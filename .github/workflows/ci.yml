@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  evals:
+    name: evals (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # build.sh calls `python3`, which setup-python does not always expose on Windows.
+      # Copy python.exe -> python3.exe in the same dir (adjacent DLLs/Lib make it a working
+      # interpreter) so `bash scripts/build.sh` finds it. This is the leg that exercises the
+      # CRLF-normalisation path in package_skill.py under a Git-Bash + Windows checkout.
+      - name: Ensure python3 is available (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $py = (Get-Command python).Source
+          $py3 = Join-Path (Split-Path $py) 'python3.exe'
+          if (-not (Test-Path $py3)) { Copy-Item $py $py3 }
+
+      - name: Structural evals
+        run: python evals/run_structural.py
+
+      - name: Validate
+        run: python scripts/quick_validate.py
+
+      - name: Build packages
+        run: bash scripts/build.sh
+
+      - name: Package evals
+        run: python evals/run_package.py

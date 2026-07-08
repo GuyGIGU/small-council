@@ -1,0 +1,13 @@
+# Normalize line endings so builds are byte-identical across platforms.
+# The .skill packages must never ship CRLF (a past bug dropped references on Windows).
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Built artifacts are binary blobs — never touched by eol normalization.
+*.skill binary

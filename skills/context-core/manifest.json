@@ -1,0 +1,10 @@
+{
+  "name": "context-core",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "GuyGIGU — derived from Carmack-Council by Sam Hudson",
+  "description": "The reusable context-handling pipeline that powers every Council mode.",
+  "references": [
+    "context-engineering.md"
+  ]
+}

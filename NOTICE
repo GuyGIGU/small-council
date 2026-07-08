@@ -1,0 +1,28 @@
+Ultra Council
+=============
+
+Ultra Council is a derivative work of **Carmack-Council** by Sam Hudson,
+originally released under the MIT License.
+
+    Original project : Carmack-Council
+    Author           : Sam Hudson (github.com/SamJHudson01)
+    Source           : https://github.com/SamJHudson01/Carmack-Council
+    License          : MIT (see LICENSE)
+
+What is derived and what is new
+-------------------------------
+Ultra Council substantially extends the original. It keeps the named-expert
+council idea and several of the domain reference documents, and adds:
+
+  - context-core   — a reusable 10-phase context-engineering pipeline that
+                     every mode runs on (the original had no shared pipeline);
+  - council-init   — per-project auto-tailoring of the roster and gates;
+  - using-council  — session bootstrap + compaction re-bootstrap;
+  - an evals harness (structural + behavioral drills).
+
+The domain reference documents under `references/` — `security.md`,
+`refactoring.md`, and the `quality-*.md` set — originate from Carmack-Council
+and remain under its MIT license. Their copyright notice is preserved in
+LICENSE as the MIT terms require.
+
+Grateful acknowledgment to Sam Hudson for the original Carmack-Council.

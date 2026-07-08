@@ -1,0 +1,20 @@
+{
+  "name": "council-implement",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "GuyGIGU — derived from Carmack-Council by Sam Hudson",
+  "description": "Execute an Ultra Council plan task by task, loading the relevant expert's reference doc per task and verifying against the project's gates between tasks.",
+  "references": [
+    "context-engineering.md",
+    "security.md",
+    "refactoring.md",
+    "quality-frontend.md",
+    "quality-backend.md",
+    "quality-postgres.md",
+    "quality-performance.md",
+    "quality-llm.md",
+    "quality-ui.md",
+    "quality-ux.md",
+    "quality-testing.md"
+  ]
+}

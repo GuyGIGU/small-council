@@ -1,0 +1,10 @@
+{
+  "name": "using-council",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "GuyGIGU — derived from Carmack-Council by Sam Hudson",
+  "description": "Bootstrap that keeps the Council active at session start and after compaction.",
+  "references": [
+    "context-engineering.md"
+  ]
+}
