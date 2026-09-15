@@ -6,6 +6,130 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-15
+
+The discipline release. The method moves out of prose the model has to remember and into three
+places:
+- stage doctrine, read at the moment of action;
+- a helper script for every mechanical step;
+- hooks that enforce the contracts.
+
+It is built from a verified audit (47 confirmed findings) and a study of 22 peer projects. See
+[`docs/design/doctrine-0.3.md`](docs/design/doctrine-0.3.md).
+
+### Added
+
+- **The `council` helper** (`bin/`, bash and git only; on PATH while the plugin is enabled). It
+  covers `run open / status / close`, `state`, `seat`, `index`, `gate` / `gates`, `collect`, `check`,
+  `map status` and `doctor`. The SessionStart hook shares its council-home resolver, which now handles
+  bare repos and submodules.
+- **Stage doctrine** in `references/doctrine/01–10`, one file per stage, read on entry. The stages
+  are now Convene · Prepare · Assign · Brief · Work · Collect · Judge · Challenge · Deliver · Learn.
+- **A seat check (SubagentStop hook).** A council worker or verifier can't finish without a valid
+  file. It is blocked once, with the reason, and can never loop.
+- **A change index every seat shares:** hunks, changed symbols, callers and covering tests, computed
+  once instead of re-traced by each seat.
+- **Blind verification:**
+  - a verifier gets only the claim and its location;
+  - each P1 and each protected subject gets its own verifier;
+  - new verdicts, MISCITED and CANNOT VERIFY;
+  - a mechanical citation and origin pre-check (`council check`) runs first.
+- **Richer findings:** each carries its origin (introduced, touched or pre-existing, from `git
+  blame`), its basis (seen or inferred) and "refuted if". Workers keep a live seat file with an index
+  block, cap their questions for the user at three, and show conflicting evidence with both sides.
+- **Several open runs at once**, each with its own status. Seat states carry agent ids. Resume
+  re-invokes the run's own mode skill.
+- **Run preferences in the config:**
+  - an approve-without-asking size, default Squad (a `/command` starts runs up to it);
+  - an agent cap, default 10 including verifiers.
+- **Run visibility:** skipped seats and their reasons appear in the approval, a progress line shows
+  as seats finish, and the actual cost is reported at close.
+- **Build loop:**
+  - a gate baseline before the first edit;
+  - before and after evidence for each task;
+  - a clean-context diagnosis after two failed verifications;
+  - a converge pass at the end;
+  - per-task commits offered;
+  - "notes for later tasks" at the top of the log.
+- **Plans** are ordered as vertical slices, walking skeleton first, with Touches and Done-when on each
+  task. **Research** scouts first and uses rival hypotheses for "why" questions.
+- **Memory:**
+  - a `## Rejected` list, so rejected proposals are never proposed again;
+  - an admission rule;
+  - proposals written with evidence and effect;
+  - consolidation by numbered operations instead of rewrites.
+- **Surface markers per seat** in the roster. init's mapping squad runs as a proper council run, and
+  init offers a permission rule for the helper.
+- **Evals:**
+  - `run_cli.py` for the helper;
+  - seat-check and multi-run cases in `run_hook.py`;
+  - `run_phrases.py`, advisory, now separate from the blocking structural checks;
+  - drills D12–D14.
+
+### Changed
+
+- **context-core is now a slim kernel:** the eleven laws, the stage index, the helper, the file
+  layout, the limits and resume.
+- **The modes are organised by stage** (`## At <Stage>` sections).
+- **Worker and verifier contracts, v2.** For changes, the burden of proof is on the builder, and a
+  builder's own account is never evidence.
+- **Performance principles are renumbered "Principle 1–6"**, so they can't be mistaken for severities.
+  An unmeasured optimization is now P3.
+- **test-architect's fix mode** is now checked by the verifier.
+
+### Fixed — from the audit
+
+- **Resume only reloaded the core, not the mode.** It now re-invokes the run's mode skill.
+- **Synthesis and verification existed only in the Chair's context,** and two verifiers could
+  overwrite one file. Now there's `synthesis.md`, one `verify-<n>.md` per verifier, and a check that
+  every shipped item has a verdict.
+- **One shared active-run pointer let concurrent runs erase each other.** Runs now carry their own
+  status and are found by scanning.
+- **Every seat re-traced the same blast radius.** The shared change index replaces that.
+- **The structural eval passed reversed rules and failed harmless edits.** It is now split into
+  blocking structural checks and advisory phrase checks.
+- **A `/command` could launch a Full run without a cost check.** It now approves only up to the
+  configured size.
+- **"Performance P1" meant a principle in one place and a severity in another.** The principles are
+  renamed.
+
+### Fixed — from the 0.3 self-review
+
+A ten-agent review of this release confirmed 24 problems. All are fixed, and each has an eval.
+
+- **Gate commands lost their quoting.** `council gate <name> -- '<command>'` now runs one quoted
+  command exactly as written, and keeps separate words as separate arguments.
+- **A paired seat could prove it read only one of its two docs.** Briefs and seat files carry one
+  `ref:` line per doc, and `collect` checks each.
+- **After a compaction the hook could resume the wrong run** — a paused one, or another session's.
+  Runs record the session that opened them; the hook resumes only that one and lists the rest.
+- **`collect` passed a seat whose worker had failed, or whose file was only a header.** It now flags
+  a seat still running, failed or blocked, an empty index, and index lines it can't read.
+- **Commands could land on the wrong run.** `run open` refuses a second in-progress run on the same
+  tree unless you say `--alongside`. With two open, every command needs `--run` (a folder name works).
+- **Empty table cells shifted columns, and a pipe inside a gate command split its row.** Rows keep a
+  placeholder for empty values; cells split only outside backticks; the doctor flags a row whose cell
+  count is off.
+- **The change index** listed prose words from Markdown as symbols and missed shell functions. It now
+  reads code files only, knows `name() {`, spots test files by their path, and says when its search
+  budget ran out.
+- **Index lines written as a list, backticked paths and en-dash ranges** read as zero items or broken
+  citations. They're accepted now.
+- **Re-dispatching a seat overwrote its token count.** Tokens add up, and each new agent id counts.
+- **Runs were sized without their verifiers.** Sizes now include them, and Challenge has an overflow
+  rule for when the cap is tight.
+- **init's mapping squad opened a run before `.council/` existed.** `run open council-init` creates it.
+- **A run resumed in a new session would wait forever** for workers that died with the old session.
+  The hook and the kernel now say to mark them failed and re-dispatch each once.
+- **The diagnosis worker had no brief or output file,** and a re-verification overwrote the first
+  verdict. Both are defined now (`diagnose-<n>.md`, `verify-<n>b.md`).
+- **The verifier couldn't open a research claim's URL.** It has web tools now.
+- **The seat check let through any reply that mentioned "BLOCKED".** Only a line that starts with it
+  counts.
+- **An old open run could disappear from `run status`** behind twenty newer ones.
+- **The helper and hooks could be committed without the executable bit.** The validator checks it.
+- **The blocking eval still checked wording.** Those checks moved to the advisory phrase eval.
+
 ## [0.2.0] — 2026-09-15
 
 Renamed **Ultra Council → Small Council** and rebuilt around what ~50 real council runs across three

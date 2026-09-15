@@ -10,7 +10,8 @@ Hard errors (exit 1):
   - hooks/hooks.json malformed, or a hook command pointing at a script that doesn't exist;
   - any ${CLAUDE_PLUGIN_ROOT}/<path> or references/<file>.md named in a skill or agent that isn't on
     disk (a dangling reference is a blind review lane);
-  - a seat reference doc whose first line isn't a single "# Title" (workers echo it as proof of reading).
+  - a seat reference doc whose first line isn't a single "# Title" (workers echo it as proof of reading);
+  - the helper or a hook script tracked in git without the executable bit.
 Warnings: a description over this repo's own budget, a version set in the marketplace entry.
 
 Standard library only; mirrors the rules in the Claude Code plugin, skills, and sub-agents docs.
@@ -18,6 +19,7 @@ Standard library only; mirrors the rules in the Claude Code plugin, skills, and 
 import json
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -209,6 +211,49 @@ for doc in SEAT_DOCS:
     first = read(path).lstrip("﻿").split("\n", 1)[0]
     if not first.startswith("# ") or first.startswith("## "):
         errors.append(f"references/{doc}: first line must be a single '# Title' (the ref: canary)")
+
+# 7. The helper and hook scripts: bash with a shebang, LF line endings (bash chokes on CR)
+EXECUTABLES = ["bin/council", "hooks/session-start.sh", "hooks/seat-gate.sh"]
+for rel in EXECUTABLES:
+    path = os.path.join(ROOT, *rel.split("/"))
+    if not os.path.isfile(path):
+        errors.append(f"{rel}: missing")
+        continue
+    with open(path, "rb") as f:
+        raw = f.read()
+    if not raw.startswith(b"#!/usr/bin/env bash"):
+        errors.append(f"{rel}: must start with '#!/usr/bin/env bash'")
+    if b"\r\n" in raw:
+        errors.append(f"{rel}: has CRLF line endings — keep LF (see .gitattributes)")
+
+# 8. Stage doctrine: ten files, each titled "# Stage N — <name>"
+STAGES = ["convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn"]
+for i, stage in enumerate(STAGES, 1):
+    rel = f"references/doctrine/{i:02d}-{stage}.md"
+    path = os.path.join(ROOT, *rel.split("/"))
+    if not os.path.isfile(path):
+        errors.append(f"{rel}: missing")
+    elif not read(path).startswith(f"# Stage {i} — "):
+        errors.append(f"{rel}: first line must be '# Stage {i} — …'")
+
+# 9. Seat docs number their principles "Principle N" — P1–P3 are severities, and the two must never look
+#    alike (items cite "Principle 3", and a finding's severity is "P2")
+for doc in SEAT_DOCS:
+    path = os.path.join(ROOT, "references", doc)
+    if os.path.isfile(path) and not re.search(r"^(#+ )?\**Principle 1\b", read(path), re.MULTILINE):
+        errors.append(f"references/{doc}: principles must be numbered 'Principle 1…N' (P1–P3 are severities)")
+
+# 10. The helper and hook scripts are executable in git: a checkout gets the mode git recorded, and a
+#     100644 bin/council can't run as a command. Untracked files and non-git copies are skipped.
+try:
+    staged = subprocess.run(["git", "ls-files", "-s", "--", *EXECUTABLES], cwd=ROOT, capture_output=True,
+                            text=True, timeout=30).stdout
+except (OSError, subprocess.SubprocessError):
+    staged = ""
+for line in staged.splitlines():
+    mode, path = line.split(" ", 1)[0], line.split("\t", 1)[-1]
+    if mode != "100755":
+        errors.append(f"{path}: tracked without the executable bit — run: git add --chmod=+x {path}")
 
 for w in warnings:
     print(f"WARN  {w}")

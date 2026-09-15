@@ -11,3 +11,5 @@
 ## Decisions (D) — the user's rulings; agents never author these
 
 ## Proposed — awaiting the user's yes/no
+
+## Rejected — proposals the user said no to; never propose these again

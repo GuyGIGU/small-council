@@ -1,45 +1,56 @@
 ---
 name: council-plan
-description: Plan a feature with the Small Council before any code is written — an interactive scoping conversation, then named domain seats advise in isolated context windows, and the Chair turns their advice into a sequenced, attributed, code-free plan whose tasks each say how to tell they're done. Use when the user wants to plan a feature, is about to start a non-trivial build, asks for a council plan, or invokes /council-plan. Propose it with its size and cost first.
+description: Plan a feature with the Small Council before any code is written — an interactive scoping conversation, then named domain seats advise in isolated context windows, and the Chair turns their advice into a sequenced, attributed, code-free plan built as vertical slices, each task saying what it touches and how to tell it's done. Use when the user wants to plan a feature, is about to start a non-trivial build, asks for a council plan, or invokes /council-plan. Propose it with its size and cost first.
 ---
 
 # Council Plan (mode)
 
-A mode on the context-core pipeline. **Invoke `context-core` and run its phases** with the inputs
-below; this file supplies what is specific to planning.
+A mode on the council's engine. **Invoke `context-core` and run its stages.** At each stage, read the
+stage's doctrine, then this file's `## At <Stage>` section.
 
-**Planning, not review.** No seat hunts for bugs. Each seat says where the risk will live, how to
-structure the work correctly from the start, and what the builder must get right the first time.
+**This is planning, not review.** No seat hunts for bugs. Each seat says:
+- where the risk will live;
+- how to structure the work correctly from the start;
+- what the builder must get right the first time.
 
-**Chair:** John Carmack — simplicity over cleverness, concrete over abstract, economic over aesthetic,
-no flattery. The filter at synthesis: *needed for this feature at this scale, or premature?*
+**Chair:** John Carmack — simplicity over cleverness, concrete over abstract, economic over
+aesthetic, no flattery. At Judge the filter is: *needed for this feature at this scale, or premature?*
 
-**Fit.** Plans suit work with a clear shape — a feature, an integration, a migration. For exploratory
-work (algorithm tuning, a performance hunt, "which approach is best?") run **council-research** first
-and plan from its answer.
+**Fit.** Plans suit work with a clear shape: a feature, an integration, a migration. For exploratory
+work — algorithm tuning, a performance hunt, "which approach is best?" — run **council-research**
+first and plan from its answer.
 
-## Discovery gate — replaces the Core's generic scope confirmation
+## At Convene — the discovery gate (in place of the generic go-ahead)
 
-The Core's phase 1 is a one-block confirmation. Planning needs a real conversation that pins the
-feature down well enough to brief every seat. The Core does not map, brief, or dispatch until this
-gate closes with an explicit go.
+Planning needs a real conversation that pins the feature down well enough to brief every seat.
+Nothing gets mapped, briefed or dispatched until this gate closes with an explicit go.
 
-**Start from what exists.** If there's a spec (`specs/<feature>.md` from spec-writer, or one the user
-points to), read it first and ask only what it leaves open. Read `map.md` and do a light survey
-(Glob/Grep for entry points, existing patterns, schema shape) so every question is about the real code.
+**Start from what exists.**
+- If there's a spec — `specs/<feature>.md` from spec-writer, or one the user points to — read it
+  first and ask only what it leaves open.
+- Read `map.md` and do a light survey (Glob/Grep for entry points, existing patterns, schema shape),
+  so every question is about the real code.
 
+**Rules for the conversation:**
 - **One question at a time.** A conversation, not a form.
 - **Ground every question in what you saw.**
   - *Good:* "Your API routes are grouped by concern — auth, billing, users. Does this extend one of
     those or want its own module?" — *Bad:* "What architecture are you picturing?"
   - *Good:* "Records are keyed by `account_id` + `created_at`. Same grain, or a new table?" —
     *Bad:* "Who should have access?"
-- **Reflect back** before moving on. **Don't propose solutions** — that's the council's job. **Ask what
-  is already decided** and never plan against it.
+- **Reflect back** before moving on.
+- **Don't propose solutions** — that's the council's job.
+- **Ask what's already decided**, and never plan against it.
 
-Cover, naturally: what it does for the user; who uses it and the permission model; what data it
-touches (new vs existing, external sources); what it connects to; what's **out of scope**; and what the
-user already has opinions on. Then present:
+Cover, naturally:
+- what it does for the user;
+- who uses it, and the permission model;
+- what data it touches: new or existing, and any external sources;
+- what it connects to;
+- what's **out of scope**;
+- what the user already has opinions on.
+
+Then present:
 
 ```
 ## Feature Scope Summary
@@ -50,96 +61,135 @@ user already has opinions on. Then present:
 **Integrations:** <modules, routes, components it connects to>
 **Out of scope:** <what this plan will not cover>
 **Already decided:** <choices the user has made — don't plan against these>
-**Council:** <size, seats, estimated cost>
+**Council:** <seats going and why, seats not going and why, estimated cost>
 ```
 
-Ask: **"Ready to dispatch the council, or do you want to adjust the scope?"** Adjust and ask again until
-they say go. The confirmed summary becomes the top block of the brief; anything the user decided is a
-Decision they may want recorded in memory.
+Ask: **"Ready to dispatch the council, or do you want to adjust the scope?"** Adjust and ask again
+until they say go. Anything the user decided is a Decision they may want recorded in memory.
 
-## Inputs handed to the Core
+- Deliverable: `<home>/plans/<slug>.md`.
+- Cap: 15 tasks.
 
-```
-roster:      council.config.md (canonical seats: references/roster/expert-catalog.md)
-worker_format: below
-synthesis:   owner rules + dependency order below · cap 15 tasks
-gates:       grounding  = the config's checks, to confirm the code is in a known-good state before planning on it
-             verification = the verifier checks every task's assumptions against the real code — each
-                            names a module, pattern, or schema that exists; no task assumes vaporware
-deliverable: <home>/plans/<slug>.md
-memory:      conventions — the plan never recommends against an Accepted Pattern, Convention, or Decision
-```
+## At Prepare
 
-## Per-item format (goes in each dispatch)
+- There's usually no diff, so no change index.
+- Refresh the map areas the feature touches.
+- Find the **nearest existing feature** and trace it end to end in one line, using the map's flows
+  plus up to 3 skeleton reads: "Nearest precedent: <feature> — <entry> → <module> → <store>". It goes
+  in the brief's landscape.
+
+## At Brief
+
+The question for every seat: *what must the builder get right, through your lens, to build this
+feature correctly the first time?*
+
+Not a finding:
+- re-opening an "Already decided" choice;
+- generic best practice with no anchor in this feature;
+- anything a settled memory entry covers.
+
+## At Work — the per-item format
+
+Index line: `<n> · <must|should|could> · <principle> · <path or area> · <title>`
 
 ```
 ### <n>. <title>
 - Principle: <name + number from your reference doc>
 - What to get right: 2–3 sentences — WHAT to build and WHY, specific to this feature in this code. No HOW, no code.
 - Risk if skipped: 1 sentence, concrete
-- Depends on: <other recommendations this must follow, or —>
+- Touches: <the areas or files it would change, from the map>
+- Assumes: <the design choices it takes as given>
+- Depends on: <other recommendations it must follow, or —>
 ```
 
-## Synthesis rules (Core phase 7)
+## At Judge
 
-- **Owner rules:** visual → UI · component architecture → Frontend · flow and screen states → UX ·
-  cross-module structure → Refactoring · async and runtime → Backend · LLM specifics → LLM · security →
-  Security · schema and migrations → Data · speed → Performance · testability → Tests. Keep the owner's
-  item plus a cross-reference.
-- **Dependency order:** data design before the routes that read it; correctness decisions before the
-  logic built on them; component architecture before the visuals on top; security informs all of it.
-- **Carmack filter on every recommendation:** needed now, or speculative? Conflicts with memory? Cut
-  what fails.
-- **Group into build tasks** (a schema item with its constraint item; a visual item with its
-  interaction item). At most 15 — merge if over. Items that aren't tasks but matter during the build
-  become **Risks & Watchpoints**.
-- **Every task gets a "Done when"** — an observable check (a test that passes, a behaviour a user can
-  see, a query that returns the right thing). council-implement's verifier judges the task against it.
+- **Owner rules.** Keep the owner's item and cross-reference the rest:
 
-## Deliverable — `<home>/plans/<slug>.md`
+  | Topic | Owner |
+  |---|---|
+  | Visual | UI |
+  | Component architecture | Frontend |
+  | Flow and screen states | UX |
+  | Cross-module structure | Refactoring |
+  | Async and runtime | Backend |
+  | LLM specifics | LLM |
+  | Security | Security |
+  | Schema and migrations | Data |
+  | Speed | Performance |
+  | Testability | Tests |
+
+- **Conflict pass.** Items whose *Assumes* lines contradict each other either get settled by the code
+  or become rulings for the user.
+- **Order the work as vertical slices.**
+  - Task 1 is a walking skeleton: the thinnest end-to-end slice that exercises the riskiest
+    assumption or integration.
+  - Each later task adds one working slice.
+  - Data design comes before the code that reads it; security informs all of it.
+- **Apply the Carmack filter** to every recommendation. Cut anything speculative or anything that
+  conflicts with memory.
+- **Group into build tasks,** at most 15. Merge if you're over.
+- **Every task gets:**
+  - **Done when:** an observable check.
+  - **Touches:** the files or areas it may change.
+
+  Items that aren't tasks but matter during the build become **Risks & Watchpoints**.
+
+## At Challenge
+
+The verifier checks each task's assumptions against the real code:
+- the modules, patterns and schemas it names exist;
+- its Touches are real paths.
+
+Send claims in the form: "task <n>: <assumption> — <path>".
+
+## At Deliver — `<home>/plans/<slug>.md`
 
 ```
+---
+(the doctrine's frontmatter, kind: plan)
+---
 # Council Plan: <Feature>
-**Scope:** <1–2 sentences from the Feature Scope Summary>
-**Context:** <2–3 sentences — how this fits the existing code>
-**Out of scope:** <…>
-**Council:** <who ran · who was skipped and why · who had no recommendations>
+**Scope:** <1–2 sentences> · **Context:** <2–3 sentences> · **Out of scope:** <…>
+**Council:** <who ran · who wasn't called and why · who had no recommendations>
 
 ## Task Sequence
 ### 1. <Task title>
 | | |
 |---|---|
-| **Domain** | <Seat> × Carmack — <principle> |
+| **Domain** | <what it checks> (<Seat>) × Carmack — <principle> |
 | **Ref** | `references/<file>.md` → Principle N |
 | **Depends on** | — (or Task N) |
+| **Touches** | <files or areas> |
 | **Done when** | <observable check> |
 
-<WHAT to build and WHY — at most 3 sentences, no HOW, no code. Cross-reference other seats that shaped it.>
+<WHAT to build and WHY — at most 3 sentences. No HOW, no code.>
 
 ## Risks & Watchpoints
 - **<Seat> — <principle>:** <when this bites and what to watch for>
 
 ## External Setup Required
 | # | What | Why | Blocks task |
-(or: "None — every task can be done inside the codebase.")
 
 ## Summary
 | # | Task | Domain | Depends on |
 
 ## Verdict
-<One direct paragraph: the most important architectural decision, the most critical domain, where to
-start, and which seat is worth having on hand during the build.>
+<One direct paragraph: the most important architectural decision, the most critical domain,
+where to start, and which seat is worth having on hand during the build.>
 ```
 
-**Attribution is non-negotiable:** every task has a Domain row (seat + principle) and a Ref row
-(document + principle number); a combined task names its primary domain and cross-references the rest.
+**Attribution is non-negotiable.** Every task has a Domain row and a Ref row. A combined task names
+its primary domain and cross-references the rest.
 
-In chat: the Summary table, the Verdict, the plan path — then, numbered: memory proposals (if the
-discovery produced decisions worth keeping) and the hand-off: *"Build it with council-implement?"*
+In chat: the Summary table, the Verdict and the plan's path. Then, numbered:
+- the rulings needed;
+- memory proposals;
+- the hand-off: *"Build it with council-implement?"*
 
 ## Notes
 
-- **No code, ever** — not in tasks, risks, or verdict. "Add a unique index on (account_id,
-  created_at)", not a model block.
-- A task whose description runs past 3 sentences is too broad — split it.
-- Say plainly when a scope is risky, and just as plainly when it's straightforward.
+- **No code, ever** — not in tasks, risks or the verdict. Write "Add a unique index on
+  (account_id, created_at)", not a model block.
+- **A task longer than 3 sentences is too broad** — split it.
+- **Say it plainly:** if a scope is risky, say so; if it's straightforward, say that too.

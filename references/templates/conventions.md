@@ -1,22 +1,25 @@
 # Conventions — <project>
 <!-- Small Council memory. Every council run reads this file first. Entries record the USER's
-     decisions: agents may only PROPOSE (last section); the user confirms. Keep it under ~25 KB —
-     past that, propose a consolidation (merge duplicates, move superseded entries to
-     conventions-archive.md, which runs do not read). -->
+     decisions: agents may only PROPOSE (the Proposed section); the user confirms. Keep it under ~25 KB —
+     past that, the council proposes a consolidation as numbered operations (merge, retire), never a
+     rewrite. -->
 
 ## Accepted Patterns (AP) — intentional; never flag these
 <!-- ### AP-1: <title>
-     **Pattern:** <what the code does on purpose> · **Why:** <reason> · **Origin:** <run or date> -->
+     **Pattern:** <what the code does on purpose> · **Why:** <reason> · **Origin:** <deliverable or date> -->
 
 ## Enforced Conventions (EC) — always / never rules
 <!-- ### EC-1: <title>
-     **Rule:** <always … / never …> · **Why:** <reason> · **Origin:** <run or date> -->
+     **Rule:** <always … / never …> · **Why:** <reason> · **Origin:** <deliverable or date> -->
 
 ## Decisions (D) — the user's rulings; agents never author these
 <!-- ### D-1: <title>
-     **Decision:** <what the user decided> · **Why:** <their reason> · **Date:** <YYYY-MM-DD> -->
+     **Decision:** <what the user decided, in their words> · **Why:** <their reason> · **Date:** <YYYY-MM-DD> -->
 
 ## Proposed — awaiting the user's yes/no
-<!-- One line per proposal, written the moment it is proposed so it survives the session.
-     Format: "- PROPOSED AP: <title> — <one line> (from <run>, <date>)". Yes → move it up with the next
-     number. No → delete the line. -->
+<!-- One line per proposal, written the moment it is proposed so it survives the session. Format:
+     "- PROPOSED accepted pattern: stop flagging <X> in <paths> — <why it's deliberate> (evidence: <path:line>; from <deliverable>, <date>)"
+     Yes → move it up with the next number. No → move it to Rejected. -->
+
+## Rejected — proposals the user said no to; never propose these again
+<!-- One line each: <title> · <date> · <the user's reason, if they gave one> -->

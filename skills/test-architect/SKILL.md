@@ -253,6 +253,14 @@ more.
 6. **Run the tests after fixing** — with the project's own command, judged by exit code — before you
    present results.
 7. **Pre-existing theatre counts** — theatre you meet while working on a feature gets fixed too.
+8. **Have the fix checked** — an agent rewriting the tests that judge its own work is exactly where
+   shortcuts hide. With the Small Council installed, dispatch `small-council:council-verifier` on the
+   changed test files, using its verdicts for changes. Ask it to confirm three things:
+   - no assertion was weakened or deleted;
+   - the tests exercise behaviour, not mocks;
+   - the mutation check (P1 check 5) holds for every high-risk function they touch.
+
+   Fix what it sends back before you present the result.
 
 ---
 

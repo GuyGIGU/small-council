@@ -1,103 +1,174 @@
 ---
 name: council-implement
-description: Build a Small Council plan task by task, or fix the findings of a council review — one builder, the governing expert's reference doc loaded per task, the project's real gates after every change, an adversarial verifier on each result, and a running log that feeds the next review. Use when the user says implement or build the plan, "fix these findings", "council implement", or invokes /council-implement.
+description: Build a Small Council plan task by task, or fix the findings of a council review — one builder, the governing expert's reference doc loaded per task, before-and-after evidence, the project's real gates after every change, a blind verifier on each result, a converge pass at the end, and a running log that feeds the next review. Use when the user says implement or build the plan, "fix these findings", "council implement", or invokes /council-implement.
 ---
 
 # Council Implement (mode)
 
-One builder, one task at a time, in this window — **not a fan-out**. **Invoke `context-core` first**
-for its doctrine, layout, run files, resume, verification, memory, and close-out rules; skip its
-partition and dispatch phases. The only agent you dispatch is the verifier.
+One builder, one task at a time, in this window. Parallel agents read; one hand writes code.
+**Invoke `context-core`**, then run:
+1. stages 1–2 with this file's sections;
+2. **the build loop below**, in place of stages 3–7;
+3. then stages 8–10.
 
-**Voice of the build:** Carmack — the smallest change that satisfies the task, code that looks like
-the same team wrote it, no speculative generality, verification by machine rather than by feel.
+The only agents you dispatch are verifiers, plus at most one diagnosis worker per stuck task.
 
-**Respect the project's hard rules** (config, `CLAUDE.md`/`AGENTS.md`). Never take a destructive
+**Voice of the build:** Carmack. Make the smallest change that satisfies the task; write code that
+looks like the same team wrote it; no speculative generality; verify by machine, not by feel.
+
+**Respect the project's hard rules** (the config, `CLAUDE.md`/`AGENTS.md`). Never take a destructive
 shortcut — dropping data, force-pushing, disabling a gate — to make a task pass.
 
 ## Two kinds of input
 
-- **A plan** — `<home>/plans/<slug>.md` (legacy: `PLAN-<slug>.md` at the project root). Each task has
-  Domain, Ref, Depends on, and Done when.
-- **A review — fix mode** — `<home>/reviews/<date>-<slug>.md` (legacy: a `FINAL-REVIEW.md` in an old
-  run dir). Each selected finding becomes a task: its seat's reference doc governs it, its Fix line is
-  the ask, and "done" means the consequence can no longer happen. Default selection: every P1 and P2 —
-  confirm it, or let the user pick.
+- **A plan:** `<home>/plans/<slug>.md` (legacy: `PLAN-<slug>.md` at the project root). Each task has
+  Domain, Ref, Depends on, Touches and Done when.
+- **A review (fix mode):** `<home>/reviews/<date>-<slug>.md` (legacy: a `FINAL-REVIEW.md` in an old
+  run folder). Each selected finding becomes a task:
+  - its seat's reference doc governs it;
+  - its Fix line is the ask;
+  - "done" means the consequence can no longer happen.
 
-## Phase 1 — Prepare (don't skip)
+  Default selection: every P1 and P2 the change introduced. Confirm it, or let the user pick.
 
-1. Read the input completely. Read `council.config.md` (Gates, Hard rules, Roster → reference map),
-   memory (never build against an AP / EC / D — if a task conflicts, follow memory and log it), and
-   `map.md`.
-2. Map the code the tasks touch (Glob/Grep). Read every file in a task's scope before changing it.
-3. **Order:** dependencies first (the plan's Depends on). Fix mode: P1 before P2, then group by file.
-4. **Safety net:** not a git repo → recommend `git init` plus a first commit before any edit; if the
-   user declines, copy each file to `<run>/backup/<path>` before its first change. Uncommitted work
-   already present → note it and never discard it.
-5. **Confirm once:** the task list, the order, and how the verifier will run (below) with its cost.
-   Approval means autonomy to the end — stop only for a red mandatory gate you can't fix, a
-   destructive step, a ruling that belongs to the user, or growth beyond the input.
-6. **Open the run:** `<home>/runs/<TS>-implement/` (fix mode: `-fix/`), `session-state.md`,
-   `active-run`, and the log at `<home>/logs/<YYYY-MM-DD>-<slug>.md` — write its header now.
+## At Convene
 
-## Phase 2 — Each task
+1. **Read what drives the build.**
+   - The input, in full.
+   - `council.config.md`: gates, hard rules, and the roster → reference map.
+   - Memory: never build against an accepted pattern, enforced convention or decision. If a task
+     conflicts with one, follow memory and log it.
+   - `map.md`.
+2. **Order the tasks.** Dependencies first. In fix mode: P1 before P2, then group by file.
+3. **Safety net.** If it isn't a git repo, recommend `git init` plus a first commit. If the user
+   declines, copy each file to `<run>/backup/<path>` before its first change. If uncommitted work
+   exists, note it and never discard it.
+4. **Confirm once:**
+   - the task list and order;
+   - how the verifier will run, and its cost;
+   - *"One commit per task on <branch>, so each task can be reverted?"* Recommended. Never commit on
+     the default branch without a yes, and never push unless asked.
 
-1. **Load the governing reference doc first.** `references/<file>.md` →
-   `${CLAUDE_PLUGIN_ROOT}/references/<file>.md` (project-local `.council/refs/…` → council home).
-   Cross-referenced docs inform specific decisions. It is the constraint set, not background reading.
-2. **Plan the change:** which files, the minimal diff, which principle constrains it, what it changes
-   for later tasks, which watchpoints apply.
-3. **Implement.** Match existing patterns. Build what the task says and nothing more — no "while we're
-   here". Honour memory. *The function least likely to cause a problem is the one that doesn't exist.*
-4. **Gates.** Run the config's gates for what you touched — full output to `<run>/gates/`, judged by
-   exit code, never through a pipe to `tail`/`head`/`grep`.
-   - Your change broke it → fix it before moving on.
-   - A **mandatory** gate red → hard stop until it's understood.
-   - Pre-existing failure → fix it if it's small and log it; otherwise log it and carry on.
-   - Can't run (missing tool, deleted file) → config drift: log it and tell the user.
-5. **Adversarial check.** Dispatch `small-council:council-verifier` with the task, its Done-when, and
-   the changed files or diff. Verify every P1 fix and every risky task (data writes, security, core
-   logic) on its own; batch two or three small tasks per verifier otherwise.
-   - INCOMPLETE or REGRESSION → fix and re-verify, at most twice more, then stop and report.
-   - SCOPE-CREEP → revert the extra change.
-   - A finding that turns out to be wrong → don't "fix" it; log it as refuted, with evidence (a memory
-     candidate).
-6. **Log and state — now, not at the end.** Append the task's entry to the log and overwrite
-   `session-state.md` (`next:` = the next task). This is what lets a reset resume mid-build.
+   Approval means autonomy to the end. Stop only for:
+   - a red mandatory gate you can't fix;
+   - a destructive step;
+   - a ruling that belongs to the user;
+   - growth beyond the input.
+5. **Open the run.** `council run open council-implement`, then write the log header at
+   `<home>/logs/<YYYY-MM-DD>-<slug>.md`.
 
-## Log — `<home>/logs/<YYYY-MM-DD>-<slug>.md`, appended per task
+## At Prepare — the baseline
+
+Run every gate once on the untouched code: `council gate --all`. Record what already fails before you
+touch anything, e.g. `council state baseline="tests: exit 1 (3 failing) · lint: pass"`. A
+pre-existing failure is never blamed on a task.
+
+## The build loop — for each task
+
+1. **Load the governing reference doc first.**
+   - `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`.
+   - Project-local `.council/refs/…` → under the council home.
+   - It is the constraint set, not background reading. Cross-referenced docs inform specific decisions.
+2. **Before-evidence.** Write or name one check that shows the problem (fix mode) or the missing
+   behaviour (plan task): a test, a command or a query. Run it with
+   `council gate before-<n> -- '<command>'` — quote the whole command, so `&&`, pipes and quotes stay
+   inside it. It should fail or show the gap.
+3. **Plan the change:**
+   - which files;
+   - the minimal diff;
+   - which principle constrains it;
+   - what it changes for later tasks;
+   - which watchpoints apply.
+4. **Implement.**
+   - Match existing patterns.
+   - Build what the task says and nothing more — no "while we're here".
+   - Honour memory.
+   - *The function least likely to cause a problem is the one that doesn't exist.*
+5. **Gates for what you touched:** `council gate <name>`, judged by exit code.
+   - **Your change broke it** → fix it before moving on.
+   - **A mandatory gate is red** → hard stop until you understand why.
+   - **It can't run** → that's config drift: log it and tell the user.
+6. **After-evidence.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
+   must now pass.
+7. **Adversarial check.** Dispatch `small-council:council-verifier` with:
+   - the task and its Done-when;
+   - the diff, written to `<run>/diff-<n>.patch`, passed by path;
+   - the before, after and gate outputs in `gates/`.
+
+   Verify every P1 fix and every risky task (data writes, security, core logic) on its own; batch
+   small tasks two or three per verifier. Track each with `council seat verify-<n> …`. Then act on
+   the verdict:
+   - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
+     `c`), so the first verdict stays on disk.
+   - **A second failed verification** → a **clean-context diagnosis**: one council-worker, read-only.
+     Its dispatch message is its whole brief — the task and its Done-when, both verdict files, the
+     diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
+     candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Track it with
+     `council seat diagnose-<n> …`. Then one more attempt; still failing → stop and report.
+   - **SCOPE-CREEP** → revert the extra change.
+   - **CANNOT VERIFY** → add the missing check, or record why it can't exist.
+   - **A finding that turns out to be wrong** → don't "fix" it. Log it as refuted, with evidence; it's
+     a memory candidate.
+8. **Log and state — now, not at the end.**
+   - Append the task's entry to the log.
+   - Update the state: `council state next="task <n+1>: <title>" attempts="T<n> 1/3"`. Keep a short
+     "tried and failed" list there too.
+   - If commits are on, commit the task.
+
+## The log — `<home>/logs/<YYYY-MM-DD>-<slug>.md`, appended after every task
 
 ```
+---
+(the doctrine's frontmatter, kind: log)
+---
 # Council Implementation Log — <feature or review title>
-Input: <plan or review path> · Started: <date> · Run: <run dir>
+Input: <plan or review path> · Run: <run folder> · Baseline: <gate results before any change>
+
+## Notes for later tasks
+- <area>: <a fact a later task needs> (task <n>)        ← at most ~12; read first after a reset
 
 ## Task <n>: <title>
-Domain: <Seat> × Carmack — <principle> · Ref applied: <principle(s)>
+Domain: <what it checks> (<Seat>) × Carmack — <principle> · Ref applied: <principle(s)>
 Files: `path` — <what changed and why, one line each>
+Evidence: before <check> → failed as expected · after → passes
 Gates: ✅ tests ✅ lint ✅ build   (or ❌ + what happened)
 Verifier: OK   (or: fixed after INCOMPLETE — <what>)
 Notes: <judgment calls, watchpoints hit, conventions followed — omit if none>
 ```
 
-It closes with **Watchpoints addressed** · **Pre-existing issues fixed** · **Follow-ups** (anything out
-of scope) · **Ready for review** (every file created or modified — the next review's target). The log
-is plain English: what changed and why, never pasted code.
+It closes with four sections:
+- **Watchpoints addressed**
+- **Pre-existing issues** (fixed or left)
+- **Follow-ups**
+- **Ready for review:** every file created or modified, which is the next review's target.
 
-## Phase 3 — Close
+Plain English: what changed and why, never pasted code.
 
-Run the final gates on everything, finish the log's closing sections, propose memory candidates, and
-close the run (Core phase 9). In chat: tasks done N/N, gate status, verifier results, anything blocked,
-the log path — then offer a council review of the "Ready for review" files (Squad size is usually
-right).
+## At Challenge — converge
+
+After the last task, one council-verifier checks every task's Done-when against the final tree. In
+fix mode, it checks every selected finding's consequence instead. Each gets met, partly met or not
+met, with evidence.
+- Anything not met → one more task, or a logged follow-up.
+- Then run the final gates: `council gate --all --at verify`.
+
+## At Deliver
+
+In chat:
+- tasks done, N of N;
+- the gates, baseline vs final;
+- the verifier and converge results;
+- anything blocked;
+- the cost and the log path.
+
+Then offer a council review of the "Ready for review" files; a Squad is usually right.
 
 ## Edge cases
 
-- **The plan names code that no longer exists** → follow the intent, not the literal path; log it.
+- **The plan names code that no longer exists** → follow the intent, not the literal path, and log it.
 - **Blocked by something outside the input** (a key, a service, an env var) → do what you can, log the
-  blocker, continue with the unblocked tasks.
-- **Two tasks would be cleaner merged** → keep them separate for attribution; shared code goes in the
-  first and is reused by the second.
+  blocker, and carry on with the unblocked tasks.
+- **Two tasks would be cleaner merged** → keep them separate for attribution. Shared code goes in the
+  first task and is reused by the second.
 - **The plan's approach looks wrong** → build it as written and log the concern; the review decides.
   Exception: it would break a hard rule or lose data → stop and ask.
-- **Commits** → only if the user asked. Then one commit per task, never on the default branch without a
-  yes, never a push unless asked.

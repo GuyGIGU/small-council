@@ -1,216 +1,121 @@
 ---
 name: context-core
-description: The Small Council's context-handling pipeline — the engine every council mode (review, plan, implement, research) runs on. Size the run, map without ingesting, write one brief, dispatch isolated seat workers, collect, synthesize, verify adversarially, deliver, remember, close. Invoked by a mode; also use it to chair any large multi-part task that would overflow one context window.
+description: The Small Council's engine — the laws, stages and helper every council mode (review, plan, implement, research) runs on — size the run, gather context once, brief isolated expert seats, collect, judge, challenge adversarially, deliver, learn, close. Invoked by a mode; also use it to chair any large multi-part task that would overflow one context window.
 user-invocable: false
 ---
 
-# Context Core — the Small Council pipeline
+# Context Core — how the Small Council runs
 
-You are the **Chair**. You spend context like money: you map, you delegate deep reading to isolated
-workers, and you judge what they bring back. Everything durable goes to disk — compaction is lossy,
-and the disk is the only memory a reset can trust.
+You are the **Chair**, the council's one head: you hold the scope, the judgment, the user's rulings
+and the final text. The **seats** — experts recruited for this project — hold depth: each works in
+an isolated window from orders on disk and hands back a file. Everything durable goes to disk;
+compaction is lossy, and the disk is the only memory a reset can trust.
 
-## Doctrine — hold this for the whole run
+## The laws
 
-- **Context is a budget with diminishing returns.** Accuracy falls as input grows, and facts buried in
-  the middle of a long context are recalled worst. Spend the smallest set of high-signal tokens that
-  gets the outcome.
-- **Map, don't ingest.** You read structure; workers read implementations. If you're reading function
-  bodies, you're doing a worker's job.
-- **Write · select · compress · isolate.** Put context on disk and point at it; load only what this
-  step needs; cut to a cap; give each worker a clean window and one slice.
-- **One brief, edge-ordered.** Load-bearing facts at the top and bottom; reference detail in the middle.
-- **Aggregate before you judge; verify before you ship.** No verdict until every seat has reported; no
-  item delivered that nobody checked against the real code.
-- **Memory compounds.** Read settled decisions first; propose new ones after; only the user confirms.
-- **Talk plainly.** To the user: plain language, no invented terms or internal jargon. Name the files,
-  the findings, and the next step.
+1. **One head.** You own scope, judgment, the user relationship and the final text. Nobody else
+   talks to the user.
+2. **Parallel readers, one writer.** Seats read and judge side by side; one builder changes code.
+   Fan out only work that splits into independent reads.
+3. **Gather once, share with everyone.** Anything two seats would both need — the map, the change
+   index, the memory entries in scope, earlier findings on these files — you or the helper compute
+   once and put in the brief.
+4. **The disk is the memory; your context is scratch.** Every decision a later stage needs is
+   written to a file before its stage ends.
+5. **Scripts do the mechanics; agents do the judgment.** Use the `council` helper for every
+   mechanical step. Never do its job by hand.
+6. **Read a stage's doctrine as you enter it.** Rules read at the start of a long run fade by its end.
+7. **Evidence or it didn't happen.** Claims carry `path:line`; "done" carries a gate's output file
+   and exit code; a builder's explanation is a claim, not evidence.
+8. **Aggregate, then judge; judge, then challenge.** The challenger never sees the author's reasoning.
+9. **The user rules; the council proposes.** Questions come last, numbered, in the chat. Rulings are
+   recorded in the user's own words.
+10. **Every run is sized, budgeted, reported and closed.** Estimate before, actual after, closed always.
+11. **The council learns this project.** What it got wrong becomes memory; each seat's track record
+    shapes the next roster.
 
-## What a mode hands you
+## The stages
 
-`roster` (seats + reference docs — the project config's roster wins over the mode's default) ·
-`worker_format` (per-item format) · `synthesis` (owner/dedupe rules + item cap) · `gates` (grounding
-and verification) · `deliverable` (schema + tracked path) · `memory` (read before, propose after).
-A mode never re-implements these phases; you never invent mode content.
+Entering a stage: read its doctrine file — `${CLAUDE_PLUGIN_ROOT}/references/doctrine/<file>` — then
+your mode's `## At <Stage>` section, if it has one. Each stage ends by recording the next
+(`council state phase=<next>`). Convene is the exception at the start: no `council state` until
+`council run open` has made the run.
+
+| # | Stage | Doctrine file | Leaves on disk |
+|---|---|---|---|
+| 1 | convene | `01-convene.md` | an open, approved run |
+| 2 | prepare | `02-prepare.md` | index.md, gate results, the memory selection |
+| 3 | assign | `03-assign.md` | every seat's slice, budget and state |
+| 4 | brief | `04-brief.md` | brief.md |
+| 5 | work | `05-work.md` | seats/<slug>.md, one per worker |
+| 6 | collect | `06-collect.md` | a clean `council collect` |
+| 7 | judge | `07-judge.md` | synthesis.md |
+| 8 | challenge | `08-challenge.md` | check.md, verify-<n>.md |
+| 9 | deliver | `09-deliver.md` | the tracked deliverable |
+| 10 | learn | `10-learn.md` | memory proposals, a closed run |
+
+Stage 0, Summon, is the council-init skill. council-implement replaces stages 3–7 with its build
+loop. A **Solo** run skips stages 3–6: you do the seat work yourself with the needed reference doc,
+then continue at Judge.
+
+## The helper
+
+`council` does the bookkeeping. It is on PATH while the plugin is enabled; if it isn't, call it as
+`bash "${CLAUDE_PLUGIN_ROOT}/bin/council"`.
+
+| Command | Use it to |
+|---|---|
+| `council run open <mode>` · `run status [--all]` · `run close [--status …]` | open a run (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one |
+| `council state key=value …` | update the run's state header: phase, next, size, deliverable |
+| `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
+| `council index [--base <ref>]` | build the change index: hunks, symbols, callers, tests |
+| `council gate <name> [-- '<command>']` · `council gate --all --at <stage>` | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved |
+| `council collect` · `council check` | check the seat files · check citations and origin |
+| `council map status` · `council doctor` | map freshness · drift scan with a fix per finding |
+
+Commands act on the one in-progress run on this working tree. With a second one open
+(`--alongside`), pass `--run <folder>` every time; the helper never guesses.
 
 ## Where things live
 
-**Council home** = the `.council/` of the *main* checkout — `git rev-parse --path-format=absolute
---git-common-dir`, then its parent — even when the session runs in a linked worktree. **Code root** =
-the working tree you are reviewing or building. Never scatter council files into a worktree.
+**Council home** = the `.council/` of the *main* checkout (`council home` prints it), even from a
+linked worktree. **Code root** = the working tree you are reviewing or building.
 
-| Path (under council home) | What | Git |
+| Under the council home | What | Git |
 |---|---|---|
-| `council.config.md` · `conventions.md` · `map.md` | tailored roster + gates · memory · codebase map | tracked |
-| `plans/` `reviews/` `logs/` `research/` | deliverables (`<slug>.md`, reviews/logs dated `YYYY-MM-DD-<slug>.md`) | tracked |
-| `runs/<YYYY-MM-DD-HHMM>-<mode>/` | scratch: `brief.md` `session-state.md` `log.md` `seats/<slug>.md` `verify.md` `gates/` | ignored |
-| `active-run` | one line: the in-flight run dir | ignored |
+| `council.config.md` · `conventions.md` · `map.md` | roster, gates, run preferences · memory · codebase map | tracked |
+| `plans/` `reviews/` `logs/` `research/` `refs/` | deliverables · project-local seat docs | tracked |
+| `runs/<date-time>-<mode>/` | `session-state.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
 
-Memory may live at a legacy path (e.g. a root `conventions.md`) — the config's Memory section says
-where. **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
-`.council/refs/<file>.md` → council home. Workers always get **absolute** paths.
+**Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
+`.council/refs/<file>.md` → under the council home. Workers always get absolute paths. Memory may
+live at a legacy path; the config's Memory section says where.
 
----
+## Limits
 
-## Phase 1 — Scope & size
+- **Agents:** at most 10 per run, verifiers included (config `agent cap`), unless the user raises it.
+- **Sizes:** Solo (you, inline) · Squad (2–4 seats + 1–2 verifiers) · Full (up to 7 seats +
+  verifiers). Size a run as seats plus the verifiers Challenge will need; its overflow rule covers
+  the rest.
+- **Approval:** a `/command` approves runs up to the config's `approve without asking` size (default
+  Squad). A Full run always asks.
 
-1. **No `council.config.md`?** Run `council-init` first — it's quick. Never tailor a roster inline; it
-   dies with the run.
-2. Name the **deliverable**, the **one question** every seat answers, and what's **out of scope**.
-3. **Size the run** and recommend one — the user decides:
+## Resume
 
-   | Size | When | Workers | Cost (field average ≈100k tokens per worker) |
-   |---|---|---|---|
-   | **Solo** | ≤ ~5 files, one domain, a quick question | none — you work inline with the needed reference doc | lowest |
-   | **Squad** | 2–4 domains touched, ≤ ~30 files | the seats with surface in scope + 1 verifier | ~100k × workers |
-   | **Full** | cross-cutting, > ~30 files, or high stakes (auth, data migration, money, release) | every seat with surface + 1–2 verifiers | 7 workers ≈ 0.75M · 14 ≈ 1.8M |
+- `session-state.md` is a status board — `council state` keeps it. History goes to `log.md`;
+  workers' states to `seats.tsv` (`council seat`).
+- After a compaction or in a new session, the SessionStart hook names the open runs — after a
+  compaction, the one this session was driving. Re-invoke the skill named by the run's `mode:` (it
+  loads this one), read `session-state.md`, re-read the doctrine for its phase, and continue. No
+  hook message? Run `council run status`.
+- **Seats marked running:** after a compaction they are still working — wait for their
+  notifications; never re-dispatch them. In a new session they are gone: `council collect` shows
+  which files exist; mark the rest `council seat <slug> failed note="interrupted"` and re-dispatch
+  each once.
+- A run the user doesn't want resumed: `council run close --status abandoned`. One they paused:
+  `--status paused`.
 
-4. **Confirm** deliverable, size, seats, and estimated cost in one short message. An explicit
-   `/command`, "go", or "take the lead" is approval. After approval, work autonomously to the
-   deliverable; stop only for a destructive action, scope growth, or a ruling that belongs to the user.
-5. **Open the run:** `TS=$(date +%Y-%m-%d-%H%M)` (PowerShell: `Get-Date -Format yyyy-MM-dd-HHmm`);
-   run dir `<home>/runs/$TS-<mode>/`. Write `session-state.md` (below) and put the run dir's path,
-   relative to the council home's parent, as the only line of `<home>/active-run`.
+## Talking to the user
 
-## Phase 2 — Map
-
-- Read `council.config.md`, memory, and `map.md`. Their settled decisions constrain everything after.
-- **Map stale** (`map-commit` behind HEAD in areas this run touches)? Refresh only what changed:
-  `git diff --stat <map-commit>..HEAD`, re-survey those areas, patch the sections, bump `map-commit`.
-  **No map?** Survey and write one from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`.
-- **Hard ceiling:** ~10 skeleton reads (manifests, entry points, schemas, route tables). Use Glob/Grep
-  and `git diff --stat` for the scope inventory — counts and paths, never bodies.
-- Start the **grounding gates** now, in the background, full output to `<run>/gates/<name>.txt`.
-
-## Phase 3 — Brief
-
-Write `<run>/brief.md`. Write it for a zero-context worker: if a fact isn't in the brief or the
-worker's reference doc, the worker doesn't have it.
-
-```
-# Brief — <run title>                                          [TOP: highest signal]
-Deliverable: <the one thing this run produces>
-Question for every seat: <the one question each seat answers in its lane>
-Out of scope: <…>
-Code root: <abs> · Council home: <abs> · Run dir: <abs>
-
-## Landscape                                                   [MIDDLE: reference detail]
-<system shape (from map.md) · scope inventory with sizes · grounding gate results ·
- relevant settled decisions as ids + one line each (AP-3, EC-7, D-2…)>
-
-## Seats
-| Seat | Slice | Reference (absolute) | Output file | Item cap |
-<skipped seats: "<Seat> — skipped: no <domain> surface in scope">
-
-## Hard constraints — do not forget                            [BOTTOM: re-surfaced signal]
-<config hard rules · accepted patterns not to re-flag · cite path:line or drop the item ·
- no code in output · stay in your lane · read-only>
-```
-
-## Phase 4 — Partition
-
-- Every in-scope artifact belongs to ≥ 1 seat — an unassigned file is a coverage gap.
-- **Skip a seat only when the map shows no surface for it in this scope**, and record why. When in
-  doubt, keep it: seats dropped for "zero surface" have gone on to find a quarter of a review's
-  findings once recast.
-- A slice over ~25 files → split the seat (`hunt-a`, `hunt-b`) and say who got what.
-- Default item cap: 8 per seat.
-
-## Phase 5 — Dispatch
-
-Spawn one worker per active seat, **all Agent calls in one message** so they run in parallel.
-Use `subagent_type: small-council:council-worker` — it carries the worker contract (read the brief,
-then the reference doc, then the slice; cite or drop; stay in lane; read-only; write the file; return
-one line). If that agent type isn't available, use `general-purpose` and paste the contract's rules.
-Keep the dispatch message short — the brief carries the context:
-
-```
-Seat: <Seat> (<lane>) — <mode> run <TS>
-Brief: <abs>/brief.md — read it all first
-Reference: <abs path> — read it all; copy its first heading into line 2 of your file
-Slice: <files/areas>   Format: <worker_format>   Item cap: <n>
-Write <abs run dir>/seats/<slug>.md, then return one line.
-```
-
-Whatever dispatches the workers (Agent tool, a Workflow script, background agents), **the file contract
-holds: one file per seat in `seats/`** — collect and resume depend on it. Wait for completion
-notifications. Never poll, and never open a subagent's transcript or output log.
-
-## Phase 6 — Collect (completeness gate)
-
-For every active seat: the file exists, isn't empty, and its line 2 `ref:` matches the first heading of
-the reference doc it was given (proof the doc was read — an unread doc means a blind lane). Missing,
-empty, wrong `ref:`, or `BLOCKED` → re-dispatch that seat once, naming the failure. Still failing →
-report the gap to the user. Never synthesize over a hole, never call partial results "enough." If a
-file read is denied or a worker hangs, tell the user what's stuck — don't wait in silence.
-
-## Phase 7 — Synthesize
-
-1. **Aggregate first.** Compile and deduplicate every item from every seat *before* forming any view or
-   re-reading source. You are the judge, not an extra reviewer with a veto.
-2. Apply the mode's **owner rules**; keep cross-references. Route `Outside my lane` notes to the owning
-   seat's items.
-3. Rank by **concrete cost in this project at this scale** — the Carmack filter: *a real problem here,
-   or pattern-matching?*
-4. **Cut to the cap.** Keep the cut list — verification re-checks cut P1s.
-5. **Provenance on every item:** seat × principle × reference line × `path:line`.
-
-## Phase 8 — Verify
-
-- **Gates.** Run the verification gates, full output to `<run>/gates/<name>.txt`, and judge each by
-  its **exit code**. Never pipe a gate through `tail`/`head`/`grep` — a piped tail once hid a missing
-  test runner and reported green. A gate that can't run (missing tool, deleted file) is **config
-  drift**: say so and offer to fix the config; it is not a code finding.
-- **Adversarial check.** Dispatch `small-council:council-verifier` with every item you plan to ship
-  plus any P1 you cut (a lone dissenter may be the one who's right). More than ~12 items → two
-  verifiers, split. Output: `<run>/verify.md`. Drop REFUTED, label UNCERTAIN, restore a cut P1 that
-  comes back CONFIRMED.
-- **Solo runs:** verify yourself, item by item, against the real code.
-
-## Phase 9 — Deliver, remember, close
-
-1. **Deliver.** Write the deliverable to its tracked path, then show the mode's in-chat summary. Any
-   questions for the user come **numbered, in the chat, after the summary**.
-2. **Remember.** Propose up to 8 memory candidates — Accepted Patterns (intentional code to stop
-   flagging; a REFUTED finding that was deliberate design is a prime candidate) and Enforced
-   Conventions (always/never rules). **Write them to memory's `## Proposed` section immediately** as
-   `- PROPOSED AP: <title> — <one line> (from <run>, <date>)` so they outlive this session. On the
-   user's yes, move the entry up with the next number; on no, delete it. **Decisions (D)** are recorded
-   only from the user's own words. Memory over ~25 KB → propose a consolidation (merge duplicates, move
-   superseded entries to `conventions-archive.md`, which runs don't read).
-3. **Close.** In `session-state.md` set `status: complete` and the deliverable path; empty
-   `<home>/active-run`. A run stopped for good → `status: abandoned`. **Close every run you open.**
-
----
-
-## Resume — every phase
-
-- After each phase, **overwrite** `session-state.md` — at most ~40 lines, always in this shape — and
-  append anything historical to `<run>/log.md`. The state file is a status board, never a ledger:
-
-```
-status: in-progress            # in-progress | complete | abandoned
-mode: <mode>
-phase: <scope | map | brief | partition | dispatch | collect | synthesize | verify | deliver | close>
-updated: <YYYY-MM-DD HH:MM>
-size: <solo | squad | full> — <n> seats, est. ~<N>k tokens
-code-root: <abs>
-deliverable: <tracked path, once known>
-seats: <slug ✓ | slug … pending | slug — skipped (reason)>
-next: <the very next action>
-## Decisions so far
-- <approvals, scope answers, user rulings this run>
-```
-
-- **After a compaction or in a new session**, the plugin's SessionStart hook flags an unfinished run.
-  Re-invoke this skill, read `session-state.md`, and resume at `phase`: don't restart, don't
-  re-dispatch seats whose files exist, don't skip the completeness gate.
-- An old run the user doesn't want resumed → `status: abandoned`, empty `active-run`.
-
-## Absolute rules
-
-- Map, don't ingest. Workers return one line; the work lives in files.
-- One brief on disk; dispatch messages point at it.
-- Aggregate before judging. Verify before shipping. Judge gates by exit code.
-- Memory: read before, propose after (in the file), the user confirms.
-- Close every run you open.
+Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
+Questions come last, numbered.
