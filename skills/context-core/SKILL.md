@@ -44,9 +44,9 @@ your mode's `## At <Stage>` section, if it has one. Each stage ends by recording
 | # | Stage | Doctrine file | Leaves on disk |
 |---|---|---|---|
 | 1 | convene | `01-convene.md` | an open, approved run |
-| 2 | prepare | `02-prepare.md` | index.md, gate results, the memory selection |
+| 2 | prepare | `02-prepare.md` | index.md, gate results, earlier findings |
 | 3 | assign | `03-assign.md` | every seat's slice, budget and state |
-| 4 | brief | `04-brief.md` | brief.md |
+| 4 | brief | `04-brief.md` | brief.md, with the memory in scope |
 | 5 | work | `05-work.md` | seats/<slug>.md, one per worker |
 | 6 | collect | `06-collect.md` | a clean `council collect` |
 | 7 | judge | `07-judge.md` | synthesis.md |
@@ -69,9 +69,10 @@ then continue at Judge.
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
 | `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
 | `council index [--base <ref>]` | build the change index: hunks, symbols, callers, tests |
-| `council gate <name> [-- '<command>']` · `council gate --all --at <stage>` | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved |
+| `council gate <name> [-- '<command>']` · `council gate --all --at grounding` (or `verify`) | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved |
 | `council collect` · `council check` | check the seat files · check citations and origin |
-| `council map status` · `council doctor` | map freshness · drift scan with a fix per finding |
+| `council fingerprint check` · `council memory select` · `council prior` | a changed stack · the memory entries in scope · earlier council work on these paths |
+| `council ledger` · `council map status` · `council doctor` | each seat's track record · map freshness · drift scan with a fix per finding |
 
 Commands act on the one in-progress run on this working tree. With a second one open
 (`--alongside`), pass `--run <folder>` every time; the helper never guesses.
@@ -84,11 +85,13 @@ linked worktree. **Code root** = the working tree you are reviewing or building.
 | Under the council home | What | Git |
 |---|---|---|
 | `council.config.md` · `conventions.md` · `map.md` | roster, gates, run preferences · memory · codebase map | tracked |
+| `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
 | `plans/` `reviews/` `logs/` `research/` `refs/` | deliverables · project-local seat docs | tracked |
 | `runs/<date-time>-<mode>/` | `session-state.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
-`.council/refs/<file>.md` → under the council home. Workers always get absolute paths. Memory may
+`.council/refs/<file>.md` → under the council home. Workers always get absolute paths, and a seat
+with a card gets the card (`cards/<slug>.md`), which names its doc. Memory may
 live at a legacy path; the config's Memory section says where.
 
 ## Limits

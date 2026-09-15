@@ -34,6 +34,8 @@ a repo and it builds the fit.
   - a game loop; a mobile app; infrastructure as code; a CLI.
 - **Commands:** from `package.json` scripts, `pyproject`/`pytest.ini`, `Makefile`, CI workflows,
   `*.bat` / `*.ps1`, and the README's "how to run tests".
+- **Fingerprint:** `council fingerprint` prints the stack's line (its manifests and code languages).
+  It goes in the config, so Prepare can tell when the stack moves.
 
 Cap your reads at config and skeleton files.
 
@@ -55,12 +57,16 @@ For each catalog seat, decide **include / recast / drop** by its "applies when" 
     mechanical and every skip evidenced. No `|` inside a marker, because the roster is a table — list
     alternatives separately.
   - For a recast seat: it keeps its reference doc, and you record why it was recast.
+  - A **card** (Phase E) that translates its doc to this project.
+- **One lens, several areas.** In a monorepo, or a repo with distinct parts (a web app and an admin,
+  an app and its firmware), a lens may take several rows — one per area, each with its own slug
+  (`dodds-web`, `dodds-admin`) and surface.
 - **John Carmack chairs** — always on, never a seat. **Fowler (structure) and Beck (tests) are never
   dropped.**
 - **A domain the catalog doesn't cover** (a game engine's frame loop, firmware, a DSL) → propose a
-  project-local seat with its own reference doc under `.council/refs/`. Draft it from the project's
-  real constraints, cite repo evidence for every principle, and leave it marked draft until the user
-  accepts it.
+  project-local seat with its own reference doc under `.council/refs/`, drafted from
+  `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-doc.md` and the project's real constraints. Cite
+  repo evidence for every principle, and leave it `status: draft` until the user accepts it.
 
 ## Phase C — Detect and dry-run the gates
 
@@ -71,8 +77,14 @@ build/compile, and any e2e or regression harness.
 - **Mark each one** ✓ runnable, or ✗ with the reason. A gate that can't run here is worse than no
   gate, because it fakes a green.
 - **Never probe** a gate that deploys, spends money, flashes hardware or needs credentials: ask
-  first, and mark it "not probed".
+  first. If it stays unprobed, its Checked cell reads `✗ not probed: <why>`, and `council gate --all`
+  skips it.
 - **Mark which gates are mandatory.**
+- **Record more than the command** — the config's Gates columns: the **Probe** (the exact dry-run
+  you ran), what it **Needs** (tools, env vars, credentials, hardware) and its **Side effects**
+  (none, writes the tree, network, cost, hardware, deploy, credentials). `council gate --all` never runs a gate
+  whose side effects involve cost, hardware, deploys or credentials; those run only by name, with
+  the user's go-ahead.
 
 ## Phase D — Build the map
 
@@ -98,14 +110,29 @@ Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`
 
 Present:
 - the roster, with recasts, drops, the reasons, and each seat's surface markers;
-- the gates (✓/✗);
+- for each seat, two lines on what its card will say is P1 here and where it will look;
+- the gates (✓/✗) and their side effects;
 - the run preferences;
 - a three-line summary of the map.
 
 Adjust on request. On confirmation, write:
 - **`.council/council.config.md`** from `${CLAUDE_PLUGIN_ROOT}/references/templates/council.config.md`,
-  stamped `last-verified: <date> @ <short sha>`. Run preferences start at the defaults, which are the
-  user's to change: approve without asking up to Squad, agent cap 10.
+  stamped `last-verified: <date> @ <short sha>`, with the `stack-fingerprint:` line `council
+  fingerprint` printed. Run preferences start at the defaults, which are the user's to change:
+  approve without asking up to Squad, agent cap 10.
+- **`.council/cards/<slug>.md`**, one per seat, from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`.
+  A card translates the seat's doc to this project, in at most ~6 KB:
+  - every principle of the doc, numbered as in the doc, one line each on what it means here — the
+    construct, a path or an idiom — or "not applicable here" with the reason;
+  - the severity rubric in this repo's terms;
+  - where to look, from the map's hot spots and the surface markers;
+  - what is not a finding here.
+
+  Its first line is what workers copy onto their `ref:` line, and its `source:` line names the doc.
+  Write them yourself after the map, one seat at a time: list the doc's principles
+  (`grep -n '^## Principle' <doc>`), read each principle's section only as you write its line, and
+  save the card before starting the next. After a compaction, carry on from the first seat without
+  a card.
 - **`.council/.gitignore`** containing `runs/` (and `active-run`, for older runs). Config, memory,
   map, plans, reviews, logs and research stay tracked.
 - **Memory:** keep an existing `conventions.md` wherever it is, and record its path in the config's
@@ -136,7 +163,17 @@ Adjust on request. On confirmation, write:
 
 Configs drift: docs get renamed, files get deleted, suite counts change. On a re-run, or "refresh the
 council":
-- Run `council doctor` and fix what it reports.
+- Run `council doctor` and fix what it reports. `council fingerprint check` says whether the stack
+  moved; `council memory check` lists memory entries whose anchored file, line or symbol is gone.
+- **Memory:** offer to add Scope and Anchor to entries that lack them — one proposal per entry, as
+  numbered operations, applied on the user's yes.
+- **Cards:** rewrite the card of any seat whose doc, surface or stack changed, and write the missing
+  ones.
+- **Roster changes from the record.** `council ledger 20` shows each seat's runs, items raised,
+  kept and refuted, and tokens. Propose changes with the numbers shown — "UX (Friedman): 6 runs, 2
+  of 14 items shipped, 5 refuted — narrow its surface to `src/ui/**`?" — and likewise pairing seats
+  that are always thin, or adding a lens the runs keep flagging outside their lanes. The user
+  decides; nothing changes without a yes.
 - Re-check **every path and gate** in the config against the repo, dry-running the gates again, and
   update `last-verified`.
 - **Merge, don't overwrite.** Show a diff. Any section the user added or edited — hard rules, a

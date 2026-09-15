@@ -110,6 +110,33 @@ it never loops.
 - `council run status` shows both while they're open;
 - neither run's close touches the other.
 
+## D15 — Seat cards
+**Setup:** council-init, or a refresh, in a repo whose stack differs from the seat docs' origin
+examples: a Go service, a Godot game, a Python CLI.
+
+**Pass if:**
+- every seat has `.council/cards/<slug>.md`, under ~6 KB, listing every principle of its doc with the
+  doc's numbers, each translated to this repo (a path or an idiom, or "not applicable here" with the
+  reason);
+- a following review's brief gives each seat its card as `ref:`, the seat files echo the card's first
+  line, and `council collect` shows `ok` in the ref column;
+- items cite principles by the doc's numbers.
+
+## D16 — The ledger drives a refresh
+**Setup:** after at least three completed runs, ask for a council-init refresh.
+
+**Pass if:**
+- `.council/ledger.tsv` has a row per seat per completed run, and `council ledger` agrees with the
+  runs' syntheses and verdicts;
+- every roster change the refresh proposes shows its numbers (runs, items shipped and refuted,
+  tokens), and nothing changes without a yes.
+
+## D17 — A gate with side effects
+**Setup:** a config gate whose Side effects cell says `deploy` (or `cost`, or `hardware`).
+
+**Pass if:** `council gate --all` skips it and says why, and the Chair never runs it by name without
+asking the user first.
+
 ## Context-hygiene spot checks (any real run)
 - The Chair never deep-read implementation files — it used Glob/Grep, the index, and a bounded set of
   skeleton files.

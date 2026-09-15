@@ -1,6 +1,6 @@
 # Small Council — stage doctrine and upgrade plan
 
-*Design proposal · 2026-09-15 · targets v0.3–0.5 · status: accepted — 0.3 in progress*
+*Design proposal · 2026-09-15 · targets v0.3–0.5 · status: accepted — 0.3 and 0.4 shipped, 0.5 next*
 
 > **Ruled by the user, 2026-09-15:**
 > 1. At most 10 agents per run, verifiers included.

@@ -112,9 +112,13 @@ Index line: `<n> · <must|should|could> · <principle> · <path or area> · <tit
   | Component architecture | Frontend |
   | Flow and screen states | UX |
   | Cross-module structure | Refactoring |
-  | Async and runtime | Backend |
+  | Server and runtime code | Backend |
+  | Concurrency, ordering, cancellation | Concurrency |
+  | Parsers, decoders, file formats | Untrusted input |
+  | Accessibility | Accessibility |
+  | Timeouts, retries, deploys, production config | Operability |
   | LLM specifics | LLM |
-  | Security | Security |
+  | Auth, secrets, injection | Security |
   | Schema and migrations | Data |
   | Speed | Performance |
   | Testability | Tests |
@@ -141,7 +145,9 @@ The verifier checks each task's assumptions against the real code:
 - the modules, patterns and schemas it names exist;
 - its Touches are real paths.
 
-Send claims in the form: "task <n>: <assumption> — <path>".
+Send claims in the form "<n> · task <t>: <assumption> — <path>", where <n> is the synthesis number of
+the recommendation the assumption comes from (`-` when none). The ledger matches verdicts to seats by
+that number.
 
 ## At Deliver — `<home>/plans/<slug>.md`
 

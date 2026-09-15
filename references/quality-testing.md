@@ -1,10 +1,26 @@
 # Test Quality Reference — Carmack × Beck
 
 Philosophy: John Carmack. Testing expertise: Kent Beck (creator of TDD, co-creator of JUnit, author of Test Desiderata).
-Stack context: Next.js App Router / React / TypeScript / tRPC / Prisma / Neon (serverless Postgres) / Clerk / CSS Modules + BEM. Vitest for unit/integration tests. Cypress for E2E. LLM pipelines with non-deterministic output.
 
 Every finding must describe the **concrete consequence** — not just "this test is bad."
 This doc covers: test quality auditing, test specification, mock discipline, behavioral coverage, and the specific failure modes of AI-generated tests. It powers two skill modes: **audit** (evaluate existing tests) and **specify** (write test specifications for new code).
+
+---
+
+## Applying this seat to another stack
+
+Origin stack for the examples: a TypeScript web app (Next.js, tRPC, Prisma over Postgres) tested with Vitest for unit and integration tests and Cypress for end-to-end, with LLM pipelines whose output is non-deterministic.
+
+The numbered principles are the constraint set; framework-specific checks (Vitest matchers, mocking Prisma or tRPC) are illustrations — on another stack, find the analogous construct and apply the principle to it. They hold for any runner: pytest, Go's `testing` package, JUnit, XCTest, a game engine's test runner, or a hardware-in-the-loop rig.
+
+| In the origin stack | The general idea | Look for it in … |
+|---|---|---|
+| Vitest `describe` blocks | How tests are grouped and named | pytest test classes and functions; Go `t.Run` subtests; JUnit 5 `@Nested` classes |
+| `.toEqual(expected)` vs `.toBeTruthy()` / `.toBeDefined()` | An exact-value assertion vs an existence or truthiness check | pytest `assert x == y` vs `assert x`; Go `if got != want` vs `if got == nil`; XCTest `XCTAssertEqual` vs `XCTAssertNotNil` |
+| `skip`, `todo`, `xit` | A test switched off but left in the suite | `@pytest.mark.skip`; Go `t.Skip()`; JUnit `@Disabled` |
+| A seeded test database instead of a mocked Prisma client | Real dependencies inside the system boundary; test doubles only at it | a pytest fixture that creates a throwaway database; Testcontainers (Java, Go, .NET and others); a real board on a hardware-in-the-loop rig instead of a mocked driver |
+| Canned LLM responses injected as fixtures | Non-deterministic input passed in, not called live | recorded HTTP responses (vcrpy cassettes); a seeded RNG or a fake clock handed to the code; recorded sensor traces replayed into firmware |
+| Vitest unit and integration tests, Cypress end-to-end | Levels of test, from one function to the whole running system | XCTest unit tests vs XCUITest UI tests; Unity Test Framework edit-mode vs play-mode tests; Go package tests vs running the built CLI as a subprocess |
 
 ---
 
@@ -75,7 +91,7 @@ Both converge on minimalism. Every mock is a point where the test detaches from 
 - Severity: **P1** — the most important behavior (success) has zero coverage.
 
 **Specify mode: default to real dependencies**
-- When specifying tests, default to real dependencies. Use a test database with seed data rather than mocking Prisma. Use real tRPC procedure calls rather than mocking the router. Use real file system operations rather than mocking fs. Only mock at the system boundary: external APIs, third-party services, LLM providers.
+- When specifying tests, default to real dependencies: a test database with seed data rather than a mocked data-access layer, real calls through your own API layer rather than a mocked router, and real file system operations rather than a mocked file system. Only mock at the system boundary: external APIs, third-party services, LLM providers.
 - When mocks are necessary, specify what realistic success data looks like — don't leave mock configuration to the implementer, who will take the path of least resistance (error cases only).
 
 ---
@@ -85,7 +101,7 @@ Both converge on minimalism. Every mock is a point where the test detaches from 
 *Carmack: "Every hour of debugging saved is an hour of development gained."*
 *Beck: "I get paid for code that works, not for tests, so my philosophy is to test as little as possible to reach a given level of confidence." And: "We don't get paid for tests, we get paid for code that a) works and b) can be changed. Tests can help with that but, all else equal, less effort on tests is better." On what to test: "You should test things that might break. If code is so simple that it can't possibly break, and you measure that the code in question doesn't actually break in practice, then you shouldn't write a test for it."*
 
-This is NOT an anti-testing statement. It's a risk-calibrated testing philosophy: invest testing effort where errors are likely and consequential. A trivial getter doesn't need a test. A tRPC procedure orchestrating a multi-step pipeline absolutely does. LLMs invert this — they'll generate 10 tests for simple CRUD and zero for complex business logic, because simple code is easier to test.
+This is NOT an anti-testing statement. It's a risk-calibrated testing philosophy: invest testing effort where errors are likely and consequential. A trivial getter doesn't need a test. A request handler orchestrating a multi-step pipeline absolutely does. LLMs invert this — they'll generate 10 tests for simple CRUD and zero for complex business logic, because simple code is easier to test.
 
 ### What to check
 
@@ -118,7 +134,7 @@ The test list is not a list of methods to test. It's a list of behavioral scenar
 - Severity: **P1** for missing happy path tests. **P2** for missing edge cases or boundary conditions.
 
 **Audit mode: tests organized by implementation, not behavior**
-- Are describe blocks named after classes or methods ("describe UserService") or after behaviors ("describe when a new user signs up")? Tests organized by implementation tend to mirror structure and miss cross-cutting behaviors. Tests organized by behavior describe what the system does, which is more resilient to refactoring.
+- Are test groups (describe blocks, test classes, subtests) named after classes or methods ("describe UserService") or after behaviors ("describe when a new user signs up")? Tests organized by implementation tend to mirror structure and miss cross-cutting behaviors. Tests organized by behavior describe what the system does, which is more resilient to refactoring.
 - Severity: **P3** — organizational, but it signals structural coupling.
 
 **Specify mode: write the test list as behavioral scenarios**
@@ -140,7 +156,7 @@ A test without meaningful assertions is not a test. It's a function call with a 
 - Tests with no assertion statements at all — just setup and execution.
 - Tests that assert only that no exception was thrown (often implicit — the test "passes" because it didn't crash).
 - Tests that assert only that the return value is not null or not undefined.
-- Tests that assert `.toBeDefined()` or `.toBeTruthy()` on complex objects without checking their contents.
+- Tests that assert only that a complex object exists or is truthy, without checking its contents.
 - Severity: **P1** for tests with no assertions. **P1** for tests where the only assertion is not-null/not-undefined on a complex return value.
 
 **Audit mode: assertions that duplicate production logic**
@@ -252,7 +268,7 @@ AI implementing agents will, without malice, find the path of least resistance t
 **Audit mode: weakened or deleted assertions**
 - Tests where assertion conditions have been broadened from specific to vague (e.g., `.toEqual(expected)` changed to `.toBeTruthy()`).
 - Tests that were present in a prior version but are now deleted or commented out without explanation.
-- Test files where `skip`, `todo`, or `xit` annotations accumulate.
+- Test files where skip or todo markers accumulate.
 - Severity: **P1** for deleted or commented-out assertions. **P2** for broadened assertion conditions.
 
 **Audit mode: tests modified to match implementation**
@@ -309,4 +325,22 @@ Beck's readability principle deserves special attention: "You're not supposed to
 |----------|---------|----------|
 | **P1 — Fix Now** | Tests providing false confidence, critical behavior untested, agent cheating | No happy-path tests, assertion-free tests in CI, mock-only tests asserting on wiring, deleted/weakened assertions, expected values copied from implementation, high-risk functions untested |
 | **P2 — Fix Soon** | Coverage gaps, structural coupling, non-determinism tolerated | Missing edge case coverage, mock count above 3, structure-coupled assertions, flaky tests with retry workarounds, deterministic code tested through non-deterministic paths, always-green suite despite production incidents |
-| **P3 — Consider** | Maintenance burden, organisation, test economics | Redundant tests, slow individual tests, tests for trivial code, describe blocks named after classes not behaviors, excessive test setup suggesting design problem |
+| **P3 — Consider** | Maintenance burden, organisation, test economics | Redundant tests, slow individual tests, tests for trivial code, test groups named after classes not behaviors, excessive test setup suggesting design problem |
+
+---
+
+## Origin-stack examples (TypeScript: Vitest, Cypress, tRPC, Prisma)
+
+Stack-specific forms of checks stated generally above, kept as written for the origin stack.
+
+### Principle 3 — real dependencies
+- Use a test database with seed data rather than mocking Prisma. Use real tRPC procedure calls rather than mocking the router. Use real file system operations rather than mocking fs.
+
+### Principle 4 — where the risk is
+- A trivial getter doesn't need a test. A tRPC procedure orchestrating a multi-step pipeline absolutely does.
+
+### Principle 6 — trivial assertions
+- Tests that assert `.toBeDefined()` or `.toBeTruthy()` on complex objects without checking their contents.
+
+### Principle 10 — switched-off tests
+- Test files where `skip`, `todo`, or `xit` annotations accumulate.

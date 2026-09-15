@@ -22,9 +22,9 @@ Chair: John Carmack — always on; the synthesis filter. Not a seat.
      Leach (no persistent state), Performance (no hot path). -->
 
 ## Gates
-| Gate | Command | Run at | Mandatory | Checked |
-|---|---|---|---|---|
-| compile | `python -m py_compile sample.py` | grounding, verify | yes | ✓ 2026-09-15 |
+| Gate | Command | Run at | Mandatory | Checked | Probe | Needs | Side effects |
+|---|---|---|---|---|---|---|---|
+| compile | `python -m py_compile sample.py` | grounding, verify | yes | ✓ 2026-09-15 | `python --version` | Python 3 | none |
 
 ## Hard rules
 - This is a drill fixture: never edit `sample.py` during D3/D4 (D9 edits a copy).

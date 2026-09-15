@@ -3,6 +3,7 @@
      a quant/screener engine plus a web app). It demonstrates recasts, surface markers, gate detection,
      and a legacy memory path; it is not a live project's config. -->
 last-verified: 2026-09-15 @ 1a2b3c4
+stack-fingerprint: 3f9c1a7e2b4d — manifests: package.json, pyproject.toml · languages: jsx, py
 
 ## Stack
 A deterministic numerical engine in Python (pandas / numpy / scipy), no LLM in the hot path · FastAPI +
@@ -30,14 +31,15 @@ or pattern-matching?"). Not a seat.
 | Karri Saarinen | saarinen | UI (visual) | `*.css`, `webapp/frontend/src/components/**` | references/quality-ui.md | kept — there is a visual surface |
 | Vitaly Friedman | friedman | UX | `webapp/frontend/src/pages/**` | references/quality-ux.md | kept — operator-facing interaction |
 | Kent Beck | beck | Tests | `tests/**`, `test_*.py` | references/quality-testing.md | kept — never dropped; audits the suite guarding the engine |
+| Michael Nygard | nygard | Operability | `webapp/backend/main.py`, `settings`, `timeout=` | references/quality-operability.md | kept — a long-running service with an external broker link |
 
 ## Gates
-| Gate | Command | Run at | Mandatory | Checked |
-|---|---|---|---|---|
-| tests | `pytest -q` | grounding, verify | yes | ✓ 2026-09-15 |
-| frontend lint | `npm --prefix webapp/frontend run lint` | verify | no | ✓ 2026-09-15 |
-| frontend build | `npm --prefix webapp/frontend run build` | verify | yes | ✓ 2026-09-15 |
-| shadow parity | `python -m tools.shadow_parity --check` | verify | yes | ✓ 2026-09-15 |
+| Gate | Command | Run at | Mandatory | Checked | Probe | Needs | Side effects |
+|---|---|---|---|---|---|---|---|
+| tests | `pytest -q` | grounding, verify | yes | ✓ 2026-09-15 | `pytest --collect-only -q` | Python 3.12 | none |
+| frontend lint | `npm --prefix webapp/frontend run lint` | verify | no | ✓ 2026-09-15 | `npm --prefix webapp/frontend run lint -- --version` | Node, npm | none |
+| frontend build | `npm --prefix webapp/frontend run build` | verify | yes | ✓ 2026-09-15 | the build itself (~20 s) | Node, npm | writes the tree |
+| shadow parity | `python -m tools.shadow_parity --check` | verify | yes | ✓ 2026-09-15 | `python -m tools.shadow_parity --help` | the shadow corpus in data/ | none |
 
 ## Hard rules
 - Engine output must stay byte-identical on the shadow corpus unless a task explicitly changes behaviour.
@@ -46,3 +48,5 @@ or pattern-matching?"). Not a seat.
 ## Memory
 - conventions: conventions.md (project root — kept where it was before council-init)
 - map: .council/map.md
+- cards: .council/cards/ (one per seat slug)
+- ledger: .council/ledger.tsv

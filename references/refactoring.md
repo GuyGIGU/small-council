@@ -1,7 +1,6 @@
 # Refactoring Reference — Carmack × Fowler
 
 Philosophy: John Carmack. Specifics: Martin Fowler.
-Stack context: Next.js App Router / React / TypeScript / tRPC / Prisma / Neon / Clerk / CSS Modules + BEM.
 
 Every refactoring finding must answer: **"Will this slow us down?"** — not "is this clean?"
 Fowler: "The point of refactoring is not to create 'clean code', it is purely economic — we refactor to make it faster."
@@ -18,6 +17,23 @@ Carmack and Fowler both want code that minimises the gap between what the progra
 **The synthesis:** extract **pure functions** freely — both philosophies approve. Keep **state-mutating code** visible and sequential — Carmack's objection is specifically to hiding mutation behind a name. Fowler would agree that extract-then-mutate-surprisingly is bad; he addresses it through different smells (Mutable Data, Global Data) rather than inlining.
 
 When reviewing, ask: **is this extraction hiding state mutation, or isolating pure logic?** The first is dangerous. The second is universally beneficial.
+
+---
+
+## Applying this seat to another stack
+
+Origin stack of the examples: Next.js App Router / React / TypeScript / tRPC / Prisma.
+
+The numbered principles are the constraint set; framework-specific checks are illustrations. On another stack, find the analogous construct and apply the principle to it. Origin-only checks sit at the end, by principle.
+
+| In the origin stack | The general idea | Look for it in … |
+|---|---|---|
+| React state derivable from props | A derived value stored as mutable state | SwiftUI `@State` copying another value; a denormalised column; a cached total on a game entity |
+| Module-scope state in Next.js serverless | Mutable state shared across requests in a long-lived process | Python module globals in a WSGI/ASGI worker; Go package-level vars; static fields in a Java service |
+| Prisma schema → tRPC router → Zod → client | One data change hand-copied through every layer | Django model → serializer → form; hand-written clients for an OpenAPI or protobuf contract |
+| tRPC procedures as the service layer | In a small app, the handlers are the service layer | FastAPI path operations; Go HTTP handlers; Django views |
+| `strict: false`, `any`, `@ts-ignore` | Blind spots where the static analyser gives up | Python `Any`, `# type: ignore`; Go `//nolint`; Rust `#[allow(...)]`; Java `@SuppressWarnings` |
+| Pages Router → App Router migration | Strangler Fig: replace one route or module at a time | UIKit → SwiftUI screen by screen; Android Views → Compose; an API moved endpoint by endpoint behind a proxy |
 
 ---
 
@@ -76,23 +92,23 @@ If you can't answer "yes" to at least one of the first two, don't flag it. This 
 *Carmack: "A large fraction of the flaws in software development are due to programmers not fully understanding all the possible states their code may execute in."*
 *Fowler added Mutable Data, Global Data, and Loops as NEW smells in his 2018 edition — reflecting the same insight.*
 
-Both identify mutable state as the root cause. Carmack pushes toward elimination (functional programming). Fowler pushes toward containment (encapsulation). For a TypeScript/React stack, you have tools for both.
+Both identify mutable state as the root cause. Carmack pushes toward elimination (functional programming). Fowler pushes toward containment (encapsulation). Most stacks give you tools for both.
 
 ### What to check
 
 **Mutable Data (Fowler: new smell, high priority)**
 - Mutable variables with scope beyond a few lines — risk increases with scope
 - Calculated/derived values stored as mutable state instead of computed on access (Fowler: "particularly pungent")
-- In React: state that could be derived from other state or props
+- UI state that could be derived from other state or inputs (React: from props)
 - Severity: **P2** when scope is wide, **P3** when scope is local
 
 **Global Data (Fowler: new smell)**
 - Module-level mutable variables, singletons with mutable state
-- In Next.js: mutable state in module scope that persists across requests in serverless (this is a correctness bug, not just a smell)
-- Severity: **P1** if it causes cross-request contamination in Next.js, **P2** otherwise
+- Mutable module or static state shared by every request a process serves (Next.js: module scope in serverless) — a correctness bug, not just a smell
+- Severity: **P1** if it causes cross-request contamination, **P2** otherwise
 
 **State colocation failures**
-- React state living higher in the component tree than necessary (prop drilling as a symptom)
+- State living higher than necessary (React: in the component tree; prop drilling as a symptom)
 - Server state duplicated in client state instead of using a cache (React Query/SWR pattern)
 - Severity: **P3** unless causing re-render cascades or stale data bugs
 
@@ -121,7 +137,7 @@ Fowler placed Mysterious Name **first** in his 2nd edition smell catalog to sign
 
 **Inconsistent vocabulary**
 - Same concept with different names across the codebase (user/account/member, create/add/insert)
-- In Next.js: inconsistent naming between route handlers, server actions, and client functions for the same operation
+- The same operation named differently in each layer that handles it (server handler, client call)
 - Severity: **P3** but compounds over time
 
 ---
@@ -135,23 +151,23 @@ Not all smells are equal. These are the ones Fowler flags as highest-cost, filte
 *Fowler: "A classic case occurs when a function in one module spends more time communicating with functions or data inside another module than it does within its own module."*
 
 Code in the wrong place. The fundamental rule: **put things together that change together.**
-- In Next.js: a Server Action that mostly manipulates data belonging to a different domain module
-- In React: a component that imports 5+ things from another feature's directory
+- A handler that mostly manipulates data belonging to a different domain module (Next.js: a Server Action)
+- A module that imports 5+ things from another feature's directory (React: a component)
 - Severity: **P2** if it causes shotgun surgery, **P3** if isolated
 
 ### Shotgun Surgery
 
 One change requires edits across many files. Fowler's counterintuitive fix: **inline first, then re-extract.** Pull the scattered logic together into one (temporarily large) place, then split along better boundaries. Don't be afraid of a large intermediate step.
 
-- In this stack: changing a data model requires touching the Prisma schema, the tRPC router, the input Zod schema, the client call, and possibly the component — but tRPC's type inference should make most of these cascade automatically. If you're manually updating types in multiple places, the type bridge is broken.
+- A data-model change hand-copied into every layer (schema, API, validation, client, UI) when the stack could generate or infer them — that bridge is broken.
 - Severity: **P2** — this is where velocity dies
 
 ### Primitive Obsession
 
 *Fowler: "We find many programmers are curiously reluctant to create their own fundamental types... such as money, coordinates, or ranges."*
 
-- Strings where domain types belong: user IDs as `string` instead of branded types, dates as strings, money as `number`
-- In TypeScript: this is cheap to fix with branded types or Zod schemas. The type system is right there.
+- Primitives where domain types belong: IDs as bare strings, dates as strings, money as floating-point numbers
+- Usually cheap to fix with a named type, newtype or value object. The type system is right there.
 - Severity: **P3** unless causing unit confusion bugs (**P2**)
 
 ### Data Clumps
@@ -186,14 +202,14 @@ Both argue against premature structural complexity. Fowler: "Don't even consider
 
 **Premature modularisation**
 - Feature modules with one consumer and one implementation
-- Abstraction layers (repositories, services, controllers) when the app has 10 tRPC procedures
-- At early stage with a Next.js/tRPC monolith: you probably don't need a "service layer" — your tRPC procedures ARE the service layer. Prisma queries in procedures is fine.
+- Abstraction layers (repositories, services, controllers) when the app has 10 endpoints
+- In an early-stage monolith you probably don't need a "service layer" — the handlers ARE the service layer, and data access inside them is fine.
 - Severity: **P3** unless the indirection is actively causing confusion (**P2**)
 
 **Missing boundaries where they matter**
 - Fowler's test: are different parts of the code changing for different reasons? If yes, they should be separated.
 - Shared mutable state between features that should be independent
-- In Next.js: route groups (`(auth)`, `(dashboard)`) that share internal implementation details
+- Feature areas (folders, packages, modules) that share internal implementation details
 - Severity: **P2** if causing divergent change
 
 **Published interfaces that shouldn't be**
@@ -203,7 +219,7 @@ Both argue against premature structural complexity. Fowler: "Don't even consider
 
 ### The Strangler Fig principle
 
-For legacy code or migrations: wrap and replace incrementally, never big-bang rewrite. Fowler: "All we are doing is writing tomorrow's legacy software today" — so design for replaceability. In Next.js terms: if migrating from Pages Router to App Router, do it route by route, not all at once.
+For legacy code or migrations: wrap and replace incrementally, never big-bang rewrite. Fowler: "All we are doing is writing tomorrow's legacy software today" — so design for replaceability. Migrate one route, screen or module at a time, not all at once.
 
 ---
 
@@ -228,10 +244,10 @@ Both want machine-verified correctness — different tools, same goal. Fowler us
 - Tests asserting on internal function calls rather than observable outcomes
 - Severity: **P2** — these erode the enabling triad
 
-**TypeScript strictness as static analysis**
+**Type-checker strictness as static analysis**
 - Carmack's static analysis principle applied to the stack you have
-- `strict: false`, liberal `any` usage, `@ts-ignore` comments — each one is a blind spot where the analyzer gives up
-- Severity: **P2** for `strict: false`, **P3** for scattered `any`
+- Loose settings, liberal escape-hatch types, suppression comments (`strict: false`, `any`, `@ts-ignore`) — each one is a blind spot where the analyzer gives up
+- Severity: **P2** for a loose checker mode, **P3** for scattered escape hatches
 
 **Test sufficiency (Fowler's two-part test)**
 - "You rarely get bugs that escape into production" — are the same classes of bugs recurring?
@@ -267,10 +283,26 @@ Fowler: "In almost all cases, I'm opposed to setting aside time for refactoring.
 
 | Severity | Pattern | Examples |
 |----------|---------|----------|
-| **P1 — Fix Now** | Structural issue causing correctness bugs | Cross-request state in Next.js module scope, critical paths without tests |
+| **P1 — Fix Now** | Structural issue causing correctness bugs | Mutable state shared across requests (e.g. Next.js module scope), critical paths without tests |
 | **P2 — Fix Soon** | Structure actively slowing the team down | Shotgun surgery, hidden mutations, feature envy, speculative complexity, tests coupled to implementation, "refactoring" PRs that change behavior |
 | **P3 — Consider** | Hygiene that compounds over time | Vague names, data clumps, minor duplication, premature abstraction, low-value extraction |
 
 ## The Overriding Filter
 
 Before writing any finding, apply Fowler's economic test: **"Will this code slow us down?"** If the answer is "not really" or "not yet," either lower the severity or don't flag it. Carmack would add: **"Is this code hiding state that will surprise someone?"** If neither applies, move on. A focused review with 6 sharp findings beats a wall of 20 nitpicks.
+
+---
+
+## Origin-stack examples (Next.js / React / TypeScript / tRPC / Prisma)
+
+### Principle 4 — Next.js naming
+- In Next.js: inconsistent naming between route handlers, server actions, and client functions for the same operation
+
+### Principle 5 — tRPC type bridge, branded types
+- Shotgun Surgery in this stack: changing a data model requires touching the Prisma schema, the tRPC router, the input Zod schema, the client call, and possibly the component — but tRPC's type inference should make most of these cascade automatically. If you're manually updating types in multiple places, the type bridge is broken.
+- Primitive Obsession: user IDs as `string` instead of branded types, money as `number`. In TypeScript: this is cheap to fix with branded types or Zod schemas.
+
+### Principle 6 — Next.js and tRPC architecture
+- At early stage with a Next.js/tRPC monolith: you probably don't need a "service layer" — your tRPC procedures ARE the service layer. Prisma queries in procedures is fine.
+- In Next.js: route groups (`(auth)`, `(dashboard)`) that share internal implementation details
+- Strangler Fig: if migrating from Pages Router to App Router, do it route by route, not all at once.

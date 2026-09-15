@@ -14,7 +14,8 @@ The seats work in parallel, each in its own window. You dispatch, then wait.
 ```
 Seat: <slug> — <what it checks> · <mode> run
 Brief: <abs>/brief.md — read the top, your "### <slug>" block, and the bottom
-Reference: <abs path(s)> — copy each one's first heading into its own ref: line, from line 2
+Reference: <abs card or doc path(s)> — copy each one's first heading into its own ref: line, from line 2
+Doc: <abs path of the full doc behind each card> — open it for the principles you cite
 Format: <your mode's per-item format>
 Write <abs run>/seats/<slug>.md, then return one line.
 ```

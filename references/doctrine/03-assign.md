@@ -7,7 +7,8 @@ Give each seat exactly its slice, and each worker a budget.
 1. **Match surfaces.** For each roster seat, match its Surface markers (the config's roster column:
    globs and greps in this repo's idioms) against the in-scope files from the index or the scope
    inventory. The match is the seat's slice. A config without markers yet → judge by the seat's
-   lens, and suggest a council-init refresh.
+   lens, and suggest a council-init refresh. A lens with several roster rows (`dodds-web`,
+   `dodds-admin`) is several seats, each with its own surface.
 2. **No orphans.** Every in-scope file belongs to at least one seat; an unowned file is a coverage
    gap. Leftovers go to the closest lens — structure takes what nobody else claims.
 3. **Thin seats pair up.** A seat with an empty slice is not called, with its reason recorded. A seat

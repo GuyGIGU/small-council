@@ -72,6 +72,8 @@ Write the file you were given (`<run>/verify-<n>.md`):
 
 - Line 1: `# Verification — <run title>`
 - A table: `| # | Item | Verdict | Evidence |`. For claims, put the reachability in the Evidence cell.
+  The `#` is the item's number exactly as the dispatch gave it (e.g. 4 or C2) — never renumber; the
+  council's ledger matches verdicts to seats by it.
 - Then one short paragraph for each item that isn't CONFIRMED or OK.
 
 Return exactly one line:

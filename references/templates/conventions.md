@@ -2,11 +2,17 @@
 <!-- Small Council memory. Every council run reads this file first. Entries record the USER's
      decisions: agents may only PROPOSE (the Proposed section); the user confirms. Keep it under ~25 KB —
      past that, the council proposes a consolidation as numbered operations (merge, retire), never a
-     rewrite. -->
+     rewrite.
+     Every entry may carry **Scope:** (paths, globs or seat slugs it concerns — leave it out and every
+     run reads the entry) and **Anchor:** (the path, symbol or path:line it is about — a path or a
+     symbol survives edits; a line number can drift). Brief reads only the entries in scope
+     (`council memory select`); `council memory check` flags an entry whose anchored file, line or
+     symbol is gone. -->
 
 ## Accepted Patterns (AP) — intentional; never flag these
 <!-- ### AP-1: <title>
-     **Pattern:** <what the code does on purpose> · **Why:** <reason> · **Origin:** <deliverable or date> -->
+     **Pattern:** <what the code does on purpose> · **Why:** <reason> · **Origin:** <deliverable or date>
+     **Scope:** <src/api/**, hunt> · **Anchor:** <src/api/auth.py:42> -->
 
 ## Enforced Conventions (EC) — always / never rules
 <!-- ### EC-1: <title>

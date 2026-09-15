@@ -51,7 +51,9 @@ Runs the helper against scaffolded git repos:
 - seat-file collection: `ref:` proof of reading (paired seats too), item caps, broken citations,
   empty or unreadable indexes, failed and re-dispatched workers;
 - citation and origin checks (introduced vs pre-existing);
-- map status and the drift doctor.
+- gate side effects: what `--all` never runs;
+- the stack fingerprint, scoped memory and stale anchors, earlier council work, the seat ledger;
+- map status and the drift doctor (cards, repeated slugs, a changed stack).
 
 ## 4. Hook evals — do the hooks behave?
 
@@ -82,5 +84,5 @@ reworded rule shouldn't break the build, and a phrase proves nothing about behav
 
 ## 6. Behavioral drills — run in Claude Code
 
-See `behavioral-drills.md` (D1–D14). They need a live agent and subagents, so they can't be scripted
+See `behavioral-drills.md` (D1–D17). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

@@ -50,7 +50,8 @@ DESCRIPTION_BUDGET = 600     # this repo's own budget: descriptions load into ev
 SEAT_DOCS = [
     "security.md", "refactoring.md", "quality-frontend.md", "quality-backend.md",
     "quality-postgres.md", "quality-performance.md", "quality-llm.md", "quality-ui.md",
-    "quality-ux.md", "quality-testing.md",
+    "quality-ux.md", "quality-testing.md", "quality-accessibility.md", "quality-concurrency.md",
+    "untrusted-input.md", "quality-operability.md",
 ]
 
 

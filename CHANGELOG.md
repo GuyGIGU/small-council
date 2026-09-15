@@ -6,6 +6,55 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-15
+
+Tailored experts. 0.3 made the council disciplined; 0.4 makes its experts experts in *your*
+project, whatever the stack.
+
+### Added
+
+- **Seat cards.** council-init writes `.council/cards/<slug>.md` per seat: each principle of the
+  seat's doc translated to this project in one line, the severity rubric in this repo's terms, where
+  to look, and what isn't a finding here — at most ~6 KB. Workers read the card first and open the
+  full doc only for the principles they cite; the card's first line is their proof of reading.
+- **Four stack-agnostic lenses:** Accessibility (Pickering), Concurrency & runtime (Goetz), Untrusted
+  input & bytes (Patterson) and Operability (Nygard). The catalog now has fourteen seats.
+- **Gates carry a probe, what they need, and their side effects.** `council gate --all` skips a gate
+  marked not runnable, and never runs one whose side effects involve cost, hardware, deploys or
+  credentials — those run only by name, with your go-ahead.
+- **A stack fingerprint** (`council fingerprint`): the manifests and code languages, recorded at
+  init. Prepare and the doctor notice when the stack moves and suggest a refresh.
+- **Scoped memory.** Entries carry **Scope:** and **Anchor:** fields. `council memory select` gives
+  a run only the entries in scope; `council memory check` flags entries whose anchored file, line or
+  symbol is gone.
+- **Earlier council work, gathered once.** `council index` ends with the reviews, logs, research and
+  plans that mention the changed files or cover them through their `areas:`; `council prior` does the
+  same for any paths.
+- **The seat ledger.** Closing a completed run adds a row per seat to `.council/ledger.tsv`: items
+  raised, kept, cut and refuted, and tokens. `council ledger` shows each seat's record; Convene
+  estimates from it, and a refresh proposes roster changes with the numbers shown.
+- **One lens, several areas:** a roster may give a lens several rows, each with its own slug and
+  surface (`dodds-web`, `dodds-admin`).
+- **A seat-doc template** for project-local lenses: `status: draft` until you accept it, and every
+  principle cites repo evidence.
+- **Doctor checks** for repeated slugs, missing or oversized cards, cards whose doc is gone, stale
+  memory anchors, a changed stack, and Gates tables without side effects.
+
+### Changed
+
+- **Every inherited seat doc gains "Applying this seat to another stack"** — the origin stack, the rule,
+  and a translation table — and keeps its origin-stack examples (TypeScript, Next.js, tRPC, Prisma,
+  Postgres) in a final section. Principle numbers and meanings are unchanged; titles that named an
+  origin product now name the idea.
+- **Brief** selects the memory in scope with `council memory select`, once Assign has named the
+  seats; **Convene** checks the fingerprint, so a changed stack goes in the approval message.
+  **Learn** writes Scope and Anchor into accepted entries, and the ledger is recorded at close.
+- **The Gates and Roster tables are read by their header names,** so older configs keep working.
+- **The review and plan owner tables name the four new seats,** and a verifier copies each item's
+  synthesis number into its table, so verdicts land on the right seat in the ledger.
+- **A seat's brief block gives the full doc's absolute path** (`- doc:`), since a card names its doc
+  relative to the plugin.
+
 ## [0.3.0] — 2026-09-15
 
 The discipline release. The method moves out of prose the model has to remember and into three

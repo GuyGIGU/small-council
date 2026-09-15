@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.3.0"
+COUNCIL_VERSION="0.4.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 
@@ -34,6 +34,9 @@ field() {
 }
 
 json_esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\t\r\n' '   '; }
+
+# Shorten each line to about N characters, at a space, so a multibyte character is never cut in half.
+clip() { awk -v n="$1" '{ if (length($0) > n) { t = substr($0, 1, n); sub(/ [^ ]*$/, "", t); $0 = t " …" } print }'; }
 
 # Letters and digits only, lowercased — for comparing a seat's ref: line with its doc's title.
 norm() { tr -d '\r' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]'; }
@@ -122,6 +125,7 @@ seat_summary() {
 resolve_run() {
   local home mine count paused
   if [ -n "$RUN_ARG" ]; then
+    RUN_ARG="${RUN_ARG%/}"
     if [ ! -f "$RUN_ARG/session-state.md" ] && [ -f "$(council_home)/runs/$RUN_ARG/session-state.md" ]; then
       RUN_ARG="$(council_home)/runs/$RUN_ARG"
     fi
@@ -254,7 +258,7 @@ cmd_seat() {
   case "$state" in queued|running|done|failed|blocked|skipped) ;; *) die "seat state must be queued, running, done, failed, blocked or skipped" ;; esac
   case "$slug" in *[!A-Za-z0-9._-]*) die "bad seat slug: $slug" ;; esac
   shift 2
-  for kv in "$@"; do
+  for kv in ${1+"$@"}; do                            # ${1+…}: bash 3.2 calls an empty "$@" unbound under set -u
     case "$kv" in
       agent=*)  agent="${kv#agent=}" ;;
       tokens=*) tokens="$(printf '%s' "${kv#tokens=}" | tr -cd '0-9')" ;;
@@ -284,7 +288,7 @@ cmd_seat() {
 }
 
 cmd_run_close() {
-  local run status home ptr p tok=0 agents=0 line
+  local run status home ptr p tok=0 agents=0 line n
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -307,6 +311,10 @@ cmd_run_close() {
     say "closed ${run##*/} — $status · ~$(( (tok + 500) / 1000 ))k tokens across $agents agents"
   else
     say "closed ${run##*/} — $status"
+  fi
+  if [ "$status" = complete ]; then
+    n="$(ledger_record "$run")"
+    [ "${n:-0}" -eq 0 ] 2>/dev/null || say "ledger: $n seat row(s) recorded — council ledger shows each seat's record"
   fi
 }
 
@@ -394,7 +402,7 @@ diff_symbols() {
 }
 
 cmd_index() {
-  local run top ref base head list body out st f label add del hunks diff nums syms sym hits callers tests stem note
+  local run top ref base head list body out st f label add del hunks diff nums syms sym hits callers tests stem note prior np=0
   local n_files=0 n_skip=0 t_add=0 t_del=0 budget=80
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
@@ -480,19 +488,28 @@ cmd_index() {
     cat "$body"
   } > "$out"
   rm -f "$list" "$body"
+  prior="$(index_paths "$run" | prior_hits "$(council_home)" | head -n 40)"
+  if [ -n "$prior" ]; then
+    np="$(printf '%s\n' "$prior" | grep -c .)"
+    { printf '## Earlier council work on these files\n'
+      printf '%s\n' "$prior" | awk -F'\t' '{ printf "- %s — %s — %s\n", $1, $2, $3 }'; } >> "$out"
+  fi
   RUN_ARG="$run" cmd_state base="$base" >/dev/null
   if [ "$n_files" -eq 0 ]; then
     say "index: nothing changed since $(git rev-parse --short "$base") ($ref) → $out"
   else
     say "index: $n_files files (+$t_add/-$t_del) → $out"
   fi
+  [ "$np" -eq 0 ] || say "earlier council work on these files: $np mention(s), listed at the end of the index"
 }
 
 # ------------------------------------------------------------------------------------------------
 # Gates
 # ------------------------------------------------------------------------------------------------
 
-# The config's Gates table as tab-separated rows: name command run-at mandatory cell-count.
+# The config's Gates table as tab-separated rows: name command run-at mandatory cell-count checked
+# side-effects needs header-cell-count has-side-effects-column. Columns are found by their header names
+# (case, spaces and dashes ignored), so an older table (no Side effects or Needs) still reads.
 # Cells split on "|" outside backticks and unescaped, so a quoted pipe can't shift the columns.
 config_gates() {
   [ -f "$1" ] || return 0
@@ -511,20 +528,26 @@ config_gates() {
     }
     function trim(s) { gsub(/^[ \t\r]+|[ \t\r]+$/, "", s); return s }
     function dash(s) { return s == "" ? "-" : s }
-    /^## / { ing = ($0 ~ /^## Gates/); next }
+    /^## / { ing = ($0 ~ /^## Gates/); hdr = 0; next }
     ing && /^\|/ {
-      k = cells($0, f)
-      name = trim(f[2]); cmd = trim(f[3]); at = trim(f[4]); mand = trim(f[5])
+      split("", f); k = cells($0, f)
+      if (!hdr) {                                   # the header row names the columns; it is never a gate
+        hdr = 1; hk = k; cg = 2; cc = 3; ca = 4; cm = 5; ck = 6; cs = 0; cn = 0
+        for (i = 2; i < k; i++) {
+          h = tolower(trim(f[i])); gsub(/[^a-z]/, "", h)
+          if (h == "gate" || h == "name") cg = i; else if (h == "command") cc = i; else if (h == "runat") ca = i
+          else if (h == "mandatory") cm = i; else if (h == "checked") ck = i
+          else if (h == "sideeffects" || h == "sideeffect") cs = i; else if (h == "needs") cn = i
+        }
+        next
+      }
+      name = trim(f[cg]); cmd = trim(f[cc]); at = trim(f[ca]); mand = trim(f[cm]); chk = trim(f[ck])
+      side = cs ? trim(f[cs]) : ""; needs = cn ? trim(f[cn]) : ""
       gsub(/`/, "", cmd)
-      if (name == "" || tolower(name) == "gate" || name ~ /^:?-+:?$/ || name ~ /^</) next
+      if (name == "" || name ~ /^:?-+:?$/ || name ~ /^</) next
       if (cmd == "" || cmd ~ /^</) next
-      print name "\t" cmd "\t" dash(at) "\t" dash(mand) "\t" k
+      print name "\t" cmd "\t" dash(at) "\t" dash(mand) "\t" k "\t" dash(chk) "\t" dash(side) "\t" dash(needs) "\t" hk "\t" (cs ? 1 : 0)
     }' "$1"
-}
-
-# Cell count of the Gates table's header row.
-gates_header_cells() {
-  awk -F'|' '/^## / { g = ($0 ~ /^## Gates/); next } g && /^\|/ { print NF; exit }' "$1" 2>/dev/null
 }
 
 cmd_gates() {
@@ -532,7 +555,43 @@ cmd_gates() {
   cfg="$(council_home)/council.config.md"
   gates="$(config_gates "$cfg")"
   [ -n "$gates" ] || { say "no gates in $cfg"; return 0; }
-  printf '%s\n' "$gates" | awk -F'\t' '{ printf "%s · %s · run at: %s · mandatory: %s\n", $1, $2, $3, $4 }'
+  printf '%s\n' "$gates" | awk -F'\t' '{
+    printf "%s · %s · run at: %s · mandatory: %s", $1, $2, $3, $4
+    if ($7 != "-") printf " · side effects: %s", $7
+    printf "\n" }'
+}
+
+# May `gate --all` run this gate unasked? With a Side effects column: only if every side effect is on
+# the safe list (none, writes the tree, network) and Needs names no credentials or hardware — anything
+# unlisted or unrecorded runs by name only. An older table without the column falls back to scanning
+# the command and Needs for risky words.
+gate_safe() {
+  local cmd="$1" side="$2" needs="$3" hascol="$4" item
+  case "$(printf '%s' "$needs" | tr 'A-Z' 'a-z')" in
+    *credential*|*secret*|*token*|*password*|*api?key*|*apikey*|*hardware*|*device*) return 1 ;;
+  esac
+  if [ "$hascol" != 1 ]; then
+    if risky_side "$cmd $needs"; then return 1; fi
+    return 0
+  fi
+  [ "$side" != "-" ] || return 1
+  while IFS= read -r item; do
+    case "$(printf '%s' "$item" | tr 'A-Z' 'a-z')" in
+      none|"writes the tree"|"writes files"|network|-|—) ;;
+      *) return 1 ;;
+    esac
+  done <<ITEMS
+$(split_list "$side")
+ITEMS
+  return 0
+}
+
+# Words that mark a command or a need as risky — the fallback for tables without a Side effects column.
+risky_side() {
+  case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in
+    *cost*|*money*|*paid*|*billing*|*hardware*|*device*|*flash*|*deploy*|*publish*|*credential*|*secret*|*production*) return 0 ;;
+  esac
+  return 1
 }
 
 gate_base() { printf '%s/gates/%s' "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')"; }
@@ -556,21 +615,39 @@ run_gate() {
   say "gate $name: FAIL (exit $ec, ${secs}s) — full output: $out"
   hits="$(grep -n -i -E 'error|fail|exception|traceback|assert|panic|cannot|not found|undefined' "$out" 2>/dev/null | head -n 12)"
   [ -n "$hits" ] || hits="$(tail -n 8 "$out")"
-  printf '%s\n' "$hits" | cut -c1-220 | sed 's/^/    /'
+  printf '%s\n' "$hits" | clip 220 | sed 's/^/    /'
   return "$ec"
 }
 
 cmd_gate() {
-  local run top cfg name cmd at mand k ran=0 failed=0 gates
+  local run top cfg name cmd at mand k chk side needs hk hascol extra row ran=0 skipped=0 failed=0 gates
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
   if [ "$ALL" = 1 ]; then
     gates="$(config_gates "$cfg")"
     [ -n "$gates" ] || { say "no gates configured in $cfg"; return 0; }
-    while IFS="$TAB" read -r name cmd at mand k; do
+    while IFS="$TAB" read -r name cmd at mand k chk side needs hk hascol; do
       [ -n "$name" ] || continue
       if [ -n "$AT_ARG" ]; then case "$at" in *"$AT_ARG"*) ;; *) continue ;; esac; fi
+      if [ "$k" != "$hk" ]; then
+        say "gate $name: skipped — its row has $k cells where the header has $hk (an unescaped | ?); fix the row"
+        skipped=$((skipped + 1)); continue
+      fi
+      case "$(printf '%s' "$chk" | tr 'A-Z' 'a-z')" in
+        ✗*|*"not probed"*) say "gate $name: skipped — the config marks it not runnable here ($chk)"; skipped=$((skipped + 1)); continue ;;
+      esac
+      if ! gate_safe "$cmd" "$side" "$needs" "$hascol"; then
+        extra=""; [ "$needs" = "-" ] || extra=" · needs: $needs"
+        if [ "$hascol" != 1 ]; then
+          say "gate $name: skipped — its command or needs look risky ($cmd$extra). Run it by name once the user agrees: council gate $name"
+        elif [ "$side" = "-" ]; then
+          say "gate $name: skipped — side effects not recorded. Fill the cell, or run it by name once the user agrees: council gate $name"
+        else
+          say "gate $name: skipped — side effects: $side$extra. Run it by name once the user agrees: council gate $name"
+        fi
+        skipped=$((skipped + 1)); continue
+      fi
       ran=$((ran + 1))
       if ! run_gate "$run" "$name" "$cmd" "$top"; then
         case "$(printf '%s' "$mand" | tr 'A-Z' 'a-z')" in yes*|y|true|mandatory) failed=1 ;; esac
@@ -578,7 +655,8 @@ cmd_gate() {
     done <<GATES
 $gates
 GATES
-    [ "$ran" -gt 0 ] || say "no gates configured${AT_ARG:+ to run at '$AT_ARG'}"
+    if [ "$ran" -eq 0 ] && [ "$skipped" -eq 0 ]; then say "no gates configured${AT_ARG:+ to run at '$AT_ARG'}"
+    else say "gates: $ran ran, $skipped skipped"; fi
     [ "$failed" -eq 0 ] || say "a mandatory gate failed"
     return "$failed"
   fi
@@ -586,8 +664,17 @@ GATES
   [ -n "$name" ] || die "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
   cmd="$GATE_CMD"
   if [ -z "$cmd" ]; then
-    cmd="$(config_gates "$cfg" | NAME="$name" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2; exit }')"
-    [ -n "$cmd" ] || die "no gate named '$name' in council.config.md — pass the command after --"
+    row="$(config_gates "$cfg" | NAME="$name" awk -F'\t' '$1 == ENVIRON["NAME"] { print; exit }')"
+    [ -n "$row" ] || die "no gate named '$name' in council.config.md — pass the command after --"
+    cmd="$(printf '%s' "$row" | cut -f2)"; chk="$(printf '%s' "$row" | cut -f6)"; side="$(printf '%s' "$row" | cut -f7)"
+    needs="$(printf '%s' "$row" | cut -f8)"; hascol="$(printf '%s' "$row" | cut -f10)"
+    case "$(printf '%s' "$chk" | tr 'A-Z' 'a-z')" in
+      ✗*|*"not probed"*) say "note: the config marks this gate not runnable here ($chk)" ;;
+    esac
+    if ! gate_safe "$cmd" "$side" "$needs" "$hascol"; then
+      extra=""; [ "$needs" = "-" ] || extra=" · needs: $needs"
+      say "note: this gate has side effects ($side)$extra — run it only with the user's go-ahead"
+    fi
   fi
   case "$cmd" in *'|'*) say "note: this gate command contains a pipe — its exit code may not be the test runner's" ;; esac
   run_gate "$run" "$name" "$cmd" "$top"
@@ -699,7 +786,7 @@ cmd_collect() {
       printf '%-16s %-8s %-7s %-4s %-9s %-7s %s%s\n' "$slug" missing - - - - "$tok" "$note"; bad=1; continue
     fi
     if sed -n '2,9p' "$f" | grep -q '^BLOCKED'; then
-      printf '%-16s %-8s %s\n' "$slug" blocked "$(sed -n '2,9p' "$f" | grep -m 1 '^BLOCKED' | tr -d '\r' | cut -c1-140)"; bad=1; continue
+      printf '%-16s %-8s %s\n' "$slug" blocked "$(sed -n '2,9p' "$f" | grep -m 1 '^BLOCKED' | tr -d '\r' | clip 140)"; bad=1; continue
     fi
     size="$(( ($(wc -c < "$f") + 1023) / 1024 ))"
     refok=ok
@@ -791,21 +878,37 @@ cmd_map() {
     | awk -F/ '{ a = (NF > 1 ? $1 "/" : $1); c[a]++ } END { for (k in c) printf "  %4d  %s\n", c[k], k }' | sort -rn | head -n 12
 }
 
-# The config's Roster table as rows: seat reference.
-roster_refs() {
+# The config's Roster table as rows: slug seat reference ("-" for an empty value). Columns are found
+# by their header names.
+roster_rows() {
   awk -F'|' '
-    /^## / { inr = ($0 ~ /^## Roster/); col = 0; next }
+    function trim(s) { gsub(/^[ \t\r]+|[ \t\r]+$/, "", s); gsub(/[`*]/, "", s); return s }
+    /^## / { inr = ($0 ~ /^## Roster/); hdr = 0; next }
     inr && /^\|/ {
-      if (col == 0) { for (i = 1; i <= NF; i++) { h = $i; gsub(/^[ \t]+|[ \t]+$/, "", h); if (tolower(h) == "reference") col = i }; next }
-      v = $col; gsub(/^[ \t]+|[ \t]+$/, "", v); gsub(/`/, "", v); gsub(/\r/, "", v)
-      if (v == "" || v ~ /^:?-+:?$/ || v ~ /^</) next
-      s = $2; gsub(/^[ \t]+|[ \t]+$/, "", s); gsub(/\*/, "", s)
-      print s "\t" v
+      if (!hdr) {
+        hdr = 1; cs = 2; cl = 0; cr = 0
+        for (i = 2; i < NF; i++) { h = tolower(trim($i)); if (h == "seat") cs = i; else if (h == "slug") cl = i; else if (h == "reference") cr = i }
+        next
+      }
+      seat = trim($cs); slug = cl ? trim($cl) : ""; ref = cr ? trim($cr) : ""
+      if (seat == "" || seat ~ /^:?-+:?$/ || seat ~ /^</) next
+      if (slug ~ /^</) slug = ""
+      if (ref ~ /^</ || ref ~ /^:?-+:?$/) ref = ""
+      printf "%s\t%s\t%s\n", (slug == "" ? "-" : slug), seat, (ref == "" ? "-" : ref)
     }' "$1" 2>/dev/null
 }
 
+# A roster or card reference as a file path: references/… is in the plugin, anything else in the repo ($2).
+ref_path() {
+  case "$1" in
+    references/*) printf '%s/%s' "$COUNCIL_PLUGIN_ROOT" "$1" ;;
+    /*|[A-Za-z]:*) printf '%s' "$1" ;;
+    *) printf '%s/%s' "$2" "$1" ;;
+  esac
+}
+
 cmd_doctor() {
-  local home root cfg errs=0 warns=0 refs seat ref p gates g gc gat gm gk hdr dir mode phase croot upd status actual ptr mem size pend map sha behind
+  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind
   home="$(council_home)"; root="$(dirname "$home")"
   finding() {
     printf '%s  %s\n       Fix: %s\n' "$1" "$2" "$3"
@@ -817,32 +920,53 @@ cmd_doctor() {
     finding ERROR "no council.config.md" "run council-init"
   else
     grep -q '^last-verified:' "$cfg" || finding WARN "the config has no last-verified stamp (an older layout)" "run council-init refresh to migrate it to the current template"
-    refs="$(roster_refs "$cfg")"
+    refs="$(roster_rows "$cfg")"
     if [ -z "$refs" ]; then
       finding WARN "couldn't read a Roster table in council.config.md" "run council-init refresh (older configs list seats instead of a table)"
     else
-      while IFS="$TAB" read -r seat ref; do
-        [ -n "$ref" ] || continue
-        case "$ref" in none|n/a|-) continue ;; references/*) p="$COUNCIL_PLUGIN_ROOT/$ref" ;; /*|[A-Za-z]:*) p="$ref" ;; *) p="$root/$ref" ;; esac
-        [ -f "$p" ] || finding ERROR "seat '$seat' points at a reference doc that doesn't exist: $ref" "restore the doc, or point the seat at another one in council.config.md"
+      [ -d "$home/cards" ] || finding WARN "no seat cards yet (.council/cards/ is missing)" "a council-init refresh writes one per seat — workers read them instead of the generic docs"
+      while IFS="$TAB" read -r slug seat ref; do
+        [ -n "$seat" ] || continue
+        case "$ref" in
+          none|n/a|-) ;;
+          *) [ -f "$(ref_path "$ref" "$root")" ] || finding ERROR "seat '$seat' points at a reference doc that doesn't exist: $ref" "restore the doc, or point the seat at another one in council.config.md" ;;
+        esac
+        if [ "$slug" = "-" ]; then
+          finding WARN "seat '$seat' has no slug" "give it a lowercase slug in the roster — it names the seat's file and card"
+          continue
+        fi
+        [ -d "$home/cards" ] || continue
+        card="$home/cards/$slug.md"
+        if [ ! -f "$card" ]; then
+          finding WARN "seat '$seat' has no card (cards/$slug.md)" "council-init refresh writes one from references/templates/seat-card.md"
+          continue
+        fi
+        src="$(field source "$card" | sed 's/[[:space:]]*·.*$//' | tr -d '`')"
+        if [ -n "$src" ] && [ ! -f "$(ref_path "$src" "$root")" ]; then
+          finding ERROR "the card for '$seat' names a source doc that doesn't exist: $src" "point the card's source: line at the seat's reference doc"
+        fi
+        [ "$(wc -c < "$card" | tr -d ' ')" -le 8192 ] || finding WARN "the card for '$seat' is over 8 KB" "cut it to one line per principle — the full doc holds the detail"
       done <<REFS
 $refs
 REFS
+      dups="$(printf '%s\n' "$refs" | cut -f1 | grep -v '^-$' | sort | uniq -d | paste -sd ' ' -)"
+      [ -z "$dups" ] || finding ERROR "the roster repeats a slug: $dups" "give each row its own slug — a lens that covers two areas gets two (dodds-web, dodds-admin)"
     fi
     gates="$(config_gates "$cfg")"
     if [ -z "$gates" ]; then
       finding WARN "no gates in council.config.md" "add the project's real test / lint / build commands (council-init detects and dry-runs them)"
     else
-      hdr="$(gates_header_cells "$cfg")"
-      while IFS="$TAB" read -r g gc gat gm gk; do
+      while IFS="$TAB" read -r g gc gat gm gk gchk gside gneeds ghk ghas; do
         [ -n "$g" ] || continue
-        if [ -n "$hdr" ] && [ "$gk" != "$hdr" ]; then
-          finding WARN "gate '$g' has $gk cells where the header has $hdr — the columns have shifted (an unescaped pipe?)" "wrap the command in backticks and escape any pipe as \\|, or remove it"
+        if [ "$gk" != "$ghk" ]; then
+          finding WARN "gate '$g' has $gk cells where the header has $ghk — the columns have shifted (an unescaped pipe?)" "wrap the command in backticks and escape any pipe as \\|, or remove it"
         fi
         case "$gc" in *'|'*) finding WARN "gate '$g' pipes its output — its exit code may not be the test runner's" "remove the pipe from that command in council.config.md" ;; esac
       done <<GATES
 $gates
 GATES
+      awk '/^## / { g = ($0 ~ /^## Gates/); next } g && /^\|/ { print; exit }' "$cfg" | grep -qi 'side effects' \
+        || finding WARN "the Gates table has no Side effects column (an older layout)" "council-init refresh adds Probe and Side effects, so a gate that costs money or touches hardware never runs unasked"
     fi
   fi
   while IFS="$TAB" read -r dir mode phase croot upd status actual; do
@@ -866,12 +990,10 @@ RUNS
       finding WARN "active-run points at a folder that no longer exists: $p" "empty .council/active-run"
     fi
   fi
-  mem="$(sed -n 's/^-[[:space:]]*conventions:[[:space:]]*//p' "$cfg" 2>/dev/null | head -n 1 | tr -d '\r' | sed 's/[[:space:]].*$//')"
-  if [ -n "$mem" ]; then
-    case "$mem" in /*|[A-Za-z]:*) ;; *) mem="$root/$mem" ;; esac
-  elif [ -f "$home/conventions.md" ]; then mem="$home/conventions.md"
-  else mem="$root/conventions.md"; fi
+  mem="$(memory_file "$home")"
   if [ -f "$mem" ]; then
+    stale="$(cmd_memory check 2>/dev/null | grep -c '^STALE' || true)"
+    [ "${stale:-0}" -eq 0 ] || finding WARN "$stale memory anchor(s) point at code that moved or no longer exists" "council memory check lists them; propose re-anchoring or retiring each at the next Learn"
     size="$(wc -c < "$mem" | tr -d ' ')"
     [ "$size" -le 25600 ] || finding WARN "memory is $(( size / 1024 )) KB — past the ~25 KB every run reads" "at the end of the next run, propose a consolidation (merge duplicates, retire superseded entries)"
     pend="$(grep -c '^- PROPOSED' "$mem" 2>/dev/null)"
@@ -891,9 +1013,409 @@ RUNS
   else
     finding WARN "no map.md" "council-init builds it"
   fi
+  if [ -f "$cfg" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+    fp="$(cmd_fingerprint check 2>/dev/null)"
+    case "$fp" in
+      "fingerprint: the stack changed"*) fp="${fp#fingerprint: }"; finding WARN "${fp%. Suggest*}" "run a council-init refresh — it re-checks the roster, cards and gates against the new stack" ;;
+      "no stack-fingerprint"*) finding WARN "the config has no stack-fingerprint" "a council-init refresh records one, so a changed stack gets noticed" ;;
+    esac
+  fi
   grep -q '^runs/' "$home/.gitignore" 2>/dev/null || finding WARN ".council/.gitignore doesn't ignore runs/" "add a line 'runs/' to .council/.gitignore"
   say "doctor: $errs error(s), $warns warning(s)"
   [ "$errs" -eq 0 ]
+}
+
+# ------------------------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------------------------
+# Stack fingerprint
+# ------------------------------------------------------------------------------------------------
+
+# "manifests: a, b · languages: x, y": build manifests up to two folders deep, and the code languages
+# with at least 3 tracked files. Everyday edits don't move it; a new language or build system does.
+stack_summary() {
+  local files man lang
+  files="$(cd "$(council_toplevel)" 2>/dev/null && git -c core.quotePath=false ls-files 2>/dev/null)"   # the whole repo, from any folder
+  man="$(printf '%s\n' "$files" | awk -F/ 'NF <= 3 { print $NF }' | grep -x -E \
+    'package\.json|deno\.json|tsconfig\.json|pyproject\.toml|requirements\.txt|setup\.py|Pipfile|environment\.yml|go\.mod|Cargo\.toml|pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|Gemfile|composer\.json|mix\.exs|rebar\.config|pubspec\.yaml|Package\.swift|project\.pbxproj|Podfile|project\.godot|ProjectVersion\.txt|.*\.uproject|CMakeLists\.txt|meson\.build|Makefile|west\.yml|platformio\.ini|Dockerfile|compose\.ya?ml|docker-compose\.ya?ml|.*\.csproj|.*\.fsproj|.*\.sln|.*\.tf|flake\.nix|BUILD(\.bazel)?|WORKSPACE' \
+    | sed -E 's/.*\.(tf|csproj|fsproj|sln|uproject)$/*.\1/' | LC_ALL=C sort -u | paste -sd ',' - | sed 's/,/, /g')"
+  lang="$(printf '%s\n' "$files" | sed -n 's/.*\.\([A-Za-z0-9+]\{1,10\}\)$/\1/p' | tr 'A-Z' 'a-z' | grep -x -E \
+    'py|pyx|ipynb|ts|tsx|js|jsx|mjs|cjs|vue|svelte|go|rs|java|kt|kts|scala|clj|groovy|swift|m|mm|c|h|cc|cpp|cxx|hh|hpp|cs|fs|vb|rb|php|ex|exs|erl|hrl|dart|lua|gd|r|jl|sql|sh|bash|ps1|tf|hcl|proto|graphql|zig|nim|ml|hs|elm|sol|asm|s|ino|glsl|hlsl|wgsl|shader|tscn|nix' \
+    | LC_ALL=C sort | uniq -c | awk '$1 >= 3 { print $2 }' | paste -sd ',' - | sed 's/,/, /g')"
+  printf 'manifests: %s · languages: %s' "${man:-none}" "${lang:-none}"
+}
+
+# Items in summary $1 that summary $2 lacks.
+summary_minus() {
+  A="$1" B="$2" awk 'BEGIN {
+    n = split(ENVIRON["B"], b, /(, | · |: )/); for (i = 1; i <= n; i++) have[b[i]] = 1
+    n = split(ENVIRON["A"], a, /(, | · |: )/)
+    for (i = 1; i <= n; i++) if (a[i] != "" && a[i] != "manifests" && a[i] != "languages" && a[i] != "none" && !(a[i] in have)) out = out (out ? ", " : "") a[i]
+    print out }'
+}
+
+cmd_fingerprint() {
+  local sum hash cfg line old added removed
+  git rev-parse --git-dir >/dev/null 2>&1 || die "the stack fingerprint needs a git repository"
+  sum="$(stack_summary)"
+  hash="$(printf '%s' "$sum" | git hash-object --stdin | cut -c1-12)"
+  if [ "${1:-}" != check ]; then say "stack-fingerprint: $hash — $sum"; return 0; fi
+  cfg="$(council_home)/council.config.md"
+  line="$(field stack-fingerprint "$cfg")"
+  line="${line#stack-fingerprint: }"                 # a pasted line that repeats the key still reads
+  if [ -z "$line" ]; then say "no stack-fingerprint in the config — a council-init refresh records one: stack-fingerprint: $hash — $sum"; return 0; fi
+  old="${line%% *}"
+  if [ "$old" = "$hash" ]; then say "fingerprint: the stack is unchanged since council-init ($hash)"; return 0; fi
+  added="$(summary_minus "$sum" "${line#* — }")"; removed="$(summary_minus "${line#* — }" "$sum")"
+  say "fingerprint: the stack changed since council-init — added: ${added:-nothing} · removed: ${removed:-nothing}. Suggest a council-init refresh."
+  return 1
+}
+
+# ------------------------------------------------------------------------------------------------
+# Memory — scoped entries, earlier council work
+# ------------------------------------------------------------------------------------------------
+
+# The memory file: the config's "- conventions:" path, else .council/conventions.md, else a root one.
+memory_file() {
+  local home="$1" root mem
+  root="$(dirname "$home")"
+  mem="$(sed -n 's/^-[[:space:]]*conventions:[[:space:]]*//p' "$home/council.config.md" 2>/dev/null | head -n 1 | tr -d '\r`' | sed 's/[[:space:]].*$//')"
+  if [ -n "$mem" ]; then
+    case "$mem" in /*|[A-Za-z]:*) ;; *) mem="$root/$mem" ;; esac
+  elif [ -f "$home/conventions.md" ]; then mem="$home/conventions.md"
+  else mem="$root/conventions.md"; fi
+  printf '%s' "$mem"
+}
+
+# Memory entries as rows: id title scope anchor ("-" when empty). An entry is a "### AP-3: title"
+# heading; its **Scope:** and **Anchor:** fields may sit anywhere in its body.
+memory_entries() {
+  awk '
+    function flush() { if (id != "") printf "%s\t%s\t%s\t%s\n", id, (title == "" ? "-" : title), (scope == "" ? "-" : scope), (anchor == "" ? "-" : anchor) }
+    function fieldval(line, name,    v) {
+      if (!match(line, "\\*\\*" name ":\\*\\*")) return ""
+      v = substr(line, RSTART + RLENGTH); sub(/[ \t]+·[ \t]+\*\*.*$/, "", v)
+      gsub(/^[ \t]+|[ \t\r]+$/, "", v); gsub(/`/, "", v); return v
+    }
+    /^### (AP|EC|D)-[0-9]+/ {
+      flush(); line = $0; gsub(/\r/, "", line); sub(/^### /, "", line)
+      id = line; sub(/[: ].*$/, "", id); title = line; sub(/^[^:]*:[ \t]*/, "", title); scope = ""; anchor = ""; next
+    }
+    /^## / { flush(); id = ""; next }
+    id != "" { v = fieldval($0, "Scope"); if (v != "") scope = v; v = fieldval($0, "Anchor"); if (v != "") anchor = v }
+    END { flush() }' "$1" 2>/dev/null
+}
+
+# Is path $1 inside scope item $2? A glob (* and ** cross folders), a folder, or an exact path.
+in_scope() {
+  local p="$1" g="${2%/}" g2
+  [ -n "$g" ] || return 1
+  case "$p" in "$g"|"$g"/*) return 0 ;; esac
+  # shellcheck disable=SC2254
+  case "$p" in $g) return 0 ;; esac
+  g2="$(printf '%s' "$g" | sed -e 's#^\*\*/##' -e 's#/\*\*/#/#g')"      # **/ also matches no folder at all
+  if [ "$g2" != "$g" ]; then
+    # shellcheck disable=SC2254
+    case "$p" in $g2) return 0 ;; esac
+  fi
+  return 1
+}
+
+# The changed files listed in a run's change index, one per line.
+index_paths() { sed -n 's/^## \(.*\)  (.*$/\1/p' "$1/index.md" 2>/dev/null; }
+
+# One item per line from a comma-separated list, trimmed.
+split_list() { printf '%s\n' "$1" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$'; }
+
+cmd_memory() {
+  local sub="${1:-index}" home mem entries n=0 hit=0 unscoped=0 stale=0 id title scope anchor item key keys match top st run
+  home="$(council_home)"; mem="$(memory_file "$home")"
+  [ -f "$mem" ] || die "no memory file ($mem) — council-init creates .council/conventions.md"
+  entries="$(memory_entries "$mem")"
+  [ $# -eq 0 ] || shift
+  case "$sub" in
+    index)
+      [ -n "$entries" ] || { say "memory: no entries yet in $mem"; return 0; }
+      printf '%s\n' "$entries" | awk -F'\t' '{
+        printf "%s · %s", $1, $2
+        if ($3 != "-") printf " · scope: %s", $3; else printf " · every run"
+        if ($4 != "-") printf " · anchor: %s", $4
+        printf "\n" }'
+      ;;
+    select)
+      if [ $# -gt 0 ]; then keys="$(printf '%s\n' "$@")"
+      else
+        run="$(resolve_run)" || exit 2
+        keys="$(index_paths "$run"; awk -F'\t' 'NR > 1 && $2 != "skipped" { print $1 }' "$run/seats.tsv" 2>/dev/null)"
+        if ! awk -F'\t' 'NR > 1 { found = 1 } END { exit !found }' "$run/seats.tsv" 2>/dev/null; then
+          keys="$keys
+$(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"            # no seats recorded yet: the whole roster
+        fi
+      fi
+      while IFS="$TAB" read -r id title scope anchor; do
+        [ -n "$id" ] || continue
+        n=$((n + 1))
+        if [ "$scope" = "-" ]; then unscoped=$((unscoped + 1)); say "$id · $title · every run"; continue; fi
+        match=""
+        while IFS= read -r item; do
+          while IFS= read -r key; do
+            [ -n "$key" ] || continue
+            if [ "$item" = "$key" ] || in_scope "$key" "$item"; then match=1; break; fi
+          done <<KEYS
+$keys
+KEYS
+          [ -z "$match" ] || break
+        done <<ITEMS
+$(split_list "$scope")
+ITEMS
+        if [ -n "$match" ]; then hit=$((hit + 1)); say "$id · $title · scope: $scope"; fi
+      done <<ENTRIES
+$entries
+ENTRIES
+      say "memory: $hit scoped and $unscoped every-run entries of $n apply — quote them in the brief by id"
+      ;;
+    check)
+      top="$(dirname "$home")"
+      while IFS="$TAB" read -r id title scope anchor; do
+        [ -n "$id" ] || continue
+        n=$((n + 1))
+        [ "$anchor" != "-" ] || continue
+        while IFS= read -r item; do
+          [ -n "$item" ] || continue
+          case "$item" in
+            *:[0-9]*)
+              st="$(cite_status "$top" "$item")"
+              [ "$st" = ok ] || { stale=$((stale + 1)); say "STALE  $id — anchor $item: $st"; } ;;
+            */*)
+              [ -e "$top/$item" ] || { stale=$((stale + 1)); say "STALE  $id — anchor $item no longer exists"; } ;;
+            *)
+              if [ ! -e "$top/$item" ] && ! (cd "$top" && git grep -q -w -F -e "$item" -- . ':(exclude).council' 2>/dev/null); then
+                stale=$((stale + 1)); say "STALE  $id — nothing in the code is named $item any more"
+              fi ;;
+          esac
+        done <<ITEMS
+$(split_list "$anchor")
+ITEMS
+      done <<ENTRIES
+$entries
+ENTRIES
+      [ "$stale" -eq 0 ] || say "→ at the next Learn, propose re-anchoring or retiring each stale entry — the user decides"
+      say "memory check: $stale stale anchor(s) across $n entries"
+      [ "$stale" -eq 0 ]
+      ;;
+    *) die "usage: council memory [index | select [path|slug …] | check]" ;;
+  esac
+}
+
+# Earlier council work that mentions these paths (one per line on stdin): tracked deliverables in
+# reviews/, logs/, research/ and plans/ that name a path, or whose frontmatter areas: cover it.
+# Rows: path · deliverable[:line] · the matching line or area.
+prior_hits() {
+  local home="$1" paths dir f
+  paths="$(cat)"
+  [ -n "$paths" ] || return 0
+  set --
+  for dir in reviews logs research plans; do
+    for f in "$home/$dir"/*.md; do [ -f "$f" ] && set -- ${1+"$@"} "$f"; done
+  done
+  [ $# -gt 0 ] || return 0
+  # One pass over every deliverable. A path counts where it appears whole (not inside a longer path),
+  # else where the frontmatter's areas: (inline, [bracketed] or a - list) cover it.
+  PATHS="$paths" awk '
+    function esc(s,   r, i, c) {
+      r = ""
+      for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (index("\\^$.[]|()+{}", c)) r = r "\\" c; else r = r c }
+      return r
+    }
+    function glob_re(g,   r, i, c) {
+      r = ""; i = 1
+      while (i <= length(g)) {
+        if (substr(g, i, 3) == "**/") { r = r "(.*/)?"; i += 3; continue }
+        if (substr(g, i, 2) == "**") { r = r ".*"; i += 2; continue }
+        c = substr(g, i, 1)
+        if (c == "*") r = r "[^/]*"; else if (c == "?") r = r "[^/]"; else r = r esc(c)
+        i++
+      }
+      return "^" r "$"
+    }
+    function covers(p, a) {
+      sub(/\/+$/, "", a)
+      if (a == "") return 0
+      if (p == a || index(p, a "/") == 1) return 1
+      return p ~ glob_re(a)
+    }
+    function clip(t) { if (length(t) <= 120) return t; t = substr(t, 1, 120); sub(/ [^ ]*$/, "", t); return t " …" }
+    function add_area(x) { gsub(/[`"]/, "", x); gsub(/\[|\]/, "", x); gsub(/^[ \t]+|[ \t]+$/, "", x); if (x != "") A[++na] = x }
+    function flush(   i, j) {
+      if (disp == "") return
+      for (i = 1; i <= np; i++) {
+        if (P[i] == "") continue
+        if (hit[i] != "") { print P[i] "\t" hit[i]; continue }
+        for (j = 1; j <= na; j++) if (covers(P[i], A[j])) { print P[i] "\t" disp "\t(its areas cover " A[j] ")"; break }
+      }
+    }
+    BEGIN { np = split(ENVIRON["PATHS"], P, "\n") }
+    FNR == 1 {
+      flush(); m = split(FILENAME, fp, "/"); disp = fp[m - 1] "/" fp[m]; na = 0; infm = 0; inareas = 0
+      for (i = 1; i <= np; i++) hit[i] = ""
+    }
+    { line = $0; sub(/\r$/, "", line) }
+    FNR == 1 && line == "---" { infm = 1; next }
+    infm {
+      if (line == "---") { infm = 0; next }
+      if (line ~ /^areas:/) {
+        v = line; sub(/^areas:[ \t]*/, "", v)
+        if (v == "") inareas = 1
+        else { inareas = 0; k = split(v, t, ","); for (i = 1; i <= k; i++) add_area(t[i]) }
+        next
+      }
+      if (inareas && line ~ /^[ \t]*-/) { x = line; sub(/^[ \t]*-[ \t]*/, "", x); add_area(x); next }
+      inareas = 0; next
+    }
+    {
+      for (i = 1; i <= np; i++) {
+        if (P[i] == "" || hit[i] != "") continue
+        s = line; base = 0
+        while ((pos = index(s, P[i])) > 0) {
+          at = base + pos
+          before = (at == 1) ? "" : substr(line, at - 1, 1)
+          after = substr(line, at + length(P[i]), 1)
+          if (before !~ /[A-Za-z0-9_.\/-]/ && after !~ /[A-Za-z0-9_\/-]/) {
+            txt = line; sub(/^[ \t]+/, "", txt); hit[i] = disp ":" FNR "\t" clip(txt); break
+          }
+          base = at; s = substr(line, at + 1)
+        }
+      }
+    }
+    END { flush() }' "$@"
+}
+
+cmd_prior() {
+  local home run hits
+  home="$(council_home)"
+  if [ $# -gt 0 ]; then
+    hits="$(printf '%s\n' "$@" | prior_hits "$home" | head -n 40)"
+  else
+    run="$(resolve_run)" || exit 2
+    [ -f "$run/index.md" ] || die "no paths given and no change index in this run — pass them: council prior <path> …"
+    hits="$(index_paths "$run" | prior_hits "$home" | head -n 40)"
+  fi
+  if [ -z "$hits" ]; then say "prior: no earlier council work mentions these paths"; return 0; fi
+  printf '%s\n' "$hits" | awk -F'\t' '{ printf "%s — %s — %s\n", $1, $2, $3 }'
+  say "prior: $(printf '%s\n' "$hits" | grep -c .) mention(s) — list them in the brief's Landscape as ids plus one line"
+}
+
+# ------------------------------------------------------------------------------------------------
+# Seat ledger — one row per seat per completed run, tracked in the council home
+# ------------------------------------------------------------------------------------------------
+
+# A seat's output file, from its brief block (default seats/<slug>.md).
+seat_out() {
+  local out
+  out="$(brief_seats "$1/brief.md" 2>/dev/null | SLUG="$2" awk -F'\t' '$1 == ENVIRON["SLUG"] { print $3; exit }')"
+  [ -n "$out" ] || out="seats/$2.md"
+  case "$out" in /*|[A-Za-z]:*) printf '%s' "$out" ;; *) printf '%s/%s' "$1" "$out" ;; esac
+}
+
+# Per-seat kept / cut / refuted counts for a run, from synthesis.md's "from:" provenance and the
+# REFUTED rows of its verify-*.md tables. Rows: slug kept cut refuted.
+synthesis_counts() {
+  local run="$1"
+  [ -f "$run/synthesis.md" ] || return 0
+  set -- "$run"/verify-*.md
+  [ -e "$1" ] || set --
+  SYN="$run/synthesis.md" awk '
+    FNR == 1 { sec = ""; vcol = 0 }
+    FILENAME == ENVIRON["SYN"] {
+      if ($0 ~ /^## /) { sec = ($0 ~ /^## Kept/) ? "k" : (($0 ~ /^## Cut/) ? "c" : ""); next }
+      if (sec == "" || index($0, "from:") == 0) next
+      n = $0; sub(/^[-* \t]*/, "", n); sub(/[ \t].*$/, "", n); sub(/\.$/, "", n)
+      f = substr($0, index($0, "from:") + 5); sub(/[ \t]+·.*$/, "", f); gsub(/[`\r]/, "", f)   # the first from: only
+      m = split(f, parts, /[ \t]*,[ \t]*/)
+      for (i = 1; i <= m; i++) {
+        s = parts[i]; sub(/#.*$/, "", s); gsub(/[ \t]/, "", s)
+        if (s == "") continue
+        seen[s] = 1
+        if (sec == "k") { kept[s]++; owners[n] = owners[n] " " s } else cut[s]++
+      }
+      next
+    }
+    /^\|/ {                                          # a verify table: find its Verdict column, then read it exactly
+      k = split($0, c, "|")
+      if (!vcol) { for (i = 2; i < k; i++) { h = c[i]; gsub(/[ \t\r*]/, "", h); if (tolower(h) == "verdict") vcol = i }; next }
+      v = c[vcol]; gsub(/[ \t\r*]/, "", v); num = c[2]; gsub(/[ \t\r*]/, "", num)
+      if (v == "REFUTED" && num ~ /^[0-9]+$/) refd[num] = 1
+    }
+    END {
+      for (v in refd) { k = split(owners[v], o, " "); for (i = 1; i <= k; i++) if (o[i] != "") refuted[o[i]]++ }
+      for (s in seen) printf "%s\t%d\t%d\t%d\n", s, kept[s], cut[s], refuted[s]
+    }' "$run/synthesis.md" ${1+"$@"}
+}
+
+# Record a completed run's seats in the ledger; re-recording a run replaces its rows. Prints the count.
+ledger_record() {
+  local run="$1" home ledger name mode date counts new="" slug tok f raised line rows=0 vt=0
+  case "$run" in */runs/*) home="${run%/runs/*}" ;; *) home="$(council_home)" ;; esac   # the run's own council home
+  ledger="$home/ledger.tsv"
+  [ -f "$run/seats.tsv" ] || { printf '0'; return 0; }
+  name="${run##*/}"; mode="$(field mode "$run/session-state.md")"; date="$(printf '%s' "$name" | cut -c1-10)"
+  counts="$(synthesis_counts "$run")"
+  while IFS="$TAB" read -r slug tok; do
+    [ -n "$slug" ] || continue
+    case "$slug" in verify-*|diagnose-*) vt=$((vt + tok)); continue ;; esac
+    f="$(seat_out "$run" "$slug")"
+    raised="$(index_lines "$f" | grep -c . || true)"
+    line="$(printf '%s\n' "$counts" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] { print $2 "\t" $3 "\t" $4; exit }')"
+    [ -n "$line" ] || line="$(printf '0\t0\t0')"
+    new="$new$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$date" "$name" "${mode:--}" "$slug" "${raised:-0}" "$line" "$tok")
+"
+    rows=$((rows + 1))
+  done <<SEATS
+$(awk -F'\t' 'NR > 1 && $2 != "skipped" && $2 != "queued" { print $1 "\t" (($4 ~ /^[0-9]+$/) ? $4 : 0) }' "$run/seats.tsv")
+SEATS
+  [ "$vt" -eq 0 ] || new="$new$(printf '%s\t%s\t%s\t(verifiers)\t-\t-\t-\t-\t%s' "$date" "$name" "${mode:--}" "$vt")
+"
+  [ -n "$new" ] || { printf '0'; return 0; }
+  if [ ! -f "$ledger" ] && ! printf 'date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\n' > "$ledger" 2>/dev/null; then
+    printf 'council: could not write %s — the ledger was not updated\n' "$ledger" >&2; printf '0'; return 0
+  fi
+  if { RUN="$name" awk -F'\t' '$2 != ENVIRON["RUN"]' "$ledger"; printf '%s' "$new"; } > "$ledger.tmp$$" 2>/dev/null \
+     && mv "$ledger.tmp$$" "$ledger" 2>/dev/null; then
+    printf '%s' "$rows"
+  else
+    rm -f "$ledger.tmp$$" 2>/dev/null
+    printf 'council: could not write %s — the ledger was not updated\n' "$ledger" >&2; printf '0'
+  fi
+}
+
+cmd_ledger() {
+  local ledger last="${1:-10}"
+  ledger="$(council_home)/ledger.tsv"
+  case "$last" in ''|*[!0-9]*) die "usage: council ledger [how many recent runs, default 10]" ;; esac
+  [ -f "$ledger" ] || { say "no ledger yet — every completed run adds its seats to $ledger"; return 0; }
+  LAST="$last" awk -F'\t' '
+    NR == 1 { next }
+    { row[NR] = $0; if (!($2 in seen)) { seen[$2] = 1; order[++nr] = $2 } }
+    END {
+      if (nr == 0) { print "the ledger has no runs yet"; exit }
+      first = nr - ENVIRON["LAST"] + 1; if (first < 1) first = 1
+      for (i = first; i <= nr; i++) keep[order[i]] = 1
+      for (r = 2; r <= NR; r++) {
+        if (!(r in row)) continue
+        split(row[r], f, "\t"); if (!(f[2] in keep)) continue
+        s = f[4]; sub(/-[a-z]$/, "", s)                  # a split worker (hunt-a, hunt-b) counts as its seat
+        if (!(s in runs)) { names[++ns] = s; runs[s] = 0 }
+        if (!((f[2], s) in counted)) { counted[f[2], s] = 1; runs[s]++ }
+        raised[s] += f[5]; kept[s] += f[6]; cut[s] += f[7]; refd[s] += f[8]; tok[s] += f[9]
+      }
+      printf "%-16s %4s %6s %5s %4s %7s %8s %9s\n", "seat", "runs", "raised", "kept", "cut", "refuted", "~k/run", "shipped"
+      for (i = 1; i <= ns; i++) {
+        s = names[i]; ship = kept[s] - refd[s]
+        pct = (raised[s] > 0) ? int(100 * ship / raised[s] + 0.5) "%" : "-"
+        printf "%-16s %4d %6d %5d %4d %7d %8d %9s\n", s, runs[s], raised[s], kept[s], cut[s], refd[s], int(tok[s] / runs[s] / 1000 + 0.5), pct
+      }
+      printf "over the last %d completed run(s) · shipped = kept and not refuted, as a share of items raised\n", nr - first + 1
+    }' "$ledger"
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -919,6 +1441,11 @@ council — the Small Council's helper (bash + git)
   council collect                        check every seat file named in the brief
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md)
   council map status                     how far the map is behind HEAD, by area
+  council fingerprint [check]            the stack's fingerprint; check compares it with the config
+  council memory [index|check]           memory's one-line index · anchors that went stale
+  council memory select [path|slug …]    the entries in scope (default: the run's files and seats)
+  council prior [path …]                 earlier council work on these paths (default: the index)
+  council ledger [N]                     each seat's record over the last N completed runs (default 10)
   council doctor                         drift scan; every finding comes with a fix
 
 Run-scoped commands act on the one in-progress run on this working tree; otherwise pass --run <folder>
@@ -959,19 +1486,23 @@ main() {
     run)
       sub="${1:-}"; [ $# -eq 0 ] || shift
       case "$sub" in
-        open)   cmd_run_open "$@" ;;
+        open)   cmd_run_open ${1+"$@"} ;;
         close)  cmd_run_close ;;
         status) cmd_run_status ;;
         *) die "usage: council run open <mode> | run status [--all] | run close [--status …]" ;;
       esac ;;
-    state)   cmd_state "$@" ;;
-    seat)    cmd_seat "$@" ;;
+    state)   cmd_state ${1+"$@"} ;;
+    seat)    cmd_seat ${1+"$@"} ;;
     index)   cmd_index ;;
-    gate)    cmd_gate "$@" ;;
+    gate)    cmd_gate ${1+"$@"} ;;
     gates)   cmd_gates ;;
     collect) cmd_collect ;;
-    check)   cmd_check "$@" ;;
-    map)     cmd_map "$@" ;;
+    check)   cmd_check ${1+"$@"} ;;
+    map)     cmd_map ${1+"$@"} ;;
+    fingerprint) cmd_fingerprint ${1+"$@"} ;;
+    memory)  cmd_memory ${1+"$@"} ;;
+    prior)   cmd_prior ${1+"$@"} ;;
+    ledger)  cmd_ledger ${1+"$@"} ;;
     doctor)  cmd_doctor ;;
     version) say "council $COUNCIL_VERSION" ;;
     help)    usage ;;

@@ -1,10 +1,27 @@
 # Security Reference — Carmack × Hunt
 
 Philosophy: John Carmack. Specifics: Troy Hunt + OWASP 2025.
-Stack context: Next.js App Router / React / TypeScript / tRPC / Prisma / Neon (serverless Postgres) / Clerk (auth) / CSS Modules + BEM.
 
 Every finding must describe the **concrete attack vector** — not just "this is insecure."
 When Carmack and Hunt independently converge on a principle, it earns its place here.
+
+---
+
+## Applying this seat to another stack
+
+Origin stack of the examples: Next.js App Router / React / TypeScript / tRPC / Prisma / Neon (serverless Postgres) / Clerk (auth).
+
+The numbered principles are the constraint set; framework-specific checks are illustrations. On another stack, find the analogous construct and apply the principle to it. Origin-only checks sit at the end, by principle.
+
+| In the origin stack | The general idea | Look for it in … |
+|---|---|---|
+| Prisma `$queryRaw` with `${}`, `child_process.exec()`, `dangerouslySetInnerHTML` | User input spliced into a query, command or markup | Python: f-string into `cursor.execute()`, `subprocess.run(..., shell=True)`; Go: `fmt.Sprintf` into `db.Query`; Django: `mark_safe` |
+| tRPC `.input()` with Zod | Every input checked against a strict schema at entry | FastAPI: Pydantic models; Go: decode, then validate; mobile: deep links, intents |
+| Clerk, tRPC `protectedProcedure` | The provider authenticates; authorisation lives in one layer all protected entry points inherit | FastAPI: router-level `Depends`; Django REST Framework (DRF): permission classes; Go: router-group middleware |
+| Prisma `findMany` without `select` | Whole records returned or logged | DRF: `fields = "__all__"`; Go: DB struct encoded straight to JSON |
+| `NEXT_PUBLIC_` env vars | Secrets shipped in a client | Mobile app bundles; Electron or game builds; Vite `VITE_` vars |
+| TypeScript `strict`, ESLint, `npm audit` | Mechanical checks in CI | Python: mypy, Bandit, pip-audit; Go: gosec, govulncheck; Rust: cargo-audit |
+| `next.config.js` headers, CSP | Hardening set once in config | Django `SECURE_*` settings; Android network security config; iOS App Transport Security |
 
 ---
 
@@ -15,29 +32,30 @@ When Carmack and Hunt independently converge on a principle, it earns its place 
 
 The reviewer's job is to hunt for **classes of flaws**, not individual bugs. If the codebase uses string interpolation in one SQL query, assume every query is suspect until proven otherwise.
 
+Injection into interpreters (SQL, shell, HTML, templates) stays with this seat. When the Untrusted input seat (Patterson, untrusted-input.md) is seated, parsing and handling of untrusted bytes, file formats, archive entries and deserialisation go deeper there.
+
 ### What to check
 
 **SQL Injection (OWASP A05)**
-- Any raw SQL with string interpolation or concatenation — `${}` template literals in query strings
-- Prisma raw queries: `prisma.$queryRaw` or `prisma.$executeRaw` with user input — use `Prisma.sql` tagged template for parameterisation
-- Prisma's standard query API is safe by default — the risk is when developers reach for raw queries
+- Any raw SQL with string interpolation or concatenation (`${}` in TypeScript)
+- ORM raw-query escape hatches fed user input — the standard query API is usually safe
 - Stored procedures that concatenate internally (Hunt: "ORMs and stored procedures won't save you" if you concatenate inside them)
 - Severity: **P1 always.** Hunt's 3-year-old executed SQLi with an automated tool. If exploitation is child's play, there is no excuse.
 
 **Command injection**
-- User input passed to `child_process.exec()`, `eval()`, `Function()`, `vm.runInContext()`
+- User input passed to a shell or code evaluator (Node: `child_process.exec()`, `eval()`, `Function()`, `vm.runInContext()`)
 - Template strings in shell commands
 - Severity: **P1**
 
 **XSS (OWASP A05)**
-- `dangerouslySetInnerHTML` without sanitisation
-- User content rendered outside React's JSX escaping (direct DOM manipulation, `innerHTML`)
-- Server-rendered HTML with unsanitised user input in Next.js API routes or `getServerSideProps`
+- Escaping bypasses without sanitisation (React: `dangerouslySetInnerHTML`)
+- User content rendered outside the framework's escaping (direct DOM manipulation, `innerHTML`)
+- Server-rendered HTML with unsanitised user input (Next.js: API routes, `getServerSideProps`)
 - Missing or weak Content Security Policy — see Principle 6
 - Severity: **P1** for stored XSS, **P2** for reflected
 
 **Path traversal**
-- User input in `fs.readFile()`, `fs.writeFile()`, file path construction
+- User input in file path construction or file reads and writes (Node: `fs.readFile()`, `fs.writeFile()`)
 - Upload filenames used directly without sanitisation
 - Severity: **P1**
 
@@ -53,10 +71,10 @@ Both agree: if you're relying on developers to remember to do the right thing, y
 ### What to check
 
 **Linting and type safety as security**
-- Is TypeScript in `strict` mode? Loose types hide exploitable assumptions.
-- Are there `any` types on API boundaries, request handlers, or database results? Each one is an unchecked assumption.
-- Is ESLint configured with security-relevant rules? (`no-eval`, `no-implied-eval`, `no-new-func`)
-- Severity: **P2** for `strict: false`, **P3** for scattered `any` types
+- Is the type checker in strict mode (TypeScript: `strict`)? Loose types hide exploitable assumptions.
+- Are there `any`-style escape hatches on API boundaries, request handlers, or database results? Each one is an unchecked assumption.
+- Is the linter configured with security-relevant rules? (ESLint: `no-eval`, `no-implied-eval`, `no-new-func`)
+- Severity: **P2** for a loose type-checker mode (`strict: false`), **P3** for scattered escape hatches
 
 **Dependency scanning**
 - Is `npm audit` or equivalent running in CI?
@@ -65,10 +83,11 @@ Both agree: if you're relying on developers to remember to do the right thing, y
 - Severity: **P2** (Hunt's gap area — supplement with OWASP A03 supply chain guidance)
 
 **Continuous validation**
-- tRPC procedures: is every mutation and query using `.input()` with a Zod schema? tRPC without input validation is just a fancy RPC with no contract.
-- Are Zod schemas strict enough? `.string()` accepts anything — use `.email()`, `.url()`, `.min()`, `.max()`, `.regex()` where the domain demands it.
-- Input validation at the tRPC boundary is the automated equivalent of Carmack's assertions. If it's not validated at entry, assume it's exploitable.
-- Severity: **P1** for missing validation on mutation procedures, **P2** for query procedures
+- Does every mutation and query validate its input against a schema? No validation, no contract.
+- Are schemas strict enough? A bare string accepts anything — constrain format, length and range.
+- Input validation at the boundary is the automated equivalent of Carmack's assertions. If it's not validated at entry, assume it's exploitable.
+- With the Untrusted input seat (Patterson) seated, parsers, file formats and size limits go deeper there; schema validation at entry stays here.
+- Severity: **P1** for missing validation on mutations, **P2** for queries
 
 ---
 
@@ -83,20 +102,20 @@ Both converge on minimalism. Carmack says state breeds bugs; Hunt says data you 
 
 **Data minimisation (OWASP A04, A06)**
 - Is the app collecting data it doesn't need? Every unnecessary field is breach surface.
-- Are Prisma queries using `select` or `include` to limit returned fields, or returning entire models? (Hunt: Spoutible's API returned bcrypt hashes, 2FA secrets, backup codes, and password reset tokens because the framework automatically serialised entire database entities.) Prisma's default `findMany` returns ALL columns — use `select` to return only what the client needs.
-- Is PII stored in logs? Search for `console.log`, logging middleware that dumps request bodies or tRPC inputs.
-- Are Neon database backups encrypted and access-controlled? Are preview branches cleaned up?
+- Do queries return only the fields the client needs, or entire records? (Hunt: Spoutible's API returned bcrypt hashes, 2FA secrets, backup codes, and password reset tokens because the framework automatically serialised entire database entities.)
+- Is PII stored in logs? Search for log calls (`console.log`) and middleware that dumps request bodies or handler inputs.
+- Are database backups encrypted and access-controlled? Are preview or staging copies cleaned up? (Neon: preview branches.)
 - Severity: **P1** for PII in logs or over-exposed query results, **P2** for unnecessary data collection
 
-**Clerk-synced user data**
-- If syncing Clerk user data to Neon via Prisma: are you storing only what you need in your `User` model? (clerkId, maybe email — not tokens, not auth metadata)
-- Is the Clerk webhook payload being stored raw in a Prisma `Json` field? Strip it to essentials.
+**Auth-provider user data**
+- Mirroring users from an identity provider? Store only what you need (its user ID, maybe email — not tokens, not auth metadata).
+- Is a webhook payload being stored raw in a JSON column? Strip it to essentials.
 - Severity: **P2**
 
 **Secrets management**
 - Secrets in source code, `.env` files committed to git, environment variable defaults in code
-- API keys, database URLs, Clerk secret keys hardcoded anywhere
-- Next.js `NEXT_PUBLIC_` prefix on secrets that should be server-only (this is the #1 Next.js secret leak)
+- API keys, database URLs, auth-provider secret keys hardcoded anywhere
+- Secrets shipped in a client bundle or app build — anything in the client is public
 - Severity: **P1**
 
 ---
@@ -106,18 +125,18 @@ Both converge on minimalism. Carmack says state breeds bugs; Hunt says data you 
 *Carmack: "Use const everywhere. Favour references over pointers. Use the type system to prove absence of flaw classes."*
 *Hunt: Demonstrated that 67% of scanned ASP.NET sites had configuration vulnerabilities — defaults kill you.*
 
-In a TypeScript/Next.js stack, the type system is your first line of defence. Carmack's "bondage and discipline languages" argument: restrictions aren't limitations, they're velocity.
+The type system is your first line of defence. Carmack's "bondage and discipline languages" argument: restrictions aren't limitations, they're velocity.
 
 ### What to check
 
 **Type safety at boundaries**
-- tRPC provides end-to-end type safety from Zod input → procedure → client. Are there any places where this chain is broken? (`any` casts, untyped context, manual fetch calls bypassing tRPC)
-- Are Prisma-generated types used throughout, or are query results cast to `any` or manual interfaces?
-- Are Clerk's `auth()` and `currentUser()` return types properly narrowed before use?
+- Is the typed chain from validated input to handler to client unbroken? (tRPC: `any` casts, untyped context, manual fetch calls bypassing tRPC.)
+- Are generated types (Prisma's) used throughout, or are query results cast to loose or hand-written types?
+- Are auth and session objects narrowed before use? (Clerk: `auth()`, `currentUser()`.)
 - Severity: **P2** for broken type chains, **P3** for weak typing internally
 
 **Configuration as code**
-- Next.js security headers set in `next.config.js`? (See Principle 6)
+- Security headers set in config? (See Principle 6)
 - Default error pages exposing stack traces in production? (`NODE_ENV` checked)
 - Debug/development routes accessible in production?
 - Severity: **P1** for exposed stack traces/debug routes, **P2** for missing security headers
@@ -157,7 +176,7 @@ Security headers and CSP aren't bolt-ons — they're the automated analysis laye
 ### What to check
 
 **Content Security Policy (OWASP A05)**
-- Is CSP set? In Next.js, check `next.config.js` headers or middleware.
+- Is CSP set? Check where the app or its proxy sets response headers.
 - Is it `default-src 'self'` with specific additions, or wide open?
 - Is `unsafe-inline` or `unsafe-eval` present? Each one defeats the purpose.
 - Are nonces or SHA-256 hashes used for inline scripts?
@@ -191,15 +210,15 @@ Every access control check is an assertion. Every input validation is an asserti
 
 **Broken Access Control — the #1 OWASP category (A01)**
 
-This is where Clerk *doesn't* save you. Clerk handles authentication (who are you?). Authorisation (what can you do?) is entirely your problem.
+This is where your auth provider *doesn't* save you. It handles authentication (who are you?). Authorisation (what can you do?) is entirely your problem.
 
-- **tRPC middleware**: is auth enforced via a `protectedProcedure` middleware, or are individual procedures checking `ctx.auth` ad hoc? A missing middleware on one procedure is an open door. The correct pattern is an `authedProcedure` base that all protected routes inherit from.
-- **tRPC context**: is the Clerk session properly injected into tRPC context? If `ctx.userId` is undefined and unchecked, every downstream query runs unauthenticated.
-- **IDOR (Insecure Direct Object Reference)**: can a user access another user's data by changing an ID in the tRPC input? Hunt's VTech example: incrementing a parent ID in `getKids` returned any child's data. "The level of sophistication involved here is being able to count."
-- **Row-level security**: when querying Prisma, is the `where` clause filtering by the authenticated user's ID? Or can you omit the filter and get other users' data? (Hunt's TicTocTrack: removing a single URL parameter returned every user.)
-- **Server Components vs Client Components**: is authorisation checked in Server Components/tRPC procedures, or only in client-side code that can be bypassed?
-- **Clerk middleware scope**: is the Next.js middleware protecting all sensitive routes, or only some? Check for routes that slipped through.
-- **Webhook validation**: is the Clerk webhook signature verified with `svix`? An unvalidated webhook endpoint is a direct write path into your database.
+- **Shared auth layer**: is auth enforced by one layer every protected entry point inherits, or checked ad hoc per handler? One missed handler is an open door.
+- **Request context**: if the user ID in the request context is missing and unchecked, every downstream query runs unauthenticated.
+- **IDOR (Insecure Direct Object Reference)**: can a user access another user's data by changing an ID in the request? Hunt's VTech example: incrementing a parent ID in `getKids` returned any child's data. "The level of sophistication involved here is being able to count."
+- **Row-level security**: does every query filter by the authenticated user's ID, or can you omit the filter and get other users' data? (Hunt's TicTocTrack: removing a single URL parameter returned every user.)
+- **Server vs client**: is authorisation checked on the server, or only in client code the user can bypass?
+- **Middleware scope**: does the auth middleware cover every sensitive route? Check for routes that slipped through.
+- **Webhook validation**: is every webhook's signature verified? An unvalidated webhook endpoint is a direct write path into your database.
 - Severity: **P1 always.** Broken access control is #1 on OWASP 2025 for a reason.
 
 **Rate limiting**
@@ -236,20 +255,20 @@ Don't just prevent breaches — design so that when something fails, the blast r
 
 **Error handling and information leakage (OWASP A02, A10)**
 - Do error responses expose stack traces, SQL errors, file paths, or internal service names?
-- Are Postgres errors propagated to the client? (Column names, table names, constraint names — all leak schema information.)
-- Is there a global error boundary that returns generic errors to clients?
-- Are unhandled promise rejections caught? (Node.js default: crash the process. Next.js: 500 with potential info leak.)
+- Are database errors propagated to the client? (Column names, table names, constraint names — all leak schema information.)
+- Is there a global error handler that returns generic errors to clients?
+- Are unhandled async errors caught? (Node.js default for promise rejections: crash the process. Next.js: 500 with potential info leak.)
 - Severity: **P1** for SQL/stack traces in production responses, **P2** for verbose error messages
 
 **Session and token management**
-- Clerk handles sessions, but: are there any custom tokens, API keys, or session identifiers in your code?
+- Your auth provider may handle sessions, but: are there any custom tokens, API keys, or session identifiers in your code?
 - If yes: are they cryptographically random, time-limited, and single-use where appropriate?
 - Are expired/revoked tokens actually rejected, or just unchecked?
 - Severity: **P1** for custom auth tokens without expiry, **P2** for other issues
 
 **Credential stuffing awareness (OWASP A07)**
 - Hunt traces the 2017 Uber breach, 2022 Uber breach, and 2023 23andMe breach all to credential stuffing from prior breaches.
-- Even with Clerk: if your app stores any credentials, keys, or secrets that users provide (API keys for integrations, etc.), are these encrypted at rest?
+- Even with a managed auth provider: if your app stores any credentials, keys, or secrets that users provide (API keys for integrations, etc.), are these encrypted at rest?
 - Severity: **P2**
 
 ---
@@ -274,4 +293,29 @@ Don't just prevent breaches — design so that when something fails, the blast r
 |----------|---------|----------|
 | **P1 — Fix Now** | Exploitable vulnerability, data exposure, access control bypass | SQLi, missing auth on API routes, IDOR, PII in logs, secrets in code, exposed stack traces |
 | **P2 — Fix Soon** | Defence gap that increases attack surface or blast radius | Missing CSP, no rate limiting, weak typing at boundaries, over-fetched API data, missing HSTS |
-| **P3 — Consider** | Hygiene issue that compounds over time | Dead endpoints, unnecessary dependencies, scattered `any` types, missing SRI on CDN scripts |
+| **P3 — Consider** | Hygiene issue that compounds over time | Dead endpoints, unnecessary dependencies, scattered type escape hatches (`any`), missing SRI on CDN scripts |
+
+---
+
+## Origin-stack examples (Next.js / tRPC / Prisma / Neon / Clerk)
+
+### Principle 1 — Prisma raw queries
+- `prisma.$queryRaw` or `prisma.$executeRaw` with user input — use the `Prisma.sql` tagged template for parameterisation. Prisma's standard query API is safe by default.
+
+### Principle 2 — tRPC and Zod
+- tRPC without input validation is just a fancy RPC with no contract: every mutation and query needs `.input()` with a Zod schema.
+- Zod's `.string()` accepts anything — use `.email()`, `.url()`, `.min()`, `.max()`, `.regex()` where the domain demands it.
+
+### Principle 3 — Prisma, Clerk, Next.js
+- Prisma's default `findMany` returns ALL columns — use `select` to return only what the client needs.
+- Clerk → Neon user sync: the `User` model holds clerkId, maybe email — no tokens, auth metadata or raw webhook payload in a `Json` field.
+- `NEXT_PUBLIC_` on a server-only secret is the #1 Next.js secret leak.
+
+### Principle 6 — Next.js headers
+- CSP and the other security headers are set in `next.config.js` headers or in middleware — check both.
+
+### Principle 7 — tRPC and Clerk access control
+- Enforce auth with an `authedProcedure`/`protectedProcedure` base all protected routes inherit, not ad hoc `ctx.auth` checks.
+- An undefined, unchecked `ctx.userId` in tRPC context runs every downstream query unauthenticated.
+- Filter Prisma `where` clauses by the user's ID; check authorisation in Server Components/tRPC procedures, not only Client Components.
+- Clerk's Next.js middleware must cover every sensitive route; verify Clerk webhooks with `svix`.

@@ -1,12 +1,29 @@
 # UX Quality Reference — Carmack × Friedman
 
 Philosophy: John Carmack. Specifics: Vitaly Friedman (Smashing Magazine, Smart Interface Design Patterns, Design Patterns for AI Interfaces).
-Stack context: Next.js App Router / React / TypeScript / tRPC / Prisma / Neon (serverless Postgres) / Clerk (auth) / CSS Modules + BEM. Mantine component library. Linear-inspired dark theme. Inter + JetBrains Mono fonts. Data-dense analytical product.
 
 Every finding must describe the **concrete UX consequence** — not just "this could be better."
 When Carmack and Friedman independently converge on a principle, it earns its place here.
 
 **Scope boundary:** This doc covers UX patterns, information architecture, and interaction design. It does NOT cover: accessibility/a11y (separate domain — WCAG compliance is assumed, not audited here), visual design aesthetics, brand, color theory, security, performance, or backend concerns. Where accessibility intersects UX patterns (touch targets, keyboard alternatives), it's noted but not deeply audited.
+
+---
+
+## Applying this seat to another stack
+
+Origin stack for the examples: a data-dense analytical web app with AI features — Next.js / React / TypeScript, Mantine components, a dark theme — used with mouse and keyboard in a browser.
+
+The numbered principles are the constraint set; framework-specific checks (ESC and click-outside to close a modal, 44×44px triggers, React error boundaries) are illustrations — on another stack, find the analogous construct and apply the principle to it. Phone and desktop apps, game menus and HUDs, and interactive terminal UIs all have screen states, disclosure, blocking dialogs, disabled controls and error messages.
+
+| In the origin stack | The general idea | Look for it in … |
+|---|---|---|
+| A modal closed by ESC, click-outside or the back button | Every blocking dialog has an obvious, standard way out | Android system Back and iOS swipe-down on sheets; the cancel button in a controller-driven game menu; Esc or `q` in a terminal UI |
+| A mobile web layout of a desktop view | The features users rely on, adapted to each form factor and input | phone vs tablet layouts; desktop vs TV or handheld play; a narrow vs a wide terminal |
+| A 44×44px accordion trigger | Triggers large and visible enough for the input method | Apple's 44pt and Material's 48dp minimum touch targets; a clear focus highlight for controller navigation; on-screen key hints in a terminal UI |
+| Skeleton screens and inline loading panes | Progress shown without locking the rest of the interface | a game loading screen with a progress bar; a status-bar progress indicator on desktop; a spinner or progress line in a CLI |
+| A React error boundary per dashboard section | One failing section shows its own error while the rest keeps working | a failed widget on a native dashboard screen; a failed pane in a split-pane terminal UI; a HUD element whose data source dropped out |
+| Keyboard shortcuts for power users | Fast paths for repeated actions on the main input device | controller button mappings or radial menus; menu accelerators in desktop apps; key bindings in a terminal UI |
+| A dashboard of metrics and charts | A summary view that should lead to action | a game's post-match stats screen; a desktop app's overview pane; the output of a CLI `status` command |
 
 ---
 
@@ -53,7 +70,7 @@ Both converge on designing for failure as a first-class concern, not an aftertho
 
 **No partial state handling**
 - What happens when some data loads but some fails? If one API call in a dashboard fails, does the entire view break or does the failing section show an error while the rest remains functional? Friedman: "When the page is sparsely populated, our job is to prevent people from getting discouraged and giving up on our product."
-- Severity: **P1** if a single failing component crashes the entire view. **P2** for missing individual error boundaries on independent data sections.
+- Severity: **P1** if a single failing component crashes the entire view. **P2** for independent data sections that don't isolate their own failures.
 
 **Generic error messages**
 - Friedman: "Avoid generic error messages: they are often main blockers." An error message must answer: what went wrong, is it the user's fault or the system's, and what can they do about it. "Something went wrong" with no action path is a UX dead end.
@@ -87,9 +104,9 @@ Both converge on keeping systems responsive. Carmack minimizes blocking state in
 ## Principle 4: Progressive disclosure needs visible triggers and hard limits
 
 *Carmack: "The structure of the code should make the intended behavior obvious." Applied to interfaces: hidden information should be obviously hidden — users should know it exists before they reveal it.*
-*Friedman: "The accordion is probably the most established workhorse in responsive design." But with constraints: visible triggers (44×44px minimum), chevron icons, entire bars clickable, and maximum three nesting levels.*
+*Friedman: "The accordion is probably the most established workhorse in responsive design." But with constraints: visible triggers (44×44px), chevron icons, entire bars clickable, and maximum three nesting levels.*
 
-Both demand that structure communicates intent. Code should make its behavior obvious from its structure. Interfaces should make their information hierarchy obvious from their layout. Progressive disclosure fails when users don't know there's more to see, or when the nesting becomes so deep they lose orientation.
+Both demand that structure communicates intent. Code should make its behavior obvious from its structure. Interfaces should make their information hierarchy obvious from their layout. Progressive disclosure fails when users don't know there's more to see, or when the nesting becomes so deep they lose orientation. A 44 px trigger is UX's recommendation (P3); the access minimum is Accessibility's.
 
 ### What to check
 
@@ -102,8 +119,8 @@ Both demand that structure communicates intent. Code should make its behavior ob
 - Severity: **P2** for nesting beyond three levels without distinct visual differentiation per level. **P3** for deep nesting that only expert users encounter.
 
 **Modals used for non-blocking content**
-- Friedman's default: "By default, use a non-blocking dialog ('non-modal dialogs')." Modals should be reserved for deliberate friction — confirming destructive actions, verifying complex input. They should never be used for: error messages, feature announcements, onboarding tutorials, or informational content. Every modal must support: close button, ESC key, click-outside-to-close, and back-button-to-close.
-- Severity: **P2** for modals used for non-blocking content. **P1** for modals with no escape route (missing ESC or click-outside support).
+- Friedman's default: "By default, use a non-blocking dialog ('non-modal dialogs')." Modals should be reserved for deliberate friction — confirming destructive actions, verifying complex input. They should never be used for: error messages, feature announcements, onboarding tutorials, or informational content. Every modal must have a visible close control and an obvious way out; keyboard, Escape and back-button dismissal are Accessibility's when that seat is present.
+- Severity: **P2** for modals used for non-blocking content. **P1** for modals with no escape route — no visible close control, or (when Accessibility isn't seated) any of the platform's standard dismissals missing: on the web, Escape or click-outside.
 
 **Dual-function triggers**
 - Friedman warns against overloading category titles that serve as both links and accordion triggers: "It seems to be a good idea to avoid overloading category titles with multiple functions." A navigation item that both navigates AND expands a submenu on the same click/tap forces users to guess which action will fire.
@@ -180,8 +197,8 @@ Both respect the user. Carmack exposes complexity to competent developers rather
 - Friedman: "Anything that keeps users away from using the product is an unnecessary distraction. That's why tutorials and walkthroughs are often dismissed almost instinctively." Never block UI with full-page onboarding modals. Never use multi-step tutorials with 5+ steps. Instead: ask what goals users are trying to achieve, use blank slates + segmentation, show features contextually when users slow down or make mistakes. The goal: "shorten the time to relevance as much as possible."
 - Severity: **P1** for blocking onboarding modals that prevent product access. **P2** for multi-step tutorials that are dismissable but delay time-to-value.
 
-**No keyboard shortcuts for frequent actions**
-- Friedman treats keyboard shortcuts as a first-class enterprise pattern, listed alongside visual indicators and customizable widgets in his B2B/expert interface curriculum. For actions users perform repeatedly (navigating between items, triggering workflows, switching views), keyboard shortcuts reduce friction for power users without affecting novice flows.
+**No keyboard shortcuts (or equivalent fast paths) for frequent actions**
+- Friedman treats keyboard shortcuts as a first-class enterprise pattern, listed alongside visual indicators and customizable widgets in his B2B/expert interface curriculum. For actions users perform repeatedly (navigating between items, triggering workflows, switching views), shortcuts on the main input device — keys, controller buttons, gestures — reduce friction for power users without affecting novice flows.
 - Severity: **P3** — an expertise-level enhancement, not a defect.
 
 ---
@@ -251,10 +268,10 @@ Both converge on inevitability of failure — and the asymmetry between building
 
 ### Areas this doc is weaker on (supplement from other sources)
 
-- **Accessibility/a11y**: Friedman covers accessibility within his patterns (touch targets, keyboard alternatives, colorblind-safe palettes) but his work is not a comprehensive accessibility audit framework. For WCAG 2.2 compliance auditing, supplement with dedicated a11y expertise. This doc does not audit for screen reader compatibility, focus management, ARIA attributes, or contrast ratios.
+- **Accessibility/a11y**: Friedman covers accessibility within his patterns (touch targets, keyboard alternatives, colorblind-safe palettes) but his work is not a comprehensive accessibility audit framework. For WCAG 2.2 compliance auditing, supplement with dedicated a11y expertise. This doc does not audit for screen reader compatibility, focus management, accessibility attributes (ARIA on the web), or contrast ratios.
 - **Data visualization depth**: Friedman teaches chart selection and honest charts but is not a visualization specialist. For complex statistical visualizations (experiment results, confidence intervals, statistical significance displays), supplement with Tufte's principles and domain-specific data viz guidance.
 - **Animation and micro-interactions**: Friedman curates rather than authors animation guidance. His work covers state transitions conceptually but doesn't provide detailed animation specifications (timing, easing, choreography).
-- **Design system architecture**: This doc audits UX patterns, not component library architecture. How Mantine components are composed, themed, or extended is outside scope.
+- **Design system architecture**: This doc audits UX patterns, not component library architecture. How the project's component library is composed, themed, or extended is outside scope.
 - **Loading states for very slow operations**: Friedman's published writing on loading patterns for operations taking 60–90+ seconds is limited. His general principles (avoid page takeover, use skeleton screens, show progress) apply, but specific patterns for multi-minute AI pipeline processing are not well-covered in his work. Supplement with domain-specific research on progress communication for long-running tasks.
 - **Internationalization and localization**: Friedman notes that localization frequently breaks layouts (test with long and short titles) but does not provide comprehensive i18n patterns.
 
@@ -266,7 +283,7 @@ Both converge on inevitability of failure — and the asymmetry between building
 |----------|---------|----------|
 | **P1 — Fix Now** | User cannot complete core task, is actively misled, or trust is destroyed | Critical data hidden behind clicks, no empty state on primary views, disabled buttons with no explanation, full-page loading lockout, AI actions without approval, data inconsistencies between views, no reasoning behind AI recommendations, blocking onboarding modals |
 | **P2 — Fix Soon** | User experience is degraded, friction is unnecessary, or workflows are inefficient | Filters that lock during update, generic error messages, modals for non-blocking content, chat-first for structured tasks, no data drill-down, dashboard metrics without action paths, no data freshness indicators, wall-of-text AI output, blank prompt with no guidance |
-| **P3 — Consider** | Polish, consistency, and maturity enhancements | Missing density controls, no keyboard shortcuts, no validation override, no confidence indicators, AI content not labeled, suboptimal chart types, no refinement controls |
+| **P3 — Consider** | Polish, consistency, and maturity enhancements | Missing density controls, no keyboard shortcuts or equivalent fast paths, no validation override, no confidence indicators, AI content not labeled, suboptimal chart types, no refinement controls |
 
 ### The Overriding Filter
 
@@ -278,4 +295,20 @@ Before writing any finding, apply the Friedman-Carmack synthesis:
 4. **Is complexity structured or stripped?** If important data was removed to simplify, flag it. (Both: eliminate unnecessary complexity, structure necessary complexity.)
 5. **Does the user know why?** If AI recommendations lack evidence, controls are disabled without explanation, or data appears without context, flag it. (Both: the system must communicate what it's doing and why.)
 6. **Is the interface honest about uncertainty?** If AI output is presented with false confidence, or data freshness/quality is obscured, flag it. (Both: epistemic honesty is non-negotiable.)
+
+---
+
+## Origin-stack examples (Next.js / React web app, Mantine)
+
+Web forms of checks stated generally above, kept as written for the origin stack.
+
+### Principle 2 — partial states
+- Severity: **P2** for missing individual error boundaries on independent data sections.
+
+### Principle 4 — modal escape routes
+- Every modal must support: close button, ESC key, click-outside-to-close, and back-button-to-close (ESC and back button are Accessibility's when that seat is present).
+- Severity: **P1** for modals with no escape route (no close button and no click-outside).
+
+### Principle 10 — component library
+- How Mantine components are composed, themed, or extended is outside scope.
 

@@ -79,6 +79,7 @@ check("kernel: the stage table lists all ten doctrine files, in order", -1 not i
 check("kernel: points at the doctrine folder", "${CLAUDE_PLUGIN_ROOT}/references/doctrine/" in core)
 check("kernel: agent cap of 10, verifiers included", re.search(r"\b10\b[^.]*verifiers included", flat(core)) is not None)
 check("kernel: approval threshold from the config", "approve without asking" in core)
+check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
@@ -89,6 +90,11 @@ for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
     check(f"{d}: ≤ 6,000 chars", len(t) <= 6000, str(len(t)))
 check("01-convene: opens the run with the helper", "council run open" in doctrine["01-convene.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
+check("01-convene: checks the stack fingerprint", "council fingerprint check" in doctrine["01-convene.md"])
+check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
+      "cards/<slug>.md" in doctrine["04-brief.md"] and "- doc:" in doctrine["04-brief.md"])
+check("04-brief: memory in scope comes from council memory select", "council memory select" in doctrine["04-brief.md"])
+check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
 check("03-assign: records every seat's state", "council seat" in doctrine["03-assign.md"])
 check("04-brief: seat blocks carry ref / out / cap for collect", all(k in doctrine["04-brief.md"] for k in ["### <slug>", "- ref:", "- out:", "- cap:"]))
 check("05-work: records each worker with its agent id", "council seat <slug> running agent=" in doctrine["05-work.md"])
@@ -150,7 +156,8 @@ for label, text, needles in [
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md"]),
     ("research", research, ["scout", "Strength:"]),
     ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "small-council:begin", "ultra-council:begin",
-                    "Edit(/.council/**)", "Bash(council *)", "last-verified", "council doctor", "council run open council-init"]),
+                    "Edit(/.council/**)", "Bash(council *)", "last-verified", "council doctor", "council run open council-init",
+                    "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger"]),
     ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier"]),
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
     missing = [n for n in needles if n not in text]
@@ -158,6 +165,7 @@ for label, text, needles in [
 
 # 6. Agents
 check("worker: header with ref: on line 2 and an Index", "ref: <the first heading" in worker and "## Index" in worker)
+check("worker: reads its card first; the card names its doc", "card" in worker and "`source:`" in worker)
 check("worker: returns a Wrote line (the seat check reads it)", "`Wrote <output path>" in worker)
 check("worker: read-only, no delegation, ignores council prompts in CLAUDE.md", all(k in worker for k in ["Read-only on the project", "No delegation", "CLAUDE.md"]))
 check("worker: rulings capped, lanes kept", "## Needs a ruling" in worker and "## Outside my lane" in worker)
@@ -165,6 +173,7 @@ check("worker: BLOCKED instead of proceeding blind", "BLOCKED" in worker)
 check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"]))
 check("verifier: change verdicts", all(v in verifier for v in ["OK", "INCOMPLETE", "REGRESSION", "SCOPE-CREEP", "CANNOT VERIFY"]))
 check("verifier: can open a research claim's URL", re.search(r"^tools:.*\bWebFetch\b", verifier, re.MULTILINE) is not None)
+check("verifier: keeps the dispatch's item number in its # column (the ledger reads it)", "never renumber" in verifier)
 for label, t in [("worker", worker), ("verifier", verifier)]:
     check(f"{label}: no Edit tool", re.search(r"^tools:.*\bEdit\b", t, re.MULTILINE) is None)
 
@@ -193,6 +202,13 @@ check("template config: gates table", "| Gate | Command | Run at | Mandatory | C
 check("template conventions: AP / EC / D / Proposed / Rejected", all(s in conv for s in ["## Accepted Patterns", "## Enforced Conventions", "## Decisions", "## Proposed", "## Rejected"]))
 check("template conventions: no live PROPOSED line (the hook would count it)", re.search(r"^- PROPOSED", conv, re.MULTILINE) is None)
 check("template map: map-commit stamp", "map-commit:" in mp)
+card_t, seatdoc_t = read("references", "templates", "seat-card.md"), read("references", "templates", "seat-doc.md")
+check("template seat card: source line, principles applied here, severity here",
+      all(k in card_t for k in ["source:", "## Principles, applied here", "## Severity here"]))
+check("template seat doc: draft status, numbered principles with repo evidence",
+      all(k in seatdoc_t for k in ["status: draft", "## Principle 1:", "### Evidence in this repo"]))
+check("template config: stack fingerprint and gate side effects", "stack-fingerprint:" in cfg and "| Side effects |" in cfg)
+check("template conventions: scope and anchor fields", "**Scope:**" in conv and "**Anchor:**" in conv)
 for label, rel in [("fixture", ("evals", "fixtures", ".council", "council.config.md")), ("example", ("examples", "chrollo", "council.config.md"))]:
     t = read(*rel)
     check(f"{label} config: current schema (surface markers, run preferences)", "| Surface |" in t and "## Run preferences" in t)
@@ -200,9 +216,17 @@ for label, rel in [("fixture", ("evals", "fixtures", ".council", "council.config
 # 9. Catalog and seat docs
 catalog = read("references", "roster", "expert-catalog.md")
 slugs = re.findall(r"^\| \*\*[^|]+\*\* \| ([a-z-]+) \|", catalog, re.MULTILINE)
-check("catalog: ten canonical seats with slugs", len(slugs) == 10, ", ".join(slugs))
-for doc in re.findall(r"`(quality-[a-z]+\.md|security\.md|refactoring\.md)`", catalog):
-    check(f"catalog: {doc} exists", os.path.isfile(os.path.join(ROOT, "references", doc)))
+check("catalog: fourteen canonical seats with slugs", len(slugs) == 14, ", ".join(slugs))
+seat_docs = re.findall(r"^\| \*\*[^|]+\*\* \| [a-z-]+ \| [^|]+ \| `([a-z-]+\.md)` \|", catalog, re.MULTILINE)
+check("catalog: every seat names its doc", len(seat_docs) == len(slugs), ", ".join(seat_docs))
+NEW_LENSES = {"quality-accessibility.md", "quality-concurrency.md", "untrusted-input.md", "quality-operability.md"}
+for doc in seat_docs:
+    text = read("references", doc)
+    check(f"catalog: {doc} exists", bool(text))
+    check(f"{doc}: says how to apply it to another stack", "## Applying this seat to another stack" in text)
+    if doc not in NEW_LENSES:
+        check(f"{doc}: keeps its origin-stack examples in a final section", "## Origin-stack examples" in text)
+    check(f"{doc}: numbers its principles 'Principle N'", re.search(r"^(#+ )?\**Principle 1\b", text, re.MULTILINE) is not None)
 check("catalog: no external/unshipped seat docs", "external (" not in catalog)
 check("template config: example slugs match the catalog",
       all(s in slugs for s in re.findall(r"^\| [A-Z][^|]+ \| ([a-z-]+) \|", cfg, re.MULTILINE)))

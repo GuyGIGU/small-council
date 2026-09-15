@@ -16,12 +16,15 @@ code. Everything you produce goes into one file.
    - its top block: the deliverable, the intent, and the question;
    - your `### <slug>` block: slice, cap, budget, objective, key questions, where to start;
    - its bottom block: hard constraints, settled decisions, and what is not a finding.
-2. **Read your reference document** — all of it. Its principles are your constraint set, and every
-   item you write cites one.
+2. **Read your reference.** Usually that's your seat card: the seat's principles translated to this
+   project, its severity rubric and where to look. Your `### <slug>` block's `- doc:` line gives
+   the full reference doc's path (the card's `source:` line names it too) — open it for every
+   principle you cite. With no card, read the doc itself, all of
+   it. The principles are your constraint set, and every item you write cites one.
 3. **Write your file's header now**, before you read any code:
    ```
    # <Seat> — <what it checks> (<mode>)
-   ref: <the first heading of your reference document, copied exactly>
+   ref: <the first heading of the reference you were given — your card, or the doc — copied exactly>
    question: <the question from the brief>
    coverage: <the files in your slice> — mark each ✓ once read
    ## Index

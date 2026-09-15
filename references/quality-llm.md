@@ -12,11 +12,31 @@ that flows out of it with the suspicion you'd give any external system.
 
 Every finding must describe the **concrete failure mode** — not "this is bad LLM practice." A pipeline
 that emits a confident wrong answer is worse than one that crashes, because a human downstream believes
-it. Secrets / auth / deserialization is Hunt's domain (security.md). Async and API plumbing is the
-backend seat (quality-backend.md). Datastore integrity is the data seat (quality-postgres.md). This doc
+it. Secrets and auth are Hunt's domain (security.md); deserialization is the Untrusted input seat's
+(Patterson), Hunt's when Patterson isn't seated. Async and API plumbing is the backend seat
+(quality-backend.md). Datastore integrity is the data seat (quality-postgres.md). This doc
 covers: prompt injection, output validation, grounding/hallucination, non-determinism, context-window
 and truncation, tool-call safety, evals, cost/latency, data governance in prompts/logs, and model
 migration.
+
+---
+
+## Applying this seat to another stack
+
+The examples come from the origin stack: an application calling a hosted LLM API, with Python snippets (`json.loads`).
+
+The numbered principles are the constraint set; provider- and language-specific checks are illustrations. On another stack, find the analogous construct and apply the principle to it.
+
+| In the origin stack | The general idea | Look for it in … |
+|---|---|---|
+| Prompt built from untrusted text | Untrusted data mixed into instructions | SQL or shell built by string concatenation; user formulas passed to `eval` |
+| JSON mode + `json.loads` | Parse and schema-check at the boundary; handle the reject | Pydantic validation; Rust `serde`; Go `encoding/json` plus explicit checks |
+| Tool / function calling | Side effects chosen by an untrusted decision-maker | MCP servers; webhook handlers; plugin or mod APIs |
+| Context window, token budget | A hard size limit whose overflow is silent | Integer overflow and float precision loss; MySQL non-strict mode truncating strings; fixed-size buffers in firmware |
+| Pinned model id, logged prompt | Reproducing a non-deterministic or versioned dependency | Pinned NumPy/SciPy versions plus a fixed RNG seed; a deterministic simulation's recorded inputs |
+| Eval set | Regression checks on properties of the output | Golden-file tests; property-based tests (Hypothesis, proptest); `numpy.testing.assert_allclose` |
+
+**Recast as numerical / simulation correctness.** A project with no LLM — a deterministic compute engine — may have `council-init` recast this seat while keeping this doc: apply the principles to numbers instead of tokens. What carries over: Principle 2 (parse defensively at the boundary; check shapes, dtypes and units; quarantine NaN, inf and malformed values before they propagate), Principle 5 (silent overflow, precision loss and dropped rows), Principle 4 (pin versions, seed RNGs, record inputs for reproducibility), Principle 7 (guard every result with a regression check) and Principle 10 (upgrades that shift results). The rest apply where their construct exists — untrusted input, side-effecting tools, user data. The recast is a per-project decision recorded in `.council/council.config.md`, not baked into this doc.
 
 ---
 
@@ -342,7 +362,7 @@ migrated.
 
 | Severity | Pattern | Examples |
 |----------|---------|----------|
-| **P1 — Fix Now** | Injection to a side effect, unvalidated output driving action, ungrounded facts, unreproducible/unevaluated critical calls, data leak | The lethal trifecta on one agent, `json.loads` of raw output feeding a mutation, model output into an HTML/SQL/exec sink, ungrounded user-facing facts, unpinned model on a critical path, secrets/PII in a prompt or trace, a silent model swap with no re-eval |
+| **P1 — Fix Now** | Injection to a side effect, unvalidated output driving action, ungrounded facts, unreproducible/unevaluated critical calls, data leak | The lethal trifecta on one agent, raw output parsed (`json.loads`) straight into a mutation, model output into an HTML/SQL/exec sink, ungrounded user-facing facts, unpinned model on a critical path, secrets/PII in a prompt or trace, a silent model swap with no re-eval |
 | **P2 — Fix Soon** | Weaker guardrails, missing abstention, unmanaged budgets, thin evals | Prompt-only "guardrail," hallucinated-but-unchecked citations, no token budget, truncation by luck, no read/write tool split, LLM-as-judge taken at face value, per-item calls at volume, unmanaged migration |
 | **P3 — Consider** | Hygiene that compounds | Unbounded prompt/response retention, model-overfit prompts, missing streaming on long completions |
 
@@ -366,10 +386,6 @@ Before writing any finding, apply the Willison–Carmack synthesis:
 
 ---
 
-> **council-init note.** This is the canonical LLM-pipeline seat (Willison). A project with **no LLM** —
-> a deterministic numeric/data/compute engine — may have `council-init` recast this seat (for example as
-> a *numerical-correctness* seat) while keeping this reference doc, because the underlying discipline
-> transfers directly: parse defensively at the boundary, quarantine NaN/inf and malformed values before
-> they propagate, pin versions and record inputs for reproducibility, and guard every result with an
-> eval/regression check. Apply the principles to numbers instead of tokens; the recast is a per-project
-> decision recorded in `.council/council.config.md`, not baked into this doc.
+## Origin-stack examples (hosted LLM APIs)
+
+Nothing here is origin-specific: the principles are written for LLM pipelines in general, and the one language-specific snippet (Python's `json.loads`, Principle 2) stands for any parser.

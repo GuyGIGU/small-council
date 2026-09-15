@@ -1,10 +1,28 @@
 # Frontend Quality Reference — Carmack × Dodds
 
 Philosophy: John Carmack. Specifics: Kent C. Dodds (React Testing Library, Epic React, AHA Programming).
-Stack context: Next.js App Router / React / TypeScript / tRPC / Prisma / Neon / Clerk / CSS Modules + BEM. NOT Tailwind.
 
 Every finding must describe the **concrete cost of getting it wrong** — not just "this is bad practice."
-The Vercel performance skill covers memoization, bundle size, re-renders, Suspense, caching. **Do not duplicate performance findings here.** Focus on correctness, maintainability, testability, and architectural quality.
+Performance (memoization, bundle size, re-renders, Suspense, caching) is covered by **quality-performance.md**, the Performance seat. **Do not duplicate performance findings here.** Focus on correctness, maintainability, testability, and architectural quality.
+
+---
+
+## Applying this seat to another stack
+
+Origin stack of the examples: Next.js App Router / React / TypeScript / tRPC / CSS Modules + BEM (not Tailwind).
+
+The numbered principles are the constraint set; framework-specific checks are illustrations. On another stack, find the analogous construct and apply the principle to it. Origin-only checks sit at the end, by principle.
+
+| In the origin stack | The general idea | Look for it in … |
+|---|---|---|
+| Components, custom hooks, Context | A view unit, reusable stateful logic, a scoped shared dependency | Vue composables and `provide`/`inject`; SwiftUI `@Environment`; Flutter `InheritedWidget` |
+| `useState` synced by `useEffect` | Derivable state stored and kept in sync by hand | Vue `watch` into a `ref` instead of `computed`; SwiftUI `onChange` into `@State`; Compose state seeded from a parameter |
+| tRPC / TanStack Query cache | Server data held in one cache, not copied into UI state | TanStack Query for Vue or Svelte; Apollo Client's cache; an Android repository exposing `Flow` |
+| `isLoading`/`isError` flags vs a TypeScript union | One status value, so impossible states can't be represented | Kotlin sealed classes; Swift enums with associated values; Dart 3 sealed classes |
+| React Testing Library, MSW | Test through what the user perceives; mock only the network | Testing Library for Vue, Svelte or Angular; Playwright `getByRole`; Compose `onNodeWithText` |
+| Error Boundaries | Failures caught with a fallback, app-wide and per feature | Vue `onErrorCaptured`; Angular `ErrorHandler`; Flutter `ErrorWidget.builder` |
+| `fetch` without `response.ok` | HTTP clients that don't fail on 4xx/5xx | Python `requests` without `raise_for_status()`; Go `http.Get`; Swift `URLSession` |
+| Server Components, `use client` | Code runs where it must; only serialisable data crosses the boundary | Astro islands; Blazor render modes; Electron main ↔ renderer IPC |
 
 ---
 
@@ -23,11 +41,11 @@ The cost isn't aesthetic — wrong abstractions are terrifying to change because
 - Components split into multiple files when only used in one place. Dodds: "It's WAY easier to maintain it until it needs to be broken up than maintain a pre-mature abstraction."
 - Dodds: **"You'll be surprised how simple a big render method can be when you just inline as much as you can."** A 200-line component with clear sequential logic is better than 8 files with 25 lines each connected by props.
 - The concrete cost of premature splitting: more files → more props → more prop drilling → pressure to add Context/store → compounding complexity.
-- Only split when one of these is concretely true: (a) same UI needed in multiple places, (b) can't tell which state relates to which JSX, (c) need isolated testing of edge cases, (d) git conflicts are unmanageable.
+- Only split when one of these is concretely true: (a) same UI needed in multiple places, (b) can't tell which state relates to which markup, (c) need isolated testing of edge cases, (d) git conflicts are unmanageable.
 - Severity: **P3** — unless the splitting has already caused prop drilling that triggered a global store (**P2**)
 
 **Premature hook extraction**
-- Custom hooks extracted for "separation of concerns" with a single call site. Apply AHA to hooks: don't extract until reuse is real.
+- Custom hooks (or composables) extracted for "separation of concerns" with a single call site. Apply AHA: don't extract until reuse is real.
 - Dodds: "Apply the AHA Programming principle and wait until the abstraction/optimization is screaming at you before applying it."
 - Exception: context consumer hooks (e.g. `useAuth()`) are always appropriate — they enforce the provider boundary.
 - Severity: **P3**
@@ -51,31 +69,31 @@ The fix: calculate during render. `const nextValue = calculateNextValue(squares)
 
 ### What to check
 
-**Derivable state stored in useState**
-- Any `useState` whose value can be computed from other state or props. This is the #1 frontend correctness bug.
-- Any `useEffect` that exists solely to synchronise two pieces of state — this is the "state sync" anti-pattern.
-- Any URL params (`searchParams`) mirrored into `useState` — the URL is the source of truth. In Next.js App Router: derive from `useSearchParams()`, never copy into local state.
-- Props stored in `useState` and synced via `useEffect` — just derive from props directly during render.
+**Derivable state stored as state**
+- Any stored state (`useState`) whose value can be computed from other state or props. This is the #1 frontend correctness bug.
+- Any effect or watcher (`useEffect`) that exists solely to synchronise two pieces of state — this is the "state sync" anti-pattern.
+- URL or route params mirrored into local state — the URL is the source of truth; derive from it.
+- Props copied into state and synced by an effect — just derive from props directly during render.
 - Severity: **P1** when the derivable state controls a critical flow (payment, auth, data mutation). **P2** for UI state sync bugs.
 
 **State lifted too high**
 - State in a global store or root Context that's consumed by a single component or subtree. Dodds: "Ask yourself 'do I really need the modal's status (open/closed) state to be in Redux?'"
 - Context providers at the app root that serve only one feature area. Dodds: "Not all of your context needs to be globally accessible!"
-- The cost: every update to high-lifted state invalidates the entire tree beneath it, forcing `React.memo`/`useMemo`/`useCallback` everywhere, which Dodds calls **"death by a thousand cuts"** complexity.
+- The cost: every update to high-lifted state invalidates the entire tree beneath it, forcing memoisation (`React.memo`/`useMemo`/`useCallback`) everywhere, which Dodds calls **"death by a thousand cuts"** complexity.
 - Severity: **P2** when it's causing real re-render cascades or complexity. **P3** when it's just misplaced but not causing harm yet.
 
 **Server state treated as UI state**
-- API response data manually stored in `useState` instead of managed through tRPC's query cache. Dodds: "I would take the data I got from the server and treat it like it was UI state. I would mix it in with the actual UI state and this resulted in making *both* more complex."
-- tRPC already separates server cache from UI state via TanStack Query integration. Any pattern that bypasses this (manual `fetch` + `useState` for data that tRPC could manage) is a quality regression.
+- API response data manually stored in UI state instead of managed through a query cache. Dodds: "I would take the data I got from the server and treat it like it was UI state. I would mix it in with the actual UI state and this resulted in making *both* more complex."
+- Bypassing an existing server cache (manual fetch + local state) is a quality regression.
 - Severity: **P2**
 
 **The state escalation framework** (check that the code follows this order):
-1. `useState` — for independent local state
+1. Local state (`useState`) — for independent local state
 2. Lift state up — to the closest common parent when siblings need it
 3. Component composition — use `children`/slots to skip intermediate layers
-4. `useReducer` — when state elements are interdependent (Dodds: "When one element of your state relies on the value of another element of your state in order to update")
-5. React Context — scoped to the relevant subtree, NOT at the app root
-6. External library — only for server cache (tRPC/TanStack Query handles this) or genuinely complex global state
+4. A reducer (`useReducer`) — when state elements are interdependent (Dodds: "When one element of your state relies on the value of another element of your state in order to update")
+5. Scoped context (React Context) — scoped to the relevant subtree, NOT at the app root
+6. External library — only for server cache (tRPC/TanStack Query in the origin stack) or genuinely complex global state
 
 ---
 
@@ -89,11 +107,11 @@ Dodds: code with **"no logic in them at all (so any bugs could be caught by ESLi
 ### What to check
 
 **The armour is broken when you see:**
-- `any` types — they defeat the entire type system. Every `any` is a hole in the armour.
-- `as` type assertions — they bypass type checking. Each one is a developer saying "I know better than the compiler" (they usually don't).
-- Catch blocks that cast `error` to `Error` instead of handling `unknown`. Dodds: "don't dismiss a compilation error or warning from TypeScript just because you think it's impossible." JavaScript can throw anything.
-- `useState` without explicit type parameters when the initial value is `null` or `undefined` and the type isn't inferrable.
-- Severity: **P2** for `any` and `as` on data boundaries (tRPC inputs/outputs, API responses, form data). **P3** for internal-only `any`/`as`.
+- Escape-hatch types (`any`) — they defeat the entire type system. Every one is a hole in the armour.
+- Unchecked casts (`as`) — they bypass type checking. Each one is a developer saying "I know better than the compiler" (they usually don't).
+- Catch blocks that cast the caught error to an assumed type (`error` to `Error`) instead of handling `unknown`. Dodds: "don't dismiss a compilation error or warning from TypeScript just because you think it's impossible." JavaScript can throw anything.
+- State initialised to `null` or `undefined` with no type the checker can infer (`useState` without a type parameter).
+- Severity: **P2** for escape hatches and casts on data boundaries (API inputs/outputs and responses, form data). **P3** for internal-only ones.
 
 **Impossible states that types could prevent**
 - Independent boolean flags (`isLoading`, `isError`, `isSuccess`) instead of a discriminated union status enum. Dodds: "By using a status variable rather than a simple isLoading indicator we enable our users to know exactly what the state is at any given point in time."
@@ -102,7 +120,7 @@ Dodds: code with **"no logic in them at all (so any bugs could be caught by ESLi
 - Severity: **P2** when the boolean combination controls a data-critical flow. **P3** for simple UI toggles.
 
 **Context without the fail-fast pattern**
-- Context created with a default value (`createContext(undefined)` or `createContext(null)`) but no consumer hook that throws on misuse. Dodds' pattern: create with no default, export a custom hook that throws a descriptive error if used outside the provider. This makes incorrect usage crash immediately with a clear message instead of silently rendering with `undefined`.
+- A context or injected dependency with a silent default (`createContext(undefined)` or `createContext(null)`) and no accessor that throws on misuse. Dodds' pattern: create with no default, export a custom hook that throws a descriptive error if used outside the provider. This makes incorrect usage crash immediately with a clear message instead of silently rendering with `undefined`.
 - Dodds: "Toggle compound components cannot be rendered outside the Toggle component" — the error message tells you exactly what's wrong.
 - Severity: **P2** — silent `undefined` from missing providers is a class of bug that's hard to trace.
 
@@ -127,8 +145,8 @@ Why integration wins: **"It doesn't matter if your component `<A />` renders com
 - The two-question litmus test: (a) Will this test break when there's a mistake that would break the component in production? (b) Will this test continue to work after a backward-compatible refactor? Implementation-detail tests fail both.
 - Severity: **P2** — these tests actively harm velocity by breaking on every refactor while providing false confidence.
 
-**Wrong query priority in Testing Library**
-- The priority hierarchy (enforced by `eslint-plugin-testing-library`):
+**Wrong query priority — find elements the way users do**
+- Query the way users find things, test IDs last. The priority hierarchy (enforced by `eslint-plugin-testing-library`):
   1. `getByRole` — top preference. Dodds: "There's not much you can't get with this. If you can't, it's possible your UI is inaccessible."
   2. `getByLabelText` — "really good for form fields"
   3. `getByPlaceholderText` — only when there's no label
@@ -142,7 +160,7 @@ Why integration wins: **"It doesn't matter if your component `<A />` renders com
 **Over-mocking**
 - Mocking internal modules, hooks, or components instead of testing through them. Dodds: "the biggest thing you can do to write more integration tests is to stop mocking so much stuff. When you mock something you're removing all confidence in the integration between what you're testing and what's being mocked."
 - The only appropriate mocks: network requests (via MSW at the network boundary) and animation/timing dependencies.
-- Flag: `jest.mock('./useMyHook')` or `jest.mock('./ChildComponent')` — these are integration-confidence killers.
+- Flag: mocking your own hooks or child components (`jest.mock('./useMyHook')`, `jest.mock('./ChildComponent')`) — integration-confidence killers.
 - Severity: **P2** when mocking hides a real integration bug. **P3** when it's just unnecessary.
 
 **Bloated snapshot tests**
@@ -174,9 +192,9 @@ Dodds' compound component pattern: think of `<select>` and `<option>` — they d
 - Severity: **P3** — unless it's already triggered the addition of a global store (**P2**)
 
 **Compound components without the safety pattern**
-- Compound components using `React.cloneElement` instead of Context — fragile, breaks with wrapper elements.
-- Compound components without a consumer hook that throws outside the provider — silent `undefined` bugs.
-- Severity: **P2** for missing safety hook. **P3** for `cloneElement` usage.
+- Compound components wired by cloning children (`React.cloneElement`) instead of shared context — fragile, breaks with wrapper elements.
+- Compound components without an accessor that throws outside the provider — silent `undefined` bugs.
+- Severity: **P2** for missing safety accessor. **P3** for clone-based wiring.
 
 **Controlled/uncontrolled confusion**
 - Components that accept a value prop but also manage internal state — unclear who owns the state.
@@ -193,24 +211,24 @@ Dodds' compound component pattern: think of `<select>` and `<option>` — they d
 ### What to check
 
 **Missing Error Boundaries**
-- Any component tree with async operations (data fetching, mutations) but no Error Boundary in its ancestry. Dodds co-maintains `react-error-boundary` and advocates: a top-level boundary to prevent white screens, plus granular boundaries around features.
-- The cost: an unhandled runtime error crashes the entire React tree to a blank page. No logging, no recovery, no user guidance.
-- For async errors that Error Boundaries can't catch natively: use `useErrorBoundary` hook from `react-error-boundary` to route async errors to the nearest boundary via `showBoundary(error)`.
-- Severity: **P1** for no top-level Error Boundary at all. **P2** for missing granular boundaries around critical features.
+- Any component tree with async operations (data fetching, mutations) but no error boundary (or the framework's equivalent) in its ancestry. Dodds co-maintains `react-error-boundary` and advocates: a top-level boundary to prevent white screens, plus granular boundaries around features.
+- The cost: an unhandled runtime error takes down the entire UI tree — in React, a blank page. No logging, no recovery, no user guidance.
+- Async errors often escape the boundary — route them to it explicitly.
+- Severity: **P1** for no top-level error boundary at all. **P2** for missing granular boundaries around critical features.
 
 **Boolean status flags instead of status enums**
 - `{ isLoading, isError, data, error }` as independent values. The concrete bug: after an error, `isLoading` is false, `data` still has stale previous value, `error` has new error — render logic silently shows stale data depending on check order.
 - Fix: `status: 'idle' | 'pending' | 'resolved' | 'rejected'` as single source of truth. Derive convenience booleans if needed. This makes the status a state machine — impossible states are unrepresentable.
-- Note: tRPC's `useQuery` already returns a status enum. Flag only when developers build their own status tracking alongside tRPC (duplication) or for custom non-tRPC async operations.
+- Note: if the data library already returns a status value (tRPC's `useQuery` does), flag only hand-built status tracking alongside it (duplication) or custom async operations outside it.
 - Severity: **P2** when controlling data-critical UI. **P3** for simple loading indicators.
 
-**The `response.ok` trap**
-- `window.fetch` only rejects on network errors, NOT on 4xx/5xx. Any raw `fetch` call (to external services, bypassing tRPC) must check `response.ok` and throw on failure.
-- For the tRPC stack: tRPC handles this for its own calls. Flag only raw `fetch` to external APIs without `response.ok` checking.
+**The unchecked-status trap (`response.ok`)**
+- Many HTTP clients fail only on network errors, NOT on 4xx/5xx (`window.fetch` only rejects on network errors). Any raw call to an external service must check the status and throw on failure.
+- A client that already throws on error statuses (tRPC, for its own calls) is fine. Flag only raw calls without a status check.
 - Severity: **P2**
 
 **Untyped error handling**
-- Catch blocks that assume `error instanceof Error`. Dodds: TypeScript correctly types catch errors as `unknown` because JavaScript can throw anything. Use a `getErrorMessage(error: unknown)` utility that duck-types for `.message`.
+- Catch blocks that assume the error's type or shape. Extract a message defensively instead.
 - Severity: **P3**
 
 ---
@@ -227,19 +245,19 @@ The orphan utility problem: **"Later, your component is deleted, but the utility
 ### What to check
 
 **Test file placement**
-- Test files in a mirror `__tests__/` directory tree instead of next to source files. Dodds: "co-locate our tests files with the file or group of files they are testing."
-- The pattern: `Button.tsx` + `Button.test.tsx` + `Button.module.css` in the same directory.
+- Test files in a mirror directory tree (`__tests__/`) instead of next to source files, where the toolchain allows. Dodds: "co-locate our tests files with the file or group of files they are testing."
+- The pattern: a component, its test and its styles in the same directory.
 - Severity: **P3**
 
-**Style file placement (CSS Modules + BEM)**
-- `.module.css` files in a separate `styles/` directory instead of next to their component. The colocation principle demands `Button.module.css` lives alongside `Button.tsx`.
-- BEM selectors that reference elements outside their own component's module — this is specificity leaking across component boundaries.
-- Global CSS that could be module-scoped — every global style is a potential specificity conflict.
+**Style placement and scope**
+- Component styles in a separate `styles/` directory instead of next to their component.
+- Selectors that reach into another component's elements — specificity leaking across component boundaries.
+- Global styles that could be component-scoped — every global style is a potential specificity conflict.
 - Severity: **P3** for placement. **P2** for specificity leaks that cause cross-component style bugs.
 
 **Orphaned utilities**
 - Functions in a `utils/` or `helpers/` directory consumed by only one component. Move them into the component file or directory until they're genuinely shared.
-- Dodds: "And for heaven's sake, please DELETE THIS ESLINT RULE" — referring to `no-multi-comp`, the rule preventing multiple components per file. Co-location means keeping related code together, even if that means multiple components or utilities in one file.
+- Co-location means keeping related code together, even if that means multiple components or utilities in one file.
 - Severity: **P3**
 
 ---
@@ -249,33 +267,32 @@ The orphan utility problem: **"Later, your component is deleted, but the utility
 *Carmack: don't run code where it doesn't need to run.*
 *Dodds: bullish on RSC but critical of current Next.js implementation.*
 
-In the Next.js App Router, default to Server Components. `use client` is a boundary directive marking where the server→client transition happens. State, functions, and browser APIs require `use client`. Everything else should stay on the server.
+Where components can run on the server or the client, default to the server; only state, event handlers and browser or device APIs need the client. On stacks with no such split, apply this to any process boundary (see the table above).
 
 ### What to check
 
-**Unnecessary `use client` directives**
-- Components marked `use client` that don't use state, effects, event handlers, or browser APIs. These should be Server Components.
-- `use client` placed too high in the tree — pushing more JavaScript to the client than necessary. Draw the boundary as deep as possible.
-- Severity: **P3** — this overlaps with the Vercel performance skill (bundle size), so flag only when it's an architectural clarity issue, not a perf issue.
+**Unnecessary client components**
+- Components shipped to the client that don't use state, effects, event handlers, or browser APIs (Next.js: marked `use client`). These should be server components.
+- The client boundary placed too high in the tree — pushing more JavaScript to the client than necessary. Draw the boundary as deep as possible.
+- Severity: **P3** — this overlaps with performance coverage (bundle size), so flag only when it's an architectural clarity issue, not a perf issue.
 
 **Serialisation failures at the boundary**
-- Attempting to pass functions, class instances, or other non-serialisable values from Server Components to Client Components. This is a hard error in RSC.
+- Attempting to pass functions, class instances, or other non-serialisable values across the boundary (from Server Components to Client Components — a hard error in RSC).
 - The boundary is a data contract — only serialisable props cross it. Dodds doesn't have deep writing here, but the principle of explicit data modelling applies.
 - Severity: **P1** if it causes runtime errors. **P2** if it's a latent bug (currently works by accident).
 
-**Server Actions vs tRPC: choosing wrong**
-- tRPC: preferred for data fetching from Client Components and complex state-driven API interactions where TanStack Query (caching, polling, invalidation) is needed.
-- Server Actions: preferred for form mutations and simple data updates benefiting from progressive enhancement and `revalidatePath`/`revalidateTag`.
-- Flag: Server Actions used for data fetching (creates non-cacheable POST requests). Flag: tRPC used for simple form submissions where a Server Action would be simpler.
+**Choosing the wrong data path**
+- Where there are several ways to reach the server, match each to its job: a caching query client for reads and state-driven interactions; the simplest mutation path for forms and one-off writes.
+- Flag: a mutation path used for data fetching (loses caching). Flag: a heavyweight client for a simple form submission.
 - Severity: **P3** — choosing wrong adds complexity but isn't a correctness bug.
 
 ---
 
 ## Gaps: What This Doc Doesn't Cover
 
-- **Performance**: memoization, React.memo, useMemo, useCallback, Suspense streaming, bundle splitting, lazy loading, re-render avoidance. Covered by the **Vercel performance skill**.
-- **Accessibility**: Dodds' query hierarchy promotes accessible patterns, but this doc is not an a11y audit. Supplement with axe-core and WCAG guidelines.
-- **RSC architecture depth**: Dodds hasn't published a dedicated RSC patterns post. His Epic React v2 covers basics but his preferred framework (Remix/React Router) hasn't shipped RSC yet. For Next.js-specific RSC patterns, supplement with Vercel docs and Lee Robinson's content.
+- **Performance**: memoization, React.memo, useMemo, useCallback, Suspense streaming, bundle splitting, lazy loading, re-render avoidance. Covered by **quality-performance.md**.
+- **Accessibility**: Dodds' query hierarchy promotes accessible patterns, but this doc is not an a11y audit — that's the Accessibility seat, **quality-accessibility.md**.
+- **RSC architecture depth**: Dodds hasn't published a dedicated RSC patterns post. His Epic React v2 covers basics, and his preferred framework, React Router, supports RSC only as an unstable preview (Framework Mode since v7.9.2). For Next.js-specific RSC patterns, supplement with Vercel docs and Lee Robinson's content.
 - **CSS architecture at scale**: BEM + CSS Modules is well-established, but this doc doesn't cover design system architecture, theming patterns, or CSS custom properties strategies. Those are design decisions, not code quality issues.
 - **Animation and transition patterns**: Not Dodds' domain.
 
@@ -285,9 +302,9 @@ In the Next.js App Router, default to Server Components. `use client` is a bound
 
 | Severity | Pattern | Examples |
 |----------|---------|----------|
-| **P1 — Fix Now** | State bugs that corrupt data or crash the app | Derivable state controlling critical flows (payment, auth), missing top-level Error Boundary, serialisation failures at server/client boundary |
-| **P2 — Fix Soon** | Patterns that actively cause bugs or kill velocity | State sync via useEffect, server state in useState, implementation-detail tests, over-mocking, boolean status flags on data-critical UI, Context without fail-fast hooks, global state for local concerns, `any`/`as` at data boundaries, specificity leaks across components |
-| **P3 — Consider** | Hygiene that compounds over time | Premature component splits, single-use hooks, snapshot tests, `getByTestId` over `getByRole`, test files in mirror directories, orphaned utilities, misplaced style files, unnecessary `use client` |
+| **P1 — Fix Now** | State bugs that corrupt data or crash the app | Derivable state controlling critical flows (payment, auth), missing top-level error boundary, serialisation failures at server/client boundary |
+| **P2 — Fix Soon** | Patterns that actively cause bugs or kill velocity | State synced via effects (`useEffect`), server data copied into UI state, implementation-detail tests, over-mocking, boolean status flags on data-critical UI, Context without fail-fast accessors, global state for local concerns, `any`/`as` at data boundaries, specificity leaks across components |
+| **P3 — Consider** | Hygiene that compounds over time | Premature component splits, single-use hooks, snapshot tests, `getByTestId` over role queries, test files in mirror directories, orphaned utilities, misplaced style files, unnecessary client components |
 
 ### The Overriding Filter
 
@@ -295,6 +312,28 @@ Before writing any finding, apply the Dodds-Carmack synthesis:
 
 1. **Is this state necessary?** If derivable, flag it. (Carmack: eliminate. Dodds: derive.)
 2. **Is this abstraction necessary?** If single-use, flag it. (Both: inline until forced.)
-3. **Is the type system earning its keep?** If `any`/`as`/booleans where enums would work, flag it. (Both: armour only works when worn.)
+3. **Is the type system earning its keep?** If escape hatches, casts (`any`/`as`) or booleans where enums would work, flag it. (Both: armour only works when worn.)
 4. **Do the tests test behaviour?** If asserting on internals, flag it. (Dodds: test use cases, not code.)
 5. **Is everything colocated?** If scattered across directories, flag it. (Dodds: things that change together live together.)
+
+---
+
+## Origin-stack examples (Next.js / React / tRPC / CSS Modules + BEM)
+
+### Principle 2 — Next.js URL state and tRPC's cache
+- In Next.js App Router: derive URL state from `useSearchParams()`, never copy `searchParams` into `useState`.
+- API data kept in `useState` instead of tRPC's query cache. tRPC already separates server cache from UI state via TanStack Query integration; manual `fetch` + `useState` for data that tRPC could manage is a quality regression.
+
+### Principle 6 — react-error-boundary, TypeScript catch blocks
+- For async errors that Error Boundaries can't catch natively: use `useErrorBoundary` hook from `react-error-boundary` to route async errors to the nearest boundary via `showBoundary(error)`.
+- Catch blocks that assume `error instanceof Error`. Dodds: TypeScript correctly types catch errors as `unknown` because JavaScript can throw anything. Use a `getErrorMessage(error: unknown)` utility that duck-types for `.message`.
+
+### Principle 7 — CSS Modules + BEM
+- The pattern: `Button.tsx` + `Button.test.tsx` + `Button.module.css` in the same directory — not `.module.css` files in a separate `styles/` directory.
+- BEM selectors that reference elements outside their own component's module — this is specificity leaking across component boundaries.
+- Dodds: "And for heaven's sake, please DELETE THIS ESLINT RULE" — referring to `no-multi-comp`, the rule preventing multiple components per file.
+
+### Principle 8 — Server Components, Server Actions, tRPC
+- In the Next.js App Router, default to Server Components. `use client` is a boundary directive marking where the server→client transition happens; state, functions, and browser APIs require it.
+- tRPC for data fetching from Client Components and complex state-driven API interactions that need TanStack Query (caching, polling, invalidation); Server Actions for form mutations and simple data updates benefiting from progressive enhancement and `revalidatePath`/`revalidateTag`.
+- Flag: Server Actions used for data fetching (creates non-cacheable POST requests). Flag: tRPC used for simple form submissions where a Server Action would be simpler.

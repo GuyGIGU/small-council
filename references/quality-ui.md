@@ -1,12 +1,28 @@
 # UI Quality Reference — Carmack × Saarinen
 
 Philosophy: John Carmack. Specifics: Karri Saarinen (Linear, Airbnb DLS) + Steve Schoger (Refactoring UI) as supplementary.
-Stack context: Next.js App Router / React / TypeScript / tRPC / Prisma / Neon (serverless Postgres) / Clerk (auth) / CSS Modules + BEM / Custom components (no component library). Dark theme. Inter + JetBrains Mono fonts. Data-dense analytical product.
 
 Every finding must describe the **concrete visual consequence** — not just "this doesn't follow the system."
 When Carmack and Saarinen independently converge on a principle, it earns its place here.
 
-**Scope boundary:** This doc covers visual design quality: hierarchy, typography, color, spacing, elevation, motion, and component consistency. It does NOT cover: UX patterns and information architecture (separate domain — quality-ux.md), accessibility/a11y (WCAG compliance assumed, not audited here), brand, marketing pages, or backend concerns. Where UX intersects visual design (density, progressive disclosure triggers), it's noted but not deeply audited.
+**Scope boundary:** This doc covers visual design quality: hierarchy, typography, color, spacing, elevation, motion, and component consistency. It does NOT cover: UX patterns and information architecture (separate domain — quality-ux.md), accessibility/a11y (quality-accessibility.md: contrast failures, focus visibility and color-only meaning are Accessibility's when that seat is present), brand, marketing pages, or backend concerns. Where UX intersects visual design (density, progressive disclosure triggers), it's noted but not deeply audited.
+
+---
+
+## Applying this seat to another stack
+
+Origin stack for the examples: a dark-themed, data-dense analytical web app — Next.js / React / TypeScript, CSS Modules + BEM, custom components (no component library), Inter + JetBrains Mono.
+
+The numbered principles are the constraint set; framework-specific checks (CSS, custom properties, `px` values) are illustrations — on another stack, find the analogous construct and apply the principle to it. Numbers quoted from Linear (the 4px grid, 150ms hovers, 6px radius) show what a system looks like; elsewhere, check that the project has an equivalent system in its own units and keeps to it. The dark-theme checks apply wherever the product ships a dark theme or follows the OS dark mode.
+
+| In the origin stack | The general idea | Look for it in … |
+|---|---|---|
+| CSS custom properties in a global variables file | One named source for colors, spacing, type, shadows and radii (design tokens) | Xcode asset-catalog color sets; Android theme attributes or Compose `MaterialTheme`; WPF/WinUI resource dictionaries |
+| CSS Modules, one stylesheet per component | Per-component styles that draw only on the tokens | SwiftUI view modifiers; Qt style sheets; Unity UI Toolkit USS or Godot `Theme` resources |
+| `px` spacing on a 4px grid | A spacing scale in the platform's layout unit | iOS points; Android `dp`; character cells in a terminal UI |
+| `box-shadow` and lighter backgrounds on raised surfaces | Visible layering: which surface sits above which | iOS base vs elevated background colors in dark mode; Material tonal elevation on Android; menu and HUD panels over a game scene |
+| CSS transitions and `:hover` states | Feedback timing and the "this is interactive" state | SwiftUI or Compose animation specs; the focus highlight for controller navigation in game menus; the selected-row highlight in a terminal UI |
+| JetBrains Mono for scores and IDs | Data set in a face that aligns and reads as data | tabular figures (OpenType `tnum`, SwiftUI `.monospacedDigit()`); a terminal UI is monospace already, so alignment falls to column layout |
 
 ---
 
@@ -52,7 +68,7 @@ Both treat structure as the primary communication mechanism. Carmack's code stru
 - Severity: **P3** for excessive type variation. **P2** if inconsistent type treatment across similar elements (e.g., timestamps rendered differently in different views).
 
 **Monospace type not used for data/technical content**
-- Saarinen uses SF Mono for code and technical content in Linear. In a product that displays scores, IDs, technical metrics, and code-adjacent content, monospace type serves two purposes: it signals "this is data, not prose" and it enables visual alignment of numbers in columns. JetBrains Mono should be used for: scores, numerical data in tables, IDs, technical identifiers, and any code snippets.
+- Saarinen uses SF Mono for code and technical content in Linear. In a product that displays scores, IDs, technical metrics, and code-adjacent content, monospace type serves two purposes: it signals "this is data, not prose" and it enables visual alignment of numbers in columns. The project's monospace face should be used for: scores, numerical data in tables, IDs, technical identifiers, and any code snippets.
 - Severity: **P3** — a polish decision, but one that significantly improves scanability of numerical data.
 
 **Label dominance over data**
@@ -105,7 +121,7 @@ Both demand systematization. Carmack eliminates unnecessary state; Saarinen elim
 ### What to check
 
 **Arbitrary spacing values**
-- Does the CSS use a consistent spacing scale, or are values arbitrary (13px here, 17px there, 22px somewhere else)? A 4px base grid means all spacing values should be multiples of 4: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. Check CSS modules for spacing values that don't fit the grid.
+- Do the styles use a consistent spacing scale, or are values arbitrary (13px here, 17px there, 22px somewhere else)? A 4px base grid means all spacing values should be multiples of 4: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. On another platform, apply the same test in its layout unit (points, dp, character cells). Check the style and layout definitions for spacing values that don't fit the grid.
 - Severity: **P3** for occasional off-grid values. **P2** for no discernible spacing system across components.
 
 **Spacing not communicating grouping**
@@ -127,12 +143,12 @@ Both demand systematization. Carmack eliminates unnecessary state; Saarinen elim
 *Carmack: "Use the type system to prove absence of flaw classes." A named color token system eliminates the class of bugs where the same conceptual color is specified differently in different places.*
 *Saarinen: Linear's design tokens are organized into groups — Bg, Label, Control — each with variations: Base, Shade, Muted, Faint. "When designing, I write 'bg base' for default background, 'label base' for default text." The full theme is generated from three inputs: base color, accent color, and contrast.*
 
-Both use naming and structure as guarantees. Carmack's type system prevents classes of errors at compile time. Saarinen's token system prevents classes of visual inconsistency at design time. A named token like `label-muted` used everywhere secondary text appears is a single source of truth — changing the token updates every instance. Ad hoc hex values scattered across CSS modules guarantee drift.
+Both use naming and structure as guarantees. Carmack's type system prevents classes of errors at compile time. Saarinen's token system prevents classes of visual inconsistency at design time. A named token like `label-muted` used everywhere secondary text appears is a single source of truth — changing the token updates every instance. Ad hoc hex values scattered across component styles guarantee drift.
 
 ### What to check
 
-**Raw hex/RGB values in CSS instead of tokens**
-- Are color values specified as raw hex codes in CSS modules, or do they reference CSS custom properties (design tokens)? Every color in the interface should trace back to a named token. Check: grep CSS modules for hex values, rgb(), and hsl() that aren't token references.
+**Raw color values instead of tokens**
+- Are color values written as raw literals in component styles and UI code, or do they reference named design tokens? Every color in the interface should trace back to a named token. Check: search the styles and UI code for literal color values that aren't token references.
 - Severity: **P2** for widespread raw color values with no token system. **P3** for a token system that exists but has leaks (occasional raw values).
 
 **No semantic color roles**
@@ -182,7 +198,7 @@ Both demand that systems replace ad hoc decisions. Carmack's assertions define i
 ### What to check
 
 **No defined elevation levels**
-- Does the CSS define a system of shadow/elevation levels, or are box-shadow values specified ad hoc per component? Saarinen's four levels (Low/Medium/High/Float) are sufficient for most interfaces. Check: are shadows consistent across components at the same elevation (e.g., all dropdowns use the same shadow)?
+- Does the codebase define a system of shadow/elevation levels, or are shadow values specified ad hoc per component? Saarinen's four levels (Low/Medium/High/Float) are sufficient for most interfaces. Check: are shadows consistent across components at the same elevation (e.g., all dropdowns use the same shadow)?
 - Schoger: define 5 levels — extra small (rest), small (primary actions), medium (dropdowns), large (modals), extra large (dragged elements). Use two-part shadows: a larger diffuse shadow plus a smaller tight shadow.
 - Severity: **P3** for no shadow system. **P2** if different components at the same elevation have different shadows.
 
@@ -197,7 +213,7 @@ Both demand that systems replace ad hoc decisions. Carmack's assertions define i
 *Carmack: "The single most effective strategy for defect reduction is code reduction." Shared tokens and consistent components reduce the surface area for visual bugs.*
 *Saarinen: "Been designing the last few weeks and realized how simple but effective the Linear design system is. There is no design system team, no councils, no meetings about what we should call it. We have a system which has colors, type, icons and components. It feels very simple and light but still useful. Like a good tool."*
 
-Both value simplicity in systems. Carmack reduces code. Saarinen reduces design system overhead. For a solo developer without a design team, the system must be lightweight enough to maintain: color tokens, type styles, spacing scale, shadow levels, a few shared component patterns. Not a 200-page design system document. The system exists in the CSS custom properties and the shared component styles — not in documentation.
+Both value simplicity in systems. Carmack reduces code. Saarinen reduces design system overhead. For a solo developer without a design team, the system must be lightweight enough to maintain: color tokens, type styles, spacing scale, shadow levels, a few shared component patterns. Not a 200-page design system document. The system exists in the shared tokens and component styles — not in documentation.
 
 ### What to check
 
@@ -205,12 +221,12 @@ Both value simplicity in systems. Carmack reduces code. Saarinen reduces design 
 - Do buttons, inputs, cards, and list items look consistent across views? Same border radius, same padding, same font treatment? Saarinen's team uses 6px border radius for interactive elements. If buttons on one page have 4px radius and buttons on another have 8px, the interface feels assembled from parts rather than designed as a whole. Check: compare the same component type across different views.
 - Severity: **P2** for visible inconsistency in core components (buttons, inputs, cards). **P3** for minor inconsistency in secondary elements.
 
-**No shared CSS custom properties**
-- Is there a central file defining CSS custom properties for colors, spacing, typography, shadows, and border-radius? Or are values repeated across CSS modules? The system should be definable in a single variables file that every module imports. Check: does a global variables file exist and is it used consistently?
+**No shared token definitions**
+- Is there one central place defining the tokens for colors, spacing, typography, shadows, and corner radius? Or are values repeated across component styles? The system should be definable in a single source that every component draws on. Check: does that central definition exist and is it used consistently?
 - Severity: **P2** for no central token file. **P3** if tokens exist but are partially adopted.
 
 **One-off component styles**
-- Does a component that appears multiple times in the codebase have multiple different style implementations? The same list item pattern should use the same CSS module or shared styles. Check: are there duplicate style patterns across modules that could be consolidated?
+- Does a component that appears multiple times in the codebase have multiple different style implementations? The same list item pattern should use the same shared styles. Check: are there duplicate style patterns across modules that could be consolidated?
 - Severity: **P3** — maintenance concern, not a user-facing issue unless it produces visible inconsistency.
 
 ---
@@ -229,7 +245,7 @@ Both treat quality as a practice, not a state. Carmack's debugging philosophy: b
 - Severity: **P1** for layout shifts on primary interactions. **P2** for shifts on secondary interactions.
 
 **Inconsistent hover/focus states**
-- Do all interactive elements have visible hover and focus states? Are they consistent? Saarinen's 150ms standard applies to all hover transitions. Check: hover over every interactive element on a view — do they all respond, and do they respond the same way?
+- Do all interactive elements have hover states, and are hover and focus styles consistent across components? (Missing or invisible focus is Accessibility's when that seat is present.) Saarinen's 150ms standard applies to all hover transitions. Check: hover over every interactive element on a view — do they all respond, and do they respond the same way?
 - Severity: **P2** for interactive elements with no hover state. **P3** for inconsistent hover treatments.
 
 **Pixel-level polish issues**
@@ -245,7 +261,7 @@ Both treat quality as a practice, not a state. Carmack's debugging philosophy: b
 
 ### Areas this doc is weaker on (supplement from other sources)
 
-- **Accessibility**: Saarinen mentions the LCH contrast variable for high-contrast themes but has not published detailed accessibility guidance. For WCAG 2.2 compliance, supplement with dedicated a11y expertise. Dark theme contrast ratios need specific verification.
+- **Accessibility**: Saarinen mentions the LCH contrast variable for high-contrast themes but has not published detailed accessibility guidance. When the Accessibility seat (Pickering, quality-accessibility.md) is present, this doc keeps only hover and focus styling that is inconsistent across components; contrast, focus visibility and color-only meaning are that seat's. Without it, supplement with dedicated a11y expertise for WCAG 2.2; dark theme contrast ratios need specific verification.
 - **Responsive/mobile design**: This doc focuses on desktop-first data-dense interfaces. Saarinen's mobile work (Liquid Glass) is iOS-native, not web. For responsive web patterns in data-dense interfaces, supplement with Friedman's quality-ux.md.
 - **Data visualization**: Saarinen has not discussed chart design or data visualization. For statistical displays (experiment results, confidence intervals), supplement with domain-specific guidance.
 - **Iconography specifics**: Saarinen has not published detailed iconography principles. Linear's icons are consistent but the system isn't documented publicly. Decisions about icon weight, size, and grid must be made from first principles or adopted from an icon library.
@@ -258,8 +274,8 @@ Both treat quality as a practice, not a state. Carmack's debugging philosophy: b
 
 | Severity | Pattern | Examples |
 |----------|---------|----------|
-| **P1 — Fix Now** | User cannot parse the interface, spatial relationships are broken, or interaction is blocked | Modals indistinguishable from background, content invisible due to contrast failure, animations blocking input, layout shifts on primary interactions, noise making primary data unreadable |
-| **P2 — Fix Soon** | Visual hierarchy is degraded, consistency is broken, or the interface feels rough | Chrome competing with content, no elevation system, raw hex values everywhere, inconsistent component styling, accent color overuse, harsh borders, pure black backgrounds, labels dominating data, spacing not communicating grouping |
+| **P1 — Fix Now** | User cannot parse the interface, spatial relationships are broken, or interaction is blocked | Modals indistinguishable from background, content invisible due to contrast failure (when Accessibility isn't seated), animations blocking input, layout shifts on primary interactions, noise making primary data unreadable |
+| **P2 — Fix Soon** | Visual hierarchy is degraded, consistency is broken, or the interface feels rough | Chrome competing with content, no elevation system, raw color values instead of tokens, inconsistent component styling, accent color overuse, harsh borders, pure black backgrounds, labels dominating data, spacing not communicating grouping |
 | **P3 — Consider** | Polish, systematization, and refinement | Off-grid spacing, type style proliferation, minor alignment drift, missing hover states, pixel-level overflow, animation timing inconsistency, monospace not used for data |
 
 ### The Overriding Filter
@@ -272,3 +288,27 @@ Before writing any finding, apply the Saarinen-Carmack synthesis:
 4. **Does every pixel earn its place?** If an element is decorative, a border could be replaced by spacing, or chrome could be lighter, flag it. (Both: eliminate the unnecessary.)
 5. **Is the quality consistent across views?** If one view is polished and another is rough, flag it. (Saarinen: quality is 1,000 small fixes, not one big redesign.)
 6. **Would this feel fast?** If animations delay interaction, loading states are heavy, or transitions are janky, flag it. (Both: latency is always a bug.)
+
+---
+
+## Origin-stack examples (Next.js / React, CSS Modules + BEM)
+
+The CSS forms of checks stated generally above, kept as written for the origin stack.
+
+### Principle 2 — monospace for data
+- JetBrains Mono should be used for: scores, numerical data in tables, IDs, technical identifiers, and any code snippets.
+
+### Principle 4 — off-grid spacing
+- Does the CSS use a consistent spacing scale, or are values arbitrary (13px here, 17px there, 22px somewhere else)? Check CSS modules for spacing values that don't fit the grid.
+
+### Principle 5 — raw colors
+- Are color values specified as raw hex codes in CSS modules, or do they reference CSS custom properties (design tokens)? Check: grep CSS modules for hex values, rgb(), and hsl() that aren't token references.
+- Ad hoc hex values scattered across CSS modules guarantee drift.
+
+### Principle 7 — shadow levels
+- Does the CSS define a system of shadow/elevation levels, or are box-shadow values specified ad hoc per component?
+
+### Principle 8 — the token file and shared styles
+- The system exists in the CSS custom properties and the shared component styles — not in documentation.
+- Is there a central file defining CSS custom properties for colors, spacing, typography, shadows, and border-radius? Or are values repeated across CSS modules? The system should be definable in a single variables file that every module imports. Check: does a global variables file exist and is it used consistently?
+- The same list item pattern should use the same CSS module or shared styles.

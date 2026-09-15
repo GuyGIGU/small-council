@@ -12,17 +12,19 @@ Catch what's wrong before the user sees it.
    - Each **P1**, and each item on a **protected subject** — authorization, data loss, injection,
      secrets, concurrency or ordering, public contracts — gets its own verifier. The rest go in
      batches of up to 8.
-   - A verifier gets only the item's number, a one-sentence claim and its `path:line` — never the
-     seat, principle, reasoning or fix — plus the brief's path and the code root. It must trace a
-     live path through the code.
+   - A verifier gets only the item's synthesis number (1, 2 … or C1 for a cut item), a one-sentence
+     claim and its `path:line` — never the seat, principle, reasoning or fix — plus the brief's path
+     and the code root. It must trace a live path through the code, and it copies the number into
+     its table's `#` column: the ledger matches verdicts to seats by it.
    - Include every cut P1: a lone dissenter may be right.
-   - Each verifier writes its own file, `<run>/verify-<n>.md`. Track them like workers
+   - Each verifier writes its own file, `<run>/verify-<n>.md` (n counts verifiers, not items). Track them like workers
      (`council seat verify-<n> running`, then `done tokens=…`).
    - **Over the cap?** P1s and protected items get their own verifiers first; keep one for the
      batch of everything else. If even that doesn't fit, pair P1s two to a verifier. Tell the user
      what shared a verifier.
    - A claim whose evidence is a URL (research) goes to a verifier too; it fetches the page.
-3. **Apply the verdicts.**
+3. **Apply the verdicts** — in the deliverable. Never renumber or delete synthesis.md's lines; the
+   ledger counts them at close.
    - CONFIRMED ships.
    - REFUTED drops. Keep it for memory: deliberate design is a candidate accepted pattern.
    - UNCERTAIN ships labelled, and is never dropped if its subject is protected.

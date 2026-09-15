@@ -19,6 +19,31 @@ reason concretely** before claiming it. "This could be slow" without a size or a
 Prefer the simplest fix that removes the cost; a clever optimization that complicates the code without a
 measured win is a net negative.
 
+## Applying this seat to another stack
+
+No single origin stack: the examples in the principles (a query plan, sequential awaits, a 60fps frame
+budget) come from web, backend, data and game work alike. The six principles are the constraint set;
+the examples are illustrations — on another stack, find the analogous construct and apply the principle
+to it.
+
+The same principles bind to whatever surface the project actually has. `council-init` points this seat at
+the project's real performance surface and, where the ecosystem has an authoritative rules set, links it:
+
+- **Frontend (SPA / SSR):** render hot paths, re-render storms, memoization that matters, data-fetch
+  waterfalls, bundle/startup cost, image and asset weight. If the framework publishes performance rules
+  (for example a React/Next.js best-practices guide), point the seat at them.
+- **Backend / service / pipeline:** request and batch timeout budgets, N+1 and connection reuse,
+  batching and streaming throughput, offloading blocking work off the event loop / into a worker,
+  bounded retries and backpressure.
+- **Data-heavy / numerical:** vectorized vs element-wise work, IO to on-disk stores (columnar files,
+  caches), avoiding recompute across a run, and the memory cost of loading a large dataset whole. When a
+  change must preserve exact output, note that any optimization has to prove it didn't alter results.
+- **Games and real-time:** the frame budget, allocation in the per-frame loop, work that belongs in a
+  background thread or a load screen, and asset streaming.
+
+`council-init` records the chosen surface (and any external rules doc) for this seat in
+`.council/council.config.md`.
+
 ## Principles
 
 **Principle 1 — Measure before you claim.** Do not guess a query plan, a hot path, or an allocation
@@ -55,22 +80,7 @@ structures, and per-iteration object churn cost memory bandwidth and GC/pause ti
 avoid copying what you can borrow/reference, and don't materialize an intermediate you'll only iterate
 once. Severity: **P2** for allocation pressure on a hot path; **P3** elsewhere.
 
-## Applying the seat to a stack (council-init)
+## Origin-stack examples
 
-The same principles bind to whatever surface the project actually has. `council-init` points this seat at
-the project's real performance surface and, where the ecosystem has an authoritative rules set, links it:
-
-- **Frontend (SPA / SSR):** render hot paths, re-render storms, memoization that matters, data-fetch
-  waterfalls, bundle/startup cost, image and asset weight. If the framework publishes performance rules
-  (for example a React/Next.js best-practices guide), point the seat at them.
-- **Backend / service / pipeline:** request and batch timeout budgets, N+1 and connection reuse,
-  batching and streaming throughput, offloading blocking work off the event loop / into a worker,
-  bounded retries and backpressure.
-- **Data-heavy / numerical:** vectorized vs element-wise work, IO to on-disk stores (columnar files,
-  caches), avoiding recompute across a run, and the memory cost of loading a large dataset whole. When a
-  change must preserve exact output, note that any optimization has to prove it didn't alter results.
-- **Games and real-time:** the frame budget, allocation in the per-frame loop, work that belongs in a
-  background thread or a load screen, and asset streaming.
-
-`council-init` records the chosen surface (and any external rules doc) for this seat in
-`.council/council.config.md`.
+None: this doc was written stack-agnostic, and its examples already span web, backend, data and game
+work.

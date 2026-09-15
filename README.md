@@ -15,7 +15,7 @@ skipped under load.
 
 | Skill | What it does |
 |---|---|
-| `council-init` | Summons the council for a repo: detects the stack, recruits and recasts the expert roster (with the paths each seat watches), dry-runs the real check commands, builds the codebase map, writes `.council/`. Once per repo. |
+| `council-init` | Summons the council for a repo: detects the stack, recruits and recasts the expert roster (with the paths each seat watches), writes each seat a card that translates its doctrine to your project, dry-runs the real check commands and records their side effects, builds the codebase map, writes `.council/`. Once per repo, and again when the stack moves. |
 | `council-review` | Multi-expert code review → verified P1/P2/P3 findings → fix hand-off. |
 | `council-plan` | Scoping conversation → expert advice → a plan built as vertical slices, each task saying what it touches and how to tell it's done. |
 | `council-implement` | Builds a plan, or fixes a review's findings, task by task: before-and-after evidence, gates after every change, a verifier on every result, a converge pass at the end. |
@@ -31,7 +31,11 @@ skipped under load.
     claims, OK / INCOMPLETE / REGRESSION / SCOPE-CREEP for changes.
 - **The `council` helper** (bash + git, on PATH while the plugin is enabled). It does the
   bookkeeping: opening and closing runs, the change index, gates judged by exit code, checking seat
-  files and citations, and a drift doctor.
+  files and citations, the memory entries in scope, earlier council work on the same files, each
+  seat's track record (the ledger), the stack fingerprint, and a drift doctor.
+- **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
+  security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,
+  accessibility, concurrency, untrusted input and operability — recast or dropped per project.
 - **Two hooks.**
   - **SessionStart**: orients council-enabled sessions, lists open runs, and after a compaction says
     "resume from disk, don't restart". It prints nothing in other projects.
@@ -52,6 +56,10 @@ Then, in each project you want a council for, run **`/council-init`**.
 - load your checkout with `claude --plugin-dir <path-to-repo>`, and run `/reload-plugins` after edits; or
 - put the repo, or a directory junction to it, at `~/.claude/skills/small-council/`. Claude Code then
   loads it automatically as `small-council@skills-dir`.
+
+**Upgrading from 0.3:** run a council-init refresh in each project. It writes the seat cards, adds
+Probe, Needs and Side effects to the gates, and records the stack fingerprint. Memory keeps working
+as it is, and the refresh offers to add Scope and Anchor to existing entries.
 
 **Upgrading from 0.2:** re-run `council-init` in each project. It adds the roster's Surface column and
 the run preferences, and offers the helper's permission rule.
@@ -87,10 +95,11 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
    `synthesis.md`.
 8. **Challenge** — a mechanical citation check, then a blind verifier per serious finding.
 9. **Deliver** — a tracked deliverable, a plain-language summary, the actual cost, then your rulings.
-10. **Learn** — memory proposals with evidence (rejected ones never come back); the run is closed.
+10. **Learn** — memory proposals with evidence (rejected ones never come back); each seat's record goes
+    into the ledger; the run is closed.
 
 **Limits:** at most 10 agents per run, verifiers included. Past runs averaged ~100k tokens per worker;
-estimates come from your own project's run history once there is some.
+estimates come from your own project's ledger once there is some.
 
 ## What it keeps in your repo
 
@@ -100,6 +109,8 @@ estimates come from your own project's run history once there is some.
 ├── conventions.md        memory: accepted patterns, conventions, your decisions,              tracked
 │                         proposals awaiting your yes/no, and rejected proposals
 ├── map.md                where things live, hot spots, vocabulary                             tracked
+├── cards/<slug>.md       each seat's doctrine translated to this project                      tracked
+├── ledger.tsv            each seat's record: items raised, kept, refuted, tokens per run      tracked
 ├── plans/ reviews/ logs/ research/ refs/     deliverables · project-local seat docs          tracked
 └── runs/<date-time>-<mode>/   state, brief, change index, seat files, synthesis, checks       ignored
 ```

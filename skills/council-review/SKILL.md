@@ -72,14 +72,18 @@ Index line: `<n> · <P1|P2|P3> · <principle> · <path:line[-line]> · <title>`
   | Component architecture | Frontend |
   | Flows and screen states | UX |
   | Cross-module structure | Refactoring |
-  | Async and runtime | Backend |
+  | Server and runtime code | Backend |
+  | Concurrency, ordering, cancellation | Concurrency |
+  | Parsers, decoders, file formats, deserialisation | Untrusted input |
+  | Accessibility | Accessibility |
+  | Timeouts, retries, deploys, configuration in production | Operability |
   | Prompt injection and streaming | LLM |
-  | General application security | Security |
+  | Auth, secrets, injection, general application security | Security |
   | Schema, migrations, data integrity | Data |
   | Hot paths | Performance |
 
   Tests complement the other seats; they never duplicate them. A recast seat keeps the lens of the
-  seat it came from.
+  seat it came from. When a topic's owner isn't seated, its nearest seated neighbour owns it.
 - **Grounding-gate failures are findings**, each with the exact message and location:
   - build or type error → P1;
   - failing test → P1;

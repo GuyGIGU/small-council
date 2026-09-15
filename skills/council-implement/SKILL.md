@@ -59,7 +59,8 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
 
 ## At Prepare — the baseline
 
-Run every gate once on the untouched code: `council gate --all`. Record what already fails before you
+Run every gate once on the untouched code: `council gate --all`. It skips gates marked not runnable
+and gates with cost, hardware, deploy or credential side effects; record those as not run. Record what already fails before you
 touch anything, e.g. `council state baseline="tests: exit 1 (3 failing) · lint: pass"`. A
 pre-existing failure is never blamed on a task.
 
@@ -85,6 +86,8 @@ pre-existing failure is never blamed on a task.
    - Honour memory.
    - *The function least likely to cause a problem is the one that doesn't exist.*
 5. **Gates for what you touched:** `council gate <name>`, judged by exit code.
+   - **Never run a gate whose side effects involve cost, hardware, deploys or credentials** without
+     asking the user first; `council gates` lists each gate's side effects.
    - **Your change broke it** → fix it before moving on.
    - **A mandatory gate is red** → hard stop until you understand why.
    - **It can't run** → that's config drift: log it and tell the user.

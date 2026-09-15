@@ -9,7 +9,8 @@ Decide whether to convene, whom, and at what cost — then get the user's go-ahe
    `--run <folder>` to every command). Never overwrite one; `council run open` refuses to without
    `--alongside`.
 2. **No `council.config.md`?** Run council-init first. Never tailor a roster inline — it dies with
-   the run.
+   the run. Otherwise `council fingerprint check`: if the stack moved since council-init, say so in
+   the approval message and offer a refresh first — the roster and cards may be stale.
 3. **Resolve the target.** Your mode's `## At Convene` says how: a diff, a plan, a question.
 4. **Shape check** — from the map and file counts, without reading code:
    - Does the work split into independent slices, or is it one chain of dependent decisions?
@@ -21,8 +22,9 @@ Decide whether to convene, whom, and at what cost — then get the user's go-ahe
    verifiers. Count the verifiers Challenge will need — one for each P1 or protected item you
    expect, one for the rest — and keep seats + verifiers within the agent cap (config `agent cap`,
    default 10).
-6. **Estimate from this project's history.** `council run status --all` shows what past runs
-   actually cost. With no history, assume ~60–100k tokens per worker.
+6. **Estimate from this project's history.** `council ledger` shows each seat's average tokens per
+   run; `council run status --all` shows whole runs. With no history, assume ~60–100k tokens per
+   worker.
 7. **Open the run.** `council run open <mode>` prints the run folder and records this session's id,
    so a compaction resumes the right run. Record the size:
    `council state size="squad — 3 seats + 1 verifier, est. ~300k tokens"`.
