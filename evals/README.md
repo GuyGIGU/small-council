@@ -101,15 +101,20 @@ keys; the agent under test can't read them.
 | adaptation | `init-godot-roster` | council-init fits a non-web stack and asks before writing | moderate |
 
 ```bash
-claude plugin eval . --scaffold --ablation none --runs 1 --tag triggering    # a quick smoke — no shell needed
-claude plugin eval . --scaffold --allow-tools Bash Write --max-cost-usd 40      # the whole suite — WSL2, macOS or Linux
-python evals/record_eval.py                                                    # add the run to evals/history/ and compare
+claude plugin eval . --model claude-opus-5 --scaffold --ablation none --runs 1 --tag triggering   # a quick smoke — no shell needed
+claude plugin eval . --model claude-opus-5 --scaffold --max-cost-usd 40 --allow-tools Bash Write   # the whole suite — WSL2, macOS or Linux
+python evals/record_eval.py                                                                       # add the run to evals/history/ and compare
 ```
 
-- **Credentials:** every case runs in a fresh `claude -p` child with a throwaway config, so it needs a
-  login it can see — `ANTHROPIC_API_KEY`, or `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) in
-  the environment you run from. Without one, every run errors ("Not logged in") and `record_eval.py`
-  refuses to record the result.
+- **Credentials:** every case runs in a fresh `claude -p` child with a throwaway config, so your normal
+  sign-in doesn't reach it. Give it one in the environment you run from: `CLAUDE_CODE_OAUTH_TOKEN`
+  (from `claude setup-token` — it draws on your Claude subscription's usage, no separate bill), or
+  `ANTHROPIC_API_KEY` (billed per token). In CI, add either as a repository secret. Without one, every
+  run errors ("Not logged in") and `record_eval.py` refuses to record the result.
+- **Cost:** `--max-cost-usd` is a stop switch, not a charge: once the run's list-price estimate passes
+  it, no further case starts (and the partial result isn't recorded). With a subscription token the
+  runs draw on your plan's usage rather than a bill. A default full run is 64 sessions (32 per arm);
+  `--runs 1` makes it 24.
 - **The shell sandbox:** every case past the smoke runs the `council` helper, so it needs
   `--allow-tools Bash Write`, and Claude Code runs granted Bash only inside its OS sandbox. Native
   Windows has none, so there every such run is refused. Run the whole suite under WSL2, on macOS, on

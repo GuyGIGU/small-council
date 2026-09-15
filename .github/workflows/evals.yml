@@ -15,7 +15,7 @@ on:
       model:
         description: "Model under test — pinned, so a model rollout isn't mistaken for a plugin regression"
         required: false
-        default: "claude-sonnet-5"
+        default: "claude-opus-5"
 
 permissions:
   contents: read
@@ -37,12 +37,20 @@ jobs:
           sudo apt-get install -y bubblewrap socat
       - name: Run the suite
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Either secret works: a subscription token from `claude setup-token`, or an API key
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TAG: ${{ inputs.tag }}
           RUNS: ${{ inputs.runs }}
           MODEL: ${{ inputs.model }}
         shell: bash
         run: |
+          if [ -n "$OAUTH_TOKEN" ]; then export CLAUDE_CODE_OAUTH_TOKEN="$OAUTH_TOKEN"; fi
+          if [ -n "$API_KEY" ]; then export ANTHROPIC_API_KEY="$API_KEY"; fi
+          if [ -z "$OAUTH_TOKEN$API_KEY" ]; then
+            echo "::error::Add a CLAUDE_CODE_OAUTH_TOKEN (from claude setup-token) or ANTHROPIC_API_KEY repository secret"
+            exit 1
+          fi
           args=(. --trust-plugin --scaffold --model "$MODEL" --judge-model claude-haiku-4-5 -j 4
                 --max-cost-usd 40 --no-publish --threshold 0.6 --json evals/suite/results/ci.json)
           if [ -n "$RUNS" ]; then args+=(--runs "$RUNS"); fi
