@@ -101,6 +101,7 @@ Index line: `<n> · <strong|moderate|weak> · <line of inquiry> · <path:line or
 (the doctrine's frontmatter, kind: research)
 ---
 # Research: <question>
+**Your request:** `.council/asks/<file>` — "<its first ~12 words>…"
 Informs: <decision> · Confidence: high | medium | low
 ## Answer
 <3–8 sentences, direct>

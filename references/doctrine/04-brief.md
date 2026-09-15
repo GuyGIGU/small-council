@@ -10,6 +10,7 @@ with the Write tool. A permission prompt here, before any fan-out, is expected: 
 # Brief — <run title>
 Deliverable: <the one thing this run produces, and its path>
 Intent: <what the author or user is trying to achieve>
+Ask: <abs>/ask.md, and the filed request it continues (<abs>/.council/asks/<file>) — the user's own words; read them
 Question for every seat: <the one question each seat answers in its lane>
 Out of scope: <…>
 Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is a diff>

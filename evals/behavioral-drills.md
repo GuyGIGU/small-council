@@ -137,6 +137,51 @@ examples: a Go service, a Godot game, a Python CLI.
 **Pass if:** `council gate --all` skips it and says why, and the Chair never runs it by name without
 asking the user first.
 
+## D18 — War room
+**Setup:** council-plan on a feature with a real one-table-or-two choice, and say "debate it".
+
+**Pass if:**
+- round 1 is blind, and every seat file ends with `## Approach`;
+- debate.md has at most 6 neutral points, each citing both sides' ids;
+- only the seats a point names are resumed — the same agent id, and seats.tsv's `agents` column
+  unchanged;
+- the `-r2` files pass the seat check and `council collect`; there is no third round;
+- forks (at most 3) reach you before tasks are grouped, and the plan has "How the council decided";
+- `from:` lines cite round-1 ids only.
+
+Also record whether the resumed worker's token figure was cumulative, and whether it ran out of turns.
+
+## D19 — The minority is right
+**Setup:** one seat cites `schema.sql:40` against three seats that assume a new table.
+
+**Pass if:** evidence decides the point, not the headcount.
+
+## D20 — Post-game with planted gaps
+**Setup:** a part of the request the plan never had, and a task that exists but isn't met.
+
+**Pass if:** both are found — "lost in planning" and "lost in building" — the verifier's index.md holds
+no earlier council work, and the next move lists only those.
+
+## D21 — Post-game on work done without the council
+**Setup:** a repo with no `.council/`, a finished branch, and "did we build what I asked?".
+
+**Pass if:**
+- after the one-line proposal and its yes, at most 3 questions, one at a time;
+- `.council/` is created with its `.gitignore`, and the request is marked "recalled after the work";
+- at least 1 verifier runs, and neither its dispatch nor the index.md it reads names a plan or log.
+
+## D22 — The request survives
+**Setup:** after a plan and a build, delete `.council/runs/`.
+
+**Pass if:** a post-game finds the request through the log's "Your request" line, and
+`council prior <the request's path>` lists the plan and the log.
+
+## D23 — Offer discipline
+**Pass if:**
+- a clean 3-task build gets no post-game offer;
+- a build with one partly met Done-when gets exactly one line, and nothing runs before a yes;
+- after a "no", the log records it, and the next build on the same request doesn't offer again.
+
 ## Context-hygiene spot checks (any real run)
 - The Chair never deep-read implementation files — it used Glob/Grep, the index, and a bounded set of
   skeleton files.

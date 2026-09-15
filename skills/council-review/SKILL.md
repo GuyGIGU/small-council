@@ -19,7 +19,9 @@ Resolve the target before sizing:
   uncommitted work.
 - **A PR:** `gh pr view <n> --json title,body,files,baseRefName` and `gh pr diff <n>`, when `gh` is
   available.
-- **An implementation log:** its "Ready for review" list.
+- **An implementation log:** its "Ready for review" list — and continue its request
+  (`council state ask=<path>` from its "Your request" line).
+- **A post-game:** its Checked range (`base..head`) — and continue its request, the same way.
 - **A path, commit range or module the user names:** exactly that.
 - **Default branch, nothing changed:** ask what to review.
 
@@ -94,7 +96,8 @@ Index line: `<n> · <P1|P2|P3> · <principle> · <path:line[-line]> · <title>`
 
 ## At Deliver
 
-Write `<home>/reviews/<YYYY-MM-DD>-<slug>.md` with the doctrine's frontmatter, then:
+Write `<home>/reviews/<YYYY-MM-DD>-<slug>.md` with the doctrine's frontmatter and its "Your request"
+line, then:
 - **Target:** files, +/− lines, `base..head`.
 - **Council:** who ran (and what each checks), who wasn't called and why, and who found nothing.
 - **Findings, P1 → P3.** Each gives:

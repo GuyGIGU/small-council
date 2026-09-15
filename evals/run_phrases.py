@@ -29,6 +29,8 @@ TEXTS = {
     "plan": read("skills", "council-plan", "SKILL.md"),
     "implement": read("skills", "council-implement", "SKILL.md"),
     "research": read("skills", "council-research", "SKILL.md"),
+    "postgame": read("skills", "council-postgame", "SKILL.md"),
+    "war-room": read("references", "war-room.md"),
 }
 FLAT = {k: " ".join(v.split()) for k, v in TEXTS.items()}
 
@@ -80,6 +82,18 @@ RULES = [  # (where, the rule, the phrase that carries it)
     ("implement", "quote the whole gate command", "quote the whole command"),
     ("research", "rival hypotheses for why-questions", "rival hypotheses"),
     ("research", "research patches the map", "patch `map.md`"),
+    ("kernel+doctrine", "the request is saved before anything else", "Save the request"),
+    ("plan", "every part of the request maps to a task", "maps to a task"),
+    ("war-room", "round 1 stays blind", "Round 1 stays blind"),
+    ("war-room", "two rounds, never a third", "never a third"),
+    ("war-room", "a move without evidence doesn't count", "Moved without new evidence"),
+    ("war-room", "evidence, not headcount", "Evidence counts, not heads"),
+    ("war-room", "debating adds tokens, not agents", "No extra agents"),
+    ("worker", "being outnumbered isn't evidence", "Being outnumbered isn't evidence"),
+    ("postgame", "the verifier never sees the plan", "never the plan"),
+    ("postgame", "the builder never grades its own homework", "never grades its own homework"),
+    ("postgame", "a verdict is lowered, never raised", "never raise one"),
+    ("implement", "a post-game runs only on a yes", "runs only on a yes"),
 ]
 
 missing = 0

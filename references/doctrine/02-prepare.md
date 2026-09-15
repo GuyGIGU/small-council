@@ -16,8 +16,9 @@ Gather every shared fact once, so no seat has to.
    a run without a diff, `council prior <path> …`. Keep ids and one line each:
    "reviews/2026-08-02-auth.md #4 — fixed in logs/2026-08-03-auth-fixes.md". Memory in scope is
    selected at Brief, once Assign has named the seats.
-5. **Intent.** One line on what the author or user is trying to achieve: the PR title and body, the
-   plan task, or the user's words.
+5. **The request, then the intent.** Read ask.md — the user's own words — and the filed request its
+   `continues:` line names. Intent is one line
+   summarising it (or the PR's title and body, or the plan task), never a replacement for it.
 6. **Grounding gates.** `council gate --all --at grounding` — in the background if the suite is
    slow. Judge by exit code. For a failure, read the excerpt the helper prints, or Grep the saved
    `<run>/gates/<name>.txt`; never read the whole file.

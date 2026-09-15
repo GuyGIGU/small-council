@@ -1,6 +1,6 @@
 ---
 name: council-plan
-description: Plan a feature with the Small Council before any code is written — an interactive scoping conversation, then named domain seats advise in isolated context windows, and the Chair turns their advice into a sequenced, attributed, code-free plan built as vertical slices, each task saying what it touches and how to tell it's done. Use when the user wants to plan a feature, is about to start a non-trivial build, asks for a council plan, or invokes /council-plan. Propose it with its size and cost first.
+description: Plan a feature with the Small Council before any code is written — an interactive scoping conversation, then named domain seats advise in isolated context windows, and the Chair turns their advice into a sequenced, attributed, code-free plan built as vertical slices, each task saying what it touches and how to tell it's done. For a big or tough feature — or "debate it" — the seats first answer each other in a war room. Use when the user wants to plan a feature, is about to start a non-trivial build, asks for a council plan, or invokes /council-plan. Propose it with its size and cost first.
 ---
 
 # Council Plan (mode)
@@ -25,9 +25,15 @@ first and plan from its answer.
 Planning needs a real conversation that pins the feature down well enough to brief every seat.
 Nothing gets mapped, briefed or dispatched until this gate closes with an explicit go.
 
+**Open the run and save the request first:** `council run open council-plan`, then write ask.md with
+the user's words, before your first question — a compaction can't paraphrase what's already on disk.
+Record the size later, with `council state size=…`.
+
 **Start from what exists.**
 - If there's a spec — `specs/<feature>.md` from spec-writer, or one the user points to — read it
   first and ask only what it leaves open.
+- A post-game (`<home>/postgames/…`) is a spec too: what was built goes under Already decided; ask
+  only what's left open, and continue its request (`council state ask=<path>`).
 - Read `map.md` and do a light survey (Glob/Grep for entry points, existing patterns, schema shape),
   so every question is about the real code.
 
@@ -61,11 +67,19 @@ Then present:
 **Integrations:** <modules, routes, components it connects to>
 **Out of scope:** <what this plan will not cover>
 **Already decided:** <choices the user has made — don't plan against these>
-**Council:** <seats going and why, seats not going and why, estimated cost>
+**Council:** <seats going and why, seats not going and why, estimated cost> · War room: <on — why, ~<k>k more tokens, no extra agents | off>
 ```
 
 Ask: **"Ready to dispatch the council, or do you want to adjust the scope?"** Adjust and ask again
 until they say go. Anything the user decided is a Decision they may want recorded in memory.
+
+**Keep the user's scoping answers.** Each answer that adds, drops or rules out something goes under
+ask.md's `## Later, in your words` as `- <date>: "<their words>"`, before your next question — a
+post-game reads them.
+
+**The war room.** For a big or tough feature — or when the user says "debate it" — the seats answer
+each other before you judge. `${CLAUDE_PLUGIN_ROOT}/references/war-room.md` says when it's on and how
+it runs; name it on the Council line with its cost.
 
 - Deliverable: `<home>/plans/<slug>.md`.
 - Cap: 15 tasks.
@@ -88,6 +102,8 @@ Not a finding:
 - generic best practice with no anchor in this feature;
 - anything a settled memory entry covers.
 
+When the war room is on, the brief's top block says `War room: on — end your file with ## Approach`.
+
 ## At Work — the per-item format
 
 Index line: `<n> · <must|should|could> · <principle> · <path or area> · <title>`
@@ -101,6 +117,12 @@ Index line: `<n> · <must|should|could> · <principle> · <path or area> · <tit
 - Assumes: <the design choices it takes as given>
 - Depends on: <other recommendations it must follow, or —>
 ```
+
+## At Collect — the war room
+
+**On:** after a clean `council collect`, read `${CLAUDE_PLUGIN_ROOT}/references/war-room.md` and run
+round 2 — at most 6 neutral points in debate.md, the seats they name resumed, then one more
+`council collect`. **Off:** nothing extra.
 
 ## At Judge
 
@@ -130,6 +152,12 @@ Index line: `<n> · <must|should|could> · <principle> · <path or area> · <tit
   write both stances side by side: what each builds, what it costs, what it risks, which items each
   serves. Put it to the user as a ruling before grouping tasks. Only for a real fork; never as a
   default, and no extra agents.
+- **After a war room,** every point ends one of four ways — agreed, settled by the code, moved without
+  new evidence (treated as not moved), or a fork that becomes Two stances (war-room.md).
+- **The request, covered.** Before grouping, every part of the request — ask.md, and the filed request
+  it continues — maps to a task, to Already decided (built, per a post-game), or to Out of scope with
+  the user's dated words that ruled it out. A part with none of these gets a task, or a question to
+  the user.
 - **Order the work as vertical slices.**
   - Task 1 is a walking skeleton: the thinnest end-to-end slice that exercises the riskiest
     assumption or integration.
@@ -156,14 +184,20 @@ Send claims in the form "<n> · task <t>: <assumption> — <path>", where <n> is
 the recommendation the assumption comes from (`-` when none). The ledger matches verdicts to seats by
 that number.
 
+After a war room, the agreements a task rests on, and the riskiest assumptions two or more seats named,
+go to the verifier too.
+
 ## At Deliver — `<home>/plans/<slug>.md`
+
+File the request first — `council ask save` — then write:
 
 ```
 ---
 (the doctrine's frontmatter, kind: plan)
 ---
 # Council Plan: <Feature>
-**Scope:** <1–2 sentences> · **Context:** <2–3 sentences> · **Out of scope:** <…>
+**Your request:** `.council/asks/<file>` — "<its first ~12 words>…"
+**Scope:** <1–2 sentences> · **Context:** <2–3 sentences> · **Out of scope:** <item> — you, <date>: "<their words>" · …
 **Council:** <who ran · who wasn't called and why · who had no recommendations>
 
 ## Task Sequence
@@ -178,6 +212,8 @@ that number.
 | **Done when** | <observable check> |
 
 <WHAT to build and WHY — at most 3 sentences. No HOW, no code.>
+
+## How the council decided        ← war room only: the table in war-room.md
 
 ## Risks & Watchpoints
 - **<Seat> — <principle>:** <when this bites and what to watch for>

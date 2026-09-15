@@ -1,6 +1,6 @@
 ---
 name: council-implement
-description: Build a Small Council plan task by task, or fix the findings of a council review — one builder, the governing expert's reference doc loaded per task, before-and-after evidence, the project's real gates after every change, a blind verifier on each result, a converge pass at the end, and a running log that feeds the next review. Use when the user says implement or build the plan, "fix these findings", "council implement", or invokes /council-implement.
+description: Build a Small Council plan task by task, fix the findings of a council review, or finish a post-game's next tasks — one builder, the governing expert's reference doc loaded per task, before-and-after evidence, the project's real gates after every change, a blind verifier on each result, a converge pass at the end, and a running log that feeds the next review. Use when the user says implement or build the plan, "fix these findings", "council implement", or invokes /council-implement.
 ---
 
 # Council Implement (mode)
@@ -19,7 +19,7 @@ looks like the same team wrote it; no speculative generality; verify by machine,
 **Respect the project's hard rules** (the config, `CLAUDE.md`/`AGENTS.md`). Never take a destructive
 shortcut — dropping data, force-pushing, disabling a gate — to make a task pass.
 
-## Two kinds of input
+## Three kinds of input
 
 - **A plan:** `<home>/plans/<slug>.md` (legacy: `PLAN-<slug>.md` at the project root). Each task has
   Domain, Ref, Depends on, Touches and Done when.
@@ -30,6 +30,8 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
   - "done" means the consequence can no longer happen.
 
   Default selection: every P1 and P2 the change introduced. Confirm it, or let the user pick.
+- **A post-game:** `<home>/postgames/<date>-<slug>.md`. Each of its Next tasks is a task, in the plan's
+  format; its Done-when quotes the user's request.
 
 ## At Convene
 
@@ -54,7 +56,11 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
    - a destructive step;
    - a ruling that belongs to the user;
    - growth beyond the input.
-5. **Open the run.** `council run open council-implement`, then write the log header at
+5. **Open the run.** `council run open council-implement`. Continue the input's request: its "Your
+   request" line gives the path → `council state ask=<path>`, and ask.md gets `continues: <path>` plus
+   this run's new words, or `(no new words)`. An input from before 0.6 has no such line: start a new
+   request from the user's words now, or restate the plan's Scope line, confirmed by the user
+   (`source: restated from <plan>`). Then write the log header at
    `<home>/logs/<YYYY-MM-DD>-<slug>.md`.
 
 ## At Prepare — the baseline
@@ -125,7 +131,8 @@ pre-existing failure is never blamed on a task.
 (the doctrine's frontmatter, kind: log)
 ---
 # Council Implementation Log — <feature or review title>
-Input: <plan or review path> · Run: <run folder> · Baseline: <gate results before any change>
+**Your request:** `.council/asks/<file>` — "<its first ~12 words>…"
+Input: `<the plan, review or post-game, repo-relative>` · Run: <run folder> · Start: <HEAD sha before task 1> · Baseline: <gate results before any change>
 
 ## Notes for later tasks
 - <area>: <a fact a later task needs> (task <n>)        ← at most ~12; read first after a reset
@@ -139,11 +146,15 @@ Verifier: OK   (or: fixed after INCOMPLETE — <what>)
 Notes: <judgment calls, watchpoints hit, conventions followed — omit if none>
 ```
 
-It closes with four sections:
+It closes with these sections:
 - **Watchpoints addressed**
 - **Pre-existing issues** (fixed or left)
 - **Follow-ups**
+- **`## Converge`:** `| Task | Done when | Result | Evidence |`, written by the converge pass
 - **Ready for review:** every file created or modified, which is the next review's target.
+
+Its last line records the post-game offer: `Post-game: offered <date> — yes | no`, or
+`Post-game: not offered`.
 
 Plain English: what changed and why, never pasted code.
 
@@ -151,7 +162,7 @@ Plain English: what changed and why, never pasted code.
 
 After the last task, one council-verifier checks every task's Done-when against the final tree. In
 fix mode, it checks every selected finding's consequence instead. Each gets met, partly met or not
-met, with evidence.
+met, with evidence — written into the log's `## Converge` table.
 - Anything not met → one more task, or a logged follow-up.
 - Then run the final gates: `council gate --all --at verify`.
 
@@ -164,7 +175,28 @@ In chat:
 - anything blocked;
 - the cost and the log path.
 
-Then offer a council review of the "Ready for review" files; a Squad is usually right.
+File the request (`council ask save`). Then **offer a post-game when the log shows one is worthwhile**
+— at least one of:
+1. converge found a Done-when partly met or not met, or the log has a follow-up;
+2. the build hit trouble: a blocked task, a clean-context diagnosis, a SCOPE-CREEP revert, or a
+   mandatory gate red at the end that was green at baseline;
+3. the build left the plan: plan-named code that no longer exists, "the plan's approach looks wrong",
+   or a task merged, split or skipped;
+4. the request moved: the request file gained words after the plan, or the user ruled on scope
+   mid-build;
+5. it was big or long: 8 or more tasks, a war-room plan, or resumed after a compaction or in a new
+   session;
+6. it's the second fix pass on the same request.
+
+Never after a fix pass that met every finding with no follow-ups, when the user already declined one
+for this request (a log's `Post-game:` line), or when a post-game for this request is newer than this
+log. The offer is one line, and it runs only on a yes: *"Want a post-game? It checks what we built
+against your original request, word for word, and lists anything left to do — about ~<k>k tokens, 1
+checker."* Record the answer as the log's last line. On a yes, finish Learn and close this run first
+(`council run open` refuses a second run on the tree), then start council-postgame.
+
+Then offer a council review of the "Ready for review" files — after the post-game, when both are
+offered; a Squad is usually right.
 
 ## Edge cases
 
@@ -173,5 +205,7 @@ Then offer a council review of the "Ready for review" files; a Squad is usually 
   blocker, and carry on with the unblocked tasks.
 - **Two tasks would be cleaner merged** → keep them separate for attribution. Shared code goes in the
   first task and is reused by the second.
+- **"Also add X" mid-build** → put the user's words under ask.md's `## Later, in your words`, and stop
+  for a go-ahead: it's growth beyond the input.
 - **The plan's approach looks wrong** → build it as written and log the concern; the review decides.
   Exception: it would break a hard rule or lose data → stop and ask.

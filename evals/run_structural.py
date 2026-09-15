@@ -44,8 +44,8 @@ def description(text):
 
 
 SKILLS = ["context-core", "council-init", "council-review", "council-plan", "council-implement",
-          "council-research", "spec-writer", "test-architect"]
-MODES = ["council-review", "council-plan", "council-implement", "council-research"]
+          "council-research", "council-postgame", "spec-writer", "test-architect"]
+MODES = ["council-review", "council-plan", "council-implement", "council-research", "council-postgame"]
 STAGES = ["convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn"]
 DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 
@@ -58,6 +58,7 @@ for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
 for d in DOCTRINE:
     check(f"layout: references/doctrine/{d} exists", bool(read("references", "doctrine", d)))
+check("layout: references/war-room.md exists", bool(read("references", "war-room.md")))
 check("layout: no using-council skill (the hook replaced it)", not os.path.isdir(os.path.join(ROOT, "skills", "using-council")))
 check("layout: no per-skill manifest.json", not any(os.path.isfile(os.path.join(ROOT, "skills", s, "manifest.json")) for s in SKILLS))
 
@@ -66,6 +67,7 @@ core = skill["context-core"]
 doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
+warroom = read("references", "war-room.md")
 
 # 2. Kernel
 LAWS = ["One head", "Parallel readers, one writer", "Gather once, share with everyone", "The disk is the memory",
@@ -103,15 +105,21 @@ check("07-judge: writes synthesis.md in the index-line format", "synthesis.md" i
 check("08-challenge: mechanical pre-check first", "council check" in doctrine["08-challenge.md"])
 check("08-challenge: one verify-<n>.md per verifier", "verify-<n>.md" in doctrine["08-challenge.md"])
 check("10-learn: closes the run", "council run close" in doctrine["10-learn.md"])
+check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
+check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])
+check("06-collect: checks a war room's round-2 files", "debate.md" in doctrine["06-collect.md"])
+check("09-deliver: files the request and knows the postgame kind",
+      "council ask save" in doctrine["09-deliver.md"] and "postgame" in doctrine["09-deliver.md"])
 
 # 4. Every `council …` command the texts mention exists in the helper
 usage = cli[cli.find("usage() {"):cli.find("main() {")]
 known = set(re.findall(r"^\s+council ([a-z]+)", usage, re.MULTILINE))
-check("helper: usage lists its commands", {"run", "state", "seat", "index", "gate", "collect", "check", "map", "doctor"} <= known, ", ".join(sorted(known)))
+check("helper: usage lists its commands", {"run", "state", "seat", "index", "gate", "collect", "check", "map", "ask", "doctor"} <= known, ", ".join(sorted(known)))
 for c in sorted(known):
     check(f"helper: '{c}' is dispatched in main", re.search(rf"^\s+{c}\)", cli, re.MULTILINE) is not None)
 texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
-         "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook}
+         "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
+         "references/war-room.md": warroom}
 flags = set(re.findall(r"^\s+(--[a-z][a-z-]*)(?:=\*)?\)", cli[cli.find("main() {"):], re.MULTILINE))
 bad, bad_flags = [], []
 for label, t in texts.items():
@@ -133,17 +141,19 @@ for m in MODES:
     check(f"{m}: invokes context-core", "context-core" in skill[m])
     check(f"{m}: every '## At <Stage>' names a real stage", heads and all(h.lower() in STAGES for h in heads), ", ".join(heads))
 WANT = {"council-review": ["Convene", "Prepare", "Brief", "Work", "Judge", "Deliver", "Learn"],
-        "council-plan": ["Convene", "Prepare", "Brief", "Work", "Judge", "Challenge", "Deliver"],
+        "council-plan": ["Convene", "Prepare", "Brief", "Work", "Collect", "Judge", "Challenge", "Deliver"],
         "council-research": ["Convene", "Prepare", "Assign", "Brief", "Work", "Judge", "Challenge", "Deliver", "Learn"],
-        "council-implement": ["Convene", "Prepare", "Challenge", "Deliver"]}
+        "council-implement": ["Convene", "Prepare", "Challenge", "Deliver"],
+        "council-postgame": ["Convene", "Prepare", "Judge", "Challenge", "Deliver", "Learn"]}
 for m, want in WANT.items():
     missing = [w for w in want if f"## At {w}" not in skill[m]]
     check(f"{m}: has its stage sections", not missing, ", ".join(missing))
-for m in ["council-review", "council-plan", "council-research"]:
+for m in ["council-review", "council-plan", "council-research", "council-postgame"]:
     check(f"{m}: per-item format has an index line", "Index line: `<n> ·" in skill[m])
     check(f"{m}: description says propose with its size and cost", "size and cost" in description(skill[m]))
 for m, path in [("council-review", "<home>/reviews/"), ("council-plan", "<home>/plans/"),
-                ("council-implement", "<home>/logs/"), ("council-research", "<home>/research/")]:
+                ("council-implement", "<home>/logs/"), ("council-research", "<home>/research/"),
+                ("council-postgame", "<home>/postgames/")]:
     check(f"{m}: deliverable under {path}", path in skill[m])
 for s in SKILLS:
     if s != "council-init":
@@ -151,10 +161,17 @@ for s in SKILLS:
 review, plan, impl, research, init = (skill[k] for k in ["council-review", "council-plan", "council-implement", "council-research", "council-init"])
 for label, text, needles in [
     ("review", review, ["merge-base", "council index --base", "Origin:", "Basis:", "Refuted if:", "Not a finding", "council-implement"]),
-    ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research"]),
+    ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research", "war-room.md", "debate.md",
+                    "## How the council decided", "ask.md", "council ask save"]),
     ("implement", impl, ["fix mode", "Before-evidence", "After-evidence", "clean-context diagnosis", "converge", "council gate --all",
-                         "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md"]),
+                         "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
+                         "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input"]),
     ("research", research, ["scout", "Strength:"]),
+    ("postgame", skill["council-postgame"], ["ask.md", "council ask save", "council run open council-postgame", "Ruled out",
+                                             "council-implement", "council-plan", "never the plan", "quote:",
+                                             "small-council:council-verifier"]),
+    ("war-room", warroom, ["debate.md", "-r2.md", "## How the council decided", "never a third", "Evidence counts, not heads",
+                           "SendMessage"]),
     ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "small-council:begin", "ultra-council:begin",
                     "Edit(/.council/**)", "Bash(council *)", "last-verified", "council doctor", "council run open council-init",
                     "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger"]),
@@ -174,6 +191,8 @@ check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFU
 check("verifier: change verdicts", all(v in verifier for v in ["OK", "INCOMPLETE", "REGRESSION", "SCOPE-CREEP", "CANNOT VERIFY"]))
 check("verifier: can open a research claim's URL", re.search(r"^tools:.*\bWebFetch\b", verifier, re.MULTILINE) is not None)
 check("verifier: keeps the dispatch's item number in its # column (the ledger reads it)", "never renumber" in verifier)
+check("verifier: checks finished work against the user's request", all(v in verifier for v in ["PARTLY MET", "NOT MET", "CAN'T TELL"]))
+check("worker: a war-room round-2 file and its riskiest assumption", "-r2.md" in worker and "## Riskiest assumption" in worker)
 for label, t in [("worker", worker), ("verifier", verifier)]:
     check(f"{label}: no Edit tool", re.search(r"^tools:.*\bEdit\b", t, re.MULTILINE) is None)
 
@@ -317,8 +336,10 @@ for c in cases:
         check(f"suite/{c}: asserts no council mode starts, in both arms", "max: 0" in body and "arm: both" in body)
         check(f"suite/{c}: also checks the ask was handled, so a run that never started can't pass",
               any("max: 0" not in g for g in graders.values()))
-want_tags = {"triggering", "near-miss", "sizing", "dispatch", "fixture", "calibration", "resume", "adaptation"}
-check("suite: covers triggering, near-misses, sizing, an end-to-end dispatch, a seeded fixture, calibration, resume and adaptation",
+want_tags = {"triggering", "near-miss", "sizing", "dispatch", "fixture", "calibration", "resume", "adaptation",
+             "postgame", "war-room"}
+check("suite: covers triggering, near-misses, sizing, an end-to-end dispatch, a seeded fixture, calibration, resume, "
+      "adaptation, the post-game and the war room",
       want_tags <= suite_tags, ", ".join(sorted(want_tags - suite_tags)))
 
 passed = sum(1 for ok, *_ in results if ok)

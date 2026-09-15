@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.5.0"
+COUNCIL_VERSION="0.6.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 
@@ -72,7 +72,7 @@ this_tree() { local t; t="$(council_toplevel)"; [ -n "$t" ] || t="$(here)"; prin
 mode_skill() {
   case "$1" in
     council-*|test-architect|spec-writer|context-core) printf '%s' "$1" ;;
-    review|plan|implement|research|init) printf 'council-%s' "$1" ;;
+    review|plan|implement|research|postgame|init) printf 'council-%s' "$1" ;;
     *) printf 'context-core' ;;
   esac
 }
@@ -112,7 +112,7 @@ seat_summary() {
   [ -f "$1/seats.tsv" ] || return 0
   W="${2:-still working}" awk -F'\t' '
     NR > 1 {
-      if ($2 == "running" || $2 == "queued") w = w (w ? ", " : "") $1
+      if ($2 == "running" || $2 == "queued") w = w (w ? ", " : "") $1 (($6 ~ /round 2/) ? " (war-room round 2)" : "")
       else if ($2 == "done") d = d (d ? ", " : "") $1
       else if ($2 == "failed" || $2 == "blocked") f = f (f ? ", " : "") $1
     }
@@ -152,19 +152,19 @@ resolve_run() {
 cmd_run_open() {
   local mode="${1:-}" short home top ts dir n existing paused session
   case "$mode" in
-    council-review|council-plan|council-implement|council-research|council-init|test-architect|context-core) ;;
+    council-review|council-plan|council-implement|council-research|council-postgame|council-init|test-architect|context-core) ;;
     '') die "usage: council run open <mode> [--alongside] [--session=ID]   (the skill name, e.g. council-review)" ;;
-    *) die "unknown mode '$mode' — use a skill name: council-review, council-plan, council-implement, council-research, council-init, test-architect, context-core" ;;
+    *) die "unknown mode '$mode' — use a skill name: council-review, council-plan, council-implement, council-research, council-postgame, council-init, test-architect, context-core" ;;
   esac
   case "$mode" in council-*) short="${mode#council-}" ;; context-core) short=core ;; *) short="$mode" ;; esac
   home="$(council_home)"
   if [ ! -d "$home" ]; then
-    if [ "$mode" = council-init ]; then                  # init's mapping squad runs before the config exists
-      mkdir -p "$home" 2>/dev/null || die "cannot create $home"
-      [ -f "$home/.gitignore" ] || printf 'runs/\nactive-run\n' > "$home/.gitignore"
-    else
-      die "no council home at $home — run council-init first"
-    fi
+    case "$mode" in
+      council-init|council-postgame)    # init maps before a config exists; a post-game may check work done without the council
+        mkdir -p "$home" 2>/dev/null || die "cannot create $home"
+        [ -f "$home/.gitignore" ] || printf 'runs/\nactive-run\n' > "$home/.gitignore" ;;
+      *) die "no council home at $home — run council-init first" ;;
+    esac
   fi
   top="${CODE_ROOT_ARG:-$(this_tree)}"
   existing="$(runs_here "$home" "$top" in-progress | names)"
@@ -196,6 +196,10 @@ EOF
   printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$dir/seats.tsv"
   [ -z "$existing" ] || printf 'council: another run is in progress on this working tree — pass --run %s to every command for this one\n' "${dir##*/}" >&2
   [ -z "$paused" ] || printf 'council: a paused run is also open here (%s) — it stays paused\n' "$paused" >&2
+  case "$mode" in
+    council-review|council-plan|council-implement|council-research|council-postgame)
+      printf "council: save the user's request word for word in %s/ask.md before anything else\n" "$dir" >&2 ;;
+  esac
   say "$dir"
 }
 
@@ -315,6 +319,11 @@ cmd_run_close() {
   if [ "$status" = complete ]; then
     n="$(ledger_record "$run")"
     [ "${n:-0}" -eq 0 ] 2>/dev/null || say "ledger: $n seat row(s) recorded — council ledger shows each seat's record"
+    case "$(field mode "$run/session-state.md")" in       # a deliverable without the user's words can't be post-gamed
+      council-review|council-plan|council-implement|council-research|council-postgame)
+        [ -n "$(field ask-saved "$run/session-state.md")" ] \
+          || printf 'council: no request was filed for this run — council ask save --run %s\n' "${run##*/}" >&2 ;;
+    esac
   fi
 }
 
@@ -488,7 +497,14 @@ cmd_index() {
     cat "$body"
   } > "$out"
   rm -f "$list" "$body"
-  prior="$(index_paths "$run" | prior_hits "$(council_home)" | head -n 40)"
+  prior=""
+  if [ "$(field mode "$run/session-state.md")" = council-postgame ]; then
+    # A post-game's verifier reads index.md and must never see the plan, the logs or their verdicts;
+    # its Chair runs `council prior` for itself.
+    say "index: earlier council work left out (a post-game's verifier reads this file) — run council prior yourself"
+  else
+    prior="$(index_paths "$run" | prior_hits "$(council_home)" | head -n 40)"
+  fi
   if [ -n "$prior" ]; then
     np="$(printf '%s\n' "$prior" | grep -c .)"
     { printf '## Earlier council work on these files\n'
@@ -765,28 +781,41 @@ cite_origin() {
   if [ "$new" -eq 0 ]; then printf 'pre-existing'; elif [ "$old" -eq 0 ]; then printf 'introduced'; else printf 'touched'; fi
 }
 
+# A seat-file problem. It's a hard one unless the seat's worker is still running: its file may just not
+# be done yet, so the Chair waits instead of resuming or re-dispatching it.
+collect_flag() { bad=1; [ "${live:-0}" = 1 ] || hard=1; }
+
 cmd_collect() {
-  local run top brief seats slug ref out cap f size refok r got shape items unparsed hasnone okc allc n sev pr cite title tok state bad=0 total=0 note
+  local run top brief seats slug ref out cap f size refok r got shape items unparsed hasnone okc allc n sev pr cite title tok state bad=0 total=0 note hard=0 live=0
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   brief="$run/brief.md"
   [ -f "$brief" ] || die "no brief.md in $run — write the brief first"
   seats="$(brief_seats "$brief")"
   [ -n "$seats" ] || die "brief.md has no seat blocks under '## Seats' (### <slug> — …)"
+  [ ! -f "$run/debate.md" ] || seats="$seats
+$(brief_seats "$run/debate.md")"                      # a war room's round-2 files, from debate.md's own ## Seats
   printf '%-16s %-8s %-7s %-4s %-9s %-7s %s\n' seat file items KB ref cites tokens
   while IFS="$TAB" read -r slug ref out cap; do
     [ -n "$slug" ] || continue
     total=$((total + 1)); note=""
     case "$out" in /*|[A-Za-z]:*) f="$out" ;; *) f="$run/$out" ;; esac
-    tok="$(seat_field "$run" "$slug" 4)"
-    if [ -n "$tok" ] && [ "$tok" -gt 0 ] 2>/dev/null; then tok="~$(( (tok + 500) / 1000 ))k"; else tok="-"; fi
-    state="$(seat_field "$run" "$slug" 2)"
-    case "$state" in failed|blocked|running|queued) note=" state:$state"; bad=1 ;; esac
+    if [ "${slug%-r2}" != "$slug" ] && [ -z "$(seat_field "$run" "$slug" 2)" ]; then
+      tok="-"; state="$(seat_field "$run" "${slug%-r2}" 2)"     # round 2 by the round-1 worker, resumed
+    else                                                         # (a fresh round-2 worker has its own row)
+      tok="$(seat_field "$run" "$slug" 4)"
+      if [ -n "$tok" ] && [ "$tok" -gt 0 ] 2>/dev/null; then tok="~$(( (tok + 500) / 1000 ))k"; else tok="-"; fi
+      state="$(seat_field "$run" "$slug" 2)"
+    fi
+    # A fresh round-2 worker (<slug>-r2) took over a lost round-1 worker: judge the round-1 row by its file.
+    if [ "${slug%-r2}" = "$slug" ] && [ -n "$(seat_field "$run" "$slug-r2" 2)" ]; then state=done; fi
+    live=0; case "$state" in running|queued) live=1 ;; esac     # its file may simply not be done yet
+    case "$state" in failed|blocked|running|queued) note=" state:$state"; collect_flag ;; esac
     if [ ! -s "$f" ]; then
-      printf '%-16s %-8s %-7s %-4s %-9s %-7s %s%s\n' "$slug" missing - - - - "$tok" "$note"; bad=1; continue
+      printf '%-16s %-8s %-7s %-4s %-9s %-7s %s%s\n' "$slug" missing - - - - "$tok" "$note"; collect_flag; continue
     fi
     if sed -n '2,9p' "$f" | grep -q '^BLOCKED'; then
-      printf '%-16s %-8s %s\n' "$slug" blocked "$(sed -n '2,9p' "$f" | grep -m 1 '^BLOCKED' | tr -d '\r' | clip 140)"; bad=1; continue
+      printf '%-16s %-8s %s\n' "$slug" blocked "$(sed -n '2,9p' "$f" | grep -m 1 '^BLOCKED' | tr -d '\r' | clip 140)"; collect_flag; continue
     fi
     size="$(( ($(wc -c < "$f") + 1023) / 1024 ))"
     refok=ok
@@ -796,18 +825,18 @@ cmd_collect() {
       got="$(sed -n '2,9p' "$f" | grep '^ref:' | sed 's/^ref:[[:space:]]*//' | while IFS= read -r l; do printf '%s' "$l" | norm; printf '\n'; done)"
       while IFS= read -r r; do
         [ -n "$r" ] || continue
-        if [ ! -f "$r" ]; then refok=no-doc; bad=1; break; fi
-        printf '%s\n' "$got" | grep -qxF "$(ref_title "$r")" || { refok=MISMATCH; bad=1; }
+        if [ ! -f "$r" ]; then refok=no-doc; collect_flag; break; fi
+        printf '%s\n' "$got" | grep -qxF "$(ref_title "$r")" || { refok=MISMATCH; collect_flag; }
       done <<REFS
 $(printf '%s\n' "$ref" | awk -F' ;; ' '{ for (i = 1; i <= NF; i++) print $i }')
 REFS
     fi
     shape="$(index_shape "$f")"; items="${shape%% *}"; unparsed="${shape#* }"; hasnone="${unparsed#* }"; unparsed="${unparsed%% *}"
-    grep -q '^## Index' "$f" || { note="$note no-index"; bad=1; }
-    [ "${unparsed:-0}" -eq 0 ] || { note="$note unparsed-index($unparsed)"; bad=1; }
-    if [ "${items:-0}" -eq 0 ] && [ "${hasnone:-0}" -eq 0 ]; then note="$note empty-index"; bad=1; fi
-    [ "${items:-0}" -le "${cap:-8}" ] || { note="$note over-cap"; bad=1; }
-    [ "$size" -le 16 ] || { note="$note over-16KB"; bad=1; }
+    grep -q '^## Index' "$f" || { note="$note no-index"; collect_flag; }
+    [ "${unparsed:-0}" -eq 0 ] || { note="$note unparsed-index($unparsed)"; collect_flag; }
+    if [ "${items:-0}" -eq 0 ] && [ "${hasnone:-0}" -eq 0 ]; then note="$note empty-index"; collect_flag; fi
+    [ "${items:-0}" -le "${cap:-8}" ] || { note="$note over-cap"; collect_flag; }
+    [ "$size" -le 16 ] || { note="$note over-16KB"; collect_flag; }
     okc=0; allc=0
     while IFS="$TAB" read -r n sev pr cite title; do
       [ -n "$n" ] || continue
@@ -815,24 +844,40 @@ REFS
     done <<ITEMS
 $(index_lines "$f")
 ITEMS
-    [ "$okc" -eq "$allc" ] || { note="$note broken-cites"; bad=1; }
+    [ "$okc" -eq "$allc" ] || { note="$note broken-cites"; collect_flag; }
     printf '%-16s %-8s %-7s %-4s %-9s %-7s %s%s\n' "$slug" ok "${items:-0}/${cap:-8}" "$size" "$refok" "$okc/$allc" "$tok" "${note:+ ·$note}"
   done <<SEATS
 $seats
 SEATS
   if [ "$bad" -eq 0 ]; then say "collect: all $total seats in order"; return 0; fi
+  if [ "$hard" -eq 0 ]; then
+    say "collect: seats still working — after a compaction, wait for their notifications; if the session that started them has ended they are gone: mark them failed and re-dispatch each once (a war-room round-2 seat gets a fresh <slug>-r2 worker)"; return 1
+  fi
   say "collect: fix the rows above — resume that worker (message its agent id) or re-dispatch it once"
   return 1
 }
 
 cmd_check() {
-  local run top base out f lab n sev pr cite title st origin rows=0 bad=0
+  local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
   if [ $# -eq 0 ]; then
     if [ -f "$run/synthesis.md" ]; then set -- "$run/synthesis.md"; else set -- "$run"/seats/*.md; fi
   fi
+  # The user's own words — ask.md and the filed request, from "## In your words" on, whitespace
+  # collapsed — for the quote: check (a post-game's parts quote the request word for word).
+  req="$run/.request.txt"
+  a="$(field ask "$run/session-state.md")"
+  [ -n "$a" ] || a="$(field continues "$run/ask.md" | tr -d '`<>' | sed 's/[[:space:]].*$//')"   # not filed yet
+  if [ -n "$a" ]; then case "$a" in /*|[A-Za-z]:*) ;; *) a="$(dirname "$(council_home)")/$a" ;; esac; fi
+  for f in "$run/ask.md" "$a"; do          # the words only: no headings, no "(no new words)"
+    if [ -n "$f" ] && [ -f "$f" ]; then
+      awk '/^## In your words/ { on = 1; next }
+           on && (/^## Later/ || /^## [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] / || /^\(no new words\)[ \t\r]*$/) { next }
+           on' "$f"
+    fi
+  done | tr -s ' \t\r\n' '    ' > "$req" 2>/dev/null
   out="$run/check.md"
   {
     printf '# Citation check — %s\n' "$(now_sec)"
@@ -854,8 +899,59 @@ cmd_check() {
     done <<ITEMS
 $(index_lines "$f")
 ITEMS
+    while IFS="$TAB" read -r n st; do
+      [ -n "$n" ] || continue
+      qn=$((qn + 1))
+      if [ "$st" = ok ]; then qok=$((qok + 1)); else bad=$((bad + 1)); fi
+      printf '| %s#%s | quote | %s | - |\n' "$lab" "$n" "$st" >> "$out"
+      say "$lab#$n  quote  $st"
+    done <<QUOTES
+$(REQF="$req" LC_ALL=C awk '
+  function alnum(c) { return c ~ /[A-Za-z0-9]/ }
+  function lastidx(s, x,   i, pos, base) {
+    pos = 0; base = 0
+    while ((i = index(s, x)) > 0) { pos = base + i; base += i + length(x) - 1; s = substr(s, i + length(x)) }
+    return pos
+  }
+  function found(r, q,   s, p, off) {                # q inside r as whole words: "port" never matches "export"
+    s = r; off = 0
+    while ((p = index(s, q)) > 0) {
+      if ((off + p == 1 || !alnum(substr(r, off + p - 1, 1))) && !alnum(substr(r, off + p + length(q), 1))) return 1
+      off += p; s = substr(r, off + 1)
+    }
+    return 0
+  }
+  FILENAME == ENVIRON["REQF"] { r = r $0; next }
+  {
+    line = $0; gsub(/\r/, "", line)
+    n = line; sub(/^[-*]?[ \t]*/, "", n); sub(/[ \t].*$/, "", n); sub(/\.$/, "", n)
+    k = split(line, fld, /[ \t]+(·|\|)[ \t]+/)
+    if (!(k >= 4 && n ~ /^C?[0-9]+$/ && fld[3] == "ask")) next    # only a post-game part quotes the request
+    p = index(tolower(line), "quote:")
+    if (!p) { printf "%s\tNO-QUOTE\n", n; next }
+    q = substr(line, p + 6); sub(/^[ \t]+/, "", q)
+    if (substr(q, 1, 1) == "\"") { q = substr(q, 2); e = lastidx(q, "\"") }
+    else if (substr(q, 1, 3) == "“") { q = substr(q, 4); e = lastidx(q, "”") }
+    else { printf "%s\tNO-QUOTE\n", n; next }
+    if (e) q = substr(q, 1, e - 1)
+    gsub(/[ \t]+/, " ", q); sub(/^ /, "", q); sub(/ $/, "", q)
+    whole = r; sub(/^ /, "", whole); sub(/ $/, "", whole)
+    if (q == "") st = "NO-QUOTE"
+    else if (split(q, wd, " ") < 3 && q != whole) st = "TOO-SHORT"
+    else st = found(r, q) ? "ok" : "NOT-IN-THE-REQUEST"
+    printf "%s\t%s\n", n, st
+  }' "$req" "$f" 2>/dev/null)
+QUOTES
   done
-  say "check: $rows items, $bad broken citation(s) → $out"
+  rm -f "$req"
+  if [ "$qn" -eq 0 ] && [ "$(field mode "$run/session-state.md")" = council-postgame ]; then
+    bad=$((bad + 1)); say "check: no quotes found — each part of a post-game quotes the request (quote: \"…\")"
+  fi
+  if [ "$qn" -gt 0 ]; then
+    say "check: $rows items, $bad broken (citations and quotes) · $qok of $qn quotes found in the request → $out"
+  else
+    say "check: $rows items, $bad broken citation(s) → $out"
+  fi
   [ "$bad" -eq 0 ]
 }
 
@@ -1146,7 +1242,8 @@ cmd_memory() {
       if [ $# -gt 0 ]; then keys="$(printf '%s\n' "$@")"
       else
         run="$(resolve_run)" || exit 2
-        keys="$(index_paths "$run"; awk -F'\t' 'NR > 1 && $2 != "skipped" { print $1 }' "$run/seats.tsv" 2>/dev/null)"
+        keys="$(index_paths "$run"; awk -F'\t' 'NR > 1 && $2 != "skipped" { print $1 }' "$run/seats.tsv" 2>/dev/null
+                field mode "$run/session-state.md")"       # a lesson may be scoped to a mode, e.g. council-plan
         if ! awk -F'\t' 'NR > 1 { found = 1 } END { exit !found }' "$run/seats.tsv" 2>/dev/null; then
           keys="$keys
 $(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"            # no seats recorded yet: the whole roster
@@ -1208,14 +1305,14 @@ ENTRIES
 }
 
 # Earlier council work that mentions these paths (one per line on stdin): tracked deliverables in
-# reviews/, logs/, research/ and plans/ that name a path, or whose frontmatter areas: cover it.
-# Rows: path · deliverable[:line] · the matching line or area.
+# reviews/, logs/, research/, plans/ and postgames/ that name a path, or whose frontmatter areas: cover
+# it. Rows: path · deliverable[:line] · the matching line or area.
 prior_hits() {
   local home="$1" paths dir f
   paths="$(cat)"
   [ -n "$paths" ] || return 0
   set --
-  for dir in reviews logs research plans; do
+  for dir in reviews logs research plans postgames; do
     for f in "$home/$dir"/*.md; do [ -f "$f" ] && set -- ${1+"$@"} "$f"; done
   done
   [ $# -gt 0 ] || return 0
@@ -1306,6 +1403,126 @@ cmd_prior() {
 }
 
 # ------------------------------------------------------------------------------------------------
+# The user's request, word for word — filed where later runs, and a post-game, can find it
+# ------------------------------------------------------------------------------------------------
+
+# A case-insensitive pattern for a word: token → [tT][oO][kK][eE][nN] (BSD sed has no I flag).
+ci() {
+  printf '%s' "$1" | awk '{ for (i = 1; i <= length($0); i++) { c = substr($0, i, 1); l = tolower(c); u = toupper(c)
+    printf "%s", (l != u) ? "[" l u "]" : c } }'
+}
+
+# Copy $1 to $2 with secret-looking strings redacted, and print how many were: keys and tokens by their
+# shape, "password: …"-style values of 8+ characters, whole private-key blocks. One sed -E pass — not
+# awk: old macOS awk has no {n,} bounds, and Git Bash's sed and awk drop carriage returns unless sed
+# gets -b (GNU sed takes it everywhere; BSD sed has no text mode to switch off). LC_ALL=C passes every
+# byte through untouched.
+sed_b() { if sed -b -e '' </dev/null >/dev/null 2>&1; then printf '%s' '-b'; fi; }
+
+# An ask.md's "In your words" body, and its "Later" lines — straight to stdout, byte for byte. Only
+# those two headings end a section, so a pasted PR or issue with its own "## Summary" stays whole. Write
+# them to files directly: Git Bash's $(…) drops carriage returns, so a variable is only good for tests.
+ask_words() { LC_ALL=C sed $(sed_b) -n -e '/^## In your words/,/^## Later/{' -e '/^## In your words/d' -e '/^## Later/d' -e 'p' -e '}' "$1"; }
+ask_later() { LC_ALL=C sed $(sed_b) -n -e '/^## Later/,${' -e '/^## Later/d' -e '/^[[:space:]]*$/d' -e 'p' -e '}' "$1"; }
+
+redact_copy() {
+  local kw q val sent before after sedb
+  kw="($(ci password)|$(ci passwd)|$(ci secret)|$(ci token)|$(ci api)[_-]?$(ci key)|$(ci access)[_-]?$(ci key))"
+  q="[\"'\`]"                                   # a quote around a key or a value
+  sent="$(printf '\001')"                       # marks a value that only looks secret: a date, "15-minute-…"
+  val="[^[:space:]\"'\`,;}${sent}]"             # one character of a value
+  sedb="$(sed_b)"
+  # Shapes first (each anchored, so task-list-… or flask-… never match); then key = value, where the
+  # value needs a digit or 20+ characters, so "token: short-lived" survives; then private-key blocks,
+  # whose base64 lines go and whose surrounding text stays even when the END line was snipped off.
+  LC_ALL=C sed $sedb -E \
+    -e 's/(^|[^A-Za-z0-9_-])(sk|rk)(-|_live_|_test_)[A-Za-z0-9_-]{20,}/\1[redacted]/g' \
+    -e 's/(^|[^A-Za-z0-9_])(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{22,})/\1[redacted]/g' \
+    -e 's/(^|[^A-Za-z0-9])(AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})/\1[redacted]/g' \
+    -e 's/(^|[^A-Za-z0-9_-])xox[baprs]-[A-Za-z0-9-]{10,}/\1[redacted]/g' \
+    -e 's/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/[redacted]/g' \
+    -e 's/([Bb]earer[[:space:]]+)[A-Za-z0-9._~+\/=-]{16,}/\1[redacted]/g' \
+    -e 's#(://[^/:@[:space:]]+:)[^/@[:space:]]+@#\1[redacted]@#g' \
+    -e "s/([A-Za-z0-9_]*${kw}${q}?[[:space:]]*[:=][[:space:]]*${q}?)([0-9]{4}-[0-9]{2}-[0-9]{2}[T0-9:.Z+-]*|[0-9]+(-[A-Za-z]+)+)/\\1${sent}\\3/g" \
+    -e "s/([A-Za-z0-9_]*${kw}${q}?[[:space:]]*[:=][[:space:]]*${q}?)(${val}{7,}[0-9]${val}*|${val}*[0-9]${val}{7,}|${val}{20,})/\\1[redacted]/g" \
+    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/{' \
+    -e 's/-----BEGIN [A-Z ]*PRIVATE KEY-----/[redacted private key]/' \
+    -e '/-----END [A-Z ]*PRIVATE KEY-----/d' \
+    -e '/^[A-Za-z0-9+\/=]{16,}[[:space:]]*$/d' \
+    -e '}' \
+    -e "s/${sent}//g" "$1" > "$2" || return 1
+  before="$(LC_ALL=C grep -o '\[redacted' "$1" 2>/dev/null | wc -l | tr -d ' ')"
+  after="$(LC_ALL=C grep -o '\[redacted' "$2" 2>/dev/null | wc -l | tr -d ' ')"
+  printf '%s' "$(( ${after:-0} - ${before:-0} ))"
+}
+
+# council ask save [slug] — file <run>/ask.md. A new request becomes .council/asks/<date>-<slug>.md
+# (line 1, then run: and mode:, then the rest of ask.md as written); a run that continues one (the
+# state's ask:) appends its new words under a dated heading. Either way the state records ask=.
+cmd_ask() {
+  local sub="${1:-}" slug run name st ask home root mode cur target base n=2 rel tmp red=0 status body later nowords="" own=""
+  [ "$sub" = save ] || die "usage: council ask save [slug]   (after writing the user's words to <run>/ask.md)"
+  shift
+  slug="${1:-}"
+  run="$(resolve_run)" || exit 2
+  name="${run##*/}"; st="$run/session-state.md"; ask="$run/ask.md"
+  [ -f "$ask" ] || die "no ask.md in $run — write the user's words there first"
+  body="$(ask_words "$ask")"; later="$(ask_later "$ask")"          # for the checks below only
+  printf '%s' "$body" | grep -q '[^[:space:]]' || die "ask.md has no words under '## In your words'"
+  [ "$(printf '%s\n' "$body" | tr -d '\r' | grep -v '^[[:space:]]*$')" != "(no new words)" ] || nowords=1
+  home="$(council_home)"; root="$(dirname "$home")"
+  mode="$(field mode "$st")"
+  # The request this run continues: the state's ask=, else ask.md's own continues: line.
+  cur="$(field ask "$st")"
+  [ -n "$cur" ] || cur="$(field continues "$ask" | tr -d '`<>' | sed 's/[[:space:]].*$//')"
+  if [ -n "$cur" ]; then
+    case "$cur" in /*|[A-Za-z]:*) target="$cur" ;; *) target="$root/$cur" ;; esac
+    case "$target" in
+      "$home"/asks/*) ;;
+      *) die "a request is filed under $home/asks/, not $cur — copy the words into ask.md instead" ;;
+    esac
+    [ -f "$target" ] || die "the request this run continues is missing: $cur"
+    [ "$(sed -n '2p' "$target" | tr -d '\r')" != "run: $name" ] || own=1        # this run filed it: re-file it whole
+  elif [ -n "$nowords" ]; then
+    die "ask.md says (no new words) but names no request to continue — add continues: <path> to it, or run council state ask=<path>"
+  fi
+  mkdir -p "$home/asks" 2>/dev/null || die "cannot create $home/asks"
+  tmp="$run/.ask.tmp"
+  if [ -z "$cur" ] || [ -n "$own" ]; then
+   if [ -z "$cur" ]; then
+    [ -n "$slug" ] || slug="$(head -n 1 "$ask" | sed 's/^#[[:space:]]*[Aa]sk//')"
+    slug="$(printf '%s' "$slug" | tr -d '\r' | tr '[:upper:]' '[:lower:]' | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+//' | cut -c1-40 | sed 's/-*$//')"
+    [ -n "$slug" ] || slug=request
+    base="$home/asks/$(date '+%Y-%m-%d')-$slug"; target="$base.md"
+    while [ -e "$target" ]; do target="$base-$n.md"; n=$((n + 1)); done
+   fi
+    { head -n 1 "$ask"; printf 'run: %s\nmode: %s\n' "${run##*/}" "${mode:--}"; tail -n +2 "$ask"; } > "$tmp" || die "cannot write $tmp"
+    red="$(redact_copy "$tmp" "$target")" || { rm -f "$tmp" "$target"; die "cannot write $target"; }
+    status=new
+  else
+    # A continuing request: this run's words go in one dated section — replaced, if this run saved before.
+    if [ -n "$(field ask-saved "$st")" ]; then
+      LC_ALL=C sed $(sed_b) -e "/^## [0-9-]* .*, run $name/,\$d" "$target" > "$tmp" && cat "$tmp" > "$target" \
+        || die "cannot update $target"
+    fi
+    if [ -n "$nowords" ] && [ -z "$later" ]; then
+      status="no new words"
+    else
+      { printf '\n## %s — %s, run %s\n' "$(date '+%Y-%m-%d')" "${mode:--}" "${run##*/}"
+        ask_words "$ask"; ask_later "$ask"; } > "$tmp" || die "cannot write $tmp"
+      if red="$(redact_copy "$tmp" "$tmp.2")" && cat "$tmp.2" >> "$target"; then rm -f "$tmp.2"
+      else rm -f "$tmp" "$tmp.2"; die "cannot append to $target"; fi
+      status=continued
+    fi
+  fi
+  rm -f "$tmp"
+  case "$target" in "$root"/*) rel="${target#"$root"/}" ;; *) rel="$target" ;; esac
+  RUN_ARG="$run" cmd_state ask="$rel" ask-saved="$(now_min)" >/dev/null
+  [ "${red:-0}" -eq 0 ] 2>/dev/null || say "ask: redacted $red secret-looking string(s) — tell the user"
+  say "ask: $rel ($status)"
+}
+
+# ------------------------------------------------------------------------------------------------
 # Seat ledger — one row per seat per completed run, tracked in the council home
 # ------------------------------------------------------------------------------------------------
 
@@ -1364,7 +1581,10 @@ ledger_record() {
     [ -n "$slug" ] || continue
     case "$slug" in verify-*|diagnose-*) vt=$((vt + tok)); continue ;; esac
     f="$(seat_out "$run" "$slug")"
-    raised="$(index_lines "$f" | grep -c . || true)"
+    case "$slug" in
+      *-r[0-9]*) raised=0 ;;                           # a war room's round 2 raises nothing new: from: cites round 1
+      *) raised="$(index_lines "$f" | grep -c . || true)" ;;
+    esac
     line="$(printf '%s\n' "$counts" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] { print $2 "\t" $3 "\t" $4; exit }')"
     [ -n "$line" ] || line="$(printf '0\t0\t0')"
     new="$new$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$date" "$name" "${mode:--}" "$slug" "${raised:-0}" "$line" "$tok")
@@ -1403,7 +1623,7 @@ cmd_ledger() {
       for (r = 2; r <= NR; r++) {
         if (!(r in row)) continue
         split(row[r], f, "\t"); if (!(f[2] in keep)) continue
-        s = f[4]; sub(/-[a-z]$/, "", s)                  # a split worker (hunt-a, hunt-b) counts as its seat
+        s = f[4]; sub(/-(r[0-9]+|[a-z])$/, "", s)        # a split worker (hunt-a) or a fresh round-2 one (hunt-r2) is its seat
         if (!(s in runs)) { names[++ns] = s; runs[s] = 0 }
         if (!((f[2], s) in counted)) { counted[f[2], s] = 1; runs[s]++ }
         raised[s] += f[5]; kept[s] += f[6]; cut[s] += f[7]; refd[s] += f[8]; tok[s] += f[9]
@@ -1438,13 +1658,15 @@ council — the Small Council's helper (bash + git)
   council gate --all [--at grounding|verify]
                                          run the configured gates
   council gates                          list the configured gates
-  council collect                        check every seat file named in the brief
+  council collect                        check every seat file named in the brief (and a war room's debate.md)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md)
   council map status                     how far the map is behind HEAD, by area
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
   council memory [index|check]           memory's one-line index · anchors that went stale
   council memory select [path|slug …]    the entries in scope (default: the run's files and seats)
   council prior [path …]                 earlier council work on these paths (default: the index)
+  council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
+                                         secret-looking strings are redacted; records ask= in the state
   council ledger [N]                     each seat's record over the last N completed runs (default 10)
   council doctor                         drift scan; every finding comes with a fix
 
@@ -1502,6 +1724,7 @@ main() {
     fingerprint) cmd_fingerprint ${1+"$@"} ;;
     memory)  cmd_memory ${1+"$@"} ;;
     prior)   cmd_prior ${1+"$@"} ;;
+    ask)     cmd_ask ${1+"$@"} ;;
     ledger)  cmd_ledger ${1+"$@"} ;;
     doctor)  cmd_doctor ;;
     version) say "council $COUNCIL_VERSION" ;;

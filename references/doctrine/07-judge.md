@@ -10,7 +10,9 @@ Your judgment, written down.
 2. **Merge** by owner (your mode's owner rules) and by root cause. Keep every author:
    "from hunt#3, collina#1".
 3. **Conflict pass.** List the pairs that contradict each other or rest on incompatible "Assumes"
-   lines. Settle what the code settles; the rest become rulings for the user.
+   lines. Settle what the code settles; the rest become rulings for the user. After a war room, each
+   point's line records how it ended — agreed, settled by the code, to the verifier, or FORK — and
+   `from:` names round-1 items only.
 4. **Rank by concrete cost in this project at this scale** — the Carmack filter: a real problem
    here, or pattern-matching? Settled memory entries are never findings.
 5. **Cut to your mode's cap.** Keep the cut list, with a reason for each item.

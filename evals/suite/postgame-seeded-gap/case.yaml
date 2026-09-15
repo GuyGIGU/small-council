@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: postgame-seeded-gap
+description: A post-game on a finished council build with a planted gap — the request asked for an owner filter the plan dropped, and the log's converge pass says all met. It must find the gap, blame planning, check the code with blind verifiers only, and propose nothing unasked.
+tags: [postgame, fixture]
+runs: 1
+expected_outcome: The owner filter is reported as not built and lost in planning; the date filter and admins-only are built; at least one council-verifier, no workers, no plan or log path in any dispatch; a deliverable under .council/postgames/.
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 60
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Skill, Agent]

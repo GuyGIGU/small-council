@@ -31,10 +31,14 @@ home="$(council_home)"
 root="$(dirname "$home")"
 top="$(this_tree)"
 
-say "[Small Council] Council-enabled project. Council home: $home"
-[ -f "$home/council.config.md" ] || say "- No council.config.md yet: run council-init before the first council mode."
-say "- Substantial work? Check for a council mode first (council-review, council-plan, council-implement, council-research, spec-writer, test-architect). Propose it with its size and estimated cost, and wait for a go-ahead before any multi-agent run."
-say "- The \`council\` helper does the bookkeeping (\`council run status\`, \`council doctor\`); if it isn't on PATH, run it as: bash \"$ROOT/bin/council\""
+if [ -f "$home/council.config.md" ]; then
+  say "[Small Council] Council-enabled project. Council home: $home"
+  say "- Substantial work? Check for a council mode first (council-review, council-plan, council-implement, council-research, council-postgame, spec-writer, test-architect). Propose it with its size and estimated cost, and wait for a go-ahead before any multi-agent run."
+  say "- The \`council\` helper does the bookkeeping (\`council run status\`, \`council doctor\`); if it isn't on PATH, run it as: bash \"$ROOT/bin/council\""
+else
+  # No config: the folder holds a post-game's results, or an unfinished council-init. One line, no nudges.
+  say "[Small Council] $home holds council results, but the council isn't set up here (No council.config.md yet). council-init sets it up for reviews, plans, builds and research; a post-game needs none."
+fi
 
 if [ -f "$home/map.md" ]; then
   sha="$(sed -n 's/^map-commit:[[:space:]]*\([0-9a-fA-F]\{7,40\}\).*/\1/p' "$home/map.md" 2>/dev/null | head -n 1)"
@@ -94,7 +98,7 @@ RUNS
       say "- PAUSED COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}). Resume it only when the user asks."
     elif [ "$event" = compact ] && [ "$dir" = "$driving" ]; then
       seats="$(seat_summary "$dir")"
-      say "- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}). Re-invoke the $skill skill (it loads context-core), read $dir/session-state.md, re-read the doctrine for that phase, and continue from there.${seats:+ Seats — $seats.} Do not restart, do not re-dispatch seats that are running or done (wait for their notifications), do not skip the completeness check.$runflag"
+      say "- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}). Re-invoke the $skill skill (it loads context-core), read $dir/session-state.md (and ask.md, if present), re-read the doctrine for that phase, and continue from there.${seats:+ Seats — $seats.} Do not restart, do not re-dispatch seats that are running or done (wait for their notifications), do not skip the completeness check.$runflag"
     elif [ "$event" = compact ]; then
       say "- Also open on this working tree, not this session's run: ${dir##*/} ($skill, phase ${phase:-?}). Leave it unless the user asks."
     else

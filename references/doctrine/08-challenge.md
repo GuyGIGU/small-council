@@ -23,6 +23,8 @@ Catch what's wrong before the user sees it.
      batch of everything else. If even that doesn't fit, pair P1s two to a verifier. Tell the user
      what shared a verifier.
    - A claim whose evidence is a URL (research) goes to a verifier too; it fetches the page.
+   - A war room's agreements are claims too. A post-game's verifiers check its parts against the
+     user's request instead — council-postgame says how.
 3. **Apply the verdicts** — in the deliverable. Never renumber or delete synthesis.md's lines; the
    ledger counts them at close.
    - CONFIRMED ships.

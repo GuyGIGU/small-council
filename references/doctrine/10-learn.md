@@ -9,6 +9,8 @@
   `- PROPOSED accepted pattern: stop flagging <X> in <paths> — <why it's deliberate> (evidence: <path:line>; scope: <paths or seat slugs>; from <deliverable path>, <date>)`
 - **Admission rule:** propose only what would change a future run if it were missing — never what
   the code, manifests or CI already say.
+- **A lesson about the council's own process** is scoped to its mode (`scope: council-plan`), so only
+  that mode's runs read it — `council memory select` counts the run's mode as in scope.
 - **Check memory first.** Grep the confirmed entries, `## Proposed` and `## Rejected`.
   - Already covered → skip it.
   - Already proposed → add "· seen again <date>" to that line.
@@ -30,7 +32,9 @@
 
 `council run close` stamps the status and the actual cost. For a completed run it also adds each
 seat's row to the ledger — items raised, kept, cut and refuted, and tokens — counted from the seat
-files, synthesis.md's `from:` lines and the verify tables, so keep those exact. `council ledger`
+files, synthesis.md's `from:` lines and the verify tables, so keep those exact. It also warns when a
+completed review, plan, build, research or post-game never filed its request — then run
+`council ask save --run <folder>`. `council ledger`
 shows the record: Convene estimates from it, and a council-init refresh proposes roster changes
 from it.
 - A run stopped for good → `--status abandoned`.

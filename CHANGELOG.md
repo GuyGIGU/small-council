@@ -6,6 +6,47 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-15
+
+The secret weapon for tough problems: the experts argue a big feature out before it's built, and a
+post-game checks the finished work against what you actually asked for.
+
+### Added
+
+- **The war room** (inside council-plan). For a big or tough feature — or when you say "debate it" —
+  the seats answer each other before the Chair judges. Round 1 stays blind; then each seat reads the
+  others' proposals and answers the points that name it, with evidence. Every point ends agreed,
+  settled by the code, sent to the verifier, or as a fork you rule on. Two rounds, never a third; the
+  same workers are resumed, so it adds tokens, not agents. The plan records how the council decided.
+  The protocol lives in `references/war-room.md`.
+- **council-postgame.** Checks finished work against your original request, word for word: what you
+  asked → what was planned → what was built, where it drifted, what's missing or was built unasked, and
+  one next move, handed to council-implement or council-plan on a yes. Blind verifiers check every
+  "built" claim and never see the plan or the log. It also works on work done without the council,
+  even in a repo with no `.council/`. council-implement offers it when the build's log says it's
+  worthwhile.
+- **Your request, kept.** Every run saves your words in `ask.md` before anything else. `council ask
+  save` files them under `.council/asks/`, redacting anything that looks like a secret — keys and
+  tokens by their shape, passwords, credentials in URLs, private-key blocks — and every deliverable
+  points at its request, so the chain survives cleaning up `runs/`.
+- **Helper:** `council ask save` (it follows a continued request, re-files rather than duplicates, and
+  never writes outside `.council/asks/`); `collect` checks a war room's round-2 files and waits for
+  seats still answering; `check` confirms each post-game part quotes the request, word for word;
+  `index` keeps earlier council work out of a post-game, whose verifier reads it; `prior` scans
+  post-games; `memory select` counts the run's mode, for lessons scoped to one mode; `run open
+  council-postgame` works without a council home; `run close` warns when a run never filed its request.
+  The SessionStart hook stays quiet in a folder that holds only post-game results.
+- **Evals:** helper, hook, structural and phrase checks for all of it; drills D18–D23; four more suite
+  cases (dormant until someone runs the suite).
+
+### Changed
+
+- council-implement takes a post-game as a third kind of input, and its log records the request, the
+  starting commit and a converge table.
+- Every plan maps each part of the request to a task, or to your words that ruled it out.
+- The verifier also answers MET / PARTLY MET / NOT MET / CAN'T TELL against a request; the worker knows
+  the war room's two rounds.
+
 ## [0.5.0] — 2026-09-15
 
 Proof. Until now nothing showed the council behaves the way its doctrine says. 0.5 adds a behavioural

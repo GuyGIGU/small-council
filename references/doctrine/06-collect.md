@@ -7,8 +7,10 @@ Prove every seat reported before anyone judges.
 1. **`council collect`** — one row per seat: its file, item count against the cap, size, whether its
    `ref:` lines match its reference docs (proof they were read), whether its citations resolve, and
    the tokens it spent. It also flags a seat whose worker is still running, failed or blocked, an
-   index with no items and no `(none)` line, and index lines it can't read.
-2. **Fix failing rows.** First resume the same worker — SendMessage to its agent id, naming what
+   index with no items and no `(none)` line, and index lines it can't read. A war room's round-2
+   files, named in `debate.md`, are checked the same way.
+2. **Fix failing rows.** A row that is only `state:running` isn't failing: that worker is still
+   answering, so wait for it. Otherwise, first resume the same worker — SendMessage to its agent id, naming what
    failed. If that isn't possible, re-dispatch it once and record the new agent:
    `council seat <slug> running agent=<new id>` (its earlier tokens are kept). Still failing → tell
    the user which lens is missing. Never judge over a hole.

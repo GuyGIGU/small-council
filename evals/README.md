@@ -55,6 +55,8 @@ Runs the helper against scaffolded git repos:
 - citation and origin checks (introduced vs pre-existing);
 - gate side effects: what `--all` never runs;
 - the stack fingerprint, scoped memory and stale anchors, earlier council work, the seat ledger;
+- the user's request: filing it word for word, redaction, continuing it, the quote check; a war
+  room's round-2 files; post-game runs without a council home;
 - map status and the drift doctor (cards, repeated slugs, a changed stack).
 
 ## 4. Hook evals — do the hooks behave?
@@ -92,7 +94,9 @@ keys; the agent under test can't read them.
 
 | Tag | Cases | What they check | Cost |
 |---|---|---|---|
-| triggering, near-miss | `trigger-review`, `trigger-plan`, `trigger-research`, `near-miss-question`, `near-miss-small-edit` | the right mode starts; none starts for a question, or for a one-line edit in a council project — and the ask still gets handled | cheap — a few turns each |
+| triggering, near-miss | `trigger-review`, `trigger-plan`, `trigger-research`, `trigger-postgame`, `near-miss-question`, `near-miss-small-edit`, `near-miss-postgame` | the right mode starts; none starts for a question, a one-line edit in a council project, or a git question that sounds like "are we done?" — and the ask still gets handled | cheap — a few turns each |
+| postgame | `postgame-seeded-gap` | a finished build whose plan dropped part of the request: the gap is found and blamed on planning, only blind verifiers check the code, nothing unasked is proposed | high |
+| war-room | `plan-war-room-proposal` | "debate it" stays in council-plan, names the war room and its cost, and dispatches nothing before the go | moderate |
 | sizing | `propose-small-change`, `propose-risky-change` | a right-sized proposal, seats not going with reasons, nothing dispatched before the go-ahead | moderate |
 | dispatch | `squad-review-dispatch` | a `/council-review` inside the approved size runs end to end: 2–4 workers, a blind verifier for the auth bypass, the bypass in the deliverable | the priciest |
 | fixture | `seeded-review-solo` | recall (the planted bug) and precision (the accepted pattern left alone), in the reply and in the deliverable | high |
@@ -113,12 +117,14 @@ python evals/record_eval.py                                                     
   run errors ("Not logged in") and `record_eval.py` refuses to record the result.
 - **Cost:** `--max-cost-usd` is a stop switch, not a charge: once the run's list-price estimate passes
   it, no further case starts (and the partial result isn't recorded). With a subscription token the
-  runs draw on your plan's usage rather than a bill. A default full run is 64 sessions (32 per arm);
-  `--runs 1` makes it 24.
+  runs draw on your plan's usage rather than a bill. A default full run is 84 sessions (42 per arm);
+  `--runs 1` makes it 32.
 - **The shell sandbox:** every case past the smoke runs the `council` helper, so it needs
   `--allow-tools Bash Write`, and Claude Code runs granted Bash only inside its OS sandbox. Native
   Windows has none, so there every such run is refused. Run the whole suite under WSL2, on macOS, on
   Linux with `bubblewrap` and `socat` installed, or in CI.
+- **The war room's round 2** has no suite case: an eval run can't grant SendMessage, which resuming a
+  seat needs. Drill D18 covers it.
 - **Scaffold scripts** (`evals/suite/*/scaffold.sh`) build each case's fixture repo and run as you,
   only with `--scaffold`. They're self-contained; read them before trusting them.
 - **History:** raw runs land in `evals/suite/results/` (untracked). `record_eval.py` keeps one small
@@ -131,5 +137,5 @@ python evals/record_eval.py                                                     
 
 ## 7. Behavioral drills — run in Claude Code
 
-See `behavioral-drills.md` (D1–D17). They need a live agent and subagents, so they can't be scripted
+See `behavioral-drills.md` (D1–D23). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

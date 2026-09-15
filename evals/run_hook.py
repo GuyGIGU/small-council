@@ -110,6 +110,7 @@ with tempfile.TemporaryDirectory() as tmp:
     os.makedirs(os.path.join(bare, ".council"))
     code, out = run_hook(bare)
     check("council without config: says run council-init", "council-init" in out and "No council.config.md" in out, out)
+    check("council without config (a post-game's folder): one line, no mode nudge", "Substantial work?" not in out, out)
 
     full = new_repo(tmp, "full")
     top = git(full, "rev-parse", "--show-toplevel")
@@ -125,17 +126,19 @@ with tempfile.TemporaryDirectory() as tmp:
     check("full council: points at the helper", "council run status" in out and "bin/council" in out, out)
     check("full council: fresh map is not 'behind'", "behind" not in out, out)
     check("full council: counts 2 pending proposals (ignores the comment)", "2 memory proposal(s)" in out, out)
+    check("full council: lists council-postgame among the modes", "council-postgame" in out, out)
     check("full council: no open-run warning", "UNFINISHED" not in out and "COMPACTED" not in out, out)
 
     runs = os.path.join(full, ".council", "runs")
     run_a = os.path.join(runs, "2026-09-15-100000-review")
     write(os.path.join(run_a, "session-state.md"), state("in-progress", code_root=top))
-    write(os.path.join(run_a, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\trunning\ta1\t\t10:00\t\nbeck\tdone\ta2\t50000\t10:05\t\n")
+    write(os.path.join(run_a, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\trunning\ta1\t\t10:00\tround 2\nbeck\tdone\ta2\t50000\t10:05\t\n")
     code, out = run_hook(full, "startup")
     check("open run found by scanning (no pointer needed)", "UNFINISHED COUNCIL RUN" in out, out)
     check("open run: shows the mode and phase", "council-review" in out and "phase: work" in out, out)
     check("open run, new session: running seats are gone, done ones listed",
           "were running when that session ended" in out and "hunt" in out and "done: beck" in out, out)
+    check("open run: a seat lost mid war-room says which round", "hunt (war-room round 2)" in out, out)
     code, out = run_hook(full, "clear")
     check("after /clear: running seats aren't declared gone", "still working: hunt" in out and "gone" not in out, out)
     code, out = run_hook(full, "compact")
@@ -224,6 +227,14 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = run_hook(full, "startup")
     check("stale map: reports commits behind", "2 commits behind HEAD" in out, out)
 
+    pgr = new_repo(tmp, "pg")
+    ptop = git(pgr, "rev-parse", "--show-toplevel")
+    write(os.path.join(pgr, ".council", "runs", "2026-09-15-130000-postgame", "session-state.md"),
+          state("in-progress", mode="council-postgame", phase="judge", code_root=ptop, session="eval"))
+    code, out = run_hook(pgr, "compact", session="eval")
+    check("after compaction in a post-game: re-invoke council-postgame and re-read ask.md",
+          "Re-invoke the council-postgame skill" in out and "and ask.md, if present" in out, out)
+
     code, out = run_hook(full, payload="\x00not json at all")
     check("garbage stdin: exits 0", code == 0, str(code))
 
@@ -281,6 +292,22 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat check: a valid verifier file passes", code == 0, err)
     code, err = run_gate(verifier, f"Wrote {good} — 1 confirmed")
     check("seat check: a verifier file must be a verification", code == 2 and "# Verification" in err, err)
+    r2 = os.path.join(seats, "leach-r2.md")
+    write(r2, "# Leach — Data integrity (council-plan, round 2)\nref: Data Reference\nquestion: q\n## Index\n"
+              "1 · hold · P1 fowler#4 · a.py:1 · one table: the join exists\n2 · concede · hunt#1 · src/ · scoped tokens\n"
+              "### 1. one table\n- Stance: hold\n## Riskiest assumption\nleach#2 — the join is indexed — schema.sql\n")
+    code, err = run_gate(worker, f"Wrote {r2} — 2 items (hold 1, concede 1)")
+    check("seat check: a war-room round-2 file passes", code == 0, err)
+    prose = os.path.join(seats, "prose-r2.md")
+    write(prose, "# Prose — x (council-plan, round 2)\nref: none\n## Index\n1 — I hold my position on P1 · mostly\n")
+    code, err = run_gate(worker, f"Wrote {prose} — 1 items")
+    check("seat check: round-2 stances written as prose are blocked", code == 2 and "aren't in the index format" in err, err)
+    met = os.path.join(tmp, "run", "verify-2.md")
+    write(met, "# Verification — post-game\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+               "| 1 | export | MET | src/x.py:4 · tested: no |\n| 2 | owner filter | NOT MET | no filter found |\n"
+               "| M1 | admins only | NOT MET | asked, no part covers it |\n")
+    code, err = run_gate(verifier, f"Wrote {met} — 1 met, 0 partly met, 2 not met, 0 can't tell, 1 missing, 0 not asked")
+    check("seat check: a post-game verifier file passes", code == 0, err)
 
 passed = sum(1 for ok, *_ in results if ok)
 for ok, name, detail in results:

@@ -7,7 +7,7 @@
     {
       "name": "small-council",
       "source": "./",
-      "description": "A context-engineering council for Claude Code: tailored expert seats review, plan, build, and research in isolated context windows, verify adversarially, and keep durable project memory."
+      "description": "A context-engineering council for Claude Code: tailored expert seats review, plan, build, and research in isolated context windows, debate the tough calls, verify adversarially, check finished work against your original request, and keep durable project memory."
     }
   ]
 }

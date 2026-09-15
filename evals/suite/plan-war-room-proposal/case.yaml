@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: plan-war-room-proposal
+description: Asking the council to plan a tough, cross-cutting feature and to "debate it" keeps council-plan, names the war room with its added cost and no extra agents, and dispatches nothing before the go-ahead.
+tags: [war-room, proposal]
+expected_outcome: Stays in council-plan; the Scope Summary's Council line (or the reply) names the war room and its cost; one grounded question at most; no Agent calls.
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 20
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Agent]

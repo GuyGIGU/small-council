@@ -17,9 +17,10 @@ skipped under load.
 |---|---|
 | `council-init` | Summons the council for a repo: detects the stack, recruits and recasts the expert roster (with the paths each seat watches), writes each seat a card that translates its doctrine to your project, dry-runs the real check commands and records their side effects, builds the codebase map, writes `.council/`. Once per repo, and again when the stack moves. |
 | `council-review` | Multi-expert code review → verified P1/P2/P3 findings → fix hand-off. |
-| `council-plan` | Scoping conversation → expert advice → a plan built as vertical slices, each task saying what it touches and how to tell it's done. |
-| `council-implement` | Builds a plan, or fixes a review's findings, task by task: before-and-after evidence, gates after every change, a verifier on every result, a converge pass at the end. |
+| `council-plan` | Scoping conversation → expert advice → a plan built as vertical slices, each task saying what it touches and how to tell it's done. For a big or tough feature — or when you say "debate it" — a **war room** first: the experts read each other's proposals and argue them out with evidence, and you rule on the real forks. |
+| `council-implement` | Builds a plan, fixes a review's findings, or finishes a post-game's next tasks, task by task: before-and-after evidence, gates after every change, a verifier on every result, a converge pass at the end. |
 | `council-research` | Answers a question with graded evidence from code, history, docs and the web; saves the answer as project knowledge; keeps the map true. |
+| `council-postgame` | After the work: checks what was built against your original request, word for word — what matches, what drifted, what's missing — and hands the next move to plan or implement. Offered after a build when it's worth it; works on work done without the council too. |
 | `spec-writer` | Short, structured specs: Job Stories, Gherkin acceptance criteria, three-tier boundaries. |
 | `test-architect` | Audits tests for theatre, specifies shortcut-proof suites, fixes weak tests (Carmack × Beck). |
 | `context-core` | The engine every council mode runs on: the laws, the ten stages, the helper. The modes invoke it; you don't. |
@@ -57,6 +58,8 @@ Then, in each project you want a council for, run **`/council-init`**.
 - put the repo, or a directory junction to it, at `~/.claude/skills/small-council/`. Claude Code then
   loads it automatically as `small-council@skills-dir`.
 
+**Upgrading from 0.5:** nothing to do — `.council/asks/` and `.council/postgames/` appear on first use.
+
 **Upgrading from 0.3:** run a council-init refresh in each project. It writes the seat cards, adds
 Probe, Needs and Side effects to the gates, and records the stack fingerprint. Memory keeps working
 as it is, and the refresh offers to add Scope and Anchor to existing entries.
@@ -72,7 +75,8 @@ the run preferences, and offers the helper's permission rule.
 ## How the modes fit together
 
 - **A new feature:** `spec-writer` (optional) → `council-plan` → `council-implement` →
-  `council-review` → `council-implement` in fix mode → …
+  `council-postgame` (when offered) → `council-review` → `council-implement` in fix mode → …
+- **"Did we build what I asked?"** `council-postgame`, on any finished work.
 - **Unknown territory:** `council-research` first, then plan from its answer.
 - **Tests:** `test-architect` — audit a suite, specify tests from a spec, or fix weak ones.
 
@@ -84,7 +88,8 @@ bigger runs always ask. After the go-ahead it runs to the deliverable on its own
 
 Each stage has its own short doctrine file, which the Chair reads as it enters that stage:
 
-1. **Convene** — check open runs, check the work's shape, size the run, and get the go-ahead.
+1. **Convene** — check open runs, check the work's shape, size the run, save your request word for
+   word, and get the go-ahead.
 2. **Prepare** — gather shared facts once: the map, memory in scope, the change index, earlier
    findings, grounding gates.
 3. **Assign** — match each seat's surface markers to the change; pair thin seats; set budgets.
@@ -98,7 +103,7 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
 10. **Learn** — memory proposals with evidence (rejected ones never come back); each seat's record goes
     into the ledger; the run is closed.
 
-**Limits:** at most 10 agents per run, verifiers included. Past runs averaged ~100k tokens per worker;
+**Limits:** at most 10 agents per run, verifiers included; a war room adds tokens, not agents. Past runs averaged ~100k tokens per worker;
 estimates come from your own project's ledger once there is some.
 
 ## What it keeps in your repo
@@ -111,7 +116,8 @@ estimates come from your own project's ledger once there is some.
 ├── map.md                where things live, hot spots, vocabulary                             tracked
 ├── cards/<slug>.md       each seat's doctrine translated to this project                      tracked
 ├── ledger.tsv            each seat's record: items raised, kept, refuted, tokens per run      tracked
-├── plans/ reviews/ logs/ research/ refs/     deliverables · project-local seat docs          tracked
+├── plans/ reviews/ logs/ research/ postgames/ refs/   deliverables · project-local seat docs tracked
+├── asks/                 your requests, word for word; every deliverable points at its own    tracked
 └── runs/<date-time>-<mode>/   state, brief, change index, seat files, synthesis, checks       ignored
 ```
 
@@ -122,7 +128,7 @@ The council home is always the **main** checkout's `.council/`, even when you wo
 
 ```
 .claude-plugin/        plugin.json + marketplace.json (this repo is its own marketplace)
-skills/                the eight skills
+skills/                the nine skills
 agents/                council-worker, council-verifier
 hooks/                 hooks.json · session-start.sh · seat-gate.sh
 bin/council            the helper

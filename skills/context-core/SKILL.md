@@ -1,6 +1,6 @@
 ---
 name: context-core
-description: The Small Council's engine — the laws, stages and helper every council mode (review, plan, implement, research) runs on — size the run, gather context once, brief isolated expert seats, collect, judge, challenge adversarially, deliver, learn, close. Invoked by a mode; also use it to chair any large multi-part task that would overflow one context window.
+description: The Small Council's engine — the laws, stages and helper every council mode (review, plan, implement, research, post-game) runs on — size the run, gather context once, brief isolated expert seats, collect, judge, challenge adversarially, deliver, learn, close. Invoked by a mode; also use it to chair any large multi-part task that would overflow one context window.
 user-invocable: false
 ---
 
@@ -28,8 +28,8 @@ compaction is lossy, and the disk is the only memory a reset can trust.
 7. **Evidence or it didn't happen.** Claims carry `path:line`; "done" carries a gate's output file
    and exit code; a builder's explanation is a claim, not evidence.
 8. **Aggregate, then judge; judge, then challenge.** The challenger never sees the author's reasoning.
-9. **The user rules; the council proposes.** Questions come last, numbered, in the chat. Rulings are
-   recorded in the user's own words.
+9. **The user rules; the council proposes.** Questions come last, numbered, in the chat. The user's
+   request and every ruling are recorded in the user's own words.
 10. **Every run is sized, budgeted, reported and closed.** Estimate before, actual after, closed always.
 11. **The council learns this project.** What it got wrong becomes memory; each seat's track record
     shapes the next roster.
@@ -56,7 +56,8 @@ your mode's `## At <Stage>` section, if it has one. Each stage ends by recording
 
 Stage 0, Summon, is the council-init skill. council-implement replaces stages 3–7 with its build
 loop. A **Solo** run skips stages 3–6: you do the seat work yourself with the needed reference doc,
-then continue at Judge.
+then continue at Judge. council-postgame skips them too: you do the desk work, and only verifiers are
+dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 ## The helper
 
@@ -70,7 +71,8 @@ then continue at Judge.
 | `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
 | `council index [--base <ref>]` | build the change index: hunks, symbols, callers, tests |
 | `council gate <name> [-- '<command>']` · `council gate --all --at grounding` (or `verify`) | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved |
-| `council collect` · `council check` | check the seat files · check citations and origin |
+| `council collect` · `council check` | check the seat files (and a war room's debate.md) · check citations, origin and request quotes |
+| `council ask save [slug]` | file the run's ask.md — the user's words — under `.council/asks/`, redacting secrets; records `ask=` |
 | `council fingerprint check` · `council memory select` · `council prior` | a changed stack · the memory entries in scope · earlier council work on these paths |
 | `council ledger` · `council map status` · `council doctor` | each seat's track record · map freshness · drift scan with a fix per finding |
 
@@ -86,8 +88,9 @@ linked worktree. **Code root** = the working tree you are reviewing or building.
 |---|---|---|
 | `council.config.md` · `conventions.md` · `map.md` | roster, gates, run preferences · memory · codebase map | tracked |
 | `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
-| `plans/` `reviews/` `logs/` `research/` `refs/` | deliverables · project-local seat docs | tracked |
-| `runs/<date-time>-<mode>/` | `session-state.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
+| `plans/` `reviews/` `logs/` `research/` `postgames/` `refs/` | deliverables · project-local seat docs | tracked |
+| `asks/` | the user's requests, word for word — every deliverable points at its own | tracked |
+| `runs/<date-time>-<mode>/` | `session-state.md` `ask.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `debate.md` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
 `.council/refs/<file>.md` → under the council home. Workers always get absolute paths, and a seat
@@ -97,9 +100,10 @@ live at a legacy path; the config's Memory section says where.
 ## Limits
 
 - **Agents:** at most 10 per run, verifiers included (config `agent cap`), unless the user raises it.
+  A resumed worker (SendMessage to its agent id) isn't a new agent; a re-dispatch is.
 - **Sizes:** Solo (you, inline) · Squad (2–4 seats + 1–2 verifiers) · Full (up to 7 seats +
   verifiers). Size a run as seats plus the verifiers Challenge will need; its overflow rule covers
-  the rest.
+  the rest. A post-game uses 1–3 verifiers and counts as Squad.
 - **Approval:** a `/command` approves runs up to the config's `approve without asking` size (default
   Squad). A Full run always asks.
 
@@ -109,12 +113,13 @@ live at a legacy path; the config's Memory section says where.
   workers' states to `seats.tsv` (`council seat`).
 - After a compaction or in a new session, the SessionStart hook names the open runs — after a
   compaction, the one this session was driving. Re-invoke the skill named by the run's `mode:` (it
-  loads this one), read `session-state.md`, re-read the doctrine for its phase, and continue. No
+  loads this one), read `session-state.md` and `ask.md`, re-read the doctrine for its phase, and continue. No
   hook message? Run `council run status`.
 - **Seats marked running:** after a compaction they are still working — wait for their
   notifications; never re-dispatch them. In a new session they are gone: `council collect` shows
   which files exist; mark the rest `council seat <slug> failed note="interrupted"` and re-dispatch
-  each once.
+  each once. A seat noted `round 2` was answering a war room: it gets a fresh round-2 worker
+  (war-room.md), never a round-1 re-dispatch.
 - A run the user doesn't want resumed: `council run close --status abandoned`. One they paused:
   `--status paused`.
 

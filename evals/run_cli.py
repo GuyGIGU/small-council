@@ -521,6 +521,267 @@ with tempfile.TemporaryDirectory() as tmp:
           "\thunt\t" in read(os.path.join(fresh, ".council", "ledger.tsv"))
           and not os.path.exists(os.path.join(plain, ".council", "ledger.tsv")) and "ledger: 1 seat row" in out, out + err)
 
+    # 0.6 — the user's request word for word, a war room's round 2, the post-game
+    req = new_repo(tmp, "req")
+    write(os.path.join(req, "a.txt"), "one\ntwo\n")
+    git(req, "add", "-A")
+    git(req, "commit", "-q", "-m", "a")
+    write(os.path.join(req, ".council", "council.config.md"), "# Council config\n## Memory\n- conventions: .council/conventions.md\n")
+    write(os.path.join(req, ".council", "conventions.md"), "# Conventions\n## Enforced Conventions (EC)\n"
+          "### EC-1: plans that touch migrations get a rollback task\n**Rule:** always · **Why:** x\n**Scope:** council-plan\n")
+    code, prun, err = council(req, "run", "open", "council-plan")
+    prun = prun.strip()
+    check("run open: stdout is the folder alone; the request reminder goes to stderr",
+          code == 0 and os.path.isdir(prun) and "ask.md before anything else" in err, prun + err)
+    code, _, err = council(req, "ask", "save")
+    check("ask save: refuses without an ask.md", code == 2 and "no ask.md" in err, err)
+    write(os.path.join(prun, "ask.md"), "# Ask — Empty\nsource: said at the time\n## In your words\n\n## Later, in your words\n")
+    code, _, err = council(req, "ask", "save")
+    check("ask save: refuses an ask.md with no words", code == 2 and "no words" in err, err)
+    words = ("We need CSV export,  filterable by `date` and $OWNER — \"admins\" only.  \n"
+             "Key: sk-abcdefghijklmnopqrstuvwx · token=ghp_abcdefghijklmnopqrstuvwxyz1234 · café\n")
+    ask_text = ("# Ask — CSV export for Reports!\nsource: said at the time\n## In your words\n" + words
+                + "## Later, in your words\n").replace("\n", "\r\n")
+    with open(os.path.join(prun, "ask.md"), "w", encoding="utf-8", newline="") as f:
+        f.write(ask_text)
+    code, out, err = council(req, "ask", "save")
+    asks = os.path.join(req, ".council", "asks")
+    filed = sorted(os.listdir(asks)) if os.path.isdir(asks) else ["?"]
+    with open(os.path.join(asks, filed[0]), encoding="utf-8", newline="") as f:
+        body = f.read() if filed[0] != "?" else ""
+    check("ask save: files a new request as asks/<date>-<slug>.md",
+          code == 0 and len(filed) == 1 and filed[0].endswith("-csv-export-for-reports.md") and "(new)" in out, out + err)
+    check("ask save: run and mode follow line 1; the rest stays as written (CRLF, backticks, $, quotes, UTF-8)",
+          body.startswith("# Ask — CSV export for Reports!\r\nrun: ") and "\nmode: council-plan\n" in body
+          and "filterable by `date` and $OWNER — \"admins\" only.  \r\n" in body and "café" in body, repr(body[:400]))
+    check("ask save: redacts secret-looking strings and says so",
+          "sk-abc" not in body and "ghp_" not in body and body.count("[redacted]") == 2 and "redacted 2" in out, out + repr(body))
+    check("ask save: records ask= in the state", f"ask: .council/asks/{filed[0]}" in read(os.path.join(prun, "session-state.md")))
+    code, out, _ = council(req, "memory", "select")
+    check("memory select: a lesson scoped to a mode applies in that mode's runs", "EC-1" in out, out)
+    council(req, "run", "close")
+    code, prun2, _ = council(req, "run", "open", "council-plan")
+    with open(os.path.join(prun2.strip(), "ask.md"), "w", encoding="utf-8", newline="") as f:
+        f.write(ask_text)
+    code, out, _ = council(req, "ask", "save")
+    check("ask save: the same name on the same day gets -2", "-csv-export-for-reports-2.md (new)" in out, out)
+    council(req, "run", "close")
+    code, irun, _ = council(req, "run", "open", "council-implement")
+    irun = irun.strip()
+    council(req, "state", f"ask=.council/asks/{filed[0]}")
+    code, out, _ = council(req, "memory", "select")
+    check("memory select: ... and not in another mode's runs", code == 0 and "EC-1" not in out and "memory: 0 scoped" in out, out)
+    write(os.path.join(irun, "ask.md"), "# Ask — build it\nsource: said at the time\n## In your words\n(no new words)\n## Later, in your words\n")
+    before = read(os.path.join(asks, filed[0]))
+    code, out, _ = council(req, "ask", "save")
+    check("ask save: a continuing request with no new words appends nothing",
+          "(no new words)" in out and read(os.path.join(asks, filed[0])) == before, out)
+    write(os.path.join(irun, "ask.md"), "# Ask — build it\n## In your words\nAlso add a PDF option.\n"
+          "## Later, in your words\n- 2026-09-15: \"drop the owner filter\"\n")
+    code, out, _ = council(req, "ask", "save")
+    after = read(os.path.join(asks, filed[0]))
+    check("ask save: a continuing request appends its new words under a dated heading",
+          "(continued)" in out and after.startswith(before) and "— council-implement, run " in after
+          and "Also add a PDF option." in after and "drop the owner filter" in after, out + after)
+    with open(os.path.join(irun, "ask.md"), "w", encoding="utf-8", newline="") as f:
+        f.write("# Ask — more\r\n## In your words\r\nAlso export XLSX.\r\n## Later, in your words\r\n")
+    council(req, "ask", "save")
+    with open(os.path.join(asks, filed[0]), "rb") as f:
+        raw = f.read()
+    check("ask save: a continuing request keeps its words' CRLF endings", b"Also export XLSX.\r\n" in raw, repr(raw[-120:]))
+    council(req, "state", "ask=.council/asks/missing.md")
+    code, _, err = council(req, "ask", "save")
+    check("ask save: a continued request that has gone missing is an error", code == 2 and "missing" in err, err)
+    council(req, "state", f"ask=.council/asks/{filed[0]}")
+
+    write(os.path.join(irun, "brief.md"), "# Brief\n## Seats\n### leach — Data (Leach)\n- ref: none\n- out: seats/leach.md\n")
+    write(os.path.join(irun, "seats", "leach.md"), "# Leach — Data (council-plan)\nref: none\n## Index\n1 · must · Principle 1 · a.txt:1 · x\n")
+    write(os.path.join(irun, "debate.md"), "# War room — x · round 2\n## Points\n### P1. one table or two?\n"
+          "## Seats\n### leach-r2 — Data (Leach), round 2\n- ref: none\n- out: seats/leach-r2.md\n- cap: 6\n")
+    council(req, "seat", "leach", "running", "agent=w1")
+    council(req, "seat", "leach", "done", "tokens=20000")
+    code, out, _ = council(req, "collect")
+    check("collect: reads a war room's round-2 seat from debate.md", code == 1 and re.search(r"^leach-r2\s+missing", out, re.MULTILINE) is not None, out)
+    write(os.path.join(irun, "seats", "leach-r2.md"), "# Leach — Data (council-plan, round 2)\nref: none\nquestion: q\n"
+          "## Index\n1 · hold · P1 fowler#4 · a.txt:2 · one table\n")
+    council(req, "seat", "leach", "running", "agent=w1", "note=round 2")
+    code, out, _ = council(req, "collect")
+    check("collect: a round-2 row follows its round-1 seat's worker", "state:running" in row(out, "leach-r2"), out)
+    code, out, _ = council(req, "seat", "leach", "done", "tokens=6000")
+    check("seat: a resumed worker adds tokens, not agents", "agents: 1 of 1 done" in out and "~26k tokens so far" in out, out)
+    code, out, _ = council(req, "collect")
+    check("collect: both rounds in order", code == 0 and "all 2 seats in order" in out, out)
+
+    write(os.path.join(irun, "ask.md"), "# Ask — more\n## In your words\nAlso email the export every Monday morning.\n")
+    write(os.path.join(irun, "synthesis.md"), "# Synthesis\n## Kept\n"
+          '1 · must · ask · reports · export · quote: "CSV export,  filterable by `date`"\n'
+          '2 · must · ask · reports · email · quote: “Also email the export every Monday morning.”\n'
+          '3 · must · ask · reports · team · quote: "filterable by team"\n'
+          '4 · must · ask · reports · none\n'
+          '5 · must · ask · reports · short · Quote: "port"\n')
+    code, out, _ = council(req, "check")
+    check("check: a quote found only in the filed request passes (whitespace collapsed)", "synthesis#1  quote  ok" in out, out)
+    check("check: a quote found only in this run's ask.md passes — curly quotes too", "synthesis#2  quote  ok" in out, out)
+    check("check: a paraphrased quote fails", code == 1 and "synthesis#3  quote  NOT-IN-THE-REQUEST" in out, out)
+    check("check: a request part with no quote, or a one-word one, is broken",
+          "synthesis#4  quote  NO-QUOTE" in out and "synthesis#5  quote  TOO-SHORT" in out
+          and "2 of 5 quotes found in the request" in out, out)
+    code, out, err = council(req, "run", "close")
+    check("run close: no warning when the request was filed", code == 0 and "no request was filed" not in err, err)
+    council(req, "run", "open", "council-review")
+    code, out, err = council(req, "run", "close")
+    check("run close: warns when a completed review filed no request", code == 0 and "no request was filed" in err, err)
+
+    write(os.path.join(req, ".council", "postgames", "2026-09-15-csv.md"),
+          "---\ntitle: Post-game — CSV\nkind: postgame\nareas: reports/**\n---\n# Post-game: CSV\n"
+          "**Your request:** `.council/asks/x.md` — \"We need CSV export\"\n| 1 | a.txt:1 | Met |\n")
+    code, out, _ = council(req, "prior", "a.txt")
+    check("prior: finds a post-game", "postgames/2026-09-15-csv.md" in out, out)
+    code, out, _ = council(req, "prior", ".council/asks/x.md")
+    check("prior: a request's path finds the deliverables that point at it", "postgames/2026-09-15-csv.md" in out, out)
+    nohome = new_repo(tmp, "nohome")
+    code, pg, err = council(nohome, "run", "open", "council-postgame")
+    pg = pg.strip()
+    check("run open council-postgame: works with no council yet, and creates one",
+          code == 0 and os.path.isdir(pg) and "runs/" in read(os.path.join(nohome, ".council", ".gitignore")), pg + err)
+
+    # A post-game's index hides earlier council work from its verifier
+    append(os.path.join(req, "a.txt"), "three\n")
+    code, rv, _ = council(req, "run", "open", "council-review")
+    code, out, _ = council(req, "index", "--base", "HEAD")
+    check("index: a review's index lists earlier council work", "## Earlier council work" in read(os.path.join(rv.strip(), "index.md")), out)
+    council(req, "run", "close", "--status", "abandoned")
+    code, pgr, _ = council(req, "run", "open", "council-postgame")
+    pgr = pgr.strip()
+    code, out, _ = council(req, "index", "--base", "HEAD")
+    check("index: a post-game's index leaves earlier council work out — its verifier reads the file",
+          "Earlier council work" not in read(os.path.join(pgr, "index.md")) and "left out" in out, out)
+    write(os.path.join(pgr, "synthesis.md"), "# Synthesis\n## Kept\n## Drift on paper\n- nothing\n")
+    code, out, _ = council(req, "check")
+    check("check: a post-game with no quoted parts fails", code == 1 and "no quotes found" in out, out)
+
+    # Redaction: the common secret shapes go; ordinary words stay
+    secrets = ['password: "hunter2hunter2"', 'API_KEY="abcd1234efgh5678ijkl"', '{"api_key": "abcd1234efgh5678ijkl"}',
+               "STRIPE=sk_live_not-a-real-key-000000", "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+               "postgres://admin:S3cretPassw0rd@db.example.com/app",
+               "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop",
+               "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz"]
+    keep = ["Add a task-list-component-for-dashboard page.", "Use the flask-sqlalchemy-extension-helper.",
+            "Auth token: short-lived-JWT, 15 minutes.", "## Summary", "Also: add a retry to the deploy script.",
+            "token_expiry: 2026-09-16T10:00", "Auth token: 15-minute-lifetime", "secret_santa_budget=120euros"]
+    write(os.path.join(pgr, "ask.md"), "# Ask — Secrets\n## In your words\n" + "\n".join(secrets) + "\n"
+          + " ".join(keep[:3]) + "\n" + "\n".join(keep[5:]) + "\n" + keep[3] + "\n-----BEGIN OPENSSH PRIVATE KEY-----\n"
+          "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\n" + keep[4] + "\n## Later, in your words\n")
+    code, out, _ = council(req, "ask", "save")
+    filed_s = [f for f in os.listdir(asks) if "secrets" in f]
+    sbody = read(os.path.join(asks, filed_s[0])) if filed_s else ""
+    leaked = [s for s in ["hunter2", "abcd1234", "sk_live_", "wJalrXUtnFEMI", "S3cretPassw0rd", "eyJhbGci", "github_pat_", "b3BlbnNz"]
+              if s in sbody]
+    check("ask save: redacts quoted passwords, JSON keys, live keys, AWS secrets, URL passwords, bearer tokens, key blocks",
+          not leaked and "[redacted private key]" in sbody and "redacted 9" in out, str(leaked) + out)
+    check("ask save: leaves ordinary words alone — task-list-…, flask-…, a token's description, text after a snipped key",
+          all(k in sbody for k in keep), sbody)
+    code, out, _ = council(req, "ask", "save")
+    check("ask save: saving again in the same run re-files the same request — no copy",
+          "(new)" in out and len([f for f in os.listdir(asks) if "secrets" in f]) == 1, out)
+    council(req, "run", "close", "--status", "abandoned")
+
+    # The request's bookkeeping: continues:, refusals, one section per run, the close warning
+    code, crun, _ = council(req, "run", "open", "council-implement")
+    crun = crun.strip()
+    write(os.path.join(crun, "ask.md"), "# Ask — go\n## In your words\n(no new words)\n")
+    code, _, err = council(req, "ask", "save")
+    check("ask save: (no new words) that names no request is refused", code == 2 and "names no request" in err, err)
+    write(os.path.join(crun, "ask.md"), f"# Ask — go\ncontinues: `.council/asks/{filed[0]}`\n## In your words\nAlso a CSV header row.\n")
+    code, out, _ = council(req, "ask", "save")
+    code2, out2, _ = council(req, "ask", "save")
+    sections = read(os.path.join(asks, filed[0])).count(", run " + os.path.basename(crun))
+    check("ask save: follows ask.md's continues: line, and a second save replaces this run's section",
+          "(continued)" in out and "(continued)" in out2 and sections == 1
+          and f"ask: .council/asks/{filed[0]}" in read(os.path.join(crun, "session-state.md")), out + out2)
+    council(req, "state", "ask=README.md")
+    code, _, err = council(req, "ask", "save")
+    check("ask save: never writes to a file outside .council/asks/", code == 2 and "copy the words into ask.md" in err, err)
+    council(req, "run", "close", "--status", "abandoned")
+    council(req, "run", "open", "council-implement")
+    council(req, "state", f"ask=.council/asks/{filed[0]}")
+    code, out, err = council(req, "run", "close")
+    check("run close: warns when a continuing run never filed its words", "no request was filed" in err, err)
+
+    # A war room's round 2: collect waits for a running seat; a fresh round-2 worker counts as its seat
+    code, wr, _ = council(req, "run", "open", "council-plan")
+    wr = wr.strip()
+    write(os.path.join(wr, "brief.md"), "# Brief\n## Seats\n### leach — Data (Leach)\n- ref: none\n- out: seats/leach.md\n")
+    write(os.path.join(wr, "seats", "leach.md"), "# Leach — Data (council-plan)\nref: none\n## Index\n1 · must · Principle 1 · a.txt:1 · x\n")
+    write(os.path.join(wr, "debate.md"), "# War room\n## Seats\n### leach-r2 — Data (Leach), round 2\n- ref: none\n- out: seats/leach-r2.md\n")
+    council(req, "seat", "leach", "done", "agent=w1", "tokens=20000")
+    council(req, "seat", "leach", "running", "agent=w1", "note=round 2")
+    code, out, _ = council(req, "collect")
+    check("collect: while round 2 runs it says wait, not fix", code == 1 and "still working" in out and "fix the rows" not in out, out)
+    council(req, "seat", "leach", "done", "tokens=5000")
+    council(req, "seat", "leach-r2", "done", "agent=w9", "tokens=4000")
+    write(os.path.join(wr, "seats", "leach-r2.md"), "# Leach — Data (council-plan, round 2)\nref: none\n## Index\n1 · hold · P1 x#1 · a.txt:1 · y\n")
+    write(os.path.join(wr, "synthesis.md"), "# Synthesis\n## Kept\n1 · must · Principle 1 · a.txt:1 · x · from: leach#1\n")
+    council(req, "run", "close")
+    code, out, _ = council(req, "ledger")
+    check("ledger: a fresh round-2 worker counts as its seat and raises nothing new",
+          "leach-r2" not in out and re.search(r"\tleach-r2\t0\t", read(os.path.join(req, ".council", "ledger.tsv"))) is not None, out)
+
+    # Pasted headings stay in the words; the quote check's reach; collect with a fresh round-2 worker
+    code, hr, _ = council(req, "run", "open", "council-research")
+    write(os.path.join(hr.strip(), "ask.md"), "# Ask — From the PR\n## In your words\n## Summary\nAdd CSV export to the reports page.\n"
+          "## Acceptance\n- admins only\n")
+    code, out, err = council(req, "ask", "save")
+    pr_file = next((f for f in os.listdir(asks) if "from-the-pr" in f), "")
+    check("ask save: words that open with a pasted '## Summary' are filed whole",
+          code == 0 and bool(pr_file) and "## Acceptance" in read(os.path.join(asks, pr_file)), out + err)
+    council(req, "run", "close")
+    code, hr2, _ = council(req, "run", "open", "council-implement")
+    hr2 = hr2.strip()
+    write(os.path.join(hr2, "ask.md"), f"# Ask — more\ncontinues: .council/asks/{pr_file}\n## In your words\n"
+          "Also, from the issue:\n## Details\n- PDF option too\n")
+    code, out, _ = council(req, "ask", "save")
+    filed_pr = read(os.path.join(asks, pr_file))
+    check("ask save: a continued request keeps a pasted heading and the lines under it",
+          "(continued)" in out and "## Details" in filed_pr and "- PDF option too" in filed_pr, out + filed_pr)
+    write(os.path.join(hr2, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P2 · Principle 1 · a.txt:1 · drops the user's quote: it shows the raw id\n"
+          '2 · must · ask · reports · export · quote: "SV export to"\n')
+    code, out, _ = council(req, "check")
+    check("check: only a request part is quote-checked, and a quote inside a longer word fails",
+          "synthesis#1  quote" not in out and "synthesis#2  quote  NOT-IN-THE-REQUEST" in out, out)
+    council(req, "run", "close")
+    code, sq, _ = council(req, "run", "open", "council-postgame")
+    sq = sq.strip()
+    write(os.path.join(sq, "ask.md"), f"# Ask — check\ncontinues: .council/asks/{pr_file}\n## In your words\n(no new words)\n")
+    write(os.path.join(sq, "synthesis.md"), '# Synthesis\n## Kept\n1 · must · ask · reports · export · quote: "Add CSV export to the reports page."\n')
+    code, out, _ = council(req, "check")
+    check("check: follows ask.md's continues: line before the request is filed", code == 0 and "synthesis#1  quote  ok" in out, out)
+    council(req, "run", "close", "--status", "abandoned")
+    code, sq2, _ = council(req, "run", "open", "council-postgame")
+    sq2 = sq2.strip()
+    write(os.path.join(sq2, "ask.md"), "# Ask — dark\n## In your words\nDark mode.\n## Later, in your words\n")
+    write(os.path.join(sq2, "synthesis.md"), '# Synthesis\n## Kept\n1 · must · ask · ui · dark · quote: "Dark mode."\n')
+    code, out, _ = council(req, "check")
+    check("check: a one-line request quoted whole passes", code == 0 and "synthesis#1  quote  ok" in out, out)
+    council(req, "run", "close", "--status", "abandoned")
+    code, fr, _ = council(req, "run", "open", "council-plan")
+    fr = fr.strip()
+    write(os.path.join(fr, "brief.md"), "# Brief\n## Seats\n### leach — Data (Leach)\n- ref: none\n- out: seats/leach.md\n")
+    write(os.path.join(fr, "seats", "leach.md"), "# Leach — Data (council-plan)\nref: none\n## Index\n1 · must · Principle 1 · a.txt:1 · x\n")
+    write(os.path.join(fr, "debate.md"), "# War room\n## Seats\n### leach-r2 — Data (Leach), round 2\n- ref: none\n- out: seats/leach-r2.md\n")
+    council(req, "seat", "leach", "done", "agent=w1", "tokens=1000")
+    council(req, "seat", "leach-r2", "failed", "agent=w9", "note=died")
+    code, out, _ = council(req, "collect")
+    check("collect: a fresh round-2 worker is judged by its own row", code == 1 and "state:failed" in row(out, "leach-r2"), out)
+    council(req, "seat", "leach", "failed", "note=interrupted")
+    council(req, "seat", "leach-r2", "done", "agent=w9", "tokens=900")
+    write(os.path.join(fr, "seats", "leach-r2.md"), "# Leach — Data (council-plan, round 2)\nref: none\n## Index\n1 · hold · P1 x#1 · a.txt:1 · y\n")
+    code, out, _ = council(req, "collect")
+    check("collect: once a fresh round-2 worker is done, the lost round-1 seat is judged by its file",
+          code == 0 and "all 2 seats in order" in out, out)
+    council(req, "run", "close", "--status", "abandoned")
+
     # Usage
     code, out, _ = council(repo, "help")
     check("help: prints the command list", code == 0 and "council run open" in out and "council doctor" in out, out)
