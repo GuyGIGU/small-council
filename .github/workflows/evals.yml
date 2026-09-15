@@ -1,0 +1,58 @@
+name: behavioural evals
+
+# Runs the claude plugin eval suite against the real model — it costs tokens, so it runs only on demand.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Only cases with this tag (blank = the whole suite)"
+        required: false
+        default: "triggering"
+      runs:
+        description: "Runs per case (blank = each case's own count)"
+        required: false
+        default: "1"
+      model:
+        description: "Model under test — pinned, so a model rollout isn't mistaken for a plugin regression"
+        required: false
+        default: "claude-sonnet-5"
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # Granted Bash runs only inside Claude Code's OS sandbox; on Linux that needs bubblewrap and socat
+      - name: Install Claude Code and the Bash sandbox
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.270
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap socat
+      - name: Run the suite
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TAG: ${{ inputs.tag }}
+          RUNS: ${{ inputs.runs }}
+          MODEL: ${{ inputs.model }}
+        shell: bash
+        run: |
+          args=(. --trust-plugin --scaffold --model "$MODEL" --judge-model claude-haiku-4-5 -j 4
+                --max-cost-usd 40 --no-publish --threshold 0.6 --json evals/suite/results/ci.json)
+          if [ -n "$RUNS" ]; then args+=(--runs "$RUNS"); fi
+          # The triggering cases need no shell; every other case runs the council helper and writes files
+          if [ "$TAG" != triggering ]; then args+=(--allow-tools Bash Write); fi
+          if [ -n "$TAG" ]; then args+=(--tag "$TAG"); fi
+          claude plugin eval "${args[@]}"
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/suite/results/

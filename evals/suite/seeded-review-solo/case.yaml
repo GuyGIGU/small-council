@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: seeded-review-solo
+description: A Solo council review of a seeded change finds the planted empty-input bug (recall), leaves the accepted pattern alone (precision, memory respected) and writes the deliverable. The graders are the answer key; the agent under test can't read them.
+tags: [fixture, precision-recall, review]
+runs: 2
+expected_outcome: Reports average()'s division by zero on an empty list; does not flag last_or_none (AP-1); writes .council/reviews/<date>-<slug>.md; dispatches no workers.
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 60
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Skill, Agent]

@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: init-godot-roster
+description: council-init on a small Godot game proposes a council fitted to the engine — web seats recast or dropped with reasons, the save system covered, surface markers in Godot idioms — and writes nothing before the user confirms.
+tags: [adaptation, init]
+runs: 2
+expected_outcome: A proposed roster that keeps Fowler and Beck, recasts or drops web seats, covers save files, uses *.gd / *.tscn markers, considers an engine seat, and asks before writing.
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 40
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Skill]

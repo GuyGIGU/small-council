@@ -151,7 +151,7 @@ for s in SKILLS:
 review, plan, impl, research, init = (skill[k] for k in ["council-review", "council-plan", "council-implement", "council-research", "council-init"])
 for label, text, needles in [
     ("review", review, ["merge-base", "council index --base", "Origin:", "Basis:", "Refuted if:", "Not a finding", "council-implement"]),
-    ("plan", plan, ["specs/", "Touches", "Done when", "council-research"]),
+    ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research"]),
     ("implement", impl, ["fix mode", "Before-evidence", "After-evidence", "clean-context diagnosis", "converge", "council gate --all",
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md"]),
     ("research", research, ["scout", "Strength:"]),
@@ -268,6 +268,58 @@ helper_version = re.search(r'^COUNCIL_VERSION="([^"]+)"', cli, re.MULTILINE)
 check("version: plugin.json matches the latest CHANGELOG release", bool(released) and plugin.get("version") == released[0], f"{plugin.get('version')} vs {released[:1]}")
 check("version: the helper matches plugin.json", bool(helper_version) and helper_version.group(1) == plugin.get("version"),
       helper_version.group(1) if helper_version else "none")
+
+# 14. The behavioural suite (claude plugin eval): found by the manifest, every case has a prompt and a
+#     grader, every scaffold exists, every tool a grader counts is one the run can call (a tool the case
+#     doesn't list is removed from the session, so "used it 0 times" would pass by construction), every
+#     grader regex compiles, the near-misses assert no mode starts yet still check the ask was handled,
+#     and every kind of case is there
+GRANTABLE = {"Bash", "Write", "Edit", "WebFetch", "WebSearch"}   # granted by --allow-tools, not by the case
+suite_rel = (plugin.get("experimental") or {}).get("evals", "")
+suite = os.path.join(ROOT, *suite_rel.split("/")) if suite_rel else ""
+check("suite: plugin.json points experimental.evals at an existing directory", bool(suite_rel) and os.path.isdir(suite), suite_rel)
+cases = sorted(d for d in os.listdir(suite) if d != "results" and os.path.isdir(os.path.join(suite, d))) if os.path.isdir(suite) else []
+check("suite: at least ten cases", len(cases) >= 10, ", ".join(cases))
+suite_tags = set()
+for c in cases:
+    cdir = os.path.join(suite, c)
+    prompt_t, case_t = read(suite_rel, c, "prompt.md"), read(suite_rel, c, "case.yaml")
+    gdir = os.path.join(cdir, "graders")
+    grader_files = sorted(f for f in os.listdir(gdir) if f.endswith(".md")) if os.path.isdir(gdir) else []
+    graders = {f: read(suite_rel, c, "graders", f) for f in grader_files}
+    check(f"suite/{c}: has a prompt and at least one grader", bool(prompt_t or case_t) and (bool(grader_files) or "graders:" in case_t))
+    m = re.search(r"^\s*scaffold_script:\s*(\S+)", case_t, re.MULTILINE)
+    if m:
+        check(f"suite/{c}: its scaffold script exists", os.path.isfile(os.path.join(cdir, m.group(1))))
+    m = re.search(r"^tags:\s*\[([^\]]*)\]", prompt_t + "\n" + case_t, re.MULTILINE)
+    if m:
+        suite_tags |= {t.strip() for t in m.group(1).split(",") if t.strip()}
+    # prompt.md frontmatter overrides case.yaml
+    m = (re.search(r"^\s*allowed_tools:\s*\[([^\]]*)\]", prompt_t, re.MULTILINE)
+         or re.search(r"^\s*allowed_tools:\s*\[([^\]]*)\]", case_t, re.MULTILINE))
+    allowed = {t.strip() for t in m.group(1).split(",") if t.strip()} if m else set()
+    for f, g in graders.items():
+        m = re.search(r"^tool:\s*(\w+)", g, re.MULTILINE)
+        if m:
+            check(f"suite/{c}/{f}: counts a tool the run can call ({m.group(1)})", m.group(1) in allowed | GRANTABLE,
+                  "allowed_tools: " + ", ".join(sorted(allowed)))
+        for key in ("pattern", "input_match"):
+            m = re.search(rf"^{key}:\s*'((?:[^']|'')*)'\s*$", g, re.MULTILINE)
+            if m:
+                try:
+                    re.compile(m.group(1).replace("''", "'"))
+                    compiled = ""
+                except re.error as e:
+                    compiled = str(e)
+                check(f"suite/{c}/{f}: its {key} compiles", not compiled, compiled)
+    if c.startswith("near-miss"):
+        body = "".join(graders.values())
+        check(f"suite/{c}: asserts no council mode starts, in both arms", "max: 0" in body and "arm: both" in body)
+        check(f"suite/{c}: also checks the ask was handled, so a run that never started can't pass",
+              any("max: 0" not in g for g in graders.values()))
+want_tags = {"triggering", "near-miss", "sizing", "dispatch", "fixture", "calibration", "resume", "adaptation"}
+check("suite: covers triggering, near-misses, sizing, an end-to-end dispatch, a seeded fixture, calibration, resume and adaptation",
+      want_tags <= suite_tags, ", ".join(sorted(want_tags - suite_tags)))
 
 passed = sum(1 for ok, *_ in results if ok)
 for ok, name, detail in results:

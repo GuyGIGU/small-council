@@ -16,7 +16,7 @@ Checks:
 - the helper and hook scripts being bash with LF endings;
 - the ten stage doctrine files;
 - seat docs opening with the `# Title` that workers echo, and numbering principles "Principle N";
-- the helper and hook scripts tracked in git as executable.
+- the helper, hook and scaffold scripts tracked in git as executable.
 
 ## 2. Structural evals — is the design intact? (blocking)
 
@@ -34,7 +34,9 @@ Checks:
 - size budgets that keep skills whole after compaction;
 - bash 3.2 portability;
 - the rename;
-- version agreement across plugin.json, the CHANGELOG and the helper.
+- version agreement across plugin.json, the CHANGELOG and the helper;
+- the behavioural suite's cases: a prompt and a grader each, scaffolds that exist, tools the graders
+  count that the run can call, regexes that compile, near-misses that can't pass on a dead run.
 
 ## 3. Helper evals — does `bin/council` do its job?
 
@@ -82,7 +84,47 @@ python evals/run_phrases.py
 Looks for the wording of the field-tested rules and warns if one is missing. It never fails: a
 reworded rule shouldn't break the build, and a phrase proves nothing about behaviour.
 
-## 6. Behavioral drills — run in Claude Code
+## 6. Behavioural suite — runs Claude for real, so it costs tokens
+
+`evals/suite/` holds cases for `claude plugin eval` (plugin.json → `experimental.evals`). Each case runs
+with and without the plugin, and the report shows what the plugin adds (Δ). Graders are the answer
+keys; the agent under test can't read them.
+
+| Tag | Cases | What they check | Cost |
+|---|---|---|---|
+| triggering, near-miss | `trigger-review`, `trigger-plan`, `trigger-research`, `near-miss-question`, `near-miss-small-edit` | the right mode starts; none starts for a question, or for a one-line edit in a council project — and the ask still gets handled | cheap — a few turns each |
+| sizing | `propose-small-change`, `propose-risky-change` | a right-sized proposal, seats not going with reasons, nothing dispatched before the go-ahead | moderate |
+| dispatch | `squad-review-dispatch` | a `/council-review` inside the approved size runs end to end: 2–4 workers, a blind verifier for the auth bypass, the bypass in the deliverable | the priciest |
+| fixture | `seeded-review-solo` | recall (the planted bug) and precision (the accepted pattern left alone), in the reply and in the deliverable | high |
+| calibration | `verifier-calibration` | the verifier's verdicts on two true and two false claims, from a blind dispatch | moderate |
+| resume | `resume-unfinished-run` | an open run is offered for resume; no seat is dispatched again | moderate |
+| adaptation | `init-godot-roster` | council-init fits a non-web stack and asks before writing | moderate |
+
+```bash
+claude plugin eval . --scaffold --ablation none --runs 1 --tag triggering    # a quick smoke — no shell needed
+claude plugin eval . --scaffold --allow-tools Bash Write --max-cost-usd 40      # the whole suite — WSL2, macOS or Linux
+python evals/record_eval.py                                                    # add the run to evals/history/ and compare
+```
+
+- **Credentials:** every case runs in a fresh `claude -p` child with a throwaway config, so it needs a
+  login it can see — `ANTHROPIC_API_KEY`, or `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) in
+  the environment you run from. Without one, every run errors ("Not logged in") and `record_eval.py`
+  refuses to record the result.
+- **The shell sandbox:** every case past the smoke runs the `council` helper, so it needs
+  `--allow-tools Bash Write`, and Claude Code runs granted Bash only inside its OS sandbox. Native
+  Windows has none, so there every such run is refused. Run the whole suite under WSL2, on macOS, on
+  Linux with `bubblewrap` and `socat` installed, or in CI.
+- **Scaffold scripts** (`evals/suite/*/scaffold.sh`) build each case's fixture repo and run as you,
+  only with `--scaffold`. They're self-contained; read them before trusting them.
+- **History:** raw runs land in `evals/suite/results/` (untracked). `record_eval.py` keeps one small
+  summary per recorded run in `evals/history/`, named by the run's start and the plugin version it
+  loaded. It compares with the newest earlier clean entry of the same shape — same `--ablation`, same
+  `--tag` filters — and exits 1 when a case's score drops by more than 0.1. It refuses partial runs
+  and runs that errored; runs that only hit their turn or time cap are recorded and counted as capped.
+- **CI:** `.github/workflows/evals.yml` runs on demand only: Claude Code and both models pinned, the
+  Bash sandbox installed, Bash granted only past the triggering smoke, and a cost ceiling.
+
+## 7. Behavioral drills — run in Claude Code
 
 See `behavioral-drills.md` (D1–D17). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

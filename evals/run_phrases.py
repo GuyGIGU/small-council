@@ -74,6 +74,8 @@ RULES = [  # (where, the rule, the phrase that carries it)
     ("init", "recast before dropping a seat", "Recast before you drop"),
     ("plan", "the plan gate", "Ready to dispatch the council"),
     ("plan", "walking skeleton first", "walking skeleton"),
+    ("plan", "a real structural choice gets two stances", "Two stances"),
+    ("plan", "a task's constraints are quoted word for word", "quoted word for word"),
     ("implement", "per-task commits offered", "One commit per task"),
     ("implement", "quote the whole gate command", "quote the whole command"),
     ("research", "rival hypotheses for why-questions", "rival hypotheses"),

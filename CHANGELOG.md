@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-15
+
+Proof. Until now nothing showed the council behaves the way its doctrine says. 0.5 adds a behavioural
+suite that runs Claude for real and scores it, with and without the plugin.
+
+### Added
+
+- **A `claude plugin eval` suite** (`evals/suite/`, 12 cases):
+  - triggering cases, and near-misses where no mode may start — each also checks the ask was handled,
+    so a run that never started can't pass;
+  - sizing cases that stop at the proposal — right-sized, seats not going, nothing dispatched early;
+  - a Squad review run end to end from a `/council-review`: workers dispatched, the auth bypass sent to
+    a blind verifier of its own and reported in the deliverable;
+  - a seeded Solo review scored for recall (the planted bug) and precision (memory respected), with the
+    answer key outside the fixture;
+  - verifier calibration on two true and two false claims, from a dispatch that stays blind;
+  - resuming an unfinished run instead of restarting it;
+  - council-init on a Godot game — the council fitting a non-web stack.
+- **Results history:** `python evals/record_eval.py` saves each run's summary under `evals/history/`,
+  compares it with the newest earlier clean run of the same shape (ablation mode and tags), and flags
+  any case whose score dropped. It refuses partial and errored runs.
+- **A manual CI workflow** (`.github/workflows/evals.yml`) for the suite: Claude Code and both models
+  pinned, the Bash sandbox installed, and a cost ceiling.
+- **Structural and validation checks for the suite:** every case has a prompt and a grader; every
+  scaffold exists and is executable LF bash; every tool a grader counts is one the run can call; every
+  grader regex compiles; the near-misses assert that no mode starts in either arm.
+
+### Changed
+
+- **Plans quote their constraints.** Every task carries the hard rules, memory entries and decisions
+  that bind it, word for word, and a real structural choice is laid out as two stances for the user to
+  rule on before tasks are grouped.
+
 ## [0.4.0] — 2026-09-15
 
 Tailored experts. 0.3 made the council disciplined; 0.4 makes its experts experts in *your*

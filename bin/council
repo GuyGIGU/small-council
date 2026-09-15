@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.4.0"
+COUNCIL_VERSION="0.5.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 

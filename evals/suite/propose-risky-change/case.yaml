@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: propose-risky-change
+description: A change that touches auth and a schema migration gets a Squad with Security and Data, the UI seats sit out with reasons, and nothing is dispatched before the go-ahead.
+tags: [sizing, proposal]
+expected_outcome: Proposes a Squad including Security and Data integrity, lists Frontend/UX as not going, gives an estimate, and waits.
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 20
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Agent]

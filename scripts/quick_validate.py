@@ -227,6 +227,19 @@ for rel in EXECUTABLES:
     if b"\r\n" in raw:
         errors.append(f"{rel}: has CRLF line endings — keep LF (see .gitattributes)")
 
+# 7b. The behavioural suite's scaffold scripts: bash with a shebang, LF — the eval harness runs them
+suite_dir = os.path.join(ROOT, "evals", "suite")
+for case in sorted(os.listdir(suite_dir)) if os.path.isdir(suite_dir) else []:
+    path = os.path.join(suite_dir, case, "scaffold.sh")
+    if not os.path.isfile(path):
+        continue
+    with open(path, "rb") as f:
+        raw = f.read()
+    if not raw.startswith(b"#!/usr/bin/env bash"):
+        errors.append(f"evals/suite/{case}/scaffold.sh: must start with '#!/usr/bin/env bash'")
+    if b"\r\n" in raw:
+        errors.append(f"evals/suite/{case}/scaffold.sh: has CRLF line endings — keep LF")
+
 # 8. Stage doctrine: ten files, each titled "# Stage N — <name>"
 STAGES = ["convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn"]
 for i, stage in enumerate(STAGES, 1):
@@ -244,10 +257,12 @@ for doc in SEAT_DOCS:
     if os.path.isfile(path) and not re.search(r"^(#+ )?\**Principle 1\b", read(path), re.MULTILINE):
         errors.append(f"references/{doc}: principles must be numbered 'Principle 1…N' (P1–P3 are severities)")
 
-# 10. The helper and hook scripts are executable in git: a checkout gets the mode git recorded, and a
-#     100644 bin/council can't run as a command. Untracked files and non-git copies are skipped.
+# 10. The helper, hook and scaffold scripts are executable in git: a checkout gets the mode git recorded,
+#     and a 100644 bin/council can't run as a command. Untracked files and non-git copies are skipped.
+scaffolds = [f"evals/suite/{case}/scaffold.sh" for case in sorted(os.listdir(suite_dir))
+             if os.path.isfile(os.path.join(suite_dir, case, "scaffold.sh"))] if os.path.isdir(suite_dir) else []
 try:
-    staged = subprocess.run(["git", "ls-files", "-s", "--", *EXECUTABLES], cwd=ROOT, capture_output=True,
+    staged = subprocess.run(["git", "ls-files", "-s", "--", *EXECUTABLES, *scaffolds], cwd=ROOT, capture_output=True,
                             text=True, timeout=30).stdout
 except (OSError, subprocess.SubprocessError):
     staged = ""

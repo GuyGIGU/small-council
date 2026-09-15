@@ -4,6 +4,9 @@
 evals/fixtures/.council/runs/
 evals/fixtures/.council/active-run
 
+# Raw `claude plugin eval` runs — evals/history/ keeps the summaries
+evals/suite/results/
+
 # Legacy (Ultra Council 0.1) run folders and build output
 .council/*-output/
 dist/

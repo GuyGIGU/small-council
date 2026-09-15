@@ -125,6 +125,11 @@ Index line: `<n> · <must|should|could> · <principle> · <path or area> · <tit
 
 - **Conflict pass.** Items whose *Assumes* lines contradict each other either get settled by the code
   or become rulings for the user.
+- **A real structural choice? Two stances.** When the conflict pass or the scope leaves two
+  defensible shapes the code doesn't settle — one table or two, extend a module or add a new one —
+  write both stances side by side: what each builds, what it costs, what it risks, which items each
+  serves. Put it to the user as a ruling before grouping tasks. Only for a real fork; never as a
+  default, and no extra agents.
 - **Order the work as vertical slices.**
   - Task 1 is a walking skeleton: the thinnest end-to-end slice that exercises the riskiest
     assumption or integration.
@@ -136,6 +141,8 @@ Index line: `<n> · <must|should|could> · <principle> · <path or area> · <tit
 - **Every task gets:**
   - **Done when:** an observable check.
   - **Touches:** the files or areas it may change.
+  - **Constraints:** every hard rule, settled memory entry and "Already decided" choice that binds
+    it, quoted word for word with its source — a builder can't honour a rule it never sees.
 
   Items that aren't tasks but matter during the build become **Risks & Watchpoints**.
 
@@ -167,6 +174,7 @@ that number.
 | **Ref** | `references/<file>.md` → Principle N |
 | **Depends on** | — (or Task N) |
 | **Touches** | <files or areas> |
+| **Constraints** | "<the rule, quoted>" — <config hard rule, memory id, or Already decided>; or — |
 | **Done when** | <observable check> |
 
 <WHAT to build and WHY — at most 3 sentences. No HOW, no code.>

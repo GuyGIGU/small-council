@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: propose-small-change
+description: A one-file, ten-line change gets a right-sized proposal (Solo or a tiny Squad) and nothing is dispatched before the go-ahead.
+tags: [sizing, proposal]
+expected_outcome: Proposes Solo (or at most a small Squad) with seats not going and an estimate, then waits.
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 20
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Agent]

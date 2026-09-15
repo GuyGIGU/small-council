@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: verifier-calibration
+description: The blind verifier gets two true and two false claims about sample.py and must get every verdict right, in its own verify file.
+tags: [calibration, verifier]
+expected_outcome: verify-1.md holds 1 CONFIRMED, 2 REFUTED (guarded by `if items`), 3 CONFIRMED, 4 REFUTED (`total` is local).
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 30
+  timeout_seconds: 900
+  allowed_tools: [Read, Glob, Grep, Agent]
