@@ -1,0 +1,12 @@
+{
+  "name": "small-council",
+  "displayName": "Small Council",
+  "version": "0.2.0",
+  "description": "A context-engineering council for Claude Code: tailored expert seats review, plan, build, and research in isolated context windows, verify adversarially, and keep durable project memory.",
+  "author": {
+    "name": "GuyGIGU"
+  },
+  "repository": "https://github.com/GuyGIGU/small-council",
+  "license": "MIT",
+  "keywords": ["council", "code-review", "planning", "context-engineering", "subagents", "memory"]
+}

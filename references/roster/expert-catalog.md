@@ -1,64 +1,95 @@
 # Expert Catalog — for council-init
 
-`council-init` uses this catalog to **tailor the council to a project**. Each entry says who the
-seat is, *when it applies*, its reference doc, and how to adapt/rename it for a project's domain.
-Keep the named experts (real practitioners) — the name carries the doctrine.
+`council-init` uses this catalog to tailor the council to a project. Each seat says who it is, when it
+applies, its reference doc, and how to recast it for another stack or domain. Keep the named
+practitioners — the name carries the doctrine.
 
 ## How council-init uses this
 
-1. Detect the project's stack/domain (map, don't ingest).
-2. For each seat below, decide **include / drop / recast** using its "Applies when" rule.
-3. For recast seats, keep the reference doc but rename the seat to fit the domain (record why).
-4. Write the resulting roster + seat→ref map + gates into `<project>/.council/council.config.md`.
-5. Propose to the user for confirmation (names kept per project decision #3).
+1. Detect the project's stack and surfaces (map, don't ingest).
+2. For each seat decide **include / recast / drop** by its "applies when" rule — and **recast before
+   you drop** (below).
+3. Give every seat a **slug** (its seat-file name). A recast seat gets a practitioner who fits the
+   stack, keeps its reference doc, and records why.
+4. Write roster, slugs, seat → reference map, and gates into `.council/council.config.md` (template:
+   `references/templates/council.config.md`).
+5. Propose to the user, adjust, and write on confirmation.
 
-## Canonical seats (the Carmack 10)
+**Chair:** John Carmack — always on, never a seat. **Never dropped:** Fowler (every codebase has
+structure) and Beck (every codebase has, or should have, tests).
 
-| Seat | Domain | Reference doc | Applies when | Recast / drop rule |
-|---|---|---|---|---|
-| **Troy Hunt** | Security | `security.md` | Almost always (any input handling, auth, secrets, external I/O) | Rarely dropped; recast to "integrity/safety" for non-web |
-| **Martin Fowler** | Refactoring / structure | `refactoring.md` | Always (every codebase has structure) | Never drop — the load-bearing seat |
-| **Kent C. Dodds** | Frontend quality | `quality-frontend.md` | There is a UI component layer | Drop if no frontend |
-| **Matteo Collina** | Backend quality | `quality-backend.md` | There is server/API/async logic | Recast to a generic **backend** seat (a practitioner fitting the project's runtime) if not Node/tRPC |
-| **Brandur Leach** | Postgres quality | `quality-postgres.md` | There is a relational DB / migrations | Recast to **data-integrity** (e.g. keep "Leach") for a non-Postgres store (embedded SQL, file-based, other) |
-| **Vercel Performance** | Performance | external (Vercel rules) | Perf-sensitive frontend/runtime | Drop or recast to a general **performance/pipeline** seat if not Next.js |
-| **Simon Willison** | LLM pipeline quality | `quality-llm.md` | There is an LLM/prompt pipeline | Recast to a **numerical / data-correctness** seat for a deterministic numeric/data engine with no LLM — keep `quality-llm.md` and apply its boundary / NaN / parse-defensively principles to numbers |
-| **Karri Saarinen** | UI quality (visual) | `quality-ui.md` | There is a visual surface | Drop if no UI |
-| **Vitaly Friedman** | UX quality | `quality-ux.md` | There is user-facing interaction | Drop if no UX surface |
-| **Kent Beck** | Test quality | `quality-testing.md` | There are (or should be) tests | Never drop — audits the test suite that guards everything |
+## Canonical seats
+
+| Seat | Slug | Lens | Reference doc | Applies when | Recast / drop |
+|---|---|---|---|---|---|
+| **Troy Hunt** | hunt | Security | `security.md` | Almost always — input handling, auth, secrets, files, network, dependencies | Rarely dropped; recast to **integrity & safety** (save files, plugin/mod loading, untrusted data) where there's no web surface |
+| **Martin Fowler** | fowler | Structure / refactoring | `refactoring.md` | Always | Never drop |
+| **Kent C. Dodds** | dodds | Frontend quality | `quality-frontend.md` | A UI component layer (web, mobile, desktop) | Recast to the project's UI framework; drop only with no UI code at all |
+| **Matteo Collina** | collina | Backend quality | `quality-backend.md` | Server, API, workers, async or runtime logic | Recast to a practitioner of the project's runtime (FastAPI, Go, Rails, .NET, …) |
+| **Brandur Leach** | leach | Data integrity | `quality-postgres.md` | Any persistent state — relational DB, migrations, embedded SQL, files, caches, save data | Recast to **data integrity** for a non-Postgres store |
+| **Performance** | perf | Performance | `quality-performance.md` | A hot path worth measuring — render, request latency, batch or compute throughput, frame time | Point it at the project's real hot path |
+| **Simon Willison** | willison | LLM pipeline | `quality-llm.md` | An LLM or prompt pipeline | Recast to **numerical / simulation correctness** for a deterministic compute engine — apply the doc's boundary, NaN-and-edge, and parse-defensively principles to numbers |
+| **Karri Saarinen** | saarinen | UI (visual) | `quality-ui.md` | A visual surface | Drop only with no visual surface |
+| **Vitaly Friedman** | friedman | UX | `quality-ux.md` | User-facing interaction — including game UI and interactive CLIs | Drop only with no user-facing interaction |
+| **Kent Beck** | beck | Tests | `quality-testing.md` | Always | Never drop |
+
+The reference docs live in the plugin's `references/`. Several (security, backend, data, frontend)
+carry TypeScript/Node/Postgres examples from their origin; their **principles** are stack-agnostic. A
+recast seat applies the principles and treats the stack-specific rules as illustrations.
+
+## Recast before you drop
+
+A seat's "no surface" is usually an analogous surface in disguise. In real use, seats dropped at init
+for "zero surface" went on to produce 4 of a later review's 15 findings once recast — a data-integrity
+seat on an embedded store, a numerical seat on a compute engine. Drop only when there is truly nothing
+for the lens to look at; otherwise recast and write down why.
+
+## Project-local seats
+
+A domain none of these lenses covers — a game engine's frame loop and scene tree, embedded firmware, a
+DSL — gets a **project-local seat**: a practitioner, a slug, and a reference doc written to
+`.council/refs/<slug>.md` from the project's real constraints (engine rules, hard limits, known traps).
+Give it the shipped docs' shape: a `# Title` first line, the philosophy, numbered principles, what to
+flag, and what not to flag.
 
 ## Worked example — a numerical service with a small UI
 
-Take a hypothetical project: a **deterministic numerical Python service** (a compute engine + a
-FastAPI backend) with a **small React dashboard**, storing derived results in an **embedded SQL
-database** plus some on-disk cache files. No LLM anywhere. Running `council-init` here should produce a
-roster like:
+A **deterministic numerical Python service** (a compute engine plus a FastAPI backend) with a **small
+React dashboard**, storing derived results in an **embedded SQL database** and on-disk cache files. No
+LLM anywhere. `council-init` should produce:
 
-- **Hunt** (security) — keep. It handles untrusted input, filesystem paths, and third-party
-  dependencies.
-- **Fowler** (refactoring) — keep (always).
-- **Beck** (tests) — keep (always).
-- **Collina → a Python/FastAPI backend seat** — recast: the runtime is FastAPI, not Node/tRPC; keep
-  `quality-backend.md`.
-- **Willison → a numerical-correctness seat** — recast: there's no LLM, but the compute engine is where
-  the real bugs live. Keep `quality-llm.md` and apply its boundary / NaN-and-edge-case /
-  parse-defensively principles to the numbers.
-- **Leach → a data-integrity seat** — recast from Postgres to the embedded SQL store and the cache
-  files: schema, migration safety, transaction boundaries. Keep `quality-postgres.md`.
-- **Dodds / Saarinen / Friedman** (frontend / UI / UX) — keep; a React dashboard exists.
-- **Vercel Performance → an engine/pipeline performance seat** — recast: there's no Next.js, so point it
-  at the compute + IO hot paths (`quality-performance.md`).
+- **Hunt** (security) — keep: untrusted input, filesystem paths, third-party dependencies.
+- **Fowler**, **Beck** — keep (always).
+- **Collina → a FastAPI backend seat** — recast; keep `quality-backend.md`.
+- **Willison → a numerical-correctness seat** — recast: no LLM, but the compute engine is where the
+  real bugs live. Keep `quality-llm.md`, apply its boundary / NaN / parse-defensively principles.
+- **Leach → data integrity** — recast from Postgres to the embedded store and cache files: schema,
+  migration safety, transaction boundaries, cache coherence.
+- **Dodds / Saarinen / Friedman** — keep: a React dashboard exists.
+- **Performance → engine and pipeline performance** — the compute and I/O hot paths.
 
-Detected gates (example): a test command (e.g. `pytest`), a frontend lint, and a frontend build. These
-are **detected from the repo** — the test-runner config and the frontend's package scripts — not assumed
-from the Carmack defaults.
+Gates are **detected and dry-run**, not assumed: the test runner from the project's config, the
+frontend's lint and build scripts — each marked runnable or not.
 
-**Contrast — a Go CLI tool** (no UI, no DB, no server): `council-init` would **keep** Hunt / Fowler /
-Beck and the Performance seat, but **drop** Dodds, Saarinen, Friedman (no frontend), Collina (no
-server/async surface), Leach (no datastore), and Willison (no LLM). The same catalog, different
-include/drop decisions — that's the point of the "Applies when" column.
+## Contrast — a Go CLI tool
 
-## Adding a seat
+No UI, no server. Keep Hunt, Fowler, Beck, and Performance. Drop Dodds, Saarinen, and Collina. Friedman
+stays only if the CLI has interactive flows. Leach: drop if the tool persists nothing; recast to data
+integrity if it writes config, caches, or state files. Willison: drop unless there's an LLM or a
+numeric core.
 
-New project type needs a lens not covered? Add a row here with its "Applies when" rule and a
-reference doc, then `council-init` can select it. Grow the catalog as new domains appear.
+## Contrast — a single-player game in an engine (Godot, Unity, …)
+
+- **Keep:** Fowler, Beck; Saarinen and Friedman (menus, HUD, input flows); Performance → frame time and
+  allocation in the hot loop.
+- **Recast:** Willison → simulation and rules correctness (combat math, RNG determinism, turn order);
+  Leach → data integrity for save files and resources; Hunt → integrity & safety (save tampering, mod
+  loading), or drop if neither exists.
+- **Drop:** Collina unless there's networking; Dodds unless the UI is built from a component framework.
+- **Add:** a project-local engine seat (`.council/refs/<engine>.md`) for the engine's lifecycle,
+  scene/node rules, and signal/event traps.
+
+## Adding a seat to the catalog
+
+Add a row with its "applies when" and recast rules and a reference doc under `references/` (first line
+a single `# Title`), then extend the evals' expectations.

@@ -1,27 +1,42 @@
 # evals/
 
-Two layers, following Superpowers' idea that a skill isn't done until it's tested.
+Three automated layers plus hand-run drills. A skill isn't done until it's tested.
 
-## 1. Structural evals — runnable now
+## 1. Validation — will the plugin load?
 
 ```bash
-python3 evals/run_structural.py
+python scripts/quick_validate.py
 ```
 
-Checks the framework's invariants without an LLM: all four skills present and valid; the Core
-exposes the mode contract and all ten phases (including the four folded-in rules); `council-review`
-rides the Core and auto-triggers; `council-init` tailors via the catalog and detects gates; the
-bootstrap re-injects after compaction. A build must never break these.
+Plugin and marketplace manifests, every skill's and agent's frontmatter (known keys only, names match,
+description under Claude Code's cap), hook commands pointing at real scripts, every
+`${CLAUDE_PLUGIN_ROOT}/…` and `references/…` path a skill names existing on disk, and every seat doc
+opening with the `# Title` line workers echo as proof of reading.
 
-## 2. Behavioral drills — run in Claude Code
+## 2. Structural evals — is the method intact?
 
-See `behavioral-drills.md`. These need a live agent + subagents, so they can't be scripted here.
-They verify the things that actually matter:
+```bash
+python evals/run_structural.py
+```
 
-- **D1 Roster fit** — `council-init` on a non-default stack detects it and proposes a fitting roster
-  (dropping no-surface seats, recasting others) plus the project's real gates — not the Carmack defaults.
-- **D2 Triggering** — `council-review` fires when a change is ready, and stays quiet on unrelated chat.
-- **D3 Bug caught** — a seeded bug in a fixture is reported (right severity, right expert).
-- **D4 Memory respected** — a seeded accepted-pattern in `conventions.md` is NOT re-flagged.
+The core's nine phases in order and its field-tested rules (close every run, persist proposals, judge
+gates by exit code, verify adversarially, one council home in the main checkout); the modes riding the
+core with consistent deliverable paths; the agents' contracts; the templates' schemas; size budgets
+that keep every skill whole after compaction; the rename; version consistency.
 
-`fixtures/` holds the seeds for D3/D4. No skill ships to `main` until D1–D4 pass by hand at least once.
+## 3. Hook evals — does the SessionStart hook behave?
+
+```bash
+python evals/run_hook.py      # needs bash + git
+```
+
+Runs `hooks/session-start.sh` against fixture projects: silent outside council projects; orients
+council projects; flags unfinished runs and says "resume" after a compaction; quiet about closed runs;
+handles legacy CRLF runs, linked worktrees, and stale maps; survives garbage input.
+
+## 4. Behavioral drills — run in Claude Code
+
+See `behavioral-drills.md` (D1–D11). They need a live agent and subagents, so they can't be scripted
+here: roster fit, triggering, a seeded bug caught, memory respected, right-sized runs, resume after
+compaction, close-out, proposals surviving, the fix loop, map reuse, and worktrees. `fixtures/` holds
+the seeds for D3/D4/D9.

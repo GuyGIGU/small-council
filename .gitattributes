@@ -1,5 +1,6 @@
-# Normalize line endings so builds are byte-identical across platforms.
-# The .skill packages must never ship CRLF (a past bug dropped references on Windows).
+# Normalize line endings. The SessionStart hook runs under bash on every platform and must never be
+# checked out with CRLF (bash would choke on the carriage returns), even on a Windows machine with
+# core.autocrlf=true — Claude Code clones this repo when installing the plugin.
 * text=auto eol=lf
 
 *.sh    text eol=lf
@@ -8,6 +9,3 @@
 *.json  text eol=lf
 *.yml   text eol=lf
 *.yaml  text eol=lf
-
-# Built artifacts are binary blobs — never touched by eol normalization.
-*.skill binary

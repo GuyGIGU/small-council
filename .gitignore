@@ -1,11 +1,12 @@
-# Build artifacts
-dist/
-.build/
-
-# Generated run output (never commit a council run)
-.council/*-output/
+# Council run scratch — never commit a council run
+.council/runs/
 .council/active-run
-evals/fixtures/_run/
+evals/fixtures/.council/runs/
+evals/fixtures/.council/active-run
+
+# Legacy (Ultra Council 0.1) run folders and build output
+.council/*-output/
+dist/
 
 # Python cache
 __pycache__/

@@ -1,39 +1,69 @@
 # Behavioral drills (run in Claude Code)
 
-Run each once by hand before shipping a change to the skills. Record pass/fail + a note.
+Run these by hand before releasing a change to the skills, agents, or hook. Record pass/fail and a note
+in the PR. Load the working copy with `claude --plugin-dir <repo>` (or the skills-directory install
+described in the README), and use a scratch project — never a real one.
 
 ## D1 — Roster fit (`council-init`)
-**Setup:** in any project with no `.council/council.config.md` (or a scratch copy). Pick one whose
-stack is NOT the Carmack default — e.g. a Python service, a Go CLI, a Rails app.
-**Run:** `council-init`.
-**Pass if:** it detects the project's real stack + surfaces and proposes a roster that **drops** seats
-with no surface (no frontend → no Dodds/Saarinen/Friedman) and **recasts** others to fit (non-Node
-backend → a generic backend seat; non-Postgres store → a data-integrity seat; a numeric engine → a
-numerical seat reusing `quality-llm.md`), keeping Carmack as chair and Fowler/Beck always; and it
-detects the project's REAL gate commands instead of assuming `tsc`/`vitest`/`cypress`.
-**Fail if:** it hard-codes the Carmack-default (Next.js) roster or the default gates instead of
-detecting them.
+**Setup:** a project with no `.council/`, whose stack is NOT the canonical web default — a Python
+service, a Go CLI, a game.
+**Pass if:** it detects the real stack and surfaces; recasts before dropping (a persistent store →
+data integrity; a compute engine → numerical correctness); drops only seats with truly no surface;
+keeps Carmack as chair and Fowler/Beck always; finds the real gate commands and **dry-runs each**,
+marking any it can't run; writes `.council/` (config, memory, map, `.gitignore`) and the CLAUDE.md
+block only after confirmation.
+**Fail if:** it assumes `tsc`/`vitest`/`cypress`, reports a gate as runnable without running it, or
+writes files before confirming.
 
-## D2 — Triggering (`council-review` / `using-council`)
-**Pass if:** the review mode engages when the user says "review this" / finishes a change / opens a
-PR, WITHOUT an explicit slash command; and does NOT fire during unrelated conversation.
-**Fail if:** it never auto-fires, or it fires on idle chatter.
+## D2 — Triggering
+**Pass if:** in a council-enabled project, "review this" / finishing a change / opening a PR makes the
+agent *propose* a council review with its size and cost — and it doesn't fire on unrelated chat.
+**Fail if:** it never proposes, dispatches without a go-ahead, or proposes during idle conversation.
 
 ## D3 — Bug caught (fixture)
-**Setup:** point a review at `fixtures/` (see `fixtures/README.md`), which contains a seeded
-off-by-one / null-deref style bug.
-**Pass if:** the bug appears as a P1 (or P2) finding, attributed to the correct expert, with a
-concrete fix and NO code snippet.
-**Fail if:** the bug is missed, or the run emits code in the review.
+**Setup:** see `fixtures/README.md` — a copy of `fixtures/` as its own git repo.
+**Pass if:** the empty-input bug in `average` is a P1 or P2, attributed to the right seat, with a
+concrete fix, no code, CONFIRMED by the verifier.
+**Fail if:** missed, code in the review, or shipped without a verdict.
 
 ## D4 — Memory respected (fixture)
-**Setup:** `fixtures/conventions.md` contains an accepted pattern (AP-1) covering an intentional
-choice in the fixture.
-**Pass if:** the review does NOT re-flag AP-1 (proves read-before + the compound effect).
-**Fail if:** it flags the accepted pattern as a finding.
+**Pass if:** `last_or_none` (Accepted Pattern AP-1) is not flagged.
+**Fail if:** it's flagged as a finding.
+
+## D5 — Right-sized runs
+**Setup:** a one-file, ten-line change.
+**Pass if:** the Chair recommends Solo or a small Squad (not Full) and states the estimated cost.
+
+## D6 — Resume after compaction
+**Setup:** start a Squad review; run `/compact` while seats are dispatched.
+**Pass if:** the hook's "compacted during a council run" note appears; the agent re-invokes
+context-core, reads `session-state.md`, and resumes without re-dispatching seats whose files exist.
+
+## D7 — Close-out
+**Pass if:** after any run, `session-state.md` says `status: complete`, `.council/active-run` is empty,
+and a new session shows no "unfinished run" warning.
+
+## D8 — Proposals survive
+**Pass if:** memory proposals appear as `- PROPOSED …` lines in the memory file *before* the user
+answers, and a new session's hook reports how many are pending.
+
+## D9 — Fix loop
+**Setup:** after D3, accept the fix hand-off.
+**Pass if:** council-implement fixes the P1, runs the gate by exit code, dispatches the verifier on
+the fix (OK), and appends the task to `.council/logs/…` immediately — then offers a review.
+
+## D10 — Map reuse
+**Setup:** a second council run in a project with a fresh `map.md`.
+**Pass if:** the Chair orients from `map.md` and reads no more than ~10 skeleton files before writing
+the brief.
+
+## D11 — Linked worktree
+**Setup:** run a council mode from a `git worktree` of a council-enabled repo.
+**Pass if:** the run files land in the **main** checkout's `.council/runs/`, and the brief records the
+worktree as the code root.
 
 ## Context-hygiene spot checks (any real run)
-- The Chair never deep-read every file (check it used Glob/Grep + a bounded set).
-- Each worker returned ~one line to the parent; full findings live in `.council/review-output/$TS/*.md`.
-- A `context-brief.md` exists and is edge-ordered (decision at top, constraints at bottom).
-- After any compaction, the run resumed from `session-state.md` rather than restarting.
+- The Chair never deep-read implementation files (Glob/Grep plus a bounded set of skeleton files).
+- Each worker returned one line; every seat file's line 2 is `ref: <its doc's title>`.
+- `brief.md` is edge-ordered: deliverable and question at the top, hard constraints at the bottom.
+- `session-state.md` stayed under ~40 lines; history went to `log.md`.

@@ -1,39 +1,24 @@
 # evals/fixtures/
 
-Tiny seeds for the behavioral drills D3 (bug caught) and D4 (memory respected). Keep them small —
-a council review of a 40-line fixture should be fast and unambiguous.
+A tiny council-enabled project for behavioral drills D3 (bug caught), D4 (memory respected), and D9
+(fix loop). Keep it small — a council review of a 40-line fixture should be fast and unambiguous.
 
-## `sample.py` — seeded bug (D3)
-Contains one deliberate correctness bug and one intentional-by-design choice:
+**Run the drills on a copy, never in place:** copy this folder somewhere scratch, then
+`git init && git add -A && git commit -m fixture` there, and open that folder in Claude Code with the
+plugin loaded. (Inside this repo the fixture's `.council/` is not at a git root, so it is inert.)
 
-```python
-def average(values):
-    total = 0
-    for v in values:
-        total += v
-    return total / len(values)          # BUG (D3): ZeroDivisionError on empty input
+## `sample.py` — seeded bug (D3) and an intentional choice (D4)
 
-def last_or_none(items):
-    return items[len(items) - 1] if items else None   # intentional (D4 / AP-1)
-```
+- **D3 target:** `average` divides by `len(values)` with no empty-input guard → a review must flag it
+  (P1 or P2, numerical-correctness / structure / tests seat depending on the roster), with a "guard the
+  empty case" fix and no code, CONFIRMED by the verifier.
+- **D4 target:** `last_or_none` uses `items[len(items) - 1]` instead of `items[-1]` **on purpose** —
+  it's Accepted Pattern AP-1 in `.council/conventions.md`. A review must NOT flag it.
 
-- **D3 target:** `average` divides by `len(values)` with no empty-guard → a review must flag this
-  (the numerical/correctness or structure/test seat, depending on roster), P1/P2, with a "guard the empty case" fix, no code.
-- **D4 target:** `last_or_none` uses `len(items) - 1` indexing instead of `items[-1]` **on purpose**
-  (see AP-1 below). A review must NOT flag it.
+## `.council/` — a ready-made council home
 
-Create `sample.py` with the two functions above when running the drills.
+- `council.config.md` — a three-seat roster (Fowler, Beck, and a numerical seat recast from Willison)
+  and one gate, in the current template's schema.
+- `conventions.md` — the seeded memory: AP-1.
 
-## `conventions.md` — seeded memory (D4)
-Place this at the fixture root so the review reads it first:
-
-```markdown
-# Project Conventions
-## Accepted Patterns
-### AP-1: explicit last-index access
-**Pattern:** `items[len(items) - 1]` is used instead of `items[-1]` for readability in teaching code.
-**Origin:** seeded for eval D4.
-**Rationale:** intentional style choice — do not flag.
-```
-
-**Pass condition for D4:** `last_or_none` is absent from the findings; `average` is present.
+**Pass condition for D3 + D4:** `average` is in the findings; `last_or_none` is not.

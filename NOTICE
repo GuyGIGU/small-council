@@ -1,8 +1,8 @@
-Ultra Council
+Small Council
 =============
 
-Ultra Council is a derivative work of **Carmack-Council** by Sam Hudson,
-originally released under the MIT License.
+Small Council (formerly Ultra Council) is a derivative work of **Carmack-Council**
+by Sam Hudson, originally released under the MIT License.
 
     Original project : Carmack-Council
     Author           : Sam Hudson (github.com/SamJHudson01)
@@ -11,18 +11,23 @@ originally released under the MIT License.
 
 What is derived and what is new
 -------------------------------
-Ultra Council substantially extends the original. It keeps the named-expert
-council idea and several of the domain reference documents, and adds:
+Small Council keeps the named-expert council idea, the council-review,
+council-plan, council-implement, spec-writer, and test-architect modes
+(substantially rewritten), and several reference documents. It adds:
 
-  - context-core   — a reusable 10-phase context-engineering pipeline that
-                     every mode runs on (the original had no shared pipeline);
-  - council-init   — per-project auto-tailoring of the roster and gates;
-  - using-council  — session bootstrap + compaction re-bootstrap;
-  - an evals harness (structural + behavioral drills).
+  - context-core      — a reusable context-engineering pipeline that every
+                        mode runs on (the original had no shared pipeline);
+  - council-init      — per-project tailoring of the roster, gates, and
+                        codebase map;
+  - council-research  — an evidence-graded investigation mode;
+  - the council-worker and council-verifier agents and the SessionStart hook;
+  - durable project memory, the codebase map, and the .council/ layout;
+  - an evals harness (validation, structural, hook, and behavioral drills).
 
-The domain reference documents under `references/` — `security.md`,
-`refactoring.md`, and the `quality-*.md` set — originate from Carmack-Council
-and remain under its MIT license. Their copyright notice is preserved in
-LICENSE as the MIT terms require.
+The seat reference documents under `references/` — `security.md`,
+`refactoring.md`, and the `quality-*.md` set other than
+`quality-performance.md` — and the spec-writer documents originate from
+Carmack-Council and remain under its MIT license. Their copyright notice is
+preserved in LICENSE as the MIT terms require.
 
 Grateful acknowledgment to Sam Hudson for the original Carmack-Council.

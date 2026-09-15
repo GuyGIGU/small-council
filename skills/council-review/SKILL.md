@@ -1,106 +1,101 @@
 ---
 name: council-review
-description: Run a rigorous multi-expert Carmack Council code review. When a review is warranted — the user finishes a change, asks to review/critique code, mentions a "council review" / "carmack review", opens/updates a PR, or says code is ready to merge — PROPOSE a council review and wait for the user's confirmation before dispatching, because it spawns a multi-agent fan-out that costs real budget; run immediately on an explicit /council-review. Chairs a council of named domain experts (security, refactoring, backend, data, tests, frontend, UI, UX, performance, +domain seat), each reviewing in an isolated context window, then merges into prioritised P1/P2/P3 findings. This is a MODE that runs on the context-core pipeline.
+description: Multi-expert code review by the Small Council — named domain seats review a change in isolated context windows, an adversarial verifier checks every finding against the real code, and you get prioritised P1/P2/P3 findings plus a fix hand-off. Use when a change is finished, a PR is opened or updated, code is "ready to merge", or the user asks for a council review. Propose it with its size and cost first; run straight away on /council-review.
 ---
 
 # Council Review (mode)
 
-This is a **mode**. It supplies review content; the **`context-core`** skill runs the pipeline.
-**Start by loading `context-core` and following its phases 1–10.** Read `context-core`'s
-`references/context-engineering.md` for the doctrine. Everything below is what you hand the Core.
+A mode on the context-core pipeline. **Invoke `context-core` and run its phases** with the inputs
+below; this file only supplies what is specific to reviewing.
 
-## Invocation — suggest, then confirm
+**Chair:** John Carmack — simplicity over cleverness, concrete over abstract, economic over aesthetic,
+no flattery, fix-don't-just-flag. The filter at synthesis: *a real problem in this codebase at this
+scale, or pattern-matching?*
 
-A council run is a multi-agent fan-out that costs real budget, so it is **not** silently auto-started.
-When a review is warranted (the situations in this skill's description), **tell the user it looks
-worthwhile and ask for a go-ahead** before dispatching workers. Run immediately only on an explicit
-`/council-review`, or once the user has said to proceed. This is Context Core phase 1 (confirm scope
-before spending budget) applied to the whole mode.
+## Target — resolve it before sizing (Core phase 1)
 
-**Chair:** John Carmack — simplicity over cleverness, concrete over abstract, economic over
-aesthetic, no sycophancy, fix don't just flag. Apply the **Carmack filter** at synthesis: *is this a
-real problem in THIS codebase at THIS scale, or pattern-matching?*
+- **Default:** the current branch against its base — `git merge-base HEAD <default branch>`, then
+  `git diff --stat <base>...HEAD`, plus uncommitted work from `git status --short`.
+- **A PR:** `gh pr view <n> --json files,baseRefName` and `gh pr diff <n>` when `gh` is available.
+- **An implementation log:** its "Ready for review" list is the target.
+- **A path, commit range, or module** the user names: exactly that.
+- On the default branch with nothing changed → ask what to review.
 
-## Mode inputs handed to the Core
+State the target as files, +/− lines, and `base..head`. The size recommendation comes from it.
 
-```
-personas + reference_docs:
-  # DEFAULT roster below. If <project>/.council/council.config.md exists, use ITS tailored roster,
-  # seat names, and seat→reference mapping instead (council-init writes it).
-  Hunt (Security)            → references/security.md
-  Fowler (Refactoring)       → references/refactoring.md
-  Dodds (Frontend)           → references/quality-frontend.md
-  Collina (Backend)          → references/quality-backend.md
-  Leach (Data/Postgres)      → references/quality-postgres.md
-  Performance                → references/quality-performance.md
-  Willison (LLM pipeline)    → references/quality-llm.md
-  Saarinen (UI)              → references/quality-ui.md
-  Friedman (UX)              → references/quality-ux.md
-  Beck (Tests)               → references/quality-testing.md
-  # the Core resolves each references/… path to an absolute path before dispatch (context-core phase 5)
+## What each seat gets
 
-output_schema: P1/P2/P3 findings → Summary table → Verdict → Findings-Breakdown-by-Expert table
-gates:
-  grounding (phase 1):  the project's checks from council.config.md
-                        (e.g. a Python project: pytest + ruff; a Node project: npm test + lint + build)
-  verification (phase 10): re-run gates green; VALIDATE each shipped finding against the real code
-synthesis_cap: 15            # a focused review of 10 sharp findings beats 25 nitpicks
-memory_namespace: conventions.md
-```
+The brief's scope inventory lists every changed file with its +/− counts and the base ref — not the
+diff itself. Each seat pulls its own slice (`git diff <base>...HEAD -- <files>`) and must check the
+**blast radius** of every change it owns: callers of changed functions and signatures, the tests that
+cover the changed code, and the config or schema the change relies on.
 
-## Per-worker finding format (put in each worker's prompt)
+## Inputs handed to the Core
 
 ```
-FINDING:
-- Title:
+roster:      council.config.md (council-init writes it; canonical seats: references/roster/expert-catalog.md)
+worker_format: below
+synthesis:   owner rules below · cap 15
+gates:       grounding  = the config's test / lint / build on the code under review — failures become findings
+             verification = the verifier checks every finding you plan to ship (re-running gates on
+                            unchanged code adds nothing)
+deliverable: <home>/reviews/<YYYY-MM-DD>-<slug>.md
+memory:      conventions — never re-flag an Accepted Pattern, Enforced Convention, or Decision
+```
+
+## Per-item format (goes in each dispatch)
+
+```
+### <n>. <title>
 - File: path:line-range
-- Principle: <name + number from the worker's reference doc>
-- Severity: P1 (bug/vuln/data-loss/correctness) | P2 (maintainability landmine, silent failure,
-            compounding debt) | P3 (clarity, naming, style)
-- What's wrong: 1–2 sentences, specific to THIS codebase
+- Principle: <name + number from your reference doc>
+- Severity: P1 (bug, vulnerability, data loss, wrong result) | P2 (silent failure, maintainability
+  landmine, compounding debt) | P3 (clarity, naming, style)
+- What's wrong: 1–2 sentences, specific to this code
 - Consequence: 1 sentence, concrete
-- Fix: 1–2 sentences, what to change and where — NO code
-If the lane is clean: "No <domain> findings. <one sentence why>."
-Plain English only — no code, schemas, or config blocks. Stay in your lane.
+- Fix: 1–2 sentences — what to change and where. No code.
 ```
 
-## Synthesis rules (mode-specific, applied in Core phase 7)
+## Synthesis rules (Core phase 7)
 
-Remember the Core rule first: **aggregate & dedupe ALL findings before forming a verdict.** Then:
+- **Owner rules — keep the owner's item, cross-reference the rest:** visual design → UI seat ·
+  component architecture → Frontend · interaction flow and screen states → UX · cross-module structure
+  → Refactoring · async and runtime behaviour → Backend · prompt injection and streaming → LLM ·
+  general app security → Security · schema, migrations, data integrity → Data · hot paths → Performance.
+  Tests is complementary, never a duplicate. A recast seat keeps the lens of the seat it came from.
+- **Grounding-gate failures are findings:** build or type error → P1 · failing test → P1 · lint error
+  → P2 · lint warning → P3, each with the exact message and location.
+- Carmack filter, cut to 15, number findings sequentially across severities.
 
-- **Deduplicate by primary owner:** Saarinen owns visual; Dodds owns component architecture;
-  Friedman owns UX flow; Fowler owns cross-module structure; Collina owns async/runtime; Willison
-  owns LLM-specific injection/streaming; Hunt owns general app-sec; Leach owns schema/migration.
-  Keep the primary owner's finding + a cross-ref. Beck is complementary, never a duplicate.
-- **Phase-1 gate failures become numbered findings** (tsc/build error → P1, test failure → P1,
-  lint error → P2, lint warning → P3) with exact message + location.
-- **Carmack filter + cut to `synthesis_cap`.** Number findings sequentially across severities.
+## Deliverable
 
-## Output schema (Core phase "Output")
+`<home>/reviews/<YYYY-MM-DD>-<slug>.md`:
 
-Write `FINAL-REVIEW.md` with: Scope · Context · Council dispatched (who ran / who found nothing) ·
-P1/P2/P3 findings (each: File, `Council: <Expert> × Carmack — <Principle>`, Ref line, Finding,
-Consequence, Fix) · Summary table · Verdict (direct: shipping-quality or not, the single most
-important thing, the most critical expert domain) · Findings-Breakdown-by-Expert table.
+- **Target** — files, +/− lines, `base..head`.
+- **Council** — who ran, who was skipped and why, who found nothing.
+- **Findings, P1 → P3** — each with title, `path:line`, `Council: <Seat> × Carmack — <principle>` and
+  its reference line, what's wrong, consequence, fix, and the verifier's verdict.
+- **Refuted by verification** — one line each: what was claimed and why it's wrong.
+- **Summary table**, then the **Verdict**: ship-ready or not, the single most important thing, the most
+  critical domain.
 
-**Then present the mandatory in-conversation summary** (never just "review complete"):
+Then the in-chat summary — never just "done":
+
 ```
-## Council Review Complete — N Findings
-| # | Finding | Severity | Expert | Fix effort |
-Totals: N P1, N P2, N P3
-Start with: <1–2 sentence triage>
-Full review: .council/review-output/$TS/FINAL-REVIEW.md
+## Council Review — <N> findings (<a> P1 · <b> P2 · <c> P3)
+| # | Finding | Sev | Seat | Fix effort |
+Start with: <1–2 sentences>
+Verified: <c> confirmed · <u> uncertain · <r> refuted and dropped
+Full review: <path>
 ```
 
-## Durable memory (Core phase 8)
+## After the summary (numbered, in the chat)
 
-After the summary, propose convention candidates for `conventions.md`:
-- **Accepted Patterns (AP-*)** — intentional code the council should stop flagging ("that's by design").
-- **Enforced Conventions (EC-*)** — adopted fixes that become "always/never" rules.
-Present ≤8 candidates, numbered; on the user's selection append with provenance + timestamp
-(continue AP-/EC- numbering; never duplicate). If the user says "none", skip silently.
+1. **Memory proposals** (Core phase 9) — already written to memory's `## Proposed` section.
+2. **Fix hand-off** — almost every review is followed by fixes. Offer: *"Fix these with
+   council-implement? Default: every P1 and P2."* On yes, hand it this review's path.
 
 ## Notes
 
-- Spawn every roster seat even if its slice is empty (proves coverage). No-surface seats return one line.
-- Voice: direct, economic, teach-don't-just-flag. No code in the review. No opening flattery.
+- No code in the review. No opening flattery. Teach, don't just flag.
+- A Solo-size review still uses the finding format, the verifier's discipline, and the deliverable path.
