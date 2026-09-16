@@ -236,7 +236,9 @@ with tempfile.TemporaryDirectory() as tmp:
           out + read(os.path.join(gates, "words.txt")))
     code, out, _ = council(repo, "gate", "--all", "--at", "verify")
     check("gate --all: a failing optional gate doesn't fail the set", code == 0 and "gate bad: FAIL" in out and "gate must" not in out, out)
-    check("gate --all --at: a gate with no Run-at value isn't run", "gate anytime" not in out, out)
+    check("gate --all --at: a gate with no Run-at value isn't run, and is never silent about it",
+          "gate anytime: skipped \u2014 its Run at cell is empty" in out
+          and not os.path.isfile(os.path.join(gates, "anytime.txt")), out)
     check("gate --all: skips a gate the config marks not runnable", "gate broken: skipped" in out, out)
     check("gate --all: skips a gate init never probed (it needs credentials)",
           "gate stripe: skipped" in out and not os.path.isfile(os.path.join(gates, "stripe.txt")), out)
@@ -246,11 +248,18 @@ with tempfile.TemporaryDirectory() as tmp:
           "gate leaky: skipped — its row has" in out and not os.path.isfile(os.path.join(gates, "leaky.txt")), out)
     check("gate --all: runs only side effects on the safe list",
           "gate bill: skipped — side effects: billable API calls" in out and not os.path.isfile(os.path.join(gates, "bill.txt")), out)
-    check("gate --all: says how many ran and how many were skipped", "gates: 2 ran, 5 skipped" in out, out)
+    check("gate --all: the verdict line names the pass count, the failures and the skips",
+          "gates: 2 ran \u2014 1 pass, 1 FAIL (bad, not mandatory) \u00b7 7 skipped" in out, out)
+    check("gate --all --at: a row whose columns shifted is still reported, not filtered away",
+          "gate leaky: skipped \u2014 its row has" in out, out)
     code, out, _ = council(repo, "gate", "ship")
     check("gate <name>: runs a side-effect gate when named, with a warning", code == 0 and "side effects (deploy, network)" in out, out)
     code, out, _ = council(repo, "gate", "--all", "--at", "strict")
     check("gate --all: a failing mandatory gate fails the set", code == 1 and "a mandatory gate failed" in out, out)
+    check("gate --all: the verdict line marks a mandatory failure", "FAIL (must \u2014 mandatory)" in out, out)
+    code, out, _ = council(repo, "gate", "--all", "--at", "nobody-runs-here")
+    check("gate --all: no gate at this stage is NOTHING WAS CHECKED, and never exit 0",
+          code == 4 and "NOTHING WAS CHECKED" in out and "nobody-runs-here" in out, out)
     code, _, err = council(repo, "gate", "missing-gate")
     check("gate: an unknown gate name is an error", code == 2 and "no gate named" in err, err)
 
@@ -473,6 +482,9 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run open council-init: creates the council home and its .gitignore (runs/ and asks/)",
           code == 0 and os.path.isdir(init_run)
           and {"runs/", "asks/"} <= set(read(os.path.join(fresh, ".council", ".gitignore")).split()), init_run + err)
+    code, out, _ = council(fresh, "gate", "--all")
+    check("gate --all: a project with no configured check says NOTHING WAS CHECKED and exits 4",
+          code == 4 and "NOTHING WAS CHECKED" in out and "no automated check" in out, out)
     council(fresh, "state", "status=paused")
     code, plan_run, err = council(fresh, "run", "open", "council-plan", "--session=explicit")
     plan_run = plan_run.strip()
@@ -636,6 +648,99 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, err = council(req, "run", "close")
     check("run close: warns when a completed review filed no request", code == 0 and "no request was filed" in err, err)
 
+    # A build's own proof: the before-check really failed, the after-check really passed, and the
+    # test that proves it is saved in the project rather than thrown away with the run folder.
+    write(os.path.join(req, "tests", "test_x.py"), "def test_gap():\n    assert True\n")
+    git(req, "add", "-A")
+    git(req, "commit", "-q", "-m", "a test")
+    code, brun, _ = council(req, "run", "open", "council-implement")
+    brun = brun.strip()
+
+    def verdict_json(name, cmd, code_):
+        write(os.path.join(brun, "gates", name + ".json"),
+              '{"gate": "%s", "command": "%s", "exit": %d, "seconds": 1, "when": "2026-09-16 10:00:00"}\n'
+              % (name, cmd, code_))
+
+    verdict_json("before-1", "pytest tests/test_x.py::test_gap", 1)
+    verdict_json("after-1", "pytest tests/test_x.py::test_gap", 0)
+    verdict_json("before-2", 'npm test -- -t \\"expired token\\"', 1)
+    verdict_json("after-2", 'npm test -- -t \\"expired token\\"', 0)
+    verdict_json("before-3", "echo fine", 0)
+    verdict_json("after-3", "echo fine", 0)
+    verdict_json("before-4", "pytest tests/test_gone.py", 1)
+    verdict_json("after-4", "pytest tests/test_gone.py", 2)
+    verdict_json("before-5", "pytest tests/test_gone.py", 1)
+    write(os.path.join(req, "src", "app.py"), "print('hi')\n")
+    git(req, "add", "-A")
+    git(req, "commit", "-q", "-m", "an app file")
+    verdict_json("before-6", "python src/app.py --check", 1)
+    verdict_json("after-6", "python src/app.py --check", 0)
+    write(os.path.join(req, "tests", "test_fresh.py"), "def test_fresh():\n    assert True\n")   # written, not staged
+    verdict_json("before-7", "pytest tests/test_fresh.py", 1)
+    verdict_json("after-7", "pytest tests/test_fresh.py", 0)
+    verdict_json("before-8", "pytest tests/test_x.py", 1)
+    verdict_json("after-8", "true", 0)
+    verdict_json("after-9", "pytest tests/test_x.py", 0)
+    write(os.path.join(req, "tests", "pytest.ini"), "[pytest]\n")
+    git(req, "add", "-A")
+    git(req, "commit", "-q", "-m", "a config file")
+    verdict_json("before-10", "grep -q marker tests/pytest.ini", 1)
+    verdict_json("after-10", "grep -q marker tests/pytest.ini", 0)
+    verdict_json("before-11", "pytest -c tests/pytest.ini tests/test_x.py", 1)
+    verdict_json("after-11", "pytest -c tests/pytest.ini tests/test_x.py", 0)
+    code, out, _ = council(req, "check")
+    check("check: a fix whose before-check failed and after-check passed is proved, and names the saved test",
+          "task 1  proof  ok \u00b7 test saved: tests/test_x.py" in out, out)
+    check("check: a proof whose command names no tracked file under-claims rather than lying",
+          "task 2  proof  ok \u00b7 couldn't confirm a saved test" in out, out)
+    check("check: a before-check that never failed is broken proof",
+          code == 1 and "task 3  proof  BEFORE-PASSED" in out, out)
+    check("check: an after-check that still fails, and a missing after-check, are both broken",
+          "task 4  proof  AFTER-FAILED" in out and "task 5  proof  NO-AFTER" in out, out)
+    check("check: a tracked file that isn't a test never counts as a saved test",
+          "task 6  proof  ok \u00b7 couldn't confirm a saved test" in out, out)
+    check("check: the test a build just wrote counts before it is committed",
+          "task 7  proof  ok \u00b7 test saved: tests/test_fresh.py" in out, out)
+    check("check: an after-check that isn't the before-check is broken proof",
+          "task 8  proof  DIFFERENT-COMMAND" in out, out)
+    check("check: an after-check with nothing before it is broken proof",
+          "task 9  proof  NO-BEFORE" in out, out)
+    check("check: a config file that merely lives under tests/ is not a saved test",
+          "task 10  proof  ok \u00b7 couldn't confirm a saved test" in out, out)
+    check("check: the real test wins over a config file named in the same command",
+          "task 11  proof  ok \u00b7 test saved: tests/test_x.py" in out, out)
+    check("check: leads with the damage, and counts only proofs that held",
+          "check: 6 of 11 fix(es) proved \u00b7 5 broken \u00b7 3 left a test behind in the project" in out, out)
+    check("check: the summary names proof as its own kind of breakage",
+          "broken (citations and proof)" in out or "broken (citations, quotes and proof)" in out, out)
+    check("check: the proof rows land in check.md too", "| task 1 | proof | ok |" in read(os.path.join(brun, "check.md")))
+    write(os.path.join(req, ".council", "logs", "2026-09-16-build.md"),
+          "# Council Implementation Log \u2014 build\nInput: `x` \u00b7 Run: %s \u00b7 Start: abc123\n\n## Task 1: x\n"
+          % os.path.basename(brun))
+    code, out, err = council(req, "run", "close")
+    check("run close: warns when a build log never says what it traded away",
+          code == 0 and "Shortcuts and concessions" in err, err)
+    code, noproof, _ = council(req, "run", "open", "council-implement", "--alongside")
+    noproof = noproof.strip()
+    code, out, _ = council(req, "check", "--run", os.path.basename(noproof))
+    check("check: a build that recorded no before-and-after evidence is not a pass",
+          code == 1 and "NO PROOF" in out, out)
+    write(os.path.join(req, ".council", "logs", "2026-09-16-other.md"),
+          "# Council Implementation Log \u2014 other\nInput: `x` \u00b7 Run: %s-2 \u00b7 Start: abc123\n\n"
+          "## Shortcuts and concessions\nnone\n" % os.path.basename(noproof))
+    code, out, err = council(req, "run", "close", "--run", os.path.basename(noproof))
+    check("run close: a log naming a different run whose id starts the same doesn't count",
+          code == 0 and "no build log names this run" in err, err)
+
+    code, brun2, _ = council(req, "run", "open", "council-implement")
+    brun2 = brun2.strip()
+    write(os.path.join(req, ".council", "logs", "2026-09-16-build-2.md"),
+          "# Council Implementation Log \u2014 build 2\nInput: `x` \u00b7 Run: %s \u00b7 Start: abc123\n\n"
+          "## Task 1: x\n\n## Shortcuts and concessions\nnone\n" % os.path.basename(brun2))
+    code, out, err = council(req, "run", "close")
+    check("run close: no warning when the log says what it traded away (or 'none')",
+          code == 0 and "Shortcuts and concessions" not in err, err)
+
     write(os.path.join(req, ".council", "postgames", "2026-09-15-csv.md"),
           "---\ntitle: Post-game — CSV\nkind: postgame\nareas: reports/**\n---\n# Post-game: CSV\n"
           "**Your request:** `.council/asks/x.md` — \"We need CSV export\"\n| 1 | a.txt:1 | Met |\n")
@@ -643,6 +748,100 @@ with tempfile.TemporaryDirectory() as tmp:
     check("prior: finds a post-game", "postgames/2026-09-15-csv.md" in out, out)
     code, out, _ = council(req, "prior", ".council/asks/x.md")
     check("prior: a request's path finds the deliverables that point at it", "postgames/2026-09-15-csv.md" in out, out)
+    chg = new_repo(tmp, "changed")
+    write(os.path.join(chg, "src", "old.py"), "x = 1\n")
+    write(os.path.join(chg, "src", "keep.txt"), "not python\n")
+    git(chg, "add", "-A")
+    git(chg, "commit", "-q", "-m", "base")
+    code, out, _ = council(chg, "changed", "--glob", "*.py", "--", "wc", "-l")
+    check("changed: nothing changed is a pass, not a skip",
+          code == 0 and "no files matched" in out and "not a skip" in out, out)
+    write(os.path.join(chg, "src", "old.py"), "x = 11\n")          # unstaged edit
+    write(os.path.join(chg, "src", "new file.py"), "y = 2\n")      # untracked, and a space in the name
+    code, out, _ = council(chg, "changed", "--glob", "*.py")
+    listed = out.split()
+    check("changed: lists the edited and the brand-new file, and nothing else",
+          code == 0 and "src/old.py" in out and "src/new file.py" in out and "keep.txt" not in out, out)
+    code, out, _ = council(chg, "changed", "--glob", "*.py", "--each", "--", "wc", "-l")
+    check("changed --each: runs the tool once per file, spaces in names intact",
+          code == 0 and out.count("\n") >= 1 and "new file.py" in out, out)
+    code, out, _ = council(chg, "changed", "--glob", "*.py", "--", "false")
+    check("changed: a failing tool fails the gate", code != 0, out)
+    git(chg, "add", "-A")
+    git(chg, "commit", "-q", "-m", "work")
+    git(chg, "checkout", "-q", "-b", "feature")
+    write(os.path.join(chg, "src", "branch.py"), "b = 1\n")
+    git(chg, "add", "-A")
+    git(chg, "commit", "-q", "-m", "on the branch")
+    code, out, _ = council(chg, "changed", "--glob", "*.py")
+    check("changed: work committed on this branch counts; the rest of the project doesn't",
+          code == 0 and out.strip() == "src/branch.py", out)
+    code, out, err = council(chg, "changed", "--base", "no-such-ref", "--glob", "*.py")
+    check("changed: a --base that isn't a ref is an error, never a quietly smaller file list",
+          code == 2 and "not a ref in this repository" in err, err)
+    code, out, err = council(chg, "changed", "--glob", "*.py", "--", "wc", "-l")
+    check("changed: says how many files the check actually looked at", "file(s) to check" in (out + err), out + err)
+    os.remove(os.path.join(chg, "src", "branch.py"))
+    code, out, _ = council(chg, "changed", "--glob", "*.py")
+    check("changed: a file deleted in the range is never handed to the tool",
+          code == 0 and "no files matched" in out, out)
+
+    names_repo = new_repo(tmp, "names")
+    write(os.path.join(names_repo, "a.txt"), "a\n")
+    git(names_repo, "add", "-A")
+    git(names_repo, "commit", "-q", "-m", "init")
+    write(os.path.join(names_repo, ".council", "council.config.md"),
+          "# Council config \u2014 names\nlast-verified: 2026-09-15 @ x\n\n## Gates\n"
+          "| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs |\n"
+          "|---|---|---|---|---|---|---|---|\n"
+          "| unit tests | `exit 1` | verify | yes | ok | `true` | none | - |\n"
+          "| type check | `exit 1` | verify | no | ok | `true` | none | - |\n"
+          "| lint | `true` | verify | no | ok | `true` | none | - |\n"
+          "| e2e | `true` | verify | yes | \u2717 2026-09-01: no browser here | - | none | - |\n")
+    council(names_repo, "run", "open", "council-review")
+    code, out, _ = council(names_repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a gate name with a space stays one name in the FAIL list",
+          "FAIL (unit tests, type check \u2014 mandatory)" in out, out)
+    check("gate --all: a required gate that could not run is named, so the line can't read clean",
+          "1 skipped (1 of them required: e2e" in out, out)
+
+    write(os.path.join(names_repo, ".council", "council.config.md"),
+          "# Council config \u2014 names\nlast-verified: 2026-09-15 @ x\n\n## Gates\n"
+          "| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs |\n"
+          "|---|---|---|---|---|---|---|---|\n"
+          "| lint | `true` | verify | no | ok | `true` | none | - |\n"
+          "| the whole test suite | `exit 9` |  | yes | ok | `true` | none | - |\n")
+    code, out, _ = council(names_repo, "gate", "--all", "--at", "verify")
+    check("gate --all --at: a required gate with no stage at all is named, not silently dropped",
+          "gate the whole test suite: skipped \u2014 its Run at cell is empty" in out
+          and "1 of them required: the whole test suite" in out, out)
+    write(os.path.join(names_repo, ".council", "council.config.md"),
+          "# Council config \u2014 names\nlast-verified: 2026-09-15 @ x\n\n## Gates\n"
+          "| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs |\n"
+          "|---|---|---|---|---|---|---|---|\n"
+          "| lint | `bash '" + slash(CLI) + "' changed --glob '*.nothing' -- false` | verify | no | ok | `true` | none | - |\n")
+    code, out, _ = council(names_repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a check that matched no files passes, but is never reported as a clean pass",
+          code == 0 and "pass \u2014 but nothing to check (0 files matched)" in out
+          and "1 had nothing to check (lint \u2014 0 files matched)" in out, out)
+
+    nogates = new_repo(tmp, "nogates")
+    write(os.path.join(nogates, "x.txt"), "x\n")
+    git(nogates, "add", "-A")
+    git(nogates, "commit", "-q", "-m", "init")
+    write(os.path.join(nogates, ".council", "council.config.md"),
+          "# Council config \u2014 nogates\nlast-verified: 2026-09-15 @ x\n\n## Roster\n")
+    code, out, _ = council(nogates, "doctor")
+    gate_line = [l for l in out.splitlines() if "no gates in council.config.md" in l]
+    check("doctor: a config with no gates is an error, not a warning",
+          code == 1 and gate_line and gate_line[0].startswith("ERROR") and "NOTHING WAS CHECKED" in gate_line[0], out)
+
+    append(os.path.join(nogates, ".council", "council.config.md"), "guardrails: declined 2026-09-16\n")
+    code, out, _ = council(nogates, "doctor")
+    gate_line = [l for l in out.splitlines() if "no gates in council.config.md" in l]
+    check("doctor: a project that was offered the checks and declined gets a warning, not an error",
+          gate_line and gate_line[0].startswith("WARN") and "guardrails declined" in gate_line[0], out)
+
     nohome = new_repo(tmp, "nohome")
     code, pg, err = council(nohome, "run", "open", "council-postgame")
     pg = pg.strip()

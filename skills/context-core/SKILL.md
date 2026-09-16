@@ -70,8 +70,9 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
 | `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
 | `council index [--base <ref>]` | build the change index: hunks, symbols, callers, tests |
-| `council gate <name> [-- '<command>']` · `council gate --all --at grounding` (or `verify`) | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved |
-| `council collect` · `council check` | check the seat files (and a war room's debate.md) · check citations, origin and request quotes |
+| `council gate <name> [-- '<command>']` · `council gate --all --at grounding` (or `verify`) | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved. From `--all`, **exit 4 = NOTHING WAS CHECKED** — no gate ran; say so, never report it as a pass. From a single gate, 4 is that command's own exit code |
+| `council changed [--glob '<pat>'] [--each] -- <cmd>` | run `<cmd>` over just the files this change touches — committed, staged, unstaged and new; exit 0 when none matched, so a newly fitted check is green on day one |
+| `council collect` · `council check` | check the seat files (and a war room's debate.md) · check citations, origin and request quotes — and, in a build, each fix's proof: did the before-check really fail, did the after-check really pass, is a test saved |
 | `council ask save [slug]` | file the run's ask.md — the user's words — under `.council/asks/`, redacting secrets; records `ask=` |
 | `council fingerprint check` · `council memory select` · `council prior` | a changed stack · the memory entries in scope · earlier council work on these paths |
 | `council ledger` · `council map status` · `council doctor` | each seat's track record · map freshness · drift scan with a fix per finding |

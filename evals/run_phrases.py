@@ -31,10 +31,27 @@ TEXTS = {
     "research": read("skills", "council-research", "SKILL.md"),
     "postgame": read("skills", "council-postgame", "SKILL.md"),
     "war-room": read("references", "war-room.md"),
+    "guardrails": read("references", "guardrails.md"),
+    "helper": read("bin", "council"),
 }
 FLAT = {k: " ".join(v.split()) for k, v in TEXTS.items()}
 
 RULES = [  # (where, the rule, the phrase that carries it)
+    ("helper", "nothing checked is never a pass", "NOTHING WAS CHECKED"),
+    ("helper", "the verdict line names pass, FAIL and skipped", "$passed pass, $nfail FAIL"),
+    ("helper", "a config with no gates is a doctor error", "every council report on this project says NOTHING WAS CHECKED"),
+    ("helper", "a build's proof is checked, not trusted", "BEFORE-PASSED"),
+    ("implement", "the receipt names the shortcuts taken", "Shortcuts I took:"),
+    ("implement", "the receipt names what nobody proved", "Not proved:"),
+    ("implement", "none and nothing are answers, silence isn't", '"none" and "nothing" are answers; silence isn\'t'),
+    ("implement", "the log keeps the shortcuts where git can see them", "## Shortcuts and concessions"),
+    ("implement", "before-evidence is a saved test when there is a runner", "a test in the project's own suite"),
+    ("implement", "a red baseline is never waved through", "A red baseline is never waved through"),
+    ("init", "the missing checks are offered once, installed only on a yes", "Nothing is installed until you say so"),
+    ("init", "the permission offer never allowlists every command", "Never widen this list to `council *`"),
+    ("guardrails", "a newly fitted check judges only what changed", "green on day one"),
+    ("guardrails", "a gate that cannot fail is worse than no gate", "A gate that cannot fail is worse than no gate"),
+    ("guardrails", "no coverage threshold, no commit hook", "No coverage threshold"),
     ("kernel+doctrine", "aggregate before judging", "Raw ledger first"),
     ("kernel+doctrine", "map, don't ingest", "Map, don't ingest"),
     ("kernel+doctrine", "brief written for a zero-context worker", "zero context"),

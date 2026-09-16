@@ -49,7 +49,9 @@ Runs the helper against scaffolded git repos:
 - opening, updating and closing runs: a second in-progress run refused without `--alongside`,
   commands that never guess between runs, paused runs, session ids, init creating the home;
 - the change index: files, symbols (code only), callers, tests;
-- gates judged by exit code (optional vs mandatory), with commands passed intact;
+- gates judged by exit code (optional vs mandatory), with commands passed intact; a project with
+  nothing configured, or nothing that can run at a stage, reported as NOTHING WAS CHECKED and never
+  as a pass; the verdict line's pass, FAIL and skipped counts;
 - seat-file collection: `ref:` proof of reading (paired seats too), item caps, broken citations,
   empty or unreadable indexes, failed and re-dispatched workers;
 - citation and origin checks (introduced vs pre-existing);
@@ -57,6 +59,9 @@ Runs the helper against scaffolded git repos:
 - the stack fingerprint, scoped memory and stale anchors, earlier council work, the seat ledger;
 - the user's request: filing it word for word and out of git, redaction, continuing it, the quote
   check; a war room's round-2 files; post-game runs without a council home;
+- a build's proof: a before-check that really failed, an after-check that really passed, whether a
+  test was left behind in the project, and the warning when a build log never says what it traded
+  away;
 - map status and the drift doctor (cards, repeated slugs, a changed stack).
 
 ## 4. Hook evals — do the hooks behave?
@@ -137,5 +142,5 @@ python evals/record_eval.py                                                     
 
 ## 7. Behavioral drills — run in Claude Code
 
-See `behavioral-drills.md` (D1–D23). They need a live agent and subagents, so they can't be scripted
+See `behavioral-drills.md` (D1–D26). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

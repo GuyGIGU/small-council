@@ -182,6 +182,56 @@ no earlier council work, and the next move lists only those.
 - a build with one partly met Done-when gets exactly one line, and nothing runs before a yes;
 - after a "no", the log records it, and the next build on the same request doesn't offer again.
 
+## D24 — Nothing was checked
+**Setup:** a council project whose `council.config.md` has no Gates rows, then any council run. Run it
+a second time with one gate present but marked not runnable (`✗ no runner here`), which `gate --all`
+also reports as NOTHING WAS CHECKED — `doctor` only errors on the no-rows case.
+
+**Pass if:**
+- `council gate --all` prints NOTHING WAS CHECKED and exits 4;
+- the run's summary carries that line in plain words — it never reads as a clean pass;
+- `council doctor` reports it as an error, not a warning;
+- council-implement asks **one** numbered question before task 1, records the answer in ask.md's
+  `## Later, in your words` with its date, and then builds without asking again;
+- every later receipt in that project carries exactly one line about it, and none once it goes green.
+
+**Fail if:** any report says the work passed, or the question is asked twice.
+
+## D25 — The checks the project is missing
+**Setup:** council-init (or a refresh) in a repo with, say, a test runner but no linter, no type check
+and no dependency audit.
+
+**Pass if:**
+- the missing ones are listed cheapest-first, one plain line each on what it would catch — no tool
+  jargon, no version numbers;
+- nothing is installed before a yes;
+- on a yes it writes `<home>/plans/guardrails.md` in council-plan's task format and offers
+  council-implement, rather than installing anything itself;
+- a fitted linter's gate runs through `council changed`, is entered `Mandatory: no`, and the count of
+  pre-existing problems is written once into the config's `## Notes`;
+- every fitted gate is proved both ways — red on a deliberate violation, green once it's removed —
+  before its task is called done;
+- a declined offer writes `guardrails: declined <date>`, and `council doctor` then warns once instead
+  of erroring for ever;
+- a fitted test runner's report says what the suite is actually worth ("1 test; it proves the app
+  starts and nothing else");
+- the permission rules it offers never include `Bash(council *)` or `council gate`.
+
+## D26 — The receipt
+**Setup:** any council-implement run, including one where you know a corner was cut.
+
+**Pass if:**
+- the six lines appear in order, every time, with `Shortcuts I took:` and `Not proved:` present even
+  when the answers are "none" and "nothing";
+- a real shortcut is named with its path and what undoing it would take, and appears in the log's
+  `## Shortcuts and concessions`;
+- `council run close` warns when that section is missing;
+- every fix's `Proof` cell in `## Converge` comes from `council check`, and a before-check that passed
+  is reported as BEFORE-PASSED rather than quietly dropped;
+- "3 of 3 fixes left a test behind" — or an honest "couldn't confirm a saved test" — reaches the user.
+
+**Fail if:** "Shortcuts I took" is omitted, or says "none" in a build where a check was loosened.
+
 ## Context-hygiene spot checks (any real run)
 - The Chair never deep-read implementation files — it used Glob/Grep, the index, and a bounded set of
   skeleton files.

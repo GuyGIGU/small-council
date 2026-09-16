@@ -59,6 +59,7 @@ for s in SKILLS:
 for d in DOCTRINE:
     check(f"layout: references/doctrine/{d} exists", bool(read("references", "doctrine", d)))
 check("layout: references/war-room.md exists", bool(read("references", "war-room.md")))
+check("layout: references/guardrails.md exists", bool(read("references", "guardrails.md")))
 check("layout: no using-council skill (the hook replaced it)", not os.path.isdir(os.path.join(ROOT, "skills", "using-council")))
 check("layout: no per-skill manifest.json", not any(os.path.isfile(os.path.join(ROOT, "skills", s, "manifest.json")) for s in SKILLS))
 
@@ -68,6 +69,7 @@ doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
 warroom = read("references", "war-room.md")
+guardrails = read("references", "guardrails.md")
 
 # 2. Kernel
 LAWS = ["One head", "Parallel readers, one writer", "Gather once, share with everyone", "The disk is the memory",
@@ -79,6 +81,10 @@ for i, law in enumerate(LAWS, 1):
 pos = [core.find(f"`{d}`") for d in DOCTRINE]
 check("kernel: the stage table lists all ten doctrine files, in order", -1 not in pos and pos == sorted(pos), str(pos))
 check("kernel: points at the doctrine folder", "${CLAUDE_PLUGIN_ROOT}/references/doctrine/" in core)
+check("kernel: exit 4 from the gates is never a pass", "NOTHING WAS CHECKED" in core)
+check("02-prepare: says what exit 4 means", "Exit 4" in doctrine["02-prepare.md"])
+check("09-deliver: a mode that changed code says what the machine checked",
+      "Checked by machine:" in doctrine["09-deliver.md"])
 check("kernel: agent cap of 10, verifiers included", re.search(r"\b10\b[^.]*verifiers included", flat(core)) is not None)
 check("kernel: approval threshold from the config", "approve without asking" in core)
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
@@ -119,13 +125,15 @@ for c in sorted(known):
     check(f"helper: '{c}' is dispatched in main", re.search(rf"^\s+{c}\)", cli, re.MULTILINE) is not None)
 texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
          "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
-         "references/war-room.md": warroom}
-flags = set(re.findall(r"^\s+(--[a-z][a-z-]*)(?:=\*)?\)", cli[cli.find("main() {"):], re.MULTILINE))
+         "references/war-room.md": warroom, "references/guardrails.md": guardrails}
+flag_src = cli[cli.find("main() {"):] + cli[cli.find("cmd_changed() {"):cli.find("cmd_changed() {") + 2000]
+flags = set(re.findall(r"^\s+(--[a-z][a-z-]*)(?:=\*)?\)", flag_src, re.MULTILINE))
 bad, bad_flags = [], []
 for label, t in texts.items():
     for m in re.finditer(r"`council ([a-z]+)([^`]*)`", t):
         c, rest = m.group(1), m.group(2).replace("\\", " ").split()   # the hook escapes backticks: \`…\`
-        bad_flags += [f"{label}: council {c} {f}" for f in re.findall(r"--[a-z][a-z-]*", " ".join(rest)) if f not in flags]
+        own = rest[:rest.index("--")] if "--" in rest else rest        # past `--` the words are the user's command
+        bad_flags += [f"{label}: council {c} {f}" for f in re.findall(r"--[a-z][a-z-]*", " ".join(own)) if f not in flags]
         if c not in known:
             bad.append(f"{label}: council {c}")
         elif c == "run" and (not rest or rest[0] not in {"open", "close", "status"}):
@@ -158,6 +166,10 @@ for m, path in [("council-review", "<home>/reviews/"), ("council-plan", "<home>/
 for s in SKILLS:
     if s != "council-init":
         check(f"{s}: no legacy <mode>-output run paths", "-output/" not in skill[s])
+check("init: never offers a blanket council allowlist (gate and changed run arbitrary commands)",
+      '"Bash(council *)"' not in skill["council-init"] and '"Bash(council gate:' not in skill["council-init"]
+      and '"Bash(council changed' not in skill["council-init"]
+      and "`Bash(council *)`" in skill["council-init"])   # named only to warn against it
 review, plan, impl, research, init = (skill[k] for k in ["council-review", "council-plan", "council-implement", "council-research", "council-init"])
 for label, text, needles in [
     ("review", review, ["merge-base", "council index --base", "Origin:", "Basis:", "Refuted if:", "Not a finding", "council-implement"]),
@@ -165,15 +177,21 @@ for label, text, needles in [
                     "## How the council decided", "ask.md", "council ask save"]),
     ("implement", impl, ["fix mode", "Before-evidence", "After-evidence", "clean-context diagnosis", "converge", "council gate --all",
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
-                         "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input"]),
+                         "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input",
+                         "NOTHING WAS CHECKED", "## Shortcuts and concessions", "Shortcuts I took:", "Not proved:",
+                         "Checked by machine:", "Works?:", "guardrails.md", "council check"]),
     ("research", research, ["scout", "Strength:"]),
     ("postgame", skill["council-postgame"], ["ask.md", "council ask save", "council run open council-postgame", "Ruled out",
                                              "council-implement", "council-plan", "never the plan", "quote:",
                                              "small-council:council-verifier"]),
     ("war-room", warroom, ["debate.md", "-r2.md", "## How the council decided", "never a third", "Evidence counts, not heads",
                            "SendMessage"]),
+    ("guardrails", guardrails, ["Formatter", "Linter", "Type check", "Test runner", "Dependency audit", "ratchet",
+                                "council changed", "Mandatory: no", "plans/guardrails.md", "council-implement",
+                                "proved both ways", "No coverage threshold", "No commit hook"]),
     ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
-                    "Edit(/.council/**)", "Bash(council *)", "last-verified", "council doctor", "council run open council-init",
+                    "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
+                    "last-verified", "council doctor", "council run open council-init",
                     "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger"]),
     ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier"]),
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:

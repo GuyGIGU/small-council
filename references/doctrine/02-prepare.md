@@ -22,6 +22,11 @@ Gather every shared fact once, so no seat has to.
 6. **Grounding gates.** `council gate --all --at grounding` — in the background if the suite is
    slow. Judge by exit code. For a failure, read the excerpt the helper prints, or Grep the saved
    `<run>/gates/<name>.txt`; never read the whole file.
+   - **Exit 4 is NOTHING WAS CHECKED**, not a pass. The helper's line names which of the three it is
+     — no check configured at all, none that runs at this stage, or every one skipped — so carry
+     those words rather than a cause of your own. In a mode that changes code, say it at Deliver and
+     offer to fit the missing ones (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md` — a council-init
+     refresh writes the plan). Never let a report read clean when nothing ran.
 7. **Anything look stale** — a config path, a gate that can't run? `council doctor`.
 
 ## Rules
@@ -30,6 +35,9 @@ Gather every shared fact once, so no seat has to.
   implementations, you're doing a seat's job.
 - **A gate that can't run** (missing tool, deleted file) is config drift: tell the user and offer to
   fix the config. It is not a code finding.
+- **Nothing checked is said out loud.** A mode that changed code carries the gates' verdict line — or
+  the helper's NOTHING WAS CHECKED line — to Deliver, as stage 9 says. A mode that changed nothing
+  mentions the missing checks once, in its offer, and doesn't repeat the alarm every run.
 
 ## Done when
 

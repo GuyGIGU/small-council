@@ -15,10 +15,10 @@ skipped under load.
 
 | Skill | What it does |
 |---|---|
-| `council-init` | Summons the council for a repo: detects the stack, recruits and recasts the expert roster (with the paths each seat watches), writes each seat a card that translates its doctrine to your project, dry-runs the real check commands and records their side effects, builds the codebase map, writes `.council/`. Once per repo, and again when the stack moves. |
+| `council-init` | Summons the council for a repo: detects the stack, recruits and recasts the expert roster (with the paths each seat watches), writes each seat a card that translates its doctrine to your project, dry-runs the real check commands and records their side effects, **lists the checks your project is missing** — formatter, linter, type check, test runner, dependency audit — builds the codebase map, writes `.council/`. Once per repo, and again when the stack moves. |
 | `council-review` | Multi-expert code review → verified P1/P2/P3 findings → fix hand-off. |
 | `council-plan` | Scoping conversation → expert advice → a plan built as vertical slices, each task saying what it touches and how to tell it's done. For a big or tough feature — or when you say "debate it" — a **war room** first: the experts read each other's proposals and argue them out with evidence, and you rule on the real forks. |
-| `council-implement` | Builds a plan, fixes a review's findings, or finishes a post-game's next tasks, task by task: before-and-after evidence, gates after every change, a verifier on every result, a converge pass at the end. |
+| `council-implement` | Builds a plan, fixes a review's findings, or finishes a post-game's next tasks, task by task: a saved test as before-and-after evidence, gates after every change, a verifier on every result, a converge pass at the end — and the same six-line receipt every time, shortcuts included. |
 | `council-research` | Answers a question with graded evidence from code, history, docs and the web; saves the answer as project knowledge; keeps the map true. |
 | `council-postgame` | After the work: checks what was built against your original request, word for word — what matches, what drifted, what's missing — and hands the next move to plan or implement. Offered after a build when it's worth it; works on work done without the council too. |
 | `spec-writer` | Short, structured specs: Job Stories, Gherkin acceptance criteria, three-tier boundaries. |
@@ -58,6 +58,14 @@ Then, in each project you want a council for, run **`/council-init`**.
 - put the repo, or a directory junction to it, at `~/.claude/skills/small-council/`. Claude Code then
   loads it automatically as `small-council@skills-dir`.
 
+**Upgrading from 0.6:** run a council-init refresh in each project, for two reasons. It lists the
+checks the project is missing (nothing is installed without a yes). And it replaces the permission rule
+earlier versions offered: `Bash(council *)` also covered `council gate <name> -- '<any command>'`,
+which runs whatever it is given — so it allowed every command on the machine. The refresh reads your
+settings, offers to replace that rule with a narrow list, and explains why the checks themselves keep
+asking each time (say yes each time; never pick "don't ask again" for them). Reports on a project with no checks configured now
+say NOTHING WAS CHECKED where they used to read clean.
+
 **Upgrading from 0.5:** nothing to do — `.council/asks/` and `.council/postgames/` appear on first
 use, and the first filed request adds `asks/` to `.council/.gitignore`, so your words stay on your
 machine.
@@ -85,6 +93,39 @@ the run preferences, and offers the helper's permission rule.
 **Every multi-agent run is proposed first**, with its seats (and the seats not going), its size and
 its estimated cost. A `/command` starts runs up to your approved size (default: Squad) straight away;
 bigger runs always ask. After the go-ahead it runs to the deliverable on its own.
+
+## What you see after every build
+
+The same six lines, in the same order, whatever happened:
+
+```
+Built: 4 of 4 tasks — you can now export a report as CSV
+Works?: ran `npm start` and exported a 12-row file; the 3 new tests pass
+Checked by machine: gates: 3 ran — all pass (baseline: 1 FAIL)
+Shortcuts I took: the export limit is hardcoded at 5,000 rows (src/export.ts) — streaming needs a design call
+Not proved: nothing
+Cost: ~90k tokens across 3 agents · 2 of 2 fix(es) proved · 0 broken · 2 left a test behind · log: .council/logs/2026-09-16-csv.md
+```
+
+"Shortcuts I took" and "Not proved" are never left out — `none` and `nothing` are answers, silence
+isn't — and every shortcut also lands in the log, which git keeps, so the pile stays visible months
+later. A shortcut is defined rather than left to taste: a hardcoded value, a skipped case, a swallowed
+error, a loosened check, a test that asserts less than the behaviour, a TODO, or a fix whose only proof
+was a throwaway command.
+
+## The checks behind a green report
+
+A council report is only as honest as the commands behind it. With nothing configured to run,
+`council gate --all` says **NOTHING WAS CHECKED** and fails — it never reports a pass when nothing ran.
+
+`council-init` lists what your project is missing, one plain line each on what it would catch, and on
+your yes writes a small plan that `council-implement` fits the same way it builds anything else. A
+newly fitted linter or type checker judges **only the files a change touches** — including the code
+just written and not yet committed — so it is green on day one and can only get stricter; the problems
+that were already there are counted once and written down as "not yours". Every fitted check is proved
+both ways before it counts: red on a deliberate mistake, green once it's fixed, because a check that
+can only pass is worse than none. Nothing is installed without a yes, there is no commit hook, and
+there is no coverage number to game. The per-stack commands live in `references/guardrails.md`.
 
 ## What a council run does
 

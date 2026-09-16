@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.6.0"
+COUNCIL_VERSION="0.7.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 
@@ -292,7 +292,7 @@ cmd_seat() {
 }
 
 cmd_run_close() {
-  local run status home ptr p tok=0 agents=0 line n
+  local run status home ptr p tok=0 agents=0 line n lg
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -324,6 +324,14 @@ cmd_run_close() {
         [ -n "$(field ask-saved "$run/session-state.md")" ] \
           || printf 'council: no request was filed for this run — council ask save --run %s\n' "${run##*/}" >&2 ;;
     esac
+    if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
+      lg="$(grep -lE "(^|[^0-9A-Za-z-])${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
+      if [ -z "$lg" ]; then
+        printf 'council: no build log names this run — write %s/logs/<date>-<slug>.md with "Run: %s" and a "## Shortcuts and concessions" section\n' "$home" "${run##*/}" >&2
+      elif ! grep -q '^## Shortcuts and concessions' "$lg"; then
+        printf 'council: the log has no "## Shortcuts and concessions" section — say what was traded away, or the single word none: %s\n' "$lg" >&2
+      fi
+    fi
   fi
 }
 
@@ -542,7 +550,7 @@ config_gates() {
       out[++n] = cur
       return n
     }
-    function trim(s) { gsub(/^[ \t\r]+|[ \t\r]+$/, "", s); return s }
+    function trim(s) { gsub(/\t/, " ", s); gsub(/^[ \r]+|[ \r]+$/, "", s); return s }
     function dash(s) { return s == "" ? "-" : s }
     /^## / { ing = ($0 ~ /^## Gates/); hdr = 0; next }
     ing && /^\|/ {
@@ -615,6 +623,7 @@ gate_base() { printf '%s/gates/%s' "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._
 # Run one gate; full output to <run>/gates/<name>.txt, the verdict to <name>.json. Returns its exit code.
 run_gate() {
   local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits
+  GATE_EMPTY=0
   base="$(gate_base "$run" "$name")"; out="$base.txt"
   mkdir -p "$run/gates"
   start="$(date +%s)"
@@ -624,7 +633,12 @@ run_gate() {
   printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"}\n' \
     "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" > "$base.json"
   if [ "$ec" -eq 0 ]; then
-    say "gate $name: pass (exit 0, ${secs}s)"
+    if grep -q '^changed: no files matched' "$out" 2>/dev/null; then
+      GATE_EMPTY=1                    # it passed because there was nothing to look at, not because it looked
+      say "gate $name: pass — but nothing to check (0 files matched)"
+    else
+      say "gate $name: pass (exit 0, ${secs}s)"
+    fi
     return 0
   fi
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
@@ -636,22 +650,39 @@ run_gate() {
 }
 
 cmd_gate() {
-  local run top cfg name cmd at mand k chk side needs hk hascol extra row ran=0 skipped=0 failed=0 gates
+  local run top cfg name cmd at mand k chk side needs hk hascol extra row ran=0 skipped=0 failed=0 gates \
+        passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth=""
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
   if [ "$ALL" = 1 ]; then
     gates="$(config_gates "$cfg")"
-    [ -n "$gates" ] || { say "no gates configured in $cfg"; return 0; }
+    if [ -z "$gates" ]; then      # a green report with nothing behind it is the worst outcome there is
+      say "NOTHING WAS CHECKED — this project has no automated check configured (no Gates row in $cfg)"
+      return 4
+    fi
     while IFS="$TAB" read -r name cmd at mand k chk side needs hk hascol; do
       [ -n "$name" ] || continue
-      if [ -n "$AT_ARG" ]; then case "$at" in *"$AT_ARG"*) ;; *) continue ;; esac; fi
-      if [ "$k" != "$hk" ]; then
+      if [ "$k" != "$hk" ]; then     # before the --at filter: a shifted row's Run-at cell means nothing
         say "gate $name: skipped — its row has $k cells where the header has $hk (an unescaped | ?); fix the row"
         skipped=$((skipped + 1)); continue
       fi
+      case "$(printf '%s' "$mand" | tr 'A-Z' 'a-z')" in yes*|y|true|mandatory) ismand=1 ;; *) ismand=0 ;; esac
+      if [ -n "$AT_ARG" ]; then
+        case "$at" in
+          *"$AT_ARG"*) ;;
+          ''|-)                       # no stage at all: it runs in no set, which must never be silent
+            say "gate $name: skipped — its Run at cell is empty, so it runs only by name; fill it in (grounding, verify)"
+            skipped=$((skipped + 1)); [ "$ismand" -eq 0 ] || { skipm=$((skipm + 1)); reds="${reds:+$reds, }$name"; }
+            continue ;;
+          *) continue ;;              # it belongs to another stage: ordinary, and not this run's business
+        esac
+      fi
       case "$(printf '%s' "$chk" | tr 'A-Z' 'a-z')" in
-        ✗*|*"not probed"*) say "gate $name: skipped — the config marks it not runnable here ($chk)"; skipped=$((skipped + 1)); continue ;;
+        ✗*|*"not probed"*)
+          say "gate $name: skipped — the config marks it not runnable here ($chk)"
+          skipped=$((skipped + 1)); [ "$ismand" -eq 0 ] || { skipm=$((skipm + 1)); reds="${reds:+$reds, }$name"; }
+          continue ;;
       esac
       if ! gate_safe "$cmd" "$side" "$needs" "$hascol"; then
         extra=""; [ "$needs" = "-" ] || extra=" · needs: $needs"
@@ -662,17 +693,40 @@ cmd_gate() {
         else
           say "gate $name: skipped — side effects: $side$extra. Run it by name once the user agrees: council gate $name"
         fi
-        skipped=$((skipped + 1)); continue
+        skipped=$((skipped + 1)); [ "$ismand" -eq 0 ] || { skipm=$((skipm + 1)); reds="${reds:+$reds, }$name"; }
+        continue
       fi
       ran=$((ran + 1))
-      if ! run_gate "$run" "$name" "$cmd" "$top"; then
-        case "$(printf '%s' "$mand" | tr 'A-Z' 'a-z')" in yes*|y|true|mandatory) failed=1 ;; esac
+      if run_gate "$run" "$name" "$cmd" "$top"; then
+        passed=$((passed + 1))
+        [ "$GATE_EMPTY" != 1 ] || { empty=$((empty + 1)); noth="${noth:+$noth, }$name"; }
+      else
+        red="${red:+$red, }$name"       # already delimited: a gate name may contain spaces
+        [ "$ismand" -eq 0 ] || failed=1
       fi
     done <<GATES
 $gates
 GATES
-    if [ "$ran" -eq 0 ] && [ "$skipped" -eq 0 ]; then say "no gates configured${AT_ARG:+ to run at '$AT_ARG'}"
-    else say "gates: $ran ran, $skipped skipped"; fi
+    if [ "$ran" -eq 0 ]; then
+      if [ "$skipped" -eq 0 ]; then
+        say "NOTHING WAS CHECKED — no gate in $cfg runs${AT_ARG:+ at '$AT_ARG'}"
+      else
+        say "NOTHING WAS CHECKED — $skipped gate(s) could not run here${AT_ARG:+ at '$AT_ARG'}; see the reasons above"
+      fi
+      return 4
+    fi
+    nfail=$((ran - passed))
+    if [ "$skipped" -gt 0 ]; then
+      tail=" · $skipped skipped"
+      [ "$skipm" -eq 0 ] || tail="$tail ($skipm of them required: $reds — so this run proves less than it looks)"
+    fi
+    [ "$empty" -eq 0 ] || tail="$tail · $empty had nothing to check ($noth — 0 files matched)"
+    if [ "$nfail" -eq 0 ]; then
+      say "gates: $ran ran — all pass$tail"
+    else
+      if [ "$failed" -eq 1 ]; then say "gates: $ran ran — $passed pass, $nfail FAIL ($red — mandatory)$tail"
+      else say "gates: $ran ran — $passed pass, $nfail FAIL ($red, not mandatory)$tail"; fi
+    fi
     [ "$failed" -eq 0 ] || say "a mandatory gate failed"
     return "$failed"
   fi
@@ -694,6 +748,65 @@ GATES
   fi
   case "$cmd" in *'|'*) say "note: this gate command contains a pipe — its exit code may not be the test runner's" ;; esac
   run_gate "$run" "$name" "$cmd" "$top"
+}
+
+# ------------------------------------------------------------------------------------------------
+# Changed files — so a newly fitted check judges only what this change touched
+# ------------------------------------------------------------------------------------------------
+
+# council changed [--base <ref>] [--glob '<pattern>' …] [--each] [-- <command> …]
+# The files this change touches: committed on this branch since <base>, staged, unstaged, and new
+# files git doesn't track yet. With no command it lists them. With one it runs the command over them
+# and exits 0 when nothing matched — so a linter fitted to an old project is green on day one and can
+# only ever get stricter, instead of printing a thousand complaints about code that was already there.
+# --each runs the command once per file, for tools that only read their first argument (bash -n).
+cmd_changed() {
+  local top ref base each=0 f worst=0 st
+  local -a globs files
+  globs=(); files=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --glob)   [ $# -ge 2 ] || die "--glob needs a pattern"; globs+=("$2"); shift 2 ;;
+      --glob=*) globs+=("${1#--glob=}"); shift ;;
+      --each)   each=1; shift ;;
+      *) die "usage: council changed [--base <ref>] [--glob '<pattern>'] [--each] -- <command> …" ;;
+    esac
+  done
+  top="${CODE_ROOT_ARG:-$(this_tree)}"
+  cd "$top" 2>/dev/null || die "cannot enter the code root: $top"
+  git rev-parse --git-dir >/dev/null 2>&1 || die "council changed needs a git repository"
+  if [ -n "$BASE_ARG" ]; then
+    ref="$BASE_ARG"
+    base="$(git merge-base HEAD "$ref" 2>/dev/null)" \
+      || base="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null)" \
+      || die "council changed: '$ref' is not a ref in this repository — the committed half of the change would be skipped in silence"
+  else
+    ref="$(default_branch)" || ref="HEAD"
+    base="$(git merge-base HEAD "$ref" 2>/dev/null)" || base=""
+  fi
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in '"'*) f="$(printf '%s' "$f" | sed 's/^"//; s/"$//')" ;; esac   # git quotes odd names
+    [ -f "$f" ] || continue                       # deleted, or renamed away: there is nothing to check
+    files+=("$f")
+  done <<FILES
+$( { [ -z "$base" ] || git -c core.quotePath=false diff --name-only --diff-filter=ACMR "$base"...HEAD -- ${globs[@]+"${globs[@]}"} 2>/dev/null
+     git -c core.quotePath=false diff --name-only --diff-filter=ACMR HEAD -- ${globs[@]+"${globs[@]}"} 2>/dev/null
+     git -c core.quotePath=false ls-files -o --exclude-standard -- ${globs[@]+"${globs[@]}"} 2>/dev/null; } | sort -u )
+FILES
+  if [ "${#files[@]}" -eq 0 ]; then
+    say "changed: no files matched — nothing to check (this is a pass, not a skip)"
+    return 0
+  fi
+  if [ "${#AFTER_DD[@]}" -eq 0 ]; then printf '%s\n' "${files[@]}"; return 0; fi
+  printf 'changed: %s file(s) to check\n' "${#files[@]}" >&2
+  if [ "$each" = 1 ]; then
+    for f in "${files[@]}"; do
+      "${AFTER_DD[@]}" "$f" || { st=$?; [ "$st" -le "$worst" ] || worst="$st"; }
+    done
+    return "$worst"
+  fi
+  "${AFTER_DD[@]}" "${files[@]}"
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -857,8 +970,43 @@ SEATS
   return 1
 }
 
+# The last path in a gate command that is a real test file the project keeps: a regular file whose
+# name or folder says test or spec, either tracked by git or present and not ignored (the test a build
+# just wrote isn't staged yet). A source file, a directory or a config file is never "a saved test".
+# Globbing off: a command may contain * and we only want its words.
+gate_test_path() {
+  ( set -f
+    cd "$1" 2>/dev/null || exit 1
+    hit=""; base=""
+    for tok in $2; do
+      tok="$(printf '%s' "$tok" | tr -d "\"'\`")"
+      case "$tok" in *::*) tok="${tok%%::*}" ;; esac
+      case "$tok" in -*|.|./|*"*"*|*"?"*) continue ;; *[/.]*) ;; *) continue ;; esac
+      base="$(printf '%s' "${tok##*/}" | tr 'A-Z' 'a-z')"
+      case "$base" in                 # a config, a log or a report is never the test that was saved
+        *.log|*.ini|*.cfg|*.conf|*.toml|*.json|*.yaml|*.yml|*.xml|*.txt|*.md|*.lock|*.csv) continue ;;
+      esac
+      case "$base" in                 # the file's own name has to say it is a test
+        test_*|test-*|*_test.*|*-test.*|*.test.*|*.spec.*|*_spec.*|*-spec.*|spec_*|tests.*|test.*) ;;
+        *) continue ;;
+      esac
+      [ -f "$tok" ] || continue
+      if git ls-files --error-unmatch -- "$tok" >/dev/null 2>&1; then hit="$tok"
+      elif ! git check-ignore -q -- "$tok" 2>/dev/null; then hit="$tok"; fi
+      [ -z "$hit" ] || break          # the first real test named wins
+    done
+    [ -n "$hit" ] || exit 1
+    printf '%s' "$hit" )
+}
+
+# A gate verdict json is one line, written by run_gate: {"gate": .., "command": .., "exit": N, ..}
+gate_exit() { sed -n 's/.*"exit": *\(-\{0,1\}[0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -n 1; }
+gate_cmd()  { sed -n 's/.*"command": "\(.*\)", "exit".*/\1/p' "$1" 2>/dev/null | head -n 1 \
+                | sed 's/\\\(.\)/\1/g'; }
+
 cmd_check() {
-  local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0
+  local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
+        bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -944,13 +1092,62 @@ $(REQF="$req" LC_ALL=C awk '
 QUOTES
   done
   rm -f "$req"
+  # council-implement: every fix's own proof, checked rather than taken on trust.
+  if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
+    for bf in "$run"/gates/before-*.json; do
+      [ -f "$bf" ] || continue
+      pn="${bf##*/}"; pn="${pn%.json}"; pn="${pn#before-}"
+      af="$run/gates/after-$pn.json"
+      bex="$(gate_exit "$bf")"; bcmd="$(gate_cmd "$bf")"
+      proofs=$((proofs + 1)); note="-"; tp=""
+      if [ ! -f "$af" ]; then
+        st="NO-AFTER"
+      else
+        aex="$(gate_exit "$af")"; acmd="$(gate_cmd "$af")"
+        if [ "${bex:-0}" -eq 0 ] 2>/dev/null; then st="BEFORE-PASSED"
+        elif [ "${aex:-1}" -ne 0 ] 2>/dev/null; then st="AFTER-FAILED"
+        elif [ -n "$acmd" ] && [ -n "$bcmd" ] && [ "$acmd" != "$bcmd" ]; then st="DIFFERENT-COMMAND"
+        else st=ok
+        fi
+        tp="$(gate_test_path "$top" "${acmd:-$bcmd}")" || tp=""
+        if [ -n "$tp" ]; then note="test saved: $tp"; else note="couldn't confirm a saved test"; fi
+      fi
+      rows=$((rows + 1))
+      if [ "$st" = ok ]; then
+        [ -z "$tp" ] || saved=$((saved + 1))       # only a proof that held counts as a test kept
+      else
+        bad=$((bad + 1)); broke=$((broke + 1))
+      fi
+      printf '| task %s | proof | %s | %s |\n' "$pn" "$st" "$note" >> "$out"
+      say "task $pn  proof  $st · $note"
+    done
+    for af in "$run"/gates/after-*.json; do        # an after-check with nothing before it proves nothing
+      [ -f "$af" ] || continue
+      pn="${af##*/}"; pn="${pn%.json}"; pn="${pn#after-}"
+      [ ! -f "$run/gates/before-$pn.json" ] || continue
+      proofs=$((proofs + 1)); rows=$((rows + 1)); bad=$((bad + 1)); broke=$((broke + 1))
+      printf '| task %s | proof | %s | %s |\n' "$pn" "NO-BEFORE" "-" >> "$out"
+      say "task $pn  proof  NO-BEFORE · nothing showed the problem first"
+    done
+    if [ "$proofs" -eq 0 ]; then
+      bad=$((bad + 1))
+      say "check: NO PROOF — this build recorded no before-and-after evidence (council gate before-<n> -- '<check>', then after-<n>)"
+    else
+      say "check: $((proofs - broke)) of $proofs fix(es) proved · $broke broken · $saved left a test behind in the project"
+    fi
+  fi
   if [ "$qn" -eq 0 ] && [ "$(field mode "$run/session-state.md")" = council-postgame ]; then
     bad=$((bad + 1)); say "check: no quotes found — each part of a post-game quotes the request (quote: \"…\")"
   fi
+  if [ "$qn" -gt 0 ] && [ "$proofs" -gt 0 ]; then what="(citations, quotes and proof)"
+  elif [ "$qn" -gt 0 ]; then what="(citations and quotes)"
+  elif [ "$proofs" -gt 0 ]; then what="(citations and proof)"
+  else what="citation(s)"
+  fi
   if [ "$qn" -gt 0 ]; then
-    say "check: $rows items, $bad broken (citations and quotes) · $qok of $qn quotes found in the request → $out"
+    say "check: $rows items, $bad broken $what · $qok of $qn quotes found in the request → $out"
   else
-    say "check: $rows items, $bad broken citation(s) → $out"
+    say "check: $rows items, $bad broken $what → $out"
   fi
   [ "$bad" -eq 0 ]
 }
@@ -1050,7 +1247,11 @@ REFS
     fi
     gates="$(config_gates "$cfg")"
     if [ -z "$gates" ]; then
-      finding WARN "no gates in council.config.md" "add the project's real test / lint / build commands (council-init detects and dry-runs them)"
+      if grep -qiE '^[-*[:space:]]*guardrails: *declined' "$cfg" 2>/dev/null; then
+        finding WARN "no gates in council.config.md (guardrails declined) — every council report on this project says NOTHING WAS CHECKED" "delete the 'guardrails: declined' line and run a council-init refresh whenever you want them fitted"
+      else
+        finding ERROR "no gates in council.config.md — every council report on this project says NOTHING WAS CHECKED" "add the project's real test / lint / build commands (a council-init refresh detects them, and offers the ones you are missing)"
+      fi
     else
       while IFS="$TAB" read -r g gc gat gm gk gchk gside gneeds ghk ghas; do
         [ -n "$g" ] || continue
@@ -1668,6 +1869,8 @@ council — the Small Council's helper (bash + git)
   council gate --all [--at grounding|verify]
                                          run the configured gates
   council gates                          list the configured gates
+  council changed [--glob '<pat>'] [--each] -- <cmd>
+                                         run <cmd> over just the files this change touches (0 when none)
   council collect                        check every seat file named in the brief (and a war room's debate.md)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md)
   council map status                     how far the map is behind HEAD, by area
@@ -1687,6 +1890,7 @@ EOF
 
 main() {
   RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" SESSION_ARG="" ALONGSIDE=0
+  AFTER_DD=()
   local -a pos
   local cmd sub
   pos=()
@@ -1702,6 +1906,7 @@ main() {
       --alongside) ALONGSIDE=1; shift ;;
       --all)       ALL=1; shift ;;
       --)          shift
+                   AFTER_DD=(${1+"$@"})                                 # the words themselves, for council changed
                    if [ $# -eq 1 ]; then GATE_CMD="$1"                  # one quoted string: a shell command, as written
                    elif [ $# -gt 1 ]; then GATE_CMD="$(printf '%q ' "$@")"; GATE_CMD="${GATE_CMD% }"   # separate words: kept intact
                    fi
@@ -1728,6 +1933,7 @@ main() {
     index)   cmd_index ;;
     gate)    cmd_gate ${1+"$@"} ;;
     gates)   cmd_gates ;;
+    changed) cmd_changed ${1+"$@"} ;;
     collect) cmd_collect ;;
     check)   cmd_check ${1+"$@"} ;;
     map)     cmd_map ${1+"$@"} ;;

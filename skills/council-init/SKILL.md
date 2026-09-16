@@ -86,6 +86,36 @@ build/compile, and any e2e or regression harness.
   whose side effects involve cost, hardware, deploys or credentials; those run only by name, with
   the user's go-ahead.
 
+### The checks this project is missing
+
+After the dry-runs, compare what the project has against the five in
+`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md` — **formatter, linter, type check, test runner,
+dependency audit**. Anything already there keeps the project's own command.
+
+Then list what's missing, cheapest-first, **one plain line each: what it would catch, in the user's
+words, not the tool's** — "a linter (ruff) — catches unused variables, dead code and obvious mistakes,
+in about a second". Say what a project with none of them means: every council report on it says
+NOTHING WAS CHECKED, because `council gate --all` has nothing to run. Then one question:
+
+> Fit the ones you want? Nothing is installed until you say so.
+
+On a yes, write `<home>/plans/guardrails.md` in council-plan's **full** task format — all six rows,
+`Domain` (Guardrails × Carmack — verify by machine, not by feel), `Ref: references/guardrails.md`,
+`Depends on`, `Touches`, `Constraints` and `Done when` — one task per check, cheapest first, and offer
+council-implement. **council-init installs nothing itself**, so every install gets before-and-after
+evidence, a blind verifier and a log row, like any other build. The reference has the task template.
+
+Two things every guardrails task needs, or it fits a gate that can only pass:
+- **A two-sided Done-when** — the gate exits non-zero on a deliberate violation and 0 once it's
+  removed. "Returns 0" alone is met by a tool that isn't even installed.
+- **The ratchet** for a new lint, format or type gate: `council changed --glob '<pat>' -- <tool>`,
+  entered `Mandatory: no`, with the count of problems that were already there written once into the
+  config's `## Notes`, never as a task list.
+
+On a no, write `guardrails: declined <date>` into the config and move on. `council doctor` then reports
+the project's missing checks as a warning rather than an error, so the decision sticks without being
+asked again; delete that line whenever you want them fitted.
+
 ## Phase D — Build the map
 
 Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`, and stamp HEAD as
@@ -154,9 +184,32 @@ Adjust on request. On confirmation, write:
    ignore this section.
    <!-- small-council:end -->
    ```
-2. **Offer permission rules** — written only on a yes — in `.claude/settings.local.json`, so council
-   runs don't prompt at every step: `"permissions": { "allow": ["Edit(/.council/**)", "Bash(council *)"] }`.
-   Edit rules cover Write too; the second rule lets the helper run without asking.
+2. **Offer permission rules** — written only on a yes — in `.claude/settings.local.json`, so the
+   bookkeeping doesn't prompt at every step:
+
+   ```json
+   { "permissions": { "allow": [
+     "Edit(.council/**)",
+     "Bash(council run:*)", "Bash(council state:*)", "Bash(council seat:*)", "Bash(council index:*)",
+     "Bash(council collect:*)", "Bash(council check:*)", "Bash(council ask:*)", "Bash(council prior:*)",
+     "Bash(council memory:*)", "Bash(council ledger:*)", "Bash(council gates:*)", "Bash(council map:*)",
+     "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)"
+   ] } }
+   ```
+
+   Edit rules cover Write too. Add the council home's real path as well — `Edit(//<what `council home`
+   printed>/**)` — because the home belongs to the **main** checkout, so the relative rule misses it
+   from a linked worktree or a subdirectory. If the helper isn't on PATH here, add the fallback form
+   the same way: `Bash(bash *bin/council run:*)` and so on, or the list does nothing.
+
+   **`council gate` and `council changed` are deliberately not on the list**: both run whatever
+   command they are given, so a blanket `Bash(council *)` would allow every command on the machine.
+   Say this to the user in one line: *"the checks will ask you each time — that's on purpose, because
+   a gate runs whatever command it names. Don't pick 'don't ask again' for `council gate` or
+   `council changed`."* Never widen this list to `council *`.
+
+   At a **refresh**, read `.claude/settings.local.json` first: if it holds `Bash(council *)` or a
+   `council gate` rule from an earlier version, offer to replace it with this list, and say why.
 3. **Nothing else to install.** The plugin's hooks already orient council-enabled sessions, flag open
    runs, restore the method after a compaction, and check every seat file before a worker can finish.
 

@@ -6,6 +6,77 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-16
+
+Proof instead of opinion: the council now says out loud when nothing was actually checked, offers to
+fit the checks a project is missing, and ends every build with the same six-line receipt — including
+the shortcuts it took.
+
+### Added
+
+- **The missing checks, offered once.** council-init now compares the project against five
+  guardrails — formatter, linter, type check, test runner, dependency audit — and lists what's
+  missing, cheapest-first, one plain line each on what it would catch. On a yes it writes
+  `<home>/plans/guardrails.md` and hands it to council-implement, so each one is fitted with
+  before-and-after evidence, a blind verifier and a log row. It installs nothing by itself. New
+  reference `references/guardrails.md` carries the per-stack commands (Node, Python, Go, Rust, .NET,
+  Java, Ruby, PHP, Swift, Godot, Unity, C/C++, shell) and the **ratchet**: a newly fitted linter or
+  type checker judges only the files a change touches, so it is green on day one and can only get
+  stricter, with the count of pre-existing problems written down once as "not yours".
+- **The receipt.** Every build ends with the same six lines: what was built · does it work, and who
+  actually proved it · what the machine checked · **shortcuts I took** (or "none") · **not proved**
+  (or "nothing") · cost and log path. A shortcut is defined, not left to taste: a hardcoded value, a
+  skipped case, a swallowed error, a loosened check, a test that asserts less than the behaviour, a
+  TODO, or a fix whose only proof was a throwaway command. Each one also lands in the log's new
+  `## Shortcuts and concessions` section, which git tracks, so the pile stays visible months later.
+- **`council changed`.** A new helper verb: `council changed --glob '*.py' -- ruff check` runs a tool
+  over just the files this change touches — committed on this branch, staged, unstaged and brand new,
+  so it sees the code the council just wrote before any commit — and exits 0 when nothing matched.
+  It is how a newly fitted check stays green on day one, and it replaces the fragile
+  `git diff | xargs` pipeline: no pipe to break a config row, paths with spaces intact, deleted files
+  dropped, `--each` for tools that read only their first argument.
+- **Every fix leaves a test behind.** Before-evidence is now a test in the project's own suite
+  whenever there is a runner — a throwaway command only when there isn't, and then it is named as
+  such. `council check` reads every before/after verdict on disk and reports, per task, whether the
+  before-check really failed, whether the after-check really passed, and whether the command names a
+  test the project now tracks — a real test file, not just any path the command names, and one the
+  build wrote counts before it is committed. Verdicts: `ok`, `BEFORE-PASSED` (the before-check never
+  failed), `AFTER-FAILED`, `DIFFERENT-COMMAND` (the after-check wasn't the before-check),
+  `NO-BEFORE`, `NO-AFTER` — and `NO PROOF` for a build that recorded none at all. The converge table
+  gains a **Proof** column.
+
+### Changed
+
+- **`council gate --all` never reports success when nothing ran.** With no gates configured, no gate
+  at the requested stage, or every gate skipped, it prints `NOTHING WAS CHECKED` and exits 4 (it used
+  to print "no gates configured" and exit 0 — so every report on such a project read clean while
+  nothing was checked). Its verdict line now names the numbers and the failures:
+  `gates: 3 ran — 2 pass, 1 FAIL (lint, not mandatory) · 1 skipped`.
+- **`council doctor`** treats a config with no gates as an error, not a warning — unless the config
+  carries `guardrails: declined <date>`, which council-init writes when the offer is refused, and
+  which demotes it to one warning.
+- **A red baseline is no longer waved through.** council-implement asks one numbered question before
+  task 1 when the gates exit 4 or a mandatory gate is already red, records the answer in the user's
+  own words with its date, and repeats exactly one line in every receipt until it goes green.
+- **`council run close`** warns when a build log has no `## Shortcuts and concessions` section.
+- The verifier is handed the governing principle's own text, so the principle is checked rather than
+  cited.
+
+### Fixed
+
+- **The permission rules council-init offers no longer allowlist every command on the machine.**
+  `Bash(council *)` covered `council gate <name> -- '<any command>'`, which runs through `bash -c`;
+  the offer is now a list of the bookkeeping subcommands, and the two verbs that run what they are
+  given — `council gate` and `council changed` — keep asking every time. The offer now carries `Edit(.council/**)` plus the
+  home's real absolute path, because the council home belongs to the **main** checkout — so from a
+  linked worktree or a subdirectory a relative rule misses it. A council-init refresh reads
+  `.claude/settings.local.json` and offers to replace an old blanket rule.
+- **`council gate --all` counts a skipped required gate**, so "all pass · 2 skipped" can no longer
+  hide a suite that never ran; a malformed Gates row is reported at every stage rather than vanishing
+  under `--at`; a gate whose Run-at cell is empty is named instead of being dropped in silence; a
+  check that ran but matched no files reads `pass — but nothing to check (0 files matched)` and is
+  counted separately in the verdict line; and gate names with spaces stay whole in the FAIL list.
+
 ## [0.6.0] — 2026-09-15
 
 The secret weapon for tough problems: the experts argue a big feature out before it's built, and a

@@ -55,7 +55,8 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
    - a red mandatory gate you can't fix;
    - a destructive step;
    - a ruling that belongs to the user;
-   - growth beyond the input.
+   - growth beyond the input;
+   - the baseline question below — once, before task 1, and never again in this run.
 5. **Open the run.** `council run open council-implement`. Continue the input's request: its "Your
    request" line gives the path → `council state ask=<path>`, and ask.md gets `continues: <path>` plus
    this run's new words, or `(no new words)`. An input from before 0.6 has no such line: start a new
@@ -70,16 +71,42 @@ and gates with cost, hardware, deploy or credential side effects; record those a
 touch anything, e.g. `council state baseline="tests: exit 1 (3 failing) · lint: pass"`. A
 pre-existing failure is never blamed on a task.
 
+**A red baseline is never waved through.** One numbered question before task 1 — one, not a
+conversation — when either:
+- **it exits 4:** quote the helper's own NOTHING WAS CHECKED line, which names the real cause (no check
+  configured at all, none that runs at this stage, or every one skipped), and say what it means here:
+  nothing built in this run can be proved by machine. Offer to fit the missing ones first
+  (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`, through a council-init refresh or a guardrails
+  plan). Building anyway is a fine answer — it just has to be the user's. Never substitute a cause of
+  your own: a project whose suite passed at grounding and has no gate at verify has checks, just not
+  here.
+- **a mandatory gate is already red:** say which, and since when if git or the logs say.
+
+Record the answer in ask.md under `## Later, in your words`, with the date. Until it goes green, the
+receipt's `Checked by machine:` line ends with **exactly one clause** about it — never a paragraph:
+*"… · the test suite has been red since 4 August, so nothing here was verified by it"*. It disappears
+the moment it passes.
+
 ## The build loop — for each task
 
 1. **Load the governing reference doc first.**
    - `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`.
    - Project-local `.council/refs/…` → under the council home.
    - It is the constraint set, not background reading. Cross-referenced docs inform specific decisions.
-2. **Before-evidence.** Write or name one check that shows the problem (fix mode) or the missing
-   behaviour (plan task): a test, a command or a query. Run it with
+2. **Before-evidence — the check that outlives the run.** Write the check that shows the problem
+   (fix mode) or the missing behaviour (plan task) as **a test in the project's own suite**, saved
+   with the code. A throwaway command or query only when the project has no test runner at all — and
+   then say so in the log and on the receipt's "Not proved" line. Run it with
    `council gate before-<n> -- '<command>'` — quote the whole command, so `&&`, pipes and quotes stay
-   inside it. It should fail or show the gap.
+   inside it.
+   - **It must fail.** A before-check that passes proves nothing; `council check` reads the saved
+     verdicts at converge and calls it broken proof.
+   - **Name the test's own path in the command** — `pytest tests/test_expiry.py::test_expired_token`,
+     not a bare `pytest` — or nothing can confirm a test was saved, and the receipt has to say so.
+   - **The after-check is the same command, word for word.** A different command that happens to pass
+     is reported as DIFFERENT-COMMAND, which is broken proof.
+   - A genuinely untestable path (a race, a rendering bug, a hardware route) records
+     `no permanent test possible — <why>` in the log, and that reason is reported, never swallowed.
 3. **Plan the change:**
    - which files;
    - the minimal diff;
@@ -95,12 +122,16 @@ pre-existing failure is never blamed on a task.
    - **Never run a gate whose side effects involve cost, hardware, deploys or credentials** without
      asking the user first; `council gates` lists each gate's side effects.
    - **Your change broke it** → fix it before moving on.
-   - **A mandatory gate is red** → hard stop until you understand why.
+   - **A mandatory gate is red that was green at baseline** → hard stop until you understand why.
+   - **Red at baseline and waved through** → carry on: check only that your change added no new
+     failure (compare with the baseline output), and keep the standing clause on the receipt.
    - **It can't run** → that's config drift: log it and tell the user.
 6. **After-evidence.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
    must now pass.
 7. **Adversarial check.** Dispatch `small-council:council-verifier` with:
    - the task and its Done-when;
+   - the governing principle's own text, quoted from the reference doc — so the principle is checked,
+     not merely cited;
    - the diff, written to `<run>/diff-<n>.patch`, passed by path;
    - the before, after and gate outputs in `gates/`.
 
@@ -150,7 +181,11 @@ It closes with these sections:
 - **Watchpoints addressed**
 - **Pre-existing issues** (fixed or left)
 - **Follow-ups**
-- **`## Converge`:** `| Task | Done when | Result | Evidence |`, written by the converge pass
+- **`## Shortcuts and concessions`** — required, never omitted. One line per shortcut:
+  `- <date> — <what I did instead> — <path> — <why> — <what undoing it would take>`, or the single
+  word `none`. Logs are tracked by git, so this is the one place the pile stays visible months later;
+  `council run close` warns when a build log has no such section.
+- **`## Converge`:** `| Task | Done when | Result | Evidence | Proof |`, written by the converge pass
 - **Ready for review:** every file created or modified, which is the next review's target.
 
 Its last line records the post-game offer: `Post-game: offered <date> — yes | no`, or
@@ -164,16 +199,43 @@ After the last task, one council-verifier checks every task's Done-when against 
 fix mode, it checks every selected finding's consequence instead. Each gets met, partly met or not
 met, with evidence — written into the log's `## Converge` table.
 - Anything not met → one more task, or a logged follow-up.
-- Then run the final gates: `council gate --all --at verify`.
+- Then run the final gates: `council gate --all --at verify`. Exit 4 means nothing was checked — say
+  so; never report it as a pass.
+- Then `council check`. It reads every `before-<n>` / `after-<n>` verdict on disk and says, per task,
+  whether the before-check really failed, whether the after-check really passed, and whether the
+  command names a test the project now tracks. Its verdicts fill the `## Converge` table's **Proof**
+  column. Each cell is a verdict — `ok`, `BEFORE-PASSED`, `AFTER-FAILED`, `DIFFERENT-COMMAND` or
+  `NO-BEFORE`/`NO-AFTER` — then `· <note>` (`test saved: <path>` or `couldn't confirm a saved test`),
+  **copied whole, never one half**. Broken proof is fixed or reported — never quietly dropped, and a
+  build with no proof at all is reported as NO PROOF.
 
-## At Deliver
+## At Deliver — the receipt
 
-In chat:
-- tasks done, N of N;
-- the gates, baseline vs final;
-- the verifier and converge results;
-- anything blocked;
-- the cost and the log path.
+The same six lines after every build, in this order, whatever happened. The shape never changes, so
+after three builds the user reads it at a glance and notices the moment a line does:
+
+```
+Built: <n> of <n> tasks — <what you can do now that you couldn't before> [· <n> partly met or blocked: <one clause each>]
+Works?: <what proved it — "ran <command> and <what happened>", or honestly "nobody ran it; proved by the tests and by reading the code">
+Checked by machine: <the gates' verdict line, baseline → now> | <the helper's own NOTHING WAS CHECKED line, quoted> [· <the standing red-baseline clause>]
+Shortcuts I took: <one line each> | none
+Not proved: <what nobody actually checked> | nothing
+Cost: ~<k>k tokens across <n> agents · <the proof line from council check> · log: <path>
+```
+
+The `Built:` line is the one that carries a partly-met Done-when or a task blocked on something
+outside the build — "6 of 6 tasks · 1 partly met: exports stop at 5,000 rows" — so neither can hide
+behind a clean count. **Never omit the last three.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
+these — not a vibe: a hardcoded value, a skipped case, a swallowed error, a loosened or disabled
+check, a test that asserts less than the behaviour, a TODO left behind, or a fix whose only proof was
+a throwaway command. Every one also goes in the log's `## Shortcuts and concessions`.
+
+One carve-out: a **guardrails task** — fitting a formatter, linter, type check, audit or test runner —
+proves itself by the gate going red on a deliberate violation and green once it's removed, exactly as
+`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md` requires. That is evidence, not a shortcut, and it
+doesn't belong on the shortcut line.
+
+Then the numbered rulings and memory proposals, as always.
 
 File the request (`council ask save`). Then **offer a post-game when the log shows one is worthwhile**
 — at least one of:
