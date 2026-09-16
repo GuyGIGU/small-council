@@ -28,7 +28,9 @@ post-game checks the finished work against what you actually asked for.
 - **Your request, kept.** Every run saves your words in `ask.md` before anything else. `council ask
   save` files them under `.council/asks/`, redacting anything that looks like a secret — keys and
   tokens by their shape, passwords, credentials in URLs, private-key blocks — and every deliverable
-  points at its request, so the chain survives cleaning up `runs/`.
+  points at its request, so the chain survives cleaning up `runs/`. Filed requests stay out of git:
+  council-init and the first filing put `asks/` in `.council/.gitignore` — drop that line to share
+  them with the team.
 - **Helper:** `council ask save` (it follows a continued request, re-files rather than duplicates, and
   never writes outside `.council/asks/`); `collect` checks a war room's round-2 files and waits for
   seats still answering; `check` confirms each post-game part quotes the request, word for word;

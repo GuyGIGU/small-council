@@ -172,7 +172,7 @@ for label, text, needles in [
                                              "small-council:council-verifier"]),
     ("war-room", warroom, ["debate.md", "-r2.md", "## How the council decided", "never a third", "Evidence counts, not heads",
                            "SendMessage"]),
-    ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "small-council:begin", "ultra-council:begin",
+    ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
                     "Edit(/.council/**)", "Bash(council *)", "last-verified", "council doctor", "council run open council-init",
                     "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger"]),
     ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier"]),

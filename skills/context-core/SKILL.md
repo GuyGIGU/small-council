@@ -89,7 +89,7 @@ linked worktree. **Code root** = the working tree you are reviewing or building.
 | `council.config.md` · `conventions.md` · `map.md` | roster, gates, run preferences · memory · codebase map | tracked |
 | `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
 | `plans/` `reviews/` `logs/` `research/` `postgames/` `refs/` | deliverables · project-local seat docs | tracked |
-| `asks/` | the user's requests, word for word — every deliverable points at its own | tracked |
+| `asks/` | the user's requests, word for word — every deliverable points at its own | local — drop the `asks/` line from `.council/.gitignore` to track them |
 | `runs/<date-time>-<mode>/` | `session-state.md` `ask.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `debate.md` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;

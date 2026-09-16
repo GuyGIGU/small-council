@@ -56,8 +56,9 @@ changing anything.
 - **`<run>/ask.md` is written right after `council run open`,** before any conversation, because a
   compaction can't paraphrase what's already on disk. That's why council-plan opens its run before the
   discovery questions.
-- **`council ask save` files it under `.council/asks/`,** which is tracked, and redacts anything that
-  looks like a secret. A hand-off continues the same file.
+- **`council ask save` files it under `.council/asks/`,** which is gitignored by default — the words
+  stay on the user's machine — and redacts anything that looks like a secret. A hand-off continues
+  the same file.
 - **Every deliverable points at its request in its body,** because `council prior` reads bodies, not
   frontmatter. That way the chain survives deleting `runs/`.
 - **On Git Bash, sed, awk and `$(…)` all drop carriage returns.** The helper copies with head, tail and
@@ -81,4 +82,6 @@ changing anything.
   whether a resumed worker's token figure is cumulative, and whether its turn limit resets.
 - **Round-2 cost** (~40% more seat tokens) is an estimate. If a war room rarely changes a plan after
   about 5 runs, make it on-request only.
-- **Tracking requests in git** is the user's call. To stop, add `asks/` to `.council/.gitignore`.
+- **Tracking requests in git** is the user's call. The default is local only — `asks/` is in
+  `.council/.gitignore`; dropping that line shares them with the team, at the cost of putting whatever
+  they typed into the history.

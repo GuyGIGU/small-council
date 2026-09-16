@@ -58,7 +58,9 @@ Then, in each project you want a council for, run **`/council-init`**.
 - put the repo, or a directory junction to it, at `~/.claude/skills/small-council/`. Claude Code then
   loads it automatically as `small-council@skills-dir`.
 
-**Upgrading from 0.5:** nothing to do — `.council/asks/` and `.council/postgames/` appear on first use.
+**Upgrading from 0.5:** nothing to do — `.council/asks/` and `.council/postgames/` appear on first
+use, and the first filed request adds `asks/` to `.council/.gitignore`, so your words stay on your
+machine.
 
 **Upgrading from 0.3:** run a council-init refresh in each project. It writes the seat cards, adds
 Probe, Needs and Side effects to the gates, and records the stack fingerprint. Memory keeps working
@@ -117,9 +119,12 @@ estimates come from your own project's ledger once there is some.
 ├── cards/<slug>.md       each seat's doctrine translated to this project                      tracked
 ├── ledger.tsv            each seat's record: items raised, kept, refuted, tokens per run      tracked
 ├── plans/ reviews/ logs/ research/ postgames/ refs/   deliverables · project-local seat docs tracked
-├── asks/                 your requests, word for word; every deliverable points at its own    tracked
+├── asks/                 your requests, word for word; every deliverable points at its own    local
 └── runs/<date-time>-<mode>/   state, brief, change index, seat files, synthesis, checks       ignored
 ```
+
+Your requests are yours: `asks/` is gitignored, so nothing you typed is committed — drop that line
+from `.council/.gitignore` if you'd rather your team saw them.
 
 The council home is always the **main** checkout's `.council/`, even when you work in a git worktree.
 `council run status` shows open runs; `council doctor` finds anything that has drifted.

@@ -470,8 +470,9 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run open: a mode other than init needs a council home", code == 2 and "council-init first" in err, err)
     code, init_run, err = council(fresh, "run", "open", "council-init")
     init_run = init_run.strip()
-    check("run open council-init: creates the council home and its .gitignore",
-          code == 0 and os.path.isdir(init_run) and "runs/" in read(os.path.join(fresh, ".council", ".gitignore")), init_run + err)
+    check("run open council-init: creates the council home and its .gitignore (runs/ and asks/)",
+          code == 0 and os.path.isdir(init_run)
+          and {"runs/", "asks/"} <= set(read(os.path.join(fresh, ".council", ".gitignore")).split()), init_run + err)
     council(fresh, "state", "status=paused")
     code, plan_run, err = council(fresh, "run", "open", "council-plan", "--session=explicit")
     plan_run = plan_run.strip()
@@ -565,6 +566,9 @@ with tempfile.TemporaryDirectory() as tmp:
         f.write(ask_text)
     code, out, _ = council(req, "ask", "save")
     check("ask save: the same name on the same day gets -2", "-csv-export-for-reports-2.md (new)" in out, out)
+    gi = read(os.path.join(req, ".council", ".gitignore"))
+    check("ask save: the requests stay out of git — asks/ is added to .council/.gitignore, once",
+          [l.strip() for l in gi.splitlines()].count("asks/") == 1 and "runs/" in gi.split(), gi)
     council(req, "run", "close")
     code, irun, _ = council(req, "run", "open", "council-implement")
     irun = irun.strip()
@@ -643,7 +647,8 @@ with tempfile.TemporaryDirectory() as tmp:
     code, pg, err = council(nohome, "run", "open", "council-postgame")
     pg = pg.strip()
     check("run open council-postgame: works with no council yet, and creates one",
-          code == 0 and os.path.isdir(pg) and "runs/" in read(os.path.join(nohome, ".council", ".gitignore")), pg + err)
+          code == 0 and os.path.isdir(pg)
+          and {"runs/", "asks/"} <= set(read(os.path.join(nohome, ".council", ".gitignore")).split()), pg + err)
 
     # A post-game's index hides earlier council work from its verifier
     append(os.path.join(req, "a.txt"), "three\n")

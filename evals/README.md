@@ -55,8 +55,8 @@ Runs the helper against scaffolded git repos:
 - citation and origin checks (introduced vs pre-existing);
 - gate side effects: what `--all` never runs;
 - the stack fingerprint, scoped memory and stale anchors, earlier council work, the seat ledger;
-- the user's request: filing it word for word, redaction, continuing it, the quote check; a war
-  room's round-2 files; post-game runs without a council home;
+- the user's request: filing it word for word and out of git, redaction, continuing it, the quote
+  check; a war room's round-2 files; post-game runs without a council home;
 - map status and the drift doctor (cards, repeated slugs, a changed stack).
 
 ## 4. Hook evals — do the hooks behave?

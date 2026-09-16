@@ -162,7 +162,7 @@ cmd_run_open() {
     case "$mode" in
       council-init|council-postgame)    # init maps before a config exists; a post-game may check work done without the council
         mkdir -p "$home" 2>/dev/null || die "cannot create $home"
-        [ -f "$home/.gitignore" ] || printf 'runs/\nactive-run\n' > "$home/.gitignore" ;;
+        [ -f "$home/.gitignore" ] || printf 'runs/\nactive-run\nasks/\n' > "$home/.gitignore" ;;
       *) die "no council home at $home — run council-init first" ;;
     esac
   fi
@@ -1486,7 +1486,17 @@ cmd_ask() {
   elif [ -n "$nowords" ]; then
     die "ask.md says (no new words) but names no request to continue — add continues: <path> to it, or run council state ask=<path>"
   fi
-  mkdir -p "$home/asks" 2>/dev/null || die "cannot create $home/asks"
+  if [ ! -d "$home/asks" ]; then                    # the user's own words stay on their machine
+    mkdir -p "$home/asks" 2>/dev/null || die "cannot create $home/asks"
+    if [ -f "$home/.gitignore" ]; then
+      if ! grep -q '^[[:space:]]*asks/\{0,1\}[[:space:]]*$' "$home/.gitignore"; then
+        [ -z "$(tail -c 1 "$home/.gitignore" 2>/dev/null)" ] || printf '\n' >> "$home/.gitignore"
+        printf 'asks/\n' >> "$home/.gitignore" 2>/dev/null || true
+      fi
+    else
+      printf 'runs/\nactive-run\nasks/\n' > "$home/.gitignore" 2>/dev/null || true
+    fi
+  fi
   tmp="$run/.ask.tmp"
   if [ -z "$cur" ] || [ -n "$own" ]; then
    if [ -z "$cur" ]; then

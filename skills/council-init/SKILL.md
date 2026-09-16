@@ -133,8 +133,9 @@ Adjust on request. On confirmation, write:
   (`grep -n '^## Principle' <doc>`), read each principle's section only as you write its line, and
   save the card before starting the next. After a compaction, carry on from the first seat without
   a card.
-- **`.council/.gitignore`** containing `runs/` (and `active-run`, for older runs). Config, memory,
-  map, plans, reviews, logs and research stay tracked.
+- **`.council/.gitignore`** containing `runs/`, `asks/` (the user's own words stay on their own
+  machine) and `active-run`, for older runs. Config, memory, map, plans, reviews, logs and research
+  stay tracked. A refresh adds the `asks/` line unless the user has chosen to share their requests.
 - **Memory:** keep an existing `conventions.md` wherever it is, and record its path in the config's
   Memory section. Otherwise create `.council/conventions.md` from the template. Obvious accepted
   patterns seen during detection go under `## Proposed`, never straight into the confirmed sections.
