@@ -316,17 +316,23 @@ with tempfile.TemporaryDirectory() as tmp:
           "**Scope:** src/stats.py, beck · **Anchor:** src/stats.py:7\n"
           "### AP-2: reports never round\n**Pattern:** raw numbers · **Why:** the users asked\n**Scope:** src/report.py · **Anchor:** summary\n"
           "### AP-3: sessions are re-read on every request\n**Pattern:** no session cache · **Why:** revocation\n**Scope:** **/auth/**, ghost\n"
+          "### AP-4: an empty list raises on purpose\n**Pattern:** no empty guard · **Why:** callers check first\n"
+          "**Scope:** src/stats.py · **Anchor:** src/stats.py:5, 8–9, summary\n"
           "## Enforced Conventions (EC) — always / never rules\n"
           "### EC-1: every module has a docstring\n**Rule:** always · **Why:** tooling\n"
           "### EC-2: no global caches\n**Rule:** never · **Why:** tests\n**Scope:** src/cache/** · **Anchor:** src/cache/store.py:3\n"
+          # README.md has 2 lines, and 3 is a word in tests/test_stats.py: read as a symbol, line 3 would pass
+          "### EC-3: the README names the robust statistic\n**Rule:** always · **Why:** users reach for the mean\n"
+          "**Scope:** README.md · **Anchor:** README.md:1,3, robust_mean\n"
           "## Proposed — awaiting the user's yes/no\n")
     code, out, _ = council(repo, "memory")
     check("memory: prints a one-line index with scopes and anchors",
           "AP-1 · median returns the upper middle on purpose · scope: src/stats.py, beck · anchor: src/stats.py:7" in out
-          and "EC-1 · every module has a docstring · every run" in out and out.count("\n") == 5, out)
+          and "AP-4 · an empty list raises on purpose · scope: src/stats.py · anchor: src/stats.py:5, 8–9, summary" in out
+          and "EC-1 · every module has a docstring · every run" in out and out.count("\n") == 7, out)
     code, out, _ = council(repo, "memory", "select", "src/stats.py")
     check("memory select: a path pulls its scoped entries plus the every-run ones",
-          "AP-1" in out and "EC-1" in out and "AP-2" not in out and "EC-2" not in out and "1 scoped and 1 every-run entries of 5" in out, out)
+          "AP-1" in out and "EC-1" in out and "AP-2" not in out and "EC-2" not in out and "2 scoped and 1 every-run entries of 7" in out, out)
     code, out, _ = council(repo, "memory", "select", "auth/session.py")
     check("memory select: **/ also matches a path at the repo root", "AP-3" in out, out)
     code, out, _ = council(repo, "memory", "select", "beck")
@@ -336,8 +342,14 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "memory", "select")
     check("memory select: defaults to the run's changed files and seats", "AP-1" in out and "AP-2" in out and "EC-2" not in out, out)
     code, out, _ = council(repo, "memory", "check")
-    check("memory check: flags the anchor that no longer exists, and only that one",
-          code == 1 and "STALE  EC-2" in out and "AP-1" not in out and "AP-2" not in out and "1 stale anchor(s) across 5 entries" in out, out)
+    check("memory check: flags the anchors that no longer hold, and only those",
+          code == 1 and "STALE  EC-2" in out and "AP-1" not in out and "AP-2" not in out and "3 stale anchor(s) across 7 entries" in out, out)
+    check("memory check: an anchor may list lines, as a citation does; with every line there, it isn't stale",
+          "AP-4" not in out, out)
+    check("memory check: a listed line past the end is bad-line, even where its number is a word in the code",
+          "STALE  EC-3 — anchor README.md:1,3: bad-line (the file has 2 lines)" in out, out)
+    check("memory check: a name after the listed lines is an anchor of its own",
+          "STALE  EC-3 — nothing in the code is named robust_mean any more" in out, out)
 
     # Citation and origin check
     write(os.path.join(run, "synthesis.md"),
@@ -438,7 +450,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("doctor: flags a repeated slug", "repeats a slug: fowler" in out, out)
     check("doctor: flags a seat without a card", "seat 'Ghost' has no card" in out, out)
     check("doctor: flags a card whose source doc is gone", "names a source doc that doesn't exist: references/nope.md" in out, out)
-    check("doctor: flags a stale memory anchor", "1 memory anchor(s) point at code" in out, out)
+    check("doctor: flags stale memory anchors", "3 memory anchor(s) point at code" in out, out)
     check("doctor: notices a config without a stack fingerprint", "has no stack-fingerprint" in out, out)
     check("doctor: every finding carries a fix", out.count("Fix:") == out.count("ERROR") + out.count("WARN "), out)
 

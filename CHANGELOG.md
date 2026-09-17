@@ -14,6 +14,14 @@ All notable changes to this project are documented here. The format is based on
   123-line file is `ok`, not `bad-line`. The origin blames every listed line, so a list of old and
   new lines reads `touched`, as a range does. A range with a second dash or a sign (`5-6-7`, `5-+7`)
   is now `bad-line`; it used to pass on the numbers before its first dash and after its last.
+- **A memory anchor that lists lines is read whole.** `council memory check` split an entry's
+  **Anchor:** on every comma before it looked for `path:line`, so `src/a.py:1,3` became `src/a.py:1`
+  and a symbol named `3`: a false alarm ("nothing in the code is named 3 any more") when both
+  lines exist, and a silent pass for a line past the end wherever its number is a word in the code.
+  A piece that is only a line or a range (`3`, `40-55`, blanks allowed) now stays with the
+  `path:line` before it, so `src/a.py:1,3, summary` is two anchors, `src/a.py:1,3` and `summary`,
+  and every listed line is checked against the file's length. The conventions template now says an
+  anchor may list lines.
 
 ## [0.7.0] — 2026-09-16
 

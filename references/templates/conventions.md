@@ -4,8 +4,9 @@
      past that, the council proposes a consolidation as numbered operations (merge, retire), never a
      rewrite.
      Every entry may carry **Scope:** (paths, globs or seat slugs it concerns — leave it out and every
-     run reads the entry) and **Anchor:** (the path, symbol or path:line it is about — a path or a
-     symbol survives edits; a line number can drift). Brief reads only the entries in scope
+     run reads the entry) and **Anchor:** (the paths, symbols or path:lines it is about, separated by
+     commas; a path:line may list lines, as in `src/api/auth.py:42,60-71` — a path or a symbol
+     survives edits; a line number can drift). Brief reads only the entries in scope
      (`council memory select`); `council memory check` flags an entry whose anchored file, line or
      symbol is gone. -->
 

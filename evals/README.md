@@ -57,7 +57,8 @@ Runs the helper against scaffolded git repos:
 - citation and origin checks: single lines, ranges and comma lists of both; introduced vs
   pre-existing;
 - gate side effects: what `--all` never runs;
-- the stack fingerprint, scoped memory and stale anchors, earlier council work, the seat ledger;
+- the stack fingerprint, scoped memory and stale anchors (line lists too), earlier council work,
+  the seat ledger;
 - the user's request: filing it word for word and out of git, redaction, continuing it, the quote
   check; a war room's round-2 files; post-game runs without a council home;
 - a build's proof: a before-check that really failed, an after-check that really passed, whether a
