@@ -42,6 +42,8 @@ or pattern-matching?"). Not a seat.
 
 <!-- The council helper runs these (`council gate <name>`, `council gate --all --at verify`) and judges
      them by exit code. Never put `| tail`, `| head` or `| grep` in a gate command.
+     Commands run under bash (Git Bash on Windows), as written: bash drops a \ outside quotes, so
+     write paths with / or quote them (cmd /c ".\run.bat").
      Probe: the exact dry-run council-init ran. Needs: tools, env vars, credentials, hardware.
      Run at: grounding · verify · both · manual (by name only). Mandatory: yes · no.
      Checked: ✓ <date> · ✗ <date>: <why it can't run here> · ✗ not probed: <why> (init didn't dry-run it).

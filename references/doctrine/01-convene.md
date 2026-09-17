@@ -9,8 +9,9 @@ Decide whether to convene, whom, and at what cost — then get the user's go-ahe
    `--run <folder>` to every command). Never overwrite one; `council run open` refuses to without
    `--alongside`.
 2. **No `council.config.md`?** Run council-init first — a post-game is the exception: it needs no roster. Never tailor a roster inline — it dies with
-   the run. Otherwise `council fingerprint check`: if the stack moved since council-init, say so in
-   the approval message and offer a refresh first — the roster and cards may be stale.
+   the run. Otherwise `council fingerprint check`: if the stack moved since council-init, or the
+   config has no stack-fingerprint yet (an older layout), say so in the approval message and offer a
+   refresh first — the roster, cards and gates may be stale.
 3. **Resolve the target.** Your mode's `## At Convene` says how: a diff, a plan, a question.
 4. **Shape check** — from the map and file counts, without reading code:
    - Does the work split into independent slices, or is it one chain of dependent decisions?

@@ -614,18 +614,51 @@ config_gates() {
     }' "$1"
 }
 
+# A Gates section still written as a list (the layout before the table): backticked commands, no table.
+gates_listed() {
+  awk '/^## / { g = ($0 ~ /^## Gates/); next } g && /^\|/ { t = 1 } g && /`[^`]+`/ { c = 1 } END { exit !(c && !t) }' "$1" 2>/dev/null
+}
+
+# A backslash outside quotes before a letter or digit: bash drops it, so tools\run.ps1 reaches the tool
+# as toolsrun.ps1.
+gate_backslash() {
+  C="$1" awk 'BEGIN {
+    s = ENVIRON["C"]; sq = sprintf("%c", 39); q = ""
+    for (i = 1; i <= length(s); i++) {
+      c = substr(s, i, 1)
+      if (q == sq) { if (c == sq) q = ""; continue }
+      if (c == "\\") { if (q == "" && substr(s, i + 1, 1) ~ /[A-Za-z0-9_]/) exit 0; i++; continue }
+      if (q == "\"") { if (c == "\"") q = ""; continue }
+      if (c == sq || c == "\"") q = c
+    }
+    exit 1 }'
+}
+backslash_note() { printf '%s' 'has a backslash outside quotes, which bash drops (tools\run.ps1 reaches the tool as toolsrun.ps1) — write paths with /, or put them in quotes'; }
+
 # A gate name as the user would type it back: quoted when it holds a space or anything unusual.
 qname() { case "$1" in *[!A-Za-z0-9._-]*) printf '"%s"' "$1" ;; *) printf '%s' "$1" ;; esac; }
 
 cmd_gates() {
-  local cfg gates
+  local cfg gates name cmd at mand rest side
   cfg="$(council_home)/council.config.md"
   gates="$(config_gates "$cfg")"
-  [ -n "$gates" ] || { say "no gates in $cfg"; return 0; }
-  printf '%s\n' "$gates" | awk -F'\t' '{
-    printf "%s · %s · run at: %s · mandatory: %s", $1, $2, $3, $4
-    if ($7 != "-") printf " · side effects: %s", $7
-    printf "\n" }'
+  if [ -z "$gates" ]; then
+    if gates_listed "$cfg"; then
+      say "the Gates section of $cfg is in an older layout (a list, not a table), so no gate can run — a council-init refresh migrates it"
+    else
+      say "no gates in $cfg"
+    fi
+    return 0
+  fi
+  while IFS="$TAB" read -r name cmd at mand rest rest side rest; do
+    [ -n "$name" ] || continue
+    printf '%s · %s · run at: %s · mandatory: %s' "$name" "$cmd" "$at" "$mand"
+    [ "$side" = "-" ] || printf ' · side effects: %s' "$side"
+    if gate_backslash "$cmd"; then printf ' · note: the command %s' "$(backslash_note)"; fi
+    printf '\n'
+  done <<GATES
+$gates
+GATES
 }
 
 # May `gate --all` run this gate unasked? Only if the table has a Side effects column, every side effect
@@ -653,17 +686,25 @@ ITEMS
 gate_base() { printf '%s/gates/%s' "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')"; }
 
 # Run one gate; full output to <run>/gates/<name>.txt, the verdict to <name>.json. Returns its exit code.
+# In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
+# so a later failure can be told apart from one the untouched code already had.
 run_gate() {
-  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits
+  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0
   GATE_EMPTY=0
-  base="$(gate_base "$run" "$name")"; out="$base.txt"
+  base="$(gate_base "$run" "$name")"; out="$base.txt"; bl="$run/gates/baseline/${base##*/}"
+  pat='error|fail|exception|traceback|assert|panic|cannot|not found|undefined'
   mkdir -p "$run/gates"
   start="$(date +%s)"
-  ( cd "$top" 2>/dev/null || exit 97; bash -c "$cmd" < /dev/null ) > "$out" 2>&1
+  # Git Bash turns /c, /p:… and other Windows switches into drive paths before a Windows program sees
+  # them (cmd /c would open a prompt, read nothing and exit 0), so the command reaches its tool as written.
+  ( cd "$top" 2>/dev/null || exit 97; MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' bash -c "$cmd" < /dev/null ) > "$out" 2>&1
   ec=$?
   secs=$(( $(date +%s) - start ))
   printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"}\n' \
     "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" > "$base.json"
+  if [ "${GATE_BASELINE:-0}" = 1 ] && [ ! -f "$bl.txt" ]; then
+    mkdir -p "$run/gates/baseline" && cp "$out" "$bl.txt" && cp "$base.json" "$bl.json" && fresh=1
+  fi
   if [ "$ec" -eq 0 ]; then
     if grep -q '^changed: no files matched' "$out" 2>/dev/null; then
       GATE_EMPTY=1                    # it passed because there was nothing to look at, not because it looked
@@ -675,9 +716,24 @@ run_gate() {
   fi
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
   say "gate $name: FAIL (exit $ec, ${secs}s) — full output: $out"
-  hits="$(grep -n -i -E 'error|fail|exception|traceback|assert|panic|cannot|not found|undefined' "$out" 2>/dev/null | head -n 12)"
+  hits="$(grep -n -i -E "$pat" "$out" 2>/dev/null | head -n 12)"
   [ -n "$hits" ] || hits="$(tail -n 8 "$out")"
   printf '%s\n' "$hits" | clip 220 | sed 's/^/    /'
+  if [ "$fresh" = 0 ] && [ -f "$bl.txt" ]; then   # it may have been red before the change too: say what is new
+    grep -i -E "$pat" "$bl.txt" 2>/dev/null | tr -d '\r' > "$base.seen"
+    if [ -s "$base.seen" ]; then
+      hits="$(grep -i -E "$pat" "$out" 2>/dev/null | tr -d '\r' | grep -v -x -F -f "$base.seen" | head -n 12)"
+    else
+      hits="$(grep -i -E "$pat" "$out" 2>/dev/null | tr -d '\r' | head -n 12)"
+    fi
+    rm -f "$base.seen"
+    if [ -n "$hits" ]; then
+      say "    failure lines the baseline didn't have (gates/baseline/${bl##*/}.txt):"
+      printf '%s\n' "$hits" | clip 220 | sed 's/^/      /'
+    else
+      say "    no failure line the baseline didn't already have (gates/baseline/${bl##*/}.txt)"
+    fi
+  fi
   return "$ec"
 }
 
@@ -689,7 +745,7 @@ skip_gate() {
 
 cmd_gate() {
   local run top cfg name cmd at mand k chk side needs hk hascol stg ism ckd extra row ran=0 skipped=0 failed=0 gates \
-        passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0
+        passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0 GATE_BASELINE=0
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
@@ -701,9 +757,14 @@ cmd_gate() {
         *) die "--at takes grounding or verify (got '$AT_ARG')" ;;
       esac
     fi
+    [ "$atl" = v ] || GATE_BASELINE=1    # the untouched code: each gate's first output is its baseline
     gates="$(config_gates "$cfg")"
     if [ -z "$gates" ]; then      # a green report with nothing behind it is the worst outcome there is
-      say "NOTHING WAS CHECKED — this project has no automated check configured (no Gates row in $cfg)"
+      if gates_listed "$cfg"; then
+        say "NOTHING WAS CHECKED — the Gates section of $cfg is in an older layout (a list, not a table), so no gate could be read; a council-init refresh migrates it"
+      else
+        say "NOTHING WAS CHECKED — this project has no automated check configured (no Gates row in $cfg)"
+      fi
       return 4
     fi
     while IFS="$TAB" read -r name cmd at mand k chk side needs hk hascol stg ism ckd; do
@@ -749,6 +810,7 @@ cmd_gate() {
         fi
         continue
       fi
+      if gate_backslash "$cmd"; then say "note: gate $name — its command $(backslash_note)"; fi
       ran=$((ran + 1))
       if run_gate "$run" "$name" "$cmd" "$top"; then
         passed=$((passed + 1))
@@ -806,6 +868,7 @@ GATES
     fi
   fi
   case "$cmd" in *'|'*) say "note: this gate command contains a pipe — its exit code may not be the test runner's" ;; esac
+  if gate_backslash "$cmd"; then say "note: this gate command $(backslash_note)"; fi
   run_gate "$run" "$name" "$cmd" "$top"
 }
 
@@ -1328,7 +1391,9 @@ REFS
     fi
     gates="$(config_gates "$cfg")"
     if [ -z "$gates" ]; then
-      if grep -qiE '^[-*[:space:]]*guardrails: *declined' "$cfg" 2>/dev/null; then
+      if gates_listed "$cfg"; then
+        finding ERROR "the Gates section is in an older layout (a list, not a table), so no gate can run — every council report on this project says NOTHING WAS CHECKED until it is migrated" "run a council-init refresh — it moves the listed commands into the Gates table; there is nothing to add by hand"
+      elif grep -qiE '^[-*[:space:]]*guardrails: *declined' "$cfg" 2>/dev/null; then
         finding WARN "no gates in council.config.md (guardrails declined) — every council report on this project says NOTHING WAS CHECKED" "delete the 'guardrails: declined' line and run a council-init refresh whenever you want them fitted"
       else
         finding ERROR "no gates in council.config.md — every council report on this project says NOTHING WAS CHECKED" "add the project's real test / lint / build commands (a council-init refresh detects them, and offers the ones you are missing)"
@@ -1340,6 +1405,9 @@ REFS
           finding WARN "gate '$g' has $gk cells where the header has $ghk — the columns have shifted (an unescaped pipe?)" "wrap the command in backticks and escape any pipe as \\|, or remove it"
         fi
         case "$gc" in *'|'*) finding WARN "gate '$g' pipes its output — its exit code may not be the test runner's" "remove the pipe from that command in council.config.md" ;; esac
+        if gate_backslash "$gc"; then
+          finding WARN "gate '$g' $(backslash_note)" "gate commands run under bash (Git Bash on Windows): write tools/run.ps1, or put the path in quotes"
+        fi
         [ "$gk" = "$ghk" ] || continue       # a shifted row's other cells mean nothing
         case "$gst" in
           *'?'*) finding WARN "gate '$g' has a Run at value that names no stage: '$gat'" "write grounding, verify, both or manual — anything else is left out of council gate --all --at …" ;;

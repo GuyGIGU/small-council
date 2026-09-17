@@ -99,6 +99,7 @@ for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
 check("01-convene: opens the run with the helper", "council run open" in doctrine["01-convene.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
 check("01-convene: checks the stack fingerprint", "council fingerprint check" in doctrine["01-convene.md"])
+check("01-convene: a config with no stack fingerprint is offered a refresh too", "no stack-fingerprint" in doctrine["01-convene.md"])
 check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
       "cards/<slug>.md" in doctrine["04-brief.md"] and "- doc:" in doctrine["04-brief.md"])
 check("04-brief: memory in scope comes from council memory select", "council memory select" in doctrine["04-brief.md"])
@@ -181,7 +182,8 @@ for label, text, needles in [
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
                          "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input",
                          "NOTHING WAS CHECKED", "## Shortcuts and concessions", "Shortcuts I took:", "Not proved:",
-                         "Checked by machine:", "Works?:", "guardrails.md", "council check"]),
+                         "Checked by machine:", "Works?:", "guardrails.md", "council check", "gates/baseline/",
+                         "older Gates layout"]),
     ("research", research, ["scout", "Strength:"]),
     ("postgame", skill["council-postgame"], ["ask.md", "council ask save", "council run open council-postgame", "Ruled out",
                                              "council-implement", "council-plan", "never the plan", "quote:",
@@ -194,7 +196,7 @@ for label, text, needles in [
     ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
                     "last-verified", "council doctor", "council run open council-init",
-                    "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger"]),
+                    "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash"]),
     ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier"]),
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
     missing = [n for n in needles if n not in text]
@@ -248,7 +250,7 @@ check("template seat doc: draft status, numbered principles with repo evidence",
       all(k in seatdoc_t for k in ["status: draft", "## Principle 1:", "### Evidence in this repo"]))
 check("template config: stack fingerprint and gate side effects", "stack-fingerprint:" in cfg and "| Side effects |" in cfg)
 check("template config: the words each gate cell takes, and that commands run under bash",
-      all(k in cfg for k in ["Run at: grounding", "Mandatory: yes"]))
+      all(k in cfg for k in ["Run at: grounding", "Mandatory: yes", "under bash"]))
 check("template conventions: scope and anchor fields", "**Scope:**" in conv and "**Anchor:**" in conv)
 for label, rel in [("fixture", ("evals", "fixtures", ".council", "council.config.md")), ("example", ("examples", "chrollo", "council.config.md"))]:
     t = read(*rel)

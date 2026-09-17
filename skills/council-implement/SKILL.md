@@ -66,7 +66,8 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
 
 ## At Prepare — the baseline
 
-Run every gate once on the untouched code: `council gate --all`. It skips gates marked not runnable
+Run every gate once on the untouched code: `council gate --all`; each gate's output is kept as
+`gates/baseline/<name>.txt`. It skips gates marked not runnable
 and gates with cost, hardware, deploy or credential side effects; record those as not run. Record what already fails before you
 touch anything, e.g. `council state baseline="tests: exit 1 (3 failing) · lint: pass"`. A
 pre-existing failure is never blamed on a task.
@@ -74,8 +75,9 @@ pre-existing failure is never blamed on a task.
 **A red baseline is never waved through.** One numbered question before task 1 — one, not a
 conversation — when either:
 - **it exits 4:** quote the helper's own NOTHING WAS CHECKED line, which names the real cause (no check
-  configured at all, none that runs at this stage, or every one skipped), and say what it means here:
-  nothing built in this run can be proved by machine. Offer to fit the missing ones first
+  configured at all, an older Gates layout, none that runs at this stage, or every one skipped), and
+  say what it means here: nothing built in this run can be proved by machine. For an older Gates
+  layout, offer the council-init refresh that migrates it; otherwise offer to fit the missing ones first
   (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`, through a council-init refresh or a guardrails
   plan). Building anyway is a fine answer — it just has to be the user's. Never substitute a cause of
   your own: a project whose suite passed at grounding and has no gate at verify has checks, just not
@@ -124,7 +126,8 @@ the moment it passes.
    - **Your change broke it** → fix it before moving on.
    - **A mandatory gate is red that was green at baseline** → hard stop until you understand why.
    - **Red at baseline and waved through** → carry on: check only that your change added no new
-     failure (compare with the baseline output), and keep the standing clause on the receipt.
+     failure — `council gate <name>` lists the failure lines `gates/baseline/<name>.txt` didn't have —
+     and keep the standing clause on the receipt.
    - **It can't run** → that's config drift: log it and tell the user.
 6. **After-evidence.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
    must now pass.

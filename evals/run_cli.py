@@ -931,6 +931,18 @@ with tempfile.TemporaryDirectory() as tmp:
     check("doctor: names a Run at, Mandatory or Checked value it can't read",
           "gate 'strict' has a Run at value" in out and "gate 'strict' has a Mandatory value" in out
           and "gate 'strict' has a Checked value" in out, out)
+    check("doctor: flags a gate command whose backslash bash would drop, and only that one",
+          "gate 'ps'" in out and "backslash" in out and "gate 'quoted'" not in out, out)
+    code, out, _ = council(vocab, "gates")
+    check("gates: points out a backslash bash would drop", "backslash" in row(out, "ps") and "backslash" not in row(out, "quoted"), out)
+    code, out, _ = council(vocab, "gate", "bs", "--", "echo tools\\x")
+    check("gate: an ad-hoc command's stray backslash gets a note", "backslash" in out and read(os.path.join(vgates, "bs.txt")) == "toolsx\n", out)
+    code, out, _ = council(vocab, "gate", "env", "--", 'echo "[${MSYS_NO_PATHCONV:-}]"')
+    check("gate: Git Bash is told to leave a gate command's Windows switches (cmd /c, /p:\u2026) alone",
+          read(os.path.join(vgates, "env.txt")) == "[1]\n", out)
+    if os.name == "nt":
+        code, out, _ = council(vocab, "gate", "cmd-exit", "--", "cmd /c exit 3")
+        check("gate: on Windows, cmd /c runs its command and the gate gets its exit code", code == 3 and "FAIL (exit 3" in out, out)
     gates_cfg(vocab, "| tests | `true` | verify | yes | ok | `true` | none | - |\n")
     code, out, _ = council(vocab, "gate", "--all", "--at", "grounding")
     check("gate --all --at: with every gate at another stage, NOTHING WAS CHECKED names the stage",
@@ -957,6 +969,44 @@ with tempfile.TemporaryDirectory() as tmp:
           and "gate push: skipped \u2014 the Gates table has no Side effects column" in out, out)
     check("gate --all: when an older table stops every gate, NOTHING WAS CHECKED says why",
           code == 4 and "NOTHING WAS CHECKED \u2014 the Gates table" in out and "no Side effects column" in out, out)
+
+    # A red baseline: its output is kept, and a later failure names only what's new
+    redbase = new_repo(tmp, "redbase")
+    write(os.path.join(redbase, "a.txt"), "a\n")
+    git(redbase, "add", "-A")
+    git(redbase, "commit", "-q", "-m", "init")
+    gates_cfg(redbase, "| tests | `if [ -f .fixed ]; then echo FAILED test_new; else echo FAILED test_old_a; echo FAILED test_old_b; fi; exit 1`"
+                       " | grounding, verify | yes | ok | `true` | none | - |\n")
+    code, rrun, _ = council(redbase, "run", "open", "council-implement")
+    rgates = os.path.join(rrun.strip(), "gates")
+    council(redbase, "gate", "--all")
+    write(os.path.join(redbase, ".fixed"), "")
+    code, out, _ = council(redbase, "gate", "tests")
+    check("gate: a red baseline's output is kept apart from later runs of the same gate",
+          "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt")) and "test_old_a" not in read(os.path.join(rgates, "tests.txt")), out)
+    check("gate: a failing gate names the failure lines its baseline didn't have",
+          code == 1 and "the baseline didn't have" in out and "FAILED test_new" in out.split("the baseline didn't have")[-1]
+          and "test_old" not in out, out)
+    council(redbase, "gate", "--all", "--at", "verify")
+    check("gate --all --at verify: never replaces the baseline", "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt")))
+
+    # A Gates section still written as a list (the layout before the table)
+    legacy = new_repo(tmp, "legacy")
+    write(os.path.join(legacy, "a.py"), "a = 1\n")
+    write(os.path.join(legacy, ".council", "council.config.md"),
+          "# Council config \u2014 legacy\n\n## Gates\n\n- **grounding** (phase 1):\n  - `pytest -m \"not network\"`   # unit tests\n"
+          "- **verification** (phase 10):\n  - `npm --prefix web run build`\n- **mandatory:** `pytest`\n\n## Hard rules\n- none\n")
+    git(legacy, "add", "-A")
+    git(legacy, "commit", "-q", "-m", "init")
+    council(legacy, "run", "open", "council-review")
+    code, out, _ = council(legacy, "gate", "--all")
+    check("gate --all: a Gates section written as a list is named as an older layout, not as no checks",
+          code == 4 and "NOTHING WAS CHECKED" in out and "older layout" in out and "no automated check" not in out, out)
+    code, out, _ = council(legacy, "doctor")
+    check("doctor: a Gates section written as a list is an older layout for a refresh to migrate, not missing checks",
+          "older layout (a list" in out and "council-init refresh" in out and "add the project's real" not in out, out)
+    code, out, _ = council(legacy, "gates")
+    check("gates: says the Gates section is an older layout", "older layout" in out, out)
 
     nogates = new_repo(tmp, "nogates")
     write(os.path.join(nogates, "x.txt"), "x\n")

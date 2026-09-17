@@ -74,6 +74,9 @@ Record the project's **real** commands — never assume `tsc` / `vitest` / `cypr
 build/compile, and any e2e or regression harness.
 - **Run each once, in its fast form** (`--version`, `--collect-only`, the quick suite). Judge it by
   exit code, never through a pipe.
+- **Gate commands run under bash** (Git Bash on Windows), so dry-run each one the same way:
+  `council gate probe-<name> -- '<its fast form>'`. Bash drops a `\` outside quotes: write paths with
+  `/`, or quote them.
 - **Mark each one** ✓ runnable, or ✗ with the reason. A gate that can't run here is worse than no
   gate, because it fakes a green.
 - **Never probe** a gate that deploys, spends money, flashes hardware or needs credentials: ask
