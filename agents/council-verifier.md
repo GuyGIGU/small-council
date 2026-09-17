@@ -91,6 +91,7 @@ Write the file you were given (`<run>/verify-<n>.md`):
   The `#` is the item's number exactly as the dispatch gave it (e.g. 4 or C2) — never renumber; the
   council's ledger matches verdicts to seats by it.
 - Then one short paragraph for each item that isn't CONFIRMED, OK or MET.
+- Keep the file under 16 KB. If it runs over, shorten the paragraphs — never drop a row.
 
 Return exactly one line:
 `Wrote <path> — <c> confirmed, <r> refuted, <u> uncertain, <m> miscited`

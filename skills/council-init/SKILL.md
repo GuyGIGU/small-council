@@ -169,7 +169,8 @@ Adjust on request. On confirmation, write:
   a card.
 - **`.council/.gitignore`** containing `runs/`, `asks/` (the user's own words stay on their own
   machine) and `active-run`, for older runs. Config, memory, map, plans, reviews, logs and research
-  stay tracked. A refresh adds the `asks/` line unless the user has chosen to share their requests.
+  stay tracked. `council run open` adds any of the three that is missing. A user who wants the team
+  to see their requests says so: write `!asks/` in place of the `asks/` line, and nothing adds it back.
 - **Memory:** keep an existing `conventions.md` wherever it is, and record its path in the config's
   Memory section. Otherwise create `.council/conventions.md` from the template. Obvious accepted
   patterns seen during detection go under `## Proposed`, never straight into the confirmed sections.

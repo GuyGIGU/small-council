@@ -43,6 +43,14 @@ def description(text):
     return m.group(1).strip() if m else ""
 
 
+def never_a_pass(text, marker):
+    """The sentences naming `marker` say, before any 'pass', that it is never / not one — and at least one
+    says it. Catches a rule turned round ("counts as a pass"); it proves wording, not behaviour."""
+    said = [s for s in re.split(r"(?<=\.)\s+", flat(text)) if marker in s]
+    negated = [s for s in said if re.search(r"\b(never|not)\b[^.]*\bpass\b", s)]
+    return bool(negated) and all(s in negated for s in said if re.search(r"\bpass\b", s))
+
+
 SKILLS = ["context-core", "council-init", "council-review", "council-plan", "council-implement",
           "council-research", "council-postgame", "spec-writer", "test-architect"]
 MODES = ["council-review", "council-plan", "council-implement", "council-research", "council-postgame"]
@@ -81,10 +89,12 @@ for i, law in enumerate(LAWS, 1):
 pos = [core.find(f"`{d}`") for d in DOCTRINE]
 check("kernel: the stage table lists all ten doctrine files, in order", -1 not in pos and pos == sorted(pos), str(pos))
 check("kernel: points at the doctrine folder", "${CLAUDE_PLUGIN_ROOT}/references/doctrine/" in core)
-check("kernel: exit 4 from the gates is never a pass", "NOTHING WAS CHECKED" in core)
-check("02-prepare: says what exit 4 means", "Exit 4" in doctrine["02-prepare.md"])
-check("09-deliver: a mode that changed code says what the machine checked",
-      "Checked by machine:" in doctrine["09-deliver.md"])
+check("kernel: the sentence naming NOTHING WAS CHECKED calls it never a pass (wording; drill D24 is the behaviour)",
+      never_a_pass(core, "NOTHING WAS CHECKED"))
+check("02-prepare: the sentence naming Exit 4 calls it not a pass (wording)", never_a_pass(doctrine["02-prepare.md"], "Exit 4"))
+check("09-deliver: names the 'Checked by machine:' line", "Checked by machine:" in doctrine["09-deliver.md"])
+check("09-deliver: a run that proved nothing by machine never reads as a pass (wording)",
+      never_a_pass(doctrine["09-deliver.md"], "proved nothing by machine"))
 check("kernel: agent cap of 10, verifiers included", re.search(r"\b10\b[^.]*verifiers included", flat(core)) is not None)
 check("kernel: approval threshold from the config", "approve without asking" in core)
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
@@ -109,7 +119,8 @@ check("04-brief: seat blocks carry ref / out / cap for collect", all(k in doctri
 check("05-work: records each worker with its agent id", "council seat <slug> running agent=" in doctrine["05-work.md"])
 check("06-collect: runs council collect", "council collect" in doctrine["06-collect.md"])
 check("07-judge: writes synthesis.md in the index-line format", "synthesis.md" in doctrine["07-judge.md"] and "1 · P1 ·" in doctrine["07-judge.md"])
-check("08-challenge: mechanical pre-check first", "council check" in doctrine["08-challenge.md"])
+check("08-challenge: names council check before the verifier dispatch",
+      -1 < doctrine["08-challenge.md"].find("council check") < doctrine["08-challenge.md"].find("council-verifier"))
 check("08-challenge: one verify-<n>.md per verifier", "verify-<n>.md" in doctrine["08-challenge.md"])
 check("10-learn: closes the run", "council run close" in doctrine["10-learn.md"])
 check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
@@ -197,7 +208,8 @@ for label, text, needles in [
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
                     "last-verified", "council doctor", "council run open council-init",
                     "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash"]),
-    ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier"]),
+    ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier",
+                                                 "verify-<n>.md"]),
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
     missing = [n for n in needles if n not in text]
     check(f"{label}: carries its mechanisms", not missing, ", ".join(missing))
@@ -217,7 +229,9 @@ check("worker: reads its card first; the card names its doc", "card" in worker a
 check("worker: returns a Wrote line (the seat check reads it)", "`Wrote <output path>" in worker)
 check("worker: read-only, no delegation, ignores council prompts in CLAUDE.md", all(k in worker for k in ["Read-only on the project", "No delegation", "CLAUDE.md"]))
 check("worker: rulings capped, lanes kept", "## Needs a ruling" in worker and "## Outside my lane" in worker)
-check("worker: BLOCKED instead of proceeding blind", "BLOCKED" in worker)
+check("worker: tells it to return 'BLOCKED: <reason>' rather than proceed blind (wording)",
+      "Never proceed blind" in worker and "`BLOCKED: <reason>`" in worker)
+check("verifier: states the 16 KB file limit the seat check enforces", "16 KB" in verifier)
 check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"]))
 check("verifier: change verdicts", all(v in verifier for v in ["OK", "INCOMPLETE", "REGRESSION", "SCOPE-CREEP", "CANNOT VERIFY"]))
 check("verifier: can open a research claim's URL", re.search(r"^tools:.*\bWebFetch\b", verifier, re.MULTILINE) is not None)
@@ -238,8 +252,11 @@ check("hook: SubagentStop runs seat-gate.sh for council agents only",
 check("hook: session-start shares the helper's resolver", '. "$ROOT/bin/council"' in hook)
 check("hook: session-start always exits 0", hook.rstrip().endswith("exit 0"))
 check("hook: silent outside council projects", '[ -d "$home" ] || exit 0' in hook)
-check("hook: seat-gate never blocks twice", "stop_hook_active" in gate)
-check("hook: seat-gate passes only a line that starts with BLOCKED", "grep -q '^BLOCKED'" in gate)
+gate_code = "\n".join(l for l in gate.split("\n") if not l.lstrip().startswith("#"))
+check("hook: seat-gate's code (not a comment) exits early on stop_hook_active — run_hook tests that it never blocks twice",
+      re.search(r"stop_hook_active.*exit 0", gate_code) is not None)
+check("hook: seat-gate's code looks for BLOCKED at a line's start — run_hook tests the forms",
+      "'^[[:space:]>*_]*blocked" in gate_code)
 check("hook: session-start resumes only this session's run", "field session" in hook and "session_id" in hook)
 check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_ID" in cli)
 

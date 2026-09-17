@@ -7,7 +7,8 @@ Hard errors (exit 1):
     frontmatter key Claude Code doesn't recognise, or whose description exceeds Claude Code's cap;
   - an agent whose frontmatter is missing, misnamed, or uses a key plugin agents don't support
     (hooks / mcpServers / permissionMode are ignored for plugin agents — shipping them misleads);
-  - hooks/hooks.json malformed, or a hook command pointing at a script that doesn't exist;
+  - hooks/hooks.json malformed, a hook command pointing at a script that doesn't exist, or a
+    ${CLAUDE_PLUGIN_ROOT} path outside double quotes (it splits at a space in the user's folder name);
   - any ${CLAUDE_PLUGIN_ROOT}/<path> or references/<file>.md named in a skill or agent that isn't on
     disk (a dangling reference is a blind review lane);
   - a seat reference doc whose first line isn't a single "# Title" (workers echo it as proof of reading);
@@ -185,9 +186,15 @@ if os.path.isfile(hooks_path):
     for event, groups in ((hooks or {}).get("hooks") or {}).items():
         for group in groups:
             for hook in group.get("hooks", []):
-                for ref in re.findall(r"\$\{CLAUDE_PLUGIN_ROOT\}/([^\s\"']+)", hook.get("command", "")):
+                command = hook.get("command", "")
+                for ref in re.findall(r"\$\{CLAUDE_PLUGIN_ROOT\}/([^\s\"']+)", command):
                     if not os.path.isfile(os.path.join(ROOT, *ref.split("/"))):
                         errors.append(f"hooks.json ({event}): command points at missing {ref}")
+                # Outside double quotes the path splits at a space (C:\Users\John Smith\...) and the hook never runs
+                unquoted = re.sub(r'"[^"]*"', "", command)
+                if "CLAUDE_PLUGIN_ROOT" in unquoted:
+                    errors.append(f"hooks.json ({event}): put ${{CLAUDE_PLUGIN_ROOT}}/… in double quotes — "
+                                  "unquoted, it breaks for a user name with a space")
 
 # 5. Every path a skill or agent names must exist
 PLACEHOLDER = re.compile(r"[<\[]")
