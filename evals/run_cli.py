@@ -733,6 +733,38 @@ with tempfile.TemporaryDirectory() as tmp:
                 "2026-09-16\t2026-09-16-000000-review\tcouncil-review\thunt-b\t2\t1\t0\t0\t20000\n")
     code, out, _ = council(repo, "ledger")
     check("ledger: a split worker's rows count as one seat in one run", re.search(r"^hunt\s+1\s+4\s+2\s+0\s+0\s+30\s+50%", out, re.MULTILINE) is not None, out)
+
+    # The ledger reads provenance and verdicts as they are really written
+    led = new_repo(tmp, "led")
+    write(os.path.join(led, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(led, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(led, "a.py"), "".join(f"{i}\n" for i in range(1, 31)))
+    git(led, "add", "-A")
+    git(led, "commit", "-q", "-m", "a")
+    _, lrun, _ = council(led, "run", "open", "council-review")
+    lrun = lrun.strip()
+    write(os.path.join(lrun, "brief.md"), "# Brief\n## Seats\n### hunt — Security\n- ref: none\n### beck — Tests\n- ref: none\n")
+    write(os.path.join(lrun, "seats", "hunt.md"), "# Hunt — Security (council-review)\nref: none\n## Index\n"
+          + "".join(f"{i} · P2 · P1 · a.py:{i} · h{i}\n" for i in range(1, 5))
+          + "\n### 1. h1\nbody\n## Outside my lane\n5 · P2 · Tests · a.py:5 · no test for a.py\n")
+    write(os.path.join(lrun, "seats", "beck.md"), "# Beck — Tests (council-review)\nref: none\n## Index\n"
+          + "".join(f"{i} · P2 · T1 · a.py:{i + 5} · b{i}\n" for i in range(1, 4)))
+    council(led, "seat", "hunt", "done", "agent=a1", "tokens=30000")
+    council(led, "seat", "beck", "done", "agent=a2", "tokens=20000")
+    council(led, "seat", "verify-1", "done", "agent=v1", "tokens=9000")
+    write(os.path.join(lrun, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P2 · P1 · a.py:1 · h1 and h2 are one bug · from: hunt#1, #2\n"
+          "2 · P2 · T1 · a.py:6 · b1 and b2 merged · from: beck#1,2\n"
+          "3 · P2 · P1 · a.py:3 · h3, also raised by beck · from: hunt#3 and beck#3\n"
+          "4 · P2 · P1 · a.py:4 · Data from: the webhook is trusted · from: hunt#4\n")
+    write(os.path.join(lrun, "verify-1.md"), "# Verification — ledger\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1. | h1 | REFUTED (latent) | guarded upstream |\n| #2 | b1 | REFUTED — test exists | covered |\n"
+          "| 3 | h3 | ❌ REFUTED | guarded |\n| 4 | data | Refuted | signature checked |\n")
+    council(led, "run", "close")
+    code, out, _ = council(led, "ledger")
+    check("ledger: 'from: a#1, #2', 'b#1,2', 'a#3 and b#3', a title holding 'from:', and verdicts as written all count",
+          re.search(r"^hunt\s+1\s+4\s+4\s+0\s+4\s+30\s+0%", out, re.MULTILINE) is not None
+          and re.search(r"^beck\s+1\s+3\s+3\s+0\s+3\s+20\s+0%", out, re.MULTILINE) is not None, out)
     code, out, _ = council(repo, "run", "status")
     check("run status: nothing open after closing", "no open council runs" in out, out)
     code, out, _ = council(repo, "run", "status", "--all")

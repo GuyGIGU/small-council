@@ -2081,33 +2081,48 @@ seat_out() {
 }
 
 # Per-seat kept / cut / refuted counts for a run, from synthesis.md's "from:" provenance and the
-# REFUTED rows of its verify-*.md tables. Rows: slug kept cut refuted.
+# REFUTED rows of its verify-*.md tables. Rows: slug kept cut refuted. Provenance is the item line's
+# last " · from:" field (a title may say "from:" too), read as seat#item tokens: "hunt#1, #2",
+# "beck#1,2" and "hunt#3 and beck#3" each name every item. A verdict counts by its first word, in any
+# case and with any mark before it ("❌ Refuted (latent)"); the # cell may read "1.", "#1" or "C1".
 synthesis_counts() {
   local run="$1"
   [ -f "$run/synthesis.md" ] || return 0
   set -- "$run"/verify-*.md
   [ -e "$1" ] || set --
   SYN="$run/synthesis.md" awk '
-    FNR == 1 { sec = ""; vcol = 0 }
+    FNR == 1 { sec = ""; vcol = 0; ncol = 2 }
     FILENAME == ENVIRON["SYN"] {
       if ($0 ~ /^## /) { sec = ($0 ~ /^## Kept/) ? "k" : (($0 ~ /^## Cut/) ? "c" : ""); next }
-      if (sec == "" || index($0, "from:") == 0) next
-      n = $0; sub(/^[-* \t]*/, "", n); sub(/[ \t].*$/, "", n); sub(/\.$/, "", n)
-      f = substr($0, index($0, "from:") + 5); sub(/[ \t]+·.*$/, "", f); gsub(/[`\r]/, "", f)   # the first from: only
-      m = split(f, parts, /[ \t]*,[ \t]*/)
+      line = $0; gsub(/[\r`*]/, "", line); gsub(/\t/, " ", line)
+      if (sec == "" || line !~ /^[-+]? *_*C?[0-9]+[a-z]?_*\.? +(·|\|) /) next
+      n = line; sub(/^[-+]? */, "", n); sub(/ .*$/, "", n); gsub(/[_.]/, "", n); n = tolower(n)
+      p = 0; t = line; off = 0
+      while ((i = index(t, "· from:")) > 0) { p = off + i; off += i; t = substr(t, i + 1) }
+      if (!p) next
+      f = substr(line, p + length("· from:")); sub(/ +· .*$/, "", f); gsub(/ +and +/, ",", f)
+      m = split(f, parts, /[ ,;&+]+/); slug = ""; split("", once)
       for (i = 1; i <= m; i++) {
-        s = parts[i]; sub(/#.*$/, "", s); gsub(/[ \t]/, "", s)
-        if (s == "") continue
-        seen[s] = 1
-        if (sec == "k") { kept[s]++; owners[n] = owners[n] " " s } else cut[s]++
+        w = parts[i]
+        if (w ~ /^[A-Za-z][A-Za-z0-9._-]*#C?[0-9]+[a-z]?$/) { slug = substr(w, 1, index(w, "#") - 1); key = w }
+        else if (w ~ /^#?C?[0-9]+[a-z]?$/ && slug != "") { sub(/^#/, "", w); key = slug "#" w }
+        else if (w ~ /^[A-Za-z][A-Za-z0-9._-]*$/) { slug = w; key = w }
+        else continue
+        if (key in once) continue
+        once[key] = 1; seen[slug] = 1
+        if (sec == "k") { kept[slug]++; owners[n] = owners[n] " " slug } else cut[slug]++
       }
       next
     }
-    /^\|/ {                                          # a verify table: find its Verdict column, then read it exactly
+    /^\|/ {                                          # a verify table: find its # and Verdict columns, then read them
       k = split($0, c, "|")
-      if (!vcol) { for (i = 2; i < k; i++) { h = c[i]; gsub(/[ \t\r*]/, "", h); if (tolower(h) == "verdict") vcol = i }; next }
-      v = c[vcol]; gsub(/[ \t\r*]/, "", v); num = c[2]; gsub(/[ \t\r*]/, "", num)
-      if (v == "REFUTED" && num ~ /^[0-9]+$/) refd[num] = 1
+      if (!vcol) {
+        for (i = 2; i < k; i++) { h = c[i]; gsub(/[ \t\r*]/, "", h); h = tolower(h); if (h == "verdict") vcol = i; else if (h == "#") ncol = i }
+        next
+      }
+      v = c[vcol]; sub(/^[^A-Za-z]*/, "", v); v = (match(v, /^[A-Za-z]+/) ? toupper(substr(v, 1, RLENGTH)) : "")
+      num = c[ncol]; gsub(/[ \t\r*#.]/, "", num); num = tolower(num)
+      if (v == "REFUTED" && num ~ /^c?[0-9]+[a-z]?$/) refd[num] = 1
     }
     END {
       for (v in refd) { k = split(owners[v], o, " "); for (i = 1; i <= k; i++) if (o[i] != "") refuted[o[i]]++ }
@@ -2129,7 +2144,7 @@ ledger_record() {
     f="$(seat_out "$run" "$slug")"
     case "$slug" in
       *-r[0-9]*) raised=0 ;;                           # a war room's round 2 raises nothing new: from: cites round 1
-      *) raised="$(index_lines "$f" | grep -c . || true)" ;;
+      *) raised="$(index_lines "$f" | awk -F'\t' '$6 == "index"' | grep -c . || true)" ;;   # the Index's items only
     esac
     line="$(printf '%s\n' "$counts" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] { print $2 "\t" $3 "\t" $4; exit }')"
     [ -n "$line" ] || line="$(printf '0\t0\t0')"
