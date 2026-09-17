@@ -42,6 +42,17 @@ def council(cwd, *args, env=None):
     return p.returncode, p.stdout, p.stderr
 
 
+def council_quoted(cwd, *args):
+    """council() for words like *.sh or *.{py,md}: on Windows, Git Bash globs and brace-expands any
+    unquoted word of its command line against the cwd, so there every word is passed quoted."""
+    if os.name != "nt":
+        return council(cwd, *args)
+    line = " ".join('"%s"' % a for a in (BASH, CLI) + args)
+    p = subprocess.run(line, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", env=GIT_ENV, timeout=120)
+    return p.returncode, p.stdout, p.stderr
+
+
 def git(cwd, *args):
     return subprocess.run([GIT, "-c", "core.autocrlf=false", *args], cwd=cwd, check=True,
                           capture_output=True, text=True, env=GIT_ENV).stdout.strip()
@@ -817,6 +828,21 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and out.count("\n") >= 1 and "new file.py" in out, out)
     code, out, _ = council(chg, "changed", "--glob", "*.py", "--", "false")
     check("changed: a failing tool fails the gate", code != 0, out)
+    code, out, err = council_quoted(chg, "changed", "--glob", "*.{py,md}")
+    check("changed: a {a,b} pattern covers each of its alternatives",
+          code == 0 and "src/old.py" in out and "src/new file.py" in out, out + err)
+    code, out, err = council_quoted(chg, "changed", "--glob", "docs/*.py", "--", "true")
+    check("changed: a pattern that matches no file anywhere in the project is an error, never a pass forever",
+          code == 2 and "no file in this project" in err, out + err)
+    write(os.path.join(chg, "good.sh"), "echo fine\n")
+    write(os.path.join(chg, "zz-broken.sh"), "if then fi (\n")
+    code, out, err = council_quoted(chg, "changed", "--glob", "*.sh", "--each", "--", "bash", "-n")
+    check("changed --each: a file that fails the check fails the gate, even when it is the last one",
+          code != 0 and "zz-broken.sh" in err, out + err)
+    write(os.path.join(chg, "-c.sh"), "echo ok\n")
+    code, out, err = council_quoted(chg, "changed", "--glob", "-*.sh", "--", "bash", "-n")
+    check("changed: a file whose name starts with - reaches the tool as a file, not as an option",
+          code == 0 and "file(s) to check" in err and "invalid option" not in err, out + err)
     git(chg, "add", "-A")
     git(chg, "commit", "-q", "-m", "work")
     git(chg, "checkout", "-q", "-b", "feature")
@@ -835,6 +861,21 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(chg, "changed", "--glob", "*.py")
     check("changed: a file deleted in the range is never handed to the tool",
           code == 0 and "no files matched" in out, out)
+    many = new_repo(tmp, "many")
+    write(os.path.join(many, "README.md"), "# many\n")
+    git(many, "add", "-A")
+    git(many, "commit", "-q", "-m", "init")
+    for i in range(300):
+        write(os.path.join(many, "src", "a_rather_long_folder_name_for_batches", f"module_number_{i:03d}.py"), "x = 1\n")
+    code, out, err = council(many, "changed", "--glob", "*.py", "--", "bash", "-c", 's="$*"; echo "batch $# ${#s}"', "x")
+    batches = [(int(a), int(b)) for a, b in re.findall(r"^batch (\d+) (\d+)$", out, re.MULTILINE)]
+    check("changed: a long file list goes to the tool in batches a Windows .cmd tool can take (8,191 characters)",
+          code == 0 and len(batches) >= 2 and sum(a for a, _ in batches) == 300 and all(b < 7500 for _, b in batches), out + err)
+    if os.name == "nt":
+        with open(os.path.join(many, "t.cmd"), "w", encoding="utf-8", newline="") as f:
+            f.write("@echo off\r\nfor %%a in (%*) do rem\r\nexit /b 0\r\n")
+        code, out, err = council(many, "changed", "--glob", "*.py", "--", "./t.cmd")
+        check("changed: on Windows a .cmd tool takes 300 changed files", code == 0 and "too long" not in out + err, out + err)
 
     names_repo = new_repo(tmp, "names")
     write(os.path.join(names_repo, "a.txt"), "a\n")
@@ -869,7 +910,7 @@ with tempfile.TemporaryDirectory() as tmp:
           "# Council config \u2014 names\nlast-verified: 2026-09-15 @ x\n\n## Gates\n"
           "| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs |\n"
           "|---|---|---|---|---|---|---|---|\n"
-          "| lint | `bash '" + slash(CLI) + "' changed --glob '*.nothing' -- false` | verify | no | ok | `true` | none | - |\n")
+          "| lint | `bash '" + slash(CLI) + "' changed --glob 'a.txt' -- false` | verify | no | ok | `true` | none | - |\n")
     code, out, _ = council(names_repo, "gate", "--all", "--at", "verify")
     check("gate --all: a check that matched no files passes, but is never reported as a clean pass",
           code == 0 and "pass \u2014 but nothing to check (0 files matched)" in out

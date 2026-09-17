@@ -37,6 +37,9 @@ council changed --glob '*.py' -- ruff check
 - Paths with spaces and unicode are passed through as single arguments; deleted and renamed-away files
   are dropped, so the tool is never handed a path that no longer exists.
 - `--each` runs the tool once per file, for tools that only read their first argument (`bash -n`).
+- Patterns are git pathspecs: `'*.{js,jsx}'` is spelled out as both, case matters, and `'src/*.js'`
+  means the top-level `src/` only. A pattern that matches no file in the project is an error, not a
+  pass forever.
 - `--base <ref>` overrides the branch point; by default it is the merge-base with the default branch,
   and on a repo with no other branch, everything uncommitted.
 - It is a plain command with no pipe, so it survives being written into a Gates table cell.

@@ -882,14 +882,35 @@ GATES
 # and exits 0 when nothing matched — so a linter fitted to an old project is green on day one and can
 # only ever get stricter, instead of printing a thousand complaints about code that was already there.
 # --each runs the command once per file, for tools that only read their first argument (bash -n).
+# Patterns are git pathspecs, which know no {a,b}: '*.{js,jsx}' is read as '*.js' and '*.jsx'.
+
+# One pattern per line, its first {a,b} group (and the ones after it) spelled out.
+glob_expand() {
+  local g="$1" pre rest body post item
+  case "$g" in *'{'*','*'}'*) ;; *) printf '%s\n' "$g"; return 0 ;; esac
+  pre="${g%%\{*}"; rest="${g#*\{}"; body="${rest%%\}*}"; post="${rest#*\}}"
+  case "$body" in *,*) ;; *) printf '%s\n' "$g"; return 0 ;; esac
+  case "$body" in *'{'*) printf '%s\n' "$g"; return 0 ;; esac       # nested groups stay as written
+  while [ -n "$body" ]; do
+    item="${body%%,*}"
+    glob_expand "$pre$item$post"
+    case "$body" in *,*) body="${body#*,}"; [ -n "$body" ] || glob_expand "$pre$post" ;; *) body="" ;; esac
+  done
+}
+
 cmd_changed() {
-  local top ref base each=0 f worst=0 st
-  local -a globs files
-  globs=(); files=()
+  local top ref base each=0 f g worst=0 st len=0 cap alive=0
+  local -a globs files chunk
+  globs=(); files=(); chunk=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --glob)   [ $# -ge 2 ] || die "--glob needs a pattern"; globs+=("$2"); shift 2 ;;
-      --glob=*) globs+=("${1#--glob=}"); shift ;;
+      --glob|--glob=*)
+        if [ "$1" = --glob ]; then [ $# -ge 2 ] || die "--glob needs a pattern"; g="$2"; shift; else g="${1#--glob=}"; fi
+        shift
+        while IFS= read -r f; do globs+=("$f"); done <<GLOBS
+$(glob_expand "$g")
+GLOBS
+        ;;
       --each)   each=1; shift ;;
       *) die "usage: council changed [--base <ref>] [--glob '<pattern>'] [--each] -- <command> …" ;;
     esac
@@ -897,6 +918,15 @@ cmd_changed() {
   top="${CODE_ROOT_ARG:-$(this_tree)}"
   cd "$top" 2>/dev/null || die "cannot enter the code root: $top"
   git rev-parse --git-dir >/dev/null 2>&1 || die "council changed needs a git repository"
+  if [ "${#globs[@]}" -gt 0 ]; then            # a pattern nothing in the project matches could only ever pass
+    for g in "${globs[@]}"; do
+      if [ -n "$(git -c core.quotePath=false ls-files -- "$g" 2>/dev/null | head -n 1)" ] \
+         || [ -n "$(git -c core.quotePath=false ls-files -o --exclude-standard -- "$g" 2>/dev/null | head -n 1)" ]; then
+        alive=1; break
+      fi
+    done
+    [ "$alive" = 1 ] || die "the --glob pattern(s) $(printf "'%s' " "${globs[@]}")match no file in this project, so this check could never look at anything — fix the --glob (a git pathspec: case matters; '*.py' reaches every folder, 'src/*.py' only the top-level src/)"
+  fi
   if [ -n "$BASE_ARG" ]; then
     ref="$BASE_ARG"
     base="$(git merge-base HEAD "$ref" 2>/dev/null)" \
@@ -910,6 +940,7 @@ cmd_changed() {
     [ -n "$f" ] || continue
     case "$f" in '"'*) f="$(printf '%s' "$f" | sed 's/^"//; s/"$//')" ;; esac   # git quotes odd names
     [ -f "$f" ] || continue                       # deleted, or renamed away: there is nothing to check
+    case "$f" in -*) f="./$f" ;; esac             # -v.py is a file, never an option
     files+=("$f")
   done <<FILES
 $( { [ -z "$base" ] || git -c core.quotePath=false diff --name-only --diff-filter=ACMR "$base"...HEAD -- ${globs[@]+"${globs[@]}"} 2>/dev/null
@@ -928,7 +959,18 @@ FILES
     done
     return "$worst"
   fi
-  "${AFTER_DD[@]}" "${files[@]}"
+  # A Windows .cmd tool (eslint.cmd, npx) gets one command line of at most 8,191 characters, so the
+  # files go in batches that stay well under it; the worst exit code wins.
+  f="${AFTER_DD[*]}"; cap=$((7000 - ${#f}))
+  for f in "${files[@]}"; do
+    if [ "${#chunk[@]}" -gt 0 ] && [ $((len + ${#f} + 3)) -gt "$cap" ]; then
+      "${AFTER_DD[@]}" "${chunk[@]}" || { st=$?; [ "$st" -le "$worst" ] || worst="$st"; }
+      chunk=(); len=0
+    fi
+    chunk+=("$f"); len=$((len + ${#f} + 3))
+  done
+  "${AFTER_DD[@]}" "${chunk[@]}" || { st=$?; [ "$st" -le "$worst" ] || worst="$st"; }
+  return "$worst"
 }
 
 # ------------------------------------------------------------------------------------------------
