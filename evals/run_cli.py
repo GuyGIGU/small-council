@@ -575,6 +575,78 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "collect", "--run", run2)
     check("collect: a paired seat missing one ref: line is a mismatch", "MISMATCH" in row(out, "pair"), out)
 
+    # One bad seat on its own fails collect: each problem alone, exit code included
+    lone = new_repo(tmp, "lone")
+    write(os.path.join(lone, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(lone, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(lone, "a.txt"), "".join(f"{i}\n" for i in range(1, 10)))
+    git(lone, "add", "-A")
+    git(lone, "commit", "-q", "-m", "a")
+
+    def lone_collect(block, seat, mode="council-review", extra=None):
+        _, r, _ = council(lone, "run", "open", mode, "--alongside")
+        r = r.strip()
+        write(os.path.join(r, "brief.md"), "# Brief\n## Seats\n### s1 — Lane (S)\n" + block + "\n")
+        write(os.path.join(r, "seats", "s1.md"), seat)
+        council(lone, "seat", "s1", "done", "--run", r)
+        if extra:
+            extra(r)
+        code_, out_, _ = council(lone, "collect", "--run", r)
+        council(lone, "run", "close", "--run", r, "--status", "abandoned")
+        return code_, out_
+
+    one = "1 · P1 · Principle 1 · a.txt:1 · x\n"
+    lone_cases = [
+        ("a ref: line that doesn't match its doc", f"- ref: {ref('security.md')}",
+         "# S — Security (council-review)\nref: I skimmed it\n## Index\n" + one, "MISMATCH"),
+        ("a reference doc that doesn't exist", "- ref: /no/such/doc.md", "# S\nref: x\n## Index\n" + one, "no-doc"),
+        ("an empty Index", "- ref: none", "# S\nref: none\n## Index\n", "empty-index"),
+        ("an index line it can't read", "- ref: none",
+         "# S\nref: none\n## Index\n" + one + "2) P1 — auth bypass in login.py line 99\n", "unparsed-index(1)"),
+        ("more items than its cap", "- ref: none\n- cap: 1",
+         "# S\nref: none\n## Index\n" + one + "2 · P2 · Principle 1 · a.txt:2 · y\n", "over-cap"),
+        ("broken citations", "- ref: none",
+         "# S\nref: none\n## Index\n1 · P1 · P · a.txt:40 · x\n2 · P1 · P · nope.py:3 · y\n", "broken-cites"),
+    ]
+    for what, block, seat, flag in lone_cases:
+        code, out = lone_collect(block, seat)
+        check(f"collect: a lone seat with {what} fails collect on its own",
+              code == 1 and flag in row(out, "s1") and "seats in order" not in out, out)
+    card = os.path.join(lone, ".council", "cards", "hunt.md")
+    write(card, "# Hunt — Security card for eval\nsource: x\n")
+    for key in ("- **ref:** ", "ref: ", "- Ref: "):
+        code, out = lone_collect(key + card, "# S\nref: I did not open the card\n## Index\n" + one)
+        check(f"collect: a brief's ref line written '{key.strip()}' is still checked",
+              code == 1 and "MISMATCH" in row(out, "s1"), out)
+    design = os.path.join(lone, "DESIGN.md")
+    write(design, "---\nname: design system\n---\n# Design System — Eval\nbody\n")
+    code, out = lone_collect(f"- ref: {design}", "# S\nref: Design System — Eval\n## Index\n" + one)
+    check("collect: a doc that opens with front matter is proved by its first heading",
+          code == 0 and re.search(r"^s1\s+ok\s+1/8\s+\d+\s+ok\s", row(out, "s1")) is not None, out)
+    code, out = lone_collect(f"- ref: {design}", "# S\nquestion: q\n## Index\n" + one)
+    check("collect: a seat with no ref: line never passes the proof of reading",
+          code == 1 and "MISMATCH" in row(out, "s1"), out)
+
+    def sat_out(r, ghost=False):
+        write(os.path.join(r, "debate.md"), "# War room\n## Seats\n### s1-r2 — Lane (S), round 2\n- ref: none\n"
+              "### s2-r2 — Other (T), round 2\n- ref: none\n")
+        write(os.path.join(r, "seats", "s1-r2.md"), "# S — x (council-plan, round 2)\nref: none\n## Index\n"
+              "1 · hold · P1 · a.txt:1 · y\n")
+        council(lone, "seat", "s2-r2", "skipped", "note=sits out: no room", "--run", r)
+        if ghost:
+            with open(os.path.join(r, "brief.md"), "a", encoding="utf-8") as f:
+                f.write("### ghost — Never ran\n- ref: none\n")
+            council(lone, "seat", "ghost", "skipped", "--run", r)
+
+    code, out = lone_collect("- ref: none", "# S\nref: none\n## Index\n" + one, "council-plan", sat_out)
+    check("collect: a round-2 seat that sat out (recorded skipped) is shown, not demanded",
+          code == 0 and "skipped" in row(out, "s2-r2") and "sits out: no room" in row(out, "s2-r2")
+          and "1 sat out" in out, out)
+    code, out = lone_collect("- ref: none", "# S\nref: none\n## Index\n" + one, "council-plan",
+                             lambda r: sat_out(r, ghost=True))
+    check("collect: a first-round seat marked skipped with no file is still a hole",
+          code == 1 and re.search(r"^ghost\s+missing", out, re.MULTILINE) is not None, out)
+
     # A linked worktree
     wt = os.path.join(tmp, "wt")
     git(repo, "worktree", "add", "-q", "-b", "other", wt)

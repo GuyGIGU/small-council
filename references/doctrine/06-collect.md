@@ -18,6 +18,7 @@ Prove every seat reported before anyone judges.
      file>` names each bad citation; fix those lines in place.
    - `no-line(N)` and `unchecked(N)` are notes, not failures: N items cite a path with no line, or
      nothing the helper can check (a command, a link, an area).
+   - A war-room round-2 seat recorded `skipped` sat out (war-room.md): its row says so.
 3. **Coverage.** In-scope files no seat's coverage line mentions, sitting in a hot spot → one bounded
    extra pass by the closest seat. Anything else goes on the deliverable's "not covered" list.
 
