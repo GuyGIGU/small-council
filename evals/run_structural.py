@@ -88,6 +88,8 @@ check("09-deliver: a mode that changed code says what the machine checked",
 check("kernel: agent cap of 10, verifiers included", re.search(r"\b10\b[^.]*verifiers included", flat(core)) is not None)
 check("kernel: approval threshold from the config", "approve without asking" in core)
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
+check("kernel: resuming a run records this session as its driver (council run resume)",
+      "council run resume" in core[core.find("## Resume"):])
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
@@ -112,6 +114,7 @@ check("07-judge: writes synthesis.md in the index-line format", "synthesis.md" i
 check("08-challenge: mechanical pre-check first", "council check" in doctrine["08-challenge.md"])
 check("08-challenge: one verify-<n>.md per verifier", "verify-<n>.md" in doctrine["08-challenge.md"])
 check("10-learn: closes the run", "council run close" in doctrine["10-learn.md"])
+check("10-learn: a paused run comes back with council run resume", "council run resume" in doctrine["10-learn.md"])
 check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
 check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])
 check("06-collect: checks a war room's round-2 files", "debate.md" in doctrine["06-collect.md"])
@@ -139,7 +142,7 @@ for label, t in texts.items():
         bad_flags += [f"{label}: council {c} {f}" for f in re.findall(r"--[a-z][a-z-]*", " ".join(own)) if f not in flags]
         if c not in known:
             bad.append(f"{label}: council {c}")
-        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status"}):
+        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume"}):
             bad.append(f"{label}: council run {' '.join(rest[:1])}")
         elif c == "map" and (not rest or rest[0] != "status"):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")
@@ -201,6 +204,8 @@ for label, text, needles in [
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
     missing = [n for n in needles if n not in text]
     check(f"{label}: carries its mechanisms", not missing, ", ".join(missing))
+check("implement and post-game: name the phase that follows Prepare (a compaction points at the right step)",
+      "council state phase=build" in impl and "council state phase=judge" in skill["council-postgame"])
 
 # 6. Agents
 check("worker: header with ref: on line 2 and an Index", "ref: <the first heading" in worker and "## Index" in worker)

@@ -19,6 +19,9 @@ set -u
 COUNCIL_VERSION="0.7.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
+BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
+NL='
+'
 
 die()     { printf 'council: %s\n' "$*" >&2; exit 2; }
 say()     { printf '%s\n' "$*"; }
@@ -28,9 +31,10 @@ here()    { pwd -W 2>/dev/null || pwd; }
 dash()    { if [ -n "$1" ]; then printf '%s' "$1"; else printf '%s' '-'; fi; }
 undash()  { if [ "$1" = "-" ]; then printf ''; else printf '%s' "$1"; fi; }
 
-# First "key: value" in a header-style file; carriage returns and trailing "   # comments" stripped.
+# First "key: value" in a header-style file; a byte-order mark, carriage returns and trailing
+# "   # comments" stripped.
 field() {
-  sed -n "s/^$1:[[:space:]]*//p" "$2" 2>/dev/null | head -n 1 | tr -d '\r' | sed 's/[[:space:]]\{2,\}#.*$//'
+  sed -n -e "1s/^$BOM//" -e "s/^$1:[[:space:]]*//p" "$2" 2>/dev/null | head -n 1 | tr -d '\r' | sed 's/[[:space:]]\{2,\}#.*$//'
 }
 
 json_esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\t\r\n' '   '; }
@@ -77,30 +81,45 @@ mode_skill() {
   esac
 }
 
-# Runs, newest first, tab-separated, "-" for an empty value: dir mode phase code-root updated status actual.
+# Runs, newest first, tab-separated, "-" for an empty value:
+#   dir mode phase code-root updated status actual session
 # $2 caps how many are listed; $3 = open (in-progress or paused, however old) | all (the newest).
+# Every state file is read in one awk pass (the same rules as field), so the cost barely grows with
+# the number of runs — the SessionStart hook has 15 s.
 list_runs() {
   local home="$1" limit="${2:-30}" which="${3:-open}"
   [ -d "$home/runs" ] || return 0
   if [ "$which" = open ]; then
-    grep -l -E '^status:[[:space:]]*(in-progress|paused)' "$home"/runs/*/session-state.md 2>/dev/null | sort -r
+    grep -l -E "^($BOM)?status:[[:space:]]*(in-progress|paused)" "$home"/runs/*/session-state.md 2>/dev/null | sort -r
   else
     ls -1 "$home/runs" 2>/dev/null | sort -r | while IFS= read -r name; do
       [ -f "$home/runs/$name/session-state.md" ] && printf '%s\n' "$home/runs/$name/session-state.md"
     done
-  fi | head -n "$limit" | while IFS= read -r st; do
-    [ -n "$st" ] || continue
-    status="$(field status "$st")"; status="${status%% *}"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${st%/session-state.md}" "$(dash "$(field mode "$st")")" \
-      "$(dash "$(field phase "$st")")" "$(dash "$(field code-root "$st")")" "$(dash "$(field updated "$st")")" \
-      "$(dash "$status")" "$(dash "$(field actual "$st")")"
-  done
+  fi | head -n "$limit" | awk '
+    function out(s) { return s == "" ? "-" : s }
+    $0 != "" {
+      st = $0; split("", v); n = 0
+      while ((getline line < st) > 0) {
+        if (++n == 1) sub(/^\357\273\277/, "", line)
+        gsub(/\r/, "", line)
+        if (!match(line, /^[a-z][a-z0-9-]*:/)) continue
+        k = substr(line, 1, RLENGTH - 1)
+        if (k in v) continue
+        val = substr(line, RLENGTH + 1); sub(/^[ \t]+/, "", val); sub(/[ \t][ \t]+#.*$/, "", val); gsub(/\t/, " ", val)
+        v[k] = val
+      }
+      close(st)
+      if (n == 0) next
+      s = v["status"]; sub(/ .*$/, "", s)
+      d = st; sub(/\/session-state\.md$/, "", d)
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d, out(v["mode"]), out(v["phase"]), out(v["code-root"]), out(v["updated"]), out(s), out(v["actual"]), out(v["session"])
+    }'
 }
 
-# Open runs on this working tree (a run with no code-root counts as this tree's): their folders.
-# $3, if given, keeps only that status (in-progress or paused).
+# Open runs on this working tree (a run with no code-root counts as this tree's): their folders — all of
+# them, however many other trees' runs are open. $3, if given, keeps only that status.
 runs_here() {
-  list_runs "$1" 50 open | TOP="$2" ST="${3:-}" awk -F'\t' '
+  list_runs "$1" 1000000 open | TOP="$2" ST="${3:-}" awk -F'\t' '
     ($4 == ENVIRON["TOP"] || $4 == "-") && (ENVIRON["ST"] == "" || $6 == ENVIRON["ST"]) { print $1 }'
 }
 
@@ -123,12 +142,9 @@ seat_summary() {
 # the one in-progress run on this working tree. Never guesses between several, and never picks a
 # paused run on its own.
 resolve_run() {
-  local home mine count paused
+  local home mine count paused p
   if [ -n "$RUN_ARG" ]; then
-    RUN_ARG="${RUN_ARG%/}"
-    if [ ! -f "$RUN_ARG/session-state.md" ] && [ -f "$(council_home)/runs/$RUN_ARG/session-state.md" ]; then
-      RUN_ARG="$(council_home)/runs/$RUN_ARG"
-    fi
+    RUN_ARG="$(run_path "$RUN_ARG")"
     [ -f "$RUN_ARG/session-state.md" ] || die "not a run folder: $RUN_ARG"
     printf '%s\n' "$RUN_ARG"; return 0
   fi
@@ -140,9 +156,26 @@ resolve_run() {
   if [ "${count:-0}" -gt 1 ]; then
     die "several runs are open on this working tree — pass --run <folder>: $(printf '%s\n' "$mine" | names)"
   fi
-  paused="$(runs_here "$home" "$(this_tree)" paused | names)"
-  [ -z "$paused" ] || die "no in-progress run on this working tree (paused: $paused) — pass --run <folder> to act on a paused one"
+  paused="$(runs_here "$home" "$(this_tree)" paused)"
+  if [ -n "$paused" ]; then
+    case "$paused" in *"$NL"*) p="<folder>" ;; *) p="${paused##*/}" ;; esac
+    die "no in-progress run on this working tree (paused: $(printf '%s\n' "$paused" | names)) — to carry on with it: council run resume --run $p; to act on it while it stays paused, pass --run <folder>"
+  fi
   die "no open run on this working tree — open one with: council run open <mode>   (or pass --run <folder>)"
+}
+
+# A --run value as a run folder: backslashes read as /, trailing separators dropped, a relative path
+# made absolute (commands may change folder), a bare name looked up under runs/.
+run_path() {
+  local bs='\' r
+  r="${1//"$bs"//}"
+  while [ "${r%/}" != "$r" ] && [ -n "${r%/}" ]; do r="${r%/}"; done
+  if [ -f "$r/session-state.md" ]; then
+    case "$r" in /*|[A-Za-z]:/*) ;; *) r="$(cd "$r" 2>/dev/null && here)" || r="$1" ;; esac
+  elif [ -f "$(council_home)/runs/$r/session-state.md" ]; then
+    r="$(council_home)/runs/$r"
+  fi
+  printf '%s' "$r"
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -208,7 +241,8 @@ cmd_state() {
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
-  tmp="$st.tmp$$"; cp "$st" "$tmp" || die "cannot update $st"
+  tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
+  awk 'NR == 1 { sub(/^\357\273\277/, "") } { print }' "$st" > "$tmp" || { rm -f "$tmp"; die "cannot update $st"; }
   for kv in "$@"; do
     key="${kv%%=*}"
     if [ "$key" = "$kv" ]; then rm -f "$tmp"; die "expected key=value, got: $kv"; fi
@@ -229,6 +263,48 @@ cmd_state() {
     { print }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
   mv "$tmp" "$st"
   say "state: phase $(field phase "$st") · $(field status "$st") · ${run##*/}"
+}
+
+# Carry on with an open run — a paused one, or one another session was driving: mark it in progress,
+# drop a pause's closed: stamp and record this session as its driver, so a compaction here resumes it.
+# Plain state and seat calls never do this: taking a run over is always asked for.
+cmd_run_resume() {
+  local run st name status old session mine count others croot drv
+  if [ -n "$RUN_ARG" ]; then
+    run="$(resolve_run)" || exit 2
+  else
+    mine="$(runs_here "$(council_home)" "$(this_tree)")"
+    count="$(printf '%s' "$mine" | grep -c . || true)"
+    [ "${count:-0}" -gt 0 ] || die "no open run on this working tree to resume — council run status lists the runs"
+    [ "$count" -eq 1 ] || die "several runs are open on this working tree — pass --run <folder>: $(printf '%s\n' "$mine" | names)"
+    run="$mine"
+  fi
+  st="$run/session-state.md"; name="${run##*/}"
+  status="$(field status "$st")"; status="${status%% *}"
+  case "$status" in
+    complete|abandoned) die "$name is closed ($status) — open a new run instead: council run open $(mode_skill "$(field mode "$st")")" ;;
+  esac
+  old="$(field session "$st")"
+  session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
+  RUN_ARG="$run" cmd_state status=in-progress session="$session" >/dev/null || exit 2
+  awk '/^## / { body = 1 } !body && index($0, "closed:") == 1 { next } { print }' "$st" > "$st.tmp$$" \
+    && mv "$st.tmp$$" "$st" || { rm -f "$st.tmp$$"; die "cannot update $st"; }
+  if [ -n "$session" ]; then drv="driven by this session"; else drv="no session id to record"; fi
+  say "resumed $name — in progress · phase $(field phase "$st") · $drv"
+  if [ -n "$old" ] && [ "$old" != "$session" ]; then
+    say "it was driven by session $old — if that session is still open, it may still be working on this run: ask the user before re-dispatching any seat"
+  fi
+  [ -z "$(seat_summary "$run")" ] || say "seats — $(seat_summary "$run")"
+  others="$(runs_here "$(council_home)" "$(this_tree)" in-progress | N="$name" awk -F/ '$NF != ENVIRON["N"]' | names)"
+  [ -z "$others" ] || printf 'council: another run is in progress on this working tree (%s) — pass --run %s to every command for this one\n' "$others" "$name" >&2
+  croot="$(field code-root "$st")"
+  if [ -n "$croot" ] && [ "$croot" != "$(this_tree)" ]; then
+    if [ -d "$croot" ]; then
+      printf 'council: its code root is %s, not this working tree — work there\n' "$croot" >&2
+    else
+      printf 'council: its code root %s no longer exists — the run cannot go on; close it: council run close --run %s --status abandoned\n' "$croot" "$name" >&2
+    fi
+  fi
 }
 
 # Tokens accumulate per seat (one completion notification = one agent); a new agent id on a seat
@@ -339,18 +415,25 @@ cmd_run_status() {
   local home which runs
   home="$(council_home)"
   [ -d "$home" ] || { say "no council here (no $home) — run council-init"; return 0; }
-  if [ "$ALL" = 1 ]; then which=all; else which=open; fi
-  runs="$(list_runs "$home" 20 "$which")"
+  # With --all, the newest 20 runs. Otherwise every open run on this tree, first, then other trees'
+  # open runs up to 20 lines in all, and a count of the rest.
+  if [ "$ALL" = 1 ]; then which=all; runs="$(list_runs "$home" 20 all)"; else which=open; runs="$(list_runs "$home" 1000000 open)"; fi
   if [ -z "$runs" ]; then
     if [ "$which" = open ]; then say "no open council runs"; else say "no council runs yet"; fi
     return 0
   fi
-  printf '%s\n' "$runs" | TOP="$(this_tree)" awk -F'\t' '{
-    n = split($1, p, "/")
-    where = ($4 == ENVIRON["TOP"] || $4 == "-") ? "here" : "elsewhere: " $4
-    printf "%s · %s · phase %s · %s · updated %s · %s", p[n], $2, $3, $6, $5, where
-    if ($7 != "-") printf " · %s", $7
-    printf "\n" }'
+  printf '%s\n' "$runs" | TOP="$(this_tree)" ALL="$ALL" awk -F'\t' '
+    {
+      n = split($1, p, "/"); here = ($4 == ENVIRON["TOP"] || $4 == "-")
+      s = sprintf("%s · %s · phase %s · %s · updated %s · %s", p[n], $2, $3, $6, $5, here ? "here" : "elsewhere: " $4)
+      if ($7 != "-") s = s " · " $7
+      if (here || ENVIRON["ALL"] == "1") { print s; shown++ } else other[++no] = s
+    }
+    END {
+      room = 20 - shown; if (room < 0) room = 0
+      for (i = 1; i <= no && i <= room; i++) print other[i]
+      if (no > room) printf "… and %d more open in other working trees\n", no - room
+    }'
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -1481,13 +1564,16 @@ GATES
         || finding WARN "the Gates table has no Side effects column (an older layout)" "a council-init refresh adds Probe, Needs and Side effects — until then council gate --all runs none of its gates unasked"
     fi
   fi
-  while IFS="$TAB" read -r dir mode phase croot upd status actual; do
+  local stale_runs rsess
+  stale_runs="$NL$(find "$home/runs" -mindepth 2 -maxdepth 2 -name session-state.md -mtime +2 2>/dev/null)$NL"   # one pass
+  while IFS="$TAB" read -r dir mode phase croot upd status actual rsess; do
     [ -n "$dir" ] || continue
-    if [ -n "$(find "$dir/session-state.md" -mtime +2 2>/dev/null)" ]; then
-      finding WARN "run ${dir##*/} ($(mode_skill "$(undash "$mode")"), phase $phase) has been open since $upd" "resume it, or: council run close --run \"$dir\" --status abandoned"
-    fi
+    case "$stale_runs" in
+      *"$NL$dir/session-state.md$NL"*)
+        finding WARN "run ${dir##*/} ($(mode_skill "$(undash "$mode")"), phase $phase) has been open since $upd" "resume it (council run resume --run ${dir##*/}), or: council run close --run \"$dir\" --status abandoned" ;;
+    esac
   done <<RUNS
-$(list_runs "$home" 200 open)
+$(list_runs "$home" 1000000 open)
 RUNS
   ptr="$home/active-run"
   if [ -s "$ptr" ]; then
@@ -2094,8 +2180,10 @@ council — the Small Council's helper (bash + git)
   council home                           where the council lives (.council/ of the main checkout)
   council run open <mode> [--alongside] [--session=ID]
                                          open a run for a mode, e.g. council-review; prints its folder
-  council run status [--all]             open runs (the last 20 with --all)
+  council run status [--all]             open runs, this tree's first (the last 20 with --all)
   council run close [--status complete|abandoned|paused]
+  council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
+                                         in progress again, this session recorded as its driver
   council state [key=value …]            show or update the run's session-state header
   council seat <slug> <state> [agent=ID] [tokens=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped
@@ -2195,7 +2283,8 @@ main() {
                 cmd_run_open ${1+"$@"} ;;
         close)  takes_flags "run close" status; no_words "run close" "$@"; cmd_run_close ;;
         status) takes_flags "run status" all; no_words "run status" "$@"; cmd_run_status ;;
-        *) die "usage: council run open <mode> | run status [--all] | run close [--status …]" ;;
+        resume) takes_flags "run resume" session; no_words "run resume" "$@"; cmd_run_resume ;;
+        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>]" ;;
       esac ;;
     state)   takes_flags state; cmd_state ${1+"$@"} ;;
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;

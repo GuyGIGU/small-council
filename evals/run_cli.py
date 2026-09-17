@@ -2,11 +2,13 @@
 """Helper evals for the Small Council — run bin/council against scaffolded git repos.
 
 Needs bash and git; no LLM, no network. Covers:
-  - the council home: main checkout, linked worktree, outside git;
-  - runs: open, update, close; a second in-progress run on one tree refused without --alongside;
+  - the council home: main checkout, linked worktree, outside git, a bare repository's worktrees;
+  - runs: open, update, close, resume; a second in-progress run on one tree refused without --alongside;
     commands that never guess between runs; paused runs; session ids; init creating the home; an old
-    open run found behind many newer closed ones;
-  - the change index: files, symbols (code only, shell functions included), callers, tests;
+    open run found behind many newer closed ones, and this tree's run behind many other trees' runs;
+    a byte-order mark; a Windows --run path;
+  - the change index: files, symbols (code only, shell functions included), callers, tests; files past
+    the cap named; renames, non-ASCII names, binaries, nested worktrees, a relative --run;
   - gates judged by exit code, with the command passed intact, and table cells that never shift;
   - seat-file collection: ref: proof of reading (paired seats too), caps, broken citations, list-style
     and unreadable index lines, failed and re-dispatched workers;
@@ -37,8 +39,11 @@ def check(name, ok, detail=""):
 
 
 def council(cwd, *args, env=None):
-    p = subprocess.run([BASH, CLI, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", env=dict(GIT_ENV, **(env or {})), timeout=120)
+    try:
+        p = subprocess.run([BASH, CLI, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", env=dict(GIT_ENV, **(env or {})), timeout=120)
+    except subprocess.TimeoutExpired:   # one failed check, not a crash that hides every other result
+        return 124, "", f"council {' '.join(args)}: still running after 120 s"
     return p.returncode, p.stdout, p.stderr
 
 
@@ -531,6 +536,54 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "run", "close", "--run", "2020-01-01-000000-review", "--status", "abandoned")
     check("run close: takes a bare folder name", code == 0 and "abandoned" in out, out)
 
+    # Many open runs in other working trees never hide this tree's run
+    crowd = new_repo(tmp, "crowd")
+    write(os.path.join(crowd, ".council", "council.config.md"), "# Council config — crowd\n")
+    ctop = slash(git(crowd, "rev-parse", "--show-toplevel"))
+    cruns = os.path.join(crowd, ".council", "runs")
+    write(os.path.join(cruns, "2026-01-01-000000-review", "session-state.md"),
+          f"status: in-progress\nmode: council-review\nphase: work\nupdated: 2026-01-01 00:00\ncode-root: {ctop}\n")
+    for i in range(55):
+        write(os.path.join(cruns, f"2026-09-17-1{i:05d}-plan", "session-state.md"),
+              f"status: in-progress\nmode: council-plan\nphase: work\nupdated: 2026-09-17 10:00\ncode-root: C:/p/.claude/worktrees/w{i}\n")
+    code, out, err = council(crowd, "state")
+    check("state: finds this tree's run behind 55 newer open runs from other working trees", code == 0 and "mode: council-review" in out, out + err)
+    code, out, err = council(crowd, "run", "open", "council-review")
+    check("run open: behind 55 other trees' runs, still refuses a second run on this tree", code == 2 and "already in progress" in err, out + err)
+    code, out, _ = council(crowd, "run", "status")
+    check("run status: lists this tree's run first, however many other trees' runs are open",
+          out.startswith("2026-01-01-000000-review · council-review") and "more" in out.strip().splitlines()[-1], out)
+
+    # A byte-order mark at the top of session-state.md (PowerShell's utf8)
+    bom = new_repo(tmp, "bom")
+    write(os.path.join(bom, ".council", "council.config.md"), "# Council config — bom\n")
+    code, bomrun, _ = council(bom, "run", "open", "council-review")
+    bom_state = os.path.join(bomrun.strip(), "session-state.md")
+    body = read(bom_state)
+    with open(bom_state, "w", encoding="utf-8-sig", newline="\n") as f:
+        f.write(body)
+    code, out, _ = council(bom, "run", "status")
+    check("run status: a byte-order mark at the top of session-state.md doesn't hide the run", os.path.basename(bomrun.strip()) in out, out)
+    code, out, err = council(bom, "run", "open", "council-plan")
+    check("run open: a byte-order mark doesn't let a second run open on this tree", code == 2 and "already in progress" in err, out + err)
+    code, out, err = council(bom, "state", "phase=judge", "status=paused")
+    body = read(bom_state)
+    check("state: updates a state file that starts with a byte-order mark, in place",
+          code == 0 and "phase judge · paused" in out and body.count("status:") == 1, out + err + body)
+
+    # --run as a Windows path (backslashes, a trailing one) names the same run as its folder name
+    wp = new_repo(tmp, "winpath")
+    write(os.path.join(wp, ".council", "council.config.md"), "# Council config — winpath\n")
+    code, wrun, _ = council(wp, "run", "open", "council-init")
+    wname = os.path.basename(wrun.strip())
+    council(wp, "seat", "engine", "done", "agent=a1", "tokens=74304")
+    code, out, err = council(wp, "run", "close", "--run", wrun.strip().replace("/", "\\") + "\\")
+    council(wp, "run", "close", "--run", wname)
+    wrows = [x for x in read(os.path.join(wp, ".council", "ledger.tsv")).splitlines()[1:] if x]
+    check("run close --run with backslashes: one ledger row, dated and named by the run's folder",
+          code == 0 and out.startswith(f"closed {wname} ") and len(wrows) == 1 and wrows[0].startswith(f"{wname[:10]}\t{wname}\t"),
+          out + err + "\n".join(wrows))
+
     # A repo with no council yet; paused runs
     fresh = new_repo(tmp, "fresh")
     write(os.path.join(fresh, "app.txt"), "v1\n")
@@ -556,6 +609,44 @@ with tempfile.TemporaryDirectory() as tmp:
     council(fresh, "run", "close")
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
+
+    # Carrying on with a run: council run resume
+    rs = new_repo(tmp, "resume")
+    write(os.path.join(rs, ".council", "council.config.md"), "# Council config — resume\n")
+    code, rrun, _ = council(rs, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sess-old"})
+    rrun = rrun.strip()
+    rname, rstate = os.path.basename(rrun), os.path.join(rrun, "session-state.md")
+    council(rs, "seat", "hunt", "running", "agent=a1")
+    council(rs, "run", "close", "--status", "paused")
+    code, _, err = council(rs, "state")
+    check("state: with only a paused run left, the error names council run resume",
+          code == 2 and f"council run resume --run {rname}" in err, err)
+    council(rs, "state", "--run", rname, "phase=collect", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
+    council(rs, "seat", "--run", rname, "beck", "done", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
+    check("state and seat never take a run over from the session that drives it", "session: sess-old" in read(rstate), read(rstate))
+    code, out, err = council(rs, "run", "resume", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
+    st = read(rstate)
+    check("run resume: the one open run (paused) is in progress again, driven by this session, its closed: stamp gone",
+          code == 0 and rname in out and "status: in-progress" in st and "session: sess-new" in st and "closed:" not in st, out + err + st)
+    check("run resume: names the session that drove it and the seats still marked running",
+          "sess-old" in out + err and "still working: hunt" in out, out + err)
+    code, out, err = council(rs, "state", "phase=judge")
+    check("run resume: plain commands act on the run again", code == 0 and "phase judge · in-progress" in out, out + err)
+    council(rs, "run", "close")
+    code, _, err = council(rs, "run", "resume", "--run", rname)
+    check("run resume: a completed run is refused, with the way forward", code == 2 and "complete" in err and "council run open" in err, err)
+    code, _, err = council(rs, "run", "resume")
+    check("run resume: with no open run here, says so", code == 2 and "no open run" in err, err)
+    code, p1, _ = council(rs, "run", "open", "council-plan")
+    council(rs, "run", "close", "--status", "paused")
+    code, p2, _ = council(rs, "run", "open", "council-research")
+    council(rs, "run", "close", "--status", "paused")
+    code, _, err = council(rs, "run", "resume")
+    check("run resume: with several open runs, asks which (--run), never guesses", code == 2 and "several" in err and "--run" in err, err)
+    code, out, err = council(rs, "run", "resume", "--run", os.path.basename(p1.strip()))
+    check("run resume --run: resumes the named run only",
+          code == 0 and "status: in-progress" in read(os.path.join(p1.strip(), "session-state.md"))
+          and "status: paused" in read(os.path.join(p2.strip(), "session-state.md")), out + err)
 
     # The stack fingerprint
     code, out, _ = council(fresh, "fingerprint")
@@ -1256,7 +1347,8 @@ with tempfile.TemporaryDirectory() as tmp:
                  ("gates", "x"), ("changed", "x"), ("collect", "x"), ("check", "no-such-file.md"), ("map", "status", "x"),
                  ("fingerprint", "x"), ("memory", "check", "x"), ("ask", "save", "a", "b"), ("ledger", "5", "x"),
                  ("doctor", "x"), ("version", "x"), ("help", "x"), ("doctor", "--frobnicate"), ("run", "close", "--base", "main"),
-                 ("run", "status", "--at=verify"), ("index", "--", "x"), ("doctor", "--all=yes"), ("run", "close", "--status=")]:
+                 ("run", "status", "--at=verify"), ("index", "--", "x"), ("doctor", "--all=yes"), ("run", "close", "--status="),
+                 ("run", "resume", "x"), ("run", "resume", "--status", "paused")]:
         code, out, err = council(repo, *args)
         if code != 2 or not err.strip():
             took.append(" ".join(args) + f" (exit {code})")

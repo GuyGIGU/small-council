@@ -7,11 +7,17 @@ SessionStart (hooks/session-start.sh):
   - finds open runs by scanning runs/*/session-state.md, several at once, and flags each one:
     unfinished on startup (its running seats died with the old session); paused as paused, even right
     after a compaction; a run in another working tree as "leave it alone";
-  - after a compaction, resumes only the run this session was driving — the one whose session: matches,
-    else the newest recent in-progress run that recorded none — and only lists the rest;
+  - after a compaction, resumes only the run this session was driving — the one whose session: matches
+    (also after `council run resume` in a new session), else the newest recent in-progress run that
+    recorded none — never a paused one or another tree's, and only lists the rest;
+  - never offers to re-dispatch or close a run another session updated in the last 2 hours;
+  - stays fast and short with many open runs: other trees' runs summed up, gone trees named, at most 5
+    of this tree's runs described;
   - says nothing about complete or abandoned runs; keeps a 0.2 run's fields in place (no code-root);
-  - still finds a legacy run through the old active-run pointer (no status line, CRLF, <mode>-output);
-  - finds the MAIN checkout's .council/ from a linked worktree; reports a stale map; survives garbage.
+  - still finds a legacy run through the old active-run pointer (no status line, CRLF, <mode>-output),
+    offers a finished one to close as complete, and never claims an old one after a compaction;
+  - finds the MAIN checkout's .council/ from a linked worktree; reports a stale or rewritten map;
+    survives garbage.
 SubagentStop (hooks/seat-gate.sh):
   - lets a valid worker or verifier file through, including list-style index lines and prose;
   - blocks once (exit 2, reason on stderr) on a missing, malformed, oversized or empty file, an index
@@ -42,13 +48,40 @@ def check(name, ok, detail=""):
     results.append((ok, name, detail))
 
 
-def run_hook(project, source="startup", payload=None, session="eval"):
+def run_hook(project, source="startup", payload=None, session="eval", raw=False):
     env = dict(GIT_ENV, CLAUDE_PROJECT_DIR=project, CLAUDE_PLUGIN_ROOT=ROOT)
     if payload is None:
         payload = json.dumps({"session_id": session, "hook_event_name": "SessionStart", "source": source})
-    p = subprocess.run([BASH, HOOK], input=payload, capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", env=env, cwd=project, timeout=60)
+    try:
+        if raw:   # bytes, as the session receives them: text mode would turn every \r into \n
+            p = subprocess.run([BASH, HOOK], input=payload.encode("utf-8"), capture_output=True, env=env, cwd=project,
+                               timeout=60)
+            return p.returncode, p.stdout
+        p = subprocess.run([BASH, HOOK], input=payload, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", env=env, cwd=project, timeout=60)
+    except subprocess.TimeoutExpired:   # Claude Code gives up after 15 s and drops everything the hook printed
+        return 124, b"" if raw else "(the hook ran for over 60 s)"
     return p.returncode, p.stdout
+
+
+def council(cwd, *args, session=""):
+    env = dict(GIT_ENV, CLAUDE_CODE_SESSION_ID=session) if session else GIT_ENV
+    p = subprocess.run([BASH, os.path.join(ROOT, "bin", "council"), *args], cwd=cwd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", env=env, timeout=120)
+    return p.returncode, p.stdout.strip(), p.stderr
+
+
+def line_with(out, text):
+    return next((line for line in out.splitlines() if text in line), "")
+
+
+def lines_with(out, text):
+    return [line for line in out.splitlines() if text in line]
+
+
+def age(path, seconds):
+    t = time.time() - seconds
+    os.utime(path, (t, t))
 
 
 def run_gate(agent, message, active=False, cwd=None):
@@ -159,7 +192,9 @@ with tempfile.TemporaryDirectory() as tmp:
 
     write(os.path.join(run_a, "session-state.md"), state("in-progress", code_root=top))
     run_b = os.path.join(runs, "2026-09-15-110000-implement")
-    write(os.path.join(run_b, "session-state.md"), state("in-progress", mode="council-implement", code_root="C:/elsewhere/tree"))
+    elsewhere = os.path.join(tmp, "elsewhere", "tree").replace("\\", "/")   # another working tree that exists
+    os.makedirs(elsewhere)
+    write(os.path.join(run_b, "session-state.md"), state("in-progress", mode="council-implement", code_root=elsewhere))
     code, out = run_hook(full, "startup")
     check("several open runs: all reported", "UNFINISHED COUNCIL RUN" in out and "2026-09-15-110000-implement" in out, out)
     check("a run in another working tree: leave it alone", "different working tree" in out and "Leave it alone" in out, out)
@@ -201,6 +236,101 @@ with tempfile.TemporaryDirectory() as tmp:
     check("after compaction: a stale run is never resumed on a guess",
           not compacted(out) and "not this session's run: 2026-09-15-120000-plan" in out, out)
 
+    two = new_repo(tmp, "two-sessionless")
+    ttop = git(two, "rev-parse", "--show-toplevel")
+    write(os.path.join(two, ".council", "council.config.md"), "# Council config\n")
+    for name, mode in (("2026-09-15-090000-review", "council-review"), ("2026-09-15-100000-plan", "council-plan")):
+        write(os.path.join(two, ".council", "runs", name, "session-state.md"), state("in-progress", mode=mode, code_root=ttop))
+    code, out = run_hook(two, "compact", session="a-new-id")
+    c = compacted(out)
+    check("after compaction: of two recent runs that recorded no session, the newest is resumed and the other only listed",
+          len(c) == 1 and "2026-09-15-100000-plan" in c[0] and "not this session's run: 2026-09-15-090000-review" in out, out)
+
+    sib = new_repo(tmp, "paused-sibling")
+    btop = git(sib, "rev-parse", "--show-toplevel")
+    write(os.path.join(sib, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(sib, ".council", "runs", "2026-09-15-090000-review", "session-state.md"),
+          state("in-progress", code_root=btop, session="eval"))
+    write(os.path.join(sib, ".council", "runs", "2026-09-15-100000-plan", "session-state.md"),
+          state("paused", mode="council-plan", code_root=btop, session="eval"))
+    code, out = run_hook(sib, "compact", session="eval")
+    c = compacted(out)
+    check("after compaction: a paused run of the same session never takes the place of the run it was driving",
+          len(c) == 1 and "2026-09-15-090000-review" in c[0] and "PAUSED COUNCIL RUN" in line_with(out, "2026-09-15-100000-plan"), out)
+
+    # A run carried into a new session: council run resume makes it that session's run
+    ho = new_repo(tmp, "handover")
+    write(os.path.join(ho, ".council", "council.config.md"), "# Council config\n")
+    code, hrun, _ = council(ho, "run", "open", "council-review", session="session-A")
+    hname = os.path.basename(hrun)
+    code, out = run_hook(ho, "clear", session="session-B")
+    check("after /clear: a run another session id was driving is offered with council run resume",
+          f"council run resume --run {hname}" in line_with(out, hname), out)
+    council(ho, "run", "resume", "--run", hname, session="session-B")
+    code, out = run_hook(ho, "compact", session="session-B")
+    c = compacted(out)
+    check("a run resumed in a new session (council run resume) is that session's run at its next compaction",
+          len(c) == 1 and hname in c[0], out)
+
+    # A run another session updated recently may still be live there
+    live = new_repo(tmp, "live")
+    ltop = git(live, "rev-parse", "--show-toplevel")
+    write(os.path.join(live, ".council", "council.config.md"), "# Council config\n")
+    lrun = os.path.join(live, ".council", "runs", "2026-09-15-130000-review")
+    write(os.path.join(lrun, "session-state.md"), state("in-progress", phase="collect", code_root=ltop, session="live-session"))
+    write(os.path.join(lrun, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\trunning\ta1\t\t13:30\t\nbeck\tdone\ta2\t5000\t13:20\t\n")
+    code, out = run_hook(live, "startup", session="another-session")
+    line = line_with(out, "2026-09-15-130000-review")
+    check("a run another session updated recently: may still be live there — no re-dispatch, no close offered",
+          "another session" in line and "gone" not in line and "re-dispatch each once" not in line
+          and "--status abandoned" not in line, out)
+    code, out = run_hook(live, "clear", session="another-session")
+    line = line_with(out, "2026-09-15-130000-review")
+    check("after /clear, a recent run with another session id: resume it if this window drove it, else leave it",
+          "council run resume --run 2026-09-15-130000-review" in line and "another session" in line
+          and "gone" not in line and "--status abandoned" not in line, out)
+    for f in ("session-state.md", "seats.tsv"):
+        age(os.path.join(lrun, f), 3 * 3600)
+    code, out = run_hook(live, "startup", session="another-session")
+    line = line_with(out, "2026-09-15-130000-review")
+    check("a run another session left hours ago: unfinished, its running seats gone, resume or close offered",
+          "UNFINISHED COUNCIL RUN" in line and "were running when that session ended" in line
+          and "council run resume --run 2026-09-15-130000-review" in line and "--status abandoned" in line, out)
+
+    # Many open runs: other trees' runs never hide this tree's, and the hook stays fast and short
+    crowd = new_repo(tmp, "crowd")
+    ctop = git(crowd, "rev-parse", "--show-toplevel")
+    write(os.path.join(crowd, ".council", "council.config.md"), "# Council config\n")
+    cruns = os.path.join(crowd, ".council", "runs")
+    write(os.path.join(cruns, "2026-09-15-000000-review", "session-state.md"), state("in-progress", code_root=ctop, session="eval"))
+    gone_root = os.path.join(tmp, "deleted-worktree").replace("\\", "/")        # never created
+    other_root = os.path.join(tmp, "crowd-other").replace("\\", "/")
+    os.makedirs(other_root)
+    for i in range(30):
+        write(os.path.join(cruns, f"2026-09-15-1{i:05d}-plan", "session-state.md"),
+              state("in-progress", mode="council-plan", code_root=gone_root if i < 2 else other_root, session=f"o{i}"))
+    t0 = time.time()
+    code, out = run_hook(crowd, "compact", session="eval")
+    took = time.time() - t0
+    c = compacted(out)
+    check("30 newer open runs in other working trees: this tree's run is still resumed after a compaction",
+          len(c) == 1 and "2026-09-15-000000-review" in c[0], out)
+    check("30 open runs in other working trees: summed up in a line or two, not a line each",
+          sum(1 for line in out.splitlines() if "working tree" in line) <= 2 and len(out) < 4000, out)
+    gone = line_with(out, "no longer exists")
+    check("runs whose working tree no longer exists: said so, with the command to close them",
+          "2026-09-15-100000-plan" in gone and "2026-09-15-100001-plan" in gone and "council run close --run" in gone
+          and "--status abandoned" in gone, out)
+    check("30 open runs: the hook finishes well inside its 15 s limit", took < 10, f"{took:.1f} s")
+    for i in range(12):
+        write(os.path.join(cruns, f"2026-09-16-1{i:05d}-research", "session-state.md"),
+              state("paused", mode="council-research", code_root=ctop))
+    code, out = run_hook(crowd, "startup", session="eval")
+    described = [line for line in out.splitlines() if "COUNCIL RUN" in line]
+    check("13 open runs on this tree: the in-progress one and 4 more described, the other 8 counted with a pointer to council run status",
+          len(described) == 5 and "2026-09-15-000000-review" in described[0]
+          and "8 more" in out and "council run status" in line_with(out, "8 more"), out)
+
     legacy = new_repo(tmp, "legacy")
     write(os.path.join(legacy, ".council", "council.config.md"), "# Council config\n", crlf=True)
     write(os.path.join(legacy, "conventions.md"), "# Project Conventions\n", crlf=True)
@@ -210,8 +340,18 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = run_hook(legacy, "startup")
     check("legacy run without status: flagged unfinished", "UNFINISHED COUNCIL RUN" in out, out)
     check("legacy run: mode inferred from the old folder name", "council-review (legacy run)" in out, out)
-    check("legacy CRLF state: no carriage returns leak into output", "\r" not in out, repr(out))
+    code, raw = run_hook(legacy, "startup", raw=True)
+    check("legacy CRLF state: no carriage returns leak into output", b"\r" not in raw, repr(raw))
     check("legacy root conventions.md: found", "Settled decisions:" in out and "conventions.md" in out, out)
+    age(os.path.join(legacy, old_rel, "session-state.md"), 3 * 86400)
+    code, out = run_hook(legacy, "compact")
+    check("legacy run untouched for days: a compaction never says this session was running it",
+          not compacted(out) and "2026-09-07-1200" in out, out)
+    write(os.path.join(legacy, old_rel, "FINAL-REVIEW.md"), "# Final review\n")
+    code, out = run_hook(legacy, "startup")
+    line = line_with(out, "2026-09-07-1200")
+    check("legacy run holding its final deliverable: offered to close as complete, not abandoned",
+          "--status complete" in line and "--status abandoned" not in line and "FINAL-REVIEW.md" in line, out)
 
     wt = os.path.join(tmp, "full-wt")
     git(full, "worktree", "add", "-q", "-b", "feature", wt)
@@ -219,7 +359,12 @@ with tempfile.TemporaryDirectory() as tmp:
     first = out.splitlines()[0] if out.strip() else ""
     check("linked worktree: finds the main checkout's council", "[Small Council]" in first
           and first.replace("\\", "/").rstrip("/").endswith("full/.council"), first)
-    check("linked worktree: the main checkout's run is someone else's", "different working tree" in out, out)
+    check("linked worktree: the main checkout's run is someone else's",
+          any("2026-09-15-100000-review" in line for line in lines_with(out, "different working tree")), out)
+    code, out = run_hook(wt, "compact")
+    check("linked worktree, after compaction: the main checkout's run is never resumed, and is named as another tree's",
+          not any("2026-09-15-100000-review" in line for line in compacted(out))
+          and any("2026-09-15-100000-review" in line for line in lines_with(out, "different working tree")), out)
 
     for n in (2, 3):
         write(os.path.join(full, "app.txt"), f"v{n}\n")
@@ -234,6 +379,14 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = run_hook(pgr, "compact", session="eval")
     check("after compaction in a post-game: re-invoke council-postgame and re-read ask.md",
           "Re-invoke the council-postgame skill" in out and "and ask.md, if present" in out, out)
+    bld = new_repo(tmp, "build")
+    write(os.path.join(bld, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(bld, ".council", "runs", "2026-09-15-140000-implement", "session-state.md"),
+          state("in-progress", mode="council-implement", phase="build", code_root=git(bld, "rev-parse", "--show-toplevel"), session="eval"))
+    code, out = run_hook(bld, "compact", session="eval")
+    c = compacted(out)
+    check("after compaction mid-build: points at the build loop, not at a stage doctrine a build skips",
+          len(c) == 1 and "build loop" in c[0] and "doctrine for that phase" not in c[0], out)
 
     code, out = run_hook(full, payload="\x00not json at all")
     check("garbage stdin: exits 0", code == 0, str(code))

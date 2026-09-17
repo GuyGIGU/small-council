@@ -66,7 +66,7 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 | Command | Use it to |
 |---|---|
-| `council run open <mode>` · `run status [--all]` · `run close [--status …]` | open a run (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one |
+| `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one · carry one on in this session (see Resume) |
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
 | `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
 | `council index [--base <ref>]` | build the change index: hunks, symbols, callers, tests |
@@ -114,15 +114,20 @@ live at a legacy path; the config's Memory section says where.
   workers' states to `seats.tsv` (`council seat`).
 - After a compaction or in a new session, the SessionStart hook names the open runs — after a
   compaction, the one this session was driving. Re-invoke the skill named by the run's `mode:` (it
-  loads this one), read `session-state.md` and `ask.md`, re-read the doctrine for its phase, and continue. No
-  hook message? Run `council run status`.
+  loads this one), read `session-state.md` and `ask.md`, re-read the doctrine for its phase (a build's
+  `build` phase: its build loop), and continue. No hook message? Run `council run status`.
+- **Carrying a run on in a new session, after `/clear`, or when the user says to go on with a paused
+  one:** first `council run resume --run <folder>`. It marks the run in progress and records this
+  session as its driver, so the next compaction resumes it here. A run the hook says another session
+  updated recently may still be live there: leave it, and don't re-dispatch its seats or close it, until
+  the user says that session has ended.
 - **Seats marked running:** after a compaction they are still working — wait for their
   notifications; never re-dispatch them. In a new session they are gone: `council collect` shows
   which files exist; mark the rest `council seat <slug> failed note="interrupted"` and re-dispatch
   each once. A seat noted `round 2` was answering a war room: it gets a fresh round-2 worker
   (war-room.md), never a round-1 re-dispatch.
 - A run the user doesn't want resumed: `council run close --status abandoned`. One they paused:
-  `--status paused`.
+  `--status paused`; `council run resume` brings it back.
 
 ## Talking to the user
 
