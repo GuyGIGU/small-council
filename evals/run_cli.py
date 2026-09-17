@@ -876,6 +876,60 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and os.path.isdir(pg)
           and {"runs/", "asks/"} <= set(read(os.path.join(nohome, ".council", ".gitignore")).split()), pg + err)
 
+    # Every run open keeps run scratch and the user's words out of git — in a home with no .gitignore, in a
+    # 0.6.0 home whose .gitignore predates asks/, in its own line endings — unless the user shares requests
+    def status_lines(repo):
+        return [l.strip() for l in git(repo, "status", "--short", "-uall").splitlines() if l.strip()]
+    legacy = new_repo(tmp, "legacy-home")
+    write(os.path.join(legacy, ".council", "council.config.md"), "# Council config (0.1 layout)\n")
+    git(legacy, "add", "-A")
+    git(legacy, "commit", "-q", "-m", "legacy council")
+    lg_run = council(legacy, "run", "open", "council-implement")[1].strip()
+    write(os.path.join(lg_run, "ask.md"), "# Ask — deploy\n## In your words\nuse my key and ship it\n")
+    gi_lines = read(os.path.join(legacy, ".council", ".gitignore")).split()
+    check("run open: a home with no .gitignore gets one that ignores runs/, asks/ and active-run before any words are written",
+          {"runs/", "asks/", "active-run"} <= set(gi_lines)
+          and not [l for l in status_lines(legacy) if "runs/" in l], " · ".join(status_lines(legacy)))
+    council(legacy, "run", "close", "--status", "abandoned")
+    old = new_repo(tmp, "home-0-6")
+    write(os.path.join(old, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(old, ".council", "asks", "2026-09-10-old.md"), "# Ask — old\n")
+    with open(os.path.join(old, ".council", ".gitignore"), "w", encoding="utf-8", newline="") as f:
+        f.write("runs/\r\nactive-run")                           # CRLF, and no newline at the end
+    git(old, "add", "-A")
+    git(old, "commit", "-q", "-m", "0.6.0 home")
+    code, out, _ = council(old, "doctor")
+    check("doctor: warns when asks/ isn't ignored — the user's words would be committed",
+          any(l.startswith("WARN") and "asks/" in l for l in out.splitlines()), out)
+    old_run = council(old, "run", "open", "council-review")[1].strip()
+    with open(os.path.join(old, ".council", ".gitignore"), "rb") as f:
+        raw = f.read()
+    check("run open: a 0.6.0 home's .gitignore gains asks/ once, in its own CRLF endings, on a line of its own",
+          raw == b"runs/\r\nactive-run\r\nasks/\r\n", repr(raw))
+    write(os.path.join(old_run, "ask.md"), "# Ask — New thing\n## In your words\nwords\n")
+    council(old, "ask", "save")
+    council(old, "run", "open", "council-plan", "--alongside")
+    with open(os.path.join(old, ".council", ".gitignore"), "rb") as f:
+        raw2 = f.read()
+    check("run open: the new request stays out of git, and a second open adds nothing",
+          raw2 == raw and status_lines(old) == ["M .council/.gitignore"], " · ".join(status_lines(old)) + repr(raw2))
+    code, out, _ = council(old, "doctor")
+    check("doctor: quiet about asks/ once it is ignored", not [l for l in out.splitlines() if "asks/" in l], out)
+    shared = new_repo(tmp, "shared-asks")
+    write(os.path.join(shared, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(shared, ".council", ".gitignore"), "runs/\nactive-run\n!asks/\n")
+    council(shared, "run", "open", "council-review")
+    code, out, _ = council(shared, "doctor")
+    check("run open and doctor: a '!asks/' line — the user shares requests — is left alone",
+          read(os.path.join(shared, ".council", ".gitignore")) == "runs/\nactive-run\n!asks/\n"
+          and not [l for l in out.splitlines() if "asks/" in l], read(os.path.join(shared, ".council", ".gitignore")) + out)
+    rooted = new_repo(tmp, "root-ignores")
+    write(os.path.join(rooted, ".gitignore"), ".council/runs/\n.council/asks/\n.council/active-run\n")
+    write(os.path.join(rooted, ".council", "council.config.md"), "# Council config\n")
+    council(rooted, "run", "open", "council-review")
+    check("run open: writes nothing when the project's own .gitignore already covers the council's scratch",
+          not os.path.exists(os.path.join(rooted, ".council", ".gitignore")))
+
     # A post-game's index hides earlier council work from its verifier
     append(os.path.join(req, "a.txt"), "three\n")
     code, rv, _ = council(req, "run", "open", "council-review")

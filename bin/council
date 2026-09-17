@@ -149,6 +149,29 @@ resolve_run() {
 # Runs
 # ------------------------------------------------------------------------------------------------
 
+# Does git ignore this path under a council home ($1)? Patterns only, so a file already tracked doesn't
+# change the answer; outside git, no.
+home_ignores() { git -C "$(dirname "$1")" check-ignore --no-index -q -- "${1##*/}/$2" 2>/dev/null; }
+
+# The user chose to share their requests with the team: a "!asks/" line in <home>/.gitignore.
+asks_shared() { grep -q -E '^[[:space:]]*!/?asks/?[[:space:]]*$' "$1/.gitignore" 2>/dev/null; }
+
+# Keep run scratch and the user's own words out of git: add runs/, asks/ and active-run to <home>/.gitignore
+# unless git already ignores them (asks/ also not when the user shares requests) — in the file's own line
+# endings, each on a line of its own.
+ensure_ignored() {
+  local gi="$1/.gitignore" cr="" want probe
+  [ ! -f "$gi" ] || [ "$(tr -cd '\r' < "$gi" | wc -c | tr -d ' ')" = 0 ] || cr="$(printf '\r')"
+  for want in runs/ asks/ active-run; do
+    case "$want" in */) probe="${want}x" ;; *) probe="$want" ;; esac      # a folder's pattern needs a path inside it
+    home_ignores "$1" "$probe" && continue
+    if [ "$want" = asks/ ] && asks_shared "$1"; then continue; fi
+    if [ -s "$gi" ] && [ -n "$(tail -c 1 "$gi")" ]; then printf '%s\n' "$cr" >> "$gi"; fi
+    printf '%s%s\n' "$want" "$cr" >> "$gi"
+  done 2>/dev/null
+  return 0
+}
+
 cmd_run_open() {
   local mode="${1:-}" short home top ts dir n existing paused session
   case "$mode" in
@@ -161,11 +184,11 @@ cmd_run_open() {
   if [ ! -d "$home" ]; then
     case "$mode" in
       council-init|council-postgame)    # init maps before a config exists; a post-game may check work done without the council
-        mkdir -p "$home" 2>/dev/null || die "cannot create $home"
-        [ -f "$home/.gitignore" ] || printf 'runs/\nactive-run\nasks/\n' > "$home/.gitignore" ;;
+        mkdir -p "$home" 2>/dev/null || die "cannot create $home" ;;
       *) die "no council home at $home — run council-init first" ;;
     esac
   fi
+  ensure_ignored "$home"                          # before any words land in runs/ — older homes too
   top="${CODE_ROOT_ARG:-$(this_tree)}"
   existing="$(runs_here "$home" "$top" in-progress | names)"
   paused="$(runs_here "$home" "$top" paused | names)"
@@ -1340,6 +1363,9 @@ RUNS
     esac
   fi
   grep -q '^runs/' "$home/.gitignore" 2>/dev/null || finding WARN ".council/.gitignore doesn't ignore runs/" "add a line 'runs/' to .council/.gitignore"
+  if ! home_ignores "$home" asks/x && ! asks_shared "$home"; then
+    finding WARN ".council/.gitignore doesn't ignore asks/ — the user's own words would be committed" "the next council run open adds 'asks/'; if the team shares requests on purpose, write '!asks/' instead"
+  fi
   say "doctor: $errs error(s), $warns warning(s)"
   [ "$errs" -eq 0 ]
 }
@@ -1782,17 +1808,8 @@ cmd_ask() {
   elif [ -n "$nowords" ]; then
     die "ask.md says (no new words) but names no request to continue — add continues: <path> to it, or run council state ask=<path>"
   fi
-  if [ ! -d "$home/asks" ]; then                    # the user's own words stay on their machine
-    mkdir -p "$home/asks" 2>/dev/null || die "cannot create $home/asks"
-    if [ -f "$home/.gitignore" ]; then
-      if ! grep -q '^[[:space:]]*asks/\{0,1\}[[:space:]]*$' "$home/.gitignore"; then
-        [ -z "$(tail -c 1 "$home/.gitignore" 2>/dev/null)" ] || printf '\n' >> "$home/.gitignore"
-        printf 'asks/\n' >> "$home/.gitignore" 2>/dev/null || true
-      fi
-    else
-      printf 'runs/\nactive-run\nasks/\n' > "$home/.gitignore" 2>/dev/null || true
-    fi
-  fi
+  ensure_ignored "$home"                            # the user's own words stay on their machine
+  mkdir -p "$home/asks" 2>/dev/null || die "cannot create $home/asks"
   tmp="$run/.ask.tmp"
   rm -f "$tmp" "$tmp.2" "$tmp.3"
   if [ -z "$cur" ] || [ -n "$own" ]; then
