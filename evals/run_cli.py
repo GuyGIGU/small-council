@@ -939,6 +939,95 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, err = council(req, "run", "close")
     check("run close: warns when a continuing run never filed its words", "no request was filed" in err, err)
 
+    # The filed request stays inside asks/, in every legitimate spelling; a re-save replaces only its own run's words
+    ap = new_repo(tmp, "askpaths")
+    readme = "# Project\nImportant tracked readme.\n"
+    write(os.path.join(ap, "README.md"), readme)
+    write(os.path.join(ap, ".council", "council.config.md"), "# Council config\n")
+    git(ap, "add", "-A")
+    git(ap, "commit", "-q", "-m", "i")
+    code, fp_run, _ = council(ap, "run", "open", "council-plan")
+    fp_run = fp_run.strip()
+    write(os.path.join(fp_run, "ask.md"), "# Ask — CSV export\n## In your words\nWe need CSV export.\n")
+    council(ap, "ask", "save")
+    council(ap, "run", "close")
+    ap_asks = os.path.join(ap, ".council", "asks")
+    ap_file = sorted(os.listdir(ap_asks))[0] if os.path.isdir(ap_asks) else "?"
+    ap_rel = ".council/asks/" + ap_file
+    code, tr, _ = council(ap, "run", "open", "council-review")
+    tr = tr.strip()
+    write(os.path.join(tr, "ask.md"), "# Ask — More\ncontinues: .council/asks/../../README.md\n## In your words\nAlso add a PDF option.\n")
+    code, _, err = council(ap, "ask", "save")
+    check("ask save: a continues: path that climbs out of asks/ with .. is refused, and the file is untouched",
+          code == 2 and "filed under" in err and read(os.path.join(ap, "README.md")) == readme, err)
+    victim = os.path.join(tmp, "victim-home", ".bashrc")
+    write(victim, "export PATH=$PATH\n")
+    write(os.path.join(tr, "ask.md"), "# Ask — More\n## In your words\necho INJECTED\n")
+    council(ap, "state", "ask=.council/asks/../../../victim-home/.bashrc")
+    code, _, err = council(ap, "ask", "save")
+    check("ask save: an ask= path that climbs out of the project is refused, and the file is untouched",
+          code == 2 and "filed under" in err and read(victim) == "export PATH=$PATH\n", err)
+    link = os.path.join(ap_asks, "linked.md")
+    try:
+        os.symlink(os.path.join(ap, "README.md"), link)
+    except (OSError, NotImplementedError, AttributeError):
+        link = ""                                                   # no symlinks here (Windows without the right)
+    if link:
+        council(ap, "state", "ask=.council/asks/linked.md")
+        code, _, err = council(ap, "ask", "save")
+        check("ask save: a request file that is a link to somewhere else is refused",
+              code == 2 and read(os.path.join(ap, "README.md")) == readme, err)
+        os.remove(link)
+    write(os.path.join(tr, "ask.md"), "# Ask — More\n## In your words\n(no new words)\n")
+    spellings = [("an absolute path", slash(os.path.join(ap, ".council", "asks", ap_file)))]
+    if re.match(r"^[A-Za-z]:/", spellings[0][1]):                      # Git Bash also writes C:/x as /c/x
+        spellings.append(("a Git Bash path (/c/…)", "/" + spellings[0][1][0].lower() + spellings[0][1][2:]))
+    for label, spelled in spellings:
+        council(ap, "state", "ask=" + spelled)
+        code, out, err = council(ap, "ask", "save")
+        check(f"ask save: continues a request named by {label}",
+              code == 0 and "(no new words)" in out and f"ask: {ap_rel}" in read(os.path.join(tr, "session-state.md")), out + err)
+    council(ap, "run", "close", "--status", "abandoned")
+
+    code, ra, _ = council(ap, "run", "open", "council-implement")
+    ra = ra.strip()
+    council(ap, "state", "ask=" + ap_rel)
+    write(os.path.join(ra, "ask.md"), "# Ask — build\n## In your words\nAlso add a PDF option.\n")
+    council(ap, "ask", "save")
+    code, rb, _ = council(ap, "run", "open", "council-review", "--alongside")
+    rb = rb.strip()
+    council(ap, "state", "--run", rb, "ask=" + ap_rel)
+    write(os.path.join(rb, "ask.md"), "# Ask — r\n## In your words\nKeep the XLSX path too.\n")
+    council(ap, "ask", "save", "--run", rb)
+    write(os.path.join(ra, "ask.md"), "# Ask — build\n## In your words\nAlso add a PDF option, with page numbers.\n")
+    code, out, _ = council(ap, "ask", "save", "--run", ra)
+    body = read(os.path.join(ap_asks, ap_file))
+    check("ask save: an older run saving again replaces only its own section — a later run's words stay",
+          code == 0 and "(continued)" in out and "Keep the XLSX path too." in body
+          and "with page numbers." in body and "Also add a PDF option.\n" not in body
+          and body.count(", run " + os.path.basename(ra)) == 1 and body.count(", run " + os.path.basename(rb)) == 1, out + body)
+    append(os.path.join(ap_asks, ap_file), "\n## 2026-09-17 — council-review, run " + os.path.basename(ra) + "-2\nA run whose name starts the same.\n")
+    council(ap, "ask", "save", "--run", ra)
+    body = read(os.path.join(ap_asks, ap_file))
+    check("ask save: a re-save leaves a run whose folder name merely starts the same alone",
+          "A run whose name starts the same." in body and body.count(", run " + os.path.basename(ra) + "\n") == 1, body)
+    code, out, _ = council(ap, "ask", "save", "--run", fp_run)
+    body = read(os.path.join(ap_asks, ap_file))
+    check("ask save: the run that filed a request can re-file it without losing later runs' words",
+          code == 0 and body.count("We need CSV export.") == 1 and "Keep the XLSX path too." in body
+          and "with page numbers." in body and "A run whose name starts the same." in body
+          and body.startswith("# Ask — CSV export\nrun: " + os.path.basename(fp_run) + "\n"), out + body)
+    council(ap, "run", "close", "--run", rb, "--status", "abandoned")
+    council(ap, "run", "close", "--run", ra, "--status", "abandoned")
+    code, rs, _ = council(ap, "run", "open", "council-review")
+    rs = rs.strip()
+    title_key = "sk" + "_live_" + "AbCdEfGhIjKlMnOpQrStUvWx"     # built at run time: not a real key's text
+    write(os.path.join(rs, "ask.md"), f"# Ask — rotate {title_key}\n## In your words\nPlease rotate it.\n")
+    code, out, _ = council(ap, "ask", "save")
+    check("ask save: a secret in the title never reaches the file name",
+          code == 0 and "-rotate" in out and "abcdefghij" not in out.lower() and "live" not in out, out)
+    council(ap, "run", "close", "--status", "abandoned")
+
     # A war room's round 2: collect waits for a running seat; a fresh round-2 worker counts as its seat
     code, wr, _ = council(req, "run", "open", "council-plan")
     wr = wr.strip()

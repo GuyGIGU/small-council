@@ -1669,6 +1669,14 @@ sed_b() { if sed -b -e '' </dev/null >/dev/null 2>&1; then printf '%s' '-b'; fi;
 ask_words() { LC_ALL=C sed $(sed_b) -n -e '/^## In your words/,/^## Later/{' -e '/^## In your words/d' -e '/^## Later/d' -e 'p' -e '}' "$1"; }
 ask_later() { LC_ALL=C sed $(sed_b) -n -e '/^## Later/,${' -e '/^## Later/d' -e '/^[[:space:]]*$/d' -e 'p' -e '}' "$1"; }
 
+# Line numbers of the sections continuing runs add to a filed request ("## <date> — <mode>, run <folder>");
+# $2, a run's folder name, keeps only that run's — the whole name, so run …-review never matches …-review-2.
+ask_sections() {
+  local who
+  who="$(printf '%s' "${2:-}" | sed 's/[.[()*+?{|^$\]/\\&/g')"
+  LC_ALL=C grep -n -E "^## [0-9]{4}-[0-9]{2}-[0-9]{2} .*, run ${who:-[^ ]+}[[:space:]]*\$" "$1" 2>/dev/null | cut -d: -f1
+}
+
 redact_copy() {
   local kw q val sent before after sedb
   kw="($(ci password)|$(ci passwd)|$(ci secret)|$(ci token)|$(ci api)[_-]?$(ci key)|$(ci access)[_-]?$(ci key))"
@@ -1704,7 +1712,8 @@ redact_copy() {
 # (line 1, then run: and mode:, then the rest of ask.md as written); a run that continues one (the
 # state's ask:) appends its new words under a dated heading. Either way the state records ask=.
 cmd_ask() {
-  local sub="${1:-}" slug run name st ask home root mode cur target base n=2 rel tmp red=0 status body later nowords="" own=""
+  local sub="${1:-}" slug run name st ask home root mode cur target base n=2 rel tmp red=0 status body later nowords="" own="" \
+        rdir rasks at next keep
   [ "$sub" = save ] || die "usage: council ask save [slug]   (after writing the user's words to <run>/ask.md)"
   shift
   slug="${1:-}"
@@ -1720,13 +1729,21 @@ cmd_ask() {
   cur="$(field ask "$st")"
   [ -n "$cur" ] || cur="$(field continues "$ask" | tr -d '`<>' | sed 's/[[:space:]].*$//')"
   if [ -n "$cur" ]; then
+    cur="$(printf '%s' "$cur" | tr '\\' '/')"
     case "$cur" in /*|[A-Za-z]:*) target="$cur" ;; *) target="$root/$cur" ;; esac
-    case "$target" in
-      "$home"/asks/*) ;;
+    # Only a real file inside asks/: no ".." step, no link, and the folder it resolves to is asks/ (or
+    # below it) — compared after resolving both, so C:/…, /c/… and a relative path all work.
+    case "/$cur/" in */../*) die "a request is filed under $home/asks/, not $cur — copy the words into ask.md instead" ;; esac
+    rdir="$(cd -P "$(dirname "$target")" 2>/dev/null && here)"
+    rasks="$(cd -P "$home/asks" 2>/dev/null && here)"
+    case "$rdir/" in
+      "$rasks"/*) [ -n "$rasks" ] || die "the request this run continues is missing: $cur"
+                  target="$home/asks${rdir#"$rasks"}/${target##*/}" ;;
       *) die "a request is filed under $home/asks/, not $cur — copy the words into ask.md instead" ;;
     esac
     [ -f "$target" ] || die "the request this run continues is missing: $cur"
-    [ "$(sed -n '2p' "$target" | tr -d '\r')" != "run: $name" ] || own=1        # this run filed it: re-file it whole
+    [ ! -L "$target" ] || die "a request is filed under $home/asks/, not $cur (a link) — copy the words into ask.md instead"
+    [ "$(sed -n '2p' "$target" | tr -d '\r')" != "run: $name" ] || own=1        # this run filed it: re-file its words
   elif [ -n "$nowords" ]; then
     die "ask.md says (no new words) but names no request to continue — add continues: <path> to it, or run council state ask=<path>"
   fi
@@ -1742,34 +1759,52 @@ cmd_ask() {
     fi
   fi
   tmp="$run/.ask.tmp"
+  rm -f "$tmp" "$tmp.2" "$tmp.3"
   if [ -z "$cur" ] || [ -n "$own" ]; then
    if [ -z "$cur" ]; then
-    [ -n "$slug" ] || slug="$(head -n 1 "$ask" | sed 's/^#[[:space:]]*[Aa]sk//')"
+    if [ -z "$slug" ]; then                           # from the title as filed, so a pasted key never names the file
+      head -n 1 "$ask" > "$tmp.3" && redact_copy "$tmp.3" "$tmp.2" >/dev/null
+      slug="$(sed 's/^#[[:space:]]*[Aa]sk//; s/\[redacted[^]]*\]//g' "$tmp.2" 2>/dev/null)"
+    fi
     slug="$(printf '%s' "$slug" | tr -d '\r' | tr '[:upper:]' '[:lower:]' | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+//' | cut -c1-40 | sed 's/-*$//')"
     [ -n "$slug" ] || slug=request
     base="$home/asks/$(date '+%Y-%m-%d')-$slug"; target="$base.md"
-    while [ -e "$target" ]; do target="$base-$n.md"; n=$((n + 1)); done
+    while [ -e "$target" ] || [ -L "$target" ]; do target="$base-$n.md"; n=$((n + 1)); done
    fi
     { head -n 1 "$ask"; printf 'run: %s\nmode: %s\n' "${run##*/}" "${mode:--}"; tail -n +2 "$ask"; } > "$tmp" || die "cannot write $tmp"
-    red="$(redact_copy "$tmp" "$target")" || { rm -f "$tmp" "$target"; die "cannot write $target"; }
+    red="$(redact_copy "$tmp" "$tmp.2")" || { rm -f "$tmp" "$tmp.2" "$tmp.3"; die "cannot write $target"; }
+    if [ -n "$own" ]; then                            # re-filed: the sections later runs added stay, as written
+      at="$(ask_sections "$target" | head -n 1)"
+      if [ -n "$at" ]; then printf '\n' >> "$tmp.2"; LC_ALL=C sed $(sed_b) -n "$at,\$p" "$target" >> "$tmp.2"; fi
+    fi
+    cat "$tmp.2" > "$target" || { rm -f "$tmp" "$tmp.2" "$tmp.3"; die "cannot write $target"; }
     status=new
   else
-    # A continuing request: this run's words go in one dated section — replaced, if this run saved before.
-    if [ -n "$(field ask-saved "$st")" ]; then
-      LC_ALL=C sed $(sed_b) -e "/^## [0-9-]* .*, run $name/,\$d" "$target" > "$tmp" && cat "$tmp" > "$target" \
-        || die "cannot update $target"
-    fi
+    # A continuing request: this run's words go in one dated section — replaced where it stands, if this run
+    # saved before; every other run's section stays.
+    : > "$tmp.2"
     if [ -n "$nowords" ] && [ -z "$later" ]; then
       status="no new words"
     else
       { printf '\n## %s — %s, run %s\n' "$(date '+%Y-%m-%d')" "${mode:--}" "${run##*/}"
         ask_words "$ask"; ask_later "$ask"; } > "$tmp" || die "cannot write $tmp"
-      if red="$(redact_copy "$tmp" "$tmp.2")" && cat "$tmp.2" >> "$target"; then rm -f "$tmp.2"
-      else rm -f "$tmp" "$tmp.2"; die "cannot append to $target"; fi
+      red="$(redact_copy "$tmp" "$tmp.2")" || { rm -f "$tmp" "$tmp.2" "$tmp.3"; die "cannot append to $target"; }
       status=continued
     fi
+    at="$(ask_sections "$target" "$name" | head -n 1)"
+    if [ -n "$at" ]; then
+      next="$(ask_sections "$target" | awk -v at="$at" '$1 > at + 0 { print; exit }')"
+      keep=$((at - 1))                                 # the blank line before the heading goes with it
+      if [ "$keep" -ge 1 ] && [ -z "$(sed -n "${keep}p" "$target" | tr -d '[:space:]')" ]; then keep=$((keep - 1)); fi
+      { [ "$keep" -lt 1 ] || LC_ALL=C sed $(sed_b) -n "1,${keep}p" "$target"
+        cat "$tmp.2"
+        if [ -n "$next" ]; then printf '\n'; LC_ALL=C sed $(sed_b) -n "$next,\$p" "$target"; fi
+      } > "$tmp.3" && cat "$tmp.3" > "$target" || { rm -f "$tmp" "$tmp.2" "$tmp.3"; die "cannot update $target"; }
+    elif [ -s "$tmp.2" ]; then
+      cat "$tmp.2" >> "$target" || { rm -f "$tmp" "$tmp.2" "$tmp.3"; die "cannot append to $target"; }
+    fi
   fi
-  rm -f "$tmp"
+  rm -f "$tmp" "$tmp.2" "$tmp.3"
   case "$target" in "$root"/*) rel="${target#"$root"/}" ;; *) rel="$target" ;; esac
   RUN_ARG="$run" cmd_state ask="$rel" ask-saved="$(now_min)" >/dev/null
   [ "${red:-0}" -eq 0 ] 2>/dev/null || say "ask: redacted $red secret-looking string(s) — tell the user"
