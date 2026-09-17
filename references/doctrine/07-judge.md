@@ -36,7 +36,8 @@ C1 · P2 · <principle> · <path:line> · <title> · from: leach#2 · why: <reas
 - <in-scope files or lenses nobody covered, and why>
 ```
 
-Kept and cut lines use the index-line format, so `council check` can read them.
+Kept and cut lines use the index-line format, so `council check` can read them: one line per item,
+no tables and no headings. With nothing kept, write `(none) — <why>` under `## Kept`.
 
 ## Done when
 

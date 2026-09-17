@@ -850,37 +850,49 @@ ref_title() {
        END { print (t != "" ? t : first) }' "$1" 2>/dev/null | norm
 }
 
-# Item lines — "<n> · <severity> · <principle> · <path:line> · <title>[ · …]", optionally written as a
-# list item ("- 1 · …", "1. · …") — as rows: n sev principle cite title section ("-" for an empty
-# value). Fields split on " · "; only a line with no "·" splits on " | ". The cite comes as written (the
-# citation reader strips its decoration); section is the first word of the "## " heading above the
-# line, lowercased.
+# Item lines — "<n> · <severity> · <principle> · <path:line> · <title>[ · …]" — as rows:
+# n sev principle cite title section ("-" for an empty value). The number may be a list item ("- 1 ·"),
+# bold ("**1** ·"), dotted ("1. ·"), a cut item's ("C1") or lettered ("3a"). Fields split on " · "; only
+# a line with no "·" splits on " | ". The cite comes as written (the citation reader strips its
+# decoration); section is the first word of the "## " heading above the line, lowercased.
 index_lines() {
   awk '
     function dash(s) { return s == "" ? "-" : s }
     /^## / { sec = tolower($0); sub(/^## +/, "", sec); sub(/[ \t\r].*$/, "", sec); next }
-    /^[-*]?[ \t]*C?[0-9]+\.?[ \t]+(·|\|)[ \t]/ {
-      line = $0; gsub(/\r/, "", line); gsub(/\t/, " ", line); sub(/^[-*]? */, "", line)
+    /^[-*+]?[ \t]*[*_]*C?[0-9]+[a-z]?[*_]*\.?[ \t]+(·|\|)[ \t]/ {
+      line = $0; gsub(/\r/, "", line); gsub(/\t/, " ", line); sub(/^[-*+]? */, "", line)
       k = (index(line, "·") ? split(line, f, / +· +/) : split(line, f, / +\| +/))
       if (k < 4) next
-      n = f[1]; sub(/\.$/, "", n)
+      n = f[1]; gsub(/[*_.]/, "", n)
       printf "%s\t%s\t%s\t%s\t%s\t%s\n", n, dash(f[2]), dash(f[3]), dash(f[4]), dash(k >= 5 ? f[5] : ""), dash(sec)
     }' "$1" 2>/dev/null
 }
 
-# The ## Index section's shape: "<parsed items> <item lines that don't parse> <has a (none) line>".
-# A line counts as an attempted item if it starts with a number (after an optional bullet) or holds
-# " · "; any other prose under the heading is ignored.
+# The shape of a file's item sections — "## Index", or the "## " headings named in $2 ("Kept|Cut") —
+# as "<parsed items> <item lines that don't parse> <has a (none) line>". Inside a section a "### P1"-style
+# group heading is skipped; any other deeper heading (an item body, "### 1. …") ends it. An attempted item
+# is a line that starts with a number (after a bullet or bold), a table row or a heading that does, or
+# any line holding " · "; it parses with at least four fields (no citation, no item). Other prose is
+# ignored. hooks/seat-gate.sh keeps a copy of this rule: change both together.
 index_shape() {
-  awk '
-    /^## Index/ { ins = 1; next }
-    ins && /^##/ { ins = 0 }
-    ins {
-      l = $0; gsub(/\r/, "", l)
-      if (l ~ /^[ \t]*$/) next
-      if (l ~ /^[ \t]*\(none\)/) { none = 1; next }
-      if (l ~ /^[-*]?[ \t]*C?[0-9]+\.?[ \t]+(·|\|)[ \t]/) { ok++; next }
-      if (l ~ /^[ \t]*([-*+][ \t]+)?[*_]*C?[0-9]+/ || l ~ / · /) bad++
+  SECS="${2:-Index}" awk '
+    BEGIN { secs = "^(" tolower(ENVIRON["SECS"]) ")([ \t\r]|$)" }
+    /^## / { h = tolower($0); sub(/^## +/, "", h); ins = (h ~ secs); next }
+    !ins { next }
+    {
+      l = $0; gsub(/\r/, "", l); gsub(/\t/, " ", l)
+      if (l ~ /^###/) {
+        if (l ~ /^#+ *[*_]*C?[0-9]+[a-z]?[*_]* +(·|\|) /) bad++                # an item written as a heading
+        else if (tolower(l) !~ /^#+ *[*_]*(p[0-4]|must|should|could|strong|moderate|weak|critical|high|medium|low|major|minor|blocker|severity)([^a-z0-9]|$)/) ins = 0
+        next
+      }
+      if (l ~ /^ *$/) next
+      if (l ~ /^ *\(none\)/) { none = 1; next }
+      if (l ~ /^[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) /) {
+        if ((index(l, "·") ? split(l, f, / +· +/) : split(l, f, / +\| +/)) >= 4) ok++; else bad++
+        next
+      }
+      if (l ~ /^ *([-*+] +)?[*_]*C?[0-9]+/ || l ~ / · / || l ~ /^ *\| *[*_]*C?[0-9]+[a-z]?[*_]* *\|/) bad++
     }
     END { printf "%d %d %d\n", ok, bad, none }' "$1" 2>/dev/null
 }
@@ -1209,7 +1221,7 @@ REFS
     shape="$(index_shape "$f")"; items="${shape%% *}"; unparsed="${shape#* }"; hasnone="${unparsed#* }"; unparsed="${unparsed%% *}"
     grep -q '^## Index' "$f" || { note="$note no-index"; collect_flag; }
     [ "${unparsed:-0}" -eq 0 ] || { note="$note unparsed-index($unparsed)"; collect_flag; }
-    if [ "${items:-0}" -eq 0 ] && [ "${hasnone:-0}" -eq 0 ]; then note="$note empty-index"; collect_flag; fi
+    if [ "${items:-0}" -eq 0 ] && [ "${hasnone:-0}" -eq 0 ] && [ "${unparsed:-0}" -eq 0 ]; then note="$note empty-index"; collect_flag; fi
     [ "${items:-0}" -le "${cap:-8}" ] || { note="$note over-cap"; collect_flag; }
     [ "$size" -le 16 ] || { note="$note over-16KB"; collect_flag; }
     okc=0; allc=0; nol=0; unc=0              # a path with no line counts as found; no path at all as unchecked
@@ -1283,10 +1295,11 @@ gate_cmd()  { sed -n 's/.*"command": "\(.*\)", "exit".*/\1/p' "$1" 2>/dev/null |
 cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what \
-        sec noline=0 unchecked=0 shown extra=""
+        mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown extra=""
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
+  mode="$(field mode "$run/session-state.md")"
   if [ $# -eq 0 ]; then
     if [ -f "$run/synthesis.md" ]; then set -- "$run/synthesis.md"; else set -- "$run"/seats/*.md; fi
   fi
@@ -1310,8 +1323,22 @@ cmd_check() {
     printf '| item | cite | status | origin |\n|---|---|---|---|\n'
   } > "$out"
   for f in "$@"; do
-    [ -f "$f" ] || continue
+    if [ ! -f "$f" ]; then
+      case "$f" in "$run/seats/*.md") continue ;; esac               # no seat files yet: nothing was named
+      bad=$((bad + 1)); say "check: $f — no such file"; continue
+    fi
+    files=$((files + 1))
     lab="$(basename "$f" .md)"
+    # Item lines it can't read, or none at all, are never a pass: nothing would have been checked.
+    if grep -Eq '^## (Kept|Cut)' "$f"; then secs='Kept|Cut'; where='## Kept or ## Cut'; else secs=Index; where='## Index'; fi
+    shape="$(index_shape "$f" "$secs")"; items="${shape%% *}"; unread="${shape#* }"; none="${unread#* }"; unread="${unread%% *}"
+    if [ "${unread:-0}" -gt 0 ]; then
+      bad=$((bad + unread))
+      say "$lab: $unread item line(s) check can't read — write each as '<n> · <severity> · <principle> · <path:line> · <title>'"
+    fi
+    if [ "${items:-0}" -eq 0 ] && [ "${none:-0}" -eq 0 ] && [ "${unread:-0}" -eq 0 ]; then
+      bad=$((bad + 1)); say "$lab: no items under $where — nothing was checked (write '(none) — <why>' when there is nothing)"
+    fi
     while IFS="$TAB" read -r n sev pr cite title sec; do
       [ -n "$n" ] || continue
       rows=$((rows + 1))
@@ -1418,7 +1445,10 @@ QUOTES
       say "check: $((proofs - broke)) of $proofs fix(es) proved · $broke broken · $saved left a test behind in the project"
     fi
   fi
-  if [ "$qn" -eq 0 ] && [ "$(field mode "$run/session-state.md")" = council-postgame ]; then
+  if [ "$files" -eq 0 ] && [ "$mode" != council-implement ]; then
+    bad=$((bad + 1)); say "check: nothing to check — no synthesis.md and no seat files"
+  fi
+  if [ "$qn" -eq 0 ] && [ "$mode" = council-postgame ]; then
     bad=$((bad + 1)); say "check: no quotes found — each part of a post-game quotes the request (quote: \"…\")"
   fi
   if [ "$qn" -gt 0 ] && [ "$proofs" -gt 0 ]; then what="(citations, quotes and proof)"

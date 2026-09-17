@@ -15,6 +15,8 @@ Catch what's wrong before the user sees it.
    - `no-line`: the path exists. Add the line when the item is about code.
    - not checked (a command, a link, no path): fine for research evidence or a plan's area; a review
      item needs a `path:line`.
+   - Item lines it can't read, or a Kept section with no items and no `(none)` line: rewrite them in
+     the index-line format and run the check again.
 2. **Blind verification.** Dispatch `small-council:council-verifier`:
    - Each **P1**, and each item on a **protected subject** — authorization, data loss, injection,
      secrets, concurrency or ordering, public contracts — gets its own verifier. The rest go in

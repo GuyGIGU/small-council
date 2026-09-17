@@ -524,6 +524,33 @@ with tempfile.TemporaryDirectory() as tmp:
           "synthesis#1  a.py:1-2  ok · origin unknown (only line endings changed)" in out
           and "synthesis#2  a.py:3  ok · introduced" in out, out)
 
+    # A synthesis the check can't read is never a pass
+    council(cites, "run", "close", "--status", "abandoned")
+    code, urun, _ = council(cites, "run", "open", "council-review")
+    usyn = os.path.join(urun.strip(), "synthesis.md")
+    write(usyn, "# Synthesis — the first four citations are wrong\n## Kept\n"
+          "| # | Sev | Principle | Cite | Title | From |\n|---|---|---|---|---|---|\n"
+          "| 1 | P1 | Validation | web/ghost.py:40 | Missing check | hunt#1 |\n"
+          "### 2 · P2 · Tests · web/db.py:999 · No test · from: beck#2\n"
+          "3. P2 · Tests · web/db.py:500 · No test either · from: beck#3\n"
+          "4 · P2 · just a title, no citation\n"
+          "**5** · P2 · Tests · web/nope.py:1 · a bold number · from: beck#5\n"
+          "6a · P2 · Tests · web/db.py:1 · a lettered number · from: beck#6\n## Cut\n")
+    code, out, _ = council(cites, "check")
+    check("check: item lines it can't read fail the check, and are counted",
+          code == 1 and "synthesis: 4 item line(s) check can't read" in out and "check: 2 items, 5 broken" in out, out)
+    check("check: a bold or lettered item number is read",
+          "synthesis#5  web/nope.py:1  missing-file" in out and "synthesis#6a  web/db.py:1  ok" in out, out)
+    write(usyn, "# Synthesis\n## Kept\n## Cut\n")
+    code, out, _ = council(cites, "check")
+    check("check: a synthesis with no items and no (none) line is not a pass", code == 1 and "nothing was checked" in out, out)
+    write(usyn, "# Synthesis\n## Kept\n(none) — the change only renames a file\n## Cut\n")
+    code, out, _ = council(cites, "check")
+    check("check: '(none)' under Kept is an honest empty result", code == 0 and "check: 0 items, 0 broken" in out, out)
+    code, out, _ = council(cites, "check", os.path.join(urun.strip(), "seats", "nobody.md"))
+    check("check: a file named on the command line that doesn't exist is not a pass", code == 1 and "no such file" in out, out)
+    council(cites, "run", "close", "--status", "abandoned")
+
     # A second run: refused, then alongside; never guessing
     code, _, err = council(repo, "run", "open", "council-research")
     check("run open: refuses a second in-progress run on this tree", code == 2 and "already in progress" in err and "--alongside" in err, err)
@@ -607,11 +634,18 @@ with tempfile.TemporaryDirectory() as tmp:
          "# S\nref: none\n## Index\n" + one + "2 · P2 · Principle 1 · a.txt:2 · y\n", "over-cap"),
         ("broken citations", "- ref: none",
          "# S\nref: none\n## Index\n1 · P1 · P · a.txt:40 · x\n2 · P1 · P · nope.py:3 · y\n", "broken-cites"),
+        ("an item with no citation field", "- ref: none", "# S\nref: none\n## Index\n1 · P2 · just a title\n",
+         "unparsed-index(1)"),
     ]
     for what, block, seat, flag in lone_cases:
         code, out = lone_collect(block, seat)
         check(f"collect: a lone seat with {what} fails collect on its own",
               code == 1 and flag in row(out, "s1") and "seats in order" not in out, out)
+    code, out = lone_collect("- ref: none\n- cap: 3", "# S\nref: none\n## Index\n### P1\n" + one
+                             + "2 · P1 · P · a.txt:2 · y\n### P2 — lower\n3 · P2 · P · a.txt:3 · z\n"
+                             "4 · P2 · P · a.txt:4 · w\n5 · P2 · P · a.txt:5 · v\n\n### 1. x\nThe body · more.\n")
+    check("collect: items grouped under ### P1 / ### P2 inside the Index are read, and over the cap is reported",
+          code == 1 and re.search(r"^s1\s+ok\s+5/3\s+\d+\s+n/a\s+5/5\s+- · over-cap$", row(out, "s1")) is not None, out)
     card = os.path.join(lone, ".council", "cards", "hunt.md")
     write(card, "# Hunt — Security card for eval\nsource: x\n")
     for key in ("- **ref:** ", "ref: ", "- Ref: "):

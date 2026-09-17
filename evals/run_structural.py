@@ -201,6 +201,7 @@ check("review: the default fix hand-off covers what the change touched, not only
       "introduced or touched" in review and "touched (" in review)
 check("08-challenge: says what each of council check's citation verdicts asks of the Chair",
       all(v in doctrine["08-challenge.md"] for v in ["unreadable", "`deleted`", "`no-line`", "not checked"]))
+check("07-judge: an empty Kept section says (none)", "(none)" in doctrine["07-judge.md"])
 
 # 6. Agents
 check("worker: header with ref: on line 2 and an Index", "ref: <the first heading" in worker and "## Index" in worker)
