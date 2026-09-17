@@ -911,11 +911,14 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(old, "doctor")
     check("doctor: warns when asks/ isn't ignored — the user's words would be committed",
           any(l.startswith("WARN") and "asks/" in l for l in out.splitlines()), out)
-    old_run = council(old, "run", "open", "council-review")[1].strip()
+    _, old_run, old_err = council(old, "run", "open", "council-review")
+    old_run = old_run.strip()
     with open(os.path.join(old, ".council", ".gitignore"), "rb") as f:
         raw = f.read()
     check("run open: a 0.6.0 home's .gitignore gains asks/ once, in its own CRLF endings, on a line of its own",
           raw == b"runs/\r\nactive-run\r\nasks/\r\n", repr(raw))
+    check("run open: says so when it starts ignoring asks/ where requests are in git — and how to keep sharing them",
+          "asks/" in old_err and "!asks/" in old_err, old_err)
     write(os.path.join(old_run, "ask.md"), "# Ask — New thing\n## In your words\nwords\n")
     council(old, "ask", "save")
     council(old, "run", "open", "council-plan", "--alongside")
@@ -939,6 +942,19 @@ with tempfile.TemporaryDirectory() as tmp:
     council(rooted, "run", "open", "council-review")
     check("run open: writes nothing when the project's own .gitignore already covers the council's scratch",
           not os.path.exists(os.path.join(rooted, ".council", ".gitignore")))
+    code, out, _ = council(rooted, "doctor")
+    check("doctor: quiet about runs/ and asks/ when the project's own .gitignore covers them",
+          not [l for l in out.splitlines() if "runs/" in l or "asks/" in l], out)
+    loose = os.path.join(tmp, "no-git-home")                          # research and post-game runs work outside git
+    write(os.path.join(loose, ".council", "council.config.md"), "# Council config\n")
+    for _ in range(3):
+        council(loose, "run", "open", "council-research")
+        council(loose, "run", "close", "--status", "abandoned")
+    loose_gi = read(os.path.join(loose, ".council", ".gitignore")).split()
+    code, out, _ = council(loose, "doctor")
+    check("run open outside git: writes each ignore line once, and doctor finds them",
+          sorted(loose_gi) == ["active-run", "asks/", "runs/"]
+          and not [l for l in out.splitlines() if "runs/" in l or "asks/" in l], " ".join(loose_gi) + " · " + out)
 
     # A post-game's index hides earlier council work from its verifier
     append(os.path.join(req, "a.txt"), "three\n")

@@ -150,25 +150,35 @@ resolve_run() {
 # ------------------------------------------------------------------------------------------------
 
 # Does git ignore this path under a council home ($1)? Patterns only, so a file already tracked doesn't
-# change the answer; outside git, no.
-home_ignores() { git -C "$(dirname "$1")" check-ignore --no-index -q -- "${1##*/}/$2" 2>/dev/null; }
+# change the answer. Outside git (check-ignore can't answer), the home's .gitignore has the line or not.
+home_ignores() {
+  local rc=0
+  git -C "$(dirname "$1")" check-ignore --no-index -q -- "${1##*/}/$2" 2>/dev/null || rc=$?
+  [ "$rc" -gt 1 ] || return "$rc"
+  grep -q -x -E "[[:space:]]*/?${2%%/*}/?[[:space:]]*" "$1/.gitignore" 2>/dev/null
+}
 
 # The user chose to share their requests with the team: a "!asks/" line in <home>/.gitignore.
 asks_shared() { grep -q -E '^[[:space:]]*!/?asks/?[[:space:]]*$' "$1/.gitignore" 2>/dev/null; }
 
 # Keep run scratch and the user's own words out of git: add runs/, asks/ and active-run to <home>/.gitignore
 # unless git already ignores them (asks/ also not when the user shares requests) — in the file's own line
-# endings, each on a line of its own.
+# endings, each on a line of its own. Requests already in git stay tracked, so adding asks/ then says so,
+# and how to keep sharing them instead (a 0.7.0 home shared them by leaving the line out).
 ensure_ignored() {
-  local gi="$1/.gitignore" cr="" want probe
+  local gi="$1/.gitignore" cr="" want probe added=""
   [ ! -f "$gi" ] || [ "$(tr -cd '\r' < "$gi" | wc -c | tr -d ' ')" = 0 ] || cr="$(printf '\r')"
   for want in runs/ asks/ active-run; do
     case "$want" in */) probe="${want}x" ;; *) probe="$want" ;; esac      # a folder's pattern needs a path inside it
     home_ignores "$1" "$probe" && continue
     if [ "$want" = asks/ ] && asks_shared "$1"; then continue; fi
     if [ -s "$gi" ] && [ -n "$(tail -c 1 "$gi")" ]; then printf '%s\n' "$cr" >> "$gi"; fi
-    printf '%s%s\n' "$want" "$cr" >> "$gi"
+    printf '%s%s\n' "$want" "$cr" >> "$gi" || continue
+    [ "$want" != asks/ ] || added=1
   done 2>/dev/null
+  if [ -n "$added" ] && [ -n "$(git -C "$(dirname "$1")" ls-files -- "${1##*/}/asks" 2>/dev/null | head -n 1)" ]; then
+    printf "council: %s now ignores asks/, so new requests stay on this machine; the ones already in git stay tracked. To share requests with the team, write '!asks/' in place of that line.\n" "${1##*/}/.gitignore" >&2
+  fi
   return 0
 }
 
@@ -1362,7 +1372,7 @@ RUNS
       "no stack-fingerprint"*) finding WARN "the config has no stack-fingerprint" "a council-init refresh records one, so a changed stack gets noticed" ;;
     esac
   fi
-  grep -q '^runs/' "$home/.gitignore" 2>/dev/null || finding WARN ".council/.gitignore doesn't ignore runs/" "add a line 'runs/' to .council/.gitignore"
+  home_ignores "$home" runs/x || finding WARN ".council/.gitignore doesn't ignore runs/" "add a line 'runs/' to .council/.gitignore"
   if ! home_ignores "$home" asks/x && ! asks_shared "$home"; then
     finding WARN ".council/.gitignore doesn't ignore asks/ — the user's own words would be committed" "the next council run open adds 'asks/'; if the team shares requests on purpose, write '!asks/' instead"
   fi
