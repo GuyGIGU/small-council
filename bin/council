@@ -1927,27 +1927,50 @@ council — the Small Council's helper (bash + git)
   council doctor                         drift scan; every finding comes with a fix
 
 Run-scoped commands act on the one in-progress run on this working tree; otherwise pass --run <folder>
-(a path, or a folder name under runs/).
+(a path, or a folder name under runs/). Every flag also takes the --flag=value form. A command refuses
+any word or flag it doesn't take.
 EOF
 }
 
+# A command given a flag it never reads fails loudly rather than doing something else. --run is taken
+# everywhere (the Chair passes it to every command when several runs are open); "--" means the command
+# takes a command of its own after --.
+takes_flags() {
+  local label="$1" f
+  shift
+  for f in $FLAGS; do
+    case " run $* " in *" $f "*) ;; *) die "$label doesn't take --$f — see: council help" ;; esac
+  done
+  case " $* " in *" -- "*) ;; *) [ "${#AFTER_DD[@]}" -eq 0 ] || die "$label takes nothing after -- — see: council help" ;; esac
+}
+
+no_words() { local label="$1"; shift; [ $# -eq 0 ] || die "$label doesn't take '$*' — see: council help"; }
+
 main() {
-  RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" SESSION_ARG="" ALONGSIDE=0
+  RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" SESSION_ARG="" ALONGSIDE=0 FLAGS=""
   AFTER_DD=()
   local -a pos
-  local cmd sub
+  local cmd sub flag val w
   pos=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run)       [ $# -ge 2 ] || die "--run needs a folder";          RUN_ARG="$2"; shift 2 ;;
-      --run=*)     RUN_ARG="${1#--run=}"; shift ;;
-      --code-root) [ $# -ge 2 ] || die "--code-root needs a folder";    CODE_ROOT_ARG="$2"; shift 2 ;;
-      --status)    [ $# -ge 2 ] || die "--status needs a value";        STATUS_ARG="$2"; shift 2 ;;
-      --base)      [ $# -ge 2 ] || die "--base needs a ref";            BASE_ARG="$2"; shift 2 ;;
-      --at)        [ $# -ge 2 ] || die "--at needs grounding or verify"; AT_ARG="$2"; shift 2 ;;
-      --session=*) SESSION_ARG="${1#--session=}"; shift ;;
-      --alongside) ALONGSIDE=1; shift ;;
-      --all)       ALL=1; shift ;;
+      --run|--code-root|--status|--base|--at|--session)
+                   flag="${1#--}"
+                   [ $# -ge 2 ] || case "$flag" in
+                     run|code-root) die "--$flag needs a folder" ;;
+                     base) die "--base needs a ref" ;;
+                     at) die "--at needs grounding or verify" ;;
+                     *) die "--$flag needs a value" ;;
+                   esac
+                   val="$2"; shift 2 ;;
+      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*)
+                   flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
+      --alongside|--all) flag="${1#--}"; val=1; shift ;;
+      --alongside=*|--all=*) die "${1%%=*} takes no value" ;;
+      --glob)      pos+=("$1"); shift                                   # council changed reads its own options
+                   [ $# -eq 0 ] || { pos+=("$1"); shift; }
+                   continue ;;
+      --glob=*|--each) pos+=("$1"); shift; continue ;;
       --)          shift
                    AFTER_DD=(${1+"$@"})                                 # the words themselves, for council changed
                    if [ $# -eq 1 ]; then GATE_CMD="$1"                  # one quoted string: a shell command, as written
@@ -1955,39 +1978,62 @@ main() {
                    fi
                    break ;;
       -h|--help)   usage; exit 0 ;;
-      *)           pos+=("$1"); shift ;;
+      -?*)         die "unknown option '$1' — see: council help" ;;
+      *)           pos+=("$1"); shift; continue ;;
     esac
+    [ -n "$val" ] || die "--$flag needs a value"
+    case "$flag" in
+      run) RUN_ARG="$val" ;;       code-root) CODE_ROOT_ARG="$val" ;;  status) STATUS_ARG="$val" ;;
+      base) BASE_ARG="$val" ;;     at) AT_ARG="$val" ;;                session) SESSION_ARG="$val" ;;
+      alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;
+    esac
+    FLAGS="$FLAGS $flag"
   done
   set -- "${pos[@]+"${pos[@]}"}"
-  [ $# -gt 0 ] || { usage; exit 0; }
+  [ $# -gt 0 ] || { [ -z "$FLAGS" ] || die "a flag needs a command — see: council help"; usage; exit 0; }
   cmd="$1"; shift
   case "$cmd" in
-    home)    council_home ;;
+    home)    takes_flags home; no_words home "$@"; council_home ;;
     run)
       sub="${1:-}"; [ $# -eq 0 ] || shift
       case "$sub" in
-        open)   cmd_run_open ${1+"$@"} ;;
-        close)  cmd_run_close ;;
-        status) cmd_run_status ;;
+        open)   takes_flags "run open" alongside session code-root
+                [ $# -le 1 ] || die "run open takes one mode (got: $*)"
+                cmd_run_open ${1+"$@"} ;;
+        close)  takes_flags "run close" status; no_words "run close" "$@"; cmd_run_close ;;
+        status) takes_flags "run status" all; no_words "run status" "$@"; cmd_run_status ;;
         *) die "usage: council run open <mode> | run status [--all] | run close [--status …]" ;;
       esac ;;
-    state)   cmd_state ${1+"$@"} ;;
-    seat)    cmd_seat ${1+"$@"} ;;
-    index)   cmd_index ;;
-    gate)    cmd_gate ${1+"$@"} ;;
-    gates)   cmd_gates ;;
-    changed) cmd_changed ${1+"$@"} ;;
-    collect) cmd_collect ;;
-    check)   cmd_check ${1+"$@"} ;;
-    map)     cmd_map ${1+"$@"} ;;
-    fingerprint) cmd_fingerprint ${1+"$@"} ;;
-    memory)  cmd_memory ${1+"$@"} ;;
-    prior)   cmd_prior ${1+"$@"} ;;
-    ask)     cmd_ask ${1+"$@"} ;;
-    ledger)  cmd_ledger ${1+"$@"} ;;
-    doctor)  cmd_doctor ;;
-    version) say "council $COUNCIL_VERSION" ;;
-    help)    usage ;;
+    state)   takes_flags state; cmd_state ${1+"$@"} ;;
+    seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;
+    index)   takes_flags index base; no_words index "$@"; cmd_index ;;
+    gate)    takes_flags gate all at --
+             if [ "$ALL" = 1 ]; then
+               no_words "gate --all" "$@"
+               [ -z "$GATE_CMD" ] || die "gate --all runs the configured gates — it takes no command after --"
+             else
+               [ -z "$AT_ARG" ] || die "--at works only with gate --all"
+             fi
+             cmd_gate ${1+"$@"} ;;
+    gates)   takes_flags gates; no_words gates "$@"; cmd_gates ;;
+    changed) takes_flags changed base code-root --; cmd_changed ${1+"$@"} ;;
+    collect) takes_flags collect; no_words collect "$@"; cmd_collect ;;
+    check)   takes_flags check base
+             for w in ${1+"$@"}; do [ -f "$w" ] || die "check: no such file: $w"; done
+             cmd_check ${1+"$@"} ;;
+    map)     takes_flags map; [ $# -le 1 ] || die "usage: council map status"; cmd_map ${1+"$@"} ;;
+    fingerprint) takes_flags fingerprint
+             case "$*" in ''|check) ;; *) die "usage: council fingerprint [check]" ;; esac
+             cmd_fingerprint ${1+"$@"} ;;
+    memory)  takes_flags memory
+             case "${1:-index}" in select) ;; *) [ $# -le 1 ] || die "usage: council memory [index | select [path|slug …] | check]" ;; esac
+             cmd_memory ${1+"$@"} ;;
+    prior)   takes_flags prior; cmd_prior ${1+"$@"} ;;
+    ask)     takes_flags ask; [ $# -le 2 ] || die "usage: council ask save [slug]"; cmd_ask ${1+"$@"} ;;
+    ledger)  takes_flags ledger; [ $# -le 1 ] || die "usage: council ledger [N]"; cmd_ledger ${1+"$@"} ;;
+    doctor)  takes_flags doctor; no_words doctor "$@"; cmd_doctor ;;
+    version) takes_flags version; no_words version "$@"; say "council $COUNCIL_VERSION" ;;
+    help)    takes_flags help; no_words help "$@"; usage ;;
     *) die "unknown command '$cmd' — see: council help" ;;
   esac
 }

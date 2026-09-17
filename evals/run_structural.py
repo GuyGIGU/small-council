@@ -127,7 +127,9 @@ texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctri
          "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
          "references/war-room.md": warroom, "references/guardrails.md": guardrails}
 flag_src = cli[cli.find("main() {"):] + cli[cli.find("cmd_changed() {"):cli.find("cmd_changed() {") + 2000]
-flags = set(re.findall(r"^\s+(--[a-z][a-z-]*)(?:=\*)?\)", flag_src, re.MULTILINE))
+flags = {alt.split("=")[0]                  # case patterns may list several: --run|--base=*)
+         for alts in re.findall(r"^\s+((?:--[a-z][a-z-]*(?:=\*)?\|)*--[a-z][a-z-]*(?:=\*)?)\)", flag_src, re.MULTILINE)
+         for alt in alts.split("|")}
 bad, bad_flags = [], []
 for label, t in texts.items():
     for m in re.finditer(r"`council ([a-z]+)([^`]*)`", t):

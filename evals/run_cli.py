@@ -252,6 +252,9 @@ with tempfile.TemporaryDirectory() as tmp:
           "gates: 2 ran \u2014 1 pass, 1 FAIL (bad, not mandatory) \u00b7 7 skipped" in out, out)
     check("gate --all --at: a row whose columns shifted is still reported, not filtered away",
           "gate leaky: skipped \u2014 its row has" in out, out)
+    code2, out2, _ = council(repo, "gate", "--all", "--at=verify")
+    check("gate --all --at=verify: the = form picks the same stage as --at verify",
+          code2 == code and out2.strip().splitlines()[-1:] == out.strip().splitlines()[-1:], out2)
     code, out, _ = council(repo, "gate", "ship")
     check("gate <name>: runs a side-effect gate when named, with a warning", code == 0 and "side effects (deploy, network)" in out, out)
     code, out, _ = council(repo, "gate", "--all", "--at", "strict")
@@ -485,6 +488,26 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run status --all: shows closed runs with their cost", "complete" in out and "~86k tokens" in out, out)
     code, _, err = council(repo, "run", "close", "--status", "finished")
     check("run close: rejects an unknown status", code == 2, err)
+
+    # --flag=value works for every flag, the same as --flag value
+    flags = new_repo(tmp, "flags")
+    write(os.path.join(flags, "a.py"), "a = 1\n")
+    write(os.path.join(flags, ".council", "council.config.md"), "# Council config — flags\n")
+    git(flags, "add", "-A")
+    git(flags, "commit", "-q", "-m", "init")
+    write(os.path.join(flags, "m.py"), "def f():\n    return 1\n")
+    git(flags, "add", "-A")
+    git(flags, "commit", "-q", "-m", "work")
+    code, frun, _ = council(flags, "run", "open", "council-review")
+    code, out, err = council(flags, "run", "close", "--status=paused")
+    check("run close --status=paused: pauses the run, as --status paused does",
+          code == 0 and "status: paused" in read(os.path.join(frun.strip(), "session-state.md")), out + err)
+    code, frun, _ = council(flags, "run", "open", "council-postgame")
+    code, out, err = council(flags, "index", "--base=HEAD~1")
+    check("index --base=<ref>: diffs against that ref, as --base <ref> does", code == 0 and "index: 1 files" in out, out + err)
+    council(flags, "run", "close", "--run=" + frun.strip(), "--status=abandoned")
+    check("run close --run=<folder> --status=abandoned: both = forms are read",
+          "status: abandoned" in read(os.path.join(frun.strip(), "session-state.md")))
 
     # An old open run behind many newer closed ones
     runs_dir = os.path.join(repo, ".council", "runs")
@@ -1018,6 +1041,17 @@ with tempfile.TemporaryDirectory() as tmp:
     check("help: prints the command list", code == 0 and "council run open" in out and "council doctor" in out, out)
     code, _, err = council(repo, "frobnicate")
     check("an unknown command is an error", code == 2 and "unknown command" in err, err)
+    took = []
+    for args in [("home", "x"), ("run", "open", "council-review", "x"), ("run", "close", "x"), ("run", "status", "x"),
+                 ("seat", "a", "done", "x"), ("index", "x"), ("gate", "--all", "x"), ("gate", "ok", "--at", "verify"),
+                 ("gates", "x"), ("changed", "x"), ("collect", "x"), ("check", "no-such-file.md"), ("map", "status", "x"),
+                 ("fingerprint", "x"), ("memory", "check", "x"), ("ask", "save", "a", "b"), ("ledger", "5", "x"),
+                 ("doctor", "x"), ("version", "x"), ("help", "x"), ("doctor", "--frobnicate"), ("run", "close", "--base", "main"),
+                 ("run", "status", "--at=verify"), ("index", "--", "x"), ("doctor", "--all=yes"), ("run", "close", "--status=")]:
+        code, out, err = council(repo, *args)
+        if code != 2 or not err.strip():
+            took.append(" ".join(args) + f" (exit {code})")
+    check("every command refuses a word or flag it doesn't take: exit 2, with a message", not took, "; ".join(took))
 
 passed = sum(1 for ok, *_ in results if ok)
 for ok, name, detail in results:
