@@ -567,8 +567,9 @@ with tempfile.TemporaryDirectory() as tmp:
     write(usyn, "# Synthesis\n## Kept\n(none) — the change only renames a file\n## Cut\n")
     code, out, _ = council(cites, "check")
     check("check: '(none)' under Kept is an honest empty result", code == 0 and "check: 0 items, 0 broken" in out, out)
-    code, out, _ = council(cites, "check", os.path.join(urun.strip(), "seats", "nobody.md"))
-    check("check: a file named on the command line that doesn't exist is not a pass", code == 1 and "no such file" in out, out)
+    code, out, err = council(cites, "check", os.path.join(urun.strip(), "seats", "nobody.md"))
+    check("check: a file named on the command line that doesn't exist is refused (exit 2), never a pass",
+          code == 2 and "no such file" in err, out + err)
     council(cites, "run", "close", "--status", "abandoned")
 
     # A second run: refused, then alongside; never guessing
