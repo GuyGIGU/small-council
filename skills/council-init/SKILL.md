@@ -131,8 +131,9 @@ Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`
   1. `council run open council-init` — it creates `.council/` and its `.gitignore` if they don't
      exist yet.
   2. Write a brief whose `## Seats` has one block per top-level area: `ref: none`,
-     `out: seats/<area>.md`, the area's paths as the slice. Format: "the map template's sections for
-     your area, a path on every row".
+     `out: seats/<area>.md`, `cap: 8`, the area's paths as the slice. Format: "an `## Index` of at
+     most 8 map rows, each `<n> · map · <section> · <path> · <one-line fact>`, then the map template's
+     sections for your area, a path on every row".
   3. Dispatch them following stage 5, then run `council collect`.
   4. Merge the results into one map of at most ~250 lines, then `council run close`.
 

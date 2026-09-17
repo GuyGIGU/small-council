@@ -197,6 +197,8 @@ for label, text, needles in [
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
     missing = [n for n in needles if n not in text]
     check(f"{label}: carries its mechanisms", not missing, ", ".join(missing))
+check("init: a mapping squad's brief gives its workers the index line and a cap",
+      "`<n> · map · <section> · <path> · <one-line fact>`" in init and "`cap: 8`" in init)
 check("review: the default fix hand-off covers what the change touched, not only what it introduced",
       "introduced or touched" in review and "touched (" in review)
 check("postgame: parts quote the request with its secrets redacted", "never a secret" in skill["council-postgame"])
