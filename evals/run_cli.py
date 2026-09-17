@@ -913,8 +913,9 @@ with tempfile.TemporaryDirectory() as tmp:
           "**5** · P2 · Tests · web/nope.py:1 · a bold number · from: beck#5\n"
           "6a · P2 · Tests · web/db.py:1 · a lettered number · from: beck#6\n## Cut\n")
     code, out, _ = council(cites, "check")
-    check("check: item lines it can't read fail the check, and are counted",
-          code == 1 and "synthesis: 4 item line(s) check can't read" in out and "check: 2 items, 5 broken" in out, out)
+    check("check: item lines it can't read fail the check, and are counted apart from broken citations",
+          code == 1 and "synthesis: 4 item line(s) check can't read" in out
+          and "check: 2 items, 1 broken citation(s) · 4 item line(s) check can't read" in out, out)
     check("check: a bold or lettered item number is read",
           "synthesis#5  web/nope.py:1  missing-file" in out and "synthesis#6a  web/db.py:1  ok" in out, out)
     write(usyn, "# Synthesis\n## Kept\n## Cut\n")
@@ -1033,14 +1034,15 @@ with tempfile.TemporaryDirectory() as tmp:
           "**Convention:** it extends two rules:\n- **EC-17 cascade** — the real flag path\n"
           "- **EC-9 verdicts** — stay pinned\n**Scope:** webapp/backend/**\n"
           "### EC-40: the old endpoint\n**Rule:** clients call /risk\n"
-          "- **EC-41 replaces this** for batch callers\n**Retired:** 2026-09-10 — superseded by EC-41\n")
+          "- **EC-41 replaces this** for batch callers\n**Retired:** 2026-09-10 — superseded by EC-41\n"
+          "- **EC-13 — a rule of its own, written inside another entry.** never Z\n")
     code, out, _ = council(msec, "memory")
     check("memory: a bold-id bullet inside a heading entry is that entry's body, not an entry of its own",
           "EC-32 · An EC-17 cascade carries an assertion · scope: webapp/backend/**" in out
           and "EC-40 · the old endpoint · not served (marked retired)" in out
-          and not any(f"{i} ·" in out for i in ["EC-17", "EC-9", "EC-41"]), out)
-    check("memory: ... and it says which lines it could not read as entries",
-          "not read" in out and "EC-17" in out and "EC-41" in out, out)
+          and not any(f"{i} ·" in out for i in ["EC-17", "EC-9", "EC-41", "EC-13"]), out)
+    check("memory: ... and a bullet written as an entry of its own inside one is named, not dropped in silence",
+          "not read" in out and "EC-13" in out, out)
     write(os.path.join(msec, ".council", "conventions.md"),
           "# m\n## Enforced Conventions\n1. **EC-1 — a numbered entry.** never X\n"
           "2. **EC-2 — another.** never Y\n   **Scope:** src/**\n- EC-3: a plain bullet — never Z\n")

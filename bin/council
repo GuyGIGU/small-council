@@ -1990,7 +1990,7 @@ memory_entries() {
       if (bullet && mark !~ /\*\*|__/) return 0            # a bullet entry has its id in bold
       flush()
       id = toupper(idt); if (!dashed) sub(/[0-9]+$/, "-&", id)
-      bul = bullet; pend = 0; pn = 0
+      bul = bullet; pend = 0; pn = 0; bodyline = 0
       closed = (rest ~ /^[*_~]/); sub(/^[*_~]+/, "", rest)
       sub(/^[ \t]*(\342\200\224|\342\200\223|-|:|\.|\))?[ \t]*/, "", rest)
       if (rest ~ /^(\*\*|__)/) { closed = 1; sub(/^[*_]+[ \t]*/, "", rest) }
@@ -2029,7 +2029,7 @@ memory_entries() {
       lvl = 0; while (substr(line, lvl + 1, 1) == "#") lvl++
       txt = trim(substr(line, lvl + 1))
       if (lvl >= 2 && lvl <= 4 && entry(txt, 0)) { elvl = lvl; anyhead = 1; next }
-      if (id != "" && !bul && lvl > elvl) { fields(line); next }   # a sub-heading inside an entry
+      if (id != "" && !bul && lvl > elvl) { fields(line); bodyline = 1; next }   # a sub-heading inside an entry
       flush()
       k = kind(txt, lvl > 2); name = substr(line, 1, lvl) " " txt
       if (lvl <= 2) {
@@ -2043,7 +2043,9 @@ memory_entries() {
     }
     line ~ /^[-*+][ \t]/ {
       txt = line; sub(/^[-*+][ \t]+/, "", txt)
-      if (id != "" && !bul) { cand(txt, FNR); fields(line); next }   # a bullet inside a heading entry is its body
+      # A bullet right under the title of a heading entry is an entry of its own; once that entry has
+      # a body, its bullets belong to it — they are the rules it points at, not new entries.
+      if (id != "" && !bul && bodyline) { cand(txt, FNR); fields(line); next }
       if (entry(txt, 1)) next
       cand(txt, FNR)
       if (bul) flush(); else if (id != "") fields(line)   # another top-level bullet ends a bullet entry
@@ -2074,7 +2076,7 @@ memory_entries() {
       if (j) { title = cleantitle(ptitle " " substr(line, 1, j - 1)); pend = 0; fields(substr(line, j + 2)); next }
       if (++pn >= 3 || line ~ /^[ \t]*$/) pend = 0; else ptitle = ptitle " " line
     }
-    id != "" { fields(line) }
+    id != "" { fields(line); if (line ~ /[^ 	]/) bodyline = 1 }
     END {
       flush()
       if (!SKIP) exit
@@ -2821,8 +2823,8 @@ synthesis_counts() {
     function count(sl, key,   gk) {                  # one item of one seat, however often it is named
       seen[sl] = 1; gk = sec "\t" key
       if (!(gk in once)) { once[gk] = 1; if (sec == "k") kept[sl]++; else cut[sl]++ }
-      if (sec == "k" && !((n "\t" sl) in owned)) { owned[n "\t" sl] = 1; owners[n] = owners[n] " " sl }
-    }
+      if (sec == "k") owners[n] = owners[n] " " sl   # one entry per item named: a REFUTED verdict on a
+    }                                                # merged item refutes each of the items merged into it
     function known(w) { return (nslug == 0 || (w in SLUG)) }
     function flush() { if (carry != "" && pendnum == 0 && known(carry)) count(carry, carry "#" n); carry = ""; pendnum = 0 }
     function credit(w, d) {
@@ -2841,10 +2843,14 @@ synthesis_counts() {
       line = $0; gsub(/[\r`*]/, "", line); gsub(/\t/, " ", line)
       if (sec == "" || line !~ /^[-+]? *_*C?[0-9]+[a-z]?_*\.? +(·|\|) /) next
       n = line; sub(/^[-+]? */, "", n); sub(/ .*$/, "", n); gsub(/[_.]/, "", n); n = tolower(n)
-      lo = tolower(line); p = 0; off = 0; t = lo
-      while ((i = index(t, "from:")) > 0) {          # the last "from:" that starts a field, not a word
-        at = off + i
-        if (at == 1 || substr(lo, at - 1, 1) !~ /[a-z0-9]/) p = at
+      # The provenance field: the last "· from:", the way the format writes it. Only when the line has
+      # none of those is a "from:" introduced another way read (— from:, (from:), so that a title
+      # saying "why: repeats from: beck" can never take the field over.
+      lo = tolower(line); p = 0; q = 0; off = 0; t = lo
+      while ((i = index(t, "from:")) > 0) {
+        at = off + i; pre = substr(lo, 1, at - 1); sub(/[ \t]+$/, "", pre)
+        if (pre ~ /·$/) { p = at; q = 1 }                           # the field separator: a real field
+        else if (!q && (pre == "" || pre !~ /[a-z0-9]$/)) p = at    # "— from:", "(from:"
         off = at; t = substr(lo, off + 1)
       }
       if (!p) next
