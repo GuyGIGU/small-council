@@ -327,6 +327,17 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat check: 'BLOCKED' mid-sentence is not a BLOCKED reply", code == 2, err)
     code, err = run_gate(worker, "Unblocked the queue; nothing else to report")
     check("seat check: a word that only contains 'blocked' is not a BLOCKED reply", code == 2, err)
+    spaced = os.path.join(tmp, "plugin root", "John Smith")          # a user name with a space
+    for d in ("hooks", "bin"):
+        shutil.copytree(os.path.join(ROOT, d), os.path.join(spaced, d))
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        stop_cmds = [h["command"] for g in json.load(f)["hooks"]["SubagentStop"] for h in g["hooks"]]
+    for cmd in stop_cmds:
+        code, err = run_gate(worker, "I looked at some things", command=cmd, env={"CLAUDE_PLUGIN_ROOT": spaced})
+        check("seat check: hooks.json's command runs from a plugin folder with a space in its path",
+              code == 2 and "Small Council seat check" in err, err)
+    code, err = run_gate("general-purpose", "hello")
+    check("seat check: other agent types pass through", code == 0, err)
     ver = os.path.join(tmp, "run", "verify-1.md")
     write(ver, "# Verification — eval\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | CONFIRMED | x |\n")
     code, err = run_gate(verifier, f"Wrote {ver} — 1 confirmed, 0 refuted, 0 uncertain, 0 miscited")
