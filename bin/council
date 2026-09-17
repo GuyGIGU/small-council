@@ -52,18 +52,32 @@ norm() { tr -d '\r' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]'; }
 council_toplevel() { git rev-parse --show-toplevel 2>/dev/null; }
 
 # The .council/ of the MAIN checkout, shared by every linked worktree. A submodule keeps its own; a
-# bare repo's worktrees use the first non-bare worktree; outside git it is ./.council.
+# bare repo's worktrees use the one that holds the council's config (else one with a .council/, else
+# this one) — never whichever name sorts first; outside git it is ./.council.
 council_home() {
-  local top main
+  local top main list wt cfg any
   top="$(council_toplevel)"
   if [ -z "$top" ]; then printf '%s/.council\n' "$(here)"; return 0; fi
   if [ -n "$(git rev-parse --show-superproject-working-tree 2>/dev/null)" ]; then
     printf '%s/.council\n' "$top"; return 0
   fi
-  main="$(git worktree list --porcelain 2>/dev/null | awk '
-    /^worktree / { if (w != "" && !b && !done) { print w; done = 1; exit } w = substr($0, 10); b = 0; next }
-    /^bare$/     { b = 1 }
-    END          { if (!done && w != "" && !b) print w }')"
+  # Every non-bare worktree, the main checkout first; "(bare)" first when the repository itself is bare.
+  list="$(git worktree list --porcelain 2>/dev/null | awk '
+    /^worktree / { if (w != "" && !b) print w; w = substr($0, 10); b = 0; n++; next }
+    /^bare$/     { b = 1; if (n == 1) print "(bare)" }
+    END          { if (w != "" && !b) print w }')"
+  main="${list%%"$NL"*}"
+  if [ "$main" = "(bare)" ]; then
+    main=""; cfg=""; any=""
+    while IFS= read -r wt; do
+      [ -n "$wt" ] && [ "$wt" != "(bare)" ] || continue
+      if [ -z "$cfg" ] && [ -f "$wt/.council/council.config.md" ]; then cfg="$wt"; fi
+      if [ -z "$any" ] && [ -d "$wt/.council" ]; then any="$wt"; fi
+    done <<WORKTREES
+$list
+WORKTREES
+    main="${cfg:-$any}"
+  fi
   [ -n "$main" ] || main="$top"
   if [ ! -d "$main/.council" ] && [ -d "$top/.council" ]; then main="$top"; fi   # a 0.1 council inside a worktree
   printf '%s/.council\n' "$main"

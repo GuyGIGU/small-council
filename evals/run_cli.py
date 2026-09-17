@@ -548,6 +548,22 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(wt, "run", "status")
     check("run status: runs from the main checkout show as elsewhere in a worktree", "elsewhere:" in out, out)
 
+    # A bare repository with worktrees: the council lives in the worktree that holds the config
+    bsrc = new_repo(tmp, "bare-src")
+    write(os.path.join(bsrc, "a.txt"), "x\n")
+    git(bsrc, "add", "-A")
+    git(bsrc, "commit", "-q", "-m", "init")
+    bare = os.path.join(tmp, "proj.git")
+    git(tmp, "clone", "-q", "--bare", bsrc, bare)
+    main_wt = os.path.join(tmp, "main-wt")
+    git(bare, "worktree", "add", "-q", main_wt, "main")
+    write(os.path.join(main_wt, ".council", "council.config.md"), "# Council config — bare\n")
+    git(bare, "worktree", "add", "-q", "-b", "f1", os.path.join(tmp, "aa-feature"), "main")
+    code, out, _ = council(os.path.join(tmp, "aa-feature"), "home")
+    code2, out2, _ = council(main_wt, "home")
+    check("home: in a bare repository's worktrees, the one holding the config, whatever their names",
+          slash(out).lower().endswith("/main-wt/.council") and slash(out2).lower().endswith("/main-wt/.council"), out + out2)
+
     # Map and doctor
     code, out, _ = council(repo, "map", "status")
     check("map status: no map yet", code == 0 and "no map yet" in out, out)
