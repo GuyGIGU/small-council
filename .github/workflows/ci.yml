@@ -13,12 +13,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     defaults:
       run:
         # Git Bash on Windows — the same shell Claude Code uses to run the plugin's hooks and the
         # council helper, so the Windows leg exercises them the way users' machines will.
         shell: bash
+    env:
+      # macOS ships bash 3.2 at /bin/bash and BSD sed/awk/grep. The helper and hooks promise to run
+      # there, so the macOS leg runs them with that bash — not a newer one found on PATH.
+      COUNCIL_EVAL_BASH: ${{ matrix.os == 'macos-latest' && '/bin/bash' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +31,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
+      - name: Tool versions
+        run: |
+          "${COUNCIL_EVAL_BASH:-bash}" -c 'echo "bash $BASH_VERSION"'
+          git --version
+          awk --version 2>/dev/null | head -n 1 || awk -W version 2>/dev/null | head -n 1 || echo "awk: $(command -v awk) (BSD)"
 
       - name: Validate plugin
         run: python scripts/quick_validate.py

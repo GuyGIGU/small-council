@@ -29,11 +29,13 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOK = os.path.join(ROOT, "hooks", "session-start.sh")
 GATE = os.path.join(ROOT, "hooks", "seat-gate.sh")
-BASH = shutil.which("bash")
+BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")   # CI's macOS leg: /bin/bash (3.2)
 GIT = shutil.which("git")
 GIT_ENV = dict(os.environ, GIT_AUTHOR_NAME="eval", GIT_AUTHOR_EMAIL="eval@example.invalid",
                GIT_COMMITTER_NAME="eval", GIT_COMMITTER_EMAIL="eval@example.invalid")
 GIT_ENV.pop("CLAUDE_CODE_SESSION_ID", None)
+if os.environ.get("COUNCIL_EVAL_BASH"):                  # nested `bash` calls use that bash too
+    GIT_ENV["PATH"] = os.path.dirname(BASH) + os.pathsep + GIT_ENV.get("PATH", "")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
 results = []
 
@@ -390,5 +392,7 @@ with tempfile.TemporaryDirectory() as tmp:
 passed = sum(1 for ok, *_ in results if ok)
 for ok, name, detail in results:
     print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  ({detail.strip()[:300]})" if detail and not ok else ""))
+if BASH:
+    print(f"\nbash: {BASH} ({subprocess.run([BASH, '-c', 'echo $BASH_VERSION'], capture_output=True, text=True).stdout.strip()})")
 print(f"\n{passed}/{len(results)} checks passed")
 sys.exit(0 if passed == len(results) else 1)
