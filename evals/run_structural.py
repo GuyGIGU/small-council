@@ -192,7 +192,7 @@ for label, text, needles in [
                            "SendMessage"]),
     ("guardrails", guardrails, ["Formatter", "Linter", "Type check", "Test runner", "Dependency audit", "ratchet",
                                 "council changed", "Mandatory: no", "plans/guardrails.md", "council-implement",
-                                "proved both ways", "No coverage threshold", "No commit hook"]),
+                                "proved both ways", "No coverage threshold", "No commit hook", "multiple of 256"]),
     ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
                     "last-verified", "council doctor", "council run open council-init",

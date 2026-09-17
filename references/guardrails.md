@@ -105,6 +105,10 @@ A gate that cannot fail is worse than no gate. Before a guardrails task is done,
    assertion — and watch it exit non-zero.
 2. **With the violation removed** — and watch it exit 0.
 
+A failing gate must exit with a code from 1 to 255. A runner that exits with its failure count (or a
+raw Windows error code) reads as a pass when that number is a multiple of 256, because only the low 8
+bits reach the helper — have it exit 1 on any failure.
+
 Record both in the task's evidence. That is also the task's before-and-after proof: the before-check is
 the tool run over the violation, never the ratchet on a clean tree (which exits 0 by design and would
 be a before-check that never failed — `council check` calls that broken proof).
