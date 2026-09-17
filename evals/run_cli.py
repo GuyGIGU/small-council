@@ -376,6 +376,154 @@ with tempfile.TemporaryDirectory() as tmp:
     check("check: reads cut items too", re.search(r"synthesis#C1\s+src/report\.py:99\s+bad-line", out) is not None, out)
     check("check: writes check.md", os.path.isfile(os.path.join(run, "check.md")))
 
+    # Citation shapes models really write: every place a field names is read and checked, a shape
+    # the reader can't parse says so, and nothing it couldn't check is ever counted as fine.
+    cites = new_repo(tmp, "cites")
+    write(os.path.join(cites, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(cites, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(cites, "web", "main.py"), "".join(f"code {i}\n" for i in range(1, 701)))
+    write(os.path.join(cites, "web", "db.py"), "".join(f"db {i}\n" for i in range(1, 31)))
+    write(os.path.join(cites, "sub dir", "my file.py"), "a\nb\nc\n")
+    write(os.path.join(cites, "Makefile"), "all:\n\ttrue\n")
+    git(cites, "add", "-A")
+    git(cites, "commit", "-q", "-m", "base")
+    code, crun, _ = council(cites, "run", "open", "council-review")
+    crun = crun.strip()
+    shapes = [
+        ("web/main.py:455/474", "ok"), ("web/main.py:254-268+", "ok"), ("web/main.py:148-150+170", "ok"),
+        ("web/main.py:12:5", "ok"), ("web/main.py:L58", "ok"), ("web/main.py#L12", "ok"), ("web/main.py:328,", "ok"),
+        ("web/main.py:335-341 (start_run before try)", "ok"), ("web/main.py:75, web/db.py:9-10", "ok"),
+        ("web/main.py:533, :7", "ok"), ("web/main.py:40 and web/db.py:12", "ok"),
+        ("[web/main.py:40](web/main.py#L40)", "ok"), ("**web/main.py:5**", "ok"), ("'web/main.py:5'", "ok"),
+        ("web/main.py:5 → web/db.py:2", "ok"), ("web/main.py:5—7", "ok"), ("web/main.py:5..7", "ok"),
+        ("web/main.py:5;25", "ok"), ("web/main.py:5.", "ok"), ("web/main.py: 2", "ok"), ("Makefile:2", "ok"),
+        ("sub dir/my file.py:3", "ok"), ("web/main.py:5 (see web/db.py)", "ok"),
+        ("`git grep -n TIMEOUT web/` → web/main.py:12: TIMEOUT = 30", "ok"),
+        ("web/main.py:0", "bad-line (there is no line 0)"),
+        ("web/main.py:20-10", "bad-line (20-10 runs backwards)"),
+        ("web/main.py:40, web/db.py:99", "bad-line (web/db.py:99 — the file has 30 lines)"),
+        ("web/main.py:12, web/ghost.py:3", "missing-file (web/ghost.py)"),
+        ("web/main.py:5x", "unreadable (web/main.py:5x — write it as path:line)"),
+        ("web/scaner.py", "missing-file"), ("web/ghost/", "missing-file"), ("web/missing.py:handle", "missing-file"),
+        ("web/main.py::run_scan", "no-line (the path exists)"), ("web/", "no-line (the path exists)"),
+        ("`curl -s localhost:8000/health` → 200", "n/a (command)"),
+        ("https://example.com/docs/page.html#L5", "n/a (link)"), ("the auth layer", "n/a (no path)"), ("-", "n/a"),
+    ]
+    write(os.path.join(crun, "synthesis.md"), "# Synthesis\n## Kept\n" + "".join(
+        f"{i} · P2 · Principle 1 · {c} · shape {i} · from: x#{i}\n" for i, (c, _) in enumerate(shapes, 1))
+        + f"{len(shapes) + 1} · P2 · OWASP A01 | Access control · web/db.py:99 · a pipe inside the principle\n")
+    code, out, _ = council(cites, "check")
+    lines = {l.split("  ", 1)[0]: l for l in out.splitlines()}
+    wrong = [(i, c, lines.get(f"synthesis#{i}", "?")) for i, (c, want) in enumerate(shapes, 1)
+             if not lines.get(f"synthesis#{i}", "").endswith("  " + want)]
+    check("check: every citation shape models write gets the right verdict, never a false missing-file or bad-line",
+          not wrong, "\n".join(f"{i} {c!r} -> {l}" for i, c, l in wrong))
+    check("check: a pipe inside the principle doesn't shift the fields — the citation is still read",
+          lines.get(f"synthesis#{len(shapes) + 1}", "").endswith("web/db.py:99  bad-line (the file has 30 lines)"), out)
+    check("check: the summary counts broken, line-less and unchecked citations apart, and fails",
+          code == 1 and f"check: {len(shapes) + 1} items, 9 broken citation(s) · 2 name a path but no line"
+          " · 4 not checked (a command, a link or no path)" in out, out)
+    write(os.path.join(crun, "brief.md"), "# Brief\n## Seats\n### shapes — A\n- ref: none\n### map — B\n- ref: none\n"
+          "### res — C\n- ref: none\n")
+    write(os.path.join(crun, "seats", "shapes.md"), "# Shapes — x (council-review)\nref: none\n## Index\n"
+          + "".join(f"{i} · P2 · Principle 1 · {shapes[i + 6][0]} · t\n" for i in range(1, 6)))
+    write(os.path.join(crun, "seats", "map.md"), "# Map — x (council-init)\nref: none\n## Index\n"
+          "1 · map · Where things live · web/scaner.py · a typo\n2 · map · Flows · web/main.py::run · a symbol\n"
+          "3 · map · Flows · web/main.py: 2 · a blank after the colon\n")
+    write(os.path.join(crun, "seats", "res.md"), "# Res — x (council-research)\nref: none\n## Index\n"
+          "1 · strong · code · `git grep -n X web/` → web/main.py:12: X = 30 · t\n"
+          "2 · moderate · runtime · `curl -s localhost:8000/health` → 200 · t\n")
+    code, out, _ = council(cites, "collect")
+    check("collect: citations with notes, lists, links and several places resolve",
+          re.search(r"^shapes\s+ok\s+5/8\s+\d+\s+n/a\s+5/5\s+-$", out, re.MULTILINE) is not None, out)
+    check("collect: a bare path is checked too; one with no line and one it couldn't check are counted, not hidden",
+          re.search(r"^map\s+ok\s+3/8\s+\d+\s+n/a\s+2/3\s+- · broken-cites no-line\(1\)$", out, re.MULTILINE) is not None
+          and re.search(r"^res\s+ok\s+2/8\s+\d+\s+n/a\s+1/1\s+- · unchecked\(1\)$", out, re.MULTILINE) is not None, out)
+    check("collect: when only citations are wrong it says fix them in place, not re-dispatch",
+          code == 1 and "collect: only citations are wrong" in out and "re-dispatch" not in out, out)
+
+    # Code the change deleted or moved: a finding about it belongs to the change, never to the past
+    moved = new_repo(tmp, "moved")
+    write(os.path.join(moved, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(moved, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(moved, "app", "api.py"), "def delete_account(user, target):\n    \"\"\"Delete an account.\"\"\"\n"
+          "    if not user.is_admin:\n        raise PermissionError(\"admins only\")\n    target.delete()\n")
+    write(os.path.join(moved, "app", "guard.py"), "def check(token):\n    return token == EXPECTED\n")
+    write(os.path.join(moved, "app", "bank.py"), "lock.acquire()\ncheck_balance()\nledger.debit()\nlock.release()\n")
+    write(os.path.join(moved, "app", "old.py"), "a = 1\nb = 2\nc = 3\n")
+    git(moved, "add", "-A")
+    git(moved, "commit", "-q", "-m", "base")
+    git(moved, "checkout", "-q", "-b", "feature")
+    write(os.path.join(moved, "app", "api.py"), "def delete_account(user, target):\n    \"\"\"Delete an account.\"\"\"\n"
+          "    target.delete()\n")
+    write(os.path.join(moved, "app", "bank.py"), "lock.acquire()\nledger.debit()\ncheck_balance()\nlock.release()\n")
+    git(moved, "rm", "-q", "app/guard.py")
+    git(moved, "commit", "-q", "-am", "simplify")
+    code, mrun, _ = council(moved, "run", "open", "council-review")
+    council(moved, "index")
+    write(os.path.join(mrun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P1 · Least privilege · app/api.py:1-3 · the change removed the admin check · from: hunt#1\n"
+          "2 · P2 · Least privilege · app/api.py:3 · guard removed right before delete · from: hunt#2\n"
+          "3 · P1 · Authentication · app/guard.py:2 · the change deleted the token check · from: hunt#3\n"
+          "4 · P1 · Ordering · app/bank.py:2 · the debit now runs before the balance check · from: hunt#4\n"
+          "5 · P3 · Naming · app/old.py:2 · an untouched file · from: hunt#5\n"
+          "6 · P3 · Naming · app/api.py:1 · a line away from the removed ones · from: hunt#6\n"
+          "7 · P3 · Naming · app/guard.py:9 · past the end of the deleted file · from: hunt#7\n")
+    code, out, _ = council(moved, "check")
+    check("check: lines next to code the change removed are 'touched', not 'pre-existing'",
+          "synthesis#1  app/api.py:1-3  ok · touched" in out and "synthesis#2  app/api.py:3  ok · touched" in out, out)
+    check("check: a line the change moved is 'touched'", "synthesis#4  app/bank.py:2  ok · touched" in out, out)
+    check("check: a file the change deleted is its own verdict, checked against the base — never missing-file",
+          re.search(r"synthesis#3  app/guard\.py:2  deleted \(.*\) · touched", out) is not None
+          and "synthesis#7  app/guard.py:9  bad-line (the deleted file had 2 lines)" in out, out)
+    check("check: lines away from the change stay 'pre-existing'",
+          "synthesis#5  app/old.py:2  ok · pre-existing" in out and "synthesis#6  app/api.py:1  ok · pre-existing" in out
+          and "7 items, 1 broken citation(s)" in out, out)
+    if os.path.isfile(os.path.join(moved, "APP", "OLD.PY")):         # a file system that ignores case
+        write(os.path.join(mrun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+              "1 · P3 · Naming · APP/OLD.PY:2 · the path in the wrong case · from: hunt#1\n")
+        code, out, _ = council(moved, "check")
+        check("check: a path cited in the wrong case keeps its real origin", "APP/OLD.PY:2  ok · pre-existing" in out, out)
+
+    # Old lines never read as new for technical reasons: a SHA-256 repository, a line-ending rewrite
+    sha = os.path.join(tmp, "sha256")
+    os.makedirs(sha)
+    git(sha, "init", "-q", "--object-format=sha256")
+    git(sha, "symbolic-ref", "HEAD", "refs/heads/main")
+    write(os.path.join(sha, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(sha, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(sha, "a.py"), "l1\nl2\nl3\nl4\nl5\n")
+    git(sha, "add", "-A")
+    git(sha, "commit", "-q", "-m", "base")
+    git(sha, "checkout", "-q", "-b", "feature")
+    append(os.path.join(sha, "a.py"), "l6\nl7\n")
+    git(sha, "commit", "-q", "-am", "more")
+    code, srun, _ = council(sha, "run", "open", "council-review")
+    council(sha, "index")
+    write(os.path.join(srun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P3 · P · a.py:2 · old · from: x#1\n2 · P3 · P · a.py:7 · new · from: x#2\n")
+    code, out, _ = council(sha, "check")
+    check("check: origins hold in a SHA-256 repository",
+          "synthesis#1  a.py:2  ok · pre-existing" in out and "synthesis#2  a.py:7  ok · introduced" in out, out)
+    eol = new_repo(tmp, "eol")
+    write(os.path.join(eol, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(eol, ".council", ".gitignore"), "runs/\n")
+    with open(os.path.join(eol, "a.py"), "wb") as f:
+        f.write(b"l1\r\nl2\r\nl3\r\nl4\r\n")
+    git(eol, "add", "-A")
+    git(eol, "commit", "-q", "-m", "base")
+    git(eol, "checkout", "-q", "-b", "feature")
+    code, erun, _ = council(eol, "run", "open", "council-review")
+    council(eol, "index")
+    with open(os.path.join(eol, "a.py"), "wb") as f:
+        f.write(b"l1\nl2\nl3 changed\nl4\n")
+    write(os.path.join(erun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P3 · P · a.py:1-2 · old · from: x#1\n2 · P3 · P · a.py:3 · changed · from: x#2\n")
+    code, out, _ = council(eol, "check")
+    check("check: lines whose endings alone changed are never called 'introduced'",
+          "synthesis#1  a.py:1-2  ok · origin unknown (only line endings changed)" in out
+          and "synthesis#2  a.py:3  ok · introduced" in out, out)
+
     # A second run: refused, then alongside; never guessing
     code, _, err = council(repo, "run", "open", "council-research")
     check("run open: refuses a second in-progress run on this tree", code == 2 and "already in progress" in err and "--alongside" in err, err)

@@ -55,7 +55,7 @@ Index line: `<n> · <P1|P2|P3> · <principle> · <path:line[-line]> · <title>`
 - Principle: <name + number from your reference doc>
 - Severity: P1 (bug, vulnerability, data loss, wrong result) | P2 (silent failure, maintainability
   landmine, compounding debt) | P3 (clarity, naming, style)
-- Origin: introduced | touched | pre-existing — from git blame against the base
+- Origin: introduced | touched (the change edited or removed lines in or next to it) | pre-existing
 - Basis: seen (you traced it) | inferred (from signals)
 - Refuted if: <the one observation that would prove this wrong, and where to look>
 - Assumes: <anything outside your slice this depends on> (optional)
@@ -125,7 +125,7 @@ Full review: <path>
 ## At Learn
 
 After the memory proposals comes the fix hand-off: *"Fix these with council-implement? Default:
-every P1 and P2 this change introduced."* On a yes, hand it the review's path.
+every P1 and P2 this change introduced or touched."* On a yes, hand it the review's path.
 
 ## Notes
 

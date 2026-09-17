@@ -14,6 +14,10 @@ Prove every seat reported before anyone judges.
    failed. If that isn't possible, re-dispatch it once and record the new agent:
    `council seat <slug> running agent=<new id>` (its earlier tokens are kept). Still failing → tell
    the user which lens is missing. Never judge over a hole.
+   - A row whose only flag is `broken-cites` needs neither: the work is there. `council check <seat
+     file>` names each bad citation; fix those lines in place.
+   - `no-line(N)` and `unchecked(N)` are notes, not failures: N items cite a path with no line, or
+     nothing the helper can check (a command, a link, an area).
 3. **Coverage.** In-scope files no seat's coverage line mentions, sitting in a hot spot → one bounded
    extra pass by the closest seat. Anything else goes on the deliverable's "not covered" list.
 

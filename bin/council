@@ -833,18 +833,21 @@ brief_seats() {
 
 ref_title() { awk 'NR == 1 { sub(/^\357\273\277/, ""); sub(/^#+[ \t]*/, ""); print; exit }' "$1" 2>/dev/null | norm; }
 
-# Index lines — "<n> · <severity> · <principle> · <path:line> · <title>[ · …]", optionally written as a
-# list item ("- 1 · …", "1. · …") — as rows: n sev principle cite title ("-" for an empty value).
+# Item lines — "<n> · <severity> · <principle> · <path:line> · <title>[ · …]", optionally written as a
+# list item ("- 1 · …", "1. · …") — as rows: n sev principle cite title section ("-" for an empty
+# value). Fields split on " · "; only a line with no "·" splits on " | ". The cite comes as written (the
+# citation reader strips its decoration); section is the first word of the "## " heading above the
+# line, lowercased.
 index_lines() {
   awk '
     function dash(s) { return s == "" ? "-" : s }
+    /^## / { sec = tolower($0); sub(/^## +/, "", sec); sub(/[ \t\r].*$/, "", sec); next }
     /^[-*]?[ \t]*C?[0-9]+\.?[ \t]+(·|\|)[ \t]/ {
-      line = $0; gsub(/\r/, "", line); sub(/^[-*]?[ \t]*/, "", line)
-      k = split(line, f, /[ \t]+(·|\|)[ \t]+/)
+      line = $0; gsub(/\r/, "", line); gsub(/\t/, " ", line); sub(/^[-*]? */, "", line)
+      k = (index(line, "·") ? split(line, f, / +· +/) : split(line, f, / +\| +/))
       if (k < 4) next
       n = f[1]; sub(/\.$/, "", n)
-      c = f[4]; gsub(/[`"]/, "", c)
-      printf "%s\t%s\t%s\t%s\t%s\n", n, dash(f[2]), dash(f[3]), dash(c), dash(k >= 5 ? f[5] : "")
+      printf "%s\t%s\t%s\t%s\t%s\t%s\n", n, dash(f[2]), dash(f[3]), dash(f[4]), dash(k >= 5 ? f[5] : ""), dash(sec)
     }' "$1" 2>/dev/null
 }
 
@@ -882,48 +885,263 @@ cite_ranges() {
   printf '%s\n' "$out"
 }
 
-# ok | missing-file | bad-line (…) | n/a — for a "path:line[-line][,line[-line]…]" citation.
-cite_status() {
-  local top="$1" c p n
-  c="$(printf '%s' "$2" | sed 's/–/-/g')"
-  case "$c" in http:*|https:*|-) printf 'n/a'; return ;; *:[0-9]*) ;; *) printf 'n/a'; return ;; esac
-  p="${c%:*}"
-  case "$p" in /*|[A-Za-z]:*) ;; *) p="$top/$p" ;; esac
-  [ -f "$p" ] || { printf 'missing-file'; return; }
-  n="$(awk 'END { print NR }' "$p")"
-  if cite_ranges "${c##*:}" "$n" >/dev/null; then printf 'ok'; return; fi
-  printf 'bad-line (the file has %s lines)' "$n"
+# "ok", or "bad-line (<why>)", for a clean line list ($1) against a line count ($2); $3 names the file
+# in the reason ("file has" by default).
+cite_lines() {
+  local piece s e
+  if cite_ranges "$1" "$2" >/dev/null; then printf 'ok'; return; fi
+  for piece in $(printf '%s' "$1" | tr ',' ' '); do
+    s="${piece%%-*}"; e="${piece#*-}"
+    if [ "$s" = 0 ] || [ "$e" = 0 ]; then printf 'bad-line (there is no line 0)'; return; fi
+    if [ "$e" -lt "$s" ] 2>/dev/null; then printf 'bad-line (%s runs backwards)' "$piece"; return; fi
+  done
+  printf 'bad-line (the %s %s lines)' "${3:-file has}" "$2"
 }
 
-# introduced | touched | pre-existing | new file — from git blame of the cited lines against the base.
-# A list is blamed whole, not just its first piece: git blame takes one -L per piece (in any order,
-# overlaps allowed), so old and new lines in one list make it "touched", as they would in one range.
+# The citation reader. A citation field, as a model writes it, becomes one row per place it names:
+#   L <path> <lines>   a file and its lines, as a clean list ("12", "7-9,40")
+#   P <path>           a path with no line ("src/app.py", "src/app.py::run", "src/")
+#   U <text>           a place whose line part can't be read ("a.py:5x")
+#   N <why>            nothing to check: command, link, no path — or "-" for no citation at all
+#   WL/WP …            first, when the whole field is one place whose path has blanks in it
+# Decoration goes first: a markdown link's [text](target) (both are read), bold, quotes. A backticked
+# command is evidence, not a place: it is dropped, and what follows it is read. Lines may be written
+# 12, L12, #L12, 12-14, 12..14, 12–14 and 12:5 (a column), and listed with , ; / + — "a.py:5, :9"
+# reuses the path. Only a word that looks like a path counts (a folder, an extension, a Makefile), and
+# after the first word a bare path needs a folder too, so the prose around a citation stays prose.
+cite_parse() {
+  CITE="$1" LC_ALL=C awk '
+    function ext(p) { return p ~ /\.[A-Za-z][A-Za-z0-9_-]*$/ && p !~ /(^|\/)[A-Za-z]\.[A-Za-z]$/ }
+    function pathy(p) { return p ~ /\// || ext(p) || p ~ /^\.[A-Za-z]/ || p ~ /^[A-Z][A-Za-z]*file$/ }
+    function num(t) { sub(/^[Ll]/, "", t); sub(/^0+/, "", t); return t == "" ? "0" : t }
+    function lines(t,   rest, out, piece, m) {   # the line part at the start of t; sets USED and ODD
+      ODD = 0; USED = 0
+      if (!match(t, /^[Ll]?[0-9]+/)) return ""
+      piece = num(substr(t, 1, RLENGTH)); rest = substr(t, RLENGTH + 1); out = ""
+      while (1) {
+        if (match(rest, /^(-|\.\.)[Ll]?[0-9]+/)) {                            # a range
+          if (index(piece, "-")) { ODD = 1; break }
+          m = substr(rest, 1, RLENGTH); sub(/^[^0-9]+/, "", m)
+          piece = piece "-" num(m); rest = substr(rest, RLENGTH + 1); continue
+        }
+        if (match(rest, /^:[0-9]+/)) { rest = substr(rest, RLENGTH + 1); continue }   # a column
+        if (match(rest, /^ *[,;\/+] *:?[Ll]?[0-9]+/)) {                         # the next piece
+          m = substr(rest, 1, RLENGTH); sub(/^[^0-9]+/, "", m)
+          out = out (out == "" ? "" : ",") piece; piece = num(m); rest = substr(rest, RLENGTH + 1); continue
+        }
+        break
+      }
+      if (rest ~ /^([A-Za-z0-9_]|-|\.\.|\.[0-9])/) ODD = 1
+      USED = length(t) - length(rest)
+      return out (out == "" ? "" : ",") piece
+    }
+    function emit(row) { if (!(row in seen)) { seen[row] = 1; print row; got++ } }
+    BEGIN {
+      s = ENVIRON["CITE"]; gsub(/[\r\t]/, " ", s)
+      t = s; gsub(/ /, "", t)
+      if (t == "" || t == "-") { print "N\t-"; exit }
+      gsub(/\342\200\223|\342\200\224/, "-", s)                                 # en and em dashes
+      gsub(/\342\206\222|->|=>/, " ", s)                                        # arrows
+      gsub(/\342\200\230|\342\200\231|\342\200\234|\342\200\235/, " ", s)      # curly quotes
+      while ((i = index(s, "](")) > 0) {                                        # [text](target) → text target
+        a = substr(s, 1, i - 1); b = substr(s, i + 2); j = index(b, ")")
+        k = 0; t = a; while ((x = index(t, "[")) > 0) { k += x; t = substr(t, x + 1) }
+        if (!j || !k) break
+        s = substr(a, 1, k - 1) " " substr(a, k + 1) " " substr(b, 1, j - 1) " " substr(b, j + 1)
+      }
+      gsub(/\*/, "", s); gsub(/["\[\]]/, " ", s); gsub(/\047/, " ", s)
+      w = s; gsub(/`/, "", w); sub(/^ +/, "", w); sub(/[ .,;]+$/, "", w)         # the whole field, as one place
+      if (w ~ /^[^:]* [^:]*:[Ll]?[0-9]/) {
+        p = w; sub(/:[^:]*$/, "", p); l = lines(substr(w, length(p) + 2))
+        if (!ODD && l != "" && substr(w, length(p) + 2 + USED) ~ /^[ .,;:+]*$/) print "WL\t" p "\t" l
+      } else if (w ~ / / && w !~ /:/ && pathy(w)) print "WP\t" w
+      while ((i = index(s, "`")) > 0) {                                         # `a command` is dropped
+        t = substr(s, i + 1); j = index(t, "`")
+        if (!j) { s = substr(s, 1, i - 1) " " t; break }
+        c = substr(t, 1, j - 1); if (c ~ / /) { cmd = 1; c = "" }
+        s = substr(s, 1, i - 1) " " c " " substr(t, j + 1)
+      }
+      if (gsub(/[A-Za-z][A-Za-z0-9+.-]*:\/\/[^ ]*/, " ", s)) link = 1
+      k = 0
+      while (match(s, /[^ ,;|()<>{}]+/)) {
+        wd = substr(s, RSTART, RLENGTH); tail = substr(s, RSTART + RLENGTH); s = tail; k++
+        from = (wd ~ /^[A-Za-z]:[\/\\]/) ? 3 : 1                               # a drive letter is not a line
+        p = wd; sfx = ""
+        if (match(substr(wd, from), /[:#]/)) { p = substr(wd, 1, from + RSTART - 2); sfx = substr(wd, from + RSTART - 1) }
+        gsub(/\\/, "/", p)
+        if (sfx == "") sub(/[.:]+$/, "", p)
+        if (p == "" || !pathy(p)) continue
+        if (sfx ~ /^(:|#)[Ll]?[0-9]/ || (sfx == ":" && tail ~ /^ [Ll]?[0-9]/)) {
+          t = (sfx == ":") ? substr(tail, 2) : substr(sfx, 2) tail
+          l = lines(t); s = substr(t, USED + 1)
+          u = wd; if (sfx == ":") { m = substr(tail, 2); sub(/ .*$/, "", m); u = wd " " m }
+          if (ODD) emit("U\t" u)
+          else emit("L\t" p "\t" l)
+          continue
+        }
+        if (p ~ /\/$/ || (p ~ /\// && ext(p)) || (k == 1 && tail ~ /^ *($|\(|-)/)) emit("P\t" p)
+      }
+      if (!got) print "N\t" (cmd ? "command" : link ? "link" : "no path")
+    }' </dev/null
+}
+
+# The rows cite_parse gives; a whole-field place (WL/WP) is used alone when its path exists.
+cite_rows() {
+  local rows first p nl='
+'
+  rows="$(cite_parse "$2")"
+  case "$rows" in
+    W*)
+      first="${rows%%"$nl"*}"; p="${first#*"$TAB"}"; p="${p%%"$TAB"*}"
+      case "$p" in /*|[A-Za-z]:*) ;; *) p="$1/$p" ;; esac
+      if [ -e "$p" ]; then printf '%s\n' "${first#W}"; else printf '%s\n' "${rows#*"$nl"}"; fi ;;
+    *) printf '%s\n' "$rows" ;;
+  esac
+}
+
+# One place: ok | deleted | no-line | missing-file | bad-line (…) | unreadable (…). A path that isn't
+# on disk but is in the base ($2; HEAD without one) was deleted by the change: its lines are checked
+# against the base's copy.
+cite_place() {
+  local top="$1" base="${2:-HEAD}" kind="$3" p="$4" l="${5:-}" f rel n
+  if [ "$kind" = U ]; then printf 'unreadable (%s — write it as path:line)' "$p"; return; fi
+  case "$p" in /*|[A-Za-z]:*) f="$p" ;; *) f="$top/$p" ;; esac
+  if [ "$kind" = P ] && [ -e "$f" ]; then printf 'no-line'; return; fi
+  if [ "$kind" = L ] && [ -f "$f" ]; then cite_lines "$l" "$(awk 'END { print NR }' "$f")"; return; fi
+  if [ "$kind" = L ] && [ -d "$f" ]; then printf 'bad-line (a folder has no lines)'; return; fi
+  rel="${f#"$top"/}"
+  if [ "$rel" != "$f" ] && git -C "$top" cat-file -e "$base:${rel%/}" 2>/dev/null; then
+    [ "$kind" = L ] || { printf 'deleted'; return; }
+    n="$(git -C "$top" show "$base:$rel" 2>/dev/null | awk 'END { print NR }')"
+    case "$(cite_lines "$l" "$n")" in ok) printf 'deleted' ;; *) cite_lines "$l" "$n" "deleted file had" ;; esac
+    return
+  fi
+  printf 'missing-file'
+}
+
+# The verdict on a citation field — ok | deleted (…) | no-line (…) | missing-file | bad-line (…) |
+# unreadable (…) | n/a [(why)]. Every place the field names is checked (see cite_parse); the first that
+# fails gives the verdict, naming the place when the field has several. $3 is the change's base.
+cite_status() {
+  local top="$1" base="${3:-}" kind p l v fv="" fp="" fl="" places=0 ok=0 del=0 bare=0 why=""
+  while IFS="$TAB" read -r kind p l; do
+    case "$kind" in N) why="$p"; continue ;; L|P|U) ;; *) continue ;; esac
+    places=$((places + 1))
+    v="$(cite_place "$top" "$base" "$kind" "$p" "$l")"
+    case "$v" in
+      ok) ok=$((ok + 1)) ;;
+      deleted) del=$((del + 1)) ;;
+      no-line) bare=$((bare + 1)) ;;
+      *) [ -n "$fv" ] || { fv="$v"; fp="$p"; fl="${l:+:$l}"; } ;;
+    esac
+  done <<ROWS
+$(cite_rows "$top" "$2")
+ROWS
+  if [ -n "$fv" ]; then
+    if [ "$places" -eq 1 ]; then printf '%s' "$fv"
+    else
+      case "$fv" in
+        missing-file) printf 'missing-file (%s)' "$fp" ;;
+        "bad-line ("*) printf 'bad-line (%s%s — %s' "$fp" "$fl" "${fv#bad-line (}" ;;
+        *) printf '%s' "$fv" ;;
+      esac
+    fi
+  elif [ "$ok" -gt 0 ]; then printf 'ok'
+  elif [ "$del" -gt 0 ]; then printf 'deleted (removed by this change — checked against the base)'
+  elif [ "$bare" -gt 0 ]; then printf 'no-line (the path exists)'
+  elif [ -z "$why" ] || [ "$why" = "-" ]; then printf 'n/a'
+  else printf 'n/a (%s)' "$why"
+  fi
+}
+
+# From a -U0 diff on stdin and the "s,e" ranges in $1: "<a hunk inside or right next to a range>
+# <an added line inside a range>", as two 0/1 flags. A hunk's new side "+c,0" is lines removed after
+# line c.
+cite_hunks() {
+  RANGES="$1" awk '
+    BEGIN { n = split(ENVIRON["RANGES"], r, " "); for (i = 1; i <= n; i++) { split(r[i], se, ","); S[i] = se[1] + 0; E[i] = se[2] + 0 } }
+    /^@@ / {
+      h = $3; sub(/^\+/, "", h); c = h + 0; d = 1
+      if (index(h, ",")) { c = substr(h, 1, index(h, ",") - 1) + 0; d = substr(h, index(h, ",") + 1) + 0 }
+      for (i = 1; i <= n; i++) {
+        if (d == 0) { if (c >= S[i] - 1 && c <= E[i]) near = 1; continue }
+        if (c <= E[i] + 1 && c + d - 1 >= S[i] - 1) near = 1
+        if (c <= E[i] && c + d - 1 >= S[i]) inside = 1
+      }
+    }
+    END { printf "%d %d\n", near, inside }'
+}
+
+# introduced | touched | pre-existing | new file | origin unknown [(…)] — for the lines a citation names,
+# from git blame against the base ($3) and from the change's own hunks. Lines the change removed or added
+# inside or right next to a cited range make it "touched" even when every cited line is old: a removed
+# guard can only be cited by the lines around the gap. A file the change deleted is "touched". A list is
+# blamed whole (git blame takes one -L per piece). When blame can't read a tracked file, or a line reads
+# as new only because its line ending changed, the origin is unknown rather than a guess.
 cite_origin() {
-  local top="$1" c base="$3" p ranges r shas sha old=0 new=0
-  c="$(printf '%s' "$2" | sed 's/–/-/g')"
-  p="${c%:*}"
-  case "$p" in "$top"/*) p="${p#"$top"/}" ;; esac
-  ranges="$(cite_ranges "${c##*:}")" || return 0          # no lines to blame, so no origin
-  set --
-  for r in $ranges; do set -- ${1+"$@"} -L "$r"; done       # the words are digits and commas only
-  shas="$(cd "$top" 2>/dev/null && git blame --porcelain "$@" -- "$p" 2>/dev/null \
-    | awk '$1 ~ /^[0-9a-f]+$/ && length($1) == 40 && NF >= 3 { print $1 }' | sort -u)"
-  [ -n "$shas" ] || { printf 'new file'; return; }
-  for sha in $shas; do
-    case "$sha" in 0000000000000000000000000000000000000000) new=$((new + 1)); continue ;; esac
-    if (cd "$top" && git merge-base --is-ancestor "$sha" "$base" 2>/dev/null); then old=$((old + 1)); else new=$((new + 1)); fi
-  done
-  if [ "$new" -eq 0 ]; then printf 'pre-existing'; elif [ "$old" -eq 0 ]; then printf 'introduced'; else printf 'touched'; fi
+  local top="$1" c="$2" base="$3" kind p l f rel real ranges r shas sha old=0 new=0 near=0 unknown=0 crlf=0 untracked=0 po pn d
+  while IFS="$TAB" read -r kind p l; do
+    [ "$kind" = L ] || continue
+    ranges="$(cite_ranges "$l")" || continue
+    case "$p" in /*|[A-Za-z]:*) f="$p" ;; *) f="$top/$p" ;; esac
+    rel="${f#"$top"/}"
+    if [ ! -f "$f" ]; then
+      ! git -C "$top" cat-file -e "$base:$rel" 2>/dev/null || near=$((near + 1))   # the change deleted it
+      continue
+    fi
+    [ "$rel" != "$f" ] || { unknown=$((unknown + 1)); continue; }                # outside this repository
+    real="$(git -C "$top" -c core.quotePath=false ls-files -- ":(icase,literal)$rel" 2>/dev/null)"
+    [ "$(printf '%s\n' "$real" | grep -c .)" != 1 ] || rel="$real"           # its real name, case and all
+    set --
+    for r in $ranges; do set -- ${1+"$@"} -L "$r"; done                        # digits and commas only
+    shas="$(git -C "$top" blame --porcelain "$@" -- "$rel" 2>/dev/null \
+      | awk '$1 ~ /^[0-9a-f]+$/ && (length($1) == 40 || length($1) == 64) && NF >= 3 { print $1 }' | sort -u)"
+    if [ -z "$shas" ]; then
+      if git -C "$top" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then unknown=$((unknown + 1))
+      else untracked=$((untracked + 1)); fi
+      continue
+    fi
+    po=0; pn=0
+    for sha in $shas; do
+      case "$sha" in *[!0]*) ;; *) pn=$((pn + 1)); continue ;; esac
+      if git -C "$top" merge-base --is-ancestor "$sha" "$base" 2>/dev/null; then po=$((po + 1)); else pn=$((pn + 1)); fi
+    done
+    d="$(git -C "$top" diff -U0 --no-color --no-ext-diff --ignore-cr-at-eol "$base" -- "$rel" 2>/dev/null | cite_hunks "$ranges")"
+    if [ "$po" -eq 0 ] && [ "${d#* }" = 0 ] \
+       && [ "$(git -C "$top" diff -U0 --no-color --no-ext-diff "$base" -- "$rel" 2>/dev/null | cite_hunks "$ranges" | cut -d' ' -f2)" = 1 ]; then
+      crlf=$((crlf + 1)); continue                                              # new only by its line endings
+    fi
+    old=$((old + po)); new=$((new + pn))
+    [ "${d%% *}" = 0 ] || near=$((near + 1))
+  done <<ROWS
+$(cite_rows "$top" "$c")
+ROWS
+  if [ "$old" -eq 0 ] && [ "$new" -eq 0 ]; then
+    if [ "$near" -gt 0 ]; then printf 'touched'
+    elif [ "$untracked" -gt 0 ]; then printf 'new file'
+    elif [ "$crlf" -gt 0 ]; then printf 'origin unknown (only line endings changed)'
+    elif [ "$unknown" -gt 0 ]; then printf 'origin unknown'
+    fi
+    return 0
+  fi
+  new=$((new + untracked))
+  if [ "$new" -eq 0 ]; then if [ "$near" -eq 0 ]; then printf 'pre-existing'; else printf 'touched'; fi
+  elif [ "$old" -eq 0 ]; then printf 'introduced'
+  else printf 'touched'
+  fi
 }
 
 # A seat-file problem. It's a hard one unless the seat's worker is still running: its file may just not
-# be done yet, so the Chair waits instead of resuming or re-dispatching it.
-collect_flag() { bad=1; [ "${live:-0}" = 1 ] || hard=1; }
+# be done yet, so the Chair waits instead of resuming or re-dispatching it. "collect_flag cite" marks a
+# problem with citations only: the seat's work is there, so the lines are fixed in place.
+collect_flag() { bad=1; [ "${live:-0}" = 1 ] || { hard=1; [ "${1:-}" = cite ] || deep=1; }; }
 
 cmd_collect() {
-  local run top brief seats slug ref out cap f size refok r got shape items unparsed hasnone okc allc n sev pr cite title tok state bad=0 total=0 note hard=0 live=0
+  local run top base brief seats slug ref out cap f size refok r got shape items unparsed hasnone okc allc nol unc \
+        n sev pr cite title sec tok state bad=0 total=0 note hard=0 deep=0 live=0
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
+  base="$(field base "$run/session-state.md")"
   brief="$run/brief.md"
   [ -f "$brief" ] || die "no brief.md in $run — write the brief first"
   seats="$(brief_seats "$brief")"
@@ -972,14 +1190,21 @@ REFS
     if [ "${items:-0}" -eq 0 ] && [ "${hasnone:-0}" -eq 0 ]; then note="$note empty-index"; collect_flag; fi
     [ "${items:-0}" -le "${cap:-8}" ] || { note="$note over-cap"; collect_flag; }
     [ "$size" -le 16 ] || { note="$note over-16KB"; collect_flag; }
-    okc=0; allc=0
-    while IFS="$TAB" read -r n sev pr cite title; do
+    okc=0; allc=0; nol=0; unc=0              # a path with no line counts as found; no path at all as unchecked
+    while IFS="$TAB" read -r n sev pr cite title sec; do
       [ -n "$n" ] || continue
-      case "$(cite_status "$top" "$cite")" in n/a) ;; ok) allc=$((allc + 1)); okc=$((okc + 1)) ;; *) allc=$((allc + 1)) ;; esac
+      case "$(cite_status "$top" "$cite" "$base")" in
+        ok|deleted*) okc=$((okc + 1)); allc=$((allc + 1)) ;;
+        no-line*) okc=$((okc + 1)); allc=$((allc + 1)); nol=$((nol + 1)) ;;
+        n/a*) unc=$((unc + 1)) ;;
+        *) allc=$((allc + 1)) ;;
+      esac
     done <<ITEMS
 $(index_lines "$f")
 ITEMS
-    [ "$okc" -eq "$allc" ] || { note="$note broken-cites"; collect_flag; }
+    [ "$okc" -eq "$allc" ] || { note="$note broken-cites"; collect_flag cite; }
+    [ "$nol" -eq 0 ] || note="$note no-line($nol)"
+    [ "$unc" -eq 0 ] || note="$note unchecked($unc)"
     printf '%-16s %-8s %-7s %-4s %-9s %-7s %s%s\n' "$slug" ok "${items:-0}/${cap:-8}" "$size" "$refok" "$okc/$allc" "$tok" "${note:+ ·$note}"
   done <<SEATS
 $seats
@@ -987,6 +1212,10 @@ SEATS
   if [ "$bad" -eq 0 ]; then say "collect: all $total seats in order"; return 0; fi
   if [ "$hard" -eq 0 ]; then
     say "collect: seats still working — after a compaction, wait for their notifications; if the session that started them has ended they are gone: mark them failed and re-dispatch each once (a war-room round-2 seat gets a fresh <slug>-r2 worker)"; return 1
+  fi
+  if [ "$deep" -eq 0 ]; then
+    say "collect: only citations are wrong — the seats' work is there. 'council check <seat file>' names each bad one: fix those lines in place (ask that worker, or correct an obvious one yourself), then collect again"
+    return 1
   fi
   say "collect: fix the rows above — resume that worker (message its agent id) or re-dispatch it once"
   return 1
@@ -1028,7 +1257,8 @@ gate_cmd()  { sed -n 's/.*"command": "\(.*\)", "exit".*/\1/p' "$1" 2>/dev/null |
 
 cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
-        bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what
+        bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what \
+        sec noline=0 unchecked=0 shown extra=""
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -1057,15 +1287,20 @@ cmd_check() {
   for f in "$@"; do
     [ -f "$f" ] || continue
     lab="$(basename "$f" .md)"
-    while IFS="$TAB" read -r n sev pr cite title; do
+    while IFS="$TAB" read -r n sev pr cite title sec; do
       [ -n "$n" ] || continue
       rows=$((rows + 1))
-      st="$(cite_status "$top" "$cite")"
+      st="$(cite_status "$top" "$cite" "$base")"
       origin=""
-      if [ "$st" = ok ] && [ -n "$base" ]; then origin="$(cite_origin "$top" "$cite" "$base")"; fi
-      case "$st" in ok|n/a) ;; *) bad=$((bad + 1)) ;; esac
-      printf '| %s#%s | %s | %s | %s |\n' "$lab" "$n" "$cite" "$st" "${origin:--}" >> "$out"
-      say "$lab#$n  $cite  $st${origin:+ · $origin}"
+      case "$st" in
+        ok|deleted*) [ -z "$base" ] || origin="$(cite_origin "$top" "$cite" "$base")" ;;
+        no-line*) noline=$((noline + 1)) ;;
+        n/a*) unchecked=$((unchecked + 1)) ;;
+        *) bad=$((bad + 1)) ;;
+      esac
+      shown="$(printf '%s' "$cite" | tr -d '`"')"
+      printf '| %s#%s | %s | %s | %s |\n' "$lab" "$n" "$shown" "$st" "${origin:--}" >> "$out"
+      say "$lab#$n  $shown  $st${origin:+ · $origin}"
     done <<ITEMS
 $(index_lines "$f")
 ITEMS
@@ -1166,10 +1401,12 @@ QUOTES
   elif [ "$proofs" -gt 0 ]; then what="(citations and proof)"
   else what="citation(s)"
   fi
+  [ "$noline" -eq 0 ] || extra="$extra · $noline name a path but no line"
+  [ "$unchecked" -eq 0 ] || extra="$extra · $unchecked not checked (a command, a link or no path)"
   if [ "$qn" -gt 0 ]; then
-    say "check: $rows items, $bad broken $what · $qok of $qn quotes found in the request → $out"
+    say "check: $rows items, $bad broken $what$extra · $qok of $qn quotes found in the request → $out"
   else
-    say "check: $rows items, $bad broken $what → $out"
+    say "check: $rows items, $bad broken $what$extra → $out"
   fi
   [ "$bad" -eq 0 ]
 }

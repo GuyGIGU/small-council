@@ -4,10 +4,17 @@ Catch what's wrong before the user sees it.
 
 ## Steps
 
-1. **Mechanical pre-check.** `council check` reads synthesis.md: every cited file and line exists,
-   and each item's origin comes from `git blame` against the base — introduced, touched or
-   pre-existing. A broken citation: fix it if the intended line is obvious; otherwise drop the item.
-   Write each origin into its item.
+1. **Mechanical pre-check.** `council check` reads synthesis.md: every place an item cites exists,
+   and each item's origin comes from `git blame` and the change's own hunks against the base —
+   introduced, touched (the change edited or removed lines in or next to it) or pre-existing. Write
+   each origin into its item. Then, by verdict:
+   - `missing-file` or `bad-line`: fix the citation if the intended line is obvious; otherwise drop
+     the item.
+   - unreadable: rewrite the citation as `path:line`.
+   - `deleted`: the change removed that file. The item stands; its lines were checked against the base.
+   - `no-line`: the path exists. Add the line when the item is about code.
+   - not checked (a command, a link, no path): fine for research evidence or a plan's area; a review
+     item needs a `path:line`.
 2. **Blind verification.** Dispatch `small-council:council-verifier`:
    - Each **P1**, and each item on a **protected subject** — authorization, data loss, injection,
      secrets, concurrency or ordering, public contracts — gets its own verifier. The rest go in
