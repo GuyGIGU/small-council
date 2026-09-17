@@ -38,7 +38,9 @@ block() {
   exit 2
 }
 
-case "$input" in *'"stop_hook_active":true'* | *'"stop_hook_active": true'*) exit 0 ;; esac
+# Any spacing JSON allows ("stop_hook_active" : true, a line break) — whitespace inside the reply's own
+# text can't fake it, because a quote in a JSON string is escaped (\").
+case "$(printf '%s' "$input" | tr -d ' \t\r\n')" in *'"stop_hook_active":true'*) exit 0 ;; esac
 
 case "$(json_str agent_type)" in
   *council-worker) kind=worker ;;
@@ -48,17 +50,59 @@ esac
 
 msg="$(json_str last_assistant_message)"
 [ -n "$msg" ] || exit 0
-if printf '%s\n' "$msg" | grep -q '^BLOCKED'; then exit 0; fi        # a line that starts with BLOCKED
+# A line that starts with BLOCKED — any case, after spaces, a quote mark or markdown (**BLOCKED:**).
+if printf '%s\n' "$msg" | grep -q -i -E '^[[:space:]>*_]*blocked([^[:alpha:]]|$)'; then exit 0; fi
 
-line="$(printf '%s\n' "$msg" | grep -m 1 'Wrote ' || true)"
-[ -n "$line" ] || block "finish by writing your output file, then reply with exactly one line: Wrote <output path> — <N> items (<counts>)."
+if [ "$kind" = worker ]; then
+  finish="finish by writing your output file, then reply with exactly one line: Wrote <output path> — <N> items (<counts>). If you couldn't do the work, reply BLOCKED: <reason> instead."
+else
+  finish="finish by writing your verdicts to the file your dispatch named (<run>/verify-<n>.md), then reply with exactly one line: Wrote <path> — <count of each verdict>. If you couldn't do the check, reply BLOCKED: <reason> instead."
+fi
 
-path="$(printf '%s' "$line" | sed -n 's/^.*Wrote[[:space:]][[:space:]]*\(.*\.md\).*$/\1/p' | tr -d '`"')"
-[ -n "$path" ] || exit 0
-case "$path" in
-  /* | [A-Za-z]:*) ;;
-  *) cwd="$(json_str cwd)"; [ -z "$cwd" ] || path="$cwd/$path" ;;
-esac
+# The line that names the file: "Wrote <path>" anywhere, or at a line's start "Wrote:", "**Wrote**", "wrote".
+line="$(printf '%s\n' "$msg" | grep -m 1 -i -E '^[[:space:]>*_]*wrote[*_:]*[[:space:]].*\.md' || true)"
+[ -n "$line" ] || line="$(printf '%s\n' "$msg" | grep -m 1 'Wrote ' || true)"
+[ -n "$line" ] || block "$finish"
+
+# Every "….md" after the word, shortest first; a markdown link gives its target; quotes and marks go.
+cands="$(printf '%s\n' "$line" | LC_ALL=C awk '
+  NR == 1 {
+    t = " " tolower($0)
+    if (!match(t, /[^a-z]wrote[*_:]*[ \t]+/)) exit
+    s = substr($0, RSTART + RLENGTH - 1)
+    pathch = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./\\-"
+    off = 0; rest = s
+    while ((i = index(rest, ".md")) > 0) {
+      end = off + i + 2
+      nxt = substr(s, end + 1, 1)
+      if (nxt == "" || index(pathch, nxt) == 0) {
+        c = substr(s, 1, end)
+        while ((k = index(c, "](")) > 0) c = substr(c, k + 2)
+        while (c != "" && index("[]`\"'"'"'*_(< \t", substr(c, 1, 1))) c = substr(c, 2)
+        if (c != "") print c
+      }
+      rest = substr(rest, i + 3); off = end
+    }
+  }')"
+[ -n "$cands" ] || exit 0
+cwd="$(json_str cwd)"
+path=""; first=""; firstrel=""
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  case "$c" in
+    /* | [A-Za-z]:*) p="$c"; r="" ;;
+    *) p="${cwd:+$cwd/}$c"; r=1 ;;
+  esac
+  if [ -z "$first" ]; then first="$p"; firstrel="$r"; fi
+  if [ -s "$p" ]; then path="$p"; break; fi
+done <<EOF
+$cands
+EOF
+if [ -z "$path" ]; then
+  # A relative path is joined to the folder Claude Code sends, which may not be the run's: can't tell.
+  [ -z "$firstrel" ] || exit 0
+  path="$first"
+fi
 
 problems=""
 add() { problems="${problems}${problems:+; }$1"; }
@@ -67,6 +111,7 @@ if [ ! -s "$path" ]; then
   add "the file you named ($path) doesn't exist or is empty"
 else
   l1="$(sed -n '1p' "$path" | tr -d '\r')"
+  bom="$(printf '\357\273\277')"; l1="${l1#"$bom"}"                 # an editor's byte-order mark
   l2="$(sed -n '2p' "$path" | tr -d '\r')"
   if [ "$kind" = worker ]; then
     case "$l1" in '# '*) ;; *) add "line 1 must be '# <Seat> — <lane> (<mode>)'" ;; esac
@@ -94,7 +139,14 @@ else
     grep -q '^|' "$path" || add "add the verdict table: | # | Item | Verdict | Evidence |"
   fi
   size="$(wc -c < "$path" | tr -d ' ')"
-  [ "$size" -le 16384 ] || add "the file is $(( size / 1024 )) KB — cut it to your item cap and keep items short (limit 16 KB)"
+  if [ "$size" -gt 16384 ]; then
+    kb=$(( (size * 10 + 1023) / 1024 )); kb="$((kb / 10)).$((kb % 10))"     # rounded up: 16.0 would read as fine
+    if [ "$kind" = worker ]; then
+      add "the file is $kb KB (limit 16 KB) — cut it to your item cap and keep items short"
+    else
+      add "the file is $kb KB (limit 16 KB) — shorten the paragraphs, and keep every row of the verdict table"
+    fi
+  fi
 fi
 
 [ -z "$problems" ] && exit 0

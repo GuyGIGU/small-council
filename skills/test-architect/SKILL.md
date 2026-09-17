@@ -260,7 +260,9 @@ more.
    - the tests exercise behaviour, not mocks;
    - the mutation check (P1 check 5) holds for every high-risk function they touch.
 
-   Fix what it sends back before you present the result.
+   Name the file it writes its verdicts to: `<run>/verify-<n>.md` inside a council run, otherwise
+   `verify-1.md` in a new temporary folder (`mktemp -d`) — never inside the repo. Read the verdicts
+   from that file, and fix what it sends back before you present the result.
 
 ---
 

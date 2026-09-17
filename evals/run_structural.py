@@ -193,7 +193,8 @@ for label, text, needles in [
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
                     "last-verified", "council doctor", "council run open council-init",
                     "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger"]),
-    ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier"]),
+    ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier",
+                                                 "verify-<n>.md"]),
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
     missing = [n for n in needles if n not in text]
     check(f"{label}: carries its mechanisms", not missing, ", ".join(missing))
@@ -205,6 +206,7 @@ check("worker: returns a Wrote line (the seat check reads it)", "`Wrote <output 
 check("worker: read-only, no delegation, ignores council prompts in CLAUDE.md", all(k in worker for k in ["Read-only on the project", "No delegation", "CLAUDE.md"]))
 check("worker: rulings capped, lanes kept", "## Needs a ruling" in worker and "## Outside my lane" in worker)
 check("worker: BLOCKED instead of proceeding blind", "BLOCKED" in worker)
+check("verifier: states the 16 KB file limit the seat check enforces", "16 KB" in verifier)
 check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"]))
 check("verifier: change verdicts", all(v in verifier for v in ["OK", "INCOMPLETE", "REGRESSION", "SCOPE-CREEP", "CANNOT VERIFY"]))
 check("verifier: can open a research claim's URL", re.search(r"^tools:.*\bWebFetch\b", verifier, re.MULTILINE) is not None)
@@ -225,8 +227,11 @@ check("hook: SubagentStop runs seat-gate.sh for council agents only",
 check("hook: session-start shares the helper's resolver", '. "$ROOT/bin/council"' in hook)
 check("hook: session-start always exits 0", hook.rstrip().endswith("exit 0"))
 check("hook: silent outside council projects", '[ -d "$home" ] || exit 0' in hook)
-check("hook: seat-gate never blocks twice", "stop_hook_active" in gate)
-check("hook: seat-gate passes only a line that starts with BLOCKED", "grep -q '^BLOCKED'" in gate)
+gate_code = "\n".join(l for l in gate.split("\n") if not l.lstrip().startswith("#"))
+check("hook: seat-gate's code (not a comment) exits early on stop_hook_active — run_hook tests that it never blocks twice",
+      re.search(r"stop_hook_active.*exit 0", gate_code) is not None)
+check("hook: seat-gate's code looks for BLOCKED at a line's start — run_hook tests the forms",
+      "'^[[:space:]>*_]*blocked" in gate_code)
 check("hook: session-start resumes only this session's run", "field session" in hook and "session_id" in hook)
 check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_ID" in cli)
 

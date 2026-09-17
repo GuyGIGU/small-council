@@ -51,11 +51,16 @@ def run_hook(project, source="startup", payload=None, session="eval"):
     return p.returncode, p.stdout
 
 
-def run_gate(agent, message, active=False, cwd=None):
-    payload = json.dumps({"hook_event_name": "SubagentStop", "agent_type": agent, "agent_id": "a1",
-                          "last_assistant_message": message, "stop_hook_active": active, "cwd": cwd or ""})
-    p = subprocess.run([BASH, GATE], input=payload, capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", timeout=60)
+def run_gate(agent, message, active=False, cwd=None, compact=False, payload=None, command=None, env=None):
+    """compact: JSON with no spaces, as JavaScript's JSON.stringify writes it. payload: the raw stdin.
+    command: a hooks.json command line, run with bash -c (env sets CLAUDE_PLUGIN_ROOT)."""
+    if payload is None:
+        fields = {"hook_event_name": "SubagentStop", "agent_type": agent, "agent_id": "a1",
+                  "last_assistant_message": message, "stop_hook_active": active, "cwd": cwd or ""}
+        payload = json.dumps(fields, separators=(",", ":")) if compact else json.dumps(fields)
+    argv = [BASH, "-c", command] if command else [BASH, GATE]
+    p = subprocess.run(argv, input=payload, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=60, env=dict(os.environ, **(env or {})))
     return p.returncode, p.stderr
 
 
@@ -247,8 +252,30 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat check: a valid worker file passes", code == 0, err)
     code, err = run_gate(worker, "Wrote seats/hunt.md — 1 items", cwd=os.path.join(tmp, "run"))
     check("seat check: a path relative to the worker's cwd passes", code == 0, err)
-    code, err = run_gate(worker, f"Wrote {os.path.join(seats, 'nope.md')} — 0 items")
+    session_dir = os.path.join(tmp, "session")                        # Claude Code sends the session's folder
+    os.makedirs(session_dir)
+    code, err = run_gate(worker, "Wrote seats/hunt.md — 1 items", cwd=session_dir)
+    check("seat check: a relative path it can't find from the session's folder is let through", code == 0, err)
+    nope = os.path.join(seats, "nope.md")
+    code, err = run_gate(worker, f"Wrote {nope} — 0 items")
     check("seat check: a missing file blocks (exit 2)", code == 2 and "doesn't exist" in err, err)
+    code, err = run_gate(worker, f"Wrote {nope} — 0 items (brief.md had no slice for me)")
+    check("seat check: a missing file is named exactly, even when the counts mention another .md",
+          code == 2 and f"({nope}) doesn't exist" in err, err)
+    code, err = run_gate(worker, f"Wrote {good} — 1 items (P2 1; brief.md had no slice for me)")
+    check("seat check: another .md in the counts doesn't hide a valid file", code == 0, err)
+    for label, reply in [("'Wrote:'", f"Wrote: {good} — 1 items (P2 1)"), ("'**Wrote**'", f"**Wrote** {good} — 1 items"),
+                         ("lowercase 'wrote'", f"wrote {good} — 1 items"),
+                         ("a markdown link", f"Wrote [hunt.md]({good}) — 1 items"),
+                         ("a backticked path", f"Wrote `{good}` — 1 items")]:
+        code, err = run_gate(worker, reply)
+        check(f"seat check: a Wrote line written with {label} is read", code == 0, err)
+    code, err = run_gate(worker, "I wrote up my notes above")
+    check("seat check: 'wrote' in a sentence with no file still asks for the file", code == 2 and "Wrote <output path>" in err, err)
+    bom = os.path.join(seats, "bom.md")
+    write(bom, "﻿# Bom — Security (council-review)\nref: none\n## Index\n1 · P2 · Principle 3 · a.py:1 · x\n")
+    code, err = run_gate(worker, f"Wrote {bom} — 1 items (P2 1)")
+    check("seat check: a byte-order mark before line 1 is fine", code == 0, err)
     bad = os.path.join(seats, "bad.md")
     write(bad, "# Bad\nnot a ref line\n")
     code, err = run_gate(worker, f"Wrote {bad} — 1 items")
@@ -257,6 +284,7 @@ with tempfile.TemporaryDirectory() as tmp:
     write(big, "# Big — x (council-review)\nref: none\n## Index\n" + ("x" * 17000) + "\n")
     code, err = run_gate(worker, f"Wrote {big} — 1 items")
     check("seat check: an oversized file blocks", code == 2 and "16 KB" in err, err)
+    check("seat check: the size is shown to one decimal, never as the limit itself", "the file is 16.7 KB" in err, err)
     listy = os.path.join(seats, "listy.md")
     write(listy, "# Listy — Security (council-review)\nref: none\n## Index\nMost important first:\n"
                  "- 1 · P2 · Principle 3 · a.py:1 · x\n\n### 1. x\nThe body.\n")
@@ -276,22 +304,52 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat check: an empty lane with a (none) line passes", code == 0, err)
     code, err = run_gate(worker, "I looked at some things")
     check("seat check: no 'Wrote' line blocks", code == 2 and "Wrote <output path>" in err, err)
+    check("seat check: the block message offers the BLOCKED way out", "BLOCKED: <reason>" in err, err)
     code, err = run_gate(worker, "I looked at some things", active=True)
     check("seat check: never blocks twice (stop_hook_active)", code == 0, err)
+    code, err = run_gate(worker, "I looked at some things", active=True, compact=True)
+    check("seat check: never blocks twice — compact JSON, as Claude Code writes it", code == 0, err)
+    for label, raw in [("a space before the colon", '{"stop_hook_active" : true, "agent_type":"%s","last_assistant_message":"x"}'),
+                       ("a line break after the colon", '{"agent_type":"%s","last_assistant_message":"x","stop_hook_active":\ntrue}')]:
+        code, err = run_gate(worker, "", payload=raw % worker)
+        check(f"seat check: never blocks twice — {label}", code == 0, err)
+    code, err = run_gate(worker, 'I set "stop_hook_active": true myself', compact=True)
+    check("seat check: stop_hook_active written inside the reply doesn't count", code == 2, err)
     code, err = run_gate(worker, "BLOCKED: cannot read the brief")
     check("seat check: BLOCKED passes through", code == 0, err)
     code, err = run_gate(worker, "Read the dispatch.\nBLOCKED: the brief is missing")
     check("seat check: a BLOCKED line after other text passes", code == 0, err)
+    for form in ["**BLOCKED:** the brief is missing", "Blocked: the brief is missing", "  BLOCKED: the brief is missing",
+                 "> BLOCKED: the brief is missing"]:
+        code, err = run_gate(worker, form)
+        check(f"seat check: a BLOCKED reply written as {form.split(' the')[0]!r} passes", code == 0, err)
     code, err = run_gate(worker, "I was not BLOCKED, I just stopped early")
     check("seat check: 'BLOCKED' mid-sentence is not a BLOCKED reply", code == 2, err)
-    code, err = run_gate("general-purpose", "hello")
-    check("seat check: other agent types pass through", code == 0, err)
+    code, err = run_gate(worker, "Unblocked the queue; nothing else to report")
+    check("seat check: a word that only contains 'blocked' is not a BLOCKED reply", code == 2, err)
     ver = os.path.join(tmp, "run", "verify-1.md")
     write(ver, "# Verification — eval\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | CONFIRMED | x |\n")
     code, err = run_gate(verifier, f"Wrote {ver} — 1 confirmed, 0 refuted, 0 uncertain, 0 miscited")
     check("seat check: a valid verifier file passes", code == 0, err)
     code, err = run_gate(verifier, f"Wrote {good} — 1 confirmed")
     check("seat check: a verifier file must be a verification", code == 2 and "# Verification" in err, err)
+    tableless = os.path.join(tmp, "run", "verify-3.md")
+    write(tableless, "# Verification — eval\nAll four items hold up.\n")
+    code, err = run_gate(verifier, f"Wrote {tableless} — 4 confirmed")
+    check("seat check: a verifier file with its title but no verdict table blocks", code == 2 and "verdict table" in err, err)
+    code, err = run_gate(verifier, "1 OK — no assertion weakened; 2 OK — tests exercise behaviour; 3 INCOMPLETE — a mutant survives")
+    check("seat check: a verifier that wrote no file is told the verifier's reply, not the worker's",
+          code == 2 and "verify-" in err and "<N> items" not in err, err)
+    bigver = os.path.join(tmp, "run", "verify-4.md")
+    write(bigver, "# Verification — eval\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | INCOMPLETE | x |\n"
+                  + ("The owner filter is missing here. " * 500) + "\n")
+    code, err = run_gate(verifier, f"Wrote {bigver} — 0 ok, 1 incomplete")
+    check("seat check: an oversized verifier file is told to shorten its paragraphs and keep every row",
+          code == 2 and "keep every row" in err and "item cap" not in err and "the file is 16." in err, err)
+    bomver = os.path.join(tmp, "run", "verify-5.md")
+    write(bomver, "﻿# Verification — eval\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | OK | x |\n")
+    code, err = run_gate(verifier, f"Wrote {bomver} — 1 ok")
+    check("seat check: a verifier file with a byte-order mark passes", code == 0, err)
     r2 = os.path.join(seats, "leach-r2.md")
     write(r2, "# Leach — Data integrity (council-plan, round 2)\nref: Data Reference\nquestion: q\n## Index\n"
               "1 · hold · P1 fowler#4 · a.py:1 · one table: the join exists\n2 · concede · hunt#1 · src/ · scoped tokens\n"
