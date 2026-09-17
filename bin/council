@@ -19,6 +19,7 @@ set -u
 COUNCIL_VERSION="0.7.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
+CITE_AREA=0; CITE_NEEDS_PLACE=0; CITE_ROWS=""
 
 die()     { printf 'council: %s\n' "$*" >&2; exit 2; }
 say()     { printf '%s\n' "$*"; }
@@ -40,6 +41,18 @@ clip() { awk -v n="$1" '{ if (length($0) > n) { t = substr($0, 1, n); sub(/ [^ ]
 
 # Letters and digits only, lowercased — for comparing a seat's ref: line with its doc's title.
 norm() { tr -d '\r' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]'; }
+
+# The same, but keeping letters no ASCII rule knows — a title written in Hebrew, Chinese or Greek
+# would otherwise come out empty, and an empty title can prove nothing. Punctuation that looks like
+# a letter to a byte-wise tool (curly quotes, dashes, ellipses, emoji) still goes.
+norm_wide() {
+  LC_ALL=C awk '{
+    gsub(/\342\200[\200-\277]|\342\201[\200-\277]|\342[\206-\254][\200-\277]/, "")   # dashes, quotes, arrows, symbols
+    gsub(/\302[\200-\277]|\343\200[\200-\277]|\357\270[\200-\217]|\357\273\277/, "") # NBSP, "·", CJK marks, BOM
+    gsub(/\360\237[\200-\277][\200-\277]/, "")                                       # emoji
+    gsub(/[^A-Za-z0-9\200-\377]/, ""); printf "%s", tolower($0)
+  } END { printf "\n" }' | tr -d '\r'
+}
 
 # ------------------------------------------------------------------------------------------------
 # Where the council lives
@@ -209,7 +222,7 @@ cmd_state() {
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
   tmp="$st.tmp$$"; cp "$st" "$tmp" || die "cannot update $st"
-  for kv in "$@"; do
+  for kv in ${1+"$@"}; do
     key="${kv%%=*}"
     if [ "$key" = "$kv" ]; then rm -f "$tmp"; die "expected key=value, got: $kv"; fi
     case "$key" in ''|*[!a-z0-9-]*) rm -f "$tmp"; die "bad key: $key (lowercase letters, digits, dashes)" ;; esac
@@ -815,13 +828,13 @@ FILES
 
 # The brief's "## Seats" blocks as rows: slug refs out cap. A paired worker's block has one "- ref:"
 # line per doc; they come out joined by " ;; ". Backticks and quotes around values are stripped. A key
-# may be written "- ref:", "ref:", "- **ref:**" or "- Ref:": a misspelled key must never switch the
-# proof of reading off.
+# may be written "- ref:", "ref:", "- **ref:**", "- Ref:", "- refs:", "- reference:", "- `ref:`",
+# "- ref :" or indented: a near-miss spelling must never switch the proof of reading off.
 brief_seats() {
   awk '
     function clean(v) { gsub(/[`"\r]/, "", v); gsub(/^[ \t]+|[ \t]+$/, "", v); return v }
     function key(l, name) {                        # the value after "name:", or "" with KEY = 0
-      KEY = match(tolower(l), "^[-*+]?[ \t]*(\\*\\*)?" name "(\\*\\*)?:(\\*\\*)?")
+      KEY = match(tolower(l), "^[ \t]*[-*+]?[ \t]*[`*_]*" name "(s|erence|erences)?[`*_]*[ \t]*:[`*_]*")
       return KEY ? substr(l, RLENGTH + 1) : ""
     }
     /^## / { ins = ($0 ~ /^## Seats[ \t\r]*$/); next }
@@ -841,13 +854,18 @@ brief_seats() {
 }
 
 # A reference doc's title as a worker copies it — its first heading, after any front matter; else its
-# first line of text — in letters and digits only, lowercased.
+# first line of text — in letters and digits only, lowercased. A title with no letters an ASCII rule
+# knows (Hebrew, Chinese) keeps its own letters instead, so it can still be proved.
 ref_title() {
-  awk 'NR == 1 { sub(/^\357\273\277/, ""); if ($0 ~ /^---[ \t\r]*$/) { fm = 1; next } }
+  local raw t
+  raw="$(awk 'NR == 1 { sub(/^\357\273\277/, ""); if ($0 ~ /^---[ \t\r]*$/) { fm = 1; next } }
        fm { if ($0 ~ /^---[ \t\r]*$/) fm = 0; next }
        /^#+[ \t]/ { sub(/^#+[ \t]*/, ""); t = $0; exit }
        first == "" && /[^ \t\r]/ { first = $0 }
-       END { print (t != "" ? t : first) }' "$1" 2>/dev/null | norm
+       END { print (t != "" ? t : first) }' "$1" 2>/dev/null)"
+  t="$(printf '%s\n' "$raw" | norm)"
+  [ -n "$t" ] || t="$(printf '%s\n' "$raw" | norm_wide)"
+  printf '%s' "$t"
 }
 
 # Item lines — "<n> · <severity> · <principle> · <path:line> · <title>[ · …]" — as rows:
@@ -869,30 +887,39 @@ index_lines() {
 }
 
 # The shape of a file's item sections — "## Index", or the "## " headings named in $2 ("Kept|Cut") —
-# as "<parsed items> <item lines that don't parse> <has a (none) line>". Inside a section a "### P1"-style
-# group heading is skipped; any other deeper heading (an item body, "### 1. …") ends it. An attempted item
-# is a line that starts with a number (after a bullet or bold), a table row or a heading that does, or
-# any line holding " · "; it parses with at least four fields (no citation, no item). Other prose is
-# ignored. hooks/seat-gate.sh keeps a copy of this rule: change both together.
+# as "<parsed items> <item lines that don't parse> <has a (none) line>". A heading counts as the section
+# when it holds that word ("## KEPT", "## Kept:", "## 📋 Index"). Inside a section a "###" heading that
+# has item lines under it is a group heading and is skipped; one with prose under it is an item's body,
+# and ends the section. An attempted item is a line that starts with a number (after a bullet or bold),
+# a table row or a heading that does, or any line holding " · "; it parses with at least four fields (no
+# citation, no item). An indented line is a note under an item unless it is written as one. Other prose
+# is ignored. hooks/seat-gate.sh keeps a copy of this rule: change both together.
 index_shape() {
   SECS="${2:-Index}" awk '
-    BEGIN { secs = "^(" tolower(ENVIRON["SECS"]) ")([ \t\r]|$)" }
-    /^## / { h = tolower($0); sub(/^## +/, "", h); ins = (h ~ secs); next }
+    function item(l) { return l ~ /^[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) / }
+    BEGIN { secs = "(^|[^a-z])(" tolower(ENVIRON["SECS"]) ")([^a-z]|$)" }
+    /^## / { h = tolower($0); sub(/^## +/, "", h); ins = (h ~ secs); pend = 0; next }
     !ins { next }
     {
       l = $0; gsub(/\r/, "", l); gsub(/\t/, " ", l)
       if (l ~ /^###/) {
+        pend = 0
         if (l ~ /^#+ *[*_]*C?[0-9]+[a-z]?[*_]* +(·|\|) /) bad++                # an item written as a heading
-        else if (tolower(l) !~ /^#+ *[*_]*(p[0-4]|must|should|could|strong|moderate|weak|critical|high|medium|low|major|minor|blocker|severity)([^a-z0-9]|$)/) ins = 0
+        else pend = 1                                   # a group heading, or an item body: what follows says
         next
       }
       if (l ~ /^ *$/) next
+      if (pend) { pend = 0; if (!item(l) && l !~ /^ *\(none\)/) { ins = 0; next } }
       if (l ~ /^ *\(none\)/) { none = 1; next }
-      if (l ~ /^[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) /) {
+      if (item(l)) {
         if ((index(l, "·") ? split(l, f, / +· +/) : split(l, f, / +\| +/)) >= 4) ok++; else bad++
         next
       }
-      if (l ~ /^ *([-*+] +)?[*_]*C?[0-9]+/ || l ~ / · / || l ~ /^ *\| *[*_]*C?[0-9]+[a-z]?[*_]* *\|/) bad++
+      if (l ~ /^[ \t]/) {                                                      # a note under an item
+        if (l ~ /^ +([-*+] +)?[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\||-|\342\200\224|\342\200\223) /) bad++
+        next
+      }
+      if (l ~ /^([-*+] +)?[*_]*C?[0-9]+/ || l ~ / · / || l ~ /^\| *[*_]*C?[0-9]+[a-z]?[*_]* *\|/) bad++
     }
     END { printf "%d %d %d\n", ok, bad, none }' "$1" 2>/dev/null
 }
@@ -943,6 +970,21 @@ cite_parse() {
     function ext(p) { return p ~ /\.[A-Za-z][A-Za-z0-9_-]*$/ && p !~ /(^|\/)[A-Za-z]\.[A-Za-z]$/ }
     function pathy(p) { return p ~ /\// || ext(p) || p ~ /^\.[A-Za-z]/ || p ~ /^[A-Z][A-Za-z]*file$/ }
     function num(t) { sub(/^[Ll]/, "", t); sub(/^0+/, "", t); return t == "" ? "0" : t }
+    # "10 and 9999", "10, line 9999", "10 or 12" — a second line joined by a word becomes "10,9999",
+    # so it is read and checked like any list. A number followed by more prose ("5 and 9 callers")
+    # is prose, and stays as written.
+    function joinlines(x,   res, st, k, tail) {
+      res = ""
+      while (match(x, /[0-9][ \t]*,?[ \t]*(and|or|plus|lines?)[ \t]+:?[Ll]?[0-9]/)) {
+        st = RSTART; k = RSTART + RLENGTH - 1                        # the first digit of the next number
+        tail = substr(x, k)
+        if (match(tail, /^[0-9]+([ \t]*-[ \t]*[0-9]+)?/) && substr(tail, RLENGTH + 1) !~ /^[ \t]+[A-Za-z]/) {
+          res = res substr(x, 1, st) ","
+        } else res = res substr(x, 1, k - 1)
+        x = tail
+      }
+      return res x
+    }
     function lines(t,   rest, out, piece, m) {   # the line part at the start of t; sets USED and ODD
       ODD = 0; USED = 0
       if (!match(t, /^[Ll]?[0-9]+/)) return ""
@@ -954,7 +996,7 @@ cite_parse() {
           piece = piece "-" num(m); rest = substr(rest, RLENGTH + 1); continue
         }
         if (match(rest, /^:[0-9]+/)) { rest = substr(rest, RLENGTH + 1); continue }   # a column
-        if (match(rest, /^ *[,;\/+] *:?[Ll]?[0-9]+/)) {                         # the next piece
+        if (match(rest, /^ *[,;\/+&] *:?[Ll]?[0-9]+/)) {                        # the next piece
           m = substr(rest, 1, RLENGTH); sub(/^[^0-9]+/, "", m)
           out = out (out == "" ? "" : ",") piece; piece = num(m); rest = substr(rest, RLENGTH + 1); continue
         }
@@ -969,6 +1011,8 @@ cite_parse() {
       s = ENVIRON["CITE"]; gsub(/[\r\t]/, " ", s)
       t = s; gsub(/ /, "", t)
       if (t == "" || t == "-") { print "N\t-"; exit }
+      na = tolower(t); gsub(/[.`*_"]/, "", na)                                  # "n/a" is no citation,
+      if (na ~ /^(n\/a|na|none|\(none\)|tbd|tba|-|\342\200\224|\342\200\223)$/) { print "N\t-"; exit }  # not a path
       gsub(/\342\200\223|\342\200\224/, "-", s)                                 # en and em dashes
       gsub(/\342\206\222|->|=>/, " ", s)                                        # arrows
       gsub(/\342\200\230|\342\200\231|\342\200\234|\342\200\235/, " ", s)      # curly quotes
@@ -979,6 +1023,7 @@ cite_parse() {
         s = substr(a, 1, k - 1) " " substr(a, k + 1) " " substr(b, 1, j - 1) " " substr(b, j + 1)
       }
       gsub(/\*/, "", s); gsub(/["\[\]]/, " ", s); gsub(/\047/, " ", s)
+      s = joinlines(s)                                                          # "…:10 and 9999" → "…:10,9999"
       w = s; gsub(/`/, "", w); sub(/^ +/, "", w); sub(/[ .,;]+$/, "", w)         # the whole field, as one place
       if (w ~ /^[^:]* [^:]*:[Ll]?[0-9]/) {
         p = w; sub(/:[^:]*$/, "", p); l = lines(substr(w, length(p) + 2))
@@ -1000,10 +1045,16 @@ cite_parse() {
         gsub(/\\/, "/", p)
         if (sfx == "") sub(/[.:]+$/, "", p)
         if (p == "" || !pathy(p)) continue
-        if (sfx ~ /^(:|#)[Ll]?[0-9]/ || (sfx == ":" && tail ~ /^ [Ll]?[0-9]/)) {
-          t = (sfx == ":") ? substr(tail, 2) : substr(sfx, 2) tail
+        # "a.py:5" · "a.py#L5" · "a.py: 12" (any blanks) · "a.py: line 12" · "a.py lines 10-12"
+        t = ""
+        if (sfx ~ /^(:|#)[Ll]?[0-9]/) t = substr(sfx, 2) tail
+        else if (sfx == ":" || sfx == "") {
+          pfx = (sfx == ":") ? "^[ \t]+(lines?[ \t]+)?" : "^[ \t]*,?[ \t]*lines?[ \t]+"
+          if (match(tail, pfx) && substr(tail, RLENGTH + 1) ~ /^[Ll]?[0-9]/) t = substr(tail, RLENGTH + 1)
+        }
+        if (t != "") {
           l = lines(t); s = substr(t, USED + 1)
-          u = wd; if (sfx == ":") { m = substr(tail, 2); sub(/ .*$/, "", m); u = wd " " m }
+          u = wd; if (sfx !~ /^(:|#)[Ll]?[0-9]/) { m = t; sub(/ .*$/, "", m); u = wd " " m }
           if (ODD) emit("U\t" u)
           else emit("L\t" p "\t" l)
           continue
@@ -1028,9 +1079,27 @@ cite_rows() {
   esac
 }
 
-# One place: ok | deleted | no-line | missing-file | bad-line (…) | unreadable (…). A path that isn't
-# on disk but is in the base ($2; HEAD without one) was deleted by the change: its lines are checked
-# against the base's copy.
+# A cited path as it sits inside the tree $1 — or the path itself when it is outside it. The forms
+# Git Bash and Windows print for the same file ("/c/Users/…", "c:/users/…", "C:/Users/…") all resolve,
+# so a citation written any of them keeps its real status and origin.
+cite_rel() {
+  local top="$1" f="$2" d lt lf
+  case "$f" in /*|[A-Za-z]:*) ;; *) printf '%s' "$f"; return 0 ;; esac
+  case "$f" in "$top"/*) printf '%s' "${f#"$top"/}"; return 0 ;; esac
+  case "$top" in
+    [A-Za-z]:/*)
+      case "$f" in /[A-Za-z]/*) d="${f:1:1}"; f="$d:${f:2}" ;; esac                # the Git Bash form
+      case "$f" in "$top"/*) printf '%s' "${f#"$top"/}"; return 0 ;; esac
+      lt="$(printf '%s' "$top" | tr 'A-Z' 'a-z')"; lf="$(printf '%s' "$f" | tr 'A-Z' 'a-z')"
+      case "$lf" in "$lt"/*) printf '%s' "${f:$((${#top} + 1))}"; return 0 ;; esac ;;
+  esac
+  printf '%s' "$2"
+}
+
+# One place: ok | deleted | no-line | missing-file | area | bad-line (…) | unreadable (…). A path that
+# isn't on disk but is in the base ($2; HEAD without one) was deleted by the change: its lines are
+# checked against the base's copy. With CITE_AREA=1 (a plan, research or a post-game, where the field
+# is "<path or area>"), a bare path that is on disk nowhere is an area or a file still to be written.
 cite_place() {
   local top="$1" base="${2:-HEAD}" kind="$3" p="$4" l="${5:-}" f rel n
   if [ "$kind" = U ]; then printf 'unreadable (%s — write it as path:line)' "$p"; return; fi
@@ -1038,21 +1107,26 @@ cite_place() {
   if [ "$kind" = P ] && [ -e "$f" ]; then printf 'no-line'; return; fi
   if [ "$kind" = L ] && [ -f "$f" ]; then cite_lines "$l" "$(awk 'END { print NR }' "$f")"; return; fi
   if [ "$kind" = L ] && [ -d "$f" ]; then printf 'bad-line (a folder has no lines)'; return; fi
-  rel="${f#"$top"/}"
+  rel="$(cite_rel "$top" "$f")"
   if [ "$rel" != "$f" ] && git -C "$top" cat-file -e "$base:${rel%/}" 2>/dev/null; then
     [ "$kind" = L ] || { printf 'deleted'; return; }
     n="$(git -C "$top" show "$base:$rel" 2>/dev/null | awk 'END { print NR }')"
     case "$(cite_lines "$l" "$n")" in ok) printf 'deleted' ;; *) cite_lines "$l" "$n" "deleted file had" ;; esac
     return
   fi
+  if [ "$kind" = P ] && [ "${CITE_AREA:-0}" = 1 ]; then printf 'area'; return; fi
   printf 'missing-file'
 }
 
 # The verdict on a citation field — ok | deleted (…) | no-line (…) | missing-file | bad-line (…) |
-# unreadable (…) | n/a [(why)]. Every place the field names is checked (see cite_parse); the first that
-# fails gives the verdict, naming the place when the field has several. $3 is the change's base.
+# unreadable (…) | no-citation (…) | n/a [(why)]. Every place the field names is checked (see
+# cite_parse); the first that fails gives the verdict, naming the place when the field has several.
+# $3 is the change's base. A bare path that isn't there, beside a place that resolved, is a note
+# ("src/api.py:40 (extract to src/lib/retry.py)"), not the item's citation. With
+# CITE_NEEDS_PLACE=1 (a review, where every item needs a path:line) a field with no place at all is
+# not a quiet "n/a" but a problem of its own.
 cite_status() {
-  local top="$1" base="${3:-}" kind p l v fv="" fp="" fl="" places=0 ok=0 del=0 bare=0 why=""
+  local top="$1" base="${3:-}" kind p l v fv="" fp="" fl="" places=0 ok=0 del=0 bare=0 why="" area=0 nv="" np=""
   while IFS="$TAB" read -r kind p l; do
     case "$kind" in N) why="$p"; continue ;; L|P|U) ;; *) continue ;; esac
     places=$((places + 1))
@@ -1061,11 +1135,15 @@ cite_status() {
       ok) ok=$((ok + 1)) ;;
       deleted) del=$((del + 1)) ;;
       no-line) bare=$((bare + 1)) ;;
+      area) area=$((area + 1)) ;;
+      missing-file) if [ "$kind" = P ]; then [ -n "$nv" ] || { nv="$v"; np="$p"; }
+                    else [ -n "$fv" ] || { fv="$v"; fp="$p"; fl="${l:+:$l}"; }; fi ;;
       *) [ -n "$fv" ] || { fv="$v"; fp="$p"; fl="${l:+:$l}"; } ;;
     esac
   done <<ROWS
-$(cite_rows "$top" "$2")
+${CITE_ROWS:-$(cite_rows "$top" "$2")}
 ROWS
+  if [ -z "$fv" ] && [ -n "$nv" ] && [ "$((ok + del + bare))" -eq 0 ]; then fv="$nv"; fp="$np"; fl=""; fi
   if [ -n "$fv" ]; then
     if [ "$places" -eq 1 ]; then printf '%s' "$fv"
     else
@@ -1078,17 +1156,22 @@ ROWS
   elif [ "$ok" -gt 0 ]; then printf 'ok'
   elif [ "$del" -gt 0 ]; then printf 'deleted (removed by this change — checked against the base)'
   elif [ "$bare" -gt 0 ]; then printf 'no-line (the path exists)'
+  elif [ "$area" -gt 0 ]; then printf 'n/a (nothing on disk by that name — an area, or a file still to write)'
+  elif [ "${CITE_NEEDS_PLACE:-0}" = 1 ] && { [ -z "$why" ] || [ "$why" = "-" ] || [ "$why" = "no path" ]; }; then
+    printf 'no-citation (a review item needs a path:line)'
   elif [ -z "$why" ] || [ "$why" = "-" ]; then printf 'n/a'
   else printf 'n/a (%s)' "$why"
   fi
 }
 
 # From a -U0 diff on stdin and the "s,e" ranges in $1: "<a hunk inside or right next to a range>
-# <an added line inside a range>", as two 0/1 flags. A hunk's new side "+c,0" is lines removed after
-# line c.
+# <an added line inside a range> <the file is not in the base under this name>", as three 0/1 flags.
+# A hunk's new side "+c,0" is lines removed after line c. A file the change added — or only renamed —
+# shows as one big added hunk, which says nothing about which lines the change really touched.
 cite_hunks() {
   RANGES="$1" awk '
     BEGIN { n = split(ENVIRON["RANGES"], r, " "); for (i = 1; i <= n; i++) { split(r[i], se, ","); S[i] = se[1] + 0; E[i] = se[2] + 0 } }
+    /^new file mode / { isnew = 1 }
     /^@@ / {
       h = $3; sub(/^\+/, "", h); c = h + 0; d = 1
       if (index(h, ",")) { c = substr(h, 1, index(h, ",") - 1) + 0; d = substr(h, index(h, ",") + 1) + 0 }
@@ -1098,7 +1181,7 @@ cite_hunks() {
         if (c <= E[i] && c + d - 1 >= S[i]) inside = 1
       }
     }
-    END { printf "%d %d\n", near, inside }'
+    END { printf "%d %d %d\n", near, inside, isnew }'
 }
 
 # introduced | touched | pre-existing | new file | origin unknown [(…)] — for the lines a citation names,
@@ -1106,14 +1189,15 @@ cite_hunks() {
 # inside or right next to a cited range make it "touched" even when every cited line is old: a removed
 # guard can only be cited by the lines around the gap. A file the change deleted is "touched". A list is
 # blamed whole (git blame takes one -L per piece). When blame can't read a tracked file, or a line reads
-# as new only because its line ending changed, the origin is unknown rather than a guess.
+# as new only because its line ending changed, the origin is unknown rather than a guess. In a file the
+# change only renamed, the diff calls every line new, so blame alone decides there.
 cite_origin() {
-  local top="$1" c="$2" base="$3" kind p l f rel real ranges r shas sha old=0 new=0 near=0 unknown=0 crlf=0 untracked=0 po pn d
+  local top="$1" c="$2" base="$3" kind p l f rel real ranges r shas sha old=0 new=0 near=0 unknown=0 crlf=0 untracked=0 po pn d dn di dnew
   while IFS="$TAB" read -r kind p l; do
     [ "$kind" = L ] || continue
     ranges="$(cite_ranges "$l")" || continue
     case "$p" in /*|[A-Za-z]:*) f="$p" ;; *) f="$top/$p" ;; esac
-    rel="${f#"$top"/}"
+    rel="$(cite_rel "$top" "$f")"
     if [ ! -f "$f" ]; then
       ! git -C "$top" cat-file -e "$base:$rel" 2>/dev/null || near=$((near + 1))   # the change deleted it
       continue
@@ -1136,14 +1220,16 @@ cite_origin() {
       if git -C "$top" merge-base --is-ancestor "$sha" "$base" 2>/dev/null; then po=$((po + 1)); else pn=$((pn + 1)); fi
     done
     d="$(git -C "$top" diff -U0 --no-color --no-ext-diff --ignore-cr-at-eol "$base" -- "$rel" 2>/dev/null | cite_hunks "$ranges")"
-    if [ "$po" -eq 0 ] && [ "${d#* }" = 0 ] \
+    dn="${d%% *}"; di="${d#* }"; dnew="${di#* }"; di="${di%% *}"
+    if [ "$dnew" = 1 ]; then dn=0; di=0; fi           # added or renamed under this name: blame decides
+    if [ "$po" -eq 0 ] && [ "$di" = 0 ] && [ "$dnew" != 1 ] \
        && [ "$(git -C "$top" diff -U0 --no-color --no-ext-diff "$base" -- "$rel" 2>/dev/null | cite_hunks "$ranges" | cut -d' ' -f2)" = 1 ]; then
       crlf=$((crlf + 1)); continue                                              # new only by its line endings
     fi
     old=$((old + po)); new=$((new + pn))
-    [ "${d%% *}" = 0 ] || near=$((near + 1))
+    [ "$dn" = 0 ] || near=$((near + 1))
   done <<ROWS
-$(cite_rows "$top" "$c")
+${CITE_ROWS:-$(cite_rows "$top" "$c")}
 ROWS
   if [ "$old" -eq 0 ] && [ "$new" -eq 0 ]; then
     if [ "$near" -gt 0 ]; then printf 'touched'
@@ -1160,6 +1246,17 @@ ROWS
   fi
 }
 
+# How a mode's citation field is read. A plan, research and a post-game cite "<path or area>": a name
+# that is on disk nowhere is an area, or a file the work would still write — not a broken citation. A
+# review item has to name a place ("no evidence, no item").
+cite_mode() {
+  CITE_AREA=0; CITE_NEEDS_PLACE=0
+  case "${1:-}" in
+    council-plan|council-research|council-postgame) CITE_AREA=1 ;;
+    council-review) CITE_NEEDS_PLACE=1 ;;
+  esac
+}
+
 # A seat-file problem. It's a hard one unless the seat's worker is still running: its file may just not
 # be done yet, so the Chair waits instead of resuming or re-dispatching it. "collect_flag cite" marks a
 # problem with citations only: the seat's work is there, so the lines are fixed in place.
@@ -1171,6 +1268,7 @@ cmd_collect() {
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="$(field base "$run/session-state.md")"
+  cite_mode "$(field mode "$run/session-state.md")"
   brief="$run/brief.md"
   [ -f "$brief" ] || die "no brief.md in $run — write the brief first"
   seats="$(brief_seats "$brief")"
@@ -1208,7 +1306,8 @@ $(brief_seats "$run/debate.md")"                      # a war room's round-2 fil
     if [ "$ref" = none ]; then
       refok=n/a
     else
-      got="$(sed -n '2,9p' "$f" | grep '^ref:' | sed 's/^ref:[[:space:]]*//' | while IFS= read -r l; do printf '%s' "$l" | norm; printf '\n'; done)"
+      got="$(sed -n '2,9p' "$f" | grep '^ref:' | sed 's/^ref:[[:space:]]*//' | while IFS= read -r l; do
+               printf '%s' "$l" | norm; printf '\n'; printf '%s' "$l" | norm_wide; done)"
       while IFS= read -r r; do
         [ -n "$r" ] || continue
         if [ ! -f "$r" ]; then refok=no-doc; collect_flag; break; fi
@@ -1295,11 +1394,13 @@ gate_cmd()  { sed -n 's/.*"command": "\(.*\)", "exit".*/\1/p' "$1" 2>/dev/null |
 cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what \
-        mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra=""
+        mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
+        other=0 unreadt=0 empty=0 gone=0
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
   mode="$(field mode "$run/session-state.md")"
+  cite_mode "$mode"
   if [ $# -eq 0 ]; then
     if [ -f "$run/synthesis.md" ]; then set -- "$run/synthesis.md"; else set -- "$run"/seats/*.md; fi
   fi
@@ -1326,26 +1427,30 @@ cmd_check() {
     printf 'base: %s\n\n' "${base:-unknown — origin not checked}"
     printf '| item | cite | status | origin |\n|---|---|---|---|\n'
   } > "$out"
-  for f in "$@"; do
+  for f in ${1+"$@"}; do
     if [ ! -f "$f" ]; then
       case "$f" in "$run/seats/*.md") continue ;; esac               # no seat files yet: nothing was named
-      bad=$((bad + 1)); say "check: $f — no such file"; continue
+      gone=$((gone + 1)); other=$((other + 1)); say "check: $f — no such file"; continue
     fi
     files=$((files + 1))
     lab="$(basename "$f" .md)"
     # Item lines it can't read, or none at all, are never a pass: nothing would have been checked.
-    if grep -Eq '^## (Kept|Cut)' "$f"; then secs='Kept|Cut'; where='## Kept or ## Cut'; else secs=Index; where='## Index'; fi
+    if awk '/^##[ \t]/ && tolower($0) ~ /(^|[^a-z])(kept|cut)([^a-z]|$)/ { f = 1; exit } END { exit !f }' "$f"; then
+      secs='Kept|Cut'; where='## Kept or ## Cut'
+    else secs=Index; where='## Index'; fi
     shape="$(index_shape "$f" "$secs")"; items="${shape%% *}"; unread="${shape#* }"; none="${unread#* }"; unread="${unread%% *}"
     if [ "${unread:-0}" -gt 0 ]; then
-      bad=$((bad + unread))
+      other=$((other + unread)); unreadt=$((unreadt + unread))
       say "$lab: $unread item line(s) check can't read — write each as '<n> · <severity> · <principle> · <path:line> · <title>'"
     fi
     if [ "${items:-0}" -eq 0 ] && [ "${none:-0}" -eq 0 ] && [ "${unread:-0}" -eq 0 ]; then
-      bad=$((bad + 1)); say "$lab: no items under $where — nothing was checked (write '(none) — <why>' when there is nothing)"
+      other=$((other + 1)); empty=$((empty + 1))
+      say "$lab: no items under $where — nothing was checked (write '(none) — <why>' when there is nothing)"
     fi
     while IFS="$TAB" read -r n sev pr cite title sec; do
       [ -n "$n" ] || continue
       rows=$((rows + 1))
+      CITE_ROWS="$(cite_rows "$top" "$cite")"        # read once, for the status and the origin alike
       st="$(cite_status "$top" "$cite" "$base")"
       origin=""
       case "$st" in
@@ -1354,6 +1459,7 @@ cmd_check() {
         n/a*) unchecked=$((unchecked + 1)) ;;
         *) bad=$((bad + 1)) ;;
       esac
+      CITE_ROWS=""
       shown="$(printf '%s' "$cite" | tr -d '`"')"
       printf '| %s#%s | %s | %s | %s |\n' "$lab" "$n" "$shown" "$st" "${origin:--}" >> "$out"
       say "$lab#$n  $shown  $st${origin:+ · $origin}"
@@ -1380,10 +1486,13 @@ $(REQF="$req" MODE="$mode" LC_ALL=C awk '
     s = repl(s, "\342\200\230", "\047"); s = repl(s, "\342\200\231", "\047")
     s = repl(s, "\342\200\234", "\""); s = repl(s, "\342\200\235", "\"")
     s = repl(s, "\302\240", " "); s = repl(s, "\342\200\257", " "); s = repl(s, "\342\200\211", " ")
+    s = repl(s, "\342\200\213", ""); s = repl(s, "\342\200\214", ""); s = repl(s, "\342\200\215", "")
+    s = repl(s, "\342\201\240", ""); s = repl(s, "\357\273\277", "")             # zero-width, joiners, BOM
+    s = repl(s, "\342\200\246", "...")                                           # an ellipsis, typed or one glyph
     gsub(/[ \t]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s)
     return s
   }
-  function loose(s) { gsub(/[*_]/, "", s); gsub(/ +/, " ", s); return tolower(s) }   # capitals and ** marks too
+  function loose(s) { gsub(/[*_`]/, "", s); gsub(/ +/, " ", s); return tolower(s) }  # capitals, ** and ` marks too
   function lastidx(s, x,   i, pos, base) {
     pos = 0; base = 0
     while ((i = index(s, x)) > 0) { pos = base + i; base += i + length(x) - 1; s = substr(s, i + length(x)) }
@@ -1408,10 +1517,17 @@ $(REQF="$req" MODE="$mode" LC_ALL=C awk '
     # A request part: its third field reads "ask"; in a post-game, every must or should line is one.
     part = (tolower(fld[3]) == "ask") || (ENVIRON["MODE"] == "council-postgame" && tolower(fld[2]) ~ /^(must|should)$/)
     if (k < 4 || !part) next
-    lo = tolower(line); p = 0; s = lo; off = 0          # the last "· quote:": a title may say "Quote:" too
-    while ((i = index(s, "· quote:")) > 0) { p = off + i; off += i; s = substr(s, i + 1) }
+    # The last "quote:" that opens a quote, however it is introduced ("· quote:", "— quote:",
+    # "(quote:"). A title may say "Quote:" too, so the word must start a quote to count.
+    lo = tolower(line); p = 0; s = lo; off = 0
+    while ((i = index(s, "quote:")) > 0) {
+      at = off + i; b = (at == 1) ? "" : substr(lo, at - 1, 1)
+      r = substr(lo, at + 6); sub(/^[ \t]+/, "", r)
+      if (b !~ /[a-z0-9]/ && (substr(r, 1, 1) == "\"" || substr(r, 1, 3) == "\342\200\234")) p = at
+      off = at; s = substr(lo, off + 1)
+    }
     if (!p) { printf "%s\tNO-QUOTE\n", n; next }
-    q = substr(line, p + length("· quote:")); sub(/^ +/, "", q); e = 0
+    q = substr(line, p + length("quote:")); sub(/^ +/, "", q); e = 0
     if (substr(q, 1, 1) == "\"") { q = substr(q, 2); e = lastidx(q, "\"") }
     else if (substr(q, 1, 3) == "\342\200\234") { q = substr(q, 4); e = lastidx(q, "\342\200\235") }
     else { printf "%s\tNO-QUOTE\n", n; next }
@@ -1420,7 +1536,7 @@ $(REQF="$req" MODE="$mode" LC_ALL=C awk '
     if (q == "") st = "NO-QUOTE"
     else if (split(q, wd, " ") < 3 && q != R) st = "TOO-SHORT"
     else if (found(R, q)) st = "ok"
-    else if (found(RL, loose(q))) st = "NOT-EXACT (only capitals or * _ marks differ — copy the words exactly)"
+    else if (found(RL, loose(q))) st = "NOT-EXACT (only capitals or * _ ` marks differ — copy the words exactly)"
     else st = "NOT-IN-THE-REQUEST"
     printf "%s\t%s\t%s\n", n, st, raw
   }' "$req" "$f" 2>/dev/null)
@@ -1471,8 +1587,8 @@ QUOTES
       say "check: $((proofs - broke)) of $proofs fix(es) proved · $broke broken · $saved left a test behind in the project"
     fi
   fi
-  if [ "$files" -eq 0 ] && [ "$mode" != council-implement ]; then
-    bad=$((bad + 1)); say "check: nothing to check — no synthesis.md and no seat files"
+  if [ "$files" -eq 0 ] && [ "$gone" -eq 0 ] && [ "$mode" != council-implement ]; then
+    other=$((other + 1)); say "check: nothing to check — no synthesis.md and no seat files"
   fi
   if [ "$qn" -eq 0 ] && [ "$mode" = council-postgame ]; then
     bad=$((bad + 1)); say "check: no quotes found — each part of a post-game quotes the request (quote: \"…\")"
@@ -1483,13 +1599,15 @@ QUOTES
   else what="citation(s)"
   fi
   [ "$noline" -eq 0 ] || extra="$extra · $noline name a path but no line"
-  [ "$unchecked" -eq 0 ] || extra="$extra · $unchecked not checked (a command, a link or no path)"
+  [ "$unchecked" -eq 0 ] || extra="$extra · $unchecked not checked (a command, a link, an area or no path)"
+  [ "$unreadt" -eq 0 ] || extra="$extra · $unreadt item line(s) check can't read"
+  [ "$empty" -eq 0 ] || extra="$extra · $empty section(s) with nothing to check"
   if [ "$qn" -gt 0 ]; then
     say "check: $rows items, $bad broken $what$extra · $qok of $qn quotes found in the request → $out"
   else
     say "check: $rows items, $bad broken $what$extra → $out"
   fi
-  [ "$bad" -eq 0 ]
+  [ "$((bad + other))" -eq 0 ]
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -1541,7 +1659,7 @@ ref_path() {
 }
 
 cmd_doctor() {
-  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind rows unk alt k orph
+  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind rows unk alt k orph skipped inplace
   home="$(council_home)"; root="$(dirname "$home")"
   finding() {
     printf '%s  %s\n       Fix: %s\n' "$1" "$2" "$3"
@@ -1636,15 +1754,15 @@ RUNS
     fi
     unk="$(printf '%s\n' "$rows" | awk -F'\t' '$5 == "unknown" { n++ } END { print n + 0 }')"
     [ "$unk" -eq 0 ] || finding WARN "$unk memory entr(ies) sit under a section the council doesn't read as settled, so they never reach a brief (council memory lists them)" "move them under Accepted Patterns, Enforced Conventions or Decisions — or under ## Retired if they no longer hold"
-    for alt in "$home/conventions.md" "$root/conventions.md"; do
-      [ "$alt" != "$mem" ] && [ -f "$alt" ] || continue
-      k="$(memory_entries "$alt" | grep -c . || true)"
-      [ "${k:-0}" -eq 0 ] || finding WARN "a second memory file, $alt, holds $k entries the council never reads (it reads $mem)" "merge the two, or point the '- conventions:' line under ## Memory in council.config.md at the one to keep"
-    done
+    skipped="$(MEM_SKIP=1 memory_entries "$mem")"
+    [ -z "$skipped" ] || finding WARN "memory has line(s) that open like an entry but are not read, so they reach no brief: $skipped" "write each as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as references/templates/conventions.md shows"
+    inplace="$(printf '%s\n' "$rows" | awk -F'\t' '$5 == "off" && $6 == "marked retired" { n++ } END { print n + 0 }')"
+    [ "$inplace" -eq 0 ] || finding WARN "$inplace memory entr(ies) under a settled section are marked retired, so no brief sees them (council memory lists them)" "if they still hold, drop the retired mark; if not, move them under ## Retired"
+    [ -z "$MEM_ALT" ] || finding WARN "a second memory file, $MEM_ALT, holds $MEM_ALT_N entries the council never reads (it reads $mem)" "merge the two, or point the '- conventions:' line under ## Memory in council.config.md at the one to keep"
     stale="$(cmd_memory check 2>/dev/null | grep -c '^STALE' || true)"
     [ "${stale:-0}" -eq 0 ] || finding WARN "$stale memory anchor(s) point at code that moved or no longer exists" "council memory check lists them; propose re-anchoring or retiring each at the next Learn"
     orph="$(cmd_memory index 2>/dev/null | grep -c 'matches no file, seat or mode' || true)"
-    [ "${orph:-0}" -eq 0 ] || finding WARN "$orph memory scope item(s) match no file, seat or mode, so their entries never reach a brief" "council memory lists them — correct each path or slug"
+    [ "${orph:-0}" -eq 0 ] || finding WARN "$orph memory scope item(s) match no file, seat or mode (an entry still reaches a brief through its other scope items, if it has any)" "council memory lists them — correct each path or slug, or drop the ones whose folder is gone"
     size="$(wc -c < "$mem" | tr -d ' ')"
     [ "$size" -le 25600 ] || finding WARN "memory is $(( size / 1024 )) KB — past the ~25 KB every run reads" "at the end of the next run, propose a consolidation (merge duplicates, retire superseded entries)"
     pend="$(grep -c '^- PROPOSED' "$mem" 2>/dev/null)"
@@ -1729,55 +1847,111 @@ cmd_fingerprint() {
 # Memory — scoped entries, earlier council work
 # ------------------------------------------------------------------------------------------------
 
+# A configured memory path as a path under the repo: "/x" means the repo's root unless that absolute
+# file exists, and a relative path hangs off the root.
+mem_abs() {
+  local root="$1" p="${2//\\//}"
+  case "$p" in
+    ""|[A-Za-z]:*) ;;
+    /*) [ -f "$p" ] || [ ! -f "$root$p" ] || p="$root$p" ;;
+    *) p="$root/${p#./}" ;;
+  esac
+  printf '%s' "$p"
+}
+
+# Are these two paths the same file? (The same file may be written C:/x, c:/x or /c/x.)
+same_file() { [ "$1" = "$2" ] || [ "$1" -ef "$2" ] 2>/dev/null; }
+
 # The memory file, set in MEM: the "- conventions:" path under the config's ## Memory heading, else
 # .council/conventions.md, else a root one. A configured path that doesn't exist gives way to one of
-# those that does, and MEM_NOTE says so. MEM_CONF is the configured path, as a path.
+# those that does, and MEM_NOTE says so. MEM_CONF is the configured path, as a path. MEM_ALT names a
+# second memory file, with MEM_ALT_N entries, that the council is not reading — nothing a project
+# wrote down should sit unread without a word.
 memory_file() {
-  local home="$1" root alt=""
+  local home="$1" root alt="" raw full first k
   root="${home%/*}"
-  MEM_NOTE=""
-  MEM_CONF="$(awk '
+  MEM_NOTE=""; MEM_ALT=""; MEM_ALT_N=0
+  raw="$(awk '
     /^##[ \t]/ { m = ($0 ~ /^##[ \t]+[Mm][Ee][Mm][Oo][Rr][Yy]([^A-Za-z]|$)/); next }
     m && /^[ \t]*[-*][ \t]*conventions:/ {
-      v = $0; sub(/^[ \t]*[-*][ \t]*conventions:[ \t]*/, "", v); gsub(/[\r`"\047]/, "", v); sub(/[ \t].*$/, "", v)
-      print v; exit
+      v = $0; sub(/^[ \t]*[-*][ \t]*conventions:[ \t]*/, "", v); gsub(/[\r`"\047]/, "", v)
+      sub(/[ \t]+\([^()]*\)[ \t]*$/, "", v)                       # a note after the path
+      sub(/[ \t]+(\342\200\224|\342\200\223|-)[ \t].*$/, "", v)
+      sub(/[ \t]+$/, "", v); w = v; sub(/[ \t].*$/, "", w)        # a path may hold a blank; a note may follow one
+      print v "\t" w; exit
     }' "$home/council.config.md" 2>/dev/null)"
-  MEM_CONF="${MEM_CONF//\\//}"
-  case "$MEM_CONF" in
-    ""|[A-Za-z]:*) ;;
-    /*) [ -f "$MEM_CONF" ] || [ ! -f "$root$MEM_CONF" ] || MEM_CONF="$root$MEM_CONF" ;;   # "/conventions.md": the repo's root
-    *) MEM_CONF="$root/${MEM_CONF#./}" ;;
-  esac
+  full="$(mem_abs "$root" "${raw%%"$TAB"*}")"
+  first="$(mem_abs "$root" "${raw#*"$TAB"}")"
+  [ -n "$raw" ] || { full=""; first=""; }
+  MEM_CONF="$full"
+  [ -f "$full" ] || [ -z "$first" ] || [ ! -f "$first" ] || MEM_CONF="$first"
   MEM="$MEM_CONF"
-  [ -z "$MEM" ] || [ ! -f "$MEM" ] || return 0
-  if [ -f "$home/conventions.md" ]; then alt="$home/conventions.md"
-  elif [ -f "$root/conventions.md" ]; then alt="$root/conventions.md"; fi
-  if [ -z "$MEM_CONF" ]; then MEM="${alt:-$home/conventions.md}"
-  elif [ -n "$alt" ]; then
-    MEM="$alt"; MEM_NOTE="the config's memory path, ${MEM_CONF#"$root"/}, doesn't exist — reading ${alt#"$root"/} instead"
+  if [ -z "$MEM" ] || [ ! -f "$MEM" ]; then
+    if [ -f "$home/conventions.md" ]; then alt="$home/conventions.md"
+    elif [ -f "$root/conventions.md" ]; then alt="$root/conventions.md"; fi
+    if [ -z "$MEM_CONF" ]; then MEM="${alt:-$home/conventions.md}"
+    elif [ -n "$alt" ]; then
+      MEM="$alt"; MEM_NOTE="the config's memory path, ${MEM_CONF#"$root"/}, doesn't exist — reading ${alt#"$root"/} instead"
+    fi
   fi
+  for alt in "$home/conventions.md" "$root/conventions.md"; do
+    [ -f "$alt" ] && ! same_file "$alt" "$MEM" || continue
+    k="$(memory_entries "$alt" | grep -c . || true)"
+    [ "${k:-0}" -eq 0 ] || { MEM_ALT="$alt"; MEM_ALT_N="$k"; break; }
+  done
 }
 
 # Memory entries as rows: id, title, scope, anchor, state, section ("-" when empty). An entry is a
-# heading (## to ####) or a top-level bullet whose bold text starts with its id: "### AP-3: title",
-# "### **AP-3**: title", "- **AP-3 — title.** text …" — the id in any case, with or without its dash.
-# Its **Scope:** and **Anchor:** may sit anywhere in its body. state is "settled" under Accepted
-# Patterns, Enforced Conventions, Decisions (or a heading that says adopted, settled, rulings…) and at
-# the top of the file; "off" under Proposed, Rejected, Retired, Superseded… or when the entry is marked
-# retired (a **Retired:** line, a struck-out id); "unknown" under any other section.
+# heading (## to ####), a top-level bullet or a numbered item whose bold text starts with its id:
+# "### AP-3: title", "### **AP-3**: title", "- **AP-3 — title.** text …", "1. **AP-3 — title.**" —
+# the id in any case, with or without its dash. Its **Scope:** and **Anchor:** may sit anywhere in its
+# body. state is "settled" under Accepted Patterns, Enforced Conventions, Decisions (or a heading that
+# says adopted, settled, rulings…) and at the top of the file; "off" under Proposed, Rejected, Retired,
+# Superseded… or when the entry is marked retired (a **Retired:** line, a struck-out id); "unknown"
+# under any other section. A section name is read by what it calls itself, not by every word in it:
+# "## Accepted Patterns — never re-propose these" is settled, and an entry titled "Retired flags stay
+# registered" is live. With MEM_SKIP=1 it prints instead the ids of lines that look like entries but
+# are not read, so nothing drops out of a memory without a word.
 memory_entries() {
   LC_ALL=C awk '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-    function kind(t,   l, i) {                   # a section name: off, settled, or "" (says neither)
-      l = tolower(t)
-      for (i = 1; i <= noff; i++) if (index(l, OFF[i])) return "off"
-      if (l ~ /^(ap|ec|d)s?$/ || l ~ /\((ap|ec|d)\)/) return "settled"      # "## EC", "## Rules (EC)"
+    # A section name: off, settled, or "" (says neither). What the section calls itself — the words
+    # before its first aside — decides; an aside only speaks when the name itself says nothing. A
+    # sub-heading or a bold label ("### Retired", "**Enforced conventions — always/never.**") is read
+    # by its first word alone: a note about a draft never retires the entries beside it.
+    function kind(t, strict,   l, h, w, i) {
+      l = tolower(t); gsub(/[*_~`#]/, "", l); sub(/^[^a-z0-9]+/, "", l)
+      h = l; sub(/[ \t]*(\342\200\224|\342\200\223|-[ \t]|\(|\[|;|:|,).*$/, "", h); h = trim(h)
+      if (strict) {
+        w = h; sub(/[ \t].*$/, "", w)
+        for (i = 1; i <= noff; i++) if (index(w, OFF[i])) return "off"
+        if (w ~ /^(ap|ec|d)s?$/) return "settled"
+        for (i = 1; i <= nset; i++) if (index(w, SET[i])) return "settled"
+        return ""
+      }
+      for (i = 1; i <= noff; i++) if (index(h, OFF[i])) return "off"
+      if (h ~ /^(ap|ec|d)s?$/ || l ~ /\((ap|ec|d)\)/) return "settled"       # "## EC", "## Rules (EC)"
+      for (i = 1; i <= nset; i++) if (index(h, SET[i])) return "settled"
+      for (i = 1; i <= noff; i++) if (index(l, OFF[i])) return "off"         # only the aside says it
       for (i = 1; i <= nset; i++) if (index(l, SET[i])) return "settled"
       return ""
     }
+    function idnorm(s,   t) { t = toupper(s); if (!index(t, "-")) sub(/[0-9]+$/, "-&", t); return t }
+    # A line that opens like an entry but is not read as one — a plain bullet, an indented one — so
+    # that it can be named rather than dropped.
+    function cand(txt, ln,   lo2, rest) {
+      lo2 = tolower(txt); sub(/^[*_~`]+/, "", lo2)
+      if (!match(lo2, /^(ap|ec|d)-?[0-9]+/)) return
+      rest = substr(lo2, RLENGTH + 1)
+      if (rest !~ /^[*_~`]*([ \t]*([:.)]|\342\200\224|\342\200\223|-[ \t])|[ \t]*$)/) return
+      CID[++ncand] = idnorm(substr(lo2, 1, RLENGTH)); CLN[ncand] = ln
+    }
     function flush() {
-      if (id != "") printf "%s\t%s\t%s\t%s\t%s\t%s\n", id, (title == "" ? "-" : title), (scope == "" ? "-" : scope),
-        (anchor == "" ? "-" : anchor), est, (ewhere == "" ? "-" : ewhere)
+      if (id != "") {
+        READ[id] = 1
+        if (!SKIP) printf "%s\t%s\t%s\t%s\t%s\t%s\n", id, (title == "" ? "-" : title), (scope == "" ? "-" : scope),
+          (anchor == "" ? "-" : anchor), est, (ewhere == "" ? "-" : ewhere)
+      }
       id = ""; pend = 0; bul = 0
     }
     function fieldval(line, name,    v) {
@@ -1785,12 +1959,21 @@ memory_entries() {
       v = substr(line, RSTART + RLENGTH); sub(/[ \t]+\302\267[ \t]+\*\*.*$/, "", v)
       gsub(/^[ \t]+|[ \t\r]+$/, "", v); gsub(/`/, "", v); return v
     }
-    function fields(line,   v, lo) {
+    # A field line of the entry: its scope, its anchor, or a line that retires it. "**Retired:** no"
+    # and "**Superseded:** -" retire nothing, and a **Status:** line is read by its first word, so a
+    # status of "accepted (proposed 2026-07-01, approved 2026-07-02)" stays accepted.
+    function fields(line,   v, lo, w, i) {
       v = fieldval(line, "Scope"); if (v != "") scope = v
       v = fieldval(line, "Anchor"); if (v != "") anchor = v
       lo = tolower(line)
-      if (lo ~ /\*\*(retired|superseded|superseded by|withdrawn|deprecated)(:\*\*|\*\*:)/) { est = "off"; ewhere = "marked retired" }
-      v = fieldval(lo, "status"); if (v != "" && kind(v) == "off") { est = "off"; ewhere = "marked " v }
+      for (i = 1; i <= nmark; i++) {
+        if (!match(lo, "\\*\\*" MARK[i] "( by)?:?\\*\\*:?")) continue
+        v = trim(substr(lo, RSTART + RLENGTH)); gsub(/[`*]/, "", v); sub(/[ \t]+\302\267.*$/, "", v); v = trim(v)
+        if (v ~ /^(no|none|n\/a|-|false|never|not yet|\342\200\224|\342\200\223)$/) continue
+        est = "off"; ewhere = "marked retired"
+      }
+      v = fieldval(lo, "status")
+      if (v != "") { w = v; sub(/[ \t].*$/, "", w); gsub(/[^a-z]/, "", w); if (kind(w) == "off") { est = "off"; ewhere = "marked " v } }
     }
     function cleantitle(t) { gsub(/~~/, "", t); gsub(/[ \t]+/, " ", t); t = trim(t); sub(/[.:]$/, "", t); return t }
     # Is s (a heading text, or a bullet after its dash) an entry? Sets id, title and the entry state.
@@ -1821,13 +2004,20 @@ memory_entries() {
       scope = ""; anchor = ""
       est = (sub_st != "" ? sub_st : sec); ewhere = (sub_st != "" ? subname : secname)
       lt = tolower(title)
-      if (est != "off" && (mark ~ /~~/ || lt ~ /[(\[](retired|superseded|withdrawn)/ || lt ~ /^(retired|superseded|withdrawn)([^a-z]|$)/)) { est = "off"; ewhere = "marked retired" }
+      # A marker, not a word of the title: "(retired 2026-09-01)" at either end, "Retired: …", a
+      # struck-out id. "Retired flags stay registered" and "The (retired) v1 route" are titles.
+      if (est != "off" && (mark ~ /~~/ \
+          || lt ~ /^[(\[](retired|superseded|withdrawn)/ \
+          || lt ~ /^(retired|superseded|withdrawn)[ \t]*[-:.\342\200\224\342\200\223]/ \
+          || lt ~ /[(\[](retired|superseded|withdrawn)[^)\]]*[)\]][ \t]*$/)) { est = "off"; ewhere = "marked retired" }
       if (bullet) fields(after)
       return 1
     }
     BEGIN {
+      SKIP = (ENVIRON["MEM_SKIP"] != "")
       noff = split("propos reject retire supersede deprecat withdraw obsolete archived pending draft declined revoked", OFF, " ")
       nset = split("accepted enforced decision convention pattern adopted settled ruling", SET, " ")
+      nmark = split("retired superseded withdrawn", MARK, " ")
       sec = "settled"; secname = ""; sub_st = ""; sublvl = 0; subname = ""; elvl = 0
     }
     { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub(/^\357\273\277/, "", line) }
@@ -1838,27 +2028,44 @@ memory_entries() {
     line ~ /^#+[ \t]/ {
       lvl = 0; while (substr(line, lvl + 1, 1) == "#") lvl++
       txt = trim(substr(line, lvl + 1))
-      if (lvl >= 2 && lvl <= 4 && entry(txt, 0)) { elvl = lvl; next }
+      if (lvl >= 2 && lvl <= 4 && entry(txt, 0)) { elvl = lvl; anyhead = 1; next }
       if (id != "" && !bul && lvl > elvl) { fields(line); next }   # a sub-heading inside an entry
       flush()
-      k = kind(txt); name = substr(line, 1, lvl) " " txt
+      k = kind(txt, lvl > 2); name = substr(line, 1, lvl) " " txt
       if (lvl <= 2) {
-        sec = (lvl == 1) ? "settled" : (k == "" ? "unknown" : k)       # the file title never retires it
+        if (lvl == 1 && !anyhead) sec = "settled"                    # the file title never retires it
+        else sec = (k == "" ? "unknown" : k)
         secname = name; sub_st = ""; sublvl = 0
       } else if (k != "") { sub_st = k; sublvl = lvl; subname = name }
       else if (sub_st != "" && lvl <= sublvl) sub_st = ""
+      anyhead = 1
       next
     }
     line ~ /^[-*+][ \t]/ {
       txt = line; sub(/^[-*+][ \t]+/, "", txt)
+      if (id != "" && !bul) { cand(txt, FNR); fields(line); next }   # a bullet inside a heading entry is its body
       if (entry(txt, 1)) next
+      cand(txt, FNR)
       if (bul) flush(); else if (id != "") fields(line)   # another top-level bullet ends a bullet entry
+      next
+    }
+    line ~ /^[0-9]+[.)][ \t]/ {                          # "1. **AP-3 — title.**" is an entry too
+      txt = line; sub(/^[0-9]+[.)][ \t]+/, "", txt)
+      if ((id == "" || bul) && entry(txt, 1)) next
+      cand(txt, FNR)
+      if (id != "") fields(line)
+      next
+    }
+    line ~ /^[ \t]+([-*+]|[0-9]+[.)])[ \t]/ {            # an indented bullet is never an entry: say so
+      txt = line; sub(/^[ \t]+([-*+]|[0-9]+[.)])[ \t]+/, "", txt)
+      cand(txt, FNR)
+      if (id != "") fields(line)
       next
     }
     line ~ /^(\*\*|__)[^*_]/ && (id == "" || bul) {          # a bold line used as a heading
       t = line; sub(/[ \t]+$/, "", t)
       if ((t ~ /^\*\*[^*]+\*\*[.:]?$/ || t ~ /^__[^_]+__[.:]?$/) && t !~ /:(\*\*|__)[.:]?$/) {
-        txt = substr(t, 3); sub(/(\*\*|__)[.:]?$/, "", txt); k = kind(txt)
+        txt = substr(t, 3); sub(/(\*\*|__)[.:]?$/, "", txt); k = kind(txt, 1)
         if (k != "") { flush(); sub_st = k; sublvl = 5; subname = t; next }
       }
     }
@@ -1868,7 +2075,13 @@ memory_entries() {
       if (++pn >= 3 || line ~ /^[ \t]*$/) pend = 0; else ptitle = ptitle " " line
     }
     id != "" { fields(line) }
-    END { flush() }' "$1" 2>/dev/null
+    END {
+      flush()
+      if (!SKIP) exit
+      for (i = 1; i <= ncand; i++)
+        if (!(CID[i] in READ) && !(CID[i] in said)) { said[CID[i]] = 1; out = out (out == "" ? "" : ", ") CID[i] " (line " CLN[i] ")" }
+      if (out != "") print out
+    }' "$1" 2>/dev/null
 }
 
 # How many lines of a memory file (outside comments) name an entry id — to tell a file with no entries
@@ -1881,10 +2094,18 @@ memory_idlines() {
     END { print n + 0 }' "$1" 2>/dev/null
 }
 
-# The loud line for a memory file that names entry ids but gives no entry — or nothing.
+# The loud line for a memory file whose entries the council can't read — the whole file, or single
+# lines that open like an entry (a plain bullet, an indented one) — or nothing when all of it reads.
 memory_unread() {
-  [ "$(memory_idlines "$1")" -gt 0 ] || return 0
-  say "memory: WARNING — $1 names entry ids, but no entry could be read, so nothing in it reaches a seat or a builder. Write each entry as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as references/templates/conventions.md shows."
+  local skipped
+  if [ -z "$(memory_entries "$1")" ]; then
+    [ "$(memory_idlines "$1")" -gt 0 ] || return 0
+    say "memory: WARNING — $1 names entry ids, but no entry could be read, so nothing in it reaches a seat or a builder. Write each entry as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as references/templates/conventions.md shows."
+    return 0
+  fi
+  skipped="$(MEM_SKIP=1 memory_entries "$1")"
+  [ -n "$skipped" ] || return 0
+  say "memory: WARNING — $1 has line(s) that open like an entry but are not read, so they reach no seat: $skipped. Write each entry as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as references/templates/conventions.md shows."
 }
 
 # The awk that matches paths and slugs to scope items and areas. items() splits a list at commas and
@@ -1896,22 +2117,32 @@ AWK_SCOPE='
 function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
 function normp(x) {
   gsub(/[`"\047]/, "", x); gsub(/\\/, "/", x); x = trim(x)
+  sub(/^[Rr][Ee][Ss]:\/\//, "", x)                    # a Godot res:// path names the same file
   while (substr(x, 1, 2) == "./") x = substr(x, 3)
   sub(/^\/+/, "", x); sub(/[.]+$/, "", x); sub(/\/+$/, "", x)
   return x
 }
-function additem(x, out, n,   m, j, p, ok) {
-  x = trim(x); sub(/[ \t]+\([^()]*\)$/, "", x); sub(/[ \t]+(\342\200\224|\342\200\223|-)[ \t].*$/, "", x)
-  if (x ~ /[ \t]/) {
+# One scope or areas item. Blank-separated paths ("docs/** webapp/**") are separate items, but a path
+# may hold a blank too ("docs/My Notes/**"), and nothing in the text says which: both readings are
+# kept, the whole in IWHOLE and its pieces in IPIECE, so a match either way counts and only an item
+# that matches under neither reading is ever called an orphan. A quoted item is never split.
+function additem(x, out, n,   m, j, p, ok, quoted, w) {
+  x = trim(x); quoted = (x ~ /^[`"\047].*[`"\047]$/)
+  sub(/[ \t]+\([^()]*\)$/, "", x); sub(/[ \t]+(\342\200\224|\342\200\223|-)[ \t].*$/, "", x)
+  if (!quoted && x ~ /[ \t]/) {
     m = split(x, p, /[ \t]+/); ok = 1
     for (j = 1; j <= m; j++) if (p[j] !~ /[\/*]/) ok = 0
-    if (ok) { for (j = 1; j <= m; j++) if ((p[j] = normp(p[j])) != "") out[++n] = p[j]; return n }
+    if (ok) {
+      w = normp(x); if (w != "") { out[++n] = w; IWHOLE[n] = 1; wn = n }
+      for (j = 1; j <= m; j++) if ((p[j] = normp(p[j])) != "") { out[++n] = p[j]; IPIECE[n] = wn }
+      return n
+    }
   }
-  x = normp(x); if (x != "") out[++n] = x
+  x = normp(x); if (x != "") { out[++n] = x; IWHOLE[n] = 0; IPIECE[n] = 0 }
   return n
 }
 function items(s, out,   n, i, c, d, cur) {
-  n = 0; d = 0; cur = ""
+  n = 0; d = 0; cur = ""; wn = 0; split("", IWHOLE); split("", IPIECE)
   for (i = 1; i <= length(s); i++) {
     c = substr(s, i, 1)
     if (c == "{") d++; else if (c == "}" && d) d--
@@ -1990,68 +2221,86 @@ index_paths() { sed -n 's/^## \(.*\)  (.*$/\1/p' "$1/index.md" 2>/dev/null; }
 # One item per line from a comma-separated list, trimmed.
 split_list() { printf '%s\n' "$1" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$'; }
 
-# One anchor per line from an **Anchor:** list, trimmed. A piece that is only a line or a range
-# ("3", "40-55", blanks allowed) belongs to the path:line before it, as it would in a citation, so
-# "src/a.py:1,3, summary" is two anchors: "src/a.py:1,3" and "summary". The piece is judged by its
-# shape, not its value: "0" or "9-2" makes the citation bad-line rather than pass as a symbol
-# wherever the code has that word. A semicolon separates anchors as a comma does.
-split_anchors() {
-  printf '%s\n' "$1" | tr ';' ',' | awk '
+# Every anchor of the memory entries on stdin, as rows the check can work through in one pass:
+#   <id> <anchor> C <path> <lines>   a file and the lines it names
+#   <id> <anchor> F <path>           a file (it has a folder in it)
+#   <id> <anchor> X <name>           a file, or a name written with dots (process.env, request.json)
+#   <id> <anchor> N <path> <name>    a name inside that file
+#   <id> <anchor> S <name>           a name in the code
+# An **Anchor:** list is split at commas and semicolons, except that a piece which is only a line or
+# a range ("3", "40-55") belongs to the path:line before it, as it would in a citation. A link gives
+# its target; res://, ./ and a trailing . go; #L5 is line 5. "fetch() in a.py", "a.py::fetch",
+# "a.py:5 (fetch)", "a.py:fetch", "a.py - fetch" and "a.py fetch" all name a symbol in a file.
+anchor_rows() {
+  LC_ALL=C awk -F'\t' '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-    function emit() { if (cur != "") print trim(cur); cur = "" }
-    {
-      n = split($0, piece, ",")
-      for (i = 1; i <= n; i++) {
-        p = trim(piece[i]); gsub(/–/, "-", p)
-        if (p == "") continue
-        if (cur ~ /:[0-9]/ && p ~ /^[0-9]+([ \t]*-[ \t]*[0-9]+)?$/) cur = cur "," piece[i]   # as written
-        else { emit(); cur = piece[i] }
-      }
-      emit()
-    }'
-}
-
-# What one anchor names, one row each: C path lines · F path · FS path name (a name inside that file) ·
-# S name · - (nothing to check: none, n/a). A link gives its target; res://, ./ and a trailing . go;
-# #L5 is line 5; "fetch() in a.py", "a.py::fetch" and "a.py:5 (fetch)" name a symbol in a file.
-anchor_parts() {
-  A="$1" LC_ALL=C awk '
-    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-    function name(s) { s = trim(s); sub(/\(.*\)$/, "", s); return trim(s) }
-    function clean(p) { p = trim(p); gsub(/\\/, "/", p); sub(/^res:\/\//, "", p); while (substr(p, 1, 2) == "./") p = substr(p, 3); return p }
+    function nm(s) { s = trim(s); sub(/\(.*\)$/, "", s); gsub(/[`"]/, "", s); return trim(s) }
+    function clean(p) { p = trim(p); gsub(/\\/, "/", p); sub(/^[Rr][Ee][Ss]:\/\//, "", p)
+                        while (substr(p, 1, 2) == "./") p = substr(p, 3); return p }
     function pathy(p) { return p ~ /\// || tolower(p) ~ EXT }
-    function place(p,   l) {
+    function named(s) { return s ~ /^[A-Za-z_][A-Za-z0-9_.:#-]*(\(\))?$/ }
+    function place(id, raw, p,   l) {
       p = clean(p)
-      if (match(p, /#[Ll]?[0-9]+(-[Ll]?[0-9]+)?$/)) { l = substr(p, RSTART + 1); gsub(/[Ll]/, "", l); P = substr(p, 1, RSTART - 1); print "C\t" P "\t" l; return }
+      if (match(p, /#[Ll]?[0-9]+(-[Ll]?[0-9]+)?$/)) { l = substr(p, RSTART + 1); gsub(/[Ll]/, "", l)
+        P = substr(p, 1, RSTART - 1); print id "\t" raw "\tC\t" P "\t" l; return }
       sub(/#.*$/, "", p)
-      if (match(p, /:[0-9][0-9, \t-]*$/)) { l = substr(p, RSTART + 1); gsub(/[ \t]/, "", l); P = substr(p, 1, RSTART - 1); print "C\t" P "\t" l; return }
-      P = p; print "F\t" p
+      if (match(p, /:[0-9][0-9, \t-]*$/)) { l = substr(p, RSTART + 1); gsub(/[ \t]/, "", l)
+        P = substr(p, 1, RSTART - 1); print id "\t" raw "\tC\t" P "\t" l; return }
+      P = p
+      print id "\t" raw "\t" (p ~ /\// ? "F" : "X") "\t" p       # with no folder it may be a dotted name
     }
-    BEGIN {
-      EXT = "\\.(py|pyi|pyx|js|jsx|mjs|cjs|ts|tsx|gd|gdshader|tscn|tres|godot|cs|java|kt|kts|go|rs|rb|php|swift|c|h|cc|cpp|cxx|hpp|sh|bash|ps1|bat|cmd|sql|md|mdx|rst|txt|json|jsonc|yml|yaml|toml|ini|cfg|conf|xml|html|htm|css|scss|sass|less|vue|svelte|lock|csv|ipynb|lua|dart|ex|exs|scala|tf|proto|graphql|gradle|env)$"
-      a = ENVIRON["A"]; gsub(/\r/, "", a); a = trim(a)
+    function parse(id, raw,   a, lo, t, p, note, i, w) {
+      a = raw; gsub(/\r/, "", a); a = trim(a)
       if (match(a, /\[[^]]*\]\([^)]*\)/)) {
         t = substr(a, RSTART, RLENGTH); sub(/^\[[^]]*\]\(/, "", t); sub(/\)$/, "", t)
         if (t !~ /^[a-z]+:\/\// || t ~ /^res:/) a = t
       }
       gsub(/[`"]/, "", a); sub(/[ \t.,;:]+$/, "", a); a = trim(a)
       lo = tolower(a)
-      if (a == "" || lo ~ /^(none|n\/a|na|tbd|-|\342\200\224|\342\200\223|\(none\))$/) { print "-"; exit }
+      if (a == "" || lo ~ /^(none|n\/a|na|tbd|-|\342\200\224|\342\200\223|\(none\))$/) return
       gsub(/\342\200\223|\342\200\224/, "-", a)
+      gsub(/\342\206\222/, " ", a); gsub(/[ \t]->[ \t]|[ \t]=>[ \t]/, " ", a)    # an arrow joins the two
       note = ""
-      if (match(a, /[ \t]+\([^()]*\)$/)) { note = trim(substr(a, RSTART)); a = trim(substr(a, 1, RSTART - 1)); note = substr(note, 2, length(note) - 2) }
+      if (match(a, /[ \t]+\([^()]*\)$/)) { note = trim(substr(a, RSTART)); a = trim(substr(a, 1, RSTART - 1))
+        note = substr(note, 2, length(note) - 2) }
       if (match(a, /[ \t]in[ \t]+[^ \t]+$/)) {
         p = substr(a, RSTART + 1); sub(/^in[ \t]+/, "", p)
-        if (pathy(clean(p))) { print "FS\t" clean(p) "\t" name(substr(a, 1, RSTART - 1)); exit }
+        if (pathy(clean(p))) { print id "\t" raw "\tN\t" clean(p) "\t" nm(substr(a, 1, RSTART - 1)); return }
       }
-      if ((i = index(a, "::")) > 0 && pathy(clean(substr(a, 1, i - 1)))) { place(substr(a, 1, i - 1)); print "FS\t" P "\t" name(substr(a, i + 2)); exit }
+      if ((i = index(a, "::")) > 0 && pathy(clean(substr(a, 1, i - 1)))) {
+        place(id, raw, substr(a, 1, i - 1))                      # sets P, and prints the file row
+        print id "\t" raw "\tN\t" P "\t" nm(substr(a, i + 2)); return
+      }
+      if (a ~ /[ \t]/) {                                         # "path - name", "path name"
+        w = a; sub(/[ \t]+-?[ \t]*[^ \t]+$/, "", w); t = a; sub(/^.*[ \t]/, "", t)
+        if (w !~ /[ \t]/ && pathy(clean(w)) && clean(w) !~ /:[0-9]/ && named(t) && !pathy(t)) {
+          place(id, raw, w); print id "\t" raw "\tN\t" P "\t" nm(t); return
+        }
+      }
+      if (match(a, /^[^ \t:]+:[A-Za-z_]/) && pathy(clean(substr(a, 1, index(a, ":") - 1)))) {
+        i = index(a, ":")                                        # "scripts/x.gd:_teardown_move"
+        place(id, raw, substr(a, 1, i - 1)); print id "\t" raw "\tN\t" P "\t" nm(substr(a, i + 1)); return
+      }
       if (a ~ /\// || a ~ /:[0-9]/ || a ~ /#[Ll]?[0-9]/ || pathy(a) || a ~ /^res:/) {
-        place(a)
-        if (note ~ /^[A-Za-z_][A-Za-z0-9_.]*(\(\))?$/) print "FS\t" P "\t" name(note)
-        exit
+        place(id, raw, a)
+        if (note ~ /^[A-Za-z_][A-Za-z0-9_.]*(\(\))?$/) print id "\t" raw "\tN\t" P "\t" nm(note)
+        return
       }
-      print "S\t" name(a)
-    }' </dev/null
+      print id "\t" raw "\tS\t" nm(a)
+    }
+    BEGIN {
+      EXT = "\\.(py|pyi|pyx|js|jsx|mjs|cjs|ts|tsx|gd|gdshader|tscn|tres|godot|cs|java|kt|kts|go|rs|rb|php|swift|c|h|cc|cpp|cxx|hpp|sh|bash|ps1|bat|cmd|sql|md|mdx|rst|txt|json|jsonc|yml|yaml|toml|ini|cfg|conf|xml|html|htm|css|scss|sass|less|vue|svelte|lock|csv|ipynb|lua|dart|ex|exs|scala|tf|proto|graphql|gradle|env)$"
+    }
+    $5 == "settled" && $4 != "-" {
+      a = $4; gsub(/;/, ",", a); n = split(a, piece, ","); cur = ""
+      for (i = 1; i <= n; i++) {
+        p = trim(piece[i]); gsub(/\342\200\223/, "-", p)
+        if (p == "") continue
+        if (cur ~ /:[0-9]/ && p ~ /^[0-9]+([ \t]*-[ \t]*[0-9]+)?$/) cur = cur "," piece[i]    # as written
+        else { if (trim(cur) != "") parse($1, trim(cur)); cur = piece[i] }
+      }
+      if (trim(cur) != "") parse($1, trim(cur))
+    }'
 }
 
 # The tracked and untracked files under $1 (outside git: every file), with a newline before each, in
@@ -2068,58 +2317,49 @@ anchor_files() {
   fi
 }
 
-# An anchor's path as it is under $1: itself, or the one file or folder whose path ends with it
-# ("x.py", "services/risk.py" written short). Fails when there is none.
+# An anchor's path as it is under $1, in AP_OUT: itself, or the one file or folder whose path ends
+# with it ("x.py", "services/risk.py" written short). Fails with AP_OUT empty when there is none.
 anchor_path() {
   local top="$1" p="$2" nl='
 '
+  AP_OUT=""
   [ -n "$p" ] || return 1
-  case "$p" in /*|[A-Za-z]:*) [ ! -e "$p" ] || { printf '%s' "$p"; return 0; }; p="${p#"$top"/}" ;; esac
-  if [ -e "$top/$p" ]; then printf '%s' "$p"; return 0; fi
+  case "$p" in /*|[A-Za-z]:*) [ ! -e "$p" ] || { AP_OUT="$p"; return 0; }; p="${p#"$top"/}" ;; esac
+  if [ -e "$top/$p" ]; then AP_OUT="$p"; return 0; fi
   case "$ANCHOR_FILES" in *"/$p$nl"*|*"/$p/"*) ;; *) return 1 ;; esac
-  P="$p" awk '
+  AP_OUT="$(P="$p" awk '
     { f = $0; p = ENVIRON["P"]; n = length(f) - length(p) }
     n > 0 && substr(f, n) == "/" p { print f; exit }
     (i = index(f, "/" p "/")) > 0 { print substr(f, 1, i + length(p)); exit }' <<EOF
 $ANCHOR_FILES
 EOF
+)"
+  [ -n "$AP_OUT" ]
 }
 
-# Is a name ($2) in the code under $1, as a whole word? Untracked files count; outside git, every file.
-anchor_named() {
-  local rc
+# Which of the names in the file $2 (one per line) are in the code under $1, as whole words — one
+# search for all of them, because one search per name costs seconds on a memory with many anchors.
+# Prints each name it found. Untracked files count; outside git, every file.
+anchor_find() {
+  local top="$1" pat="$2" rc
+  [ -s "$pat" ] || return 0
   if [ "${ANCHOR_GIT:-1}" = 1 ]; then
-    (cd "$1" && git grep -q -w -F --untracked -e "$2" -- . ':(exclude).council') 2>/dev/null; rc=$?
+    (cd "$top" && git grep -h -o -w -F -f "$pat" --untracked -- . ':(exclude).council') 2>/dev/null; rc=$?
   else
-    (cd "$1" && git grep --no-index -q -w -F -e "$2" -- . ':(exclude).council' ':(exclude).git') 2>/dev/null; rc=$?
+    (cd "$top" && git grep -h -o -w -F -f "$pat" --no-index -- . ':(exclude).council' ':(exclude).git') 2>/dev/null; rc=$?
   fi
-  [ "$rc" -le 1 ] || { (cd "$1" && grep -r -q -w -F --exclude-dir=.git --exclude-dir=.council -e "$2" .) 2>/dev/null; rc=$?; }
-  return "$rc"
+  [ "$rc" -le 1 ] || (cd "$top" && grep -r -h -o -w -F -f "$pat" --exclude-dir=.git --exclude-dir=.council .) 2>/dev/null
+  return 0
 }
 
-# Why an anchor ($2) no longer holds under $1 — or nothing, when it does.
-anchor_stale() {
-  local top="$1" item="$2" kind p l f st part rest
-  while IFS="$TAB" read -r kind p l; do
-    case "$kind" in
-      C) if ! f="$(anchor_path "$top" "$p")"; then printf 'anchor %s no longer exists' "$item"; return; fi
-         st="$(cite_status "$top" "$f:$l")"
-         [ "$st" = ok ] || { printf 'anchor %s: %s' "$item" "$st"; return; } ;;
-      F) anchor_path "$top" "$p" >/dev/null || { printf 'anchor %s no longer exists' "$item"; return; } ;;
-      FS) if ! f="$(anchor_path "$top" "$p")"; then printf 'anchor %s no longer exists' "$item"; return; fi
-          case "$f" in /*|[A-Za-z]:*) ;; *) f="$top/$f" ;; esac
-          grep -r -q -w -F -e "$l" "$f" 2>/dev/null || { printf 'nothing in %s is named %s any more' "$p" "$l"; return; } ;;
-      S) [ -n "$p" ] || continue
-         anchor_path "$top" "$p" >/dev/null && continue
-         rest="${p//::/.}"; rest="${rest//->/.}"; rest="${rest//#/.}."     # Universe.registry: both names
-         while [ -n "$rest" ]; do
-           part="${rest%%.*}"; rest="${rest#*.}"
-           [ -z "$part" ] || anchor_named "$top" "$part" || { printf 'nothing in the code is named %s any more' "$p"; return; }
-         done ;;
-    esac
-  done <<ROWS
-$(anchor_parts "$item")
-ROWS
+# The same inside named files: for the names in $2 and the files listed in $3, print "<file> <name>"
+# (tab separated) for every name that is in that file.
+anchor_find_in() {
+  local top="$1" pat="$2" files="$3"
+  { [ -s "$pat" ] && [ -s "$files" ]; } || return 0
+  (cd "$top" && tr '\n' '\0' < "$files" | xargs -0 grep -H -o -w -F -f "$pat" -- 2>/dev/null) \
+    | awk -F: 'NF >= 2 { n = $NF; printf "%s\t%s\n", substr($0, 1, length($0) - length(n) - 1), n }'
+  return 0
 }
 
 # Every scope item that matches no file, seat slug or mode. Rows on stdin are memory entries; $1 is the
@@ -2137,21 +2377,34 @@ scope_orphans() {
     END {
       for (r = 1; r <= nr; r++) {
         split(R[r], f, "\t"); m = items(f[3], I)
+        split("", hit); split("", bare); split("", W); split("", P)
+        for (i = 1; i <= m; i++) { W[i] = IWHOLE[i]; P[i] = IPIECE[i] }
         for (i = 1; i <= m; i++) {
+          g = I[i]
+          for (j = 1; j <= ns && !hit[i]; j++) if (S[j] != "" && S[j] == g) hit[i] = 1
+          if (!hit[i] && g !~ /[\/.*?{\[]/ && !roster) { bare[i] = 1; continue }   # no roster to judge a word by
+          for (j = 1; j <= nf && !hit[i]; j++) if (covers(F[j], g, ".*", 0)) hit[i] = 1
+        }
+        for (i = 1; i <= m; i++) {
+          if (hit[i] || bare[i]) continue
+          if (P[i] && hit[P[i]]) continue                       # the item read whole matches
+          if (W[i] && pieceshit(i, m, P, hit)) continue          # its pieces match instead
           g = I[i]; if (g in seen) continue
-          seen[g] = 1; hit = 0
-          for (j = 1; j <= ns && !hit; j++) if (S[j] != "" && S[j] == g) hit = 1
-          if (!hit && g !~ /[\/.*?{\[]/ && !roster) continue    # a bare word, and no roster to judge it by
-          for (j = 1; j <= nf && !hit; j++) if (covers(F[j], g, ".*", 0)) hit = 1
-          if (!hit) printf "memory: scope item \"%s\" (%s) matches no file, seat or mode — check its spelling\n", g, f[1]
+          seen[g] = 1
+          printf "memory: scope item \"%s\" (%s) matches no file, seat or mode — check its spelling, or drop it when the folder is gone\n", g, f[1]
         }
       }
+    }
+    function pieceshit(w, m, P, hit,   i, any) {
+      any = 0
+      for (i = 1; i <= m; i++) if (P[i] == w) { if (!hit[i]) return 0; any = 1 }
+      return any
     }'
 }
 
 cmd_memory() {
   local sub="${1:-index}" home top tree mem entries n=0 stale=0 id title scope anchor state where item k keys run why nl='
-'
+' tmpd rows found foundin counts kind p extra parts part f ln st last=""
   home="$(council_home)"; top="${home%/*}"
   memory_file "$home"; mem="$MEM"
   if [ ! -f "$mem" ]; then
@@ -2159,6 +2412,7 @@ cmd_memory() {
     die "no memory file ($mem) — council-init creates .council/conventions.md"
   fi
   [ -z "$MEM_NOTE" ] || printf 'council: %s — fix the - conventions: line under ## Memory in council.config.md\n' "$MEM_NOTE" >&2
+  [ -z "$MEM_ALT" ] || printf 'council: WARNING — a second memory file, %s, holds %s entries the council never reads (it reads %s) — merge them, or point the - conventions: line under ## Memory in council.config.md at the one to keep\n' "$MEM_ALT" "$MEM_ALT_N" "$mem" >&2
   entries="$(memory_entries "$mem")"
   [ $# -eq 0 ] || shift
   case "$sub" in
@@ -2175,12 +2429,13 @@ cmd_memory() {
         { printf "%s · %s · NOT SERVED — its section, %s, is not one the council reads as settled\n", $1, $2, clip($6); u++ }
         END { if (u) printf "memory: WARNING — %d entr%s never reach%s a brief: move %s under Accepted Patterns, Enforced Conventions or Decisions (or under ## Retired if %s no longer hold%s)\n", u, (u == 1 ? "y" : "ies"), (u == 1 ? "es" : ""), (u == 1 ? "it" : "them"), (u == 1 ? "it" : "they"), (u == 1 ? "s" : "") }'
       printf '%s\n' "$entries" | scope_orphans "$(this_tree)" "$(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"
+      memory_unread "$mem"
       ;;
     select)
-      [ -n "$entries" ] || memory_unread "$mem" >&2
+      memory_unread "$mem" >&2
       tree=""; keys=""
       [ $# -eq 0 ] || tree="$(this_tree)"
-      for k in "$@"; do
+      for k in ${1+"$@"}; do
         case "$k" in */) ;; *) [ ! -d "$tree/$k" ] || k="$k/" ;; esac
         keys="$keys$k$nl"
       done
@@ -2209,7 +2464,9 @@ $(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"            #
         $0 == "\f" { part = 2; next }
         !part {                                     # the keys: paths, slugs, the mode
           k = $0; gsub(/\r/, "", k); gsub(/\\/, "/", k)
-          if (top != "" && index(k, top "/") == 1) k = substr(k, length(top) + 2)
+          if (k ~ /^\/[A-Za-z]\// && top ~ /^[A-Za-z]:\//) k = substr(k, 2, 1) ":" substr(k, 3)   # Git Bash
+          if (top != "" && index(tolower(k), tolower(top) "/") == 1) k = substr(k, length(top) + 2)
+          if (k == "." || k == "./" || (top != "" && tolower(k) == tolower(top))) { all = 1; next }  # the whole tree
           d = (k ~ /\/$/); k = normp(k)
           if (k != "") { K[++n] = k; D[n] = d }
           next
@@ -2220,7 +2477,7 @@ $(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"            #
         {
           tot++
           if ($3 == "-" || everyrun($3)) { every++; print $1 " · " $2 " · every run"; next }
-          m = items($3, I); hit = 0
+          m = items($3, I); hit = all                 # "select ." is the whole tree: every scope is in it
           for (i = 1; i <= m && !hit; i++) {
             if (everyrun(I[i])) hit = 1
             for (j = 1; j <= n && !hit; j++) if (covers(K[j], I[i], ".*", D[j])) hit = 1
@@ -2235,22 +2492,70 @@ $(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"            #
         }'
       ;;
     check)
-      [ -n "$entries" ] || memory_unread "$mem"
+      memory_unread "$mem"
       anchor_files "$top"
-      while IFS="$TAB" read -r id title scope anchor state where; do
-        [ -n "$id" ] && [ "$state" = settled ] || continue
-        n=$((n + 1))
-        [ "$anchor" != "-" ] || continue
-        while IFS= read -r item; do
-          [ -n "$item" ] || continue
-          why="$(anchor_stale "$top" "$item")"
-          [ -z "$why" ] || { stale=$((stale + 1)); say "STALE  $id — $why"; }
-        done <<ITEMS
-$(split_anchors "$anchor")
-ITEMS
-      done <<ENTRIES
-$entries
-ENTRIES
+      n="$(printf '%s\n' "$entries" | awk -F'\t' '$5 == "settled" { c++ } END { print c + 0 }')"
+      tmpd="$(mktemp -d 2>/dev/null)" || { tmpd="$home/.memcheck.$$"; mkdir -p "$tmpd" || die "cannot write $tmpd"; }
+      : > "$tmpd/names"; : > "$tmpd/fsnames"; : > "$tmpd/fsfiles"; : > "$tmpd/files"
+      # One pass to see what each anchor names, then one search for every name at once: a search per
+      # anchor costs minutes on a memory with hundreds of them.
+      rows=""
+      while IFS="$TAB" read -r id item kind p extra; do
+        [ -n "$id" ] || continue
+        f=""; parts="${extra//[.:#]/ }"
+        case "$kind" in
+          C|F|N) anchor_path "$top" "$p" && f="$AP_OUT" ;;
+          X) if anchor_path "$top" "$p"; then f="$AP_OUT"; else printf '%s\n' "$p" >> "$tmpd/names"; fi ;;
+          S) for part in ${p//[.:#]/ }; do printf '%s\n' "$part" >> "$tmpd/names"; done ;;
+        esac
+        case "$kind" in
+          C) [ -z "$f" ] || printf '%s\n' "$f" >> "$tmpd/files" ;;
+          N) if [ -n "$f" ]; then
+               printf '%s\n' "$f" >> "$tmpd/fsfiles"
+               for part in ${parts:-}; do printf '%s\n' "$part" >> "$tmpd/fsnames"; done
+             fi ;;
+        esac
+        rows="$rows$id$TAB$item$TAB$kind$TAB${f:--}$TAB$p$TAB${extra:--}
+"
+      done <<PARSED
+$(printf '%s\n' "$entries" | anchor_rows)
+PARSED
+      for k in names fsnames fsfiles files; do
+        sort -u "$tmpd/$k" > "$tmpd/$k.s" 2>/dev/null && mv -f "$tmpd/$k.s" "$tmpd/$k" 2>/dev/null
+      done
+      found="$nl$(anchor_find "$top" "$tmpd/names" | sort -u)$nl"
+      foundin="$nl$(anchor_find_in "$top" "$tmpd/fsnames" "$tmpd/fsfiles" | sort -u)$nl"
+      counts="$nl$( (cd "$top" && tr '\n' '\0' < "$tmpd/files" | xargs -0 -n 20 awk \
+                   '{ c[FILENAME] = FNR } END { for (f in c) printf "%s\t%s\n", f, c[f] }' 2>/dev/null) )$nl"
+      rm -rf "$tmpd" 2>/dev/null
+      while IFS="$TAB" read -r id item kind f p extra; do
+        [ -n "$id" ] || continue
+        why=""; [ "$extra" != "-" ] || extra=""; parts="${extra//[.:#]/ }"
+        case "$kind" in
+          C) if [ "$f" = "-" ]; then why="anchor $item no longer exists"
+             elif [ -d "$top/$f" ]; then why="anchor $item: bad-line (a folder has no lines)"
+             else
+               ln=0; case "$counts" in *"$nl$f$TAB"*) st="${counts#*"$nl$f$TAB"}"; ln="${st%%"$nl"*}" ;; esac
+               if ! cite_ranges "$extra" "$ln" >/dev/null 2>&1; then why="anchor $item: $(cite_lines "$extra" "$ln")"; fi
+             fi ;;
+          F) [ "$f" != "-" ] || why="anchor $item no longer exists" ;;
+          X) if [ "$f" = "-" ]; then
+               case "$found" in *"$nl$p$nl"*) ;; *) why="anchor $item no longer exists" ;; esac
+             fi ;;
+          N) if [ "$f" = "-" ]; then why="anchor $item no longer exists"
+             else
+               for part in ${parts:-}; do
+                 case "$foundin" in *"$nl$f$TAB$part$nl"*) ;; *) why="nothing in $f is named $extra any more"; break ;; esac
+               done
+             fi ;;
+          S) for part in ${p//[.:#]/ }; do
+               case "$found" in *"$nl$part$nl"*) ;; *) why="nothing in the code is named $p any more"; break ;; esac
+             done ;;
+        esac
+        [ -z "$why" ] || [ "$id$TAB$item" = "$last" ] || { stale=$((stale + 1)); last="$id$TAB$item"; say "STALE  $id — $why"; }
+      done <<RESOLVED
+$rows
+RESOLVED
       [ "$stale" -eq 0 ] || say "→ at the next Learn, propose re-anchoring or retiring each stale entry — the user decides"
       say "memory check: $stale stale anchor(s) across $n entries"
       [ "$stale" -eq 0 ]
@@ -2499,36 +2804,64 @@ seat_out() {
 
 # Per-seat kept / cut / refuted counts for a run, from synthesis.md's "from:" provenance and the
 # REFUTED rows of its verify-*.md tables. Rows: slug kept cut refuted. Provenance is the item line's
-# last " · from:" field (a title may say "from:" too), read as seat#item tokens: "hunt#1, #2",
-# "beck#1,2" and "hunt#3 and beck#3" each name every item. A verdict counts by its first word, in any
+# last "from:" field, however it is introduced (" · from:", "— from:", "(from:"); a title may say
+# "from:" too, so the last one wins. It is read as seat#item tokens — "hunt#1, #2", "beck#1,2",
+# "hunt#3 and beck#3", "hunt#4/beck#4" and "hunt #1" all name every item, and each item counts once
+# however often it is named. A bare seat name counts as one item of that seat's, and only for a seat
+# the run really had, so the words of a sentence never become seats; inside brackets only "seat#n"
+# counts ("(merged with hunt#2)" names hunt#2, not "with"). A verdict counts by its first word, in any
 # case and with any mark before it ("❌ Refuted (latent)"); the # cell may read "1.", "#1" or "C1".
 synthesis_counts() {
   local run="$1"
   [ -f "$run/synthesis.md" ] || return 0
   set -- "$run"/verify-*.md
   [ -e "$1" ] || set --
-  SYN="$run/synthesis.md" awk '
+  SYN="$run/synthesis.md" \
+  SLUGS="$(awk -F'\t' 'NR > 1 && $1 != "" { print $1 }' "$run/seats.tsv" 2>/dev/null | paste -sd ' ' -)" awk '
+    function count(sl, key,   gk) {                  # one item of one seat, however often it is named
+      seen[sl] = 1; gk = sec "\t" key
+      if (!(gk in once)) { once[gk] = 1; if (sec == "k") kept[sl]++; else cut[sl]++ }
+      if (sec == "k" && !((n "\t" sl) in owned)) { owned[n "\t" sl] = 1; owners[n] = owners[n] " " sl }
+    }
+    function known(w) { return (nslug == 0 || (w in SLUG)) }
+    function flush() { if (carry != "" && pendnum == 0 && known(carry)) count(carry, carry "#" n); carry = ""; pendnum = 0 }
+    function credit(w, d) {
+      sub(/[.,:;]+$/, "", w)
+      if (w ~ /^[A-Za-z][A-Za-z0-9._-]*#C?[0-9]+[a-z]?$/) {
+        flush(); carry = substr(w, 1, index(w, "#") - 1); pendnum = 1; count(carry, w); return
+      }
+      if (w ~ /^#?C?[0-9]+[a-z]?$/ && carry != "") { sub(/^#/, "", w); pendnum = 1; if (known(carry)) count(carry, carry "#" w); return }
+      if (d == 0 && w ~ /^[A-Za-z][A-Za-z0-9._-]*$/) { flush(); carry = w; pendnum = 0; return }
+      flush()
+    }
+    BEGIN { nslug = split(ENVIRON["SLUGS"], S, " "); for (i = 1; i <= nslug; i++) SLUG[S[i]] = 1 }
     FNR == 1 { sec = ""; vcol = 0; ncol = 2 }
     FILENAME == ENVIRON["SYN"] {
       if ($0 ~ /^## /) { sec = ($0 ~ /^## Kept/) ? "k" : (($0 ~ /^## Cut/) ? "c" : ""); next }
       line = $0; gsub(/[\r`*]/, "", line); gsub(/\t/, " ", line)
       if (sec == "" || line !~ /^[-+]? *_*C?[0-9]+[a-z]?_*\.? +(·|\|) /) next
       n = line; sub(/^[-+]? */, "", n); sub(/ .*$/, "", n); gsub(/[_.]/, "", n); n = tolower(n)
-      p = 0; t = line; off = 0
-      while ((i = index(t, "· from:")) > 0) { p = off + i; off += i; t = substr(t, i + 1) }
-      if (!p) next
-      f = substr(line, p + length("· from:")); sub(/ +· .*$/, "", f); gsub(/ +and +/, ",", f)
-      m = split(f, parts, /[ ,;&+]+/); slug = ""; split("", once)
-      for (i = 1; i <= m; i++) {
-        w = parts[i]
-        if (w ~ /^[A-Za-z][A-Za-z0-9._-]*#C?[0-9]+[a-z]?$/) { slug = substr(w, 1, index(w, "#") - 1); key = w }
-        else if (w ~ /^#?C?[0-9]+[a-z]?$/ && slug != "") { sub(/^#/, "", w); key = slug "#" w }
-        else if (w ~ /^[A-Za-z][A-Za-z0-9._-]*$/) { slug = w; key = w }
-        else continue
-        if (key in once) continue
-        once[key] = 1; seen[slug] = 1
-        if (sec == "k") { kept[slug]++; owners[n] = owners[n] " " slug } else cut[slug]++
+      lo = tolower(line); p = 0; off = 0; t = lo
+      while ((i = index(t, "from:")) > 0) {          # the last "from:" that starts a field, not a word
+        at = off + i
+        if (at == 1 || substr(lo, at - 1, 1) !~ /[a-z0-9]/) p = at
+        off = at; t = substr(lo, off + 1)
       }
+      if (!p) next
+      f = substr(line, p + length("from:")); sub(/ +· .*$/, "", f)
+      carry = ""; pendnum = 0; depth = 0; tok = ""
+      for (j = 1; j <= length(f) + 1; j++) {
+        ch = (j <= length(f)) ? substr(f, j, 1) : " "
+        if (ch ~ /[][(){} ,;&+\/]/) {
+          if (tok != "") credit(tok, depth)
+          tok = ""
+          if (ch ~ /[[({]/) depth++
+          else if (ch ~ /[])}]/ && depth > 0) depth--
+          continue
+        }
+        tok = tok ch
+      }
+      flush()
       next
     }
     /^\|/ {                                          # a verify table: find its # and Verdict columns, then read them

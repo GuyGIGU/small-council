@@ -51,11 +51,15 @@ if [ -f "$home/map.md" ]; then
   fi
 fi
 
-conv="$home/conventions.md"
-[ -f "$conv" ] || conv="$root/conventions.md"
+# The same memory file every council command reads — the config's "- conventions:" path included, so
+# the model is never pointed at a file the helper ignores.
+memory_file "$home"
+conv="$MEM"
 if [ -f "$conv" ]; then
   say "- Settled decisions: $conv (respect them; never re-litigate)."
+  [ -z "$MEM_ALT" ] || say "- A second memory file, $MEM_ALT, holds $MEM_ALT_N entries the council never reads: tell the user, and merge them or point the '- conventions:' line under ## Memory in council.config.md at the one to keep."
   pending="$(grep -c '^- PROPOSED' "$conv" 2>/dev/null || true)"
+  pending=$(( ${pending:-0} + $(memory_entries "$conv" | awk -F'\t' '$5 == "off" && tolower($6) ~ /^[#* ]*propos/ { n++ } END { print n + 0 }') ))
   if [ "${pending:-0}" -gt 0 ] 2>/dev/null; then
     say "- $pending memory proposal(s) in that file await the user's yes/no. Raise them at a natural pause."
   fi

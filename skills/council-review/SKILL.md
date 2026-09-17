@@ -125,7 +125,9 @@ Full review: <path>
 ## At Learn
 
 After the memory proposals comes the fix hand-off: *"Fix these with council-implement? Default:
-every P1 and P2 this change introduced or touched."* On a yes, hand it the review's path.
+every P1 and P2 this change introduced or touched."* An item whose origin came back `origin unknown`
+counts as the change's own here: the helper couldn't tell, so it is offered rather than dropped. On a
+yes, hand it the review's path.
 
 ## Notes
 
