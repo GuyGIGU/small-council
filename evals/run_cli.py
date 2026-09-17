@@ -221,8 +221,12 @@ with tempfile.TemporaryDirectory() as tmp:
     verdict = json.loads(read(os.path.join(gates, "bad.json")) or "{}")
     check("gate: a failing gate returns its own exit code", code == 3 and "FAIL (exit 3" in out, out)
     check("gate: the verdict JSON records the exit code", verdict.get("exit") == 3 and verdict.get("gate") == "bad", str(verdict))
-    check("gate: prints a failure excerpt, not the whole output", "Error: boom" in out, out)
+    check("gate: a failure shows its error line", "Error: boom" in out, out)
     check("gate: saves the full output", "Error: boom" in read(os.path.join(gates, "bad.txt")))
+    code, out, _ = council(repo, "gate", "noisy", "--", "for i in $(seq 1 60); do echo step $i; done; echo 'Error: boom at the end'; exit 3")
+    check("gate: prints a failure excerpt, not the whole output",
+          code == 3 and "Error: boom at the end" in out and "step 30" not in out
+          and len(read(os.path.join(gates, "noisy.txt")).splitlines()) == 61, out)
     code, out, _ = council(repo, "gate", "piped")
     check("gate: a quoted pipe in a configured command runs as written", code == 0 and read(os.path.join(gates, "piped.txt")) == "a|b", out)
     code, out, _ = council(repo, "gate", "adhoc", "--", "echo hi")
@@ -483,8 +487,10 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run status: nothing open after closing", "no open council runs" in out, out)
     code, out, _ = council(repo, "run", "status", "--all")
     check("run status --all: shows closed runs with their cost", "complete" in out and "~86k tokens" in out, out)
-    code, _, err = council(repo, "run", "close", "--status", "finished")
-    check("run close: rejects an unknown status", code == 2, err)
+    closed_state = read(os.path.join(run, "session-state.md"))
+    code, _, err = council(repo, "run", "close", "--run", run, "--status", "finished")
+    check("run close: rejects an unknown status, and leaves the run as it was",
+          code == 2 and "--status must be" in err and read(os.path.join(run, "session-state.md")) == closed_state, err)
 
     # An old open run behind many newer closed ones
     runs_dir = os.path.join(repo, ".council", "runs")
@@ -548,8 +554,12 @@ with tempfile.TemporaryDirectory() as tmp:
     git(fresh, "commit", "-q", "-m", "make")
     _, fp_top, _ = council(fresh, "fingerprint")
     _, fp_sub, _ = council(os.path.join(fresh, "cmd"), "fingerprint")
-    _, fp_loc, _ = council(fresh, "fingerprint", env={"LC_ALL": "en_US.UTF-8"})
-    check("fingerprint: the same from a subfolder and under another locale",
+    other_locale = next((loc for loc in ("en_US.UTF-8", "en_GB.UTF-8", "C.UTF-8")
+                         if subprocess.run([BASH, "-c", "printf 'B\\na\\n' | sort"], capture_output=True, text=True,
+                                           env=dict(GIT_ENV, LC_ALL=loc)).stdout == "a\nB\n"), "")
+    _, fp_loc, _ = council(fresh, "fingerprint", env={"LC_ALL": other_locale or "C"})
+    check("fingerprint: the same from a subfolder and under another locale"
+          + ("" if other_locale else " (no second locale here: only the subfolder is proved)"),
           fp_top == fp_sub == fp_loc and "Makefile, go.mod" in fp_top, fp_top + fp_sub + fp_loc)
 
     # The ledger belongs to the run's council home, wherever the close runs from
