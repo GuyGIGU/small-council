@@ -865,26 +865,48 @@ index_shape() {
     END { printf "%d %d %d\n", ok, bad, none }' "$1" 2>/dev/null
 }
 
-# ok | missing-file | bad-line (…) | n/a — for a "path:line[-line]" citation.
+# The line part of a citation — "12", "7-9", or a comma list of both in any mix, such as "12,40-55" —
+# as "start,end" words, one per piece. Fails on an empty or malformed piece and, given the file's line
+# count as $2, on any piece that runs past the end. Blanks around a number are fine: "12, 40-55".
+cite_ranges() {
+  local rest="$1," piece s e out=""
+  while [ -n "$rest" ]; do
+    piece="${rest%%,*}"; rest="${rest#*,}"
+    s="${piece%%-*}"; e="${piece#*-}"                      # a single line gives s = e
+    case "$s$e" in *[!0-9[:blank:]]*) return 1 ;; esac      # no signs, no second dash
+    # test takes blanks around a number but not inside one: "1 2" is an error, so false.
+    [ "$s" -ge 1 ] 2>/dev/null && [ "$e" -ge "$s" ] 2>/dev/null || return 1
+    [ $# -lt 2 ] || [ "$e" -le "$2" ] 2>/dev/null || return 1
+    out="$out${out:+ }${s//[[:blank:]]/},${e//[[:blank:]]/}"
+  done
+  printf '%s\n' "$out"
+}
+
+# ok | missing-file | bad-line (…) | n/a — for a "path:line[-line][,line[-line]…]" citation.
 cite_status() {
-  local top="$1" c p l s e n
+  local top="$1" c p n
   c="$(printf '%s' "$2" | sed 's/–/-/g')"
   case "$c" in http:*|https:*|-) printf 'n/a'; return ;; *:[0-9]*) ;; *) printf 'n/a'; return ;; esac
-  p="${c%:*}"; l="${c##*:}"; s="${l%%-*}"; e="${l##*-}"
+  p="${c%:*}"
   case "$p" in /*|[A-Za-z]:*) ;; *) p="$top/$p" ;; esac
   [ -f "$p" ] || { printf 'missing-file'; return; }
   n="$(awk 'END { print NR }' "$p")"
-  if [ "$s" -ge 1 ] 2>/dev/null && [ "$e" -ge "$s" ] 2>/dev/null && [ "$e" -le "$n" ] 2>/dev/null; then printf 'ok'; return; fi
+  if cite_ranges "${c##*:}" "$n" >/dev/null; then printf 'ok'; return; fi
   printf 'bad-line (the file has %s lines)' "$n"
 }
 
 # introduced | touched | pre-existing | new file — from git blame of the cited lines against the base.
+# A list is blamed whole, not just its first piece: git blame takes one -L per piece (in any order,
+# overlaps allowed), so old and new lines in one list make it "touched", as they would in one range.
 cite_origin() {
-  local top="$1" c base="$3" p l s e shas sha old=0 new=0
+  local top="$1" c base="$3" p ranges r shas sha old=0 new=0
   c="$(printf '%s' "$2" | sed 's/–/-/g')"
-  p="${c%:*}"; l="${c##*:}"; s="${l%%-*}"; e="${l##*-}"
+  p="${c%:*}"
   case "$p" in "$top"/*) p="${p#"$top"/}" ;; esac
-  shas="$(cd "$top" 2>/dev/null && git blame --porcelain -L "$s,$e" -- "$p" 2>/dev/null \
+  ranges="$(cite_ranges "${c##*:}")" || return 0          # no lines to blame, so no origin
+  set --
+  for r in $ranges; do set -- ${1+"$@"} -L "$r"; done       # the words are digits and commas only
+  shas="$(cd "$top" 2>/dev/null && git blame --porcelain "$@" -- "$p" 2>/dev/null \
     | awk '$1 ~ /^[0-9a-f]+$/ && length($1) == 40 && NF >= 3 { print $1 }' | sort -u)"
   [ -n "$shas" ] || { printf 'new file'; return; }
   for sha in $shas; do

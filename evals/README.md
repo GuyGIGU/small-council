@@ -54,7 +54,8 @@ Runs the helper against scaffolded git repos:
   as a pass; the verdict line's pass, FAIL and skipped counts;
 - seat-file collection: `ref:` proof of reading (paired seats too), item caps, broken citations,
   empty or unreadable indexes, failed and re-dispatched workers;
-- citation and origin checks (introduced vs pre-existing);
+- citation and origin checks: single lines, ranges and comma lists of both; introduced vs
+  pre-existing;
 - gate side effects: what `--all` never runs;
 - the stack fingerprint, scoped memory and stale anchors, earlier council work, the seat ledger;
 - the user's request: filing it word for word and out of git, redaction, continuing it, the quote

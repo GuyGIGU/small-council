@@ -10,7 +10,7 @@ Needs bash and git; no LLM, no network. Covers:
   - gates judged by exit code, with the command passed intact, and table cells that never shift;
   - seat-file collection: ref: proof of reading (paired seats too), caps, broken citations, list-style
     and unreadable index lines, failed and re-dispatched workers;
-  - citation and origin checks; map status; the drift doctor.
+  - citation and origin checks (single lines, ranges and comma lists); map status; the drift doctor.
 """
 import json
 import os
@@ -345,14 +345,23 @@ with tempfile.TemporaryDirectory() as tmp:
           "2 · P1 · Principle 5 · src/stats.py:1-2 · old lines · from: beck#1\n"
           "3 · P2 · Principle 1 · src/report.py:5 · the uncommitted line · from: x\n"
           "4 · P3 · Principle 2 · `src/stats.py:7–9` · a backticked cite with an en dash · from: z\n"
-          "## Cut\nC1 · P3 · Principle 1 · src/report.py:99 · past the end · from: gone · why: repeats from: beck\n")
+          "5 · P2 · Principle 3 · src/stats.py:1,7-9 · a list: a base line and branch lines · from: y\n"
+          "6 · P3 · Principle 3 · src/stats.py:9, 7-8 · a list out of order, with a blank · from: y\n"
+          "## Cut\nC1 · P3 · Principle 1 · src/report.py:99 · past the end · from: gone · why: repeats from: beck\n"
+          "C2 · P3 · Principle 1 · src/stats.py:1,10,7-9 · a list with its middle piece past the end · from: y · why: x\n")
     code, out, _ = council(repo, "check")
-    check("check: fails on a broken citation", code == 1 and "1 broken citation" in out, out)
+    check("check: fails on a broken citation", code == 1 and "2 broken citation" in out, out)
     check("check: new lines on the branch are 'introduced'", re.search(r"synthesis#1\s+src/stats\.py:7-9\s+ok · introduced", out) is not None, out)
     check("check: lines from the base are 'pre-existing'", re.search(r"synthesis#2\s+src/stats\.py:1-2\s+ok · pre-existing", out) is not None, out)
     check("check: uncommitted lines are 'introduced'", re.search(r"synthesis#3\s+src/report\.py:5\s+ok · introduced", out) is not None, out)
     check("check: backticks and en-dash ranges resolve", re.search(r"synthesis#4\s+src/stats\.py:7–9\s+ok · introduced", out) is not None, out)
-    check("check: reads cut items too", "synthesis#C1" in out and "bad-line" in out, out)
+    check("check: a comma list of lines and ranges passes, and every piece is blamed (base + branch = 'touched')",
+          re.search(r"synthesis#5\s+src/stats\.py:1,7-9\s+ok · touched", out) is not None, out)
+    check("check: a list's pieces may come in any order, with blanks after the commas",
+          re.search(r"synthesis#6\s+src/stats\.py:9, 7-8\s+ok · introduced", out) is not None, out)
+    check("check: a list with one piece past the end is bad-line",
+          re.search(r"synthesis#C2\s+src/stats\.py:1,10,7-9\s+bad-line \(the file has 9 lines\)", out) is not None, out)
+    check("check: reads cut items too", re.search(r"synthesis#C1\s+src/report\.py:99\s+bad-line", out) is not None, out)
     check("check: writes check.md", os.path.isfile(os.path.join(run, "check.md")))
 
     # A second run: refused, then alongside; never guessing
@@ -378,6 +387,7 @@ with tempfile.TemporaryDirectory() as tmp:
           "# Brief — formats\n## Seats\n"
           f"### pair — Frontend and UX (Dodds, Norman)\n- ref: `{ref('quality-frontend.md')}`\n- ref: {ref('quality-ux.md')}\n- cap: 4\n"
           "### listy — A list-style index\n- ref: none\n"
+          "### multi — Several lines in one citation\n- ref: none\n"
           "### hollow — Header only\n- ref: none\n"
           "### messy — Unreadable index lines\n- ref: none\n")
     write(os.path.join(seats2, "pair.md"),
@@ -386,12 +396,17 @@ with tempfile.TemporaryDirectory() as tmp:
     write(os.path.join(seats2, "listy.md"),
           "# Listy — list-style (council-research)\nref: none\n## Index\nMost important first:\n"
           "- 1 · moderate · inquiry · src/report.py:1 · written as a list item\n\n### 1. written as a list item\nThe body.\n")
+    write(os.path.join(seats2, "multi.md"),
+          "# Multi — several lines (council-research)\nref: none\n## Index\n"
+          "1 · moderate · inquiry · src/stats.py:2,7-9 · one claim cites a line and a range\n")
     write(os.path.join(seats2, "hollow.md"), "# Hollow — header only (council-research)\nref: none\nquestion: q\n## Index\n")
     write(os.path.join(seats2, "messy.md"), "# Messy — x (council-research)\nref: none\n## Index\n1) P2 — no separators at all\n")
     code, out, _ = council(repo, "collect", "--run", run2)
     check("collect: a paired seat proves both reference docs", re.search(r"^pair\s+ok\s+1/4\s+\d+\s+ok\s+1/1", out, re.MULTILINE) is not None, out)
     check("collect: a list-style index line counts; prose under the Index is ignored",
           re.search(r"^listy\s+ok\s+1/8\s+\d+\s+n/a\s+1/1", out, re.MULTILINE) is not None, out)
+    check("collect: a comma list of lines and ranges is a good citation",
+          re.search(r"^multi\s+ok\s+1/8\s+\d+\s+n/a\s+1/1", out, re.MULTILINE) is not None, out)
     check("collect: a header-only seat file is caught", "empty-index" in row(out, "hollow"), out)
     check("collect: an index line it can't read is caught", "unparsed-index(1)" in row(out, "messy"), out)
     write(os.path.join(seats2, "pair.md"),

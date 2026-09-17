@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **A citation that lists several lines is no longer reported broken.** `council collect` and
+  `council check` now read `path:12,40-55` — single lines and ranges in any mix, blanks around the
+  commas allowed — and check every piece against the file's length, so `core/MAP.md:58,77` in a
+  123-line file is `ok`, not `bad-line`. The origin blames every listed line, so a list of old and
+  new lines reads `touched`, as a range does. A range with a second dash or a sign (`5-6-7`, `5-+7`)
+  is now `bad-line`; it used to pass on the numbers before its first dash and after its last.
+
 ## [0.7.0] — 2026-09-16
 
 Proof instead of opinion: the council now says out loud when nothing was actually checked, offers to
