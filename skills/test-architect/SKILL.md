@@ -261,8 +261,10 @@ more.
    - the mutation check (P1 check 5) holds for every high-risk function they touch.
 
    Name the file it writes its verdicts to: `<run>/verify-<n>.md` inside a council run, otherwise
-   `verify-1.md` in a new temporary folder (`mktemp -d`) — never inside the repo. Read the verdicts
-   from that file, and fix what it sends back before you present the result.
+   `verify-1.md` in a new temporary folder outside the repo — make it with
+   `cd "$(mktemp -d)" && { pwd -W 2>/dev/null || pwd; }` and use the path that prints (on Windows it is
+   the `C:/…` form every tool opens, not `/tmp/…`). Read the verdicts from that file, and fix what it
+   sends back before you present the result.
 
 ---
 

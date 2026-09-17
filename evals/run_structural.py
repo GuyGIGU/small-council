@@ -44,11 +44,13 @@ def description(text):
 
 
 def never_a_pass(text, marker):
-    """The sentences naming `marker` say, before any 'pass', that it is never / not one — and at least one
-    says it. Catches a rule turned round ("counts as a pass"); it proves wording, not behaviour."""
+    """In the sentences naming `marker`, every 'pass' is governed by a never / not in its own clause (no , ; :
+    or 'but' between them) — and at least one is. Catches a rule turned round ("counts as a pass", "not a
+    failure, so report it as a pass"); it proves wording, not behaviour."""
     said = [s for s in re.split(r"(?<=\.)\s+", flat(text)) if marker in s]
-    negated = [s for s in said if re.search(r"\b(never|not)\b[^.]*\bpass\b", s)]
-    return bool(negated) and all(s in negated for s in said if re.search(r"\bpass\b", s))
+    negated = r"\b(?:never|not)\b(?:(?!\bbut\b)[^.,;:]){0,40}?\bpass\b"
+    return (any(re.search(negated, s) for s in said)
+            and all(len(re.findall(r"\bpass\b", s)) == len(re.findall(negated, s)) for s in said))
 
 
 SKILLS = ["context-core", "council-init", "council-review", "council-plan", "council-implement",
@@ -209,6 +211,8 @@ for label, text, needles in [
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
     missing = [n for n in needles if n not in text]
     check(f"{label}: carries its mechanisms", not missing, ", ".join(missing))
+check("test-architect: the verifier's temporary folder is named as pwd -W prints it, which every tool opens (wording)",
+      re.search(r"mktemp -d[^\n]*pwd -W", skill["test-architect"]) is not None)
 
 # 6. Agents
 check("worker: header with ref: on line 2 and an Index", "ref: <the first heading" in worker and "## Index" in worker)
