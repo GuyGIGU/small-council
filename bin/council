@@ -1710,10 +1710,11 @@ ask_later() { LC_ALL=C sed $(sed_b) -n -e '/^## Later/,${' -e '/^## Later/d' -e 
 
 # Line numbers of the sections continuing runs add to a filed request ("## <date> — <mode>, run <folder>");
 # $2, a run's folder name, keeps only that run's — the whole name, so run …-review never matches …-review-2.
+# Only a run folder's name (<date>-<time>-<mode>) counts: a dated heading in the user's own words is no section.
 ask_sections() {
-  local who
+  local who any='[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}-[A-Za-z0-9-]+'
   who="$(printf '%s' "${2:-}" | sed 's/[.[()*+?{|^$\]/\\&/g')"
-  LC_ALL=C grep -n -E "^## [0-9]{4}-[0-9]{2}-[0-9]{2} .*, run ${who:-[^ ]+}[[:space:]]*\$" "$1" 2>/dev/null | cut -d: -f1
+  LC_ALL=C grep -n -E "^## [0-9]{4}-[0-9]{2}-[0-9]{2} .*, run ${who:-$any}[[:space:]]*\$" "$1" 2>/dev/null | cut -d: -f1
 }
 
 redact_copy() {
@@ -1809,6 +1810,11 @@ cmd_ask() {
   printf '%s' "$body" | grep -q '[^[:space:]]' || die "ask.md has no words under '## In your words'"
   [ "$(printf '%s\n' "$body" | tr -d '\r' | grep -v '^[[:space:]]*$')" != "(no new words)" ] || nowords=1
   home="$(council_home)"; root="$(dirname "$home")"
+  # Requests live in a real asks/ folder: a link there (a committed symlink, a junction) could lead anywhere.
+  if [ -L "$home/asks" ] || { [ -e "$home/asks" ] \
+       && [ "$(cd -P "$home/asks" 2>/dev/null && here)" != "$(cd -P "$home" 2>/dev/null && here)/asks" ]; }; then
+    die "$home/asks is a link or a file, not a folder — requests are filed only in a real asks/ folder; replace it with one"
+  fi
   mode="$(field mode "$st")"
   # The request this run continues: the state's ask=, else ask.md's own continues: line.
   cur="$(field ask "$st")"
@@ -1867,7 +1873,8 @@ cmd_ask() {
       red="$(redact_copy "$tmp" "$tmp.2")" || { rm -f "$tmp" "$tmp.2" "$tmp.3"; die "cannot append to $target"; }
       status=continued
     fi
-    at="$(ask_sections "$target" "$name" | head -n 1)"
+    at=""                                              # no new words: this run's earlier section stays as it is
+    [ "$status" = "no new words" ] || at="$(ask_sections "$target" "$name" | head -n 1)"
     if [ -n "$at" ]; then
       next="$(ask_sections "$target" | awk -v at="$at" '$1 > at + 0 { print; exit }')"
       keep=$((at - 1))                                 # the blank line before the heading goes with it

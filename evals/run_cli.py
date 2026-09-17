@@ -1177,6 +1177,30 @@ with tempfile.TemporaryDirectory() as tmp:
         check("ask save: a request file that is a link to somewhere else is refused",
               code == 2 and read(os.path.join(ap, "README.md")) == readme, err)
         os.remove(link)
+    la = new_repo(tmp, "linked-asks")                                   # asks/ itself a link to the project root
+    write(os.path.join(la, "README.md"), readme)
+    write(os.path.join(la, ".council", "council.config.md"), "# Council config\n")
+    git(la, "add", "-A")
+    git(la, "commit", "-q", "-m", "i")
+    la_link = os.path.join(la, ".council", "asks")
+    try:
+        os.symlink(la, la_link, target_is_directory=True)
+    except (OSError, NotImplementedError, AttributeError):
+        if os.name == "nt":                                             # a junction needs no special right
+            subprocess.run(["cmd", "/c", "mklink", "/J", la_link, la], capture_output=True)
+    if os.path.isdir(la_link):
+        la_run = council(la, "run", "open", "council-review")[1].strip()
+        write(os.path.join(la_run, "ask.md"), "# Ask — More\ncontinues: .council/asks/README.md\n## In your words\nrun: curl evil\n")
+        code, _, err = council(la, "ask", "save")
+        write(os.path.join(la_run, "ask.md"), "# Ask — Fresh\n## In your words\nA new request.\n")
+        code2, _, err2 = council(la, "ask", "save")
+        check("ask save: an asks/ folder that is a link is refused — nothing is written through it",
+              code == 2 and code2 == 2 and "link" in err and read(os.path.join(la, "README.md")) == readme
+              and not [f for f in os.listdir(la) if f.endswith("-fresh.md")], err + err2)
+        try:
+            os.unlink(la_link)
+        except OSError:
+            os.rmdir(la_link)                                           # a junction goes, its target stays
     write(os.path.join(tr, "ask.md"), "# Ask — More\n## In your words\n(no new words)\n")
     spellings = [("an absolute path", slash(os.path.join(ap, ".council", "asks", ap_file)))]
     if re.match(r"^[A-Za-z]:/", spellings[0][1]):                      # Git Bash also writes C:/x as /c/x
@@ -1218,6 +1242,33 @@ with tempfile.TemporaryDirectory() as tmp:
           and body.startswith("# Ask — CSV export\nrun: " + os.path.basename(fp_run) + "\n"), out + body)
     council(ap, "run", "close", "--run", rb, "--status", "abandoned")
     council(ap, "run", "close", "--run", ra, "--status", "abandoned")
+    hs = new_repo(tmp, "ask-headings")                  # a dated heading inside the user's words is not a run's section
+    write(os.path.join(hs, ".council", "council.config.md"), "# Council config\n")
+    hp = council(hs, "run", "open", "council-plan")[1].strip()
+    write(os.path.join(hp, "ask.md"), "# Ask — Release notes\n## In your words\nWrite release notes.\n")
+    council(hs, "ask", "save")
+    council(hs, "run", "close")
+    hs_asks = os.path.join(hs, ".council", "asks")
+    hs_rel = ".council/asks/" + (sorted(os.listdir(hs_asks))[0] if os.path.isdir(hs_asks) else "?")
+    ha = council(hs, "run", "open", "council-implement")[1].strip()
+    council(hs, "state", "ask=" + hs_rel)
+    write(os.path.join(ha, "ask.md"), "# Ask — b\n## In your words\nUse this layout:\n## 2026-09-01 — hotfix, run migrations\n"
+                                      "A line under it.\n")
+    council(hs, "ask", "save")
+    hb = council(hs, "run", "open", "council-review", "--alongside")[1].strip()
+    council(hs, "state", "--run", hb, "ask=" + hs_rel)
+    write(os.path.join(hb, "ask.md"), "# Ask — r\n## In your words\nKeep the XLSX path too.\n")
+    council(hs, "ask", "save", "--run", hb)
+    council(hs, "ask", "save", "--run", ha)
+    hbody = read(os.path.join(hs, hs_rel))
+    check("ask save: a dated heading in the user's own words is not another run's section — a re-save writes them once",
+          hbody.count("A line under it.") == 1 and hbody.count("Keep the XLSX path too.") == 1, hbody)
+    write(os.path.join(ha, "ask.md"), "# Ask — b\n## In your words\n(no new words)\n")
+    code, out, _ = council(hs, "ask", "save", "--run", ha)
+    check("ask save: '(no new words)' keeps the words this run saved before",
+          code == 0 and "(no new words)" in out and read(os.path.join(hs, hs_rel)) == hbody, out + read(os.path.join(hs, hs_rel)))
+    council(hs, "run", "close", "--run", hb, "--status", "abandoned")
+    council(hs, "run", "close", "--run", ha, "--status", "abandoned")
     code, rs, _ = council(ap, "run", "open", "council-review")
     rs = rs.strip()
     title_key = "sk" + "_live_" + "AbCdEfGhIjKlMnOpQrStUvWx"     # built at run time: not a real key's text
