@@ -502,8 +502,9 @@ diff_symbols() {
 }
 
 cmd_index() {
-  local run top ref base head list body out st f label add del hunks diff nums syms sym hits callers tests stem note prior np=0
-  local n_files=0 n_skip=0 t_add=0 t_del=0 budget=80
+  local run top ref base head list body over out st f old label add del hunks diff nums syms sym hits callers tests stem note prior np=0
+  local n_files=0 n_skip=0 n_over=0 n_new=0 t_add=0 t_del=0 budget=80 dirty=""
+  local cap="${COUNCIL_INDEX_CAP:-80}"                # files indexed in full (the evals lower it to stay quick)
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cd "$top" 2>/dev/null || die "cannot enter the code root: $top"
@@ -513,25 +514,38 @@ cmd_index() {
   [ -n "$base" ] || base="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null)" || base=""
   [ -n "$base" ] || die "unknown base: $ref"
   head="$(git rev-parse --short HEAD 2>/dev/null)"
-  list="$run/.index-files"; body="$run/.index-body"; out="$run/index.md"
-  { git diff --name-status "$base" -- . 2>/dev/null | awk -F'\t' '{ print substr($1, 1, 1) "\t" $NF }'
-    git ls-files --others --exclude-standard 2>/dev/null | awk '{ print "?\t" $0 }'
+  list="$run/.index-files"; body="$run/.index-body"; over="$run/.index-over"; out="$run/index.md"
+  # status, path, old path (a rename's, else "-"); names as they are (no \ooo quoting); an untracked
+  # folder (a nested repository or worktree) is not a changed file.
+  { git -c core.quotePath=false diff -M --name-status "$base" -- . 2>/dev/null \
+      | awk -F'\t' '{ s = substr($1, 1, 1); if (s == "R" || s == "C") print s "\t" $3 "\t" $2; else print s "\t" $2 "\t-" }'
+    git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null | awk '!/\/$/ { print "?\t" $0 "\t-" }'
   } | sort -t "$TAB" -k2,2 -u > "$list"
-  : > "$body"
-  while IFS="$TAB" read -r st f; do
+  : > "$body"; : > "$over"
+  while IFS="$TAB" read -r st f old; do
     [ -n "$f" ] || continue
     case "$f" in .council/*) continue ;; esac          # the council's own files are never part of a change
-    if not_indexed "$f" || [ "$n_files" -ge 80 ]; then n_skip=$((n_skip + 1)); continue; fi
+    if not_indexed "$f"; then n_skip=$((n_skip + 1)); continue; fi
+    case "$st" in
+      A) label=added ;; D) label=deleted ;; R) label="renamed from $old" ;; C) label="copied from $old" ;;
+      "?") label="new, untracked"; n_new=$((n_new + 1)) ;; *) label=modified ;;
+    esac
+    if [ "$n_files" -ge "$cap" ]; then                 # past the cap: named, so it still gets an owner
+      n_over=$((n_over + 1)); printf '## %s  (%s — past the %s-file cap: not indexed)\n' "$f" "$label" "$cap" >> "$over"; continue
+    fi
     n_files=$((n_files + 1))
     if [ "$st" = "?" ]; then
-      label="new, untracked"; add="$(awk 'END { print NR }' "$f" 2>/dev/null)"; del=0
+      if [ -s "$f" ] && ! LC_ALL=C grep -qI -e '' "$f" 2>/dev/null; then
+        printf '## %s  (%s, binary)\n\n' "$f" "$label" >> "$body"; continue
+      fi
+      add="$(awk 'END { print NR }' "$f" 2>/dev/null)"; del=0
       hunks="1-${add:-0}"; diff="$(head -n 400 "$f" 2>/dev/null | sed 's/^/+/')"
     else
-      case "$st" in A) label=added ;; D) label=deleted ;; R) label=renamed ;; *) label=modified ;; esac
-      nums="$(git diff --numstat "$base" -- "$f" 2>/dev/null | head -n 1)"
+      if [ "$st" = R ] || [ "$st" = C ]; then set -- "$old" "$f"; else set -- "$f"; fi   # both paths, so git pairs them
+      nums="$(git diff -M --numstat "$base" -- "$@" 2>/dev/null | head -n 1)"
       add="$(printf '%s' "$nums" | cut -f1)"; del="$(printf '%s' "$nums" | cut -f2)"
       if [ "$add" = "-" ]; then printf '## %s  (%s, binary)\n\n' "$f" "$label" >> "$body"; continue; fi
-      diff="$(git diff -U0 "$base" -- "$f" 2>/dev/null)"
+      diff="$(git diff -M -U0 "$base" -- "$@" 2>/dev/null)"
       hunks="$(printf '%s\n' "$diff" | awk '
         /^@@/ {
           if (match($0, /\+[0-9]+(,[0-9]+)?/)) {
@@ -578,16 +592,24 @@ cmd_index() {
     case "$add" in ''|*[!0-9]*) ;; *) t_add=$((t_add + add)) ;; esac
     case "$del" in ''|*[!0-9]*) ;; *) t_del=$((t_del + del)) ;; esac
   done < "$list"
+  # Uncommitted: staged or unstaged edits to tracked files, or new files in the change.
+  if [ "$n_new" -gt 0 ] || [ -n "$(git --no-optional-locks status --porcelain --untracked-files=no 2>/dev/null | head -n 1)" ]; then
+    dirty=" + uncommitted changes"
+  fi
   {
     printf '# Change index — %s\n' "${run##*/}"
-    printf 'base: %s (%s) · head: %s%s · generated: %s\n' "$(git rev-parse --short "$base")" "$ref" "$head" \
-      "$(git diff --quiet 2>/dev/null || printf ' + uncommitted changes')" "$(now_sec)"
+    printf 'base: %s (%s) · head: %s%s · generated: %s\n' "$(git rev-parse --short "$base")" "$ref" "$head" "$dirty" "$(now_sec)"
     printf 'files: %d (+%d/-%d)' "$n_files" "$t_add" "$t_del"
-    [ "$n_skip" -eq 0 ] || printf ' · not indexed: %d (lockfiles, vendored or generated files, or past the 80-file cap)' "$n_skip"
+    [ "$n_over" -eq 0 ] || printf ' · past the %s-file cap: %d (named at the end, not indexed — they still need an owner)' "$cap" "$n_over"
+    [ "$n_skip" -eq 0 ] || printf ' · not indexed: %d (lockfiles, vendored or generated files)' "$n_skip"
     printf '\nSymbols come from definitions in the diff; callers and tests are matched by name (git grep) —\na starting point for tracing, not proof.\n\n'
     cat "$body"
+    if [ "$n_over" -gt 0 ]; then
+      printf '## Past the %s-file cap — %d more changed files, named but not indexed; each still needs an owner\n' "$cap" "$n_over"
+      cat "$over"; printf '\n'
+    fi
   } > "$out"
-  rm -f "$list" "$body"
+  rm -f "$list" "$body" "$over"
   prior=""
   if [ "$(field mode "$run/session-state.md")" = council-postgame ]; then
     # A post-game's verifier reads index.md and must never see the plan, the logs or their verdicts;
@@ -607,6 +629,7 @@ cmd_index() {
   else
     say "index: $n_files files (+$t_add/-$t_del) → $out"
   fi
+  [ "$n_over" -eq 0 ] || say "index: $n_over more past the $cap-file cap — named at the end of the index but not indexed; give them an owner too"
   [ "$np" -eq 0 ] || say "earlier council work on these files: $np mention(s), listed at the end of the index"
 }
 

@@ -107,6 +107,7 @@ check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
 check("04-brief: memory in scope comes from council memory select", "council memory select" in doctrine["04-brief.md"])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
 check("03-assign: records every seat's state", "council seat" in doctrine["03-assign.md"])
+check("03-assign: files past the change index's cap still need an owner", "past the 80-file cap" in doctrine["03-assign.md"])
 check("04-brief: seat blocks carry ref / out / cap for collect", all(k in doctrine["04-brief.md"] for k in ["### <slug>", "- ref:", "- out:", "- cap:"]))
 check("05-work: records each worker with its agent id", "council seat <slug> running agent=" in doctrine["05-work.md"])
 check("06-collect: runs council collect", "council collect" in doctrine["06-collect.md"])

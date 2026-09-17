@@ -224,6 +224,74 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "prior", "src/report.py")
     check("prior: a deliverable whose areas cover the path counts", "reviews/2026-08-01-stats.md" in out and "areas cover src/**" in out, out)
 
+    # The change index past its file cap (80 files; lowered here, since 80 take minutes on a busy Windows machine)
+    big = new_repo(tmp, "bigchange")
+    write(os.path.join(big, "a.txt"), "x\n")
+    git(big, "add", "-A")
+    git(big, "commit", "-q", "-m", "init")
+    git(big, "checkout", "-q", "-b", "big")
+    for i in range(1, 5):
+        write(os.path.join(big, "core", f"mod_{i:02d}.txt"), f"core {i}\n")
+    write(os.path.join(big, "package-lock.json"), "{}\n")
+    for i in range(1, 6):
+        write(os.path.join(big, "webapp", "backend", f"orders_{i}.py"), f"def place_order_{i}(req):\n    return req\n")
+    git(big, "add", "-A")
+    git(big, "commit", "-q", "-m", "big")
+    write(os.path.join(big, ".council", "council.config.md"), "# Council config — big\n")
+    code, brun, _ = council(big, "run", "open", "council-review")
+    code, out, err = council(big, "index", env={"COUNCIL_INDEX_CAP": "4"})
+    bidx = read(os.path.join(brun.strip(), "index.md"))
+    check("index: past the file cap, every other changed file is still named, as a file in scope",
+          code == 0 and all(f"\n## webapp/backend/orders_{i}.py  (added" in bidx for i in range(1, 6)), out + err + bidx[-800:])
+    check("index: files past the cap are counted apart from lockfiles, and the output line says so",
+          "past the 4-file cap: 5" in bidx and "not indexed: 1 (lockfiles" in bidx and "5 more past the 4-file cap" in out,
+          out + bidx[:400])
+
+    # The change index: renames, non-ASCII names, untracked binaries, a nested worktree, a relative --run
+    uni = new_repo(tmp, "unicode")
+    write(os.path.join(uni, "big_module.py"), "".join(f"x_{i} = 1\n" for i in range(1, 301)) + "def load():\n    return 1\n")
+    write(os.path.join(uni, "sub", "keep.txt"), "k\n")
+    git(uni, "add", "-A")
+    git(uni, "commit", "-q", "-m", "base")
+    git(uni, "checkout", "-q", "-b", "feat")
+    write(os.path.join(uni, "café.py"), "def cafe_price():\n    return 3\n")
+    git(uni, "mv", "big_module.py", "core_module.py")
+    append(os.path.join(uni, "core_module.py"), "def save():\n    return 2\n")
+    git(uni, "add", "-A")
+    git(uni, "commit", "-q", "-m", "rename")
+    write(os.path.join(uni, "ünï new.py"), "def helper_new():\n    pass\n")
+    with open(os.path.join(uni, "new_logo.png"), "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\n")
+    git(uni, "worktree", "add", "-q", "-b", "feat-x", os.path.join(uni, ".claude", "worktrees", "feat-x"))
+    write(os.path.join(uni, ".council", "council.config.md"), "# Council config — unicode\n")
+    code, urun, _ = council(uni, "run", "open", "council-review")
+    urun = urun.strip()
+    code, out, err = council(uni, "index")
+    uidx = read(os.path.join(urun, "index.md"))
+    check("index: a non-ASCII file name is indexed as itself, with its lines and symbols",
+          "## café.py  (added, +2/-0)" in uidx and "symbols: cafe_price" in uidx
+          and "## ünï new.py  (new, untracked, +2/-0)" in uidx, out + err + uidx)
+    moved = uidx.split("## core_module.py", 1)[-1].split("\n## ", 1)[0]
+    check("index: a renamed file shows only its changed lines, and the path it came from",
+          "  (renamed from big_module.py, +2/-0)" in moved and "- hunks: 303-304" in moved, uidx)
+    check("index: an untracked binary file is marked binary, with no line count and no warning",
+          "## new_logo.png  (new, untracked, binary)" in uidx and "null byte" not in err, err + uidx)
+    check("index: a nested worktree's folder is not a changed file", ".claude/worktrees" not in uidx and "index: 4 files" in out, out + uidx)
+    code, out, err = council(os.path.join(uni, "sub"), "index", "--run", "../.council/runs/" + os.path.basename(urun))
+    check("index --run: a relative run path works from a subfolder", code == 0 and out.startswith("index: 4 files"), out + err)
+    staged = new_repo(tmp, "staged")
+    write(os.path.join(staged, "a.py"), "a = 1\n")
+    git(staged, "add", "-A")
+    git(staged, "commit", "-q", "-m", "init")
+    git(staged, "checkout", "-q", "-b", "work")
+    write(os.path.join(staged, "a.py"), "a = 2\n")
+    git(staged, "add", "a.py")
+    write(os.path.join(staged, ".council", "council.config.md"), "# Council config — staged\n")
+    code, srun, _ = council(staged, "run", "open", "council-review")
+    council(staged, "index")
+    check("index: a staged-only change is noted as uncommitted", "+ uncommitted changes" in read(os.path.join(srun.strip(), "index.md")),
+          read(os.path.join(srun.strip(), "index.md")))
+
     # Gates
     gates = os.path.join(run, "gates")
     code, out, _ = council(repo, "gates")
