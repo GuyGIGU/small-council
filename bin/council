@@ -963,6 +963,8 @@ run_gate() {
       else
         say "    the same test(s) are failing as at the baseline (gates/baseline/${bl##*/}.txt) — no new one is named"
       fi
+    elif [ -s "$base.now" ]; then
+      say "    the baseline's output names no failing test, so nothing can be compared — read gates/baseline/${bl##*/}.txt next to this one yourself"
     else
       say "    this output names no failing test, so nothing can be compared — read it next to gates/baseline/${bl##*/}.txt yourself"
     fi
@@ -1081,7 +1083,7 @@ GATES
     [ "$failed" -eq 0 ] || say "a mandatory gate failed"
     return "$failed"
   fi
-  name="$*"                           # a name with a space may arrive as several words
+  name="${1+$*}"                      # a name with a space may arrive as several words
   [ -n "$name" ] || die "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
   cmd="$GATE_CMD"
   if [ -z "$cmd" ]; then
