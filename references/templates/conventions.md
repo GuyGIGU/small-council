@@ -8,7 +8,11 @@
      commas; a path:line may list lines, as in `src/api/auth.py:42,60-71` — a path or a symbol
      survives edits; a line number can drift). Brief reads only the entries in scope
      (`council memory select`); `council memory check` flags an entry whose anchored file, line or
-     symbol is gone. -->
+     symbol is gone.
+     An entry is a heading (### AP-1: title) or a bullet (- **AP-1 — title** …). Runs read entries only
+     under Accepted Patterns, Enforced Conventions and Decisions (a heading that says Adopted or
+     Settled counts too) — never under Proposed, Rejected, Retired or a section of another name. -->
+
 
 ## Accepted Patterns (AP) — intentional; never flag these
 <!-- ### AP-1: <title>
@@ -30,3 +34,7 @@
 
 ## Rejected — proposals the user said no to; never propose these again
 <!-- One line each: <title> · <date> · <the user's reason, if they gave one> -->
+
+## Retired — entries the user withdrew; no run reads them
+<!-- To retire an entry, move it here whole and add a line:
+     **Retired:** <YYYY-MM-DD> — <why, e.g. superseded by EC-9> -->

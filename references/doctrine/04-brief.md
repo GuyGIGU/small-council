@@ -52,9 +52,10 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   card's `source:` line names it relative to the plugin or repo), and the worker opens it for the
   principles it cites. A worker that covers several roster seats — a pair, or a split `hunt-a` —
   gets each seat's card and doc.
-- **Memory in scope, never the whole file.** Before writing, `council memory select`: with no
-  arguments it reads the index and the seats Assign recorded; a run without a diff also passes its
-  target paths. Quote what it prints in the bottom block.
+- **Memory in scope, never the whole file.** Before writing, `council memory select`: it reads the
+  run's index, the seats Assign recorded and the mode; a run without a diff also passes its target
+  paths, which add to those. Quote the entries it prints in the bottom block. If it warns that
+  entries can't be read or are left out, tell the user.
 - **Hard rules go in word for word** — workers also load the project's CLAUDE.md, but the brief is
   the orders they must not miss.
 

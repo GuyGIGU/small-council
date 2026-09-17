@@ -255,6 +255,7 @@ check("template seat doc: draft status, numbered principles with repo evidence",
       all(k in seatdoc_t for k in ["status: draft", "## Principle 1:", "### Evidence in this repo"]))
 check("template config: stack fingerprint and gate side effects", "stack-fingerprint:" in cfg and "| Side effects |" in cfg)
 check("template conventions: scope and anchor fields", "**Scope:**" in conv and "**Anchor:**" in conv)
+check("template conventions: says which sections are served and how to retire an entry", "## Retired" in conv and "**Retired:**" in conv)
 for label, rel in [("fixture", ("evals", "fixtures", ".council", "council.config.md")), ("example", ("examples", "chrollo", "council.config.md"))]:
     t = read(*rel)
     check(f"{label} config: current schema (surface markers, run preferences)", "| Surface |" in t and "## Run preferences" in t)

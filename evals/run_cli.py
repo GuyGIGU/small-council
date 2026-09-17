@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(ROOT, "bin", "council")
@@ -207,6 +208,31 @@ with tempfile.TemporaryDirectory() as tmp:
     check("prior: says so when nothing earlier mentions a path", code == 0 and "no earlier council work" in out, out)
     code, out, _ = council(repo, "prior", "src/report.py")
     check("prior: a deliverable whose areas cover the path counts", "reviews/2026-08-01-stats.md" in out and "areas cover src/**" in out, out)
+    pr = new_repo(tmp, "priors")
+    write(os.path.join(pr, ".council", "council.config.md"), "# c\n")
+    prtop = slash(git(pr, "rev-parse", "--show-toplevel"))
+    prv = os.path.join(pr, ".council", "reviews")
+    write(os.path.join(prv, "2026-09-01-brace.md"), "---\nareas: webapp/frontend/src/**/*.{js,jsx}\n---\n# r\n")
+    write(os.path.join(prv, "2026-09-02-yaml.md"), "---\nareas:\n  - tests/**   # the suites\n---\n# p\n")
+    with open(os.path.join(prv, "2026-09-03-bom.md"), "w", encoding="utf-8-sig", newline="\n") as f:
+        f.write("---\nareas: docs/** lib/**; tools/**\n---\n# s\n")
+    write(os.path.join(prv, "2026-09-04-cites.md"),
+          "# m\n1 · P2 · ./scripts/deploy.sh:4 — q\n2 · P2 · api.py.bak shipped\n3 · P2 · res://scripts/ai/role_def.gd:3 — r\n"
+          "4 · P3 · webapp\\backend\\main.py:7 — w\n" f"5 · P3 · {prtop}/core/x.py:5 — abs\n")
+    code, out, _ = council(pr, "prior", "webapp/frontend/src/App.jsx", "tests/test_a.py", "lib/x.py", "tools/y.sh")
+    check("prior: areas may be brace globs, a YAML list with comments, or blank- and semicolon-separated behind a BOM",
+          "(its areas cover webapp/frontend/src/**/*.{js,jsx})" in out and "tests/test_a.py — reviews/2026-09-02-yaml.md — (its areas cover tests/**)" in out
+          and "lib/x.py — reviews/2026-09-03-bom.md" in out and "tools/y.sh — reviews/2026-09-03-bom.md" in out and "prior: 4 mention(s)" in out, out)
+    code, out, _ = council(pr, "prior", "scripts/deploy.sh", "scripts/ai/role_def.gd", "webapp/backend/main.py", "core/x.py")
+    check("prior: a mention may start with ./, res:// or the repo's own path, and use backslashes",
+          all(f"{q} — reviews/2026-09-04-cites.md:{n} —" in out for q, n in
+              [("scripts/deploy.sh", 2), ("scripts/ai/role_def.gd", 4), ("webapp/backend/main.py", 5), ("core/x.py", 6)]), out)
+    code, out, _ = council(pr, "prior", "api.py")
+    check("prior: a path inside a longer name (api.py.bak) is not a mention", "no earlier council work" in out, out)
+    for i in range(45):
+        write(os.path.join(prv, f"2026-07-{i:02d}-many.md"), "---\nareas: src/**\n---\n# many\n")
+    code, out, _ = council(pr, "prior", "src/a.py")
+    check("prior: past 40 mentions it says how many it left out", out.count("src/a.py — ") == 40 and "prior: 40 of 45 mention(s) shown" in out, out)
 
     # Gates
     gates = os.path.join(run, "gates")
@@ -310,8 +336,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat: a re-dispatched worker adds its tokens instead of replacing them", "agents: 3 of 3 done" in out and "~86k tokens so far" in out, out)
 
     # Memory: scopes and anchors
-    write(os.path.join(repo, ".council", "conventions.md"),
-          "# Conventions\n## Accepted Patterns (AP) — intentional; never flag these\n"
+    conv_text = ("# Conventions\n## Accepted Patterns (AP) — intentional; never flag these\n"
           "### AP-1: median returns the upper middle on purpose\n**Pattern:** even lists return the upper middle · **Why:** the spec\n"
           "**Scope:** src/stats.py, beck · **Anchor:** src/stats.py:7\n"
           "### AP-2: reports never round\n**Pattern:** raw numbers · **Why:** the users asked\n**Scope:** src/report.py · **Anchor:** summary\n"
@@ -325,19 +350,23 @@ with tempfile.TemporaryDirectory() as tmp:
           "### EC-3: the README names the robust statistic\n**Rule:** always · **Why:** users reach for the mean\n"
           "**Scope:** README.md · **Anchor:** README.md:1,3, robust_mean\n"
           "## Proposed — awaiting the user's yes/no\n")
+    write(os.path.join(repo, ".council", "conventions.md"), conv_text)
+    memonly = new_repo(tmp, "memonly")          # no run open: the paths given are the only keys
+    write(os.path.join(memonly, ".council", "council.config.md"), CONFIG)
+    write(os.path.join(memonly, ".council", "conventions.md"), conv_text)
     code, out, _ = council(repo, "memory")
     check("memory: prints a one-line index with scopes and anchors",
           "AP-1 · median returns the upper middle on purpose · scope: src/stats.py, beck · anchor: src/stats.py:7" in out
           and "AP-4 · an empty list raises on purpose · scope: src/stats.py · anchor: src/stats.py:5, 8–9, summary" in out
-          and "EC-1 · every module has a docstring · every run" in out and out.count("\n") == 7, out)
-    code, out, _ = council(repo, "memory", "select", "src/stats.py")
+          and "EC-1 · every module has a docstring · every run" in out and sum(" · " in l for l in out.splitlines()) == 7, out)
+    code, out, _ = council(memonly, "memory", "select", "src/stats.py")
     check("memory select: a path pulls its scoped entries plus the every-run ones",
           "AP-1" in out and "EC-1" in out and "AP-2" not in out and "EC-2" not in out and "2 scoped and 1 every-run entries of 7" in out, out)
-    code, out, _ = council(repo, "memory", "select", "auth/session.py")
+    code, out, _ = council(memonly, "memory", "select", "auth/session.py")
     check("memory select: **/ also matches a path at the repo root", "AP-3" in out, out)
-    code, out, _ = council(repo, "memory", "select", "beck")
+    code, out, _ = council(memonly, "memory", "select", "beck")
     check("memory select: a seat slug pulls its entries", "AP-1" in out and "AP-2" not in out, out)
-    code, out, _ = council(repo, "memory", "select", "src/cache/deep/x.py")
+    code, out, _ = council(memonly, "memory", "select", "src/cache/deep/x.py")
     check("memory select: ** globs reach into subfolders", "EC-2" in out, out)
     code, out, _ = council(repo, "memory", "select")
     check("memory select: defaults to the run's changed files and seats", "AP-1" in out and "AP-2" in out and "EC-2" not in out, out)
@@ -350,6 +379,185 @@ with tempfile.TemporaryDirectory() as tmp:
           "STALE  EC-3 — anchor README.md:1,3: bad-line (the file has 2 lines)" in out, out)
     check("memory check: a name after the listed lines is an anchor of its own",
           "STALE  EC-3 — nothing in the code is named robust_mean any more" in out, out)
+
+    # Memory: the entry shapes real projects write
+    ms = new_repo(tmp, "memshapes")
+    write(os.path.join(ms, ".council", "council.config.md"), "# c\n")
+    ms_conv = os.path.join(ms, ".council", "conventions.md")
+    write(ms_conv, "# m\n## Accepted Patterns\n### **AP-3**: bold id\n#### AP-4: four hashes\n### ap-7: lowercase\n### AP8: no dash\n"
+          "### AP-2 — em dash title\n- **AP-6 — bullet entry.**\n### AP-5. period\n## AP-9: a level-two entry\n### **AP-10: all in bold**\n")
+    code, out, _ = council(ms, "memory")
+    check("memory: reads ## to #### headings, bold and lower-case ids, ids without a dash, and bold bullets",
+          all(f"{e} · every run" in out for e in ["AP-3 · bold id", "AP-4 · four hashes", "AP-7 · lowercase", "AP-8 · no dash",
+              "AP-2 · em dash title", "AP-6 · bullet entry", "AP-5 · period", "AP-9 · a level-two entry", "AP-10 · all in bold"])
+          and out.count(" · every run") == 9, out)
+    bullets = ("# Conventions — settled decisions\n\nProvenance: review 2026-07-28 (9 seats). Adopted 2026-07-28.\n\n"
+               "**Accepted patterns — stop flagging these. They are deliberate.**\n\n"
+               "- **AP-1 — `player.gd` stays whole.** It is not a god object. It reads\n  top-to-bottom. *(Structure, unprompted.)*\n"
+               "- **AP-2 — Global group scans are the right answer to \"who else is here\"** at\n  this scale. Do not propose a registry.\n\n"
+               "**Enforced conventions — always/never.**\n\n"
+               "- **EC-1 — Never store a node reference across frames without\n  `is_valid`.** Prefer not storing it. A freed object is\n  *not* null.\n"
+               "- **EC-2 — Every deadline in a test is in seconds, never a frame\n  count.** Run suites with `--fixed-fps 60`.\n  **Scope:** tests/**\n\n"
+               "---\n\n## Adopted 2026-07-30 — review 2026-07-30-2257\n\nProvenance: 11 seats, 98 raw findings.\n\n"
+               "**Accepted patterns — stop flagging these.**\n\n"
+               "- **AP-3 — Recast seats are the norm here, not an exception.** A seat whose\n  domain is absent is re-aimed.\n\n"
+               "**Enforced conventions — always/never.**\n\n"
+               "- **EC-3 — A PERMUTATION OVER IDENTICAL ELEMENTS IS THE IDENTITY, AND AN ARM BUILT ON ONE\n"
+               "  CAN NEVER FAIL.** The arm reported **+0.00 four times**, and **what hid it is\n  that it gave the expected answer**.\n\n"
+               "- **EC-4 — EVERY `ext_resource` CARRIES A `uid://`.** Most lines were path-only.\n")
+    write(ms_conv, bullets)
+    code, out, _ = council(ms, "memory")
+    check("memory: a file of bold bullet entries under bold labels and dated sections reads whole",
+          all(e in out for e in ["AP-1 · `player.gd` stays whole · every run",
+                                 "AP-2 · Global group scans are the right answer to \"who else is here\" · every run",
+                                 "EC-1 · Never store a node reference across frames without `is_valid` · every run",
+                                 "EC-2 · Every deadline in a test is in seconds, never a frame count · scope: tests/**",
+                                 "AP-3 · Recast seats are the norm here, not an exception · every run",
+                                 "EC-3 · A PERMUTATION OVER IDENTICAL ELEMENTS IS THE IDENTITY, AND AN ARM BUILT ON ONE CAN NEVER FAIL · every run",
+                                 "EC-4 · EVERY `ext_resource` CARRIES A `uid://` · every run"]) and "WARNING" not in out, out)
+    code, out, _ = council(ms, "memory", "select", "tests/test_x.gd")
+    check("memory select: ... and serves it", "1 scoped and 6 every-run entries of 7 apply" in out, out)
+    write(ms_conv, "# m\n| Id | Rule |\n|---|---|\n| AP-1 | tables are not entries |\n")
+    code, out, _ = council(ms, "memory")
+    check("memory: a file that names entry ids but gives no entry says so loudly",
+          "no entries yet" in out and "WARNING" in out and "names entry ids, but no entry could be read" in out, out)
+    code, out, err = council(ms, "memory", "select", "x.py")
+    check("memory select: ... and so does select", "no entry could be read" in err and "entries of 0 apply" in out, out + err)
+    write(ms_conv, read(ref(os.path.join("templates", "conventions.md"))))
+    code, out, _ = council(ms, "memory")
+    check("memory: the blank template has no entries yet, and no warning", "no entries yet" in out and "WARNING" not in out, out)
+
+    root_shape = ("# Project Conventions\n\nAccepted patterns and enforced conventions from council reviews. The council reads this file\n"
+                  "before every review.\n\n---\n\n## Accepted Patterns\n\nThese are intentional — do not flag as findings.\n\n"
+                  "### AP-1: `eu_stocks` key vs `eu_equities` type split\n**Pattern:** The default market key is `eu_stocks`; its archive type is\n"
+                  "`eu_equities`. Do NOT propose migrating.\n**Origin:** Review 2026-06-30\n**Rationale:** A live migration for cosmetic gain.\n\n"
+                  "### AP-2: `load_prices` cold/incremental/repair state machine\n**Pattern:** a sequence of named helpers.\n**Origin:** Review 2026-06-30\n\n"
+                  "---\n\n## Enforced Conventions\n\n### EC-1: One source for the default scope\n**Convention:** every caller reads one place.\n\n"
+                  "### EC-2: Fold twin code paths, never copy\n**Convention:** one path.\n\n---\n\n"
+                  "### AP-3: The two reads are DIFFERENT bases — by design\n**Pattern:** they may disagree.\n\n"
+                  "### EC-3: `/live-risk` degrades, never 500s\n**Convention:** an empty answer, not an error.\n")
+    rs = new_repo(tmp, "rootmem")
+    rs_cfg = os.path.join(rs, ".council", "council.config.md")
+    write(rs_cfg, "# c\n## Stack\n- conventions: PEP 8 + ruff\n## Memory\n- conventions: .council/conventions.md\n")
+    with open(os.path.join(rs, "conventions.md"), "w", encoding="utf-8", newline="\r\n") as f:
+        f.write(root_shape)
+    code, out, err = council(rs, "memory", "select", "core/pipeline/downloads.py")
+    check("memory: a CRLF file at the repo root reads whole when the config names a memory file that doesn't exist — and says so",
+          code == 0 and "0 scoped and 6 every-run entries of 6 apply" in out and "AP-3 · The two reads are DIFFERENT bases — by design · every run" in out
+          and "doesn't exist — reading" in err and "PEP" not in out + err, out + err)
+    write(rs_cfg, "# c\n## Memory\n- conventions: /conventions.md\n")
+    code, out, err = council(rs, "memory")
+    check("memory: a configured /conventions.md is the repo's root one", code == 0 and "EC-3 · `/live-risk` degrades, never 500s" in out and not err.strip(), out + err)
+
+    # Memory: only settled entries are served
+    msec = new_repo(tmp, "memsections")
+    write(os.path.join(msec, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(msec, ".council", "conventions.md"),
+          "# m\n## Accepted Patterns (AP)\n### AP-1: live one\n**Scope:** webapp/**\n"
+          "### AP-2: retired by a line\n**Pattern:** x · **Retired:** 2026-09-01 — superseded by AP-1\n**Scope:** webapp/**\n"
+          "### ~~AP-3~~: struck out\n"
+          "## Proposed — awaiting the user's yes/no\n### AP-9: proposed as a heading\n**Scope:** webapp/**\n"
+          "- PROPOSED accepted pattern: stop flagging X — deliberate (evidence: a.py:1)\n"
+          "## Rejected — never propose again\n### AP-10: the user said NO\n"
+          "## Retired\n### EC-15: superseded\n"
+          "## Backend notes\n### EC-20: under a section nobody named\n")
+    code, out, err = council(msec, "memory", "select", "webapp/frontend/src/App.jsx")
+    check("memory select: serves only settled entries — never proposed, rejected or retired ones",
+          code == 0 and "AP-1 · live one" in out and not any(i in out for i in ["AP-2", "AP-3", "AP-9", "AP-10", "EC-15", "EC-20"])
+          and "1 scoped and 0 every-run entries of 1 apply" in out and "(5 retired or not yet accepted, left out)" in out, out)
+    check("memory select: an entry under a section it can't place is left out, loudly", "EC-20" in err and "WARNING" in err, err)
+    code, out, _ = council(msec, "memory")
+    check("memory: lists what it doesn't serve, and why",
+          "AP-2 · retired by a line · not served (marked retired)" in out and "AP-3 · struck out · not served (marked retired)" in out
+          and "AP-9 · proposed as a heading · not served (under ## Proposed" in out and "EC-15 · superseded · not served (under ## Retired)" in out
+          and "EC-20 · under a section nobody named · NOT SERVED" in out and "WARNING — 1 entry never reaches a brief" in out, out)
+
+    # Memory: scope spellings, folder boundaries, and speed
+    msc = new_repo(tmp, "memscopes")
+    write(os.path.join(msc, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(msc, "webapp", "frontend", "src", "App.jsx"), "x\n")
+    scopes = [("brace", "webapp/frontend/src/*.{js,jsx}"), ("all", "all"), ("dot", "./webapp/frontend/"), ("star", "*"),
+              ("leading slash", "/webapp/**"), ("backslashes", "webapp\\frontend\\**"), ("semicolons", "docs/**; webapp/**"),
+              ("brackets", "app/(group)/[id]/**"), ("none", "none"), ("elsewhere", "server/**, {api,worker}/**"),
+              ("brace folders", "{webapp,mobile}/frontend/**"), ("a folder", "src/api"), ("a typo", "webapp/fronted/**")]
+    write(os.path.join(msc, ".council", "conventions.md"), "# m\n## Enforced Conventions\n" +
+          "".join(f"### EC-{i}: {t}\n**Scope:** {sc}\n" for i, (t, sc) in enumerate(scopes, 1)))
+    code, out, _ = council(msc, "memory", "select", "webapp/frontend/src/App.jsx", "app/(group)/[id]/page.tsx", "src/api_v2/client.py")
+    picked = sorted(int(m) for m in re.findall(r"^EC-(\d+) ", out, re.MULTILINE))
+    check("memory select: brace globs, all, ./, a leading /, backslashes, semicolons and literal brackets all match",
+          picked == [1, 2, 3, 4, 5, 6, 7, 8, 9, 11] and "7 scoped and 3 every-run entries of 13 apply" in out
+          and "EC-2 · all · every run" in out and "EC-9 · none · every run" in out, out)
+    check("memory select: a folder scope never reaches a sibling that shares its prefix (src/api, src/api_v2)", "EC-12" not in out, out)
+    code, out, _ = council(msc, "memory", "select", "src/api/client.py")
+    check("memory select: ... and does reach inside the folder", "EC-12 · a folder" in out, out)
+    code, out, _ = council(msc, "memory")
+    check("memory: flags a scope item that matches no file, seat or mode",
+          '"webapp/fronted/**" (EC-13) matches no file, seat or mode' in out and not any(f"({e})" in out for e in ["EC-1", "EC-3", "EC-5", "EC-6"]), out)
+    mpf = new_repo(tmp, "memperf")
+    write(os.path.join(mpf, ".council", "council.config.md"), "# c\n")
+    pscopes = ["core/structure/**, mckinney", "webapp/backend/**/*.py, leach", "**/tests/**, beck"]
+    write(os.path.join(mpf, ".council", "conventions.md"), "# m\n## Enforced Conventions\n" +
+          "".join(f"### EC-{i}: rule {i}\n**Rule:** always · **Why:** x\n**Scope:** {pscopes[i % 3]}\n" for i in range(1, 71)))
+    pkeys = [f"webapp/frontend/src/components/Panel{i}.jsx" for i in range(117)] + ["fowler", "hunt", "council-review"]
+    t0 = time.time()
+    try:
+        code, out, _ = council(mpf, "memory", "select", *pkeys)
+    except subprocess.TimeoutExpired:
+        code, out = -1, "timed out after 120 s"
+    took = time.time() - t0
+    check("memory select: 70 scoped entries against 120 paths and slugs take seconds, not minutes",
+          code == 0 and "0 scoped and 0 every-run entries of 70 apply" in out and took < 10, f"{took:.1f} s: {out}")
+
+    # Memory: anchors as models write them, and a project without git
+    man = new_repo(tmp, "anchors")
+    write(os.path.join(man, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(man, "core", "x.py"), "class Universe:\n    def registry(self):\n        pass\n\ndef fetch_data(t, s):\n    return None\n")
+    git(man, "add", "-A")
+    git(man, "commit", "-q", "-m", "i")
+    write(os.path.join(man, "core", "new.py"), "def new_helper():\n    pass\n")      # never committed
+    live = ["Universe.registry", "fetch_data()", "core/x.py::fetch_data", "fetch_data in x.py", "x.py; fetch_data",
+            "x.py:5 (fetch_data)", "x.py.", "[x.py](core/x.py)", "core/x.py#L5", "none", "n/a", "new_helper",
+            "res://core/x.py", "Universe::registry", "core\\x.py"]
+    write(os.path.join(man, ".council", "conventions.md"), "# m\n## Accepted Patterns\n" +
+          "".join(f"### AP-{i}: live {i}\n**Anchor:** {a}\n" for i, a in enumerate(live, 1)) +
+          "## Enforced Conventions\n### EC-1: gone\n**Anchor:** gone_helper()\n"
+          "### EC-2: gone from its file\n**Anchor:** core/x.py::gone_helper\n### EC-3: past the end\n**Anchor:** x.py:99\n")
+    code, out, _ = council(man, "memory", "check")
+    check("memory check: anchors written as a.b, f(), path::name, name in path, short paths, links, #L5 or none hold while the code does",
+          code == 1 and "AP-" not in out and "3 stale anchor(s) across 18 entries" in out, out)
+    check("memory check: ... and the ones that moved are still caught",
+          "STALE  EC-1 — nothing in the code is named gone_helper any more" in out
+          and "STALE  EC-2 — nothing in core/x.py is named gone_helper any more" in out
+          and "STALE  EC-3 — anchor x.py:99: bad-line (the file has 6 lines)" in out, out)
+    nogit = os.path.join(tmp, "nogit")
+    shutil.copytree(os.path.join(man, "core"), os.path.join(nogit, "core"))
+    write(os.path.join(nogit, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(nogit, ".council", "conventions.md"),
+          "# m\n## EC\n### EC-1: live\n**Anchor:** fetch_data\n### EC-2: gone\n**Anchor:** gone_helper\n")
+    code, out, _ = council(nogit, "memory", "check")
+    check("memory check: outside git, a name that is in the code is not stale", code == 1 and "EC-1" not in out
+          and "STALE  EC-2" in out and "1 stale anchor(s) across 2 entries" in out, out)
+
+    # Memory: with a run open, the paths given add to the run's own keys
+    msel = new_repo(tmp, "memsel")
+    write(os.path.join(msel, ".council", "council.config.md"), CONFIG)
+    write(os.path.join(msel, "webapp", "backend", "main.py"), "x = 1\n")
+    write(os.path.join(msel, ".council", "conventions.md"),
+          "# m\n## Accepted Patterns\n### AP-1: bare except in the router\n**Scope:** webapp/backend/**\n"
+          "### AP-2: the frontend polls\n**Scope:** webapp/frontend/**\n"
+          "## Enforced Conventions\n### EC-1: plans that touch migrations include a rollback task\n**Scope:** council-plan\n"
+          "### EC-2: credentials come from the keyring on purpose\n**Scope:** hunt\n")
+    code, selrun, _ = council(msel, "run", "open", "council-plan")
+    council(msel, "seat", "hunt", "queued")
+    code, out, _ = council(msel, "memory", "select", "webapp/backend")
+    check("memory select: with a run open, the paths given add to the run's seats and mode",
+          all(i in out for i in ["AP-1", "EC-1", "EC-2"]) and "AP-2" not in out and "3 scoped and 0 every-run entries of 4 apply" in out, out)
+    code, selrun2, _ = council(msel, "run", "open", "council-research", "--alongside")
+    code, out, err = council(msel, "memory", "select", "webapp/backend/")
+    check("memory select: with several runs open, only the paths given count — and it says so",
+          code == 0 and "AP-1" in out and "EC-1" not in out and "several runs are open" in err, out + err)
+    council(msel, "run", "close", "--run", selrun2.strip(), "--status", "abandoned")
+    council(msel, "run", "close", "--run", selrun.strip(), "--status", "abandoned")
 
     # Citation and origin check
     write(os.path.join(run, "synthesis.md"),
@@ -707,6 +915,27 @@ with tempfile.TemporaryDirectory() as tmp:
     check("doctor: flags stale memory anchors", "3 memory anchor(s) point at code" in out, out)
     check("doctor: notices a config without a stack fingerprint", "has no stack-fingerprint" in out, out)
     check("doctor: every finding carries a fix", out.count("Fix:") == out.count("ERROR") + out.count("WARN "), out)
+    code, out, _ = council(msec, "doctor")
+    check("doctor: counts a proposal written as a heading, and flags entries under a section it can't place",
+          "2 memory proposal(s) await" in out and "1 memory entr" in out and "never reach a brief" in out, out)
+    write(ms_conv, "# m\n| Id | Rule |\n|---|---|\n| AP-1 | tables are not entries |\n")
+    code, out, _ = council(ms, "doctor")
+    check("doctor: flags a memory file whose entries can't be read", "no entry could be read" in out, out)
+    write(rs_cfg, "# c\n## Memory\n- conventions: .council/conventions.md\n")
+    code, out, _ = council(rs, "doctor")
+    check("doctor: a configured memory path that doesn't exist points at the real file, never at creating an empty one",
+          "doesn't exist — reading" in out and "council-init creates" not in out and "no memory file" not in out, out)
+    write(os.path.join(rs, ".council", "conventions.md"), read(ref(os.path.join("templates", "conventions.md"))))
+    code, out, _ = council(rs, "doctor")
+    check("doctor: a second memory file with entries the council never reads is flagged", "holds 6 entries the council never reads" in out, out)
+    code, out, _ = council(msc, "doctor")
+    check("doctor: flags memory scope items that match nothing", "memory scope item(s) match no file, seat or mode" in out, out)
+    nomem = new_repo(tmp, "nomem")
+    write(os.path.join(nomem, ".council", "council.config.md"), "# c\n## Memory\n- conventions: docs/memory.md\n")
+    code, out, _ = council(nomem, "doctor")
+    check("doctor: a configured memory path with no file anywhere names that path", "the config names" in out and "docs/memory.md" in out, out)
+    code, _, err = council(nomem, "memory")
+    check("memory: ... and memory says the same", code == 2 and "docs/memory.md" in err and "doesn't exist" in err, err)
 
     # Close, and the legacy pointer
     write(os.path.join(run, "verify-1.md"), "# Verification — eval\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
