@@ -164,8 +164,10 @@ estimates come from your own project's ledger once there is some.
 └── runs/<date-time>-<mode>/   state, brief, change index, seat files, synthesis, checks       ignored
 ```
 
-Your requests are yours: `asks/` is gitignored, so nothing you typed is committed — drop that line
-from `.council/.gitignore` if you'd rather your team saw them.
+Your requests are yours: `asks/` is gitignored, so nothing you typed is committed — write `!asks/` in
+place of that line if you'd rather your team saw them. (Since 0.7.1 a missing `asks/` line is put
+back when a run opens, so that a fresh council home can't file your words into git by accident;
+`!asks/` is how you say you meant it.)
 
 The council home is always the **main** checkout's `.council/`, even when you work in a git worktree.
 `council run status` shows open runs; `council doctor` finds anything that has drifted.
