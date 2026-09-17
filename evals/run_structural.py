@@ -199,6 +199,8 @@ for label, text, needles in [
     check(f"{label}: carries its mechanisms", not missing, ", ".join(missing))
 check("review: the default fix hand-off covers what the change touched, not only what it introduced",
       "introduced or touched" in review and "touched (" in review)
+check("postgame: parts quote the request with its secrets redacted", "never a secret" in skill["council-postgame"])
+check("09-deliver: the request line quotes the filed, redacted copy", "redacted" in doctrine["09-deliver.md"].split("**Your request:**", 1)[-1][:400])
 check("08-challenge: says what each of council check's citation verdicts asks of the Chair",
       all(v in doctrine["08-challenge.md"] for v in ["unreadable", "`deleted`", "`no-line`", "not checked"]))
 check("07-judge: an empty Kept section says (none)", "(none)" in doctrine["07-judge.md"])

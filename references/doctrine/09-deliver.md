@@ -19,7 +19,7 @@
    ```
 
    Under its `# Title`, point at the request: ``**Your request:** `.council/asks/<file>` — "<its first
-   ~12 words>…"``. It goes in the body because `council prior` reads bodies, so later runs — and a
+   ~12 words>…"``, quoted from that filed copy, where secrets are already redacted. It goes in the body because `council prior` reads bodies, so later runs — and a
    post-game — find the whole chain from it.
 3. `council state deliverable=<path>`.
 4. **In chat, your mode's summary**, in plain words: say what a seat checks before its name — "Data

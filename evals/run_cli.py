@@ -955,6 +955,39 @@ with tempfile.TemporaryDirectory() as tmp:
     check("check: a request part with no quote, or a one-word one, is broken",
           "synthesis#4  quote  NO-QUOTE" in out and "synthesis#5  quote  TOO-SHORT" in out
           and "2 of 5 quotes found in the request" in out, out)
+    qrepo = new_repo(tmp, "quotes")
+    write(os.path.join(qrepo, "x.txt"), "x\n")
+    git(qrepo, "add", "-A")
+    git(qrepo, "commit", "-q", "-m", "x")
+    code, qrun, _ = council(qrepo, "run", "open", "council-postgame")
+    qrun = qrun.strip()
+    fake_key = "sk" + "_live_" + "NOTREAL" * 4          # assembled here, so no key-shaped string sits in the file
+    write(os.path.join(qrun, "ask.md"), "# Ask — panel\nsource: said at the time\n## In your words\n"
+          "The quote panel shouldn’t freeze when the feed drops.\n"
+          "Show the last price in **bold** and keep the 5 minute chart.\nit must never place orders.\n"
+          f"Wire checkout with the key {fake_key} and email a receipt.\n")
+    write(os.path.join(qrun, "synthesis.md"), "# Synthesis\n## Kept\n"
+          '1 · must · ask · panel · no freeze · quote: "The quote panel shouldn\'t freeze when the feed drops."\n'
+          '2 · must · ask · panel · bold · quote: "Show the last price in **bold** and keep the 5 minute chart."\n'
+          '3 · must · ask · panel · bold · quote: "Show the last price in bold and keep"\n'
+          '4 · must · ask · orders · never · quote: "It must never place orders."\n'
+          '5 · must · ask · panel · Quote: stays live · quote: "shouldn’t freeze when the feed"\n'
+          '6 · must · Ask · orders · may trade · quote: "the app may place orders on its own"\n'
+          '7 · should · asks · orders · a mistyped part · quote: "never place orders"\n'
+          f'8 · must · ask · payments · the key · quote: "Wire checkout with the key {fake_key}"\n'
+          '9 · must · ask · payments · redacted · quote: "Wire checkout with the key [redacted] and email"\n')
+    code, out, _ = council(qrepo, "check")
+    check("check: a quote that differs only by a curly apostrophe or a non-breaking space passes",
+          "synthesis#1  quote  ok" in out and "synthesis#2  quote  ok" in out, out)
+    check("check: a quote that differs only in capitals or ** marks says exactly that",
+          "synthesis#3  quote  NOT-EXACT" in out and "synthesis#4  quote  NOT-EXACT" in out, out)
+    check("check: 'Quote:' in a title never hides the part's quote", "synthesis#5  quote  ok" in out, out)
+    check("check: in a post-game, a part whose third field isn't exactly 'ask' is still checked",
+          "synthesis#6  quote  NOT-IN-THE-REQUEST" in out and "synthesis#7  quote  ok" in out, out)
+    check("check: a quote holding a secret-looking string fails; the redacted words pass",
+          code == 1 and "synthesis#8  quote  SECRET" in out and "synthesis#9  quote  ok" in out
+          and "5 of 9 quotes found in the request" in out, out)
+    council(qrepo, "run", "close", "--status", "abandoned")
     code, out, err = council(req, "run", "close")
     check("run close: no warning when the request was filed", code == 0 and "no request was filed" not in err, err)
     council(req, "run", "open", "council-review")

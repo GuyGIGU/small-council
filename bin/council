@@ -1295,7 +1295,7 @@ gate_cmd()  { sed -n 's/.*"command": "\(.*\)", "exit".*/\1/p' "$1" 2>/dev/null |
 cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what \
-        mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown extra=""
+        mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra=""
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -1304,7 +1304,8 @@ cmd_check() {
     if [ -f "$run/synthesis.md" ]; then set -- "$run/synthesis.md"; else set -- "$run"/seats/*.md; fi
   fi
   # The user's own words — ask.md and the filed request, from "## In your words" on, whitespace
-  # collapsed — for the quote: check (a post-game's parts quote the request word for word).
+  # collapsed — for the quote: check (a post-game's parts quote the request word for word). Secrets are
+  # redacted here as in the filed copy, so a quote can only match words a tracked file may hold.
   req="$run/.request.txt"
   a="$(field ask "$run/session-state.md")"
   [ -n "$a" ] || a="$(field continues "$run/ask.md" | tr -d '`<>' | sed 's/[[:space:]].*$//')"   # not filed yet
@@ -1315,7 +1316,10 @@ cmd_check() {
            on && (/^## Later/ || /^## [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] / || /^\(no new words\)[ \t\r]*$/) { next }
            on' "$f"
     fi
-  done | tr -s ' \t\r\n' '    ' > "$req" 2>/dev/null
+  done > "$req.raw" 2>/dev/null
+  redact_copy "$req.raw" "$req.red" >/dev/null 2>&1 || : > "$req.red"
+  tr -s ' \t\r\n' '    ' < "$req.red" > "$req" 2>/dev/null
+  rm -f "$req.raw" "$req.red"
   out="$run/check.md"
   {
     printf '# Citation check — %s\n' "$(now_sec)"
@@ -1356,15 +1360,30 @@ cmd_check() {
     done <<ITEMS
 $(index_lines "$f")
 ITEMS
-    while IFS="$TAB" read -r n st; do
+    while IFS="$TAB" read -r n st q; do
       [ -n "$n" ] || continue
       qn=$((qn + 1))
+      if [ "$st" != ok ] && [ -n "$q" ]; then                   # a secret in a quote would reach a tracked file
+        printf '%s\n' "$q" > "$req.q"
+        [ "$(redact_copy "$req.q" "$req.q2" 2>/dev/null)" = 0 ] \
+          || st="SECRET (it holds a secret-looking string — quote the redacted words the filed request has)"
+        rm -f "$req.q" "$req.q2"
+      fi
       if [ "$st" = ok ]; then qok=$((qok + 1)); else bad=$((bad + 1)); fi
       printf '| %s#%s | quote | %s | - |\n' "$lab" "$n" "$st" >> "$out"
       say "$lab#$n  quote  $st"
     done <<QUOTES
-$(REQF="$req" LC_ALL=C awk '
+$(REQF="$req" MODE="$mode" LC_ALL=C awk '
   function alnum(c) { return c ~ /[A-Za-z0-9]/ }
+  function repl(s, a, b,   i, o) { o = ""; while ((i = index(s, a)) > 0) { o = o substr(s, 1, i - 1) b; s = substr(s, i + length(a)) } return o s }
+  function fold(s) {                               # what a reader can not see: curly quotes, odd spaces
+    s = repl(s, "\342\200\230", "\047"); s = repl(s, "\342\200\231", "\047")
+    s = repl(s, "\342\200\234", "\""); s = repl(s, "\342\200\235", "\"")
+    s = repl(s, "\302\240", " "); s = repl(s, "\342\200\257", " "); s = repl(s, "\342\200\211", " ")
+    gsub(/[ \t]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s)
+    return s
+  }
+  function loose(s) { gsub(/[*_]/, "", s); gsub(/ +/, " ", s); return tolower(s) }   # capitals and ** marks too
   function lastidx(s, x,   i, pos, base) {
     pos = 0; base = 0
     while ((i = index(s, x)) > 0) { pos = base + i; base += i + length(x) - 1; s = substr(s, i + length(x)) }
@@ -1380,23 +1399,30 @@ $(REQF="$req" LC_ALL=C awk '
   }
   FILENAME == ENVIRON["REQF"] { r = r $0; next }
   {
-    line = $0; gsub(/\r/, "", line)
-    n = line; sub(/^[-*]?[ \t]*/, "", n); sub(/[ \t].*$/, "", n); sub(/\.$/, "", n)
-    k = split(line, fld, /[ \t]+(·|\|)[ \t]+/)
-    if (!(k >= 4 && n ~ /^C?[0-9]+$/ && fld[3] == "ask")) next    # only a post-game part quotes the request
-    p = index(tolower(line), "quote:")
+    if (!folded) { R = fold(r); RL = loose(R); folded = 1 }
+    line = $0; gsub(/\r/, "", line); gsub(/\t/, " ", line)
+    if (line !~ /^[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) /) next
+    t = line; sub(/^[-*+]? */, "", t)
+    k = (index(t, "·") ? split(t, fld, / +· +/) : split(t, fld, / +\| +/))
+    n = fld[1]; gsub(/[*_.]/, "", n)
+    # A request part: its third field reads "ask"; in a post-game, every must or should line is one.
+    part = (tolower(fld[3]) == "ask") || (ENVIRON["MODE"] == "council-postgame" && tolower(fld[2]) ~ /^(must|should)$/)
+    if (k < 4 || !part) next
+    lo = tolower(line); p = 0; s = lo; off = 0          # the last "· quote:": a title may say "Quote:" too
+    while ((i = index(s, "· quote:")) > 0) { p = off + i; off += i; s = substr(s, i + 1) }
     if (!p) { printf "%s\tNO-QUOTE\n", n; next }
-    q = substr(line, p + 6); sub(/^[ \t]+/, "", q)
+    q = substr(line, p + length("· quote:")); sub(/^ +/, "", q); e = 0
     if (substr(q, 1, 1) == "\"") { q = substr(q, 2); e = lastidx(q, "\"") }
-    else if (substr(q, 1, 3) == "“") { q = substr(q, 4); e = lastidx(q, "”") }
+    else if (substr(q, 1, 3) == "\342\200\234") { q = substr(q, 4); e = lastidx(q, "\342\200\235") }
     else { printf "%s\tNO-QUOTE\n", n; next }
     if (e) q = substr(q, 1, e - 1)
-    gsub(/[ \t]+/, " ", q); sub(/^ /, "", q); sub(/ $/, "", q)
-    whole = r; sub(/^ /, "", whole); sub(/ $/, "", whole)
+    raw = q; q = fold(q)
     if (q == "") st = "NO-QUOTE"
-    else if (split(q, wd, " ") < 3 && q != whole) st = "TOO-SHORT"
-    else st = found(r, q) ? "ok" : "NOT-IN-THE-REQUEST"
-    printf "%s\t%s\n", n, st
+    else if (split(q, wd, " ") < 3 && q != R) st = "TOO-SHORT"
+    else if (found(R, q)) st = "ok"
+    else if (found(RL, loose(q))) st = "NOT-EXACT (only capitals or * _ marks differ — copy the words exactly)"
+    else st = "NOT-IN-THE-REQUEST"
+    printf "%s\t%s\t%s\n", n, st, raw
   }' "$req" "$f" 2>/dev/null)
 QUOTES
   done
