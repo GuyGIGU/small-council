@@ -452,8 +452,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # Memory: only settled entries are served
     msec = new_repo(tmp, "memsections")
     write(os.path.join(msec, ".council", "council.config.md"), "# c\n")
-    write(os.path.join(msec, ".council", "conventions.md"),
-          "# m\n## Accepted Patterns (AP)\n### AP-1: live one\n**Scope:** webapp/**\n"
+    msec_conv = ("# m\n## Accepted Patterns (AP)\n### AP-1: live one\n**Scope:** webapp/**\n"
           "### AP-2: retired by a line\n**Pattern:** x · **Retired:** 2026-09-01 — superseded by AP-1\n**Scope:** webapp/**\n"
           "### ~~AP-3~~: struck out\n"
           "## Proposed — awaiting the user's yes/no\n### AP-9: proposed as a heading\n**Scope:** webapp/**\n"
@@ -461,6 +460,7 @@ with tempfile.TemporaryDirectory() as tmp:
           "## Rejected — never propose again\n### AP-10: the user said NO\n"
           "## Retired\n### EC-15: superseded\n"
           "## Backend notes\n### EC-20: under a section nobody named\n")
+    write(os.path.join(msec, ".council", "conventions.md"), msec_conv)
     code, out, err = council(msec, "memory", "select", "webapp/frontend/src/App.jsx")
     check("memory select: serves only settled entries — never proposed, rejected or retired ones",
           code == 0 and "AP-1 · live one" in out and not any(i in out for i in ["AP-2", "AP-3", "AP-9", "AP-10", "EC-15", "EC-20"])
@@ -1049,6 +1049,7 @@ with tempfile.TemporaryDirectory() as tmp:
           "EC-1 ·" in out and "EC-2 ·" in out and "1 scoped and 1 every-run entries of 2 apply" in out, out)
     check("memory select: ... and a plain bullet that names an id is warned about, never dropped in silence",
           "EC-3" in err and "not read" in err, err)
+    write(os.path.join(msec, ".council", "conventions.md"), msec_conv)   # as the later doctor check expects
     code, out, _ = council(repo, "collect", "--run", run2)
     check("collect: a paired seat proves both reference docs", re.search(r"^pair\s+ok\s+1/4\s+\d+\s+ok\s+1/1", out, re.MULTILINE) is not None, out)
     check("collect: a list-style index line counts; prose under the Index is ignored",
