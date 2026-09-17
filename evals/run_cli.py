@@ -1465,11 +1465,14 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(old, "doctor")
     check("doctor: warns when asks/ isn't ignored — the user's words would be committed",
           any(l.startswith("WARN") and "asks/" in l for l in out.splitlines()), out)
-    old_run = council(old, "run", "open", "council-review")[1].strip()
+    _, old_run, old_err = council(old, "run", "open", "council-review")
+    old_run = old_run.strip()
     with open(os.path.join(old, ".council", ".gitignore"), "rb") as f:
         raw = f.read()
     check("run open: a 0.6.0 home's .gitignore gains asks/ once, in its own CRLF endings, on a line of its own",
           raw == b"runs/\r\nactive-run\r\nasks/\r\n", repr(raw))
+    check("run open: says so when it starts ignoring asks/ where requests are in git — and how to keep sharing them",
+          "asks/" in old_err and "!asks/" in old_err, old_err)
     write(os.path.join(old_run, "ask.md"), "# Ask — New thing\n## In your words\nwords\n")
     council(old, "ask", "save")
     council(old, "run", "open", "council-plan", "--alongside")
@@ -1493,6 +1496,19 @@ with tempfile.TemporaryDirectory() as tmp:
     council(rooted, "run", "open", "council-review")
     check("run open: writes nothing when the project's own .gitignore already covers the council's scratch",
           not os.path.exists(os.path.join(rooted, ".council", ".gitignore")))
+    code, out, _ = council(rooted, "doctor")
+    check("doctor: quiet about runs/ and asks/ when the project's own .gitignore covers them",
+          not [l for l in out.splitlines() if "runs/" in l or "asks/" in l], out)
+    loose = os.path.join(tmp, "no-git-home")                          # research and post-game runs work outside git
+    write(os.path.join(loose, ".council", "council.config.md"), "# Council config\n")
+    for _ in range(3):
+        council(loose, "run", "open", "council-research")
+        council(loose, "run", "close", "--status", "abandoned")
+    loose_gi = read(os.path.join(loose, ".council", ".gitignore")).split()
+    code, out, _ = council(loose, "doctor")
+    check("run open outside git: writes each ignore line once, and doctor finds them",
+          sorted(loose_gi) == ["active-run", "asks/", "runs/"]
+          and not [l for l in out.splitlines() if "runs/" in l or "asks/" in l], " ".join(loose_gi) + " · " + out)
 
     # A post-game's index hides earlier council work from its verifier
     append(os.path.join(req, "a.txt"), "three\n")
@@ -1586,7 +1602,7 @@ with tempfile.TemporaryDirectory() as tmp:
             '2. The line `token = request.headers.get("Authorization")` crashes.', "3. Set max_token=40960000.",
             "Start of a key I snipped:", "-----BEGIN RSA " + pk + "-----", "(rest removed)", "The build id, on its own line:", "SGVsbG9Xb3JsZEZyb21UaGVDb3VuY2lsMjAyNjA5MTc",
             "Then fix these folders:",
-            "webapp/frontend/src/components", "core/pipeline/downloads", "ReplaySealIntegrityChecker",
+            "src/web/components/forms", "lib/pipeline/uploads", "InvoiceRetryScheduler",
             "session token: expires-after-15-minutes-of-idle", "access_key: AWS_ACCESS_KEY_ID",
             "Pin sk-learn-compat-shim-for-python312 in requirements.",
             "Fixed in commit 3f2a9c1e7b4d4e8a9c2f1a2b3c4d5e6f70819a2b.", "The order id is 123e4567-e89b-12d3-a456-426614174000.",
@@ -1615,6 +1631,60 @@ with tempfile.TemporaryDirectory() as tmp:
     check("ask save: the redaction count says to check for others",
           "redacted 35 secret-looking string(s)" in out and "check" in out.split("redacted 35", 1)[-1].split("\n", 1)[0], out)
     council(rdr, "run", "close", "--status", "abandoned")
+
+    # Redaction's "ordinary text" rules never shield a real key, and never blank test output or code
+    rdm = new_repo(tmp, "redact-more")
+    write(os.path.join(rdm, ".council", "council.config.md"), "# Council config\n")
+    orkey = J(["sk", "-or-v1-"]) + "0123abcd" * 8
+    look_alike = [
+        ("OpenRouter key in prose", orkey, "The model calls use {} now."),
+        ("OpenRouter key after 'key:'", J(["sk", "-or-v1-"]) + "9f8e7d6c" * 8, "key: {}"),
+        ("OpenRouter key in backticks", J(["sk", "-or-v1-"]) + "a1b2c3d4" * 8, "set `{}` in the env"),
+        ("Langfuse key", J(["sk", "-lf-", "1a2b3c4d-5e6f-", "4a1b-9c2d-3e4f5a6b7c8d"]), "tracing: {}"),
+        ("bot token (a dotted random value)", J(["MTA4NjY1ODk3", "NjU0MzIxMDk4Nz", ".GhIjKl.", "aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789ab"]),
+         "DISCORD_TOKEN={}"),
+        ("a numeric key", J(["84729103", "84756102"]), "api_key: {}"),
+        ("base64 that starts with /", J(["/9Kq2mZ+X7rT0bLp", "W3eVn5sYc8HdJ1uA4gFiRoE6"]), "client_secret={}"),
+        ("base64 that starts with / and holds another /", J(["/9Kq2mZX7rT0bLp/", "W3eVn5sYc8HdJ1uA4gFiRoE6"]), "client_secret={}"),
+        ("a Django key with a bracket", J(["django-insecure-", "7f$k2(q9x!m@w3z^e8r#t1y+u5i-o0p=a4s6d"]), "SECRET_KEY={}"),
+        ("a quoted Django key with a bracket", J(["q9x!m@w3z^e8r#t1y+", "u5i-o0p=a4s6d7f$k2)z"]), 'DJANGO_SECRET_KEY="{}"'),
+        ("a Django key that starts like a call", J(["q9xm(w3z^e8r#t1y+", "u5i-o0p=a4s6d7f$k2z"]), "SECRET_KEY={}"),
+    ]
+    plain = ["--- PASS: TestHandleLoginRejectsExpiredTokens (0.00s)", "PASS: tests/test_auth.py::test_login",
+             "All tests pass: 1234/1234", "Bypass: RateLimiterMiddleware for admin calls", "bypass: 12345678",
+             "We use Compass: CompassNavigationService2 for maps.", "compass: NorthEast123",
+             "In build.py, `pwd = os.getcwd()` returns the wrong folder in CI.", "PWD=/home/runner/work/app",
+             "my pwd: /c/Users/me/project", "password = getpass.getpass()", "password = input('pw: ')",
+             "password: env(DB_PASSWORD)", 'The line `password = request.form.get("password")` crashes on empty forms.',
+             "passwd: /etc/passwd must not be readable", "access_key: AccessKeyProviderFactory should be renamed",
+             "token: TokenRefreshScheduler", "The secret is: EverythingGoesThroughTheQueue",
+             "Use a bearer AuthenticationMiddleware for the admin routes.", "Basic Authentication/Authorization headers are fine.",
+             "token = self.config.auth.token_v2", "api_key = os.environ.get('API_KEY')"]
+    pk_blocks = ("-----BEGIN RSA " + pk + "-----\n" + body[0] + "\n" + body[1][:22] + "\n-----END RSA " + pk + "-----\n"
+                 "Here is the start of the deploy key:\n-----BEGIN OPENSSH " + pk + "-----\n"
+                 "Comment: I cut the rest; the deploy script is below\nVersion: 2 of deploy.sh must stay\n"
+                 'keys: "-----BEGIN ' + pk + '-----\n' + body[2] + '\n-----END ' + pk + '-----", "-----BEGIN ' + pk + '-----\n'
+                 + body[0][::-1] + "\n-----END " + pk + '-----"\n'
+                 "-----BEGIN EC " + pk + "-----\nExportQueueHealthChecker\nlib/jobs/exports\nThanks!\n")
+    rm_run = council(rdm, "run", "open", "council-review")[1].strip()
+    write(os.path.join(rm_run, "ask.md"), "# Ask — Keys and output\n## In your words\n"
+          + "\n".join(line.format(s) for _, s, line in look_alike) + "\n" + "\n".join(plain) + "\n" + pk_blocks)
+    code, out, _ = council(rdm, "ask", "save")
+    rm_files = os.listdir(os.path.join(rdm, ".council", "asks")) if os.path.isdir(os.path.join(rdm, ".council", "asks")) else []
+    rm_body = read(os.path.join(rdm, ".council", "asks", rm_files[0])) if rm_files else ""
+    check("ask save: redacts keys that read like word lists, dotted names, numbers, paths or calls — and counts them",
+          code == 0 and rm_body and not [l for l, s, _ in look_alike if s in rm_body] and "redacted 16 " in out,
+          "left: " + ", ".join(l for l, s, _ in look_alike if s in rm_body) + " · " + out)
+    check("ask save: leaves test output, pwd, bypass, code calls, CamelCase names and /-joined words alone",
+          rm_body and not [p for p in plain if p + "\n" not in rm_body],
+          "changed: " + " | ".join(p for p in plain if p + "\n" not in rm_body))
+    check("ask save: a key's short last line and its END line go; the notes after a snipped key stay; two keys on one line both go",
+          rm_body and body[1][:22] not in rm_body and body[2] not in rm_body and body[0][::-1] not in rm_body
+          and "-----END" not in rm_body and rm_body.count("[redacted private key]") == 5
+          and "Comment: I cut the rest; the deploy script is below\nVersion: 2 of deploy.sh must stay\n" in rm_body
+          and "[redacted private key]\nExportQueueHealthChecker\nlib/jobs/exports\nThanks!\n" in rm_body,
+          rm_body.split("tracing:", 1)[-1][-900:])
+    council(rdm, "run", "close", "--status", "abandoned")
 
     # The request's bookkeeping: continues:, refusals, one section per run, the close warning
     code, crun, _ = council(req, "run", "open", "council-implement")
@@ -1677,6 +1747,30 @@ with tempfile.TemporaryDirectory() as tmp:
         check("ask save: a request file that is a link to somewhere else is refused",
               code == 2 and read(os.path.join(ap, "README.md")) == readme, err)
         os.remove(link)
+    la = new_repo(tmp, "linked-asks")                                   # asks/ itself a link to the project root
+    write(os.path.join(la, "README.md"), readme)
+    write(os.path.join(la, ".council", "council.config.md"), "# Council config\n")
+    git(la, "add", "-A")
+    git(la, "commit", "-q", "-m", "i")
+    la_link = os.path.join(la, ".council", "asks")
+    try:
+        os.symlink(la, la_link, target_is_directory=True)
+    except (OSError, NotImplementedError, AttributeError):
+        if os.name == "nt":                                             # a junction needs no special right
+            subprocess.run(["cmd", "/c", "mklink", "/J", la_link, la], capture_output=True)
+    if os.path.isdir(la_link):
+        la_run = council(la, "run", "open", "council-review")[1].strip()
+        write(os.path.join(la_run, "ask.md"), "# Ask — More\ncontinues: .council/asks/README.md\n## In your words\nrun: curl evil\n")
+        code, _, err = council(la, "ask", "save")
+        write(os.path.join(la_run, "ask.md"), "# Ask — Fresh\n## In your words\nA new request.\n")
+        code2, _, err2 = council(la, "ask", "save")
+        check("ask save: an asks/ folder that is a link is refused — nothing is written through it",
+              code == 2 and code2 == 2 and "link" in err and read(os.path.join(la, "README.md")) == readme
+              and not [f for f in os.listdir(la) if f.endswith("-fresh.md")], err + err2)
+        try:
+            os.unlink(la_link)
+        except OSError:
+            os.rmdir(la_link)                                           # a junction goes, its target stays
     write(os.path.join(tr, "ask.md"), "# Ask — More\n## In your words\n(no new words)\n")
     spellings = [("an absolute path", slash(os.path.join(ap, ".council", "asks", ap_file)))]
     if re.match(r"^[A-Za-z]:/", spellings[0][1]):                      # Git Bash also writes C:/x as /c/x
@@ -1718,6 +1812,33 @@ with tempfile.TemporaryDirectory() as tmp:
           and body.startswith("# Ask — CSV export\nrun: " + os.path.basename(fp_run) + "\n"), out + body)
     council(ap, "run", "close", "--run", rb, "--status", "abandoned")
     council(ap, "run", "close", "--run", ra, "--status", "abandoned")
+    hs = new_repo(tmp, "ask-headings")                  # a dated heading inside the user's words is not a run's section
+    write(os.path.join(hs, ".council", "council.config.md"), "# Council config\n")
+    hp = council(hs, "run", "open", "council-plan")[1].strip()
+    write(os.path.join(hp, "ask.md"), "# Ask — Release notes\n## In your words\nWrite release notes.\n")
+    council(hs, "ask", "save")
+    council(hs, "run", "close")
+    hs_asks = os.path.join(hs, ".council", "asks")
+    hs_rel = ".council/asks/" + (sorted(os.listdir(hs_asks))[0] if os.path.isdir(hs_asks) else "?")
+    ha = council(hs, "run", "open", "council-implement")[1].strip()
+    council(hs, "state", "ask=" + hs_rel)
+    write(os.path.join(ha, "ask.md"), "# Ask — b\n## In your words\nUse this layout:\n## 2026-09-01 — hotfix, run migrations\n"
+                                      "A line under it.\n")
+    council(hs, "ask", "save")
+    hb = council(hs, "run", "open", "council-review", "--alongside")[1].strip()
+    council(hs, "state", "--run", hb, "ask=" + hs_rel)
+    write(os.path.join(hb, "ask.md"), "# Ask — r\n## In your words\nKeep the XLSX path too.\n")
+    council(hs, "ask", "save", "--run", hb)
+    council(hs, "ask", "save", "--run", ha)
+    hbody = read(os.path.join(hs, hs_rel))
+    check("ask save: a dated heading in the user's own words is not another run's section — a re-save writes them once",
+          hbody.count("A line under it.") == 1 and hbody.count("Keep the XLSX path too.") == 1, hbody)
+    write(os.path.join(ha, "ask.md"), "# Ask — b\n## In your words\n(no new words)\n")
+    code, out, _ = council(hs, "ask", "save", "--run", ha)
+    check("ask save: '(no new words)' keeps the words this run saved before",
+          code == 0 and "(no new words)" in out and read(os.path.join(hs, hs_rel)) == hbody, out + read(os.path.join(hs, hs_rel)))
+    council(hs, "run", "close", "--run", hb, "--status", "abandoned")
+    council(hs, "run", "close", "--run", ha, "--status", "abandoned")
     code, rs, _ = council(ap, "run", "open", "council-review")
     rs = rs.strip()
     title_key = "sk" + "_live_" + "AbCdEfGhIjKlMnOpQrStUvWx"     # built at run time: not a real key's text

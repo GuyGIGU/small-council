@@ -50,8 +50,10 @@ esac
 
 msg="$(json_str last_assistant_message)"
 [ -n "$msg" ] || exit 0
-# A line that starts with BLOCKED — any case, after spaces, a quote mark or markdown (**BLOCKED:**).
-if printf '%s\n' "$msg" | grep -q -i -E '^[[:space:]>*_]*blocked([^[:alpha:]]|$)'; then exit 0; fi
+# BLOCKED at a line's start, after spaces, a quote mark or markdown (**BLOCKED:**): in capitals on any line,
+# or "Blocked:" in any case as the reply's first line — so a finding like "* Blocked users can …" is no reply.
+if printf '%s\n' "$msg" | grep -q -E '^[[:space:]>*_]*BLOCKED([^[:alpha:]]|$)'; then exit 0; fi
+if printf '%s\n' "$msg" | awk 'NF { print; exit }' | grep -q -i -E '^[[:space:]>*_]*blocked[*_]*[[:space:]]*:'; then exit 0; fi
 
 if [ "$kind" = worker ]; then
   finish="finish by writing your output file, then reply with exactly one line: Wrote <output path> — <N> items (<counts>). If you couldn't do the work, reply BLOCKED: <reason> instead."
@@ -64,44 +66,55 @@ line="$(printf '%s\n' "$msg" | grep -m 1 -i -E '^[[:space:]>*_]*wrote[*_:]*[[:sp
 [ -n "$line" ] || line="$(printf '%s\n' "$msg" | grep -m 1 'Wrote ' || true)"
 [ -n "$line" ] || block "$finish"
 
-# Every "….md" after the word, shortest first; a markdown link gives its target; quotes and marks go.
+# For each "….md" after the word (a full stop may follow; a markdown link gives its target): the whole text
+# before it, then the text from each space, quote or mark on — so "my findings to /abs/x.md" yields /abs/x.md.
 cands="$(printf '%s\n' "$line" | LC_ALL=C awk '
   NR == 1 {
     t = " " tolower($0)
     if (!match(t, /[^a-z]wrote[*_:]*[ \t]+/)) exit
     s = substr($0, RSTART + RLENGTH - 1)
     pathch = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./\\-"
+    marks = "[]`\"'"'"'*_(< \t"
     off = 0; rest = s
     while ((i = index(rest, ".md")) > 0) {
       end = off + i + 2
       nxt = substr(s, end + 1, 1)
-      if (nxt == "" || index(pathch, nxt) == 0) {
+      if (nxt == ".") nxt = substr(s, end + 2, 1)
+      if ((nxt == "" || index(pathch, nxt) == 0) && substr(s, end + 1, 2) != "](") {
         c = substr(s, 1, end)
         while ((k = index(c, "](")) > 0) c = substr(c, k + 2)
-        while (c != "" && index("[]`\"'"'"'*_(< \t", substr(c, 1, 1))) c = substr(c, 2)
-        if (c != "") print c
+        n = length(c)
+        for (j = 1; j <= n; j++) {
+          if (j > 1 && index(marks, substr(c, j - 1, 1)) == 0) continue
+          d = substr(c, j)
+          while (d != "" && index(marks, substr(d, 1, 1))) d = substr(d, 2)
+          if (d != "" && !(d in seen)) { seen[d] = 1; print d }
+        }
+        print ""
       }
       rest = substr(rest, i + 3); off = end
     }
   }')"
 [ -n "$cands" ] || exit 0
 cwd="$(json_str cwd)"
-path=""; first=""; firstrel=""
+path=""; named=""
 while IFS= read -r c; do
-  [ -n "$c" ] || continue
+  if [ -z "$c" ]; then                     # the end of one .md's candidates: an absolute one that isn't there
+    [ -z "$named" ] || break               # is the file the agent named
+    continue
+  fi
   case "$c" in
-    /* | [A-Za-z]:*) p="$c"; r="" ;;
-    *) p="${cwd:+$cwd/}$c"; r=1 ;;
+    /* | [A-Za-z]:[\\/]*) p="$c"; [ -n "$named" ] || named="$c" ;;
+    *) p="${cwd:+$cwd/}$c" ;;
   esac
-  if [ -z "$first" ]; then first="$p"; firstrel="$r"; fi
   if [ -s "$p" ]; then path="$p"; break; fi
 done <<EOF
 $cands
 EOF
 if [ -z "$path" ]; then
-  # A relative path is joined to the folder Claude Code sends, which may not be the run's: can't tell.
-  [ -z "$firstrel" ] || exit 0
-  path="$first"
+  # Only relative names, joined to the folder Claude Code sends — which may not be the run's: can't tell.
+  [ -n "$named" ] || exit 0
+  path="$named"
 fi
 
 problems=""

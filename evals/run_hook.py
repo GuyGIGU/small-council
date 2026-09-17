@@ -272,6 +272,11 @@ with tempfile.TemporaryDirectory() as tmp:
                          ("a backticked path", f"Wrote `{good}` — 1 items")]:
         code, err = run_gate(worker, reply)
         check(f"seat check: a Wrote line written with {label} is read", code == 0, err)
+    missing = os.path.join(seats, "missing.md")
+    for label, reply in [("a markdown link to a missing file", f"Wrote [hunt.md]({missing}) — 1 items"),
+                         ("'Wrote the file to <a missing path>'", f"Wrote the file to {missing}")]:
+        code, err = run_gate(worker, reply)
+        check(f"seat check: {label} blocks, naming that file", code == 2 and f"({missing}) doesn't exist" in err, err)
     code, err = run_gate(worker, "I wrote up my notes above")
     check("seat check: 'wrote' in a sentence with no file still asks for the file", code == 2 and "Wrote <output path>" in err, err)
     bom = os.path.join(seats, "bom.md")
@@ -282,6 +287,12 @@ with tempfile.TemporaryDirectory() as tmp:
     write(bad, "# Bad\nnot a ref line\n")
     code, err = run_gate(worker, f"Wrote {bad} — 1 items")
     check("seat check: a malformed file blocks and names the fixes", code == 2 and "line 2" in err and "## Index" in err, err)
+    for label, reply in [("words before the path", f"Wrote my findings to {bad} — 1 items (P2 1)"),
+                         ("'Wrote the file <path>'", f"Wrote the file {bad}"),
+                         ("a backticked path after words", f"Wrote findings to `{bad}` — 1 items"),
+                         ("a full stop after the path", f"Wrote {bad}.")]:
+        code, err = run_gate(worker, reply)
+        check(f"seat check: the file is still read when the Wrote line has {label}", code == 2 and "line 2" in err, err)
     big = os.path.join(seats, "big.md")
     write(big, "# Big — x (council-review)\nref: none\n## Index\n" + ("x" * 17000) + "\n")
     code, err = run_gate(worker, f"Wrote {big} — 1 items")
@@ -338,6 +349,12 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat check: 'BLOCKED' mid-sentence is not a BLOCKED reply", code == 2, err)
     code, err = run_gate(worker, "Unblocked the queue; nothing else to report")
     check("seat check: a word that only contains 'blocked' is not a BLOCKED reply", code == 2, err)
+    for label, reply in [("a finding bullet that starts with 'Blocked'",
+                          "I reviewed the auth module and found 3 issues:\n* Blocked users can still log in (P1)\n* Tokens never expire (P2)"),
+                         ("a bold 'Blocked' in a later line", "1 CONFIRMED — the retry loop\n**Blocked** accounts: not relevant"),
+                         ("a 'Blocked:' tally after a heading", "Summary\nBlocked: 0, allowed: 12")]:
+        code, err = run_gate(worker, reply)
+        check(f"seat check: {label} is not a BLOCKED reply", code == 2 and "Wrote <output path>" in err, err)
     spaced = os.path.join(tmp, "plugin root", "John Smith")          # a user name with a space
     for d in ("hooks", "bin"):
         shutil.copytree(os.path.join(ROOT, d), os.path.join(spaced, d))
@@ -359,6 +376,10 @@ with tempfile.TemporaryDirectory() as tmp:
     write(tableless, "# Verification — eval\nAll four items hold up.\n")
     code, err = run_gate(verifier, f"Wrote {tableless} — 4 confirmed")
     check("seat check: a verifier file with its title but no verdict table blocks", code == 2 and "verdict table" in err, err)
+    for label, reply in [("'Wrote verdicts to <path>'", f"Wrote verdicts to {tableless} — 4 confirmed"),
+                         ("a full stop after the path", f"Wrote {tableless}.")]:
+        code, err = run_gate(verifier, reply)
+        check(f"seat check: a verifier file with no verdict table blocks — {label}", code == 2 and "verdict table" in err, err)
     code, err = run_gate(verifier, "1 OK — no assertion weakened; 2 OK — tests exercise behaviour; 3 INCOMPLETE — a mutant survives")
     check("seat check: a verifier that wrote no file is told the verifier's reply, not the worker's",
           code == 2 and "verify-" in err and "<N> items" not in err, err)
