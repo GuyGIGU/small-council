@@ -1032,7 +1032,7 @@ with tempfile.TemporaryDirectory() as tmp:
             '2. The line `token = request.headers.get("Authorization")` crashes.', "3. Set max_token=40960000.",
             "Start of a key I snipped:", "-----BEGIN RSA " + pk + "-----", "(rest removed)", "The build id, on its own line:", "SGVsbG9Xb3JsZEZyb21UaGVDb3VuY2lsMjAyNjA5MTc",
             "Then fix these folders:",
-            "webapp/frontend/src/components", "core/pipeline/downloads", "ReplaySealIntegrityChecker",
+            "src/web/components/forms", "lib/pipeline/uploads", "InvoiceRetryScheduler",
             "session token: expires-after-15-minutes-of-idle", "access_key: AWS_ACCESS_KEY_ID",
             "Pin sk-learn-compat-shim-for-python312 in requirements.",
             "Fixed in commit 3f2a9c1e7b4d4e8a9c2f1a2b3c4d5e6f70819a2b.", "The order id is 123e4567-e89b-12d3-a456-426614174000.",
@@ -1061,6 +1061,60 @@ with tempfile.TemporaryDirectory() as tmp:
     check("ask save: the redaction count says to check for others",
           "redacted 35 secret-looking string(s)" in out and "check" in out.split("redacted 35", 1)[-1].split("\n", 1)[0], out)
     council(rdr, "run", "close", "--status", "abandoned")
+
+    # Redaction's "ordinary text" rules never shield a real key, and never blank test output or code
+    rdm = new_repo(tmp, "redact-more")
+    write(os.path.join(rdm, ".council", "council.config.md"), "# Council config\n")
+    orkey = J(["sk", "-or-v1-"]) + "0123abcd" * 8
+    look_alike = [
+        ("OpenRouter key in prose", orkey, "The model calls use {} now."),
+        ("OpenRouter key after 'key:'", J(["sk", "-or-v1-"]) + "9f8e7d6c" * 8, "key: {}"),
+        ("OpenRouter key in backticks", J(["sk", "-or-v1-"]) + "a1b2c3d4" * 8, "set `{}` in the env"),
+        ("Langfuse key", J(["sk", "-lf-", "1a2b3c4d-5e6f-", "4a1b-9c2d-3e4f5a6b7c8d"]), "tracing: {}"),
+        ("bot token (a dotted random value)", J(["MTA4NjY1ODk3", "NjU0MzIxMDk4Nz", ".GhIjKl.", "aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789ab"]),
+         "DISCORD_TOKEN={}"),
+        ("a numeric key", J(["84729103", "84756102"]), "api_key: {}"),
+        ("base64 that starts with /", J(["/9Kq2mZ+X7rT0bLp", "W3eVn5sYc8HdJ1uA4gFiRoE6"]), "client_secret={}"),
+        ("base64 that starts with / and holds another /", J(["/9Kq2mZX7rT0bLp/", "W3eVn5sYc8HdJ1uA4gFiRoE6"]), "client_secret={}"),
+        ("a Django key with a bracket", J(["django-insecure-", "7f$k2(q9x!m@w3z^e8r#t1y+u5i-o0p=a4s6d"]), "SECRET_KEY={}"),
+        ("a quoted Django key with a bracket", J(["q9x!m@w3z^e8r#t1y+", "u5i-o0p=a4s6d7f$k2)z"]), 'DJANGO_SECRET_KEY="{}"'),
+        ("a Django key that starts like a call", J(["q9xm(w3z^e8r#t1y+", "u5i-o0p=a4s6d7f$k2z"]), "SECRET_KEY={}"),
+    ]
+    plain = ["--- PASS: TestHandleLoginRejectsExpiredTokens (0.00s)", "PASS: tests/test_auth.py::test_login",
+             "All tests pass: 1234/1234", "Bypass: RateLimiterMiddleware for admin calls", "bypass: 12345678",
+             "We use Compass: CompassNavigationService2 for maps.", "compass: NorthEast123",
+             "In build.py, `pwd = os.getcwd()` returns the wrong folder in CI.", "PWD=/home/runner/work/app",
+             "my pwd: /c/Users/me/project", "password = getpass.getpass()", "password = input('pw: ')",
+             "password: env(DB_PASSWORD)", 'The line `password = request.form.get("password")` crashes on empty forms.',
+             "passwd: /etc/passwd must not be readable", "access_key: AccessKeyProviderFactory should be renamed",
+             "token: TokenRefreshScheduler", "The secret is: EverythingGoesThroughTheQueue",
+             "Use a bearer AuthenticationMiddleware for the admin routes.", "Basic Authentication/Authorization headers are fine.",
+             "token = self.config.auth.token_v2", "api_key = os.environ.get('API_KEY')"]
+    pk_blocks = ("-----BEGIN RSA " + pk + "-----\n" + body[0] + "\n" + body[1][:22] + "\n-----END RSA " + pk + "-----\n"
+                 "Here is the start of the deploy key:\n-----BEGIN OPENSSH " + pk + "-----\n"
+                 "Comment: I cut the rest; the deploy script is below\nVersion: 2 of deploy.sh must stay\n"
+                 'keys: "-----BEGIN ' + pk + '-----\n' + body[2] + '\n-----END ' + pk + '-----", "-----BEGIN ' + pk + '-----\n'
+                 + body[0][::-1] + "\n-----END " + pk + '-----"\n'
+                 "-----BEGIN EC " + pk + "-----\nExportQueueHealthChecker\nlib/jobs/exports\nThanks!\n")
+    rm_run = council(rdm, "run", "open", "council-review")[1].strip()
+    write(os.path.join(rm_run, "ask.md"), "# Ask — Keys and output\n## In your words\n"
+          + "\n".join(line.format(s) for _, s, line in look_alike) + "\n" + "\n".join(plain) + "\n" + pk_blocks)
+    code, out, _ = council(rdm, "ask", "save")
+    rm_files = os.listdir(os.path.join(rdm, ".council", "asks")) if os.path.isdir(os.path.join(rdm, ".council", "asks")) else []
+    rm_body = read(os.path.join(rdm, ".council", "asks", rm_files[0])) if rm_files else ""
+    check("ask save: redacts keys that read like word lists, dotted names, numbers, paths or calls — and counts them",
+          code == 0 and rm_body and not [l for l, s, _ in look_alike if s in rm_body] and "redacted 16 " in out,
+          "left: " + ", ".join(l for l, s, _ in look_alike if s in rm_body) + " · " + out)
+    check("ask save: leaves test output, pwd, bypass, code calls, CamelCase names and /-joined words alone",
+          rm_body and not [p for p in plain if p + "\n" not in rm_body],
+          "changed: " + " | ".join(p for p in plain if p + "\n" not in rm_body))
+    check("ask save: a key's short last line and its END line go; the notes after a snipped key stay; two keys on one line both go",
+          rm_body and body[1][:22] not in rm_body and body[2] not in rm_body and body[0][::-1] not in rm_body
+          and "-----END" not in rm_body and rm_body.count("[redacted private key]") == 5
+          and "Comment: I cut the rest; the deploy script is below\nVersion: 2 of deploy.sh must stay\n" in rm_body
+          and "[redacted private key]\nExportQueueHealthChecker\nlib/jobs/exports\nThanks!\n" in rm_body,
+          rm_body.split("tracing:", 1)[-1][-900:])
+    council(rdm, "run", "close", "--status", "abandoned")
 
     # The request's bookkeeping: continues:, refusals, one section per run, the close warning
     code, crun, _ = council(req, "run", "open", "council-implement")
