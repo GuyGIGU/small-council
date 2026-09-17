@@ -106,6 +106,10 @@ def row(out, slug):
     return m.group(0) if m else ""
 
 
+def line_of(out, text):
+    return next((line for line in out.splitlines() if text in line), "")
+
+
 CONFIG = """# Council config — eval
 last-verified: 2026-09-15 @ eval
 
@@ -395,6 +399,28 @@ with tempfile.TemporaryDirectory() as tmp:
     check("collect: a seat that is running again is a hole, file or not", code == 1 and "state:running" in row(out, "beck"), out)
     code, out, _ = council(repo, "seat", "beck", "done", "tokens=10000")
     check("seat: a re-dispatched worker adds its tokens instead of replacing them", "agents: 3 of 3 done" in out and "~86k tokens so far" in out, out)
+
+    # Token counts as the UI shows them; several workers recorded at the same moment
+    tk = new_repo(tmp, "tokens")
+    write(os.path.join(tk, ".council", "council.config.md"), "# Council config — tokens\n")
+    code, trun, _ = council(tk, "run", "open", "council-review")
+    trun = trun.strip()
+    council(tk, "seat", "hunt", "done", "agent=a1", "tokens=74.3k")
+    council(tk, "seat", "beck", "done", "agent=a2", "tokens=1.2k")
+    council(tk, "seat", "leach", "done", "agent=a3", "tokens=74,304")
+    code, out, err = council(tk, "seat", "dodds", "done", "agent=a4", "tokens=lots")
+    tseats = read(os.path.join(trun, "seats.tsv"))
+    check("seat: tokens=74.3k is 74,300 tokens, 1.2k is 1,200 and 74,304 is 74,304",
+          "\nhunt\tdone\ta1\t74300\t" in tseats and "\nbeck\tdone\ta2\t1200\t" in tseats and "\nleach\tdone\ta3\t74304\t" in tseats, tseats)
+    check("seat: a tokens= value with no number in it is refused", code == 2 and "tokens" in err and "\ndodds\t" not in tseats, out + err)
+    procs = [subprocess.Popen([BASH, CLI, "seat", f"par{i}", "running", f"agent=p{i}", "--run", trun], cwd=tk, env=GIT_ENV,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for i in range(6)]
+    for p in procs:
+        p.wait(timeout=120)
+    tlines = read(os.path.join(trun, "seats.tsv")).splitlines()
+    check("seat: six workers recorded at the same moment keep six rows, and the header stays first",
+          tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents"] and sum(1 for x in tlines if x.startswith("par")) == 6,
+          "\n".join(tlines))
 
     # Memory: scopes and anchors
     write(os.path.join(repo, ".council", "conventions.md"),
@@ -995,6 +1021,20 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, err = council(req, "run", "close")
     check("run close: no warning when the log says what it traded away (or 'none')",
           code == 0 and "Shortcuts and concessions" not in err, err)
+    cl = new_repo(tmp, "closelog")
+    write(os.path.join(cl, ".council", "council.config.md"), "# Council config — close\n")
+    code, clrun, _ = council(cl, "run", "open", "council-implement")
+    cln = os.path.basename(clrun.strip())
+    council(cl, "state", "ask-saved=x")
+    write(os.path.join(cl, ".council", "logs", "2026-09-17-zz-build.md"),
+          f"# Build log\nInput: `x` · Run: {cln} · Start: abc123\n\n## Shortcuts and concessions\nnone\n")
+    write(os.path.join(cl, ".council", "logs", "2026-09-17-aa-notes.md"), f"# Notes\nThe build (run {cln}) follows plan 3.\n")
+    council(cl, "seat", "builder", "done", "agent=b1", "tokens=90000")
+    council(cl, "seat", "verify-1", "running", "agent=v1")
+    code, out, err = council(cl, "run", "close")
+    check("run close: reads the build log whose Run: line names the run, not another file that mentions it",
+          code == 0 and "Shortcuts and concessions" not in err, err)
+    check("run close: names the seats still marked running", "verify-1" in line_of(err, "still"), err)
 
     write(os.path.join(req, ".council", "postgames", "2026-09-15-csv.md"),
           "---\ntitle: Post-game — CSV\nkind: postgame\nareas: reports/**\n---\n# Post-game: CSV\n"

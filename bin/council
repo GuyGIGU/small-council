@@ -341,16 +341,19 @@ cmd_seat() {
   for kv in ${1+"$@"}; do                            # ${1+…}: bash 3.2 calls an empty "$@" unbound under set -u
     case "$kv" in
       agent=*)  agent="${kv#agent=}" ;;
-      tokens=*) tokens="$(printf '%s' "${kv#tokens=}" | tr -cd '0-9')" ;;
+      tokens=*) tokens="$(seat_tokens "${kv#tokens=}")" \
+                  || die "tokens= takes a number of tokens (74304, 74,304 or 74.3k), got: ${kv#tokens=}" ;;
       note=*)   note="$(printf '%s' "${kv#note=}" | tr '\t\r\n' '   ')" ;;
       *) die "unknown seat field: $kv (use agent=, tokens=, note=)" ;;
     esac
   done
   run="$(resolve_run)" || exit 2
   f="$run/seats.tsv"
-  [ -f "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$f"
+  lock_file "$f"                                     # calls made at the same moment take turns
+  [ -s "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$f"
   SLUG="$slug" STATE="$state" AGENT="$agent" TOKENS="$tokens" NOTE="$note" NOW="$(now_min)" awk -F'\t' -v OFS='\t' '
-    NR == 1 { if (NF < 7) $0 = $0 "\tagents"; print; next }
+    NR == 1 && $1 == "slug" { if (NF < 7) $0 = $0 "\tagents"; print; next }
+    NR == 1 { print "slug", "state", "agent", "tokens", "updated", "note", "agents" }   # a lost header comes back
     $1 == ENVIRON["SLUG"] {
       found = 1
       ag = ($7 == "" ? 1 : $7 + 0)
@@ -363,18 +366,44 @@ cmd_seat() {
     }
     { print }
     END { if (!found) print ENVIRON["SLUG"], ENVIRON["STATE"], ENVIRON["AGENT"], ENVIRON["TOKENS"], ENVIRON["NOW"], ENVIRON["NOTE"], 1 }' \
-    "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
+  rm -f "$f.tmp$$"; rmdir "$f.lock" 2>/dev/null
   progress_line "$run"
 }
 
+# A token count as a notification or the UI gives it: 74304, 74,304, "74304 tokens", 74.3k, 1.2M.
+# Empty stays empty; anything with no number fails.
+seat_tokens() {
+  [ -n "$1" ] || return 0
+  V="$1" awk 'BEGIN {
+    s = ENVIRON["V"]; gsub(/,/, "", s)
+    if (!match(s, /[0-9]+(\.[0-9]+)?[ \t]*[kKmM]?/)) exit 1
+    t = substr(s, RSTART, RLENGTH); m = 1
+    if (t ~ /[kK]$/) m = 1000; else if (t ~ /[mM]$/) m = 1000000
+    sub(/[ \t]*[kKmM]$/, "", t)
+    printf "%d", int(t * m + 0.5)
+  }'
+}
+
+# Take a lock folder next to a file; a lock left by a killed call is broken after ~10 s.
+lock_file() {
+  local n=0
+  while ! mkdir "$1.lock" 2>/dev/null; do
+    n=$((n + 1))
+    if [ "$n" -ge 100 ]; then rm -rf "$1.lock"; mkdir "$1.lock" 2>/dev/null; return 0; fi
+    sleep 0.1 2>/dev/null || sleep 1
+  done
+}
+
 cmd_run_close() {
-  local run status home ptr p tok=0 agents=0 line n lg
+  local run status home ptr p tok=0 agents=0 line n lg busy=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
   if [ -f "$run/seats.tsv" ]; then
     line="$(awk -F'\t' 'NR > 1 && $2 != "skipped" && $2 != "queued" { a += ($7 == "" ? 1 : $7); t += $4 } END { printf "%d %d", a, t }' "$run/seats.tsv")"
     agents="${line%% *}"; tok="${line#* }"
+    busy="$(awk -F'\t' 'NR > 1 && ($2 == "running" || $2 == "queued") { printf "%s%s", (n++ ? ", " : ""), $1 }' "$run/seats.tsv")"
   fi
   if [ "$tok" -gt 0 ] 2>/dev/null; then
     RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" actual="~$(( (tok + 500) / 1000 ))k tokens across $agents agents" >/dev/null
@@ -392,6 +421,9 @@ cmd_run_close() {
   else
     say "closed ${run##*/} — $status"
   fi
+  if [ -n "$busy" ] && [ "$status" != abandoned ]; then
+    printf 'council: seats still marked running or queued: %s — their results will not be collected; wait for them, or record each (council seat <slug> failed or skipped) before closing\n' "$busy" >&2
+  fi
   if [ "$status" = complete ]; then
     n="$(ledger_record "$run")"
     [ "${n:-0}" -eq 0 ] 2>/dev/null || say "ledger: $n seat row(s) recorded — council ledger shows each seat's record"
@@ -401,7 +433,9 @@ cmd_run_close() {
           || printf 'council: no request was filed for this run — council ask save --run %s\n' "${run##*/}" >&2 ;;
     esac
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
-      lg="$(grep -lE "(^|[^0-9A-Za-z-])${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
+      # The log whose Run: line names this run; failing that, the first log that mentions it.
+      lg="$(grep -lE "Run:[[:space:]\`*]*${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
+      [ -n "$lg" ] || lg="$(grep -lE "(^|[^0-9A-Za-z-])${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
       if [ -z "$lg" ]; then
         printf 'council: no build log names this run — write %s/logs/<date>-<slug>.md with "Run: %s" and a "## Shortcuts and concessions" section\n' "$home" "${run##*/}" >&2
       elif ! grep -q '^## Shortcuts and concessions' "$lg"; then
