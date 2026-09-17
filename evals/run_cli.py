@@ -105,7 +105,7 @@ last-verified: 2026-09-15 @ eval
 |---|---|---|---|---|---|---|
 | ok | `true` | grounding, verify | yes | ok | — | none |
 | bad | `echo "Error: boom"; exit 3` | verify | no | ok | — | none |
-| must | `exit 4` | strict | yes | ok | — | none |
+| must | `exit 4` | grounding | yes | ok | — | none |
 | piped | `printf "a|b"` | manual | no | ok | — | none |
 | anytime | `true` |  | no | ok |  |  |
 | broken | `true` | verify | no | ✗ 2026-09-15: needs a simulator | a simulator | none |
@@ -257,12 +257,12 @@ with tempfile.TemporaryDirectory() as tmp:
           code2 == code and out2.strip().splitlines()[-1:] == out.strip().splitlines()[-1:], out2)
     code, out, _ = council(repo, "gate", "ship")
     check("gate <name>: runs a side-effect gate when named, with a warning", code == 0 and "side effects (deploy, network)" in out, out)
-    code, out, _ = council(repo, "gate", "--all", "--at", "strict")
+    code, out, _ = council(repo, "gate", "--all", "--at", "grounding")
     check("gate --all: a failing mandatory gate fails the set", code == 1 and "a mandatory gate failed" in out, out)
     check("gate --all: the verdict line marks a mandatory failure", "FAIL (must \u2014 mandatory)" in out, out)
-    code, out, _ = council(repo, "gate", "--all", "--at", "nobody-runs-here")
-    check("gate --all: no gate at this stage is NOTHING WAS CHECKED, and never exit 0",
-          code == 4 and "NOTHING WAS CHECKED" in out and "nobody-runs-here" in out, out)
+    code, out, err = council(repo, "gate", "--all", "--at", "nobody-runs-here")
+    check("gate --all --at: a stage that doesn't exist is refused, never a quietly empty set",
+          code == 2 and "--at takes grounding or verify" in err, out + err)
     code, _, err = council(repo, "gate", "missing-gate")
     check("gate: an unknown gate name is an error", code == 2 and "no gate named" in err, err)
 
@@ -874,6 +874,89 @@ with tempfile.TemporaryDirectory() as tmp:
     check("gate --all: a check that matched no files passes, but is never reported as a clean pass",
           code == 0 and "pass \u2014 but nothing to check (0 files matched)" in out
           and "1 had nothing to check (lint \u2014 0 files matched)" in out, out)
+
+    # The Gates table's small vocabularies \u2014 Run at, Mandatory, Checked \u2014 and what gate --all may run unasked
+    vocab = new_repo(tmp, "vocab")
+    write(os.path.join(vocab, "a.txt"), "a\n")
+    git(vocab, "add", "-A")
+    git(vocab, "commit", "-q", "-m", "init")
+
+    def gates_cfg(where, rows, head="| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs |\n"
+                                    "|---|---|---|---|---|---|---|---|\n"):
+        write(os.path.join(where, ".council", "council.config.md"),
+              "# Council config \u2014 x\nlast-verified: 2026-09-15 @ x\n\n## Gates\n" + head + rows + "\n## Hard rules\n")
+
+    gates_cfg(vocab, "| tests | `echo RAN-TESTS; exit 1` | Grounding, Verify | yes | ok | `true` | none | - |\n"
+                     "| suite | `exit 1` | grounding, verification | no | ok | `true` | none | - |\n"
+                     "| lint | `true` | verify | no | ok | `true` | none | - |\n")
+    code, vrun, _ = council(vocab, "run", "open", "council-implement")
+    vgates = os.path.join(vrun.strip(), "gates")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+    check("gate --all --at: a Run at cell is read whatever its case, and 'verification' means verify",
+          code == 1 and "gate tests: FAIL" in out and "gate suite: FAIL" in out and "gates: 3 ran" in out, out)
+    gates_cfg(vocab, "| both | `true` | Both | no | ok | `true` | none | - |\n"
+                     "| strict | `exit 7` | strict | yes | ok | `true` | none | - |\n"
+                     "| typo | `exit 7` | grounding, verfy | no | ok | `true` | none | - |\n"
+                     "| byhand | `exit 7` | manual | yes | ok | `true` | none | - |\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "Verification")
+    check("gate --all --at: the stage is read whatever its case, and 'both' runs at every stage",
+          code == 0 and "gate both: pass" in out, out)
+    check("gate --all --at: a Run at word it doesn't know is named, never silently dropped",
+          "gate strict: skipped" in out and "'strict'" in out and "gate typo: skipped" in out and "'grounding, verfy'" in out
+          and not os.path.isfile(os.path.join(vgates, "strict.txt")) and not os.path.isfile(os.path.join(vgates, "typo.txt")), out)
+    check("gate --all --at: a required gate that runs only by name is named as required",
+          "gate byhand: skipped" in out and "2 of them required: strict, byhand" in out, out)
+    mand_bad = []
+    for word in ["required", "\u2713", "**Yes**", "always", "YES \u2014 blocks the run"]:
+        gates_cfg(vocab, f"| t | `exit 1` | verify | {word} | ok | `true` | none | - |\n")
+        code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+        if code != 1 or "a mandatory gate failed" not in out:
+            mand_bad.append(word)
+    check("gate --all: required, a tick, **Yes** and always all mean mandatory", not mand_bad, ", ".join(mand_bad))
+    gates_cfg(vocab, "| t | `exit 1` | verify | not mandatory | \u2705 2026-09-15 | `true` | none | - |\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+    check("gate --all: 'not mandatory' is not mandatory, and a green tick in Checked means runnable",
+          code == 0 and "FAIL (t, not mandatory)" in out, out)
+    gates_cfg(vocab, "| odd | `exit 1` | verify | sometimes | maybe | `true` | none | - |\n"
+                     "| e2e | `exit 1` | verify | yes | \u274c needs the game editor | `true` | none | - |\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+    check("gate --all: a Mandatory word it doesn't know is said, and counts as mandatory",
+          code == 1 and "Mandatory cell says 'sometimes'" in out and "gate odd: FAIL" in out, out)
+    check("gate --all: a Checked word it doesn't know is said; a cross mark means not runnable here",
+          "Checked cell says 'maybe'" in out and "gate e2e: skipped" in out and not os.path.isfile(os.path.join(vgates, "e2e.txt")), out)
+    gates_cfg(vocab, "| strict | `true` | strict | sometimes | maybe | `true` | none | - |\n"
+                     "| ps | `powershell -File tools\\run_tests.ps1` | verify | yes | ok | `true` | none | - |\n"
+                     "| quoted | `echo \"tools\\run.ps1\" 'a\\b'` | verify | no | ok | `true` | none | - |\n")
+    code, out, _ = council(vocab, "doctor")
+    check("doctor: names a Run at, Mandatory or Checked value it can't read",
+          "gate 'strict' has a Run at value" in out and "gate 'strict' has a Mandatory value" in out
+          and "gate 'strict' has a Checked value" in out, out)
+    gates_cfg(vocab, "| tests | `true` | verify | yes | ok | `true` | none | - |\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "grounding")
+    check("gate --all --at: with every gate at another stage, NOTHING WAS CHECKED names the stage",
+          code == 4 and "NOTHING WAS CHECKED \u2014 no gate in" in out and "runs at 'grounding'" in out, out)
+    gates_cfg(vocab, "| lint | `true` | verify | no | ok | `true` | none | - |\n"
+                     "| e2e suite | `echo e2e > ran-e2e.txt` | verify | yes | ok | `true` | writes the test database, network | - |\n"
+                     "| smoke | `echo smoke > ran-smoke.txt` | verify | no | ok | `true` | network | a production API token |\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+    check("gate --all: a required gate skipped for its side effects is named as required",
+          "gates: 1 ran \u2014 all pass \u00b7 2 skipped (1 of them required: e2e suite" in out
+          and not os.path.isfile(os.path.join(vocab, "ran-e2e.txt")), out)
+    check("gate --all: never runs a gate whose Needs name a token, even with safe side effects",
+          "gate smoke: skipped" in out and not os.path.isfile(os.path.join(vocab, "ran-smoke.txt")), out)
+    check("gate --all: the run-it-by-name hint quotes a name with a space", 'council gate "e2e suite"' in out, out)
+    code, out, _ = council(vocab, "gate", "e2e", "suite")
+    check("gate: a name given as separate words still finds its gate", code == 0 and "gate e2e suite: pass" in out, out)
+    gates_cfg(vocab, "| tests | `true` | verify | yes | ok |\n"
+                     "| ship | `echo WOULD-RUN: npx vercel --prod > ran-ship.txt` | verify | no | ok |\n"
+                     "| push | `echo WOULD-RUN: git push origin main > ran-push.txt` | verify | no | ok |\n",
+              head="| Gate | Command | Run at | Mandatory | Checked |\n|---|---|---|---|---|\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+    check("gate --all: an older table (no Side effects column) runs nothing unasked, whatever its commands say",
+          not os.path.isfile(os.path.join(vocab, "ran-ship.txt")) and not os.path.isfile(os.path.join(vocab, "ran-push.txt"))
+          and "gate push: skipped \u2014 the Gates table has no Side effects column" in out, out)
+    check("gate --all: when an older table stops every gate, NOTHING WAS CHECKED says why",
+          code == 4 and "NOTHING WAS CHECKED \u2014 the Gates table" in out and "no Side effects column" in out, out)
 
     nogates = new_repo(tmp, "nogates")
     write(os.path.join(nogates, "x.txt"), "x\n")

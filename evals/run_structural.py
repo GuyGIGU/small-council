@@ -247,6 +247,8 @@ check("template seat card: source line, principles applied here, severity here",
 check("template seat doc: draft status, numbered principles with repo evidence",
       all(k in seatdoc_t for k in ["status: draft", "## Principle 1:", "### Evidence in this repo"]))
 check("template config: stack fingerprint and gate side effects", "stack-fingerprint:" in cfg and "| Side effects |" in cfg)
+check("template config: the words each gate cell takes, and that commands run under bash",
+      all(k in cfg for k in ["Run at: grounding", "Mandatory: yes"]))
 check("template conventions: scope and anchor fields", "**Scope:**" in conv and "**Anchor:**" in conv)
 for label, rel in [("fixture", ("evals", "fixtures", ".council", "council.config.md")), ("example", ("examples", "chrollo", "council.config.md"))]:
     t = read(*rel)

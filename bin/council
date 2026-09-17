@@ -532,9 +532,13 @@ cmd_index() {
 # ------------------------------------------------------------------------------------------------
 
 # The config's Gates table as tab-separated rows: name command run-at mandatory cell-count checked
-# side-effects needs header-cell-count has-side-effects-column. Columns are found by their header names
-# (case, spaces and dashes ignored), so an older table (no Side effects or Needs) still reads.
-# Cells split on "|" outside backticks and unescaped, so a quoted pipe can't shift the columns.
+# side-effects needs header-cell-count has-side-effects-column, then the three small vocabularies, read
+# once, here: stages (g, v, gv; m = by name only; - = an empty cell; a ? is added for a word that names
+# no stage) · mandatory (yes, no, ?) · checked (ok, not, ?). Case, markdown bold and punctuation don't
+# matter; for Mandatory and Checked the first word that decides wins and the rest of the cell is a note.
+# Columns are found by their header names (case, spaces and dashes ignored), so an older table (no Side
+# effects or Needs) still reads. Cells split on "|" outside backticks and unescaped, so a quoted pipe
+# can't shift the columns.
 config_gates() {
   [ -f "$1" ] || return 0
   awk '
@@ -552,6 +556,41 @@ config_gates() {
     }
     function trim(s) { gsub(/\t/, " ", s); gsub(/^[ \r]+|[ \r]+$/, "", s); return s }
     function dash(s) { return s == "" ? "-" : s }
+    function words(s, w) {
+      s = tolower(s); gsub(/✓|✔|✅|☑/, " yes ", s); gsub(/✗|✘|❌|×/, " no ", s)
+      gsub(/[]*_`()[,;\/+&:.!?"]/, " ", s)
+      return split(s, w, /[ \t]+/)
+    }
+    function stages(s,    w, n, i, g, v, m, bad) {
+      n = words(s, w)
+      for (i = 1; i <= n; i++) {
+        if (w[i] == "" || w[i] ~ /^(and|or|only|by|on|at|stage|stages|-|—)$/) continue
+        if (w[i] ~ /^(grounding|baseline)$/) g = 1
+        else if (w[i] ~ /^(verify|verification)$/) v = 1
+        else if (w[i] ~ /^(both|all|always|every)$/) g = v = 1
+        else if (w[i] ~ /^(manual|manually|never|none|no|name|hand|demand)$/) m = 1
+        else bad = 1
+      }
+      s = (g ? "g" : "") (v ? "v" : "") (bad ? "?" : ((!g && !v && m) ? "m" : ""))
+      return s == "" ? "-" : s
+    }
+    function mandatory(s,    w, n, i) {
+      n = words(s, w)
+      for (i = 1; i <= n; i++) {
+        if (w[i] ~ /^(yes|y|true|mandatory|required|require|must|always|blocking|blocks|blocker)$/) return "yes"
+        if (w[i] ~ /^(no|n|false|not|optional|advisory|never|informational)$/) return "no"
+      }
+      return "?"
+    }
+    function checked(s,    w, n, i, d) {
+      n = words(s, w)
+      for (i = 1; i <= n; i++) {
+        if (w[i] ~ /^(yes|y|true|ok|okay|pass|passed|passes|passing|green|probed|checked|verified|runs|ran|works|runnable)$/) return "ok"
+        if (w[i] ~ /^(no|n|false|not|never|fails|failed|failing|broken|blocked|skip|skipped|unrunnable|unprobed)$/) return "not"
+        if (w[i] ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) d = 1     # a bare date: when it was checked
+      }
+      return d ? "ok" : "?"
+    }
     /^## / { ing = ($0 ~ /^## Gates/); hdr = 0; next }
     ing && /^\|/ {
       split("", f); k = cells($0, f)
@@ -570,9 +609,13 @@ config_gates() {
       gsub(/`/, "", cmd)
       if (name == "" || name ~ /^:?-+:?$/ || name ~ /^</) next
       if (cmd == "" || cmd ~ /^</) next
-      print name "\t" cmd "\t" dash(at) "\t" dash(mand) "\t" k "\t" dash(chk) "\t" dash(side) "\t" dash(needs) "\t" hk "\t" (cs ? 1 : 0)
+      print name "\t" cmd "\t" dash(at) "\t" dash(mand) "\t" k "\t" dash(chk) "\t" dash(side) "\t" dash(needs) "\t" hk "\t" (cs ? 1 : 0) \
+        "\t" stages(at) "\t" mandatory(mand) "\t" checked(chk)
     }' "$1"
 }
+
+# A gate name as the user would type it back: quoted when it holds a space or anything unusual.
+qname() { case "$1" in *[!A-Za-z0-9._-]*) printf '"%s"' "$1" ;; *) printf '%s' "$1" ;; esac; }
 
 cmd_gates() {
   local cfg gates
@@ -585,19 +628,16 @@ cmd_gates() {
     printf "\n" }'
 }
 
-# May `gate --all` run this gate unasked? With a Side effects column: only if every side effect is on
-# the safe list (none, writes the tree, network) and Needs names no credentials or hardware — anything
-# unlisted or unrecorded runs by name only. An older table without the column falls back to scanning
-# the command and Needs for risky words.
+# May `gate --all` run this gate unasked? Only if the table has a Side effects column, every side effect
+# is on the safe list (none, writes the tree, network) and Needs names no credentials or hardware.
+# Anything unlisted or unrecorded runs by name only — and so does every gate of an older table, which
+# records nothing about what its gates do: a command's wording is no evidence that it is safe.
 gate_safe() {
-  local cmd="$1" side="$2" needs="$3" hascol="$4" item
+  local side="$1" needs="$2" hascol="$3" item
   case "$(printf '%s' "$needs" | tr 'A-Z' 'a-z')" in
     *credential*|*secret*|*token*|*password*|*api?key*|*apikey*|*hardware*|*device*) return 1 ;;
   esac
-  if [ "$hascol" != 1 ]; then
-    if risky_side "$cmd $needs"; then return 1; fi
-    return 0
-  fi
+  [ "$hascol" = 1 ] || return 1
   [ "$side" != "-" ] || return 1
   while IFS= read -r item; do
     case "$(printf '%s' "$item" | tr 'A-Z' 'a-z')" in
@@ -608,14 +648,6 @@ gate_safe() {
 $(split_list "$side")
 ITEMS
   return 0
-}
-
-# Words that mark a command or a need as risky — the fallback for tables without a Side effects column.
-risky_side() {
-  case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in
-    *cost*|*money*|*paid*|*billing*|*hardware*|*device*|*flash*|*deploy*|*publish*|*credential*|*secret*|*production*) return 0 ;;
-  esac
-  return 1
 }
 
 gate_base() { printf '%s/gates/%s' "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')"; }
@@ -649,51 +681,72 @@ run_gate() {
   return "$ec"
 }
 
+# One gate left out of `gate --all`: said, counted, and named if it was required (cmd_gate's locals).
+skip_gate() {
+  say "gate $name: skipped — $1"
+  skipped=$((skipped + 1)); [ "$ismand" -eq 0 ] || { skipm=$((skipm + 1)); reds="${reds:+$reds, }$name"; }
+}
+
 cmd_gate() {
-  local run top cfg name cmd at mand k chk side needs hk hascol extra row ran=0 skipped=0 failed=0 gates \
-        passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth=""
+  local run top cfg name cmd at mand k chk side needs hk hascol stg ism ckd extra row ran=0 skipped=0 failed=0 gates \
+        passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
   if [ "$ALL" = 1 ]; then
+    if [ -n "$AT_ARG" ]; then
+      case "$(printf '%s' "$AT_ARG" | tr 'A-Z' 'a-z')" in
+        grounding) atl=g; AT_ARG=grounding ;;
+        verify|verification) atl=v; AT_ARG=verify ;;
+        *) die "--at takes grounding or verify (got '$AT_ARG')" ;;
+      esac
+    fi
     gates="$(config_gates "$cfg")"
     if [ -z "$gates" ]; then      # a green report with nothing behind it is the worst outcome there is
       say "NOTHING WAS CHECKED — this project has no automated check configured (no Gates row in $cfg)"
       return 4
     fi
-    while IFS="$TAB" read -r name cmd at mand k chk side needs hk hascol; do
+    while IFS="$TAB" read -r name cmd at mand k chk side needs hk hascol stg ism ckd; do
       [ -n "$name" ] || continue
+      ismand=0
       if [ "$k" != "$hk" ]; then     # before the --at filter: a shifted row's Run-at cell means nothing
-        say "gate $name: skipped — its row has $k cells where the header has $hk (an unescaped | ?); fix the row"
-        skipped=$((skipped + 1)); continue
+        skip_gate "its row has $k cells where the header has $hk (an unescaped | ?); fix the row"
+        continue
       fi
-      case "$(printf '%s' "$mand" | tr 'A-Z' 'a-z')" in yes*|y|true|mandatory) ismand=1 ;; *) ismand=0 ;; esac
-      if [ -n "$AT_ARG" ]; then
-        case "$at" in
-          *"$AT_ARG"*) ;;
-          ''|-)                       # no stage at all: it runs in no set, which must never be silent
-            say "gate $name: skipped — its Run at cell is empty, so it runs only by name; fill it in (grounding, verify)"
-            skipped=$((skipped + 1)); [ "$ismand" -eq 0 ] || { skipm=$((skipm + 1)); reds="${reds:+$reds, }$name"; }
+      [ "$ism" = no ] || ismand=1      # a Mandatory word nobody can read counts as yes
+      if [ -n "$atl" ]; then
+        case "$stg" in
+          *"$atl"*) ;;
+          -)                          # no stage at all: it runs in no set, which must never be silent
+            skip_gate "its Run at cell is empty, so it runs only by name; fill it in (grounding, verify)"
+            continue ;;
+          *'?'*)
+            skip_gate "its Run at cell says '$at', which names no stage here; write grounding, verify, both or manual"
+            continue ;;
+          m)
+            [ "$ismand" -eq 0 ] || skip_gate "its Run at cell says '$at', so it runs only by name: council gate $(qname "$name")"
             continue ;;
           *) continue ;;              # it belongs to another stage: ordinary, and not this run's business
         esac
+      elif [ "$stg" = m ]; then
+        [ "$ismand" -eq 0 ] || skip_gate "its Run at cell says '$at', so it runs only by name: council gate $(qname "$name")"
+        continue
       fi
-      case "$(printf '%s' "$chk" | tr 'A-Z' 'a-z')" in
-        ✗*|*"not probed"*)
-          say "gate $name: skipped — the config marks it not runnable here ($chk)"
-          skipped=$((skipped + 1)); [ "$ismand" -eq 0 ] || { skipm=$((skipm + 1)); reds="${reds:+$reds, }$name"; }
-          continue ;;
+      [ "$ism" != '?' ] || say "note: gate $name — its Mandatory cell says '$mand', which isn't yes or no, so it counts as mandatory; write yes or no"
+      case "$ckd" in
+        not) skip_gate "the config marks it not runnable here ($chk)"; continue ;;
+        '?') say "note: gate $name — its Checked cell says '$chk', which isn't ✓ or ✗; running it anyway (write ✓ <date> once it runs cleanly here, or ✗ <why> if it can't)" ;;
       esac
-      if ! gate_safe "$cmd" "$side" "$needs" "$hascol"; then
+      if ! gate_safe "$side" "$needs" "$hascol"; then
         extra=""; [ "$needs" = "-" ] || extra=" · needs: $needs"
         if [ "$hascol" != 1 ]; then
-          say "gate $name: skipped — its command or needs look risky ($cmd$extra). Run it by name once the user agrees: council gate $name"
+          old=1
+          skip_gate "the Gates table has no Side effects column (an older layout), so nothing says it is safe to run unasked. Run it by name once the user agrees: council gate $(qname "$name")"
         elif [ "$side" = "-" ]; then
-          say "gate $name: skipped — side effects not recorded. Fill the cell, or run it by name once the user agrees: council gate $name"
+          skip_gate "side effects not recorded. Fill the cell, or run it by name once the user agrees: council gate $(qname "$name")"
         else
-          say "gate $name: skipped — side effects: $side$extra. Run it by name once the user agrees: council gate $name"
+          skip_gate "side effects: $side$extra. Run it by name once the user agrees: council gate $(qname "$name")"
         fi
-        skipped=$((skipped + 1)); [ "$ismand" -eq 0 ] || { skipm=$((skipm + 1)); reds="${reds:+$reds, }$name"; }
         continue
       fi
       ran=$((ran + 1))
@@ -708,7 +761,9 @@ cmd_gate() {
 $gates
 GATES
     if [ "$ran" -eq 0 ]; then
-      if [ "$skipped" -eq 0 ]; then
+      if [ "$old" = 1 ]; then
+        say "NOTHING WAS CHECKED — the Gates table in $cfg has no Side effects column (an older layout), so no gate runs unasked; a council-init refresh adds it, or run a gate by name once the user agrees"
+      elif [ "$skipped" -eq 0 ]; then
         say "NOTHING WAS CHECKED — no gate in $cfg runs${AT_ARG:+ at '$AT_ARG'}"
       else
         say "NOTHING WAS CHECKED — $skipped gate(s) could not run here${AT_ARG:+ at '$AT_ARG'}; see the reasons above"
@@ -730,20 +785,24 @@ GATES
     [ "$failed" -eq 0 ] || say "a mandatory gate failed"
     return "$failed"
   fi
-  name="${1:-}"
+  name="$*"                           # a name with a space may arrive as several words
   [ -n "$name" ] || die "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
   cmd="$GATE_CMD"
   if [ -z "$cmd" ]; then
     row="$(config_gates "$cfg" | NAME="$name" awk -F'\t' '$1 == ENVIRON["NAME"] { print; exit }')"
     [ -n "$row" ] || die "no gate named '$name' in council.config.md — pass the command after --"
     cmd="$(printf '%s' "$row" | cut -f2)"; chk="$(printf '%s' "$row" | cut -f6)"; side="$(printf '%s' "$row" | cut -f7)"
-    needs="$(printf '%s' "$row" | cut -f8)"; hascol="$(printf '%s' "$row" | cut -f10)"
-    case "$(printf '%s' "$chk" | tr 'A-Z' 'a-z')" in
-      ✗*|*"not probed"*) say "note: the config marks this gate not runnable here ($chk)" ;;
-    esac
-    if ! gate_safe "$cmd" "$side" "$needs" "$hascol"; then
+    needs="$(printf '%s' "$row" | cut -f8)"; hascol="$(printf '%s' "$row" | cut -f10)"; ckd="$(printf '%s' "$row" | cut -f13)"
+    [ "$ckd" != not ] || say "note: the config marks this gate not runnable here ($chk)"
+    if ! gate_safe "$side" "$needs" "$hascol"; then
       extra=""; [ "$needs" = "-" ] || extra=" · needs: $needs"
-      say "note: this gate has side effects ($side)$extra — run it only with the user's go-ahead"
+      if [ "$hascol" != 1 ]; then
+        say "note: the Gates table has no Side effects column, so this gate's side effects are unknown$extra — run it only with the user's go-ahead"
+      elif [ "$side" = "-" ]; then
+        say "note: this gate's side effects aren't recorded$extra — run it only with the user's go-ahead"
+      else
+        say "note: this gate has side effects ($side)$extra — run it only with the user's go-ahead"
+      fi
     fi
   fi
   case "$cmd" in *'|'*) say "note: this gate command contains a pipe — its exit code may not be the test runner's" ;; esac
@@ -1223,7 +1282,7 @@ ref_path() {
 }
 
 cmd_doctor() {
-  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind
+  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind
   home="$(council_home)"; root="$(dirname "$home")"
   finding() {
     printf '%s  %s\n       Fix: %s\n' "$1" "$2" "$3"
@@ -1275,17 +1334,24 @@ REFS
         finding ERROR "no gates in council.config.md — every council report on this project says NOTHING WAS CHECKED" "add the project's real test / lint / build commands (a council-init refresh detects them, and offers the ones you are missing)"
       fi
     else
-      while IFS="$TAB" read -r g gc gat gm gk gchk gside gneeds ghk ghas; do
+      while IFS="$TAB" read -r g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck; do
         [ -n "$g" ] || continue
         if [ "$gk" != "$ghk" ]; then
           finding WARN "gate '$g' has $gk cells where the header has $ghk — the columns have shifted (an unescaped pipe?)" "wrap the command in backticks and escape any pipe as \\|, or remove it"
         fi
         case "$gc" in *'|'*) finding WARN "gate '$g' pipes its output — its exit code may not be the test runner's" "remove the pipe from that command in council.config.md" ;; esac
+        [ "$gk" = "$ghk" ] || continue       # a shifted row's other cells mean nothing
+        case "$gst" in
+          *'?'*) finding WARN "gate '$g' has a Run at value that names no stage: '$gat'" "write grounding, verify, both or manual — anything else is left out of council gate --all --at …" ;;
+          -)     finding WARN "gate '$g' has an empty Run at cell, so it runs in no set" "write grounding, verify, both or manual" ;;
+        esac
+        [ "$gmd" != '?' ] || finding WARN "gate '$g' has a Mandatory value that isn't yes or no: '$gm' — it counts as mandatory" "write yes or no"
+        [ "$gck" != '?' ] || finding WARN "gate '$g' has a Checked value that isn't ✓ or ✗: '$gchk'" "write ✓ <date> once it has run cleanly here, or ✗ <date>: <why it can't>"
       done <<GATES
 $gates
 GATES
       awk '/^## / { g = ($0 ~ /^## Gates/); next } g && /^\|/ { print; exit }' "$cfg" | grep -qi 'side effects' \
-        || finding WARN "the Gates table has no Side effects column (an older layout)" "council-init refresh adds Probe and Side effects, so a gate that costs money or touches hardware never runs unasked"
+        || finding WARN "the Gates table has no Side effects column (an older layout)" "a council-init refresh adds Probe, Needs and Side effects — until then council gate --all runs none of its gates unasked"
     fi
   fi
   while IFS="$TAB" read -r dir mode phase croot upd status actual; do
