@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(ROOT, "bin", "council")
@@ -246,10 +247,17 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, err = council(big, "index", env={"COUNCIL_INDEX_CAP": "4"})
     bidx = read(os.path.join(brun.strip(), "index.md"))
     check("index: past the file cap, every other changed file is still named, as a file in scope",
-          code == 0 and all(f"\n## webapp/backend/orders_{i}.py  (added" in bidx for i in range(1, 6)), out + err + bidx[-800:])
+          code == 0 and "## Past the 4-file cap" in bidx
+          and all(f"\n## webapp/backend/orders_{i}.py  (added" in bidx for i in range(1, 6)), out + err + bidx[-800:])
     check("index: files past the cap are counted apart from lockfiles, and the output line says so",
           "past the 4-file cap: 5" in bidx and "not indexed: 1 (lockfiles" in bidx and "5 more past the 4-file cap" in out,
           out + bidx[:400])
+    # The list of names has a bound of its own: a repo-wide change must not flood the file every seat reads.
+    code, out, err = council(big, "index", env={"COUNCIL_INDEX_CAP": "4", "COUNCIL_INDEX_NAMECAP": "2"})
+    bidx = read(os.path.join(brun.strip(), "index.md"))
+    check("index: past the cap, only the first few files are named one by one; the rest are counted",
+          code == 0 and bidx.count("past the 4-file cap: not indexed") == 2
+          and "… and 3 more, not named one by one: git diff --name-only" in bidx, out + err + bidx[-600:])
 
     # The change index: renames, non-ASCII names, untracked binaries, a nested worktree, a relative --run
     uni = new_repo(tmp, "unicode")
@@ -412,6 +420,10 @@ with tempfile.TemporaryDirectory() as tmp:
     tseats = read(os.path.join(trun, "seats.tsv"))
     check("seat: tokens=74.3k is 74,300 tokens, 1.2k is 1,200 and 74,304 is 74,304",
           "\nhunt\tdone\ta1\t74300\t" in tseats and "\nbeck\tdone\ta2\t1200\t" in tseats and "\nleach\tdone\ta3\t74304\t" in tseats, tseats)
+    council(tk, "seat", "spaced", "done", "agent=a5", "tokens=74 304")
+    tseats = read(os.path.join(trun, "seats.tsv"))
+    check("seat: a space between digits is a thousands separator, not the end of the number",
+          "\nspaced\tdone\ta5\t74304\t" in tseats, tseats)
     check("seat: a tokens= value with no number in it is refused", code == 2 and "tokens" in err and "\ndodds\t" not in tseats, out + err)
     procs = [subprocess.Popen([BASH, CLI, "seat", f"par{i}", "running", f"agent=p{i}", "--run", trun], cwd=tk, env=GIT_ENV,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for i in range(6)]
@@ -421,6 +433,13 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat: six workers recorded at the same moment keep six rows, and the header stays first",
           tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents"] and sum(1 for x in tlines if x.startswith("par")) == 6,
           "\n".join(tlines))
+    os.makedirs(os.path.join(trun, "seats.tsv.lock"), exist_ok=True)   # what a killed seat call leaves behind
+    started = time.time()
+    code, out, err = council(tk, "seat", "afterlock", "running", "agent=a9", "--run", trun)
+    took = time.time() - started
+    check("seat: a lock a killed call left behind is broken after about ten seconds, not a minute",
+          code == 0 and took < 40 and "\nafterlock\t" in read(os.path.join(trun, "seats.tsv")),
+          "%.1f s · %s%s" % (took, out, err))
 
     # Memory: scopes and anchors
     write(os.path.join(repo, ".council", "conventions.md"),
@@ -690,7 +709,9 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, err = council(bom, "state", "phase=judge", "status=paused")
     body = read(bom_state)
     check("state: updates a state file that starts with a byte-order mark, in place",
-          code == 0 and "phase judge · paused" in out and body.count("status:") == 1, out + err + body)
+          code == 0 and "phase judge · paused" in out and os.path.basename(bomrun.strip()) in out
+          and not body.startswith("﻿") and body.count("status:") == 1 and "status: paused" in body,
+          out + err + body)
 
     # --run as a Windows path (backslashes, a trailing one) names the same run as its folder name
     wp = new_repo(tmp, "winpath")
@@ -1004,7 +1025,10 @@ with tempfile.TemporaryDirectory() as tmp:
                              "npm --prefix webapp/frontend test -- src/utils/fmt.test.js",
                              "cd webapp/backend && python -m pytest tests/test_expiry.py::test_y",
                              "pytest -c tests/test_settings.toml -k expiry",
-                             "pytest " + slash(outside)], start=1):
+                             "pytest " + slash(outside),
+                             "(cd webapp/backend && pytest tests/test_expiry.py)",
+                             "cd " + slash(tmp) + " && pytest webapp/backend/tests/test_expiry.py",
+                             "cd webapp/frontend && pytest ../backend/tests/test_expiry.py"], start=1):
         for name, ex in ((f"before-{n}", 1), (f"after-{n}", 0)):
             write(os.path.join(prf, "gates", name + ".json"),
                   '{"gate": "%s", "command": "%s", "exit": %d, "seconds": 1, "when": "2026-09-16 10:00:00"}\n' % (name, cmd, ex))
@@ -1020,6 +1044,12 @@ with tempfile.TemporaryDirectory() as tmp:
           "task 4  proof  ok · couldn't confirm a saved test" in out, out)
     check("check: a test file outside the project is never a test the project keeps",
           "task 5  proof  ok · couldn't confirm a saved test" in out, out)
+    check("check: a test run in a subshell — (cd <dir> && …) — is found in that folder",
+          "task 6  proof  ok · test saved: webapp/backend/tests/test_expiry.py" in out, out)
+    check("check: after a cd out of the project, the project's own file of that name is not the saved test",
+          "task 7  proof  ok · couldn't confirm a saved test" in out, out)
+    check("check: a test path that walks back up out of a cd folder is named as the file it is",
+          "task 8  proof  ok · test saved: webapp/backend/tests/test_expiry.py" in out, out)
     check("check: in a build, a diagnosis file's old line numbers aren't checked as citations",
           code == 0 and "diagnose-2" not in out, out)
     write(os.path.join(req, ".council", "logs", "2026-09-16-build.md"),
@@ -1062,6 +1092,17 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run close: reads the build log whose Run: line names the run, not another file that mentions it",
           code == 0 and "Shortcuts and concessions" not in err, err)
     check("run close: names the seats still marked running", "verify-1" in line_of(err, "still"), err)
+    code, clrun2, _ = council(cl, "run", "open", "council-implement")
+    clrun2 = clrun2.strip()
+    council(cl, "state", "ask-saved=x")
+    write(os.path.join(cl, ".council", "logs", "2026-09-17-zz-build-2.md"),
+          f"# Build log\nInput: `x` · Run: {slash(clrun2)} · Start: abc123\n\n"
+          "## Shortcuts and concessions\nnone\n")
+    write(os.path.join(cl, ".council", "logs", "2026-09-17-aa-notes-2.md"),
+          f"# Notes\nThe build (run {os.path.basename(clrun2)}) follows plan 3.\n")
+    code, out, err = council(cl, "run", "close")
+    check("run close: a Run: line that gives the run's folder path names the build log too",
+          code == 0 and "Shortcuts and concessions" not in err, err)
 
     write(os.path.join(req, ".council", "postgames", "2026-09-15-csv.md"),
           "---\ntitle: Post-game — CSV\nkind: postgame\nareas: reports/**\n---\n# Post-game: CSV\n"
@@ -1239,12 +1280,19 @@ with tempfile.TemporaryDirectory() as tmp:
     check("gates: points out a backslash bash would drop", "backslash" in row(out, "ps") and "backslash" not in row(out, "quoted"), out)
     code, out, _ = council(vocab, "gate", "bs", "--", "echo tools\\x")
     check("gate: an ad-hoc command's stray backslash gets a note", "backslash" in out and read(os.path.join(vgates, "bs.txt")) == "toolsx\n", out)
-    code, out, _ = council(vocab, "gate", "env", "--", 'echo "[${MSYS_NO_PATHCONV:-}]"')
-    check("gate: Git Bash is told to leave a gate command's Windows switches (cmd /c, /p:\u2026) alone",
-          read(os.path.join(vgates, "env.txt")) == "[1]\n", out)
+    write(os.path.join(vocab, "probe_abs.py"), "print('abs ok')\n")
+    py = sys.executable.replace("\\", "/")          # a native tool, given a bash absolute path
+    code, out, _ = council(vocab, "gate", "abspath", "--", f'"{py}" "$PWD/probe_abs.py"')
+    check("gate: a gate's own environment is left alone, so an absolute path still reaches its tool",
+          code == 0 and "abs ok" in read(os.path.join(vgates, "abspath.txt")), out + read(os.path.join(vgates, "abspath.txt")))
     if os.name == "nt":
-        code, out, _ = council(vocab, "gate", "cmd-exit", "--", "cmd /c exit 3")
-        check("gate: on Windows, cmd /c runs its command and the gate gets its exit code", code == 3 and "FAIL (exit 3" in out, out)
+        for form in ("cmd /c exit 3", "cmd //c exit 3", 'cmd.exe /C "exit 3"'):
+            code, out, _ = council(vocab, "gate", "cmd-exit", "--", form)
+            check(f"gate: on Windows, {form} runs its command and the gate gets its exit code",
+                  code == 3 and "FAIL (exit 3" in out, out)
+        code, out, _ = council(vocab, "gate", "cmd-bare", "--", "cmd")
+        check("gate: on Windows, a cmd that only opened its prompt is never a pass",
+              code != 0 and "ran nothing" in out, out)
     gates_cfg(vocab, "| tests | `true` | verify | yes | ok | `true` | none | - |\n")
     code, out, _ = council(vocab, "gate", "--all", "--at", "grounding")
     check("gate --all --at: with every gate at another stage, NOTHING WAS CHECKED names the stage",
@@ -1286,11 +1334,33 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(redbase, "gate", "tests")
     check("gate: a red baseline's output is kept apart from later runs of the same gate",
           "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt")) and "test_old_a" not in read(os.path.join(rgates, "tests.txt")), out)
-    check("gate: a failing gate names the failure lines its baseline didn't have",
-          code == 1 and "the baseline didn't have" in out and "FAILED test_new" in out.split("the baseline didn't have")[-1]
+    check("gate: a failing gate names the test that failed here and not at the baseline",
+          code == 1 and "not at the baseline" in out and "test_new" in out.split("not at the baseline")[-1]
           and "test_old" not in out, out)
     council(redbase, "gate", "--all", "--at", "verify")
     check("gate --all --at verify: never replaces the baseline", "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt")))
+    # The comparison is by failing test, not by line: a runner's timed summary is never a "new" failure,
+    # and a swap (one test fixed, another broken) is never "nothing new".
+    gates_cfg(redbase, "| timed | `if [ -f .fixed ]; then t=0.81; else t=0.26; fi;"
+                       " echo FAILED tests/test_a.py::test_one; echo FAILED tests/test_b.py::test_two;"
+                       " echo \"== 2 failed, 3 passed in ${t}s ==\"; exit 1`"
+                       " | grounding, verify | yes | ok | `true` | none | - |\n")
+    os.remove(os.path.join(redbase, ".fixed"))
+    council(redbase, "gate", "--all", "--at", "grounding")
+    write(os.path.join(redbase, ".fixed"), "")
+    code, out, _ = council(redbase, "gate", "timed")
+    check("gate: an unchanged red suite is not reported as newly failing, whatever its run time",
+          code == 1 and "the same test(s) are failing as at the baseline" in out and "2 failed, 3 passed"
+          not in out.split("baseline")[-1], out)
+    gates_cfg(redbase, "| swap | `if [ -f .swapped ]; then echo \"✖ formats dates (1.09ms)\";"
+                       " else echo \"✖ parses input (0.71ms)\"; fi;"
+                       " echo \"AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\"; exit 1`"
+                       " | grounding, verify | yes | ok | `true` | none | - |\n")
+    council(redbase, "gate", "--all", "--at", "grounding")
+    write(os.path.join(redbase, ".swapped"), "")
+    code, out, _ = council(redbase, "gate", "swap")
+    check("gate: a red suite that swaps one failing test for another names the new one",
+          code == 1 and "not at the baseline" in out and "formats dates" in out.split("not at the baseline")[-1], out)
 
     # A Gates section still written as a list (the layout before the table)
     legacy = new_repo(tmp, "legacy")

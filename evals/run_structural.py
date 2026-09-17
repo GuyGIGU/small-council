@@ -200,7 +200,8 @@ for label, text, needles in [
     ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
                     "last-verified", "council doctor", "council run open council-init",
-                    "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash"]),
+                    "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash",
+                    "needs an open run", "every command into the Gates table"]),
     ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier"]),
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
     missing = [n for n in needles if n not in text]
@@ -296,6 +297,18 @@ for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks
     hit = re.search(r"declare -A|\bmapfile\b|\breadarray\b|,,\}|\^\^\}", code_only)
     check(f"{label}: bash 3.2 portable (no declare -A, mapfile, readarray, case-conversion expansions)",
           hit is None, hit.group(0) if hit else "")
+# bash 3.2 calls an empty "$@" or $* unbound under set -u, so the argument dispatch always guards them.
+bare = []
+for fn in ("main", "takes_flags", "no_words", "cmd_check"):
+    body = re.search(r"^%s\(\) \{\n(.*?)^\}" % fn, cli, re.S | re.M)
+    for i, line in enumerate((body.group(1) if body else "").split("\n"), 1):
+        bit = re.sub(r"\$\{[0-9]\+[^}]*\}", "", re.sub(r"#.*$", "", line))    # ${1+"$@"} is the guarded form
+        if re.search(r'"\$@"|\$\*', bit) and not re.search(r"\[ \$# -", bit):
+            bare.append(f"{fn}:{i}: {line.strip()}")
+if not re.search(r'^if \[ "\$\{BASH_SOURCE\[0\]\}" = "\$0" \]; then main \$\{1\+"\$@"\}; fi', cli, re.M):
+    bare.append("the file's own dispatch line calls main without a guard")
+check("bin/council: the argument dispatch never expands an empty \"$@\" or $* (unbound in bash 3.2 under set -u)",
+      not bare, "; ".join(bare))
 
 # 12. Rename, and no project leakage in anything that ships as behaviour
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},

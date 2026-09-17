@@ -385,12 +385,14 @@ cmd_seat() {
   progress_line "$run"
 }
 
-# A token count as a notification or the UI gives it: 74304, 74,304, "74304 tokens", 74.3k, 1.2M.
-# Empty stays empty; anything with no number fails.
+# A token count as a notification or the UI gives it: 74304, 74,304, "74 304", "74304 tokens", 74.3k,
+# 1.2M. Empty stays empty; anything with no number fails.
 seat_tokens() {
   [ -n "$1" ] || return 0
   V="$1" awk 'BEGIN {
     s = ENVIRON["V"]; gsub(/,/, "", s)
+    while (match(s, /[0-9][ \t]+[0-9]/))              # a space between digits is a thousands separator
+      s = substr(s, 1, RSTART) substr(s, RSTART + RLENGTH - 1)
     if (!match(s, /[0-9]+(\.[0-9]+)?[ \t]*[kKmM]?/)) exit 1
     t = substr(s, RSTART, RLENGTH); m = 1
     if (t ~ /[kK]$/) m = 1000; else if (t ~ /[mM]$/) m = 1000000
@@ -399,12 +401,19 @@ seat_tokens() {
   }'
 }
 
-# Take a lock folder next to a file; a lock left by a killed call is broken after ~10 s.
+# Take a lock folder next to a file; a lock left by a killed call is broken after ~10 s. The wait is
+# measured on the clock, not in loops: a fork costs far more on Git Bash than the sleep it runs.
 lock_file() {
-  local n=0
+  local start tries=0
+  start="$(date +%s)"
   while ! mkdir "$1.lock" 2>/dev/null; do
-    n=$((n + 1))
-    if [ "$n" -ge 100 ]; then rm -rf "$1.lock"; mkdir "$1.lock" 2>/dev/null; return 0; fi
+    if [ $(( $(date +%s) - start )) -ge 10 ]; then
+      tries=$((tries + 1))
+      [ "$tries" -le 2 ] || return 0            # twice broken by someone else: carry on rather than hang
+      rm -rf "$1.lock"                          # what a killed call left behind
+      mkdir "$1.lock" 2>/dev/null && return 0   # lost the race: the other caller holds it, so wait again
+      start="$(date +%s)"
+    fi
     sleep 0.1 2>/dev/null || sleep 1
   done
 }
@@ -447,8 +456,9 @@ cmd_run_close() {
           || printf 'council: no request was filed for this run — council ask save --run %s\n' "${run##*/}" >&2 ;;
     esac
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
-      # The log whose Run: line names this run; failing that, the first log that mentions it.
-      lg="$(grep -lE "Run:[[:space:]\`*]*${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
+      # The log whose Run: line names this run — as a name or as the folder's full path, which is what
+      # council run open prints; failing that, the first log that mentions it.
+      lg="$(grep -lE "Run:[^|]*${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
       [ -n "$lg" ] || lg="$(grep -lE "(^|[^0-9A-Za-z-])${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
       if [ -z "$lg" ]; then
         printf 'council: no build log names this run — write %s/logs/<date>-<slug>.md with "Run: %s" and a "## Shortcuts and concessions" section\n' "$home" "${run##*/}" >&2
@@ -553,6 +563,7 @@ cmd_index() {
   local run top ref base head list body over out st f old label add del hunks diff nums syms sym hits callers tests stem note prior np=0
   local n_files=0 n_skip=0 n_over=0 n_new=0 t_add=0 t_del=0 budget=80 dirty=""
   local cap="${COUNCIL_INDEX_CAP:-80}"                # files indexed in full (the evals lower it to stay quick)
+  local namecap="${COUNCIL_INDEX_NAMECAP:-200}"       # past the cap: how many are named one by one
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cd "$top" 2>/dev/null || die "cannot enter the code root: $top"
@@ -579,7 +590,12 @@ cmd_index() {
       "?") label="new, untracked"; n_new=$((n_new + 1)) ;; *) label=modified ;;
     esac
     if [ "$n_files" -ge "$cap" ]; then                 # past the cap: named, so it still gets an owner
-      n_over=$((n_over + 1)); printf '## %s  (%s — past the %s-file cap: not indexed)\n' "$f" "$label" "$cap" >> "$over"; continue
+      # Named, so each still gets an owner — but a repo-wide change would put hundreds of KB into a
+      # file every seat reads, so past namecap they are counted instead of listed.
+      n_over=$((n_over + 1))
+      [ "$n_over" -gt "$namecap" ] \
+        || printf '## %s  (%s — past the %s-file cap: not indexed)\n' "$f" "$label" "$cap" >> "$over"
+      continue
     fi
     n_files=$((n_files + 1))
     if [ "$st" = "?" ]; then
@@ -654,7 +670,10 @@ cmd_index() {
     cat "$body"
     if [ "$n_over" -gt 0 ]; then
       printf '## Past the %s-file cap — %d more changed files, named but not indexed; each still needs an owner\n' "$cap" "$n_over"
-      cat "$over"; printf '\n'
+      cat "$over"
+      [ "$n_over" -le "$namecap" ] \
+        || printf '## … and %d more, not named one by one: git diff --name-only %s\n' "$((n_over - namecap))" "$(git rev-parse --short "$base")"
+      printf '\n'
     fi
   } > "$out"
   rm -f "$list" "$body" "$over"
@@ -712,13 +731,15 @@ config_gates() {
     function dash(s) { return s == "" ? "-" : s }
     function words(s, w) {
       s = tolower(s); gsub(/✓|✔|✅|☑/, " yes ", s); gsub(/✗|✘|❌|×/, " no ", s)
+      gsub(/·|→|›|»|–|—|\302\240/, " ", s)              # separators and a non-breaking space
       gsub(/[]*_`()[,;\/+&:.!?"]/, " ", s)
       return split(s, w, /[ \t]+/)
     }
     function stages(s,    w, n, i, g, v, m, bad) {
+      gsub(/\([^)]*\)/, " ", s)                         # a note in brackets is a note: "verify (phase 10)"
       n = words(s, w)
       for (i = 1; i <= n; i++) {
-        if (w[i] == "" || w[i] ~ /^(and|or|only|by|on|at|stage|stages|-|—)$/) continue
+        if (w[i] == "" || w[i] ~ /^(and|or|only|by|on|at|stage|stages|-)$/) continue
         if (w[i] ~ /^(grounding|baseline)$/) g = 1
         else if (w[i] ~ /^(verify|verification)$/) v = 1
         else if (w[i] ~ /^(both|all|always|every)$/) g = v = 1
@@ -731,8 +752,9 @@ config_gates() {
     function mandatory(s,    w, n, i) {
       n = words(s, w)
       for (i = 1; i <= n; i++) {
-        if (w[i] ~ /^(yes|y|true|mandatory|required|require|must|always|blocking|blocks|blocker)$/) return "yes"
-        if (w[i] ~ /^(no|n|false|not|optional|advisory|never|informational)$/) return "no"
+        if (w[i] ~ /^(yes|y|true|mandatory|required|require|must|always|blocking|blocks|blocker|1)$/) return "yes"
+        if (w[i] ~ /^(no|n|false|not|optional|advisory|never|informational|0)$/) return "no"
+        if (w[i] ~ /^(non|not)-(blocking|blocker|mandatory|required|require|must|gating)$/) return "no"
       }
       return "?"
     }
@@ -754,7 +776,7 @@ config_gates() {
           h = tolower(trim(f[i])); gsub(/[^a-z]/, "", h)
           if (h == "gate" || h == "name") cg = i; else if (h == "command") cc = i; else if (h == "runat") ca = i
           else if (h == "mandatory") cm = i; else if (h == "checked") ck = i
-          else if (h == "sideeffects" || h == "sideeffect") cs = i; else if (h == "needs") cn = i
+          else if (h ~ /^sideeffects?/) cs = i; else if (h ~ /^needs/) cn = i
         }
         next
       }
@@ -768,9 +790,17 @@ config_gates() {
     }' "$1"
 }
 
-# A Gates section still written as a list (the layout before the table): backticked commands, no table.
+# A Gates section still written as a list (the layout before the table): list items with a backticked
+# command, and no table. Only list lines count, so the template's own HTML comment — or a note about a
+# `council-init` refresh — is not mistaken for a layout to migrate.
 gates_listed() {
-  awk '/^## / { g = ($0 ~ /^## Gates/); next } g && /^\|/ { t = 1 } g && /`[^`]+`/ { c = 1 } END { exit !(c && !t) }' "$1" 2>/dev/null
+  awk '
+    /^## / { g = ($0 ~ /^## Gates/); next }
+    !g { next }
+    /^[ \t]*<!--/ { cm = 1 } cm { if (/-->/) cm = 0; next }
+    /^\|/ { t = 1 }
+    /^[ \t]*([-*+]|[0-9]+[.)])[ \t]*(\*\*[^*]*\*\*:?[ \t]*)?`[^`]+`/ { c = 1 }
+    END { exit !(c && !t) }' "$1" 2>/dev/null
 }
 
 # A backslash outside quotes before a letter or digit: bash drops it, so tools\run.ps1 reaches the tool
@@ -839,23 +869,69 @@ ITEMS
 
 gate_base() { printf '%s/gates/%s' "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')"; }
 
+# The failing tests a runner's output names, one id per line, in the order they appear and without
+# repeats: pytest (FAILED x::y, x::y FAILED), go (--- FAIL: Name), unittest (FAIL: test_x), node --test
+# and jest/vitest (✖ name, ✕ name), TAP (not ok 3 - name), cargo (test x ... FAILED). Run times are
+# dropped, so the same failure reads the same in two runs; a summary count line names no test and is
+# ignored, which is why a whole-line comparison could not be trusted.
+failure_ids() {
+  awk '
+    function norm(s) {
+      sub(/[ \t]*\([0-9][0-9.,]*[ \t]*(ms|s|sec|secs|seconds)\)[ \t]*$/, "", s)
+      sub(/[ \t]+-[ \t].*$/, "", s)                     # pytest appends " - AssertionError: …"
+      gsub(/^[ \t\[]+|[ \t,.:;\]]+$/, "", s)
+      return s
+    }
+    function emit(s) { s = norm(s); if (s != "" && !(s in seen)) { seen[s] = 1; print s } }
+    {
+      l = $0; gsub(/\r/, "", l); gsub(/\033\[[0-9;]*[A-Za-z]/, "", l)
+      if (match(l, /^[ \t]*(FAILED|ERROR)[ \t]+[^ \t]/))            { emit(substr(l, RSTART + RLENGTH - 1)); next }
+      if (match(l, /^[ \t]*---[ \t]+(FAIL|ERROR):[ \t]+[^ \t]/))    { emit(substr(l, RSTART + RLENGTH - 1)); next }
+      if (match(l, /^[ \t]*(FAIL|ERROR):[ \t]+[^ \t]/))             { emit(substr(l, RSTART + RLENGTH - 1)); next }
+      if (match(l, /^[ \t]*(✖|✗|✕|×|❌)[ \t]+[^ \t]/))               { emit(substr(l, RSTART + RLENGTH - 1)); next }
+      if (match(l, /^[ \t]*not ok[ \t]+[0-9]+[ \t]*-?[ \t]*/))      { emit(substr(l, RSTART + RLENGTH)); next }
+      if (match(l, /^[ \t]*test[ \t]+[^ \t]+[ \t]+\.\.\.[ \t]+(FAILED|failed)/)) { emit($2); next }
+      if (match(l, /^[ \t]*[^ \t]+[ \t]+FAILED([ \t]|$)/))          { emit($1); next }
+      if (match(l, /^[ \t]*FAIL[ \t]+[^ \t]/))                      { emit(substr(l, RSTART + RLENGTH - 1)); next }
+    }' "$1" 2>/dev/null
+}
+
+# cmd.exe that never got its /c switch prints its version banner, then a prompt, and exits 0 — a green
+# gate for a command that never ran. Its whole output is that banner and a trailing prompt.
+cmd_never_ran() {
+  [ -s "$1" ] || return 1
+  head -n 1 "$1" | grep -q '^Microsoft Windows \[Version' || return 1
+  tail -n 1 "$1" | tr -d '\r' | grep -q '>[ ]*$'
+}
+
 # Run one gate; full output to <run>/gates/<name>.txt, the verdict to <name>.json. Returns its exit code.
 # In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
 # so a later failure can be told apart from one the untouched code already had.
 run_gate() {
-  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0
+  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0 rcmd never=0 nnote=""
   GATE_EMPTY=0
   base="$(gate_base "$run" "$name")"; out="$base.txt"; bl="$run/gates/baseline/${base##*/}"
   pat='error|fail|exception|traceback|assert|panic|cannot|not found|undefined'
   mkdir -p "$run/gates"
+  # On Git Bash a lone /c is turned into a drive path before cmd sees it, so cmd opens a prompt, reads
+  # end-of-input and exits 0 without running anything. Written //c it survives as /c, so that is how
+  # the command is run. Nothing else in the command is touched: a /c/… path a Windows tool is given
+  # (python "$PWD/x.py") still has to be converted.
+  rcmd="$cmd"
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      rcmd="$(printf '%s' "$cmd" \
+        | sed -E 's#(^|[[:space:];&|(])([cC][mM][dD](\.[eE][xX][eE])?)([[:space:]]+)/([cCkK])([[:space:]]|$)#\1\2\4//\5\6#g')" ;;
+  esac
   start="$(date +%s)"
-  # Git Bash turns /c, /p:… and other Windows switches into drive paths before a Windows program sees
-  # them (cmd /c would open a prompt, read nothing and exit 0), so the command reaches its tool as written.
-  ( cd "$top" 2>/dev/null || exit 97; MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' bash -c "$cmd" < /dev/null ) > "$out" 2>&1
+  ( cd "$top" 2>/dev/null || exit 97; bash -c "$rcmd" < /dev/null ) > "$out" 2>&1
   ec=$?
   secs=$(( $(date +%s) - start ))
-  printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"}\n' \
-    "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" > "$base.json"
+  if [ "$ec" -eq 0 ] && cmd_never_ran "$out"; then   # a prompt and a banner: the command never ran
+    ec=1; never=1; nnote=', "note": "cmd opened its prompt and ran nothing"'
+  fi
+  printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"%s}\n' \
+    "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" "$nnote" > "$base.json"
   if [ "${GATE_BASELINE:-0}" = 1 ] && [ ! -f "$bl.txt" ]; then
     mkdir -p "$run/gates/baseline" && cp "$out" "$bl.txt" && cp "$base.json" "$bl.json" && fresh=1
   fi
@@ -869,24 +945,28 @@ run_gate() {
     return 0
   fi
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
-  say "gate $name: FAIL (exit $ec, ${secs}s) — full output: $out"
+  if [ "$never" = 1 ]; then
+    say "gate $name: FAIL — cmd opened its prompt and ran nothing (${secs}s): write its switch as //c, e.g. cmd //c \"<command>\" — full output: $out"
+  else
+    say "gate $name: FAIL (exit $ec, ${secs}s) — full output: $out"
+  fi
   hits="$(grep -n -i -E "$pat" "$out" 2>/dev/null | head -n 12)"
   [ -n "$hits" ] || hits="$(tail -n 8 "$out")"
   printf '%s\n' "$hits" | clip 220 | sed 's/^/    /'
   if [ "$fresh" = 0 ] && [ -f "$bl.txt" ]; then   # it may have been red before the change too: say what is new
-    grep -i -E "$pat" "$bl.txt" 2>/dev/null | tr -d '\r' > "$base.seen"
-    if [ -s "$base.seen" ]; then
-      hits="$(grep -i -E "$pat" "$out" 2>/dev/null | tr -d '\r' | grep -v -x -F -f "$base.seen" | head -n 12)"
+    failure_ids "$bl.txt" > "$base.seen"; failure_ids "$out" > "$base.now"
+    if [ -s "$base.now" ] && [ -s "$base.seen" ]; then
+      hits="$(grep -v -x -F -f "$base.seen" "$base.now" | head -n 12)"
+      if [ -n "$hits" ]; then
+        say "    failing now and not at the baseline (gates/baseline/${bl##*/}.txt):"
+        printf '%s\n' "$hits" | clip 220 | sed 's/^/      /'
+      else
+        say "    the same test(s) are failing as at the baseline (gates/baseline/${bl##*/}.txt) — no new one is named"
+      fi
     else
-      hits="$(grep -i -E "$pat" "$out" 2>/dev/null | tr -d '\r' | head -n 12)"
+      say "    this output names no failing test, so nothing can be compared — read it next to gates/baseline/${bl##*/}.txt yourself"
     fi
-    rm -f "$base.seen"
-    if [ -n "$hits" ]; then
-      say "    failure lines the baseline didn't have (gates/baseline/${bl##*/}.txt):"
-      printf '%s\n' "$hits" | clip 220 | sed 's/^/      /'
-    else
-      say "    no failure line the baseline didn't already have (gates/baseline/${bl##*/}.txt)"
-    fi
+    rm -f "$base.seen" "$base.now"
   fi
   return "$ec"
 }
@@ -1079,7 +1159,7 @@ GLOBS
         alive=1; break
       fi
     done
-    [ "$alive" = 1 ] || die "the --glob pattern(s) $(printf "'%s' " "${globs[@]}")match no file in this project, so this check could never look at anything — fix the --glob (a git pathspec: case matters; '*.py' reaches every folder, 'src/*.py' only the top-level src/)"
+    [ "$alive" = 1 ] || die "the --glob pattern(s) $(printf "'%s' " "${globs[@]}")match no file in this project, so this check could never look at anything — fix the --glob (a git pathspec: case matters, and a pattern with a / in it is anchored at the repo root, so 'src/*.py' covers every folder under a top-level src/ but not web/src/)"
   fi
   if [ -n "$BASE_ARG" ]; then
     ref="$BASE_ARG"
@@ -1319,15 +1399,22 @@ SEATS
 gate_test_path() {
   ( set -f
     cd "$1" 2>/dev/null || exit 1
-    hit=""; base=""; sub=""; want=""
+    hit=""; base=""; sub=""; want=""; away=0; root="$(pwd -P)"
     for tok in $2; do
       tok="$(printf '%s' "$tok" | tr -d "\"'\`")"; tok="${tok%;}"
-      if [ -n "$want" ]; then want=""; sub="${tok%/}"; continue; fi
+      tok="${tok#(}"; tok="${tok%)}"   # a subshell: (cd dir && pytest tests/test_x.py)
+      if [ -n "$want" ]; then want=""; sub="${tok%/}"; away=0; fi
       case "$tok" in
         cd|pushd|--prefix|--cwd|--dir|-C) want=1; continue ;;
-        --prefix=*|--cwd=*|--dir=*) sub="${tok#*=}"; sub="${sub%/}"; continue ;;
+        --prefix=*|--cwd=*|--dir=*) sub="${tok#*=}"; sub="${sub%/}"; away=0 ;;
         -*=*) tok="${tok#*=}" ;;
       esac
+      if [ -n "$sub" ] && [ "$away" = 0 ]; then
+        # A cd or --prefix out of the project: from here the paths are not this project's, so nothing
+        # is confirmed rather than the wrong file being named.
+        case "$(cd "$sub" 2>/dev/null && pwd -P)" in "$root"|"$root"/*) ;; *) away=1 ;; esac
+      fi
+      case "$tok" in cd|pushd|--prefix=*|--cwd=*|--dir=*) continue ;; esac
       case "$tok" in res://*) tok="${tok#res://}" ;; esac
       case "$tok" in *::*) tok="${tok%%::*}" ;; esac
       case "$tok" in -*|.|./|*"*"*|*"?"*) continue ;; *[/.]*) ;; *) continue ;; esac
@@ -1339,16 +1426,26 @@ gate_test_path() {
         test_*|test-*|*_test.*|*-test.*|*.test.*|*.spec.*|*_spec.*|*-spec.*|spec_*|tests.*|test.*) ;;
         *) continue ;;
       esac
-      for p in ${sub:+"$sub/$tok"} "$tok"; do
-        [ -f "$p" ] || continue
-        if git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then hit="$p"; break; fi
-        git check-ignore -q -- "$p" >/dev/null 2>&1
-        if [ $? -eq 1 ]; then hit="$p"; break; fi   # 1 = not ignored; 128 = outside the project
-      done
+      [ "$away" = 0 ] || continue     # the command left the project before naming this path
+      p="$tok"                        # inside the folder the command moved to, if it named one
+      case "$tok" in /*|[A-Za-z]:*) ;; *) [ -z "$sub" ] || p="$sub/$tok" ;; esac
+      if [ -f "$p" ]; then
+        if git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then hit="$p"
+        else
+          git check-ignore -q -- "$p" >/dev/null 2>&1
+          [ $? -ne 1 ] || hit="$p"    # 1 = not ignored; 128 = outside the project
+        fi
+      fi
       [ -z "$hit" ] || break          # the first real test named wins
     done
     [ -n "$hit" ] || exit 1
-    printf '%s' "$hit" )
+    while :; do                       # a path that walks back up: webapp/backend/../../tests/x -> tests/x
+      case "$hit" in
+        */../*) p="$(printf '%s' "$hit" | sed 's#[^/][^/]*/\.\./##')"; [ "$p" != "$hit" ] || break; hit="$p" ;;
+        *) break ;;
+      esac
+    done
+    printf '%s' "${hit#./}" )
 }
 
 # A gate verdict json is one line, written by run_gate: {"gate": .., "command": .., "exit": N, ..}
@@ -1365,8 +1462,8 @@ cmd_check() {
   if [ $# -eq 0 ]; then
     if [ -f "$run/synthesis.md" ]; then set -- "$run/synthesis.md"; else set -- "$run"/seats/*.md; fi
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
-      for f in "$@"; do                # a build's diagnosis cites the code before its fix: lines that moved on
-        shift; case "${f##*/}" in diagnose-*) ;; *) set -- "$@" "$f" ;; esac
+      for f in ${1+"$@"}; do           # a build's diagnosis cites the code before its fix: lines that moved on
+        shift; case "${f##*/}" in diagnose-*) ;; *) set -- ${1+"$@"} "$f" ;; esac
       done
     fi
   fi
@@ -1389,7 +1486,7 @@ cmd_check() {
     printf 'base: %s\n\n' "${base:-unknown — origin not checked}"
     printf '| item | cite | status | origin |\n|---|---|---|---|\n'
   } > "$out"
-  for f in "$@"; do
+  for f in ${1+"$@"}; do
     [ -f "$f" ] || continue
     lab="$(basename "$f" .md)"
     while IFS="$TAB" read -r n sev pr cite title; do
@@ -1605,10 +1702,10 @@ REFS
     fi
     gates="$(config_gates "$cfg")"
     if [ -z "$gates" ]; then
-      if gates_listed "$cfg"; then
-        finding ERROR "the Gates section is in an older layout (a list, not a table), so no gate can run — every council report on this project says NOTHING WAS CHECKED until it is migrated" "run a council-init refresh — it moves the listed commands into the Gates table; there is nothing to add by hand"
-      elif grep -qiE '^[-*[:space:]]*guardrails: *declined' "$cfg" 2>/dev/null; then
+      if grep -qiE '^[-*[:space:]]*guardrails: *declined' "$cfg" 2>/dev/null; then    # the user's own choice, first
         finding WARN "no gates in council.config.md (guardrails declined) — every council report on this project says NOTHING WAS CHECKED" "delete the 'guardrails: declined' line and run a council-init refresh whenever you want them fitted"
+      elif gates_listed "$cfg"; then
+        finding ERROR "the Gates section is in an older layout (a list, not a table), so no gate can run — every council report on this project says NOTHING WAS CHECKED until it is migrated" "run a council-init refresh — it moves the listed commands into the Gates table; there is nothing to add by hand"
       else
         finding ERROR "no gates in council.config.md — every council report on this project says NOTHING WAS CHECKED" "add the project's real test / lint / build commands (a council-init refresh detects them, and offers the ones you are missing)"
       fi
@@ -1632,7 +1729,8 @@ REFS
       done <<GATES
 $gates
 GATES
-      awk '/^## / { g = ($0 ~ /^## Gates/); next } g && /^\|/ { print; exit }' "$cfg" | grep -qi 'side effects' \
+      # The same has-column answer gate --all uses, so the two can never disagree about a header.
+      [ "$(printf '%s\n' "$gates" | awk -F"$TAB" 'NR == 1 { print $10 }')" = 1 ] \
         || finding WARN "the Gates table has no Side effects column (an older layout)" "a council-init refresh adds Probe, Needs and Side effects — until then council gate --all runs none of its gates unasked"
     fi
   fi
@@ -2291,12 +2389,13 @@ EOF
 # everywhere (the Chair passes it to every command when several runs are open); "--" means the command
 # takes a command of its own after --.
 takes_flags() {
-  local label="$1" f
+  local label="$1" f ok
   shift
+  ok=" run ${1+$*} "                    # ${1+…}: bash 3.2 calls an empty "$@" or $* unbound under set -u
   for f in $FLAGS; do
-    case " run $* " in *" $f "*) ;; *) die "$label doesn't take --$f — see: council help" ;; esac
+    case "$ok" in *" $f "*) ;; *) die "$label doesn't take --$f — see: council help" ;; esac
   done
-  case " $* " in *" -- "*) ;; *) [ "${#AFTER_DD[@]}" -eq 0 ] || die "$label takes nothing after -- — see: council help" ;; esac
+  case "$ok" in *" -- "*) ;; *) [ "${#AFTER_DD[@]}" -eq 0 ] || die "$label takes nothing after -- — see: council help" ;; esac
 }
 
 no_words() { local label="$1"; shift; [ $# -eq 0 ] || die "$label doesn't take '$*' — see: council help"; }
@@ -2348,38 +2447,39 @@ main() {
   [ $# -gt 0 ] || { [ -z "$FLAGS" ] || die "a flag needs a command — see: council help"; usage; exit 0; }
   cmd="$1"; shift
   case "$cmd" in
-    home)    takes_flags home; no_words home "$@"; council_home ;;
+    home)    takes_flags home; no_words home ${1+"$@"}; council_home ;;
     run)
       sub="${1:-}"; [ $# -eq 0 ] || shift
       case "$sub" in
         open)   takes_flags "run open" alongside session code-root
                 [ $# -le 1 ] || die "run open takes one mode (got: $*)"
                 cmd_run_open ${1+"$@"} ;;
-        close)  takes_flags "run close" status; no_words "run close" "$@"; cmd_run_close ;;
-        status) takes_flags "run status" all; no_words "run status" "$@"; cmd_run_status ;;
-        resume) takes_flags "run resume" session; no_words "run resume" "$@"; cmd_run_resume ;;
+        close)  takes_flags "run close" status; no_words "run close" ${1+"$@"}; cmd_run_close ;;
+        status) takes_flags "run status" all; no_words "run status" ${1+"$@"}; cmd_run_status ;;
+        resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
         *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>]" ;;
       esac ;;
     state)   takes_flags state; cmd_state ${1+"$@"} ;;
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;
-    index)   takes_flags index base; no_words index "$@"; cmd_index ;;
+    index)   takes_flags index base; no_words index ${1+"$@"}; cmd_index ;;
     gate)    takes_flags gate all at --
              if [ "$ALL" = 1 ]; then
-               no_words "gate --all" "$@"
+               no_words "gate --all" ${1+"$@"}
                [ -z "$GATE_CMD" ] || die "gate --all runs the configured gates — it takes no command after --"
              else
                [ -z "$AT_ARG" ] || die "--at works only with gate --all"
              fi
              cmd_gate ${1+"$@"} ;;
-    gates)   takes_flags gates; no_words gates "$@"; cmd_gates ;;
+    gates)   takes_flags gates; no_words gates ${1+"$@"}; cmd_gates ;;
     changed) takes_flags changed base code-root --; cmd_changed ${1+"$@"} ;;
-    collect) takes_flags collect; no_words collect "$@"; cmd_collect ;;
+    collect) takes_flags collect; no_words collect ${1+"$@"}; cmd_collect ;;
     check)   takes_flags check base
              for w in ${1+"$@"}; do [ -f "$w" ] || die "check: no such file: $w"; done
              cmd_check ${1+"$@"} ;;
     map)     takes_flags map; [ $# -le 1 ] || die "usage: council map status"; cmd_map ${1+"$@"} ;;
     fingerprint) takes_flags fingerprint
-             case "$*" in ''|check) ;; *) die "usage: council fingerprint [check]" ;; esac
+             [ $# -le 1 ] || die "usage: council fingerprint [check]"
+             case "${1:-}" in ''|check) ;; *) die "usage: council fingerprint [check]" ;; esac
              cmd_fingerprint ${1+"$@"} ;;
     memory)  takes_flags memory
              case "${1:-index}" in select) ;; *) [ $# -le 1 ] || die "usage: council memory [index | select [path|slug …] | check]" ;; esac
@@ -2387,11 +2487,11 @@ main() {
     prior)   takes_flags prior; cmd_prior ${1+"$@"} ;;
     ask)     takes_flags ask; [ $# -le 2 ] || die "usage: council ask save [slug]"; cmd_ask ${1+"$@"} ;;
     ledger)  takes_flags ledger; [ $# -le 1 ] || die "usage: council ledger [N]"; cmd_ledger ${1+"$@"} ;;
-    doctor)  takes_flags doctor; no_words doctor "$@"; cmd_doctor ;;
-    version) takes_flags version; no_words version "$@"; say "council $COUNCIL_VERSION" ;;
-    help)    takes_flags help; no_words help "$@"; usage ;;
+    doctor)  takes_flags doctor; no_words doctor ${1+"$@"}; cmd_doctor ;;
+    version) takes_flags version; no_words version ${1+"$@"}; say "council $COUNCIL_VERSION" ;;
+    help)    takes_flags help; no_words help ${1+"$@"}; usage ;;
     *) die "unknown command '$cmd' — see: council help" ;;
   esac
 }
 
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then main "$@"; fi
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then main ${1+"$@"}; fi
