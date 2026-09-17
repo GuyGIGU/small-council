@@ -83,5 +83,5 @@ changing anything.
 - **Round-2 cost** (~40% more seat tokens) is an estimate. If a war room rarely changes a plan after
   about 5 runs, make it on-request only.
 - **Tracking requests in git** is the user's call. The default is local only — `asks/` is in
-  `.council/.gitignore`; dropping that line shares them with the team, at the cost of putting whatever
-  they typed into the history.
+  `.council/.gitignore`; writing `!asks/` in place of that line shares them with the team (since 0.7.1,
+  `run open` puts a missing `asks/` line back), at the cost of putting whatever they typed into the history.
