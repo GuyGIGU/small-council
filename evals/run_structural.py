@@ -102,6 +102,8 @@ check("01-convene: checks the stack fingerprint", "council fingerprint check" in
 check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
       "cards/<slug>.md" in doctrine["04-brief.md"] and "- doc:" in doctrine["04-brief.md"])
 check("04-brief: memory in scope comes from council memory select", "council memory select" in doctrine["04-brief.md"])
+check("context-core: a Solo run selects the memory in scope too",
+      "council memory select" in core.split("A **Solo** run", 1)[-1].split("\n\n", 1)[0])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
 check("03-assign: records every seat's state", "council seat" in doctrine["03-assign.md"])
 check("04-brief: seat blocks carry ref / out / cap for collect", all(k in doctrine["04-brief.md"] for k in ["### <slug>", "- ref:", "- out:", "- cap:"]))
