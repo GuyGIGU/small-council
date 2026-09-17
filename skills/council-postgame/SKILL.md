@@ -92,7 +92,9 @@ You don't trace code here; the verifiers do.
 
 Index line: `<n> · must|should · ask · <area or path> · <plain title> · quote: "<the request's exact words>"`
 
-The quote is checked against the request mechanically at Challenge, so copy it exactly.
+The quote is checked against the request mechanically at Challenge, so copy it exactly —
+and never a secret: where the request holds a key or a password, quote the words around it, or the
+filed copy's `[redacted]`.
 
 **Then `## Drift on paper`**, as `-` bullets — never numbered lines:
 - plan tasks tied to no part;
@@ -103,7 +105,9 @@ The quote is checked against the request mechanically at Challenge, so copy it e
 
 ## At Challenge — the request check
 
-1. `council check`: every quote must appear in the request word for word. Fix a paraphrase first.
+1. `council check`: every quote must appear in the request word for word. `NOT-IN-THE-REQUEST` is a
+   paraphrase: fix it first. `NOT-EXACT` differs only in capitals or `**` marks: copy the words
+   exactly. `SECRET`: quote the redacted words instead.
 2. Write a short brief.md. Top: the deliverable; the question "does the code do what these words
    ask?"; the code root and the range. Bottom: the hard rules, and "Not a finding: code quality,
    style, anything outside the range unless a part needs it."

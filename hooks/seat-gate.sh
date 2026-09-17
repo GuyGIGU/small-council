@@ -74,15 +74,24 @@ else
     if ! grep -q '^## Index' "$path"; then
       add "add an '## Index' section with one line per item: '<n> · <severity> · <principle> · <path:line> · <title>' (write '(none) — <why>' for an empty lane)"
     else
+      # The same rule as index_shape in bin/council: change both together.
       shape="$(awk '
-        /^## Index/ { ins = 1; next }
-        ins && /^##/ { ins = 0 }
-        ins {
-          l = $0; gsub(/\r/, "", l)
-          if (l ~ /^[ \t]*$/) next
-          if (l ~ /^[ \t]*\(none\)/) { none = 1; next }
-          if (l ~ /^[-*]?[ \t]*C?[0-9]+\.?[ \t]+(·|\|)[ \t]/) { ok++; next }
-          if (l ~ /^[ \t]*([-*+][ \t]+)?[*_]*C?[0-9]+/ || l ~ / · /) bad++    # an item line that does not parse
+        /^## / { h = tolower($0); sub(/^## +/, "", h); ins = (h ~ /^index([ \t\r]|$)/); next }
+        !ins { next }
+        {
+          l = $0; gsub(/\r/, "", l); gsub(/\t/, " ", l)
+          if (l ~ /^###/) {                          # a "### P1" group heading is skipped; an item body ends the Index
+            if (l ~ /^#+ *[*_]*C?[0-9]+[a-z]?[*_]* +(·|\|) /) bad++
+            else if (tolower(l) !~ /^#+ *[*_]*(p[0-4]|must|should|could|strong|moderate|weak|critical|high|medium|low|major|minor|blocker|severity)([^a-z0-9]|$)/) ins = 0
+            next
+          }
+          if (l ~ /^ *$/) next
+          if (l ~ /^ *\(none\)/) { none = 1; next }
+          if (l ~ /^[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) /) {   # an item needs four fields: no citation, no item
+            if ((index(l, "·") ? split(l, f, / +· +/) : split(l, f, / +\| +/)) >= 4) ok++; else bad++
+            next
+          }
+          if (l ~ /^ *([-*+] +)?[*_]*C?[0-9]+/ || l ~ / · / || l ~ /^ *\| *[*_]*C?[0-9]+[a-z]?[*_]* *\|/) bad++
         }
         END { printf "%d %d %d", ok, bad, none }' "$path")"
       ok="${shape%% *}"; rest="${shape#* }"; bad="${rest%% *}"; none="${rest#* }"

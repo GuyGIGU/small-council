@@ -390,6 +390,181 @@ with tempfile.TemporaryDirectory() as tmp:
     check("check: reads cut items too", re.search(r"synthesis#C1\s+src/report\.py:99\s+bad-line", out) is not None, out)
     check("check: writes check.md", os.path.isfile(os.path.join(run, "check.md")))
 
+    # Citation shapes models really write: every place a field names is read and checked, a shape
+    # the reader can't parse says so, and nothing it couldn't check is ever counted as fine.
+    cites = new_repo(tmp, "cites")
+    write(os.path.join(cites, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(cites, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(cites, "web", "main.py"), "".join(f"code {i}\n" for i in range(1, 701)))
+    write(os.path.join(cites, "web", "db.py"), "".join(f"db {i}\n" for i in range(1, 31)))
+    write(os.path.join(cites, "sub dir", "my file.py"), "a\nb\nc\n")
+    write(os.path.join(cites, "Makefile"), "all:\n\ttrue\n")
+    git(cites, "add", "-A")
+    git(cites, "commit", "-q", "-m", "base")
+    code, crun, _ = council(cites, "run", "open", "council-review")
+    crun = crun.strip()
+    shapes = [
+        ("web/main.py:455/474", "ok"), ("web/main.py:254-268+", "ok"), ("web/main.py:148-150+170", "ok"),
+        ("web/main.py:12:5", "ok"), ("web/main.py:L58", "ok"), ("web/main.py#L12", "ok"), ("web/main.py:328,", "ok"),
+        ("web/main.py:335-341 (start_run before try)", "ok"), ("web/main.py:75, web/db.py:9-10", "ok"),
+        ("web/main.py:533, :7", "ok"), ("web/main.py:40 and web/db.py:12", "ok"),
+        ("[web/main.py:40](web/main.py#L40)", "ok"), ("**web/main.py:5**", "ok"), ("'web/main.py:5'", "ok"),
+        ("web/main.py:5 → web/db.py:2", "ok"), ("web/main.py:5—7", "ok"), ("web/main.py:5..7", "ok"),
+        ("web/main.py:5;25", "ok"), ("web/main.py:5.", "ok"), ("web/main.py: 2", "ok"), ("Makefile:2", "ok"),
+        ("sub dir/my file.py:3", "ok"), ("web/main.py:5 (see web/db.py)", "ok"),
+        ("`git grep -n TIMEOUT web/` → web/main.py:12: TIMEOUT = 30", "ok"),
+        ("web/main.py:0", "bad-line (there is no line 0)"),
+        ("web/main.py:20-10", "bad-line (20-10 runs backwards)"),
+        ("web/main.py:40, web/db.py:99", "bad-line (web/db.py:99 — the file has 30 lines)"),
+        ("web/main.py:12, web/ghost.py:3", "missing-file (web/ghost.py)"),
+        ("web/main.py:5x", "unreadable (web/main.py:5x — write it as path:line)"),
+        ("web/scaner.py", "missing-file"), ("web/ghost/", "missing-file"), ("web/missing.py:handle", "missing-file"),
+        ("web/main.py::run_scan", "no-line (the path exists)"), ("web/", "no-line (the path exists)"),
+        ("`curl -s localhost:8000/health` → 200", "n/a (command)"),
+        ("https://example.com/docs/page.html#L5", "n/a (link)"), ("the auth layer", "n/a (no path)"), ("-", "n/a"),
+    ]
+    write(os.path.join(crun, "synthesis.md"), "# Synthesis\n## Kept\n" + "".join(
+        f"{i} · P2 · Principle 1 · {c} · shape {i} · from: x#{i}\n" for i, (c, _) in enumerate(shapes, 1))
+        + f"{len(shapes) + 1} · P2 · OWASP A01 | Access control · web/db.py:99 · a pipe inside the principle\n")
+    code, out, _ = council(cites, "check")
+    lines = {l.split("  ", 1)[0]: l for l in out.splitlines()}
+    wrong = [(i, c, lines.get(f"synthesis#{i}", "?")) for i, (c, want) in enumerate(shapes, 1)
+             if not lines.get(f"synthesis#{i}", "").endswith("  " + want)]
+    check("check: every citation shape models write gets the right verdict, never a false missing-file or bad-line",
+          not wrong, "\n".join(f"{i} {c!r} -> {l}" for i, c, l in wrong))
+    check("check: a pipe inside the principle doesn't shift the fields — the citation is still read",
+          lines.get(f"synthesis#{len(shapes) + 1}", "").endswith("web/db.py:99  bad-line (the file has 30 lines)"), out)
+    check("check: the summary counts broken, line-less and unchecked citations apart, and fails",
+          code == 1 and f"check: {len(shapes) + 1} items, 9 broken citation(s) · 2 name a path but no line"
+          " · 4 not checked (a command, a link or no path)" in out, out)
+    write(os.path.join(crun, "brief.md"), "# Brief\n## Seats\n### shapes — A\n- ref: none\n### map — B\n- ref: none\n"
+          "### res — C\n- ref: none\n")
+    write(os.path.join(crun, "seats", "shapes.md"), "# Shapes — x (council-review)\nref: none\n## Index\n"
+          + "".join(f"{i} · P2 · Principle 1 · {shapes[i + 6][0]} · t\n" for i in range(1, 6)))
+    write(os.path.join(crun, "seats", "map.md"), "# Map — x (council-init)\nref: none\n## Index\n"
+          "1 · map · Where things live · web/scaner.py · a typo\n2 · map · Flows · web/main.py::run · a symbol\n"
+          "3 · map · Flows · web/main.py: 2 · a blank after the colon\n")
+    write(os.path.join(crun, "seats", "res.md"), "# Res — x (council-research)\nref: none\n## Index\n"
+          "1 · strong · code · `git grep -n X web/` → web/main.py:12: X = 30 · t\n"
+          "2 · moderate · runtime · `curl -s localhost:8000/health` → 200 · t\n")
+    code, out, _ = council(cites, "collect")
+    check("collect: citations with notes, lists, links and several places resolve",
+          re.search(r"^shapes\s+ok\s+5/8\s+\d+\s+n/a\s+5/5\s+-$", out, re.MULTILINE) is not None, out)
+    check("collect: a bare path is checked too; one with no line and one it couldn't check are counted, not hidden",
+          re.search(r"^map\s+ok\s+3/8\s+\d+\s+n/a\s+2/3\s+- · broken-cites no-line\(1\)$", out, re.MULTILINE) is not None
+          and re.search(r"^res\s+ok\s+2/8\s+\d+\s+n/a\s+1/1\s+- · unchecked\(1\)$", out, re.MULTILINE) is not None, out)
+    check("collect: when only citations are wrong it says fix them in place, not re-dispatch",
+          code == 1 and "collect: only citations are wrong" in out and "re-dispatch" not in out, out)
+
+    # Code the change deleted or moved: a finding about it belongs to the change, never to the past
+    moved = new_repo(tmp, "moved")
+    write(os.path.join(moved, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(moved, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(moved, "app", "api.py"), "def delete_account(user, target):\n    \"\"\"Delete an account.\"\"\"\n"
+          "    if not user.is_admin:\n        raise PermissionError(\"admins only\")\n    target.delete()\n")
+    write(os.path.join(moved, "app", "guard.py"), "def check(token):\n    return token == EXPECTED\n")
+    write(os.path.join(moved, "app", "bank.py"), "lock.acquire()\ncheck_balance()\nledger.debit()\nlock.release()\n")
+    write(os.path.join(moved, "app", "old.py"), "a = 1\nb = 2\nc = 3\n")
+    git(moved, "add", "-A")
+    git(moved, "commit", "-q", "-m", "base")
+    git(moved, "checkout", "-q", "-b", "feature")
+    write(os.path.join(moved, "app", "api.py"), "def delete_account(user, target):\n    \"\"\"Delete an account.\"\"\"\n"
+          "    target.delete()\n")
+    write(os.path.join(moved, "app", "bank.py"), "lock.acquire()\nledger.debit()\ncheck_balance()\nlock.release()\n")
+    git(moved, "rm", "-q", "app/guard.py")
+    git(moved, "commit", "-q", "-am", "simplify")
+    code, mrun, _ = council(moved, "run", "open", "council-review")
+    council(moved, "index")
+    write(os.path.join(mrun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P1 · Least privilege · app/api.py:1-3 · the change removed the admin check · from: hunt#1\n"
+          "2 · P2 · Least privilege · app/api.py:3 · guard removed right before delete · from: hunt#2\n"
+          "3 · P1 · Authentication · app/guard.py:2 · the change deleted the token check · from: hunt#3\n"
+          "4 · P1 · Ordering · app/bank.py:2 · the debit now runs before the balance check · from: hunt#4\n"
+          "5 · P3 · Naming · app/old.py:2 · an untouched file · from: hunt#5\n"
+          "6 · P3 · Naming · app/api.py:1 · a line away from the removed ones · from: hunt#6\n"
+          "7 · P3 · Naming · app/guard.py:9 · past the end of the deleted file · from: hunt#7\n")
+    code, out, _ = council(moved, "check")
+    check("check: lines next to code the change removed are 'touched', not 'pre-existing'",
+          "synthesis#1  app/api.py:1-3  ok · touched" in out and "synthesis#2  app/api.py:3  ok · touched" in out, out)
+    check("check: a line the change moved is 'touched'", "synthesis#4  app/bank.py:2  ok · touched" in out, out)
+    check("check: a file the change deleted is its own verdict, checked against the base — never missing-file",
+          re.search(r"synthesis#3  app/guard\.py:2  deleted \(.*\) · touched", out) is not None
+          and "synthesis#7  app/guard.py:9  bad-line (the deleted file had 2 lines)" in out, out)
+    check("check: lines away from the change stay 'pre-existing'",
+          "synthesis#5  app/old.py:2  ok · pre-existing" in out and "synthesis#6  app/api.py:1  ok · pre-existing" in out
+          and "7 items, 1 broken citation(s)" in out, out)
+    if os.path.isfile(os.path.join(moved, "APP", "OLD.PY")):         # a file system that ignores case
+        write(os.path.join(mrun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+              "1 · P3 · Naming · APP/OLD.PY:2 · the path in the wrong case · from: hunt#1\n")
+        code, out, _ = council(moved, "check")
+        check("check: a path cited in the wrong case keeps its real origin", "APP/OLD.PY:2  ok · pre-existing" in out, out)
+
+    # Old lines never read as new for technical reasons: a SHA-256 repository, a line-ending rewrite
+    sha = os.path.join(tmp, "sha256")
+    os.makedirs(sha)
+    git(sha, "init", "-q", "--object-format=sha256")
+    git(sha, "symbolic-ref", "HEAD", "refs/heads/main")
+    write(os.path.join(sha, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(sha, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(sha, "a.py"), "l1\nl2\nl3\nl4\nl5\n")
+    git(sha, "add", "-A")
+    git(sha, "commit", "-q", "-m", "base")
+    git(sha, "checkout", "-q", "-b", "feature")
+    append(os.path.join(sha, "a.py"), "l6\nl7\n")
+    git(sha, "commit", "-q", "-am", "more")
+    code, srun, _ = council(sha, "run", "open", "council-review")
+    council(sha, "index")
+    write(os.path.join(srun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P3 · P · a.py:2 · old · from: x#1\n2 · P3 · P · a.py:7 · new · from: x#2\n")
+    code, out, _ = council(sha, "check")
+    check("check: origins hold in a SHA-256 repository",
+          "synthesis#1  a.py:2  ok · pre-existing" in out and "synthesis#2  a.py:7  ok · introduced" in out, out)
+    eol = new_repo(tmp, "eol")
+    write(os.path.join(eol, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(eol, ".council", ".gitignore"), "runs/\n")
+    with open(os.path.join(eol, "a.py"), "wb") as f:
+        f.write(b"l1\r\nl2\r\nl3\r\nl4\r\n")
+    git(eol, "add", "-A")
+    git(eol, "commit", "-q", "-m", "base")
+    git(eol, "checkout", "-q", "-b", "feature")
+    code, erun, _ = council(eol, "run", "open", "council-review")
+    council(eol, "index")
+    with open(os.path.join(eol, "a.py"), "wb") as f:
+        f.write(b"l1\nl2\nl3 changed\nl4\n")
+    write(os.path.join(erun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P3 · P · a.py:1-2 · old · from: x#1\n2 · P3 · P · a.py:3 · changed · from: x#2\n")
+    code, out, _ = council(eol, "check")
+    check("check: lines whose endings alone changed are never called 'introduced'",
+          "synthesis#1  a.py:1-2  ok · origin unknown (only line endings changed)" in out
+          and "synthesis#2  a.py:3  ok · introduced" in out, out)
+
+    # A synthesis the check can't read is never a pass
+    council(cites, "run", "close", "--status", "abandoned")
+    code, urun, _ = council(cites, "run", "open", "council-review")
+    usyn = os.path.join(urun.strip(), "synthesis.md")
+    write(usyn, "# Synthesis — the first four citations are wrong\n## Kept\n"
+          "| # | Sev | Principle | Cite | Title | From |\n|---|---|---|---|---|---|\n"
+          "| 1 | P1 | Validation | web/ghost.py:40 | Missing check | hunt#1 |\n"
+          "### 2 · P2 · Tests · web/db.py:999 · No test · from: beck#2\n"
+          "3. P2 · Tests · web/db.py:500 · No test either · from: beck#3\n"
+          "4 · P2 · just a title, no citation\n"
+          "**5** · P2 · Tests · web/nope.py:1 · a bold number · from: beck#5\n"
+          "6a · P2 · Tests · web/db.py:1 · a lettered number · from: beck#6\n## Cut\n")
+    code, out, _ = council(cites, "check")
+    check("check: item lines it can't read fail the check, and are counted",
+          code == 1 and "synthesis: 4 item line(s) check can't read" in out and "check: 2 items, 5 broken" in out, out)
+    check("check: a bold or lettered item number is read",
+          "synthesis#5  web/nope.py:1  missing-file" in out and "synthesis#6a  web/db.py:1  ok" in out, out)
+    write(usyn, "# Synthesis\n## Kept\n## Cut\n")
+    code, out, _ = council(cites, "check")
+    check("check: a synthesis with no items and no (none) line is not a pass", code == 1 and "nothing was checked" in out, out)
+    write(usyn, "# Synthesis\n## Kept\n(none) — the change only renames a file\n## Cut\n")
+    code, out, _ = council(cites, "check")
+    check("check: '(none)' under Kept is an honest empty result", code == 0 and "check: 0 items, 0 broken" in out, out)
+    code, out, _ = council(cites, "check", os.path.join(urun.strip(), "seats", "nobody.md"))
+    check("check: a file named on the command line that doesn't exist is not a pass", code == 1 and "no such file" in out, out)
+    council(cites, "run", "close", "--status", "abandoned")
+
     # A second run: refused, then alongside; never guessing
     code, _, err = council(repo, "run", "open", "council-research")
     check("run open: refuses a second in-progress run on this tree", code == 2 and "already in progress" in err and "--alongside" in err, err)
@@ -440,6 +615,85 @@ with tempfile.TemporaryDirectory() as tmp:
           "## Index\n1 · strong · Principle 1 · src/stats.py:1 · x\n")
     code, out, _ = council(repo, "collect", "--run", run2)
     check("collect: a paired seat missing one ref: line is a mismatch", "MISMATCH" in row(out, "pair"), out)
+
+    # One bad seat on its own fails collect: each problem alone, exit code included
+    lone = new_repo(tmp, "lone")
+    write(os.path.join(lone, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(lone, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(lone, "a.txt"), "".join(f"{i}\n" for i in range(1, 10)))
+    git(lone, "add", "-A")
+    git(lone, "commit", "-q", "-m", "a")
+
+    def lone_collect(block, seat, mode="council-review", extra=None):
+        _, r, _ = council(lone, "run", "open", mode, "--alongside")
+        r = r.strip()
+        write(os.path.join(r, "brief.md"), "# Brief\n## Seats\n### s1 — Lane (S)\n" + block + "\n")
+        write(os.path.join(r, "seats", "s1.md"), seat)
+        council(lone, "seat", "s1", "done", "--run", r)
+        if extra:
+            extra(r)
+        code_, out_, _ = council(lone, "collect", "--run", r)
+        council(lone, "run", "close", "--run", r, "--status", "abandoned")
+        return code_, out_
+
+    one = "1 · P1 · Principle 1 · a.txt:1 · x\n"
+    lone_cases = [
+        ("a ref: line that doesn't match its doc", f"- ref: {ref('security.md')}",
+         "# S — Security (council-review)\nref: I skimmed it\n## Index\n" + one, "MISMATCH"),
+        ("a reference doc that doesn't exist", "- ref: /no/such/doc.md", "# S\nref: x\n## Index\n" + one, "no-doc"),
+        ("an empty Index", "- ref: none", "# S\nref: none\n## Index\n", "empty-index"),
+        ("an index line it can't read", "- ref: none",
+         "# S\nref: none\n## Index\n" + one + "2) P1 — auth bypass in login.py line 99\n", "unparsed-index(1)"),
+        ("more items than its cap", "- ref: none\n- cap: 1",
+         "# S\nref: none\n## Index\n" + one + "2 · P2 · Principle 1 · a.txt:2 · y\n", "over-cap"),
+        ("broken citations", "- ref: none",
+         "# S\nref: none\n## Index\n1 · P1 · P · a.txt:40 · x\n2 · P1 · P · nope.py:3 · y\n", "broken-cites"),
+        ("an item with no citation field", "- ref: none", "# S\nref: none\n## Index\n1 · P2 · just a title\n",
+         "unparsed-index(1)"),
+    ]
+    for what, block, seat, flag in lone_cases:
+        code, out = lone_collect(block, seat)
+        check(f"collect: a lone seat with {what} fails collect on its own",
+              code == 1 and flag in row(out, "s1") and "seats in order" not in out, out)
+    code, out = lone_collect("- ref: none\n- cap: 3", "# S\nref: none\n## Index\n### P1\n" + one
+                             + "2 · P1 · P · a.txt:2 · y\n### P2 — lower\n3 · P2 · P · a.txt:3 · z\n"
+                             "4 · P2 · P · a.txt:4 · w\n5 · P2 · P · a.txt:5 · v\n\n### 1. x\nThe body · more.\n")
+    check("collect: items grouped under ### P1 / ### P2 inside the Index are read, and over the cap is reported",
+          code == 1 and re.search(r"^s1\s+ok\s+5/3\s+\d+\s+n/a\s+5/5\s+- · over-cap$", row(out, "s1")) is not None, out)
+    card = os.path.join(lone, ".council", "cards", "hunt.md")
+    write(card, "# Hunt — Security card for eval\nsource: x\n")
+    for key in ("- **ref:** ", "ref: ", "- Ref: "):
+        code, out = lone_collect(key + card, "# S\nref: I did not open the card\n## Index\n" + one)
+        check(f"collect: a brief's ref line written '{key.strip()}' is still checked",
+              code == 1 and "MISMATCH" in row(out, "s1"), out)
+    design = os.path.join(lone, "DESIGN.md")
+    write(design, "---\nname: design system\n---\n# Design System — Eval\nbody\n")
+    code, out = lone_collect(f"- ref: {design}", "# S\nref: Design System — Eval\n## Index\n" + one)
+    check("collect: a doc that opens with front matter is proved by its first heading",
+          code == 0 and re.search(r"^s1\s+ok\s+1/8\s+\d+\s+ok\s", row(out, "s1")) is not None, out)
+    code, out = lone_collect(f"- ref: {design}", "# S\nquestion: q\n## Index\n" + one)
+    check("collect: a seat with no ref: line never passes the proof of reading",
+          code == 1 and "MISMATCH" in row(out, "s1"), out)
+
+    def sat_out(r, ghost=False):
+        write(os.path.join(r, "debate.md"), "# War room\n## Seats\n### s1-r2 — Lane (S), round 2\n- ref: none\n"
+              "### s2-r2 — Other (T), round 2\n- ref: none\n")
+        write(os.path.join(r, "seats", "s1-r2.md"), "# S — x (council-plan, round 2)\nref: none\n## Index\n"
+              "1 · hold · P1 · a.txt:1 · y\n")
+        council(lone, "seat", "s2-r2", "skipped", "note=sits out: no room", "--run", r)
+        if ghost:
+            with open(os.path.join(r, "brief.md"), "a", encoding="utf-8") as f:
+                f.write("### ghost — Never ran\n- ref: none\n")
+            council(lone, "seat", "ghost", "skipped", "--run", r)
+
+    code, out = lone_collect("- ref: none", "# S\nref: none\n## Index\n" + one, "council-plan", sat_out)
+    check("collect: a round-2 seat that sat out (recorded skipped) is shown, not demanded",
+          code == 0 and "skipped" in row(out, "s2-r2") and "sits out: no room" in row(out, "s2-r2")
+          and "1 sat out" in out, out)
+    code, out = lone_collect("- ref: none", "# S\nref: none\n## Index\n" + one, "council-plan",
+                             lambda r: sat_out(r, ghost=True))
+    check("collect: a first-round seat marked skipped with no file is still a hole",
+          code == 1 and re.search(r"^ghost\s+missing", out, re.MULTILINE) is not None, out)
 
     # A linked worktree
     wt = os.path.join(tmp, "wt")
@@ -493,6 +747,38 @@ with tempfile.TemporaryDirectory() as tmp:
                 "2026-09-16\t2026-09-16-000000-review\tcouncil-review\thunt-b\t2\t1\t0\t0\t20000\n")
     code, out, _ = council(repo, "ledger")
     check("ledger: a split worker's rows count as one seat in one run", re.search(r"^hunt\s+1\s+4\s+2\s+0\s+0\s+30\s+50%", out, re.MULTILINE) is not None, out)
+
+    # The ledger reads provenance and verdicts as they are really written
+    led = new_repo(tmp, "led")
+    write(os.path.join(led, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(led, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(led, "a.py"), "".join(f"{i}\n" for i in range(1, 31)))
+    git(led, "add", "-A")
+    git(led, "commit", "-q", "-m", "a")
+    _, lrun, _ = council(led, "run", "open", "council-review")
+    lrun = lrun.strip()
+    write(os.path.join(lrun, "brief.md"), "# Brief\n## Seats\n### hunt — Security\n- ref: none\n### beck — Tests\n- ref: none\n")
+    write(os.path.join(lrun, "seats", "hunt.md"), "# Hunt — Security (council-review)\nref: none\n## Index\n"
+          + "".join(f"{i} · P2 · P1 · a.py:{i} · h{i}\n" for i in range(1, 5))
+          + "\n### 1. h1\nbody\n## Outside my lane\n5 · P2 · Tests · a.py:5 · no test for a.py\n")
+    write(os.path.join(lrun, "seats", "beck.md"), "# Beck — Tests (council-review)\nref: none\n## Index\n"
+          + "".join(f"{i} · P2 · T1 · a.py:{i + 5} · b{i}\n" for i in range(1, 4)))
+    council(led, "seat", "hunt", "done", "agent=a1", "tokens=30000")
+    council(led, "seat", "beck", "done", "agent=a2", "tokens=20000")
+    council(led, "seat", "verify-1", "done", "agent=v1", "tokens=9000")
+    write(os.path.join(lrun, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P2 · P1 · a.py:1 · h1 and h2 are one bug · from: hunt#1, #2\n"
+          "2 · P2 · T1 · a.py:6 · b1 and b2 merged · from: beck#1,2\n"
+          "3 · P2 · P1 · a.py:3 · h3, also raised by beck · from: hunt#3 and beck#3\n"
+          "4 · P2 · P1 · a.py:4 · Data from: the webhook is trusted · from: hunt#4\n")
+    write(os.path.join(lrun, "verify-1.md"), "# Verification — ledger\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1. | h1 | REFUTED (latent) | guarded upstream |\n| #2 | b1 | REFUTED — test exists | covered |\n"
+          "| 3 | h3 | ❌ REFUTED | guarded |\n| 4 | data | Refuted | signature checked |\n")
+    council(led, "run", "close")
+    code, out, _ = council(led, "ledger")
+    check("ledger: 'from: a#1, #2', 'b#1,2', 'a#3 and b#3', a title holding 'from:', and verdicts as written all count",
+          re.search(r"^hunt\s+1\s+4\s+4\s+0\s+4\s+30\s+0%", out, re.MULTILINE) is not None
+          and re.search(r"^beck\s+1\s+3\s+3\s+0\s+3\s+20\s+0%", out, re.MULTILINE) is not None, out)
     code, out, _ = council(repo, "run", "status")
     check("run status: nothing open after closing", "no open council runs" in out, out)
     code, out, _ = council(repo, "run", "status", "--all")
@@ -703,6 +989,39 @@ with tempfile.TemporaryDirectory() as tmp:
     check("check: a request part with no quote, or a one-word one, is broken",
           "synthesis#4  quote  NO-QUOTE" in out and "synthesis#5  quote  TOO-SHORT" in out
           and "2 of 5 quotes found in the request" in out, out)
+    qrepo = new_repo(tmp, "quotes")
+    write(os.path.join(qrepo, "x.txt"), "x\n")
+    git(qrepo, "add", "-A")
+    git(qrepo, "commit", "-q", "-m", "x")
+    code, qrun, _ = council(qrepo, "run", "open", "council-postgame")
+    qrun = qrun.strip()
+    fake_key = "sk" + "_live_" + "NOTREAL" * 4          # assembled here, so no key-shaped string sits in the file
+    write(os.path.join(qrun, "ask.md"), "# Ask — panel\nsource: said at the time\n## In your words\n"
+          "The quote panel shouldn’t freeze when the feed drops.\n"
+          "Show the last price in **bold** and keep the 5 minute chart.\nit must never place orders.\n"
+          f"Wire checkout with the key {fake_key} and email a receipt.\n")
+    write(os.path.join(qrun, "synthesis.md"), "# Synthesis\n## Kept\n"
+          '1 · must · ask · panel · no freeze · quote: "The quote panel shouldn\'t freeze when the feed drops."\n'
+          '2 · must · ask · panel · bold · quote: "Show the last price in **bold** and keep the 5 minute chart."\n'
+          '3 · must · ask · panel · bold · quote: "Show the last price in bold and keep"\n'
+          '4 · must · ask · orders · never · quote: "It must never place orders."\n'
+          '5 · must · ask · panel · Quote: stays live · quote: "shouldn’t freeze when the feed"\n'
+          '6 · must · Ask · orders · may trade · quote: "the app may place orders on its own"\n'
+          '7 · should · asks · orders · a mistyped part · quote: "never place orders"\n'
+          f'8 · must · ask · payments · the key · quote: "Wire checkout with the key {fake_key}"\n'
+          '9 · must · ask · payments · redacted · quote: "Wire checkout with the key [redacted] and email"\n')
+    code, out, _ = council(qrepo, "check")
+    check("check: a quote that differs only by a curly apostrophe or a non-breaking space passes",
+          "synthesis#1  quote  ok" in out and "synthesis#2  quote  ok" in out, out)
+    check("check: a quote that differs only in capitals or ** marks says exactly that",
+          "synthesis#3  quote  NOT-EXACT" in out and "synthesis#4  quote  NOT-EXACT" in out, out)
+    check("check: 'Quote:' in a title never hides the part's quote", "synthesis#5  quote  ok" in out, out)
+    check("check: in a post-game, a part whose third field isn't exactly 'ask' is still checked",
+          "synthesis#6  quote  NOT-IN-THE-REQUEST" in out and "synthesis#7  quote  ok" in out, out)
+    check("check: a quote holding a secret-looking string fails; the redacted words pass",
+          code == 1 and "synthesis#8  quote  SECRET" in out and "synthesis#9  quote  ok" in out
+          and "5 of 9 quotes found in the request" in out, out)
+    council(qrepo, "run", "close", "--status", "abandoned")
     code, out, err = council(req, "run", "close")
     check("run close: no warning when the request was filed", code == 0 and "no request was filed" not in err, err)
     council(req, "run", "open", "council-review")

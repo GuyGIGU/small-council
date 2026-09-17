@@ -92,7 +92,8 @@ Seats named by no point stay idle.
 **A worker that can't be resumed** (the session ended, or SendMessage fails) gets a fresh round-2
 worker, with its round-1 file and debate.md as its brief — only if the agent cap has room, and it
 counts as an agent. Track it as `council seat <slug>-r2 running agent=<id>`. No room: the seat sits out, its points become forks or verifier claims, and the
-plan says so.
+plan says so. Record it — `council seat <slug>-r2 skipped note="sits out: no room"` — so collect shows
+it as skipped rather than missing.
 
 ## Judge — every point ends one of four ways
 
