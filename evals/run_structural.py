@@ -207,6 +207,10 @@ check("postgame: parts quote the request with its secrets redacted", "never a se
 check("09-deliver: the request line quotes the filed, redacted copy", "redacted" in doctrine["09-deliver.md"].split("**Your request:**", 1)[-1][:400])
 check("08-challenge: says what each of council check's citation verdicts asks of the Chair",
       all(v in doctrine["08-challenge.md"] for v in ["unreadable", "`deleted`", "`no-line`", "not checked"]))
+check("08-challenge: says what to do with an uncited review item and an unknown origin",
+      "no-citation" in doctrine["08-challenge.md"] and "origin unknown" in doctrine["08-challenge.md"])
+check("review: an item whose origin is unknown still reaches the fix hand-off",
+      "origin unknown" in review)
 check("07-judge: an empty Kept section says (none)", "(none)" in doctrine["07-judge.md"])
 
 # 6. Agents
@@ -258,6 +262,8 @@ check("template seat doc: draft status, numbered principles with repo evidence",
 check("template config: stack fingerprint and gate side effects", "stack-fingerprint:" in cfg and "| Side effects |" in cfg)
 check("template conventions: scope and anchor fields", "**Scope:**" in conv and "**Anchor:**" in conv)
 check("template conventions: says which sections are served and how to retire an entry", "## Retired" in conv and "**Retired:**" in conv)
+check("template conventions: says how a section's name is read, and what memory lists as unread",
+      "not a word further along its heading" in conv and "could not be read" in conv)
 for label, rel in [("fixture", ("evals", "fixtures", ".council", "council.config.md")), ("example", ("examples", "chrollo", "council.config.md"))]:
     t = read(*rel)
     check(f"{label} config: current schema (surface markers, run preferences)", "| Surface |" in t and "## Run preferences" in t)
@@ -296,6 +302,10 @@ for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks
     hit = re.search(r"declare -A|\bmapfile\b|\breadarray\b|,,\}|\^\^\}", code_only)
     check(f"{label}: bash 3.2 portable (no declare -A, mapfile, readarray, case-conversion expansions)",
           hit is None, hit.group(0) if hit else "")
+    # bash 3.2 under set -u calls an empty "$@" unbound: every loop over the arguments uses ${1+"$@"}
+    bare = re.findall(r'^\s*for \w+ in "\$@"', code_only, re.MULTILINE)
+    check(f"{label}: loops over the arguments survive an empty \"$@\" on bash 3.2 (${{1+\"$@\"}})",
+          not bare, "; ".join(bare))
 
 # 12. Rename, and no project leakage in anything that ships as behaviour
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},

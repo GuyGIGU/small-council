@@ -393,28 +393,28 @@ with tempfile.TemporaryDirectory() as tmp:
           and out.count(" · every run") == 9, out)
     bullets = ("# Conventions — settled decisions\n\nProvenance: review 2026-07-28 (9 seats). Adopted 2026-07-28.\n\n"
                "**Accepted patterns — stop flagging these. They are deliberate.**\n\n"
-               "- **AP-1 — `player.gd` stays whole.** It is not a god object. It reads\n  top-to-bottom. *(Structure, unprompted.)*\n"
-               "- **AP-2 — Global group scans are the right answer to \"who else is here\"** at\n  this scale. Do not propose a registry.\n\n"
+               "- **AP-1 — `widget.ext` stays whole.** It is not a god object. It reads\n  top-to-bottom. *(Structure, unprompted.)*\n"
+               "- **AP-2 — A whole-list scan is the right answer to \"who else is here\"** at\n  this scale. Do not propose an index.\n\n"
                "**Enforced conventions — always/never.**\n\n"
-               "- **EC-1 — Never store a node reference across frames without\n  `is_valid`.** Prefer not storing it. A freed object is\n  *not* null.\n"
-               "- **EC-2 — Every deadline in a test is in seconds, never a frame\n  count.** Run suites with `--fixed-fps 60`.\n  **Scope:** tests/**\n\n"
+               "- **EC-1 — Never keep a handle across ticks without\n  `is_live`.** Prefer not keeping it. A released handle is\n  *not* null.\n"
+               "- **EC-2 — Every deadline in a test is in seconds, never a tick\n  count.** Run suites with `--fixed-rate 60`.\n  **Scope:** tests/**\n\n"
                "---\n\n## Adopted 2026-07-30 — review 2026-07-30-2257\n\nProvenance: 11 seats, 98 raw findings.\n\n"
                "**Accepted patterns — stop flagging these.**\n\n"
                "- **AP-3 — Recast seats are the norm here, not an exception.** A seat whose\n  domain is absent is re-aimed.\n\n"
                "**Enforced conventions — always/never.**\n\n"
-               "- **EC-3 — A PERMUTATION OVER IDENTICAL ELEMENTS IS THE IDENTITY, AND AN ARM BUILT ON ONE\n"
-               "  CAN NEVER FAIL.** The arm reported **+0.00 four times**, and **what hid it is\n  that it gave the expected answer**.\n\n"
-               "- **EC-4 — EVERY `ext_resource` CARRIES A `uid://`.** Most lines were path-only.\n")
+               "- **EC-3 — A CHECK THAT CANNOT FAIL PROVES NOTHING, AND ONE BUILT ON A CONSTANT\n"
+               "  NEVER FAILS.** The run reported **+0.00 four times**, and **what hid it is\n  that it gave the expected answer**.\n\n"
+               "- **EC-4 — EVERY `linked_asset` CARRIES AN `id://`.** Most lines were path-only.\n")
     write(ms_conv, bullets)
     code, out, _ = council(ms, "memory")
     check("memory: a file of bold bullet entries under bold labels and dated sections reads whole",
-          all(e in out for e in ["AP-1 · `player.gd` stays whole · every run",
-                                 "AP-2 · Global group scans are the right answer to \"who else is here\" · every run",
-                                 "EC-1 · Never store a node reference across frames without `is_valid` · every run",
-                                 "EC-2 · Every deadline in a test is in seconds, never a frame count · scope: tests/**",
+          all(e in out for e in ["AP-1 · `widget.ext` stays whole · every run",
+                                 "AP-2 · A whole-list scan is the right answer to \"who else is here\" · every run",
+                                 "EC-1 · Never keep a handle across ticks without `is_live` · every run",
+                                 "EC-2 · Every deadline in a test is in seconds, never a tick count · scope: tests/**",
                                  "AP-3 · Recast seats are the norm here, not an exception · every run",
-                                 "EC-3 · A PERMUTATION OVER IDENTICAL ELEMENTS IS THE IDENTITY, AND AN ARM BUILT ON ONE CAN NEVER FAIL · every run",
-                                 "EC-4 · EVERY `ext_resource` CARRIES A `uid://` · every run"]) and "WARNING" not in out, out)
+                                 "EC-3 · A CHECK THAT CANNOT FAIL PROVES NOTHING, AND ONE BUILT ON A CONSTANT NEVER FAILS · every run",
+                                 "EC-4 · EVERY `linked_asset` CARRIES AN `id://` · every run"]) and "WARNING" not in out, out)
     code, out, _ = council(ms, "memory", "select", "tests/test_x.gd")
     check("memory select: ... and serves it", "1 scoped and 6 every-run entries of 7 apply" in out, out)
     write(ms_conv, "# m\n| Id | Rule |\n|---|---|\n| AP-1 | tables are not entries |\n")
@@ -429,13 +429,13 @@ with tempfile.TemporaryDirectory() as tmp:
 
     root_shape = ("# Project Conventions\n\nAccepted patterns and enforced conventions from council reviews. The council reads this file\n"
                   "before every review.\n\n---\n\n## Accepted Patterns\n\nThese are intentional — do not flag as findings.\n\n"
-                  "### AP-1: `eu_stocks` key vs `eu_equities` type split\n**Pattern:** The default market key is `eu_stocks`; its archive type is\n"
-                  "`eu_equities`. Do NOT propose migrating.\n**Origin:** Review 2026-06-30\n**Rationale:** A live migration for cosmetic gain.\n\n"
-                  "### AP-2: `load_prices` cold/incremental/repair state machine\n**Pattern:** a sequence of named helpers.\n**Origin:** Review 2026-06-30\n\n"
+                  "### AP-1: `main_list` key vs `main_items` type split\n**Pattern:** The default key is `main_list`; its stored type is\n"
+                  "`main_items`. Do NOT propose migrating.\n**Origin:** Review 2026-06-30\n**Rationale:** A live migration for cosmetic gain.\n\n"
+                  "### AP-2: `load_rows` cold/incremental/repair state machine\n**Pattern:** a sequence of named helpers.\n**Origin:** Review 2026-06-30\n\n"
                   "---\n\n## Enforced Conventions\n\n### EC-1: One source for the default scope\n**Convention:** every caller reads one place.\n\n"
                   "### EC-2: Fold twin code paths, never copy\n**Convention:** one path.\n\n---\n\n"
-                  "### AP-3: The two reads are DIFFERENT bases — by design\n**Pattern:** they may disagree.\n\n"
-                  "### EC-3: `/live-risk` degrades, never 500s\n**Convention:** an empty answer, not an error.\n")
+                  "### AP-3: The two reads use DIFFERENT sources — by design\n**Pattern:** they may disagree.\n\n"
+                  "### EC-3: `/status` degrades, never 500s\n**Convention:** an empty answer, not an error.\n")
     rs = new_repo(tmp, "rootmem")
     rs_cfg = os.path.join(rs, ".council", "council.config.md")
     write(rs_cfg, "# c\n## Stack\n- conventions: PEP 8 + ruff\n## Memory\n- conventions: .council/conventions.md\n")
@@ -443,11 +443,11 @@ with tempfile.TemporaryDirectory() as tmp:
         f.write(root_shape)
     code, out, err = council(rs, "memory", "select", "core/pipeline/downloads.py")
     check("memory: a CRLF file at the repo root reads whole when the config names a memory file that doesn't exist — and says so",
-          code == 0 and "0 scoped and 6 every-run entries of 6 apply" in out and "AP-3 · The two reads are DIFFERENT bases — by design · every run" in out
+          code == 0 and "0 scoped and 6 every-run entries of 6 apply" in out and "AP-3 · The two reads use DIFFERENT sources — by design · every run" in out
           and "doesn't exist — reading" in err and "PEP" not in out + err, out + err)
     write(rs_cfg, "# c\n## Memory\n- conventions: /conventions.md\n")
     code, out, err = council(rs, "memory")
-    check("memory: a configured /conventions.md is the repo's root one", code == 0 and "EC-3 · `/live-risk` degrades, never 500s" in out and not err.strip(), out + err)
+    check("memory: a configured /conventions.md is the repo's root one", code == 0 and "EC-3 · `/status` degrades, never 500s" in out and not err.strip(), out + err)
 
     # Memory: only settled entries are served
     msec = new_repo(tmp, "memsections")
@@ -493,6 +493,37 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(msc, "memory")
     check("memory: flags a scope item that matches no file, seat or mode",
           '"webapp/fronted/**" (EC-13) matches no file, seat or mode' in out and not any(f"({e})" in out for e in ["EC-1", "EC-3", "EC-5", "EC-6"]), out)
+
+    # Scopes and keys as projects really write them: a folder with a blank in its name, a Godot
+    # res:// path, the absolute path Git Bash prints, and "." for the whole tree.
+    msp = new_repo(tmp, "memspaced")
+    write(os.path.join(msp, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(msp, "docs", "My Notes", "a.md"), "x\n")
+    write(os.path.join(msp, "scripts", "fighter.gd"), "x\n")
+    write(os.path.join(msp, "scripts", "ai", "role_def.gd"), "x\n")
+    write(os.path.join(msp, "webapp", "backend", "main.py"), "x\n")
+    git(msp, "add", "-A")
+    git(msp, "commit", "-q", "-m", "i")
+    write(os.path.join(msp, ".council", "conventions.md"), "# m\n## Enforced Conventions\n"
+          "### EC-1: a folder with a blank in its name\n**Scope:** docs/My Notes/**\n"
+          "### EC-2: a res:// path\n**Scope:** res://scripts/fighter.gd\n"
+          "### EC-3: a res:// glob\n**Scope:** `res://scripts/ai/**`\n"
+          "### EC-4: two globs, blank-separated\n**Scope:** webapp/backend/** docs/**\n")
+    code, out, _ = council(msp, "memory", "select", os.path.join("docs", "My Notes", "a.md"))
+    check("memory select: a scope path with a blank in it still matches", "EC-1 ·" in out, out)
+    code, out, _ = council(msp, "memory", "select", "scripts/fighter.gd", "scripts/ai/role_def.gd")
+    check("memory select: a Godot res:// scope matches the file it names", "EC-2 ·" in out and "EC-3 ·" in out, out)
+    code, out, _ = council(msp, "memory")
+    check("memory: and none of those is called a spelling mistake", "matches no" not in out, out)
+    write(os.path.join(msp, ".council", "reviews", "2026-09-01-r.md"), "---\nareas: res://scripts/ai/**\n---\n# r\n")
+    code, out, _ = council(msp, "prior", "scripts/ai/role_def.gd")
+    check("prior: a res:// area matches the file it names", "2026-09-01-r.md" in out, out)
+    code, out, _ = council(msp, "memory", "select", ".")
+    check("memory select: '.' is the whole tree — every scoped entry applies", "4 scoped" in out, out)
+    if re.match(r"^[A-Za-z]:", slash(msp)):                  # Windows: the absolute form Git Bash prints
+        unix = "/" + slash(msp)[0].lower() + slash(msp)[2:]
+        code, out, _ = council(msp, "memory", "select", unix + "/webapp/backend/main.py")
+        check("memory select: a /c/… absolute key is the same file as C:/…", "EC-4 ·" in out, out)
     mpf = new_repo(tmp, "memperf")
     write(os.path.join(mpf, ".council", "council.config.md"), "# c\n")
     pscopes = ["core/structure/**, mckinney", "webapp/backend/**/*.py, leach", "**/tests/**, beck"]
@@ -537,6 +568,53 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(nogit, "memory", "check")
     check("memory check: outside git, a name that is in the code is not stale", code == 1 and "EC-1" not in out
           and "STALE  EC-2" in out and "1 stale anchor(s) across 2 entries" in out, out)
+
+    # Anchor forms real projects write. A dotted name that ends in something that looks like a file
+    # extension (process.env), a method inside a file (path::Class.method), a pytest id, and a path
+    # and a symbol joined by an arrow, a colon or a blank: each is checked, none is called gone.
+    man2 = new_repo(tmp, "anchors2")
+    write(os.path.join(man2, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(man2, "core", "x.py"), "class Universe:\n    def registry(self):\n        pass\n\ndef fetch_data(t, s):\n    return None\n")
+    write(os.path.join(man2, "web", "src", "client.js"), "const url = import.meta.env.VITE_API;\nconst key = process.env.API_KEY;\n")
+    write(os.path.join(man2, "api", "routes.py"), "from flask import request\ndef create():\n    body = request.json\n    return body\n")
+    write(os.path.join(man2, "tests", "test_x.py"), "class TestFoo:\n    def test_bar(self):\n        pass\n")
+    write(os.path.join(man2, "scripts", "fighter.gd"), "func _teardown_move():\n\tpass\n")
+    git(man2, "add", "-A")
+    git(man2, "commit", "-q", "-m", "i")
+    live2 = ["core/x.py::Universe.registry", "tests/test_x.py::TestFoo::test_bar", "`Universe.registry()` in `core/x.py`",
+             "`core/x.py` — `fetch_data`", "core/x.py → fetch_data", "core/x.py `fetch_data`",
+             "scripts/fighter.gd:_teardown_move", "import.meta.env", "process.env", "request.json"]
+    write(os.path.join(man2, ".council", "conventions.md"), "# m\n## Accepted Patterns\n" +
+          "".join(f"### AP-{i}: live {i}\n**Anchor:** {a}\n" for i, a in enumerate(live2, 1)) +
+          "## Enforced Conventions\n### EC-1: a method that is gone\n**Anchor:** core/x.py::Universe.vanished\n"
+          "### EC-2: a dotted name that is gone\n**Anchor:** request.vanished\n")
+    code, out, _ = council(man2, "memory", "check")
+    check("memory check: path::Class.method, pytest ids, process.env and path → symbol hold while the code does",
+          code == 1 and "AP-" not in out and "2 stale anchor(s) across 12 entries" in out, out)
+    check("memory check: ... and the ones that really went are still named once each",
+          "STALE  EC-1 — nothing in core/x.py is named Universe.vanished any more" in out
+          and "STALE  EC-2 — nothing in the code is named request.vanished any more" in out, out)
+    # Speed: one search for every name, not one per anchor — a real project's memory, with anchors on
+    # every entry used to take minutes, past the 2-minute limit a tool call has.
+    apf = new_repo(tmp, "anchorperf")
+    write(os.path.join(apf, ".council", "council.config.md"), "# c\n")
+    for d in range(1, 11):
+        for f in range(1, 21):
+            write(os.path.join(apf, "webapp", f"mod{d}", f"f{f}.py"),
+                  f"class Thing{d}_{f}:\n    def run_{f}(self):\n        return {f}\n")
+    git(apf, "add", "-A")
+    git(apf, "commit", "-q", "-m", "i")
+    write(os.path.join(apf, ".council", "conventions.md"), "# m\n## Enforced Conventions\n" + "".join(
+        f"### EC-{i}: rule {i}\n**Anchor:** webapp/mod{(i % 10) + 1}/f1.py:2, Thing{(i % 10) + 1}_1.run_1, "
+        f"services/f{(i % 10) + 1}.py::run_1\n" for i in range(1, 70)))
+    t0 = time.time()
+    try:
+        code, out, _ = council(apf, "memory", "check")
+    except subprocess.TimeoutExpired:
+        code, out = -1, "timed out after 120 s"
+    took = time.time() - t0
+    check("memory check: a memory with an anchor on every entry is checked in seconds, not minutes",
+          code == 1 and "69 stale anchor(s) across 69 entries" in out and took < 60, f"{took:.1f} s: {out}")
 
     # Memory: with a run open, the paths given add to the run's own keys
     msel = new_repo(tmp, "memsel")
@@ -615,8 +693,22 @@ with tempfile.TemporaryDirectory() as tmp:
         ("web/scaner.py", "missing-file"), ("web/ghost/", "missing-file"), ("web/missing.py:handle", "missing-file"),
         ("web/main.py::run_scan", "no-line (the path exists)"), ("web/", "no-line (the path exists)"),
         ("`curl -s localhost:8000/health` → 200", "n/a (command)"),
-        ("https://example.com/docs/page.html#L5", "n/a (link)"), ("the auth layer", "n/a (no path)"), ("-", "n/a"),
+        ("https://example.com/docs/page.html#L5", "n/a (link)"),
+        ("web/main.py:10 and 9999", "bad-line (the file has 700 lines)"),
+        ("web/main.py:10, line 9999", "bad-line (the file has 700 lines)"),
+        ("web/db.py:5 & 9999", "bad-line (the file has 30 lines)"),
+        ("web/main.py:10 and 20", "ok"), ("web/main.py:10 or 12", "ok"), ("web/main.py: line 10", "ok"),
+        ("web/main.py lines 10-12", "ok"), ("web/main.py:  12", "ok"),
+        ("web/main.py:5 and 9 other callers", "ok"), ("web/main.py:40 (extract to web/lib/retry.py)", "ok"),
+        ("ghost.py lines 10-12", "missing-file"),
+        ("the auth layer", "no-citation (a review item needs a path:line)"),
+        ("-", "no-citation (a review item needs a path:line)"),
+        ("n/a", "no-citation (a review item needs a path:line)"),
     ]
+    # The summary's own arithmetic, from the table above: broken, path-but-no-line, and not checked.
+    n_broken = sum(1 for _, w in shapes if not w.startswith(("ok", "n/a", "no-line", "deleted"))) + 1
+    n_noline = sum(1 for _, w in shapes if w.startswith("no-line"))
+    n_unchecked = sum(1 for _, w in shapes if w.startswith("n/a"))
     write(os.path.join(crun, "synthesis.md"), "# Synthesis\n## Kept\n" + "".join(
         f"{i} · P2 · Principle 1 · {c} · shape {i} · from: x#{i}\n" for i, (c, _) in enumerate(shapes, 1))
         + f"{len(shapes) + 1} · P2 · OWASP A01 | Access control · web/db.py:99 · a pipe inside the principle\n")
@@ -629,8 +721,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("check: a pipe inside the principle doesn't shift the fields — the citation is still read",
           lines.get(f"synthesis#{len(shapes) + 1}", "").endswith("web/db.py:99  bad-line (the file has 30 lines)"), out)
     check("check: the summary counts broken, line-less and unchecked citations apart, and fails",
-          code == 1 and f"check: {len(shapes) + 1} items, 9 broken citation(s) · 2 name a path but no line"
-          " · 4 not checked (a command, a link or no path)" in out, out)
+          code == 1 and f"check: {len(shapes) + 1} items, {n_broken} broken citation(s) · {n_noline} name a path but no line"
+          f" · {n_unchecked} not checked (a command, a link, an area or no path)" in out, out)
     write(os.path.join(crun, "brief.md"), "# Brief\n## Seats\n### shapes — A\n- ref: none\n### map — B\n- ref: none\n"
           "### res — C\n- ref: none\n")
     write(os.path.join(crun, "seats", "shapes.md"), "# Shapes — x (council-review)\nref: none\n## Index\n"
@@ -649,6 +741,76 @@ with tempfile.TemporaryDirectory() as tmp:
           and re.search(r"^res\s+ok\s+2/8\s+\d+\s+n/a\s+1/1\s+- · unchecked\(1\)$", out, re.MULTILINE) is not None, out)
     check("collect: when only citations are wrong it says fix them in place, not re-dispatch",
           code == 1 and "collect: only citations are wrong" in out and "re-dispatch" not in out, out)
+
+    # A plan, research or post-game cites "<path or area>": a name that is on disk nowhere is an area,
+    # or a file the work would still write — never a broken citation. A review item must name a place.
+    areas = new_repo(tmp, "areas")
+    write(os.path.join(areas, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(areas, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(areas, "src", "auth", "session.py"), "".join(f"l{i}\n" for i in range(1, 11)))
+    git(areas, "add", "-A")
+    git(areas, "commit", "-q", "-m", "base")
+    code, arun, _ = council(areas, "run", "open", "council-plan")
+    arun = arun.strip()
+    write(os.path.join(arun, "brief.md"), "# Brief\n## Seats\n### fowler — Structure\n- ref: none\n")
+    write(os.path.join(arun, "seats", "fowler.md"), "# Fowler — Structure (council-plan)\nref: none\n## Index\n"
+          "1 · must · P2 · src/auth/tokens.py · a module still to write · t\n"
+          "2 · should · P4 · src/auth/session.py:3 · one seam · t\n"
+          "3 · could · P1 · n/a · name the flag once · t\n"
+          "4 · could · P1 · CI/CD · the pipeline · t\n"
+          "5 · could · P1 · tests/test_*.py · a glob · t\n"
+          "6 · could · P1 · asyncio.gather · a library call · t\n")
+    code, out, _ = council(areas, "collect")
+    check("collect: a plan's areas, globs and files still to write are not broken citations",
+          code == 0 and "all 1 seats in order" in out and "unchecked(5)" in out, out)
+    code, out, _ = council(areas, "check", os.path.join(arun, "seats", "fowler.md"))
+    check("check: ... and check says what they are instead of missing-file",
+          code == 0 and "nothing on disk by that name" in out and "5 not checked" in out and "missing-file" not in out, out)
+    council(areas, "run", "close", "--status", "abandoned")
+    nocite = new_repo(tmp, "nocite")
+    write(os.path.join(nocite, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(nocite, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(nocite, "a.py"), "".join(f"l{i}\n" for i in range(1, 10)))
+    git(nocite, "add", "-A")
+    git(nocite, "commit", "-q", "-m", "base")
+    code, nrun, _ = council(nocite, "run", "open", "council-review")
+    nrun = nrun.strip()
+    write(os.path.join(nrun, "brief.md"), "# Brief\n## Seats\n### hunt — Security\n- ref: none\n")
+    write(os.path.join(nrun, "seats", "hunt.md"), "# Hunt — Security (council-review)\nref: none\n## Index\n"
+          "1 · P1 · Principle 3 · Login has no rate limit\n2 · P2 · Principle 1 · n/a · Tokens never expire\n")
+    code, out, _ = council(nocite, "collect")
+    check("collect: a review item with no path:line is a hole in its seat, four fields or not",
+          code == 1 and "broken-cites" in row(out, "hunt"), out)
+    code, out, _ = council(nocite, "check", os.path.join(nrun, "seats", "hunt.md"))
+    check("check: ... and check names it: a review item needs a path:line",
+          code == 1 and out.count("no-citation (a review item needs a path:line)") == 2, out)
+
+    # A file the change only renamed: the diff calls every line new, blame knows better
+    ren = new_repo(tmp, "renamed")
+    write(os.path.join(ren, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(ren, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(ren, "app", "moved.py"), "".join(f"old line {i}\n" for i in range(1, 41)))
+    git(ren, "add", "-A")
+    git(ren, "commit", "-q", "-m", "base")
+    git(ren, "checkout", "-q", "-b", "feature")
+    git(ren, "mv", "app/moved.py", "app/renamed.py")
+    git(ren, "commit", "-q", "-m", "move")
+    code, rrun, _ = council(ren, "run", "open", "council-review")
+    rrun = rrun.strip()
+    council(ren, "index")
+    write(os.path.join(rrun, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P2 · Naming · app/renamed.py:10 · an old bug in a file the change only moved · from: hunt#1\n")
+    code, out, _ = council(ren, "check")
+    check("check: in a file the change only renamed, an untouched line stays 'pre-existing'",
+          code == 0 and "app/renamed.py:10  ok · pre-existing" in out, out)
+    if re.match(r"^[A-Za-z]:", slash(ren)):          # Windows: /c/… and a lower-case drive name one file
+        unix = "/" + slash(ren)[0].lower() + slash(ren)[2:]
+        write(os.path.join(rrun, "synthesis.md"), "# Synthesis\n## Kept\n"
+              f"1 · P2 · Naming · {unix}/app/renamed.py:10 · the path as Git Bash prints it · from: hunt#1\n"
+              f"2 · P2 · Naming · {slash(ren).lower()}/app/renamed.py:10 · a lower-case drive · from: hunt#2\n")
+        code, out, _ = council(ren, "check")
+        check("check: a citation written /c/… or with a lower-case drive keeps its origin",
+              code == 0 and out.count("ok · pre-existing") == 2 and "origin unknown" not in out, out)
 
     # Code the change deleted or moved: a finding about it belongs to the change, never to the past
     moved = new_repo(tmp, "moved")
@@ -696,23 +858,29 @@ with tempfile.TemporaryDirectory() as tmp:
     # Old lines never read as new for technical reasons: a SHA-256 repository, a line-ending rewrite
     sha = os.path.join(tmp, "sha256")
     os.makedirs(sha)
-    git(sha, "init", "-q", "--object-format=sha256")
-    git(sha, "symbolic-ref", "HEAD", "refs/heads/main")
-    write(os.path.join(sha, ".council", "council.config.md"), "# Council config\n")
-    write(os.path.join(sha, ".council", ".gitignore"), "runs/\n")
-    write(os.path.join(sha, "a.py"), "l1\nl2\nl3\nl4\nl5\n")
-    git(sha, "add", "-A")
-    git(sha, "commit", "-q", "-m", "base")
-    git(sha, "checkout", "-q", "-b", "feature")
-    append(os.path.join(sha, "a.py"), "l6\nl7\n")
-    git(sha, "commit", "-q", "-am", "more")
-    code, srun, _ = council(sha, "run", "open", "council-review")
-    council(sha, "index")
-    write(os.path.join(srun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
-          "1 · P3 · P · a.py:2 · old · from: x#1\n2 · P3 · P · a.py:7 · new · from: x#2\n")
-    code, out, _ = council(sha, "check")
-    check("check: origins hold in a SHA-256 repository",
-          "synthesis#1  a.py:2  ok · pre-existing" in out and "synthesis#2  a.py:7  ok · introduced" in out, out)
+    try:                                    # git < 2.29 has no SHA-256 repositories: skip that one check
+        git(sha, "init", "-q", "--object-format=sha256")
+        sha256 = True
+    except subprocess.CalledProcessError:
+        sha256 = False
+        print("[SKIP] check: origins hold in a SHA-256 repository (this git has no --object-format)")
+    if sha256:
+        git(sha, "symbolic-ref", "HEAD", "refs/heads/main")
+        write(os.path.join(sha, ".council", "council.config.md"), "# Council config\n")
+        write(os.path.join(sha, ".council", ".gitignore"), "runs/\n")
+        write(os.path.join(sha, "a.py"), "l1\nl2\nl3\nl4\nl5\n")
+        git(sha, "add", "-A")
+        git(sha, "commit", "-q", "-m", "base")
+        git(sha, "checkout", "-q", "-b", "feature")
+        append(os.path.join(sha, "a.py"), "l6\nl7\n")
+        git(sha, "commit", "-q", "-am", "more")
+        code, srun, _ = council(sha, "run", "open", "council-review")
+        council(sha, "index")
+        write(os.path.join(srun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+              "1 · P3 · P · a.py:2 · old · from: x#1\n2 · P3 · P · a.py:7 · new · from: x#2\n")
+        code, out, _ = council(sha, "check")
+        check("check: origins hold in a SHA-256 repository",
+              "synthesis#1  a.py:2  ok · pre-existing" in out and "synthesis#2  a.py:7  ok · introduced" in out, out)
     eol = new_repo(tmp, "eol")
     write(os.path.join(eol, ".council", "council.config.md"), "# Council config\n")
     write(os.path.join(eol, ".council", ".gitignore"), "runs/\n")
@@ -752,6 +920,42 @@ with tempfile.TemporaryDirectory() as tmp:
     write(usyn, "# Synthesis\n## Kept\n## Cut\n")
     code, out, _ = council(cites, "check")
     check("check: a synthesis with no items and no (none) line is not a pass", code == 1 and "nothing was checked" in out, out)
+
+    # Items grouped under a heading the worker chose — by area, by file, with an emoji — are still
+    # items: they count towards the cap, and check reads them instead of saying nothing was checked.
+    grp = new_repo(tmp, "grouped")
+    write(os.path.join(grp, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(grp, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(grp, "a.py"), "".join(f"l{i}\n" for i in range(1, 10)))
+    git(grp, "add", "-A")
+    git(grp, "commit", "-q", "-m", "base")
+    code, grun, _ = council(grp, "run", "open", "council-review")
+    grun = grun.strip()
+    write(os.path.join(grun, "brief.md"), "# Brief\n## Seats\n### lens — Lane\n- ref: none\n- cap: 3\n")
+    write(os.path.join(grun, "seats", "lens.md"), "# Lens — Lane (council-review)\nref: none\n## Index\n"
+          "### Auth\n1 · P1 · P · a.py:1 · x\n2 · P1 · P · a.py:2 · y\n"
+          "### `a.py` storage\n3 · P2 · P · a.py:3 · z\n"
+          "### Nice to have\n4 · P3 · P · a.py:4 · w\n5 · P3 · P · a.py:5 · v\n\n### 1. x\nThe body · with a dot.\n")
+    code, out, _ = council(grp, "collect")
+    check("collect: items grouped under headings of the worker's own choosing are counted, not called an empty Index",
+          code == 1 and "empty-index" not in out and re.search(r"^lens\s+ok\s+5/3\s+\d+\s+n/a\s+5/5\s+- · over-cap$",
+                                                              row(out, "lens")) is not None, out)
+    write(os.path.join(grun, "synthesis.md"), "# Synthesis\n## KEPT\n### Security\n"
+          "1 · P1 · P · a.py:1 · a real one · from: lens#1\n"
+          "   - 3 callers reach it · origin: introduced\n"
+          "2 · P2 · P · a.py:2 · another · from: lens#2\n")
+    code, out, _ = council(grp, "check")
+    check("check: '## KEPT', a group heading and an indented note under an item are all read",
+          code == 0 and "nothing was checked" not in out and "can't read" not in out
+          and "check: 2 items, 0 broken citation(s)" in out, out)
+    write(os.path.join(grun, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P1 · P · a.py:1 · a real one · from: lens#1\n2) P2 — no separators at all\n")
+    code, out, _ = council(grp, "check")
+    check("check: a line it can't read is counted as that, never as a broken citation",
+          code == 1 and "check: 1 items, 0 broken citation(s) · 1 item line(s) check can't read" in out, out)
+    code, out, _ = council(grp, "check", os.path.join(grun, "nope.md"))
+    check("check: a named file that doesn't exist says so once, and never 'nothing to check'",
+          code == 1 and "no such file" in out and "nothing to check" not in out, out)
     write(usyn, "# Synthesis\n## Kept\n(none) — the change only renames a file\n## Cut\n")
     code, out, _ = council(cites, "check")
     check("check: '(none)' under Kept is an honest empty result", code == 0 and "check: 0 items, 0 broken" in out, out)
@@ -796,6 +1000,55 @@ with tempfile.TemporaryDirectory() as tmp:
           "1 · moderate · inquiry · src/stats.py:2,7-9 · one claim cites a line and a range\n")
     write(os.path.join(seats2, "hollow.md"), "# Hollow — header only (council-research)\nref: none\nquestion: q\n## Index\n")
     write(os.path.join(seats2, "messy.md"), "# Messy — x (council-research)\nref: none\n## Index\n1) P2 — no separators at all\n")
+
+    # A section is read by what it calls itself, and an entry by its own marks: a heading's aside, a
+    # title that happens to say "retired", or a **Deprecated:** line about the code never drop a
+    # settled entry. The user settled these; silently withholding them is the failure this guards.
+    write(os.path.join(msec, ".council", "conventions.md"),
+          "# m\n## Accepted Patterns — intentional; never re-propose these\n"
+          "### AP-1: live one\n"
+          "### AP-2: Superseded verdict rows stay in the archive\n**Pattern:** kept for audit\n"
+          "### AP-3: The (retired) v1 route still answers 410\n**Pattern:** on purpose\n"
+          "## Enforced Conventions (replaces the deprecated STYLE.md)\n"
+          "### EC-1: Retired flags stay registered in the manifest\n**Rule:** never delete a flag row\n"
+          "### EC-2: Never call the old loader\n**Rule:** use load()\n"
+          "**Deprecated:** `load_v1()` — kept only for the migration script\n"
+          "### EC-3: accepted after a proposal\n**Status:** accepted (proposed 2026-07-01, approved 2026-07-02)\n"
+          "### EC-4: a superseded field that says no\n**Pattern:** x · **Superseded:** no\n"
+          "### Notes on the draft-flag protocol\nSome notes about EC-1.\n"
+          "### EC-5: after a note sub-heading\n**Rule:** y\n"
+          "## Decisions — each supersedes an older ADR\n### D-1: the user ruled\n")
+    code, out, _ = council(msec, "memory", "select", "x.py")
+    check("memory select: a settled section with 'propose' or 'deprecated' further along its heading still serves",
+          code == 0 and all(f"{i} ·" in out for i in ["AP-1", "AP-2", "AP-3", "EC-1", "EC-2", "EC-3", "EC-4", "EC-5", "D-1"])
+          and "9 every-run entries of 9 apply" in out and "retired or not yet accepted" not in out, out)
+    write(os.path.join(msec, ".council", "conventions.md"),
+          "# Accepted Patterns\n## AP-1: live\n# Rejected\n## AP-2: the user said no\n# Retired\n### EC-3: withdrawn rule\n")
+    code, out, _ = council(msec, "memory", "select", "x.py")
+    check("memory select: with #-level sections, a '# Rejected' or '# Retired' one is not served either",
+          "AP-1 ·" in out and "AP-2" not in out and "EC-3" not in out
+          and "1 every-run entries of 1 apply" in out, out)
+    write(os.path.join(msec, ".council", "conventions.md"),
+          "# m\n## Enforced Conventions\n### EC-32: An EC-17 cascade carries an assertion\n"
+          "**Convention:** it extends two rules:\n- **EC-17 cascade** — the real flag path\n"
+          "- **EC-9 verdicts** — stay pinned\n**Scope:** webapp/backend/**\n"
+          "### EC-40: the old endpoint\n**Rule:** clients call /risk\n"
+          "- **EC-41 replaces this** for batch callers\n**Retired:** 2026-09-10 — superseded by EC-41\n")
+    code, out, _ = council(msec, "memory")
+    check("memory: a bold-id bullet inside a heading entry is that entry's body, not an entry of its own",
+          "EC-32 · An EC-17 cascade carries an assertion · scope: webapp/backend/**" in out
+          and "EC-40 · the old endpoint · not served (marked retired)" in out
+          and not any(f"{i} ·" in out for i in ["EC-17", "EC-9", "EC-41"]), out)
+    check("memory: ... and it says which lines it could not read as entries",
+          "not read" in out and "EC-17" in out and "EC-41" in out, out)
+    write(os.path.join(msec, ".council", "conventions.md"),
+          "# m\n## Enforced Conventions\n1. **EC-1 — a numbered entry.** never X\n"
+          "2. **EC-2 — another.** never Y\n   **Scope:** src/**\n- EC-3: a plain bullet — never Z\n")
+    code, out, err = council(msec, "memory", "select", "src/a.py")
+    check("memory select: numbered bold entries are read like bullet ones",
+          "EC-1 ·" in out and "EC-2 ·" in out and "1 scoped and 1 every-run entries of 2 apply" in out, out)
+    check("memory select: ... and a plain bullet that names an id is warned about, never dropped in silence",
+          "EC-3" in err and "not read" in err, err)
     code, out, _ = council(repo, "collect", "--run", run2)
     check("collect: a paired seat proves both reference docs", re.search(r"^pair\s+ok\s+1/4\s+\d+\s+ok\s+1/1", out, re.MULTILINE) is not None, out)
     check("collect: a list-style index line counts; prose under the Index is ignored",
@@ -856,7 +1109,7 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 1 and re.search(r"^s1\s+ok\s+5/3\s+\d+\s+n/a\s+5/5\s+- · over-cap$", row(out, "s1")) is not None, out)
     card = os.path.join(lone, ".council", "cards", "hunt.md")
     write(card, "# Hunt — Security card for eval\nsource: x\n")
-    for key in ("- **ref:** ", "ref: ", "- Ref: "):
+    for key in ("- **ref:** ", "ref: ", "- Ref: ", "- refs: ", "- reference: ", "- ref : ", "  - ref: "):
         code, out = lone_collect(key + card, "# S\nref: I did not open the card\n## Index\n" + one)
         check(f"collect: a brief's ref line written '{key.strip()}' is still checked",
               code == 1 and "MISMATCH" in row(out, "s1"), out)
@@ -867,6 +1120,15 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and re.search(r"^s1\s+ok\s+1/8\s+\d+\s+ok\s", row(out, "s1")) is not None, out)
     code, out = lone_collect(f"- ref: {design}", "# S\nquestion: q\n## Index\n" + one)
     check("collect: a seat with no ref: line never passes the proof of reading",
+          code == 1 and "MISMATCH" in row(out, "s1"), out)
+
+    heb = os.path.join(lone, "HEBREW.md")
+    write(heb, "# \u05de\u05d3\u05e8\u05d9\u05da \u05d0\u05d1\u05d8\u05d7\u05d4\nbody\n")
+    code, out = lone_collect(f"- ref: {heb}", "# S\nref: \u05de\u05d3\u05e8\u05d9\u05da \u05d0\u05d1\u05d8\u05d7\u05d4\n## Index\n" + one)
+    check("collect: a reference doc whose title has no Latin letters can still be proved",
+          code == 0 and re.search(r"^s1\s+ok\s+1/8\s+\d+\s+ok\s", row(out, "s1")) is not None, out)
+    code, out = lone_collect(f"- ref: {heb}", "# S\nref: I did not open it\n## Index\n" + one)
+    check("collect: ... and a worker that did not copy that title is still a MISMATCH",
           code == 1 and "MISMATCH" in row(out, "s1"), out)
 
     def sat_out(r, ghost=False):
@@ -937,6 +1199,41 @@ with tempfile.TemporaryDirectory() as tmp:
     code, _, err = council(nomem, "memory")
     check("memory: ... and memory says the same", code == 2 and "docs/memory.md" in err and "doesn't exist" in err, err)
 
+    # A blank .council/conventions.md beside a memory file full of entries: every command says so, so
+    # a project's settled decisions can never sit unread in silence.
+    two = new_repo(tmp, "twomem")
+    write(os.path.join(two, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(two, ".council", "conventions.md"), read(ref(os.path.join("templates", "conventions.md"))))
+    write(os.path.join(two, "conventions.md"), "# m\n## Accepted Patterns\n### AP-1: the real one\n### AP-2: and another\n")
+    code, out, err = council(two, "memory")
+    check("memory: a second memory file with entries the council never reads is called out",
+          "a second memory file" in err and "2 entries" in err, out + err)
+    code, out, err = council(two, "memory", "select", "x.py")
+    check("memory select: ... and select says it too, where a brief would see it",
+          "a second memory file" in err, out + err)
+    code, out, _ = council(two, "doctor")
+    check("doctor: ... and so does doctor", "a second memory file" in out, out)
+    # The same file, named in the config the other way round, is not a second file
+    write(os.path.join(two, ".council", "conventions.md"), "# m\n## Accepted Patterns\n### AP-1: the only one\n")
+    os.remove(os.path.join(two, "conventions.md"))
+    conf_path = slash(os.path.join(two, ".council", "conventions.md"))
+    if re.match(r"^[A-Za-z]:", conf_path):
+        conf_path = "/" + conf_path[0].lower() + conf_path[2:]
+    write(os.path.join(two, ".council", "council.config.md"), f"# c\n## Memory\n- conventions: {conf_path}\n")
+    code, out, _ = council(two, "doctor")
+    check("doctor: the same file named as /c/… is not 'a second memory file'",
+          "a second memory file" not in out and "AP-1" not in out, out)
+    spaced = os.path.join(tmp, "My Notes Project")
+    os.makedirs(spaced)
+    git(spaced, "init", "-q")
+    git(spaced, "symbolic-ref", "HEAD", "refs/heads/main")
+    write(os.path.join(spaced, "conventions.md"), "# m\n## Accepted Patterns\n### AP-1: one\n")
+    write(os.path.join(spaced, ".council", "council.config.md"),
+          f"# c\n## Memory\n- conventions: \"{slash(spaced)}/conventions.md\"\n")
+    code, out, err = council(spaced, "memory")
+    check("memory: a configured absolute path with a blank in it is read whole, not cut at the blank",
+          code == 0 and "AP-1 · one" in out and "doesn't exist" not in err, out + err)
+
     # Close, and the legacy pointer
     write(os.path.join(run, "verify-1.md"), "# Verification — eval\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | median | CONFIRMED | traced; the guard does not make it REFUTED |\n| 2 | old lines | REFUTED | guarded upstream |\n")
@@ -994,6 +1291,38 @@ with tempfile.TemporaryDirectory() as tmp:
     check("ledger: 'from: a#1, #2', 'b#1,2', 'a#3 and b#3', a title holding 'from:', and verdicts as written all count",
           re.search(r"^hunt\s+1\s+4\s+4\s+0\s+4\s+30\s+0%", out, re.MULTILINE) is not None
           and re.search(r"^beck\s+1\s+3\s+3\s+0\s+3\s+20\s+0%", out, re.MULTILINE) is not None, out)
+
+    # Provenance as models write it: "hunt #1" with a blank, "beck 1, 3", a slash between two seats,
+    # a bracketed note that names another seat, and a "from:" introduced by a dash or a bracket. Each
+    # item of a seat counts once, however often it is named — this is the number the owner reads as
+    # "shipped", so counting a seat twice, or losing it, is the failure here.
+    led2 = new_repo(tmp, "ledger2")
+    write(os.path.join(led2, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(led2, ".council", ".gitignore"), "runs/\n")
+    write(os.path.join(led2, "a.py"), "".join(f"{i}\n" for i in range(1, 31)))
+    git(led2, "add", "-A")
+    git(led2, "commit", "-q", "-m", "a")
+    _, l2run, _ = council(led2, "run", "open", "council-review")
+    l2run = l2run.strip()
+    write(os.path.join(l2run, "brief.md"), "# Brief\n## Seats\n### hunt — Security\n- ref: none\n### beck — Tests\n- ref: none\n")
+    write(os.path.join(l2run, "seats", "hunt.md"), "# Hunt — Security (council-review)\nref: none\n## Index\n"
+          + "".join(f"{i} · P2 · P1 · a.py:{i} · h{i}\n" for i in range(1, 5)))
+    write(os.path.join(l2run, "seats", "beck.md"), "# Beck — Tests (council-review)\nref: none\n## Index\n"
+          + "".join(f"{i} · P2 · T1 · a.py:{i + 5} · b{i}\n" for i in range(1, 5)))
+    council(led2, "seat", "hunt", "done", "agent=a1", "tokens=30000")
+    council(led2, "seat", "beck", "done", "agent=a2", "tokens=20000")
+    write(os.path.join(l2run, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P2 · P1 · a.py:1 · a blank before the number · from: hunt #1\n"
+          "2 · P2 · P1 · a.py:2 · a bracketed note names a seat · from: beck#2 (merged with hunt#2)\n"
+          "3 · P2 · P1 · a.py:3 · bare numbers after the seat · from: beck 1, 3\n"
+          "4 · P2 · P1 · a.py:4 · a slash between seats · from: hunt#4/beck#4\n"
+          "5 · P2 · P1 · a.py:5 · an em dash before from — from: hunt#3\n"
+          "6 · P2 · P1 · a.py:6 · a bracketed from · (from: hunt#1)\n")
+    council(led2, "run", "close")
+    code, out, _ = council(led2, "ledger")
+    check("ledger: 'hunt #1', 'beck 1, 3', 'a#4/b#4', '(merged with hunt#2)' and '— from:' all count, each item once",
+          re.search(r"^hunt\s+1\s+4\s+4\s+0\s+0\s+30\s+100%", out, re.MULTILINE) is not None
+          and re.search(r"^beck\s+1\s+4\s+4\s+0\s+0\s+20\s+100%", out, re.MULTILINE) is not None, out)
     code, out, _ = council(repo, "run", "status")
     check("run status: nothing open after closing", "no open council runs" in out, out)
     code, out, _ = council(repo, "run", "status", "--all")
@@ -1194,7 +1523,8 @@ with tempfile.TemporaryDirectory() as tmp:
     write(os.path.join(qrun, "ask.md"), "# Ask — panel\nsource: said at the time\n## In your words\n"
           "The quote panel shouldn’t freeze when the feed drops.\n"
           "Show the last price in **bold** and keep the 5 minute chart.\nit must never place orders.\n"
-          f"Wire checkout with the key {fake_key} and email a receipt.\n")
+          f"Wire checkout with the key {fake_key} and email a receipt.\n"
+          "Keep `npm test` green and the 5 minute chart​ visible.\n")
     write(os.path.join(qrun, "synthesis.md"), "# Synthesis\n## Kept\n"
           '1 · must · ask · panel · no freeze · quote: "The quote panel shouldn\'t freeze when the feed drops."\n'
           '2 · must · ask · panel · bold · quote: "Show the last price in **bold** and keep the 5 minute chart."\n'
@@ -1204,7 +1534,12 @@ with tempfile.TemporaryDirectory() as tmp:
           '6 · must · Ask · orders · may trade · quote: "the app may place orders on its own"\n'
           '7 · should · asks · orders · a mistyped part · quote: "never place orders"\n'
           f'8 · must · ask · payments · the key · quote: "Wire checkout with the key {fake_key}"\n'
-          '9 · must · ask · payments · redacted · quote: "Wire checkout with the key [redacted] and email"\n')
+          '9 · must · ask · payments · redacted · quote: "Wire checkout with the key [redacted] and email"\n'
+          '10 · must · ask · orders · an em dash before quote — quote: "must never place orders"\n'
+          '11 · must · ask · orders · a bracketed quote (quote: "must never place orders")\n'
+          '12 · must · ask · orders · no blank after the mark ·quote: "must never place orders"\n'
+          '13 · must · ask · panel · a zero-width space in the request · quote: "the 5 minute chart visible"\n'
+          '14 · must · ask · panel · backticks dropped · quote: "Keep npm test green"\n')
     code, out, _ = council(qrepo, "check")
     check("check: a quote that differs only by a curly apostrophe or a non-breaking space passes",
           "synthesis#1  quote  ok" in out and "synthesis#2  quote  ok" in out, out)
@@ -1214,8 +1549,12 @@ with tempfile.TemporaryDirectory() as tmp:
     check("check: in a post-game, a part whose third field isn't exactly 'ask' is still checked",
           "synthesis#6  quote  NOT-IN-THE-REQUEST" in out and "synthesis#7  quote  ok" in out, out)
     check("check: a quote holding a secret-looking string fails; the redacted words pass",
-          code == 1 and "synthesis#8  quote  SECRET" in out and "synthesis#9  quote  ok" in out
-          and "5 of 9 quotes found in the request" in out, out)
+          code == 1 and "synthesis#8  quote  SECRET" in out and "synthesis#9  quote  ok" in out, out)
+    check("check: a quote introduced by an em dash, a bracket or no blank at all is still found",
+          all(f"synthesis#{i}  quote  ok" in out for i in (10, 11, 12)), out)
+    check("check: an invisible character in the request is not a paraphrase; dropped backticks are named",
+          "synthesis#13  quote  ok" in out and "synthesis#14  quote  NOT-EXACT" in out
+          and "9 of 14 quotes found in the request" in out, out)
     council(qrepo, "run", "close", "--status", "abandoned")
     code, out, err = council(req, "run", "close")
     check("run close: no warning when the request was filed", code == 0 and "no request was filed" not in err, err)
