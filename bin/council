@@ -1156,16 +1156,25 @@ SEATS
   return 1
 }
 
-# The last path in a gate command that is a real test file the project keeps: a regular file whose
-# name or folder says test or spec, either tracked by git or present and not ignored (the test a build
-# just wrote isn't staged yet). A source file, a directory or a config file is never "a saved test".
-# Globbing off: a command may contain * and we only want its words.
+# The first path in a gate command that is a real test file the project keeps: a regular file inside
+# the project whose name says test or spec, either tracked by git or present and not ignored (the test a
+# build just wrote isn't staged yet). A source file, a directory, a config file or a file outside the
+# project is never "a saved test". A path is also tried inside the folder a `cd <dir>`, `--prefix`,
+# `--cwd`, `--dir` or `-C` names, a `--flag=<path>` word is read for its path, and Godot's res:// is
+# the project root. Globbing off: a command may contain * and we only want its words.
 gate_test_path() {
   ( set -f
     cd "$1" 2>/dev/null || exit 1
-    hit=""; base=""
+    hit=""; base=""; sub=""; want=""
     for tok in $2; do
-      tok="$(printf '%s' "$tok" | tr -d "\"'\`")"
+      tok="$(printf '%s' "$tok" | tr -d "\"'\`")"; tok="${tok%;}"
+      if [ -n "$want" ]; then want=""; sub="${tok%/}"; continue; fi
+      case "$tok" in
+        cd|pushd|--prefix|--cwd|--dir|-C) want=1; continue ;;
+        --prefix=*|--cwd=*|--dir=*) sub="${tok#*=}"; sub="${sub%/}"; continue ;;
+        -*=*) tok="${tok#*=}" ;;
+      esac
+      case "$tok" in res://*) tok="${tok#res://}" ;; esac
       case "$tok" in *::*) tok="${tok%%::*}" ;; esac
       case "$tok" in -*|.|./|*"*"*|*"?"*) continue ;; *[/.]*) ;; *) continue ;; esac
       base="$(printf '%s' "${tok##*/}" | tr 'A-Z' 'a-z')"
@@ -1176,9 +1185,12 @@ gate_test_path() {
         test_*|test-*|*_test.*|*-test.*|*.test.*|*.spec.*|*_spec.*|*-spec.*|spec_*|tests.*|test.*) ;;
         *) continue ;;
       esac
-      [ -f "$tok" ] || continue
-      if git ls-files --error-unmatch -- "$tok" >/dev/null 2>&1; then hit="$tok"
-      elif ! git check-ignore -q -- "$tok" 2>/dev/null; then hit="$tok"; fi
+      for p in ${sub:+"$sub/$tok"} "$tok"; do
+        [ -f "$p" ] || continue
+        if git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then hit="$p"; break; fi
+        git check-ignore -q -- "$p" >/dev/null 2>&1
+        if [ $? -eq 1 ]; then hit="$p"; break; fi   # 1 = not ignored; 128 = outside the project
+      done
       [ -z "$hit" ] || break          # the first real test named wins
     done
     [ -n "$hit" ] || exit 1
@@ -1198,6 +1210,11 @@ cmd_check() {
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
   if [ $# -eq 0 ]; then
     if [ -f "$run/synthesis.md" ]; then set -- "$run/synthesis.md"; else set -- "$run"/seats/*.md; fi
+    if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
+      for f in "$@"; do                # a build's diagnosis cites the code before its fix: lines that moved on
+        shift; case "${f##*/}" in diagnose-*) ;; *) set -- "$@" "$f" ;; esac
+      done
+    fi
   fi
   # The user's own words — ask.md and the filed request, from "## In your words" on, whitespace
   # collapsed — for the quote: check (a post-game's parts quote the request word for word).

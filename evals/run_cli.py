@@ -775,6 +775,41 @@ with tempfile.TemporaryDirectory() as tmp:
     check("check: the summary names proof as its own kind of breakage",
           "broken (citations and proof)" in out or "broken (citations, quotes and proof)" in out, out)
     check("check: the proof rows land in check.md too", "| task 1 | proof | ok |" in read(os.path.join(brun, "check.md")))
+
+    # Where a proof names its test: a Godot flag, a subfolder, a config file, a path outside the project
+    proof = new_repo(tmp, "proof")
+    for p in ["test/unit/test_player.gd", "webapp/frontend/src/utils/fmt.test.js",
+              "webapp/backend/tests/test_expiry.py", "tests/test_settings.toml"]:
+        write(os.path.join(proof, p), "x\n")
+    write(os.path.join(proof, ".council", "council.config.md"), "# Council config — proof\n")
+    git(proof, "add", "-A")
+    git(proof, "commit", "-q", "-m", "tests")
+    outside = os.path.join(tmp, "outside", "test_repro.py")
+    write(outside, "x\n")
+    code, prf, _ = council(proof, "run", "open", "council-implement")
+    prf = prf.strip()
+    for n, cmd in enumerate(["godot --headless -s addons/gut/gut_cmdln.gd -gtest=res://test/unit/test_player.gd -gexit",
+                             "npm --prefix webapp/frontend test -- src/utils/fmt.test.js",
+                             "cd webapp/backend && python -m pytest tests/test_expiry.py::test_y",
+                             "pytest -c tests/test_settings.toml -k expiry",
+                             "pytest " + slash(outside)], start=1):
+        for name, ex in ((f"before-{n}", 1), (f"after-{n}", 0)):
+            write(os.path.join(prf, "gates", name + ".json"),
+                  '{"gate": "%s", "command": "%s", "exit": %d, "seconds": 1, "when": "2026-09-16 10:00:00"}\n' % (name, cmd, ex))
+    write(os.path.join(prf, "seats", "diagnose-2.md"), "# Diagnosis — task 2\nref: none\n## Index\n"
+          "1 · likely · root cause · webapp/backend/tests/test_expiry.py:9-12 · the lines before the fix\n")
+    code, out, _ = council(proof, "check")
+    check("check: a Godot test named as -gtest=res://… counts as the saved test",
+          "task 1  proof  ok · test saved: test/unit/test_player.gd" in out, out)
+    check("check: a test path under npm --prefix <dir>, or after cd <dir> &&, is found in that folder",
+          "task 2  proof  ok · test saved: webapp/frontend/src/utils/fmt.test.js" in out
+          and "task 3  proof  ok · test saved: webapp/backend/tests/test_expiry.py" in out, out)
+    check("check: a config file is never a saved test, even when its name says test",
+          "task 4  proof  ok · couldn't confirm a saved test" in out, out)
+    check("check: a test file outside the project is never a test the project keeps",
+          "task 5  proof  ok · couldn't confirm a saved test" in out, out)
+    check("check: in a build, a diagnosis file's old line numbers aren't checked as citations",
+          code == 0 and "diagnose-2" not in out, out)
     write(os.path.join(req, ".council", "logs", "2026-09-16-build.md"),
           "# Council Implementation Log \u2014 build\nInput: `x` \u00b7 Run: %s \u00b7 Start: abc123\n\n## Task 1: x\n"
           % os.path.basename(brun))
