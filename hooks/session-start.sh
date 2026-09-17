@@ -47,9 +47,17 @@ fi
 
 if [ -f "$home/map.md" ]; then
   sha="$(sed -n 's/^map-commit:[[:space:]]*\([0-9a-fA-F]\{7,40\}\).*/\1/p' "$home/map.md" 2>/dev/null | head -n 1)"
-  behind=""
-  [ -n "$sha" ] && behind="$(git rev-list --count "$sha..HEAD" 2>/dev/null || true)"
-  if [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
+  behind=""; lost=""
+  if [ -n "$sha" ]; then
+    if git cat-file -e "$sha^{commit}" 2>/dev/null; then
+      behind="$(git rev-list --count "$sha..HEAD" 2>/dev/null || true)"
+    elif git rev-parse --git-dir >/dev/null 2>&1; then
+      lost=1                                   # rewritten away (a rebase or squash), so no count is possible
+    fi
+  fi
+  if [ -n "$lost" ]; then
+    say "- Orientation: $home/map.md lists where things live, hot spots and vocabulary — check it before exploring unfamiliar code (it was built on a commit that is no longer in this repo's history: trust its structure, verify details)."
+  elif [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
     say "- Orientation: $home/map.md lists where things live, hot spots and vocabulary — check it before exploring unfamiliar code ($behind commits behind HEAD: trust its structure, verify details)."
   else
     say "- Orientation: $home/map.md lists where things live, hot spots and vocabulary — check it before exploring unfamiliar code."

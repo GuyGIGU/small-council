@@ -371,6 +371,10 @@ with tempfile.TemporaryDirectory() as tmp:
         git(full, "commit", "-q", "-am", f"change {n}")
     code, out = run_hook(full, "startup")
     check("stale map: reports commits behind", "2 commits behind HEAD" in out, out)
+    write(os.path.join(full, ".council", "map.md"), "# Codebase map\nmap-commit: 0123456789abcdef0123456789abcdef01234567\n")
+    code, out = run_hook(full, "startup")
+    check("map built on a commit no longer in history: said so, not presented as current",
+          "no longer in this repo's history" in line_with(out, "Orientation"), out)
 
     pgr = new_repo(tmp, "pg")
     ptop = git(pgr, "rev-parse", "--show-toplevel")

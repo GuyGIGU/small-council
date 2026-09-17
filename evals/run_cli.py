@@ -555,6 +555,9 @@ with tempfile.TemporaryDirectory() as tmp:
     write(os.path.join(repo, ".council", "map.md"), f"# Codebase map\nmap-commit: {prev}\nupdated: 2026-09-15\n")
     code, out, _ = council(repo, "map", "status")
     check("map status: counts commits behind and changed areas", "1 commits behind" in out and "src/" in out, out)
+    code, out, _ = council(os.path.join(repo, "src"), "map", "status")
+    check("map status: from a subfolder, still lists every changed area",
+          all(a in out for a in ("src/", "scripts/", "tests/", "README.md")), out)
     write(os.path.join(repo, ".council", "cards", "fowler.md"),
           "# Fowler — Structure card for eval\nsource: references/nope.md · written: 2026-09-15 @ abc1234\n## Principles, applied here\n1. x — here: y\n")
     code, out, _ = council(repo, "doctor")
@@ -566,6 +569,14 @@ with tempfile.TemporaryDirectory() as tmp:
     check("doctor: flags stale memory anchors", "3 memory anchor(s) point at code" in out, out)
     check("doctor: notices a config without a stack fingerprint", "has no stack-fingerprint" in out, out)
     check("doctor: every finding carries a fix", out.count("Fix:") == out.count("ERROR") + out.count("WARN "), out)
+    gone_map = new_repo(tmp, "maphistory")
+    write(os.path.join(gone_map, "a.txt"), "x\n")
+    git(gone_map, "add", "-A")
+    git(gone_map, "commit", "-q", "-m", "init")
+    write(os.path.join(gone_map, ".council", "council.config.md"), "# Council config — map\n")
+    write(os.path.join(gone_map, ".council", "map.md"), "# Map\nmap-commit: 0123456789abcdef0123456789abcdef01234567\n")
+    code, out, _ = council(gone_map, "doctor")
+    check("doctor: a map-commit that isn't in this repo's history is flagged", "isn't in this repo's history" in out, out)
 
     # Close, and the legacy pointer
     write(os.path.join(run, "verify-1.md"), "# Verification — eval\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"

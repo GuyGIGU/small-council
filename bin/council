@@ -1510,7 +1510,8 @@ cmd_map() {
   behind="$(git rev-list --count "$sha..HEAD" 2>/dev/null)"
   if [ "${behind:-0}" -eq 0 ]; then say "map: up to date (map-commit $(printf '%.9s' "$sha"))"; return 0; fi
   say "map: $behind commits behind HEAD (map-commit $(printf '%.9s' "$sha")). Files changed since, by area:"
-  git diff --name-only "$sha" HEAD -- . 2>/dev/null | grep -v '^\.council/' \
+  # The whole repository, from any folder (paths are printed from the top).
+  git -c core.quotePath=false -c diff.relative=false diff --name-only "$sha" HEAD 2>/dev/null | grep -v '^\.council/' \
     | awk -F/ '{ a = (NF > 1 ? $1 "/" : $1); c[a]++ } END { for (k in c) printf "  %4d  %s\n", c[k], k }' | sort -rn | head -n 12
 }
 
@@ -1659,7 +1660,9 @@ RUNS
   map="$home/map.md"
   if [ -f "$map" ]; then
     sha="$(sed -n 's/^map-commit:[[:space:]]*\([0-9a-fA-F]\{7,40\}\).*/\1/p' "$map" | head -n 1)"
-    if [ -n "$sha" ]; then
+    if [ -n "$sha" ] && git rev-parse --git-dir >/dev/null 2>&1 && ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
+      finding WARN "map-commit $(printf '%.9s' "$sha") isn't in this repo's history (a rebase or squash removed it), so nobody can tell what changed since" "rebuild the map with a council-init refresh, and stamp the new map-commit"
+    elif [ -n "$sha" ]; then
       behind="$(git rev-list --count "$sha..HEAD" 2>/dev/null)"
       [ "${behind:-0}" -le 50 ] 2>/dev/null || finding WARN "the map is $behind commits behind HEAD" "refresh the changed areas (council map status lists them)"
     else
