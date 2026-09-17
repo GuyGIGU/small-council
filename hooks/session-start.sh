@@ -158,13 +158,16 @@ RUNS
       esac
       seats="$(seat_summary "$dir")"
       say "- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}). Re-invoke the $skill skill (it loads context-core), read $dir/session-state.md (and ask.md, if present), $redo, and continue from there.${seats:+ Seats — $seats.} Do not restart, do not re-dispatch seats that are running or done (wait for their notifications), do not skip the completeness check.$runflag"
+    elif [ "$event" = compact ] && [ -n "$sid" ] && [ "$rsid" = "$sid" ]; then
+      # This session opened it too (council run open … --alongside): its own work, not a stranger's.
+      say "- Also open on this working tree, opened alongside by this same session: $name ($skill, phase ${phase:-?}). It is yours too — pass --run $name to every council command meant for it."
     elif [ "$event" = compact ]; then
       say "- Also open on this working tree, not this session's run: $name ($skill, phase ${phase:-?}). Leave it unless the user asks."
     elif [ -n "$rsid" ] && [ "$rsid" != "$sid" ] && [ -n "$(find "$dir" -type f -mmin -120 2>/dev/null | head -n 1)" ]; then
       # Another session id touched it in the last 2 hours: that session may still be driving it.
       if [ "$event" = clear ]; then
         seats="$(seat_summary "$dir")"
-        say "- COUNCIL RUN OPEN, updated in the last 2 hours by another session id: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}).${seats:+ Seats — $seats.} If this window was driving it before /clear, carry on: council run resume --run $name, then re-invoke the $skill skill and read its session-state.md; seats marked running are still working, so wait for their notifications. Otherwise it may still be live in another session: leave it, and don't resume it, re-dispatch its seats or close it unless the user says so.$runflag"
+        say "- COUNCIL RUN OPEN, updated in the last 2 hours by another session id: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}).${seats:+ Seats — $seats.} If this window was driving it before /clear, carry on: council run resume --run $name, then re-invoke the $skill skill and read its session-state.md; its workers died with the old session, so run council collect to see which files exist, mark the rest failed (council seat <slug> failed note=\"interrupted\") and re-dispatch each once. Otherwise it may still be live in another session: leave it, and don't resume it, re-dispatch its seats or close it unless the user says so.$runflag"
       else
         say "- COUNCIL RUN OPEN, updated in the last 2 hours by another session: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}). It may still be running in that session: leave it, and don't resume it, re-dispatch its seats or close it. If the user says that session has ended: council run resume --run $name, then re-invoke the $skill skill.$runflag"
       fi
@@ -221,8 +224,10 @@ if [ -s "$home/active-run" ]; then
             phase="$(field phase "$state")"
             updated="$(field updated "$state")"
             rsid="$(field session "$state")"
-            final=""                           # an older run's final deliverable: it is probably finished
-            for f in "$run"/FINAL-*.md "$run"/PLAN-*.md "$run"/*implementation-log*; do
+            # An older run's final deliverable: it is probably finished. A build's log is not one — it
+            # is appended to after every task, so a half-finished build holds one too.
+            final=""
+            for f in "$run"/FINAL-*.md "$run"/PLAN-*.md; do
               if [ -f "$f" ]; then final="${f##*/}"; break; fi
             done
             if [ "$event" = compact ]; then

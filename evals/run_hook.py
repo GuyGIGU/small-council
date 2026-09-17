@@ -226,6 +226,14 @@ with tempfile.TemporaryDirectory() as tmp:
     check("after compaction: resumes the run this session opened, not the newest", len(c) == 1 and "2026-09-15-090000-review" in c[0], out)
     check("after compaction: another session's run is only listed", "not this session's run: 2026-09-15-120000-plan" in out, out)
     check("after compaction: with two runs here, says to pass --run", "pass --run 2026-09-15-090000-review" in out, out)
+    # A second run this same session opened (council run open … --alongside) is its own work too.
+    write(os.path.join(theirs, "session-state.md"), state("in-progress", mode="council-plan", code_root=stop, session="eval"))
+    code, out = run_hook(sess, "compact", session="eval")
+    line = line_with(out, "2026-09-15-090000-review")
+    check("after compaction: a run this same session opened alongside is not called someone else's",
+          "not this session's run" not in line and "opened alongside by this same session" in line
+          and "--run 2026-09-15-090000-review" in line, out)
+    write(os.path.join(theirs, "session-state.md"), state("in-progress", mode="council-plan", code_root=stop, session="someone-else"))
     write(os.path.join(theirs, "session-state.md"), state("in-progress", mode="council-plan", code_root=stop))
     code, out = run_hook(sess, "compact", session="a-new-id")
     c = compacted(out)
@@ -288,7 +296,10 @@ with tempfile.TemporaryDirectory() as tmp:
     line = line_with(out, "2026-09-15-130000-review")
     check("after /clear, a recent run with another session id: resume it if this window drove it, else leave it",
           "council run resume --run 2026-09-15-130000-review" in line and "another session" in line
-          and "gone" not in line and "--status abandoned" not in line, out)
+          and "--status abandoned" not in line, out)
+    check("after /clear: workers of the cleared session are never something to wait for",
+          "wait for their notifications" not in line and "died with the old session" in line
+          and "re-dispatch each once" in line, out)
     for f in ("session-state.md", "seats.tsv"):
         age(os.path.join(lrun, f), 3 * 3600)
     code, out = run_hook(live, "startup", session="another-session")
@@ -347,6 +358,14 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = run_hook(legacy, "compact")
     check("legacy run untouched for days: a compaction never says this session was running it",
           not compacted(out) and "2026-09-07-1200" in out, out)
+    # A build's log is written after every task, so it is evidence of work, never of a finished run.
+    write(os.path.join(legacy, old_rel, "implementation-log.md"),
+          "# Implementation log\n**Tasks completed:** 3/15\nNext session resumes at Task 11.\n")
+    code, out = run_hook(legacy, "startup")
+    line = line_with(out, "2026-09-07-1200")
+    check("legacy run holding only a build log: never called probably finished, and never offered as complete",
+          "probably finished" not in line and "--status complete" not in line
+          and "council run resume" in line and "--status abandoned" in line, out)
     write(os.path.join(legacy, old_rel, "FINAL-REVIEW.md"), "# Final review\n")
     code, out = run_hook(legacy, "startup")
     line = line_with(out, "2026-09-07-1200")
