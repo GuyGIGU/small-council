@@ -1135,7 +1135,7 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and "src/old.py" in out and "src/new file.py" in out, out + err)
     code, out, err = council_quoted(chg, "changed", "--glob", "docs/*.py", "--", "true")
     check("changed: a pattern that matches no file anywhere in the project is an error, never a pass forever",
-          code == 2 and "no file in this project" in err, out + err)
+          code == 2 and "no file in this project" in err and "anchored at the repo root" in err, out + err)
     write(os.path.join(chg, "good.sh"), "echo fine\n")
     write(os.path.join(chg, "zz-broken.sh"), "if then fi (\n")
     code, out, err = council_quoted(chg, "changed", "--glob", "*.sh", "--each", "--", "bash", "-n")
@@ -1260,6 +1260,31 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
     check("gate --all: 'not mandatory' is not mandatory, and a green tick in Checked means runnable",
           code == 0 and "FAIL (t, not mandatory)" in out, out)
+    gates_cfg(vocab, "| dot | `true` | grounding \u00b7 verify | yes | ok | `true` | none | - |\n"
+                     "| slow | `true` | verify (slow, run in background) | yes | ok | `true` | none | - |\n"
+                     "| byhand | `true` | manual (needs the device) | yes | ok | `true` | none | - |\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+    check("gate --all --at: a note in brackets is a note, and \u00b7 between two stages is a separator",
+          code == 0 and "gate dot: pass" in out and "gate slow: pass" in out and "names no stage" not in out
+          and "council gate byhand" in out, out)
+    code, out, _ = council(vocab, "gate", "--all", "--at", "grounding")
+    check("gate --all --at: a gate whose cell names only the other stage is not counted as a required skip",
+          code == 0 and "gate dot: pass" in out and "slow" not in out and "1 skipped" in out, out)
+    code, out, _ = council(vocab, "doctor")
+    check("doctor: a Run at cell that names its stage raises nothing, note or separator included",
+          "gate 'dot'" not in out and "gate 'slow'" not in out and "gate 'byhand'" not in out, out)
+    gates_cfg(vocab, "| nonblock | `exit 1` | verify | non-blocking | ok | `true` | none | - |\n"
+                     "| zero | `exit 1` | verify | 0 | ok | `true` | none | - |\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+    check("gate --all: non-blocking and 0 mean not mandatory, so a failing advisory gate never hard-stops a build",
+          code == 0 and "not mandatory" in out and "a mandatory gate failed" not in out, out)
+    for header in ("Side-effects", "Side effects (none = safe)"):
+        gates_cfg(vocab, "| tests | `true` | verify | yes | ok | none |\n",
+                  head="| Gate | Command | Run at | Mandatory | Checked | %s |\n|---|---|---|---|---|---|\n" % header)
+        code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+        code2, dout, _ = council(vocab, "doctor")
+        check(f"gate --all and doctor read a '{header}' header the same way",
+              code == 0 and "gate tests: pass" in out and "no Side effects column" not in out + dout, out + dout)
     gates_cfg(vocab, "| odd | `exit 1` | verify | sometimes | maybe | `true` | none | - |\n"
                      "| e2e | `exit 1` | verify | yes | \u274c needs the game editor | `true` | none | - |\n")
     code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
@@ -1379,6 +1404,14 @@ with tempfile.TemporaryDirectory() as tmp:
           "older layout (a list" in out and "council-init refresh" in out and "add the project's real" not in out, out)
     code, out, _ = council(legacy, "gates")
     check("gates: says the Gates section is an older layout", "older layout" in out, out)
+    write(os.path.join(legacy, ".council", "council.config.md"),
+          "# Council config — declined\nlast-verified: 2026-09-15 @ x\n\n## Gates\n\n"
+          "- guardrails: declined 2026-09-01 (fit them later with a `council-init` refresh)\n\n## Hard rules\n- none\n")
+    code, out, _ = council(legacy, "doctor")
+    gate_line = [l for l in out.splitlines() if "no gates in council.config.md" in l]
+    check("doctor: a Gates section that only mentions a command in prose is not an older layout to migrate",
+          bool(gate_line) and gate_line[0].startswith("WARN") and "guardrails declined" in gate_line[0]
+          and "older layout (a list" not in out, out)
 
     nogates = new_repo(tmp, "nogates")
     write(os.path.join(nogates, "x.txt"), "x\n")
