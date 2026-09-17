@@ -917,6 +917,87 @@ with tempfile.TemporaryDirectory() as tmp:
           "(new)" in out and len([f for f in os.listdir(asks) if "secrets" in f]) == 1, out)
     council(req, "run", "close", "--status", "abandoned")
 
+    # Redaction, widened: each token shape on its own (so only its own rule can catch it), secrets named by
+    # their context, key blocks in any indentation, and the ordinary text around them left alone. Every
+    # fake secret is assembled here at run time, so no file in the repo holds a real-looking key.
+    rdr = new_repo(tmp, "redact")
+    write(os.path.join(rdr, ".council", "council.config.md"), "# Council config\n")
+    J = "".join
+    shapes = [
+        ("AWS key id", J(["AK", "IA", "EXAMPLE0NOTREAL0"]), "The deploy uses {} for S3."),
+        ("AWS temporary key id", J(["AS", "IA", "EXAMPLE0NOTREAL0"]), "Today it is {} instead."),
+        ("Google API key", J(["AI", "za", "EXAMPLE_not-a-real-key-000000000000"]), "Maps key {}"),
+        ("GitHub token", J(["gh", "p_", "EXAMPLEnotarealtoken000000"]), "Use {} for the CI."),
+        ("GitLab token", J(["gl", "pat-", "EXAMPLEnotarealtoken00"]), "push with {} please"),
+        ("Slack bot token", J(["xo", "xb-", "000000000000-EXAMPLEnotreal"]), "bot: {}"),
+        ("Slack app token", J(["xa", "pp-", "1-A000-EXAMPLEnotreal"]), "socket mode {}"),
+        ("Slack webhook", J(["T00000000/B00000000/", "EXAMPLEnotarealhook000000"]), "post alerts to https://hooks." + "slack.com/services/{}"),
+        ("OpenAI-style key", J(["sk", "-", "EXAMPLEnotarealkey000000"]), "the model key {}"),
+        ("Stripe webhook secret", J(["wh", "sec_", "EXAMPLEnotarealsecret000"]), "signing with {}"),
+        ("Google OAuth secret", J(["GOC", "SPX-", "EXAMPLE_not-a-real-000000"]), "client {}"),
+        ("SendGrid key", J(["S", "G.", "EXAMPLEnotreal000000", ".", "EXAMPLEnotarealkey00000"]), "mail with {}"),
+        ("npm token", J(["np", "m_", "EXAMPLEnotarealtoken0000000000000"]), "publish using {}"),
+        ("PyPI token", J(["py", "pi-", "AgEIEXAMPLE-not-a-real-token-000000000000000"]), "upload with {}"),
+        ("Hugging Face token", J(["h", "f_", "EXAMPLEnotarealtoken0000000000000"]), "model pull {}"),
+        ("Telegram bot token", J(["0000000000", ":AA", "EXAMPLE_not-a-real-token-00000000"]), "alerts bot {}"),
+        ("JWT", J(["ey", "JhbGciOiJIUzI1NiJ9.", "ey", "JzdWIiOiJleGFtcGxlIn0.", "EXAMPLEnotarealsignature"]), "the cookie holds {}"),
+    ]
+    context = [
+        ("Bearer without a header", J(["EXAMPLEnot", "AREALopaque", "1234"]), "send it with Bearer {} in the header"),
+        ("Authorization: Token", J(["b7d9", "0a1c"] * 5), "Authorization: Token {}"),
+        ("Basic without a header", J(["dXNlcjpw", "YXNzd29yZA", "=="]), "then Basic {} for the proxy"),
+        ("URL with a password and no user", J(["Rd", "pwExample", "4"]), "redis://:{}@localhost:6379/0"),
+        ("'my password is'", J(["Tr4d", "3r!", "xyz"]), "my login is U1234567 and my password is {}"),
+        ("'the secret key is'", J(["kwtD", "9x+Q", "EXAMPLE", "/k3y"] * 2), "and the secret key is {} for the bucket"),
+        ("DB_PASS=", J(["Db", "Pa55", "word"]), "DB_PASS={}"),
+        ("ENCRYPTION_KEY=", J(["gaS+", "EXAMPLE", "k3y/"] * 3), "ENCRYPTION_KEY={}"),
+        ("AccountKey=", J(["znnJ", "Q2x0", "EXAMPLE"] * 6) + "==", "Protocol=https;AccountName=x;AccountKey={};Suffix=core"),
+        ("PRIVATE_KEY=0x…", "0x" + "4f3a" * 16, "PRIVATE_KEY={}"),
+        ("a quoted password with spaces", "correct horse battery 42", 'password: "{}"'),
+        ("a password with no digit", J(["Winter", "IsComingSoon!"]), "password: {}"),
+        ("the secret after a key id in a CSV row", J(["wJal", "rXUt", "nFEM", "I/K7", "MDEN", "G/bP", "xRfi", "CYEX", "AMPL", "EKEY"]),
+         J(["AK", "IA", "EXAMPLE1NOTREAL1"]) + ",{}"),
+    ]
+    pk = "PRIVATE" + " KEY"
+    b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    body = [J(b64[(i * 37 + seed * 11) % 64] for i in range(64)) for seed in (1, 2, 3)]   # key-body-shaped lines
+    blocks = ("- deploy key:\n  -----BEGIN OPENSSH " + pk + "-----\n  " + body[0] + "\n  -----END OPENSSH " + pk + "-----\n"
+              "-----BEGIN PGP " + pk + " BLOCK-----\n\n" + body[1] + "\n=AbCd\n-----END PGP " + pk + " BLOCK-----\n"
+              "```\n-----BEGIN RSA " + pk + "-----\n" + body[2] + "\nQmVlZkNha2Ux==\n-----END RSA " + pk + "-----\n```\n")
+    keep = ["1. Switch the admin API to bearer authentication/authorization-headers.",
+            '2. The line `token = request.headers.get("Authorization")` crashes.', "3. Set max_token=40960000.",
+            "Start of a key I snipped:", "-----BEGIN RSA " + pk + "-----", "(rest removed)", "The build id, on its own line:", "SGVsbG9Xb3JsZEZyb21UaGVDb3VuY2lsMjAyNjA5MTc",
+            "Then fix these folders:",
+            "webapp/frontend/src/components", "core/pipeline/downloads", "ReplaySealIntegrityChecker",
+            "session token: expires-after-15-minutes-of-idle", "access_key: AWS_ACCESS_KEY_ID",
+            "Pin sk-learn-compat-shim-for-python312 in requirements.",
+            "Fixed in commit 3f2a9c1e7b4d4e8a9c2f1a2b3c4d5e6f70819a2b.", "The order id is 123e4567-e89b-12d3-a456-426614174000.",
+            "secret: /run/secrets/db_password", "api_key: settings.API_KEY", "token: ${GITHUB_TOKEN}",
+            "Bearer tokens expire after an hour.", "Authorization: Basic authentication is fine here.",
+            "secret_file: config/secrets/production-database.yaml", "token_count: 128000", "Password: required",
+            "The token is valid for an hour.", "the API key is rotated-every-quarter"]
+    rd_run = council(rdr, "run", "open", "council-review")[1].strip()
+    write(os.path.join(rd_run, "ask.md"), "# Ask — Wire the services\n## In your words\n"
+          + "\n".join(line.format(s) for _, s, line in shapes + context) + "\n" + blocks + "\n".join(keep) + "\nThanks!\n")
+    code, out, _ = council(rdr, "ask", "save")
+    rd_files = os.listdir(os.path.join(rdr, ".council", "asks")) if os.path.isdir(os.path.join(rdr, ".council", "asks")) else []
+    rd_body = read(os.path.join(rdr, ".council", "asks", rd_files[0])) if rd_files else ""
+    rd_words = rd_body.split("## In your words\n", 1)[-1]
+    check("ask save: redacts each common token shape, written on its own",
+          code == 0 and rd_body and not [l for l, s, _ in shapes if s in rd_body],
+          "left: " + ", ".join(l for l, s, _ in shapes if s in rd_body) + " · " + out)
+    check("ask save: redacts secrets named by what's around them — Authorization, Bearer, 'password is', DB_PASS=, AccountKey=, …",
+          rd_body and not [l for l, s, _ in context if s in rd_body], "left: " + ", ".join(l for l, s, _ in context if s in rd_body))
+    check("ask save: removes indented, PGP and short-tailed private-key blocks whole",
+          rd_body and not [b for b in body + ["=AbCd", "QmVlZkNha2Ux=="] if b in rd_body] and "  [redacted private key]\n" in rd_body
+          and rd_body.count("[redacted private key]") == 4 and "-----BEGIN" not in rd_body and "-----END" not in rd_body, rd_words)
+    check("ask save: leaves the words around secrets alone — after a snipped key, auth wording, code, hashes, ids, paths, constants",
+          rd_body and "\n".join(keep).replace("-----BEGIN RSA " + pk + "-----", "[redacted private key]") + "\nThanks!\n" in rd_words,
+          rd_words[-1500:])
+    check("ask save: the redaction count says to check for others",
+          "redacted 35 secret-looking string(s)" in out and "check" in out.split("redacted 35", 1)[-1].split("\n", 1)[0], out)
+    council(rdr, "run", "close", "--status", "abandoned")
+
     # The request's bookkeeping: continues:, refusals, one section per run, the close warning
     code, crun, _ = council(req, "run", "open", "council-implement")
     crun = crun.strip()
