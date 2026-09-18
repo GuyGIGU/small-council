@@ -10,7 +10,9 @@ Give each seat exactly its slice, and each worker a budget.
    lens, and suggest a council-init refresh. A lens with several roster rows (`dodds-web`,
    `dodds-admin`) is several seats, each with its own surface.
 2. **No orphans.** Every in-scope file belongs to at least one seat; an unowned file is a coverage
-   gap. Leftovers go to the closest lens — structure takes what nobody else claims.
+   gap. That includes the files the index names past the 80-file cap (listed at its end, with no
+   hunks): they are in scope, just not indexed. Leftovers go to the closest lens — structure takes
+   what nobody else claims.
 3. **Thin seats pair up.** A seat with an empty slice is not called, with its reason recorded. A seat
    with a thin slice (one or two files) shares one worker with a neighbour — UI with UX, backend with
    data — rather than getting its own agent.

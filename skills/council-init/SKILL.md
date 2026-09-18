@@ -75,8 +75,11 @@ build/compile, and any e2e or regression harness.
 - **Run each once, in its fast form** (`--version`, `--collect-only`, the quick suite). Judge it by
   exit code, never through a pipe.
 - **Gate commands run under bash** (Git Bash on Windows), so dry-run each one the same way:
-  `council gate probe-<name> -- '<its fast form>'`. Bash drops a `\` outside quotes: write paths with
-  `/`, or quote them.
+  `council gate probe-<name> -- '<its fast form>'`. That needs an open run, so open it first —
+  `council run open council-init`, which also creates `.council/` and its `.gitignore` — and keep it
+  open through Phase D (don't open a second one). Bash drops a `\` outside quotes: write paths with
+  `/`, or quote them. Judge a gate by what `council gate` reports, not by your own shell: a `cmd /c`
+  run straight from a Bash tool exits 0 without running anything.
 - **Mark each one** ✓ runnable, or ✗ with the reason. A gate that can't run here is worse than no
   gate, because it fakes a green.
 - **Never probe** a gate that deploys, spends money, flashes hardware or needs credentials: ask
@@ -131,8 +134,8 @@ Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`
   - the conventions new code must match.
 - **A small repo** → do it yourself.
 - **A large repo** → a mapping squad of at most 4 workers, run like any council run:
-  1. `council run open council-init` — it creates `.council/` and its `.gitignore` if they don't
-     exist yet.
+  1. The run you opened for Phase C's dry-runs (`council run open council-init` if none is open yet —
+     it creates `.council/` and its `.gitignore`). One run, not two.
   2. Write a brief whose `## Seats` has one block per top-level area: `ref: none`,
      `out: seats/<area>.md`, `cap: 8`, the area's paths as the slice. Format: "an `## Index` of at
      most 8 map rows, each `<n> · map · <section> · <path> · <one-line fact>`, then the map template's
@@ -233,8 +236,14 @@ council":
   of 14 items shipped, 5 refuted — narrow its surface to `src/ui/**`?" — and likewise pairing seats
   that are always thin, or adding a lens the runs keep flagging outside their lanes. The user
   decides; nothing changes without a yes.
-- Re-check **every path and gate** in the config against the repo, dry-running the gates again, and
-  update `last-verified`.
+- Re-check **every path and gate** in the config against the repo, dry-running the gates again
+  (`council run open council-init` first — `council gate probe-<name> -- '…'` needs an open run;
+  close it when you are done), and update `last-verified`.
+- **A Gates section still written as a list** (backticked commands under `## Gates`, no table): move
+  every command into the Gates table, one row each, dry-run them as in Phase C, and fill Run at,
+  Mandatory, Checked, Probe, Needs and Side effects. Until that is done the helper can read no gate
+  and every report says NOTHING WAS CHECKED, so this is not a section to leave as the user wrote it —
+  show the diff and say what each row came from.
 - **Merge, don't overwrite.** Show a diff. Any section the user added or edited — hard rules, a
   pinned gate, a manual recast, Notes — is theirs: merge around it and surface conflicts for them to
   resolve.

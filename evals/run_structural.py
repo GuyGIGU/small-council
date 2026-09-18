@@ -100,6 +100,8 @@ check("09-deliver: a run that proved nothing by machine never reads as a pass (w
 check("kernel: agent cap of 10, verifiers included", re.search(r"\b10\b[^.]*verifiers included", flat(core)) is not None)
 check("kernel: approval threshold from the config", "approve without asking" in core)
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
+check("kernel: resuming a run records this session as its driver (council run resume)",
+      "council run resume" in core[core.find("## Resume"):])
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
@@ -117,6 +119,7 @@ check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
 check("04-brief: memory in scope comes from council memory select", "council memory select" in doctrine["04-brief.md"])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
 check("03-assign: records every seat's state", "council seat" in doctrine["03-assign.md"])
+check("03-assign: files past the change index's cap still need an owner", "past the 80-file cap" in doctrine["03-assign.md"])
 check("04-brief: seat blocks carry ref / out / cap for collect", all(k in doctrine["04-brief.md"] for k in ["### <slug>", "- ref:", "- out:", "- cap:"]))
 check("05-work: records each worker with its agent id", "council seat <slug> running agent=" in doctrine["05-work.md"])
 check("06-collect: runs council collect", "council collect" in doctrine["06-collect.md"])
@@ -125,6 +128,7 @@ check("08-challenge: names council check before the verifier dispatch",
       -1 < doctrine["08-challenge.md"].find("council check") < doctrine["08-challenge.md"].find("council-verifier"))
 check("08-challenge: one verify-<n>.md per verifier", "verify-<n>.md" in doctrine["08-challenge.md"])
 check("10-learn: closes the run", "council run close" in doctrine["10-learn.md"])
+check("10-learn: a paused run comes back with council run resume", "council run resume" in doctrine["10-learn.md"])
 check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
 check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])
 check("06-collect: checks a war room's round-2 files", "debate.md" in doctrine["06-collect.md"])
@@ -152,7 +156,7 @@ for label, t in texts.items():
         bad_flags += [f"{label}: council {c} {f}" for f in re.findall(r"--[a-z][a-z-]*", " ".join(own)) if f not in flags]
         if c not in known:
             bad.append(f"{label}: council {c}")
-        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status"}):
+        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume"}):
             bad.append(f"{label}: council run {' '.join(rest[:1])}")
         elif c == "map" and (not rest or rest[0] != "status"):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")
@@ -209,7 +213,8 @@ for label, text, needles in [
     ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
                     "last-verified", "council doctor", "council run open council-init",
-                    "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash"]),
+                    "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash",
+                    "needs an open run", "every command into the Gates table"]),
     ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier",
                                                  "verify-<n>.md"]),
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
@@ -226,6 +231,8 @@ check("08-challenge: says what each of council check's citation verdicts asks of
 check("07-judge: an empty Kept section says (none)", "(none)" in doctrine["07-judge.md"])
 check("test-architect: the verifier's temporary folder is named as pwd -W prints it, which every tool opens (wording)",
       re.search(r"mktemp -d[^\n]*pwd -W", skill["test-architect"]) is not None)
+check("implement and post-game: name the phase that follows Prepare (a compaction points at the right step)",
+      "council state phase=build" in impl and "council state phase=judge" in skill["council-postgame"])
 
 # 6. Agents
 check("worker: header with ref: on line 2 and an Index", "ref: <the first heading" in worker and "## Index" in worker)
@@ -320,6 +327,18 @@ for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks
     hit = re.search(r"declare -A|\bmapfile\b|\breadarray\b|,,\}|\^\^\}", code_only)
     check(f"{label}: bash 3.2 portable (no declare -A, mapfile, readarray, case-conversion expansions)",
           hit is None, hit.group(0) if hit else "")
+# bash 3.2 calls an empty "$@" or $* unbound under set -u, so the argument dispatch always guards them.
+bare = []
+for fn in ("main", "takes_flags", "no_words", "cmd_check", "cmd_gate"):
+    body = re.search(r"^%s\(\) \{\n(.*?)^\}" % fn, cli, re.S | re.M)
+    for i, line in enumerate((body.group(1) if body else "").split("\n"), 1):
+        bit = re.sub(r"\$\{[0-9]\+[^}]*\}", "", re.sub(r"#.*$", "", line))    # ${1+"$@"} is the guarded form
+        if re.search(r'"\$@"|\$\*', bit) and not re.search(r"\[ \$# -", bit):
+            bare.append(f"{fn}:{i}: {line.strip()}")
+if not re.search(r'^if \[ "\$\{BASH_SOURCE\[0\]\}" = "\$0" \]; then main \$\{1\+"\$@"\}; fi', cli, re.M):
+    bare.append("the file's own dispatch line calls main without a guard")
+check("bin/council: the argument dispatch never expands an empty \"$@\" or $* (unbound in bash 3.2 under set -u)",
+      not bare, "; ".join(bare))
 
 # 12. Rename, and no project leakage in anything that ships as behaviour
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},

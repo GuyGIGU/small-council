@@ -38,6 +38,6 @@ completed review, plan, build, research or post-game never filed its request —
 shows the record: Convene estimates from it, and a council-init refresh proposes roster changes
 from it.
 - A run stopped for good → `--status abandoned`.
-- A run the user paused → `--status paused`.
+- A run the user paused → `--status paused`. When they want it back, `council run resume --run <folder>`.
 
 **Close every run you open.**

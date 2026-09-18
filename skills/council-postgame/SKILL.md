@@ -83,6 +83,7 @@ yes. It works on any work, council or not.
   `council prior <changed paths>` finds review P1/P2 findings still open.
 - Read the plan (tasks, Done-when, Out of scope) and the logs (notes, deviations, blocked tasks,
   follow-ups, `## Converge`). Skip `council memory select` when there's no memory file.
+- Then `council state phase=judge`, not `assign`: stages 3–6 are skipped.
 
 ## At Judge — desk work, written to synthesis.md
 

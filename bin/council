@@ -19,6 +19,9 @@ set -u
 COUNCIL_VERSION="0.7.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
+BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
+NL='
+'
 
 die()     { printf 'council: %s\n' "$*" >&2; exit 2; }
 say()     { printf '%s\n' "$*"; }
@@ -28,9 +31,10 @@ here()    { pwd -W 2>/dev/null || pwd; }
 dash()    { if [ -n "$1" ]; then printf '%s' "$1"; else printf '%s' '-'; fi; }
 undash()  { if [ "$1" = "-" ]; then printf ''; else printf '%s' "$1"; fi; }
 
-# First "key: value" in a header-style file; carriage returns and trailing "   # comments" stripped.
+# First "key: value" in a header-style file; a byte-order mark, carriage returns and trailing
+# "   # comments" stripped.
 field() {
-  sed -n "s/^$1:[[:space:]]*//p" "$2" 2>/dev/null | head -n 1 | tr -d '\r' | sed 's/[[:space:]]\{2,\}#.*$//'
+  sed -n -e "1s/^$BOM//" -e "s/^$1:[[:space:]]*//p" "$2" 2>/dev/null | head -n 1 | tr -d '\r' | sed 's/[[:space:]]\{2,\}#.*$//'
 }
 
 json_esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\t\r\n' '   '; }
@@ -48,18 +52,32 @@ norm() { tr -d '\r' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]'; }
 council_toplevel() { git rev-parse --show-toplevel 2>/dev/null; }
 
 # The .council/ of the MAIN checkout, shared by every linked worktree. A submodule keeps its own; a
-# bare repo's worktrees use the first non-bare worktree; outside git it is ./.council.
+# bare repo's worktrees use the one that holds the council's config (else one with a .council/, else
+# this one) — never whichever name sorts first; outside git it is ./.council.
 council_home() {
-  local top main
+  local top main list wt cfg any
   top="$(council_toplevel)"
   if [ -z "$top" ]; then printf '%s/.council\n' "$(here)"; return 0; fi
   if [ -n "$(git rev-parse --show-superproject-working-tree 2>/dev/null)" ]; then
     printf '%s/.council\n' "$top"; return 0
   fi
-  main="$(git worktree list --porcelain 2>/dev/null | awk '
-    /^worktree / { if (w != "" && !b && !done) { print w; done = 1; exit } w = substr($0, 10); b = 0; next }
-    /^bare$/     { b = 1 }
-    END          { if (!done && w != "" && !b) print w }')"
+  # Every non-bare worktree, the main checkout first; "(bare)" first when the repository itself is bare.
+  list="$(git worktree list --porcelain 2>/dev/null | awk '
+    /^worktree / { if (w != "" && !b) print w; w = substr($0, 10); b = 0; n++; next }
+    /^bare$/     { b = 1; if (n == 1) print "(bare)" }
+    END          { if (w != "" && !b) print w }')"
+  main="${list%%"$NL"*}"
+  if [ "$main" = "(bare)" ]; then
+    main=""; cfg=""; any=""
+    while IFS= read -r wt; do
+      [ -n "$wt" ] && [ "$wt" != "(bare)" ] || continue
+      if [ -z "$cfg" ] && [ -f "$wt/.council/council.config.md" ]; then cfg="$wt"; fi
+      if [ -z "$any" ] && [ -d "$wt/.council" ]; then any="$wt"; fi
+    done <<WORKTREES
+$list
+WORKTREES
+    main="${cfg:-$any}"
+  fi
   [ -n "$main" ] || main="$top"
   if [ ! -d "$main/.council" ] && [ -d "$top/.council" ]; then main="$top"; fi   # a 0.1 council inside a worktree
   printf '%s/.council\n' "$main"
@@ -77,30 +95,45 @@ mode_skill() {
   esac
 }
 
-# Runs, newest first, tab-separated, "-" for an empty value: dir mode phase code-root updated status actual.
+# Runs, newest first, tab-separated, "-" for an empty value:
+#   dir mode phase code-root updated status actual session
 # $2 caps how many are listed; $3 = open (in-progress or paused, however old) | all (the newest).
+# Every state file is read in one awk pass (the same rules as field), so the cost barely grows with
+# the number of runs — the SessionStart hook has 15 s.
 list_runs() {
   local home="$1" limit="${2:-30}" which="${3:-open}"
   [ -d "$home/runs" ] || return 0
   if [ "$which" = open ]; then
-    grep -l -E '^status:[[:space:]]*(in-progress|paused)' "$home"/runs/*/session-state.md 2>/dev/null | sort -r
+    grep -l -E "^($BOM)?status:[[:space:]]*(in-progress|paused)" "$home"/runs/*/session-state.md 2>/dev/null | sort -r
   else
     ls -1 "$home/runs" 2>/dev/null | sort -r | while IFS= read -r name; do
       [ -f "$home/runs/$name/session-state.md" ] && printf '%s\n' "$home/runs/$name/session-state.md"
     done
-  fi | head -n "$limit" | while IFS= read -r st; do
-    [ -n "$st" ] || continue
-    status="$(field status "$st")"; status="${status%% *}"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${st%/session-state.md}" "$(dash "$(field mode "$st")")" \
-      "$(dash "$(field phase "$st")")" "$(dash "$(field code-root "$st")")" "$(dash "$(field updated "$st")")" \
-      "$(dash "$status")" "$(dash "$(field actual "$st")")"
-  done
+  fi | head -n "$limit" | awk '
+    function out(s) { return s == "" ? "-" : s }
+    $0 != "" {
+      st = $0; split("", v); n = 0
+      while ((getline line < st) > 0) {
+        if (++n == 1) sub(/^\357\273\277/, "", line)
+        gsub(/\r/, "", line)
+        if (!match(line, /^[a-z][a-z0-9-]*:/)) continue
+        k = substr(line, 1, RLENGTH - 1)
+        if (k in v) continue
+        val = substr(line, RLENGTH + 1); sub(/^[ \t]+/, "", val); sub(/[ \t][ \t]+#.*$/, "", val); gsub(/\t/, " ", val)
+        v[k] = val
+      }
+      close(st)
+      if (n == 0) next
+      s = v["status"]; sub(/ .*$/, "", s)
+      d = st; sub(/\/session-state\.md$/, "", d)
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d, out(v["mode"]), out(v["phase"]), out(v["code-root"]), out(v["updated"]), out(s), out(v["actual"]), out(v["session"])
+    }'
 }
 
-# Open runs on this working tree (a run with no code-root counts as this tree's): their folders.
-# $3, if given, keeps only that status (in-progress or paused).
+# Open runs on this working tree (a run with no code-root counts as this tree's): their folders — all of
+# them, however many other trees' runs are open. $3, if given, keeps only that status.
 runs_here() {
-  list_runs "$1" 50 open | TOP="$2" ST="${3:-}" awk -F'\t' '
+  list_runs "$1" 1000000 open | TOP="$2" ST="${3:-}" awk -F'\t' '
     ($4 == ENVIRON["TOP"] || $4 == "-") && (ENVIRON["ST"] == "" || $6 == ENVIRON["ST"]) { print $1 }'
 }
 
@@ -123,12 +156,9 @@ seat_summary() {
 # the one in-progress run on this working tree. Never guesses between several, and never picks a
 # paused run on its own.
 resolve_run() {
-  local home mine count paused
+  local home mine count paused p
   if [ -n "$RUN_ARG" ]; then
-    RUN_ARG="${RUN_ARG%/}"
-    if [ ! -f "$RUN_ARG/session-state.md" ] && [ -f "$(council_home)/runs/$RUN_ARG/session-state.md" ]; then
-      RUN_ARG="$(council_home)/runs/$RUN_ARG"
-    fi
+    RUN_ARG="$(run_path "$RUN_ARG")"
     [ -f "$RUN_ARG/session-state.md" ] || die "not a run folder: $RUN_ARG"
     printf '%s\n' "$RUN_ARG"; return 0
   fi
@@ -140,9 +170,26 @@ resolve_run() {
   if [ "${count:-0}" -gt 1 ]; then
     die "several runs are open on this working tree — pass --run <folder>: $(printf '%s\n' "$mine" | names)"
   fi
-  paused="$(runs_here "$home" "$(this_tree)" paused | names)"
-  [ -z "$paused" ] || die "no in-progress run on this working tree (paused: $paused) — pass --run <folder> to act on a paused one"
+  paused="$(runs_here "$home" "$(this_tree)" paused)"
+  if [ -n "$paused" ]; then
+    case "$paused" in *"$NL"*) p="<folder>" ;; *) p="${paused##*/}" ;; esac
+    die "no in-progress run on this working tree (paused: $(printf '%s\n' "$paused" | names)) — to carry on with it: council run resume --run $p; to act on it while it stays paused, pass --run <folder>"
+  fi
   die "no open run on this working tree — open one with: council run open <mode>   (or pass --run <folder>)"
+}
+
+# A --run value as a run folder: backslashes read as /, trailing separators dropped, a relative path
+# made absolute (commands may change folder), a bare name looked up under runs/.
+run_path() {
+  local bs='\' r
+  r="${1//"$bs"//}"
+  while [ "${r%/}" != "$r" ] && [ -n "${r%/}" ]; do r="${r%/}"; done
+  if [ -f "$r/session-state.md" ]; then
+    case "$r" in /*|[A-Za-z]:/*) ;; *) r="$(cd "$r" 2>/dev/null && here)" || r="$1" ;; esac
+  elif [ -f "$(council_home)/runs/$r/session-state.md" ]; then
+    r="$(council_home)/runs/$r"
+  fi
+  printf '%s' "$r"
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -241,7 +288,8 @@ cmd_state() {
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
-  tmp="$st.tmp$$"; cp "$st" "$tmp" || die "cannot update $st"
+  tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
+  awk 'NR == 1 { sub(/^\357\273\277/, "") } { print }' "$st" > "$tmp" || { rm -f "$tmp"; die "cannot update $st"; }
   for kv in "$@"; do
     key="${kv%%=*}"
     if [ "$key" = "$kv" ]; then rm -f "$tmp"; die "expected key=value, got: $kv"; fi
@@ -262,6 +310,48 @@ cmd_state() {
     { print }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
   mv "$tmp" "$st"
   say "state: phase $(field phase "$st") · $(field status "$st") · ${run##*/}"
+}
+
+# Carry on with an open run — a paused one, or one another session was driving: mark it in progress,
+# drop a pause's closed: stamp and record this session as its driver, so a compaction here resumes it.
+# Plain state and seat calls never do this: taking a run over is always asked for.
+cmd_run_resume() {
+  local run st name status old session mine count others croot drv
+  if [ -n "$RUN_ARG" ]; then
+    run="$(resolve_run)" || exit 2
+  else
+    mine="$(runs_here "$(council_home)" "$(this_tree)")"
+    count="$(printf '%s' "$mine" | grep -c . || true)"
+    [ "${count:-0}" -gt 0 ] || die "no open run on this working tree to resume — council run status lists the runs"
+    [ "$count" -eq 1 ] || die "several runs are open on this working tree — pass --run <folder>: $(printf '%s\n' "$mine" | names)"
+    run="$mine"
+  fi
+  st="$run/session-state.md"; name="${run##*/}"
+  status="$(field status "$st")"; status="${status%% *}"
+  case "$status" in
+    complete|abandoned) die "$name is closed ($status) — open a new run instead: council run open $(mode_skill "$(field mode "$st")")" ;;
+  esac
+  old="$(field session "$st")"
+  session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
+  RUN_ARG="$run" cmd_state status=in-progress session="$session" >/dev/null || exit 2
+  awk '/^## / { body = 1 } !body && index($0, "closed:") == 1 { next } { print }' "$st" > "$st.tmp$$" \
+    && mv "$st.tmp$$" "$st" || { rm -f "$st.tmp$$"; die "cannot update $st"; }
+  if [ -n "$session" ]; then drv="driven by this session"; else drv="no session id to record"; fi
+  say "resumed $name — in progress · phase $(field phase "$st") · $drv"
+  if [ -n "$old" ] && [ "$old" != "$session" ]; then
+    say "it was driven by session $old — if that session is still open, it may still be working on this run: ask the user before re-dispatching any seat"
+  fi
+  [ -z "$(seat_summary "$run")" ] || say "seats — $(seat_summary "$run")"
+  others="$(runs_here "$(council_home)" "$(this_tree)" in-progress | N="$name" awk -F/ '$NF != ENVIRON["N"]' | names)"
+  [ -z "$others" ] || printf 'council: another run is in progress on this working tree (%s) — pass --run %s to every command for this one\n' "$others" "$name" >&2
+  croot="$(field code-root "$st")"
+  if [ -n "$croot" ] && [ "$croot" != "$(this_tree)" ]; then
+    if [ -d "$croot" ]; then
+      printf 'council: its code root is %s, not this working tree — work there\n' "$croot" >&2
+    else
+      printf 'council: its code root %s no longer exists — the run cannot go on; close it: council run close --run %s --status abandoned\n' "$croot" "$name" >&2
+    fi
+  fi
 }
 
 # Tokens accumulate per seat (one completion notification = one agent); a new agent id on a seat
@@ -298,16 +388,19 @@ cmd_seat() {
   for kv in ${1+"$@"}; do                            # ${1+…}: bash 3.2 calls an empty "$@" unbound under set -u
     case "$kv" in
       agent=*)  agent="${kv#agent=}" ;;
-      tokens=*) tokens="$(printf '%s' "${kv#tokens=}" | tr -cd '0-9')" ;;
+      tokens=*) tokens="$(seat_tokens "${kv#tokens=}")" \
+                  || die "tokens= takes a number of tokens (74304, 74,304 or 74.3k), got: ${kv#tokens=}" ;;
       note=*)   note="$(printf '%s' "${kv#note=}" | tr '\t\r\n' '   ')" ;;
       *) die "unknown seat field: $kv (use agent=, tokens=, note=)" ;;
     esac
   done
   run="$(resolve_run)" || exit 2
   f="$run/seats.tsv"
-  [ -f "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$f"
+  lock_file "$f"                                     # calls made at the same moment take turns
+  [ -s "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$f"
   SLUG="$slug" STATE="$state" AGENT="$agent" TOKENS="$tokens" NOTE="$note" NOW="$(now_min)" awk -F'\t' -v OFS='\t' '
-    NR == 1 { if (NF < 7) $0 = $0 "\tagents"; print; next }
+    NR == 1 && $1 == "slug" { if (NF < 7) $0 = $0 "\tagents"; print; next }
+    NR == 1 { print "slug", "state", "agent", "tokens", "updated", "note", "agents" }   # a lost header comes back
     $1 == ENVIRON["SLUG"] {
       found = 1
       ag = ($7 == "" ? 1 : $7 + 0)
@@ -320,18 +413,53 @@ cmd_seat() {
     }
     { print }
     END { if (!found) print ENVIRON["SLUG"], ENVIRON["STATE"], ENVIRON["AGENT"], ENVIRON["TOKENS"], ENVIRON["NOW"], ENVIRON["NOTE"], 1 }' \
-    "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
+  rm -f "$f.tmp$$"; rmdir "$f.lock" 2>/dev/null
   progress_line "$run"
 }
 
+# A token count as a notification or the UI gives it: 74304, 74,304, "74 304", "74304 tokens", 74.3k,
+# 1.2M. Empty stays empty; anything with no number fails.
+seat_tokens() {
+  [ -n "$1" ] || return 0
+  V="$1" awk 'BEGIN {
+    s = ENVIRON["V"]; gsub(/,/, "", s)
+    while (match(s, /[0-9][ \t]+[0-9]/))              # a space between digits is a thousands separator
+      s = substr(s, 1, RSTART) substr(s, RSTART + RLENGTH - 1)
+    if (!match(s, /[0-9]+(\.[0-9]+)?[ \t]*[kKmM]?/)) exit 1
+    t = substr(s, RSTART, RLENGTH); m = 1
+    if (t ~ /[kK]$/) m = 1000; else if (t ~ /[mM]$/) m = 1000000
+    sub(/[ \t]*[kKmM]$/, "", t)
+    printf "%d", int(t * m + 0.5)
+  }'
+}
+
+# Take a lock folder next to a file; a lock left by a killed call is broken after ~10 s. The wait is
+# measured on the clock, not in loops: a fork costs far more on Git Bash than the sleep it runs.
+lock_file() {
+  local start tries=0
+  start="$(date +%s)"
+  while ! mkdir "$1.lock" 2>/dev/null; do
+    if [ $(( $(date +%s) - start )) -ge 10 ]; then
+      tries=$((tries + 1))
+      [ "$tries" -le 2 ] || return 0            # twice broken by someone else: carry on rather than hang
+      rm -rf "$1.lock"                          # what a killed call left behind
+      mkdir "$1.lock" 2>/dev/null && return 0   # lost the race: the other caller holds it, so wait again
+      start="$(date +%s)"
+    fi
+    sleep 0.1 2>/dev/null || sleep 1
+  done
+}
+
 cmd_run_close() {
-  local run status home ptr p tok=0 agents=0 line n lg
+  local run status home ptr p tok=0 agents=0 line n lg busy=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
   if [ -f "$run/seats.tsv" ]; then
     line="$(awk -F'\t' 'NR > 1 && $2 != "skipped" && $2 != "queued" { a += ($7 == "" ? 1 : $7); t += $4 } END { printf "%d %d", a, t }' "$run/seats.tsv")"
     agents="${line%% *}"; tok="${line#* }"
+    busy="$(awk -F'\t' 'NR > 1 && ($2 == "running" || $2 == "queued") { printf "%s%s", (n++ ? ", " : ""), $1 }' "$run/seats.tsv")"
   fi
   if [ "$tok" -gt 0 ] 2>/dev/null; then
     RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" actual="~$(( (tok + 500) / 1000 ))k tokens across $agents agents" >/dev/null
@@ -349,6 +477,9 @@ cmd_run_close() {
   else
     say "closed ${run##*/} — $status"
   fi
+  if [ -n "$busy" ] && [ "$status" != abandoned ]; then
+    printf 'council: seats still marked running or queued: %s — their results will not be collected; wait for them, or record each (council seat <slug> failed or skipped) before closing\n' "$busy" >&2
+  fi
   if [ "$status" = complete ]; then
     n="$(ledger_record "$run")"
     [ "${n:-0}" -eq 0 ] 2>/dev/null || say "ledger: $n seat row(s) recorded — council ledger shows each seat's record"
@@ -358,7 +489,10 @@ cmd_run_close() {
           || printf 'council: no request was filed for this run — council ask save --run %s\n' "${run##*/}" >&2 ;;
     esac
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
-      lg="$(grep -lE "(^|[^0-9A-Za-z-])${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
+      # The log whose Run: line names this run — as a name or as the folder's full path, which is what
+      # council run open prints; failing that, the first log that mentions it.
+      lg="$(grep -lE "Run:[^|]*${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
+      [ -n "$lg" ] || lg="$(grep -lE "(^|[^0-9A-Za-z-])${run##*/}([^0-9A-Za-z-]|\$)" "$home"/logs/*.md 2>/dev/null | head -n 1)"
       if [ -z "$lg" ]; then
         printf 'council: no build log names this run — write %s/logs/<date>-<slug>.md with "Run: %s" and a "## Shortcuts and concessions" section\n' "$home" "${run##*/}" >&2
       elif ! grep -q '^## Shortcuts and concessions' "$lg"; then
@@ -372,18 +506,25 @@ cmd_run_status() {
   local home which runs
   home="$(council_home)"
   [ -d "$home" ] || { say "no council here (no $home) — run council-init"; return 0; }
-  if [ "$ALL" = 1 ]; then which=all; else which=open; fi
-  runs="$(list_runs "$home" 20 "$which")"
+  # With --all, the newest 20 runs. Otherwise every open run on this tree, first, then other trees'
+  # open runs up to 20 lines in all, and a count of the rest.
+  if [ "$ALL" = 1 ]; then which=all; runs="$(list_runs "$home" 20 all)"; else which=open; runs="$(list_runs "$home" 1000000 open)"; fi
   if [ -z "$runs" ]; then
     if [ "$which" = open ]; then say "no open council runs"; else say "no council runs yet"; fi
     return 0
   fi
-  printf '%s\n' "$runs" | TOP="$(this_tree)" awk -F'\t' '{
-    n = split($1, p, "/")
-    where = ($4 == ENVIRON["TOP"] || $4 == "-") ? "here" : "elsewhere: " $4
-    printf "%s · %s · phase %s · %s · updated %s · %s", p[n], $2, $3, $6, $5, where
-    if ($7 != "-") printf " · %s", $7
-    printf "\n" }'
+  printf '%s\n' "$runs" | TOP="$(this_tree)" ALL="$ALL" awk -F'\t' '
+    {
+      n = split($1, p, "/"); here = ($4 == ENVIRON["TOP"] || $4 == "-")
+      s = sprintf("%s · %s · phase %s · %s · updated %s · %s", p[n], $2, $3, $6, $5, here ? "here" : "elsewhere: " $4)
+      if ($7 != "-") s = s " · " $7
+      if (here || ENVIRON["ALL"] == "1") { print s; shown++ } else other[++no] = s
+    }
+    END {
+      room = 20 - shown; if (room < 0) room = 0
+      for (i = 1; i <= no && i <= room; i++) print other[i]
+      if (no > room) printf "… and %d more open in other working trees\n", no - room
+    }'
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -452,8 +593,10 @@ diff_symbols() {
 }
 
 cmd_index() {
-  local run top ref base head list body out st f label add del hunks diff nums syms sym hits callers tests stem note prior np=0
-  local n_files=0 n_skip=0 t_add=0 t_del=0 budget=80
+  local run top ref base head list body over out st f old label add del hunks diff nums syms sym hits callers tests stem note prior np=0
+  local n_files=0 n_skip=0 n_over=0 n_new=0 t_add=0 t_del=0 budget=80 dirty=""
+  local cap="${COUNCIL_INDEX_CAP:-80}"                # files indexed in full (the evals lower it to stay quick)
+  local namecap="${COUNCIL_INDEX_NAMECAP:-200}"       # past the cap: how many are named one by one
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cd "$top" 2>/dev/null || die "cannot enter the code root: $top"
@@ -463,25 +606,43 @@ cmd_index() {
   [ -n "$base" ] || base="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null)" || base=""
   [ -n "$base" ] || die "unknown base: $ref"
   head="$(git rev-parse --short HEAD 2>/dev/null)"
-  list="$run/.index-files"; body="$run/.index-body"; out="$run/index.md"
-  { git diff --name-status "$base" -- . 2>/dev/null | awk -F'\t' '{ print substr($1, 1, 1) "\t" $NF }'
-    git ls-files --others --exclude-standard 2>/dev/null | awk '{ print "?\t" $0 }'
+  list="$run/.index-files"; body="$run/.index-body"; over="$run/.index-over"; out="$run/index.md"
+  # status, path, old path (a rename's, else "-"); names as they are (no \ooo quoting); an untracked
+  # folder (a nested repository or worktree) is not a changed file.
+  { git -c core.quotePath=false diff -M --name-status "$base" -- . 2>/dev/null \
+      | awk -F'\t' '{ s = substr($1, 1, 1); if (s == "R" || s == "C") print s "\t" $3 "\t" $2; else print s "\t" $2 "\t-" }'
+    git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null | awk '!/\/$/ { print "?\t" $0 "\t-" }'
   } | sort -t "$TAB" -k2,2 -u > "$list"
-  : > "$body"
-  while IFS="$TAB" read -r st f; do
+  : > "$body"; : > "$over"
+  while IFS="$TAB" read -r st f old; do
     [ -n "$f" ] || continue
     case "$f" in .council/*) continue ;; esac          # the council's own files are never part of a change
-    if not_indexed "$f" || [ "$n_files" -ge 80 ]; then n_skip=$((n_skip + 1)); continue; fi
+    if not_indexed "$f"; then n_skip=$((n_skip + 1)); continue; fi
+    case "$st" in
+      A) label=added ;; D) label=deleted ;; R) label="renamed from $old" ;; C) label="copied from $old" ;;
+      "?") label="new, untracked"; n_new=$((n_new + 1)) ;; *) label=modified ;;
+    esac
+    if [ "$n_files" -ge "$cap" ]; then                 # past the cap: named, so it still gets an owner
+      # Named, so each still gets an owner — but a repo-wide change would put hundreds of KB into a
+      # file every seat reads, so past namecap they are counted instead of listed.
+      n_over=$((n_over + 1))
+      [ "$n_over" -gt "$namecap" ] \
+        || printf '## %s  (%s — past the %s-file cap: not indexed)\n' "$f" "$label" "$cap" >> "$over"
+      continue
+    fi
     n_files=$((n_files + 1))
     if [ "$st" = "?" ]; then
-      label="new, untracked"; add="$(awk 'END { print NR }' "$f" 2>/dev/null)"; del=0
+      if [ -s "$f" ] && ! LC_ALL=C grep -qI -e '' "$f" 2>/dev/null; then
+        printf '## %s  (%s, binary)\n\n' "$f" "$label" >> "$body"; continue
+      fi
+      add="$(awk 'END { print NR }' "$f" 2>/dev/null)"; del=0
       hunks="1-${add:-0}"; diff="$(head -n 400 "$f" 2>/dev/null | sed 's/^/+/')"
     else
-      case "$st" in A) label=added ;; D) label=deleted ;; R) label=renamed ;; *) label=modified ;; esac
-      nums="$(git diff --numstat "$base" -- "$f" 2>/dev/null | head -n 1)"
+      if [ "$st" = R ] || [ "$st" = C ]; then set -- "$old" "$f"; else set -- "$f"; fi   # both paths, so git pairs them
+      nums="$(git diff -M --numstat "$base" -- "$@" 2>/dev/null | head -n 1)"
       add="$(printf '%s' "$nums" | cut -f1)"; del="$(printf '%s' "$nums" | cut -f2)"
       if [ "$add" = "-" ]; then printf '## %s  (%s, binary)\n\n' "$f" "$label" >> "$body"; continue; fi
-      diff="$(git diff -U0 "$base" -- "$f" 2>/dev/null)"
+      diff="$(git diff -M -U0 "$base" -- "$@" 2>/dev/null)"
       hunks="$(printf '%s\n' "$diff" | awk '
         /^@@/ {
           if (match($0, /\+[0-9]+(,[0-9]+)?/)) {
@@ -528,16 +689,27 @@ cmd_index() {
     case "$add" in ''|*[!0-9]*) ;; *) t_add=$((t_add + add)) ;; esac
     case "$del" in ''|*[!0-9]*) ;; *) t_del=$((t_del + del)) ;; esac
   done < "$list"
+  # Uncommitted: staged or unstaged edits to tracked files, or new files in the change.
+  if [ "$n_new" -gt 0 ] || [ -n "$(git --no-optional-locks status --porcelain --untracked-files=no 2>/dev/null | head -n 1)" ]; then
+    dirty=" + uncommitted changes"
+  fi
   {
     printf '# Change index — %s\n' "${run##*/}"
-    printf 'base: %s (%s) · head: %s%s · generated: %s\n' "$(git rev-parse --short "$base")" "$ref" "$head" \
-      "$(git diff --quiet 2>/dev/null || printf ' + uncommitted changes')" "$(now_sec)"
+    printf 'base: %s (%s) · head: %s%s · generated: %s\n' "$(git rev-parse --short "$base")" "$ref" "$head" "$dirty" "$(now_sec)"
     printf 'files: %d (+%d/-%d)' "$n_files" "$t_add" "$t_del"
-    [ "$n_skip" -eq 0 ] || printf ' · not indexed: %d (lockfiles, vendored or generated files, or past the 80-file cap)' "$n_skip"
+    [ "$n_over" -eq 0 ] || printf ' · past the %s-file cap: %d (named at the end, not indexed — they still need an owner)' "$cap" "$n_over"
+    [ "$n_skip" -eq 0 ] || printf ' · not indexed: %d (lockfiles, vendored or generated files)' "$n_skip"
     printf '\nSymbols come from definitions in the diff; callers and tests are matched by name (git grep) —\na starting point for tracing, not proof.\n\n'
     cat "$body"
+    if [ "$n_over" -gt 0 ]; then
+      printf '## Past the %s-file cap — %d more changed files, named but not indexed; each still needs an owner\n' "$cap" "$n_over"
+      cat "$over"
+      [ "$n_over" -le "$namecap" ] \
+        || printf '## … and %d more, not named one by one: git diff --name-only %s\n' "$((n_over - namecap))" "$(git rev-parse --short "$base")"
+      printf '\n'
+    fi
   } > "$out"
-  rm -f "$list" "$body"
+  rm -f "$list" "$body" "$over"
   prior=""
   if [ "$(field mode "$run/session-state.md")" = council-postgame ]; then
     # A post-game's verifier reads index.md and must never see the plan, the logs or their verdicts;
@@ -557,6 +729,7 @@ cmd_index() {
   else
     say "index: $n_files files (+$t_add/-$t_del) → $out"
   fi
+  [ "$n_over" -eq 0 ] || say "index: $n_over more past the $cap-file cap — named at the end of the index but not indexed; give them an owner too"
   [ "$np" -eq 0 ] || say "earlier council work on these files: $np mention(s), listed at the end of the index"
 }
 
@@ -591,13 +764,15 @@ config_gates() {
     function dash(s) { return s == "" ? "-" : s }
     function words(s, w) {
       s = tolower(s); gsub(/✓|✔|✅|☑/, " yes ", s); gsub(/✗|✘|❌|×/, " no ", s)
+      gsub(/·|→|›|»|–|—|\302\240/, " ", s)              # separators and a non-breaking space
       gsub(/[]*_`()[,;\/+&:.!?"]/, " ", s)
       return split(s, w, /[ \t]+/)
     }
     function stages(s,    w, n, i, g, v, m, bad) {
+      gsub(/\([^)]*\)/, " ", s)                         # a note in brackets is a note: "verify (phase 10)"
       n = words(s, w)
       for (i = 1; i <= n; i++) {
-        if (w[i] == "" || w[i] ~ /^(and|or|only|by|on|at|stage|stages|-|—)$/) continue
+        if (w[i] == "" || w[i] ~ /^(and|or|only|by|on|at|stage|stages|-)$/) continue
         if (w[i] ~ /^(grounding|baseline)$/) g = 1
         else if (w[i] ~ /^(verify|verification)$/) v = 1
         else if (w[i] ~ /^(both|all|always|every)$/) g = v = 1
@@ -610,8 +785,9 @@ config_gates() {
     function mandatory(s,    w, n, i) {
       n = words(s, w)
       for (i = 1; i <= n; i++) {
-        if (w[i] ~ /^(yes|y|true|mandatory|required|require|must|always|blocking|blocks|blocker)$/) return "yes"
-        if (w[i] ~ /^(no|n|false|not|optional|advisory|never|informational)$/) return "no"
+        if (w[i] ~ /^(yes|y|true|mandatory|required|require|must|always|blocking|blocks|blocker|1)$/) return "yes"
+        if (w[i] ~ /^(no|n|false|not|optional|advisory|never|informational|0)$/) return "no"
+        if (w[i] ~ /^(non|not)-(blocking|blocker|mandatory|required|require|must|gating)$/) return "no"
       }
       return "?"
     }
@@ -633,7 +809,7 @@ config_gates() {
           h = tolower(trim(f[i])); gsub(/[^a-z]/, "", h)
           if (h == "gate" || h == "name") cg = i; else if (h == "command") cc = i; else if (h == "runat") ca = i
           else if (h == "mandatory") cm = i; else if (h == "checked") ck = i
-          else if (h == "sideeffects" || h == "sideeffect") cs = i; else if (h == "needs") cn = i
+          else if (h ~ /^sideeffects?/) cs = i; else if (h ~ /^needs/) cn = i
         }
         next
       }
@@ -647,9 +823,17 @@ config_gates() {
     }' "$1"
 }
 
-# A Gates section still written as a list (the layout before the table): backticked commands, no table.
+# A Gates section still written as a list (the layout before the table): list items with a backticked
+# command, and no table. Only list lines count, so the template's own HTML comment — or a note about a
+# `council-init` refresh — is not mistaken for a layout to migrate.
 gates_listed() {
-  awk '/^## / { g = ($0 ~ /^## Gates/); next } g && /^\|/ { t = 1 } g && /`[^`]+`/ { c = 1 } END { exit !(c && !t) }' "$1" 2>/dev/null
+  awk '
+    /^## / { g = ($0 ~ /^## Gates/); next }
+    !g { next }
+    /^[ \t]*<!--/ { cm = 1 } cm { if (/-->/) cm = 0; next }
+    /^\|/ { t = 1 }
+    /^[ \t]*([-*+]|[0-9]+[.)])[ \t]*(\*\*[^*]*\*\*:?[ \t]*)?`[^`]+`/ { c = 1 }
+    END { exit !(c && !t) }' "$1" 2>/dev/null
 }
 
 # A backslash outside quotes before a letter or digit: bash drops it, so tools\run.ps1 reaches the tool
@@ -718,23 +902,69 @@ ITEMS
 
 gate_base() { printf '%s/gates/%s' "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')"; }
 
+# The failing tests a runner's output names, one id per line, in the order they appear and without
+# repeats: pytest (FAILED x::y, x::y FAILED), go (--- FAIL: Name), unittest (FAIL: test_x), node --test
+# and jest/vitest (✖ name, ✕ name), TAP (not ok 3 - name), cargo (test x ... FAILED). Run times are
+# dropped, so the same failure reads the same in two runs; a summary count line names no test and is
+# ignored, which is why a whole-line comparison could not be trusted.
+failure_ids() {
+  awk '
+    function norm(s) {
+      sub(/[ \t]*\([0-9][0-9.,]*[ \t]*(ms|s|sec|secs|seconds)\)[ \t]*$/, "", s)
+      sub(/[ \t]+-[ \t].*$/, "", s)                     # pytest appends " - AssertionError: …"
+      gsub(/^[ \t\[]+|[ \t,.:;\]]+$/, "", s)
+      return s
+    }
+    function emit(s) { s = norm(s); if (s != "" && !(s in seen)) { seen[s] = 1; print s } }
+    {
+      l = $0; gsub(/\r/, "", l); gsub(/\033\[[0-9;]*[A-Za-z]/, "", l)
+      if (match(l, /^[ \t]*(FAILED|ERROR)[ \t]+[^ \t]/))            { emit(substr(l, RSTART + RLENGTH - 1)); next }
+      if (match(l, /^[ \t]*---[ \t]+(FAIL|ERROR):[ \t]+[^ \t]/))    { emit(substr(l, RSTART + RLENGTH - 1)); next }
+      if (match(l, /^[ \t]*(FAIL|ERROR):[ \t]+[^ \t]/))             { emit(substr(l, RSTART + RLENGTH - 1)); next }
+      if (match(l, /^[ \t]*(✖|✗|✕|×|❌)[ \t]+[^ \t]/))               { emit(substr(l, RSTART + RLENGTH - 1)); next }
+      if (match(l, /^[ \t]*not ok[ \t]+[0-9]+[ \t]*-?[ \t]*/))      { emit(substr(l, RSTART + RLENGTH)); next }
+      if (match(l, /^[ \t]*test[ \t]+[^ \t]+[ \t]+\.\.\.[ \t]+(FAILED|failed)/)) { emit($2); next }
+      if (match(l, /^[ \t]*[^ \t]+[ \t]+FAILED([ \t]|$)/))          { emit($1); next }
+      if (match(l, /^[ \t]*FAIL[ \t]+[^ \t]/))                      { emit(substr(l, RSTART + RLENGTH - 1)); next }
+    }' "$1" 2>/dev/null
+}
+
+# cmd.exe that never got its /c switch prints its version banner, then a prompt, and exits 0 — a green
+# gate for a command that never ran. Its whole output is that banner and a trailing prompt.
+cmd_never_ran() {
+  [ -s "$1" ] || return 1
+  head -n 1 "$1" | grep -q '^Microsoft Windows \[Version' || return 1
+  tail -n 1 "$1" | tr -d '\r' | grep -q '>[ ]*$'
+}
+
 # Run one gate; full output to <run>/gates/<name>.txt, the verdict to <name>.json. Returns its exit code.
 # In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
 # so a later failure can be told apart from one the untouched code already had.
 run_gate() {
-  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0
+  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0 rcmd never=0 nnote=""
   GATE_EMPTY=0
   base="$(gate_base "$run" "$name")"; out="$base.txt"; bl="$run/gates/baseline/${base##*/}"
   pat='error|fail|exception|traceback|assert|panic|cannot|not found|undefined'
   mkdir -p "$run/gates"
+  # On Git Bash a lone /c is turned into a drive path before cmd sees it, so cmd opens a prompt, reads
+  # end-of-input and exits 0 without running anything. Written //c it survives as /c, so that is how
+  # the command is run. Nothing else in the command is touched: a /c/… path a Windows tool is given
+  # (python "$PWD/x.py") still has to be converted.
+  rcmd="$cmd"
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      rcmd="$(printf '%s' "$cmd" \
+        | sed -E 's#(^|[[:space:];&|(])([cC][mM][dD](\.[eE][xX][eE])?)([[:space:]]+)/([cCkK])([[:space:]]|$)#\1\2\4//\5\6#g')" ;;
+  esac
   start="$(date +%s)"
-  # Git Bash turns /c, /p:… and other Windows switches into drive paths before a Windows program sees
-  # them (cmd /c would open a prompt, read nothing and exit 0), so the command reaches its tool as written.
-  ( cd "$top" 2>/dev/null || exit 97; MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' bash -c "$cmd" < /dev/null ) > "$out" 2>&1
+  ( cd "$top" 2>/dev/null || exit 97; bash -c "$rcmd" < /dev/null ) > "$out" 2>&1
   ec=$?
   secs=$(( $(date +%s) - start ))
-  printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"}\n' \
-    "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" > "$base.json"
+  if [ "$ec" -eq 0 ] && cmd_never_ran "$out"; then   # a prompt and a banner: the command never ran
+    ec=1; never=1; nnote=', "note": "cmd opened its prompt and ran nothing"'
+  fi
+  printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"%s}\n' \
+    "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" "$nnote" > "$base.json"
   if [ "${GATE_BASELINE:-0}" = 1 ] && [ ! -f "$bl.txt" ]; then
     mkdir -p "$run/gates/baseline" && cp "$out" "$bl.txt" && cp "$base.json" "$bl.json" && fresh=1
   fi
@@ -748,24 +978,30 @@ run_gate() {
     return 0
   fi
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
-  say "gate $name: FAIL (exit $ec, ${secs}s) — full output: $out"
+  if [ "$never" = 1 ]; then
+    say "gate $name: FAIL — cmd opened its prompt and ran nothing (${secs}s): write its switch as //c, e.g. cmd //c \"<command>\" — full output: $out"
+  else
+    say "gate $name: FAIL (exit $ec, ${secs}s) — full output: $out"
+  fi
   hits="$(grep -n -i -E "$pat" "$out" 2>/dev/null | head -n 12)"
   [ -n "$hits" ] || hits="$(tail -n 8 "$out")"
   printf '%s\n' "$hits" | clip 220 | sed 's/^/    /'
   if [ "$fresh" = 0 ] && [ -f "$bl.txt" ]; then   # it may have been red before the change too: say what is new
-    grep -i -E "$pat" "$bl.txt" 2>/dev/null | tr -d '\r' > "$base.seen"
-    if [ -s "$base.seen" ]; then
-      hits="$(grep -i -E "$pat" "$out" 2>/dev/null | tr -d '\r' | grep -v -x -F -f "$base.seen" | head -n 12)"
+    failure_ids "$bl.txt" > "$base.seen"; failure_ids "$out" > "$base.now"
+    if [ -s "$base.now" ] && [ -s "$base.seen" ]; then
+      hits="$(grep -v -x -F -f "$base.seen" "$base.now" | head -n 12)"
+      if [ -n "$hits" ]; then
+        say "    failing now and not at the baseline (gates/baseline/${bl##*/}.txt):"
+        printf '%s\n' "$hits" | clip 220 | sed 's/^/      /'
+      else
+        say "    the same test(s) are failing as at the baseline (gates/baseline/${bl##*/}.txt) — no new one is named"
+      fi
+    elif [ -s "$base.now" ]; then
+      say "    the baseline's output names no failing test, so nothing can be compared — read gates/baseline/${bl##*/}.txt next to this one yourself"
     else
-      hits="$(grep -i -E "$pat" "$out" 2>/dev/null | tr -d '\r' | head -n 12)"
+      say "    this output names no failing test, so nothing can be compared — read it next to gates/baseline/${bl##*/}.txt yourself"
     fi
-    rm -f "$base.seen"
-    if [ -n "$hits" ]; then
-      say "    failure lines the baseline didn't have (gates/baseline/${bl##*/}.txt):"
-      printf '%s\n' "$hits" | clip 220 | sed 's/^/      /'
-    else
-      say "    no failure line the baseline didn't already have (gates/baseline/${bl##*/}.txt)"
-    fi
+    rm -f "$base.seen" "$base.now"
   fi
   return "$ec"
 }
@@ -880,7 +1116,7 @@ GATES
     [ "$failed" -eq 0 ] || say "a mandatory gate failed"
     return "$failed"
   fi
-  name="$*"                           # a name with a space may arrive as several words
+  name="${1+$*}"                      # a name with a space may arrive as several words
   [ -n "$name" ] || die "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
   cmd="$GATE_CMD"
   if [ -z "$cmd" ]; then
@@ -958,7 +1194,7 @@ GLOBS
         alive=1; break
       fi
     done
-    [ "$alive" = 1 ] || die "the --glob pattern(s) $(printf "'%s' " "${globs[@]}")match no file in this project, so this check could never look at anything — fix the --glob (a git pathspec: case matters; '*.py' reaches every folder, 'src/*.py' only the top-level src/)"
+    [ "$alive" = 1 ] || die "the --glob pattern(s) $(printf "'%s' " "${globs[@]}")match no file in this project, so this check could never look at anything — fix the --glob (a git pathspec: case matters, and a pattern with a / in it is anchored at the repo root, so 'src/*.py' covers every folder under a top-level src/ but not web/src/)"
   fi
   if [ -n "$BASE_ARG" ]; then
     ref="$BASE_ARG"
@@ -1464,15 +1700,22 @@ SEATS
 gate_test_path() {
   ( set -f
     cd "$1" 2>/dev/null || exit 1
-    hit=""; base=""; sub=""; want=""
+    hit=""; base=""; sub=""; want=""; away=0; root="$(pwd -P)"
     for tok in $2; do
       tok="$(printf '%s' "$tok" | tr -d "\"'\`")"; tok="${tok%;}"
-      if [ -n "$want" ]; then want=""; sub="${tok%/}"; continue; fi
+      tok="${tok#(}"; tok="${tok%)}"   # a subshell: (cd dir && pytest tests/test_x.py)
+      if [ -n "$want" ]; then want=""; sub="${tok%/}"; away=0; fi
       case "$tok" in
         cd|pushd|--prefix|--cwd|--dir|-C) want=1; continue ;;
-        --prefix=*|--cwd=*|--dir=*) sub="${tok#*=}"; sub="${sub%/}"; continue ;;
+        --prefix=*|--cwd=*|--dir=*) sub="${tok#*=}"; sub="${sub%/}"; away=0 ;;
         -*=*) tok="${tok#*=}" ;;
       esac
+      if [ -n "$sub" ] && [ "$away" = 0 ]; then
+        # A cd or --prefix out of the project: from here the paths are not this project's, so nothing
+        # is confirmed rather than the wrong file being named.
+        case "$(cd "$sub" 2>/dev/null && pwd -P)" in "$root"|"$root"/*) ;; *) away=1 ;; esac
+      fi
+      case "$tok" in cd|pushd|--prefix=*|--cwd=*|--dir=*) continue ;; esac
       case "$tok" in res://*) tok="${tok#res://}" ;; esac
       case "$tok" in *::*) tok="${tok%%::*}" ;; esac
       case "$tok" in -*|.|./|*"*"*|*"?"*) continue ;; *[/.]*) ;; *) continue ;; esac
@@ -1484,16 +1727,26 @@ gate_test_path() {
         test_*|test-*|*_test.*|*-test.*|*.test.*|*.spec.*|*_spec.*|*-spec.*|spec_*|tests.*|test.*) ;;
         *) continue ;;
       esac
-      for p in ${sub:+"$sub/$tok"} "$tok"; do
-        [ -f "$p" ] || continue
-        if git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then hit="$p"; break; fi
-        git check-ignore -q -- "$p" >/dev/null 2>&1
-        if [ $? -eq 1 ]; then hit="$p"; break; fi   # 1 = not ignored; 128 = outside the project
-      done
+      [ "$away" = 0 ] || continue     # the command left the project before naming this path
+      p="$tok"                        # inside the folder the command moved to, if it named one
+      case "$tok" in /*|[A-Za-z]:*) ;; *) [ -z "$sub" ] || p="$sub/$tok" ;; esac
+      if [ -f "$p" ]; then
+        if git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then hit="$p"
+        else
+          git check-ignore -q -- "$p" >/dev/null 2>&1
+          [ $? -ne 1 ] || hit="$p"    # 1 = not ignored; 128 = outside the project
+        fi
+      fi
       [ -z "$hit" ] || break          # the first real test named wins
     done
     [ -n "$hit" ] || exit 1
-    printf '%s' "$hit" )
+    while :; do                       # a path that walks back up: webapp/backend/../../tests/x -> tests/x
+      case "$hit" in
+        */../*) p="$(printf '%s' "$hit" | sed 's#[^/][^/]*/\.\./##')"; [ "$p" != "$hit" ] || break; hit="$p" ;;
+        *) break ;;
+      esac
+    done
+    printf '%s' "${hit#./}" )
 }
 
 # A gate verdict json is one line, written by run_gate: {"gate": .., "command": .., "exit": N, ..}
@@ -1512,8 +1765,8 @@ cmd_check() {
   if [ $# -eq 0 ]; then
     if [ -f "$run/synthesis.md" ]; then set -- "$run/synthesis.md"; else set -- "$run"/seats/*.md; fi
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
-      for f in "$@"; do                # a build's diagnosis cites the code before its fix: lines that moved on
-        shift; case "${f##*/}" in diagnose-*) ;; *) set -- "$@" "$f" ;; esac
+      for f in ${1+"$@"}; do           # a build's diagnosis cites the code before its fix: lines that moved on
+        shift; case "${f##*/}" in diagnose-*) ;; *) set -- ${1+"$@"} "$f" ;; esac
       done
     fi
   fi
@@ -1540,7 +1793,7 @@ cmd_check() {
     printf 'base: %s\n\n' "${base:-unknown — origin not checked}"
     printf '| item | cite | status | origin |\n|---|---|---|---|\n'
   } > "$out"
-  for f in "$@"; do
+  for f in ${1+"$@"}; do                                            # ${1+…}: bash 3.2 and an empty list
     if [ ! -f "$f" ]; then
       case "$f" in "$run/seats/*.md") continue ;; esac               # no seat files yet: nothing was named
       bad=$((bad + 1)); say "check: $f — no such file"; continue
@@ -1721,7 +1974,8 @@ cmd_map() {
   behind="$(git rev-list --count "$sha..HEAD" 2>/dev/null)"
   if [ "${behind:-0}" -eq 0 ]; then say "map: up to date (map-commit $(printf '%.9s' "$sha"))"; return 0; fi
   say "map: $behind commits behind HEAD (map-commit $(printf '%.9s' "$sha")). Files changed since, by area:"
-  git diff --name-only "$sha" HEAD -- . 2>/dev/null | grep -v '^\.council/' \
+  # The whole repository, from any folder (paths are printed from the top).
+  git -c core.quotePath=false -c diff.relative=false diff --name-only "$sha" HEAD 2>/dev/null | grep -v '^\.council/' \
     | awk -F/ '{ a = (NF > 1 ? $1 "/" : $1); c[a]++ } END { for (k in c) printf "  %4d  %s\n", c[k], k }' | sort -rn | head -n 12
 }
 
@@ -1801,10 +2055,10 @@ REFS
     fi
     gates="$(config_gates "$cfg")"
     if [ -z "$gates" ]; then
-      if gates_listed "$cfg"; then
-        finding ERROR "the Gates section is in an older layout (a list, not a table), so no gate can run — every council report on this project says NOTHING WAS CHECKED until it is migrated" "run a council-init refresh — it moves the listed commands into the Gates table; there is nothing to add by hand"
-      elif grep -qiE '^[-*[:space:]]*guardrails: *declined' "$cfg" 2>/dev/null; then
+      if grep -qiE '^[-*[:space:]]*guardrails: *declined' "$cfg" 2>/dev/null; then    # the user's own choice, first
         finding WARN "no gates in council.config.md (guardrails declined) — every council report on this project says NOTHING WAS CHECKED" "delete the 'guardrails: declined' line and run a council-init refresh whenever you want them fitted"
+      elif gates_listed "$cfg"; then
+        finding ERROR "the Gates section is in an older layout (a list, not a table), so no gate can run — every council report on this project says NOTHING WAS CHECKED until it is migrated" "run a council-init refresh — it moves the listed commands into the Gates table; there is nothing to add by hand"
       else
         finding ERROR "no gates in council.config.md — every council report on this project says NOTHING WAS CHECKED" "add the project's real test / lint / build commands (a council-init refresh detects them, and offers the ones you are missing)"
       fi
@@ -1828,17 +2082,21 @@ REFS
       done <<GATES
 $gates
 GATES
-      awk '/^## / { g = ($0 ~ /^## Gates/); next } g && /^\|/ { print; exit }' "$cfg" | grep -qi 'side effects' \
+      # The same has-column answer gate --all uses, so the two can never disagree about a header.
+      [ "$(printf '%s\n' "$gates" | awk -F"$TAB" 'NR == 1 { print $10 }')" = 1 ] \
         || finding WARN "the Gates table has no Side effects column (an older layout)" "a council-init refresh adds Probe, Needs and Side effects — until then council gate --all runs none of its gates unasked"
     fi
   fi
-  while IFS="$TAB" read -r dir mode phase croot upd status actual; do
+  local stale_runs rsess
+  stale_runs="$NL$(find "$home/runs" -mindepth 2 -maxdepth 2 -name session-state.md -mtime +2 2>/dev/null)$NL"   # one pass
+  while IFS="$TAB" read -r dir mode phase croot upd status actual rsess; do
     [ -n "$dir" ] || continue
-    if [ -n "$(find "$dir/session-state.md" -mtime +2 2>/dev/null)" ]; then
-      finding WARN "run ${dir##*/} ($(mode_skill "$(undash "$mode")"), phase $phase) has been open since $upd" "resume it, or: council run close --run \"$dir\" --status abandoned"
-    fi
+    case "$stale_runs" in
+      *"$NL$dir/session-state.md$NL"*)
+        finding WARN "run ${dir##*/} ($(mode_skill "$(undash "$mode")"), phase $phase) has been open since $upd" "resume it (council run resume --run ${dir##*/}), or: council run close --run \"$dir\" --status abandoned" ;;
+    esac
   done <<RUNS
-$(list_runs "$home" 200 open)
+$(list_runs "$home" 1000000 open)
 RUNS
   ptr="$home/active-run"
   if [ -s "$ptr" ]; then
@@ -1867,7 +2125,9 @@ RUNS
   map="$home/map.md"
   if [ -f "$map" ]; then
     sha="$(sed -n 's/^map-commit:[[:space:]]*\([0-9a-fA-F]\{7,40\}\).*/\1/p' "$map" | head -n 1)"
-    if [ -n "$sha" ]; then
+    if [ -n "$sha" ] && git rev-parse --git-dir >/dev/null 2>&1 && ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
+      finding WARN "map-commit $(printf '%.9s' "$sha") isn't in this repo's history (a rebase or squash removed it), so nobody can tell what changed since" "rebuild the map with a council-init refresh, and stamp the new map-commit"
+    elif [ -n "$sha" ]; then
       behind="$(git rev-list --count "$sha..HEAD" 2>/dev/null)"
       [ "${behind:-0}" -le 50 ] 2>/dev/null || finding WARN "the map is $behind commits behind HEAD" "refresh the changed areas (council map status lists them)"
     else
@@ -2556,8 +2816,10 @@ council — the Small Council's helper (bash + git)
   council home                           where the council lives (.council/ of the main checkout)
   council run open <mode> [--alongside] [--session=ID]
                                          open a run for a mode, e.g. council-review; prints its folder
-  council run status [--all]             open runs (the last 20 with --all)
+  council run status [--all]             open runs, this tree's first (the last 20 with --all)
   council run close [--status complete|abandoned|paused]
+  council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
+                                         in progress again, this session recorded as its driver
   council state [key=value …]            show or update the run's session-state header
   council seat <slug> <state> [agent=ID] [tokens=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped
@@ -2591,12 +2853,13 @@ EOF
 # everywhere (the Chair passes it to every command when several runs are open); "--" means the command
 # takes a command of its own after --.
 takes_flags() {
-  local label="$1" f
+  local label="$1" f ok
   shift
+  ok=" run ${1+$*} "                    # ${1+…}: bash 3.2 calls an empty "$@" or $* unbound under set -u
   for f in $FLAGS; do
-    case " run $* " in *" $f "*) ;; *) die "$label doesn't take --$f — see: council help" ;; esac
+    case "$ok" in *" $f "*) ;; *) die "$label doesn't take --$f — see: council help" ;; esac
   done
-  case " $* " in *" -- "*) ;; *) [ "${#AFTER_DD[@]}" -eq 0 ] || die "$label takes nothing after -- — see: council help" ;; esac
+  case "$ok" in *" -- "*) ;; *) [ "${#AFTER_DD[@]}" -eq 0 ] || die "$label takes nothing after -- — see: council help" ;; esac
 }
 
 no_words() { local label="$1"; shift; [ $# -eq 0 ] || die "$label doesn't take '$*' — see: council help"; }
@@ -2648,37 +2911,39 @@ main() {
   [ $# -gt 0 ] || { [ -z "$FLAGS" ] || die "a flag needs a command — see: council help"; usage; exit 0; }
   cmd="$1"; shift
   case "$cmd" in
-    home)    takes_flags home; no_words home "$@"; council_home ;;
+    home)    takes_flags home; no_words home ${1+"$@"}; council_home ;;
     run)
       sub="${1:-}"; [ $# -eq 0 ] || shift
       case "$sub" in
         open)   takes_flags "run open" alongside session code-root
                 [ $# -le 1 ] || die "run open takes one mode (got: $*)"
                 cmd_run_open ${1+"$@"} ;;
-        close)  takes_flags "run close" status; no_words "run close" "$@"; cmd_run_close ;;
-        status) takes_flags "run status" all; no_words "run status" "$@"; cmd_run_status ;;
-        *) die "usage: council run open <mode> | run status [--all] | run close [--status …]" ;;
+        close)  takes_flags "run close" status; no_words "run close" ${1+"$@"}; cmd_run_close ;;
+        status) takes_flags "run status" all; no_words "run status" ${1+"$@"}; cmd_run_status ;;
+        resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
+        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>]" ;;
       esac ;;
     state)   takes_flags state; cmd_state ${1+"$@"} ;;
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;
-    index)   takes_flags index base; no_words index "$@"; cmd_index ;;
+    index)   takes_flags index base; no_words index ${1+"$@"}; cmd_index ;;
     gate)    takes_flags gate all at --
              if [ "$ALL" = 1 ]; then
-               no_words "gate --all" "$@"
+               no_words "gate --all" ${1+"$@"}
                [ -z "$GATE_CMD" ] || die "gate --all runs the configured gates — it takes no command after --"
              else
                [ -z "$AT_ARG" ] || die "--at works only with gate --all"
              fi
              cmd_gate ${1+"$@"} ;;
-    gates)   takes_flags gates; no_words gates "$@"; cmd_gates ;;
+    gates)   takes_flags gates; no_words gates ${1+"$@"}; cmd_gates ;;
     changed) takes_flags changed base code-root --; cmd_changed ${1+"$@"} ;;
-    collect) takes_flags collect; no_words collect "$@"; cmd_collect ;;
+    collect) takes_flags collect; no_words collect ${1+"$@"}; cmd_collect ;;
     check)   takes_flags check base
              for w in ${1+"$@"}; do [ -f "$w" ] || die "check: no such file: $w"; done
              cmd_check ${1+"$@"} ;;
     map)     takes_flags map; [ $# -le 1 ] || die "usage: council map status"; cmd_map ${1+"$@"} ;;
     fingerprint) takes_flags fingerprint
-             case "$*" in ''|check) ;; *) die "usage: council fingerprint [check]" ;; esac
+             [ $# -le 1 ] || die "usage: council fingerprint [check]"
+             case "${1:-}" in ''|check) ;; *) die "usage: council fingerprint [check]" ;; esac
              cmd_fingerprint ${1+"$@"} ;;
     memory)  takes_flags memory
              case "${1:-index}" in select) ;; *) [ $# -le 1 ] || die "usage: council memory [index | select [path|slug …] | check]" ;; esac
@@ -2686,11 +2951,11 @@ main() {
     prior)   takes_flags prior; cmd_prior ${1+"$@"} ;;
     ask)     takes_flags ask; [ $# -le 2 ] || die "usage: council ask save [slug]"; cmd_ask ${1+"$@"} ;;
     ledger)  takes_flags ledger; [ $# -le 1 ] || die "usage: council ledger [N]"; cmd_ledger ${1+"$@"} ;;
-    doctor)  takes_flags doctor; no_words doctor "$@"; cmd_doctor ;;
-    version) takes_flags version; no_words version "$@"; say "council $COUNCIL_VERSION" ;;
-    help)    takes_flags help; no_words help "$@"; usage ;;
+    doctor)  takes_flags doctor; no_words doctor ${1+"$@"}; cmd_doctor ;;
+    version) takes_flags version; no_words version ${1+"$@"}; say "council $COUNCIL_VERSION" ;;
+    help)    takes_flags help; no_words help ${1+"$@"}; usage ;;
     *) die "unknown command '$cmd' — see: council help" ;;
   esac
 }
 
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then main "$@"; fi
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then main ${1+"$@"}; fi

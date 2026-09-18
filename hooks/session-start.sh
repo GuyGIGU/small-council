@@ -5,11 +5,14 @@
 # the session's context: which modes exist, where the map and settled decisions live, how many memory
 # proposals await the user, and — most importantly — which council runs are still open. Right after a
 # compaction it tells the agent to resume the run THIS session was driving (matched by session id)
-# from disk instead of restarting it; every other open run is only reported. For every other project
-# it prints nothing, so it costs nothing there.
+# from disk instead of restarting it; every other open run is only reported. A run another session
+# updated recently may still be live there, so it is never offered for re-dispatch or closing. For
+# every other project it prints nothing, so it costs nothing there.
 #
 # It sources bin/council, so the hook and the helper find the council home the same way. It must never
-# break a session: every failure path is silent and the script always exits 0.
+# break a session: every failure path is silent and the script always exits 0. It must also stay well
+# inside Claude Code's 15 s limit however many runs were left open: every state file is read in one
+# pass, only this tree's runs are described (at most 5), and other trees' runs are summed up.
 
 set -u
 
@@ -30,6 +33,8 @@ home="$(council_home)"
 [ -d "$home" ] || exit 0
 root="$(dirname "$home")"
 top="$(this_tree)"
+NL='
+'
 
 if [ -f "$home/council.config.md" ]; then
   say "[Small Council] Council-enabled project. Council home: $home"
@@ -42,9 +47,17 @@ fi
 
 if [ -f "$home/map.md" ]; then
   sha="$(sed -n 's/^map-commit:[[:space:]]*\([0-9a-fA-F]\{7,40\}\).*/\1/p' "$home/map.md" 2>/dev/null | head -n 1)"
-  behind=""
-  [ -n "$sha" ] && behind="$(git rev-list --count "$sha..HEAD" 2>/dev/null || true)"
-  if [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
+  behind=""; lost=""
+  if [ -n "$sha" ]; then
+    if git cat-file -e "$sha^{commit}" 2>/dev/null; then
+      behind="$(git rev-list --count "$sha..HEAD" 2>/dev/null || true)"
+    elif git rev-parse --git-dir >/dev/null 2>&1; then
+      lost=1                                   # rewritten away (a rebase or squash), so no count is possible
+    fi
+  fi
+  if [ -n "$lost" ]; then
+    say "- Orientation: $home/map.md lists where things live, hot spots and vocabulary — check it before exploring unfamiliar code (it was built on a commit that is no longer in this repo's history: trust its structure, verify details)."
+  elif [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
     say "- Orientation: $home/map.md lists where things live, hot spots and vocabulary — check it before exploring unfamiliar code ($behind commits behind HEAD: trust its structure, verify details)."
   else
     say "- Orientation: $home/map.md lists where things live, hot spots and vocabulary — check it before exploring unfamiliar code."
@@ -62,54 +75,130 @@ if [ -f "$conv" ]; then
 fi
 
 # Open runs (0.3+: every run folder under runs/ carries its own status, so several can be open at once).
-runs="$(list_runs "$home" 20 open)"
+driving=""
+runs="$(list_runs "$home" 100000 open)"
 if [ -n "$runs" ]; then
-  here_n="$(printf '%s\n' "$runs" | TOP="$top" awk -F'\t' '$4 == ENVIRON["TOP"] || $4 == "-" { n++ } END { print n + 0 }')"
-  # After a compaction, only the run this session was driving is resumed: the one whose session: matches
-  # this session's id, or — for a run that recorded none — the newest in-progress run on this tree, if
-  # it was touched in the last 12 hours. Every other open run is only listed.
-  driving=""; fallback=""
+  # Split them: this tree's runs (a run with no code-root counts as this tree's), other trees' runs, and
+  # runs whose working tree no longer exists. Other trees' runs are only summed up.
+  mine=""; here_n=0; others=""; n_other=0; gone=""; n_gone=0
+  while IFS="$TAB" read -r dir mode phase croot updated status actual rsid; do
+    [ -n "$dir" ] || continue
+    if [ "$croot" = - ] || [ "$croot" = "$top" ]; then     # rows keep "-" for an empty value (read merges tabs)
+      mine="$mine$dir$TAB$mode$TAB$phase$TAB$updated$TAB$status$TAB$rsid$NL"; here_n=$((here_n + 1))
+    elif [ -d "$croot" ]; then
+      n_other=$((n_other + 1))
+      [ "$phase" != - ] || phase="?"
+      [ "$n_other" -gt 5 ] || others="$others${others:+; }${dir##*/} ($(mode_skill "$mode"), phase $phase, code root $croot)"
+    else
+      n_gone=$((n_gone + 1))
+      [ "$n_gone" -gt 5 ] || gone="$gone${gone:+, }${dir##*/} (code root $croot)"
+    fi
+  done <<RUNS
+$runs
+RUNS
+
+  # After a compaction, only the run this session was driving is resumed: the in-progress run whose
+  # session: matches this session's id, or — for a run that recorded none — the newest in-progress run
+  # on this tree, if it was touched in the last 12 hours. Every other open run is only listed.
   if [ "$event" = compact ]; then
-    while IFS="$TAB" read -r dir mode phase croot updated status actual; do
+    fallback=""
+    while IFS="$TAB" read -r dir mode phase updated status rsid; do
       [ -n "$dir" ] || continue
-      croot="$(undash "$croot")"
-      { [ -z "$croot" ] || [ "$croot" = "$top" ]; } || continue
       [ "$status" = in-progress ] || continue
-      rsid="$(field session "$dir/session-state.md")"
+      [ "$rsid" != - ] || rsid=""
       if [ -n "$sid" ] && [ "$rsid" = "$sid" ]; then driving="$dir"; break; fi
       if [ -z "$fallback" ] && { [ -z "$rsid" ] || [ -z "$sid" ]; } \
          && [ -n "$(find "$dir/session-state.md" -mmin -720 2>/dev/null)" ]; then
         fallback="$dir"
       fi
     done <<RUNS
-$runs
+$mine
 RUNS
     [ -n "$driving" ] || driving="$fallback"
   fi
-  printf '%s\n' "$runs" | while IFS="$TAB" read -r dir mode phase croot updated status actual; do
+
+  # Described first: the run being resumed, then in-progress runs, then paused ones (each newest first).
+  ordered=""
+  for pass in driving in-progress other; do
+    while IFS="$TAB" read -r dir mode phase updated status rsid; do
+      [ -n "$dir" ] || continue
+      case "$pass" in
+        driving)     [ "$dir" = "$driving" ] || continue ;;
+        in-progress) [ "$dir" != "$driving" ] && [ "$status" = in-progress ] || continue ;;
+        other)       [ "$dir" != "$driving" ] && [ "$status" != in-progress ] || continue ;;
+      esac
+      ordered="$ordered$dir$TAB$mode$TAB$phase$TAB$updated$TAB$status$TAB$rsid$NL"
+    done <<RUNS
+$mine
+RUNS
+  done
+
+  shown=0; more=""; n_more=0
+  while IFS="$TAB" read -r dir mode phase updated status rsid; do
     [ -n "$dir" ] || continue
-    croot="$(undash "$croot")"; phase="$(undash "$phase")"; updated="$(undash "$updated")"
-    skill="$(mode_skill "$(undash "$mode")")"
+    name="${dir##*/}"
+    if [ "$shown" -ge 5 ]; then
+      n_more=$((n_more + 1))
+      [ "$n_more" -gt 5 ] || more="$more${more:+, }$name ($status)"
+      continue
+    fi
+    shown=$((shown + 1))
+    [ "$phase" != - ] || phase=""
+    [ "$updated" != - ] || updated=""
+    [ "$rsid" != - ] || rsid=""
+    skill="$(mode_skill "$mode")"
     runflag=""
-    [ "${here_n:-0}" -le 1 ] 2>/dev/null || runflag=" Several runs are open on this tree: pass --run ${dir##*/} to every council command for this one."
-    if [ -n "$croot" ] && [ "$croot" != "$top" ]; then
-      say "- Another council run is open in a different working tree: ${dir##*/} ($skill, phase ${phase:-?}, code root $croot). Leave it alone."
-    elif [ "$status" = paused ]; then
-      say "- PAUSED COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}). Resume it only when the user asks."
+    [ "$here_n" -le 1 ] || runflag=" Several runs are open on this tree: pass --run $name to every council command for this one."
+    if [ "$status" = paused ]; then
+      say "- PAUSED COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}). Resume it only when the user asks: council run resume --run $name, then re-invoke the $skill skill and read its session-state.md."
     elif [ "$event" = compact ] && [ "$dir" = "$driving" ]; then
+      case "$phase" in
+        build) redo="re-read its build loop and the build log" ;;    # a build replaces the stages between Prepare and Challenge
+        *)     redo="re-read the doctrine for that phase" ;;
+      esac
       seats="$(seat_summary "$dir")"
-      say "- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}). Re-invoke the $skill skill (it loads context-core), read $dir/session-state.md (and ask.md, if present), re-read the doctrine for that phase, and continue from there.${seats:+ Seats — $seats.} Do not restart, do not re-dispatch seats that are running or done (wait for their notifications), do not skip the completeness check.$runflag"
+      say "- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}). Re-invoke the $skill skill (it loads context-core), read $dir/session-state.md (and ask.md, if present), $redo, and continue from there.${seats:+ Seats — $seats.} Do not restart, do not re-dispatch seats that are running or done (wait for their notifications), do not skip the completeness check.$runflag"
+    elif [ "$event" = compact ] && [ -n "$sid" ] && [ "$rsid" = "$sid" ]; then
+      # This session opened it too (council run open … --alongside): its own work, not a stranger's.
+      say "- Also open on this working tree, opened alongside by this same session: $name ($skill, phase ${phase:-?}). It is yours too — pass --run $name to every council command meant for it."
     elif [ "$event" = compact ]; then
-      say "- Also open on this working tree, not this session's run: ${dir##*/} ($skill, phase ${phase:-?}). Leave it unless the user asks."
+      say "- Also open on this working tree, not this session's run: $name ($skill, phase ${phase:-?}). Leave it unless the user asks."
+    elif [ -n "$rsid" ] && [ "$rsid" != "$sid" ] && [ -n "$(find "$dir" -type f -mmin -120 2>/dev/null | head -n 1)" ]; then
+      # Another session id touched it in the last 2 hours: that session may still be driving it.
+      if [ "$event" = clear ]; then
+        seats="$(seat_summary "$dir")"
+        say "- COUNCIL RUN OPEN, updated in the last 2 hours by another session id: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}).${seats:+ Seats — $seats.} If this window was driving it before /clear, carry on: council run resume --run $name, then re-invoke the $skill skill and read its session-state.md; its workers died with the old session, so run council collect to see which files exist, mark the rest failed (council seat <slug> failed note=\"interrupted\") and re-dispatch each once. Otherwise it may still be live in another session: leave it, and don't resume it, re-dispatch its seats or close it unless the user says so.$runflag"
+      else
+        say "- COUNCIL RUN OPEN, updated in the last 2 hours by another session: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}). It may still be running in that session: leave it, and don't resume it, re-dispatch its seats or close it. If the user says that session has ended: council run resume --run $name, then re-invoke the $skill skill.$runflag"
+      fi
     else
       if [ "$event" = clear ]; then
         seats="$(seat_summary "$dir")"
       else
         seats="$(seat_summary "$dir" "were running when that session ended (they are gone — re-dispatch each once if you resume)")"
       fi
-      say "- UNFINISHED COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}).${seats:+ Seats — $seats.} Before new council work, ask the user whether to resume it (re-invoke the $skill skill, read its session-state.md) or close it (council run close --run ${dir##*/} --status abandoned).$runflag"
+      say "- UNFINISHED COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}).${seats:+ Seats — $seats.} Before new council work, ask the user whether to resume it (council run resume --run $name, then re-invoke the $skill skill and read its session-state.md) or close it (council run close --run $name --status abandoned).$runflag"
     fi
-  done
+  done <<RUNS
+$ordered
+RUNS
+  if [ "$n_more" -gt 0 ]; then
+    [ "$n_more" -le 5 ] || more="$more, …"
+    say "- And $n_more more open on this working tree: $more — council run status lists them all. Leave them unless the user asks."
+  fi
+
+  if [ "$n_other" -gt 5 ]; then others="$others; and $((n_other - 5)) more"; fi
+  if [ "$n_other" -eq 1 ]; then
+    say "- Another council run is open in a different working tree: $others. Leave it alone."
+  elif [ "$n_other" -gt 1 ]; then
+    say "- $n_other council runs are open in different working trees: $others. Leave them alone (council run status lists them)."
+  fi
+  if [ "$n_gone" -gt 5 ]; then gone="$gone, and $((n_gone - 5)) more"; fi
+  if [ "$n_gone" -eq 1 ]; then
+    say "- A council run was left open in a working tree that no longer exists: $gone. Ask the user, then close it: council run close --run ${gone%% *} --status abandoned."
+  elif [ "$n_gone" -gt 1 ]; then
+    say "- $n_gone council runs were left open in a working tree that no longer exists: $gone. Ask the user, then close each: council run close --run <name> --status abandoned."
+  fi
 fi
 
 # Older layouts (0.1/0.2) kept one pointer to the in-flight run; runs outside runs/ are only found here.
@@ -134,10 +223,27 @@ if [ -s "$home/active-run" ]; then
             fi
             phase="$(field phase "$state")"
             updated="$(field updated "$state")"
+            rsid="$(field session "$state")"
+            # An older run's final deliverable: it is probably finished. A build's log is not one — it
+            # is appended to after every task, so a half-finished build holds one too.
+            final=""
+            for f in "$run"/FINAL-*.md "$run"/PLAN-*.md; do
+              if [ -f "$f" ]; then final="${f##*/}"; break; fi
+            done
             if [ "$event" = compact ]; then
-              say "- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: $run (${mode:-unknown mode}, phase: ${phase:-unknown}). If this session was running it, re-invoke that mode's skill, read $state, and resume at that phase. Do not restart, do not re-dispatch seats whose files exist, do not skip the completeness check."
+              # The same rule as for runs under runs/: this session's by session id, or — with none
+              # recorded, nothing else resumed and no final deliverable — touched in the last 12 hours.
+              if { [ -n "$sid" ] && [ "$rsid" = "$sid" ]; } \
+                 || { [ -z "$rsid" ] && [ -z "$driving" ] && [ -z "$final" ] \
+                      && [ -n "$(find "$state" -mmin -720 2>/dev/null)" ]; }; then
+                say "- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: $run (${mode:-unknown mode}, phase: ${phase:-unknown}). Re-invoke that mode's skill, read $state, and resume at that phase. Do not restart, do not re-dispatch seats whose files exist, do not skip the completeness check."
+              else
+                say "- Also open (an older run layout), not this session's run: $run (${mode:-unknown mode}, phase: ${phase:-unknown})${final:+ — it holds $final, so it is probably finished}. Leave it unless the user asks."
+              fi
+            elif [ -n "$final" ]; then
+              say "- UNFINISHED COUNCIL RUN (an older run layout): $run (${mode:-unknown mode}, phase: ${phase:-unknown}, updated: ${updated:-unknown}). It holds its final deliverable ($final), so it is probably finished: ask the user, then close it as complete (council run close --run \"$run\" --status complete)."
             else
-              say "- UNFINISHED COUNCIL RUN: $run (${mode:-unknown mode}, phase: ${phase:-unknown}, updated: ${updated:-unknown}). Before new council work, ask the user whether to resume it or close it (council run close --run \"$run\" --status abandoned)."
+              say "- UNFINISHED COUNCIL RUN: $run (${mode:-unknown mode}, phase: ${phase:-unknown}, updated: ${updated:-unknown}). Before new council work, ask the user whether to resume it (council run resume --run \"$run\", then re-invoke that mode's skill) or close it (council run close --run \"$run\" --status abandoned)."
             fi
             ;;
         esac

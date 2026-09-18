@@ -2,11 +2,13 @@
 """Helper evals for the Small Council — run bin/council against scaffolded git repos.
 
 Needs bash and git; no LLM, no network. Covers:
-  - the council home: main checkout, linked worktree, outside git;
-  - runs: open, update, close; a second in-progress run on one tree refused without --alongside;
+  - the council home: main checkout, linked worktree, outside git, a bare repository's worktrees;
+  - runs: open, update, close, resume; a second in-progress run on one tree refused without --alongside;
     commands that never guess between runs; paused runs; session ids; init creating the home; an old
-    open run found behind many newer closed ones;
-  - the change index: files, symbols (code only, shell functions included), callers, tests;
+    open run found behind many newer closed ones, and this tree's run behind many other trees' runs;
+    a byte-order mark; a Windows --run path;
+  - the change index: files, symbols (code only, shell functions included), callers, tests; files past
+    the cap named; renames, non-ASCII names, binaries, nested worktrees, a relative --run;
   - gates judged by exit code, with the command passed intact, and table cells that never shift;
   - seat-file collection: ref: proof of reading (paired seats too), caps, broken citations, list-style
     and unreadable index lines, failed and re-dispatched workers;
@@ -19,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(ROOT, "bin", "council")
@@ -39,8 +42,11 @@ def check(name, ok, detail=""):
 
 
 def council(cwd, *args, env=None):
-    p = subprocess.run([BASH, CLI, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", env=dict(GIT_ENV, **(env or {})), timeout=120)
+    try:
+        p = subprocess.run([BASH, CLI, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", env=dict(GIT_ENV, **(env or {})), timeout=120)
+    except subprocess.TimeoutExpired:   # one failed check, not a crash that hides every other result
+        return 124, "", f"council {' '.join(args)}: still running after 120 s"
     return p.returncode, p.stdout, p.stderr
 
 
@@ -101,6 +107,10 @@ def new_repo(base, name):
 def row(out, slug):
     m = re.search(rf"^{slug}\s.*$", out, re.MULTILINE)
     return m.group(0) if m else ""
+
+
+def line_of(out, text):
+    return next((line for line in out.splitlines() if text in line), "")
 
 
 CONFIG = """# Council config — eval
@@ -221,6 +231,81 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "prior", "src/report.py")
     check("prior: a deliverable whose areas cover the path counts", "reviews/2026-08-01-stats.md" in out and "areas cover src/**" in out, out)
 
+    # The change index past its file cap (80 files; lowered here, since 80 take minutes on a busy Windows machine)
+    big = new_repo(tmp, "bigchange")
+    write(os.path.join(big, "a.txt"), "x\n")
+    git(big, "add", "-A")
+    git(big, "commit", "-q", "-m", "init")
+    git(big, "checkout", "-q", "-b", "big")
+    for i in range(1, 5):
+        write(os.path.join(big, "core", f"mod_{i:02d}.txt"), f"core {i}\n")
+    write(os.path.join(big, "package-lock.json"), "{}\n")
+    for i in range(1, 6):
+        write(os.path.join(big, "webapp", "backend", f"orders_{i}.py"), f"def place_order_{i}(req):\n    return req\n")
+    git(big, "add", "-A")
+    git(big, "commit", "-q", "-m", "big")
+    write(os.path.join(big, ".council", "council.config.md"), "# Council config — big\n")
+    code, brun, _ = council(big, "run", "open", "council-review")
+    code, out, err = council(big, "index", env={"COUNCIL_INDEX_CAP": "4"})
+    bidx = read(os.path.join(brun.strip(), "index.md"))
+    check("index: past the file cap, every other changed file is still named, as a file in scope",
+          code == 0 and "## Past the 4-file cap" in bidx
+          and all(f"\n## webapp/backend/orders_{i}.py  (added" in bidx for i in range(1, 6)), out + err + bidx[-800:])
+    check("index: files past the cap are counted apart from lockfiles, and the output line says so",
+          "past the 4-file cap: 5" in bidx and "not indexed: 1 (lockfiles" in bidx and "5 more past the 4-file cap" in out,
+          out + bidx[:400])
+    # The list of names has a bound of its own: a repo-wide change must not flood the file every seat reads.
+    code, out, err = council(big, "index", env={"COUNCIL_INDEX_CAP": "4", "COUNCIL_INDEX_NAMECAP": "2"})
+    bidx = read(os.path.join(brun.strip(), "index.md"))
+    check("index: past the cap, only the first few files are named one by one; the rest are counted",
+          code == 0 and bidx.count("past the 4-file cap: not indexed") == 2
+          and "… and 3 more, not named one by one: git diff --name-only" in bidx, out + err + bidx[-600:])
+
+    # The change index: renames, non-ASCII names, untracked binaries, a nested worktree, a relative --run
+    uni = new_repo(tmp, "unicode")
+    write(os.path.join(uni, "big_module.py"), "".join(f"x_{i} = 1\n" for i in range(1, 301)) + "def load():\n    return 1\n")
+    write(os.path.join(uni, "sub", "keep.txt"), "k\n")
+    git(uni, "add", "-A")
+    git(uni, "commit", "-q", "-m", "base")
+    git(uni, "checkout", "-q", "-b", "feat")
+    write(os.path.join(uni, "café.py"), "def cafe_price():\n    return 3\n")
+    git(uni, "mv", "big_module.py", "core_module.py")
+    append(os.path.join(uni, "core_module.py"), "def save():\n    return 2\n")
+    git(uni, "add", "-A")
+    git(uni, "commit", "-q", "-m", "rename")
+    write(os.path.join(uni, "ünï new.py"), "def helper_new():\n    pass\n")
+    with open(os.path.join(uni, "new_logo.png"), "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\n")
+    git(uni, "worktree", "add", "-q", "-b", "feat-x", os.path.join(uni, ".claude", "worktrees", "feat-x"))
+    write(os.path.join(uni, ".council", "council.config.md"), "# Council config — unicode\n")
+    code, urun, _ = council(uni, "run", "open", "council-review")
+    urun = urun.strip()
+    code, out, err = council(uni, "index")
+    uidx = read(os.path.join(urun, "index.md"))
+    check("index: a non-ASCII file name is indexed as itself, with its lines and symbols",
+          "## café.py  (added, +2/-0)" in uidx and "symbols: cafe_price" in uidx
+          and "## ünï new.py  (new, untracked, +2/-0)" in uidx, out + err + uidx)
+    moved = uidx.split("## core_module.py", 1)[-1].split("\n## ", 1)[0]
+    check("index: a renamed file shows only its changed lines, and the path it came from",
+          "  (renamed from big_module.py, +2/-0)" in moved and "- hunks: 303-304" in moved, uidx)
+    check("index: an untracked binary file is marked binary, with no line count and no warning",
+          "## new_logo.png  (new, untracked, binary)" in uidx and "null byte" not in err, err + uidx)
+    check("index: a nested worktree's folder is not a changed file", ".claude/worktrees" not in uidx and "index: 4 files" in out, out + uidx)
+    code, out, err = council(os.path.join(uni, "sub"), "index", "--run", "../.council/runs/" + os.path.basename(urun))
+    check("index --run: a relative run path works from a subfolder", code == 0 and out.startswith("index: 4 files"), out + err)
+    staged = new_repo(tmp, "staged")
+    write(os.path.join(staged, "a.py"), "a = 1\n")
+    git(staged, "add", "-A")
+    git(staged, "commit", "-q", "-m", "init")
+    git(staged, "checkout", "-q", "-b", "work")
+    write(os.path.join(staged, "a.py"), "a = 2\n")
+    git(staged, "add", "a.py")
+    write(os.path.join(staged, ".council", "council.config.md"), "# Council config — staged\n")
+    code, srun, _ = council(staged, "run", "open", "council-review")
+    council(staged, "index")
+    check("index: a staged-only change is noted as uncommitted", "+ uncommitted changes" in read(os.path.join(srun.strip(), "index.md")),
+          read(os.path.join(srun.strip(), "index.md")))
+
     # Gates
     gates = os.path.join(run, "gates")
     code, out, _ = council(repo, "gates")
@@ -328,6 +413,39 @@ with tempfile.TemporaryDirectory() as tmp:
     check("collect: a seat that is running again is a hole, file or not", code == 1 and "state:running" in row(out, "beck"), out)
     code, out, _ = council(repo, "seat", "beck", "done", "tokens=10000")
     check("seat: a re-dispatched worker adds its tokens instead of replacing them", "agents: 3 of 3 done" in out and "~86k tokens so far" in out, out)
+
+    # Token counts as the UI shows them; several workers recorded at the same moment
+    tk = new_repo(tmp, "tokens")
+    write(os.path.join(tk, ".council", "council.config.md"), "# Council config — tokens\n")
+    code, trun, _ = council(tk, "run", "open", "council-review")
+    trun = trun.strip()
+    council(tk, "seat", "hunt", "done", "agent=a1", "tokens=74.3k")
+    council(tk, "seat", "beck", "done", "agent=a2", "tokens=1.2k")
+    council(tk, "seat", "leach", "done", "agent=a3", "tokens=74,304")
+    code, out, err = council(tk, "seat", "dodds", "done", "agent=a4", "tokens=lots")
+    tseats = read(os.path.join(trun, "seats.tsv"))
+    check("seat: tokens=74.3k is 74,300 tokens, 1.2k is 1,200 and 74,304 is 74,304",
+          "\nhunt\tdone\ta1\t74300\t" in tseats and "\nbeck\tdone\ta2\t1200\t" in tseats and "\nleach\tdone\ta3\t74304\t" in tseats, tseats)
+    council(tk, "seat", "spaced", "done", "agent=a5", "tokens=74 304")
+    tseats = read(os.path.join(trun, "seats.tsv"))
+    check("seat: a space between digits is a thousands separator, not the end of the number",
+          "\nspaced\tdone\ta5\t74304\t" in tseats, tseats)
+    check("seat: a tokens= value with no number in it is refused", code == 2 and "tokens" in err and "\ndodds\t" not in tseats, out + err)
+    procs = [subprocess.Popen([BASH, CLI, "seat", f"par{i}", "running", f"agent=p{i}", "--run", trun], cwd=tk, env=GIT_ENV,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for i in range(6)]
+    for p in procs:
+        p.wait(timeout=120)
+    tlines = read(os.path.join(trun, "seats.tsv")).splitlines()
+    check("seat: six workers recorded at the same moment keep six rows, and the header stays first",
+          tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents"] and sum(1 for x in tlines if x.startswith("par")) == 6,
+          "\n".join(tlines))
+    os.makedirs(os.path.join(trun, "seats.tsv.lock"), exist_ok=True)   # what a killed seat call leaves behind
+    started = time.time()
+    code, out, err = council(tk, "seat", "afterlock", "running", "agent=a9", "--run", trun)
+    took = time.time() - started
+    check("seat: a lock a killed call left behind is broken after about ten seconds, not a minute",
+          code == 0 and took < 40 and "\nafterlock\t" in read(os.path.join(trun, "seats.tsv")),
+          "%.1f s · %s%s" % (took, out, err))
 
     # Memory: scopes and anchors
     write(os.path.join(repo, ".council", "conventions.md"),
@@ -710,6 +828,22 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(wt, "run", "status")
     check("run status: runs from the main checkout show as elsewhere in a worktree", "elsewhere:" in out, out)
 
+    # A bare repository with worktrees: the council lives in the worktree that holds the config
+    bsrc = new_repo(tmp, "bare-src")
+    write(os.path.join(bsrc, "a.txt"), "x\n")
+    git(bsrc, "add", "-A")
+    git(bsrc, "commit", "-q", "-m", "init")
+    bare = os.path.join(tmp, "proj.git")
+    git(tmp, "clone", "-q", "--bare", bsrc, bare)
+    main_wt = os.path.join(tmp, "main-wt")
+    git(bare, "worktree", "add", "-q", main_wt, "main")
+    write(os.path.join(main_wt, ".council", "council.config.md"), "# Council config — bare\n")
+    git(bare, "worktree", "add", "-q", "-b", "f1", os.path.join(tmp, "aa-feature"), "main")
+    code, out, _ = council(os.path.join(tmp, "aa-feature"), "home")
+    code2, out2, _ = council(main_wt, "home")
+    check("home: in a bare repository's worktrees, the one holding the config, whatever their names",
+          slash(out).lower().endswith("/main-wt/.council") and slash(out2).lower().endswith("/main-wt/.council"), out + out2)
+
     # Map and doctor
     code, out, _ = council(repo, "map", "status")
     check("map status: no map yet", code == 0 and "no map yet" in out, out)
@@ -717,6 +851,9 @@ with tempfile.TemporaryDirectory() as tmp:
     write(os.path.join(repo, ".council", "map.md"), f"# Codebase map\nmap-commit: {prev}\nupdated: 2026-09-15\n")
     code, out, _ = council(repo, "map", "status")
     check("map status: counts commits behind and changed areas", "1 commits behind" in out and "src/" in out, out)
+    code, out, _ = council(os.path.join(repo, "src"), "map", "status")
+    check("map status: from a subfolder, still lists every changed area",
+          all(a in out for a in ("src/", "scripts/", "tests/", "README.md")), out)
     write(os.path.join(repo, ".council", "cards", "fowler.md"),
           "# Fowler — Structure card for eval\nsource: references/nope.md · written: 2026-09-15 @ abc1234\n## Principles, applied here\n1. x — here: y\n")
     code, out, _ = council(repo, "doctor")
@@ -728,6 +865,14 @@ with tempfile.TemporaryDirectory() as tmp:
     check("doctor: flags stale memory anchors", "3 memory anchor(s) point at code" in out, out)
     check("doctor: notices a config without a stack fingerprint", "has no stack-fingerprint" in out, out)
     check("doctor: every finding carries a fix", out.count("Fix:") == out.count("ERROR") + out.count("WARN "), out)
+    gone_map = new_repo(tmp, "maphistory")
+    write(os.path.join(gone_map, "a.txt"), "x\n")
+    git(gone_map, "add", "-A")
+    git(gone_map, "commit", "-q", "-m", "init")
+    write(os.path.join(gone_map, ".council", "council.config.md"), "# Council config — map\n")
+    write(os.path.join(gone_map, ".council", "map.md"), "# Map\nmap-commit: 0123456789abcdef0123456789abcdef01234567\n")
+    code, out, _ = council(gone_map, "doctor")
+    check("doctor: a map-commit that isn't in this repo's history is flagged", "isn't in this repo's history" in out, out)
 
     # Close, and the legacy pointer
     write(os.path.join(run, "verify-1.md"), "# Verification — eval\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
@@ -826,6 +971,56 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "run", "close", "--run", "2020-01-01-000000-review", "--status", "abandoned")
     check("run close: takes a bare folder name", code == 0 and "abandoned" in out, out)
 
+    # Many open runs in other working trees never hide this tree's run
+    crowd = new_repo(tmp, "crowd")
+    write(os.path.join(crowd, ".council", "council.config.md"), "# Council config — crowd\n")
+    ctop = slash(git(crowd, "rev-parse", "--show-toplevel"))
+    cruns = os.path.join(crowd, ".council", "runs")
+    write(os.path.join(cruns, "2026-01-01-000000-review", "session-state.md"),
+          f"status: in-progress\nmode: council-review\nphase: work\nupdated: 2026-01-01 00:00\ncode-root: {ctop}\n")
+    for i in range(55):
+        write(os.path.join(cruns, f"2026-09-17-1{i:05d}-plan", "session-state.md"),
+              f"status: in-progress\nmode: council-plan\nphase: work\nupdated: 2026-09-17 10:00\ncode-root: C:/p/.claude/worktrees/w{i}\n")
+    code, out, err = council(crowd, "state")
+    check("state: finds this tree's run behind 55 newer open runs from other working trees", code == 0 and "mode: council-review" in out, out + err)
+    code, out, err = council(crowd, "run", "open", "council-review")
+    check("run open: behind 55 other trees' runs, still refuses a second run on this tree", code == 2 and "already in progress" in err, out + err)
+    code, out, _ = council(crowd, "run", "status")
+    check("run status: lists this tree's run first, however many other trees' runs are open",
+          out.startswith("2026-01-01-000000-review · council-review") and "more" in out.strip().splitlines()[-1], out)
+
+    # A byte-order mark at the top of session-state.md (PowerShell's utf8)
+    bom = new_repo(tmp, "bom")
+    write(os.path.join(bom, ".council", "council.config.md"), "# Council config — bom\n")
+    code, bomrun, _ = council(bom, "run", "open", "council-review")
+    bom_state = os.path.join(bomrun.strip(), "session-state.md")
+    body = read(bom_state)
+    with open(bom_state, "w", encoding="utf-8-sig", newline="\n") as f:
+        f.write(body)
+    code, out, _ = council(bom, "run", "status")
+    check("run status: a byte-order mark at the top of session-state.md doesn't hide the run", os.path.basename(bomrun.strip()) in out, out)
+    code, out, err = council(bom, "run", "open", "council-plan")
+    check("run open: a byte-order mark doesn't let a second run open on this tree", code == 2 and "already in progress" in err, out + err)
+    code, out, err = council(bom, "state", "phase=judge", "status=paused")
+    body = read(bom_state)
+    check("state: updates a state file that starts with a byte-order mark, in place",
+          code == 0 and "phase judge · paused" in out and os.path.basename(bomrun.strip()) in out
+          and not body.startswith("﻿") and body.count("status:") == 1 and "status: paused" in body,
+          out + err + body)
+
+    # --run as a Windows path (backslashes, a trailing one) names the same run as its folder name
+    wp = new_repo(tmp, "winpath")
+    write(os.path.join(wp, ".council", "council.config.md"), "# Council config — winpath\n")
+    code, wrun, _ = council(wp, "run", "open", "council-init")
+    wname = os.path.basename(wrun.strip())
+    council(wp, "seat", "engine", "done", "agent=a1", "tokens=74304")
+    code, out, err = council(wp, "run", "close", "--run", wrun.strip().replace("/", "\\") + "\\")
+    council(wp, "run", "close", "--run", wname)
+    wrows = [x for x in read(os.path.join(wp, ".council", "ledger.tsv")).splitlines()[1:] if x]
+    check("run close --run with backslashes: one ledger row, dated and named by the run's folder",
+          code == 0 and out.startswith(f"closed {wname} ") and len(wrows) == 1 and wrows[0].startswith(f"{wname[:10]}\t{wname}\t"),
+          out + err + "\n".join(wrows))
+
     # A repo with no council yet; paused runs
     fresh = new_repo(tmp, "fresh")
     write(os.path.join(fresh, "app.txt"), "v1\n")
@@ -851,6 +1046,44 @@ with tempfile.TemporaryDirectory() as tmp:
     council(fresh, "run", "close")
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
+
+    # Carrying on with a run: council run resume
+    rs = new_repo(tmp, "resume")
+    write(os.path.join(rs, ".council", "council.config.md"), "# Council config — resume\n")
+    code, rrun, _ = council(rs, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sess-old"})
+    rrun = rrun.strip()
+    rname, rstate = os.path.basename(rrun), os.path.join(rrun, "session-state.md")
+    council(rs, "seat", "hunt", "running", "agent=a1")
+    council(rs, "run", "close", "--status", "paused")
+    code, _, err = council(rs, "state")
+    check("state: with only a paused run left, the error names council run resume",
+          code == 2 and f"council run resume --run {rname}" in err, err)
+    council(rs, "state", "--run", rname, "phase=collect", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
+    council(rs, "seat", "--run", rname, "beck", "done", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
+    check("state and seat never take a run over from the session that drives it", "session: sess-old" in read(rstate), read(rstate))
+    code, out, err = council(rs, "run", "resume", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
+    st = read(rstate)
+    check("run resume: the one open run (paused) is in progress again, driven by this session, its closed: stamp gone",
+          code == 0 and rname in out and "status: in-progress" in st and "session: sess-new" in st and "closed:" not in st, out + err + st)
+    check("run resume: names the session that drove it and the seats still marked running",
+          "sess-old" in out + err and "still working: hunt" in out, out + err)
+    code, out, err = council(rs, "state", "phase=judge")
+    check("run resume: plain commands act on the run again", code == 0 and "phase judge · in-progress" in out, out + err)
+    council(rs, "run", "close")
+    code, _, err = council(rs, "run", "resume", "--run", rname)
+    check("run resume: a completed run is refused, with the way forward", code == 2 and "complete" in err and "council run open" in err, err)
+    code, _, err = council(rs, "run", "resume")
+    check("run resume: with no open run here, says so", code == 2 and "no open run" in err, err)
+    code, p1, _ = council(rs, "run", "open", "council-plan")
+    council(rs, "run", "close", "--status", "paused")
+    code, p2, _ = council(rs, "run", "open", "council-research")
+    council(rs, "run", "close", "--status", "paused")
+    code, _, err = council(rs, "run", "resume")
+    check("run resume: with several open runs, asks which (--run), never guesses", code == 2 and "several" in err and "--run" in err, err)
+    code, out, err = council(rs, "run", "resume", "--run", os.path.basename(p1.strip()))
+    check("run resume --run: resumes the named run only",
+          code == 0 and "status: in-progress" in read(os.path.join(p1.strip(), "session-state.md"))
+          and "status: paused" in read(os.path.join(p2.strip(), "session-state.md")), out + err)
 
     # The stack fingerprint
     code, out, _ = council(fresh, "fingerprint")
@@ -1124,7 +1357,10 @@ with tempfile.TemporaryDirectory() as tmp:
                              "npm --prefix webapp/frontend test -- src/utils/fmt.test.js",
                              "cd webapp/backend && python -m pytest tests/test_expiry.py::test_y",
                              "pytest -c tests/test_settings.toml -k expiry",
-                             "pytest " + slash(outside)], start=1):
+                             "pytest " + slash(outside),
+                             "(cd webapp/backend && pytest tests/test_expiry.py)",
+                             "cd " + slash(tmp) + " && pytest webapp/backend/tests/test_expiry.py",
+                             "cd webapp/frontend && pytest ../backend/tests/test_expiry.py"], start=1):
         for name, ex in ((f"before-{n}", 1), (f"after-{n}", 0)):
             write(os.path.join(prf, "gates", name + ".json"),
                   '{"gate": "%s", "command": "%s", "exit": %d, "seconds": 1, "when": "2026-09-16 10:00:00"}\n' % (name, cmd, ex))
@@ -1140,6 +1376,12 @@ with tempfile.TemporaryDirectory() as tmp:
           "task 4  proof  ok · couldn't confirm a saved test" in out, out)
     check("check: a test file outside the project is never a test the project keeps",
           "task 5  proof  ok · couldn't confirm a saved test" in out, out)
+    check("check: a test run in a subshell — (cd <dir> && …) — is found in that folder",
+          "task 6  proof  ok · test saved: webapp/backend/tests/test_expiry.py" in out, out)
+    check("check: after a cd out of the project, the project's own file of that name is not the saved test",
+          "task 7  proof  ok · couldn't confirm a saved test" in out, out)
+    check("check: a test path that walks back up out of a cd folder is named as the file it is",
+          "task 8  proof  ok · test saved: webapp/backend/tests/test_expiry.py" in out, out)
     check("check: in a build, a diagnosis file's old line numbers aren't checked as citations",
           code == 0 and "diagnose-2" not in out, out)
     write(os.path.join(req, ".council", "logs", "2026-09-16-build.md"),
@@ -1167,6 +1409,31 @@ with tempfile.TemporaryDirectory() as tmp:
           "## Task 1: x\n\n## Shortcuts and concessions\nnone\n" % os.path.basename(brun2))
     code, out, err = council(req, "run", "close")
     check("run close: no warning when the log says what it traded away (or 'none')",
+          code == 0 and "Shortcuts and concessions" not in err, err)
+    cl = new_repo(tmp, "closelog")
+    write(os.path.join(cl, ".council", "council.config.md"), "# Council config — close\n")
+    code, clrun, _ = council(cl, "run", "open", "council-implement")
+    cln = os.path.basename(clrun.strip())
+    council(cl, "state", "ask-saved=x")
+    write(os.path.join(cl, ".council", "logs", "2026-09-17-zz-build.md"),
+          f"# Build log\nInput: `x` · Run: {cln} · Start: abc123\n\n## Shortcuts and concessions\nnone\n")
+    write(os.path.join(cl, ".council", "logs", "2026-09-17-aa-notes.md"), f"# Notes\nThe build (run {cln}) follows plan 3.\n")
+    council(cl, "seat", "builder", "done", "agent=b1", "tokens=90000")
+    council(cl, "seat", "verify-1", "running", "agent=v1")
+    code, out, err = council(cl, "run", "close")
+    check("run close: reads the build log whose Run: line names the run, not another file that mentions it",
+          code == 0 and "Shortcuts and concessions" not in err, err)
+    check("run close: names the seats still marked running", "verify-1" in line_of(err, "still"), err)
+    code, clrun2, _ = council(cl, "run", "open", "council-implement")
+    clrun2 = clrun2.strip()
+    council(cl, "state", "ask-saved=x")
+    write(os.path.join(cl, ".council", "logs", "2026-09-17-zz-build-2.md"),
+          f"# Build log\nInput: `x` · Run: {slash(clrun2)} · Start: abc123\n\n"
+          "## Shortcuts and concessions\nnone\n")
+    write(os.path.join(cl, ".council", "logs", "2026-09-17-aa-notes-2.md"),
+          f"# Notes\nThe build (run {os.path.basename(clrun2)}) follows plan 3.\n")
+    code, out, err = council(cl, "run", "close")
+    check("run close: a Run: line that gives the run's folder path names the build log too",
           code == 0 and "Shortcuts and concessions" not in err, err)
 
     write(os.path.join(req, ".council", "postgames", "2026-09-15-csv.md"),
@@ -1200,7 +1467,7 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and "src/old.py" in out and "src/new file.py" in out, out + err)
     code, out, err = council_quoted(chg, "changed", "--glob", "docs/*.py", "--", "true")
     check("changed: a pattern that matches no file anywhere in the project is an error, never a pass forever",
-          code == 2 and "no file in this project" in err, out + err)
+          code == 2 and "no file in this project" in err and "anchored at the repo root" in err, out + err)
     write(os.path.join(chg, "good.sh"), "echo fine\n")
     write(os.path.join(chg, "zz-broken.sh"), "if then fi (\n")
     code, out, err = council_quoted(chg, "changed", "--glob", "*.sh", "--each", "--", "bash", "-n")
@@ -1325,6 +1592,31 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
     check("gate --all: 'not mandatory' is not mandatory, and a green tick in Checked means runnable",
           code == 0 and "FAIL (t, not mandatory)" in out, out)
+    gates_cfg(vocab, "| dot | `true` | grounding \u00b7 verify | yes | ok | `true` | none | - |\n"
+                     "| slow | `true` | verify (slow, run in background) | yes | ok | `true` | none | - |\n"
+                     "| byhand | `true` | manual (needs the device) | yes | ok | `true` | none | - |\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+    check("gate --all --at: a note in brackets is a note, and \u00b7 between two stages is a separator",
+          code == 0 and "gate dot: pass" in out and "gate slow: pass" in out and "names no stage" not in out
+          and "council gate byhand" in out, out)
+    code, out, _ = council(vocab, "gate", "--all", "--at", "grounding")
+    check("gate --all --at: a gate whose cell names only the other stage is not counted as a required skip",
+          code == 0 and "gate dot: pass" in out and "slow" not in out and "1 skipped" in out, out)
+    code, out, _ = council(vocab, "doctor")
+    check("doctor: a Run at cell that names its stage raises nothing, note or separator included",
+          "gate 'dot'" not in out and "gate 'slow'" not in out and "gate 'byhand'" not in out, out)
+    gates_cfg(vocab, "| nonblock | `exit 1` | verify | non-blocking | ok | `true` | none | - |\n"
+                     "| zero | `exit 1` | verify | 0 | ok | `true` | none | - |\n")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+    check("gate --all: non-blocking and 0 mean not mandatory, so a failing advisory gate never hard-stops a build",
+          code == 0 and "not mandatory" in out and "a mandatory gate failed" not in out, out)
+    for header in ("Side-effects", "Side effects (none = safe)"):
+        gates_cfg(vocab, "| tests | `true` | verify | yes | ok | none |\n",
+                  head="| Gate | Command | Run at | Mandatory | Checked | %s |\n|---|---|---|---|---|---|\n" % header)
+        code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
+        code2, dout, _ = council(vocab, "doctor")
+        check(f"gate --all and doctor read a '{header}' header the same way",
+              code == 0 and "gate tests: pass" in out and "no Side effects column" not in out + dout, out + dout)
     gates_cfg(vocab, "| odd | `exit 1` | verify | sometimes | maybe | `true` | none | - |\n"
                      "| e2e | `exit 1` | verify | yes | \u274c needs the game editor | `true` | none | - |\n")
     code, out, _ = council(vocab, "gate", "--all", "--at", "verify")
@@ -1345,12 +1637,19 @@ with tempfile.TemporaryDirectory() as tmp:
     check("gates: points out a backslash bash would drop", "backslash" in row(out, "ps") and "backslash" not in row(out, "quoted"), out)
     code, out, _ = council(vocab, "gate", "bs", "--", "echo tools\\x")
     check("gate: an ad-hoc command's stray backslash gets a note", "backslash" in out and read(os.path.join(vgates, "bs.txt")) == "toolsx\n", out)
-    code, out, _ = council(vocab, "gate", "env", "--", 'echo "[${MSYS_NO_PATHCONV:-}]"')
-    check("gate: Git Bash is told to leave a gate command's Windows switches (cmd /c, /p:\u2026) alone",
-          read(os.path.join(vgates, "env.txt")) == "[1]\n", out)
+    write(os.path.join(vocab, "probe_abs.py"), "print('abs ok')\n")
+    py = sys.executable.replace("\\", "/")          # a native tool, given a bash absolute path
+    code, out, _ = council(vocab, "gate", "abspath", "--", f'"{py}" "$PWD/probe_abs.py"')
+    check("gate: a gate's own environment is left alone, so an absolute path still reaches its tool",
+          code == 0 and "abs ok" in read(os.path.join(vgates, "abspath.txt")), out + read(os.path.join(vgates, "abspath.txt")))
     if os.name == "nt":
-        code, out, _ = council(vocab, "gate", "cmd-exit", "--", "cmd /c exit 3")
-        check("gate: on Windows, cmd /c runs its command and the gate gets its exit code", code == 3 and "FAIL (exit 3" in out, out)
+        for form in ("cmd /c exit 3", "cmd //c exit 3", 'cmd.exe /C "exit 3"'):
+            code, out, _ = council(vocab, "gate", "cmd-exit", "--", form)
+            check(f"gate: on Windows, {form} runs its command and the gate gets its exit code",
+                  code == 3 and "FAIL (exit 3" in out, out)
+        code, out, _ = council(vocab, "gate", "cmd-bare", "--", "cmd")
+        check("gate: on Windows, a cmd that only opened its prompt is never a pass",
+              code != 0 and "ran nothing" in out, out)
     gates_cfg(vocab, "| tests | `true` | verify | yes | ok | `true` | none | - |\n")
     code, out, _ = council(vocab, "gate", "--all", "--at", "grounding")
     check("gate --all --at: with every gate at another stage, NOTHING WAS CHECKED names the stage",
@@ -1392,11 +1691,33 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(redbase, "gate", "tests")
     check("gate: a red baseline's output is kept apart from later runs of the same gate",
           "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt")) and "test_old_a" not in read(os.path.join(rgates, "tests.txt")), out)
-    check("gate: a failing gate names the failure lines its baseline didn't have",
-          code == 1 and "the baseline didn't have" in out and "FAILED test_new" in out.split("the baseline didn't have")[-1]
+    check("gate: a failing gate names the test that failed here and not at the baseline",
+          code == 1 and "not at the baseline" in out and "test_new" in out.split("not at the baseline")[-1]
           and "test_old" not in out, out)
     council(redbase, "gate", "--all", "--at", "verify")
     check("gate --all --at verify: never replaces the baseline", "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt")))
+    # The comparison is by failing test, not by line: a runner's timed summary is never a "new" failure,
+    # and a swap (one test fixed, another broken) is never "nothing new".
+    gates_cfg(redbase, "| timed | `if [ -f .fixed ]; then t=0.81; else t=0.26; fi;"
+                       " echo FAILED tests/test_a.py::test_one; echo FAILED tests/test_b.py::test_two;"
+                       " echo \"== 2 failed, 3 passed in ${t}s ==\"; exit 1`"
+                       " | grounding, verify | yes | ok | `true` | none | - |\n")
+    os.remove(os.path.join(redbase, ".fixed"))
+    council(redbase, "gate", "--all", "--at", "grounding")
+    write(os.path.join(redbase, ".fixed"), "")
+    code, out, _ = council(redbase, "gate", "timed")
+    check("gate: an unchanged red suite is not reported as newly failing, whatever its run time",
+          code == 1 and "the same test(s) are failing as at the baseline" in out and "2 failed, 3 passed"
+          not in out.split("baseline")[-1], out)
+    gates_cfg(redbase, "| swap | `if [ -f .swapped ]; then echo \"✖ formats dates (1.09ms)\";"
+                       " else echo \"✖ parses input (0.71ms)\"; fi;"
+                       " echo \"AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\"; exit 1`"
+                       " | grounding, verify | yes | ok | `true` | none | - |\n")
+    council(redbase, "gate", "--all", "--at", "grounding")
+    write(os.path.join(redbase, ".swapped"), "")
+    code, out, _ = council(redbase, "gate", "swap")
+    check("gate: a red suite that swaps one failing test for another names the new one",
+          code == 1 and "not at the baseline" in out and "formats dates" in out.split("not at the baseline")[-1], out)
 
     # A Gates section still written as a list (the layout before the table)
     legacy = new_repo(tmp, "legacy")
@@ -1415,6 +1736,14 @@ with tempfile.TemporaryDirectory() as tmp:
           "older layout (a list" in out and "council-init refresh" in out and "add the project's real" not in out, out)
     code, out, _ = council(legacy, "gates")
     check("gates: says the Gates section is an older layout", "older layout" in out, out)
+    write(os.path.join(legacy, ".council", "council.config.md"),
+          "# Council config — declined\nlast-verified: 2026-09-15 @ x\n\n## Gates\n\n"
+          "- guardrails: declined 2026-09-01 (fit them later with a `council-init` refresh)\n\n## Hard rules\n- none\n")
+    code, out, _ = council(legacy, "doctor")
+    gate_line = [l for l in out.splitlines() if "no gates in council.config.md" in l]
+    check("doctor: a Gates section that only mentions a command in prose is not an older layout to migrate",
+          bool(gate_line) and gate_line[0].startswith("WARN") and "guardrails declined" in gate_line[0]
+          and "older layout (a list" not in out, out)
 
     nogates = new_repo(tmp, "nogates")
     write(os.path.join(nogates, "x.txt"), "x\n")
@@ -1933,7 +2262,8 @@ with tempfile.TemporaryDirectory() as tmp:
                  ("gates", "x"), ("changed", "x"), ("collect", "x"), ("check", "no-such-file.md"), ("map", "status", "x"),
                  ("fingerprint", "x"), ("memory", "check", "x"), ("ask", "save", "a", "b"), ("ledger", "5", "x"),
                  ("doctor", "x"), ("version", "x"), ("help", "x"), ("doctor", "--frobnicate"), ("run", "close", "--base", "main"),
-                 ("run", "status", "--at=verify"), ("index", "--", "x"), ("doctor", "--all=yes"), ("run", "close", "--status=")]:
+                 ("run", "status", "--at=verify"), ("index", "--", "x"), ("doctor", "--all=yes"), ("run", "close", "--status="),
+                 ("run", "resume", "x"), ("run", "resume", "--status", "paused")]:
         code, out, err = council(repo, *args)
         if code != 2 or not err.strip():
             took.append(" ".join(args) + f" (exit {code})")

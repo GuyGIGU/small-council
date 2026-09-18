@@ -89,6 +89,9 @@ receipt's `Checked by machine:` line ends with **exactly one clause** about it �
 *"… · the test suite has been red since 4 August, so nothing here was verified by it"*. It disappears
 the moment it passes.
 
+Then `council state phase=build`, not `assign`: the build loop replaces the stages in between. When
+the converge pass starts, `council state phase=challenge`.
+
 ## The build loop — for each task
 
 1. **Load the governing reference doc first.**
@@ -126,8 +129,10 @@ the moment it passes.
    - **Your change broke it** → fix it before moving on.
    - **A mandatory gate is red that was green at baseline** → hard stop until you understand why.
    - **Red at baseline and waved through** → carry on: check only that your change added no new
-     failure — `council gate <name>` lists the failure lines `gates/baseline/<name>.txt` didn't have —
-     and keep the standing clause on the receipt.
+     failure — `council gate <name>` names the tests failing now that `gates/baseline/<name>.txt`
+     didn't name. When it says it can't compare (the runner names no failing test), read the two
+     outputs side by side yourself before calling it unchanged. Keep the standing clause on the
+     receipt.
    - **It can't run** → that's config drift: log it and tell the user.
 6. **After-evidence.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
    must now pass.
