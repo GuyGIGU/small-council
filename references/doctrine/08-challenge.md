@@ -13,8 +13,12 @@ Catch what's wrong before the user sees it.
    - unreadable: rewrite the citation as `path:line`.
    - `deleted`: the change removed that file. The item stands; its lines were checked against the base.
    - `no-line`: the path exists. Add the line when the item is about code.
-   - not checked (a command, a link, no path): fine for research evidence or a plan's area; a review
-     item needs a `path:line`.
+   - not checked (a command, a link, an area or no path): fine for research evidence or a plan's
+     area — including a file the plan would still write ("nothing on disk by that name"). A review
+     item needs a `path:line`, and `no-citation` says it has none: add one, or drop the item.
+   - origin `origin unknown`: the helper could not tell whether the change made the line (a citation
+     outside the repository, a file blame can't read, a line-ending rewrite). Treat it as the
+     change's own unless you check it yourself — never drop it for the label.
    - Item lines it can't read, or a Kept section with no items and no `(none)` line: rewrite them in
      the index-line format and run the check again.
 2. **Blind verification.** Dispatch `small-council:council-verifier`:

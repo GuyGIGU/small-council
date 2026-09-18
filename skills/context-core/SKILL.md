@@ -55,7 +55,8 @@ your mode's `## At <Stage>` section, if it has one. Each stage ends by recording
 | 10 | learn | `10-learn.md` | memory proposals, a closed run |
 
 Stage 0, Summon, is the council-init skill. council-implement replaces stages 3–7 with its build
-loop. A **Solo** run skips stages 3–6: you do the seat work yourself with the needed reference doc,
+loop. A **Solo** run skips stages 3–6: run `council memory select` (plus the target paths when there
+is no diff), then do the seat work yourself with the needed reference doc and the entries it printed,
 then continue at Judge. council-postgame skips them too: you do the desk work, and only verifiers are
 dispatched, at Challenge. council-plan's war room runs inside Collect.
 

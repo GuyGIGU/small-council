@@ -23,7 +23,8 @@
   - **Decisions (D)** are recorded only in the user's own words.
 - **Memory over ~25 KB** → propose a consolidation as numbered operations ("merge AP-7 into AP-3",
   "retire EC-2 — superseded by EC-9"). Apply them one by one on the user's yes. Never rewrite the
-  file wholesale.
+  file wholesale. To retire an entry, move it under `## Retired` with a
+  `**Retired:** <date> — <why>` line; no run reads it after that.
 - **Stale anchors:** `council memory check` lists entries whose anchored file, line or symbol is
   gone. Propose re-anchoring or retiring each, as operations like the ones above. Anchor new entries
   to a path or a symbol where you can — a line number can drift without anyone noticing.

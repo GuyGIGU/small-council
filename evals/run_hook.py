@@ -379,6 +379,26 @@ with tempfile.TemporaryDirectory() as tmp:
     check("legacy run holding its final deliverable: offered to close as complete, not abandoned",
           "--status complete" in line and "--status abandoned" not in line and "FINAL-REVIEW.md" in line, out)
 
+    # The hook names the memory file every council command reads — the config's own path included —
+    # and says when a second one holds entries nobody reads.
+    memcfg = new_repo(tmp, "memcfg")
+    write(os.path.join(memcfg, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- conventions: docs/conventions.md\n")
+    write(os.path.join(memcfg, "docs", "conventions.md"), "# m\n## Accepted Patterns\n### AP-1: the one in docs\n")
+    write(os.path.join(memcfg, "conventions.md"), "# m\n## Accepted Patterns\n### AP-1: an older copy\n### AP-2: and another\n")
+    code, out = run_hook(memcfg, "startup")
+    check("settled decisions: the hook names the file the config points at",
+          "docs/conventions.md (respect them" in out.replace("\\", "/"), out)
+    check("settled decisions: a second memory file with entries nobody reads is reported",
+          "second memory file" in out and "2 entries" in out, out)
+    write(os.path.join(memcfg, "docs", "conventions.md"),
+          "# m\n## Proposed — awaiting the user's yes/no\n### AP-3: a proposal written as a heading\n"
+          "- PROPOSED enforced convention: never X (evidence: a.py:1)\n")
+    os.remove(os.path.join(memcfg, "conventions.md"))
+    code, out = run_hook(memcfg, "startup")
+    check("settled decisions: proposals written as a heading are counted too, as doctor counts them",
+          "2 memory proposal(s)" in out, out)
+
     wt = os.path.join(tmp, "full-wt")
     git(full, "worktree", "add", "-q", "-b", "feature", wt)
     code, out = run_hook(wt, "startup")
@@ -487,11 +507,26 @@ with tempfile.TemporaryDirectory() as tmp:
     write(thin, "# Thin — x (council-review)\nref: none\n## Index\n1 · P2 · just a title\n")
     code, err = run_gate(worker, f"Wrote {thin} — 1 items")
     check("seat check: an index line with no citation field blocks", code == 2 and "aren't in the index format" in err, err)
+    check("seat check: ... and it never also says the Index is empty — the line is there, it can't be read",
+          "the Index is empty" not in err, err)
     grouped = os.path.join(seats, "grouped.md")
     write(grouped, "# Grouped — x (council-review)\nref: none\n## Index\n### P1\n**1** · P1 · Principle 1 · a.py:1 · x\n"
                    "### P2 — lower\n2a · P2 · Principle 1 · a.py:2 · y\n\n### 1. x\nThe body · with a dot · and more.\n")
     code, err = run_gate(worker, f"Wrote {grouped} — 2 items")
     check("seat check: items grouped under ### P1 / ### P2, with bold or lettered numbers, pass", code == 0, err)
+    # A worker may group its items any way it likes: by area, by file, with an emoji. Telling it the
+    # Index is empty when the items are right there sends it to fix what isn't broken.
+    for name, heads in [("area", "### Backend"), ("byfile", "### `a.py`"), ("emoji", "### 🔴 P1"),
+                        ("nice", "### Nice to have")]:
+        own = os.path.join(seats, f"{name}.md")
+        write(own, f"# Own — x (council-review)\nref: none\n## Index\n{heads}\n1 · P1 · Principle 1 · a.py:1 · x\n")
+        code, err = run_gate(worker, f"Wrote {own} — 1 items")
+        check(f"seat check: items grouped under '{heads}' are items, not an empty Index", code == 0, err)
+    note = os.path.join(seats, "note.md")
+    write(note, "# Note — x (council-review)\nref: none\n## Index\n1 · P1 · Principle 1 · a.py:1 · x\n"
+                "   - 3 callers reach it · origin: introduced\n")
+    code, err = run_gate(worker, f"Wrote {note} — 1 items")
+    check("seat check: an indented note under an item is not an unreadable index line", code == 0, err)
     hollow = os.path.join(seats, "hollow.md")
     write(hollow, "# Hollow — x (council-review)\nref: none\n## Index\n")
     code, err = run_gate(worker, f"Wrote {hollow} — 0 items")

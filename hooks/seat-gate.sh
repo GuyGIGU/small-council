@@ -134,27 +134,34 @@ else
     else
       # The same rule as index_shape in bin/council: change both together.
       shape="$(awk '
-        /^## / { h = tolower($0); sub(/^## +/, "", h); ins = (h ~ /^index([ \t\r]|$)/); next }
+        function item(l) { return l ~ /^[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) / }
+        /^## / { h = tolower($0); sub(/^## +/, "", h); ins = (h ~ /(^|[^a-z])index([^a-z]|$)/); pend = 0; next }
         !ins { next }
         {
           l = $0; gsub(/\r/, "", l); gsub(/\t/, " ", l)
-          if (l ~ /^###/) {                          # a "### P1" group heading is skipped; an item body ends the Index
+          if (l ~ /^###/) {              # a group heading is skipped; an item body ends the Index: what follows says
+            pend = 0
             if (l ~ /^#+ *[*_]*C?[0-9]+[a-z]?[*_]* +(·|\|) /) bad++
-            else if (tolower(l) !~ /^#+ *[*_]*(p[0-4]|must|should|could|strong|moderate|weak|critical|high|medium|low|major|minor|blocker|severity)([^a-z0-9]|$)/) ins = 0
+            else pend = 1
             next
           }
           if (l ~ /^ *$/) next
+          if (pend) { pend = 0; if (!item(l) && l !~ /^ *\(none\)/) { ins = 0; next } }
           if (l ~ /^ *\(none\)/) { none = 1; next }
-          if (l ~ /^[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) /) {   # an item needs four fields: no citation, no item
+          if (item(l)) {                 # an item needs four fields: no citation, no item
             if ((index(l, "·") ? split(l, f, / +· +/) : split(l, f, / +\| +/)) >= 4) ok++; else bad++
             next
           }
-          if (l ~ /^ *([-*+] +)?[*_]*C?[0-9]+/ || l ~ / · / || l ~ /^ *\| *[*_]*C?[0-9]+[a-z]?[*_]* *\|/) bad++
+          if (l ~ /^[ \t]/) {            # a note under an item, unless it is written as an item line
+            if (l ~ /^ +([-*+] +)?[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\||-|\342\200\224|\342\200\223) /) bad++
+            next
+          }
+          if (l ~ /^([-*+] +)?[*_]*C?[0-9]+/ || l ~ / · / || l ~ /^\| *[*_]*C?[0-9]+[a-z]?[*_]* *\|/) bad++
         }
         END { printf "%d %d %d", ok, bad, none }' "$path")"
       ok="${shape%% *}"; rest="${shape#* }"; bad="${rest%% *}"; none="${rest#* }"
       [ "${bad:-0}" -eq 0 ] || add "$bad line(s) under '## Index' aren't in the index format — write each item as '<n> · <severity> · <principle> · <path:line> · <title>'"
-      if [ "${ok:-0}" -eq 0 ] && [ "${none:-0}" -eq 0 ]; then add "the Index is empty — list your items, or write '(none) — <why>' if your lane had nothing"; fi
+      if [ "${ok:-0}" -eq 0 ] && [ "${none:-0}" -eq 0 ] && [ "${bad:-0}" -eq 0 ]; then add "the Index is empty — list your items, or write '(none) — <why>' if your lane had nothing"; fi
     fi
   else
     case "$l1" in '# Verification'*) ;; *) add "line 1 must be '# Verification — <run title>'" ;; esac

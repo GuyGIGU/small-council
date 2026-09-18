@@ -107,8 +107,8 @@ filed copy's `[redacted]`.
 ## At Challenge — the request check
 
 1. `council check`: every quote must appear in the request word for word. `NOT-IN-THE-REQUEST` is a
-   paraphrase: fix it first. `NOT-EXACT` differs only in capitals or `**` marks: copy the words
-   exactly. `SECRET`: quote the redacted words instead.
+   paraphrase: fix it first. `NOT-EXACT` differs only in capitals, `**` or backtick marks: copy the
+   words exactly. `SECRET`: quote the redacted words instead.
 2. Write a short brief.md. Top: the deliverable; the question "does the code do what these words
    ask?"; the code root and the range. Bottom: the hard rules, and "Not a finding: code quality,
    style, anything outside the range unless a part needs it."

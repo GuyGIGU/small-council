@@ -117,6 +117,8 @@ check("01-convene: a config with no stack fingerprint is offered a refresh too",
 check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
       "cards/<slug>.md" in doctrine["04-brief.md"] and "- doc:" in doctrine["04-brief.md"])
 check("04-brief: memory in scope comes from council memory select", "council memory select" in doctrine["04-brief.md"])
+check("context-core: a Solo run selects the memory in scope too",
+      "council memory select" in core.split("A **Solo** run", 1)[-1].split("\n\n", 1)[0])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
 check("03-assign: records every seat's state", "council seat" in doctrine["03-assign.md"])
 check("03-assign: files past the change index's cap still need an owner", "past the 80-file cap" in doctrine["03-assign.md"])
@@ -228,6 +230,10 @@ check("postgame: parts quote the request with its secrets redacted", "never a se
 check("09-deliver: the request line quotes the filed, redacted copy", "redacted" in doctrine["09-deliver.md"].split("**Your request:**", 1)[-1][:400])
 check("08-challenge: says what each of council check's citation verdicts asks of the Chair",
       all(v in doctrine["08-challenge.md"] for v in ["unreadable", "`deleted`", "`no-line`", "not checked"]))
+check("08-challenge: says what to do with an uncited review item and an unknown origin",
+      "no-citation" in doctrine["08-challenge.md"] and "origin unknown" in doctrine["08-challenge.md"])
+check("review: an item whose origin is unknown still reaches the fix hand-off",
+      "origin unknown" in review)
 check("07-judge: an empty Kept section says (none)", "(none)" in doctrine["07-judge.md"])
 check("test-architect: the verifier's temporary folder is named as pwd -W prints it, which every tool opens (wording)",
       re.search(r"mktemp -d[^\n]*pwd -W", skill["test-architect"]) is not None)
@@ -289,6 +295,9 @@ check("template config: stack fingerprint and gate side effects", "stack-fingerp
 check("template config: the words each gate cell takes, and that commands run under bash",
       all(k in cfg for k in ["Run at: grounding", "Mandatory: yes", "under bash"]))
 check("template conventions: scope and anchor fields", "**Scope:**" in conv and "**Anchor:**" in conv)
+check("template conventions: says which sections are served and how to retire an entry", "## Retired" in conv and "**Retired:**" in conv)
+check("template conventions: says how a section's name is read, and what memory lists as unread",
+      "not a word further along its heading" in conv and "could not be read" in conv)
 for label, rel in [("fixture", ("evals", "fixtures", ".council", "council.config.md")), ("example", ("examples", "chrollo", "council.config.md"))]:
     t = read(*rel)
     check(f"{label} config: current schema (surface markers, run preferences)", "| Surface |" in t and "## Run preferences" in t)
@@ -327,6 +336,11 @@ for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks
     hit = re.search(r"declare -A|\bmapfile\b|\breadarray\b|,,\}|\^\^\}", code_only)
     check(f"{label}: bash 3.2 portable (no declare -A, mapfile, readarray, case-conversion expansions)",
           hit is None, hit.group(0) if hit else "")
+    # bash 3.2 under set -u calls an empty "$@" unbound: every loop over the arguments uses ${1+"$@"}
+    bare = re.findall(r'^\s*for \w+ in "\$@"', code_only, re.MULTILINE)
+    check(f"{label}: loops over the arguments survive an empty \"$@\" on bash 3.2 (${{1+\"$@\"}})",
+          not bare, "; ".join(bare))
+
 # bash 3.2 calls an empty "$@" or $* unbound under set -u, so the argument dispatch always guards them.
 bare = []
 for fn in ("main", "takes_flags", "no_words", "cmd_check", "cmd_gate"):
