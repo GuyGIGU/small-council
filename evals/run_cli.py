@@ -1091,9 +1091,9 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(grp, "check")
     check("check: a line it can't read is counted as that, never as a broken citation",
           code == 1 and "check: 1 items, 0 broken citation(s) · 1 item line(s) check can't read" in out, out)
-    code, out, _ = council(grp, "check", os.path.join(grun, "nope.md"))
-    check("check: a named file that doesn't exist says so once, and never 'nothing to check'",
-          code == 1 and "no such file" in out and "nothing to check" not in out, out)
+    code, out, err = council(grp, "check", os.path.join(grun, "nope.md"))
+    check("check: a named file that doesn't exist says so once (a refusal, exit 2), and never 'nothing to check'",
+          code == 2 and (out + err).count("no such file") == 1 and "nothing to check" not in out + err, out + err)
     write(usyn, "# Synthesis\n## Kept\n(none) — the change only renames a file\n## Cut\n")
     code, out, _ = council(cites, "check")
     check("check: '(none)' under Kept is an honest empty result", code == 0 and "check: 0 items, 0 broken" in out, out)
@@ -1359,7 +1359,9 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(rs, "doctor")
     check("doctor: a second memory file with entries the council never reads is flagged", "holds 6 entries the council never reads" in out, out)
     code, out, _ = council(msc, "doctor")
-    check("doctor: flags memory scope items that match nothing", "memory scope item(s) match no file, seat or mode" in out, out)
+    check("doctor: flags memory scope items that match nothing, and says the entry still reaches a brief through its others",
+          "memory scope item(s) match no file, seat or mode" in out and "through its other scope items" in out
+          and "drop the ones whose folder is gone" in out, out)
     nomem = new_repo(tmp, "nomem")
     write(os.path.join(nomem, ".council", "council.config.md"), "# c\n## Memory\n- conventions: docs/memory.md\n")
     code, out, _ = council(nomem, "doctor")
