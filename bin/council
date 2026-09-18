@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.7.0"
+COUNCIL_VERSION="0.7.1"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line

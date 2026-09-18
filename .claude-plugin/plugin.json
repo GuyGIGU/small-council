@@ -1,7 +1,7 @@
 {
   "name": "small-council",
   "displayName": "Small Council",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "A context-engineering council for Claude Code: tailored expert seats review, plan, build, and research in isolated context windows, debate the tough calls, verify adversarially, check finished work against your original request, fit the checks a project is missing, and report every build — shortcuts included — in plain language.",
   "author": {
     "name": "GuyGIGU"

@@ -4,10 +4,90 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.1] — 2026-09-18
+
+A repair release. A deep review of 0.7.0 found its checks passing in places where they had not
+actually looked. Seven independent hunts each had their findings checked blind against the code,
+and deliberate breakage showed which of those problems the tests would catch. Most fixes here make
+a check read what agents, models and projects really write, and refuse what it can't read instead
+of passing it.
+
+### Added
+
+- **`council run resume`.** A run carried into a new session, or past `/clear`, was called "not this
+  session's run" at the next compaction, and a paused run had no way back. `run resume` marks the run
+  in progress, drops a pause's `closed:` stamp and records this session as its driver; context-core,
+  the doctrine, the hook and the paused-run error all point at it.
+- **The evals run on macOS with its own bash 3.2.** CI gains a `macos-latest` leg, where
+  `COUNCIL_EVAL_BASH=/bin/bash` starts the helper and both hooks with the system bash, so the bash 3.2
+  and BSD-tools promise is finally tested.
+
+### Changed
+
+- **Every command refuses words it doesn't take.** `--flag=value` now works for every flag (before,
+  only `--run=` and `--session=` did, so `run close --status=paused` closed a run as complete), and a
+  stray word, flag or missing file is refused with exit 2 and a message instead of being ignored.
 
 ### Fixed
 
+- **Gates tell the truth.** Under Git Bash, `cmd /c …` lost its `/c`, opened a prompt and exited 0,
+  so a batch-file gate "passed" without running; only that switch is now rewritten, and a cmd that
+  just opened its prompt fails. The Gates table's Run at, Mandatory and Checked cells are read as
+  small vocabularies, so "verification", "required", a tick or **yes** no longer drop a mandatory
+  gate from the verify set. With a red baseline a gate compares the failing tests its runner names,
+  not whole lines. The guardrails reference says a failing runner must exit 1 to 255 (only the low
+  8 bits reach the helper, so 256 failures read as a pass).
+- **`council changed` looks at the files it names.** `--glob '*.{js,jsx}'` matched nothing (git
+  pathspecs have no braces), so a fitted linter passed forever; braces are spelled out, a pattern
+  that matches no file is an error, and long lists are passed in batches.
+- **`council check` and `collect` read citations and items as models write them.** Notes, lists,
+  links, bold, table columns, `L58`, `#L12` and trailing commas no longer read as missing files or
+  bad lines, and bare paths, `path::symbol` and `path: 12` are checked instead of skipped. Items
+  written as a table, `### 2 · …` or `3. P2 · …` are read; a synthesis whose items can't be read is
+  no longer "0 items, 0 broken". Deleted code is labelled as the change's own.
+- **`collect` judges each seat on its own.** The proof-of-reading key can't be switched off by
+  writing it as `- **ref:**` or `Ref:`, and a reference doc that opens with front matter no longer
+  fails an honest worker.
+- **The seat check reads replies the way agents write them.** Any JSON spacing of
+  `stop_hook_active` counts, BLOCKED is taken only as a reply (not "* Blocked users can …" in a
+  report), and the seat file is found wherever the Wrote line names it, with words before the path
+  or a full stop after it. A named absolute path that doesn't exist now blocks.
+- **Several `council seat` calls at once keep every row.** They shared one temp file and could lose
+  rows or the header; they now take turns behind a lock. `tokens=74.3k` was stored as 743; `k`, `M`
+  and comma thousands are read, and a value with no number is refused.
+- **The change index names every file.** Past 80 files it stopped naming them, so whole areas of a
+  big change were never assigned; the rest are now listed at the end and Assign says they still
+  need an owner (`COUNCIL_INDEX_CAP` lowers the cap). Renamed and non-ASCII names come out right.
+- **`council map status` works from any folder**, and when the map's commit is gone after a rebase
+  or squash, the SessionStart hook and `doctor` say so instead of presenting the map as current.
+- **A bare repository's council is found in the worktree that holds it**, not whichever worktree
+  sorts first, so adding a worktree no longer moves everyone's home.
+- **After `/clear` the hook no longer says to wait** for workers whose notifications can never
+  arrive; it says to run `council collect`, mark the rest failed and re-dispatch each once. A
+  build's implementation log no longer counts as a finished deliverable.
+- **A proof's saved test is found in Godot** (`-gtest=res://…`) and after `cd <dir> &&` or
+  `npm --prefix <dir>`; a test file outside the project isn't counted as one the project keeps.
+- **Filed requests stay where they belong.** `ask save` refused nothing: a `..` in the path, a request
+  file that is a link or an `asks/` folder that is a link let it append the user's words to any file.
+  All three are refused now. A re-save no longer duplicates the user's own dated headings or deletes
+  the words saved before. Redaction covers about twenty more everyday secret shapes (GitLab, npm,
+  PyPI, Hugging Face, Slack app tokens and more), strips indented key bodies, and keeps the ordinary
+  text around a snipped key.
+- **Run scratch and the user's words stay out of git in every home.** `run open` and `ask save` now
+  add the `runs/`, `asks/` and `active-run` ignore lines to older homes too, including outside git.
+  A 0.7.0 home that shared requests by leaving the `asks/` line out is told when the line comes back.
+  To share requests now, add a `!asks/` line (README and the design notes say so).
+- **The post-game quote check is fair and safe.** Curly apostrophes and non-breaking spaces match, a
+  "Quote:" title isn't taken for the quote, and a quote holding a secret never passes.
+- **The ledger counts what was really written:** `from: hunt#1, #2`, `beck#1,2`, "REFUTED (latent)",
+  and a `#` cell written `1.`.
+- **council-init's mapping squad gets an Index line and a cap**, so a worker that follows init's
+  brief is no longer sent back by the seat check.
+- **test-architect names the verifier's temp folder the way the file tools open it** (`C:/…` on
+  Windows, not `/tmp/…`), so verdicts aren't lost.
+- **The design checks say what they check.** `quick_validate` rejects an unquoted
+  `${CLAUDE_PLUGIN_ROOT}` path in hooks.json (the hook never runs from a folder with a space), and
+  three helper checks now fail for the reason their names give.
 - **A citation that lists several lines is no longer reported broken.** `council collect` and
   `council check` now read `path:12,40-55` — single lines and ranges in any mix, blanks around the
   commas allowed — and check every piece against the file's length, so `core/MAP.md:58,77` in a
