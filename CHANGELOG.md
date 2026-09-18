@@ -44,7 +44,20 @@ of passing it.
   links, bold, table columns, `L58`, `#L12` and trailing commas no longer read as missing files or
   bad lines, and bare paths, `path::symbol` and `path: 12` are checked instead of skipped. Items
   written as a table, `### 2 · …` or `3. P2 · …` are read; a synthesis whose items can't be read is
-  no longer "0 items, 0 broken". Deleted code is labelled as the change's own.
+  no longer "0 items, 0 broken". Deleted code is labelled as the change's own, and a file the change
+  only renamed no longer makes every line in it "touched". In a plan, research or post-game, a path
+  that isn't on disk is an area or a file still to be written, not a broken citation; in a review an
+  item with no `path:line` is named (`no-citation`) instead of passing.
+- **The memory is read as projects write it.** Entries written as bold bullets, not only as
+  `### AP-n:` headings, are read (one real project's 63 entries read as "no entries yet"), and
+  entries under Proposed, Rejected or Retired are no longer served as settled. A configured memory
+  path that doesn't exist is named instead of quietly turning memory off, and `doctor` points at the
+  real file instead of advising an empty new one. A second memory file whose entries the council
+  never reads is called out by `memory`, `memory select` and `doctor`. `memory select` takes seconds
+  instead of minutes, and scopes written with brace globs, `all`, `./`, a leading `/`, backslashes
+  or semicolons now match.
+- **A Solo run selects the memory in scope too**, instead of reading the whole file or missing
+  settled entries (the only select step was at Brief, which Solo skips).
 - **`collect` judges each seat on its own.** The proof-of-reading key can't be switched off by
   writing it as `- **ref:**` or `Ref:`, and a reference doc that opens with front matter no longer
   fails an honest worker.
@@ -80,7 +93,8 @@ of passing it.
 - **The post-game quote check is fair and safe.** Curly apostrophes and non-breaking spaces match, a
   "Quote:" title isn't taken for the quote, and a quote holding a secret never passes.
 - **The ledger counts what was really written:** `from: hunt#1, #2`, `beck#1,2`, "REFUTED (latent)",
-  and a `#` cell written `1.`.
+  and a `#` cell written `1.`. It reads the `· from:` field the format writes, so a reason that says
+  "repeats from: beck" doesn't move the item to another seat.
 - **council-init's mapping squad gets an Index line and a cap**, so a worker that follows init's
   brief is no longer sent back by the seat check.
 - **test-architect names the verifier's temp folder the way the file tools open it** (`C:/…` on
