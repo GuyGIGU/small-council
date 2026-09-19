@@ -2030,6 +2030,14 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(chg, "changed", "--glob", "*.py", "--", "wc", "-l")
     check("changed: nothing changed is a pass, not a skip",
           code == 0 and "no files matched" in out and "not a skip" in out, out)
+    write(os.path.join(chg, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(chg, ".council", ".gitignore"), "runs/\n# local\ncache/")    # no asks/, no final newline
+    git(chg, "add", "-A")
+    git(chg, "commit", "-q", "-m", "an older home")
+    council(chg, "run", "open", "council-review")
+    code, out, _ = council(chg, "changed")
+    check("changed: the ignore lines run open adds to an older home's tracked .gitignore are not the user's change",
+          code == 0 and "no files matched" in out and ".council" not in out, out)
     write(os.path.join(chg, "src", "old.py"), "x = 11\n")          # unstaged edit
     write(os.path.join(chg, "src", "new file.py"), "y = 2\n")      # untracked, and a space in the name
     code, out, _ = council(chg, "changed", "--glob", "*.py")
@@ -2214,6 +2222,19 @@ with tempfile.TemporaryDirectory() as tmp:
           "gate 'ps'" in out and "backslash" in out and "gate 'quoted'" not in out, out)
     code, out, _ = council(vocab, "gates")
     check("gates: points out a backslash bash would drop", "backslash" in row(out, "ps") and "backslash" not in row(out, "quoted"), out)
+    gates_cfg(vocab, "| msb | `msbuild App.sln /p:Configuration=Release /nologo` | manual | no | ok | `true` | none | - |\n"
+                     "| paths | `ls /c/Users /usr/bin http://x/y C:/x` | manual | no | ok | `true` | none | - |\n"
+                     "| dashed | `dotnet build -p:Configuration=Release` | manual | no | ok | `true` | none | - |\n")
+    code, out, _ = council(vocab, "doctor")
+    check("doctor: flags a Windows switch Git Bash would turn into a path, and says to write -p:",
+          "gate 'msb' has a Windows switch" in out and "-p:" in out
+          and "gate 'paths' has a Windows switch" not in out and "gate 'dashed' has a Windows switch" not in out, out)
+    code, out, _ = council(vocab, "gates")
+    check("gates: points out the Windows switch on that gate only",
+          "Windows switch" in row(out, "msb") and "Windows switch" not in row(out, "paths") + row(out, "dashed"), out)
+    gates_cfg(vocab, "| strict | `true` | strict | sometimes | maybe | `true` | none | - |\n"
+                     "| ps | `powershell -File tools\\run_tests.ps1` | verify | yes | ok | `true` | none | - |\n"
+                     "| quoted | `echo \"tools\\run.ps1\" 'a\\b'` | verify | no | ok | `true` | none | - |\n")
     code, out, _ = council(vocab, "gate", "bs", "--", "echo tools\\x")
     check("gate: an ad-hoc command's stray backslash gets a note", "backslash" in out and read(os.path.join(vgates, "bs.txt")) == "toolsx\n", out)
     write(os.path.join(vocab, "probe_abs.py"), "print('abs ok')\n")
@@ -2576,7 +2597,9 @@ with tempfile.TemporaryDirectory() as tmp:
              "passwd: /etc/passwd must not be readable", "access_key: AccessKeyProviderFactory should be renamed",
              "token: TokenRefreshScheduler", "The secret is: EverythingGoesThroughTheQueue",
              "Use a bearer AuthenticationMiddleware for the admin routes.", "Basic Authentication/Authorization headers are fine.",
-             "token = self.config.auth.token_v2", "api_key = os.environ.get('API_KEY')"]
+             "token = self.config.auth.token_v2", "api_key = os.environ.get('API_KEY')",
+             "The password is hashed-with-bcrypt-before-storage, keep that.",
+             "The passphrase is the-same-one-we-use-for-staging"]
     pk_blocks = ("-----BEGIN RSA " + pk + "-----\n" + body[0] + "\n" + body[1][:22] + "\n-----END RSA " + pk + "-----\n"
                  "Here is the start of the deploy key:\n-----BEGIN OPENSSH " + pk + "-----\n"
                  "Comment: I cut the rest; the deploy script is below\nVersion: 2 of deploy.sh must stay\n"
