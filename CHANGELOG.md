@@ -12,6 +12,10 @@ and deliberate breakage showed which of those problems the tests would catch. Mo
 a check read what agents, models and projects really write, and refuse what it can't read instead
 of passing it.
 
+**Upgrading:** if `council doctor` says the Gates section is an "older layout (a list …)", run a
+council-init refresh once to move it into the Gates table. Until then `council gate --all` checks
+nothing, and every build says so.
+
 ### Added
 
 - **`council run resume`.** A run carried into a new session, or past `/clear`, was called "not this
@@ -37,9 +41,18 @@ of passing it.
   gate from the verify set. With a red baseline a gate compares the failing tests its runner names,
   not whole lines. The guardrails reference says a failing runner must exit 1 to 255 (only the low
   8 bits reach the helper, so 256 failures read as a pass).
+- **Every older Gates list is recognised**, including ``- tests: `pytest` `` and a command on the line
+  under its list item, so `doctor` and `gate --all` say "older layout — a council-init refresh
+  migrates it" instead of "no gates configured".
+- **A Windows switch in a gate is named.** Git Bash turns `/p:Configuration=Release` into a path before
+  a Windows tool sees it (only `cmd`'s `/c` and `/k` are rewritten), so `doctor`, `gates` and every
+  gate run now point it out and say to write `-p:…` where the tool takes it (msbuild and dotnet do),
+  else `//p:…`.
 - **`council changed` looks at the files it names.** `--glob '*.{js,jsx}'` matched nothing (git
   pathspecs have no braces), so a fitted linter passed forever; braces are spelled out, a pattern
-  that matches no file is an error, and long lists are passed in batches.
+  that matches no file is an error, and long lists are passed in batches. The council's own files
+  are skipped, as the change index skips them, so the ignore lines `run open` adds to an older home's
+  tracked `.gitignore` never count as the user's change.
 - **`council check` and `collect` read citations and items as models write them.** Notes, lists,
   links, bold, table columns, `L58`, `#L12` and trailing commas no longer read as missing files or
   bad lines, and bare paths, `path::symbol` and `path: 12` are checked instead of skipped. Items
@@ -64,7 +77,13 @@ of passing it.
 - **The seat check reads replies the way agents write them.** Any JSON spacing of
   `stop_hook_active` counts, BLOCKED is taken only as a reply (not "* Blocked users can …" in a
   report), and the seat file is found wherever the Wrote line names it, with words before the path
-  or a full stop after it. A named absolute path that doesn't exist now blocks.
+  or a full stop after it. A named absolute path that doesn't exist now blocks. In a review it sends
+  back an item that names no place at all, and it takes `- (none)` for an empty lane, as `collect`
+  does.
+- **A war-room worker lost in round 2 is re-dispatched for round 2.** Marked failed in a new session,
+  it used to have `collect` flag its finished round-1 file and say "re-dispatch it once", which re-runs
+  round 1. The failure is now the round-2 row's, and `collect` says to record a fresh `<slug>-r2`
+  worker.
 - **Several `council seat` calls at once keep every row.** They shared one temp file and could lose
   rows or the header; they now take turns behind a lock. `tokens=74.3k` was stored as 743; `k`, `M`
   and comma thousands are read, and a value with no number is refused.
@@ -85,7 +104,8 @@ of passing it.
   All three are refused now. A re-save no longer duplicates the user's own dated headings or deletes
   the words saved before. Redaction covers about twenty more everyday secret shapes (GitLab, npm,
   PyPI, Hugging Face, Slack app tokens and more), strips indented key bodies, and keeps the ordinary
-  text around a snipped key.
+  text around a snipped key. A password described in words ("the password is
+  hashed-with-bcrypt-before-storage") stays readable; a passphrase of random words stays redacted.
 - **Run scratch and the user's words stay out of git in every home.** `run open` and `ask save` now
   add the `runs/`, `asks/` and `active-run` ignore lines to older homes too, including outside git.
   A 0.7.0 home that shared requests by leaving the `asks/` line out is told when the line comes back.
