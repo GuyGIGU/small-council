@@ -535,6 +535,18 @@ with tempfile.TemporaryDirectory() as tmp:
     write(quiet, "# Quiet — x (council-review)\nref: none\n## Index\n(none) — nothing in my slice\n")
     code, err = run_gate(worker, f"Wrote {quiet} — 0 items")
     check("seat check: an empty lane with a (none) line passes", code == 0, err)
+    write(quiet, "# Quiet — x (council-review)\nref: none\n## Index\n- (none) — nothing in my slice\n")
+    code, err = run_gate(worker, f"Wrote {quiet} — 0 items")
+    check("seat check: an empty lane written as a list line, '- (none)', passes too", code == 0, err)
+    uncited = os.path.join(seats, "uncited.md")
+    write(uncited, "# Uncited — x (council-review)\nref: none\n## Index\n1 · P1 · Principle 3 · Login has no rate limit\n"
+                   "2 · P2 · Principle 1 · src/a.py:12 · Retries forever\n")
+    code, err = run_gate(worker, f"Wrote {uncited} — 2 items")
+    check("seat check: a review item that names no place blocks, and only that one is counted",
+          code == 2 and "1 review item(s) name no place" in err, err)
+    write(uncited, "# Uncited — x (council-plan)\nref: none\n## Index\n1 · P1 · Principle 3 · Login has no rate limit\n")
+    code, err = run_gate(worker, f"Wrote {uncited} — 1 items")
+    check("seat check: ... but in a plan an item may name an area, so the same line passes", code == 0, err)
     code, err = run_gate(worker, "I looked at some things")
     check("seat check: no 'Wrote' line blocks", code == 2 and "Wrote <output path>" in err, err)
     check("seat check: the block message offers the BLOCKED way out", "BLOCKED: <reason>" in err, err)

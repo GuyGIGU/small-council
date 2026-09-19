@@ -1342,8 +1342,8 @@ index_shape() {
         next
       }
       if (l ~ /^ *$/) next
-      if (pend) { pend = 0; if (!item(l) && l !~ /^ *\(none\)/) { ins = 0; next } }
-      if (l ~ /^ *\(none\)/) { none = 1; next }
+      if (pend) { pend = 0; if (!item(l) && l !~ /^ *([-*+] +)?[*_]*\([Nn]one\)/) { ins = 0; next } }
+      if (l ~ /^ *([-*+] +)?[*_]*\([Nn]one\)/) { none = 1; next }
       if (item(l)) {
         if ((index(l, "·") ? split(l, f, / +· +/) : split(l, f, / +\| +/)) >= 4) ok++; else bad++
         next

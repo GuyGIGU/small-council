@@ -133,7 +133,10 @@ else
       add "add an '## Index' section with one line per item: '<n> · <severity> · <principle> · <path:line> · <title>' (write '(none) — <why>' for an empty lane)"
     else
       # The same rule as index_shape in bin/council: change both together.
-      shape="$(awk '
+      # A review item has to name a place; collect and check read the full citation, so this only sends
+      # back an item with nothing place-like in any field ("1 · P1 · Principle 3 · Login has no rate limit").
+      case "$(printf '%s' "$l1" | tr 'A-Z' 'a-z')" in *'review)'|*'review) ') review=1 ;; *) review=0 ;; esac
+      shape="$(REVIEW="$review" awk '
         function item(l) { return l ~ /^[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) / }
         /^## / { h = tolower($0); sub(/^## +/, "", h); ins = (h ~ /(^|[^a-z])index([^a-z]|$)/); pend = 0; next }
         !ins { next }
@@ -146,10 +149,12 @@ else
             next
           }
           if (l ~ /^ *$/) next
-          if (pend) { pend = 0; if (!item(l) && l !~ /^ *\(none\)/) { ins = 0; next } }
-          if (l ~ /^ *\(none\)/) { none = 1; next }
+          if (pend) { pend = 0; if (!item(l) && l !~ /^ *([-*+] +)?[*_]*\([Nn]one\)/) { ins = 0; next } }
+          if (l ~ /^ *([-*+] +)?[*_]*\([Nn]one\)/) { none = 1; next }
           if (item(l)) {                 # an item needs four fields: no citation, no item
-            if ((index(l, "·") ? split(l, f, / +· +/) : split(l, f, / +\| +/)) >= 4) ok++; else bad++
+            if ((index(l, "·") ? split(l, f, / +· +/) : split(l, f, / +\| +/)) < 4) { bad++; next }
+            ok++
+            if (ENVIRON["REVIEW"] == 1 && l !~ /[]A-Za-z0-9_)]: *[0-9]|#L[0-9]|(^|[^A-Za-z])L[0-9]|[A-Za-z0-9_-]\.[A-Za-z]|\/|::/) unc++
             next
           }
           if (l ~ /^[ \t]/) {            # a note under an item, unless it is written as an item line
@@ -158,8 +163,9 @@ else
           }
           if (l ~ /^([-*+] +)?[*_]*C?[0-9]+/ || l ~ / · / || l ~ /^\| *[*_]*C?[0-9]+[a-z]?[*_]* *\|/) bad++
         }
-        END { printf "%d %d %d", ok, bad, none }' "$path")"
-      ok="${shape%% *}"; rest="${shape#* }"; bad="${rest%% *}"; none="${rest#* }"
+        END { printf "%d %d %d %d", ok, bad, unc, none }' "$path")"
+      ok="${shape%% *}"; rest="${shape#* }"; bad="${rest%% *}"; rest="${rest#* }"; unc="${rest%% *}"; none="${rest#* }"
+      [ "${unc:-0}" -eq 0 ] || add "$unc review item(s) name no place — give each a <path:line> field (no evidence, no item)"
       [ "${bad:-0}" -eq 0 ] || add "$bad line(s) under '## Index' aren't in the index format — write each item as '<n> · <severity> · <principle> · <path:line> · <title>'"
       if [ "${ok:-0}" -eq 0 ] && [ "${none:-0}" -eq 0 ] && [ "${bad:-0}" -eq 0 ]; then add "the Index is empty — list your items, or write '(none) — <why>' if your lane had nothing"; fi
     fi
