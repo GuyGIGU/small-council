@@ -836,16 +836,22 @@ config_gates() {
     }' "$1"
 }
 
-# A Gates section still written as a list (the layout before the table): list items with a backticked
-# command, and no table. Only list lines count, so the template's own HTML comment — or a note about a
-# `council-init` refresh — is not mistaken for a layout to migrate.
+# A Gates section still written as a list (the layout before the table): a backticked command in a list
+# item — "- `pytest`", "- **Tests:** `pytest`", "- tests: `pytest`" — or on an indented line under one,
+# and no table. Only list items count, and a backticked council command is a note, not a gate, so the
+# template's own HTML comment, prose, or "fit them later with a `council-init` refresh" is not mistaken
+# for a layout to migrate.
 gates_listed() {
   awk '
-    /^## / { g = ($0 ~ /^## Gates/); next }
+    function cmd(l) { return l ~ /`[^`]+`/ && l !~ /`council[ -]/ }
+    /^## / { g = ($0 ~ /^## Gates/); li = 0; next }
     !g { next }
     /^[ \t]*<!--/ { cm = 1 } cm { if (/-->/) cm = 0; next }
-    /^\|/ { t = 1 }
-    /^[ \t]*([-*+]|[0-9]+[.)])[ \t]*(\*\*[^*]*\*\*:?[ \t]*)?`[^`]+`/ { c = 1 }
+    /^\|/ { t = 1; li = 0; next }
+    /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/ { li = 1; if (cmd($0)) c = 1; next }
+    /^[ \t]*$/ { next }
+    /^[ \t]/ { if (li && cmd($0)) c = 1; next }          # a line under a list item
+    { li = 0 }
     END { exit !(c && !t) }' "$1" 2>/dev/null
 }
 
@@ -1697,7 +1703,7 @@ collect_flag() { bad=1; [ "${live:-0}" = 1 ] || { hard=1; [ "${1:-}" = cite ] ||
 
 cmd_collect() {
   local run top base brief seats slug ref out cap f size refok r t got shape items unparsed hasnone okc allc nol unc \
-        n sev pr cite title sec tok state bad=0 total=0 note hard=0 deep=0 live=0 sat=0
+        n sev pr cite title sec tok state bad=0 total=0 note hard=0 deep=0 live=0 sat=0 r2lost=""
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="$(field base "$run/session-state.md")"
@@ -1722,8 +1728,14 @@ $(brief_seats "$run/debate.md")"                      # a war room's round-2 fil
     fi
     # A fresh round-2 worker (<slug>-r2) took over a lost round-1 worker: judge the round-1 row by its file.
     if [ "${slug%-r2}" = "$slug" ] && [ -n "$(seat_field "$run" "$slug-r2" 2)" ]; then state=done; fi
+    # A worker lost in a war room's round 2 (marked failed after a compaction or a new session): the
+    # failure is the round-2 row's, which follows it; the round-1 file is done and judged by itself.
+    case "$state" in failed|blocked)
+      if [ "${slug%-r2}" = "$slug" ] && printf '%s\n' "$seats" | cut -f1 | grep -qxF -- "$slug-r2"; then state=done; fi ;;
+    esac
     live=0; case "$state" in running|queued) live=1 ;; esac     # its file may simply not be done yet
     case "$state" in failed|blocked|running|queued) note=" state:$state"; collect_flag ;; esac
+    case "$slug:$state" in *-r2:failed|*-r2:blocked) r2lost="$r2lost${r2lost:+, }$slug" ;; esac
     if [ ! -s "$f" ] && [ "$state" = skipped ] && [ "${slug%-r2}" != "$slug" ]; then   # sat round 2 out (war-room.md)
       t="$(seat_field "$run" "$slug" 6)"
       printf '%-16s %-8s %-7s %-4s %-9s %-7s %s%s\n' "$slug" skipped - - - - "$tok" "${t:+ · $t}"; sat=$((sat + 1)); continue
@@ -1787,6 +1799,7 @@ SEATS
     return 1
   fi
   say "collect: fix the rows above — resume that worker (message its agent id) or re-dispatch it once"
+  [ -z "$r2lost" ] || say "collect: $r2lost lost round 2 with its worker — dispatch a fresh round-2 worker for each and record it as 'council seat <slug>-r2 running'; round 1 is done, don't re-run it"
   return 1
 }
 

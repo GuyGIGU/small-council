@@ -1778,6 +1778,13 @@ with tempfile.TemporaryDirectory() as tmp:
     council(req, "seat", "leach", "running", "agent=w1", "note=round 2")
     code, out, _ = council(req, "collect")
     check("collect: a round-2 row follows its round-1 seat's worker", "state:running" in row(out, "leach-r2"), out)
+    council(req, "seat", "leach", "failed", "note=interrupted")
+    code, out, _ = council(req, "collect")
+    check("collect: a worker lost in round 2 flags the round-2 row, not the round-1 file that is done",
+          code == 1 and "state:failed" in row(out, "leach-r2") and "state:" not in row(out, "leach"), out)
+    check("collect: ... and says to start a fresh round-2 worker, not to re-run round 1",
+          "leach-r2 lost round 2" in out and "council seat <slug>-r2 running" in out, out)
+    council(req, "seat", "leach", "running", "note=round 2")
     code, out, _ = council(req, "seat", "leach", "done", "tokens=6000")
     check("seat: a resumed worker adds tokens, not agents", "agents: 1 of 1 done" in out and "~26k tokens so far" in out, out)
     code, out, _ = council(req, "collect")
@@ -2308,6 +2315,15 @@ with tempfile.TemporaryDirectory() as tmp:
           "older layout (a list" in out and "council-init refresh" in out and "add the project's real" not in out, out)
     code, out, _ = council(legacy, "gates")
     check("gates: says the Gates section is an older layout", "older layout" in out, out)
+    for label, gates in [("a plain name and a colon before the command", "- tests: `pytest -q`\n"),
+                         ("its command on the line under the list item (tactics-v2's layout)",
+                          "- **grounding** (Core phase 1):\n  `powershell -ExecutionPolicy Bypass -File tools\\run_tests.ps1`\n"
+                          "  22 suites. Exits 2 on failure.\n")]:
+        write(os.path.join(legacy, ".council", "council.config.md"),
+              "# Council config — legacy\n\n## Gates\n\n" + gates + "\n## Hard rules\n- none\n")
+        code, out, _ = council(legacy, "doctor")
+        check(f"doctor: an older Gates list with {label} is named as an older layout",
+              "older layout (a list" in out and "council-init refresh" in out, out)
     write(os.path.join(legacy, ".council", "council.config.md"),
           "# Council config — declined\nlast-verified: 2026-09-15 @ x\n\n## Gates\n\n"
           "- guardrails: declined 2026-09-01 (fit them later with a `council-init` refresh)\n\n## Hard rules\n- none\n")
