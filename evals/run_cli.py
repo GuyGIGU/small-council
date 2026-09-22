@@ -84,6 +84,40 @@ def read(path):
         return f.read()
 
 
+def write_plan(run, selected=("chair",), skipped=(), size="squad", risk="medium", complexity="medium",
+               uncertainty="medium", verification="independent", estimated_tokens=100000):
+    """Complete a run-plan v1 for tests whose subject is later than routing."""
+    state = read(os.path.join(run, "session-state.md"))
+    mode = re.search(r"^mode:\s*(.+)$", state, re.MULTILINE).group(1).strip()
+    rows = [
+        ("kind", "id", "field", "value", "reason"),
+        ("schema", "plan", "version", "1", "versioned test contract"),
+        ("run", "run", "id", os.path.basename(run), "bind this plan to the test run"),
+        ("run", "run", "mode", mode, "mode chosen by this test"),
+        ("run", "run", "size", size, "sized for this test"),
+        ("assessment", "run", "risk", risk, "test fixture risk"),
+        ("assessment", "run", "complexity", complexity, "test fixture complexity"),
+        ("assessment", "run", "uncertainty", uncertainty, "test fixture uncertainty"),
+        ("budget", "run", "agent-cap", "10", "default project cap"),
+        ("budget", "run", "estimated-tokens", str(estimated_tokens), "fixture estimate"),
+        ("verification", "run", "level", verification, "fixture verification"),
+    ]
+    for slug in selected:
+        role = "chair" if slug == "chair" else ("verifier" if slug.startswith("verify-") else "worker")
+        rows.extend([
+            ("seat", slug, "disposition", "selected", "needed by this test"),
+            ("seat", slug, "role", role, "fixture role"),
+            ("context", slug, "level", "focused", "only the fixture context"),
+            ("budget", slug, "tool-calls", "15", "small fixture slice"),
+        ])
+    for slug in skipped:
+        rows.extend([
+            ("seat", slug, "disposition", "skipped", "no surface in this fixture"),
+            ("seat", slug, "role", "worker", "roster seat"),
+        ])
+    write(os.path.join(run, "run-plan.tsv"), "\n".join("\t".join(row) for row in rows) + "\n")
+
+
 def slash(p):
     return p.strip().replace("\\", "/").rstrip("/")
 
@@ -189,6 +223,17 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run open: state records the code root", re.search(r"^code-root: .+/repo$", st, re.MULTILINE) is not None, st)
     check("run open: state records Claude Code's session id", "session: sess-123" in st, st)
     check("run open: seats.tsv and seats/ created", os.path.isfile(os.path.join(run, "seats.tsv")) and os.path.isdir(os.path.join(run, "seats")))
+    plan_path = os.path.join(run, "run-plan.tsv")
+    check("run open: creates and stamps a versioned run plan",
+          os.path.isfile(plan_path) and "plan-schema: 1" in st and "\t{{MODE}}\t" not in read(plan_path), read(plan_path) + st)
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: the starter plan is intentionally incomplete", code == 1 and "replace the placeholder" in out, out)
+    code, out, err = council(repo, "state", "phase=brief")
+    check("state: refuses to enter Brief while the run plan is invalid",
+          code == 2 and "cannot advance to brief" in err and "phase: convene" in read(os.path.join(run, "session-state.md")), out + err)
+    code, out, err = council(repo, "state", "phase=build")
+    check("state: refuses to enter an implement Build while the run plan is invalid",
+          code == 2 and "cannot advance to build" in err and "phase: convene" in read(os.path.join(run, "session-state.md")), out + err)
 
     # State
     code, out, _ = council(repo, "state", "phase=prepare", "next=build the index")
@@ -198,6 +243,37 @@ with tempfile.TemporaryDirectory() as tmp:
     check("state: rejects an invalid status", code == 2, err)
     code, _, err = council(repo, "state", "no-equals-sign")
     check("state: rejects a bare word", code == 2, err)
+
+    write_plan(run, selected=("fowler", "beck", "gone"), skipped=("ghost",))
+    code, out, err = council(repo, "run", "plan", "check")
+    check("run plan check: accepts a complete plan and counts selected agents",
+          code == 0 and "3 selected, 1 skipped" in out and "3 agent(s) of cap 10" in out, out + err)
+    code, out, err = council(repo, "state", "phase=brief")
+    check("state: enters Brief once the run plan is valid", code == 0 and "phase brief" in out, out + err)
+    code, out, err = council(repo, "run", "plan", "show")
+    check("run plan show: explains routing, context, budgets and verification",
+          code == 0 and "selected — fowler" in out and "skipped — ghost" in out and "verification: independent" in out, out + err)
+    good_plan = read(plan_path)
+    append(plan_path, "schema\tplan\tversion\t1\tduplicate for the drill\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: rejects duplicate identities", code == 1 and "duplicate row" in out, out)
+    write(plan_path, good_plan.replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t2"))
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: rejects a roster over its plan cap", code == 1 and "selected agents exceed the plan cap" in out, out)
+    write(plan_path, good_plan)
+    code, out, err = council(repo, "seat", "outsider", "running", "agent=nope")
+    check("seat: refuses to start an identity the valid plan did not select",
+          code == 2 and "does not mark it selected" in err, out + err)
+
+    legacy = new_repo(tmp, "legacy-plan")
+    write(os.path.join(legacy, ".council", "council.config.md"), "# Council config — legacy plan\n")
+    _, legacy_run, _ = council(legacy, "run", "open", "council-review")
+    legacy_run = legacy_run.strip()
+    os.remove(os.path.join(legacy_run, "run-plan.tsv"))
+    write(os.path.join(legacy_run, "session-state.md"), read(os.path.join(legacy_run, "session-state.md")).replace("plan-schema: 1\n", ""))
+    code, out, err = council(legacy, "seat", "old-worker", "running", "agent=old")
+    check("legacy run: a pre-contract run without a plan still works", code == 0 and "old-worker" in out, out + err)
+    council(legacy, "run", "close", "--status", "abandoned")
 
     # Change index, with an earlier review on disk
     write(os.path.join(repo, ".council", "reviews", "2026-08-01-stats.md"),
@@ -444,6 +520,7 @@ with tempfile.TemporaryDirectory() as tmp:
     write(os.path.join(tk, ".council", "council.config.md"), "# Council config — tokens\n")
     code, trun, _ = council(tk, "run", "open", "council-review")
     trun = trun.strip()
+    write_plan(trun, selected=tuple(f"par{i}" for i in range(6)) + ("afterlock",))
     council(tk, "seat", "hunt", "done", "agent=a1", "tokens=74.3k")
     council(tk, "seat", "beck", "done", "agent=a2", "tokens=1.2k")
     council(tk, "seat", "leach", "done", "agent=a3", "tokens=74,304")
@@ -763,6 +840,8 @@ with tempfile.TemporaryDirectory() as tmp:
           "## Enforced Conventions\n### EC-1: plans that touch migrations include a rollback task\n**Scope:** council-plan\n"
           "### EC-2: credentials come from the keyring on purpose\n**Scope:** hunt\n")
     code, selrun, _ = council(msel, "run", "open", "council-plan")
+    selrun = selrun.strip()
+    write_plan(selrun, selected=("hunt",))
     council(msel, "seat", "hunt", "queued")
     code, out, _ = council(msel, "memory", "select", "webapp/backend")
     check("memory select: with a run open, the paths given add to the run's seats and mode",
@@ -772,7 +851,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("memory select: with several runs open, only the paths given count — and it says so",
           code == 0 and "AP-1" in out and "EC-1" not in out and "several runs are open" in err, out + err)
     council(msel, "run", "close", "--run", selrun2.strip(), "--status", "abandoned")
-    council(msel, "run", "close", "--run", selrun.strip(), "--status", "abandoned")
+    council(msel, "run", "close", "--run", selrun, "--status", "abandoned")
 
     # Citation and origin check
     write(os.path.join(run, "synthesis.md"),
@@ -1555,6 +1634,8 @@ with tempfile.TemporaryDirectory() as tmp:
     bom = new_repo(tmp, "bom")
     write(os.path.join(bom, ".council", "council.config.md"), "# Council config — bom\n")
     code, bomrun, _ = council(bom, "run", "open", "council-review")
+    bomrun = bomrun.strip()
+    write_plan(bomrun)
     bom_state = os.path.join(bomrun.strip(), "session-state.md")
     body = read(bom_state)
     with open(bom_state, "w", encoding="utf-8-sig", newline="\n") as f:
@@ -1614,6 +1695,7 @@ with tempfile.TemporaryDirectory() as tmp:
     write(os.path.join(rs, ".council", "council.config.md"), "# Council config — resume\n")
     code, rrun, _ = council(rs, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sess-old"})
     rrun = rrun.strip()
+    write_plan(rrun, selected=("hunt", "beck"))
     rname, rstate = os.path.basename(rrun), os.path.join(rrun, "session-state.md")
     council(rs, "seat", "hunt", "running", "agent=a1")
     council(rs, "run", "close", "--status", "paused")
@@ -1739,6 +1821,7 @@ with tempfile.TemporaryDirectory() as tmp:
     council(req, "run", "close")
     code, irun, _ = council(req, "run", "open", "council-implement")
     irun = irun.strip()
+    write_plan(irun, selected=("leach",))
     council(req, "state", f"ask=.council/asks/{filed[0]}")
     code, out, _ = council(req, "memory", "select")
     check("memory select: ... and not in another mode's runs", code == 0 and "EC-1" not in out and "memory: 0 scoped" in out, out)
@@ -1992,7 +2075,9 @@ with tempfile.TemporaryDirectory() as tmp:
     cl = new_repo(tmp, "closelog")
     write(os.path.join(cl, ".council", "council.config.md"), "# Council config — close\n")
     code, clrun, _ = council(cl, "run", "open", "council-implement")
-    cln = os.path.basename(clrun.strip())
+    clrun = clrun.strip()
+    write_plan(clrun, selected=("builder", "verify-1"))
+    cln = os.path.basename(clrun)
     council(cl, "state", "ask-saved=x")
     write(os.path.join(cl, ".council", "logs", "2026-09-17-zz-build.md"),
           f"# Build log\nInput: `x` · Run: {cln} · Start: abc123\n\n## Shortcuts and concessions\nnone\n")
@@ -2791,6 +2876,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # A war room's round 2: collect waits for a running seat; a fresh round-2 worker counts as its seat
     code, wr, _ = council(req, "run", "open", "council-plan")
     wr = wr.strip()
+    write_plan(wr, selected=("leach",))
     write(os.path.join(wr, "brief.md"), "# Brief\n## Seats\n### leach — Data (Leach)\n- ref: none\n- out: seats/leach.md\n")
     write(os.path.join(wr, "seats", "leach.md"), "# Leach — Data (council-plan)\nref: none\n## Index\n1 · must · Principle 1 · a.txt:1 · x\n")
     write(os.path.join(wr, "debate.md"), "# War room\n## Seats\n### leach-r2 — Data (Leach), round 2\n- ref: none\n- out: seats/leach-r2.md\n")

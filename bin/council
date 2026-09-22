@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.7.1"
+COUNCIL_VERSION="0.8.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -106,6 +106,16 @@ mode_skill() {
     review|plan|implement|research|postgame|init) printf 'council-%s' "$1" ;;
     *) printf 'context-core' ;;
   esac
+}
+
+# The configured run-wide agent ceiling. Older configs and unreadable values keep the documented
+# default. A run plan may choose a lower ceiling, but never a higher one.
+configured_agent_cap() {
+  local cfg="$(council_home)/council.config.md" cap
+  cap="$(sed -n 's/^[[:space:]]*-[[:space:]]*agent cap:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$cfg" 2>/dev/null | head -n 1)"
+  case "$cap" in ''|*[!0-9]*) cap=10 ;; esac
+  [ "$cap" -gt 0 ] 2>/dev/null || cap=10
+  printf '%s' "$cap"
 }
 
 # Runs, newest first, tab-separated, "-" for an empty value:
@@ -243,7 +253,7 @@ ensure_ignored() {
 }
 
 cmd_run_open() {
-  local mode="${1:-}" short home top ts dir n existing paused session
+  local mode="${1:-}" short home top ts dir n existing paused session template cap
   case "$mode" in
     council-review|council-plan|council-implement|council-research|council-postgame|council-init|test-architect|context-core) ;;
     '') die "usage: council run open <mode> [--alongside] [--session=ID]   (the skill name, e.g. council-review)" ;;
@@ -279,12 +289,19 @@ updated: $(now_min)
 opened: $(now_sec)
 code-root: $top
 session: $session
+plan-schema: 1
 size:
 base:
 deliverable:
 next: size the run and ask for the go-ahead
 ## Decisions so far
 EOF
+  template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan.tsv"
+  [ -f "$template" ] || die "run plan template is missing: $template"
+  cap="$(configured_agent_cap)"
+  RUN_NAME="${dir##*/}" RUN_MODE="$mode" AGENT_CAP="$cap" awk '
+    { gsub(/\{\{RUN\}\}/, ENVIRON["RUN_NAME"]); gsub(/\{\{MODE\}\}/, ENVIRON["RUN_MODE"]); gsub(/\{\{AGENT_CAP\}\}/, ENVIRON["AGENT_CAP"]); print }
+  ' "$template" > "$dir/run-plan.tsv" || die "cannot write $dir/run-plan.tsv"
   printf '# Run log — %s · opened %s\n' "$mode" "$(now_sec)" > "$dir/log.md"
   printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$dir/seats.tsv"
   [ -z "$existing" ] || printf 'council: another run is in progress on this working tree — pass --run %s to every command for this one\n' "${dir##*/}" >&2
@@ -301,6 +318,12 @@ cmd_state() {
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
+  for kv in ${1+"$@"}; do
+    case "$kv" in
+      phase=brief|phase=build|phase=work|phase=collect|phase=judge|phase=challenge|phase=deliver|phase=learn)
+        require_run_plan "$run" "advance to ${kv#phase=}" ;;
+    esac
+  done
   tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
   awk 'NR == 1 { sub(/^\357\273\277/, "") } { print }' "$st" > "$tmp" || { rm -f "$tmp"; die "cannot update $st"; }
   for kv in ${1+"$@"}; do
@@ -408,6 +431,14 @@ cmd_seat() {
     esac
   done
   run="$(resolve_run)" || exit 2
+  case "$state" in
+    queued|running)
+      require_run_plan "$run" "start seat $slug"
+      if [ -f "$run/run-plan.tsv" ]; then
+        run_plan_has_selected "$run/run-plan.tsv" "$slug" \
+          || die "cannot start seat $slug — run-plan.tsv does not mark it selected; update the plan and run: council run plan check --run ${run##*/}"
+      fi ;;
+  esac
   f="$run/seats.tsv"
   lock_file "$f"                                     # calls made at the same moment take turns
   [ -s "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$f"
@@ -538,6 +569,187 @@ cmd_run_status() {
       for (i = 1; i <= no && i <= room; i++) print other[i]
       if (no > room) printf "… and %d more open in other working trees\n", no - room
     }'
+}
+
+# ------------------------------------------------------------------------------------------------
+# Run plan contract
+# ------------------------------------------------------------------------------------------------
+
+# Validate the versioned five-column plan. The file is deliberately plain TSV so a Chair can write
+# it directly and old shells can check it without jq or another runtime. QUIET=1 suppresses only the
+# success line; errors always remain visible.
+run_plan_validate() {
+  local run="$1" plan="$2" expected_mode max_cap
+  expected_mode="$(field mode "$run/session-state.md")"
+  max_cap="$(configured_agent_cap)"
+  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" QUIET="${QUIET:-0}" awk -F'\t' '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    function problem(line, msg) {
+      errors++
+      if (line > 0) printf "ERROR line %d: %s\n", line, msg
+      else printf "ERROR: %s\n", msg
+    }
+    function need(kind, id, field, label, key) {
+      key = kind SUBSEP id SUBSEP field
+      if (!(key in val)) problem(0, "missing " label " row (" kind "/" id "/" field ")")
+    }
+    function integer(s) { return s ~ /^[0-9]+$/ }
+    BEGIN { header = "kind\tid\tfield\tvalue\treason" }
+    {
+      sub(/\r$/, "")
+      if ($0 ~ /^[ \t]*$/ || $0 ~ /^#/) next
+      if (!got_header) {
+        got_header = 1
+        if ($0 != header) problem(NR, "header must be exactly: " header)
+        next
+      }
+      if (NF != 5) { problem(NR, "expected exactly 5 tab-separated columns, got " NF); next }
+      kind = trim($1); id = trim($2); fld = trim($3); v = trim($4); why = trim($5)
+      if (kind == "" || id == "" || fld == "" || v == "" || why == "") {
+        problem(NR, "kind, id, field, value and reason must all be present"); next
+      }
+      if (id !~ /^[A-Za-z0-9._-]+$/) problem(NR, "id must use letters, digits, dot, underscore or dash: " id)
+      if (v ~ /^<.*>$/ || v == "pending") problem(NR, "replace the placeholder value for " kind "/" id "/" fld)
+      if (why ~ /^<.*>$/) problem(NR, "replace the placeholder reason for " kind "/" id "/" fld)
+      key = kind SUBSEP id SUBSEP fld
+      if (key in val) { problem(NR, "duplicate row for " kind "/" id "/" fld); next }
+      val[key] = v; reason[key] = why; at[key] = NR
+
+      if (kind == "schema") {
+        if (id != "plan" || fld != "version") problem(NR, "unknown schema row")
+        else if (v != "1") problem(NR, "unsupported run-plan schema version: " v)
+      } else if (kind == "run") {
+        if (id != "run" || (fld != "id" && fld != "mode" && fld != "size")) problem(NR, "unknown run row")
+        else if (fld == "id" && v != ENVIRON["EXPECT_RUN"]) problem(NR, "run id must match its folder: " ENVIRON["EXPECT_RUN"])
+        else if (fld == "mode" && v != ENVIRON["EXPECT_MODE"]) problem(NR, "run mode must match session-state.md: " ENVIRON["EXPECT_MODE"])
+        else if (fld == "size" && v != "solo" && v != "squad" && v != "full") problem(NR, "run size must be solo, squad or full")
+      } else if (kind == "assessment") {
+        if (id != "run" || (fld != "risk" && fld != "complexity" && fld != "uncertainty")) problem(NR, "unknown assessment row")
+        else if (v != "low" && v != "medium" && v != "high") problem(NR, fld " must be low, medium or high")
+      } else if (kind == "seat") {
+        seats[id] = 1
+        if (fld == "disposition") {
+          if (v != "selected" && v != "skipped") problem(NR, "seat disposition must be selected or skipped")
+          disp[id] = v
+        } else if (fld == "role") {
+          if (v != "chair" && v != "worker" && v != "verifier") problem(NR, "seat role must be chair, worker or verifier")
+          role[id] = v
+        } else problem(NR, "unknown seat field: " fld)
+      } else if (kind == "context") {
+        if (fld != "level") problem(NR, "unknown context field: " fld)
+        else if (v != "minimal" && v != "focused" && v != "full") problem(NR, "context level must be minimal, focused or full")
+        ctx[id] = v
+      } else if (kind == "budget") {
+        if (id == "run") {
+          if (fld == "agent-cap") {
+            if (!integer(v) || v < 1) problem(NR, "agent-cap must be a positive integer")
+            else if (v > ENVIRON["MAX_CAP"] + 0) problem(NR, "agent-cap " v " exceeds the configured cap " ENVIRON["MAX_CAP"])
+            plan_cap = v + 0
+          } else if (fld == "estimated-tokens") {
+            if (!integer(v)) problem(NR, "estimated-tokens must be a non-negative integer")
+          } else problem(NR, "unknown run budget field: " fld)
+        } else {
+          if (fld != "tool-calls") problem(NR, "unknown seat budget field: " fld)
+          else if (!integer(v) || v < 1 || v > 200) problem(NR, "tool-calls must be an integer from 1 to 200")
+          calls[id] = v
+        }
+      } else if (kind == "verification") {
+        if (id != "run" || fld != "level") problem(NR, "unknown verification row")
+        else if (v != "self" && v != "independent" && v != "adversarial") problem(NR, "verification level must be self, independent or adversarial")
+      } else problem(NR, "unknown kind: " kind)
+    }
+    END {
+      if (!got_header) problem(0, "missing header")
+      need("schema", "plan", "version", "schema version")
+      need("run", "run", "id", "run id")
+      need("run", "run", "mode", "run mode")
+      need("run", "run", "size", "run size")
+      need("assessment", "run", "risk", "risk assessment")
+      need("assessment", "run", "complexity", "complexity assessment")
+      need("assessment", "run", "uncertainty", "uncertainty assessment")
+      need("budget", "run", "agent-cap", "agent cap")
+      need("budget", "run", "estimated-tokens", "token estimate")
+      need("verification", "run", "level", "verification level")
+
+      for (id in seats) {
+        if (!(id in disp)) problem(0, "seat " id " has no disposition row")
+        if (!(id in role)) problem(0, "seat " id " has no role row")
+      }
+      for (id in disp) {
+        if (!(id in role)) problem(0, "seat " id " has no role row")
+        if (disp[id] == "selected") {
+          selected++
+          if (!(id in ctx)) problem(0, "selected seat " id " has no context/level row")
+          if (!(id in calls)) problem(0, "selected " role[id] " " id " has no budget/tool-calls row")
+          if (role[id] != "chair") agents++
+        } else {
+          skipped++
+          if (id in ctx) problem(at["context" SUBSEP id SUBSEP "level"], "skipped seat " id " must not receive context")
+          if (id in calls) problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "skipped seat " id " must not receive a tool-call budget")
+        }
+      }
+      if (selected + skipped == 0) problem(0, "add at least one considered seat with a selected or skipped disposition")
+      for (id in ctx) if (!(id in disp) || disp[id] != "selected") problem(at["context" SUBSEP id SUBSEP "level"], "context belongs only to a selected seat: " id)
+      for (id in calls) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "a seat budget belongs only to a selected seat: " id)
+      if (plan_cap > 0 && agents > plan_cap) problem(0, agents " selected agents exceed the plan cap " plan_cap)
+
+      if (errors) {
+        printf "plan: %d error(s) · run-plan.tsv\n", errors
+        exit 1
+      }
+      if (ENVIRON["QUIET"] != "1") printf "plan: valid · %s · %d selected, %d skipped · %d agent(s) of cap %d\n", val["run" SUBSEP "run" SUBSEP "size"], selected, skipped, agents, plan_cap
+    }
+  ' "$plan"
+}
+
+run_plan_has_selected() {
+  [ -f "$1" ] || return 1
+  SLUG="$2" awk -F'\t' '$1 == "seat" && $2 == ENVIRON["SLUG"] && $3 == "disposition" && $4 == "selected" { found = 1 } END { exit !found }' "$1"
+}
+
+require_run_plan() {
+  local run="$1" action="$2" schema plan="$1/run-plan.tsv"
+  schema="$(field plan-schema "$run/session-state.md")"
+  if [ ! -f "$plan" ]; then
+    [ -z "$schema" ] && return 0                         # pre-v1 run: intentionally compatible
+    die "cannot $action — run-plan.tsv is missing; restore it from references/templates/run-plan.tsv"
+  fi
+  QUIET=1 run_plan_validate "$run" "$plan" || die "cannot $action — fix run-plan.tsv, then run: council run plan check --run ${run##*/}"
+}
+
+cmd_run_plan() {
+  local sub="${1:-check}" run plan schema
+  run="$(resolve_run)" || exit 2
+  plan="$run/run-plan.tsv"; schema="$(field plan-schema "$run/session-state.md")"
+  if [ ! -f "$plan" ]; then
+    if [ -z "$schema" ]; then say "plan: legacy run · no run-plan.tsv required · ${run##*/}"; return 0; fi
+    die "run-plan.tsv is missing from ${run##*/} — restore it from references/templates/run-plan.tsv"
+  fi
+  case "$sub" in
+    check) run_plan_validate "$run" "$plan" ;;
+    show)
+      run_plan_validate "$run" "$plan" || return 1
+      PLAN="$plan" awk -F'\t' '
+        $0 !~ /^#/ && NF == 5 { v[$1 SUBSEP $2 SUBSEP $3] = $4; why[$1 SUBSEP $2 SUBSEP $3] = $5; if ($1 == "seat" && $3 == "disposition") order[++n] = $2 }
+        END {
+          print "Run plan — " v["run" SUBSEP "run" SUBSEP "id"]
+          print "  mode: " v["run" SUBSEP "run" SUBSEP "mode"] " · size: " v["run" SUBSEP "run" SUBSEP "size"]
+          print "  risk: " v["assessment" SUBSEP "run" SUBSEP "risk"] " · complexity: " v["assessment" SUBSEP "run" SUBSEP "complexity"] " · uncertainty: " v["assessment" SUBSEP "run" SUBSEP "uncertainty"]
+          print "  budget: " v["budget" SUBSEP "run" SUBSEP "estimated-tokens"] " tokens · " v["budget" SUBSEP "run" SUBSEP "agent-cap"] " agents · verification: " v["verification" SUBSEP "run" SUBSEP "level"]
+          print "  seats:"
+          for (i = 1; i <= n; i++) {
+            id = order[i]; d = v["seat" SUBSEP id SUBSEP "disposition"]; r = v["seat" SUBSEP id SUBSEP "role"]
+            line = "    " d " — " id " (" r ")"
+            if (d == "selected") {
+              line = line " · context " v["context" SUBSEP id SUBSEP "level"]
+              calls = v["budget" SUBSEP id SUBSEP "tool-calls"]; if (calls != "") line = line " · " calls " tool calls"
+            }
+            print line " — " why["seat" SUBSEP id SUBSEP "disposition"]
+          }
+        }
+      ' "$plan" ;;
+    *) die "usage: council run plan [check|show]" ;;
+  esac
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -2158,7 +2370,7 @@ ref_path() {
 }
 
 cmd_doctor() {
-  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind rows unk alt k orph skipped i
+  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind rows unk alt k orph skipped i stfile schema plan_result
   home="$(council_home)"; root="$(dirname "$home")"
   finding() {
     printf '%s  %s\n       Fix: %s\n' "$1" "$2" "$3"
@@ -2250,6 +2462,25 @@ GATES
   done <<RUNS
 $(list_runs "$home" 1000000 open)
 RUNS
+  while IFS= read -r stfile; do
+    [ -n "$stfile" ] || continue
+    dir="${stfile%/session-state.md}"; phase="$(field phase "$stfile")"; schema="$(field plan-schema "$stfile")"
+    if [ -f "$dir/run-plan.tsv" ]; then
+      if plan_result="$(QUIET=1 run_plan_validate "$dir" "$dir/run-plan.tsv" 2>&1)"; then :; else
+        plan_result="$(printf '%s\n' "$plan_result" | tail -n 1)"
+        case "$phase" in
+          convene|prepare|assign)
+            finding WARN "run ${dir##*/} has a run plan that is not ready yet ($plan_result)" "complete it before Brief, then run: council run plan check --run ${dir##*/}" ;;
+          *)
+            finding ERROR "run ${dir##*/} has an invalid run plan ($plan_result)" "fix it, then run: council run plan check --run ${dir##*/}" ;;
+        esac
+      fi
+    elif [ -n "$schema" ]; then
+      finding ERROR "run ${dir##*/} declares plan schema $schema but run-plan.tsv is missing" "restore it from references/templates/run-plan.tsv and complete it before dispatch"
+    fi
+  done <<RUN_PLANS
+$(find "$home/runs" -mindepth 2 -maxdepth 2 -name session-state.md 2>/dev/null | sort)
+RUN_PLANS
   ptr="$home/active-run"
   if [ -s "$ptr" ]; then
     p="$(head -n 1 "$ptr" | tr -d '\r')"
@@ -3588,6 +3819,7 @@ council — the Small Council's helper (bash + git)
   council run close [--status complete|abandoned|paused]
   council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
                                          in progress again, this session recorded as its driver
+  council run plan [check|show]          validate the run plan · show its decisions in plain language
   council state [key=value …]            show or update the run's session-state header
   council seat <slug> <state> [agent=ID] [tokens=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped
@@ -3689,7 +3921,8 @@ main() {
         close)  takes_flags "run close" status; no_words "run close" ${1+"$@"}; cmd_run_close ;;
         status) takes_flags "run status" all; no_words "run status" ${1+"$@"}; cmd_run_status ;;
         resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
-        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>]" ;;
+        plan)   takes_flags "run plan"; [ $# -le 1 ] || die "usage: council run plan [check|show]"; cmd_run_plan ${1+"$@"} ;;
+        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show]" ;;
       esac ;;
     state)   takes_flags state; cmd_state ${1+"$@"} ;;
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;

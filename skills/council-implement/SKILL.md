@@ -89,7 +89,9 @@ receipt's `Checked by machine:` line ends with **exactly one clause** about it �
 *"… · the test suite has been red since 4 August, so nothing here was verified by it"*. It disappears
 the moment it passes.
 
-Then `council state phase=build`, not `assign`: the build loop replaces the stages in between. When
+Before changing code, make sure the run plan names the inline Chair and expected verifiers with
+their context and tool budgets; `council run plan check` must pass. Then `council state phase=build`,
+not `assign`: the build loop replaces the stages in between. When
 the converge pass starts, `council state phase=challenge`.
 
 ## The build loop — for each task

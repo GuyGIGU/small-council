@@ -1,0 +1,18 @@
+# Small Council run plan v1. Keep exactly five tab-separated columns.
+# Replace every <...> value and add one seat/role row per considered seat.
+# A selected seat also needs context/level and budget/tool-calls rows. The Chair is budgeted but is not an agent.
+kind	id	field	value	reason
+schema	plan	version	1	versioned run-plan contract
+run	run	id	{{RUN}}	bind this plan to its run folder
+run	run	mode	{{MODE}}	mode chosen when the run opened
+run	run	size	<pending>	why this work is solo, squad or full
+assessment	run	risk	<pending>	what can go wrong and how serious it is
+assessment	run	complexity	<pending>	how many surfaces or dependent decisions are involved
+assessment	run	uncertainty	<pending>	how much is unknown before the work starts
+budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
+budget	run	estimated-tokens	<pending>	estimate from the ledger or the no-history default
+verification	run	level	<pending>	self, independent or adversarial, and why
+# seat	<slug>	disposition	selected|skipped	why this seat is or is not called
+# seat	<slug>	role	chair|worker|verifier	what this selected seat does
+# context	<slug>	level	minimal|focused|full	context allocated to this selected seat
+# budget	<slug>	tool-calls	<positive integer>	tool-call cap for this selected seat

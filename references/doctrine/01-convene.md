@@ -27,7 +27,11 @@ Decide whether to convene, whom, and at what cost — then get the user's go-ahe
    run; `council run status --all` shows whole runs. With no history, assume ~60–100k tokens per
    worker.
 7. **Open the run.** `council run open <mode>` prints the run folder and records this session's id,
-   so a compaction resumes the right run. Record the size:
+   so a compaction resumes the right run. It also creates `<run>/run-plan.tsv`: fill its run size,
+   risk, complexity, uncertainty, token estimate and verification level from the decision you just
+   made. Assign completes its seat rows. A Solo run or a mode that skips Assign completes every seat
+   row here too (the inline Chair plus any expected verifiers), then runs `council run plan check`.
+   Record the same size on the status board:
    `council state size="squad — 3 seats + 1 verifier, est. ~300k tokens"`.
 8. **Save the request** — right after opening the run, before anything else. Write `<run>/ask.md`:
    ```

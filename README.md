@@ -31,7 +31,7 @@ skipped under load.
   - **`council-verifier`**: blind and adversarial — CONFIRMED / REFUTED / UNCERTAIN / MISCITED for
     claims, OK / INCOMPLETE / REGRESSION / SCOPE-CREEP for changes.
 - **The `council` helper** (bash + git, on PATH while the plugin is enabled). It does the
-  bookkeeping: opening and closing runs, the change index, gates judged by exit code, checking seat
+  bookkeeping: opening and closing runs, validating the run plan before fan-out, the change index, gates judged by exit code, checking seat
   files and citations, the memory entries in scope, earlier council work on the same files, each
   seat's track record (the ledger), the stack fingerprint, and a drift doctor.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:

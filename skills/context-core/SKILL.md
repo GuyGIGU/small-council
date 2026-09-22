@@ -30,7 +30,9 @@ compaction is lossy, and the disk is the only memory a reset can trust.
 8. **Aggregate, then judge; judge, then challenge.** The challenger never sees the author's reasoning.
 9. **The user rules; the council proposes.** Questions come last, numbered, in the chat. The user's
    request and every ruling are recorded in the user's own words.
-10. **Every run is sized, budgeted, reported and closed.** Estimate before, actual after, closed always.
+10. **Every run is sized, budgeted, reported and closed.** A validated `run-plan.tsv` records why
+    each seat is selected or skipped, its context and budget, and the required verification before
+    Brief or dispatch. Estimate before, actual after, closed always.
 11. **The council learns this project.** What it got wrong becomes memory; each seat's track record
     shapes the next roster.
 
@@ -45,7 +47,7 @@ your mode's `## At <Stage>` section, if it has one. Each stage ends by recording
 |---|---|---|---|
 | 1 | convene | `01-convene.md` | an open, approved run |
 | 2 | prepare | `02-prepare.md` | index.md, gate results, earlier findings |
-| 3 | assign | `03-assign.md` | every seat's slice, budget and state |
+| 3 | assign | `03-assign.md` | a valid run-plan.tsv; every seat's slice, budget and state |
 | 4 | brief | `04-brief.md` | brief.md, with the memory in scope |
 | 5 | work | `05-work.md` | seats/<slug>.md, one per worker |
 | 6 | collect | `06-collect.md` | a clean `council collect` |
@@ -67,7 +69,8 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 | Command | Use it to |
 |---|---|
-| `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one · carry one on in this session (see Resume) |
+| `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one · carry one on in this session (see Resume) |
+| `council run plan check` · `run plan show` | validate the run's routing, context, budgets and verification contract · show those decisions plainly |
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
 | `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
 | `council index [--base <ref>]` | build the change index: hunks, symbols, callers, tests |
@@ -92,7 +95,7 @@ linked worktree. **Code root** = the working tree you are reviewing or building.
 | `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
 | `plans/` `reviews/` `logs/` `research/` `postgames/` `refs/` | deliverables · project-local seat docs | tracked |
 | `asks/` | the user's requests, word for word — every deliverable points at its own | local — to share them, replace the `asks/` line in `.council/.gitignore` with `!asks/` |
-| `runs/<date-time>-<mode>/` | `session-state.md` `ask.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `debate.md` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
+| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `ask.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `debate.md` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
 `.council/refs/<file>.md` → under the council home. Workers always get absolute paths, and a seat
@@ -103,6 +106,9 @@ live at a legacy path; the config's Memory section says where.
 
 - **Agents:** at most 10 per run, verifiers included (config `agent cap`), unless the user raises it.
   A resumed worker (SendMessage to its agent id) isn't a new agent; a re-dispatch is.
+- **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts. Runs
+  created by an older plugin have no plan stamp and remain valid legacy runs. The exact v1 fields
+  and compatibility rule live in `references/run-plan.md`.
 - **Sizes:** Solo (you, inline) · Squad (2–4 seats + 1–2 verifiers) · Full (up to 7 seats +
   verifiers). Size a run as seats plus the verifiers Challenge will need; its overflow rule covers
   the rest. A post-game uses 1–3 verifiers and counts as Squad.

@@ -21,8 +21,13 @@ Give each seat exactly its slice, and each worker a budget.
 6. **Count agents.** Workers + the verifiers Challenge will need must fit the agent cap (default
    10). Over → pair more seats, or ask the user. A re-dispatch or a diagnosis worker counts too; a resumed worker
    (SendMessage to its agent id) doesn't.
-7. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
-   note="<reason>"` for every seat not called.
+7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat a `disposition`
+   (`selected` or `skipped`) and `role`, with the reason. Every selected seat gets a context level;
+   every selected seat gets a tool-call budget. Include the Chair as a selected
+   `chair` for Solo. Run `council run plan check`; fix every error before going on.
+8. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
+   note="<reason>"` for every seat not called. The helper refuses to queue or start a seat the valid
+   plan does not mark selected.
 
 ## Rules
 
@@ -33,4 +38,5 @@ Give each seat exactly its slice, and each worker a budget.
 
 ## Done when
 
-Every in-scope file has an owner and every worker has a slice and a budget. → `council state phase=brief`
+Every in-scope file has an owner, every worker has a slice and a budget, and `council run plan check`
+is clean. → `council state phase=brief` (the helper refuses this transition while the plan is invalid)

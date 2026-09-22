@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-09-22
+
+The first evolution milestone makes the Council's routing decisions inspectable and enforceable
+without replacing its execution model. New runs now carry a small versioned plan before any context
+or worker is dispatched.
+
+**Upgrading:** nothing to migrate. Runs opened by an older version have no plan stamp and continue
+to work as legacy runs. Every new run gets `run-plan.tsv` automatically.
+
+### Added
+
+- **A versioned run-plan contract.** `run-plan.tsv` records size, risk, complexity, uncertainty,
+  selected and skipped seats with reasons, context allocation, agent and token budgets, and required
+  verification in five plain TSV columns.
+- **`council run plan check` and `show`.** The checker rejects placeholders, unknown or duplicate
+  fields, invalid vocabularies, mismatched run identity and mode, missing seat context or budget,
+  and a selected roster over either the plan or project cap. `show` renders a valid plan plainly.
+- **Pre-dispatch enforcement.** The helper refuses to enter Brief, Build or a later standard stage with an
+  invalid plan, and refuses to queue or start an identity the plan did not select. `council doctor`
+  reports incomplete early plans as warnings and invalid later plans as errors.
+
+### Changed
+
+- Convene now records run-level judgments in the starter plan; Assign completes and validates its
+  seat rows before it records workers. Brief starts from the checked plan, so its context and budgets
+  cannot silently drift from the routing decision.
+
 ## [0.7.1] — 2026-09-18
 
 A repair release. A deep review of 0.7.0 found its checks passing in places where they had not

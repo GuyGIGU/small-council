@@ -4,6 +4,9 @@ One set of orders that every seat can act on with no other context. Write it to 
 with the Write tool. A permission prompt here, before any fan-out, is expected: allow edits under
 `.council/` for the session, so the workers can write their files.
 
+Start from `council run plan show`: the brief's called and uncalled seats, context and budgets must
+agree with the validated plan. If a new seat is needed, update and re-check the plan before briefing it.
+
 ## The format — edge-ordered: what matters most goes at the top and the bottom
 
 ```

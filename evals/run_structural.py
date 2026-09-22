@@ -62,7 +62,8 @@ DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 # 1. Layout
 for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.json"), ("bin", "council"),
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
-             ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh")]:
+             ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"),
+             ("references", "templates", "run-plan.tsv")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
 for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
@@ -102,6 +103,8 @@ check("kernel: approval threshold from the config", "approve without asking" in 
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
 check("kernel: resuming a run records this session as its driver (council run resume)",
       "council run resume" in core[core.find("## Resume"):])
+check("kernel: new runs require a validated run plan before Brief or dispatch",
+      "council run plan check" in core and "before Brief, Build or any worker starts" in core)
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
@@ -121,6 +124,8 @@ check("context-core: a Solo run selects the memory in scope too",
       "council memory select" in core.split("A **Solo** run", 1)[-1].split("\n\n", 1)[0])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
 check("03-assign: records every seat's state", "council seat" in doctrine["03-assign.md"])
+check("03-assign: validates the run plan before the Brief hand-off",
+      doctrine["03-assign.md"].find("council run plan check") < doctrine["03-assign.md"].find("council state phase=brief"))
 check("03-assign: files past the change index's cap still need an owner", "past the 80-file cap" in doctrine["03-assign.md"])
 check("04-brief: seat blocks carry ref / out / cap for collect", all(k in doctrine["04-brief.md"] for k in ["### <slug>", "- ref:", "- out:", "- cap:"]))
 check("05-work: records each worker with its agent id", "council seat <slug> running agent=" in doctrine["05-work.md"])
@@ -158,7 +163,7 @@ for label, t in texts.items():
         bad_flags += [f"{label}: council {c} {f}" for f in re.findall(r"--[a-z][a-z-]*", " ".join(own)) if f not in flags]
         if c not in known:
             bad.append(f"{label}: council {c}")
-        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume"}):
+        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume", "plan"}):
             bad.append(f"{label}: council run {' '.join(rest[:1])}")
         elif c == "map" and (not rest or rest[0] != "status"):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")

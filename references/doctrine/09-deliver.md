@@ -33,7 +33,7 @@
    in the offer. council-implement's receipt holds this line, and adds `Shortcuts I took:` and
    `Not proved:` — where `none` and `nothing` are answers, and silence isn't.
 5. **The cost:** "This run used ~<actual>k tokens across <n> agents (estimated ~<estimate>k)", from
-   the progress line or `seats.tsv`.
+   the progress line or `seats.tsv`; the estimate is the one recorded in `run-plan.tsv`.
 6. **Then, numbered, in the chat:** the rulings needed (from synthesis.md), then the next step your
    mode offers.
 
