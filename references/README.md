@@ -18,7 +18,8 @@ Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is
 
 `adaptive-routing.md` documents the optional pre-run recommendation and its limits.
 `run-plan.md` defines the checked decision state for a run. `event-stream.md` defines the
-append-only record of CLI-observable actions.
+append-only record of CLI-observable actions. `impact-graph.md` defines the optional run-local
+graph of changed paths, direct dependencies and test hints.
 
 ## Seat reference docs — one per council seat
 

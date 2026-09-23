@@ -182,6 +182,12 @@ surface and cap flags let you test a different shape. The command only prints a 
 maps archetypes to the project's real roster, makes any needed judgment calls, and records the final
 choice in the checked run plan. See the [adaptive routing contract](references/adaptive-routing.md).
 
+For a run with code changes, `council index` also builds `impact.tsv` when Python 3.8+ is available.
+It separates changed files from direct static importers and likely tests, with confidence and scan
+limits visible; `council impact` refreshes it after more edits. This is a scope aid, not proof of
+runtime coverage or an automatic routing decision. The Bash/Git index still works without Python.
+See the [impact graph contract](references/impact-graph.md).
+
 ## Repo layout
 
 ```
@@ -191,8 +197,8 @@ agents/                council-worker, council-verifier
 hooks/                 hooks.json · session-start.sh · seat-gate.sh
 bin/council            the helper
 references/            stage doctrine · seat docs · spec and test docs · roster catalog · templates
-evals/                 run_structural · run_cli · run_hook · run_phrases · behavioral-drills · fixtures
-scripts/               quick_validate.py
+evals/                 run_structural · run_cli · run_impact · run_hook · run_phrases · behavioral-drills · fixtures
+scripts/               quick_validate.py · optional impact.py provider
 docs/design/           the design behind the current doctrine
 examples/              an illustrative council-init output
 ```
@@ -203,11 +209,12 @@ examples/              an illustrative council-init output
 python scripts/quick_validate.py   # will it load? manifests, frontmatter, paths, scripts, doctrine
 python evals/run_structural.py     # is the design intact? laws, stages, commands, modes, budgets
 python evals/run_cli.py            # does the helper work? (needs bash + git)
+python evals/run_impact.py         # does the optional impact graph resolve direct relationships?
 python evals/run_hook.py           # do the hooks behave? (needs bash + git)
 python evals/run_phrases.py        # advisory: are the field-tested rules still worded in?
 ```
 
-CI runs all of them on Ubuntu and Windows. Before a release:
+CI runs all of them on Ubuntu, Windows and macOS. Before a release:
 - run the behavioral drills in [`evals/behavioral-drills.md`](evals/behavioral-drills.md);
 - if you have the CLI, run `claude plugin validate . --strict`.
 

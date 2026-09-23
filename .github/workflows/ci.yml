@@ -47,6 +47,9 @@ jobs:
       - name: Helper evals
         run: python evals/run_cli.py
 
+      - name: Impact evals
+        run: python evals/run_impact.py
+
       - name: Hook evals
         run: python evals/run_hook.py
 

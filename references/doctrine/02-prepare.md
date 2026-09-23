@@ -11,7 +11,10 @@ Gather every shared fact once, so no seat has to.
    reads — manifests, entry points, schemas, route tables.
 3. **Change index** — for anything with a diff: `council index [--base <ref>]` writes
    `<run>/index.md`: per changed file its hunks, changed symbols, callers and covering tests. Seats
-   read it instead of each re-tracing the blast radius.
+   read it instead of each re-tracing the blast radius. If optional Python 3.8+ is available, the
+   same command also writes `<run>/impact.tsv`: changed paths, direct static importers, likely
+   tests and surface hints. Read `references/impact-graph.md` before using its confidence labels.
+   A missing graph is not a clean impact result; `index.md` remains the fallback.
 4. **Earlier council work.** The index ends with the earlier council work on the changed files; for
    a run without a diff, `council prior <path> …`. Keep ids and one line each:
    "reviews/2026-08-02-auth.md #4 — fixed in logs/2026-08-03-auth-fixes.md". Memory in scope is
@@ -41,5 +44,5 @@ Gather every shared fact once, so no seat has to.
 
 ## Done when
 
-The index (if there is a diff) and the gate results are on disk.
+The index (if there is a diff), any available impact graph, and the gate results are on disk.
 → `council state phase=assign`

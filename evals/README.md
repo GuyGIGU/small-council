@@ -1,6 +1,6 @@
 # evals/
 
-Four automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
+Five automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
 
 ## 1. Validation — will the plugin load?
 
@@ -84,7 +84,17 @@ python evals/run_hook.py       # needs bash + git
 - a missing, malformed, empty or oversized file is blocked, but only once;
 - other agents are never touched.
 
-## 5. Phrase checks — advisory
+## 5. Impact evals — are direct dependencies and limits honest?
+
+```bash
+python evals/run_impact.py   # needs Python 3.8+, bash and git for the CLI handoff
+```
+
+Uses temporary repositories to check committed/staged/unstaged/untracked changes, renames and
+deletions, Python AST and literal JS/TS imports, likely test links, deterministic TSV, and the
+`council index` → `impact.tsv` handoff. This is not a claim of runtime coverage.
+
+## 6. Phrase checks — advisory
 
 ```bash
 python evals/run_phrases.py

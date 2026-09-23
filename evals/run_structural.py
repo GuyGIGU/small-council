@@ -63,7 +63,8 @@ DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.json"), ("bin", "council"),
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"),
-             ("references", "templates", "run-plan.tsv")]:
+             ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
+             ("scripts", "impact.py")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
 for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
@@ -107,6 +108,8 @@ check("kernel: new runs require a validated run plan before Brief or dispatch",
       "council run plan check" in core and "before Brief, Build or any worker starts" in core)
 check("kernel: adaptive routing is advisory before a run opens",
       "council route recommend" in core and "advisory" in core)
+check("kernel: optional impact graph is available beside the change index",
+      "council impact" in core and "impact.tsv" in core)
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
@@ -122,6 +125,10 @@ check("01-convene: a route needing rescope does not silently waive verification"
       "needs-rescope" in doctrine["01-convene.md"] and "before opening or" in doctrine["01-convene.md"])
 check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
+check("02-prepare: distinguishes optional graph from the fallback index",
+      "impact.tsv" in doctrine["02-prepare.md"] and "fallback" in doctrine["02-prepare.md"])
+check("03-assign: impact hints need inspection before ownership",
+      "impact.tsv" in doctrine["03-assign.md"] and "before assigning" in doctrine["03-assign.md"])
 check("01-convene: checks the stack fingerprint", "council fingerprint check" in doctrine["01-convene.md"])
 check("01-convene: a config with no stack fingerprint is offered a refresh too", "no stack-fingerprint" in doctrine["01-convene.md"])
 check("04-brief: a seat gets its card as its ref, and its doc's absolute path",

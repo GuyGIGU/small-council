@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.10.0"
+COUNCIL_VERSION="0.11.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -956,6 +956,29 @@ is_test_path() {
   return 1
 }
 
+impact_python() {
+  local candidate
+  for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import ast, sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+cmd_impact() {
+  local run top base py output
+  run="$(resolve_run)" || exit 2
+  top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
+  base="$(field base "$run/session-state.md")"
+  [ -n "$base" ] || die "impact needs a change baseline — run council index first"
+  output="$run/impact.tsv"
+  py="$(impact_python)" || { rm -f "$output"; printf 'council: impact needs optional Python 3.8+; index.md remains available\n' >&2; return 1; }
+  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/impact.py" --root "$top" --base "$base" --output "$output" \
+    || { rm -f "$output"; return 1; }
+}
+
 # Definition names from diff lines (+/-) and hunk-header context. Heuristic and language-agnostic:
 # def/class/func/fn/…, const-arrow functions, Go methods, shell "name() {", and C-style signatures —
 # never a bare call.
@@ -1123,6 +1146,7 @@ cmd_index() {
   fi
   [ "$n_over" -eq 0 ] || say "index: $n_over more past the $cap-file cap — named at the end of the index but not indexed; give them an owner too"
   [ "$np" -eq 0 ] || say "earlier council work on these files: $np mention(s), listed at the end of the index"
+  RUN_ARG="$run" cmd_impact || printf 'council: optional impact graph was not refreshed; the change index is still valid\n' >&2
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -4219,6 +4243,7 @@ council — the Small Council's helper (bash + git)
   council seat <slug> <state> [agent=ID] [tokens=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped
   council index [--base REF]             change index → <run>/index.md (hunks, symbols, callers, tests)
+  council impact [--run <folder>]        refresh <run>/impact.tsv from the index baseline (optional Python 3.8+)
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
                                          inside it; output and exit code → <run>/gates/
   council gate --all [--at grounding|verify]
@@ -4340,6 +4365,7 @@ main() {
                *) die "usage: council route recommend --task TEXT [routing flags]" ;;
              esac ;;
     index)   takes_flags index base; no_words index ${1+"$@"}; cmd_index ;;
+    impact)  takes_flags impact; no_words impact ${1+"$@"}; cmd_impact ;;
     gate)    takes_flags gate all at --
              if [ "$ALL" = 1 ]; then
                no_words "gate --all" ${1+"$@"}

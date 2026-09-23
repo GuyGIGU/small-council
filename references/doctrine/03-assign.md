@@ -10,7 +10,9 @@ Give each seat exactly its slice, and each worker a budget.
    column: globs and greps in this repo's idioms) against the in-scope files from the index or the scope
    inventory. The match is the seat's slice. A config without markers yet → judge by the seat's
    lens, and suggest a council-init refresh. A lens with several roster rows (`dodds-web`,
-   `dodds-admin`) is several seats, each with its own surface.
+   `dodds-admin`) is several seats, each with its own surface. If `impact.tsv` exists, consider its
+   direct importers and likely tests as additional scope, but inspect them before assigning an
+   owner; low-confidence name/path hints are not proof of behavior.
 2. **No orphans.** Every in-scope file belongs to at least one seat; an unowned file is a coverage
    gap. That includes the files the index names past the 80-file cap (listed at its end, with no
    hunks): they are in scope, just not indexed. Leftovers go to the closest lens — structure takes

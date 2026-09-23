@@ -75,7 +75,7 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 | `council run events show` · `run events check` | inspect or validate the run's mechanical event history (`events.tsv`); see `${CLAUDE_PLUGIN_ROOT}/references/event-stream.md` |
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
 | `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
-| `council index [--base <ref>]` | build the change index: hunks, symbols, callers, tests |
+| `council index [--base <ref>]` · `council impact` | build the change index and, when Python 3.8+ is available, the bounded `impact.tsv` graph · refresh that graph after code changes (see `${CLAUDE_PLUGIN_ROOT}/references/impact-graph.md`) |
 | `council gate <name> [-- '<command>']` · `council gate --all --at grounding` (or `verify`) | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved. From `--all`, **exit 4 = NOTHING WAS CHECKED** — no gate ran; say so, never report it as a pass. From a single gate, 4 is that command's own exit code |
 | `council changed [--glob '<pat>'] [--each] -- <cmd>` | run `<cmd>` over just the files this change touches — committed, staged, unstaged and new; exit 0 when none matched, so a newly fitted check is green on day one |
 | `council collect` · `council check` | check the seat files (and a war room's debate.md) · check citations, origin and request quotes — and, in a build, each fix's proof: did the before-check really fail, did the after-check really pass, is a test saved |
@@ -97,7 +97,7 @@ linked worktree. **Code root** = the working tree you are reviewing or building.
 | `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
 | `plans/` `reviews/` `logs/` `research/` `postgames/` `refs/` | deliverables · project-local seat docs | tracked |
 | `asks/` | the user's requests, word for word — every deliverable points at its own | local — to share them, replace the `asks/` line in `.council/.gitignore` with `!asks/` |
-| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `events.tsv` `ask.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `debate.md` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
+| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `events.tsv` `ask.md` `log.md` `seats.tsv` `index.md` `impact.tsv` (optional) `brief.md` `seats/` `debate.md` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
 `.council/refs/<file>.md` → under the council home. Workers always get absolute paths, and a seat

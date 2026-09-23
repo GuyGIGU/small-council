@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-09-23
+
+The fourth evolution milestone adds a bounded, inspectable impact graph alongside the existing
+change index. It distinguishes what changed from direct static importers and likely tests without
+claiming complete runtime coverage.
+
+**Upgrading:** `council index` still works with Bash and Git alone. With optional Python 3.8+, it
+also writes `<run>/impact.tsv`; `council impact` refreshes that graph from the saved baseline.
+Older runs and the manual routing workflow need no migration.
+
+### Added
+
+- **Impact graph v1.** Versioned TSV rows record Git change provenance, touched definitions,
+  direct import/dependent links, likely tests, path-based surfaces and explicit provider limits.
+  The Git delta includes committed, staged, unstaged, untracked, renamed and deleted paths.
+- **Incremental language providers.** Python AST handles static imports and definitions, including
+  common `src/` layouts; JS/TS resolves literal relative imports and nearby declarations. Both
+  are bounded and evidence-labelled. No project code, compiler or external service is run.
+- **Focused impact evals and ADR.** Temporary-repository tests cover the graph contract, rename
+  and deletion consumers, deterministic output and the CLI integration on all CI platforms.
+
+### Fixed since 0.10.0
+
+- Run plans now reject a missing Chair, incompatible Solo/Full team sizes, or independent and
+  adversarial verification without a selected verifier.
+- Seat events preserve concurrent update order; abandoned event locks can be recovered.
+
+### Known limits
+
+- Relationships are direct and static. Dynamic imports, aliases, transitive dependencies and
+  actual test coverage require further evidence; a missing edge is not a clean bill of health.
+- Python is optional. If unavailable or the provider fails, the existing `index.md` remains the
+  fallback and the helper reports that the graph was not refreshed.
+
 ## [0.10.0] — 2026-09-23
 
 The third evolution milestone adds an explainable, optional routing recommendation before a run.
