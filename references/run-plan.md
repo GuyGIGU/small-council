@@ -36,8 +36,11 @@ Every considered seat has `seat/<slug>/disposition` (`selected` or `skipped`) an
 does not count as an agent. Skipped seats receive neither context nor budget. The selected workers and verifiers must
 fit both the plan's agent cap and the project's configured cap.
 
-For a Solo run, record the Chair as the selected `chair`. The Chair receives a context level but
-does not count as an agent.
+Exactly one Chair must be selected. Solo selects no delegated agents; Squad selects at least one,
+and Full selects at least four. Independent or adversarial verification requires a selected
+`verifier`; a plan marked `self` cannot also select one. The Chair receives a context level but
+does not count as an agent. A plan that cannot fit its required verifier or run size must be
+resized or given a higher cap before Brief or dispatch.
 
 ## Lifecycle
 

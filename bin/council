@@ -258,11 +258,51 @@ ensure_ignored() {
 # events-schema stamp and continue without a stream.
 event_cell() { printf '%s' "$1" | tr '\t\r\n' '   ' | LC_ALL=C tr -cd '\40-\176\200-\377'; }
 
+event_lock_stale() {
+  local lock="$1" owner modified now
+  [ -d "$lock" ] || return 1
+  if [ -f "$lock/owner" ]; then
+    IFS= read -r owner < "$lock/owner" || :
+    case "$owner" in
+      ''|*[!0-9]*) ;;
+      *) kill -0 "$owner" 2>/dev/null && return 1; return 0 ;;
+    esac
+  fi
+  # A writer can be killed between mkdir and writing owner. Do not mistake that short window
+  # for a stale lock; BSD stat is for macOS, GNU stat for Git Bash/Linux.
+  modified="$(stat -c %Y "$lock" 2>/dev/null || stat -f %m "$lock" 2>/dev/null)"
+  case "$modified" in ''|*[!0-9]*) return 1 ;; esac
+  now="$(date +%s)"
+  [ $((now - modified)) -ge 10 ]
+}
+
+event_unlock() {
+  rm -f "$1/owner" && rmdir "$1" 2>/dev/null
+}
+
 event_lock() {
-  local lock="$1" tries=0
-  while ! mkdir "$lock" 2>/dev/null; do
+  local lock="$1" recovery="$1.recover" tries=0 owner="${BASHPID:-$$}"
+  while :; do
+    if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
+      # A reclaimer may have started just before mkdir succeeded. Yield this new lock to it.
+      if [ -d "$recovery" ]; then rmdir "$lock" 2>/dev/null; continue; fi
+      printf '%s\n' "$owner" > "$lock/owner" \
+        || { rm -f "$lock/owner"; rmdir "$lock" 2>/dev/null; return 1; }
+      return 0
+    fi
+    if event_lock_stale "$recovery"; then
+      rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
+    fi
+    if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
+      if printf '%s\n' "$owner" > "$recovery/owner"; then
+        if event_lock_stale "$lock"; then
+          rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null || :
+        fi
+      fi
+      event_unlock "$recovery" || :
+    fi
     tries=$((tries + 1))
-    [ "$tries" -lt 100 ] || { printf 'council: event lock unavailable: %s\n' "$lock" >&2; return 1; }
+    [ "$tries" -lt 200 ] || { printf 'council: event lock unavailable: %s\n' "$lock" >&2; return 1; }
     sleep 0.1
   done
 }
@@ -303,7 +343,7 @@ event_append() {
       "$(event_cell "$type")" "$(event_cell "$subject")" "$(event_cell "$value")" "$(event_cell "$detail")" \
       >> "$file" || rc=1
   fi
-  rmdir "$lock" 2>/dev/null || rc=1
+  event_unlock "$lock" || rc=1
   [ "$rc" -eq 0 ] || printf 'council: could not append a valid event to %s\n' "$file" >&2
   return "$rc"
 }
@@ -320,11 +360,11 @@ event_check() {
   fi
   lock="$file.lock"; event_lock "$lock" || return 1
   if [ ! -f "$file" ]; then
-    rmdir "$lock" 2>/dev/null
+    event_unlock "$lock"
     printf 'council: events.tsv is missing from %s\n' "${run##*/}" >&2; return 1
   fi
   if [ -n "$(tail -c 1 "$file")" ]; then
-    rmdir "$lock" 2>/dev/null
+    event_unlock "$lock"
     say "events: final line is incomplete"; return 1
   fi
   awk -F'\t' '
@@ -342,7 +382,7 @@ event_check() {
           exit bad ? 1 : 0 }
   ' "$file"
   rc=$?
-  rmdir "$lock" 2>/dev/null || rc=1
+  event_unlock "$lock" || rc=1
   return "$rc"
 }
 
@@ -356,7 +396,7 @@ cmd_run_events() {
       [ -f "$run/events.tsv" ] || return 0
       lock="$run/events.tsv.lock"; event_lock "$lock" || return 1
       awk -F'\t' 'NR > 1 { printf "%s  %s  %s  %s → %s  (%s)\n", $2, $3, $4, $5, $6, $7 }' "$run/events.tsv"
-      rc=$?; rmdir "$lock" 2>/dev/null || rc=1; return "$rc" ;;
+      rc=$?; event_unlock "$lock" || rc=1; return "$rc" ;;
     *) die "usage: council run events [show|check]" ;;
   esac
 }
@@ -560,7 +600,7 @@ cmd_seat() {
       fi ;;
   esac
   f="$run/seats.tsv"
-  lock_file "$f"                                     # calls made at the same moment take turns
+  event_lock "$f.lock" || die "seat lock unavailable: $f.lock"  # state and event keep the same order
   [ -s "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$f"
   SLUG="$slug" STATE="$state" AGENT="$agent" TOKENS="$tokens" NOTE="$note" NOW="$(now_min)" awk -F'\t' -v OFS='\t' '
     NR == 1 && $1 == "slug" { if (NF < 7) $0 = $0 "\tagents"; print; next }
@@ -577,9 +617,13 @@ cmd_seat() {
     }
     { print }
     END { if (!found) print ENVIRON["SLUG"], ENVIRON["STATE"], ENVIRON["AGENT"], ENVIRON["TOKENS"], ENVIRON["NOW"], ENVIRON["NOTE"], 1 }' \
-    "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; rmdir "$f.lock" 2>/dev/null; die "cannot update $f"; }
-  rm -f "$f.tmp$$"; rmdir "$f.lock" 2>/dev/null
-  event_append "$run" seat.updated "$slug" "$state" "tokens=$(seat_field "$run" "$slug" 4)" || die "seat changed, but its event could not be recorded"
+    "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; event_unlock "$f.lock"; die "cannot update $f"; }
+  rm -f "$f.tmp$$"
+  if ! event_append "$run" seat.updated "$slug" "$state" "tokens=$(seat_field "$run" "$slug" 4)"; then
+    event_unlock "$f.lock"
+    die "seat changed, but its event could not be recorded"
+  fi
+  event_unlock "$f.lock" || die "seat changed, but its lock could not be released: $f.lock"
   progress_line "$run"
 }
 
@@ -597,23 +641,6 @@ seat_tokens() {
     sub(/[ \t]*[kKmM]$/, "", t)
     printf "%d", int(t * m + 0.5)
   }'
-}
-
-# Take a lock folder next to a file; a lock left by a killed call is broken after ~10 s. The wait is
-# measured on the clock, not in loops: a fork costs far more on Git Bash than the sleep it runs.
-lock_file() {
-  local start tries=0
-  start="$(date +%s)"
-  while ! mkdir "$1.lock" 2>/dev/null; do
-    if [ $(( $(date +%s) - start )) -ge 10 ]; then
-      tries=$((tries + 1))
-      [ "$tries" -le 2 ] || return 0            # twice broken by someone else: carry on rather than hang
-      rm -rf "$1.lock"                          # what a killed call left behind
-      mkdir "$1.lock" 2>/dev/null && return 0   # lost the race: the other caller holds it, so wait again
-      start="$(date +%s)"
-    fi
-    sleep 0.1 2>/dev/null || sleep 1
-  done
 }
 
 cmd_run_close() {
@@ -807,7 +834,11 @@ run_plan_validate() {
           selected++
           if (!(id in ctx)) problem(0, "selected seat " id " has no context/level row")
           if (!(id in calls)) problem(0, "selected " role[id] " " id " has no budget/tool-calls row")
-          if (role[id] != "chair") agents++
+          if (role[id] == "chair") chairs++
+          else {
+            agents++
+            if (role[id] == "verifier") verifiers++
+          }
         } else {
           skipped++
           if (id in ctx) problem(at["context" SUBSEP id SUBSEP "level"], "skipped seat " id " must not receive context")
@@ -817,6 +848,16 @@ run_plan_validate() {
       if (selected + skipped == 0) problem(0, "add at least one considered seat with a selected or skipped disposition")
       for (id in ctx) if (!(id in disp) || disp[id] != "selected") problem(at["context" SUBSEP id SUBSEP "level"], "context belongs only to a selected seat: " id)
       for (id in calls) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "a seat budget belongs only to a selected seat: " id)
+      if (chairs != 1) problem(0, "select exactly one Chair; found " chairs + 0)
+      size = val["run" SUBSEP "run" SUBSEP "size"]
+      verification = val["verification" SUBSEP "run" SUBSEP "level"]
+      if (size == "solo" && agents != 0) problem(0, "Solo must not select delegated agents")
+      if (size == "squad" && agents < 1) problem(0, "Squad needs at least one selected agent")
+      if (size == "full" && agents < 4) problem(0, "Full needs at least four selected agents")
+      if ((verification == "independent" || verification == "adversarial") && verifiers < 1)
+        problem(0, verification " verification needs a selected verifier")
+      if (verification == "self" && verifiers > 0)
+        problem(0, "self verification conflicts with a selected verifier")
       if (plan_cap > 0 && agents > plan_cap) problem(0, agents " selected agents exceed the plan cap " plan_cap)
 
       if (errors) {

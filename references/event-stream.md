@@ -18,7 +18,10 @@ schema	seq	at	type	subject	value	detail
 Each later line has seven tab-separated cells. `schema` is `1`; `seq` starts at 1 and rises by one;
 `at` is UTC in `YYYY-MM-DDTHH:MM:SSZ` form. The containing folder identifies the run. Cells never
 contain tabs, newlines or control characters. The writer replaces those with spaces or drops them.
-It allocates sequence numbers under a per-file lock, then appends one complete line. Consumers can
+It allocates sequence numbers under a per-file lock, then appends one complete line. Seat updates
+hold their state lock through the event append, so concurrent updates to the same seat appear in
+state-change order. Lock folders record their owner's process ID; a later command can reclaim a
+lock left by a terminated writer (or an old ownerless lock). Consumers can
 read the TSV directly, or use `council run events show --run <folder>` for a short view and
 `council run events check --run <folder>` to verify structure and sequence.
 

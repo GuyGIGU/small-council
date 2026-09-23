@@ -106,6 +106,11 @@ def route_value(rows, kind, ident, field):
 def write_plan(run, selected=("chair",), skipped=(), size="squad", risk="medium", complexity="medium",
                uncertainty="medium", verification="independent", estimated_tokens=100000):
     """Complete a run-plan v1 for tests whose subject is later than routing."""
+    selected = list(selected)
+    if "chair" not in selected:
+        selected.insert(0, "chair")
+    if size != "solo" and verification != "self" and not any(slug.startswith("verify-") for slug in selected):
+        selected.append("verify-plan")
     state = read(os.path.join(run, "session-state.md"))
     mode = re.search(r"^mode:\s*(.+)$", state, re.MULTILINE).group(1).strip()
     rows = [
@@ -279,7 +284,7 @@ with tempfile.TemporaryDirectory() as tmp:
     write_plan(run, selected=("fowler", "beck", "gone"), skipped=("ghost",))
     code, out, err = council(repo, "run", "plan", "check")
     check("run plan check: accepts a complete plan and counts selected agents",
-          code == 0 and "3 selected, 1 skipped" in out and "3 agent(s) of cap 10" in out, out + err)
+          code == 0 and "5 selected, 1 skipped" in out and "4 agent(s) of cap 10" in out, out + err)
     code, out, err = council(repo, "state", "phase=brief")
     check("state: enters Brief once the run plan is valid", code == 0 and "phase brief" in out, out + err)
     code, out, err = council(repo, "run", "plan", "show")
@@ -403,6 +408,20 @@ with tempfile.TemporaryDirectory() as tmp:
     write(plan_path, good_plan.replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t2"))
     code, out, _ = council(repo, "run", "plan", "check")
     check("run plan check: rejects a roster over its plan cap", code == 1 and "selected agents exceed the plan cap" in out, out)
+    write(plan_path, "\n".join(line for line in good_plan.splitlines() if "\tchair\t" not in line) + "\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: requires exactly one selected Chair", code == 1 and "select exactly one Chair" in out, out)
+    write(plan_path, "\n".join(line for line in good_plan.splitlines() if "\tverify-plan\t" not in line) + "\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: independent verification needs a selected verifier",
+          code == 1 and "independent verification needs a selected verifier" in out, out)
+    write(plan_path, good_plan.replace("run\trun\tsize\tsquad", "run\trun\tsize\tsolo"))
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: Solo cannot select delegated agents", code == 1 and "Solo must not select" in out, out)
+    write(plan_path, "\n".join(line for line in good_plan.replace("run\trun\tsize\tsquad", "run\trun\tsize\tfull").splitlines()
+                                if "\tgone\t" not in line) + "\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: Full needs a broader selected team", code == 1 and "Full needs at least four" in out, out)
     write(plan_path, good_plan)
     code, out, err = council(repo, "seat", "outsider", "running", "agent=nope")
     check("seat: refuses to start an identity the valid plan did not select",
@@ -440,6 +459,44 @@ with tempfile.TemporaryDirectory() as tmp:
           all(p.returncode == 0 for p in jobs) and code == 0 and len(events(event_run)) == 4 and
           {e[4] for e in events(event_run)[1:]} == {"parallel-0", "parallel-1", "parallel-2"},
           out + err + str(outcomes))
+    event_lock_path = os.path.join(event_run, "events.tsv.lock")
+    os.mkdir(event_lock_path)
+    write(os.path.join(event_lock_path, "owner"), "99999999\n")
+    code, out, err = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events: reclaims a lock left by a terminated writer",
+          code == 0 and "valid" in out and not os.path.exists(event_lock_path), out + err)
+    os.mkdir(event_lock_path)
+    old_time = time.time() - 30
+    os.utime(event_lock_path, (old_time, old_time))
+    code, out, err = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events: reclaims an old lock with no owner file",
+          code == 0 and "valid" in out and not os.path.exists(event_lock_path), out + err)
+
+    write_plan(event_run, selected=("racer",))
+    os.mkdir(event_lock_path)
+    future_time = time.time() + 300  # Hold this test lock while two seat commands contend.
+    os.utime(event_lock_path, (future_time, future_time))
+    first = subprocess.Popen([BASH, CLI, "seat", "racer", "running", "agent=a", "--run", event_run],
+                             cwd=event_repo, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, encoding="utf-8", errors="replace")
+    seat_file = os.path.join(event_run, "seats.tsv")
+    deadline = time.monotonic() + 8
+    while "racer\trunning\t" not in read(seat_file) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    first_wrote = "racer\trunning\t" in read(seat_file)
+    second = subprocess.Popen([BASH, CLI, "seat", "racer", "done", "agent=a", "--run", event_run],
+                              cwd=event_repo, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, encoding="utf-8", errors="replace")
+    time.sleep(0.5)
+    second_waited = "racer\trunning\t" in read(seat_file)
+    os.rmdir(event_lock_path)
+    first_result = first.communicate(timeout=120)
+    second_result = second.communicate(timeout=120)
+    racer_events = [row[5] for row in events(event_run) if row[3:5] == ["seat.updated", "racer"]]
+    check("run events: concurrent updates to one seat preserve state and event order",
+          first_wrote and second_waited and first.returncode == 0 and second.returncode == 0 and
+          racer_events == ["running", "done"] and "racer\tdone\t" in read(seat_file),
+          str((first_result, second_result, racer_events, read(seat_file))))
     append(os.path.join(event_run, "events.tsv"), "1\t9\tbroken\n")
     code, out, _ = council(event_repo, "run", "events", "check", "--run", event_run)
     check("run events check: rejects a truncated or discontinuous row", code == 1 and "invalid row" in out, out)
