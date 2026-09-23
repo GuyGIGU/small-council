@@ -84,6 +84,11 @@ def read(path):
         return f.read()
 
 
+def events(run):
+    """Parsed event rows, excluding the header."""
+    return [line.split("\t") for line in read(os.path.join(run, "events.tsv")).splitlines()[1:]]
+
+
 def write_plan(run, selected=("chair",), skipped=(), size="squad", risk="medium", complexity="medium",
                uncertainty="medium", verification="independent", estimated_tokens=100000):
     """Complete a run-plan v1 for tests whose subject is later than routing."""
@@ -226,6 +231,16 @@ with tempfile.TemporaryDirectory() as tmp:
     plan_path = os.path.join(run, "run-plan.tsv")
     check("run open: creates and stamps a versioned run plan",
           os.path.isfile(plan_path) and "plan-schema: 1" in st and "\t{{MODE}}\t" not in read(plan_path), read(plan_path) + st)
+    first_events = events(run)
+    check("run open: stamps and writes the first structured event",
+          "events-schema: 1" in st and len(first_events) == 1 and
+          first_events[0][0:2] == ["1", "1"] and first_events[0][3:6] == ["run.opened", "run", "council-review"],
+          read(os.path.join(run, "events.tsv")))
+    code, out, err = council(repo, "run", "events", "check")
+    check("run events check: accepts the opened stream", code == 0 and "1 event(s)" in out, out + err)
+    code, out, err = council(repo, "run", "events", "show")
+    check("run events show: renders the first event and its detail",
+          code == 0 and "run.opened  run → council-review  (phase=convene)" in out, out + err)
     code, out, _ = council(repo, "run", "plan", "check")
     check("run plan check: the starter plan is intentionally incomplete", code == 1 and "replace the placeholder" in out, out)
     code, out, err = council(repo, "state", "phase=brief")
@@ -239,6 +254,9 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "state", "phase=prepare", "next=build the index")
     st = read(os.path.join(run, "session-state.md"))
     check("state: updates header fields", code == 0 and "phase: prepare" in st and "next: build the index" in st, st)
+    check("state: the phase transition gets one event",
+          len(events(run)) == 2 and events(run)[1][3:7] == ["run.phase_changed", "run", "prepare", "from=convene"],
+          read(os.path.join(run, "events.tsv")))
     code, _, err = council(repo, "state", "status=bogus")
     check("state: rejects an invalid status", code == 2, err)
     code, _, err = council(repo, "state", "no-equals-sign")
@@ -271,9 +289,43 @@ with tempfile.TemporaryDirectory() as tmp:
     legacy_run = legacy_run.strip()
     os.remove(os.path.join(legacy_run, "run-plan.tsv"))
     write(os.path.join(legacy_run, "session-state.md"), read(os.path.join(legacy_run, "session-state.md")).replace("plan-schema: 1\n", ""))
+    os.remove(os.path.join(legacy_run, "events.tsv"))
+    write(os.path.join(legacy_run, "session-state.md"), read(os.path.join(legacy_run, "session-state.md")).replace("events-schema: 1\n", ""))
+    code, out, err = council(legacy, "run", "events", "check")
+    check("legacy run: no event stream is required", code == 0 and "legacy run" in out, out + err)
+    write(os.path.join(legacy_run, "events.tsv"), "schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n")
+    code, _, err = council(legacy, "run", "events", "check")
+    check("run events check: rejects a stream without a schema stamp",
+          code == 1 and "without an events-schema stamp" in err, err)
+    os.remove(os.path.join(legacy_run, "events.tsv"))
     code, out, err = council(legacy, "seat", "old-worker", "running", "agent=old")
     check("legacy run: a pre-contract run without a plan still works", code == 0 and "old-worker" in out, out + err)
     council(legacy, "run", "close", "--status", "abandoned")
+
+    event_repo = new_repo(tmp, "event-contract")
+    write(os.path.join(event_repo, ".council", "council.config.md"), "# Council config — events\n")
+    _, event_run, _ = council(event_repo, "run", "open", "council-review")
+    event_run = event_run.strip()
+    jobs = [subprocess.Popen([BASH, CLI, "gate", f"parallel-{i}", "--run", event_run, "--", "true"],
+                             cwd=event_repo, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, encoding="utf-8", errors="replace") for i in range(3)]
+    outcomes = [p.communicate(timeout=120) for p in jobs]
+    code, out, err = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events: concurrent gate completions get distinct, continuous sequence numbers",
+          all(p.returncode == 0 for p in jobs) and code == 0 and len(events(event_run)) == 4 and
+          {e[4] for e in events(event_run)[1:]} == {"parallel-0", "parallel-1", "parallel-2"},
+          out + err + str(outcomes))
+    append(os.path.join(event_run, "events.tsv"), "1\t9\tbroken\n")
+    code, out, _ = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events check: rejects a truncated or discontinuous row", code == 1 and "invalid row" in out, out)
+    code, out, _ = council(event_repo, "doctor")
+    check("doctor: flags a damaged event stream", "invalid event stream" in out, out)
+    os.remove(os.path.join(event_run, "events.tsv"))
+    code, _, err = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events check: a stamped run cannot silently lose its stream", code == 1 and "missing" in err, err)
+    code, _, err = council(event_repo, "gate", "after-loss", "--run", event_run, "--", "true")
+    check("run events: a later action reports a lost stream instead of silently recreating it",
+          code == 0 and "not recorded" in err and not os.path.exists(os.path.join(event_run, "events.tsv")), err)
 
     # Change index, with an earlier review on disk
     write(os.path.join(repo, ".council", "reviews", "2026-08-01-stats.md"),
@@ -420,6 +472,11 @@ with tempfile.TemporaryDirectory() as tmp:
     verdict = json.loads(read(os.path.join(gates, "bad.json")) or "{}")
     check("gate: a failing gate returns its own exit code", code == 3 and "FAIL (exit 3" in out, out)
     check("gate: the verdict JSON records the exit code", verdict.get("exit") == 3 and verdict.get("gate") == "bad", str(verdict))
+    gate_events = [e for e in events(run) if e[3] == "gate.finished"]
+    check("gate: passing and failing commands leave sequenced verdict events",
+          len(gate_events) >= 2 and gate_events[-2][4:6] == ["ok", "passed"] and
+          gate_events[-1][4:6] == ["bad", "failed"] and "exit=3" in gate_events[-1][6],
+          str(gate_events[-2:]))
     check("gate: a failure shows its error line", "Error: boom" in out, out)
     check("gate: saves the full output", "Error: boom" in read(os.path.join(gates, "bad.txt")))
     code, out, _ = council(repo, "gate", "noisy", "--", "for i in $(seq 1 60); do echo step $i; done; echo 'Error: boom at the end'; exit 3")
@@ -1494,6 +1551,15 @@ with tempfile.TemporaryDirectory() as tmp:
     st = read(os.path.join(run, "session-state.md"))
     check("run close: marks complete and stamps the actual cost (re-dispatches count, skipped seats don't)",
           "status: complete" in st and "actual: ~86k tokens across 4 agents" in st, st)
+    final_events = events(run)
+    code_ev, out_ev, err_ev = council(repo, "run", "events", "check", "--run", run)
+    check("run events: seat updates and completion survive with a continuous sequence",
+          code_ev == 0 and any(e[3] == "seat.updated" for e in final_events) and
+          any(e[3] == "collect.finished" for e in final_events) and
+          any(e[3] == "verification.finished" for e in final_events) and
+          final_events[-1][3:6] == ["run.closed", "run", "complete"] and
+          [int(e[1]) for e in final_events] == list(range(1, len(final_events) + 1)),
+          out_ev + err_ev + str(final_events[-3:]))
     check("run close: prints the actual cost", "~86k tokens across 4 agents" in out, out)
     ledger = read(os.path.join(repo, ".council", "ledger.tsv"))
     check("run close: records each seat in the ledger", "ledger: 3 seat row(s) recorded" in out

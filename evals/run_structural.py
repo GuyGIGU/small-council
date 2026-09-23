@@ -163,7 +163,7 @@ for label, t in texts.items():
         bad_flags += [f"{label}: council {c} {f}" for f in re.findall(r"--[a-z][a-z-]*", " ".join(own)) if f not in flags]
         if c not in known:
             bad.append(f"{label}: council {c}")
-        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume", "plan"}):
+        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume", "plan", "events"}):
             bad.append(f"{label}: council run {' '.join(rest[:1])}")
         elif c == "map" and (not rest or rest[0] != "status"):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")

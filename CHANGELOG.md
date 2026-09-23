@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-09-23
+
+The second evolution milestone adds a run-local event stream for CLI-observable lifecycle actions.
+It is a small, versioned TSV contract for later inspection and analytics, without adding a server or UI.
+
+**Upgrading:** new runs get `events.tsv` automatically. Older runs continue without an event file;
+the helper does not invent history for them.
+
+### Added
+
+- **Append-only run events.** Run, phase, status, seat and gate actions add sequenced UTC rows under
+  a per-run lock. The schema and event meanings are documented in `references/event-stream.md`.
+- **`council run events show` and `check`.** Show gives a short chronological view; check validates
+  the schema and continuous sequence. `council doctor` also flags a missing or damaged event stream.
+
 ## [0.8.0] — 2026-09-22
 
 The first evolution milestone makes the Council's routing decisions inspectable and enforceable

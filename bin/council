@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.8.0"
+COUNCIL_VERSION="0.9.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -28,6 +28,7 @@ die()     { printf 'council: %s\n' "$*" >&2; exit 2; }
 say()     { printf '%s\n' "$*"; }
 now_min() { date '+%Y-%m-%d %H:%M'; }
 now_sec() { date '+%Y-%m-%d %H:%M:%S'; }
+now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 here()    { pwd -W 2>/dev/null || pwd; }
 dash()    { if [ -n "$1" ]; then printf '%s' "$1"; else printf '%s' '-'; fi; }
 undash()  { if [ "$1" = "-" ]; then printf ''; else printf '%s' "$1"; fi; }
@@ -252,6 +253,114 @@ ensure_ignored() {
   return 0
 }
 
+# A run-local, append-only event stream. The header and every row have seven TSV cells; sequence is
+# allocated while holding a directory lock. Only CLI mechanics write events. Older runs have no
+# events-schema stamp and continue without a stream.
+event_cell() { printf '%s' "$1" | tr '\t\r\n' '   ' | LC_ALL=C tr -cd '\40-\176\200-\377'; }
+
+event_lock() {
+  local lock="$1" tries=0
+  while ! mkdir "$lock" 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 100 ] || { printf 'council: event lock unavailable: %s\n' "$lock" >&2; return 1; }
+    sleep 0.1
+  done
+}
+
+event_append() {
+  local run="$1" type="$2" subject="$3" value="$4" detail="$5" file lock last seq rc=0 schema
+  schema="$(field events-schema "$run/session-state.md")"
+  case "$schema" in
+    '')
+      [ ! -f "$run/events.tsv" ] || { printf 'council: event file exists without an events-schema stamp: %s\n' "$run/events.tsv" >&2; return 1; }
+      return 0 ;;
+    1) ;;
+    *) printf 'council: unsupported events schema: %s\n' "$schema" >&2; return 1 ;;
+  esac
+  file="$run/events.tsv"; lock="$file.lock"
+  event_lock "$lock" || return 1
+  if [ ! -f "$file" ]; then
+    if [ "$type" = run.opened ]; then
+      printf 'schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n' > "$file" || rc=1
+    else
+      rc=1
+    fi
+  fi
+  if [ "$rc" -eq 0 ]; then
+    [ -z "$(tail -c 1 "$file")" ] || rc=1  # a torn final line must not be joined to the next event
+  fi
+  if [ "$rc" -eq 0 ]; then
+    last="$(tail -n 1 "$file" | tr -d '\r')"
+    if [ "$last" = "$(printf 'schema\tseq\tat\ttype\tsubject\tvalue\tdetail')" ]; then
+      seq=1
+    else
+      seq="$(printf '%s\n' "$last" | awk -F'\t' 'NF == 7 && $1 == "1" && $2 ~ /^[0-9]+$/ { print $2 + 1 }')"
+      [ -n "$seq" ] || rc=1
+    fi
+  fi
+  if [ "$rc" -eq 0 ]; then
+    printf '1\t%s\t%s\t%s\t%s\t%s\t%s\n' "$seq" "$(now_utc)" \
+      "$(event_cell "$type")" "$(event_cell "$subject")" "$(event_cell "$value")" "$(event_cell "$detail")" \
+      >> "$file" || rc=1
+  fi
+  rmdir "$lock" 2>/dev/null || rc=1
+  [ "$rc" -eq 0 ] || printf 'council: could not append a valid event to %s\n' "$file" >&2
+  return "$rc"
+}
+
+event_check() {
+  local run="$1" file="$1/events.tsv" schema lock rc
+  schema="$(field events-schema "$run/session-state.md")"
+  case "$schema" in ''|1) ;; *) printf 'council: unsupported events schema: %s\n' "$schema" >&2; return 1 ;; esac
+  if [ -z "$schema" ] && [ ! -f "$file" ]; then
+    say "events: legacy run · no event stream · ${run##*/}"; return 0
+  fi
+  if [ -z "$schema" ]; then
+    printf 'council: event file exists without an events-schema stamp: %s\n' "$file" >&2; return 1
+  fi
+  lock="$file.lock"; event_lock "$lock" || return 1
+  if [ ! -f "$file" ]; then
+    rmdir "$lock" 2>/dev/null
+    printf 'council: events.tsv is missing from %s\n' "${run##*/}" >&2; return 1
+  fi
+  if [ -n "$(tail -c 1 "$file")" ]; then
+    rmdir "$lock" 2>/dev/null
+    say "events: final line is incomplete"; return 1
+  fi
+  awk -F'\t' '
+    NR == 1 { sub(/\r$/, ""); if ($0 != "schema\tseq\tat\ttype\tsubject\tvalue\tdetail") { print "events: bad header"; bad = 1 }; next }
+    {
+      sub(/\r$/, "")
+      if (NF != 7 || $1 != "1" || $2 !~ /^[0-9]+$/ || $2 != NR - 1 ||
+          $3 !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/ ||
+          $4 == "" || $5 == "" || $6 == "" || $7 == "" || (NR == 2 && $4 != "run.opened")) {
+        printf "events: invalid row %d\n", NR; bad = 1
+      }
+    }
+    END { if (NR < 2) { print "events: no events"; bad = 1 }
+          if (!bad) printf "events: valid · %d event(s)\n", NR - 1
+          exit bad ? 1 : 0 }
+  ' "$file"
+  rc=$?
+  rmdir "$lock" 2>/dev/null || rc=1
+  return "$rc"
+}
+
+cmd_run_events() {
+  local run sub="${1:-show}" lock rc
+  run="$(resolve_run)" || exit 2
+  case "$sub" in
+    check) event_check "$run" ;;
+    show)
+      event_check "$run" || return 1
+      [ -f "$run/events.tsv" ] || return 0
+      lock="$run/events.tsv.lock"; event_lock "$lock" || return 1
+      awk -F'\t' 'NR > 1 { printf "%s  %s  %s  %s → %s  (%s)\n", $2, $3, $4, $5, $6, $7 }' "$run/events.tsv"
+      rc=$?; rmdir "$lock" 2>/dev/null || rc=1; return "$rc" ;;
+    *) die "usage: council run events [show|check]" ;;
+  esac
+}
+
 cmd_run_open() {
   local mode="${1:-}" short home top ts dir n existing paused session template cap
   case "$mode" in
@@ -290,6 +399,7 @@ opened: $(now_sec)
 code-root: $top
 session: $session
 plan-schema: 1
+events-schema: 1
 size:
 base:
 deliverable:
@@ -304,6 +414,7 @@ EOF
   ' "$template" > "$dir/run-plan.tsv" || die "cannot write $dir/run-plan.tsv"
   printf '# Run log — %s · opened %s\n' "$mode" "$(now_sec)" > "$dir/log.md"
   printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$dir/seats.tsv"
+  event_append "$dir" run.opened run "$mode" "phase=convene" || die "run opened, but its first event could not be recorded: $dir/events.tsv"
   [ -z "$existing" ] || printf 'council: another run is in progress on this working tree — pass --run %s to every command for this one\n' "${dir##*/}" >&2
   [ -z "$paused" ] || printf 'council: a paused run is also open here (%s) — it stays paused\n' "$paused" >&2
   case "$mode" in
@@ -314,10 +425,11 @@ EOF
 }
 
 cmd_state() {
-  local run st kv key tmp
+  local run st kv key tmp old_phase old_status new_phase new_status
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
+  old_phase="$(field phase "$st")"; old_status="$(field status "$st")"
   for kv in ${1+"$@"}; do
     case "$kv" in
       phase=brief|phase=build|phase=work|phase=collect|phase=judge|phase=challenge|phase=deliver|phase=learn)
@@ -344,7 +456,14 @@ cmd_state() {
     BEGIN { l = "updated: " ENVIRON["NOW"] }
     !d && index($0, "updated:") == 1 { print l; d = 1; next }
     { print }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
-  mv "$tmp" "$st"
+  mv "$tmp" "$st" || die "cannot update $st"
+  new_phase="$(field phase "$st")"; new_status="$(field status "$st")"
+  if [ "$old_phase" != "$new_phase" ]; then
+    event_append "$run" run.phase_changed run "$new_phase" "from=$old_phase" || die "state changed, but the phase event could not be recorded"
+  fi
+  if [ "$old_status" != "$new_status" ]; then
+    event_append "$run" run.status_changed run "$new_status" "from=$old_status" || die "state changed, but the status event could not be recorded"
+  fi
   say "state: phase $(field phase "$st") · $(field status "$st") · ${run##*/}"
 }
 
@@ -372,6 +491,7 @@ cmd_run_resume() {
   RUN_ARG="$run" cmd_state status=in-progress session="$session" >/dev/null || exit 2
   awk '/^## / { body = 1 } !body && index($0, "closed:") == 1 { next } { print }' "$st" > "$st.tmp$$" \
     && mv "$st.tmp$$" "$st" || { rm -f "$st.tmp$$"; die "cannot update $st"; }
+  event_append "$run" run.resumed run in-progress "from=$status" || die "run resumed, but its event could not be recorded"
   if [ -n "$session" ]; then drv="driven by this session"; else drv="no session id to record"; fi
   say "resumed $name — in progress · phase $(field phase "$st") · $drv"
   if [ -n "$old" ] && [ "$old" != "$session" ]; then
@@ -457,8 +577,9 @@ cmd_seat() {
     }
     { print }
     END { if (!found) print ENVIRON["SLUG"], ENVIRON["STATE"], ENVIRON["AGENT"], ENVIRON["TOKENS"], ENVIRON["NOW"], ENVIRON["NOTE"], 1 }' \
-    "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
+    "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; rmdir "$f.lock" 2>/dev/null; die "cannot update $f"; }
   rm -f "$f.tmp$$"; rmdir "$f.lock" 2>/dev/null
+  event_append "$run" seat.updated "$slug" "$state" "tokens=$(seat_field "$run" "$slug" 4)" || die "seat changed, but its event could not be recorded"
   progress_line "$run"
 }
 
@@ -496,10 +617,11 @@ lock_file() {
 }
 
 cmd_run_close() {
-  local run status home ptr p tok=0 agents=0 line n lg busy=""
+  local run status home ptr p tok=0 agents=0 line n lg busy="" old_status event_type
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
+  old_status="$(field status "$run/session-state.md")"
   if [ -f "$run/seats.tsv" ]; then
     line="$(awk -F'\t' 'NR > 1 && $2 != "skipped" && $2 != "queued" { a += ($7 == "" ? 1 : $7); t += $4 } END { printf "%d %d", a, t }' "$run/seats.tsv")"
     agents="${line%% *}"; tok="${line#* }"
@@ -543,6 +665,10 @@ cmd_run_close() {
         printf 'council: the log has no "## Shortcuts and concessions" section — say what was traded away, or the single word none: %s\n' "$lg" >&2
       fi
     fi
+  fi
+  if [ "$old_status" != "$status" ]; then
+    event_type=run.closed; [ "$status" != paused ] || event_type=run.paused
+    event_append "$run" "$event_type" run "$status" "agents=$agents;tokens=$tok" || die "run closed, but its event could not be recorded"
   fi
 }
 
@@ -1221,6 +1347,8 @@ run_gate() {
     else
       say "gate $name: pass (exit 0, ${secs}s)"
     fi
+    event_append "$run" gate.finished "$name" passed "exit=0;seconds=$secs;empty=$GATE_EMPTY" \
+      || printf 'council: gate passed, but its event was not recorded\n' >&2
     return 0
   fi
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
@@ -1249,6 +1377,8 @@ run_gate() {
     fi
     rm -f "$base.seen" "$base.now"
   fi
+  event_append "$run" gate.finished "$name" failed "exit=$ec;seconds=$secs;empty=0" \
+    || printf 'council: gate failed, and its event was not recorded\n' >&2
   return "$ec"
 }
 
@@ -2019,8 +2149,10 @@ $seats
 SEATS
   if [ "$bad" -eq 0 ]; then
     if [ "$sat" -eq 0 ]; then say "collect: all $total seats in order"; else say "collect: all $total seats in order · $sat sat out (skipped)"; fi
+    event_append "$run" collect.finished run passed "seats=$total" || printf 'council: collection passed, but its event was not recorded\n' >&2
     return 0
   fi
+  event_append "$run" collect.finished run failed "seats=$total" || printf 'council: collection failed, and its event was not recorded\n' >&2
   if [ "$hard" -eq 0 ]; then
     say "collect: seats still working — after a compaction, wait for their notifications; if the session that started them has ended they are gone: mark them failed and re-dispatch each once (a war-room round-2 seat gets a fresh <slug>-r2 worker)"; return 1
   fi
@@ -2100,7 +2232,7 @@ cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what \
         mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
-        other=0 unreadt=0 empty=0 gone=0
+        other=0 unreadt=0 empty=0 gone=0 result
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -2317,6 +2449,9 @@ QUOTES
   else
     say "check: $rows items, $bad broken $what$extra → $out"
   fi
+  result=passed; [ "$((bad + other))" -eq 0 ] || result=failed
+  event_append "$run" verification.finished run "$result" "items=$rows;broken=$bad;other=$other" \
+    || printf 'council: verification finished, but its event was not recorded\n' >&2
   [ "$((bad + other))" -eq 0 ]
 }
 
@@ -2370,7 +2505,7 @@ ref_path() {
 }
 
 cmd_doctor() {
-  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind rows unk alt k orph skipped i stfile schema plan_result
+  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind rows unk alt k orph skipped i stfile schema plan_result event_result
   home="$(council_home)"; root="$(dirname "$home")"
   finding() {
     printf '%s  %s\n       Fix: %s\n' "$1" "$2" "$3"
@@ -2477,6 +2612,9 @@ RUNS
       fi
     elif [ -n "$schema" ]; then
       finding ERROR "run ${dir##*/} declares plan schema $schema but run-plan.tsv is missing" "restore it from references/templates/run-plan.tsv and complete it before dispatch"
+    fi
+    if event_result="$(event_check "$dir" 2>&1)"; then :; else
+      finding ERROR "run ${dir##*/} has an invalid event stream ($event_result)" "inspect $dir/events.tsv and run: council run events check --run ${dir##*/}"
     fi
   done <<RUN_PLANS
 $(find "$home/runs" -mindepth 2 -maxdepth 2 -name session-state.md 2>/dev/null | sort)
@@ -3820,6 +3958,7 @@ council — the Small Council's helper (bash + git)
   council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
                                          in progress again, this session recorded as its driver
   council run plan [check|show]          validate the run plan · show its decisions in plain language
+  council run events [show|check]        inspect or validate the run's append-only event stream
   council state [key=value …]            show or update the run's session-state header
   council seat <slug> <state> [agent=ID] [tokens=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped
@@ -3922,7 +4061,8 @@ main() {
         status) takes_flags "run status" all; no_words "run status" ${1+"$@"}; cmd_run_status ;;
         resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
         plan)   takes_flags "run plan"; [ $# -le 1 ] || die "usage: council run plan [check|show]"; cmd_run_plan ${1+"$@"} ;;
-        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show]" ;;
+        events) takes_flags "run events"; [ $# -le 1 ] || die "usage: council run events [show|check]"; cmd_run_events ${1+"$@"} ;;
+        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show] | run events [show|check]" ;;
       esac ;;
     state)   takes_flags state; cmd_state ${1+"$@"} ;;
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;

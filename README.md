@@ -161,7 +161,7 @@ estimates come from your own project's ledger once there is some.
 ├── ledger.tsv            each seat's record: items raised, kept, refuted, tokens per run      tracked
 ├── plans/ reviews/ logs/ research/ postgames/ refs/   deliverables · project-local seat docs tracked
 ├── asks/                 your requests, word for word; every deliverable points at its own    local
-└── runs/<date-time>-<mode>/   state, brief, change index, seat files, synthesis, checks       ignored
+└── runs/<date-time>-<mode>/   state, run plan, events, brief, seat files, synthesis, checks     ignored
 ```
 
 Your requests are yours: `asks/` is gitignored, so nothing you typed is committed — write `!asks/` in
@@ -171,6 +171,9 @@ back when a run opens, so that a fresh council home can't file your words into g
 
 The council home is always the **main** checkout's `.council/`, even when you work in a git worktree.
 `council run status` shows open runs; `council doctor` finds anything that has drifted.
+New runs also keep a versioned `events.tsv` for CLI actions. `council run events show` displays its
+history and `council run events check` validates it; the [event contract](references/event-stream.md)
+defines the rows for tools that read the file directly.
 
 ## Repo layout
 

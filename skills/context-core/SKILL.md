@@ -71,6 +71,7 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 |---|---|
 | `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one · carry one on in this session (see Resume) |
 | `council run plan check` · `run plan show` | validate the run's routing, context, budgets and verification contract · show those decisions plainly |
+| `council run events show` · `run events check` | inspect or validate the run's mechanical event history (`events.tsv`); see `${CLAUDE_PLUGIN_ROOT}/references/event-stream.md` |
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
 | `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
 | `council index [--base <ref>]` | build the change index: hunks, symbols, callers, tests |
@@ -95,7 +96,7 @@ linked worktree. **Code root** = the working tree you are reviewing or building.
 | `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
 | `plans/` `reviews/` `logs/` `research/` `postgames/` `refs/` | deliverables · project-local seat docs | tracked |
 | `asks/` | the user's requests, word for word — every deliverable points at its own | local — to share them, replace the `asks/` line in `.council/.gitignore` with `!asks/` |
-| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `ask.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `debate.md` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
+| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `events.tsv` `ask.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `debate.md` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
 `.council/refs/<file>.md` → under the council home. Workers always get absolute paths, and a seat
