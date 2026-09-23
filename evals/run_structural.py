@@ -105,6 +105,8 @@ check("kernel: resuming a run records this session as its driver (council run re
       "council run resume" in core[core.find("## Resume"):])
 check("kernel: new runs require a validated run plan before Brief or dispatch",
       "council run plan check" in core and "before Brief, Build or any worker starts" in core)
+check("kernel: adaptive routing is advisory before a run opens",
+      "council route recommend" in core and "advisory" in core)
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
@@ -114,6 +116,11 @@ for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
         check(f"{d}: hands off to {STAGES[i]}", f"council state phase={STAGES[i]}" in t)
     check(f"{d}: ≤ 6,000 chars", len(t) <= 6000, str(len(t)))
 check("01-convene: opens the run with the helper", "council run open" in doctrine["01-convene.md"])
+check("01-convene: weighs route advice before opening the run",
+      0 <= doctrine["01-convene.md"].find("council route recommend") < doctrine["01-convene.md"].find("**Open the run.**"))
+check("01-convene: a route needing rescope does not silently waive verification",
+      "needs-rescope" in doctrine["01-convene.md"] and "before opening or" in doctrine["01-convene.md"])
+check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
 check("01-convene: checks the stack fingerprint", "council fingerprint check" in doctrine["01-convene.md"])
 check("01-convene: a config with no stack fingerprint is offered a refresh too", "no stack-fingerprint" in doctrine["01-convene.md"])

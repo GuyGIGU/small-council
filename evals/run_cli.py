@@ -16,6 +16,7 @@ Needs bash and git; no LLM, no network. Covers:
 """
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -87,6 +88,19 @@ def read(path):
 def events(run):
     """Parsed event rows, excluding the header."""
     return [line.split("\t") for line in read(os.path.join(run, "events.tsv")).splitlines()[1:]]
+
+
+def route_table(output):
+    """Parse the advisory route's stable five-column TSV contract."""
+    lines = output.splitlines()
+    valid = bool(lines) and lines[0] == "kind\tid\tfield\tvalue\treason"
+    rows = [line.split("\t") for line in lines[1:]]
+    valid = valid and all(len(row) == 5 for row in rows)
+    return valid, {(row[0], row[1], row[2]): row[3:] for row in rows if len(row) == 5}
+
+
+def route_value(rows, kind, ident, field):
+    return rows.get((kind, ident, field), [""])[0]
 
 
 def write_plan(run, selected=("chair",), skipped=(), size="squad", risk="medium", complexity="medium",
@@ -272,6 +286,117 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run plan show: explains routing, context, budgets and verification",
           code == 0 and "selected — fowler" in out and "skipped — ghost" in out and "verification: independent" in out, out + err)
     good_plan = read(plan_path)
+
+    # Advisory routing is deterministic policy output, never a run mutation or agent dispatch.
+    route_before = {os.path.relpath(os.path.join(folder, name), run):
+                    Path(folder, name).read_bytes()
+                    for folder, _, names in os.walk(run) for name in names}
+    tiny_args = ("route", "recommend", "--task", "Fix a typo in README", "--risk", "low",
+                 "--complexity", "1", "--uncertainty", "low")
+    code, tiny, err = council(repo, *tiny_args)
+    table_ok, tiny_rows = route_table(tiny)
+    tiny_seats = [(key, value) for key, value in tiny_rows.items() if key[0] == "seat" and key[2] == "disposition"]
+    check("route recommend: tiny low-risk work gets a compatible solo plan",
+          code == 0 and table_ok and route_value(tiny_rows, "schema", "route", "version") == "1" and
+          route_value(tiny_rows, "run", "route", "policy") == "adaptive" and
+          route_value(tiny_rows, "run", "route", "size") == "solo" and
+          route_value(tiny_rows, "assessment", "route", "risk") == "low" and
+          route_value(tiny_rows, "assessment", "route", "complexity") == "1" and
+          route_value(tiny_rows, "assessment", "route", "complexity-band") == "low" and
+          route_value(tiny_rows, "assessment", "route", "uncertainty") == "low" and
+          route_value(tiny_rows, "verification", "route", "level") == "self" and
+          sum(value[0] == "selected" for _, value in tiny_seats) == 1 and
+          all(value[0] in ("selected", "skipped") and value[1] for _, value in tiny_seats), tiny + err)
+    code, tiny_again, err = council(repo, *tiny_args)
+    check("route recommend: identical inputs give byte-identical advice", code == 0 and tiny_again == tiny, tiny_again + err)
+    for wording in ("Author a README", "Build docs", "Fix a rapid typo", "Reduce token usage"):
+        code, advice, err = council(repo, "route", "recommend", "--task", wording)
+        table_ok, advice_rows = route_table(advice)
+        check("route recommend: incidental keyword letters do not inflate " + wording,
+              code == 0 and table_ok and route_value(advice_rows, "assessment", "route", "risk") == "low" and
+              route_value(advice_rows, "run", "route", "size") == "solo", advice + err)
+    code, auth_advice, err = council(repo, "route", "recommend", "--task", "Fix refresh token authorization")
+    table_ok, auth_rows = route_table(auth_advice)
+    check("route recommend: actual authorization work still activates security routing",
+          code == 0 and table_ok and route_value(auth_rows, "assessment", "route", "risk") == "high" and
+          route_value(auth_rows, "seat", "security", "disposition") == "selected", auth_advice + err)
+    code, refresh_advice, err = council(repo, "route", "recommend", "--task", "Rotate refresh tokens")
+    table_ok, refresh_rows = route_table(refresh_advice)
+    check("route recommend: refresh tokens infer security and adversarial verification without overrides",
+          code == 0 and table_ok and route_value(refresh_rows, "assessment", "route", "risk") == "high" and
+          route_value(refresh_rows, "seat", "security", "disposition") == "selected" and
+          route_value(refresh_rows, "verification", "route", "level") == "adversarial", refresh_advice + err)
+
+    code, high, err = council(repo, "route", "recommend", "--task", "Change authentication and persistent user records",
+                              "--risk", "high", "--complexity", "8", "--uncertainty", "high",
+                              "--surface", "security", "--surface", "data")
+    table_ok, high_rows = route_table(high)
+    high_seats = [(key, value) for key, value in high_rows.items() if key[0] == "seat" and key[2] == "disposition"]
+    check("route recommend: high-risk persistent security work escalates and explains seats",
+          code == 0 and table_ok and route_value(high_rows, "assessment", "route", "risk") == "high" and
+          route_value(high_rows, "run", "route", "size") == "full" and
+          route_value(high_rows, "assessment", "route", "complexity") == "8" and
+          route_value(high_rows, "assessment", "route", "complexity-band") == "high" and
+          route_value(high_rows, "assessment", "route", "uncertainty") == "high" and
+          route_value(high_rows, "verification", "route", "level") == "adversarial" and
+          route_value(high_rows, "seat", "security", "disposition") == "selected" and
+          route_value(high_rows, "seat", "data", "disposition") == "selected" and
+          sum(value[0] == "selected" for _, value in high_seats) > 1 and
+          all(value[1] for _, value in high_seats), high + err)
+    code, data_advice, err = council(repo, "route", "recommend", "--task", "Database migration", "--agent-cap", "4")
+    table_ok, data_rows = route_table(data_advice)
+    check("route recommend: a capped migration keeps its data specialist",
+          code == 0 and table_ok and route_value(data_rows, "assessment", "route", "risk") == "high" and
+          route_value(data_rows, "seat", "data", "disposition") == "selected" and
+          route_value(data_rows, "budget", "route", "selected-agents") == "4", data_advice + err)
+    code, mixed_advice, err = council(repo, "route", "recommend", "--task", "Auth database migration", "--agent-cap", "4")
+    table_ok, mixed_rows = route_table(mixed_advice)
+    check("route recommend: a cap-omitted relevant lens is called out as constrained",
+          code == 0 and table_ok and route_value(mixed_rows, "seat", "security", "disposition") == "selected" and
+          route_value(mixed_rows, "seat", "data", "disposition") == "skipped" and
+          route_value(mixed_rows, "run", "route", "status") == "constrained", mixed_advice + err)
+
+    code, capped, err = council(repo, "route", "recommend", "--task", "Change authentication and persistent user records",
+                                "--risk", "high", "--complexity", "8", "--uncertainty", "high",
+                                "--surface", "security", "--surface", "data", "--agent-cap", "1",
+                                "--budget-tokens", "1000")
+    table_ok, cap_rows = route_table(capped)
+    selected = sum(value[0] == "selected" for key, value in cap_rows.items()
+                   if key[0] == "seat" and key[1] != "chair" and key[2] == "disposition")
+    estimated = route_value(cap_rows, "budget", "route", "estimated-tokens")
+    check("route recommend: a small cap is honored without pretending high-risk work fits its token ceiling",
+          code == 0 and table_ok and route_value(cap_rows, "budget", "route", "agent-cap") == "1" and
+          selected <= 1 and route_value(cap_rows, "budget", "route", "selected-agents") == str(selected) and
+          route_value(cap_rows, "budget", "route", "ceiling-tokens") == "1000" and
+          estimated.isdigit() and int(estimated) > 1000 and
+          route_value(cap_rows, "verification", "route", "level") == "adversarial" and
+          route_value(cap_rows, "run", "route", "status") == "needs-rescope" and
+          route_value(cap_rows, "verification", "route", "status") == "unavailable",
+          capped + err)
+
+    code, classic, err = council(repo, "route", "recommend", "--task", "Fix a typo in README", "--classic")
+    table_ok, classic_rows = route_table(classic)
+    check("route recommend: classic static routing remains available",
+          code == 0 and table_ok and route_value(classic_rows, "run", "route", "policy") == "classic" and
+          route_value(classic_rows, "run", "route", "size") == "squad", classic + err)
+
+    for bad_args in (("route", "recommend"),
+                     ("route", "recommend", "--task", "x", "--risk", "urgent"),
+                     ("route", "recommend", "--task", "x", "--complexity", "0"),
+                     ("route", "recommend", "--task", "x", "--complexity", "11"),
+                     ("route", "recommend", "--task", "x", "--uncertainty", "unknown"),
+                     ("route", "recommend", "--task", "x", "--agent-cap", "0"),
+                     ("route", "recommend", "--task", "x", "--agent-cap", "11"),
+                     ("route", "recommend", "--task", "x", "--budget-tokens", "0"),
+                     ("route", "recommend", "--task", "x", "--run", run)):
+        code, _, err = council(repo, *bad_args)
+        check("route recommend: rejects invalid " + " ".join(bad_args[2:]), code == 2 and bool(err.strip()), err)
+    route_after = {os.path.relpath(os.path.join(folder, name), run):
+                   Path(folder, name).read_bytes()
+                   for folder, _, names in os.walk(run) for name in names}
+    check("route recommend: advice does not alter an existing run or dispatch seats",
+          route_after == route_before and read(plan_path) == good_plan, str(set(route_after) ^ set(route_before)))
+
     append(plan_path, "schema\tplan\tversion\t1\tduplicate for the drill\n")
     code, out, _ = council(repo, "run", "plan", "check")
     check("run plan check: rejects duplicate identities", code == 1 and "duplicate row" in out, out)

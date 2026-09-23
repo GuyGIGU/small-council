@@ -71,6 +71,7 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 |---|---|
 | `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one · carry one on in this session (see Resume) |
 | `council run plan check` · `run plan show` | validate the run's routing, context, budgets and verification contract · show those decisions plainly |
+| `council route recommend --task "<summary>"` | inspect an advisory size, risk, seat archetypes, verification and budget before opening a run; use `--classic` for the fixed comparison path (see `${CLAUDE_PLUGIN_ROOT}/references/adaptive-routing.md`) |
 | `council run events show` · `run events check` | inspect or validate the run's mechanical event history (`events.tsv`); see `${CLAUDE_PLUGIN_ROOT}/references/event-stream.md` |
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
 | `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |

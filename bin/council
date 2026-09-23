@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.9.0"
+COUNCIL_VERSION="0.10.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -3945,6 +3945,221 @@ cmd_ledger() {
 }
 
 # ------------------------------------------------------------------------------------------------
+# Advisory routing. The TSV is a proposal, never a run plan or a dispatch instruction.
+# Keep the policy small and deterministic until actual outcome measurements can support learning.
+# ------------------------------------------------------------------------------------------------
+
+route_row() { printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5"; }
+route_cell() { printf '%s' "$1" | tr '\t\r\n' '   '; }
+
+route_positive() {
+  case "$2" in ''|*[!0-9]*) die "--$1 needs a positive integer" ;; esac
+  [ "${#2}" -le 7 ] && [ "$2" -gt 0 ] 2>/dev/null || die "--$1 must be between 1 and 9999999"
+}
+
+cmd_route_recommend() {
+  local task="$ROUTE_TASK_ARG" risk="$ROUTE_RISK_ARG" complexity="$ROUTE_COMPLEXITY_ARG" uncertainty="$ROUTE_UNCERTAINTY_ARG"
+  local project_cap cap budget max_budget size level policy band text surfaces="" surface s
+  local security=0 data=0 frontend=0 architecture=0 performance=0 candidates="" selected="" count=0 limit=0
+  local slug why size_reason cap_reason budget_reason risk_reason complexity_reason uncertainty_reason
+  local required_level route_status verification_status chair_tokens worker_tokens verification_tokens selected_agents=0
+  [ -n "$(route_cell "$task" | tr -d '[:space:]')" ] || die "route recommend needs --task TEXT"
+  task="$(route_cell "$task")"
+  project_cap="$(configured_agent_cap)"
+  route_positive agent-cap "$project_cap"
+  cap="$project_cap"; cap_reason="project's configured agent cap"
+  if [ -n "$ROUTE_CAP_ARG" ]; then
+    route_positive agent-cap "$ROUTE_CAP_ARG"
+    [ "$ROUTE_CAP_ARG" -le "$project_cap" ] || die "--agent-cap cannot exceed the configured cap ($project_cap)"
+    cap="$ROUTE_CAP_ARG"; cap_reason="explicit cap within project's configured cap"
+  fi
+  if [ -n "$ROUTE_BUDGET_ARG" ]; then route_positive budget-tokens "$ROUTE_BUDGET_ARG"; fi
+  case "$risk" in ''|low|medium|high) ;; *) die "--risk must be low, medium or high" ;; esac
+  case "$uncertainty" in ''|low|medium|high) ;; *) die "--uncertainty must be low, medium or high" ;; esac
+  if [ -n "$complexity" ]; then
+    route_positive complexity "$complexity"
+    [ "$complexity" -le 10 ] || die "--complexity must be 1..10"
+  fi
+  for surface in "${ROUTE_SURFACES[@]+"${ROUTE_SURFACES[@]}"}"; do
+    [ -n "$(route_cell "$surface" | tr -d '[:space:]')" ] || die "--surface needs a non-empty name"
+    s="$(route_cell "$surface")"
+    case "$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]')" in data|database|db) data=1 ;; esac
+    [ -z "$surfaces" ] || surfaces="$surfaces, "
+    surfaces="$surfaces$s"
+  done
+  # Normalize punctuation (including path separators) into token boundaries. Substring matching
+  # misroutes ordinary words such as "author" as auth and "rapid" as API.
+  text=" $(printf '%s %s' "$task" "$surfaces" | tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c 'a-z0-9' ' ') "
+  case "$text" in *" auth "*|*" authentication "*|*" authorization "*|*" authorize "*|*" security "*|*" secure "*|*" crypto "*|*" cryptography "*|*" secret "*|*" secrets "*|*" permission "*|*" permissions "*|*" credential "*|*" credentials "*|*" access token "*|*" access tokens "*|*" refresh token "*|*" refresh tokens "*|*" bearer token "*|*" bearer tokens "*|*" session token "*|*" session tokens "*|*" api key "*|*" api keys "*) security=1 ;; esac
+  case "$text" in *" database "*|*" schema "*|*" migration "*|*" migrate "*|*" persistence "*|*" persistent "*|*" storage "*|*" sql "*|*" db "*) data=1 ;; esac
+  case "$text" in *" frontend "*|*" browser "*|*" accessibility "*|*" accessible "*|*" ui "*|*" ux "*|*" css "*|*" webpage "*|*" web "*) frontend=1 ;; esac
+  case "$text" in *" architecture "*|*" architectural "*|*" refactor "*|*" refactoring "*|*" api "*|*" interface "*|*" module "*|*" modules "*|*" design "*) architecture=1 ;; esac
+  case "$text" in *" performance "*|*" latency "*|*" throughput "*|*" hot path "*|*" optimize "*|*" optimization "*) performance=1 ;; esac
+  risk_reason="inferred from task and named surfaces"
+  if [ -z "$risk" ]; then
+    risk=low
+    if [ "$security" -eq 1 ] || [ "$data" -eq 1 ]; then risk=high
+    elif [ "$architecture" -eq 1 ] || [ "$frontend" -eq 1 ] || [ "$performance" -eq 1 ]; then risk=medium; fi
+    case "$text" in *" destructive "*|*" delete "*|*" deletion "*|*" production "*|*" deploy "*|*" deployment "*|*" breaking "*|*" public api "*) risk=high ;; esac
+  else risk_reason="explicit --risk override"; fi
+  complexity_reason="estimated from named surfaces and task wording"
+  if [ -z "$complexity" ]; then
+    complexity=2
+    [ "${#ROUTE_SURFACES[@]}" -eq 0 ] || complexity=$((complexity + ${#ROUTE_SURFACES[@]}))
+    [ "$architecture" -eq 0 ] || complexity=$((complexity + 2))
+    [ "$data" -eq 0 ] || complexity=$((complexity + 1))
+    [ "$security" -eq 0 ] || complexity=$((complexity + 1))
+    case "$text" in *" cross module "*|*" multiple "*|*" several "*|*" end to end "*) complexity=$((complexity + 2)) ;; esac
+    [ "$complexity" -le 10 ] || complexity=10
+  else complexity_reason="explicit --complexity override"; fi
+  if [ "$complexity" -le 3 ]; then band=low
+  elif [ "$complexity" -le 6 ]; then band=medium
+  else band=high; fi
+  uncertainty_reason="conservative default; limited evidence from task wording"
+  if [ -z "$uncertainty" ]; then uncertainty=medium
+  else uncertainty_reason="explicit --uncertainty override"; fi
+
+  required_level=self
+  if [ "$risk" = high ]; then required_level=adversarial
+  elif [ "$risk" = medium ] || [ "$complexity" -ge 4 ] || [ "$uncertainty" = high ]; then required_level=independent; fi
+  policy=adaptive; [ "$ROUTE_CLASSIC" -eq 0 ] || policy=classic
+  route_status=ready; verification_status=available
+  size=solo; size_reason="one bounded chain can stay with the Chair"
+  if [ "$ROUTE_CLASSIC" -eq 1 ]; then
+    size=squad; size_reason="classic fixed squad baseline, independent of inferred task signals"
+  elif [ "$risk" = high ] || [ "$complexity" -ge 7 ] || [ "$uncertainty" = high ]; then
+    size=full; size_reason="high risk, complexity or uncertainty warrants broader review"
+  elif [ "$risk" = medium ] || [ "$complexity" -ge 4 ] || [ "$security" -eq 1 ] || [ "$data" -eq 1 ]; then
+    size=squad; size_reason="multiple useful lenses and independent verification"
+  fi
+  max_budget="${ROUTE_BUDGET_ARG:-9999999}"
+  if [ "$size" = full ] && { [ "$cap" -lt 4 ] || [ "$max_budget" -lt 340000 ]; }; then
+    size=squad; size_reason="full recommendation reduced by agent or token cap"
+    route_status=constrained
+  fi
+  if [ "$size" = squad ] && { [ "$cap" -lt 3 ] || [ "$max_budget" -lt 260000 ]; }; then
+    size=solo; size_reason="squad recommendation reduced by agent or token cap; independent verification unavailable"
+    route_status=constrained
+  fi
+  case "$size" in
+    solo) limit=0 ;;
+    squad) limit=4 ;;
+    full) limit=7 ;;
+  esac
+  level="$required_level"
+  if [ "$size" != solo ] && [ "$level" = self ]; then level=independent; fi
+  if [ "$size" = solo ] && [ "$required_level" != self ]; then
+    route_status=needs-rescope
+    verification_status=unavailable
+  elif [ "$route_status" = constrained ]; then
+    verification_status=constrained
+  fi
+  route_row kind id field value reason
+  route_row schema route version 1 "versioned advisory recommendation"
+  route_row input route task "$task" "explicit task description"
+  route_row input route surfaces "${surfaces:--}" "explicit surfaces only; '-' means none"
+  route_row run route policy "$policy" "classic keeps a fixed baseline; adaptive uses task signals"
+  route_row run route size "$size" "$size_reason"
+  route_row assessment route risk "$risk" "$risk_reason"
+  route_row assessment route complexity "$complexity" "$complexity_reason"
+  route_row assessment route complexity-band "$band" "maps score 1-3 low, 4-6 medium, 7-10 high for run-plan v1"
+  route_row assessment route uncertainty "$uncertainty" "$uncertainty_reason"
+  route_row budget route agent-cap "$cap" "$cap_reason"
+  route_row budget route ceiling-tokens "${ROUTE_BUDGET_ARG:--}" "explicit advisory planning ceiling; '-' means no user ceiling; not runtime enforcement"
+  route_row verification route level "$level" "minimum depth from risk, uncertainty and run size; never reduced to fit a cap"
+  if [ "$size" = solo ]; then
+    route_row seat chair disposition selected "Solo stays with the Chair; the Chair does not count against agent cap"
+  else
+    route_row seat chair disposition selected "Chair coordinates and synthesizes; does not count against agent cap"
+  fi
+  # Priority is explicit, so capped recommendations are reproducible and explain omitted lenses.
+  candidates="implementation testing security data frontend architecture performance verification"
+  if [ "$size" != solo ]; then
+    selected="implementation testing"
+    count=2
+    if [ "$size" = full ]; then limit=7; else limit=4; fi
+    # Reserve one agent slot for the verifier and add specialists by relevance.
+    [ "$cap" -gt "$limit" ] || limit=$((cap - 1))
+    for slug in security data frontend architecture performance; do
+      [ "$ROUTE_CLASSIC" -eq 0 ] || break
+      [ "$count" -lt "$limit" ] || break
+      case "$slug" in
+        security) [ "$security" -eq 1 ] || continue ;;
+        data) [ "$data" -eq 1 ] || continue ;;
+        frontend) [ "$frontend" -eq 1 ] || continue ;;
+        architecture) [ "$architecture" -eq 1 ] || [ "$complexity" -ge 7 ] || continue ;;
+        performance) [ "$performance" -eq 1 ] || continue ;;
+      esac
+      selected="$selected $slug"; count=$((count + 1))
+    done
+    # Generic Full fallbacks come only after lenses actually indicated by the task/surfaces.
+    if [ "$ROUTE_CLASSIC" -eq 0 ] && [ "$size" = full ] && [ "$count" -lt "$limit" ] && [ "$risk" = high ]; then
+      case " $selected " in *" security "*) ;; *) selected="$selected security"; count=$((count + 1)) ;; esac
+    fi
+    if [ "$ROUTE_CLASSIC" -eq 0 ] && [ "$size" = full ] && [ "$count" -lt "$limit" ]; then
+      case " $selected " in *" architecture "*) ;; *) selected="$selected architecture"; count=$((count + 1)) ;; esac
+    fi
+    selected="$selected verification"
+    selected_agents=$((count + 1))
+  fi
+  if [ "$ROUTE_CLASSIC" -eq 0 ] && [ "$size" != solo ] && [ "$route_status" = ready ]; then
+    for slug in security data frontend architecture performance; do
+      case "$slug" in
+        security) [ "$security" -eq 1 ] || continue ;;
+        data) [ "$data" -eq 1 ] || continue ;;
+        frontend) [ "$frontend" -eq 1 ] || continue ;;
+        architecture) [ "$architecture" -eq 1 ] || [ "$complexity" -ge 7 ] || continue ;;
+        performance) [ "$performance" -eq 1 ] || continue ;;
+      esac
+      case " $selected " in *" $slug "*) ;; *) route_status=constrained; break ;; esac
+    done
+  fi
+  route_row budget route selected-agents "$selected_agents" "Chair is excluded; never exceeds agent cap"
+  chair_tokens=20000
+  if [ "$size" = solo ]; then worker_tokens=0; verification_tokens=0
+  else worker_tokens=$((count * 80000)); verification_tokens=80000; fi
+  budget=$((chair_tokens + worker_tokens + verification_tokens))
+  budget_reason="no-history estimate: 80k per selected agent plus 20k Chair; not measured or enforced"
+  if [ -n "$ROUTE_BUDGET_ARG" ] && [ "$budget" -gt "$ROUTE_BUDGET_ARG" ]; then
+    route_status=needs-rescope
+    verification_status=unavailable
+  fi
+  route_row run route status "$route_status" "constrained means reduced size or omitted relevant lens; needs-rescope means estimated need exceeds ceiling or required verification cannot fit"
+  route_row verification route status "$verification_status" "unavailable requires more budget or agents before proceeding"
+  route_row budget route estimated-tokens "$budget" "$budget_reason"
+  route_row budget chair estimated-tokens "$chair_tokens" "advisory allocation; not measured or enforced"
+  route_row budget workers estimated-tokens "$worker_tokens" "shared across selected worker archetypes; not measured or enforced"
+  route_row budget verification estimated-tokens "$verification_tokens" "advisory allocation; not measured or enforced"
+  for slug in $candidates; do
+    case " $selected " in
+      *" $slug "*)
+        case "$slug" in
+          implementation) why="bounded implementation or primary investigation lens" ;;
+          testing) why="regression and test-design lens" ;;
+          verification) why="independent challenge of worker claims" ;;
+          security) [ "$security" -eq 0 ] && why="high-risk work merits a security challenge" || why="task or surface indicates a security lens" ;;
+          architecture) [ "$architecture" -eq 0 ] && why="full council needs a structural lens" || why="task or surface indicates an architecture lens" ;;
+          *) why="task or surface indicates a $slug lens" ;;
+        esac
+        route_row seat "$slug" disposition selected "$why" ;;
+      *)
+        if [ "$size" = solo ]; then why="Solo uses no delegated agents"
+        elif [ "$ROUTE_CLASSIC" -eq 1 ]; then why="classic policy keeps a fixed implementation, testing and verification roster"
+        elif [ "$slug" = verification ]; then why="no agent slot available for independent verification"
+        else
+          case "$slug" in
+            implementation|testing) why="not selected by routing policy" ;;
+            security) [ "$security" -eq 0 ] && why="no security signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
+            data) [ "$data" -eq 0 ] && why="no persistent-data signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
+            frontend) [ "$frontend" -eq 0 ] && why="no frontend signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
+            architecture) [ "$architecture" -eq 0 ] && [ "$complexity" -lt 7 ] && why="no architecture or high-complexity signal" || why="agent cap reserved for higher-priority lenses" ;;
+            performance) [ "$performance" -eq 0 ] && why="no performance signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
+          esac
+        fi
+        route_row seat "$slug" disposition skipped "$why" ;;
+    esac
+  done
+}
 
 usage() {
   cat <<'EOF'
@@ -3980,6 +4195,10 @@ council — the Small Council's helper (bash + git)
   council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
                                          secret-looking strings are redacted; records ask= in the state
   council ledger [N]                     each seat's record over the last N completed runs (default 10)
+  council route recommend --task TEXT [--risk low|medium|high] [--complexity 1..10]
+                         [--uncertainty low|medium|high] [--surface NAME ...]
+                         [--agent-cap N] [--budget-tokens N] [--classic]
+                                         advisory TSV recommendation; does not open or alter a run
   council doctor                         drift scan; every finding comes with a fix
 
 Run-scoped commands act on the one in-progress run on this working tree; otherwise pass --run <folder>
@@ -4005,13 +4224,15 @@ no_words() { local label="$1"; shift; [ $# -eq 0 ] || die "$label doesn't take '
 
 main() {
   RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" SESSION_ARG="" ALONGSIDE=0 FLAGS=""
+  ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
+  ROUTE_SURFACES=()
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
   pos=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run|--code-root|--status|--base|--at|--session)
+      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens)
                    flag="${1#--}"
                    [ $# -ge 2 ] || case "$flag" in
                      run|code-root) die "--$flag needs a folder" ;;
@@ -4020,10 +4241,10 @@ main() {
                      *) die "--$flag needs a value" ;;
                    esac
                    val="$2"; shift 2 ;;
-      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*)
+      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --alongside|--all) flag="${1#--}"; val=1; shift ;;
-      --alongside=*|--all=*) die "${1%%=*} takes no value" ;;
+      --alongside|--all|--classic) flag="${1#--}"; val=1; shift ;;
+      --alongside=*|--all=*|--classic=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
                    [ $# -eq 0 ] || { pos+=("$1"); shift; }
                    continue ;;
@@ -4043,6 +4264,10 @@ main() {
       run) RUN_ARG="$val" ;;       code-root) CODE_ROOT_ARG="$val" ;;  status) STATUS_ARG="$val" ;;
       base) BASE_ARG="$val" ;;     at) AT_ARG="$val" ;;                session) SESSION_ARG="$val" ;;
       alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;
+      task) ROUTE_TASK_ARG="$val" ;; risk) ROUTE_RISK_ARG="$val" ;;
+      complexity) ROUTE_COMPLEXITY_ARG="$val" ;; uncertainty) ROUTE_UNCERTAINTY_ARG="$val" ;;
+      surface) ROUTE_SURFACES+=("$val") ;; agent-cap) ROUTE_CAP_ARG="$val" ;;
+      budget-tokens) ROUTE_BUDGET_ARG="$val" ;; classic) ROUTE_CLASSIC=1 ;;
     esac
     FLAGS="$FLAGS $flag"
   done
@@ -4066,6 +4291,13 @@ main() {
       esac ;;
     state)   takes_flags state; cmd_state ${1+"$@"} ;;
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;
+    route)   sub="${1:-}"; [ $# -eq 0 ] || shift
+             case "$sub" in
+               recommend) takes_flags "route recommend" task risk complexity uncertainty surface agent-cap budget-tokens classic
+                          [ -z "$RUN_ARG" ] || die "route recommend does not take --run; it uses this project's config"
+                          no_words "route recommend" ${1+"$@"}; cmd_route_recommend ;;
+               *) die "usage: council route recommend --task TEXT [routing flags]" ;;
+             esac ;;
     index)   takes_flags index base; no_words index ${1+"$@"}; cmd_index ;;
     gate)    takes_flags gate all at --
              if [ "$ALL" = 1 ]; then

@@ -4,6 +4,12 @@
 choices that used to live only in the Chair's prose before any context is distributed or worker is
 started. It is run-local and ignored by git with the rest of `.council/runs/`.
 
+`council route recommend --task "<summary>"` can suggest those decisions before a run opens. Its
+output is advisory and never writes this file or dispatches seats. The Chair maps suggested seat
+archetypes to the project's actual roster and records the final choices and their reasons here.
+The route's numeric complexity input is converted to a `low`, `medium`, or `high` band for this v1
+contract; do not put the numeric score in `assessment/run/complexity`.
+
 ## Shape
 
 The file has exactly five tab-separated columns:

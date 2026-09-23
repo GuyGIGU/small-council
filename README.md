@@ -175,6 +175,13 @@ New runs also keep a versioned `events.tsv` for CLI actions. `council run events
 history and `council run events check` validates it; the [event contract](references/event-stream.md)
 defines the rows for tools that read the file directly.
 
+Before opening a run, `council route recommend --task "<work to do>"` gives an advisory council
+size, risk/complexity/uncertainty assessment, seat archetypes, verification level and estimated
+budget, with a reason for each choice. `--classic` shows the static baseline; explicit assessment,
+surface and cap flags let you test a different shape. The command only prints a proposal: the Chair
+maps archetypes to the project's real roster, makes any needed judgment calls, and records the final
+choice in the checked run plan. See the [adaptive routing contract](references/adaptive-routing.md).
+
 ## Repo layout
 
 ```

@@ -4,8 +4,10 @@ Give each seat exactly its slice, and each worker a budget.
 
 ## Steps
 
-1. **Match surfaces.** For each roster seat, match its Surface markers (the config's roster column:
-   globs and greps in this repo's idioms) against the in-scope files from the index or the scope
+1. **Match surfaces.** Use the Convene routing recommendation as a starting point, then map its
+   archetypes to the project's actual roster; a recommendation is never a substitute for the
+   project's Surface markers. For each roster seat, match its Surface markers (the config's roster
+   column: globs and greps in this repo's idioms) against the in-scope files from the index or the scope
    inventory. The match is the seat's slice. A config without markers yet → judge by the seat's
    lens, and suggest a council-init refresh. A lens with several roster rows (`dodds-web`,
    `dodds-admin`) is several seats, each with its own surface.
@@ -24,7 +26,10 @@ Give each seat exactly its slice, and each worker a budget.
 7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat a `disposition`
    (`selected` or `skipped`) and `role`, with the reason. Every selected seat gets a context level;
    every selected seat gets a tool-call budget. Include the Chair as a selected
-   `chair` for Solo. Run `council run plan check`; fix every error before going on.
+   `chair` for Solo. Copy the recommendation's compatible risk, complexity band, uncertainty,
+   cap, and verification level only after checking them against what Prepare uncovered. If a
+   recommendation changed, record the evidence and reason in the plan. Run
+   `council run plan check`; fix every error before going on.
 8. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
    note="<reason>"` for every seat not called. The helper refuses to queue or start a seat the valid
    plan does not mark selected.

@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-09-23
+
+The third evolution milestone adds an explainable, optional routing recommendation before a run.
+It is a deterministic heuristic, not a new dispatcher or a claim of measured cost savings.
+
+**Upgrading:** existing manual sizing and run plans still work. The routing command is read-only;
+it does not change past or current runs, select a model, or launch agents.
+
+### Added
+
+- **`council route recommend`.** Proposes task risk, complexity, uncertainty, council size,
+  generic seat archetypes, verification and an estimated token budget. Each choice carries a reason.
+  Explicit inputs can override the initial assessment; an agent cap and optional budget ceiling
+  constrain the proposal. Unaffordable or unverifiable recommendations say `needs-rescope` instead
+  of lowering required verification or disguising the estimate. `--classic` exposes a static
+  comparison policy.
+- **Adaptive routing contract.** `references/adaptive-routing.md` defines the advisory boundary,
+  manual roster mapping, plan validation and limits of the heuristic.
+
+### Known limits
+
+- The earlier no-history estimate was roughly 60–100k tokens per worker, and the existing docs
+  describe past runs as averaging around 100k. These are planning baselines, not proof that routing
+  improves outcomes or cost. Reliable per-task effectiveness data, impact analysis and learned
+  policy tuning are deferred.
+
 ## [0.9.0] — 2026-09-23
 
 The second evolution milestone adds a run-local event stream for CLI-observable lifecycle actions.
