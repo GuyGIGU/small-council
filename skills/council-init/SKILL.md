@@ -156,7 +156,7 @@ Adjust on request. On confirmation, write:
 - **`.council/council.config.md`** from `${CLAUDE_PLUGIN_ROOT}/references/templates/council.config.md`,
   stamped `last-verified: <date> @ <short sha>`, with the `stack-fingerprint:` line `council
   fingerprint` printed. Run preferences start at the defaults, which are the user's to change:
-  approve without asking up to Squad, agent cap 10.
+  approve without asking up to Squad, agent cap 10, context packs off.
 - **`.council/cards/<slug>.md`**, one per seat, from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`.
   A card translates the seat's doc to this project, in at most ~6 KB:
   - every principle of the doc, numbered as in the doc, one line each on what it means here — the

@@ -6,6 +6,11 @@ slice, without copying the whole repository into the worker's window. It never b
 source of orders: the brief, project hard constraints and each seat's full reference doc remain
 authoritative. The Chair still owns scope and decides what the worker must inspect.
 
+**Packs are opt-in.** The Chair builds them only when the project config's run preferences say
+`context packs: on` (a missing line means off), or when the user asks for them in a run. Their
+effect on findings and cost has not been measured with a live model; see
+`docs/validation/phase-5.5-context-pilot.md`. The commands below work either way.
+
 ## Lifecycle and commands
 
 1. Complete and validate `run-plan.tsv`; write the complete `brief.md` first.

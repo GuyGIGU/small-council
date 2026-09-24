@@ -138,7 +138,7 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
    findings, grounding gates.
 3. **Assign** — match each seat's surface markers to the change; pair thin seats; set budgets.
 4. **Brief** — one set of orders on disk: the question at the top, the hard rules at the bottom;
-   optionally build a plan-sized evidence pack for each selected seat.
+   if the project opts in, build a plan-sized evidence pack for each selected seat.
 5. **Work** — one isolated worker per seat, in parallel; each writes a file and returns one line.
 6. **Collect** — the helper checks every seat file and its proof of reading; stuck workers are resumed.
 7. **Judge** — a raw ledger of every finding before merging, a conflict pass, the cut — all written to
@@ -159,7 +159,9 @@ After writing `<run>/brief.md`, `council context build <seat>` uses that selecte
 prints both paths and the metrics. Repeated `--expand PATH` requests more evidence when inspection
 shows a gap. This is an inspectable, optional selection aid, not a new dispatcher or a substitute for
 the brief, reference docs, or project rules. Python 3.8+ is required only for building a pack; if it
-is unavailable, the existing complete brief is the fallback. See
+is unavailable, the existing complete brief is the fallback. Packs are **off by default** until
+their value is measured: set `- context packs: on` under `## Run preferences` in
+`.council/council.config.md`, or ask for them in a run. See
 [`references/precision-context.md`](references/precision-context.md) for the contract and limits.
 
 ## What it keeps in your repo

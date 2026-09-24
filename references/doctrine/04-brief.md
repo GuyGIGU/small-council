@@ -61,7 +61,12 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   entries can't be read or are left out, tell the user.
 - **Hard rules go in word for word** — workers also load the project's CLAUDE.md, but the brief is
   the orders they must not miss.
-- **Then prepare each dispatched seat's context pack.** Run `council context build <slug>` after
+- **Context packs are opt-in.** Build them only when the config's run preferences say
+  `context packs: on`, or the user asks for them in this run. Otherwise skip this step and
+  dispatch from the complete brief — that is the normal path, not a fallback. Packs add material
+  to every worker and their benefit to findings has not been measured yet
+  (`docs/validation/phase-5.5-context-pilot.md`).
+- **When opted in, prepare each dispatched seat's context pack.** Run `council context build <slug>` after
   `brief.md` exists. It takes the `minimal`, `focused` or `full` level from the validated run plan
   and writes `contexts/<slug>.md` plus selection metrics. Inspect `council context show <slug>`;
   if a needed path was omitted, rebuild with `--expand <path>` (repeatable) and record why in the
@@ -73,5 +78,5 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 
 ## Done when
 
-brief.md is written; dispatched seats have a pack when the optional provider is available, or the
-brief-only fallback is explicit. → `council state phase=work`
+brief.md is written; when packs are opted in, dispatched seats have a pack or the brief-only
+fallback is explicit. → `council state phase=work`

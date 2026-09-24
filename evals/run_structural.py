@@ -113,6 +113,7 @@ check("kernel: optional impact graph is available beside the change index",
       "council impact" in core and "impact.tsv" in core)
 check("kernel: seat-specific context packs are available without replacing the brief",
       "council context build" in core and "brief.md" in core and "contexts/" in core)
+check("kernel: context packs are opt-in via the config", "only if opted in" in core and "context packs: on" in core)
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
@@ -303,6 +304,9 @@ check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_
 cfg, conv, mp = read("references", "templates", "council.config.md"), read("references", "templates", "conventions.md"), read("references", "templates", "map.md")
 check("template config: last-verified stamp", "last-verified:" in cfg)
 check("template config: run preferences", "## Run preferences" in cfg and "approve without asking: up to squad" in cfg and "agent cap: 10" in cfg)
+check("template config: context packs start off", "- context packs: off" in cfg)
+check("04-brief: packs are built only when opted in, brief-only is the normal path",
+      "Context packs are opt-in" in doctrine["04-brief.md"] and "context packs: on" in doctrine["04-brief.md"])
 check("template config: roster has slugs and surface markers", "| Seat | Slug | Lens | Surface | Reference | Recast note |" in cfg)
 check("template config: gates table", "| Gate | Command | Run at | Mandatory | Checked |" in cfg)
 check("template conventions: AP / EC / D / Proposed / Rejected", all(s in conv for s in ["## Accepted Patterns", "## Enforced Conventions", "## Decisions", "## Proposed", "## Rejected"]))

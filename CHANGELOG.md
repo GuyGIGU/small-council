@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Context packs are opt-in.** The Chair builds seat context packs only when the project config
+  has `- context packs: on` under `## Run preferences`, or the user asks for them in a run. A
+  missing line means off; new configs start with `context packs: off`. Packs add material to every
+  worker and their effect on findings is unmeasured until the Phase 5.5 live paired run.
+  `council context build` and `show` are unchanged.
+
 ## [0.12.0] — 2026-09-24
 
 The fifth evolution milestone makes a seat's assigned context level actionable without replacing
