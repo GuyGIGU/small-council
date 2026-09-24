@@ -47,6 +47,11 @@ reduction percent, selected and omitted path counts. Reduction can be negative w
 expansions make the pack larger than the baseline. It is accounting for context selection,
 **not** a measure of correctness, coverage or token savings. The Chair should inspect any
 provider limits, omitted paths and explicit expansions before claiming a seat had enough evidence.
+In the current dispatch contract the worker receives both the complete brief and the pack, so
+the pack adds referenced material compared with a brief-only run. Its reduction relative to
+brief + index + graph must not be described as a reduction in actual worker context or cost.
+The local Phase 5.5 comparison and live-run protocol are in
+`docs/validation/phase-5.5-context-pilot.md`.
 
 ## Boundaries and fallback
 

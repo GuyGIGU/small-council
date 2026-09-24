@@ -105,6 +105,12 @@ and test links, context levels, byte reduction with relevant paths retained, det
 and metrics, explicit expansion, path containment, and the index-only fallback. When Bash is
 available, it also checks `council context build <seat>` against a validated run plan.
 
+`python evals/run_context_pilot.py` is a separate, no-network Phase 5.5 measurement. It compares
+the **brief alone** with the **brief plus pack actually referenced at dispatch** on three fixture
+shapes. It also checks retention of known paths and a hard rule. Its byte counts are not agent
+tokens or finding-quality results. See `docs/validation/phase-5.5-context-pilot.md` for the
+measured result and the live paired-run protocol.
+
 ## 7. Phrase checks — advisory
 
 ```bash
