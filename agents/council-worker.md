@@ -49,6 +49,9 @@ code. Everything you produce goes into one file.
   names it).
 - **Evidence:** every item has `path:line` — or, for research, a URL or the command you ran plus the
   output line that matters. No evidence, no item.
+- **Evidence state:** each item body says `- Evidence state: OBSERVED | REPRODUCED | INFERRED |
+  ASSUMED | UNVERIFIED` using `references/evidence-model.md`. `REPRODUCED` names the saved check
+  output; a command you did not run is not reproduction. The Chair carries the state into synthesis.
 - **Size:** at most your item cap (default 8). Aim for under ~800 words; the file must stay under 16 KB.
 - **Plain English.** No code blocks, diffs or pasted source unless your format asks for them.
 

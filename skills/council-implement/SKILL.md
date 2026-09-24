@@ -114,6 +114,9 @@ the converge pass starts, `council state phase=challenge`.
      is reported as DIFFERENT-COMMAND, which is broken proof.
    - A genuinely untestable path (a race, a rendering bug, a hardware route) records
      `no permanent test possible — <why>` in the log, and that reason is reported, never swallowed.
+   - Label the task's support in the log with the evidence vocabulary from
+     `references/evidence-model.md`. `REPRODUCED` requires the saved before/after gate paths;
+     a passing command alone does not prove the changed path works.
 3. **Plan the change:**
    - which files;
    - the minimal diff;

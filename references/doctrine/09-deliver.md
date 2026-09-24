@@ -22,6 +22,10 @@
    ~12 words>…"``, quoted from that filed copy, where secrets are already redacted. It goes in the body because `council prior` reads bodies, so later runs — and a
    post-game — find the whole chain from it.
 3. `council state deliverable=<path>`.
+   For review and research, each shipped claim retains its synthesis id, evidence state, citation
+   and verifier verdict. In a plan, link a task to the synthesis claims it uses, and state which
+   assumptions remain open. Link to the run's `claims.jsonl` when built; readable explanations
+   remain necessary. Never call `INFERRED` or `ASSUMED` verified merely because a citation resolves.
 4. **In chat, your mode's summary**, in plain words: say what a seat checks before its name — "Data
    integrity (Leach)". No internal labels: no bare principle numbers, no "lanes", no "AP/EC".
    **A mode that changed code carries one line, as written:** `Checked by machine:` followed by the

@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Phase 6 evidence ledger.** `council evidence build|show|check` projects synthesis claims,
+  evidence states, source-seat ids and blind-verifier rows into deterministic run-local
+  `claims.jsonl`. The existing Markdown remains authoritative. Checks flag absent or stale links,
+  missing reproduction artifacts and conflicting verifier rows; they do not establish claim truth.
+  Python 3.8+ is optional. Older runs remain readable without migration, though an evidence check
+  on one may flag missing new fields.
+
 ### Changed
 
 - **Context packs are opt-in.** The Chair builds seat context packs only when the project config

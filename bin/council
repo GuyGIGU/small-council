@@ -1030,6 +1030,15 @@ cmd_context() {
   esac
 }
 
+# Index the human-readable synthesis and blind verifier tables without replacing them.
+# Python is optional: if unavailable, Chair keeps the existing manual evidence trail.
+cmd_evidence() {
+  local action="$1" run py
+  run="$(resolve_run)" || exit 2
+  py="$(impact_python)" || die "evidence needs optional Python 3.8+; use synthesis.md and verify tables directly"
+  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/evidence.py" "$action" --run "$run"
+}
+
 # Definition names from diff lines (+/-) and hunk-header context. Heuristic and language-agnostic:
 # def/class/func/fn/…, const-arrow functions, Go methods, shell "name() {", and C-style signatures —
 # never a bare call.
@@ -4298,6 +4307,8 @@ council — the Small Council's helper (bash + git)
   council context build <seat> [--expand PATH ...]
                                          build a seat's plan-sized context pack after brief.md
   council context show <seat>            print the pack path and its selection metrics
+  council evidence build|show|check       index claims, provenance, states and verifier links from
+                                         synthesis.md and verify-*.md into run-local claims.jsonl
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
                                          inside it; output and exit code → <run>/gates/
   council gate --all [--at grounding|verify]
@@ -4432,6 +4443,11 @@ main() {
                      cmd_context show "$1" ;;
                *) die "usage: council context build <seat> [--expand PATH ...] | context show <seat>" ;;
              esac ;;
+    evidence) sub="${1:-}"; [ $# -eq 0 ] || shift
+              takes_flags "evidence $sub"; no_words "evidence $sub" ${1+"$@"}
+              case "$sub" in build|show|check) cmd_evidence "$sub" ;;
+                *) die "usage: council evidence build|show|check [--run <folder>]" ;;
+              esac ;;
     gate)    takes_flags gate all at --
              if [ "$ALL" = 1 ]; then
                no_words "gate --all" ${1+"$@"}

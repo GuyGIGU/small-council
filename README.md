@@ -33,7 +33,8 @@ skipped under load.
 - **The `council` helper** (bash + git, on PATH while the plugin is enabled). It does the
   bookkeeping: opening and closing runs, validating the run plan before fan-out, the change index,
   optional seat-specific context packs (`council context build <seat>`), gates judged by exit code, checking seat
-  files and citations, the memory entries in scope, earlier council work on the same files, each
+  files and citations, an optional evidence ledger (`council evidence build|check`) linking claims
+  to their sources and verifier rows, the memory entries in scope, earlier council work on the same files, each
   seat's track record (the ledger), the stack fingerprint, and a drift doctor.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
   security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,

@@ -56,6 +56,9 @@ jobs:
       - name: Context delivery pilot (byte accounting, no model calls)
         run: python evals/run_context_pilot.py
 
+      - name: Evidence model evals
+        run: python evals/run_evidence.py
+
       - name: Hook evals
         run: python evals/run_hook.py
 

@@ -64,8 +64,9 @@ for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"),
              ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
-             ("references", "precision-context.md"), ("scripts", "impact.py"),
-             ("scripts", "context.py"), ("docs", "design", "precision-context-adr.md")]:
+             ("references", "precision-context.md"), ("references", "evidence-model.md"),
+             ("scripts", "impact.py"), ("scripts", "context.py"), ("scripts", "evidence.py"),
+             ("docs", "design", "precision-context-adr.md")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
 for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
@@ -114,6 +115,19 @@ check("kernel: optional impact graph is available beside the change index",
 check("kernel: seat-specific context packs are available without replacing the brief",
       "council context build" in core and "brief.md" in core and "contexts/" in core)
 check("kernel: context packs are opt-in via the config", "only if opted in" in core and "context packs: on" in core)
+check("kernel: evidence ledger is optional and does not replace synthesis", "council evidence build" in core and
+      "optional Python 3.8+" in core and "synthesis.md" in core)
+check("challenge: refreshed evidence links are checked", "council evidence build" in doctrine["08-challenge.md"] and
+      "council evidence check" in doctrine["08-challenge.md"])
+evidence_contract = read("references", "evidence-model.md")
+check("evidence: support states stay distinct from verifier verdicts",
+      all(state in evidence_contract for state in ("OBSERVED", "REPRODUCED", "INFERRED", "ASSUMED", "UNVERIFIED")) and
+      all(verdict in evidence_contract for verdict in ("CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED")) and
+      "separate" in evidence_contract)
+check("worker and verifier: declared support is blind to independent verification",
+      "Evidence state:" in worker and "which you do not receive" in verifier and "refute the claim" in verifier)
+check("modes: evidence states reach review, research, plan, build and post-game",
+      all("evidence-model.md" in skill[mode] for mode in MODES))
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):

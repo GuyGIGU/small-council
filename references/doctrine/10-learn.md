@@ -7,6 +7,10 @@
 - **Enforced conventions:** always/never rules the user adopted along with the fixes.
 - **Write each one in plain words, with evidence and effect:**
   `- PROPOSED accepted pattern: stop flagging <X> in <paths> — <why it's deliberate> (evidence: <path:line>; scope: <paths or seat slugs>; from <deliverable path>, <date>)`
+- **Preserve the support level.** A proposal derived from a refuted or uncertain claim names that
+  verdict and verifier file. A remembered decision is the user's ruling, not an agent's assumption;
+  retain the dated words and origin. Never turn an `INFERRED` or `ASSUMED` note into settled memory
+  just because it appeared in synthesis.
 - **Admission rule:** propose only what would change a future run if it were missing — never what
   the code, manifests or CI already say.
 - **A lesson about the council's own process** is scoped to its mode (`scope: council-plan`), so only

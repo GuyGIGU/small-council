@@ -16,18 +16,24 @@ Your judgment, written down.
 4. **Rank by concrete cost in this project at this scale** — the Carmack filter: a real problem
    here, or pattern-matching? Settled memory entries are never findings.
 5. **Cut to your mode's cap.** Keep the cut list, with a reason for each item.
-6. **Write `<run>/synthesis.md`** in the format below. Everything after this stage reads the file,
-   not your memory of it.
+6. **Write `<run>/synthesis.md`** in the format below. In review, plan and research, every kept
+   and cut claim carries a declared `state:` and `from:` as specified in
+   `references/evidence-model.md`; a `REPRODUCED` claim also names saved `proof:`. Do not upgrade
+   an inference to observation because several seats agreed. Post-game keeps its request-quote
+   format instead. Everything after this stage reads the file, not your memory of it.
+7. **For review, plan and research, build the provisional claim index** with
+   `council evidence build` when Python 3.8+ is available. Missing verifier links at this stage
+   are expected, never a pass.
 
 ## synthesis.md
 
 ```
 # Synthesis — <run title>
 ## Kept
-1 · P1 · <principle> · <path:line> · <title> · from: hunt#3, collina#1
+1 · P1 · <principle> · <path:line> · <title> · state: OBSERVED · from: hunt#3, collina#1
 2 · …
 ## Cut
-C1 · P2 · <principle> · <path:line> · <title> · from: leach#2 · why: <reason>
+C1 · P2 · <principle> · <path:line> · <title> · why: <reason> · state: INFERRED · from: leach#2
 ## Conflicts
 - hunt#2 vs fowler#4: <one line> → <how it was settled | RULING NEEDED>
 ## Rulings needed

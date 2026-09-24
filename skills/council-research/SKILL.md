@@ -74,6 +74,8 @@ Index line: `<n> · <strong|moderate|weak> · <line of inquiry> · <path:line or
 ### <n>. <claim — one sentence>
 - Evidence: path:line | URL | `command` → the output line that matters
 - Strength: strong (direct evidence) | moderate (several consistent signals) | weak (a single hint or an analogy)
+- Evidence state: OBSERVED | REPRODUCED | INFERRED | ASSUMED | UNVERIFIED (see `references/evidence-model.md`)
+- Proof: <saved run artifact, only if REPRODUCED>
 - Bears on: <which part of the question>
 - Against / open: <what cuts against it, or what would settle it>
 - Conflict: <when sources disagree, both sides, cited> (optional)
@@ -106,7 +108,7 @@ Informs: <decision> · Confidence: high | medium | low
 ## Answer
 <3–8 sentences, direct>
 ## Evidence
-| # | Claim | Evidence | Strength | Verified |
+| # | Claim | Evidence | State | Strength | Verified |
 ## Unknowns — and how to settle them
 ## What this changes
 <for plans, conventions, the map; the suggested next step, e.g. council-plan>

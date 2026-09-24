@@ -1,6 +1,6 @@
 # evals/
 
-Six automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
+Seven automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
 
 ## 1. Validation — will the plugin load?
 
@@ -111,7 +111,17 @@ shapes. It also checks retention of known paths and a hard rule. Its byte counts
 tokens or finding-quality results. See `docs/validation/phase-5.5-context-pilot.md` for the
 measured result and the live paired-run protocol.
 
-## 7. Phrase checks — advisory
+## 7. Evidence evals — do claims retain their support and verification trail?
+
+```bash
+python evals/run_evidence.py   # needs Python 3.8+; bash for the CLI handoff
+```
+
+Uses temporary run artifacts to check provisional `UNVERIFIED` status, deterministic JSONL,
+provenance and verifier links, stale snapshots, refuted and conflicting verdicts, missing proof,
+proof traversal, missing state and cut-P1 verification. It does not judge the truth of a claim.
+
+## 8. Phrase checks — advisory
 
 ```bash
 python evals/run_phrases.py
@@ -120,7 +130,7 @@ python evals/run_phrases.py
 Looks for the wording of the field-tested rules and warns if one is missing. It never fails: a
 reworded rule shouldn't break the build, and a phrase proves nothing about behaviour.
 
-## 8. Behavioural suite — runs Claude for real, so it costs tokens
+## 9. Behavioural suite — runs Claude for real, so it costs tokens
 
 `evals/suite/` holds cases for `claude plugin eval` (plugin.json → `experimental.evals`). Each case runs
 with and without the plugin, and the report shows what the plugin adds (Δ). Graders are the answer
@@ -169,7 +179,7 @@ python evals/record_eval.py                                                     
 - **CI:** `.github/workflows/evals.yml` runs on demand only: Claude Code and both models pinned, the
   Bash sandbox installed, Bash granted only past the triggering smoke, and a cost ceiling.
 
-## 9. Behavioral drills — run in Claude Code
+## 10. Behavioral drills — run in Claude Code
 
 See `behavioral-drills.md` (D1–D26). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.
