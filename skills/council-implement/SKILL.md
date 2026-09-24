@@ -11,7 +11,8 @@ One builder, one task at a time, in this window. Parallel agents read; one hand 
 2. **the build loop below**, in place of stages 3–7;
 3. then stages 8–10.
 
-The only agents you dispatch are verifiers, plus at most one diagnosis worker per stuck task.
+The only agents you dispatch are verifiers, plus at most one diagnosis worker per stuck task across
+gate and verifier failures.
 
 **Voice of the build:** Carmack. Make the smallest change that satisfies the task; write code that
 looks like the same team wrote it; no speculative generality; verify by machine, not by feel.
@@ -139,6 +140,13 @@ the converge pass starts, `council state phase=challenge`.
      outputs side by side yourself before calling it unchanged. Keep the standing clause on the
      receipt.
    - **It can't run** → that's config drift: log it and tell the user.
+   - **It fails during this task** → use the bounded loop in `references/repair-loop.md`:
+     `council repair record T<n> <gate>`, inspect its advisory category, saved output and baseline,
+     then repair and rerun the **same** gate. The first failure stays with the builder; the second
+     calls for one independent read-only diagnosis if this task has not used that worker already;
+     otherwise stop and report. The third failed execution stops mutation and is reported.
+     Python 3.8+ is optional: if absent, record the same attempts and limit in the log. Never count
+     the intentionally failing `before-<n>` check as a repair attempt.
 6. **After-evidence.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
    must now pass.
 7. **Adversarial check.** Dispatch `small-council:council-verifier` with:
@@ -153,7 +161,8 @@ the converge pass starts, `council state phase=challenge`.
    the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
      `c`), so the first verdict stays on disk.
-   - **A second failed verification** → a **clean-context diagnosis**: one council-worker, read-only.
+   - **A second failed verification** → a **clean-context diagnosis** if this task has not already
+     used its one diagnosis worker for a gate failure; otherwise stop and report. The worker is read-only.
      Its dispatch message is its whole brief — the task and its Done-when, both verdict files, the
      diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
      candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Track it with
@@ -164,6 +173,8 @@ the converge pass starts, `council state phase=challenge`.
      a memory candidate.
 8. **Log and state — now, not at the end.**
    - Append the task's entry to the log.
+   - Include each failed gate attempt's category, suggested lens, actual cause (or uncertainty),
+     snapshot paths and next action. `council repair check T<n>` checks saved snapshots when used.
    - Update the state: `council state next="task <n+1>: <title>" attempts="T<n> 1/3"`. Keep a short
      "tried and failed" list there too.
    - If commits are on, commit the task.
@@ -214,6 +225,9 @@ met, with evidence — written into the log's `## Converge` table.
 - Anything not met → one more task, or a logged follow-up.
 - Then run the final gates: `council gate --all --at verify`. Exit 4 means nothing was checked — say
   so; never report it as a pass.
+- If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
+  reported, never folded into a green receipt. Without optional Python, audit the log's attempt
+  list and saved gate outputs by hand.
 - Then `council check`. It reads every `before-<n>` / `after-<n>` verdict on disk and says, per task,
   whether the before-check really failed, whether the after-check really passed, and whether the
   command names a test the project now tracks. Its verdicts fill the `## Converge` table's **Proof**

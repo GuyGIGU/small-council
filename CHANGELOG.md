@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Phase 7 bounded repair trail.** `council repair record|show|check` snapshots each failed build
+  gate and its reruns, suggests an advisory failure category and expert lens, distinguishes a red
+  baseline, and stops after three failed executions of the same gate. The second failure recommends
+  independent read-only diagnosis; a nonempty pass closes the trail. It never runs a gate, dispatches
+  an agent, changes code or attributes a failure to the edit. Python 3.8+ is optional, with a manual
+  log fallback. Local fixture checks do not establish live model behavior.
+
 - **Phase 6 evidence ledger.** `council evidence build|show|check` projects synthesis claims,
   evidence states, source-seat ids and blind-verifier rows into deterministic run-local
   `claims.jsonl`. The existing Markdown remains authoritative. Checks flag absent or stale links,

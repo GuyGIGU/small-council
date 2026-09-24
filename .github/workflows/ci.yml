@@ -59,6 +59,9 @@ jobs:
       - name: Evidence model evals
         run: python evals/run_evidence.py
 
+      - name: Repair loop evals
+        run: python evals/run_repair.py
+
       - name: Hook evals
         run: python evals/run_hook.py
 

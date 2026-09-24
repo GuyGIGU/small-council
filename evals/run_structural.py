@@ -65,7 +65,9 @@ for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"),
              ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
              ("references", "precision-context.md"), ("references", "evidence-model.md"),
+             ("references", "repair-loop.md"),
              ("scripts", "impact.py"), ("scripts", "context.py"), ("scripts", "evidence.py"),
+             ("scripts", "repair.py"),
              ("docs", "design", "precision-context-adr.md")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
 for s in SKILLS:
@@ -128,6 +130,13 @@ check("worker and verifier: declared support is blind to independent verificatio
       "Evidence state:" in worker and "which you do not receive" in verifier and "refute the claim" in verifier)
 check("modes: evidence states reach review, research, plan, build and post-game",
       all("evidence-model.md" in skill[mode] for mode in MODES))
+repair_contract = read("references", "repair-loop.md")
+check("repair: build mode records bounded same-gate failures",
+      "council repair record" in skill["council-implement"] and "repair-loop.md" in skill["council-implement"] and
+      "same" in repair_contract and "Third" in repair_contract and "stop mutation" in repair_contract.lower())
+check("repair: helper and kernel expose inspectable repair trail",
+      "cmd_repair()" in cli and "council repair record" in cli and "council repair record" in core and
+      "repairs.jsonl" in core)
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
