@@ -1,6 +1,6 @@
 # evals/
 
-Five automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
+Six automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
 
 ## 1. Validation — will the plugin load?
 
@@ -94,7 +94,18 @@ Uses temporary repositories to check committed/staged/unstaged/untracked changes
 deletions, Python AST and literal JS/TS imports, likely test links, deterministic TSV, and the
 `council index` → `impact.tsv` handoff. This is not a claim of runtime coverage.
 
-## 6. Phrase checks — advisory
+## 6. Context evals — do seat packs stay relevant, small, and safe?
+
+```bash
+python evals/run_context.py   # needs Python 3.8+; bash and git for the CLI handoff
+```
+
+Uses temporary fixture runs to check selected-seat scope, shared hard constraints, direct caller
+and test links, context levels, byte reduction with relevant paths retained, deterministic Markdown
+and metrics, explicit expansion, path containment, and the index-only fallback. When Bash is
+available, it also checks `council context build <seat>` against a validated run plan.
+
+## 7. Phrase checks — advisory
 
 ```bash
 python evals/run_phrases.py
@@ -103,7 +114,7 @@ python evals/run_phrases.py
 Looks for the wording of the field-tested rules and warns if one is missing. It never fails: a
 reworded rule shouldn't break the build, and a phrase proves nothing about behaviour.
 
-## 6. Behavioural suite — runs Claude for real, so it costs tokens
+## 8. Behavioural suite — runs Claude for real, so it costs tokens
 
 `evals/suite/` holds cases for `claude plugin eval` (plugin.json → `experimental.evals`). Each case runs
 with and without the plugin, and the report shows what the plugin adds (Δ). Graders are the answer
@@ -152,7 +163,7 @@ python evals/record_eval.py                                                     
 - **CI:** `.github/workflows/evals.yml` runs on demand only: Claude Code and both models pinned, the
   Bash sandbox installed, Bash granted only past the triggering smoke, and a cost ceiling.
 
-## 7. Behavioral drills — run in Claude Code
+## 9. Behavioral drills — run in Claude Code
 
 See `behavioral-drills.md` (D1–D26). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

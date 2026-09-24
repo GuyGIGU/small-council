@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.11.0"
+COUNCIL_VERSION="0.12.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -977,6 +977,57 @@ cmd_impact() {
   py="$(impact_python)" || { rm -f "$output"; printf 'council: impact needs optional Python 3.8+; index.md remains available\n' >&2; return 1; }
   "$py" "$COUNCIL_PLUGIN_ROOT/scripts/impact.py" --root "$top" --base "$base" --output "$output" \
     || { rm -f "$output"; return 1; }
+}
+
+# Build a run-local, seat-specific context pack. The validated run plan is the source of truth for
+# both eligibility and level; the pack only supplements brief.md and never edits project guidance.
+context_seat() {
+  case "$1" in
+    ''|.|..|*[!A-Za-z0-9._-]*) die "context seat must be a single slug (letters, digits, dot, underscore or dash)" ;;
+  esac
+}
+
+cmd_context() {
+  local sub="$1" seat="$2" run output metrics top level py expand expand_count=0
+  context_seat "$seat"
+  run="$(resolve_run)" || exit 2
+  output="$run/contexts/$seat.md"
+  metrics="$output.metrics.tsv"
+  case "$sub" in
+    build)
+      [ -f "$run/run-plan.tsv" ] || die "context build needs a run-plan.tsv with a selected seat; legacy runs cannot infer a context level"
+      QUIET=1 run_plan_validate "$run" "$run/run-plan.tsv" || die "context build needs a valid run plan — run: council run plan check --run ${run##*/}"
+      run_plan_has_selected "$run/run-plan.tsv" "$seat" || die "context build needs a selected seat in run-plan.tsv: $seat"
+      [ -f "$run/brief.md" ] || die "context build needs the authoritative brief first: $run/brief.md"
+      level="$(SEAT="$seat" awk -F'\t' '$1 == "context" && $2 == ENVIRON["SEAT"] && $3 == "level" { print $4; exit }' "$run/run-plan.tsv" | tr -d '\r')"
+      [ -n "$level" ] || die "context level is missing for selected seat $seat"
+      top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
+      py="$(impact_python)" || die "context build needs optional Python 3.8+; brief.md remains available"
+      mkdir -p "$run/contexts" || die "cannot create $run/contexts"
+      set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/context.py" --root "$top" --run "$run" --seat "$seat" --level "$level" --output "$output"
+      for expand in "${CONTEXT_EXPANDS[@]+"${CONTEXT_EXPANDS[@]}"}"; do
+        set -- "$@" --expand "$expand"
+        expand_count=$((expand_count + 1))
+      done
+      "$@" || { printf 'council: context build failed; brief.md remains authoritative; any prior pack may be stale and must not be dispatched\n' >&2; return 1; }
+      [ -f "$output" ] && [ -f "$metrics" ] || die "context provider returned without the pack and metrics sidecar"
+      event_append "$run" context.built "$seat" "$level" "expands=$expand_count;metrics=$metrics" \
+        || die "context built, but its event could not be recorded"
+      say "context: $output"
+      say "metrics: $metrics" ;;
+    show)
+      [ ! -L "$run/contexts" ] && [ ! -L "$output" ] && [ ! -L "$metrics" ] \
+        || die "context show refuses a symlink in the generated pack path"
+      [ -f "$output" ] || die "context pack is missing for $seat — run: council context build $seat --run ${run##*/}"
+      say "context: $output"
+      if [ -f "$metrics" ]; then
+        say "metrics: $metrics"
+        cat "$metrics"
+      else
+        say "metrics: missing (rebuild the context pack to refresh its accounting)"
+      fi ;;
+    *) die "usage: council context build <seat> [--expand PATH ...] | context show <seat>" ;;
+  esac
 }
 
 # Definition names from diff lines (+/-) and hunk-header context. Heuristic and language-agnostic:
@@ -4244,6 +4295,9 @@ council — the Small Council's helper (bash + git)
                                          record a worker: queued|running|done|failed|blocked|skipped
   council index [--base REF]             change index → <run>/index.md (hunks, symbols, callers, tests)
   council impact [--run <folder>]        refresh <run>/impact.tsv from the index baseline (optional Python 3.8+)
+  council context build <seat> [--expand PATH ...]
+                                         build a seat's plan-sized context pack after brief.md
+  council context show <seat>            print the pack path and its selection metrics
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
                                          inside it; output and exit code → <run>/gates/
   council gate --all [--at grounding|verify]
@@ -4292,13 +4346,14 @@ main() {
   RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" SESSION_ARG="" ALONGSIDE=0 FLAGS=""
   ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
   ROUTE_SURFACES=()
+  CONTEXT_EXPANDS=()
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
   pos=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens)
+      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand)
                    flag="${1#--}"
                    [ $# -ge 2 ] || case "$flag" in
                      run|code-root) die "--$flag needs a folder" ;;
@@ -4307,7 +4362,7 @@ main() {
                      *) die "--$flag needs a value" ;;
                    esac
                    val="$2"; shift 2 ;;
-      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*)
+      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
       --alongside|--all|--classic) flag="${1#--}"; val=1; shift ;;
       --alongside=*|--all=*|--classic=*) die "${1%%=*} takes no value" ;;
@@ -4334,6 +4389,7 @@ main() {
       complexity) ROUTE_COMPLEXITY_ARG="$val" ;; uncertainty) ROUTE_UNCERTAINTY_ARG="$val" ;;
       surface) ROUTE_SURFACES+=("$val") ;; agent-cap) ROUTE_CAP_ARG="$val" ;;
       budget-tokens) ROUTE_BUDGET_ARG="$val" ;; classic) ROUTE_CLASSIC=1 ;;
+      expand) CONTEXT_EXPANDS+=("$val") ;;
     esac
     FLAGS="$FLAGS $flag"
   done
@@ -4366,6 +4422,16 @@ main() {
              esac ;;
     index)   takes_flags index base; no_words index ${1+"$@"}; cmd_index ;;
     impact)  takes_flags impact; no_words impact ${1+"$@"}; cmd_impact ;;
+    context) sub="${1:-}"; [ $# -eq 0 ] || shift
+             case "$sub" in
+               build) takes_flags "context build" expand
+                      [ $# -eq 1 ] || die "usage: council context build <seat> [--run <folder>] [--expand PATH ...]"
+                      cmd_context build "$1" ;;
+               show) takes_flags "context show"
+                     [ $# -eq 1 ] || die "usage: council context show <seat> [--run <folder>]"
+                     cmd_context show "$1" ;;
+               *) die "usage: council context build <seat> [--expand PATH ...] | context show <seat>" ;;
+             esac ;;
     gate)    takes_flags gate all at --
              if [ "$ALL" = 1 ]; then
                no_words "gate --all" ${1+"$@"}

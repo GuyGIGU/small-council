@@ -20,6 +20,7 @@ Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is
 `run-plan.md` defines the checked decision state for a run. `event-stream.md` defines the
 append-only record of CLI-observable actions. `impact-graph.md` defines the optional run-local
 graph of changed paths, direct dependencies and test hints.
+`precision-context.md` defines the optional, seat-specific context pack and its measurement limits.
 
 ## Seat reference docs — one per council seat
 

@@ -64,7 +64,8 @@ for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"),
              ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
-             ("scripts", "impact.py")]:
+             ("references", "precision-context.md"), ("scripts", "impact.py"),
+             ("scripts", "context.py"), ("docs", "design", "precision-context-adr.md")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
 for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
@@ -110,6 +111,8 @@ check("kernel: adaptive routing is advisory before a run opens",
       "council route recommend" in core and "advisory" in core)
 check("kernel: optional impact graph is available beside the change index",
       "council impact" in core and "impact.tsv" in core)
+check("kernel: seat-specific context packs are available without replacing the brief",
+      "council context build" in core and "brief.md" in core and "contexts/" in core)
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):

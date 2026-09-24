@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — 2026-09-24
+
+The fifth evolution milestone makes a seat's assigned context level actionable without replacing
+the Chair's brief or the worker's reference docs.
+
+**Upgrading:** no migration or new mandatory dependency. New packs are generated only on request,
+after `brief.md` and a valid run plan exist. Older runs and brief-only dispatch still work.
+
+### Added
+
+- **`council context build <seat>` and `show`.** A selected seat receives a run-local Markdown pack
+  at its validated `minimal`, `focused` or `full` level. `--expand PATH` can be repeated to request
+  omitted evidence explicitly. The generated metrics sidecar makes the selection inspectable, and
+  successful builds are recorded in the run event stream when one exists.
+- **Precision-context contract and evals.** The provider is optional Python 3.8+; the contract
+  documents relevance signals, selection boundaries, explicit expansion and fallback behavior.
+
+### Known limits
+
+- Selection is a bounded heuristic, not proof that omitted files are irrelevant. It cannot override
+  the brief's hard constraints, infer runtime behavior, or modify a project's `CLAUDE.md`.
+- If Python is unavailable or generation fails, the complete brief and reference docs remain the
+  dispatch path; a missing pack must not be presented as built.
+
 ## [0.11.0] — 2026-09-23
 
 The fourth evolution milestone adds a bounded, inspectable impact graph alongside the existing

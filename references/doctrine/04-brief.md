@@ -61,7 +61,17 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   entries can't be read or are left out, tell the user.
 - **Hard rules go in word for word** — workers also load the project's CLAUDE.md, but the brief is
   the orders they must not miss.
+- **Then prepare each dispatched seat's context pack.** Run `council context build <slug>` after
+  `brief.md` exists. It takes the `minimal`, `focused` or `full` level from the validated run plan
+  and writes `contexts/<slug>.md` plus selection metrics. Inspect `council context show <slug>`;
+  if a needed path was omitted, rebuild with `--expand <path>` (repeatable) and record why in the
+  brief or run log. The pack is selected evidence, not a replacement for this brief, the seat's
+  full reference doc, or the project's hard constraints. See `references/precision-context.md`.
+- **Keep the fallback honest.** Python 3.8+ is optional. If context building is unavailable or
+  fails, dispatch from the complete brief and reference docs; do not claim a pack was built.
+  Never rewrite a project `CLAUDE.md` as part of context preparation.
 
 ## Done when
 
-brief.md is written. → `council state phase=work`
+brief.md is written; dispatched seats have a pack when the optional provider is available, or the
+brief-only fallback is explicit. → `council state phase=work`

@@ -31,7 +31,8 @@ skipped under load.
   - **`council-verifier`**: blind and adversarial — CONFIRMED / REFUTED / UNCERTAIN / MISCITED for
     claims, OK / INCOMPLETE / REGRESSION / SCOPE-CREEP for changes.
 - **The `council` helper** (bash + git, on PATH while the plugin is enabled). It does the
-  bookkeeping: opening and closing runs, validating the run plan before fan-out, the change index, gates judged by exit code, checking seat
+  bookkeeping: opening and closing runs, validating the run plan before fan-out, the change index,
+  optional seat-specific context packs (`council context build <seat>`), gates judged by exit code, checking seat
   files and citations, the memory entries in scope, earlier council work on the same files, each
   seat's track record (the ledger), the stack fingerprint, and a drift doctor.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
@@ -136,7 +137,8 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
 2. **Prepare** — gather shared facts once: the map, memory in scope, the change index, earlier
    findings, grounding gates.
 3. **Assign** — match each seat's surface markers to the change; pair thin seats; set budgets.
-4. **Brief** — one set of orders on disk: the question at the top, the hard rules at the bottom.
+4. **Brief** — one set of orders on disk: the question at the top, the hard rules at the bottom;
+   optionally build a plan-sized evidence pack for each selected seat.
 5. **Work** — one isolated worker per seat, in parallel; each writes a file and returns one line.
 6. **Collect** — the helper checks every seat file and its proof of reading; stuck workers are resumed.
 7. **Judge** — a raw ledger of every finding before merging, a conflict pass, the cut — all written to
@@ -148,6 +150,17 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
 
 **Limits:** at most 10 agents per run, verifiers included; a war room adds tokens, not agents. Past runs averaged ~100k tokens per worker;
 estimates come from your own project's ledger once there is some.
+
+## Precision context (0.12)
+
+After writing `<run>/brief.md`, `council context build <seat>` uses that selected seat's validated
+`minimal`, `focused` or `full` run-plan level to build `<run>/contexts/<seat>.md`. The companion
+`<seat>.md.metrics.tsv` accounts for what was included and omitted; `council context show <seat>`
+prints both paths and the metrics. Repeated `--expand PATH` requests more evidence when inspection
+shows a gap. This is an inspectable, optional selection aid, not a new dispatcher or a substitute for
+the brief, reference docs, or project rules. Python 3.8+ is required only for building a pack; if it
+is unavailable, the existing complete brief is the fallback. See
+[`references/precision-context.md`](references/precision-context.md) for the contract and limits.
 
 ## What it keeps in your repo
 

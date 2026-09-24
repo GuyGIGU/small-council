@@ -50,6 +50,9 @@ jobs:
       - name: Impact evals
         run: python evals/run_impact.py
 
+      - name: Context evals
+        run: python evals/run_context.py
+
       - name: Hook evals
         run: python evals/run_hook.py
 

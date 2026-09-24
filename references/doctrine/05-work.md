@@ -14,11 +14,18 @@ The seats work in parallel, each in its own window. You dispatch, then wait.
 ```
 Seat: <slug> — <what it checks> · <mode> run
 Brief: <abs>/brief.md — read the top, your "### <slug>" block, and the bottom
+Context: <abs>/contexts/<slug>.md — if built, read it for selected evidence; the brief remains authoritative
 Reference: <abs card or doc path(s)> — copy each one's first heading into its own ref: line, from line 2
 Doc: <abs path of the full doc behind each card> — open it for the principles you cite
 Format: <your mode's per-item format>
 Write <abs run>/seats/<slug>.md, then return one line.
 ```
+
+- **A context pack supplements the orders.** Include the `Context:` line only if that seat's pack
+  was built successfully for the current brief and code state. A failed rebuild can leave an old
+  pack on disk; existence alone does not establish freshness. It does not override the brief's
+  objective, slice, hard constraints or reference docs.
+  With no pack, dispatch still uses the complete brief. Do not imply that omitted paths are safe.
 
 - **Right after dispatching:** `council seat <slug> running agent=<agentId>` for each worker.
 

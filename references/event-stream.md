@@ -2,8 +2,9 @@
 
 New runs keep an append-only `events.tsv` beside `session-state.md`. The CLI writes events for
 mechanical actions it can observe: opening, resuming and closing a run; changing its phase or status;
-updating a seat; and finishing a gate, collection or citation check. The file is local to the run and
-ignored by git. It is an observation record, not the authority for current state: use
+updating a seat; building a context pack; and finishing a gate, collection or citation check. The
+file is local to the run and ignored by git. It is an observation record, not the authority for
+current state: use
 `session-state.md`, `seats.tsv`, gate verdicts and `run-plan.tsv` for that.
 
 TSV keeps the Bash 3.2 helper readable with the tools it already requires. The fixed columns cover
@@ -34,6 +35,7 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `run.paused` | `run` | `paused` | `agents=<n>;tokens=<n>` |
 | `run.closed` | `run` | `complete` or `abandoned` | `agents=<n>;tokens=<n>` |
 | `seat.updated` | seat slug | new state | `tokens=<cumulative tokens>` |
+| `context.built` | seat slug | context level | `expands=<n>;metrics=<run-local path>` (see `precision-context.md`) |
 | `gate.finished` | gate name | `passed` or `failed` | `exit=<code>;seconds=<n>;empty=<0 or 1>` |
 | `collect.finished` | `run` | `passed` or `failed` | `seats=<n>` |
 | `verification.finished` | `run` | `passed` or `failed` | `items=<n>;broken=<n>;other=<n>` |
