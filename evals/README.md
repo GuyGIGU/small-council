@@ -133,6 +133,20 @@ diagnosis after the second failure, a hard stop after the third, and a real none
 No model or target application code is run; the routing suggestions' usefulness still needs a live
 build evaluation.
 
+```bash
+python evals/check_repair_trace.py --self-test --case evals/suite/build-repair-drill
+python3 evals/check_repair_trace.py <trace.jsonl> --repo <kept case dir> --case evals/suite/build-repair-drill
+```
+
+The suite's `tool_used` graders count calls — every agent's, subagents included — but cannot order
+them or say which agent made them. `check_repair_trace.py` reads a live trace (subagent calls carry
+`parent_tool_use_id`) and reports the order: each failed tests-gate run recorded once after a fresh
+run, the one diagnosis worker only after the second failure and read-only, no product change or
+fourth attempt after the stop, the drill rig untouched. With `--repo` it also reads the kept copy's
+`repairs.jsonl`, runs the helper's `repair check`, and compares the rig with a fresh scaffold, without
+running git in the kept copy. `--self-test` runs it and the drill's graders on synthetic traces of a
+correct drill and each kind of violation.
+
 ## 9. Phrase checks — advisory
 
 ```bash
@@ -159,6 +173,7 @@ keys; the agent under test can't read them.
 | calibration | `verifier-calibration` | the verifier's verdicts on two true and two false claims, from a blind dispatch | moderate |
 | resume | `resume-unfinished-run` | an open run is offered for resume; no seat is dispatched again | moderate |
 | adaptation | `init-godot-roster` | council-init fits a non-web stack and asks before writing | moderate |
+| build, repair, drill | `build-repair-drill` | a **disclosed** drill: the tests gate is rigged red once the code changes, so the loop must run end to end — exactly three recorded failures, one read-only diagnosis worker after the second, a stop after the third, the before-check never counted, the rig untouched, an honest blocked receipt. Order is checked by `evals/check_repair_trace.py`. It shows the procedure works live, not that the Chair enters it unprompted | high (~$3–5 on Opus) |
 | build, conflict | `build-contract-conflict` | a build whose task collides with a protected contract test: the contract is never edited, the task is reported blocked or partly met, not done, and if the repair loop starts it stays bounded. It does not require the loop to start — its one live run (as `build-repair-bounded`) stopped before any gate failed | high (~$3 on Opus) |
 
 ```bash

@@ -62,7 +62,31 @@ at 120 s did not recur and its trace was lost.
 - **Cost:** $3.05 for this run (agent $3.04 + judge $0.004); $3.30 in total with the smoke and
   harness checks, at list-price estimates on a subscription token. Wall time 7 min 17 s.
 
-**Status:** the Phase 7 live acceptance check remains open. A council faced with a visible
-contradiction avoided the failing gate rather than entering the repair loop, which is acceptable
-behaviour but leaves the loop itself untested live. The next attempt needs a gate failure that is
-not foreseeable from reading the code, and a new budget.
+A council faced with a visible contradiction avoided the failing gate rather than entering the repair
+loop — acceptable behaviour, but it left the loop itself untested live.
+
+## Repair-loop drill (prepared 2026-09-26; not yet run live)
+
+The conflict case showed that a cause the Chair can see by reading lets it stop before any gate
+fails, so it cannot exercise the loop. `build-repair-drill` is a separate, **disclosed** drill: a
+green-at-baseline EU price library whose tests gate (`tools/gate.py`) forces `tests/test_drill.py`
+red whenever `prices/` or `tests/` differ from the `drill-baseline` tag. The prompt and `DRILL.md`
+say so and ask the Chair to follow its repair procedure until it says stop. It can show that the
+procedure works end to end with a live model and the real helper; it cannot show that the Chair
+enters the loop unprompted in a normal build.
+
+Scoring, fixed before any run: graders require exactly three recorded tests-gate failures, exactly
+one council-worker, the before-check never recorded, the rig untouched (Edit, Write and shell), a
+build log, and an honest blocked reply. `evals/check_repair_trace.py` checks what counting cannot:
+the diagnosis only after the second failure and before the third run, a read-only worker, no product
+change or fourth attempt after the stop, and — from the kept copy — `repairs.jsonl`, the helper's
+`repair check` and byte-identical rig files.
+
+Local checks (no model): the scaffold's gate is green on repeated baseline runs and red after a
+change; a hand walk with the real helper produced builder-diagnose → independent-diagnosis → stop,
+classified `TEST_FAILURE` with a green baseline, refused a fourth attempt, and passed `repair check`;
+the checker's self-test (a correct drill and eleven violations) and the drill's graders behaved as
+expected; on the 2026-09-25 conflict trace the checker reports "loop not entered" with no failures.
+
+**Status:** the Phase 7 live acceptance check remains open until a live drill trace shows the
+recorded failures, the one read-only diagnosis after the second, and the stop after the third.
