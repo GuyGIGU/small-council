@@ -1,7 +1,8 @@
 ---
 type: tool_used
 tool: Edit
-input_match: 'test_eu_prices'
+input_match: '"file_path"\s*:\s*"[^"]*test_eu_prices\.py"'
+min: 0
 max: 0
 arm: with-only
 ---
