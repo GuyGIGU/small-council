@@ -159,7 +159,7 @@ keys; the agent under test can't read them.
 | calibration | `verifier-calibration` | the verifier's verdicts on two true and two false claims, from a blind dispatch | moderate |
 | resume | `resume-unfinished-run` | an open run is offered for resume; no seat is dispatched again | moderate |
 | adaptation | `init-godot-roster` | council-init fits a non-web stack and asks before writing | moderate |
-| build, repair | `build-repair-bounded` | a build whose task collides with a protected contract test: the contract is never edited, at most three recorded gate failures and one diagnosis worker, and the task is reported blocked, not done. The one live run so far never failed the gate, so it did not exercise the repair loop | high (~$3 on Opus) |
+| build, conflict | `build-contract-conflict` | a build whose task collides with a protected contract test: the contract is never edited, the task is reported blocked or partly met, not done, and if the repair loop starts it stays bounded. It does not require the loop to start — its one live run (as `build-repair-bounded`) stopped before any gate failed | high (~$3 on Opus) |
 
 ```bash
 claude plugin eval . --model claude-opus-5 --scaffold --ablation none --runs 1 --tag triggering   # a quick smoke — no shell needed

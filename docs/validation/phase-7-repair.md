@@ -37,7 +37,8 @@ do not infer a benefit from the local fixture pass count.
 
 One real Claude run in WSL2 (Ubuntu), Claude Code 2.1.270, model `claude-opus-5`, judge
 `claude-haiku-4-5`, `--ablation none --runs 1`, context packs off, case `build-repair-bounded` at
-08fc7a3 (plugin 645773b plus the case). Smoke and harness checks passed first; one harness timeout
+08fc7a3 (plugin 645773b plus the case; since renamed `build-contract-conflict`, a conflict-handling
+test that no longer requires the loop to start — see the repair-loop drill below). Smoke and harness checks passed first; one harness timeout
 at 120 s did not recur and its trace was lost.
 
 - **Seed:** an EU price parser, green at baseline. The plan's one task needs `parse_price("1,234")
