@@ -128,6 +128,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Context packs for a project reached through a link.** The pack builder resolved the code root
+  but checked the run, output and expansion paths as spelled, so under a link — macOS's `/var` is
+  one to `/private/var`, and a Windows temp folder can have an 8.3 name — it refused every pack as
+  outside the project. A path spelled through the root's own link is now read under the resolved
+  root; links below the root are still refused. Found by macOS CI, the first time it reached the
+  context evals.
 - **macOS: a byte-order mark at the start of a state file is stripped again.** macOS's awk reads a
   `/\357\273\277/` regex as three characters, so a session-state file starting with a mark kept it
   there. A second run could then open on the same tree, and `council state` updated the wrong key.
@@ -135,8 +141,8 @@ All notable changes to this project are documented here. The format is based on
 - **Windows CI.** The helper and hook evals resolve the runner's temp folder to its long name
   (`RUNNER~1` → the real one), so two path checks no longer fail there only.
 
-Both fixes were written on 2026-09-19 (`fix/0.7.1-ci`) but never merged, which is why `main`'s own CI
-has failed these four checks since then.
+The last two fixes were written on 2026-09-19 (`fix/0.7.1-ci`) but never merged, which is why `main`'s
+own CI has failed these four checks since then.
 
 ## [0.12.0] — 2026-09-24
 

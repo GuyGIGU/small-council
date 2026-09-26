@@ -235,6 +235,7 @@ with tempfile.TemporaryDirectory() as folder:
               rejected.returncode != 0 and "OUTSIDE_SECRET_MUST_NOT_LEAK" not in
               (rejected.stdout + rejected.stderr + text_at(linked_path)), rejected.stdout + rejected.stderr)
         output_link = run_dir / "contexts/output-link.md"
+        output_link.parent.mkdir(parents=True, exist_ok=True)  # report failed builds instead of crashing here
         output_link.symlink_to(outside)
         rejected = produce(repo, "alpha", "focused", output_link)
         check("context: a pre-existing output symlink cannot redirect writes outside the run",
@@ -251,6 +252,38 @@ with tempfile.TemporaryDirectory() as folder:
         check("context: a pre-existing contexts directory symlink cannot redirect output",
               rejected.returncode != 0 and not (outside_dir / "alpha.md").exists(),
               rejected.stdout + rejected.stderr)
+
+    # A root reached through a link resolves (macOS /var -> /private/var, a Windows 8.3 temp name),
+    # while the run and output paths beside it arrive spelled through the link.
+    alias = temp / "repo-alias"
+    try:
+        if os.name == "nt":
+            aliased = subprocess.run(["cmd", "/c", "mklink", "/J", str(alias), str(repo)],
+                                     capture_output=True).returncode == 0
+        else:
+            os.symlink(str(repo), str(alias))
+            aliased = True
+    except OSError:
+        aliased = False
+    if aliased:
+        via_run = alias / ".council/runs/fixture"
+        via = run(repo, sys.executable, str(ENGINE), "--root", str(alias), "--run", str(via_run),
+                  "--seat", "alpha", "--level", "focused", "--output", str(via_run / "contexts/via-link.md"),
+                  "--expand", str(alias / "docs/addendum.md"))
+        check("context: a root reached through a link accepts its run, output and expansion spelled that way",
+              via.returncode == 0 and "EXPANDED_NOTE_ONLY_FOR_ALPHA" in text_at(run_dir / "contexts/via-link.md"),
+              via.stdout + via.stderr)
+        escape = run(repo, sys.executable, str(ENGINE), "--root", str(alias), "--run", str(via_run),
+                     "--seat", "alpha", "--level", "focused", "--output", str(via_run / "contexts/via-escape.md"),
+                     "--expand", os.path.join(str(alias), "..", outside.name))
+        check("context: a root reached through a link still refuses an expansion that climbs out of it",
+              escape.returncode != 0 and "OUTSIDE_SECRET_MUST_NOT_LEAK" not in
+              (escape.stdout + escape.stderr + text_at(run_dir / "contexts/via-escape.md")),
+              escape.stdout + escape.stderr)
+        if os.name == "nt":
+            subprocess.run(["cmd", "/c", "rmdir", str(alias)], capture_output=True)
+        else:
+            alias.unlink()
 
     rename_graph = text_at(impact).replace(
         "change\tsrc/math.py\t-\tM\tunstaged\thigh",

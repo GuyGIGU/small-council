@@ -40,6 +40,20 @@ def within(parent, path):
         return False
 
 
+def rebase(path, given, root):
+    """Spell an absolute path under the resolved root when it arrives under the root as given.
+
+    The root is resolved, but the paths beside it arrive as spelled: on macOS /var is a link to
+    /private/var, and a Windows temp folder can be an 8.3 name (RUNNER~1). Links below the root
+    are still refused by safe_path."""
+    if not path.is_absolute():
+        return path
+    path = Path(os.path.abspath(str(path)))
+    if within(given, path) and not within(root, path):
+        return root / path.relative_to(given)
+    return path
+
+
 def safe_path(parent, candidate, *, must_exist=True, regular=False):
     """Reject traversal and symlink components before any file read or write."""
     parent = parent.absolute()
@@ -426,15 +440,18 @@ def main():
                         help="explicit regular source file under the code root (repeatable)")
     args = parser.parse_args()
     try:
+        given = Path(os.path.abspath(str(args.root)))
         root = args.root.resolve(strict=True)
         if not root.is_dir():
             raise ContextError("root is not a directory")
-        run = safe_path(root, args.run, regular=False)
+        run = safe_path(root, rebase(args.run, given, root), regular=False)
         if not run.is_dir():
             raise ContextError("run is not a directory")
         contexts = safe_path(run, Path("contexts"), must_exist=False)
-        output = safe_path(contexts, args.output, must_exist=False)
-        build(root, run, args.seat, args.level, output, args.expand)
+        output = safe_path(contexts, rebase(args.output, given, root), must_exist=False)
+        expansions = [str(rebase(Path(request), given, root)) if Path(request).is_absolute() else request
+                      for request in args.expand]
+        build(root, run, args.seat, args.level, output, expansions)
     except (ContextError, OSError) as error:
         print("context: " + str(error), file=sys.stderr)
         return 2
