@@ -71,6 +71,9 @@ jobs:
       - name: Run cockpit evals
         run: python evals/run_tui.py
 
+      - name: Run history evals
+        run: python evals/run_history.py
+
       - name: Benchmark harness self-test (no model calls)
         run: python evals/bench.py self-test
 

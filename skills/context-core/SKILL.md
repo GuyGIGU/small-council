@@ -86,7 +86,7 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 | `council ask save [slug]` | file the run's ask.md — the user's words — under `.council/asks/`, redacting secrets; records `ask=` |
 | `council fingerprint check` · `council memory select` · `council prior` | a changed stack · the memory entries in scope · earlier council work on these paths |
 | `council memory propose claim\|repair <id>` · `memory accept\|reject F-<n> --user-said "…"` | at Learn: draft an observed failure from the run's verified record under `## Proposed` · file the user's answer in their words; optional Python 3.8+ |
-| `council ledger` · `council ledger advice` · `council map status` · `council doctor` · `council tui` | each seat's track record · what that record can support, with advice only past a bar · map freshness · drift scan with a fix per finding · a read-only screen of the run for the user (never needed by the Chair) |
+| `council ledger` · `council ledger advice` · `council map status` · `council doctor` · `council tui` · `council history` | each seat's track record · what that record can support, with advice only past a bar · map freshness · drift scan with a fix per finding · a read-only screen of the run for the user (never needed by the Chair) · every run's cost, estimate accuracy and catches, a rate only past five runs |
 
 Commands act on the one in-progress run on this working tree. With a second one open
 (`--alongside`), pass `--run <folder>` every time; the helper never guesses.

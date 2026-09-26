@@ -233,6 +233,12 @@ memory proposals on screen; the `--json` snapshot; plain ASCII on request; escap
 neutralised; a legacy run and malformed files still drawn; `--watch` stopping by itself when the
 run closes; and every file of the run and the council home byte-for-byte unchanged afterwards.
 
+`python evals/run_history.py` checks history across runs (`council history`, `scripts/history.py`):
+counts always, but a median, share or ratio only once five runs carry its data; a build's
+before/after proofs and gate probes kept apart from the project's gates; repairs, claims and
+estimate accuracy computed right on a synthetic home; missing and malformed data named; odd run
+folders survived; and nothing written.
+
 ## 11. Benchmark — Small Council against plain Claude Code
 
 ```bash

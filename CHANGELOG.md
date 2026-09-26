@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **History across runs, gated on enough data.** `council history [--json]` reads every run of the
+  council home and reports runs by status, mode and month, the project's gates (a build's
+  before/after proofs and gate probes counted apart), repair trails, claim verdicts, seat evidence
+  and missing data. A median, share or ratio — cost and agents per run, tokens per worker, actual
+  cost over the plan's estimate, repairs resolved, the verifier's catches — appears only once five
+  runs carry its data; below that it says "too few". Read-only; no database or dashboard.
+
 - **A read-only run cockpit.** `council tui` draws one screen from the run's own files — the
   plan's decisions and skipped seats with their reasons, seat states and tokens, agents against
   the cap, gates, each repair task's next step, claim verdict counts, memory proposals waiting and

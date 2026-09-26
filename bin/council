@@ -1051,6 +1051,18 @@ cmd_tui() {
   "$@"
 }
 
+# History across the council home's runs (scripts/history.py): counts always, a median, share or
+# ratio only when enough runs carry its data. Read-only, like the cockpit whose snapshot it reuses.
+cmd_history() {
+  local home py
+  home="$(council_home)"
+  [ -d "$home" ] || { say "no council here (no $home) — run council-init"; return 0; }
+  py="$(impact_python)" || die "history needs optional Python 3.8+; council run status --all and council ledger show the raw record"
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/history.py" --home "$home"
+  [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
+  "$@"
+}
+
 # Record a build's gate failure or repair outcome without rerunning commands or dispatching agents.
 cmd_repair() {
   local action="$1" run py
@@ -4771,6 +4783,9 @@ council — the Small Council's helper (bash + git)
                          [--uncertainty low|medium|high] [--surface NAME ...]
                          [--agent-cap N] [--budget-tokens N] [--classic]
                                          advisory TSV recommendation; does not open or alter a run
+  council history [--json]               every run of this council home: cost, estimate accuracy, gates,
+                                         repairs, verifier catches, seat evidence — a rate only when
+                                         enough runs carry its data (optional Python 3.8+)
   council tui [--watch | --json]         a read-only cockpit for the run: plan, seats, gates, repairs,
                                          evidence, memory proposals and recent events (--watch redraws
                                          until the run stops; optional Python 3.8+)
@@ -4944,6 +4959,9 @@ main() {
              else
                takes_flags ledger; [ $# -le 1 ] || die "usage: council ledger [N] | ledger advice [N] [--json]"; cmd_ledger ${1+"$@"}
              fi ;;
+    history) takes_flags history json; no_words history ${1+"$@"}
+             [ -z "$RUN_ARG" ] || die "history reads every run of this council home; it does not take --run"
+             cmd_history ;;
     tui)     takes_flags tui watch json; no_words tui ${1+"$@"}
              [ "$WATCH" -eq 0 ] || [ "$JSON_OUT" -eq 0 ] || die "tui takes --watch or --json, not both"
              cmd_tui ;;
