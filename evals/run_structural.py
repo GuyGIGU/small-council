@@ -146,6 +146,10 @@ check("repair: blocked work is excluded from the built count and helper cost is 
 check("repair: helper and kernel expose inspectable repair trail",
       "cmd_repair()" in cli and "council repair record" in cli and "council repair record" in core and
       "repairs.jsonl" in core)
+check("memory: selected entries carry meaning and origin, failures stay observations",
+      "observed failure, not a rule" in cli and "origin:" in cli and
+      "Observed Failures" in read("references", "templates", "conventions.md") and
+      "keeping observed" in doctrine["04-brief.md"])
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):

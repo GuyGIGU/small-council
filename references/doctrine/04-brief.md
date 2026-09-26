@@ -38,7 +38,8 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 
 ## Hard constraints — do not forget
 - <the config's hard rules, word for word>
-- Settled, never a finding: <the entries `council memory select` printed, one line each>
+- Settled, never a finding: <the AP/EC/D entries `council memory select` printed, one line each>
+- Observed failures, not rules: <the scoped F entries it printed, including verdict and evidence>
 - Not a finding: <your mode's list, from its `## At Brief`>
 - Cite path:line or drop the item. Plain English, no code. Stay in your lane. Read-only.
 ```
@@ -57,8 +58,9 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   gets each seat's card and doc.
 - **Memory in scope, never the whole file.** Before writing, `council memory select`: it reads the
   run's index, the seats Assign recorded and the mode; a run without a diff also passes its target
-  paths, which add to those. Quote the entries it prints in the bottom block. If it warns that
-  entries can't be read or are left out, tell the user.
+  paths, which add to those. Quote the entries it prints in the bottom block, keeping observed
+  failures separate from settled rules. If it warns that entries can't be read or are left out,
+  tell the user.
 - **Hard rules go in word for word** — workers also load the project's CLAUDE.md, but the brief is
   the orders they must not miss.
 - **Context packs are opt-in.** Build them only when the config's run preferences say

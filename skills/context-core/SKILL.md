@@ -34,7 +34,8 @@ compaction is lossy, and the disk is the only memory a reset can trust.
     each seat is selected or skipped, its context and budget, and the required verification before
     Brief or dispatch. Estimate before, actual after, closed always.
 11. **The council learns this project.** What it got wrong becomes memory; each seat's track record
-    shapes the next roster.
+    shapes the next roster. `council memory select` labels F entries as observed failures: they are
+    leads to check against current code, never settled rules or proof of today's cause.
 
 ## The stages
 

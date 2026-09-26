@@ -5,8 +5,13 @@
 - **Accepted patterns:** deliberate code to stop flagging. A REFUTED finding that turned out to be
   deliberate design is the best candidate.
 - **Enforced conventions:** always/never rules the user adopted along with the fixes.
+- **Observed failures:** evidence-backed history that would prevent a repeat; it is not a new rule.
+  Propose the observation and its verdict, not a guessed cause. A future run treats it as a lead to
+  check, never as proof that the same cause applies again.
 - **Write each one in plain words, with evidence and effect:**
   `- PROPOSED accepted pattern: stop flagging <X> in <paths> — <why it's deliberate> (evidence: <path:line>; scope: <paths or seat slugs>; from <deliverable path>, <date>)`
+- For a failure proposal, name the observed failure, scope, origin, evidence path, verdict and the
+  future check it changes. Do not promote an unsupported hypothesis into a failure entry.
 - **Preserve the support level.** A proposal derived from a refuted or uncertain claim names that
   verdict and verifier file. A remembered decision is the user's ruling, not an agent's assumption;
   retain the dated words and origin. Never turn an `INFERRED` or `ASSUMED` note into settled memory
@@ -21,8 +26,9 @@
   - Rejected → never propose it again.
 - **Write them to memory's `## Proposed` section now**, then list them, numbered, in the chat.
 - **On the user's answer:**
-  - Yes → move the entry into its section with the next number, carrying **Scope:** (its scope)
-    and **Anchor:** (its evidence) so later runs read it only where it applies.
+  - Yes → move the entry into its section with the next number, carrying **Scope:** (its scope),
+    **Origin:** and **Anchor:** (if one exists). An F entry also needs **Failure:**, **Evidence:**
+    and **Verdict:** before selection will serve it. Later runs read only what applies.
   - No → move it to `## Rejected` as title · date · their reason.
   - **Decisions (D)** are recorded only in the user's own words.
 - **Memory over ~25 KB** → propose a consolidation as numbered operations ("merge AP-7 into AP-3",

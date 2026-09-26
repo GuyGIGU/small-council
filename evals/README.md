@@ -133,6 +133,9 @@ diagnosis after the second failure, a hard stop after the third, and a real none
 No model or target application code is run; the routing suggestions' usefulness still needs a live
 build evaluation.
 
+`python evals/run_memory.py` is a focused, no-model check of provenance-aware selection and scoped
+observed failures. The larger helper suite also covers legacy memory formats and anchor checks.
+
 ```bash
 python evals/check_repair_trace.py --self-test --case evals/suite/build-repair-drill
 python3 evals/check_repair_trace.py <trace.jsonl> --repo <kept case dir> --case evals/suite/build-repair-drill

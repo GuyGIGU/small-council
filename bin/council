@@ -2774,7 +2774,7 @@ RUN_PLANS
       finding WARN "memory ($mem) names entry ids, but no entry could be read — nothing in it reaches a seat or a builder" "write each entry as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as the plugin's references/templates/conventions.md shows"
     fi
     unk="$(printf '%s\n' "$rows" | awk -F'\t' '$5 == "unknown" { n++ } END { print n + 0 }')"
-    [ "$unk" -eq 0 ] || finding WARN "$unk memory entr(ies) sit under a section the council doesn't read as settled, so they never reach a brief (council memory lists them)" "move them under Accepted Patterns, Enforced Conventions or Decisions — or under ## Retired if they no longer hold"
+    [ "$unk" -eq 0 ] || finding WARN "$unk memory entr(ies) are unrecognized or incomplete, so they never reach a brief (council memory lists them)" "complete observed failures, move settled rules under their proper section, or retire entries that no longer hold"
     skipped="$(MEM_SKIP=1 memory_entries "$mem")"
     [ -z "$skipped" ] || finding WARN "memory has line(s) that open like an entry but are not read, so they reach no brief: $skipped" "write each as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as references/templates/conventions.md shows"
     inplace="$(printf '%s\n' "$rows" | awk -F'\t' '$5 == "off" && $6 == "marked retired" { n++ } END { print n + 0 }')"
@@ -2927,14 +2927,15 @@ memory_file() {
   done
 }
 
-# Memory entries as rows: id, title, scope, anchor, state, section ("-" when empty). An entry is a
+# Memory entries as rows: id, title, scope, anchor, state, section, meaning, origin, evidence,
+# verdict ("-" when empty). An entry is a
 # heading (## to ####), a top-level bullet or a numbered item whose bold text starts with its id:
 # "### AP-3: title", "### **AP-3**: title", "- **AP-3 — title.** text …", "1. **AP-3 — title.**" —
 # the id in any case, with or without its dash. Its **Scope:** and **Anchor:** may sit anywhere in its
 # body. state is "settled" under Accepted Patterns, Enforced Conventions, Decisions (or a heading that
-# says adopted, settled, rulings…) and at the top of the file; "off" under Proposed, Rejected, Retired,
-# Superseded… or when the entry is marked retired (a **Retired:** line, a struck-out id); "unknown"
-# under any other section. A section name is read by what it calls itself, not by every word in it:
+# says adopted, settled, rulings…) and at the top of the file; "observed" for complete F- entries
+# under Observed Failures; "off" under Proposed, Rejected, Retired, Superseded… or when marked retired;
+# "unknown" under any other section or for incomplete failures. A section name is read by what it calls itself, not by every word in it:
 # "## Accepted Patterns — never re-propose these" is settled, and an entry titled "Retired flags stay
 # registered" is live. With MEM_SKIP=1 it prints instead the ids of lines that look like entries but
 # are not read, so nothing drops out of a memory without a word.
@@ -2951,11 +2952,13 @@ memory_entries() {
       if (strict) {
         w = h; sub(/[ \t].*$/, "", w)
         for (i = 1; i <= noff; i++) if (index(w, OFF[i])) return "off"
+        if (w == "observed" || w == "failures") return "observed"
         if (w ~ /^(ap|ec|d)s?$/) return "settled"
         for (i = 1; i <= nset; i++) if (index(w, SET[i])) return "settled"
         return ""
       }
       for (i = 1; i <= noff; i++) if (index(h, OFF[i])) return "off"
+      if (h ~ /^(observed failures|failure history|failures)([ \t]|$)/) return "observed"
       if (h ~ /^(ap|ec|d)s?$/ || l ~ /\((ap|ec|d)\)/) return "settled"       # "## EC", "## Rules (EC)"
       for (i = 1; i <= nset; i++) if (index(h, SET[i])) return "settled"
       for (i = 1; i <= noff; i++) if (index(l, OFF[i])) return "off"         # only the aside says it
@@ -2967,7 +2970,7 @@ memory_entries() {
     # that it can be named rather than dropped.
     function cand(txt, ln,   lo2, rest) {
       lo2 = tolower(txt); sub(/^[*_~`]+/, "", lo2)
-      if (!match(lo2, /^(ap|ec|d)-?[0-9]+/)) return
+      if (!match(lo2, /^(ap|ec|d|f)-?[0-9]+/)) return
       rest = substr(lo2, RLENGTH + 1)
       if (rest !~ /^[*_~`]*([ \t]*([:.)]|\342\200\224|\342\200\223|-[ \t])|[ \t]*$)/) return
       CID[++ncand] = idnorm(substr(lo2, 1, RLENGTH)); CLN[ncand] = ln
@@ -2975,15 +2978,20 @@ memory_entries() {
     function flush() {
       if (id != "") {
         READ[id] = 1
-        if (!SKIP) printf "%s\t%s\t%s\t%s\t%s\t%s\n", id, (title == "" ? "-" : title), (scope == "" ? "-" : scope),
-          (anchor == "" ? "-" : anchor), est, (ewhere == "" ? "-" : ewhere)
+        if (id ~ /^F-/ && est != "off" && (est != "observed" || scope == "" || meaning == "" || origin == "" || evidence == "" || verdict == "")) {
+          est = "unknown"; ewhere = "incomplete or misplaced failure entry"
+        }
+        if (id !~ /^F-/ && est == "observed") { est = "unknown"; ewhere = "non-failure entry under Observed Failures" }
+        if (!SKIP) printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, (title == "" ? "-" : title), (scope == "" ? "-" : scope),
+          (anchor == "" ? "-" : anchor), est, (ewhere == "" ? "-" : ewhere),
+          (meaning == "" ? "-" : meaning), (origin == "" ? "-" : origin), (evidence == "" ? "-" : evidence), (verdict == "" ? "-" : verdict)
       }
-      id = ""; pend = 0; bul = 0
+      id = ""; pend = 0; bul = 0; meaning = ""; origin = ""; evidence = ""; verdict = ""
     }
     function fieldval(line, name,    v) {
       if (!match(line, "\\*\\*" name ":\\*\\*")) return ""
       v = substr(line, RSTART + RLENGTH); sub(/[ \t]+\302\267[ \t]+\*\*.*$/, "", v)
-      gsub(/^[ \t]+|[ \t\r]+$/, "", v); gsub(/`/, "", v); return v
+      gsub(/^[ \t]+|[ \t\r]+$/, "", v); gsub(/`/, "", v); gsub(/\t/, " ", v); return v
     }
     # A field line of the entry: its scope, its anchor, or a line that retires it. "**Retired:** no"
     # and "**Superseded:** -" retire nothing, and a **Status:** line is read by its first word, so a
@@ -2991,6 +2999,10 @@ memory_entries() {
     function fields(line,   v, lo, w, i) {
       v = fieldval(line, "Scope"); if (v != "") scope = v
       v = fieldval(line, "Anchor"); if (v != "") anchor = v
+      for (i = 1; i <= nmeaning; i++) { v = fieldval(line, MEANING[i]); if (v != "") { meaning = v; break } }
+      v = fieldval(line, "Origin"); if (v != "") origin = v
+      v = fieldval(line, "Evidence"); if (v != "") evidence = v
+      v = fieldval(line, "Verdict"); if (v != "") verdict = v
       lo = tolower(line)
       for (i = 1; i <= nmark; i++) {
         if (!match(lo, "\\*\\*" MARK[i] "( by)?:?\\*\\*:?")) continue
@@ -3007,7 +3019,7 @@ memory_entries() {
       lo = tolower(s); b = 0
       while (substr(lo, b + 1, 1) ~ /[*_~]/) b++
       t = substr(lo, b + 1)
-      if (!match(t, /^(ap|ec|d)-?[0-9]+/)) return 0
+      if (!match(t, /^(ap|ec|d|f)-?[0-9]+/)) return 0
       idt = substr(t, 1, RLENGTH); rest = substr(s, b + RLENGTH + 1)
       dashed = index(idt, "-") > 0
       if (rest ~ /^[A-Za-z0-9_]/ || rest ~ /^-[A-Za-z0-9]/) return 0
@@ -3027,7 +3039,7 @@ memory_entries() {
         else if (bullet) { pend = 1; ptitle = rest }       # a bold title that runs on to the next lines
       }
       title = cleantitle(rest)
-      scope = ""; anchor = ""
+      scope = ""; anchor = ""; meaning = ""; origin = ""; evidence = ""; verdict = ""
       est = (sub_st != "" ? sub_st : sec); ewhere = (sub_st != "" ? subname : secname)
       lt = tolower(title)
       # A marker, not a word of the title: "(retired 2026-09-01)" at either end, "Retired: …", a
@@ -3044,6 +3056,7 @@ memory_entries() {
       noff = split("propos reject retire supersede deprecat withdraw obsolete archived pending draft declined revoked", OFF, " ")
       nset = split("accepted enforced decision convention pattern adopted settled ruling", SET, " ")
       nmark = split("retired superseded withdrawn", MARK, " ")
+      nmeaning = split("Pattern Rule Convention Decision Failure Observation", MEANING, " ")
       sec = "settled"; secname = ""; sub_st = ""; sublvl = 0; subname = ""; elvl = 0
     }
     { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub(/^\357\273\277/, "", line) }
@@ -3118,7 +3131,7 @@ memory_idlines() {
   LC_ALL=C awk '
     incom { if (index($0, "-->")) incom = 0; next }
     /^[ \t]*<!--/ { if (!index($0, "-->")) incom = 1; next }
-    /(^|[^A-Za-z0-9_])(AP|EC|D)-[0-9]+([^A-Za-z0-9_]|$)/ || /^(#+|[-*+])[ \t]*[*_]*([Aa][Pp]|[Ee][Cc]|D)-?[0-9]+/ { n++ }
+    /(^|[^A-Za-z0-9_])(AP|EC|D|F)-[0-9]+([^A-Za-z0-9_]|$)/ || /^(#+|[-*+])[ \t]*[*_]*([Aa][Pp]|[Ee][Cc]|D|F)-?[0-9]+/ { n++ }
     END { print n + 0 }' "$1" 2>/dev/null
 }
 
@@ -3319,7 +3332,7 @@ anchor_rows() {
     BEGIN {
       EXT = "\\.(py|pyi|pyx|js|jsx|mjs|cjs|ts|tsx|gd|gdshader|tscn|tres|godot|cs|java|kt|kts|go|rs|rb|php|swift|c|h|cc|cpp|cxx|hpp|sh|bash|ps1|bat|cmd|sql|md|mdx|rst|txt|json|jsonc|yml|yaml|toml|ini|cfg|conf|xml|html|htm|css|scss|sass|less|vue|svelte|lock|csv|ipynb|lua|dart|ex|exs|scala|tf|proto|graphql|gradle|env)$"
     }
-    $5 == "settled" && $4 != "-" {
+    ($5 == "settled" || $5 == "observed") && $4 != "-" {
       a = $4; gsub(/;/, ",", a); n = split(a, piece, ","); cur = ""
       for (i = 1; i <= n; i++) {
         p = trim(piece[i]); gsub(/\342\200\223/, "-", p)
@@ -3401,7 +3414,7 @@ scope_orphans() {
     }
     $0 == "\f" { part = 2; next }
     part == 2 { if ($0 != "") F[++nf] = $0; next }
-    $5 == "settled" && $3 != "-" && !everyrun($3) { R[++nr] = $0 }
+    ($5 == "settled" || $5 == "observed") && $3 != "-" && !everyrun($3) { R[++nr] = $0 }
     END {
       for (r = 1; r <= nr; r++) {
         split(R[r], f, "\t"); m = items(f[3], I)
@@ -3452,10 +3465,14 @@ cmd_memory() {
           printf "%s · %s", $1, $2
           if ($3 != "-" && !everyrun($3)) printf " · scope: %s", $3; else printf " · every run"
           if ($4 != "-") printf " · anchor: %s", $4
+          if ($8 != "-") printf " · origin: %s", $8
           printf "\n"; next }
+        $5 == "observed" {
+          printf "%s · %s · observed failure, not a rule · scope: %s · verdict: %s · evidence: %s · origin: %s\n", $1, $2, $3, $10, $9, $8
+          next }
         $5 == "off" { printf "%s · %s · not served (%s)\n", $1, $2, ($6 ~ /^marked/ ? $6 : "under " clip($6)) ; next }
         { printf "%s · %s · NOT SERVED — its section, %s, is not one the council reads as settled\n", $1, $2, clip($6); u++ }
-        END { if (u) printf "memory: WARNING — %d entr%s never reach%s a brief: move %s under Accepted Patterns, Enforced Conventions or Decisions (or under ## Retired if %s no longer hold%s)\n", u, (u == 1 ? "y" : "ies"), (u == 1 ? "es" : ""), (u == 1 ? "it" : "them"), (u == 1 ? "it" : "they"), (u == 1 ? "s" : "") }'
+        END { if (u) printf "memory: WARNING — %d entr%s never reach%s a brief: move %s under a fitting settled section, complete Observed Failures, or ## Retired\n", u, (u == 1 ? "y" : "ies"), (u == 1 ? "es" : ""), (u == 1 ? "it" : "them") }'
       printf '%s\n' "$entries" | scope_orphans "$(this_tree)" "$(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"
       memory_unread "$mem"
       ;;
@@ -3501,28 +3518,39 @@ $(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"            #
         }
         $1 == "" { next }
         $5 == "off" { off++; next }
-        $5 != "settled" { unk++; U = U (U == "" ? "" : ", ") $1; next }
+        $5 != "settled" && $5 != "observed" { unk++; U = U (U == "" ? "" : ", ") $1; next }
         {
-          tot++
-          if ($3 == "-" || everyrun($3)) { every++; print $1 " · " $2 " · every run"; next }
+          if ($5 == "settled") tot++; else otot++
+          line = $1 " · " $2
+          if ($5 == "observed") line = line " · observed failure, not a rule"
+          if ($3 == "-" || everyrun($3)) {
+            if ($5 == "settled") every++; else oevery++
+            line = line " · every run"
+          } else line = line " · scope: " $3
+          if ($7 != "-") line = line " · " $7
+          if ($10 != "-") line = line " · verdict: " $10
+          if ($9 != "-") line = line " · evidence: " $9
+          if ($8 != "-") line = line " · origin: " $8
+          if ($3 == "-" || everyrun($3)) { print line; next }
           m = items($3, I); hit = all                 # "select ." is the whole tree: every scope is in it
           for (i = 1; i <= m && !hit; i++) {
             if (everyrun(I[i])) hit = 1
             for (j = 1; j <= n && !hit; j++) if (covers(K[j], I[i], ".*", D[j])) hit = 1
           }
-          if (hit) { sc++; print $1 " · " $2 " · scope: " $3 }
+          if (hit) { if ($5 == "settled") sc++; else osc++; print line }
         }
         END {
           printf "memory: %d scoped and %d every-run entries of %d apply — quote them in the brief by id", sc, every, tot
           if (off) printf " (%d retired or not yet accepted, left out)", off
           printf "\n"
+          if (otot) printf "memory: %d scoped and %d every-run observed failure(s) of %d apply — historical evidence, not instructions\n", osc, oevery, otot
           if (unk) printf "memory: WARNING — %s sit%s under a section the council does not read as settled and %s left out; council memory lists %s\n", U, (unk == 1 ? "s" : ""), (unk == 1 ? "is" : "are"), (unk == 1 ? "it" : "them") > "/dev/stderr"
         }'
       ;;
     check)
       memory_unread "$mem"
       anchor_files "$top"
-      n="$(printf '%s\n' "$entries" | awk -F'\t' '$5 == "settled" { c++ } END { print c + 0 }')"
+      n="$(printf '%s\n' "$entries" | awk -F'\t' '$5 == "settled" || $5 == "observed" { c++ } END { print c + 0 }')"
       tmpd="$(mktemp -d 2>/dev/null)" || { tmpd="$home/.memcheck.$$"; mkdir -p "$tmpd" || die "cannot write $tmpd"; }
       : > "$tmpd/names"; : > "$tmpd/fsnames"; : > "$tmpd/fsfiles"; : > "$tmpd/files"
       # One pass to see what each anchor names, then one search for every name at once: a search per
@@ -4332,7 +4360,7 @@ council — the Small Council's helper (bash + git)
   council map status                     how far the map is behind HEAD, by area
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
   council memory [index|check]           memory's one-line index · anchors that went stale
-  council memory select [path|slug …]    the entries in scope (default: the run's files and seats)
+  council memory select [path|slug …]    scoped rules and observed failures with provenance
   council prior [path …]                 earlier council work on these paths (default: the index)
   council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
                                          secret-looking strings are redacted; records ask= in the state

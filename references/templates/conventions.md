@@ -1,5 +1,5 @@
 # Conventions — <project>
-<!-- Small Council memory. Every council run reads this file first. Entries record the USER's
+<!-- Small Council memory. Every council run reads this file first. Settled entries record the USER's
      decisions: agents may only PROPOSE (the Proposed section); the user confirms. Keep it under ~25 KB —
      past that, the council proposes a consolidation as numbered operations (merge, retire), never a
      rewrite.
@@ -8,13 +8,15 @@
      commas; a path:line may list lines, as in `src/api/auth.py:42,60-71` — a path or a symbol
      survives edits; a line number can drift). Brief reads only the entries in scope
      (`council memory select`); `council memory check` flags an entry whose anchored file, line or
-     symbol is gone.
+     symbol is gone. Give a one-line **Pattern:**, **Rule:** or **Decision:** and **Origin:** when
+     accepting a new entry; selection includes those fields so a title alone need not carry the rule.
      An entry is a heading (### AP-1: title), a bullet (- **AP-1 — title** …) or a numbered item
      (1. **AP-1 — title** …); a bullet inside a heading entry belongs to that entry. Runs read entries
      only under Accepted Patterns, Enforced Conventions and Decisions (a heading that says Adopted or
      Settled counts too) — never under Proposed, Rejected, Retired or a section of another name. What
      a section is called decides that, not a word further along its heading, so "Accepted Patterns —
-     never re-propose these" still holds entries the runs read. `council memory` lists every entry it
+     never re-propose these" still holds entries the runs read. Observed Failures are selected as
+     historical evidence, explicitly not as instructions. `council memory` lists every entry it
      does not serve, and every line that looks like an entry but could not be read. -->
 
 
@@ -25,11 +27,23 @@
 
 ## Enforced Conventions (EC) — always / never rules
 <!-- ### EC-1: <title>
-     **Rule:** <always … / never …> · **Why:** <reason> · **Origin:** <deliverable or date> -->
+     **Rule:** <always … / never …> · **Why:** <reason> · **Origin:** <dated user approval> -->
 
 ## Decisions (D) — the user's rulings; agents never author these
 <!-- ### D-1: <title>
-     **Decision:** <what the user decided, in their words> · **Why:** <their reason> · **Date:** <YYYY-MM-DD> -->
+     **Decision:** <what the user decided, in their words> · **Why:** <their reason>
+     **Origin:** <dated user ruling or ask path> · **Date:** <YYYY-MM-DD> -->
+
+## Observed Failures (F) — historical evidence, never a rule
+<!-- User-confirmed entries only. A failure must have all five fields below; an incomplete entry
+     is listed as NOT SERVED. Keep the observation separate from a proposed future rule.
+     ### F-1: <brief title>
+     **Failure:** <what was observed, not an assumed cause>
+     **Scope:** <paths, globs or mode slugs; required>
+     **Origin:** <run or deliverable path and date>
+     **Evidence:** <gate output, verifier file or trace path>
+     **Verdict:** <OBSERVED, REPRODUCED, REFUTED or UNCERTAIN; never imply certainty from a guess>
+     **Anchor:** <code path or symbol, if one exists> -->
 
 ## Proposed — awaiting the user's yes/no
 <!-- One line per proposal, written the moment it is proposed so it survives the session. Format:

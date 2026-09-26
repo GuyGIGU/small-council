@@ -107,7 +107,7 @@ Works?: ran `npm start` and exported a 12-row file; the 3 new tests pass
 Checked by machine: gates: 3 ran — all pass (baseline: 1 FAIL)
 Shortcuts I took: the export limit is hardcoded at 5,000 rows (src/export.ts) — streaming needs a design call
 Not proved: nothing
-Cost: ~90k tokens across 3 agents · 2 of 2 fix(es) proved · 0 broken · 2 left a test behind · log: .council/logs/2026-09-16-csv.md
+Cost: helpers ~90k tokens across 3 agents; Chair usage unavailable · 2 of 2 fix(es) proved · 0 broken · 2 left a test behind · log: .council/logs/2026-09-16-csv.md
 ```
 
 "Shortcuts I took" and "Not proved" are never left out — `none` and `nothing` are answers, silence
@@ -172,7 +172,7 @@ their value is measured: set `- context packs: on` under `## Run preferences` in
 .council/
 ├── council.config.md     roster (with surface markers), gates, hard rules, run preferences    tracked
 ├── conventions.md        memory: accepted patterns, conventions, your decisions,              tracked
-│                         proposals awaiting your yes/no, and rejected proposals
+│                         scoped observed failures, proposals and rejected proposals
 ├── map.md                where things live, hot spots, vocabulary                             tracked
 ├── cards/<slug>.md       each seat's doctrine translated to this project                      tracked
 ├── ledger.tsv            each seat's record: items raised, kept, refuted, tokens per run      tracked

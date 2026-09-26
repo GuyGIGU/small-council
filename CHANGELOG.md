@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Phase 8 memory foundation.** Scoped selection includes a settled entry's meaning and origin
+  when recorded. User-confirmed observed failures have a separate F category with required scope,
+  origin, evidence and verdict; they are historical leads, never rules. Legacy AP/EC/D entries
+  remain readable. Focused local evals cover retrieval and incomplete-entry exclusion.
+
 - **Phase 7 bounded repair trail.** `council repair record|show|check` snapshots each failed build
   gate and its reruns, suggests an advisory failure category and expert lens, distinguishes a red
   baseline, and stops after three failed executions of the same gate. The second failure recommends
@@ -23,6 +28,10 @@ All notable changes to this project are documented here. The format is based on
   on one may flag missing new fields.
 
 ### Changed
+
+- A third failed build-gate execution now stops the build's product edits and cannot fall through to
+  a verifier fix or success commit. Blocked tasks do not count as built; helper-only token usage is
+  labelled as such on the receipt. No automatic rollback is performed.
 
 - **Context packs are opt-in.** The Chair builds seat context packs only when the project config
   has `- context packs: on` under `## Run preferences`, or the user asks for them in a run. A

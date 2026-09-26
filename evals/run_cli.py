@@ -823,6 +823,35 @@ with tempfile.TemporaryDirectory() as tmp:
     check("memory select: ** globs reach into subfolders", "EC-2" in out, out)
     code, out, _ = council(repo, "memory", "select")
     check("memory select: defaults to the run's changed files and seats", "AP-1" in out and "AP-2" in out and "EC-2" not in out, out)
+    mem8 = new_repo(tmp, "memory-evolution")
+    write(os.path.join(mem8, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(mem8, ".council", "conventions.md"),
+          "# Conventions\n## Accepted Patterns\n### AP-1: old title\n"
+          "**Pattern:** read the cache after revocation · **Origin:** review-12, user accepted 2026-09-26\n"
+          "**Scope:** src/auth/**\n"
+          "## Observed Failures (F)\n### F-1: stale token finding\n"
+          "**Failure:** a seat reported stale tokens, but middleware invalidates before lookup\n"
+          "**Scope:** src/auth/**\n**Origin:** run-12, 2026-09-26\n"
+          "**Evidence:** reviews/run-12.md:42\n**Verdict:** REFUTED\n"
+          "### F-2: unsupported failure\n**Failure:** guessed cause\n**Scope:** src/auth/**\n"
+          "**Origin:** run-13\n**Verdict:** INFERRED\n"
+          "## Proposed\n### F-3: not approved\n**Failure:** a proposal only\n"
+          "**Scope:** src/auth/**\n**Origin:** run-14\n**Evidence:** log.md\n**Verdict:** OBSERVED\n")
+    code, out, err = council(mem8, "memory", "select", "src/auth/session.py")
+    check("memory select: serves the rule itself and its origin, not only the title",
+          code == 0 and "AP-1 · old title · scope: src/auth/** · read the cache after revocation" in out
+          and "origin: review-12, user accepted 2026-09-26" in out, out + err)
+    check("memory select: scoped failure history is labelled as evidence, not a rule",
+          "F-1 · stale token finding · observed failure, not a rule" in out
+          and "verdict: REFUTED" in out and "evidence: reviews/run-12.md:42" in out
+          and "F-2" not in out and "F-3" not in out, out + err)
+    code, out, err = council(mem8, "memory", "select", "src/other.py")
+    check("memory select: failure history outside the touched scope stays out",
+          code == 0 and "F-1" not in out and "AP-1" not in out, out + err)
+    code, out, err = council(mem8, "memory")
+    check("memory index: incomplete failure provenance is visible but never served",
+          code == 0 and "F-2 · unsupported failure · NOT SERVED" in out
+          and "F-3 · not approved · not served" in out, out + err)
     code, out, _ = council(repo, "memory", "check")
     check("memory check: flags the anchors that no longer hold, and only those",
           code == 1 and "STALE  EC-2" in out and "AP-1" not in out and "AP-2" not in out and "3 stale anchor(s) across 7 entries" in out, out)
