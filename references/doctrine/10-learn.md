@@ -15,6 +15,11 @@
   serves an F entry only with a verdict that establishes it (OBSERVED, REPRODUCED, or a verifier's
   CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE, SCOPE-CREEP), a scope narrower than every
   run, and evidence files that still show it.
+- **Draft a failure from the run's own record when there is one:** a claim the blind verifier
+  REFUTED or MISCITED (`council memory propose claim <id>`, after `council evidence build`), or a
+  build task's recorded gate failures (`council memory propose repair <task> --scope <paths>`). The
+  helper fills the entry from those records, not from your summary, writes it under `## Proposed`,
+  and refuses one that could not be served. Otherwise write the proposal by hand.
 - **Preserve the support level.** A proposal derived from a refuted or uncertain claim names that
   verdict and verifier file. A remembered decision is the user's ruling, not an agent's assumption;
   retain the dated words and origin. Never turn an `INFERRED` or `ASSUMED` note into settled memory
@@ -33,6 +38,9 @@
     **Origin:** and **Anchor:** (if one exists). An F entry also needs **Failure:**, **Evidence:**
     and **Verdict:** before selection will serve it. Later runs read only what applies.
   - No → move it to `## Rejected` as title · date · their reason.
+  - A drafted F entry: `council memory accept F-<n> --user-said "<their words>"` on a yes,
+    `council memory reject …` on a no. Run it only after they answered in the chat — it records
+    their words and the date, and checks the entry would be served before filing it.
   - **Decisions (D)** are recorded only in the user's own words.
 - **Memory over ~25 KB** → propose a consolidation as numbered operations ("merge AP-7 into AP-3",
   "retire EC-2 — superseded by EC-9"). Apply them one by one on the user's yes. Never rewrite the

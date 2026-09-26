@@ -3339,6 +3339,48 @@ memory_served() {
     { print }'
 }
 
+# Would entry $2 of memory file $1 reach a brief as an observed failure — the parser's rules and the
+# evidence audit both? Prints why not. $3 is the council home, $4 the repo root.
+memory_would_serve() {
+  local row why nl='
+'
+  row="$(memory_entries "$1" | awk -F'\t' -v id="$2" '$1 == id')"
+  case "$row" in
+    '') printf 'it is not read as an entry'; return 1 ;;
+    *"$nl"*) printf 'it appears more than once'; return 1 ;;
+  esac
+  if [ "$(printf '%s\n' "$row" | cut -f5)" != observed ]; then
+    printf '%s' "$(printf '%s\n' "$row" | cut -f6 | sed 's/^failure entry: //')"; return 1
+  fi
+  why="$(printf '%s\n' "$row" | failure_audit "$3" "$4" | awk -F'\t' '$2 == "fatal" { print $3; exit }')"
+  [ -z "$why" ] || { printf '%s' "$why"; return 1; }
+}
+
+# Replace memory file $1 with $3 — an edit of $2, a copy of $1 — only when the edit touched entry $4
+# alone and left it $5: proposed (off, under a Proposed section), observed (served, evidence and all)
+# or gone. Every other entry must read exactly as before, no line may start or stop going unread, and
+# $1 must not have changed since the copy was taken. Otherwise nothing is written. $6 is the council
+# home, $7 the repo root.
+memory_replace() {
+  local mem="$1" before="$2" after="$3" id="$4" want="$5" why
+  [ "$(memory_entries "$before" | awk -F'\t' -v id="$id" '$1 != id')" = "$(memory_entries "$after" | awk -F'\t' -v id="$id" '$1 != id')" ] \
+    || { printf 'council: the edit would change other memory entries too — nothing written\n' >&2; return 1; }
+  [ "$(MEM_SKIP=1 memory_entries "$before" | sed 's/ (line [0-9]*)//g')" = "$(MEM_SKIP=1 memory_entries "$after" | sed 's/ (line [0-9]*)//g')" ] \
+    || { printf 'council: the edit would change which memory lines go unread — nothing written\n' >&2; return 1; }
+  case "$want" in
+    gone) [ -z "$(memory_entries "$after" | awk -F'\t' -v id="$id" '$1 == id')" ] \
+            || { printf 'council: %s is still in the memory file — nothing written\n' "$id" >&2; return 1; } ;;
+    proposed) memory_entries "$after" | awk -F'\t' -v id="$id" '$1 == id && $5 == "off" && tolower($6) ~ /^[#* ]*propos/ { n++ } END { exit n != 1 }' \
+            || { printf 'council: %s did not land under ## Proposed — nothing written\n' "$id" >&2; return 1; } ;;
+    observed) why="$(memory_would_serve "$after" "$id" "$6" "$7")" \
+            || { printf 'council: %s would not be served (%s) — nothing written\n' "$id" "$why" >&2; return 1; } ;;
+  esac
+  cmp -s "$mem" "$before" || { printf 'council: %s changed while this ran — nothing written; run it again\n' "$mem" >&2; return 1; }
+  # Written beside the file and moved over it, so the memory is never half-written; the copy keeps its mode.
+  cp "$mem" "$mem.council-new" 2>/dev/null && cat "$after" > "$mem.council-new" && mv -f "$mem.council-new" "$mem" \
+    || { rm -f "$mem.council-new"; printf 'council: could not write %s\n' "$mem" >&2; return 1; }
+}
+
 # The awk that matches paths and slugs to scope items and areas. items() splits a list at commas and
 # semicolons outside braces (and at blanks when every piece looks like a path), drops ./, a leading /,
 # backticks, quotes and a trailing note; covers(k, g) is true when key k is g, sits inside folder g, or
@@ -3634,7 +3676,7 @@ scope_orphans() {
 }
 
 cmd_memory() {
-  local sub="${1:-index}" home top tree mem entries audit="" served n=0 stale=0 id title scope anchor state where item k keys run why nl='
+  local sub="${1:-index}" home top tree mem entries audit="" served py n=0 stale=0 id title scope anchor state where item k keys run why nl='
 ' tmpd rows found foundin counts kind p extra parts part f ln st last=""
   home="$(council_home)"; top="${home%/*}"
   memory_file "$home"; mem="$MEM"
@@ -3831,7 +3873,54 @@ AUDIT
       fi
       [ "$stale" -eq 0 ] && [ "$k" -eq 0 ]
       ;;
-    *) die "usage: council memory [index | select [path|slug …] | check]" ;;
+    propose)
+      # Draft an observed failure from one verified record of a run — a claim a blind verifier
+      # REFUTED or MISCITED (claims.jsonl), or a build task's failed gate trail (repairs.jsonl) — and
+      # file it under ## Proposed. It is refused unless, once the user says yes, it would be served.
+      run="$(resolve_run)" || exit 2
+      py="$(impact_python)" || die "memory propose needs optional Python 3.8+ — write the proposal under ## Proposed by hand (references/doctrine/10-learn.md)"
+      tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
+      printf '%s\n' "$MEMORY_SCOPE_ARG" > "$tmpd/scope" || { rm -rf "$tmpd"; die "cannot write $tmpd"; }
+      "$py" "$COUNCIL_PLUGIN_ROOT/scripts/memory.py" draft "$1" "$2" --run "$run" --top "$top" \
+        --scope-file "$tmpd/scope" --today "$(date +%Y-%m-%d)" > "$tmpd/raw" || { rm -rf "$tmpd"; exit 2; }
+      k="$(redact_copy "$tmpd/raw" "$tmpd/draft")" || { rm -rf "$tmpd"; die "could not redact the draft"; }
+      { printf '# probe\n## Observed Failures (F)\n'; cat "$tmpd/draft"; } > "$tmpd/probe"
+      why="$(memory_would_serve "$tmpd/probe" F-0 "$home" "$top")" \
+        || { rm -rf "$tmpd"; die "nothing drafted — once accepted it would not be served: $why"; }
+      cp "$mem" "$tmpd/before" || { rm -rf "$tmpd"; die "cannot copy $mem"; }
+      id="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/memory.py" insert --memory "$tmpd/before" --block "$tmpd/draft" \
+        --out "$tmpd/after")" || { rm -rf "$tmpd"; exit 2; }
+      memory_replace "$mem" "$tmpd/before" "$tmpd/after" "$id" proposed "$home" "$top" || { rm -rf "$tmpd"; exit 1; }
+      rm -rf "$tmpd"
+      event_append "$run" memory.proposed "$id" "$1" "source=$2" || say "council: $id is drafted, but its event could not be recorded"
+      [ "${k:-0}" = 0 ] || say "memory: $k secret-looking string(s) in the draft were redacted"
+      say "memory: drafted $id under ## Proposed from $1 $2 of ${run##*/} — no brief reads it until the user says yes"
+      say "→ show the user the entry, then record their answer in their words:"
+      say "   yes: council memory accept $id --user-said \"<their words>\"   no: council memory reject $id --user-said \"<their words>\""
+      ;;
+    accept|reject)
+      # The user's answer to a drafted proposal, in their words: accept files it under Observed
+      # Failures with the date and those words; reject moves it to ## Rejected as one line.
+      case "$1" in F-*) case "${1#F-}" in ''|*[!0-9]*) die "memory $sub takes an observed-failure id such as F-3" ;; esac ;;
+                   *) die "memory $sub takes an observed-failure id such as F-3" ;; esac
+      printf '%s\n' "$entries" | awk -F'\t' -v id="$1" '$1 == id && $5 == "off" && tolower($6) ~ /^[#* ]*propos/ { n++ } END { exit n != 1 }' \
+        || die "$1 is not a proposal awaiting the user's answer — council memory shows where it is"
+      py="$(impact_python)" || die "memory $sub needs optional Python 3.8+ — move the entry by hand (references/doctrine/10-learn.md)"
+      tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
+      { cp "$mem" "$tmpd/before" && printf '%s\n' "$MEMORY_SAID_ARG" > "$tmpd/said.raw"; } || { rm -rf "$tmpd"; die "cannot write $tmpd"; }
+      redact_copy "$tmpd/said.raw" "$tmpd/said" >/dev/null || { rm -rf "$tmpd"; die "could not redact the user's words"; }
+      if [ "$sub" = accept ]; then k=observed; st=observed; else k=rejected; st=gone; fi
+      "$py" "$COUNCIL_PLUGIN_ROOT/scripts/memory.py" move "$1" --to "$k" --memory "$tmpd/before" --said "$tmpd/said" \
+        --today "$(date +%Y-%m-%d)" --out "$tmpd/after" || { rm -rf "$tmpd"; exit 2; }
+      memory_replace "$mem" "$tmpd/before" "$tmpd/after" "$1" "$st" "$home" "$top" || { rm -rf "$tmpd"; exit 1; }
+      rm -rf "$tmpd"
+      if [ "$sub" = accept ]; then
+        say "memory: $1 accepted with the user's words — runs whose files, seats or mode match its scope get it, as history to check, never as a rule"
+      else
+        say "memory: $1 rejected — one line under ## Rejected keeps the user's words and its evidence, so it is never proposed again"
+      fi
+      ;;
+    *) die "usage: council memory [index | select [path|slug …] | check | propose claim|repair <id> | accept|reject F-<n> --user-said \"…\"]" ;;
   esac
 }
 
@@ -4574,8 +4663,15 @@ council — the Small Council's helper (bash + git)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md)
   council map status                     how far the map is behind HEAD, by area
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
-  council memory [index|check]           memory's one-line index · anchors that went stale
+  council memory [index|check]           memory's one-line index · stale anchors and failure evidence
   council memory select [path|slug …]    scoped rules and observed failures with provenance
+  council memory propose claim|repair <id> [--scope …]
+                                         draft an observed failure from the run's verified record
+                                         under ## Proposed (a claim refuted or miscited by the
+                                         verifier; a build task's failed gate trail, --scope needed)
+  council memory accept|reject F-<n> --user-said "…"
+                                         the user's answer, in their words: file it under Observed
+                                         Failures, or move it to ## Rejected
   council prior [path …]                 earlier council work on these paths (default: the index)
   council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
                                          secret-looking strings are redacted; records ask= in the state
@@ -4612,13 +4708,14 @@ main() {
   ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
   ROUTE_SURFACES=()
   CONTEXT_EXPANDS=()
+  MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG=""
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
   pos=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand)
+      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said)
                    flag="${1#--}"
                    [ $# -ge 2 ] || case "$flag" in
                      run|code-root) die "--$flag needs a folder" ;;
@@ -4627,7 +4724,7 @@ main() {
                      *) die "--$flag needs a value" ;;
                    esac
                    val="$2"; shift 2 ;;
-      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*)
+      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
       --alongside|--all|--classic) flag="${1#--}"; val=1; shift ;;
       --alongside=*|--all=*|--classic=*) die "${1%%=*} takes no value" ;;
@@ -4655,6 +4752,7 @@ main() {
       surface) ROUTE_SURFACES+=("$val") ;; agent-cap) ROUTE_CAP_ARG="$val" ;;
       budget-tokens) ROUTE_BUDGET_ARG="$val" ;; classic) ROUTE_CLASSIC=1 ;;
       expand) CONTEXT_EXPANDS+=("$val") ;;
+      scope) MEMORY_SCOPE_ARG="$val" ;; user-said) MEMORY_SAID_ARG="$val" ;;
     esac
     FLAGS="$FLAGS $flag"
   done
@@ -4730,8 +4828,18 @@ main() {
              [ $# -le 1 ] || die "usage: council fingerprint [check]"
              case "${1:-}" in ''|check) ;; *) die "usage: council fingerprint [check]" ;; esac
              cmd_fingerprint ${1+"$@"} ;;
-    memory)  takes_flags memory
-             case "${1:-index}" in select) ;; *) [ $# -le 1 ] || die "usage: council memory [index | select [path|slug …] | check]" ;; esac
+    memory)  case "${1:-index}" in
+               select)  takes_flags "memory select" ;;
+               propose) takes_flags "memory propose" scope
+                        case "$#:${2:-}" in 3:claim|3:repair) ;;
+                          *) die "usage: council memory propose claim <id> [--scope <paths>] | memory propose repair <task> --scope <paths> [--run <folder>]" ;;
+                        esac ;;
+               accept|reject) takes_flags "memory $1" user-said
+                        [ $# -eq 2 ] || die "usage: council memory $1 F-<n> --user-said \"<the user's words>\""
+                        [ -n "$MEMORY_SAID_ARG" ] || die "memory $1 needs --user-said \"<the user's own words>\" — their answer, not a summary of it" ;;
+               *)       takes_flags memory
+                        [ $# -le 1 ] || die "usage: council memory [index | select [path|slug …] | check | propose … | accept … | reject …]" ;;
+             esac
              cmd_memory ${1+"$@"} ;;
     prior)   takes_flags prior; cmd_prior ${1+"$@"} ;;
     ask)     takes_flags ask; [ $# -le 2 ] || die "usage: council ask save [slug]"; cmd_ask ${1+"$@"} ;;

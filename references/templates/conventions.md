@@ -50,7 +50,10 @@
      **Anchor:** <code path or symbol, if one exists>
      Selection opens the evidence each time: an entry whose files are gone, or whose cited lines
      no longer show a verifier's verdict, reaches no brief until it is re-anchored or retired, and
-     `council memory check` says which. -->
+     `council memory check` says which. `council memory propose` drafts one under ## Proposed from
+     a run's verified record; `council memory accept F-<n> --user-said "<their words>"` files it
+     here on the user's yes (`reject` on their no). -->
+
 
 ## Proposed — awaiting the user's yes/no
 <!-- One line per proposal, written the moment it is proposed so it survives the session. Format:

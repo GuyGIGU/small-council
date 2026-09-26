@@ -150,6 +150,11 @@ check("memory: selected entries carry meaning and origin, failures stay observat
       "observed failure, not a rule" in cli and "origin:" in cli and
       "Observed Failures" in read("references", "templates", "conventions.md") and
       "keeping observed" in doctrine["04-brief.md"])
+check("memory: a failure is served only while its evidence supports it, and filed only on the user's words",
+      "failure_audit" in cli and "memory_replace" in cli and "--user-said" in cli and
+      os.path.isfile(os.path.join(ROOT, "scripts", "memory.py")) and
+      "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
+      "UNSUPPORTED" in doctrine["10-learn.md"])
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):

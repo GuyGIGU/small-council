@@ -47,6 +47,39 @@ Settled AP/EC/D entries are not audited: their authority is the user's approval,
 These checks are mechanical. A file that still shows `REFUTED` does not prove the old observation
 applies to today's code — the brief still labels F entries as leads to check, never as rules.
 
+## From verified run evidence to a user-approved entry
+
+Before this, an F entry had to be written by hand from the Chair's reading of the run, so its
+fields carried the Chair's summary rather than the run's records. Now, at Learn:
+
+1. `council memory propose claim <id>` drafts an entry from a synthesis claim the blind verifier
+   **REFUTED** or **MISCITED** — the classic council failure. It refuses a CONFIRMED finding (a real
+   defect, not a council failure), an UNCERTAIN, unverified or conflicting claim, and a
+   `claims.jsonl` older than the Markdown it indexes. `council memory propose repair <task> --scope
+   <paths>` drafts one from a build task's recorded gate failures after `repair check`'s integrity
+   rules pass; the scope is the Chair's judgment and is required.
+2. The helper fills Failure, Scope (default: the cited file), Origin, Evidence (the exact verifier
+   row plus the tracked deliverable; or each saved failed-gate output), Verdict and Anchor from those
+   records, with a `**Drafted:**` line naming the source. Text copied from artifacts cannot write a
+   field or open a comment in the memory file, and secret-looking strings are redacted before
+   anything is written. A draft that would not be served once accepted — a scope of every run,
+   evidence that does not show its verdict — is refused before the file is touched. So is evidence
+   the memory already cites (an entry, a proposal or a rejected line): nothing is proposed twice.
+3. The draft goes under `## Proposed`, where no brief reads it, and the run's event stream gets
+   `memory.proposed`.
+4. Only the user's answer files it: `council memory accept F-<n> --user-said "<their words>"` moves
+   it under Observed Failures with an `**Approved:**` line holding the date and those words;
+   `reject` leaves one Rejected line with the words and the evidence, which blocks a re-proposal.
+   Both refuse without the user's words, refuse anything that is not a proposal, and check the
+   result before writing: the moved entry must be served (evidence audit included), every other
+   entry must read exactly as before, and the memory file must not have changed meanwhile. The
+   file keeps its own line endings.
+
+The helper cannot know that the user said yes: the doctrine allows `accept` only after their answer
+in the chat, and the recorded words make an unapproved entry a visible fabrication rather than a
+silent one. Python 3.8+ is optional here as elsewhere; without it the manual path in
+`references/doctrine/10-learn.md` remains.
+
 ## The "stalled" broad helper suite
 
 `evals/run_cli.py` was reported as stalled during the first slice. The earlier session's log shows it
@@ -65,11 +98,16 @@ session and was left alone).
   `council memory` with the reason, but do not reach a brief.
 - A memory with no observed failures is parsed, selected and checked exactly as before; the audit
   runs only when an F entry is served.
-- `evals/run_memory.py` (17 checks) covers selection with meaning and origin, scoped retrieval,
+- `evals/run_memory.py` (39 checks) covers selection with meaning and origin, scoped retrieval,
   each refusal above, the provenance audit's served and unserved cases (a path with a blank, a
-  path outside the project, prose instead of a file, a partial loss), the doctor warning, and
-  legacy formats. Nine of its checks fail against the first slice's helper, which is how they were
-  shown to test something. `evals/run_cli.py` keeps its own Phase 8 cases with a real evidence file.
+  path outside the project, prose instead of a file, a partial loss), the doctor warning, legacy
+  formats, and the proposal path end to end through real helper runs: a review run whose verifier
+  refuted two claims and confirmed one, a build run with two recorded gate failures, and each
+  refusal (confirmed finding, stale ledger, every-run scope, duplicate, missing words, not a
+  proposal, a saved gate output edited afterwards), field and comment injection from copied text,
+  secret redaction and a CRLF memory file. Nine of the hardening checks fail against the first
+  slice's helper, which is how they were shown to test something. `evals/run_cli.py` keeps its own
+  Phase 8 cases with a real evidence file.
 - With this change, the structural (600), hook (135), repair (37) and evidence (21) suites pass on
   Windows. The broad helper suite is rerun on it separately (it takes 17 minutes). macOS (bash
   3.2, BSD awk) and Linux legs have not been run for this change; CI runs them on a pull request.
@@ -83,4 +121,9 @@ file; authors should make the selected first line self-contained. An F id at the
 bullet (for example `- F-16 jets …` in prose) is now reported as a line that looks like an entry
 but is not read. Evidence inside `.council/runs/` is local and untracked, so it can vanish with the
 run folder or be absent on another clone; an entry then drops out of briefs, with a warning, until
-its evidence is re-anchored to a tracked file. No automatic memory promotion is present.
+its evidence is re-anchored to a tracked file. A file cited whole (the review deliverable) only has
+to mention the verdict somewhere, so it is weaker support than a cited verifier row. Proposals come
+from review, plan and research claims and from build gate trails; a build verifier's REGRESSION or
+INCOMPLETE rows and post-game findings are not drafted by the helper yet and stay hand-written.
+Nothing here shows that remembered failures improve later runs — that needs the benchmark. No
+automatic memory promotion is present: every entry still needs the user's yes.

@@ -21,6 +21,15 @@ All notable changes to this project are documented here. The format is based on
   gone, or whose cited lines no longer show a verifier's verdict, is left out with the reason, and
   `memory check` (and `doctor`) report it. Memories without observed failures behave as before.
 
+- **Observed failures from a run's verified record, filed only with the user's words.**
+  `council memory propose claim <id>` drafts an F entry from a claim the blind verifier refuted or
+  miscited; `council memory propose repair <task> --scope <paths>` from a build task's recorded gate
+  failures. The helper fills the fields from `claims.jsonl` or `repairs.jsonl` — not from a summary —
+  redacts secret-looking text, refuses duplicates and anything that could not be served, and files
+  the draft under `## Proposed`. `council memory accept|reject F-<n> --user-said "<their words>"`
+  applies the user's answer with the date and their words, and writes only when the result checks
+  out and nothing else in the memory changed. Optional Python 3.8+; the manual path remains.
+
 - **Phase 7 bounded repair trail.** `council repair record|show|check` snapshots each failed build
   gate and its reruns, suggests an advisory failure category and expert lens, distinguishes a red
   baseline, and stops after three failed executions of the same gate. The second failure recommends

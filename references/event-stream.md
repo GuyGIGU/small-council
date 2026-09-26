@@ -39,6 +39,7 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `gate.finished` | gate name | `passed` or `failed` | `exit=<code>;seconds=<n>;empty=<0 or 1>` |
 | `collect.finished` | `run` | `passed` or `failed` | `seats=<n>` |
 | `verification.finished` | `run` | `passed` or `failed` | `items=<n>;broken=<n>;other=<n>` |
+| `memory.proposed` | the drafted entry's id (`F-<n>`) | `claim` or `repair` | `source=<claim id or task id>` |
 
 The stable columns, version and sequence let later readers follow runs without parsing prose.
 Detail keys above are part of v1 for their event type; new optional types can be added without
