@@ -74,6 +74,9 @@ jobs:
       - name: Run history evals
         run: python evals/run_history.py
 
+      - name: Tuning evals
+        run: python evals/run_tune.py
+
       - name: Benchmark harness self-test (no model calls)
         run: python evals/bench.py self-test
 

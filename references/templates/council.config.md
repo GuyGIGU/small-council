@@ -17,7 +17,9 @@ deploy target, domain. Name the one thing that must never break.>
 <!-- "approve without asking": solo | squad | full — a /command starts runs up to this size without a
      second question; bigger runs always ask. "agent cap": agents per run, verifiers included.
      "context packs": off | on — on builds a seat-specific evidence pack for each dispatched worker
-     (experimental: it adds material and its benefit is unmeasured). Missing means off. Yours to change. -->
+     (experimental: it adds material and its benefit is unmeasured). Missing means off. Yours to change.
+     "estimate per worker" (e.g. 150k) is added only by `council tune apply budget` on your words,
+     from what this project's workers measure; the route budgets with it, and 80k without it. -->
 
 ## Roster
 Chair: John Carmack — always on; the synthesis filter ("a real problem in this codebase at this scale,

@@ -155,6 +155,10 @@ check("memory: a failure is served only while its evidence supports it, and file
       os.path.isfile(os.path.join(ROOT, "scripts", "memory.py")) and
       "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
       "UNSUPPORTED" in doctrine["10-learn.md"])
+check("tune: one knob changed, only with the user's words; behaviour held until a benchmark shows it helps",
+      "cmd_tune" in cli and "configured_worker_estimate" in cli and
+      os.path.isfile(os.path.join(ROOT, "scripts", "tune.py")) and
+      "held" in read("scripts", "tune.py") and "council tune" in read("skills", "council-init", "SKILL.md"))
 check("history: a read-only report over run folders, with a stated bar for every rate",
       "cmd_history" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "history.py")) and
       "MIN_RUNS = 5" in read("scripts", "history.py"))

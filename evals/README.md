@@ -239,6 +239,13 @@ before/after proofs and gate probes kept apart from the project's gates; repairs
 estimate accuracy computed right on a synthetic home; missing and malformed data named; odd run
 folders survived; and nothing written.
 
+`python evals/run_tune.py` checks conservative self-tuning (`council tune`, `scripts/tune.py`): the
+estimate per worker is proposed only once five completed runs measure it and it is off by more than
+a quarter; behaviour is held and the roster goes through a refresh; `apply` writes one line under
+## Run preferences only with the user's words (secret-looking text redacted before the tracked
+log), the route then budgets with it, and `revert` restores the file byte for byte — but refuses
+over a hand edit; a BOM and CRLF survive; every refusal says why and writes nothing.
+
 ## 11. Benchmark — Small Council against plain Claude Code
 
 ```bash

@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Conservative self-tuning.** `council tune` proposes from the project's own record: the estimate
+  per worker that `council route recommend` budgets with, once five completed runs measure it and
+  it is off by more than a quarter; roster changes whose seat advice clears its bar (made only
+  through a council-init refresh); and nothing about behaviour — context packs, run size and
+  verification depth are held until a benchmark shows a change helps. `council tune apply|revert
+  budget --user-said "…"` writes or undoes one line under `## Run preferences`, with the user's
+  redacted words and the evidence logged in `.council/tuning.md`; an undo over a hand edit is
+  refused. Without the line, the route's budget is unchanged. Optional Python 3.8+.
+
 - **History across runs, gated on enough data.** `council history [--json]` reads every run of the
   council home and reports runs by status, mode and month, the project's gates (a build's
   before/after proofs and gate probes counted apart), repair trails, claim verdicts, seat evidence

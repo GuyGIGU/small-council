@@ -32,7 +32,8 @@ Decide whether to convene, whom, and at what cost — then get the user's go-ahe
    rest — and keep seats + verifiers within the agent cap (config `agent cap`, default 10).
 6. **Estimate from this project's history.** `council ledger` shows each seat's average tokens per
    run; `council run status --all` shows whole runs. With no history, assume ~60–100k tokens per
-   worker.
+   worker. The route budgets with the config's `estimate per worker` when the user set one through
+   `council tune`; otherwise with 80k.
 7. **Open the run.** `council run open <mode>` prints the run folder and records this session's id,
    so a compaction resumes the right run. It also creates `<run>/run-plan.tsv`: fill its run size,
    risk, complexity, uncertainty, token estimate and verification level from the decision you just

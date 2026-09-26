@@ -238,6 +238,10 @@ council":
   verifier refuted 12 of 20 kept (42–76%) — narrow its surface to `src/ui/**`?" Below the bar, say
   the record is too thin and change nothing. A lens the runs keep flagging outside their lanes is a
   separate proposal: name the runs. The user decides; nothing changes without a yes.
+- **Tuning from the record.** `council tune` proposes the estimate per worker once five completed
+  runs measure it, and holds every behaviour change until a benchmark shows it helps. Put a
+  proposal to the user with its evidence; on their yes, `council tune apply budget --user-said "…"`
+  (`revert` undoes it). Both are logged in `.council/tuning.md`.
 - Re-check **every path and gate** in the config against the repo, dry-running the gates again
   (`council run open council-init` first — `council gate probe-<name> -- '…'` needs an open run;
   close it when you are done), and update `last-verified`.

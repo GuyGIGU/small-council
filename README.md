@@ -40,7 +40,9 @@ skipped under load.
   the user's own words (`council memory propose|accept|reject`), earlier council work on the same
   files, each seat's track record (the ledger) and how much it can support (`council ledger advice`:
   advice only past a stated bar), history across runs (`council history`: a rate only once five
-  runs carry its data), the stack fingerprint, a drift doctor, and a read-only run cockpit
+  runs carry its data), conservative tuning (`council tune`: the estimate per worker from your own
+  runs, changed only on your words and undoable; behaviour held until a benchmark shows it helps),
+  the stack fingerprint, a drift doctor, and a read-only run cockpit
   (`council tui --watch`) you can leave open in a terminal while a council works.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
   security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,
