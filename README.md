@@ -38,7 +38,8 @@ skipped under load.
   failed build gates, the memory entries in scope — an observed failure only while the evidence it
   cites still shows it — and memory proposals drafted from a run's verified record, filed only with
   the user's own words (`council memory propose|accept|reject`), earlier council work on the same
-  files, each seat's track record (the ledger), the stack fingerprint, and a drift doctor.
+  files, each seat's track record (the ledger) and how much it can support (`council ledger advice`:
+  advice only past a stated bar), the stack fingerprint, and a drift doctor.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
   security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,
   accessibility, concurrency, untrusted input and operability — recast or dropped per project.

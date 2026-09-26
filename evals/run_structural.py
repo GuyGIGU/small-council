@@ -155,6 +155,11 @@ check("memory: a failure is served only while its evidence supports it, and file
       os.path.isfile(os.path.join(ROOT, "scripts", "memory.py")) and
       "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
       "UNSUPPORTED" in doctrine["10-learn.md"])
+check("seat learning: roster advice weighs only judged runs, past a stated bar",
+      "cmd_ledger_advice" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
+      "council ledger advice" in doctrine["10-learn.md"] and
+      "council ledger advice 20" in read("skills/council-init/SKILL.md") and
+      "Below the bar" in read("skills/council-init/SKILL.md"))
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):

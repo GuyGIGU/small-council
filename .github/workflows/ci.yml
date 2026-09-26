@@ -65,6 +65,9 @@ jobs:
       - name: Memory evals
         run: python evals/run_memory.py
 
+      - name: Seat learning evals
+        run: python evals/run_seats.py
+
       - name: Hook evals
         run: python evals/run_hook.py
 

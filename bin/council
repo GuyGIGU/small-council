@@ -4446,7 +4446,8 @@ cmd_ledger() {
   [ -f "$ledger" ] || { say "no ledger yet — every completed run adds its seats to $ledger"; return 0; }
   LAST="$last" awk -F'\t' '
     NR == 1 { next }
-    { row[NR] = $0; if (!($2 in seen)) { seen[$2] = 1; order[++nr] = $2 } }
+    { row[NR] = $0; if (!($2 in seen)) { seen[$2] = 1; order[++nr] = $2 }
+      if ($4 != "(verifiers)" && $6 + $7 > 0) judged[$2] = 1 }   # a run whose synthesis credited items
     END {
       if (nr == 0) { print "the ledger has no runs yet"; exit }
       first = nr - ENVIRON["LAST"] + 1; if (first < 1) first = 1
@@ -4458,15 +4459,31 @@ cmd_ledger() {
         if (!(s in runs)) { names[++ns] = s; runs[s] = 0 }
         if (!((f[2], s) in counted)) { counted[f[2], s] = 1; runs[s]++ }
         raised[s] += f[5]; kept[s] += f[6]; cut[s] += f[7]; refd[s] += f[8]; tok[s] += f[9]
+        if (f[2] in judged) seen_judged[s] = 1
       }
       printf "%-16s %4s %6s %5s %4s %7s %8s %9s\n", "seat", "runs", "raised", "kept", "cut", "refuted", "~k/run", "shipped"
       for (i = 1; i <= ns; i++) {
         s = names[i]; ship = kept[s] - refd[s]
-        pct = (raised[s] > 0) ? int(100 * ship / raised[s] + 0.5) "%" : "-"
+        pct = (raised[s] > 0 && (s in seen_judged)) ? int(100 * ship / raised[s] + 0.5) "%" : "-"
+        if (raised[s] > 0 && !(s in seen_judged)) unjudged = 1
         printf "%-16s %4d %6d %5d %4d %7d %8d %9s\n", s, runs[s], raised[s], kept[s], cut[s], refd[s], int(tok[s] / runs[s] / 1000 + 0.5), pct
       }
       printf "over the last %d completed run(s) · shipped = kept and not refuted, as a share of items raised\n", nr - first + 1
+      if (unjudged) print "- = never judged: no synthesis credited its items (council-init, a build) — tokens only"
+      print "what this record can support, seat by seat: council ledger advice"
     }' "$ledger"
+}
+
+# Seat learning: each seat's record over the runs that judged its items, with a plausible range, and
+# advice only past a stated bar (scripts/ledger.py). Advisory: it never changes a roster, a route or a run.
+cmd_ledger_advice() {
+  local last="${1:-20}" py
+  case "$last" in ''|*[!0-9]*|0) die "usage: council ledger advice [how many recent runs, default 20] [--json]" ;; esac
+  [ "${#last}" -le 6 ] || die "ledger advice: keep N under a million runs"
+  py="$(impact_python)" || die "ledger advice needs optional Python 3.8+; council ledger shows the raw record — weigh no seat on fewer than 3 judged runs and 15 items"
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/ledger.py" advice --ledger "$(council_home)/ledger.tsv" --last "$last"
+  [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
+  "$@"
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -4735,6 +4752,8 @@ council — the Small Council's helper (bash + git)
   council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
                                          secret-looking strings are redacted; records ask= in the state
   council ledger [N]                     each seat's record over the last N completed runs (default 10)
+  council ledger advice [N] [--json]     how much each seat's record can support over the last N runs
+                                         (default 20), and advice only past the bar (optional Python 3.8+)
   council route recommend --task TEXT [--risk low|medium|high] [--complexity 1..10]
                          [--uncertainty low|medium|high] [--surface NAME ...]
                          [--agent-cap N] [--budget-tokens N] [--classic]
@@ -4767,7 +4786,7 @@ main() {
   ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
   ROUTE_SURFACES=()
   CONTEXT_EXPANDS=()
-  MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG=""
+  MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
@@ -4785,8 +4804,8 @@ main() {
                    val="$2"; shift 2 ;;
       --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --alongside|--all|--classic) flag="${1#--}"; val=1; shift ;;
-      --alongside=*|--all=*|--classic=*) die "${1%%=*} takes no value" ;;
+      --alongside|--all|--classic|--json) flag="${1#--}"; val=1; shift ;;
+      --alongside=*|--all=*|--classic=*|--json=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
                    [ $# -eq 0 ] || { pos+=("$1"); shift; }
                    continue ;;
@@ -4805,7 +4824,7 @@ main() {
     case "$flag" in
       run) RUN_ARG="$val" ;;       code-root) CODE_ROOT_ARG="$val" ;;  status) STATUS_ARG="$val" ;;
       base) BASE_ARG="$val" ;;     at) AT_ARG="$val" ;;                session) SESSION_ARG="$val" ;;
-      alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;
+      alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;                     json) JSON_OUT=1 ;;
       task) ROUTE_TASK_ARG="$val" ;; risk) ROUTE_RISK_ARG="$val" ;;
       complexity) ROUTE_COMPLEXITY_ARG="$val" ;; uncertainty) ROUTE_UNCERTAINTY_ARG="$val" ;;
       surface) ROUTE_SURFACES+=("$val") ;; agent-cap) ROUTE_CAP_ARG="$val" ;;
@@ -4902,7 +4921,13 @@ main() {
              cmd_memory ${1+"$@"} ;;
     prior)   takes_flags prior; cmd_prior ${1+"$@"} ;;
     ask)     takes_flags ask; [ $# -le 2 ] || die "usage: council ask save [slug]"; cmd_ask ${1+"$@"} ;;
-    ledger)  takes_flags ledger; [ $# -le 1 ] || die "usage: council ledger [N]"; cmd_ledger ${1+"$@"} ;;
+    ledger)  if [ "${1:-}" = advice ]; then
+               takes_flags "ledger advice" json
+               [ $# -le 2 ] || die "usage: council ledger advice [N] [--json]"
+               cmd_ledger_advice ${2+"$2"}
+             else
+               takes_flags ledger; [ $# -le 1 ] || die "usage: council ledger [N] | ledger advice [N] [--json]"; cmd_ledger ${1+"$@"}
+             fi ;;
     doctor)  takes_flags doctor; no_words doctor ${1+"$@"}; cmd_doctor ;;
     version) takes_flags version; no_words version ${1+"$@"}; say "council $COUNCIL_VERSION" ;;
     help)    takes_flags help; no_words help ${1+"$@"}; usage ;;

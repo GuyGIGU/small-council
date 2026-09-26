@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Seat learning, advisory only.** `council ledger advice [N] [--json]` says how much each seat's
+  record can support: runs that judged its items, useful items (kept and not refuted) with a 90%
+  plausible range that counts at most five items a run, refuted items among those verified, and
+  tokens per useful item. It advises (retain, lower priority, narrow, pair, drop?, unclear) only
+  past a stated bar of 3 judged runs and 15 items, and "drop?" only after eight, as a question for
+  the user. A council-init refresh proposes roster changes only where the advice clears the bar.
+  It never changes a roster, a route or a run. Optional Python 3.8+.
+
 - **Phase 8 memory foundation.** Scoped selection includes a settled entry's meaning and origin
   when recorded. User-confirmed observed failures have a separate F category with required scope,
   origin, evidence and verdict; they are historical leads, never rules. Legacy AP/EC/D entries
@@ -51,6 +59,9 @@ All notable changes to this project are documented here. The format is based on
   on one may flag missing new fields.
 
 ### Changed
+
+- `council ledger` shows `-` rather than `0%` shipped for a seat that no run judged (a
+  council-init or build run credits no items), and points to `council ledger advice`.
 
 - A third failed build-gate execution now stops the build's product edits and cannot fall through to
   a verifier fix or success commit. Blocked tasks do not count as built; helper-only token usage is

@@ -61,8 +61,8 @@ seat's row to the ledger — items raised, kept, cut and refuted, and tokens —
 files, synthesis.md's `from:` lines and the verify tables, so keep those exact. It also warns when a
 completed review, plan, build, research or post-game never filed its request — then run
 `council ask save --run <folder>`. `council ledger`
-shows the record: Convene estimates from it, and a council-init refresh proposes roster changes
-from it.
+shows the record: Convene estimates from it. `council ledger advice` says how much it supports,
+seat by seat; a council-init refresh proposes roster changes only where the advice clears its bar.
 - A run stopped for good → `--status abandoned`.
 - A run the user paused → `--status paused`. When they want it back, `council run resume --run <folder>`.
 

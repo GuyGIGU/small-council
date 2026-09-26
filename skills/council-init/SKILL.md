@@ -231,11 +231,12 @@ council":
   numbered operations, applied on the user's yes.
 - **Cards:** rewrite the card of any seat whose doc, surface or stack changed, and write the missing
   ones.
-- **Roster changes from the record.** `council ledger 20` shows each seat's runs, items raised,
-  kept and refuted, and tokens. Propose changes with the numbers shown — "UX (Friedman): 6 runs, 2
-  of 14 items shipped, 5 refuted — narrow its surface to `src/ui/**`?" — and likewise pairing seats
-  that are always thin, or adding a lens the runs keep flagging outside their lanes. The user
-  decides; nothing changes without a yes.
+- **Roster changes from the record.** `council ledger advice 20` weighs each seat only on runs that
+  judged its items, gives a plausible range, and advises only past its bar (3 judged runs, 15
+  items). Propose only what it advises, with the numbers shown — "UX (Friedman): 6 judged runs, 2 of 14
+  items useful (plausible 5–35%), 5 refuted — narrow its surface to `src/ui/**`?" — likewise pairing
+  a thin seat, or a lens the runs keep flagging outside their lanes. Below the bar, say the record
+  is too thin and change nothing. The user decides; nothing changes without a yes.
 - Re-check **every path and gate** in the config against the repo, dry-running the gates again
   (`council run open council-init` first — `council gate probe-<name> -- '…'` needs an open run;
   close it when you are done), and update `last-verified`.
