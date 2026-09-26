@@ -67,8 +67,8 @@ low, high = ledger.wilson(0, 10, 1.645)
 check("a range: none of 10 still leaves up to about a fifth plausible", low == 0 and 0.18 < high < 0.25, (low, high))
 low, high = ledger.wilson(10, 10, 1.645)
 check("a range: all of 10 still leaves the share plausibly under 80%", high == 1 and 0.75 < low < 0.85, (low, high))
-one_run = ledger.share(8, 8, 1)
-eight_runs = ledger.share(40, 40, 8)
+one_run = ledger.share([(8, 8)])
+eight_runs = ledger.share([(5, 5)] * 8)
 check("one run's items count as at most five items of evidence",
       one_run["counted"] == 5 and eight_runs["counted"] == 40 and one_run["low"] < eight_runs["low"], (one_run, eight_runs))
 check("a split or round-2 worker is its seat; a hyphenated name is not split",
@@ -124,14 +124,43 @@ _, seats = advise(row("2026-09-16-000000-review", "hunt-a", 2, 1, 0, 0, 10000)
 check("split workers add up to one seat in one run; a round-2 worker raises nothing new",
       seats["hunt"]["raised"] == 4 and len(seats["hunt"]["runs"]) == 1 and seats["hunt"]["tokens"] == 30000
       and seats["leach"]["raised"] == 0, (seats["hunt"], seats["leach"]))
-data, seats = advise(row("2026-09-20-013508-plan", "nygard-perf", 8, 5, 4, 1))
-check("kept and cut beyond raised is noted, and no share goes past 100%",
-      any("credited loosely" in note for note in data["notes"]) and seats["nygard-perf"]["useful_share"]["share"] <= 1,
-      data["notes"])
+data, seats = advise(row("2026-09-20-013508-plan", "nygard-perf", 8, 5, 4, 1) + row("2026-09-20-013508-plan", "z", 2, 5, 0, 0))
+check("kept and cut beyond raised is noted, and a run's useful items never exceed its raised items",
+      any("credited loosely" in note for note in data["notes"]) and seats["z"]["useful"] == 2
+      and seats["z"]["useful_share"]["share"] == 1.0, (data["notes"], seats["z"]["useful_share"]))
+data, seats = advise(runs_of("hunt", 3, 5, 1, cut=4) + "".join(
+    row("2026-09-{:02d}-0000{:02d}-review".format(1 + (1 + i) % 28, 1 + i), "hunt-r2", 0, 4, 0, 0) for i in range(3)))
+check("credit that arrives through a round-2 worker is folded in before the loose-credit check",
+      any("credited loosely" in note and "hunt" in note for note in data["notes"]) and seats["hunt"]["useful"] == 15,
+      (data["notes"], seats["hunt"]["useful_share"]))
+
+# --- one big run is not many runs' worth of evidence --------------------------------------------------------
+_, seats = advise(row("2026-09-01-000001-review", "x", 15, 0, 15, 0) + row("2026-09-02-000002-review", "o", 5, 5, 0, 0)
+                  + row("2026-09-03-000003-review", "o", 5, 5, 0, 0) + row("2026-09-02-000002-review", "x", 0, 0, 0, 0)
+                  + row("2026-09-03-000003-review", "x", 0, 0, 0, 0))
+check("fifteen items in one run and none in two others are five items of evidence, so too little to judge",
+      seats["x"]["advice"] == "collect" and seats["x"]["useful_share"]["counted"] == 5 and "5 item(s) of evidence" in seats["x"]["reason"],
+      seats["x"]["reason"])
+_, seats = advise(row("2026-09-01-000001-review", "u", 20, 0, 20, 0) + runs_of("u", 3, 5, 5, start=10))
+check("one big bad run cannot outweigh three good ones: each run counts at most five items",
+      seats["u"]["advice"] == "retain" and seats["u"]["useful_share"]["counted"] == 20
+      and seats["u"]["useful_share"]["share"] < 0.5 < seats["u"]["useful_share"]["low"], seats["u"]["useful_share"])
+_, seats = advise(runs_of("s", 8, 0, 0) + "".join(row("2026-09-{:02d}-0000{:02d}-review".format(1 + (1 + i) % 28, 1 + i), "s", 10, 0, 10, 0)
+                                                    for i in range(2)) + runs_of("o", 8, 5, 5))
+check("eight judged runs with items in only two are ten items of evidence: never 'drop?'",
+      seats["s"]["advice"] == "collect" and len(seats["s"]["judged_runs"]) == 8, seats["s"]["reason"])
 data, seats = advise("not\ta\trow\n" + row("2026-09-16-000000-review", "x", "three", 1, 0, 0)
                      + row("2026-09-16-000000-review", "y", 2, 1, 0, 0).replace("\n", "\r\n"))
 check("an unreadable line is left out and counted; a CRLF line is still read",
       "x" not in seats and "y" in seats and any("2 ledger line(s) could not be read" in n for n in data["notes"]), data["notes"])
+data, seats = advise("", 20)
+with tempfile.TemporaryDirectory(prefix="council-seats-") as temporary:
+    odd = Path(temporary) / "ledger.tsv"
+    odd.write_bytes(("\ufeff" + HEADER + row("2026-09-16-000000-review", "y", 2, 1, 0, 0)
+                     + row("2026-09-17-000000-review", "f", 2, 2, 0, 0).replace("council-review", "council\freview")).encode("utf-8"))
+    data = ledger.report(odd, 20)
+check("a byte-order mark before the header, and a form feed inside a cell, are read the way awk reads them",
+      not data["notes"] and sorted(s["seat"] for s in data["seats"]) == ["f", "y"], data["notes"])
 
 with tempfile.TemporaryDirectory(prefix="council-seats-") as temporary:
     missing = ledger.report(Path(temporary) / "ledger.tsv", 20)
@@ -157,7 +186,7 @@ else:
             + runs_of("beck", 3, 6, 6, start=5), encoding="utf-8", newline="\n")
         code, out, err = council(repo, "ledger", "advice")
         check("helper: ledger advice prints the bar, the table and the advice",
-              code == 0 and "a seat is weighed after 3 judged runs and 15 items" in out
+              code == 0 and "a seat is weighed after 3 judged runs and 15 items of evidence" in out
               and "- beck: retain" in out and "- engine: never judged" in out, out + err)
         code, out, err = council(repo, "ledger", "advice", "2", "--json")
         try:
@@ -170,10 +199,19 @@ else:
         check("helper: the plain ledger shows '-' for a seat no run judged, and points to the advice",
               code == 0 and any(line.split()[:1] == ["engine"] and line.split()[-1] == "-" for line in out.splitlines())
               and "council ledger advice" in out, out)
-        refusals = [council(repo, *words) for words in (("ledger", "advice", "0"), ("ledger", "advice", "3", "x"),
-                                                        ("ledger", "--json"), ("ledger", "advice", "--json=yes"))]
-        check("helper: a zero window, an extra word, --json on the plain ledger and --json=… are refused",
-              all(code == 2 for code, _, _ in refusals), refusals)
+        refusals = [(council(repo, *words), want) for words, want in (
+            (("ledger", "advice", "0"), "usage: council ledger advice"), (("ledger", "advice", "00"), "usage: council ledger advice"),
+            (("ledger", "advice", "3", "x"), "usage: council ledger advice [N] [--json]"),
+            (("ledger", "--json"), "ledger doesn't take --json"), (("ledger", "advice", "--json=yes"), "--json takes no value"))]
+        check("helper: a zero window (0 or 00), an extra word, --json on the plain ledger and --json=… are refused, each saying why",
+              all(code == 2 and want in err for (code, _, err), want in refusals), [(c, e) for (c, _, e), _ in refusals])
+        (repo / ".council" / "ledger.tsv").write_text(
+            HEADER + row("2026-09-17-113250-init", "mix", 8, 0, 0, 0, 1000, "council-init")
+            + row("2026-09-18-000000-review", "mix", 4, 4, 0, 0, 1000) + "\n", encoding="utf-8", newline="\n")
+        code, out, err = council(repo, "ledger", "1")
+        mix = next((line.split() for line in out.splitlines() if line.startswith("mix")), [])
+        check("helper: a blank line is no run, and shipped counts only the items a synthesis judged",
+              code == 0 and mix[-1:] == ["100%"] and not any(line.startswith(" ") and "%" in line for line in out.splitlines()), out)
 
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:

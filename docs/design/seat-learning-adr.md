@@ -30,10 +30,11 @@ Option 3, as `council ledger advice [N] [--json]` (`scripts/ledger.py`):
 - **Judged runs only.** A run counts toward usefulness when its synthesis credited some item, kept or
   cut. Other runs (council-init, builds) count toward tokens only.
 - **Useful = kept and not refuted**, the ledger's own "shipped".
-- **Ranges.** The range is a 90% Wilson interval that counts at most five items per run, because
-  one run's items share a brief, a model and a day.
-- **The bar.** A seat is weighed only after 3 judged runs and 15 items. Past it, the first rule
-  that matches applies:
+- **Ranges.** The range is a 90% Wilson interval over the seat's items, counting at most five items
+  from any one run (that run's useful items scaled alike), because one run's items share a brief, a
+  model and a day. A run in which the seat raised nothing adds no evidence.
+- **The bar.** A seat is weighed only after 3 judged runs and 15 items of evidence counted that way.
+  Past it, the first rule that matches applies:
   - drop? — only after 8 judged runs, useful at most 15%, and phrased as a question for the user;
   - lower priority — useful at most 30%;
   - narrow or pair with a verifier — at least 30% of verified kept items refuted, with at least 10

@@ -22,11 +22,13 @@ All notable changes to this project are documented here. The format is based on
 
 - **Seat learning, advisory only.** `council ledger advice [N] [--json]` says how much each seat's
   record can support: runs that judged its items, useful items (kept and not refuted) with a 90%
-  plausible range that counts at most five items a run, refuted items among those verified, and
-  tokens per useful item. It advises (retain, lower priority, narrow, pair, drop?, unclear) only
-  past a stated bar of 3 judged runs and 15 items, and "drop?" only after eight, as a question for
-  the user. A council-init refresh proposes roster changes only where the advice clears the bar.
-  It never changes a roster, a route or a run. Optional Python 3.8+.
+  plausible range that counts at most five items from any one run, refuted items among those
+  verified, and tokens per useful item. It advises (retain, lower priority, narrow, pair, drop?,
+  unclear) only past a stated bar of 3 judged runs and 15 items of evidence counted that way, and
+  "drop?" only after eight, as a question for the user. A council-init refresh proposes roster
+  changes only where the advice clears the bar. It never changes a roster, a route or a run.
+  Optional Python 3.8+. An independent review found that the first version capped evidence per run
+  only in total, so one big run could still count as three; that and seven smaller gaps are fixed.
 
 - **Phase 8 memory foundation.** Scoped selection includes a settled entry's meaning and origin
   when recorded. User-confirmed observed failures have a separate F category with required scope,

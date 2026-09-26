@@ -28,8 +28,8 @@ VERIFIERS = "(verifiers)"
 # The bar, stated once so the report, the doctrine and the tests read the same numbers.
 BAR = {
     "min_runs": 3,          # judged runs before a seat's record is weighed at all
-    "min_items": 15,        # items it raised in those runs
-    "per_run": 5,           # items per run counted as independent evidence
+    "min_items": 15,        # items of evidence it raised in those runs, at most per_run from any one
+    "per_run": 5,           # items of one run counted as independent evidence
     "z": 1.645,             # two-sided 90% plausible range
     "retain_floor": 0.5,    # useful share's lower bound at or above this → retain
     "low_ceiling": 0.3,     # useful share's upper bound below this → lower priority
@@ -66,9 +66,9 @@ def read_ledger(path):
         return None, 0
     if not path.is_file() or path.stat().st_size > MAX_LEDGER:
         raise LedgerError("the ledger is not a regular file under 8 MB: " + str(path))
-    text = path.read_bytes().decode("utf-8", errors="replace")
+    text = path.read_bytes().decode("utf-8-sig", errors="replace")    # a BOM (PowerShell 5.1) is no cell
     rows, bad = [], 0
-    for number, line in enumerate(text.splitlines()):
+    for number, line in enumerate(text.split("\n")):                   # as awk splits lines: \n only
         line = line.rstrip("\r")
         if not line.strip() or (number == 0 and line.startswith("date\t")):
             continue
@@ -101,13 +101,16 @@ def wilson(k, n, z):
     return max(0.0, c - h), min(1.0, c + h)
 
 
-def share(k, n, runs, bar=BAR):
-    """k of n, with a plausible range that counts at most bar['per_run'] items per run."""
+def share(pairs, bar=BAR):
+    """k of n summed over runs, from (k, n) per run, with a plausible range that counts at most
+    bar['per_run'] items of any one run (its k scaled alike). A run with n = 0 adds nothing."""
+    pairs = [(min(max(k, 0), n), n) for k, n in pairs if n > 0]
+    n = sum(n for _, n in pairs)
     if n <= 0:
         return None
-    k = min(max(k, 0), n)
-    counted = min(n, bar["per_run"] * runs) if runs > 0 else n
-    low, high = wilson(k * counted / n, counted, bar["z"])
+    k = sum(k for k, _ in pairs)
+    counted = sum(min(m, bar["per_run"]) for _, m in pairs)
+    low, high = wilson(sum(j * min(m, bar["per_run"]) / m for j, m in pairs), counted, bar["z"])
     return {"k": k, "n": n, "share": round(k / n, 4), "low": round(low, 4), "high": round(high, 4),
             "counted": counted}
 
@@ -136,52 +139,51 @@ def records(rows, runs):
         fact["judged"] = fact["judged"] or row["kept"] + row["cut"] > 0
         fact["verified"] = fact["verified"] or row["refuted"] > 0
     seats, loose = {}, []
-    for row in rows:
+    for row in rows:                        # fold split and round-2 workers into their seat, run by run
         if row["seat"] == VERIFIERS:
             continue
-        name = seat_of(row["seat"])
-        seat = seats.setdefault(name, {
-            "seat": name, "runs": [], "judged_runs": [], "verified_runs": [], "raised": 0, "kept": 0,
-            "cut": 0, "refuted": 0, "verified_kept": 0, "tokens": 0, "judged_tokens": 0, "modes": {}})
-        fact = facts[row["run"]]
-        if row["run"] not in seat["runs"]:
-            seat["runs"].append(row["run"])
-        seat["tokens"] += row["tokens"]
-        if not fact["judged"]:
-            continue
-        if row["run"] not in seat["judged_runs"]:
-            seat["judged_runs"].append(row["run"])
-            seat["modes"][fact["mode"]] = seat["modes"].get(fact["mode"], 0) + 1
-        seat["raised"] += row["raised"]
-        seat["kept"] += row["kept"]
-        seat["cut"] += row["cut"]
-        seat["refuted"] += row["refuted"]
-        seat["judged_tokens"] += row["tokens"]
-        if row["raised"] and row["kept"] + row["cut"] > row["raised"]:
-            loose.append((row["seat"], row["run"]))
-        if fact["verified"]:
-            seat["verified_kept"] += row["kept"]
-            if row["run"] not in seat["verified_runs"]:
-                seat["verified_runs"].append(row["run"])
+        seat = seats.setdefault(seat_of(row["seat"]), {"seat": seat_of(row["seat"]), "per_run": {}})
+        tally = seat["per_run"].setdefault(row["run"], dict.fromkeys(("raised", "kept", "cut", "refuted", "tokens"), 0))
+        for key in tally:
+            tally[key] += row[key]
+    for name, seat in seats.items():
+        tallies = seat["per_run"]
+        mine = [run for run in runs if run in tallies]
+        judged = [run for run in mine if facts[run]["judged"]]
+        verified = [run for run in judged if facts[run]["verified"]]
+        seat.update(runs=mine, judged_runs=judged, verified_runs=verified, modes={},
+                    verified_kept=sum(tallies[run]["kept"] for run in verified),
+                    tokens=sum(tallies[run]["tokens"] for run in mine),
+                    judged_tokens=sum(tallies[run]["tokens"] for run in judged))
+        for key in ("raised", "kept", "cut", "refuted"):
+            seat[key] = sum(tallies[run][key] for run in judged)
+        for run in judged:
+            seat["modes"][facts[run]["mode"]] = seat["modes"].get(facts[run]["mode"], 0) + 1
+            if tallies[run]["kept"] + tallies[run]["cut"] > tallies[run]["raised"]:
+                loose.append((name, run))
     return seats, facts, loose
 
 
 def judge(seat, bar=BAR):
     """Fill in a seat's shares and its advice: (code, reason)."""
     judged, raised = len(seat["judged_runs"]), seat["raised"]
-    useful = max(seat["kept"] - seat["refuted"], 0)
+    tallies = seat["per_run"]
+    seat["useful_share"] = share([(tallies[r]["kept"] - tallies[r]["refuted"], tallies[r]["raised"])
+                                  for r in seat["judged_runs"]], bar)
+    seat["refuted_share"] = share([(tallies[r]["refuted"], tallies[r]["kept"]) for r in seat["verified_runs"]], bar)
+    useful = seat["useful_share"]["k"] if seat["useful_share"] else 0     # each run's useful capped at its items
+    counted = seat["useful_share"]["counted"] if seat["useful_share"] else 0
     seat["useful"] = useful
-    seat["useful_share"] = share(useful, raised, judged, bar)
-    seat["refuted_share"] = share(seat["refuted"], seat["verified_kept"], len(seat["verified_runs"]), bar)
     seat["tokens_per_run"] = round(seat["tokens"] / len(seat["runs"])) if seat["runs"] else None
     seat["tokens_per_useful"] = round(seat["judged_tokens"] / useful) if useful else None
-    seat["weighed"] = judged >= bar["min_runs"] and raised >= bar["min_items"]
+    seat["weighed"] = judged >= bar["min_runs"] and counted >= bar["min_items"]
     if not judged:
         return "collect", ("never judged: no synthesis credited its items in {} run(s) — its runs count "
                            "toward tokens only".format(len(seat["runs"])))
     if not seat["weighed"]:
-        return "collect", ("too little to judge: {} judged run(s) and {} item(s); the bar is {} runs and "
-                           "{} items".format(judged, raised, bar["min_runs"], bar["min_items"]))
+        return "collect", ("too little to judge: {} judged run(s) and {} item(s) of evidence (at most {} from "
+                           "any run); the bar is {} runs and {} items".format(
+                               judged, counted, bar["per_run"], bar["min_runs"], bar["min_items"]))
     use, ref = seat["useful_share"], seat["refuted_share"]
     if judged >= bar["drop_runs"] and use["high"] < bar["drop_ceiling"]:
         return "drop?", ("consider dropping it — the user decides: after {} judged runs at most {} of its "
@@ -234,7 +236,7 @@ def report(ledger, last, bar=BAR):
                      "loosely, so shares are capped at 100%".format(len(loose), loose[0][0], loose[0][1]))
     if bad:
         notes.append("{} ledger line(s) could not be read and were left out".format(bad))
-    per_run = sorted(r["tokens"] for r in rows if r["seat"] != VERIFIERS and r["tokens"] > 0)
+    per_run = sorted(t["tokens"] for s in seats.values() for t in s["per_run"].values() if t["tokens"] > 0)
     tokens = None
     if per_run:
         tokens = {"seat_runs": len(per_run), "median": round(statistics.median(per_run)),
@@ -254,8 +256,8 @@ def render(data):
     bar = data["bar"]
     lines.append("seat advice · the last {} completed run(s): {} judged, {} not".format(
         w["runs"], w["judged"], w["runs"] - w["judged"]))
-    lines.append("a seat is weighed after {} judged runs and {} items · useful = kept and not refuted · "
-                 "ranges are 90% plausible ranges counting at most {} items a run".format(
+    lines.append("a seat is weighed after {} judged runs and {} items of evidence, at most {} from any run · "
+                 "useful = kept and not refuted · ranges are 90% plausible ranges on that evidence".format(
                      bar["min_runs"], bar["min_items"], bar["per_run"]))
     lines.append("")
     lines.append("{:<16} {:>6} {:>5} {:>7} {:>11} {:>8} {:>6} {:>9}  {}".format(
