@@ -20,6 +20,7 @@ COUNCIL_VERSION="0.12.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
+export COUNCIL_BOM="$BOM"    # for awk as ENVIRON["COUNCIL_BOM"]: macOS's awk reads a /\357…/ regex as three characters
 NL='
 '
 CITE_AREA=0; CITE_NEEDS_PLACE=0; CITE_ROWS=""
@@ -150,7 +151,7 @@ list_runs() {
     $0 != "" {
       st = $0; split("", v); n = 0
       while ((getline line < st) > 0) {
-        if (++n == 1) sub(/^\357\273\277/, "", line)
+        if (++n == 1) sub("^" ENVIRON["COUNCIL_BOM"], "", line)
         gsub(/\r/, "", line)
         if (!match(line, /^[a-z][a-z0-9-]*:/)) continue
         k = substr(line, 1, RLENGTH - 1)
@@ -489,7 +490,7 @@ cmd_state() {
     esac
   done
   tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
-  awk 'NR == 1 { sub(/^\357\273\277/, "") } { print }' "$st" > "$tmp" || { rm -f "$tmp"; die "cannot update $st"; }
+  awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { print }' "$st" > "$tmp" || { rm -f "$tmp"; die "cannot update $st"; }
   for kv in ${1+"$@"}; do
     key="${kv%%=*}"
     if [ "$key" = "$kv" ]; then rm -f "$tmp"; die "expected key=value, got: $kv"; fi
@@ -1856,7 +1857,7 @@ brief_seats() {
 # knows (Hebrew, Chinese) keeps its own letters instead, so it can still be proved.
 ref_title() {
   local raw t
-  raw="$(awk 'NR == 1 { sub(/^\357\273\277/, ""); if ($0 ~ /^---[ \t\r]*$/) { fm = 1; next } }
+  raw="$(awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], ""); if ($0 ~ /^---[ \t\r]*$/) { fm = 1; next } }
        fm { if ($0 ~ /^---[ \t\r]*$/) fm = 0; next }
        /^#+[ \t]/ { sub(/^#+[ \t]*/, ""); t = $0; exit }
        first == "" && /[^ \t\r]/ { first = $0 }
@@ -3175,7 +3176,7 @@ memory_entries() {
       FVLIST = "OBSERVED, REPRODUCED, CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE or SCOPE-CREEP"
       sec = "settled"; secname = ""; sub_st = ""; sublvl = 0; subname = ""; elvl = 0
     }
-    { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub(/^\357\273\277/, "", line) }
+    { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub("^" ENVIRON["COUNCIL_BOM"], "", line) }
     incom { if (index(line, "-->")) incom = 0; next }
     line ~ /^[ \t]*<!--/ { if (!index(line, "-->")) incom = 1; next }
     line ~ /^[ \t]*(```|~~~)/ { fence = !fence; next }
@@ -4093,7 +4094,7 @@ prior_hits() {
       flush(); m = split(FILENAME, fp, "/"); disp = fp[m - 1] "/" fp[m]; na = 0; infm = 0; inareas = 0
       for (i = 1; i <= np; i++) hit[i] = ""
     }
-    { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub(/^\357\273\277/, "", line) }
+    { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub("^" ENVIRON["COUNCIL_BOM"], "", line) }
     FNR == 1 && line == "---" { infm = 1; next }
     infm {
       if (line == "---") { infm = 0; next }

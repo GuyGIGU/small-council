@@ -140,6 +140,7 @@ if not BASH or not GIT:
     sys.exit(0)
 
 with tempfile.TemporaryDirectory() as tmp:
+    tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     # --- SessionStart --------------------------------------------------------------------------
     plain = new_repo(tmp, "plain")
     code, out = run_hook(plain)

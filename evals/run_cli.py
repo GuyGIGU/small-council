@@ -212,6 +212,7 @@ if not BASH or not GIT:
     sys.exit(0)
 
 with tempfile.TemporaryDirectory() as tmp:
+    tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     repo = new_repo(tmp, "repo")
     write(os.path.join(repo, "src", "stats.py"),
           "def average(values):\n    total = 0\n    for v in values:\n        total += v\n    return total / len(values)\n")

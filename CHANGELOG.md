@@ -126,6 +126,18 @@ All notable changes to this project are documented here. The format is based on
   worker and their effect on findings is unmeasured until the Phase 5.5 live paired run.
   `council context build` and `show` are unchanged.
 
+### Fixed
+
+- **macOS: a byte-order mark at the start of a state file is stripped again.** macOS's awk reads a
+  `/\357\273\277/` regex as three characters, so a session-state file starting with a mark kept it
+  there. A second run could then open on the same tree, and `council state` updated the wrong key.
+  The five strips now take the mark as a string from the environment.
+- **Windows CI.** The helper and hook evals resolve the runner's temp folder to its long name
+  (`RUNNER~1` → the real one), so two path checks no longer fail there only.
+
+Both fixes were written on 2026-09-19 (`fix/0.7.1-ci`) but never merged, which is why `main`'s own CI
+has failed these four checks since then.
+
 ## [0.12.0] — 2026-09-24
 
 The fifth evolution milestone makes a seat's assigned context level actionable without replacing
