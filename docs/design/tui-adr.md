@@ -44,8 +44,19 @@ Option 3, as `council tui [--watch | --json]` (`scripts/cockpit.py`). The snapsh
 - the last events, with times shown locally.
 
 `--watch` redraws every two seconds with ANSI clearing (on a terminal; plain frames otherwise). It
-stops by itself once the run is no longer in progress. Control codes in any file are neutralised
-before display. `COUNCIL_ASCII=1` gives plain ASCII for consoles that cannot show UTF-8.
+stops once two polls in a row read the run as closed; a state file that is briefly missing (a
+helper replacing it) is read again, not taken for a closed run. `COUNCIL_ASCII=1` gives plain ASCII
+for consoles that cannot show UTF-8.
+
+**What it trusts.**
+- **Every value** from a file — a number field included — is stripped of C0 and C1 controls (tab
+  and newline too) before it is drawn.
+- **Malformed values** (a null or list exit, deeply nested JSON) draw as unknown.
+- **Links.** A file or folder that is a link or a Windows junction, or leads outside the run, is not
+  read.
+- **Windows file sharing.** On Windows every file is opened with delete sharing. Without it, a
+  cockpit reading `session-state.md` at the wrong moment made the helper's own `mv` of that file
+  fail: 161 of 300 renames in a tight-loop test, against 0 with delete sharing.
 
 ## Tradeoffs
 

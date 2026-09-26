@@ -141,7 +141,7 @@ run: 2026-09-26-091000-plan
 | **Ref** | references/quality-ux.md |
 | **Depends on** | — |
 | **Touches** | sitekit/slug.py, and a test of your own |
-| **Done when** | tests/test_slug_contract.py passes unedited; for any title, the slug holds only a–z, 0–9 and single hyphens, with no hyphen at either end (empty when nothing is left); an accented letter keeps its base letter (é → e); the tests gate passes |
+| **Done when** | tests/test_slug_contract.py passes unedited; for any title, the slug holds only a–z, 0–9 and single hyphens: each run of other characters becomes one hyphen, with no hyphen at either end (empty when nothing is left); an accented letter keeps its base letter (é → e); the tests gate passes |
 EOF
 
 git add -A

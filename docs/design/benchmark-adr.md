@@ -30,8 +30,14 @@ for doing the council's steps, not for outcomes.
 Option 3.
 - **Cases.** Three build cases (`evals/suite/bench-*`, tag `benchmark`) each carry a written plan
   and one trap.
-- **Hidden checks** live encoded in `evals/bench/<case>.hidden`, where a search of the plugin tree
-  does not find them.
+- **Hidden checks** and each case's traps live encoded in `evals/bench/<case>.hidden`, where a search
+  of the plugin tree does not find them.
+- **Tests run where the project cannot reach them.** An isolated Python imports the real `unittest`
+  first, runs the tests under a random module name, and writes a nonce-tagged result outside the
+  project. A pass needs:
+  - the exact test count;
+  - no skips and no failures;
+  - a canary assertion that fails as it must.
 - **Scoring.** `evals/bench.py score` judges each kept run on:
   - hidden checks;
   - restored original tests;

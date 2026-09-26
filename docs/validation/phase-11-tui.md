@@ -34,21 +34,41 @@ asked for a live cockpit outside the orchestration core.
 
 ## Tests
 
-`evals/run_tui.py`: 15 checks, about 17 s, no model, against a run the helper itself opened, planned,
+`evals/run_tui.py`: 21 checks, about 40 s, no model, against a run the helper itself opened, planned,
 seated and gated. They check:
 - the facts on screen (plan, seats, skipped reason, gates, repair next step, claim counts, memory
   proposals, budget, timeline);
 - the `--json` snapshot;
 - ASCII mode;
-- that a gate name holding an escape sequence never reaches the terminal;
-- `--watch`: it redraws while the run is open and exits by itself within seconds of the run closing;
+- that escape, bell and C1 codes never reach the terminal, whether they sit in a name, a number
+  field, a note or a verdict, and that a note's newline cannot draw a line of its own;
+- malformed values (a null or list exit) and 200,000-deep JSON, on screen and as data;
+- an events.tsv over 4 MB, reported as too large;
+- a linked gates folder and a linked run folder, neither followed;
+- `--watch`: it keeps watching through a moment with no state file, and exits by itself once the
+  run closes;
 - a legacy run with malformed files still draws;
-- `--watch` on a closed run draws once;
+- `--watch` on a closed run reads it closed twice and stops;
 - a folder that is not a run is refused;
+- on Windows: 300 of the helper's own renames over a file it reads in a tight loop all succeed,
+  while a plain reader (the control) makes some fail;
 - five refusals, each with its own message;
 - that every file of the run and the council home is byte-for-byte unchanged after drawing.
 
 Also run: structural 619/619 and quick validation (0 warnings).
+
+## Independent review
+
+A reviewer checked `17769f7` without access to my reasoning. It found:
+
+| Severity | Finding | Fix |
+|---|---|---|
+| medium | A gate's `exit` or `seconds` and a repair's `attempt` reached the screen uncleaned (a window-title or clipboard escape went through); `clean()` kept tab, newline and C1 codes. | Every value is cleaned, and every drawn line is swept again for C0 and C1 controls and line separators. |
+| medium | `"exit": null` or a list crashed the screen; 200,000-deep JSON crashed both the screen and `--json`. | Numbers are coerced (unknown shows as `?`), and deep nesting is caught. |
+| medium-low | `--watch` quit when `session-state.md` was briefly missing, and on Windows its reads could make the helper's rename of that file fail. | A missing file is read again; the watch stops only after two polls read the run as closed. Files are opened with delete sharing: 0 of 300 of the helper's own renames failed under a tight-loop reader, against 161 of 300 with a plain reader (the control). |
+| low | An events.tsv over 4 MB showed as missing; a Windows junction was followed; the README's path fits only the developer install. | Too-large is said as such; links and junctions are refused for the run, its folders and its files; the README names both installs. |
+
+Run against the old cockpit, 6 of the new checks fail; against the fixed one, 21 of 21 pass.
 
 ## Metrics / baseline comparison
 

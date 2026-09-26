@@ -161,11 +161,14 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
 estimates come from your own project's ledger once there is some.
 
 **Watching a run.** In a terminal of your own, in the project, run the helper's cockpit. Outside
-Claude Code the helper is not on your PATH, so give its full path:
+Claude Code the helper is not on your PATH, so give its full path: `bin/council` inside the plugin's
+folder. For the `~/.claude/skills/small-council/` install described under Install, that is:
 
 ```bash
 bash ~/.claude/skills/small-council/bin/council tui --watch
 ```
+
+For a marketplace install, use the folder Claude Code installed the plugin into instead.
 
 It redraws the plan, seats, gates, repairs, evidence and recent events every two seconds, and it
 stops when the run closes. It only reads: leaving it open changes nothing. It needs Python 3.8+. Add

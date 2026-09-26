@@ -29,8 +29,9 @@ All notable changes to this project are documented here. The format is based on
   the cap, gates, each repair task's next step, claim verdict counts, memory proposals waiting and
   the last events. `--watch` redraws every two seconds and stops by itself when the run closes;
   `--json` prints the same snapshot as data (`council.run-snapshot/1`). It never writes a file or
-  an event, neutralises escape codes from files, draws legacy and malformed runs, and prints plain
-  ASCII with `COUNCIL_ASCII=1`. Optional Python 3.8+; no curses, no server.
+  an event; strips control characters from every value it draws; draws legacy and malformed runs;
+  follows no link or junction; opens files on Windows so the helper can still replace them while it
+  reads; and prints plain ASCII with `COUNCIL_ASCII=1`. Optional Python 3.8+; no curses, no server.
 
 - **A baseline-versus-council benchmark harness.**
   - **Cases.** Three build cases (`evals/suite/bench-*`, tag `benchmark`) run through
@@ -40,6 +41,15 @@ All notable changes to this project are documented here. The format is based on
     `evals/bench/*.hidden`), restored original tests, frozen and protected files, scope, removed
     assertions, a required test and false completion claims.
   - **`compare`** reports the arms side by side and calls nothing a result below ten pairs.
+  - **Tests the run cannot fake.** The scorer runs the hidden and original tests in an isolated
+    Python that imports the real `unittest` first, under random module names, with a nonce-tagged
+    result outside the project. A pass needs:
+    - the exact test count;
+    - no skips;
+    - a canary assertion that fails.
+
+    It also rules out six fakes, and reads final reports so that a product sentence ("cannot
+    delete") is not a disclosure while "not fixed yet" is.
   - **`self-test`** (in CI, no model) proves each case is unsolved when untouched, solvable, and
     scored as intended on every trap.
   - **Budget.** A pilot is paid and awaits the owner's budget (see `evals/bench/README.md`).

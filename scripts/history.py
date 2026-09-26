@@ -35,10 +35,10 @@ CHECKED = ("CONFIRMED", "REFUTED", "MISCITED")
 
 def run_folders(home):
     runs = Path(home) / "runs"
-    if not runs.is_dir() or runs.is_symlink():
+    if not runs.is_dir() or cockpit.linked(runs):
         return []
     found = [p for p in runs.iterdir()
-             if p.is_dir() and not p.is_symlink() and (p / "session-state.md").is_file()]
+             if p.is_dir() and not cockpit.linked(p) and (p / "session-state.md").is_file()]
     return sorted(found, key=lambda p: p.name)[-MAX_RUNS:]
 
 
