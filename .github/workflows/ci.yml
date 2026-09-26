@@ -62,6 +62,9 @@ jobs:
       - name: Repair loop evals
         run: python evals/run_repair.py
 
+      - name: Memory evals
+        run: python evals/run_memory.py
+
       - name: Hook evals
         run: python evals/run_hook.py
 

@@ -21,20 +21,66 @@ actual rule and its origin. A prior failure also had no distinct memory category
 an enforced convention would overstate its authority, while leaving it only in a run log made it
 hard to retrieve by scope. The new category is evidence, not policy.
 
+## Hardening review (2026-09-26)
+
+A review of the first slice found four ways an unsupported failure could still reach every brief.
+Each was reproduced with the helper before it was fixed:
+
+| Gap in the first slice | Now |
+|---|---|
+| Any non-empty verdict was accepted, so `INFERRED`, `ASSUMED` or a guess was served as history. | The verdict must establish the failure: `OBSERVED`, `REPRODUCED`, or a verifier's `CONFIRMED`, `REFUTED`, `MISCITED`, `REGRESSION`, `INCOMPLETE`, `SCOPE-CREEP`. |
+| "Required" scope accepted `none`, `all`, `*` or `.`, which the matcher reads as every run — so the entry reached unrelated runs. | A scope item that means every run keeps the entry out. |
+| Any Pattern/Rule/Decision field satisfied the Failure requirement, and a `**Rule:**` was shown as the meaning of an entry labelled "not a rule". | Only `**Failure:**` (or `**Observation:**`) counts, and it is the only meaning shown. |
+| Evidence was a recorded string: an entry citing a file that never existed was served, and `memory check` reported nothing. | Every `index`, `select` and `check` opens the cited files (below). |
+
+**Provenance audit.** For each observed failure the helper reads the `**Evidence:**` paths — from the
+repo root, then the council home, never outside them — in one pass for the whole memory. It does not
+take the entry's word for anything. An entry reaches no brief when its evidence names no file, when
+none of its files can be read as cited (missing, or a cited line past the end), or when a verifier's
+verdict word appears on none of the cited lines (anywhere in a file cited whole). OBSERVED and
+REPRODUCED name artifacts, not a verdict line, so for them the files must exist. `select` names each
+entry it leaves out and why; `memory check` prints `EVIDENCE` for each missing or mis-cited piece and
+`UNSUPPORTED` for each entry no longer served, and fails; `council doctor` counts both. An entry
+with one missing piece and another that still shows its verdict stays served, with the note.
+Settled AP/EC/D entries are not audited: their authority is the user's approval, not a file.
+
+These checks are mechanical. A file that still shows `REFUTED` does not prove the old observation
+applies to today's code — the brief still labels F entries as leads to check, never as rules.
+
+## The "stalled" broad helper suite
+
+`evals/run_cli.py` was reported as stalled during the first slice. The earlier session's log shows it
+was killed twice while still running: once on Windows after about eight minutes, once inside WSL on
+the `/mnt/c` checkout after about four, and `bin/council` was being edited while the first run was
+reading it. Rerun unchanged in an isolated worktree on 2026-09-26, it passed **520/520 in 16 min
+39 s** on Windows Git Bash (bash 5.3.9): about 900 helper calls at roughly one second each, the
+slowest 14 s, no timeouts. It had printed nothing until the end; it now prints each result as it
+finishes. WSL was not used or shut down for this investigation (its `wsl -l -v` hung during this
+session and was left alone).
+
 ## Compatibility and tests
 
 - Existing AP/EC/D headings and bullets remain readable; missing new fields do not silence them.
 - Proposed, rejected and retired entries are still excluded. Incomplete F entries are visible in
-  `council memory` but do not reach a brief.
-- `evals/run_cli.py` covers content and origin in selection, scoped F retrieval, missing-evidence
-  exclusion, and unapproved F exclusion. `evals/run_structural.py` guards the doctrine boundary.
+  `council memory` with the reason, but do not reach a brief.
+- A memory with no observed failures is parsed, selected and checked exactly as before; the audit
+  runs only when an F entry is served.
+- `evals/run_memory.py` (17 checks) covers selection with meaning and origin, scoped retrieval,
+  each refusal above, the provenance audit's served and unserved cases (a path with a blank, a
+  path outside the project, prose instead of a file, a partial loss), the doctor warning, and
+  legacy formats. Nine of its checks fail against the first slice's helper, which is how they were
+  shown to test something. `evals/run_cli.py` keeps its own Phase 8 cases with a real evidence file.
+- With this change, the structural (600), hook (135), repair (37) and evidence (21) suites pass on
+  Windows. The broad helper suite is rerun on it separately (it takes 17 minutes). macOS (bash
+  3.2, BSD awk) and Linux legs have not been run for this change; CI runs them on a pull request.
 - No live Claude run or claim of improved findings is part of this slice. The Phase 7 live check
   remains open; context packs remain opt-in.
 
 ## Limitations and next work
 
 The parser captures one-line labelled fields. A long multiline explanation still needs the source
-file; authors should make the selected first line self-contained. `Origin`, `Evidence` and `Verdict`
-are recorded strings, not independently verified truths. Later Phase 8 work can add an audit that
-checks referenced provenance without trusting old agent claims, and a controlled path from a
-verified run failure into a user-confirmed F proposal. No automatic memory promotion is present.
+file; authors should make the selected first line self-contained. An F id at the start of a plain
+bullet (for example `- F-16 jets …` in prose) is now reported as a line that looks like an entry
+but is not read. Evidence inside `.council/runs/` is local and untracked, so it can vanish with the
+run folder or be absent on another clone; an entry then drops out of briefs, with a warning, until
+its evidence is re-anchored to a tracked file. No automatic memory promotion is present.

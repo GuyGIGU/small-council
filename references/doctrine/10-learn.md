@@ -11,7 +11,10 @@
 - **Write each one in plain words, with evidence and effect:**
   `- PROPOSED accepted pattern: stop flagging <X> in <paths> — <why it's deliberate> (evidence: <path:line>; scope: <paths or seat slugs>; from <deliverable path>, <date>)`
 - For a failure proposal, name the observed failure, scope, origin, evidence path, verdict and the
-  future check it changes. Do not promote an unsupported hypothesis into a failure entry.
+  future check it changes. Do not promote an unsupported hypothesis into a failure entry: the helper
+  serves an F entry only with a verdict that establishes it (OBSERVED, REPRODUCED, or a verifier's
+  CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE, SCOPE-CREEP), a scope narrower than every
+  run, and evidence files that still show it.
 - **Preserve the support level.** A proposal derived from a refuted or uncertain claim names that
   verdict and verifier file. A remembered decision is the user's ruling, not an agent's assumption;
   retain the dated words and origin. Never turn an `INFERRED` or `ASSUMED` note into settled memory
@@ -38,6 +41,10 @@
 - **Stale anchors:** `council memory check` lists entries whose anchored file, line or symbol is
   gone. Propose re-anchoring or retiring each, as operations like the ones above. Anchor new entries
   to a path or a symbol where you can — a line number can drift without anyone noticing.
+- **Unsupported failures:** the same check lists each observed failure whose evidence file is gone
+  or whose cited lines no longer show its verdict (`UNSUPPORTED` — no brief gets it). Propose
+  re-anchoring its evidence to a file that still shows it, or retiring it; never restore it by
+  editing its verdict.
 
 ## Close
 

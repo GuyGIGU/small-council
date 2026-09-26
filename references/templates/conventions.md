@@ -35,15 +35,22 @@
      **Origin:** <dated user ruling or ask path> · **Date:** <YYYY-MM-DD> -->
 
 ## Observed Failures (F) — historical evidence, never a rule
-<!-- User-confirmed entries only. A failure must have all five fields below; an incomplete entry
-     is listed as NOT SERVED. Keep the observation separate from a proposed future rule.
+<!-- User-confirmed entries only. A failure is served only with all five fields below, a scope that
+     names paths, seats or a mode (never "all", "none" or "*"), and a verdict that establishes it;
+     otherwise it is listed as NOT SERVED with the reason. Keep the observation separate from any
+     future rule: a **Rule:** written into an F entry is never shown with it.
      ### F-1: <brief title>
      **Failure:** <what was observed, not an assumed cause>
-     **Scope:** <paths, globs or mode slugs; required>
-     **Origin:** <run or deliverable path and date>
-     **Evidence:** <gate output, verifier file or trace path>
-     **Verdict:** <OBSERVED, REPRODUCED, REFUTED or UNCERTAIN; never imply certainty from a guess>
-     **Anchor:** <code path or symbol, if one exists> -->
+     **Scope:** <paths, globs, seat or mode slugs; required>
+     **Origin:** <run or deliverable and date>
+     **Evidence:** <paths to the gate output, verifier row or trace, e.g. .council/runs/<run>/verify-1.md:14>
+     **Verdict:** <OBSERVED or REPRODUCED (seen, or seen again, in a named artifact), or the verifier's
+                  CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE or SCOPE-CREEP — never
+                  INFERRED, ASSUMED, UNVERIFIED or UNCERTAIN>
+     **Anchor:** <code path or symbol, if one exists>
+     Selection opens the evidence each time: an entry whose files are gone, or whose cited lines
+     no longer show a verifier's verdict, reaches no brief until it is re-anchored or retired, and
+     `council memory check` says which. -->
 
 ## Proposed — awaiting the user's yes/no
 <!-- One line per proposal, written the moment it is proposed so it survives the session. Format:

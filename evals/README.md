@@ -139,7 +139,10 @@ No model or target application code is run; the routing suggestions' usefulness 
 build evaluation.
 
 `python evals/run_memory.py` is a focused, no-model check of provenance-aware selection and scoped
-observed failures. The larger helper suite also covers legacy memory formats and anchor checks.
+observed failures: which failures are refused (a verdict that establishes nothing, a scope of every
+run, a rule posing as a failure) and the evidence audit that keeps an entry out of briefs once its
+files are gone or no longer show its verdict. The larger helper suite also covers legacy memory
+formats and anchor checks.
 
 ```bash
 python evals/check_repair_trace.py --self-test --case evals/suite/build-repair-drill

@@ -13,6 +13,14 @@ All notable changes to this project are documented here. The format is based on
   origin, evidence and verdict; they are historical leads, never rules. Legacy AP/EC/D entries
   remain readable. Focused local evals cover retrieval and incomplete-entry exclusion.
 
+- **Observed failures must be supported to be served.** An F entry reaches a brief only with a
+  verdict that establishes it (OBSERVED, REPRODUCED, or a verifier's CONFIRMED, REFUTED, MISCITED,
+  REGRESSION, INCOMPLETE, SCOPE-CREEP — never INFERRED, ASSUMED or UNCERTAIN), a scope narrower
+  than every run, and a Failure field; a Rule written into one is never shown as its meaning.
+  `council memory`, `select` and `check` open the files its Evidence names: an entry whose files are
+  gone, or whose cited lines no longer show a verifier's verdict, is left out with the reason, and
+  `memory check` (and `doctor`) report it. Memories without observed failures behave as before.
+
 - **Phase 7 bounded repair trail.** `council repair record|show|check` snapshots each failed build
   gate and its reruns, suggests an advisory failure category and expert lens, distinguishes a red
   baseline, and stops after three failed executions of the same gate. The second failure recommends

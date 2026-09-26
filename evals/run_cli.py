@@ -832,6 +832,9 @@ with tempfile.TemporaryDirectory() as tmp:
     check("memory select: defaults to the run's changed files and seats", "AP-1" in out and "AP-2" in out and "EC-2" not in out, out)
     mem8 = new_repo(tmp, "memory-evolution")
     write(os.path.join(mem8, ".council", "council.config.md"), "# c\n")
+    # F-1's evidence: an observed failure is served only while the file it cites still shows its verdict.
+    write(os.path.join(mem8, ".council", "reviews", "run-12.md"),
+          "".join(f"line {n}\n" for n in range(1, 42)) + "| 4 | stale tokens | REFUTED — invalidated first | mw.py:3 |\n")
     write(os.path.join(mem8, ".council", "conventions.md"),
           "# Conventions\n## Accepted Patterns\n### AP-1: old title\n"
           "**Pattern:** read the cache after revocation · **Origin:** review-12, user accepted 2026-09-26\n"
