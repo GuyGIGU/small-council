@@ -329,7 +329,9 @@ with tempfile.TemporaryDirectory(prefix="council-memory-") as temporary:
     proofs = sorted((build / "repairs").glob("T1-*-tests.txt"))
     if proofs:
         proofs[0].write_text("edited after the fact\n", encoding="utf-8")
-    code, out, err = council(proj, "memory", "reject", "F-3", "--user-said", "no")
+    code, out, err = council(proj, "memory", "reject", "F-3", "--user-said", "no. my db password is\nZq8vT3xKp2Lm")
+    check("a secret the user's words split across lines is still redacted before the tracked memory file",
+          code == 0 and "Zq8vT3xKp2Lm" not in pmem.read_text(encoding="utf-8"), out + err)
     code, out, err = council(proj, "memory", "propose", "repair", "T1", "--scope", "src/auth/**")
     check("a repair trail whose saved output changed is refused", code == 2 and "already cites" not in err and
           "changed" in err, out + err)

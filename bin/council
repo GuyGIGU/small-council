@@ -127,7 +127,7 @@ configured_worker_estimate() {
   v="$(sed -n 's/^[[:space:]]*-[[:space:]]*estimate per worker:[[:space:]]*\([0-9][0-9.,]*[[:space:]]*[kKmM]\{0,1\}\).*/\1/p' "$cfg" 2>/dev/null | head -n 1)"
   [ -n "$v" ] || return 0
   v="$(seat_tokens "$v")" || return 0
-  [ "${v:-0}" -ge 1000 ] 2>/dev/null && [ "$v" -le 5000000 ] 2>/dev/null && printf '%s' "$v"
+  [ "${v:-0}" -ge 1000 ] 2>/dev/null && [ "$v" -le 1000000 ] 2>/dev/null && printf '%s' "$v"
   return 0
 }
 
@@ -1080,7 +1080,7 @@ cmd_history() {
 # logged in tuning.md. Roster changes go through a council-init refresh; behaviour is held until a
 # benchmark shows a change helps.
 cmd_tune() {
-  local action="$1" knob="${2:-}" home py tmpd
+  local action="$1" knob="${2:-}" value="${3:-}" home py tmpd
   home="$(council_home)"
   [ -d "$home" ] || die "no council here (no $home) — run council-init"
   py="$(impact_python)" || die "tune needs optional Python 3.8+; nothing is tuned without it"
@@ -1091,9 +1091,14 @@ cmd_tune() {
     return
   fi
   tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
-  printf '%s\n' "$MEMORY_SAID_ARG" > "$tmpd/said.raw" || { rm -rf "$tmpd"; die "cannot write $tmpd"; }
+  { printf '%s' "$MEMORY_SAID_ARG" | tr '\r\n\t' '   '; printf '\n'; } > "$tmpd/said.raw" \
+    || { rm -rf "$tmpd"; die "cannot write $tmpd"; }
   redact_copy "$tmpd/said.raw" "$tmpd/said" >/dev/null || { rm -rf "$tmpd"; die "could not redact the user's words"; }
-  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" "$action" "$knob" --home "$home" --said "$tmpd/said"
+  if [ "$action" = apply ]; then
+    "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" apply "$knob" --value "$value" --home "$home" --said "$tmpd/said"
+  else
+    "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" "$action" "$knob" --home "$home" --said "$tmpd/said"
+  fi
   set -- $?
   rm -rf "$tmpd"
   return "$1"
@@ -4026,7 +4031,8 @@ AUDIT
         || die "$1 is not one proposal awaiting the user's answer (none, or its id is shared) — council memory shows where it is"
       py="$(impact_python)" || die "memory $sub needs optional Python 3.8+ — move the entry by hand (references/doctrine/10-learn.md)"
       tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
-      { cp "$mem" "$tmpd/before" && printf '%s\n' "$MEMORY_SAID_ARG" > "$tmpd/said.raw"; } || { rm -rf "$tmpd"; die "cannot write $tmpd"; }
+      { cp "$mem" "$tmpd/before" && { printf '%s' "$MEMORY_SAID_ARG" | tr '\r\n\t' '   '; printf '\n'; } > "$tmpd/said.raw"; } \
+        || { rm -rf "$tmpd"; die "cannot write $tmpd"; }   # one line, so a secret split across lines is still caught
       redact_copy "$tmpd/said.raw" "$tmpd/said" >/dev/null || { rm -rf "$tmpd"; die "could not redact the user's words"; }
       if [ "$sub" = accept ]; then k=observed; st=observed; else k=rejected; st=gone; fi
       "$py" "$COUNCIL_PLUGIN_ROOT/scripts/memory.py" move "$1" --to "$k" --memory "$tmpd/before" --said "$tmpd/said" \
@@ -4636,13 +4642,14 @@ cmd_route_recommend() {
     size=squad; size_reason="multiple useful lenses and independent verification"
   fi
   max_budget="${ROUTE_BUDGET_ARG:-9999999}"
-  per="$(configured_worker_estimate)"; per_reason="project's measured estimate (estimate per worker in council.config.md)"
+  per="$(configured_worker_estimate)"; per_reason="configured estimate per worker (council.config.md)"
   [ -n "$per" ] || { per=80000; per_reason="no-history estimate"; }
-  if [ "$size" = full ] && { [ "$cap" -lt 4 ] || [ "$max_budget" -lt $((20000 + 4 * per)) ]; }; then
+  # Only a ceiling the user gave (--budget-tokens) can shrink a run; the estimate alone never does.
+  if [ "$size" = full ] && { [ "$cap" -lt 4 ] || { [ -n "$ROUTE_BUDGET_ARG" ] && [ "$max_budget" -lt $((20000 + 4 * per)) ]; }; }; then
     size=squad; size_reason="full recommendation reduced by agent or token cap"
     route_status=constrained
   fi
-  if [ "$size" = squad ] && { [ "$cap" -lt 3 ] || [ "$max_budget" -lt $((20000 + 3 * per)) ]; }; then
+  if [ "$size" = squad ] && { [ "$cap" -lt 3 ] || { [ -n "$ROUTE_BUDGET_ARG" ] && [ "$max_budget" -lt $((20000 + 3 * per)) ]; }; }; then
     size=solo; size_reason="squad recommendation reduced by agent or token cap; independent verification unavailable"
     route_status=constrained
   fi
@@ -4824,8 +4831,11 @@ council — the Small Council's helper (bash + git)
   council tune [propose] [--json]        tuning proposals from this project's own record: the estimate
                                          per worker (when five runs measure it), roster changes (via a
                                          refresh), behaviour held until a benchmark shows it helps
-  council tune apply|revert budget --user-said "…"
-                                         set or undo the estimate per worker, logged in tuning.md
+  council tune apply budget <value> --user-said "…"
+                                         set the estimate per worker to the value it proposed, logged
+                                         in tuning.md with the exact line it replaced
+  council tune revert budget --user-said "…"
+                                         put that line back exactly
   council history [--json]               every run of this council home: cost, estimate accuracy, gates,
                                          repairs, verifier catches, seat evidence — a rate only when
                                          enough runs carry its data (optional Python 3.8+)
@@ -5007,11 +5017,15 @@ main() {
                              [ -z "$RUN_ARG" ] || die "tune reads this council home's record; it does not take --run"
                              cmd_tune propose ;;
                apply|revert) takes_flags "tune $1" user-said
-                             [ $# -eq 2 ] || die "usage: council tune $1 budget --user-said \"<the user's words>\""
+                             if [ "$1" = apply ]; then
+                               [ $# -eq 3 ] || die "usage: council tune apply budget <the value council tune showed, e.g. 150k> --user-said \"<the user's words>\""
+                             else
+                               [ $# -eq 2 ] || die "usage: council tune revert budget --user-said \"<the user's words>\""
+                             fi
                              [ -z "$RUN_ARG" ] || die "tune reads this council home's record; it does not take --run"
                              [ -n "$MEMORY_SAID_ARG" ] || die "tune $1 needs --user-said \"<the user's own words>\" — their answer, not a summary of it"
-                             cmd_tune "$1" "$2" ;;
-               *)            die "usage: council tune [propose] [--json] | tune apply|revert budget --user-said \"…\"" ;;
+                             cmd_tune "$1" "$2" "${3:-}" ;;
+               *)            die "usage: council tune [propose] [--json] | tune apply budget <value> --user-said \"…\" | tune revert budget --user-said \"…\"" ;;
              esac ;;
     history) takes_flags history json; no_words history ${1+"$@"}
              [ -z "$RUN_ARG" ] || die "history reads every run of this council home; it does not take --run"

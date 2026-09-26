@@ -38,15 +38,20 @@ A self-tuner built now would act on noise, or on nothing.
 Option 3, as `council tune` (`scripts/tune.py`). It sorts knobs into three kinds:
 - **budget** (the only knob it changes): the estimate per worker that `council route recommend`
   budgets with.
-  - When it is proposed: once five completed runs measure tokens per worker (`council history`) and
-    the median is more than a quarter away from the current estimate.
-  - How it is applied: `council tune apply budget --user-said "…"` writes one line,
-    `- estimate per worker: <N>k`, under `## Run preferences`.
-  - What gets logged: the evidence and the user's redacted words, in `.council/tuning.md`.
-  - How it is undone: `council tune revert budget` restores the previous line byte for byte. It
-    refuses if the file was edited by hand since.
-  - What it affects: the route reads the line for its worker and verifier estimates and for the
-    ceilings that shrink a run to fit a user's budget. Without the line, nothing changes.
+  - When it is proposed: once five completed runs measure tokens per agent — workers and verifiers,
+    as the route budgets them (`council history`) — and the median is more than a quarter away from
+    the current estimate.
+  - How it is applied: `council tune apply budget <value> --user-said "…"`, with the value the user
+    was shown. It is refused if the record now proposes another. It writes one line,
+    `- estimate per worker: <N>k`, under `## Run preferences`, or replaces the one there.
+  - What gets logged: the evidence, the user's words (flattened to one line, then redacted) and the
+    exact line replaced, in `.council/tuning.md`. The log and the config are written as a pair: if
+    the config cannot be written, the log is put back.
+  - How it is undone: `council tune revert budget` puts back exactly the bytes that were there. It
+    refuses if the line was edited by hand since, or if the log's exact record was.
+  - What it affects: the route reads the line (1k–1M; anything else is ignored) for its per-agent
+    estimates, and for the ceilings that shrink a run — only when the user gave a ceiling with
+    `--budget-tokens`. Without the line, nothing changes.
 - **roster:** seats whose `council ledger advice` clears its bar. These are listed only; a roster
   changes only through a council-init refresh, with the numbers shown.
 - **held:** context packs, run size and verification depth. These are never proposed without a

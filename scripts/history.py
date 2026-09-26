@@ -26,9 +26,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cockpit  # noqa: E402  (the read-only run snapshot)
 import ledger   # noqa: E402  (seat evidence and advice)
 
-SCHEMA = "council.history/1"
+SCHEMA = "council.history/2"
 MIN_RUNS = 5          # runs that carry a fact before a median, share or ratio over them is shown
 MAX_RUNS = 1000       # the most recent runs read
+SEAT_WINDOW = 20      # the runs of the ledger read for seat evidence, as council ledger advice reads them
+CHAIR_ESTIMATE = 20000  # the Chair's share of a route estimate; seats.tsv never records the Chair
 CATCHES = ("REFUTED", "MISCITED")
 CHECKED = ("CONFIRMED", "REFUTED", "MISCITED")
 
@@ -52,12 +54,16 @@ def spread(values):
             "p90": at(0.9)}
 
 
-def rate(k, n):
-    """k of n with a 90% plausible range, when n runs' worth of data is enough to trust it."""
-    if n < MIN_RUNS:
-        return {"k": k, "n": n, "enough": False}
-    low, high = ledger.wilson(k, n, ledger.BAR["z"])
-    return {"k": k, "n": n, "enough": True, "share": round(k / n, 4), "low": round(low, 4), "high": round(high, 4)}
+def rate(pairs):
+    """k of n summed over runs, from (k, n) per run, with a 90% plausible range — only once MIN_RUNS
+    runs carry the data. Items of one run count at most as the seat advice counts them."""
+    pairs = [(k, n) for k, n in pairs if n > 0]
+    k, n = sum(k for k, _ in pairs), sum(n for _, n in pairs)
+    if len(pairs) < MIN_RUNS:
+        return {"k": k, "n": n, "runs": len(pairs), "enough": False}
+    got = ledger.share(pairs)
+    return {"k": k, "n": n, "runs": len(pairs), "enough": True, "share": got["share"], "low": got["low"],
+            "high": got["high"]}
 
 
 def month_of(name):
@@ -67,7 +73,7 @@ def month_of(name):
 
 def history(home):
     home = Path(home)
-    runs = [cockpit.snapshot(folder, home, last_events=0) for folder in run_folders(home)]
+    runs = [cockpit.snapshot(folder, None, last_events=0) for folder in run_folders(home)]  # memory is not read
     by_status, by_mode, by_month = {}, {}, {}
     for snap in runs:
         info = snap["run"]
@@ -77,13 +83,11 @@ def history(home):
     complete = [s for s in runs if s["run"]["status"] == "complete"]
     costed = [s for s in complete if s["tokens"]["total"] > 0]
     ratios = []
-    for snap in costed:
-        estimate = cockpit.number(snap["plan"].get("estimated-tokens"))
+    for snap in costed:                  # agents' tokens against the plan's estimate less the Chair's share
+        estimate = cockpit.number(snap["plan"].get("estimated-tokens")) - CHAIR_ESTIMATE
         if estimate > 0:
             ratios.append(snap["tokens"]["total"] / estimate)
-    workers = [s["tokens"]["workers"] / max(1, sum(1 for seat in s["seats"] if seat["state"] not in ("queued", "skipped")
-                                                   and not seat["slug"].startswith(("verify-", "diagnose-"))))
-               for s in costed if s["tokens"]["workers"] > 0]
+    agents = [s["tokens"]["total"] / s["agents"] for s in costed if s["agents"] > 0]
     sizes = {}
     for snap in runs:
         size = snap["plan"].get("size", "")
@@ -101,20 +105,25 @@ def history(home):
             entry["runs"].add(snap["run"]["id"])
             if gate["exit"] != 0:
                 entry["failed_runs"].add(snap["run"]["id"])
-    tasks, categories = [], {}
+    tasks, categories, finished = [], {}, []
     for snap in runs:
+        resolved = stopped = 0
         for task, info in snap["repairs"].items():
             tasks.append(info["next"])
-            if info["category"]:
-                categories[info["category"]] = categories.get(info["category"], 0) + 1
-    verdicts, claim_runs = {}, 0
+            resolved += info["next"] == "resolved"
+            stopped += info["next"] == "stop"
+            if info.get("failure_category"):
+                categories[info["failure_category"]] = categories.get(info["failure_category"], 0) + 1
+        finished.append((resolved, resolved + stopped))
+    verdicts, claim_runs, checked_runs = {}, 0, []
     for snap in runs:
         if snap["claims"]["total"]:
             claim_runs += 1
             for verdict, n in snap["claims"]["by_verdict"].items():
                 verdicts[verdict] = verdicts.get(verdict, 0) + n
-    checked = sum(verdicts.get(v, 0) for v in CHECKED)
-    seats = ledger.report(home / "ledger.tsv", max(1, len(runs)))
+            by = snap["claims"]["by_verdict"]
+            checked_runs.append((sum(by.get(v, 0) for v in CATCHES), sum(by.get(v, 0) for v in CHECKED)))
+    seats = ledger.report(home / "ledger.tsv", SEAT_WINDOW)
     advice = {}
     for seat in seats["seats"]:
         advice[seat["advice"]] = advice.get(seat["advice"], 0) + 1
@@ -130,7 +139,7 @@ def history(home):
                  "first": opened[0] if opened else None, "last": opened[-1] if opened else None, "sizes": sizes},
         "cost": {"tokens_per_run": spread([s["tokens"]["total"] for s in costed]),
                  "agents_per_run": spread([s["agents"] for s in costed]),
-                 "tokens_per_worker": spread(workers)},
+                 "tokens_per_agent": spread(agents)},
         "estimates": {"actual_over_estimate": spread(ratios)},
         "gates": {name: {"runs": len(e["runs"]), "failed_runs": len(e["failed_runs"])} for name, e in sorted(gates.items())},
         "proofs": {"before_checks": proofs["before"][0], "before_failed_as_intended": proofs["before"][1],
@@ -138,10 +147,10 @@ def history(home):
                    "probes": proofs["probe"][0], "probes_failed": proofs["probe"][1]},
         "repairs": {"tasks": len(tasks), "resolved": tasks.count("resolved"), "stopped": tasks.count("stop"),
                     "open": len(tasks) - tasks.count("resolved") - tasks.count("stop"),
-                    "resolved_share": rate(tasks.count("resolved"), tasks.count("resolved") + tasks.count("stop")),
+                    "resolved_share": rate(finished),
                     "categories": dict(sorted(categories.items()))},
         "claims": {"runs": claim_runs, "verdicts": dict(sorted(verdicts.items())),
-                   "caught_share": rate(sum(verdicts.get(v, 0) for v in CATCHES), checked)},
+                   "caught_share": rate(checked_runs)},
         "seats": {"in_ledger": len(seats["seats"]), "advice": dict(sorted(advice.items())),
                   "weighed": sorted(s["seat"] for s in seats["seats"] if s.get("weighed"))},
         "quality": quality,
@@ -170,16 +179,19 @@ def render(data):
     if runs["sizes"]:
         lines.append("Planned size: " + " · ".join("{} {}".format(s, n) for s, n in sorted(runs["sizes"].items())))
     cost = data["cost"]
-    t, a, w = cost["tokens_per_run"], cost["agents_per_run"], cost["tokens_per_worker"]
+    t, a, w = cost["tokens_per_run"], cost["agents_per_run"], cost["tokens_per_agent"]
     lines.append("")
     lines.append("Cost per completed run: " + (
         "median {} tokens (10–90%: {}–{}), median {} agent(s)".format(k(t["median"]), k(t["p10"]), k(t["p90"]), a["median"])
         if t["enough"] else too_few(t["n"], "completed runs with a recorded cost")))
-    lines.append("Tokens per worker: " + ("median {} (10–90%: {}–{})".format(k(w["median"]), k(w["p10"]), k(w["p90"]))
-                                          if w["enough"] else too_few(w["n"], "runs with workers")))
+    lines.append("Tokens per agent (workers and verifiers): " + (
+        "median {} (10–90%: {}–{})".format(k(w["median"]), k(w["p10"]), k(w["p90"]))
+        if w["enough"] else too_few(w["n"], "completed runs with agents")))
     e = data["estimates"]["actual_over_estimate"]
-    lines.append("Estimates: " + ("actual was {:.2f}× the plan's estimate at the median (10–90%: {:.2f}–{:.2f}×)".format(
-        e["median"], e["p10"], e["p90"]) if e["enough"] else too_few(e["n"], "completed runs with both an estimate and a cost")))
+    lines.append("Estimates: " + (
+        "agents cost {:.2f}× the plan's estimate less the Chair's 20k, at the median (10–90%: {:.2f}–{:.2f}×)".format(
+            e["median"], e["p10"], e["p90"]) if e["enough"]
+        else too_few(e["n"], "completed runs with both an estimate and a cost")))
     lines.append("")
     if data["gates"]:
         ranked = sorted(data["gates"].items(), key=lambda item: (-item[1]["runs"], item[0]))
@@ -199,7 +211,7 @@ def render(data):
         lines.append("Repairs: {} task(s) · {} resolved · {} stopped · {} still open · resolved {}".format(
             r["tasks"], r["resolved"], r["stopped"], r["open"],
             "{:.0%} (plausible {:.0%}–{:.0%})".format(share["share"], share["low"], share["high"]) if share["enough"]
-            else too_few(share["n"], "finished repair trails")))
+            else too_few(share["runs"], "runs with a finished repair trail")))
         if r["categories"]:
             lines.append("  failure categories: " + " · ".join("{} {}".format(c, n) for c, n in r["categories"].items()))
     else:
@@ -210,7 +222,7 @@ def render(data):
         lines.append("Claims: {} run(s) with an evidence ledger · {} · verifier caught {}".format(
             c["runs"], " · ".join("{} {}".format(v, n) for v, n in c["verdicts"].items()),
             "{:.0%} of checked claims (plausible {:.0%}–{:.0%})".format(caught["share"], caught["low"], caught["high"])
-            if caught["enough"] else too_few(caught["n"], "checked claims")))
+            if caught["enough"] else too_few(caught["runs"], "runs with checked claims")))
     else:
         lines.append("Claims: none recorded (no run built an evidence ledger)")
     s = data["seats"]

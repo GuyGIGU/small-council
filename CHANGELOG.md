@@ -9,20 +9,23 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 
 - **Conservative self-tuning.** `council tune` proposes from the project's own record: the estimate
-  per worker that `council route recommend` budgets with, once five completed runs measure it and
-  it is off by more than a quarter; roster changes whose seat advice clears its bar (made only
+  per worker that `council route recommend` budgets with (per agent), once five completed runs
+  measure it and it is off by more than a quarter; roster changes whose seat advice clears its bar (made only
   through a council-init refresh); and nothing about behaviour — context packs, run size and
-  verification depth are held until a benchmark shows a change helps. `council tune apply|revert
-  budget --user-said "…"` writes or undoes one line under `## Run preferences`, with the user's
-  redacted words and the evidence logged in `.council/tuning.md`; an undo over a hand edit is
-  refused. Without the line, the route's budget is unchanged. Optional Python 3.8+.
+  verification depth are held until a benchmark shows a change helps. `council tune apply budget
+  <value> --user-said "…"` writes the value the user was shown as one line under `## Run
+  preferences`, logging the evidence, the user's redacted words and the exact line it replaced in
+  `.council/tuning.md`; `council tune revert budget` puts those bytes back and refuses over a hand
+  edit. Only a ceiling the user gives can shrink a run. Without the line, the route is unchanged.
+  Optional Python 3.8+.
 
 - **History across runs, gated on enough data.** `council history [--json]` reads every run of the
   council home and reports runs by status, mode and month, the project's gates (a build's
   before/after proofs and gate probes counted apart), repair trails, claim verdicts, seat evidence
-  and missing data. A median, share or ratio — cost and agents per run, tokens per worker, actual
+  and missing data. A median, share or ratio — cost and agents per run, tokens per agent, actual
   cost over the plan's estimate, repairs resolved, the verifier's catches — appears only once five
-  runs carry its data; below that it says "too few". Read-only; no database or dashboard.
+  runs (not items) carry its data; below that it says "too few". Read-only; no database or
+  dashboard.
 
 - **A read-only run cockpit.** `council tui` draws one screen from the run's own files — the
   plan's decisions and skipped seats with their reasons, seat states and tokens, agents against
@@ -82,7 +85,9 @@ All notable changes to this project are documented here. The format is based on
   outside the project and placeholder fields; and a cited line number too large to exist can no
   longer make every memory command loop forever.
 
-- **Observed failures from a run's verified record, filed only with the user's words.**
+- **Observed failures from a run's verified record, filed only with the user's words.** (Later: the
+  user's words are flattened to one line before redaction, so a secret split across lines is
+  still caught.)
   `council memory propose claim <id>` drafts an F entry from a claim the blind verifier refuted or
   miscited; `council memory propose repair <task> --scope <paths>` from a build task's recorded gate
   failures. The helper fills the fields from `claims.jsonl` or `repairs.jsonl` — not from a summary —

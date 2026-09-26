@@ -48,8 +48,14 @@ def make_run(home, name, status="complete", mode="council-review", size="squad",
         write(run / "gates" / (gate + ".json"), json.dumps({"gate": gate, "command": "x", "exit": code, "seconds": 1,
                                                            "when": name[:10] + " 10:00:00"}) + "\n")
     if repairs:
-        write(run / "repairs.jsonl", "".join(json.dumps({"task": t, "gate": "tests", "attempt": 1, "result": "failed",
-                                                         "category": c, "action": a}) + "\n" for t, a, c in repairs))
+        rows = []
+        for task, action, category in repairs:
+            rows.append({"task": task, "gate": "tests", "attempt": 1, "result": "failed", "category": category,
+                         "action": "builder-diagnose" if action == "resolved" else "stop"})
+            if action == "resolved":
+                rows.append({"task": task, "gate": "tests", "attempt": 2, "result": "passed", "category": "RESOLVED",
+                             "action": "resolved"})
+        write(run / "repairs.jsonl", "".join(json.dumps(row) + "\n" for row in rows))
     if claims:
         write(run / "claims.jsonl", "".join(json.dumps({"id": str(i), "verdict": v}) + "\n" for i, v in enumerate(claims)))
     if events:
@@ -107,19 +113,22 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
     data = history.history(home)
     out = history.render(data)
     cost = data["cost"]
-    check("five completed runs: median cost, agents and tokens per worker are shown",
+    check("five completed runs: median cost, agents and tokens per agent are shown",
           cost["tokens_per_run"]["enough"] and cost["tokens_per_run"]["median"] == 80000 and cost["agents_per_run"]["median"] == 2
-          and cost["tokens_per_worker"]["median"] == 60000 and "median ~80k tokens" in out, (cost, out))
-    check("estimates: actual over the plan's estimate at the median",
-          data["estimates"]["actual_over_estimate"]["median"] == 0.4 and "0.40× the plan's estimate" in out, out)
+          and cost["tokens_per_agent"]["median"] == 40000 and "median ~80k tokens" in out, (cost, out))
+    check("estimates: agents' tokens over the plan's estimate less the Chair's 20k (80k of 180k)",
+          data["estimates"]["actual_over_estimate"]["median"] == 0.444 and "0.44× the plan's estimate less the Chair" in out,
+          out)
     check("a build's before/after proofs and gate probes are kept apart from the project's gates",
           data["gates"] == {"tests": {"runs": 5, "failed_runs": 1}}
           and data["proofs"]["before_failed_as_intended"] == 5 and data["proofs"]["probes"] == 5
           and "5 before-check(s), 5 failing as intended" in out, (data["gates"], data["proofs"]))
     repairs = data["repairs"]
-    check("repairs: resolved and stopped trails, with a range once six are finished",
+    check("repairs: resolved and stopped trails, with a range once five runs have finished ones; failure categories "
+          "come from the failed attempts, never the RESOLVED row",
           repairs["tasks"] == 6 and repairs["resolved"] == 4 and repairs["stopped"] == 2 and repairs["resolved_share"]["enough"]
-          and repairs["categories"] == {"LINT_FAILURE": 1, "TEST_FAILURE": 5} and "4 resolved · 2 stopped" in out, repairs)
+          and repairs["resolved_share"]["runs"] == 5 and repairs["categories"] == {"LINT_FAILURE": 1, "TEST_FAILURE": 5}
+          and "RESOLVED" not in out and "4 resolved · 2 stopped" in out, repairs)
     claims = data["claims"]
     check("claims: verdict totals and the verifier's catches among checked claims",
           claims["verdicts"] == {"CONFIRMED": 8, "MISCITED": 1, "REFUTED": 4, "UNVERIFIED": 1}
@@ -131,6 +140,30 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
           data["quality"]["no_plan"] == 1 and data["quality"]["no_events"] == 1
           and "1 run(s) have no filled run plan" in out and "no events.tsv" in out, data["quality"])
     check("reading history changes nothing", fingerprint(home.parent) == before)
+
+    one = Path(temporary) / "one" / ".council"
+    one.mkdir(parents=True)
+    make_run(one, "2026-09-01-100000-review", repairs=tuple(("T{}".format(i), "resolved", "TEST_FAILURE") for i in range(5)),
+             claims=("CONFIRMED", "REFUTED", "REFUTED", "CONFIRMED", "MISCITED"))
+    data = history.history(one)
+    out = history.render(data)
+    check("one run with five repair trails and five checked claims shows no share: 'too few runs (1 of 5 needed)'",
+          not data["repairs"]["resolved_share"]["enough"] and not data["claims"]["caught_share"]["enough"]
+          and "too few runs with a finished repair trail (1 of 5 needed)" in out
+          and "too few runs with checked claims (1 of 5 needed)" in out and "%" not in out, out)
+    write(one / "runs" / "2026-09-01-100000-review" / "claims.jsonl", "[" * 200000 + "\n")
+    try:
+        history.render(history.history(one))
+        deep_ok = True
+    except RecursionError:
+        deep_ok = False
+    check("200,000-deep JSON in a run's claims is survived", deep_ok)
+    write(one / "ledger.tsv", "date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\n" + "".join(
+        "2026-09-{:02d}\t2026-09-{:02d}-000000-review\tcouncil-review\thunt\t5\t5\t0\t0\t9000\n".format(i, i)
+        for i in range(1, 7)))
+    data = history.history(one)
+    check("seat evidence reads the ledger's last 20 runs, as council ledger advice does, not just the runs on disk",
+          data["seats"]["weighed"] == ["hunt"], data["seats"])
 
     odd = make_run(home, "2026-10-02-100000-review")
     write(odd / "seats.tsv", "garbage\n\x00\x01\n")
@@ -168,7 +201,7 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
             parsed = json.loads(out)
         except ValueError:
             parsed = {}
-        check("helper: --json is the same report as data", code == 0 and parsed.get("schema") == "council.history/1"
+        check("helper: --json is the same report as data", code == 0 and parsed.get("schema") == "council.history/2"
               and parsed["runs"]["total"] == 2, out[:300] + err)
         refusals = [(council(repo, *w), want) for w, want in (
             (("history", "--run", "x"), "does not take --run"), (("history", "x"), "history doesn't take 'x'"),

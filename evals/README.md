@@ -234,17 +234,22 @@ neutralised; a legacy run and malformed files still drawn; `--watch` stopping by
 run closes; and every file of the run and the council home byte-for-byte unchanged afterwards.
 
 `python evals/run_history.py` checks history across runs (`council history`, `scripts/history.py`):
-counts always, but a median, share or ratio only once five runs carry its data; a build's
+counts always, but a median, share or ratio only once five runs (not items) carry its data; a build's
 before/after proofs and gate probes kept apart from the project's gates; repairs, claims and
 estimate accuracy computed right on a synthetic home; missing and malformed data named; odd run
 folders survived; and nothing written.
 
-`python evals/run_tune.py` checks conservative self-tuning (`council tune`, `scripts/tune.py`): the
-estimate per worker is proposed only once five completed runs measure it and it is off by more than
-a quarter; behaviour is held and the roster goes through a refresh; `apply` writes one line under
-## Run preferences only with the user's words (secret-looking text redacted before the tracked
-log), the route then budgets with it, and `revert` restores the file byte for byte — but refuses
-over a hand edit; a BOM and CRLF survive; every refusal says why and writes nothing.
+`python evals/run_tune.py` checks conservative self-tuning (`council tune`, `scripts/tune.py`):
+- the estimate is proposed only once five completed runs measure tokens per agent and it is off by
+  more than a quarter;
+- behaviour is held, and the roster goes through a refresh;
+- `apply` needs the value the user was shown and their words. Secret-looking text is redacted even
+  when split across lines. It writes one line, and the route then budgets with it;
+- only a ceiling the user gave shrinks a run;
+- `revert` puts back the exact bytes for six awkward file shapes, and refuses over a hand edit;
+- a failed config write leaves the log as it was;
+- BOM, CRLF, comments and file modes survive;
+- every refusal says why and writes nothing.
 
 ## 11. Benchmark — Small Council against plain Claude Code
 

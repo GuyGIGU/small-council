@@ -25,13 +25,15 @@ trends.
 
 ## Decision
 
-Option 3, as `council history [--json]` (`scripts/history.py`, schema `council.history/1`).
+Option 3, as `council history [--json]` (`scripts/history.py`, schema `council.history/2`).
 
 - **Always shown.** Counts are always reported: runs by status, mode and month.
-- **Shown only past the bar.** A median, a share or a ratio needs **5 runs that carry its data**.
+- **Shown only past the bar.** A median, a share or a ratio needs **5 runs that carry its data** —
+  five runs, not five items: five claims in one run are still one run. A share's range counts at
+  most five items from any run, as the seat advice does.
   Below that, the report gives the count and says "too few". The measures behind this bar are:
   - cost and agents per completed run;
-  - tokens per worker;
+  - tokens per agent (workers and verifiers);
   - how far actual cost was from the plan's estimate;
   - how often a finished repair trail was resolved;
   - how often the verifier caught a checked claim.
@@ -39,7 +41,10 @@ Option 3, as `council history [--json]` (`scripts/history.py`, schema `council.h
   the project's gates, because a before-check is meant to fail.
 - **Missing data is named.** The report lists runs with no plan, no events or malformed events, and
   runs still open.
-- **Seat evidence** comes from the same code as `council ledger advice`.
+- **Seat evidence** comes from the same code as `council ledger advice`, over the same window of the
+  ledger's last 20 runs (the ledger is tracked; run folders are not).
+- **Estimate accuracy** compares the agents' tokens with the plan's estimate less the Chair's 20k,
+  because seats.tsv never records the Chair.
 
 ## Tradeoffs
 

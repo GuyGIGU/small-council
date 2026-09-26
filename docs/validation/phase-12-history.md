@@ -14,7 +14,7 @@ cockpit's read-only snapshot, and the seat ledger through the advice code. It re
   - seat evidence;
   - missing or malformed data.
 - **Only when 5 runs carry the data:**
-  - the median cost, agents and tokens per worker;
+  - the median cost, agents and tokens per agent;
   - actual cost over the plan's estimate;
   - the share of finished repair trails that resolved;
   - the verifier's share of caught claims (with a 90% range).
@@ -38,12 +38,17 @@ says how far the data is from the bar.
 
 ## Tests
 
-`evals/run_history.py`: 14 checks on Windows, 15 where symlinks can be made. No model, about 3 s.
+`evals/run_history.py`: 17 checks on Windows, 18 where symlinks can be made, after the review below
+(14 before). No model, about 3 s.
 They check that:
 - no runs is said plainly;
 - four runs give counts and "too few (4 of 5 needed)", never a median;
-- five runs give the right median cost (80k), agents (2), tokens per worker (60k) and estimate
-  ratio (0.40×);
+- five runs give the right median cost (80k), agents (2), tokens per agent (40k) and estimate ratio
+  (0.44×, the Chair's 20k left out);
+- one run with five repair trails and five checked claims shows no share ("too few runs, 1 of 5");
+- failure categories come from failed attempts, never RESOLVED;
+- deep JSON is survived;
+- seat evidence reads the ledger's last 20 runs;
 - the proofs and probes are kept apart from project gates;
 - repairs (4 resolved, 2 stopped, with a range) and categories are right;
 - claims: 5 caught out of 13 checked;
@@ -53,6 +58,18 @@ They check that:
 - a symlinked run folder is not read;
 - reading changes nothing;
 - the helper handoff works, with three refusals each giving its own message.
+
+## Independent review
+
+The same review (of `1d6e02b`) found in history:
+
+| Severity | Finding | Fix |
+|---|---|---|
+| medium | Shares were gated on items, not runs: one run with five claims showed "verifier caught 60%". | A share needs five runs that carry its data, and counts at most five items from any run. Lowering the bar to one run fails a check. |
+| medium | "Failure categories" counted RESOLVED, from the closing row of a resolved trail. | The category comes from the trail's failed attempts. The test data now matches what the real repair producer writes. |
+| low | Seat evidence used as many ledger runs as there were local run folders. | The same 20-run window as `council ledger advice`. |
+| low | Deep JSON crashed the report; junctioned folders were read; conventions.md was re-read for every run (11 s on a large home). | Fixed in the cockpit's reading layer, which history uses; history no longer reads memory. |
+| low | The estimate ratio compared agents' tokens (no Chair) with an estimate including the Chair's 20k. | The Chair's share is left out of the estimate. |
 
 ## Evidence on real data
 

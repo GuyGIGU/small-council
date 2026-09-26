@@ -101,4 +101,7 @@ budget are optimal.
 Earlier project docs give a no-history estimate of roughly 60–100k tokens per worker, with past
 runs described as averaging around 100k. The route estimate uses that range for planning; it is
 not a measured Phase 3 efficiency gain. Reliable per-task cost and effectiveness data are not yet
-available, so the routing policy is heuristic. Benchmarking and outcome-based tuning are deferred.
+available, so the routing policy is heuristic. The one measured input it takes is an `estimate per
+worker` line in `council.config.md`, which `council tune` proposes once five completed runs
+measure tokens per agent and the user approves; only a ceiling the user gives shrinks a run.
+Outcome-based tuning of the policy itself waits for the benchmark (`evals/bench/`).

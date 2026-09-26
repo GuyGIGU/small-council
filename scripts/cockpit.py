@@ -207,12 +207,16 @@ def gates_of(run):
 
 
 def repairs_of(run):
+    """Each repair task's last attempt, and the category of its last failed attempt (a trail that
+    resolved ends on a RESOLVED row, which is no failure category)."""
     tasks = {}
     for row in jsonl(run, "repairs.jsonl"):
         task = clean(row.get("task", "?")) or "?"
+        result, category = clean(row.get("result", "")), clean(row.get("category", ""))
+        failed = category if result == "failed" else tasks.get(task, {}).get("failure_category", "")
         tasks[task] = {"gate": clean(row.get("gate", "")), "attempts": integer(row.get("attempt")),
-                       "result": clean(row.get("result", "")), "category": clean(row.get("category", "")),
-                       "next": clean(row.get("action", ""))}
+                       "result": result, "category": category, "next": clean(row.get("action", "")),
+                       "failure_category": failed}
     return tasks
 
 
