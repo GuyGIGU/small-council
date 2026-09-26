@@ -68,6 +68,9 @@ jobs:
       - name: Seat learning evals
         run: python evals/run_seats.py
 
+      - name: Benchmark harness self-test (no model calls)
+        run: python evals/bench.py self-test
+
       - name: Hook evals
         run: python evals/run_hook.py
 

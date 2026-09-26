@@ -226,7 +226,20 @@ python evals/record_eval.py                                                     
 - **CI:** `.github/workflows/evals.yml` runs on demand only: Claude Code and both models pinned, the
   Bash sandbox installed, Bash granted only past the triggering smoke, and a cost ceiling.
 
-## 11. Behavioral drills — run in Claude Code
+## 11. Benchmark — Small Council against plain Claude Code
+
+```bash
+python evals/bench.py self-test        # no model: every case unsolved when untouched, solvable, traps scored
+```
+
+Three build cases in `evals/suite/bench-*` (tag `benchmark`) run through `claude plugin eval` with
+both arms: the same prompt, model, tools and project, with and without the plugin. Each kept run is
+scored afterwards by `evals/bench.py score` on hidden checks (encoded in `evals/bench/*.hidden`),
+restored original tests, frozen and protected files, scope, removed assertions and false completion
+claims; `compare` reports the arms side by side and refuses to call fewer than ten pairs a result.
+A pilot is paid — see `evals/bench/README.md` for the protocol and the cost.
+
+## 12. Behavioral drills — run in Claude Code
 
 See `behavioral-drills.md` (D1–D26). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

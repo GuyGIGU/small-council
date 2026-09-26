@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **A baseline-versus-council benchmark harness.**
+  - **Cases.** Three build cases (`evals/suite/bench-*`, tag `benchmark`) run through
+    `claude plugin eval` with both arms: the same plain prompt, model, tools and project, with and
+    without the plugin.
+  - **`evals/bench.py score`** judges each kept run on hidden checks (encoded in
+    `evals/bench/*.hidden`), restored original tests, frozen and protected files, scope, removed
+    assertions, a required test and false completion claims.
+  - **`compare`** reports the arms side by side and calls nothing a result below ten pairs.
+  - **`self-test`** (in CI, no model) proves each case is unsolved when untouched, solvable, and
+    scored as intended on every trap.
+  - **Budget.** A pilot is paid and awaits the owner's budget (see `evals/bench/README.md`).
+
 - **Seat learning, advisory only.** `council ledger advice [N] [--json]` says how much each seat's
   record can support: runs that judged its items, useful items (kept and not refuted) with a 90%
   plausible range that counts at most five items a run, refuted items among those verified, and

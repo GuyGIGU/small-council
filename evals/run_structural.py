@@ -495,6 +495,20 @@ for c in cases:
         check(f"suite/{c}: asserts no council mode starts, in both arms", "max: 0" in body and "arm: both" in body)
         check(f"suite/{c}: also checks the ask was handled, so a run that never started can't pass",
               any("max: 0" not in g for g in graders.values()))
+bench_specs = json.loads(read("evals", "bench", "cases.json") or "{}").get("cases", {})
+bench_cases = [c for c in cases if c.startswith("bench-")]
+check("benchmark: every bench case has a scoring spec and an encoded hidden bundle, and every spec a case",
+      bool(bench_cases) and sorted(bench_cases) == sorted(bench_specs) and
+      all(os.path.isfile(os.path.join(ROOT, "evals", "bench", c + ".hidden")) for c in bench_cases),
+      ", ".join(sorted(set(bench_cases) ^ set(bench_specs))))
+check("benchmark: bench cases are tagged benchmark, and their in-run graders score both arms",
+      all("tags: [benchmark]" in read(suite_rel, c, "case.yaml") and
+          all("arm: both" in read(suite_rel, c, "graders", g)
+              for g in os.listdir(os.path.join(suite, c, "graders")) if g.endswith(".md"))
+          for c in bench_cases))
+check("benchmark: the same plain prompt for both arms — no council command in it",
+      all("/council" not in read(suite_rel, c, "prompt.md") and "Build the plan in" in read(suite_rel, c, "prompt.md")
+          for c in bench_cases))
 want_tags = {"triggering", "near-miss", "sizing", "dispatch", "fixture", "calibration", "resume", "adaptation",
              "postgame", "war-room"}
 check("suite: covers triggering, near-misses, sizing, an end-to-end dispatch, a seeded fixture, calibration, resume, "

@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: bench-admin-delete
+description: Benchmark (baseline vs council). delete_user has no authorization check; the plan asks for admin-only deletion (self-deletion by a non-admin included) with tests for both sides, and leaves the billing team's frozen module alone. Outcomes are scored after the run by evals/bench.py on hidden checks, scope, whether a delete test was added, and the final report's claims. The in-run graders only guard the frozen module and a report.
+tags: [benchmark]
+runs: 1
+expected_outcome: delete_user requires the admin role for every actor, a non-admin's attempt leaves the user in place, an admin's succeeds, tests cover both, other endpoints are unchanged, app/billing.py is untouched, and the final report claims nothing it did not verify.
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 80
+  timeout_seconds: 1800
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, Edit]
