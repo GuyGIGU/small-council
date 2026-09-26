@@ -1039,6 +1039,18 @@ cmd_evidence() {
   "$py" "$COUNCIL_PLUGIN_ROOT/scripts/evidence.py" "$action" --run "$run"
 }
 
+# A thin terminal cockpit over the run's own files (scripts/cockpit.py). It only reads: no state, no
+# event, no file is written, so it is safe beside a live run and never part of one.
+cmd_tui() {
+  local run py
+  run="$(resolve_run)" || exit 2
+  py="$(impact_python)" || die "tui needs optional Python 3.8+; council run status, run plan show and run events show give the same facts"
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/cockpit.py" --run "$run" --home "$(council_home)"
+  [ "$WATCH" -eq 0 ] || set -- "$@" --watch
+  [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
+  "$@"
+}
+
 # Record a build's gate failure or repair outcome without rerunning commands or dispatching agents.
 cmd_repair() {
   local action="$1" run py
@@ -4759,6 +4771,9 @@ council — the Small Council's helper (bash + git)
                          [--uncertainty low|medium|high] [--surface NAME ...]
                          [--agent-cap N] [--budget-tokens N] [--classic]
                                          advisory TSV recommendation; does not open or alter a run
+  council tui [--watch | --json]         a read-only cockpit for the run: plan, seats, gates, repairs,
+                                         evidence, memory proposals and recent events (--watch redraws
+                                         until the run stops; optional Python 3.8+)
   council doctor                         drift scan; every finding comes with a fix
 
 Run-scoped commands act on the one in-progress run on this working tree; otherwise pass --run <folder>
@@ -4787,7 +4802,7 @@ main() {
   ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
   ROUTE_SURFACES=()
   CONTEXT_EXPANDS=()
-  MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0
+  MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0 WATCH=0
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
@@ -4805,8 +4820,8 @@ main() {
                    val="$2"; shift 2 ;;
       --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --alongside|--all|--classic|--json) flag="${1#--}"; val=1; shift ;;
-      --alongside=*|--all=*|--classic=*|--json=*) die "${1%%=*} takes no value" ;;
+      --alongside|--all|--classic|--json|--watch) flag="${1#--}"; val=1; shift ;;
+      --alongside=*|--all=*|--classic=*|--json=*|--watch=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
                    [ $# -eq 0 ] || { pos+=("$1"); shift; }
                    continue ;;
@@ -4825,7 +4840,7 @@ main() {
     case "$flag" in
       run) RUN_ARG="$val" ;;       code-root) CODE_ROOT_ARG="$val" ;;  status) STATUS_ARG="$val" ;;
       base) BASE_ARG="$val" ;;     at) AT_ARG="$val" ;;                session) SESSION_ARG="$val" ;;
-      alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;                     json) JSON_OUT=1 ;;
+      alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;                     json) JSON_OUT=1 ;;  watch) WATCH=1 ;;
       task) ROUTE_TASK_ARG="$val" ;; risk) ROUTE_RISK_ARG="$val" ;;
       complexity) ROUTE_COMPLEXITY_ARG="$val" ;; uncertainty) ROUTE_UNCERTAINTY_ARG="$val" ;;
       surface) ROUTE_SURFACES+=("$val") ;; agent-cap) ROUTE_CAP_ARG="$val" ;;
@@ -4929,6 +4944,9 @@ main() {
              else
                takes_flags ledger; [ $# -le 1 ] || die "usage: council ledger [N] | ledger advice [N] [--json]"; cmd_ledger ${1+"$@"}
              fi ;;
+    tui)     takes_flags tui watch json; no_words tui ${1+"$@"}
+             [ "$WATCH" -eq 0 ] || [ "$JSON_OUT" -eq 0 ] || die "tui takes --watch or --json, not both"
+             cmd_tui ;;
     doctor)  takes_flags doctor; no_words doctor ${1+"$@"}; cmd_doctor ;;
     version) takes_flags version; no_words version ${1+"$@"}; say "council $COUNCIL_VERSION" ;;
     help)    takes_flags help; no_words help ${1+"$@"}; usage ;;

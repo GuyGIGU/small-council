@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **A read-only run cockpit.** `council tui` draws one screen from the run's own files — the
+  plan's decisions and skipped seats with their reasons, seat states and tokens, agents against
+  the cap, gates, each repair task's next step, claim verdict counts, memory proposals waiting and
+  the last events. `--watch` redraws every two seconds and stops by itself when the run closes;
+  `--json` prints the same snapshot as data (`council.run-snapshot/1`). It never writes a file or
+  an event, neutralises escape codes from files, draws legacy and malformed runs, and prints plain
+  ASCII with `COUNCIL_ASCII=1`. Optional Python 3.8+; no curses, no server.
+
 - **A baseline-versus-council benchmark harness.**
   - **Cases.** Three build cases (`evals/suite/bench-*`, tag `benchmark`) run through
     `claude plugin eval` with both arms: the same plain prompt, model, tools and project, with and

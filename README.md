@@ -39,7 +39,8 @@ skipped under load.
   cites still shows it — and memory proposals drafted from a run's verified record, filed only with
   the user's own words (`council memory propose|accept|reject`), earlier council work on the same
   files, each seat's track record (the ledger) and how much it can support (`council ledger advice`:
-  advice only past a stated bar), the stack fingerprint, and a drift doctor.
+  advice only past a stated bar), the stack fingerprint, a drift doctor, and a read-only run
+  cockpit (`council tui --watch`) you can leave open in a terminal while a council works.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
   security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,
   accessibility, concurrency, untrusted input and operability — recast or dropped per project.
@@ -155,6 +156,18 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
 
 **Limits:** at most 10 agents per run, verifiers included; a war room adds tokens, not agents. Past runs averaged ~100k tokens per worker;
 estimates come from your own project's ledger once there is some.
+
+**Watching a run.** In a terminal of your own, in the project, run the helper's cockpit. Outside
+Claude Code the helper is not on your PATH, so give its full path:
+
+```bash
+bash ~/.claude/skills/small-council/bin/council tui --watch
+```
+
+It redraws the plan, seats, gates, repairs, evidence and recent events every two seconds, and it
+stops when the run closes. It only reads: leaving it open changes nothing. It needs Python 3.8+. Add
+`--run <folder>` when more than one run is open. Set `COUNCIL_ASCII=1` if your console shows boxes
+as garbage.
 
 ## Precision context (0.12)
 

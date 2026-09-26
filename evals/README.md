@@ -227,6 +227,12 @@ python evals/record_eval.py                                                     
 - **CI:** `.github/workflows/evals.yml` runs on demand only: Claude Code and both models pinned, the
   Bash sandbox installed, Bash granted only past the triggering smoke, and a cost ceiling.
 
+`python evals/run_tui.py` checks the read-only run cockpit (`council tui`, `scripts/cockpit.py`)
+against a real helper-made run: the plan, seats, gates, a repair's next step, evidence counts and
+memory proposals on screen; the `--json` snapshot; plain ASCII on request; escape codes in a file
+neutralised; a legacy run and malformed files still drawn; `--watch` stopping by itself when the
+run closes; and every file of the run and the council home byte-for-byte unchanged afterwards.
+
 ## 11. Benchmark — Small Council against plain Claude Code
 
 ```bash

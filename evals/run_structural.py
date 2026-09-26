@@ -155,6 +155,9 @@ check("memory: a failure is served only while its evidence supports it, and file
       os.path.isfile(os.path.join(ROOT, "scripts", "memory.py")) and
       "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
       "UNSUPPORTED" in doctrine["10-learn.md"])
+check("tui: a read-only cockpit script, reached through the helper, never part of a stage",
+      "cmd_tui" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "cockpit.py")) and
+      "council tui" not in "".join(doctrine.values()))
 check("seat learning: roster advice weighs only judged runs, past a stated bar",
       "cmd_ledger_advice" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
       "council ledger advice" in doctrine["10-learn.md"] and
