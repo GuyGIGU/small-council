@@ -144,12 +144,15 @@ the converge pass starts, `council state phase=challenge`.
      `council repair record T<n> <gate>`, inspect its advisory category, saved output and baseline,
      then repair and rerun the **same** gate. The first failure stays with the builder; the second
      calls for one independent read-only diagnosis if this task has not used that worker already;
-     otherwise stop and report. The third failed execution stops mutation and is reported.
+     otherwise stop and report. The third failed execution stops product-code mutation for this
+     task. Jump to blocked-task logging and the receipt; do not attempt steps 6–7 as a fix path,
+     start another gate trail, or commit it as complete. Preserve the diff and gate output; never
+     silently revert unrelated work. Read-only review cannot reopen repair.
      Python 3.8+ is optional: if absent, record the same attempts and limit in the log. Never count
      the intentionally failing `before-<n>` check as a repair attempt.
-6. **After-evidence.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
+6. **After-evidence — only if the task is not blocked.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
    must now pass.
-7. **Adversarial check.** Dispatch `small-council:council-verifier` with:
+7. **Adversarial check — only if the task is not blocked.** Dispatch `small-council:council-verifier` with:
    - the task and its Done-when;
    - the governing principle's own text, quoted from the reference doc — so the principle is checked,
      not merely cited;
@@ -177,7 +180,9 @@ the converge pass starts, `council state phase=challenge`.
      snapshot paths and next action. `council repair check T<n>` checks saved snapshots when used.
    - Update the state: `council state next="task <n+1>: <title>" attempts="T<n> 1/3"`. Keep a short
      "tried and failed" list there too.
-   - If commits are on, commit the task.
+   - If commits are on, commit only a task whose mandatory gates pass and whose verifier has no
+     unresolved regression. Leave blocked work uncommitted; log its diff and state. Rollback needs
+     the user's decision.
 
 ## The log — `<home>/logs/<YYYY-MM-DD>-<slug>.md`, appended after every task
 
@@ -242,17 +247,21 @@ The same six lines after every build, in this order, whatever happened. The shap
 after three builds the user reads it at a glance and notices the moment a line does:
 
 ```
-Built: <n> of <n> tasks — <what you can do now that you couldn't before> [· <n> partly met or blocked: <one clause each>]
+Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>]
 Works?: <what proved it — "ran <command> and <what happened>", or honestly "nobody ran it; proved by the tests and by reading the code">
 Checked by machine: <the gates' verdict line, baseline → now> | <the helper's own NOTHING WAS CHECKED line, quoted> [· <the standing red-baseline clause>]
 Shortcuts I took: <one line each> | none
 Not proved: <what nobody actually checked> | nothing
-Cost: ~<k>k tokens across <n> agents · <the proof line from council check> · log: <path>
+Cost: helpers ~<k>k tokens across <n> agents; Chair usage <actual total or "unavailable"> · <the proof line from council check> · log: <path>
 ```
 
-The `Built:` line is the one that carries a partly-met Done-when or a task blocked on something
-outside the build — "6 of 6 tasks · 1 partly met: exports stop at 5,000 rows" — so neither can hide
-behind a clean count. **Never omit the last three.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
+The first `Built:` number counts only fully met tasks with required proof, passing mandatory gates,
+and no unresolved verifier regression. A partly met or blocked task is named after the count but
+is not counted as built: "5 of 6 tasks · 1 partly met: exports stop at 5,000 rows". A task stopped
+by the repair limit is **blocked**, not merely partly met, even if some code works. A red mandatory
+gate or known regression cannot be hidden behind a clean count. `Cost:` labels helper-only usage
+as such; never imply that it includes the Chair or the whole session when those figures are not
+available. **Never omit the last three.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
 these — not a vibe: a hardcoded value, a skipped case, a swallowed error, a loosened or disabled
 check, a test that asserts less than the behaviour, a TODO left behind, or a fix whose only proof was
 a throwaway command. Every one also goes in the log's `## Shortcuts and concessions`.

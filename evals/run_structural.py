@@ -133,7 +133,16 @@ check("modes: evidence states reach review, research, plan, build and post-game"
 repair_contract = read("references", "repair-loop.md")
 check("repair: build mode records bounded same-gate failures",
       "council repair record" in skill["council-implement"] and "repair-loop.md" in skill["council-implement"] and
-      "same" in repair_contract and "Third" in repair_contract and "stop mutation" in repair_contract.lower())
+      "same" in repair_contract and "Third" in repair_contract and "stop product-code mutation" in repair_contract.lower())
+check("repair: terminal gate stop cannot fall through to another fix or success commit",
+      "third failure stops the build" in repair_contract and
+      "do not attempt steps 6–7 as a fix path" in skill["council-implement"] and
+      "only if the task is not blocked" in skill["council-implement"] and
+      "commit only a task whose mandatory gates pass" in skill["council-implement"])
+check("repair: blocked work is excluded from the built count and helper cost is labelled",
+      "A task stopped" in skill["council-implement"] and
+      "is not counted as built" in skill["council-implement"] and
+      "helper-only usage" in skill["council-implement"])
 check("repair: helper and kernel expose inspectable repair trail",
       "cmd_repair()" in cli and "council repair record" in cli and "council repair record" in core and
       "repairs.jsonl" in core)

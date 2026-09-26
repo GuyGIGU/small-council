@@ -17,7 +17,17 @@ checks that saved snapshots still match it.
 |---|---|
 | First | Original builder investigates the output and the governing reference. |
 | Second | One independent, read-only diagnosis worker gets the task, both saved attempts, baseline and diff. The Chair chooses the fix. If this task already used its one diagnosis worker for verifier trouble, stop instead. |
-| Third | Stop mutation and report the blocker and remaining uncertainty. No fourth automatic attempt. |
+| Third | Stop product-code mutation and report the blocker and remaining uncertainty. No fourth automatic attempt. |
+
+The third failure stops the build, not just this gate. Do not start later tasks or continue to the
+after-evidence step, a verifier's fix path, another gate-repair trail, or a success commit for the
+same task. A read-only review may describe the stopped state; it must not authorize another fix.
+The Chair may still write the run log, check the saved repair trail, and give the receipt. Mark the
+task **blocked**, even if some requested behavior was implemented. A mandatory gate that remains
+red cannot support a "built" claim. Preserve the attempted diff and evidence for the user; do not
+automatically discard task changes or unrelated work to manufacture a green tree. If a known
+regression remains, name it and leave the result unmerged for a user decision about repair or
+rollback.
 
 A successful, nonempty rerun closes the task's repair trail. A passing gate with zero files matched
 does not close it. A gate run can only be recorded once, using its `gate.finished` event sequence;
