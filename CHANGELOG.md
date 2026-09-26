@@ -134,6 +134,8 @@ All notable changes to this project are documented here. The format is based on
   outside the project. A path spelled through the root's own link is now read under the resolved
   root; links below the root are still refused. Found by macOS CI, the first time it reached the
   context evals.
+- **CI shows every failing suite.** Each check now runs even after an earlier one fails, so one run
+  reports them all, and the job still fails if any does. macOS had stopped at the first.
 - **macOS: a byte-order mark at the start of a state file is stripped again.** macOS's awk reads a
   `/\357\273\277/` regex as three characters, so a session-state file starting with a mark kept it
   there. A second run could then open on the same tree, and `council state` updated the wrong key.
