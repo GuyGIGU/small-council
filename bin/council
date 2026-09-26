@@ -2783,7 +2783,7 @@ RUN_PLANS
     mcheck="$(cmd_memory check 2>/dev/null)"
     stale="$(printf '%s\n' "$mcheck" | grep -c '^STALE' || true)"
     [ "${stale:-0}" -eq 0 ] || finding WARN "$stale memory anchor(s) point at code that moved or no longer exists" "council memory check lists them; propose re-anchoring or retiring each at the next Learn"
-    unsup="$(printf '%s\n' "$mcheck" | grep -c '^UNSUPPORTED' || true)"
+    unsup="$(printf '%s\n' "$mcheck" | awk '/^UNSUPPORTED/ && !($2 in s) { s[$2] = 1; n++ } END { print n + 0 }')"
     evid="$(printf '%s\n' "$mcheck" | grep -c '^EVIDENCE' || true)"
     [ "${unsup:-0}" -eq 0 ] || finding WARN "$unsup observed failure(s) in memory are no longer served: their evidence is gone or no longer shows their verdict" "council memory check lists them; propose re-anchoring the evidence or retiring each at the next Learn"
     [ "${evid:-0}" -eq 0 ] || finding WARN "$evid piece(s) of observed-failure evidence can't be found or cite lines their file doesn't have" "council memory check lists them; re-anchor them to files that still hold the evidence"
@@ -3003,6 +3003,11 @@ memory_entries() {
       }
       return 0
     }
+    # A field left as a placeholder ("-", "—", "none", "n/a", "tbd", "?") says nothing.
+    function blank(v,   t) {
+      t = tolower(trim(v)); gsub(/[`"\047]/, "", t); t = trim(t)
+      return t == "" || t ~ /^(-+|\342\200\224|\342\200\223|none|n\/a|na|tbd|todo|\?+|\.\.\.|\342\200\246)$/
+    }
     function flush(   why, miss) {
       if (id != "") {
         READ[id] = 1
@@ -3011,11 +3016,11 @@ memory_entries() {
           if (est != "observed") why = "it sits outside Observed Failures"
           else {
             miss = ""
-            if (failure == "") miss = miss ", Failure"
-            if (scope == "") miss = miss ", Scope"
-            if (origin == "") miss = miss ", Origin"
-            if (evidence == "") miss = miss ", Evidence"
-            if (verdict == "") miss = miss ", Verdict"
+            if (blank(failure)) miss = miss ", Failure"
+            if (blank(scope)) miss = miss ", Scope"
+            if (blank(origin)) miss = miss ", Origin"
+            if (blank(evidence)) miss = miss ", Evidence"
+            if (blank(verdict)) miss = miss ", Verdict"
             if (miss != "") why = "it has no " substr(miss, 3)
             else if (wholescope(scope)) why = "its scope reaches every run; name the paths, seats or mode it concerns"
             else if (!(vword(verdict) in FVERDICT)) why = "its verdict, " substr(verdict, 1, 40) ", does not establish a failure (" FVLIST ")"
@@ -3197,43 +3202,67 @@ memory_unread() {
 
 # The support behind each observed failure among the memory rows on stdin, as
 #   <id> TAB note|fatal TAB <what is wrong>
-# It never takes an entry's word for its support: it opens what the **Evidence:** names. Each path in
-# it — a word with a folder in it or a record's extension (a/b.txt, verify-2.md), with or without
-# lines (a.md:12,40-44, a.md#L12) — is looked for from the repo root ($2), then the council home ($1),
-# and never outside them. A note is one piece that can't be found or cites a line its file doesn't
-# have. The entry is fatal — it reaches no brief — when its evidence names no file, when none of the
-# pieces can be read as cited, or when a verifier's verdict (CONFIRMED, REFUTED, MISCITED, REGRESSION,
-# INCOMPLETE, SCOPE-CREEP) shows on none of the cited lines (or, for a file cited whole, nowhere in it).
-# OBSERVED and REPRODUCED name artifacts rather than a verdict line, so for them the files must exist.
-# The files are read in one pass, however many entries there are.
+# Every observed failure gets a hearing, and it never takes an entry's word for its support. It is
+# fatal — the entry reaches no brief — when two entries share its id; when its scope reaches every
+# run as the scope matcher reads it (spelled "all/", "?*", "{**,x}", "res://*", with blanks…); when its
+# evidence names no file; when none of the files it names can be read as cited; or when a verifier's
+# verdict (CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE, SCOPE-CREEP) is not on a cited line
+# (or, for a file cited whole, on any line) as the verifier writes it: a whole word, in capitals, so
+# UNCONFIRMED or "the user confirmed" is not CONFIRMED. OBSERVED and REPRODUCED name artifacts
+# rather than a verdict line, so for them the files must exist. A note is one piece that can't be
+# used — gone, a line its file doesn't have, a link, a place outside the project, the memory file
+# itself — while another piece still carries the entry.
+# Each evidence path — a word with a folder in it or a record's extension (a/b.txt, verify-2.md), with
+# or without lines (a.md:12,40-44, a.md#L12) — is looked for from the repo root ($2), then the council
+# home ($1). The memory file is $3. The files are read in one pass, however many entries there are.
 failure_audit() {
-  local home="$1" top="$2" pieces q=0 id w raw p lines kind g okg="" f rows="" reqs="" results="" seenf="" nl='
+  local home="$1" top="$2" mem="${3:-}" input pieces q=0 id w raw p lines kind g okg="" f d why inside ptop phome
+  local rows="" reqs="" results="" seenf="" nl='
 '
   local -a files
   files=()
-  pieces="$(LC_ALL=C awk -F'\t' '
+  input="$(cat)"
+  # What the rows alone decide: an id two entries share, and a scope that reaches every run — read by
+  # the select matcher's own items(), everyrun() and covers(), so no spelling of "everything" passes.
+  printf '%s\n' "$input" | LC_ALL=C awk -F'\t' "$AWK_SCOPE"'
+    $5 == "observed" { n[$1]++; S[$1] = $3; if (!($1 in seen)) { seen[$1] = 1; ids[++k] = $1 } }
+    END {
+      for (x = 1; x <= k; x++) {
+        id = ids[x]
+        if (n[id] > 1) { print id "\tfatal\tits id is used by more than one entry; give each its own number"; continue }
+        m = items(S[id], I)
+        for (i = 1; i <= m; i++)
+          if (everyrun(I[i]) || covers("zz9-probe/zz9-probe.zz9probe", I[i], ".*", 0) || covers("zz9-probe", I[i], ".*", 0)) {
+            print id "\tfatal\tits scope reaches every run; name the paths, seats or mode it concerns"; break
+          }
+      }
+    }'
+  pieces="$(printf '%s\n' "$input" | LC_ALL=C awk -F'\t' '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function vword(v,   x) { x = toupper(v); sub(/^[^A-Z]+/, "", x); return match(x, /^[A-Z]+(-[A-Z]+)*/) ? substr(x, 1, RLENGTH) : "" }
-    # One candidate path: prints it (kind: only, whole or part of group g) when it looks like a file.
-    function cand(id, w, t, kind, g,   path, ln) {
+    # A word of evidence as a path: sets P (the path) and L (its lines, or "-"); false when it is not
+    # one — a URL, or a word with no folder, no record extension and no line.
+    function pathof(t) {
       sub(/^[(\[<"\047`]+/, "", t); sub(/[)\]>"\047`.;]+$/, "", t); sub(/[:,]+$/, "", t)
-      path = t; ln = "-"
-      if (match(path, /#L?[0-9]+(-L?[0-9]+)?$/)) { ln = substr(path, RSTART + 1); gsub(/L/, "", ln); path = substr(path, 1, RSTART - 1) }
-      else if (match(path, /:[0-9][0-9,-]*$/)) { ln = substr(path, RSTART + 1); path = substr(path, 1, RSTART - 1) }
-      if (path == "" || path ~ /^[A-Za-z]+:\/\//) return 0                        # a URL is not a file here
-      if (path !~ /\// && tolower(path) !~ REC && !(ln != "-" && path ~ /\.[A-Za-z0-9]+$/)) return 0
-      print id "\t" w "\t" t "\t" path "\t" ln "\t" kind "\t" g
-      return 1
+      P = t; L = "-"; C = t
+      if (match(P, /#L?[0-9]+(-L?[0-9]+)?$/)) { L = substr(P, RSTART + 1); gsub(/L/, "", L); P = substr(P, 1, RSTART - 1) }
+      else if (match(P, /:[0-9][0-9,-]*$/)) { L = substr(P, RSTART + 1); P = substr(P, 1, RSTART - 1) }
+      if (P == "" || P ~ /^[A-Za-z]+:\/\//) return 0
+      return P ~ /\// || tolower(P) ~ REC || (L != "-" && P ~ /\.[A-Za-z0-9]+$/)
     }
     # A piece of evidence is a path, or words around paths. A path may hold a blank ("docs/My Notes/
-    # out.txt"), and nothing in the text says which: the whole piece is tried first, and its words
-    # only when no file has that whole name.
-    function emit(id, w, piece,   m, T, i, got) {
-      if (piece !~ /[ \t]/) return cand(id, w, piece, "only", ++grp)
-      got = cand(id, w, piece, "whole", ++grp)
-      m = split(piece, T, /[ \t]+/)
-      for (i = 1; i <= m; i++) got += cand(id, w, T[i], "part", grp)
-      return got
+    # out.txt"), and nothing in the text says which: the whole piece is tried first and its words only
+    # when no file has that whole name. A piece whose words hold no path is itself the candidate.
+    function emit(id, w, piece,   m, T, i, parts) {
+      if (piece !~ /[ \t]/) { if (!pathof(piece)) return 0; print id "\t" w "\t" C "\t" P "\t" L "\tonly\t" ++grp; return 1 }
+      m = split(piece, T, /[ \t]+/); parts = 0
+      for (i = 1; i <= m; i++) parts += pathof(T[i])
+      if (!pathof(piece)) { if (!parts) return 0 }
+      else print id "\t" w "\t" C "\t" P "\t" L "\t" (parts ? "whole" : "only") "\t" ++grp
+      if (!parts) return 1
+      if (!pathof(piece)) ++grp
+      for (i = 1; i <= m; i++) if (pathof(T[i])) print id "\t" w "\t" C "\t" P "\t" L "\tpart\t" grp
+      return 1
     }
     BEGIN {
       REC = "\\.(md|txt|json|jsonl|tsv|csv|log|out|html|xml|yml|yaml)$"
@@ -3242,9 +3271,9 @@ failure_audit() {
     }
     $5 == "observed" {
       w = vword($10); if (!(w in VER)) w = "-"
-      ev = $9; gsub(/\\/, "/", ev); n = split(ev, P, /[,;]/); cur = ""; k = 0
+      ev = $9; gsub(/\\/, "/", ev); n = split(ev, PC, /[,;]/); cur = ""; k = 0
       for (i = 1; i <= n; i++) {
-        p = trim(P[i]); if (p == "") continue
+        p = trim(PC[i]); if (p == "") continue
         if (cur ~ /:[0-9]/ && p ~ /^[0-9]+(-[0-9]+)?$/) { cur = cur "," p; continue }   # a.md:12,14 is one piece
         if (cur != "") k += emit($1, w, cur)
         cur = p
@@ -3253,23 +3282,33 @@ failure_audit() {
       if (!k) print $1 "\t" w "\t-\t-\t-\tonly\t0"
     }')"
   [ -n "$pieces" ] || return 0
+  ptop="$(cd "$top" 2>/dev/null && pwd -P)"; phome="$(cd "$home" 2>/dev/null && pwd -P)"
   while IFS="$TAB" read -r id w raw p lines kind g; do
     [ -n "$id" ] || continue
     [ "$kind" != part ] || [ "$g" != "$okg" ] || continue                  # its whole piece was a file
-    f=""
+    f=""; why="-"
     case "/$p/" in
-      /-/|*/../*) ;;                                                         # no path, or one that climbs out
+      /-/) ;;
+      */../*) why="climbs out of the project" ;;
       *) case "$p" in
-           /*|[A-Za-z]:*) case "$p" in "$top"/*|"$home"/*) [ ! -f "$p" ] || f="$p" ;; esac ;;
+           /*|[A-Za-z]:*) case "$p" in "$top"/*|"$home"/*) [ ! -f "$p" ] || f="$p" ;; *) why="is outside this project" ;; esac ;;
            *) if [ -f "$top/$p" ]; then f="$top/$p"; elif [ -f "$home/$p" ]; then f="$home/$p"; fi ;;
          esac ;;
     esac
+    if [ -n "$f" ]; then                         # a file, but one that may not be what it seems
+      d="$(cd "${f%/*}" 2>/dev/null && pwd -P)"
+      case "$d/" in "$ptop"/*|"$phome"/*) inside=1 ;; *) inside=0 ;; esac
+      if [ -L "$f" ]; then why="is a link; cite the file it points to"; f=""
+      elif [ "$inside" = 0 ]; then why="leads outside this project"; f=""
+      elif [ -n "$mem" ] && same_file "$f" "$mem"; then why="is the memory file itself"; f=""
+      fi
+    fi
     if [ "$kind" = whole ]; then
       [ -n "$f" ] || continue                                               # try its words instead
       okg="$g"
     fi
     q=$((q + 1))
-    rows="$rows$q$TAB$id$TAB$w$TAB$raw$TAB${f:--}$nl"
+    rows="$rows$q$TAB$id$TAB$w$TAB$raw$TAB${f:--}$TAB$why$nl"
     [ -n "$f" ] || continue
     reqs="$reqs$q$TAB$f$TAB$lines$TAB$w$nl"
     case "$nl$seenf" in *"$nl$f$nl"*) ;; *) seenf="$seenf$f$nl"; files+=("$f") ;; esac
@@ -3278,18 +3317,26 @@ $pieces
 EOF
   if [ -n "$reqs" ]; then       # per piece: q, what is wrong with its lines ("-" for nothing), and shown: 1, 0 or -
     results="$(printf '%s' "$reqs" | LC_ALL=C awk -F'\t' '
-      function span(r) { S = r; E = r; j = index(r, "-"); if (j) { E = substr(r, j + 1); S = substr(r, 1, j - 1) }
-                         S += 0; E += 0; if (E < S) { t = S; S = E; E = t } }
+      # A line or a range ("12", "40-44"), in S and E; false for 0, or for a number no file reaches —
+      # past a billion, adding one to it can stop changing it, and a loop over it would never end.
+      function span(r,   j, t) {
+        S = r; E = r; j = index(r, "-"); if (j) { E = substr(r, j + 1); S = substr(r, 1, j - 1) }
+        if (length(S) > 9 || length(E) > 9) return 0
+        S += 0; E += 0; if (E < S) { t = S; S = E; E = t }
+        return S >= 1
+      }
+      # The verdict as the verifier writes it: a whole word, in capitals.
+      function says(s, w) { return (" " s " ") ~ ("[^A-Za-z0-9_-]" w "[^A-Za-z0-9_-]") }
       FNR == NR {
         F[$1] = $2; L[$1] = $3; W[$1] = $4; Q[++nq] = $1
-        if ($3 != "-") { m = split($3, R, ","); for (i = 1; i <= m; i++) { span(R[i]); for (k = S; k <= E && k - S <= 2000; k++) NEED[$2, k] = 1 } }
+        if ($3 != "-") { m = split($3, R, ","); for (i = 1; i <= m; i++) if (span(R[i])) for (k = S; k <= E && k - S <= 2000; k++) NEED[$2, k] = 1 }
         else if ($4 != "-") WANT[$2] = WANT[$2] " " $4
         next
       }
       {
         f = FILENAME; N[f] = FNR
-        if ((f, FNR) in NEED) T[f, FNR] = toupper($0)
-        if (f in WANT) { m = split(WANT[f], ws, " "); u = toupper($0); for (i = 1; i <= m; i++) if (index(u, ws[i])) HAS[f, ws[i]] = 1 }
+        if ((f, FNR) in NEED) T[f, FNR] = $0
+        if (f in WANT) { m = split(WANT[f], ws, " "); for (i = 1; i <= m; i++) if (says($0, ws[i])) HAS[f, ws[i]] = 1 }
       }
       END {
         for (x = 1; x <= nq; x++) {
@@ -3297,32 +3344,34 @@ EOF
           if (L[q] != "-") {
             m = split(L[q], R, ",")
             for (i = 1; i <= m; i++) {
-              span(R[i])
-              if (S < 1 || E > n) { bad = "the file has " n " line(s), not " R[i]; break }
-              if (W[q] != "-") for (k = S; k <= E && k - S <= 2000; k++) if (index(T[f, k], W[q])) shown = 1
+              if (!span(R[i]) || E > n) { bad = "the file has " n " line(s), not " R[i]; break }
+              if (W[q] != "-") for (k = S; k <= E && k - S <= 2000; k++) if (says(T[f, k], W[q])) shown = 1
             }
           } else if (W[q] != "-") shown = ((f, W[q]) in HAS) ? 1 : 0
           print q "\t" bad "\t" shown
         }
       }' - "${files[@]}")"
   fi
-  printf '%s\n\f\n%s' "$results" "$rows" | LC_ALL=C awk -F'\t' '
-    $0 == "\f" { part = 2; next }
-    !part { if ($1 != "") { BAD[$1] = $2; SHOWN[$1] = $3 }; next }
-    $2 != "" {
-      q = $1; id = $2
-      if (!(id in seen)) { seen[id] = 1; ids[++nid] = id; WV[id] = $3 }
+  printf '%s\n\f\n%s\n\f\n%s\n' "$results" "$rows" "$input" | LC_ALL=C awk -F'\t' '
+    $0 == "\f" { part++; next }
+    part == 0 { if ($1 != "") { BAD[$1] = $2; SHOWN[$1] = $3 }; next }
+    part == 1 {
+      if ($2 == "") next
+      q = $1; id = $2; WV[id] = $3
       if ($4 == "-") { nopath[id] = 1; next }
-      if ($5 == "-") { print id "\tnote\tevidence " $4 " can\047t be found in this project"; next }
+      piece[id] = 1
+      if ($5 == "-") { print id "\tnote\tevidence " $4 " " ($6 != "-" ? $6 : "can\047t be found in this project"); next }
       if (BAD[q] != "-") { print id "\tnote\tevidence " $4 ": " BAD[q]; next }
       good[id]++; if (SHOWN[q] == "1") shows[id] = 1
+      next
     }
+    $5 == "observed" && !($1 in listed) { listed[$1] = 1; ids[++nid] = $1 }       # every one gets a verdict
     END {
       for (x = 1; x <= nid; x++) {
         id = ids[x]
-        if (nopath[id]) print id "\tfatal\tits evidence names no file that can be checked"
+        if (nopath[id] || !(id in piece)) print id "\tfatal\tits evidence names no file that can be checked"
         else if (!good[id]) print id "\tfatal\tnone of its evidence can be found and read as cited"
-        else if (WV[id] != "-" && !shows[id]) print id "\tfatal\tnone of the evidence it cites shows " WV[id]
+        else if (WV[id] != "-" && !shows[id]) print id "\tfatal\tnone of the evidence it cites shows " WV[id] " as the verifier writes it"
       }
     }'
 }
@@ -3340,7 +3389,8 @@ memory_served() {
 }
 
 # Would entry $2 of memory file $1 reach a brief as an observed failure — the parser's rules and the
-# evidence audit both? Prints why not. $3 is the council home, $4 the repo root.
+# evidence audit both? Prints why not. $3 is the council home, $4 the repo root, $5 the project's
+# memory file (which no entry may cite as its own evidence).
 memory_would_serve() {
   local row why nl='
 '
@@ -3352,7 +3402,7 @@ memory_would_serve() {
   if [ "$(printf '%s\n' "$row" | cut -f5)" != observed ]; then
     printf '%s' "$(printf '%s\n' "$row" | cut -f6 | sed 's/^failure entry: //')"; return 1
   fi
-  why="$(printf '%s\n' "$row" | failure_audit "$3" "$4" | awk -F'\t' '$2 == "fatal" { print $3; exit }')"
+  why="$(printf '%s\n' "$row" | failure_audit "$3" "$4" "${5:-}" | awk -F'\t' '$2 == "fatal" { print $3; exit }')"
   [ -z "$why" ] || { printf '%s' "$why"; return 1; }
 }
 
@@ -3362,7 +3412,12 @@ memory_would_serve() {
 # $1 must not have changed since the copy was taken. Otherwise nothing is written. $6 is the council
 # home, $7 the repo root.
 memory_replace() {
-  local mem="$1" before="$2" after="$3" id="$4" want="$5" why
+  local mem="$1" before="$2" after="$3" id="$4" want="$5" why had
+  # The entry's id was free before a draft, and a proposal's own before a yes or a no — never shared.
+  had="$(memory_entries "$before" | awk -F'\t' -v id="$id" '$1 == id { n++ } END { print n + 0 }')"
+  case "$want:$had" in proposed:0|observed:1|gone:1) ;;
+    *) printf 'council: %s is used by %s entr(ies) before this edit — nothing written; give each its own number\n' "$id" "$had" >&2; return 1 ;;
+  esac
   [ "$(memory_entries "$before" | awk -F'\t' -v id="$id" '$1 != id')" = "$(memory_entries "$after" | awk -F'\t' -v id="$id" '$1 != id')" ] \
     || { printf 'council: the edit would change other memory entries too — nothing written\n' >&2; return 1; }
   [ "$(MEM_SKIP=1 memory_entries "$before" | sed 's/ (line [0-9]*)//g')" = "$(MEM_SKIP=1 memory_entries "$after" | sed 's/ (line [0-9]*)//g')" ] \
@@ -3372,7 +3427,7 @@ memory_replace() {
             || { printf 'council: %s is still in the memory file — nothing written\n' "$id" >&2; return 1; } ;;
     proposed) memory_entries "$after" | awk -F'\t' -v id="$id" '$1 == id && $5 == "off" && tolower($6) ~ /^[#* ]*propos/ { n++ } END { exit n != 1 }' \
             || { printf 'council: %s did not land under ## Proposed — nothing written\n' "$id" >&2; return 1; } ;;
-    observed) why="$(memory_would_serve "$after" "$id" "$6" "$7")" \
+    observed) why="$(memory_would_serve "$after" "$id" "$6" "$7" "$mem")" \
             || { printf 'council: %s would not be served (%s) — nothing written\n' "$id" "$why" >&2; return 1; } ;;
   esac
   cmp -s "$mem" "$before" || { printf 'council: %s changed while this ran — nothing written; run it again\n' "$mem" >&2; return 1; }
@@ -3688,7 +3743,7 @@ cmd_memory() {
   [ -z "$MEM_ALT" ] || printf 'council: WARNING — a second memory file, %s, holds %s entries the council never reads (it reads %s) — merge them, or point the - conventions: line under ## Memory in council.config.md at the one to keep\n' "$MEM_ALT" "$MEM_ALT_N" "$mem" >&2
   entries="$(memory_entries "$mem")"
   # An observed failure is served only while the evidence it names still supports it.
-  case "$entries" in *"${TAB}observed${TAB}"*) audit="$(printf '%s\n' "$entries" | failure_audit "$home" "$top")" ;; esac
+  case "$entries" in *"${TAB}observed${TAB}"*) audit="$(printf '%s\n' "$entries" | failure_audit "$home" "$top" "$mem")" ;; esac
   if [ -n "$audit" ]; then served="$(memory_served "$entries" "$audit")"; else served="$entries"; fi
   [ $# -eq 0 ] || shift
   case "$sub" in
@@ -3707,6 +3762,7 @@ cmd_memory() {
           next }
         $5 == "off" { printf "%s · %s · not served (%s)\n", $1, $2, ($6 ~ /^marked/ ? $6 : "under " clip($6)) ; next }
         $6 ~ /^failure entry: / { printf "%s · %s · NOT SERVED as an observed failure — %s\n", $1, $2, substr($6, 16); u++; next }
+        $6 ~ /^not a failure entry/ { printf "%s · %s · NOT SERVED — only observed failures (F) belong under Observed Failures; move it to its own section\n", $1, $2; u++; next }
         { printf "%s · %s · NOT SERVED — its section, %s, is not one the council reads as settled\n", $1, $2, clip($6); u++ }
         END { if (u) printf "memory: WARNING — %d entr%s never reach%s a brief: move %s under a fitting settled section, complete Observed Failures, or ## Retired\n", u, (u == 1 ? "y" : "ies"), (u == 1 ? "es" : ""), (u == 1 ? "it" : "them") }'
       printf '%s\n' "$entries" | scope_orphans "$(this_tree)" "$(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"
@@ -3853,12 +3909,13 @@ RESOLVED
       [ "$stale" -eq 0 ] || say "→ at the next Learn, propose re-anchoring or retiring each stale entry — the user decides"
       say "memory check: $stale stale anchor(s) across $n entries"
       # The evidence behind observed failures: a fatal problem keeps the entry out of every brief.
-      k=0; st=0
+      k=0; st=0; last=" "
       if [ -n "$audit" ]; then
         while IFS="$TAB" read -r id kind why; do
           [ -n "$id" ] || continue
           case "$kind" in
-            fatal) say "UNSUPPORTED  $id — $why; no brief gets it until its evidence is re-anchored or it is retired"; st=$((st + 1)) ;;
+            fatal) say "UNSUPPORTED  $id — $why; no brief gets it until this is fixed or it is retired"
+                   case "$last" in *" $id "*) ;; *) st=$((st + 1)); last="$last$id " ;; esac ;;   # entries, not reasons
             *) say "EVIDENCE  $id — $why" ;;
           esac
           k=$((k + 1))
@@ -3877,6 +3934,7 @@ AUDIT
       # Draft an observed failure from one verified record of a run — a claim a blind verifier
       # REFUTED or MISCITED (claims.jsonl), or a build task's failed gate trail (repairs.jsonl) — and
       # file it under ## Proposed. It is refused unless, once the user says yes, it would be served.
+      [ ! -L "$mem" ] || die "the memory file is a link — write the proposal into the file it points to by hand"
       run="$(resolve_run)" || exit 2
       py="$(impact_python)" || die "memory propose needs optional Python 3.8+ — write the proposal under ## Proposed by hand (references/doctrine/10-learn.md)"
       tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
@@ -3885,7 +3943,7 @@ AUDIT
         --scope-file "$tmpd/scope" --today "$(date +%Y-%m-%d)" > "$tmpd/raw" || { rm -rf "$tmpd"; exit 2; }
       k="$(redact_copy "$tmpd/raw" "$tmpd/draft")" || { rm -rf "$tmpd"; die "could not redact the draft"; }
       { printf '# probe\n## Observed Failures (F)\n'; cat "$tmpd/draft"; } > "$tmpd/probe"
-      why="$(memory_would_serve "$tmpd/probe" F-0 "$home" "$top")" \
+      why="$(memory_would_serve "$tmpd/probe" F-0 "$home" "$top" "$mem")" \
         || { rm -rf "$tmpd"; die "nothing drafted — once accepted it would not be served: $why"; }
       cp "$mem" "$tmpd/before" || { rm -rf "$tmpd"; die "cannot copy $mem"; }
       id="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/memory.py" insert --memory "$tmpd/before" --block "$tmpd/draft" \
@@ -3903,8 +3961,9 @@ AUDIT
       # Failures with the date and those words; reject moves it to ## Rejected as one line.
       case "$1" in F-*) case "${1#F-}" in ''|*[!0-9]*) die "memory $sub takes an observed-failure id such as F-3" ;; esac ;;
                    *) die "memory $sub takes an observed-failure id such as F-3" ;; esac
-      printf '%s\n' "$entries" | awk -F'\t' -v id="$1" '$1 == id && $5 == "off" && tolower($6) ~ /^[#* ]*propos/ { n++ } END { exit n != 1 }' \
-        || die "$1 is not a proposal awaiting the user's answer — council memory shows where it is"
+      [ ! -L "$mem" ] || die "the memory file is a link — move the entry in the file it points to by hand"
+      printf '%s\n' "$entries" | awk -F'\t' -v id="$1" '$1 == id { n++; if ($5 == "off" && tolower($6) ~ /^[#* ]*propos/) p++ } END { exit !(n == 1 && p == 1) }' \
+        || die "$1 is not one proposal awaiting the user's answer (none, or its id is shared) — council memory shows where it is"
       py="$(impact_python)" || die "memory $sub needs optional Python 3.8+ — move the entry by hand (references/doctrine/10-learn.md)"
       tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
       { cp "$mem" "$tmpd/before" && printf '%s\n' "$MEMORY_SAID_ARG" > "$tmpd/said.raw"; } || { rm -rf "$tmpd"; die "cannot write $tmpd"; }

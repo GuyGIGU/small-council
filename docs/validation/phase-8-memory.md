@@ -47,6 +47,32 @@ Settled AP/EC/D entries are not audited: their authority is the user's approval,
 These checks are mechanical. A file that still shows `REFUTED` does not prove the old observation
 applies to today's code — the brief still labels F entries as leads to check, never as rules.
 
+### Independent review of the hardening (2026-09-26)
+
+One blind verifier agent (about 224k tokens) was asked to refute the new rules by running the helper
+on hostile memory files. It upheld one claim — memories without observed failures, and older AP/EC/D
+formats, behave exactly as before — and found eleven defects in the rest. Each was reproduced by a
+new check in `evals/run_memory.py` before it was fixed:
+
+| Found | Fixed by |
+|---|---|
+| A cited line number past 2^53 made `select`, `check`, `index` and `doctor` loop forever (adding one to it no longer changed it), so one hand-edited entry could stall every brief. | Numbers of more than nine digits are refused as lines no file has. |
+| Two entries sharing an id were audited as one, so a bad copy was served beside a good one; `propose` could also reuse an id written `f4`. | A shared id keeps both out; drafts are numbered past every spelling the parser reads; `accept`, `reject` and the file replacement refuse an id used more than once. |
+| Scopes such as `**/`, `all/`, `?*`, `{**,x}`, `res://*` or `src/** *` reached every run past a guard that compared raw text. | The audit reads each scope with the select matcher's own functions and refuses any item that covers every path. |
+| Evidence written as words around a URL gave the entry no audit row at all, so it was served. | Every observed failure now gets a verdict, even one with no usable evidence. |
+| A verdict matched as a substring in any case: `UNCONFIRMED`, or prose saying "confirmed", counted as CONFIRMED. | The verdict must appear as the verifier writes it — a whole word in capitals — on a cited line, or anywhere in a file cited whole. |
+| An entry could cite the memory file, even its own Verdict line, as evidence. | The memory file is never evidence. |
+| A directory link or junction inside the project let the audit read a file outside it. | A cited file is used only if its real location is inside the project, and never if it is itself a link. |
+| `***Verdict:***` or `***Scope:***` in copied text (and `<!---`) reassembled into a field or a comment after a one-pass replacement; a citation's text reached the Scope line unfiltered. End to end this made an accepted entry every-run, or turned REFUTED into CONFIRMED. | Runs of asterisks and dashes collapse in one pass; the default scope and anchor come only from cited places that are real files of the project; the helper's own fields follow all copied text. |
+| A private key in copied text lost its end marker when the text was cut short, so its body survived redaction. | Private-key blocks are removed whole before the text is flattened. |
+| `**Failure:** —` or `**Origin:** -` counted as present. | Placeholders (`-`, `—`, `none`, `n/a`, `tbd`, `?`) count as missing. |
+| A rule filed under Observed Failures got a garbled reason. | It now says only F entries belong there. |
+
+The stricter verdict match has a cost: a review deliverable's "Refuted by verification" heading no
+longer counts as showing REFUTED, so an entry whose verifier row has gone (with its run folder) drops
+out of briefs until its evidence is re-anchored. The reviewer ran only gawk (including its POSIX and
+traditional modes), not bash 3.2 or BSD awk.
+
 ## From verified run evidence to a user-approved entry
 
 Before this, an F entry had to be written by hand from the Chair's reading of the run, so its
@@ -98,16 +124,19 @@ session and was left alone).
   `council memory` with the reason, but do not reach a brief.
 - A memory with no observed failures is parsed, selected and checked exactly as before; the audit
   runs only when an F entry is served.
-- `evals/run_memory.py` (39 checks) covers selection with meaning and origin, scoped retrieval,
+- `evals/run_memory.py` (54 checks) covers selection with meaning and origin, scoped retrieval,
   each refusal above, the provenance audit's served and unserved cases (a path with a blank, a
   path outside the project, prose instead of a file, a partial loss), the doctor warning, legacy
   formats, and the proposal path end to end through real helper runs: a review run whose verifier
   refuted two claims and confirmed one, a build run with two recorded gate failures, and each
   refusal (confirmed finding, stale ledger, every-run scope, duplicate, missing words, not a
   proposal, a saved gate output edited afterwards), field and comment injection from copied text,
-  secret redaction and a CRLF memory file. Nine of the hardening checks fail against the first
-  slice's helper, which is how they were shown to test something. `evals/run_cli.py` keeps its own
-  Phase 8 cases with a real evidence file.
+  secret redaction and a byte-order-marked CRLF memory file, plus one check for each defect the
+  independent review found. Nine of the hardening checks fail against the first slice's helper.
+  Of the fifteen review checks, twelve failed on the code before their fixes; the hang check hung
+  (its runaway awk was stopped by hand, and the rest were then rerun with an ordinary line number
+  in its place); one passed only vacuously there, because the draft it inspects had the wrong id.
+  `evals/run_cli.py` keeps its own Phase 8 cases with a real evidence file.
 - With this change, the structural (600), hook (135), repair (37) and evidence (21) suites pass on
   Windows. The broad helper suite is rerun on it separately (it takes 17 minutes). macOS (bash
   3.2, BSD awk) and Linux legs have not been run for this change; CI runs them on a pull request.

@@ -24,8 +24,11 @@ if hasattr(sys.stdout, "reconfigure"):
 MAX_MEMORY = 1024 * 1024
 FAILURE_VERDICTS = ("REFUTED", "MISCITED")
 HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*$")
-FID = re.compile(r"(?<![A-Za-z0-9_])F-([0-9]+)(?![0-9])")
+# Every spelling of an F id the parser reads — "F-4", "f4", "F4" — so a new number is never a reused one.
+FID = re.compile(r"(?<![A-Za-z0-9_])[Ff]-?([0-9]+)(?![0-9])")
 FIELD = re.compile(r"^\*\*([A-Za-z]+):\*\*[ \t]*(.*)$")
+PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?"
+                         r"(-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----|$)", re.S)
 
 
 class MemoryError_(Exception):
@@ -34,11 +37,15 @@ class MemoryError_(Exception):
 
 def one_line(text, limit=0, copied=True):
     """A field value: one line, and nothing the memory parser would read as a comment — nor, in text
-    copied from a run artifact, as a field (**Scope:** …). A scope keeps its ** globs."""
-    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(text or ""))
-    text = text.replace("<!--", "<!-").replace("-->", "->")
+    copied from a run artifact, as a field (**Scope:** …). Runs are collapsed in one pass, so "***"
+    or "<!---" cannot reassemble into a marker. A private key goes whole, before the text is joined
+    into one line and cut short. A scope keeps its ** globs."""
+    text = PRIVATE_KEY.sub("[redacted private key]", str(text or ""))
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", text)
+    text = re.sub(r"<!-{2,}", "<!-", text)
+    text = re.sub(r"-{2,}>", "->", text)
     if copied:
-        text = text.replace("**", "*").replace("`", "'")
+        text = re.sub(r"\*{2,}", "*", text).replace("`", "'")
     text = re.sub(r"\s+", " ", text).strip()
     if limit and len(text) > limit:
         text = text[:limit].rsplit(" ", 1)[0].rstrip(" ,;:·") + " …"
@@ -59,15 +66,20 @@ def state_field(run, name):
     return re.sub(r"[ \t]{2,}#.*$", "", match.group(1)).strip() if match else ""
 
 
-def citation_paths(citation):
-    """The file paths of a claim's citation ("src/a.py:12", "src/a.py:3-9, b.py:4")."""
-    paths = []
+def citation_places(citation, top):
+    """The places a claim's citation names ("src/a.py:12", "src/a.py:3-9, b.py:4") that are real files
+    of this project, as (path, place) pairs. Anything else in it — a glob, a field marker, an absolute
+    or climbing path, a file that is not there — is not a place to scope or anchor an entry by."""
+    places = []
     for piece in re.split(r"[,;]", citation or ""):
-        piece = piece.strip().strip("`\"'")
-        piece = re.sub(r"(:[0-9][0-9 -]*|#L?[0-9]+(-L?[0-9]+)?)$", "", piece).strip()
-        if piece and ("/" in piece or re.search(r"\.[A-Za-z0-9]{1,8}$", piece)) and piece not in paths:
-            paths.append(piece.replace("\\", "/"))
-    return paths
+        piece = piece.strip().strip("`\"'").replace("\\", "/")
+        path = re.sub(r"(:[0-9][0-9 -]*|#L?[0-9]+(-L?[0-9]+)?)$", "", piece).strip()
+        if (not path or re.search(r"[*?<>|\"`:]", path) or path.startswith("/") or
+                ".." in path.split("/") or not (top / path).is_file()):
+            continue
+        if path not in [known for known, _ in places]:
+            places.append((path, piece))
+    return places
 
 
 def verifier_reason(run, ref, verdict):
@@ -106,9 +118,9 @@ def draft_claim(run, top, claim_id, scope, today):
         raise MemoryError_("claim {} is {} — only a single REFUTED or MISCITED verifier row is "
                            "evidence of a council failure".format(claim_id, verdict))
     link = claim["verification"][0]
-    paths = citation_paths(claim["citation"])
-    if not scope and not paths:
-        raise MemoryError_("claim {} cites no file to scope it by — pass --scope".format(claim_id))
+    places = citation_places(claim["citation"], top)
+    if not scope and not places:
+        raise MemoryError_("claim {} cites no file of this project to scope it by — pass --scope".format(claim_id))
     sources = [rel(top, run) + "/" + link["ref"]]
     deliverable = state_field(run, "deliverable")
     if deliverable:
@@ -119,14 +131,16 @@ def draft_claim(run, top, claim_id, scope, today):
         one_line(", ".join(claim["provenance"]) or "an unattributed item", 80),
         one_line(claim["claim"], 200), one_line(claim["citation"], 120),
         one_line(verifier_reason(run, link["ref"], verdict) or verdict, 240), one_line(link["evidence"], 160))
+    name = one_line(run.name, 80)
+    # Copied text first; the fields the helper sets come after it, so theirs are the values read.
     return block("{} claim: {}".format(verdict.lower(), one_line(claim["claim"], 60)), [
         ("Failure", failure),
-        ("Scope", one_line(scope, 200, copied=False) if scope else ", ".join(paths)),
-        ("Origin", "run {} ({})".format(run.name, one_line(state_field(run, "mode") or "unknown mode", 40))),
+        ("Anchor", ", ".join(place for _, place in places)),
+        ("Scope", one_line(scope, 200, copied=False) if scope else ", ".join(path for path, _ in places)),
+        ("Origin", "run {} ({})".format(name, one_line(state_field(run, "mode") or "unknown mode", 40))),
         ("Evidence", ", ".join(sources)),
         ("Verdict", verdict),
-        ("Anchor", one_line(claim["citation"], 160) if paths else ""),
-        ("Drafted", "{} by council memory propose from claim {} of run {}".format(today, claim_id, run.name)),
+        ("Drafted", "{} by council memory propose from claim {} of run {}".format(today, claim_id, name)),
     ])
 
 
@@ -154,14 +168,14 @@ def draft_repair(run, top, task, scope, today):
                "baseline {}); last failure signal: {}; {}").format(
         gate, len(failed), len(rows), task, one_line(failed[-1].get("category"), 40),
         one_line(failed[-1].get("baseline"), 20), one_line(failed[-1].get("signal"), 200), outcome)
-    run_rel = rel(top, run)
+    run_rel, name = rel(top, run), one_line(run.name, 80)
     return block("gate {} failed {} time(s) on task {}".format(gate, len(failed), task), [
         ("Failure", failure),
         ("Scope", one_line(scope, 200, copied=False)),
-        ("Origin", "run {} (council-implement)".format(run.name)),
+        ("Origin", "run {} (council-implement)".format(name)),
         ("Evidence", ", ".join([run_rel + "/" + row["proof_text"] for row in failed] + [run_rel + "/repairs.jsonl"])),
         ("Verdict", "OBSERVED"),
-        ("Drafted", "{} by council memory propose from repair task {} of run {}".format(today, task, run.name)),
+        ("Drafted", "{} by council memory propose from repair task {} of run {}".format(today, task, name)),
     ])
 
 

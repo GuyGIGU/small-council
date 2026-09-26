@@ -49,8 +49,9 @@
                   INFERRED, ASSUMED, UNVERIFIED or UNCERTAIN>
      **Anchor:** <code path or symbol, if one exists>
      Selection opens the evidence each time: an entry whose files are gone, or whose cited lines
-     no longer show a verifier's verdict, reaches no brief until it is re-anchored or retired, and
-     `council memory check` says which. `council memory propose` drafts one under ## Proposed from
+     no longer show a verifier's verdict as the verifier writes it (a whole word, in capitals),
+     reaches no brief until it is re-anchored or retired, and `council memory check` says which.
+     Evidence is a file of this project, never this memory file or a link; each F id is used once. `council memory propose` drafts one under ## Proposed from
      a run's verified record; `council memory accept F-<n> --user-said "<their words>"` files it
      here on the user's yes (`reject` on their no). -->
 

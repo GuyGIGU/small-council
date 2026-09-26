@@ -20,13 +20,19 @@ All notable changes to this project are documented here. The format is based on
   `council memory`, `select` and `check` open the files its Evidence names: an entry whose files are
   gone, or whose cited lines no longer show a verifier's verdict, is left out with the reason, and
   `memory check` (and `doctor`) report it. Memories without observed failures behave as before.
+  After an independent review, the audit also refuses an id two entries share, any spelling of an
+  every-run scope (read the way the scope matcher reads it), a verdict that is not the verifier's
+  own capitalised word on a cited line, the memory file cited as its own evidence, links that lead
+  outside the project and placeholder fields; and a cited line number too large to exist can no
+  longer make every memory command loop forever.
 
 - **Observed failures from a run's verified record, filed only with the user's words.**
   `council memory propose claim <id>` drafts an F entry from a claim the blind verifier refuted or
   miscited; `council memory propose repair <task> --scope <paths>` from a build task's recorded gate
   failures. The helper fills the fields from `claims.jsonl` or `repairs.jsonl` — not from a summary —
-  redacts secret-looking text, refuses duplicates and anything that could not be served, and files
-  the draft under `## Proposed`. `council memory accept|reject F-<n> --user-said "<their words>"`
+  redacts secret-looking text (a private key whole), keeps copied text from forming fields or
+  comments, scopes a claim only by cited files that exist, refuses duplicates and anything that could
+  not be served, and files the draft under `## Proposed` with an id no entry uses. `council memory accept|reject F-<n> --user-said "<their words>"`
   applies the user's answer with the date and their words, and writes only when the result checks
   out and nothing else in the memory changed. Optional Python 3.8+; the manual path remains.
 
