@@ -66,6 +66,11 @@ Runs the helper against scaffolded git repos:
   away;
 - map status and the drift doctor (cards, repeated slugs, a changed stack).
 
+It calls the helper about 900 times, so it is slow where starting a process is slow: 16–17 minutes
+on Windows Git Bash (2026-09-26), longer still inside WSL on a `/mnt/c` checkout. Each result prints
+as it finishes and any failures are repeated at the end — a quiet stretch is one slow command, not
+a hang (each call has a 120 s timeout that is reported as a failed check).
+
 ## 4. Hook evals — do the hooks behave?
 
 ```bash

@@ -38,8 +38,15 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles d
 results = []
 
 
+def result_line(ok, name, detail):
+    return f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  ({detail.strip()[:400]})" if detail and not ok else "")
+
+
 def check(name, ok, detail=""):
     results.append((ok, name, detail))
+    # Printed as it happens: the suite runs the helper hundreds of times (about 17 minutes on Windows
+    # Git Bash), and a run that prints nothing until the end is easy to mistake for a stalled one.
+    print(result_line(ok, name, detail), flush=True)
 
 
 def council(cwd, *args, env=None):
@@ -3244,8 +3251,11 @@ with tempfile.TemporaryDirectory() as tmp:
     check("every command refuses a word or flag it doesn't take: exit 2, with a message", not took, "; ".join(took))
 
 passed = sum(1 for ok, *_ in results if ok)
-for ok, name, detail in results:
-    print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  ({detail.strip()[:400]})" if detail and not ok else ""))
+if passed != len(results):                     # the failures again, so none scrolls out of sight
+    print("\nFailed:")
+    for ok, name, detail in results:
+        if not ok:
+            print(result_line(ok, name, detail))
 if BASH:
     print(f"\nbash: {BASH} ({subprocess.run([BASH, '-c', 'echo $BASH_VERSION'], capture_output=True, text=True).stdout.strip()})")
 print(f"\n{passed}/{len(results)} checks passed")
