@@ -147,7 +147,8 @@ def lines_of(text):
 
 def header(run):
     """The key: value lines of session-state.md, above its first heading — the first of a repeated
-    key and without a trailing '  # comment', as the helper's field() reads them."""
+    key, leading space dropped, then a trailing '  # comment' — as the helper's state_field reads them
+    (bin/council; its older field() also reads below the heading, which a header key never is)."""
     fields = {}
     for line in lines_of(text_of(run / "session-state.md", run)):
         if line.startswith("## "):
@@ -155,7 +156,7 @@ def header(run):
         key, sep, value = line.partition(":")
         key = key.strip()
         if sep and re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", key) and key not in fields:
-            fields[key] = clean(re.sub(r"[ \t]{2,}#.*$", "", value))
+            fields[key] = clean(re.sub(r"[ \t]{2,}#.*$", "", value.lstrip(" \t")))
     return fields
 
 
@@ -282,82 +283,104 @@ def optional_number(value):
     return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else None
 
 
+def evidenced(text):
+    """Evidence names a source: at least one letter or digit once cleaned (the helper's awk asks the same)."""
+    return bool(re.search(r"[A-Za-z0-9]", clean(text or "")))
+
+
 def corrections_of(run):
     """The latest evidence-backed correction per seat and field, from the append-only corrections.jsonl.
-    A correction never changes seats.tsv; it is laid over it here, and its evidence travels with it."""
+    A correction never changes seats.tsv; it is laid over it here, and its evidence travels with it.
+    Read exactly as the helper's corrections_tsv reads it: a whole number of at most 12 digits, and
+    evidence that names something."""
     latest = {}
     for row in jsonl(run, "corrections.jsonl"):
         seat, field, to = clean(row.get("seat", "")), clean(row.get("field", "")), integer(row.get("to"))
-        if seat and field in ("tokens", "agents") and to is not None and to >= 0 and clean(row.get("evidence", "")):
+        if seat and field in ("tokens", "agents") and to is not None and to >= 0 and evidenced(row.get("evidence")):
             latest[(seat, field)] = {"seat": seat, "field": field, "to": to, "from": clean(row.get("from", "")),
                                      "evidence": clean(row.get("evidence", ""))[:300], "at": clean(row.get("at", ""))}
     return latest
 
 
 def seat_usage(row, fixes):
-    """One seat's agent runs and tokens, each with how far the record supports it (see
-    references/run-accounting.md). A row written before the accounting columns existed is 'legacy':
-    its token count was never checked for units, and its agent count is only a lower bound."""
+    """One seat's agent runs and tokens, each with how far the record supports it — the rule in
+    references/run-accounting.md, kept identical to the helper's seat_rows (bin/council), which states
+    the close line and the ledger. Bases: reported, corrected, pending (still working), partial or
+    missing (a finished run's usage is unknown), no-agent (no agent ran), suspect (a count no agent
+    run can have), legacy (a row from before the accounting columns: units never checked)."""
     slug, state = row["slug"], row["state"]
-    executed = state in ("running", "done", "failed", "blocked")
-    finished = state in ("done", "failed", "blocked")
-    recorded, runs, reported = optional_number(row["raw_tokens"]), optional_number(row["raw_agents"]), row["raw_reported"]
+    executed = state not in ("", "queued", "skipped")      # as the helper's seat_rows selects rows
+    finished = executed and state != "running"
+    cell = str(row["raw_tokens"] if row["raw_tokens"] is not None else "").strip()
+    recorded = optional_number(cell)
+    runs, reported = optional_number(row["raw_agents"]), row["raw_reported"]
     legacy = reported is None
     fix_t, fix_a = fixes.get((slug, "tokens")), fixes.get((slug, "agents"))
-    if legacy:
-        agents, basis_a = None, "at-least"
-        at_least = max(runs or 0, 1 if executed else 0)
-    else:
-        agents, basis_a, at_least = (runs or 0), "counted", runs or 0
     if fix_a:
         agents, basis_a, at_least = fix_a["to"], "corrected", fix_a["to"]
+    elif legacy:
+        agents, basis_a, at_least = None, "at-least", max(runs if runs is not None else 1, 1) if executed else 0
+    else:
+        agents, basis_a, at_least = (runs or 0), "counted", runs or 0
+    gap = missing = pending = 0
     if fix_t:
-        tokens, basis_t = fix_t["to"], "corrected"
+        tokens = fix_t["to"]
+        basis_t = "suspect" if 0 < tokens < 1000 else "corrected"
     elif legacy:
         tokens, basis_t = None, "legacy"
     elif not executed:
         tokens, basis_t = None, "none"
-    elif reported == 0:
-        tokens, basis_t = None, ("pending" if not finished else "missing")
+    elif agents == 0 and reported == 0:
+        tokens, basis_t = None, "no-agent"
+    elif reported > 0 and (recorded is None or recorded < 1000):
+        tokens, basis_t = None, "suspect"   # a count no agent run can have (a unit slip or a broken cell)
+    elif reported >= agents and reported > 0:
+        tokens, basis_t = recorded, "reported"
     else:
-        tokens = recorded
-        basis_t = "reported" if agents is not None and reported >= agents else "partial"
-    if tokens is not None and 0 < tokens < 1000:
-        tokens, basis_t = None, "suspect"   # no agent run costs under a thousand tokens: a unit slip, not a count
-    missing = 0
-    if basis_t in ("missing", "partial") and agents is not None:
-        missing = max(0, agents - (reported or 0))
+        tokens = recorded if reported > 0 else None
+        gap = max(0, agents - reported)
+        if state == "running":
+            basis_t, pending = "pending", gap
+        else:
+            basis_t, missing = ("partial" if reported > 0 else "missing"), gap
+    if basis_t == "suspect":
+        tokens = None
     return {"tokens": tokens, "tokens_basis": basis_t, "tokens_recorded": recorded, "agents": agents,
-            "agents_basis": basis_a, "agents_at_least": at_least, "missing_runs": missing,
+            "agents_basis": basis_a, "agents_at_least": at_least, "missing_runs": missing, "pending_runs": pending,
             "executed": executed, "finished": finished}
 
 
 def usage_totals(seats):
-    """Run totals that are only as complete as their least complete seat: a total over rows that
-    cannot be trusted is not a total, so it is None and the basis says why."""
-    ran = [s for s in seats if s["executed"] or s["tokens_basis"] == "corrected"]
-    known = sum(s["tokens"] for s in ran if s["tokens"] is not None)
+    """Run totals that are only as complete as their least complete seat — the helper's run_usage rule.
+    A total over rows that cannot be trusted is not a total, so it is None and the basis says why:
+    legacy, then suspect, then none (no agent ran), then partial (a finished run's usage is unknown),
+    then running (a seat is still at work), else complete."""
+    ran = [s for s in seats if s["executed"]]
+    counted = [s for s in ran if s["tokens"] is not None]
+    known = sum(s["tokens"] for s in counted)
     bases = {s["tokens_basis"] for s in ran}
-    if not ran:
-        basis = "none"
-    elif "legacy" in bases:
+    agent_runs = sum((s["agents"] if s["agents"] is not None else s["agents_at_least"]) for s in ran)
+    if "legacy" in bases:
         basis = "legacy"
     elif "suspect" in bases:
         basis = "suspect"
+    elif not ran or (agent_runs == 0 and not counted):
+        basis = "none"
+    elif bases & {"missing", "partial"}:
+        basis = "partial"
     elif bases & {"pending"} or any(s["state"] == "running" for s in ran):
         basis = "running"
-    elif bases & {"missing", "partial", "none"}:
-        basis = "partial"
     else:
         basis = "complete"
-    verifier = [s for s in ran if s["slug"].startswith(("verify-", "diagnose-"))]
+    verifier = [s for s in counted if s["slug"].startswith(("verify-", "diagnose-"))]
     complete = basis == "complete"
-    exact = ran and all(s["agents"] is not None for s in ran)
+    exact = bool(ran) and all(s["agents"] is not None for s in ran)
     return {
         "tokens": {"basis": basis, "known": known, "total": known if complete else None,
-                   "workers": sum(s["tokens"] for s in ran if s not in verifier) if complete else None,
+                   "workers": sum(s["tokens"] for s in counted if s not in verifier) if complete else None,
                    "verifiers": sum(s["tokens"] for s in verifier) if complete else None,
                    "missing_runs": sum(s["missing_runs"] for s in ran),
+                   "pending_runs": sum(s["pending_runs"] for s in ran),
                    "legacy_seats": [s["slug"] for s in ran if s["tokens_basis"] == "legacy"],
                    "suspect_seats": [s["slug"] for s in ran if s["tokens_basis"] == "suspect"],
                    "corrected_seats": [s["slug"] for s in seats if "corrected" in (s["tokens_basis"], s["agents_basis"])]},

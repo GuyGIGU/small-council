@@ -72,6 +72,42 @@ def fingerprint(folder):
             for p in sorted(Path(folder).rglob("*")) if p.is_file()}
 
 
+def sourced(repo, script):
+    """Run bash with the helper sourced (as the SessionStart hook sources it) and return stdout."""
+    env = os.environ.copy()
+    for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID"):
+        env.pop(var, None)
+    helper = str(ROOT / "bin" / "council").replace("\\", "/")
+    result = subprocess.run([BASH, "-c", 'source "{}"; {}'.format(helper, script)], cwd=repo, capture_output=True,
+                            text=True, encoding="utf-8", errors="replace", env=env, timeout=90)
+    return result.stdout
+
+
+RUN_BASIS = {"older": "legacy"}         # the close line's word for what the snapshot calls legacy
+
+
+def readers(repo, run):
+    """The helper's and the snapshot's reading of one run: per seat (basis, agent runs, trusted tokens)
+    and for the run (basis, agent runs, tokens). The two must be the same."""
+    path = str(run).replace("\\", "/")
+    bash_seats = {}
+    for line in sourced(repo, 'seat_rows "{}"'.format(path)).splitlines():
+        cells = line.split("\t")
+        if len(cells) == 9:
+            bash_seats[cells[0]] = (cells[2], int(cells[3]),
+                                    int(cells[5]) if cells[2] in ("reported", "corrected") else None)
+    words = sourced(repo, 'run_usage "{}"'.format(path)).split()
+    bash_run = (RUN_BASIS.get(words[0], words[0]), int(words[1]), int(float(words[3]))) if len(words) == 7 else None
+    snap = cockpit.snapshot(run, None, 8)
+    py_seats = {x["slug"]: (x["tokens_basis"], x["agents"] if x["agents"] is not None else x["agents_at_least"],
+                            x["tokens"] if x["tokens_basis"] in ("reported", "corrected") else None)
+                for x in snap["seats"] if x["executed"]}
+    usage = snap["usage"]
+    py_run = (usage["tokens"]["basis"], usage["agents"]["total"] if usage["agents"]["total"] is not None
+              else usage["agents"]["at_least"], usage["tokens"]["known"])
+    return bash_seats, bash_run, py_seats, py_run
+
+
 def seat_row(run, slug):
     for line in read(Path(run) / "seats.tsv").split("\n")[1:]:
         cells = line.split("\t")
@@ -209,6 +245,9 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           and "not reliably recorded" in r["usage"]["text"], (snap["usage"], r["usage"]))
     check("agents: an older record gives a lower bound only", snap["usage"]["agents"]["total"] is None
           and r["usage"]["agent_runs_text"].startswith("at least 2"), r["usage"])
+    edge = make_run(base, "edge", status_value="complete", seats=[v2("hunt", "done", 1000, 1, 1)])
+    check("tokens: exactly 1,000 is a real count to the reader, not suspect",
+          cockpit.snapshot(edge, None, 8)["usage"]["tokens"]["basis"] == "complete")
     suspect = make_run(base, "suspect", status_value="complete", seats=[v2("hunt", "done", 160, 1, 1), v2("beck", "done", 50000, 1, 1)])
     snap = cockpit.snapshot(suspect, None, 8)
     check("tokens: a count under a thousand for an agent run is suspect, not a total",
@@ -247,10 +286,17 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
              seats=[("hunt", "done", "", "160", local(5)[:16], "", "1")], seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents")
     make_run(home.parent / "hist-root", "2026-09-18-000000-review", status_value="complete",
              seats=[("wf", "done", "a-wf", "2967380", local(5)[:16], "", "1", "")])
+    inexact = make_run(home.parent / "hist-root", "2026-09-17-000000-review", status_value="complete",
+                       seats=[("hunt", "done", "", "160", local(5)[:16], "", "1")],
+                       seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents")
+    write(inexact / "corrections.jsonl", json.dumps({"schema": 1, "seat": "hunt", "field": "tokens", "from": "160",
+                                                     "to": 160360, "evidence": "transcript A L1679"}) + "\n")
     data = history.history(home.parent / "hist-root" / ".council")
     check("history: only runs with complete, exact records are costed; the rest are counted and named, never zeroes",
           data["cost"]["tokens_per_agent"]["enough"] and data["cost"]["tokens_per_agent"]["median"] == 50000
-          and data["cost"]["left_out"] == {"older records (units never checked)": 2}, data["cost"])
+          and data["cost"]["tokens_per_agent"]["n"] == 5
+          and data["cost"]["left_out"] == {"older records (units never checked)": 2,
+                                           "agent-run count not exact": 1}, data["cost"])
     check("history: the report says five runs make a figure eligible, not reliable, and lists what was left out",
           "eligible, not reliable" in history.render(data) and "left out of cost figures" in history.render(data),
           history.render(data))
@@ -436,6 +482,148 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("older record: its cost line says tokens aren't reliably recorded, and the agent count is a lower bound",
               "tokens not reliably recorded (1 older row(s)) · at least 2 agent run(s)" in read(old / "session-state.md"),
               read(old / "session-state.md"))
+
+
+        # --- the two readers: one helper-written run per basis, read by both (review finding 1) --------------
+        agree = base / "agree"
+        agree.mkdir()
+        subprocess.run([GIT, "init", "-q"], cwd=agree, check=True)
+        write(agree / ".council" / "council.config.md", "# Council config\n")
+        cases = {}
+
+        def fresh(name, seats):
+            code, out, err = council(agree, "run", "open", "council-review", "--alongside")
+            folder = Path(out.strip())
+            plan(folder, tuple(seats) + ("verify-1",))
+            cases[name] = folder
+            return folder
+
+        run_a = fresh("complete", ("a",))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_a.name)
+        run_b = fresh("no-agent seat", ("a", "gone"))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_b.name)
+        council(agree, "seat", "gone", "failed", "--run", run_b.name)
+        council(agree, "seat", "gone", "done", "--run", run_b.name)
+        run_c = fresh("missing usage", ("a", "b"))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_c.name)
+        council(agree, "seat", "b", "running", "agent=b1", "--run", run_c.name)
+        council(agree, "seat", "b", "done", "--run", run_c.name)
+        run_d = fresh("still working", ("a", "b"))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_d.name)
+        council(agree, "seat", "b", "running", "agent=b1", "--run", run_d.name)
+        run_e = fresh("agents-only correction", ("wf",))
+        council(agree, "seat", "wf", "done", "agent=wf_1", "tokens=400000", "--run", run_e.name)
+        council(agree, "correct", "wf", "agents=5", "evidence=workflow notification agent_count=5, L12", "--run", run_e.name)
+        run_f = fresh("corrected zero", ("a", "chair-task"))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_f.name)
+        council(agree, "seat", "chair-task", "running", "agent=x1", "--run", run_f.name)
+        council(agree, "seat", "chair-task", "done", "--run", run_f.name)
+        council(agree, "correct", "chair-task", "tokens=0", "agents=0", "evidence=transcript L9: the Chair built it; no Agent call", "--run", run_f.name)
+        run_g = fresh("suspect", ("a", "b"))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_g.name)
+        council(agree, "seat", "b", "done", "agent=b1", "tokens=50000", "--run", run_g.name)
+        text = read(run_g / "seats.tsv").replace("\tb1\t50000\t", "\tb1\t160\t")          # a hand edit
+        write(run_g / "seats.tsv", text)
+        run_h = fresh("thirteen digits", ("a",))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_h.name)
+        write(run_h / "seats.tsv", read(run_h / "seats.tsv").replace("\ta1\t40000\t", "\ta1\t1234567890123\t"))
+        run_i = fresh("older", ("a",))
+        write(run_i / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\na\tdone\tverifier\t160\t2026-09-20 18:07\t\t1\n")
+        mismatch = []
+        for name, folder in cases.items():
+            try:
+                bash_seats, bash_run, py_seats, py_run = readers(agree, folder)
+            except Exception as exc:  # noqa: BLE001 — a crash is a disagreement too
+                mismatch.append((name, "crash", repr(exc)))
+                continue
+            if bash_seats != py_seats or bash_run != py_run:
+                mismatch.append((name, bash_seats, py_seats, bash_run, py_run))
+        check("readers: the helper (close line, ledger) and the snapshot (widget, tui, history) read every basis the same — "
+              "per seat and for the run (found in review: a finished seat with no agent split them)",
+              not mismatch and len(cases) == 9, mismatch)
+        expect = {"complete": "complete", "no-agent seat": "complete", "missing usage": "partial",
+                  "still working": "running", "agents-only correction": "partial", "corrected zero": "complete",
+                  "suspect": "suspect", "thirteen digits": "suspect", "older": "legacy"}
+        got = {name: cockpit.snapshot(folder, None, 8)["usage"]["tokens"]["basis"] for name, folder in cases.items()}
+        check("readers: each case lands on the basis the accounting reference names — an agents-only correction "
+              "is partial (the ruling), a corrected 0 is a real 0, 160 and 13 digits are suspect",
+              got == expect, got)
+        ledger = sourced(agree, 'ledger_tokens "{}"'.format(str(run_e).replace("\\", "/")))
+        check("ledger: a seat every reader calls partial gets no price", ledger.strip() == "wf\t-", ledger)
+        try:
+            status.interpret(cockpit.snapshot(run_h, None, 8), NOW)
+            crashed = False
+        except Exception:  # noqa: BLE001
+            crashed = True
+        check("status: a 13-digit token cell reads as suspect, never a crash (review finding 3)", not crashed)
+
+        # --- corrections are normalised and bounded, so both readers read the same line (review finding 2) ---
+        run_j = fresh("corrections", ("a",))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_j.name)
+        refused = [council(agree, "correct", "a", *w, "--run", run_j.name)[0] for w in (
+            ("tokens=1234567890123", "evidence=transcript L1 uuid 1"),
+            ("agents=1001", "evidence=transcript L1 uuid 1"),
+            ("tokens=41234", "evidence=" + " " * 20),
+            ("tokens=41234", "evidence=" + "\x7f" * 20))]
+        council(agree, "correct", "a", "tokens=0041234", "evidence=transcript B L42 uuid 1234abcd", "--run", run_j.name)
+        council(agree, "correct", "a", "tokens=41300", "evidence=transcript B L77: the later report", "--run", run_j.name)
+        lines = read(run_j / "corrections.jsonl").splitlines()
+        awk_view = sourced(agree, 'corrections_tsv "{}"'.format(str(run_j).replace("\\", "/"))).split()
+        py_view = cockpit.corrections_of(run_j)
+        check("correct: 13 digits, over 1,000 agent runs and evidence of spaces or control marks are refused; "
+              "leading zeros are written as a plain number",
+              refused == [2, 2, 2, 2] and len(lines) == 2 and '"to":41234,' in lines[0], (refused, lines))
+        check("correct: the latest correction of a field counts, keeps the value it replaced, and both readers "
+              "see it (review finding 5)",
+              awk_view == ["a", "tokens", "41300"] and py_view[("a", "tokens")]["to"] == 41300
+              and '"from":"40000"' in lines[1], (awk_view, py_view, lines))
+
+        # --- the usage trail's own rules, focused (review finding 6) ---------------------------------------------
+        run_k = fresh("trail", ("s", "n"))
+        council(agree, "seat", "s", "running", "agent=s1", "--run", run_k.name)
+        council(agree, "seat", "s", "done", "tokens=20000", "--run", run_k.name)
+        council(agree, "seat", "s", "done", "tokens=6000", "--run", run_k.name)
+        council(agree, "seat", "n", "done", "tokens=5000", "--run", run_k.name)
+        council(agree, "seat", "n", "done", "tokens=5000", "--run", run_k.name)
+        check("seat: a smaller later figure from the same agent is a count of its own and is added — still one agent run",
+              seat_row(run_k, "s")[3:4] == ["26000"] and seat_row(run_k, "s")[6:8] == ["1", "1"], seat_row(run_k, "s"))
+        check("seat: a report with no agent id stands alone, so the same one twice counts twice — record the id at dispatch",
+              seat_row(run_k, "n")[3:4] == ["10000"] and seat_row(run_k, "n")[6:8] == ["2", "2"], seat_row(run_k, "n"))
+        code, _, _ = council(agree, "seat", "s", "done", "tokens=1000", "--run", run_k.name)
+        check("seat: exactly 1,000 tokens is accepted — the floor is 'under 1,000' (review finding 12)", code == 0)
+        with open(run_k / "usage.tsv", "a", encoding="utf-8", newline="\n") as trail:
+            trail.write("2026-09-27T12:00:00Z\tn\tn9\tfinished\t1\t12abc\n")
+        council(agree, "seat", "n", "done", "--run", run_k.name)
+        check("seat: a usage.tsv cell that is not a count (a hand edit) is never read as one (review finding 8)",
+              seat_row(run_k, "n")[3:4] == ["10000"] and seat_row(run_k, "n")[6:8] == ["2", "2"], seat_row(run_k, "n"))
+
+        # --- one reading of the waiting: key (review finding 9) ---------------------------------------------------
+        run_l = fresh("waiting", ("a",))
+        text = read(run_l / "session-state.md").replace("## Decisions so far", "waiting:   # only a note\n## Decisions so far")
+        write(run_l / "session-state.md", text + "waiting: this line is below the heading\n")
+        helper_view = sourced(agree, 'state_field waiting "{}/session-state.md"'.format(str(run_l).replace("\\", "/"))).strip()
+        check("state: the helper and the snapshot read the waiting: header the same way",
+              helper_view == cockpit.header(run_l).get("waiting", "") == "# only a note",
+              (helper_view, cockpit.header(run_l).get("waiting")))
+
+        # --- a pasted command runs nothing (review finding 10) ---------------------------------------------------
+        quoted = sourced(agree, "sh_quote \"a'b\\$c\\`d\"; echo; ps_quote \"a'b\\$c\\`d\"").splitlines()
+        check("status: the terminal-view command quotes paths literally for bash and PowerShell",
+              quoted == ["'a'\\''b$c`d'", "'a''b$c`d'"], quoted)
+
+        # --- failing, recovery and blocked, driven through the helper (review finding 7) ---------------------------
+        code, out, err = council(agree, "run", "open", "council-implement", "--alongside")
+        build = Path(out.strip())
+        plan(build, ("verify-1",))
+        states = []
+        for attempt in range(3):
+            council(agree, "gate", "tests", "--run", build.name, "--", "false")
+            if attempt == 0:
+                states.append(json.loads(council(agree, "status", "--json", "--run", build.name)[1])["state"]["key"])
+            council(agree, "repair", "record", "T1", "tests", "--run", build.name)
+            states.append(json.loads(council(agree, "status", "--json", "--run", build.name)[1])["state"]["key"])
+        check("status through the helper: a failing check, then recovery attempts 1 and 2, then blocked at the limit",
+              states == ["failing", "recovering", "recovering", "blocked"], states)
 
         # Pausing while an agent still works: its usage is pending, not missing; resuming drops the stale cost
         code, out, err = council(repo, "run", "open", "council-review", "--alongside")

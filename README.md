@@ -42,7 +42,8 @@ skipped under load.
   advice only past a stated bar), history across runs (`council history`: a rate only once five
   runs carry its data), conservative tuning (`council tune`: the estimate per worker from your own
   runs, changed only on your words and undoable; behaviour held until a benchmark shows it helps),
-  the stack fingerprint, a drift doctor, and a read-only run cockpit
+  the stack fingerprint, a drift doctor, a plain-language status for a run (`council status`: a
+  snapshot card in chat where the app can show one, text elsewhere), and a read-only run cockpit
   (`council tui --watch`) you can leave open in a terminal while a council works.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
   security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,
@@ -160,7 +161,17 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
 **Limits:** at most 10 agents per run, verifiers included; a war room adds tokens, not agents. Past runs averaged ~100k tokens per worker;
 estimates come from your own project's ledger once there is some.
 
-**Watching a run.** In a terminal of your own, in the project, run the helper's cockpit. Outside
+**Seeing how a run is going.** In the Claude desktop app, the council shows a small status card in
+the chat once, when it first sends out its experts: what is happening, whether it is moving, what
+needs you, and — under "Details and evidence" — the seats, checks, cost and where the records are.
+Ask "how's the council run going?" (or "council status") any time for a fresh card. A card is a
+snapshot: it shows when it was taken, counts its age up in the page, and says so when it is over an
+hour old; it never updates itself, and nothing on it can stop or change a run. Where the app can't
+show cards (the terminal, IDE extensions), you get the same reading as a few lines of text, ending
+with the exact command for the live terminal view below. Cost appears only when the run's records
+support it (see `references/run-accounting.md`).
+
+**Watching a run live.** In a terminal of your own, in the project, run the helper's cockpit. Outside
 Claude Code the helper is not on your PATH, so give its full path: `bin/council` inside the plugin's
 folder. For the `~/.claude/skills/small-council/` install described under Install, that is:
 

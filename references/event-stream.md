@@ -32,9 +32,11 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `run.phase_changed` | `run` | new phase | `from=<old phase>` |
 | `run.status_changed` | `run` | new status | `from=<old status>` |
 | `run.resumed` | `run` | `in-progress` | `from=<old status>` |
-| `run.paused` | `run` | `paused` | `agents=<n>;tokens=<n>` |
-| `run.closed` | `run` | `complete` or `abandoned` | `agents=<n>;tokens=<n>` |
-| `seat.updated` | seat slug | new state | `tokens=<cumulative tokens>` |
+| `run.paused` | `run` | `paused` | `agent_runs=<n>;reported=<n>;tokens=<n>;basis=<basis>` (0.14; before: `agents=<n>;tokens=<n>`) |
+| `run.closed` | `run` | `complete` or `abandoned` | as `run.paused` |
+| `run.waiting_changed` | `run` | `on` or `off` | `from=<off or on>` — the run started or stopped waiting on the user (0.14) |
+| `seat.updated` | seat slug | new state | `tokens=<seat total>;agent_runs=<n>;reported=<n>` (0.14; before: `tokens=<cumulative tokens>`) — totals so far, never to be summed across events |
+| `seat.usage_corrected` | seat slug | `tokens` or `agents` | `from=<recorded>;to=<exact>` — an evidence-backed correction, whose evidence is in `corrections.jsonl` (0.14) |
 | `context.built` | seat slug | context level | `expands=<n>;metrics=<run-local path>` (see `precision-context.md`) |
 | `gate.finished` | gate name | `passed` or `failed` | `exit=<code>;seconds=<n>;empty=<0 or 1>` |
 | `collect.finished` | `run` | `passed` or `failed` | `seats=<n>` |
@@ -42,6 +44,8 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `memory.proposed` | the drafted entry's id (`F-<n>`) | `claim` or `repair` | `source=<claim id or task id>` |
 
 The stable columns, version and sequence let later readers follow runs without parsing prose.
+`references/run-accounting.md` says what the token and agent-run figures mean, and which basis a
+total may be stated on.
 Detail keys above are part of v1 for their event type; new optional types can be added without
 changing the seven-column layout. A gate with no matching files has `empty=1` even if its exit is
 zero. Skipped gates have no `gate.finished` event because no command ran.
