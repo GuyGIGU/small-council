@@ -233,6 +233,20 @@ memory proposals on screen; the `--json` snapshot; plain ASCII on request; escap
 neutralised; a legacy run and malformed files still drawn; `--watch` stopping by itself when the
 run closes; and every file of the run and the council home byte-for-byte unchanged afterwards.
 
+`python evals/run_status.py` checks run accounting and the plain-language status (`council seat`,
+`council correct`, `council status [--widget | --json]`, `scripts/status.py`), about 90 s:
+- **Accounting, through the helper.** A token count is one plausible number stored whole. A repeated
+  or resumed report counts once. A Workflow reports its agent count. Missing and older figures stay
+  unknown. A correction is normalised, bounded, and keeps the original and its evidence.
+- **Two readers.** Nine helper-written runs, one per basis, read the same by the helper (close line,
+  ledger) and by the snapshot (widget, `tui`, history), seat by seat and for the run.
+- **Status, from hand-made runs read at a fixed time.** Every state the widget shows (starting,
+  running, waiting, failing, recovering, blocked, completed, paused, stopped, stale, unknown).
+  Failing, recovering and blocked are also driven through `council gate` and `council repair`.
+- **The widget.** Every record value escaped. No network, and one inline script. The state is given in
+  words, not colour alone. The snapshot time is carried. A long run stays under 16 KB with capped
+  lists. Reading writes nothing.
+
 `python evals/run_history.py` checks history across runs (`council history`, `scripts/history.py`):
 counts always, but a median, share or ratio only once five runs (not items) carry its data; a build's
 before/after proofs and gate probes kept apart from the project's gates; repairs, claims and

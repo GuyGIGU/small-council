@@ -84,6 +84,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: python evals/run_tui.py
 
+      - name: Status and accounting evals
+        if: ${{ !cancelled() }}
+        run: python evals/run_status.py
+
       - name: Run history evals
         if: ${{ !cancelled() }}
         run: python evals/run_history.py

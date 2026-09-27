@@ -6,6 +6,44 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+**TL;DR:** a run's status as a snapshot card in chat, from records that now count agents and tokens
+exactly and say "unknown" instead of guessing. Old runs stay readable; their figures are never
+totalled.
+
+### Added
+
+- `council status [--widget | --json]`: a run in plain words — what is happening, whether it moves,
+  what needs you, where the evidence is. `--widget` is a card for the desktop app's chat; elsewhere,
+  text that ends with the exact terminal-view command.
+- The Chair shows the card once at first dispatch, then only when asked; a new session can show any
+  open run's card on request.
+- `council correct <seat> tokens=… agents=… evidence="…"`: an exact, evidenced figure laid over a seat's
+  record; the original stays in `seats.tsv`, the evidence in `corrections.jsonl`.
+- `usage.tsv`: every dispatch and usage report of a run, the trail behind its seat figures.
+- `council seat … agents=N` for a Workflow's agent count; `council state waiting="…"` for a question
+  the run waits on (with its own event).
+- `references/run-accounting.md`: what a seat, an agent run, a check and a token mean.
+
+### Changed
+
+- Token counts: one number, stored whole; two numbers, a sign, an exponent, a decimal comma or
+  anything under 1,000 is refused. A repeated or resumed report counts once.
+- Every reader (widget, `tui`, close line, ledger, history, tune) states a total only when every agent
+  run's usage is known; missing is "at least", older runs "not reliably recorded".
+- History and tuning cost only complete, exact runs and name the ones left out. Five runs make a
+  proposal eligible, not reliable.
+- The progress line counts seats as seats; queued seats are no longer "still working".
+- Resuming a run drops its stale cost line.
+
+### Fixed
+
+- A role name passed as `agent=` is refused, so a Workflow can no longer count as one agent.
+- The ledger no longer drops a line whose cost is unknown, and prices only checked figures.
+- A line break inside a note no longer creates a phantom seat in the cockpit.
+
+Details: `docs/validation/status-widget.md`, `docs/design/status-widget-adr.md`,
+`docs/roadmap-status.md`.
+
 ## [0.13.0] — 2026-09-27
 
 **TL;DR:** every run now leaves a checkable record, and the council learns from it only as far as

@@ -165,6 +165,19 @@ check("history: a read-only report over run folders, with a stated bar for every
 check("tui: a read-only cockpit script, reached through the helper, never part of a stage",
       "cmd_tui" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "cockpit.py")) and
       "council tui" not in "".join(doctrine.values()))
+kernel_text = read("skills", "context-core", "SKILL.md")
+check("status: one plain-language reading shared by the widget, the summary and the cockpit, shown once "
+      "at first dispatch and on request — never a card per progress line",
+      "cmd_status" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "status.py")) and
+      "council status --widget" in kernel_text and "show_widget" in kernel_text and "never a card per progress line" in kernel_text
+      and "waiting=" in kernel_text and "interpret" in read("scripts", "status.py")
+      and "status.interpret" in read("scripts", "cockpit.py"))
+check("accounting: seats record exact usage per agent run, a Workflow's agent count, and the two readers "
+      "share one per-seat rule",
+      os.path.isfile(os.path.join(ROOT, "references", "run-accounting.md")) and
+      "agents=<agent_count>" in doctrine["05-work.md"] and "never a role name" in doctrine["05-work.md"] and
+      "seat_rows()" in cli and "def seat_usage" in read("scripts", "cockpit.py") and "cmd_correct" in cli and
+      "usage.tsv" in cli)
 check("seat learning: roster advice weighs only judged runs, past a stated bar",
       "cmd_ledger_advice" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
       "council ledger advice" in doctrine["10-learn.md"] and
