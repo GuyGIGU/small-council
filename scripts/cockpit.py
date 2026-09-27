@@ -512,8 +512,8 @@ def render(snap, ascii_only=False, width=None, reading=None):
         add("  {} {:<16} {:<8} {:>6}  {:<8} {}".format(g.get(seat["state"], "?"), seat["slug"][:16], seat["state"][:8],
                                                      seat_tokens(seat), info.get("role", "")[:8], info.get("context", "")))
     for slug, info in sorted(planned.items()):
-        if slug in drawn or info.get("disposition") not in ("selected", "skipped"):
-            continue
+        if slug in drawn or info.get("disposition") not in ("selected", "skipped") or info.get("role") == "chair":
+            continue                                # the Chair is no seat to wait for
         if info["disposition"] == "skipped":
             add("  {} {:<16} skipped  — {}".format(g["skipped"], slug[:16], info.get("reason", "")))
         else:

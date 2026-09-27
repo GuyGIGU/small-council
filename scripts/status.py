@@ -219,7 +219,7 @@ def recent_of(snap, ref, limit):
         for event in snap["events"]["last"]:
             text = event_text(event, None)
             moment = utc_time(event["at"])
-            if text:
+            if text and not (items and items[-1]["text"] == text):   # one change can write two events
                 items.append({"at": iso(moment), "clock": clock(moment, ref), "text": text})
         return items[-limit:], "events"
     for seat in snap["seats"]:
