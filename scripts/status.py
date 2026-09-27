@@ -242,7 +242,8 @@ def usage_of(snap):
     if basis == "complete":
         text = "{} tokens across {}".format(tokens_text(total), plural(runs, "agent run"))
     elif basis == "running":
-        text = "{} tokens so far across {}".format(tokens_text(known), plural(at_least, "finished agent run"))
+        text = ("{} tokens reported so far; agents still working".format(tokens_text(known)) if known
+                else "no usage reported yet; agents still working")
     elif basis == "partial":
         text = "at least {} tokens — {} without a usage report".format(tokens_text(known), plural(missing, "agent run"))
     elif basis == "legacy":
