@@ -171,6 +171,13 @@ show cards (the terminal, IDE extensions), you get the same reading as a few lin
 with the exact command for the live terminal view below. Cost appears only when the run's records
 support it (see `references/run-accounting.md`).
 
+Two times show on every card:
+- **the snapshot** — when the card was drawn, with its age counting up;
+- **last activity** — the newest thing the run recorded.
+
+If an open run has recorded nothing for an hour, the card says **No recent activity**. That can mean
+a long job is still running, or that the session stopped; the card says both.
+
 **Watching a run live.** In a terminal of your own, in the project, run the helper's cockpit. Outside
 Claude Code the helper is not on your PATH, so give its full path: `bin/council` inside the plugin's
 folder. For the `~/.claude/skills/small-council/` install described under Install, that is:
@@ -261,6 +268,7 @@ python evals/run_structural.py     # is the design intact? laws, stages, command
 python evals/run_cli.py            # does the helper work? (needs bash + git)
 python evals/run_impact.py         # does the optional impact graph resolve direct relationships?
 python evals/run_hook.py           # do the hooks behave? (needs bash + git)
+python evals/run_status.py         # run accounting and the status widget (needs bash + git)
 python evals/run_phrases.py        # advisory: are the field-tested rules still worded in?
 ```
 
