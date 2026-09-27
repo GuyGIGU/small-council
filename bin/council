@@ -548,7 +548,7 @@ cmd_run_resume() {
   old="$(field session "$st")"
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
   RUN_ARG="$run" cmd_state status=in-progress session="$session" >/dev/null || exit 2
-  awk '/^## / { body = 1 } !body && index($0, "closed:") == 1 { next } { print }' "$st" > "$st.tmp$$" \
+  awk '/^## / { body = 1 } !body && (index($0, "closed:") == 1 || index($0, "actual:") == 1) { next } { print }' "$st" > "$st.tmp$$" \
     && mv "$st.tmp$$" "$st" || { rm -f "$st.tmp$$"; die "cannot update $st"; }
   event_append "$run" run.resumed run in-progress "from=$status" || die "run resumed, but its event could not be recorded"
   if [ -n "$session" ]; then drv="driven by this session"; else drv="no session id to record"; fi
@@ -750,11 +750,12 @@ corrections_tsv() {
 
 # What a run cost, said only as far as its records support (references/run-accounting.md), with
 # corrections laid over the rows: "<basis> <agent runs> <runs with usage> <tokens> <older rows>
-# <agent count exact 1|0>". The basis is complete when every agent run's usage is known, partial when
-# some is missing, older when a row predates usage.tsv and was not corrected (its units were never
-# checked), and none when no agent run is on record.
+# <agent count exact 1|0> <still working>". The basis is complete when every agent run's usage is
+# known, running when the only unknown usage belongs to seats still at work, partial when a finished
+# run's usage is missing, older when a row predates usage.tsv and was not corrected (its units were
+# never checked), and none when no agent run is on record.
 run_usage() {
-  [ -f "$1/seats.tsv" ] || { printf 'none 0 0 0 0 1'; return 0; }
+  [ -f "$1/seats.tsv" ] || { printf 'none 0 0 0 0 1 0'; return 0; }
   { corrections_tsv "$1"; printf '%s\n' "--seats--"; cat "$1/seats.tsv"; } | awk -F'\t' '
     $0 == "--seats--" { body = 1; next }
     !body { c[$1 SUBSEP $2] = $3; next }
@@ -767,11 +768,14 @@ run_usage() {
       k = ca ? c[$1, "agents"] : (older ? ($7 == "" ? 1 : $7 + 0) : $7 + 0)
       e += k
       if (ct) { r += k; t += c[$1, "tokens"] }
-      else if (!older) { r += ($8 + 0 > k ? k : $8 + 0); t += $4 }
+      else if (!older) {
+        got = ($8 + 0 > k ? k : $8 + 0); r += got; t += $4
+        if ($2 == "running") p += k - got; else m += k - got   # at work is pending, not missing
+      }
     }
     END {
-      b = old ? "older" : (e == 0 ? "none" : (r < e ? "partial" : "complete"))
-      printf "%s %d %d %d %d %d", b, e, r, t, old, inexact ? 0 : 1
+      b = old ? "older" : (e == 0 ? "none" : (m > 0 ? "partial" : (p > 0 ? "running" : "complete")))
+      printf "%s %d %d %d %d %d %d", b, e, r, t, old, inexact ? 0 : 1, p
     }'
 }
 
@@ -782,8 +786,10 @@ usage_words() {
   runs="$2"; [ "$6" = 1 ] || runs="at least $2"
   case "$1" in
     complete) printf '~%sk tokens across %s agent run(s)' "$(( ($4 + 500) / 1000 ))" "$runs" ;;
+    running)  printf '~%sk tokens so far across %s agent run(s) — %s still working' \
+                "$(( ($4 + 500) / 1000 ))" "$runs" "$7" ;;
     partial)  printf 'at least ~%sk tokens across %s agent run(s) — %s without a usage report' \
-                "$(( ($4 + 500) / 1000 ))" "$runs" "$(( $2 - $3 ))" ;;
+                "$(( ($4 + 500) / 1000 ))" "$runs" "$(( $2 - $3 - $7 ))" ;;
     older)    printf 'tokens not reliably recorded (%s older row(s)) · %s agent run(s)' "$5" "$runs" ;;
   esac
 }

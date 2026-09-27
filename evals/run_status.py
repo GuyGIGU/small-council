@@ -437,6 +437,20 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "tokens not reliably recorded (1 older row(s)) · at least 2 agent run(s)" in read(old / "session-state.md"),
               read(old / "session-state.md"))
 
+        # Pausing while an agent still works: its usage is pending, not missing; resuming drops the stale cost
+        code, out, err = council(repo, "run", "open", "council-review", "--alongside")
+        paused = Path(out.strip())
+        plan(paused, ("hunt",))
+        council(repo, "seat", "hunt", "running", "agent=a1", "--run", paused.name)
+        council(repo, "run", "close", "--status", "paused", "--run", paused.name)
+        state = read(paused / "session-state.md")
+        check("close: a run paused while an agent works says it is still working, not that its usage is missing (found on a real run)",
+              "still working" in state and "without a usage report" not in state, re.findall(r"^actual:.*$", state, re.MULTILINE))
+        council(repo, "run", "resume", "--run", paused.name)
+        check("resume: the closing cost line goes with the closing time — no stale cost on a live run",
+              "\nactual:" not in read(paused / "session-state.md") and "\nclosed:" not in read(paused / "session-state.md"),
+              read(paused / "session-state.md"))
+
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:
     print("[{}] {}".format("PASS" if good else "FAIL", name))
