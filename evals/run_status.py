@@ -338,7 +338,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("seat: usage comes with a finished run — tokens= on running is refused", code == 2 and "finished" in err, err)
         code, _, err = council(repo, "seat", "hunt", "running", "agent=council-verifier")
         code2, _, err2 = council(repo, "seat", "hunt", "running", "agent=workflow")
-        check("seat: a role name where the agent id belongs is refused (the Chrollo run recorded 'workflow')",
+        check("seat: a role name where the agent id belongs is refused (a real run recorded 'workflow')",
               code == 2 and code2 == 2 and "role, not an agent id" in err + err2, err + err2)
 
         council(repo, "seat", "hunt", "running", "agent=a1")

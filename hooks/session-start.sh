@@ -186,6 +186,10 @@ RUNS
   done <<RUNS
 $ordered
 RUNS
+  if [ "$shown" -gt 0 ]; then
+    # Reading a run changes nothing, so its status is safe to show even while another session drives it.
+    say "- If the user asks how a run is going: council status --run <name>. With a show_widget tool, pass the output of council status --widget --run <name> to it verbatim (a snapshot card, not live); otherwise relay the text."
+  fi
   if [ "$n_more" -gt 0 ]; then
     [ "$n_more" -le 5 ] || more="$more, …"
     say "- And $n_more more open on this working tree: $more — council run status lists them all. Leave them unless the user asks."

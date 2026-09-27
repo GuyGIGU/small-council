@@ -181,8 +181,8 @@ def event_text(event, repairs_by_gate):
     if kind == "seat.usage_corrected":
         return "Record for {} corrected from its source".format(subject)
     if kind == "gate.finished":
-        if gate_kind(subject) == "proof":
-            return "Proof {} {}".format(subject, "failed first, as intended" if value == "failed" else "passed")
+        if gate_kind(subject) != "check":
+            return None                  # a build's before-proof or a dry run: detail, not news
         return "Check {} {}".format(subject, value)
     if kind == "collect.finished":
         return "Results collected" if value == "passed" else "Collecting results found gaps"
@@ -224,13 +224,9 @@ def recent_of(snap, ref, limit):
             items.append((moment, "{} {}".format(seat["slug"], SEAT_WORDS.get(seat["state"], seat["state"]))))
     for gate in snap["gates"]:
         moment = local_time(gate["when"])
-        if moment and gate_kind(gate["name"]) != "probe":
+        if moment and gate_kind(gate["name"]) == "check":
             result = "unknown" if gate["exit"] is None else ("passed" if gate["exit"] == 0 else "failed")
-            if gate_kind(gate["name"]) == "proof":
-                text = "Proof {} {}".format(gate["name"], "failed first, as intended" if result == "failed" else result)
-            else:
-                text = "Check {} {}".format(gate["name"], result)
-            items.append((moment, text))
+            items.append((moment, "Check {} {}".format(gate["name"], result)))
     items.sort(key=lambda item: item[0])
     return [{"at": iso(m), "clock": clock(m, ref), "text": t} for m, t in items[-limit:]], "records"
 
@@ -301,7 +297,7 @@ def evidence_of(snap, run_path):
     if snap["repairs"]:
         items.append({"label": "Repair trail", "path": rel(run / "repairs.jsonl")})
     if snap.get("corrections"):
-        items.append({"label": "Record corrections ({})".format(len(snap["corrections"])),
+        items.append({"label": "Corrected figures ({})".format(len(snap["corrections"])),
                       "path": rel(run / "corrections.jsonl")})
     return items
 
@@ -339,7 +335,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
                 task, info["gate"] or "?", plural(info["attempts"] or ATTEMPTS, "time")))})
     if waiting and open_run:
         attention.append({"kind": "waiting", "severity": 2, "text": "Waiting for your answer: " + waiting})
-    mending_gates = {info["gate"] for info in mending.values()}
+    mending_gates = {info["gate"] for info in list(mending.values()) + list(stopped.values())}
     for check in failing:
         if check["name"] in mending_gates:
             continue
@@ -420,14 +416,24 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
         summary = "The run finished."
     elif key == "interrupted":
         summary = "The run is paused." if status == "paused" else "The run was stopped before it finished."
-    elif working:
-        summary = "Working now: {}.".format(listing(working))
-    elif key == "starting":
-        summary = "Setting up the run."
+    elif key == "unknown":
+        summary = "The run's records can't be read."
+    elif key == "blocked":
+        summary = "The build stopped and waits for your decision."
+    elif key == "waiting":
+        summary = "Waiting for your answer."
     elif key == "stale":
         summary = "Nothing has been recorded for a while."
+    elif working:
+        summary = "Working now: {}.".format(listing(working))
+    elif key == "recovering":
+        summary = "A repair is under way."
+    elif key == "failing":
+        summary = "A check failed."
+    elif key == "starting":
+        summary = "Setting up the run."
     else:
-        summary = "No expert is working right now."
+        summary = "In progress: {}.".format(phase_label(phase))
     return {
         "schema": SCHEMA,
         "snapshot_at": iso(now),
@@ -477,7 +483,9 @@ def text(status, tui_commands=()):
     if status["recent"]:
         lines.append("Recent: " + " · ".join("{} {}".format(i["clock"], i["text"]) for i in status["recent"][-4:]))
     fresh = status["freshness"]
-    lines.append("Token use: {} · Agent runs: {}".format(status["usage"]["text"], status["usage"]["agent_runs_text"]))
+    usage = status["usage"]
+    lines.append("Token use: " + usage["text"] + ("" if usage["basis"] == "complete" else
+                                                  " · Agent runs: " + usage["agent_runs_text"]))
     lines.append("As of {} (last activity {}).".format(clock(now, now), fresh["last_activity_clock"] or "unknown"))
     for command in tui_commands or ():
         lines.append("Live view in a terminal — " + command)
@@ -575,13 +583,17 @@ def widget(status, preview=False, limit=5):
     out.append(details(status))
     out.append("</div></div>")
     out.append(SCRIPT)
-    return "".join(out)
+    return "".join(out).encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
 def details(status, limit=12):
     usage = status["usage"]
-    rows = ['<p><span class="muted">Token use:</span> {}</p>'.format(esc(usage["text"])),
-            '<p><span class="muted">Agent runs:</span> {}</p>'.format(esc(usage["agent_runs_text"]))]
+    rows = ['<p><span class="muted">Token use:</span> {}</p>'.format(esc(usage["text"]))]
+    if usage["basis"] in ("complete", "running", "partial"):
+        rows.append('<p class="muted">Token figures measure how large each agent\'s work grew, not what it '
+                    'cost.</p>')
+    if usage["basis"] != "complete":
+        rows.append('<p><span class="muted">Agent runs:</span> {}</p>'.format(esc(usage["agent_runs_text"])))
     if usage["corrected_seats"]:
         rows.append('<p class="muted">Corrected from source records: {}</p>'.format(esc(listing(usage["corrected_seats"], 6))))
     seats = status["seats"]

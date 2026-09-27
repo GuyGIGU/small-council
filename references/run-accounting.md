@@ -13,8 +13,8 @@ number only as far as the record supports it. Blank is unknown, never zero.
 | **Check** | One gate command (`council gate`), saved under `gates/` with a `gate.finished` event. A check is not an agent run and is never counted as one. |
 | **Tokens** | The figure Claude Code reports for a finished agent run (`subagent_tokens` in its completion notification; a Workflow's notification gives one figure for all its agents), stored as whole tokens. |
 
-**What the token figure measures.** Checked against real transcripts (the Chrollo build of September
-2026), it tracks the size of the agent's final context — not the sum of every call it made, and not a
+**What the token figure measures.** Checked against real transcripts (a build run of September 2026), it
+tracks the size of the agent's final context — not the sum of every call it made, and not a
 bill. One verifier reported 160,360 while its 54 calls added up to 5.3 million. Compare runs with it;
 don't price them with it.
 
@@ -89,8 +89,8 @@ unknown seat, and a missing source.
 
 ## Known limits
 
-- A dispatched agent the Chair never recorded is not counted. The Chrollo build has 8 such agent runs
-  (a first check of task 4, two surveys, and a 5-agent survey workflow), outside every total.
+- A dispatched agent the Chair never recorded is not counted. One real build run has 8 such agent
+  runs (a first check of a task, two surveys, and a 5-agent survey workflow), outside every total.
 - The resumed-agent rule assumes running totals, as observed. A smaller later figure is added, which
   is right for a fresh count and wrong if the harness ever reported less than before for the same
   agent.
