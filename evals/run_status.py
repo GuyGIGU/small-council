@@ -440,7 +440,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         # Pausing while an agent still works: its usage is pending, not missing; resuming drops the stale cost
         code, out, err = council(repo, "run", "open", "council-review", "--alongside")
         paused = Path(out.strip())
-        plan(paused, ("hunt",))
+        plan(paused, ("hunt", "verify-1"))
         council(repo, "seat", "hunt", "running", "agent=a1", "--run", paused.name)
         council(repo, "run", "close", "--status", "paused", "--run", paused.name)
         state = read(paused / "session-state.md")
