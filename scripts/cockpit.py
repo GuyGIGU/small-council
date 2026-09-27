@@ -240,14 +240,24 @@ def claims_of(run):
 def events_of(run, last):
     path = run / "events.tsv"
     if too_large(path):
-        return {"count": None, "malformed": 0, "last": [], "present": True, "header_ok": None, "too_large": True}
+        return {"count": None, "malformed": 0, "last": [], "present": True, "header_ok": None, "too_large": True,
+                "gates": {}}
     lines = [line for line in lines_of(text_of(path, run)) if line.strip()]
     rows = [line.split("\t") for line in lines[1:]]
     good = [r for r in rows if len(r) == 7]
     shown = [{"seq": clean(r[1]), "at": clean(r[2]), "type": clean(r[3]), "subject": clean(r[4]),
               "value": clean(r[5]), "detail": clean(r[6])} for r in good[-last:]] if last else []
+    gates = {}          # every gate's runs from the event stream: a re-run overwrites gates/<name>.json
+    for r in good:
+        if r[3] == "gate.finished":
+            seen = gates.setdefault(clean(r[4]), {"passed": 0, "failed": 0, "last": ""})
+            result = clean(r[5])
+            if result in ("passed", "failed"):
+                seen[result] += 1
+                seen["last"] = result
     return {"count": len(good), "malformed": len(rows) - len(good), "last": shown, "present": bool(lines),
-            "header_ok": bool(lines) and lines[0] == "schema\tseq\tat\ttype\tsubject\tvalue\tdetail", "too_large": False}
+            "header_ok": bool(lines) and lines[0] == "schema\tseq\tat\ttype\tsubject\tvalue\tdetail", "too_large": False,
+            "gates": gates}
 
 
 def proposals_in(home):

@@ -139,8 +139,12 @@ def gate_kind(name):
 
 
 def checks_of(snap):
-    """The latest run of every check (proofs and probes aside), in time order, and which recovered."""
+    """The latest run of every check (proofs and probes aside), in time order, and which recovered. A
+    re-run overwrites a check's saved result, so its earlier failures come from the event stream."""
     latest, failed_once = {}, set()
+    for name, seen in (snap["events"].get("gates") or {}).items():
+        if seen.get("failed"):
+            failed_once.add(name)
     for gate in snap["gates"]:
         if gate_kind(gate["name"]) != "check":
             continue

@@ -376,6 +376,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         code, out, err = council(repo, "run", "events", "check")
         check("events: the stream with the new detail fields and event types still checks", code == 0, out + err)
 
+        council(repo, "gate", "smoke", "--", "false")
+        failing = json.loads(council(repo, "status", "--json")[1])
+        council(repo, "gate", "smoke", "--", "true")
+        passing = json.loads(council(repo, "status", "--json")[1])
+        check("status: a check re-run under the same name after failing reads as recovered — its saved result is "
+              "overwritten, so the failure comes from the event stream (found on a real run)",
+              failing["state"]["key"] == "failing" and passing["state"]["key"] == "running"
+              and "1 recovered after failing" in passing["progress"]["checks"] and not passing["attention"],
+              (failing["state"], passing["progress"], passing["attention"]))
         before = fingerprint(run)
         code, text_out, err = council(repo, "status")
         code_w, widget_out, err_w = council(repo, "status", "--widget")
