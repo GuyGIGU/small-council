@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-09-27
+
+The sixth evolution milestone (Phases 6–13) gives each run a checkable record, and learns from that
+record only as far as it supports. It adds:
+- an evidence ledger;
+- a bounded repair trail;
+- observed-failure memory, filed only on the user's own words;
+- seat advice;
+- a baseline-versus-council benchmark harness;
+- a read-only run cockpit;
+- history across runs;
+- one conservatively tuned setting.
+
+**Upgrading:** no migration or new mandatory dependency, and older runs stay readable.
+- The new commands use optional Python 3.8+. Without it, each says so, and the existing commands
+  still work.
+- Context packs are now off unless the project config has `- context packs: on` under
+  `## Run preferences`, or the user asks for them in a run.
+- A build now stops after a gate fails three times.
+
 ### Added
 
 - **Conservative self-tuning.** `council tune` proposes from the project's own record: the estimate
