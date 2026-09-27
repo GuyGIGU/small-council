@@ -1207,6 +1207,10 @@ cmd_status() {
   root="$(cd "$COUNCIL_PLUGIN_ROOT" 2>/dev/null && here)"; where="$(cd "$run" 2>/dev/null && here)"
   set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/status.py" --run "$run" --home "$(council_home)"
   if command -v cygpath >/dev/null 2>&1 && bash_exe="$(cygpath -m "$BASH" 2>/dev/null)" && [ -n "$bash_exe" ]; then
+    case "$bash_exe" in                          # Git's usr/bin/bash.exe has no tools on PATH outside Git Bash;
+      */usr/bin/bash.exe) [ ! -f "${bash_exe%/usr/bin/bash.exe}/bin/bash.exe" ] \
+                            || bash_exe="${bash_exe%/usr/bin/bash.exe}/bin/bash.exe" ;;   # its bin/bash.exe sets them up
+    esac
     set -- "$@" --tui-command "PowerShell: & \"$bash_exe\" \"$root/bin/council\" tui --watch --run \"$where\"" \
                --tui-command "Git Bash: bash \"$root/bin/council\" tui --watch --run \"$where\""
   else

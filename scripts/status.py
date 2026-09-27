@@ -320,8 +320,9 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
     counts = {}
     for seat in seats:
         counts[seat["state"]] = counts.get(seat["state"], 0) + 1
-    planned = [slug for slug, info in snap["plan"].get("seats", {}).items()
-               if info.get("disposition") == "selected" and slug not in {s["slug"] for s in seats}]
+    planned = [slug for slug, info in snap["plan"].get("seats", {}).items()   # the Chair is no seat to wait for
+               if info.get("disposition") == "selected" and info.get("role") != "chair" and slug != "chair"
+               and slug not in {s["slug"] for s in seats}]
     working = [s["slug"] for s in seats if s["state"] == "running"]
     active = any(s["state"] in ("running", "done", "failed", "blocked") for s in seats) or bool(snap["gates"])
     moment = last_activity(snap)
