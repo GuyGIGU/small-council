@@ -18,16 +18,18 @@ totalled.
 - The Chair shows the card once at first dispatch, then only when asked; a new session can show any
   open run's card on request.
 - `council correct <seat> tokens=… agents=… evidence="…"`: an exact, evidenced figure laid over a seat's
-  record; the original stays in `seats.tsv`, the evidence in `corrections.jsonl`.
+  record; the original stays in `seats.tsv`, the evidence in `corrections.jsonl`. `unrecorded=yes` adds
+  an agent run the record missed.
 - `usage.tsv`: every dispatch and usage report of a run, the trail behind its seat figures.
-- `council seat … agents=N` for a Workflow's agent count; `council state waiting="…"` for a question
-  the run waits on (with its own event).
+- `council seat … agents=N` for a Workflow's agent count, and `agents=0` for a seat no agent ran;
+  `council state waiting="…"` for a question the run waits on (with its own event).
 - `references/run-accounting.md`: what a seat, an agent run, a check and a token mean.
 
 ### Changed
 
-- Token counts: one number, stored whole; two numbers, a sign, an exponent, a decimal comma or
-  anything under 1,000 is refused. A repeated or resumed report counts once.
+- Token counts: one exact number, stored whole; two numbers, a sign, an exponent, a decimal comma, a
+  rounded figure (`74.3k`) or anything under 1,000 is refused. A repeated or resumed report counts
+  once. A seat with no agent on record has an unknown agent count, never 0.
 - Every reader (widget, `tui`, close line, ledger, history, tune) states a total only when every agent
   run's usage is known; missing is "at least", older runs "not reliably recorded".
 - History and tuning cost only complete, exact runs and name the ones left out. Five runs make a
@@ -37,7 +39,7 @@ totalled.
 
 ### Fixed
 
-- A role name passed as `agent=` is refused, so a Workflow can no longer count as one agent.
+- A role name passed as `agent=` is refused, and a Workflow's agent count is recorded with `agents=`.
 - The ledger no longer drops a line whose cost is unknown, and prices only checked figures.
 - A line break inside a note no longer creates a phantom seat in the cockpit.
 

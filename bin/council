@@ -662,7 +662,8 @@ cmd_seat() {
                   agent|worker|verifier|workflow|builder|chair|explore|general-purpose|council-worker|council-verifier|small-council:council-worker|small-council:council-verifier)
                     die "agent=$agent is a role, not an agent id — pass the id the Agent or Workflow tool returned (like a0a66e66dae8005a1 or wf_1b2fc8d3-b14), or leave agent= out" ;;
                 esac ;;
-      tokens=*) case "$(printf '%s' "${kv#tokens=}" | sed 's/[[:space:]]*tokens\{0,1\}$//')" in
+      tokens=*) case "$(printf '%s' "${kv#tokens=}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+                              -e 's/[[:space:]]*[Tt][Oo][Kk][Ee][Nn][Ss]\{0,1\}$//')" in
                   *[kKmM]*) die "tokens=${kv#tokens=} is a rounded figure — pass the exact count the usage report gives (like 159812)" ;;
                 esac
                 tokens="$(seat_tokens "${kv#tokens=}")" \
@@ -685,6 +686,12 @@ cmd_seat() {
     die "agents=0 says no agent ran for this seat — it takes no tokens="
   fi
   run="$(resolve_run)" || exit 2
+  if [ "$runs" = 0 ] && { [ -n "$agent" ] || [ -n "$(seat_field "$run" "$slug" 3)" ]; }; then
+    die "agents=0 says no agent ran for $slug, but an agent id is on record for it — report that agent's usage instead"
+  fi
+  if [ -n "$(corrections_tsv "$run" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] && $4 == 1 { print; exit }')" ]; then
+    die "$slug was added from evidence as an agent run the record missed — record new work under a new slug"
+  fi
   case "$state" in
     queued|running)
       require_run_plan "$run" "start seat $slug"
@@ -746,7 +753,8 @@ cmd_seat() {
 seat_tokens() {
   [ -n "$1" ] || return 0
   V="$1" awk 'BEGIN {
-    s = ENVIRON["V"]; gsub(/^[ \t]+|[ \t]+$/, "", s); sub(/[ \t]*tokens?$/, "", s)
+    s = ENVIRON["V"]; gsub(/^[ \t]+|[ \t]+$/, "", s)
+    if (match(tolower(s), /[ \t]*tokens?$/)) s = substr(s, 1, RSTART - 1)
     if (s ~ /^[0-9][0-9]?[0-9]?([, ][0-9][0-9][0-9])+$/ || s ~ /^[0-9]+$/) {
       gsub(/[, ]/, "", s); sub(/^0+/, "", s); if (s == "") s = "0"
       if (length(s) > 12) exit 1                          # more than any agent run reports (and than readers take)
@@ -765,15 +773,22 @@ seat_tokens() {
 # line in a fixed order, so its three fields are read by pattern; a line without evidence is ignored.
 corrections_tsv() {
   [ -f "$1/corrections.jsonl" ] || return 0
-  awk '{
-    s = $0
-    if (s !~ /"evidence":"[^"]*[A-Za-z0-9]/) next                 # evidence that names something
-    if (!match(s, /"seat":"[^"]*"/)) next; slug = substr(s, RSTART + 8, RLENGTH - 9)
-    if (!match(s, /"field":"(tokens|agents)"/)) next; f = substr(s, RSTART + 9, RLENGTH - 10)
-    if (!match(s, /"to":(0|[1-9][0-9]*)[,}]/)) next                  # a JSON whole number, as Python reads it
-    v = substr(s, RSTART + 5, RLENGTH - 6); if (length(v) > 12) next
-    k = slug "\t" f; if (!(k in last)) order[++n] = k; last[k] = v; added[k] = (s ~ /"added":true/) ? 1 : 0
-  } END { for (i = 1; i <= n; i++) print order[i] "\t" last[order[i]] "\t" added[order[i]] }' "$1/corrections.jsonl"
+  awk '
+    function value(pattern, key,   v) {                      # the text of "key": <v>, spacing as JSON allows
+      if (!match(s, pattern)) return ""
+      v = substr(s, RSTART, RLENGTH); sub("^\"" key "\"[ \t]*:[ \t]*", "", v); gsub(/^"|"$|[ \t,}]+$/, "", v)
+      return v
+    }
+    {
+      s = $0
+      if (s !~ /"evidence"[ \t]*:[ \t]*"[^"]*[A-Za-z0-9]/) next               # evidence that names something
+      slug = value("\"seat\"[ \t]*:[ \t]*\"[^\"]*\"", "seat"); if (slug == "") next
+      f = value("\"field\"[ \t]*:[ \t]*\"(tokens|agents)\"", "field"); if (f == "") next
+      v = value("\"to\"[ \t]*:[ \t]*(0|[1-9][0-9]*)[ \t]*[,}]", "to")          # a JSON whole number, as Python reads it
+      if (v == "" || v !~ /^[0-9]+$/ || length(v) > 12) next
+      k = slug "\t" f; if (!(k in last)) order[++n] = k; last[k] = v; added[k] = (s ~ /"added"[ \t]*:[ \t]*true/) ? 1 : 0
+    }
+    END { for (i = 1; i <= n; i++) print order[i] "\t" last[order[i]] "\t" added[order[i]] }' "$1/corrections.jsonl"
 }
 
 # Each executed seat's figures under the one per-seat rule of references/run-accounting.md — the same
@@ -792,14 +807,16 @@ seat_rows() {
     $2 == "skipped" || $2 == "queued" || $1 == "" { next }
     {
       slug = $1; st = $2; ct = ((slug SUBSEP "tokens") in c); ca = ((slug SUBSEP "agents") in c)
-      older = (NF < 8 || $8 == "")
+      c7 = $7; gsub(/^[ \t]+|[ \t]+$/, "", c7); c8 = $8; gsub(/^[ \t]+|[ \t]+$/, "", c8)
+      n7 = (c7 ~ /^[0-9]+$/ && length(c7) <= 12); n8 = (c8 ~ /^[0-9]+$/ && length(c8) <= 12)
+      older = !n8                                                   # as the snapshot reads the reported cell
       cell = $4; gsub(/^[ \t]+|[ \t]+$/, "", cell)
       rec = (cell ~ /^[0-9]+$/ && length(cell) <= 12) ? cell : ""
-      unknown = (!older && !ca && $7 == "")                            # no agent on record
+      unknown = (!older && !ca && !n7)                                  # no agent on record
       if (ca) k = c[slug, "agents"] + 0
-      else if (older) k = ($7 ~ /^[0-9]+$/ && $7 + 0 >= 1) ? $7 + 0 : 1
-      else k = $7 + 0
-      R = older ? 0 : $8 + 0
+      else if (older) k = (n7 && c7 + 0 >= 1) ? c7 + 0 : 1
+      else k = n7 ? c7 + 0 : 0
+      R = older ? 0 : c8 + 0
       exact = (ca || (!older && !unknown)) ? 1 : 0
       miss = 0; pend = 0; tok = "-"; rep = 0
       if (ct) {
@@ -818,8 +835,13 @@ seat_rows() {
       printf "%s\t%s\t%s\t%d\t%d\t%s\t%d\t%d\t%d\n", slug, st, b, k, rep, tok, exact, miss, pend
     }
     END {                                         # agent runs never recorded, added from evidence
-      for (slug in add) if (!(slug in seen) && ((slug SUBSEP "tokens") in c) && ((slug SUBSEP "agents") in c))
-        printf "%s\tdone\tcorrected\t%d\t%d\t%s\t1\t0\t0\n", slug, c[slug, "agents"], c[slug, "agents"], c[slug, "tokens"]
+      for (slug in add) {
+        if ((slug in seen) || !((slug SUBSEP "agents") in c)) continue
+        k = c[slug, "agents"] + 0
+        if (!((slug SUBSEP "tokens") in c)) printf "%s\tdone\tmissing\t%d\t0\t-\t1\t%d\t0\n", slug, k, k
+        else if (c[slug, "tokens"] + 0 > 0 && c[slug, "tokens"] + 0 < 1000) printf "%s\tdone\tsuspect\t%d\t0\t-\t1\t0\t0\n", slug, k
+        else printf "%s\tdone\tcorrected\t%d\t%d\t%s\t1\t0\t0\n", slug, k, k, c[slug, "tokens"]
+      }
     }'
 }
 
@@ -1326,10 +1348,15 @@ cmd_correct() {
   if [ -n "$tokens" ] && [ "$tokens" -ne 0 ] && [ "$tokens" -lt 1000 ]; then
     die "correct: tokens=$tokens is below any real agent run (1,000); a seat no agent ran for is tokens=0 agents=0"
   fi
+  if [ "$tokens" = 0 ] && [ -n "$runs" ] && [ "$runs" -gt 0 ]; then
+    die "correct: tokens=0 with agents=$runs — an agent run always costs something; if its figure is unknown, leave tokens= out"
+  fi
   run="$(resolve_run)" || exit 2
   if [ -n "$added" ]; then                     # an agent run the Chair never recorded: both figures, a new slug
-    [ -n "$tokens" ] && [ -n "$runs" ] || die "correct: unrecorded=yes adds an agent run the record missed — give both tokens= and agents="
+    [ -n "$runs" ] && [ "$runs" -gt 0 ] || die "correct: unrecorded=yes adds an agent run the record missed — give agents= (1 or more), and tokens= if the source shows its figure"
     [ -z "$(seat_field "$run" "$slug" 1)" ] || die "correct: $slug is already a seat of ${run##*/} — correct it without unrecorded=yes"
+    [ -z "$(corrections_tsv "$run" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] && $4 == 1 { print; exit }')" ] \
+      || die "correct: $slug was already added — name a second missed agent run with a new slug"
   else
     [ -n "$(seat_field "$run" "$slug" 1)" ] || die "correct: $slug is not a seat of ${run##*/} — only a recorded seat can be corrected (an agent run never recorded: unrecorded=yes)"
   fi

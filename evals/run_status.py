@@ -531,6 +531,13 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         run_h = fresh("thirteen digits", ("a",))
         council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_h.name)
         write(run_h / "seats.tsv", read(run_h / "seats.tsv").replace("\ta1\t40000\t", "\ta1\t1234567890123\t"))
+        run_m = fresh("malformed agents cell", ("a", "b"))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_m.name)
+        council(agree, "seat", "b", "running", "--run", run_m.name)
+        council(agree, "seat", "b", "done", "--run", run_m.name)
+        cells = [line.split("\t") for line in read(run_m / "seats.tsv").split("\n")]
+        write(run_m / "seats.tsv", "\n".join("\t".join(c[:6] + ["-"] + c[7:]) if c[0] == "b" else "\t".join(c)
+                                              for c in cells))
         run_i = fresh("older", ("a",))
         write(run_i / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\na\tdone\tverifier\t160\t2026-09-20 18:07\t\t1\n")
         mismatch = []
@@ -544,8 +551,9 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
                 mismatch.append((name, bash_seats, py_seats, bash_run, py_run))
         check("readers: the helper (close line, ledger) and the snapshot (widget, tui, history) read every basis the same — "
               "per seat and for the run (found in review: a finished seat with no agent split them)",
-              not mismatch and len(cases) == 10, mismatch)
+              not mismatch and len(cases) == 11, mismatch)
         expect = {"complete": "complete", "no-agent seat": "partial", "declared no agent": "complete", "missing usage": "partial",
+                  "malformed agents cell": "partial",
                   "still working": "running", "agents-only correction": "partial", "corrected zero": "complete",
                   "suspect": "suspect", "thirteen digits": "suspect", "older": "legacy"}
         got = {name: cockpit.snapshot(folder, None, 8)["usage"]["tokens"]["basis"] for name, folder in cases.items()}
@@ -598,6 +606,39 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               refused_add == [2, 2] and "survey" not in rows_after and bash_seats == py_seats
               and bash_run == py_run == ("complete", 2, 230883) and bash_seats.get("survey") == ("corrected", 1, 190883),
               (refused_add, bash_seats, py_seats, bash_run, py_run))
+
+        overwrite = council(agree, "seat", "survey", "done", "agent=z1", "tokens=30000", "--run", run_add.name)[0]
+        twice = council(agree, "correct", "survey", "tokens=25000", "agents=1", "unrecorded=yes",
+                        "evidence=transcript A L9999 uuid 1 another run", "--run", run_add.name)[0]
+        zero_cost = council(agree, "correct", "q", "tokens=0", "agents=1", "unrecorded=yes",
+                            "evidence=transcript A L42 an Agent call, usage not shown", "--run", run_add.name)[0]
+        council(agree, "correct", "q", "agents=1", "unrecorded=yes", "evidence=transcript A L42 an Agent call, usage not shown",
+                "--run", run_add.name)
+        bash_seats, bash_run, py_seats, py_run = readers(agree, run_add)
+        check("added runs: an added slug can't later be recorded or added again, a real agent run can't cost 0, and an "
+              "added run with no figure is missing usage in both readers (second real run's review)",
+              (overwrite, twice, zero_cost) == (2, 2, 2) and bash_seats == py_seats and bash_run == py_run
+              and bash_seats.get("q") == ("missing", 1, None) and bash_run[0] == "partial",
+              ((overwrite, twice, zero_cost), bash_seats, py_seats, bash_run, py_run))
+        run_z = fresh("agents zero", ("c",))
+        council(agree, "seat", "c", "failed", "agent=c1", "--run", run_z.name)
+        declared = council(agree, "seat", "c", "done", "agents=0", "--run", run_z.name)
+        check("seat: agents=0 is refused once an agent was dispatched for the seat — it can't erase that run",
+              declared[0] == 2 and "agent id is on record" in declared[2], declared)
+        run_h2 = fresh("hand-written add", ("a",))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_h2.name)
+        write(run_h2 / "corrections.jsonl", "".join(json.dumps(c) + "\n" for c in (
+            {"schema": 1, "seat": "s2", "field": "tokens", "from": "", "to": 500, "added": True, "evidence": "hand written A L1"},
+            {"schema": 1, "seat": "s2", "field": "agents", "from": "", "to": 1, "added": True, "evidence": "hand written A L1"})))
+        bash_seats, bash_run, py_seats, py_run = readers(agree, run_h2)
+        check("added runs: a hand-written line (spaced JSON) is read by both readers, and a tiny figure is suspect in both",
+              bash_seats == py_seats and bash_run == py_run and bash_seats.get("s2", ("",))[0] == "suspect",
+              (bash_seats, py_seats, bash_run, py_run))
+        spaced = [council(agree, "seat", slug, "done", "agent=" + slug + "1", "tokens=" + value, "--run", run_add.name)[0]
+                  for slug, value in (("t1", "74304 Tokens"), ("t2", "74304 tokens "))]
+        check("seat: an exact figure followed by 'Tokens' or a trailing space is accepted, not mistaken for a rounded one",
+              spaced == [0, 0] and seat_row(run_add, "t1")[3:4] == ["74304"] and seat_row(run_add, "t2")[3:4] == ["74304"],
+              (spaced, seat_row(run_add, "t1"), seat_row(run_add, "t2")))
 
         # --- the usage trail's own rules, focused (review finding 6) ---------------------------------------------
         run_k = fresh("trail", ("s", "n"))

@@ -22,7 +22,7 @@ don't price them with it.
 is a Workflow the Chair runs: its `agent_count` is its agent runs.
 
 **Display is not storage.** "160k" is how a figure is shown. The stored value is the whole number
-(160360). A figure is never rounded when stored.
+(160360). A figure is never rounded when stored, and a rounded figure is never accepted.
 
 ## Where it is written
 
@@ -40,6 +40,9 @@ How `usage.tsv` becomes a seat's figures:
 - **A report with no agent id stands alone.** It cannot be matched, so a repeat would add. Record
   the id at dispatch.
 - **A dispatched id that never reported** counts as one agent run with no usage.
+- **A seat with no agent on record** (no id, no report) has an unknown agent count — its `agents` cell
+  stays blank, never 0. `agents=0` on a finished report is the one way to say that no agent ran (the
+  Chair did the work).
 
 `seats.tsv` holds the summary and `usage.tsv` its parts. A reader uses one or the other, never both.
 The `seat.updated` event carries a seat's totals so far, so summing events counts twice.
@@ -48,13 +51,14 @@ The `seat.updated` event carries a seat's totals so far, so summing events count
 
 - `agent=` takes the id the Agent or Workflow tool returned. A role name (`workflow`,
   `council-verifier`) is refused.
-- `tokens=` takes one number: `159812`, `159,812`, `159 812`, `160k`. It is refused when it holds two
-  numbers ("12 tool uses, 45000 tokens"), a sign, an exponent, a decimal comma, or anything under
-  1,000. No agent run costs less than that, so 160 is a slip, and the helper never guesses what it
-  meant.
+- `tokens=` takes one exact number: `159812`, `159,812`, `159 812`. It is refused when it holds two
+  numbers ("12 tool uses, 45000 tokens"), a sign, an exponent, a decimal comma, a rounded figure
+  (`160k`, `1.2M`), or anything under 1,000. No agent run costs less than that, so 160 is a slip, and
+  the helper never guesses what it meant.
 - `tokens=` and `agents=` come with a finished run (`done`, `failed` or `blocked`), once per agent
   run, with the notification's figure as given. A Workflow gives `agents=<agent_count>
   tokens=<subagent_tokens>`.
+- A seat the Chair did itself, with no agent: `council seat <slug> done agents=0`.
 
 ## What may be said
 
@@ -62,7 +66,7 @@ The `seat.updated` event carries a seat's totals so far, so summing events count
 |---|---|---|
 | complete | every agent run's usage is known (reported or corrected) | a total, "~4,675k tokens across 39 agent runs" |
 | running | some seats are still working | "so far" |
-| partial | a finished agent run has no usage report | "at least …, N without a usage report" |
+| partial | a finished agent run has no usage report, or a seat has no agent on record | "at least …, N without a usage report" / "no agent on record for …" |
 | older | a row written before 0.14 (no `reported` value) and not corrected | "not reliably recorded"; agent runs "at least N" |
 | suspect | a figure under 1,000 tokens for an agent run | not shown; the seat is named |
 | none | no agent run on record | nothing to cost |
@@ -84,13 +88,16 @@ unknown seat, and a missing source.
 - A seat no agent ran for (the Chair did the work) is `tokens=0 agents=0`.
 - A later pass of an agent counted under another seat gets `agents=0` and the difference between that
   agent's consecutive reports.
+- An agent run that never got a seat row is added with `unrecorded=yes` (both figures, a new slug).
+  Every reader counts it as a done seat; `seats.tsv` is not touched.
 - Only an exact figure the source shows is a correction. 160 is never read as 160,000 because it
   looks small.
 
 ## Known limits
 
-- A dispatched agent the Chair never recorded is not counted. One real build run has 8 such agent
-  runs (a first check of a task, two surveys, and a 5-agent survey workflow), outside every total.
+- A dispatched agent the Chair never recorded is not counted until it is added from evidence. One
+  real build run had 8 such agent runs (a first check of a task, two surveys, and a 5-agent survey
+  workflow); all were added from its transcripts.
 - The resumed-agent rule assumes running totals, as observed. A smaller later figure is added, which
   is right for a fresh count and wrong if the harness ever reported less than before for the same
   agent.

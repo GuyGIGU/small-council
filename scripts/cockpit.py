@@ -417,7 +417,7 @@ def snapshot(run, home=None, last_events=8):
         seats.append(seat)
     recorded = {s["slug"] for s in seats} | {clean(r.get("slug", "")) for r in tsv(run, "seats.tsv")}
     for slug in sorted({f["seat"] for f in fixes.values() if f["added"]} - recorded):
-        if (slug, "tokens") in fixes and (slug, "agents") in fixes:     # an agent run never recorded, added from evidence
+        if (slug, "agents") in fixes:        # an agent run never recorded, added from evidence (its figure may be unknown)
             seat = {"slug": slug, "state": "done", "agent": "", "updated": "", "added": True,
                     "note": "never recorded; added from evidence", "raw_tokens": None, "raw_agents": None, "raw_reported": 0}
             seat.update(seat_usage(seat, fixes))

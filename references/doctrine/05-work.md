@@ -38,7 +38,7 @@ Write <abs run>/seats/<slug>.md, then return one line.
 - **On each notification:** `council seat <slug> done tokens=<the notification's figure, as given>`,
   or `failed note="…"` (with its tokens if it reported any). Once per finished agent run; a resumed
   worker's later figure is its running total, so record it as given. A Workflow's notification:
-  `agents=<agent_count> tokens=<subagent_tokens>`. It prints a progress line — relay it to the user as one short line: "3 of 5
+  `agents=<agent_count> tokens=<subagent_tokens>`. A seat you did yourself: `done agents=0`. It prints a progress line — relay it to the user as one short line: "3 of 5
   seats in — Security, Structure, Tests · ~210k tokens so far".
 - **No notification comes from a worker that died with its session.** After a compaction, keep
   waiting. In a new session, follow Resume in context-core.
