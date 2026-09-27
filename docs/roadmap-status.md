@@ -11,8 +11,9 @@ added after 0.13.0. It keeps four things apart:
 
 Checks passing is never counted as validation in real use. The real runs so far:
 - the September 2026 Chrollo build, begun on 0.7.1 and read by the new version;
-- a fresh council review of the status-widget change (2026-09-27): two seats plus a verifier
-  Workflow of four agents.
+- two fresh council reviews of the status-widget change (2026-09-27): two seats plus a 4-agent
+  verifier Workflow, then one seat plus a 2-agent verifier Workflow, the second entirely on one
+  version.
 
 | Phase | Implemented | Automatically tested | Validated in real use | Deferred |
 |---|---|---|---|---|
@@ -30,7 +31,7 @@ Checks passing is never counted as validation in real use. The real runs so far:
 | 11 TUI | 0.13, plus the shared status line (unreleased) | `run_tui` | Yes: it drew the in-progress Chrollo run and the fresh run | Navigation and per-area screens |
 | 12 Historical analytics | 0.13 (`council history`) | `run_history` | No: no council home has five complete, exact runs yet | The history dashboard |
 | 13 Self-tuning | 0.13 (one knob) | `run_tune` | No: needs five measured runs; five make a proposal eligible, not reliable | Behaviour knobs (held until the benchmark) |
-| Run accounting | Unreleased | `run_status`, `run_cli`, `run_seats`, `run_history`, `run_tune` | Yes: the fresh run's figures are exact from its notifications (627k tokens across 6 agent runs), and the Chrollo run was corrected from transcripts (24.8M across 212), each figure derived twice | Recording agents the Chair never logged |
-| Status widget | Unreleased | `run_status`, `run_structural` | Yes: four cards rendered in the desktop app (the Chrollo preview, plus start, failing check and completion of the fresh run), and every read left the run unchanged | Live updates (the host shows snapshots); claude.ai/code and IDE extensions not verified |
+| Run accounting | Unreleased | `run_status`, `run_cli`, `run_seats`, `run_history`, `run_tune` | Yes: both fresh runs' figures are exact from their notifications (627k across 6 agent runs; 235k across 3). The Chrollo run was corrected from transcripts, each figure derived twice, including 8 agent runs it never recorded: 26.4M across 220 | — |
+| Status widget | Unreleased | `run_status`, `run_structural` | Partly: five cards rendered in the desktop app (the Chrollo preview; the first fresh run at start, at a controlled failing check, and at completion; the second at start), and every read left the run unchanged. Waiting and paused were read as text only. Recovery in progress, blocked, stale and unknown are simulated only | Live updates (the host shows snapshots); claude.ai/code and IDE extensions not verified |
 
 Whether the council beats plain Claude Code is unmeasured.
