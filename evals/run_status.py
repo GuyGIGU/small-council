@@ -97,7 +97,7 @@ def readers(repo, run):
             bash_seats[cells[0]] = (cells[2], int(cells[3]),
                                     int(cells[5]) if cells[2] in ("reported", "corrected") else None)
     words = sourced(repo, 'run_usage "{}"'.format(path)).split()
-    bash_run = (RUN_BASIS.get(words[0], words[0]), int(words[1]), int(float(words[3]))) if len(words) == 7 else None
+    bash_run = (RUN_BASIS.get(words[0], words[0]), int(words[1]), int(float(words[3]))) if len(words) == 8 else None
     snap = cockpit.snapshot(run, None, 8)
     py_seats = {x["slug"]: (x["tokens_basis"], x["agents"] if x["agents"] is not None else x["agents_at_least"],
                             x["tokens"] if x["tokens_basis"] in ("reported", "corrected") else None)
@@ -172,7 +172,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
 
     r = reading(make_run(base, "running", seats=[v2("hunt", "running", "", 1, 0, 3), v2("beck", "done", 50000, 1, 1, 4)]))
     check("state: an open run with work under way is running, and says who is working",
-          r["state"]["key"] == "running" and "hunt" in r["state"]["summary"] and not r["attention"], (r["state"], r["attention"]))
+          r["state"]["key"] == "running" and "Hunt" in r["state"]["summary"] and not r["attention"], (r["state"], r["attention"]))
     check("progress: seats done and working, never a completion percentage",
           r["progress"]["seats"] == "1 of 2 done · 1 working" and "%" not in json.dumps(r["progress"]), r["progress"])
 
@@ -366,12 +366,12 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               and read(run / "seats.tsv").startswith("slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"), err)
 
         refused = [(council(repo, "seat", "hunt", "done", "agent=a1", "tokens=" + value), value) for value in (
-            "12 tool uses, 45000 tokens", "-500", "1e5", "74,3k", "lots", "160", "0", "999")]
-        check("seat: a token count must be one plausible number — two numbers, a sign, an exponent, a decimal comma, "
-              "a count under 1,000 are refused and nothing is written",
+            "12 tool uses, 45000 tokens", "-500", "1e5", "74,3k", "lots", "160", "0", "999", "74.3k", "160k", "1.2M")]
+        check("seat: a token count must be one exact, plausible number — two numbers, a sign, an exponent, a decimal "
+              "comma, a count under 1,000, or a rounded 74.3k are refused and nothing is written",
               all(code == 2 for (code, _, _), _ in refused) and not seat_row(run, "hunt"),
               [(v, c, e.strip()[-120:]) for (c, _, e), v in refused])
-        for value, want in (("74.3k", "74300"), ("74,304", "74304"), ("74 304", "74304"), ("74304 tokens", "74304")):
+        for value, want in (("74,304", "74304"), ("74 304", "74304"), ("74304 tokens", "74304"), ("0074304", "74304")):
             slug = "fowler"
             write(run / "seats.tsv", read(run / "seats.tsv").split("\n")[0] + "\n")
             (run / "usage.tsv").unlink(missing_ok=True)
@@ -504,6 +504,10 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_b.name)
         council(agree, "seat", "gone", "failed", "--run", run_b.name)
         council(agree, "seat", "gone", "done", "--run", run_b.name)
+        run_decl = fresh("declared no agent", ("a", "chair-work"))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_decl.name)
+        council(agree, "seat", "chair-work", "running", "--run", run_decl.name)
+        council(agree, "seat", "chair-work", "done", "agents=0", "--run", run_decl.name)
         run_c = fresh("missing usage", ("a", "b"))
         council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_c.name)
         council(agree, "seat", "b", "running", "agent=b1", "--run", run_c.name)
@@ -540,13 +544,14 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
                 mismatch.append((name, bash_seats, py_seats, bash_run, py_run))
         check("readers: the helper (close line, ledger) and the snapshot (widget, tui, history) read every basis the same — "
               "per seat and for the run (found in review: a finished seat with no agent split them)",
-              not mismatch and len(cases) == 9, mismatch)
-        expect = {"complete": "complete", "no-agent seat": "complete", "missing usage": "partial",
+              not mismatch and len(cases) == 10, mismatch)
+        expect = {"complete": "complete", "no-agent seat": "partial", "declared no agent": "complete", "missing usage": "partial",
                   "still working": "running", "agents-only correction": "partial", "corrected zero": "complete",
                   "suspect": "suspect", "thirteen digits": "suspect", "older": "legacy"}
         got = {name: cockpit.snapshot(folder, None, 8)["usage"]["tokens"]["basis"] for name, folder in cases.items()}
-        check("readers: each case lands on the basis the accounting reference names — an agents-only correction "
-              "is partial (the ruling), a corrected 0 is a real 0, 160 and 13 digits are suspect",
+        check("readers: each case lands on the basis the accounting reference names — a seat with no agent on record is "
+              "unknown (partial), never a zero; agents=0 or a corrected 0 is a real 0; an agents-only correction is partial "
+              "(the ruling); 160 and 13 digits are suspect",
               got == expect, got)
         ledger = sourced(agree, 'ledger_tokens "{}"'.format(str(run_e).replace("\\", "/")))
         check("ledger: a seat every reader calls partial gets no price", ledger.strip() == "wf\t-", ledger)
@@ -575,8 +580,24 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               refused == [2, 2, 2, 2] and len(lines) == 2 and '"to":41234,' in lines[0], (refused, lines))
         check("correct: the latest correction of a field counts, keeps the value it replaced, and both readers "
               "see it (review finding 5)",
-              awk_view == ["a", "tokens", "41300"] and py_view[("a", "tokens")]["to"] == 41300
+              awk_view == ["a", "tokens", "41300", "0"] and py_view[("a", "tokens")]["to"] == 41300
               and '"from":"40000"' in lines[1], (awk_view, py_view, lines))
+
+        # --- an agent run the record missed, added from evidence ---------------------------------------------------
+        run_add = fresh("added", ("a",))
+        council(agree, "seat", "a", "done", "agent=a1", "tokens=40000", "--run", run_add.name)
+        refused_add = [council(agree, "correct", *w, "--run", run_add.name)[0] for w in (
+            ("a", "tokens=1000", "agents=1", "unrecorded=yes", "evidence=transcript L3 an Agent call"),
+            ("survey", "tokens=190883", "unrecorded=yes", "evidence=transcript L3 an Agent call"))]
+        council(agree, "correct", "survey", "tokens=190883", "agents=1", "unrecorded=yes",
+                "evidence=transcript A L3475 uuid 685ff6a5 subagent_tokens=190883", "--run", run_add.name)
+        rows_after = read(run_add / "seats.tsv")
+        bash_seats, bash_run, py_seats, py_run = readers(agree, run_add)
+        check("correct unrecorded=yes: an agent run that never got a seat is added from evidence — seats.tsv untouched, "
+              "both readers count it, an existing seat or a missing figure refused",
+              refused_add == [2, 2] and "survey" not in rows_after and bash_seats == py_seats
+              and bash_run == py_run == ("complete", 2, 230883) and bash_seats.get("survey") == ("corrected", 1, 190883),
+              (refused_add, bash_seats, py_seats, bash_run, py_run))
 
         # --- the usage trail's own rules, focused (review finding 6) ---------------------------------------------
         run_k = fresh("trail", ("s", "n"))

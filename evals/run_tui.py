@@ -87,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
         for k, i, f, v in dict.fromkeys(rows)))
     code, out, err = council(repo, "run", "plan", "check")
     check("setup: the plan is valid", code == 0, out + err)
-    council(repo, "seat", "hunt", "done", "agent=a1", "tokens=58k")
+    council(repo, "seat", "hunt", "done", "agent=a1", "tokens=58000")
     council(repo, "seat", "verify-1", "running", "agent=v1")
     council(repo, "gate", "tests", "--", "true")
     council(repo, "gate", "lint", "--", "false")

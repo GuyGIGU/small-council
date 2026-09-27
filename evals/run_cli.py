@@ -768,13 +768,14 @@ with tempfile.TemporaryDirectory() as tmp:
     code, trun, _ = council(tk, "run", "open", "council-review")
     trun = trun.strip()
     write_plan(trun, selected=tuple(f"par{i}" for i in range(6)) + ("afterlock",))
-    council(tk, "seat", "hunt", "done", "agent=a1", "tokens=74.3k")
-    council(tk, "seat", "beck", "done", "agent=a2", "tokens=1.2k")
+    code_k, _, err_k = council(tk, "seat", "hunt", "done", "agent=a1", "tokens=74.3k")
+    council(tk, "seat", "beck", "done", "agent=a2", "tokens=1,200")
     council(tk, "seat", "leach", "done", "agent=a3", "tokens=74,304")
     code, out, err = council(tk, "seat", "dodds", "done", "agent=a4", "tokens=lots")
     tseats = read(os.path.join(trun, "seats.tsv"))
-    check("seat: tokens=74.3k is 74,300 tokens, 1.2k is 1,200 and 74,304 is 74,304",
-          "\nhunt\tdone\ta1\t74300\t" in tseats and "\nbeck\tdone\ta2\t1200\t" in tseats and "\nleach\tdone\ta3\t74304\t" in tseats, tseats)
+    check("seat: a rounded 74.3k is refused (the notification's exact figure is wanted); 1,200 is 1,200 and 74,304 is 74,304",
+          code_k == 2 and "rounded" in err_k and "\nhunt\t" not in tseats
+          and "\nbeck\tdone\ta2\t1200\t" in tseats and "\nleach\tdone\ta3\t74304\t" in tseats, err_k + tseats)
     council(tk, "seat", "spaced", "done", "agent=a5", "tokens=74 304")
     tseats = read(os.path.join(trun, "seats.tsv"))
     check("seat: a space between digits is a thousands separator, not the end of the number",
@@ -1771,9 +1772,9 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run close: empties the old active-run pointer when it names the run", read(os.path.join(repo, ".council", "active-run")).strip() == "")
     code, out, _ = council(repo, "run", "close")
     st = read(os.path.join(run, "session-state.md"))
-    check("run close: marks complete and stamps the actual cost (a re-dispatch is an agent run; a skipped seat, or one "
-          "with no agent on record, is none)",
-          "status: complete" in st and "actual: ~86k tokens across 3 agent run(s)" in st, st)
+    check("run close: marks complete and stamps the actual cost — a re-dispatch is an agent run, a skipped seat is none, "
+          "and a seat with no agent on record makes the figure a lower bound, never a zero",
+          "status: complete" in st and "actual: at least ~86k tokens across at least 3 agent run(s) — 1 seat(s) with no agent on record" in st, st)
     final_events = events(run)
     code_ev, out_ev, err_ev = council(repo, "run", "events", "check", "--run", run)
     check("run events: seat updates and completion survive with a continuous sequence",
@@ -1783,7 +1784,7 @@ with tempfile.TemporaryDirectory() as tmp:
           final_events[-1][3:6] == ["run.closed", "run", "complete"] and
           [int(e[1]) for e in final_events] == list(range(1, len(final_events) + 1)),
           out_ev + err_ev + str(final_events[-3:]))
-    check("run close: prints the actual cost", "~86k tokens across 3 agent run(s)" in out, out)
+    check("run close: prints the actual cost", "at least ~86k tokens across at least 3 agent run(s)" in out, out)
     ledger = read(os.path.join(repo, ".council", "ledger.tsv"))
     check("run close: records each seat in the ledger", "ledger: 3 seat row(s) recorded" in out
           and "\tcouncil-review\tfowler\t1\t1\t0\t0\t40000" in ledger and "\tbeck\t1\t1\t0\t1\t45500" in ledger

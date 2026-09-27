@@ -11,7 +11,7 @@ sharing, so a helper that replaces a file by rename while the cockpit reads it i
 Every value is stripped of control characters before it is drawn, and a file that is a link, leads
 outside the run, is too large or does not parse is skipped rather than followed or trusted.
 `--watch` redraws every two seconds until the run has read as closed twice in a row. `--json` prints
-the same snapshot as data (`council.run-snapshot/1`) for other tools. Every fact on screen comes from
+the same snapshot as data (`council.run-snapshot/2`) for other tools. Every fact on screen comes from
 a file the helper or the Chair already writes; the cockpit adds no state of its own.
 """
 
@@ -298,7 +298,8 @@ def corrections_of(run):
         seat, field, to = clean(row.get("seat", "")), clean(row.get("field", "")), integer(row.get("to"))
         if seat and field in ("tokens", "agents") and to is not None and to >= 0 and evidenced(row.get("evidence")):
             latest[(seat, field)] = {"seat": seat, "field": field, "to": to, "from": clean(row.get("from", "")),
-                                     "evidence": clean(row.get("evidence", ""))[:300], "at": clean(row.get("at", ""))}
+                                     "evidence": clean(row.get("evidence", ""))[:300], "at": clean(row.get("at", "")),
+                                     "added": row.get("added") is True}
     return latest
 
 
@@ -306,8 +307,9 @@ def seat_usage(row, fixes):
     """One seat's agent runs and tokens, each with how far the record supports it — the rule in
     references/run-accounting.md, kept identical to the helper's seat_rows (bin/council), which states
     the close line and the ledger. Bases: reported, corrected, pending (still working), partial or
-    missing (a finished run's usage is unknown), no-agent (no agent ran), suspect (a count no agent
-    run can have), legacy (a row from before the accounting columns: units never checked)."""
+    missing (a finished run's usage is unknown), unrecorded (no agent on record: unknown, never
+    zero), no-agent (declared with agents=0, or corrected so), suspect (a count no agent run can
+    have), legacy (a row from before the accounting columns: units never checked)."""
     slug, state = row["slug"], row["state"]
     executed = state not in ("", "queued", "skipped")      # as the helper's seat_rows selects rows
     finished = executed and state != "running"
@@ -320,8 +322,10 @@ def seat_usage(row, fixes):
         agents, basis_a, at_least = fix_a["to"], "corrected", fix_a["to"]
     elif legacy:
         agents, basis_a, at_least = None, "at-least", max(runs if runs is not None else 1, 1) if executed else 0
+    elif runs is None:
+        agents, basis_a, at_least = None, "unknown", 0          # no agent on record: not a zero
     else:
-        agents, basis_a, at_least = (runs or 0), "counted", runs or 0
+        agents, basis_a, at_least = runs, "counted", runs
     gap = missing = pending = 0
     if fix_t:
         tokens = fix_t["to"]
@@ -330,6 +334,8 @@ def seat_usage(row, fixes):
         tokens, basis_t = None, "legacy"
     elif not executed:
         tokens, basis_t = None, "none"
+    elif agents is None:
+        tokens, basis_t = None, "unrecorded"
     elif agents == 0 and reported == 0:
         tokens, basis_t = None, "no-agent"
     elif reported > 0 and (recorded is None or recorded < 1000):
@@ -353,8 +359,8 @@ def seat_usage(row, fixes):
 def usage_totals(seats):
     """Run totals that are only as complete as their least complete seat — the helper's run_usage rule.
     A total over rows that cannot be trusted is not a total, so it is None and the basis says why:
-    legacy, then suspect, then none (no agent ran), then partial (a finished run's usage is unknown),
-    then running (a seat is still at work), else complete."""
+    legacy, then suspect, then partial (a finished run's usage is unknown, or a seat has no agent on
+    record), then none (no agent ran), then running (a seat is still at work), else complete."""
     ran = [s for s in seats if s["executed"]]
     counted = [s for s in ran if s["tokens"] is not None]
     known = sum(s["tokens"] for s in counted)
@@ -364,10 +370,10 @@ def usage_totals(seats):
         basis = "legacy"
     elif "suspect" in bases:
         basis = "suspect"
+    elif bases & {"missing", "partial", "unrecorded"}:
+        basis = "partial"
     elif not ran or (agent_runs == 0 and not counted):
         basis = "none"
-    elif bases & {"missing", "partial"}:
-        basis = "partial"
     elif bases & {"pending"} or any(s["state"] == "running" for s in ran):
         basis = "running"
     else:
@@ -383,6 +389,8 @@ def usage_totals(seats):
                    "pending_runs": sum(s["pending_runs"] for s in ran),
                    "legacy_seats": [s["slug"] for s in ran if s["tokens_basis"] == "legacy"],
                    "suspect_seats": [s["slug"] for s in ran if s["tokens_basis"] == "suspect"],
+                   "unrecorded_seats": [s["slug"] for s in ran if s["tokens_basis"] == "unrecorded"],
+                   "added_seats": [s["slug"] for s in seats if s.get("added")],
                    "corrected_seats": [s["slug"] for s in seats if "corrected" in (s["tokens_basis"], s["agents_basis"])]},
         "agents": {"total": sum(s["agents"] for s in ran) if exact else None,
                    "at_least": sum(s["agents_at_least"] for s in ran),
@@ -407,6 +415,15 @@ def snapshot(run, home=None, last_events=8):
         for key in ("raw_tokens", "raw_agents", "raw_reported"):
             seat.pop(key)
         seats.append(seat)
+    recorded = {s["slug"] for s in seats} | {clean(r.get("slug", "")) for r in tsv(run, "seats.tsv")}
+    for slug in sorted({f["seat"] for f in fixes.values() if f["added"]} - recorded):
+        if (slug, "tokens") in fixes and (slug, "agents") in fixes:     # an agent run never recorded, added from evidence
+            seat = {"slug": slug, "state": "done", "agent": "", "updated": "", "added": True,
+                    "note": "never recorded; added from evidence", "raw_tokens": None, "raw_agents": None, "raw_reported": 0}
+            seat.update(seat_usage(seat, fixes))
+            for key in ("raw_tokens", "raw_agents", "raw_reported"):
+                seat.pop(key)
+            seats.append(seat)
     return {
         "schema": SCHEMA,
         "run": {"id": clean(run.name), "path": str(run), **{k: state.get(k, "") for k in (

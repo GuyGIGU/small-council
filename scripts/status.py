@@ -20,6 +20,7 @@ import html
 import json
 import os
 from pathlib import Path
+import re
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -169,7 +170,7 @@ def last_activity(snap):
     return max(stamps) if stamps else None
 
 
-def event_text(event, repairs_by_gate):
+def event_text(event, snap):
     kind, subject, value = event["type"], event["subject"], event["value"]
     if kind == "run.opened":
         return "Run started"
@@ -181,13 +182,13 @@ def event_text(event, repairs_by_gate):
     if kind == "run.waiting_changed":
         return "Waiting for your answer" if value == "on" else "Your answer came in; work resumed"
     if kind == "seat.updated":
-        return "{} {}".format(subject, SEAT_WORDS.get(value, value))
+        return "{} {}".format(seat_name(snap, subject), SEAT_WORDS.get(value, value))
     if kind == "seat.usage_corrected":
-        return "Record for {} corrected from its source".format(subject)
+        return "Record for {} corrected from its source".format(seat_name(snap, subject))
     if kind == "gate.finished":
         if gate_kind(subject) != "check":
             return None                  # a build's before-proof or a dry run: detail, not news
-        return "Check {} {}".format(subject, value)
+        return "Check {} {}".format(check_name(subject), value)
     if kind == "collect.finished":
         return "Results collected" if value == "passed" else "Collecting results found gaps"
     if kind == "verification.finished":
@@ -217,7 +218,7 @@ def recent_of(snap, ref, limit):
     items = []
     if snap["events"]["present"] and snap["events"]["last"]:
         for event in snap["events"]["last"]:
-            text = event_text(event, None)
+            text = event_text(event, snap)
             moment = utc_time(event["at"])
             if text and not (items and items[-1]["text"] == text):   # one change can write two events
                 items.append({"at": iso(moment), "clock": clock(moment, ref), "text": text})
@@ -225,12 +226,12 @@ def recent_of(snap, ref, limit):
     for seat in snap["seats"]:
         moment = local_time(seat["updated"])
         if moment:
-            items.append((moment, "{} {}".format(seat["slug"], SEAT_WORDS.get(seat["state"], seat["state"]))))
+            items.append((moment, "{} {}".format(seat_name(snap, seat["slug"]), SEAT_WORDS.get(seat["state"], seat["state"]))))
     for gate in snap["gates"]:
         moment = local_time(gate["when"])
         if moment and gate_kind(gate["name"]) == "check":
             result = "unknown" if gate["exit"] is None else ("passed" if gate["exit"] == 0 else "failed")
-            items.append((moment, "Check {} {}".format(gate["name"], result)))
+            items.append((moment, "Check {} {}".format(check_name(gate["name"]), result)))
     items.sort(key=lambda item: item[0])
     return [{"at": iso(m), "clock": clock(m, ref), "text": t} for m, t in items[-limit:]], "records"
 
@@ -249,7 +250,12 @@ def usage_of(snap):
         text = ("{} tokens reported so far; agents still working".format(tokens_text(known)) if known
                 else "no usage reported yet; agents still working")
     elif basis == "partial":
-        text = "at least {} tokens — {} without a usage report".format(tokens_text(known), plural(missing, "agent run"))
+        gaps = []
+        if missing:
+            gaps.append("{} without a usage report".format(plural(missing, "agent run")))
+        if tokens.get("unrecorded_seats"):
+            gaps.append("no agent on record for {}".format(listing([seat_name(snap, s) for s in tokens["unrecorded_seats"]], 3)))
+        text = "at least {} tokens — {}".format(tokens_text(known), "; ".join(gaps) or "some usage unknown")
     elif basis == "legacy":
         text = "not reliably recorded (this run uses the older record format)"
     elif basis == "suspect":
@@ -265,6 +271,40 @@ def usage_of(snap):
     return {"tokens": total if basis == "complete" else None, "tokens_known": known, "basis": basis,
             "text": text, "agent_runs": runs, "agent_runs_at_least": at_least, "agent_runs_text": runs_text,
             "corrected_seats": tokens.get("corrected_seats", [])}
+
+
+def brief_names(snap):
+    """Seat names as the brief gives them — "### <slug> — <what it checks> (<Seat name>)" — so the
+    user reads "Tests", not a slug. Read once per snapshot, like every other run file."""
+    cached = snap.get("_names")
+    if cached is None:
+        cached = {}
+        run = Path(snap["run"].get("path") or ".")
+        for line in cockpit.lines_of(cockpit.text_of(run / "brief.md", run)):
+            match = re.match(r"^###\s+([A-Za-z0-9._-]+)\s+[-—].*\(([^()]+)\)\s*$", line)
+            if match:
+                cached[match.group(1)] = cockpit.clean(match.group(2))[:40]
+        snap["_names"] = cached
+    return cached
+
+
+def seat_name(snap, slug):
+    """A seat in plain words: the brief's name for it, else its slug made readable."""
+    named = brief_names(snap).get(slug)
+    if named:
+        return named
+    for prefix, word in (("verify-", "Verifier"), ("diagnose-", "Diagnosis"), ("task-", "Task")):
+        if slug.startswith(prefix) and len(slug) > len(prefix):
+            return "{} {}".format(word, slug[len(prefix):])
+    words = re.sub(r"[-_.]+", " ", slug).strip()
+    return words[:1].upper() + words[1:] if words else slug
+
+
+def check_name(name):
+    """A check in plain words: a build's after-check is the fix's check, not a name to decode."""
+    if name.startswith("after-") and len(name) > 6:
+        return "fix check for task " + name[6:]
+    return name
 
 
 def evidence_of(snap, run_path):
@@ -328,7 +368,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
     planned = [slug for slug, info in snap["plan"].get("seats", {}).items()   # the Chair is no seat to wait for
                if info.get("disposition") == "selected" and info.get("role") != "chair" and slug != "chair"
                and slug not in {s["slug"] for s in seats}]
-    working = [s["slug"] for s in seats if s["state"] == "running"]
+    working = [seat_name(snap, s["slug"]) for s in seats if s["state"] == "running"]
     active = any(s["state"] in ("running", "done", "failed", "blocked") for s in seats) or bool(snap["gates"])
     moment = last_activity(snap)
     quiet = minutes_between(moment, now) if moment else None
@@ -412,7 +452,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
     if real:
         g = real[-1]
         result = "unknown" if g["exit"] is None else ("passed" if g["exit"] == 0 else "failed")
-        latest = {"name": g["name"], "result": result, "at": iso(local_time(g["when"])),
+        latest = {"name": check_name(g["name"]), "result": result, "at": iso(local_time(g["when"])),
                   "clock": clock(local_time(g["when"]), now)}
     items, source = recent_of(snap, now, recent)
     stage = stage_of(phase)
@@ -444,6 +484,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
         "schema": SCHEMA,
         "snapshot_at": iso(now),
         "run": {"id": run.get("id", ""), "path": str(run_path), "project": project, "mode": run.get("mode", ""),
+                "started": clock(local_time(run.get("opened")), now) if local_time(run.get("opened")) else "",
                 "mode_label": MODES.get(run.get("mode", ""), run.get("mode", "") or "Council run"),
                 "status": status, "phase": phase, "phase_label": phase_label(phase), "stage": stage,
                 "opened": run.get("opened", ""), "closed": run.get("closed", "")},
@@ -457,7 +498,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
                       "quiet_minutes": None if quiet is None else int(quiet), "quiet": key == "stale"},
         "usage": usage,
         "checks": checks,
-        "seats": [{"slug": s["slug"], "state": s["state"], "tokens": s.get("tokens"),
+        "seats": [{"slug": s["slug"], "name": seat_name(snap, s["slug"]), "state": s["state"], "tokens": s.get("tokens"),
                    "tokens_basis": s.get("tokens_basis", ""), "agent_runs": s.get("agents"),
                    "note": s["note"]} for s in seats],
         "evidence": evidence_of(snap, run_path),
@@ -551,7 +592,7 @@ def widget(status, preview=False, limit=5):
     out.append('<div class="row"><span class="badge {}"><i class="ti {}" aria-hidden="true"></i>{}</span>'
                '<span style="font-weight:500">{}</span><span class="muted">{} · {}</span></div>'.format(
                    state["role"], state["icon"], esc(state["label"]), esc(run["project"] or "Council run"),
-                   esc(run["mode_label"]), esc(run["id"])))
+                   esc(run["mode_label"]), esc("started " + run["started"] if run.get("started") else run["id"])))
     out.append('<p style="margin-top:6px">{}</p>'.format(esc(state["summary"])))
     if attention:
         top = attention[0]["severity"]
@@ -604,7 +645,7 @@ def details(status, limit=12):
         rows.append('<p class="muted">Corrected from source records: {}</p>'.format(esc(listing(usage["corrected_seats"], 6))))
     seats = status["seats"]
     if seats:
-        shown = ["{} — {}{}".format(s["slug"], s["state"], "" if not s["note"] else ": " + s["note"][:80]) for s in seats[-limit:]]
+        shown = ["{} — {}{}".format(s["name"], s["state"], "" if not s["note"] else ": " + s["note"][:80]) for s in seats[-limit:]]
         more = len(seats) - len(shown)
         rows.append('<p class="muted" style="margin-top:8px">Seats{}</p><ul>{}</ul>'.format(
             " (latest {} of {})".format(len(shown), len(seats)) if more else "",
@@ -614,7 +655,7 @@ def details(status, limit=12):
         shown = checks[-limit:]
         rows.append('<p class="muted" style="margin-top:8px">Checks, latest result of each{}</p><ul>{}</ul>'.format(
             " (latest {} of {})".format(len(shown), len(checks)) if len(checks) > len(shown) else "",
-            "".join("<li>{} — {}{}</li>".format(esc(c["name"]), esc(c["result"]),
+            "".join("<li>{} — {}{}</li>".format(esc(check_name(c["name"])), esc(c["result"]),
                                                  esc(", recovered after failing") if c["recovered"] else "")
                     for c in shown)))
     rows.append('<p class="muted" style="margin-top:8px">Where the evidence is</p><ul>{}</ul>'.format(
