@@ -8,163 +8,37 @@ All notable changes to this project are documented here. The format is based on
 
 ## [0.13.0] — 2026-09-27
 
-The sixth evolution milestone (Phases 6–13) gives each run a checkable record, and learns from that
-record only as far as it supports. It adds:
-- an evidence ledger;
-- a bounded repair trail;
-- observed-failure memory, filed only on the user's own words;
-- seat advice;
-- a baseline-versus-council benchmark harness;
-- a read-only run cockpit;
-- history across runs;
-- one conservatively tuned setting.
-
-**Upgrading:** no migration or new mandatory dependency, and older runs stay readable.
-- The new commands use optional Python 3.8+. Without it, each says so, and the existing commands
-  still work.
-- Context packs are now off unless the project config has `- context packs: on` under
-  `## Run preferences`, or the user asks for them in a run.
-- A build now stops after a gate fails three times.
+**TL;DR:** every run now leaves a checkable record, and the council learns from it only as far as
+that record supports. Nothing to migrate. The new commands need optional Python 3.8+.
 
 ### Added
 
-- **Conservative self-tuning.** `council tune` proposes from the project's own record: the estimate
-  per worker that `council route recommend` budgets with (per agent), once five completed runs
-  measure it and it is off by more than a quarter; roster changes whose seat advice clears its bar (made only
-  through a council-init refresh); and nothing about behaviour — context packs, run size and
-  verification depth are held until a benchmark shows a change helps. `council tune apply budget
-  <value> --user-said "…"` writes the value the user was shown as one line under `## Run
-  preferences`, logging the evidence, the user's redacted words and the exact line it replaced in
-  `.council/tuning.md`; `council tune revert budget` puts those bytes back and refuses over a hand
-  edit. Only a ceiling the user gives can shrink a run. Without the line, the route is unchanged.
-  Optional Python 3.8+.
-
-- **History across runs, gated on enough data.** `council history [--json]` reads every run of the
-  council home and reports runs by status, mode and month, the project's gates (a build's
-  before/after proofs and gate probes counted apart), repair trails, claim verdicts, seat evidence
-  and missing data. A median, share or ratio — cost and agents per run, tokens per agent, actual
-  cost over the plan's estimate, repairs resolved, the verifier's catches — appears only once five
-  runs (not items) carry its data; below that it says "too few". Read-only; no database or
-  dashboard.
-
-- **A read-only run cockpit.** `council tui` draws one screen from the run's own files — the
-  plan's decisions and skipped seats with their reasons, seat states and tokens, agents against
-  the cap, gates, each repair task's next step, claim verdict counts, memory proposals waiting and
-  the last events. `--watch` redraws every two seconds and stops by itself when the run closes;
-  `--json` prints the same snapshot as data (`council.run-snapshot/1`). It never writes a file or
-  an event; strips control characters from every value it draws; draws legacy and malformed runs;
-  follows no link or junction; opens files on Windows so the helper can still replace them while it
-  reads; and prints plain ASCII with `COUNCIL_ASCII=1`. Optional Python 3.8+; no curses, no server.
-
-- **A baseline-versus-council benchmark harness.**
-  - **Cases.** Three build cases (`evals/suite/bench-*`, tag `benchmark`) run through
-    `claude plugin eval` with both arms: the same plain prompt, model, tools and project, with and
-    without the plugin.
-  - **`evals/bench.py score`** judges each kept run on hidden checks (encoded in
-    `evals/bench/*.hidden`), restored original tests, frozen and protected files, scope, removed
-    assertions, a required test and false completion claims.
-  - **`compare`** reports the arms side by side and calls nothing a result below ten pairs.
-  - **Tests the run cannot fake.** The scorer runs the hidden and original tests in an isolated
-    Python that imports the real `unittest` first, under random module names, with a nonce-tagged
-    result outside the project. A pass needs:
-    - the exact test count;
-    - no skips;
-    - a canary assertion that fails.
-
-    It also rules out six fakes, and reads final reports so that a product sentence ("cannot
-    delete") is not a disclosure while "not fixed yet" is.
-  - **`self-test`** (in CI, no model) proves each case is unsolved when untouched, solvable, and
-    scored as intended on every trap.
-  - **Budget.** A pilot is paid and awaits the owner's budget (see `evals/bench/README.md`).
-
-- **Seat learning, advisory only.** `council ledger advice [N] [--json]` says how much each seat's
-  record can support: runs that judged its items, useful items (kept and not refuted) with a 90%
-  plausible range that counts at most five items from any one run, refuted items among those
-  verified, and tokens per useful item. It advises (retain, lower priority, narrow, pair, drop?,
-  unclear) only past a stated bar of 3 judged runs and 15 items of evidence counted that way, and
-  "drop?" only after eight, as a question for the user. A council-init refresh proposes roster
-  changes only where the advice clears the bar. It never changes a roster, a route or a run.
-  Optional Python 3.8+. An independent review found that the first version capped evidence per run
-  only in total, so one big run could still count as three; that and seven smaller gaps are fixed.
-
-- **Phase 8 memory foundation.** Scoped selection includes a settled entry's meaning and origin
-  when recorded. User-confirmed observed failures have a separate F category with required scope,
-  origin, evidence and verdict; they are historical leads, never rules. Legacy AP/EC/D entries
-  remain readable. Focused local evals cover retrieval and incomplete-entry exclusion.
-
-- **Observed failures must be supported to be served.** An F entry reaches a brief only with a
-  verdict that establishes it (OBSERVED, REPRODUCED, or a verifier's CONFIRMED, REFUTED, MISCITED,
-  REGRESSION, INCOMPLETE, SCOPE-CREEP — never INFERRED, ASSUMED or UNCERTAIN), a scope narrower
-  than every run, and a Failure field; a Rule written into one is never shown as its meaning.
-  `council memory`, `select` and `check` open the files its Evidence names: an entry whose files are
-  gone, or whose cited lines no longer show a verifier's verdict, is left out with the reason, and
-  `memory check` (and `doctor`) report it. Memories without observed failures behave as before.
-  After an independent review, the audit also refuses an id two entries share, any spelling of an
-  every-run scope (read the way the scope matcher reads it), a verdict that is not the verifier's
-  own capitalised word on a cited line, the memory file cited as its own evidence, links that lead
-  outside the project and placeholder fields; and a cited line number too large to exist can no
-  longer make every memory command loop forever.
-
-- **Observed failures from a run's verified record, filed only with the user's words.** (Later: the
-  user's words are flattened to one line before redaction, so a secret split across lines is
-  still caught.)
-  `council memory propose claim <id>` drafts an F entry from a claim the blind verifier refuted or
-  miscited; `council memory propose repair <task> --scope <paths>` from a build task's recorded gate
-  failures. The helper fills the fields from `claims.jsonl` or `repairs.jsonl` — not from a summary —
-  redacts secret-looking text (a private key whole), keeps copied text from forming fields or
-  comments, scopes a claim only by cited files that exist, refuses duplicates and anything that could
-  not be served, and files the draft under `## Proposed` with an id no entry uses. `council memory accept|reject F-<n> --user-said "<their words>"`
-  applies the user's answer with the date and their words, and writes only when the result checks
-  out and nothing else in the memory changed. Optional Python 3.8+; the manual path remains.
-
-- **Phase 7 bounded repair trail.** `council repair record|show|check` snapshots each failed build
-  gate and its reruns, suggests an advisory failure category and expert lens, distinguishes a red
-  baseline, and stops after three failed executions of the same gate. The second failure recommends
-  independent read-only diagnosis; a nonempty pass closes the trail. It never runs a gate, dispatches
-  an agent, changes code or attributes a failure to the edit. Python 3.8+ is optional, with a manual
-  log fallback. Local fixture checks do not establish live model behavior.
-
-- **Phase 6 evidence ledger.** `council evidence build|show|check` projects synthesis claims,
-  evidence states, source-seat ids and blind-verifier rows into deterministic run-local
-  `claims.jsonl`. The existing Markdown remains authoritative. Checks flag absent or stale links,
-  missing reproduction artifacts and conflicting verifier rows; they do not establish claim truth.
-  Python 3.8+ is optional. Older runs remain readable without migration, though an evidence check
-  on one may flag missing new fields.
+- `council evidence`: each run's claims and verifier verdicts, in `claims.jsonl`.
+- `council repair`: a record of each failed build gate. A build stops once a gate fails three times.
+- `council memory propose|accept|reject`: remembered failures, drafted from a run's record and filed
+  only on the user's own words.
+- `council ledger advice`: how far each seat's record can be trusted. It advises only past a stated
+  bar.
+- `council tui`: a read-only view of a run, which `--watch` keeps live.
+- `council history`: counts across runs. It shows rates only once five runs have the data.
+- `council tune`: one setting (the token estimate per worker). It changes only on the user's words,
+  is logged and can be undone.
+- `evals/bench.py`: Claude Code with and without the council, scored on hidden checks. Running it
+  costs money, and it has not been run.
 
 ### Changed
 
-- `council ledger` shows `-` rather than `0%` shipped for a seat that no run judged (a
-  council-init or build run credits no items), and points to `council ledger advice`.
-
-- A third failed build-gate execution now stops the build's product edits and cannot fall through to
-  a verifier fix or success commit. Blocked tasks do not count as built; helper-only token usage is
-  labelled as such on the receipt. No automatic rollback is performed.
-
-- **Context packs are opt-in.** The Chair builds seat context packs only when the project config
-  has `- context packs: on` under `## Run preferences`, or the user asks for them in a run. A
-  missing line means off; new configs start with `context packs: off`. Packs add material to every
-  worker and their effect on findings is unmeasured until the Phase 5.5 live paired run.
-  `council context build` and `show` are unchanged.
+- Context packs are opt-in: add `- context packs: on` under `## Run preferences`.
+- `council ledger` shows `-` for a seat that no run has judged.
 
 ### Fixed
 
-- **Context packs for a project reached through a link.** The pack builder resolved the code root
-  but checked the run, output and expansion paths as spelled, so under a link — macOS's `/var` is
-  one to `/private/var`, and a Windows temp folder can have an 8.3 name — it refused every pack as
-  outside the project. A path spelled through the root's own link is now read under the resolved
-  root; links below the root are still refused. Found by macOS CI, the first time it reached the
-  context evals.
-- **CI shows every failing suite.** Each check now runs even after an earlier one fails, so one run
-  reports them all, and the job still fails if any does. macOS had stopped at the first.
-- **macOS: a byte-order mark at the start of a state file is stripped again.** macOS's awk reads a
-  `/\357\273\277/` regex as three characters, so a session-state file starting with a mark kept it
-  there. A second run could then open on the same tree, and `council state` updated the wrong key.
-  The five strips now take the mark as a string from the environment.
-- **Windows CI.** The helper and hook evals resolve the runner's temp folder to its long name
-  (`RUNNER~1` → the real one), so two path checks no longer fail there only.
+- Context packs now work when the project path passes through a link (macOS `/var`, Windows short
+  names).
+- macOS strips a byte-order mark at the start of a state file.
+- CI: two Windows path checks pass, and every check now runs even after one fails.
 
-The last two fixes were written on 2026-09-19 (`fix/0.7.1-ci`) but never merged, which is why `main`'s
-own CI has failed these four checks since then.
+Details: `docs/validation/`, `docs/design/` and `references/`.
 
 ## [0.12.0] — 2026-09-24
 
