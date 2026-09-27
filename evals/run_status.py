@@ -1,0 +1,437 @@
+#!/usr/bin/env python3
+"""Focused, no-model checks for run accounting and the plain-language status: `council seat`,
+`council correct`, `council status [--widget | --json]`, scripts/status.py and the cockpit's reading.
+
+Two halves:
+- Accounting, through the helper. A token count is one number, stored as whole tokens. A repeated or
+  resumed report never adds twice. A Workflow reports its agent count. Missing and older figures stay
+  unknown, never zero. A correction keeps the original and its evidence.
+- Status, from hand-made run folders read at a fixed time. It covers every state the widget shows
+  (starting, running, waiting, a failing check, recovery, blocked, completed, interrupted, stale and
+  unknown). A recovered failure is no current problem. A long run stays compact, and a record never
+  reaches the widget unescaped. Reading a run writes nothing.
+"""
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
+GIT = shutil.which("git")
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.path.insert(0, str(ROOT / "scripts"))
+import cockpit  # noqa: E402
+import history  # noqa: E402
+import status  # noqa: E402
+
+checks = []
+AT = "2026-09-27T12:00:00Z"                       # every hand-made run is read at this moment
+NOW = status.utc_time(AT)
+
+
+def check(name, good, detail=""):
+    checks.append((name, bool(good), detail))
+
+
+def council(repo, *args, timeout=90):
+    env = os.environ.copy()
+    for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID", "COUNCIL_ASCII"):
+        env.pop(var, None)
+    if os.environ.get("COUNCIL_EVAL_BASH"):
+        env["PATH"] = str(Path(BASH).parent) + os.pathsep + env.get("PATH", "")
+    words = [BASH, str(ROOT / "bin" / "council"), *args]
+    if os.name == "nt":
+        words = " ".join('"{}"'.format(word.replace('"', '\\"')) for word in words)
+    try:
+        result = subprocess.run(words, cwd=repo, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", env=env, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, "", "council {}: still running after {} s".format(" ".join(args), timeout)
+    return result.returncode, result.stdout, result.stderr
+
+
+def write(path, text):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def read(path):
+    return Path(path).read_text(encoding="utf-8")
+
+
+def fingerprint(folder):
+    return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(Path(folder).rglob("*")) if p.is_file()}
+
+
+def seat_row(run, slug):
+    for line in read(Path(run) / "seats.tsv").split("\n")[1:]:
+        cells = line.split("\t")
+        if cells and cells[0] == slug:
+            return cells
+    return []
+
+
+def plan(run, seats):
+    rows = [("schema", "plan", "version", "1"), ("run", "run", "id", Path(run).name), ("run", "run", "mode", "council-review"),
+            ("run", "run", "size", "squad"), ("assessment", "run", "risk", "medium"),
+            ("assessment", "run", "complexity", "medium"), ("assessment", "run", "uncertainty", "low"),
+            ("budget", "run", "agent-cap", "10"), ("budget", "run", "estimated-tokens", "260000"),
+            ("verification", "run", "level", "independent")]
+    for slug in ("chair",) + tuple(seats):
+        role = "chair" if slug == "chair" else ("verifier" if slug.startswith("verify-") else "worker")
+        rows += [("seat", slug, "disposition", "selected"), ("seat", slug, "role", role),
+                 ("context", slug, "level", "focused"), ("budget", slug, "tool-calls", "20")]
+    write(Path(run) / "run-plan.tsv", "kind\tid\tfield\tvalue\treason\n"
+          + "".join("{}\t{}\t{}\t{}\tbecause\n".format(*r) for r in rows))
+
+
+# --- hand-made runs for the status half ---------------------------------------------------------------
+def local(minutes_before):
+    """A helper-style local stamp this many minutes before AT."""
+    moment = NOW.astimezone().replace(tzinfo=None)
+    from datetime import timedelta
+    return (moment - timedelta(minutes=minutes_before)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def make_run(base, name, status_value="in-progress", phase="work", seats=(), gates=(), repairs=(), extra_state="",
+             events=None, seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported", updated_min=5):
+    run = Path(base) / ".council" / "runs" / name
+    write(run / "session-state.md", "status: {}\nmode: council-review\nphase: {}\nupdated: {}\nopened: {}\n{}"
+          "## Decisions so far\n".format(status_value, phase, local(updated_min)[:16], local(300), extra_state))
+    write(run / "seats.tsv", seats_header + "\n" + "".join("\t".join(str(c) for c in s) + "\n" for s in seats))
+    for n, (gate, code, minutes) in enumerate(gates):
+        write(run / "gates" / "{}-{}.json".format(gate, n), json.dumps(
+            {"gate": gate, "command": "true", "exit": code, "seconds": 1, "when": local(minutes)}))
+    if repairs:
+        write(run / "repairs.jsonl", "".join(json.dumps(r) + "\n" for r in repairs))
+    if events is not None:
+        write(run / "events.tsv", "schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n" + "".join(
+            "1\t{}\t{}\t{}\t{}\t{}\t{}\n".format(i + 1, *e) for i, e in enumerate(events)))
+    return run
+
+
+def reading(run, **kw):
+    return status.interpret(cockpit.snapshot(run, None, 40), NOW, **kw)
+
+
+def v2(slug, state, tokens, runs, reported, minutes=5, note=""):
+    return (slug, state, "a-" + slug, tokens, local(minutes)[:16], note, runs, reported)
+
+
+with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
+    base = Path(temporary)
+
+    # --- the states -----------------------------------------------------------------------------------
+    r = reading(make_run(base, "starting", phase="convene", seats=()))
+    check("state: a run with nothing dispatched yet is starting", r["state"]["key"] == "starting", r["state"])
+
+    r = reading(make_run(base, "running", seats=[v2("hunt", "running", "", 1, 0, 3), v2("beck", "done", 50000, 1, 1, 4)]))
+    check("state: an open run with work under way is running, and says who is working",
+          r["state"]["key"] == "running" and "hunt" in r["state"]["summary"] and not r["attention"], (r["state"], r["attention"]))
+    check("progress: seats done and working, never a completion percentage",
+          r["progress"]["seats"] == "1 of 2 done · 1 working" and "%" not in json.dumps(r["progress"]), r["progress"])
+
+    r = reading(make_run(base, "waiting", seats=[v2("beck", "done", 50000, 1, 1, 200)], updated_min=200,
+                         extra_state="waiting: approve the 3-seat plan (~300k tokens)?\n"))
+    check("state: a run waiting on the user says what for, first in the attention list, and a wait is never stale",
+          r["state"]["key"] == "waiting" and r["attention"][0]["kind"] == "waiting"
+          and "approve the 3-seat plan" in r["attention"][0]["text"] and not any(a["kind"] == "stale" for a in r["attention"]),
+          (r["state"], r["attention"]))
+
+    r = reading(make_run(base, "failing", seats=[v2("beck", "done", 50000, 1, 1)], gates=[("tests", 0, 30), ("lint", 1, 10)]))
+    check("state: a check whose latest run failed, with no repair under way, is a failing check needing attention",
+          r["state"]["key"] == "failing" and any(a["kind"] == "failure" and "lint" in a["text"] for a in r["attention"]),
+          (r["state"], r["attention"]))
+
+    rec = [{"task": "T2", "gate": "tests", "attempt": 1, "result": "failed", "category": "TEST_FAILURE",
+            "action": "builder-diagnose"}]
+    r = reading(make_run(base, "recovering", phase="build", gates=[("tests", 1, 10)], repairs=rec))
+    check("state: a failed check with its repair under way is recovery in progress, attempt counted against the limit",
+          r["state"]["key"] == "recovering" and any("attempt 1 of 3" in a["text"] for a in r["attention"])
+          and not any(a["kind"] == "failure" for a in r["attention"]), (r["state"], r["attention"]))
+
+    r = reading(make_run(base, "recovered", seats=[v2("beck", "done", 50000, 1, 1)],
+                         gates=[("tests", 1, 60), ("tests", 0, 20), ("before-1", 1, 50), ("after-1", 0, 40)]))
+    check("state: a failure that later passed is recovered — no longer a problem, still shown as history",
+          r["state"]["key"] == "running" and not r["attention"] and "1 recovered after failing" in r["progress"]["checks"],
+          (r["state"], r["attention"], r["progress"]))
+    check("checks: a build's before-proof failing first is not a failure, and the latest check shown is a real one",
+          r["latest_check"]["name"] == "tests" and all(c["name"] != "before-1" for c in r["checks"]), r["latest_check"])
+
+    stop = rec + [{"task": "T2", "gate": "tests", "attempt": 2, "result": "failed", "action": "independent-diagnosis"},
+                  {"task": "T2", "gate": "tests", "attempt": 3, "result": "failed", "action": "stop"}]
+    r = reading(make_run(base, "blocked", phase="build", gates=[("tests", 1, 10)], repairs=stop))
+    check("state: a build stopped at the repair limit is blocked, and that comes first",
+          r["state"]["key"] == "blocked" and r["attention"][0]["kind"] == "blocked"
+          and "needs your decision" in r["attention"][0]["text"], (r["state"], r["attention"]))
+
+    r = reading(make_run(base, "completed", status_value="complete", phase="learn",
+                         seats=[v2("beck", "done", 50000, 1, 1)], gates=[("tests", 0, 30)],
+                         extra_state="next: nothing\nclosed: {}\n".format(local(20))))
+    check("state: a completed run says so, and shows no next step", r["state"]["key"] == "completed"
+          and not r["progress"]["next"] and r["state"]["label"] == "Completed", r["state"])
+
+    r = reading(make_run(base, "paused", status_value="paused", seats=[v2("beck", "done", 50000, 1, 1)]))
+    check("state: a paused run reads as interrupted ('Paused') with a note on how to go on",
+          r["state"]["key"] == "interrupted" and r["state"]["label"] == "Paused"
+          and any(a["kind"] == "paused" for a in r["attention"]), (r["state"], r["attention"]))
+    r = reading(make_run(base, "abandoned", status_value="abandoned"))
+    check("state: an abandoned run reads as stopped early", r["state"]["label"] == "Stopped early", r["state"])
+
+    r = reading(make_run(base, "stale", seats=[v2("hunt", "running", "", 1, 0, 190)], updated_min=190))
+    check("state: an open run with nothing recorded for over an hour reads as quiet, with how long",
+          r["state"]["key"] == "stale" and any(a["kind"] == "stale" and "3 h 10 min" in a["text"] for a in r["attention"]),
+          (r["state"], r["attention"]))
+
+    broken = make_run(base, "broken")
+    write(broken / "session-state.md", "not a header at all\n")
+    r = reading(broken)
+    check("state: unreadable run records read as unknown, never as fine", r["state"]["key"] == "unknown"
+          and any(a["kind"] == "data" for a in r["attention"]), r["state"])
+
+    # --- what the numbers may say ----------------------------------------------------------------------
+    legacy = make_run(base, "legacy", seats=[("hunt", "done", "verifier", "160", local(5)[:16], "", "1"),
+                                             ("beck", "done", "", "201000", local(4)[:16], "", "1")],
+                      seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents")
+    snap = cockpit.snapshot(legacy, None, 8)
+    r = status.interpret(snap, NOW)
+    check("tokens: an older record's figures are never totalled — its units were never checked",
+          snap["usage"]["tokens"]["total"] is None and r["usage"]["basis"] == "legacy"
+          and "not reliably recorded" in r["usage"]["text"], (snap["usage"], r["usage"]))
+    check("agents: an older record gives a lower bound only", snap["usage"]["agents"]["total"] is None
+          and r["usage"]["agent_runs_text"].startswith("at least 2"), r["usage"])
+    suspect = make_run(base, "suspect", status_value="complete", seats=[v2("hunt", "done", 160, 1, 1), v2("beck", "done", 50000, 1, 1)])
+    snap = cockpit.snapshot(suspect, None, 8)
+    check("tokens: a count under a thousand for an agent run is suspect, not a total",
+          snap["usage"]["tokens"]["basis"] == "suspect" and snap["usage"]["tokens"]["total"] is None
+          and snap["usage"]["tokens"]["suspect_seats"] == ["hunt"], snap["usage"])
+    partial = make_run(base, "partial", status_value="complete",
+                       seats=[v2("hunt", "done", 50000, 2, 1), v2("beck", "done", "", 1, 0)])
+    snap = cockpit.snapshot(partial, None, 8)
+    r = status.interpret(snap, NOW)
+    check("tokens: missing usage reports make the total a lower bound, and say how many",
+          snap["usage"]["tokens"]["basis"] == "partial" and snap["usage"]["tokens"]["missing_runs"] == 2
+          and r["usage"]["text"].startswith("at least 50k"), (snap["usage"], r["usage"]["text"]))
+    whole = make_run(base, "whole", status_value="complete",
+                     seats=[v2("hunt", "done", 50000, 1, 1), v2("verify-1", "done", 4625154, 38, 38)])
+    snap = cockpit.snapshot(whole, None, 8)
+    check("tokens: every agent run reported → an exact total, split workers from verifiers, with the exact run count",
+          snap["usage"]["tokens"]["total"] == 4675154 and snap["usage"]["tokens"]["verifiers"] == 4625154
+          and snap["usage"]["agents"]["total"] == 39, snap["usage"])
+    write(legacy / "corrections.jsonl", "".join(json.dumps(c) + "\n" for c in (
+        {"schema": 1, "seat": "hunt", "field": "tokens", "from": "160", "to": 160360, "evidence": "transcript A L1679 uuid be2f"},
+        {"schema": 1, "seat": "hunt", "field": "agents", "from": "1", "to": 1, "evidence": "transcript A L1564 one Agent call"},
+        {"schema": 1, "seat": "beck", "field": "tokens", "from": "201000", "to": 200958, "evidence": "transcript B L951"},
+        {"schema": 1, "seat": "beck", "field": "agents", "from": "1", "to": 1, "evidence": "transcript B L868"},
+        {"schema": 1, "seat": "beck", "field": "tokens", "from": "201000", "to": 99, "evidence": ""})))
+    snap = cockpit.snapshot(legacy, None, 8)
+    check("corrections: evidence-backed figures lay over an older record and make its totals exact; one without evidence is ignored",
+          snap["usage"]["tokens"]["total"] == 361318 and snap["usage"]["agents"]["total"] == 2
+          and sorted(snap["usage"]["tokens"]["corrected_seats"]) == ["beck", "hunt"], snap["usage"])
+
+    # --- history leaves out what it can't count ------------------------------------------------------------
+    home = base / "hist"
+    for i in range(5):
+        make_run(home.parent / "hist-root", "2026-09-2{}-000000-review".format(i), status_value="complete",
+                 seats=[v2("hunt", "done", 60000, 1, 1), v2("beck", "done", 40000, 1, 1)])
+    make_run(home.parent / "hist-root", "2026-09-19-000000-review", status_value="complete",
+             seats=[("hunt", "done", "", "160", local(5)[:16], "", "1")], seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents")
+    make_run(home.parent / "hist-root", "2026-09-18-000000-review", status_value="complete",
+             seats=[("wf", "done", "a-wf", "2967380", local(5)[:16], "", "1", "")])
+    data = history.history(home.parent / "hist-root" / ".council")
+    check("history: only runs with complete, exact records are costed; the rest are counted and named, never zeroes",
+          data["cost"]["tokens_per_agent"]["enough"] and data["cost"]["tokens_per_agent"]["median"] == 50000
+          and data["cost"]["left_out"] == {"older records (units never checked)": 2}, data["cost"])
+    check("history: the report says five runs make a figure eligible, not reliable, and lists what was left out",
+          "eligible, not reliable" in history.render(data) and "left out of cost figures" in history.render(data),
+          history.render(data))
+
+    # --- the widget --------------------------------------------------------------------------------------
+    evil = make_run(base, "evil", seats=[v2("hunt", "running", "", 1, 0, 3,
+                                            note='<img src=x onerror="alert(1)"> \x1b[2J</details><script>bad()</script>')],
+                    extra_state="next: finish <b>now</b> & report\n")
+    r = reading(evil)
+    html = status.widget(r)
+    check("widget: every value from the records is escaped, and control codes never reach it",
+          "<img" not in html and "&lt;img" in html and "<script>bad" not in html and "\x1b" not in html
+          and "&lt;/details&gt;" in html and "&lt;b&gt;now&lt;/b&gt; &amp; report" in html, html[:400])
+    check("widget: no network, no page — only the host's own styles, one inline script, no external source",
+          "http://" not in html and "https://" not in html and "<script src" not in html and html.count("<script>") == 1
+          and "<html" not in html and "<body" not in html and "position:fixed" not in html.replace(" ", ""), html[-600:])
+    check("widget: a screen-reader summary first, and the state in words and an icon, never colour alone",
+          re.search(r'<h2 class="sr">[^<]*Running', html) is not None and ">Running</span>" in html and "ti-activity" in html,
+          html[:700])
+    check("widget: the snapshot carries its time, shows it, and turns its age into words in the page",
+          'data-at="{}"'.format(AT) in html and 'id="sc-age"' in html and "sc-old" in html and "hidden" in html, html[-900:])
+    check("widget: it says plainly that it is a snapshot you ask for again, never that it updates itself",
+          "Ask for the council status" in html and not re.search(r"live|real-time|auto-?refresh", html, re.I), html[-900:])
+    preview = status.widget(r, preview=True)
+    check("widget: a preview says it is one, with the time of its fixed snapshot, and that it does not update",
+          "Preview built from a fixed snapshot taken" in preview and "does not update" in preview, preview[:900])
+
+    many = make_run(base, "long", phase="build",
+                    seats=[v2("seat-{}".format(i), "done", 50000 + i, 1, 1, 400 - i) for i in range(120)],
+                    gates=[("check-{}".format(i % 40), 1 if i % 7 == 0 else 0, 300 - i) for i in range(300)],
+                    events=[("{}".format(AT), "seat.updated", "seat-{}".format(i), "done", "tokens=1") for i in range(250)])
+    big = status.widget(reading(many))
+    check("widget: a long run stays compact — capped lists, 'latest N of M', under 16 KB",
+          len(big.encode("utf-8")) < 16 * 1024 and "latest 12 of 120" in big and big.count("<li>") <= 12 + 12 + 5 + 5 + 12,
+          len(big.encode("utf-8")))
+
+    # --- the cockpit keeps working ------------------------------------------------------------------------
+    frame = cockpit.render(cockpit.snapshot(legacy, None, 8), reading=status.interpret(cockpit.snapshot(legacy, None, 8), NOW))
+    check("tui: the terminal fallback still draws, with the shared status line on top",
+          "Small Council —" in frame and "Status:" in frame and "Budget:" in frame, frame)
+    old6 = make_run(base, "six-columns", seats=[("hunt", "done", "a1", "74000", local(5)[:16], "")],
+                    seats_header="slug\tstate\tagent\ttokens\tupdated\tnote")
+    try:
+        frame = cockpit.render(cockpit.snapshot(old6, None, 8), reading=reading(old6))
+        ok = "Small Council —" in frame and "74000?" in frame
+    except Exception as exc:  # noqa: BLE001
+        ok, frame = False, repr(exc)
+    check("tui: a six-column record from before agent counting still draws, its figure marked unchecked", ok, frame)
+    ghost = make_run(base, "ghost", seats=[v2("hunt", "done", 50000, 1, 1, note="part one part two\x1cthree")])
+    snap = cockpit.snapshot(ghost, None, 8)
+    check("records: a line break inside a note never becomes a seat of its own",
+          [s["slug"] for s in snap["seats"]] == ["hunt"], [s["slug"] for s in snap["seats"]])
+
+    # --- through the helper ------------------------------------------------------------------------------
+    if not BASH or not GIT:
+        print("[SKIP] bash or git unavailable — helper checks skipped")
+        check("helper: bash and git are available (required for the helper half)", False, "missing")
+    else:
+        repo = base / "repo"
+        repo.mkdir()
+        subprocess.run([GIT, "init", "-q"], cwd=repo, check=True)
+        write(repo / ".council" / "council.config.md", "# Council config\n")
+        code, out, err = council(repo, "run", "open", "council-review")
+        run = Path(out.strip())
+        plan(run, ("hunt", "beck", "leach", "fowler", "wf", "verify-1"))
+        check("setup: a run opens with the accounting columns", code == 0
+              and read(run / "seats.tsv").startswith("slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"), err)
+
+        refused = [(council(repo, "seat", "hunt", "done", "agent=a1", "tokens=" + value), value) for value in (
+            "12 tool uses, 45000 tokens", "-500", "1e5", "74,3k", "lots", "160", "0", "999")]
+        check("seat: a token count must be one plausible number — two numbers, a sign, an exponent, a decimal comma, "
+              "a count under 1,000 are refused and nothing is written",
+              all(code == 2 for (code, _, _), _ in refused) and not seat_row(run, "hunt"),
+              [(v, c, e.strip()[-120:]) for (c, _, e), v in refused])
+        for value, want in (("74.3k", "74300"), ("74,304", "74304"), ("74 304", "74304"), ("74304 tokens", "74304")):
+            slug = "fowler"
+            write(run / "seats.tsv", read(run / "seats.tsv").split("\n")[0] + "\n")
+            (run / "usage.tsv").unlink(missing_ok=True)
+            council(repo, "seat", slug, "done", "agent=a9", "tokens=" + value)
+            check("seat: tokens={} is stored as {} whole tokens".format(value, want), seat_row(run, slug)[3:4] == [want],
+                  seat_row(run, slug))
+        write(run / "seats.tsv", read(run / "seats.tsv").split("\n")[0] + "\n")
+        (run / "usage.tsv").unlink(missing_ok=True)
+        code, _, err = council(repo, "seat", "hunt", "running", "tokens=5000")
+        check("seat: usage comes with a finished run — tokens= on running is refused", code == 2 and "finished" in err, err)
+        code, _, err = council(repo, "seat", "hunt", "running", "agent=council-verifier")
+        code2, _, err2 = council(repo, "seat", "hunt", "running", "agent=workflow")
+        check("seat: a role name where the agent id belongs is refused (the Chrollo run recorded 'workflow')",
+              code == 2 and code2 == 2 and "role, not an agent id" in err + err2, err + err2)
+
+        council(repo, "seat", "hunt", "running", "agent=a1")
+        council(repo, "seat", "hunt", "done", "tokens=50000")
+        code, out, _ = council(repo, "seat", "hunt", "done", "tokens=50000")
+        check("seat: the same usage report recorded twice counts once", seat_row(run, "hunt")[3:4] == ["50000"]
+              and seat_row(run, "hunt")[6:8] == ["1", "1"], seat_row(run, "hunt"))
+        council(repo, "seat", "hunt", "running", "agent=a1", "note=round 2")
+        council(repo, "seat", "hunt", "done", "tokens=80000")
+        check("seat: a resumed agent's later report is its running total — it replaces, and is still one agent run",
+              seat_row(run, "hunt")[3:4] == ["80000"] and seat_row(run, "hunt")[6:8] == ["1", "1"], seat_row(run, "hunt"))
+        council(repo, "seat", "hunt", "running", "agent=a2")
+        code, out, _ = council(repo, "seat", "hunt", "done", "tokens=30000")
+        check("seat: a re-dispatched agent is a second agent run and adds its own tokens",
+              seat_row(run, "hunt")[3:4] == ["110000"] and seat_row(run, "hunt")[6:8] == ["2", "2"], seat_row(run, "hunt"))
+        check("progress: the line counts seats as seats, not agents", out.startswith("seats: 1 of 1 done") and "~110k tokens so far" in out, out)
+        council(repo, "seat", "wf", "running", "agent=wf_1b2fc8d3-b14")
+        council(repo, "seat", "wf", "done", "agents=38", "tokens=4625154")
+        check("seat: a Workflow's report carries its agent count — 38 agent runs, not one",
+              seat_row(run, "wf")[3:4] == ["4625154"] and seat_row(run, "wf")[6:8] == ["38", "38"], seat_row(run, "wf"))
+        council(repo, "seat", "beck", "queued")
+        code, out, _ = council(repo, "seat", "leach", "running", "agent=a5")
+        check("progress: queued seats are queued, not 'still working'", "queued: beck" in out and "still working: leach" in out, out)
+        council(repo, "seat", "leach", "failed", "note=died with its session")
+        council(repo, "seat", "beck", "skipped", "note=no surface")
+        usage = read(run / "usage.tsv")
+        check("usage.tsv: every dispatch and every report is its own row, the audit trail behind the seat totals",
+              usage.startswith("at\tseat\tagent\tkind\truns\ttokens\n") and usage.count("\tdispatched\t") == 4
+              and usage.count("\tfinished\t") == 5, usage)
+        council(repo, "state", "waiting=approve the fix?")
+        council(repo, "state", "waiting=")
+        events = read(run / "events.tsv")
+        check("state: setting and clearing what the run waits on the user for are events of their own",
+              "\trun.waiting_changed\trun\ton\t" in events and "\trun.waiting_changed\trun\toff\t" in events, events[-400:])
+        code, out, err = council(repo, "run", "events", "check")
+        check("events: the stream with the new detail fields and event types still checks", code == 0, out + err)
+
+        before = fingerprint(run)
+        code, text_out, err = council(repo, "status")
+        code_w, widget_out, err_w = council(repo, "status", "--widget")
+        code_j, json_out, err_j = council(repo, "status", "--json")
+        check("status: the summary names the state, what needs the user, and the exact terminal-view command",
+              code == 0 and "Status:" in text_out and "Needs you:" in text_out and "tui --watch --run" in text_out
+              and run.name in text_out, text_out + err)
+        check("status: --widget prints one self-contained fragment; --json the same reading as data",
+              code_w == 0 and widget_out.lstrip().startswith("<style>") and code_j == 0
+              and json.loads(json_out)["schema"] == "council.run-status/1", (widget_out[:200], json_out[:200], err_w, err_j))
+        check("status: reading a run — summary, widget or data — writes nothing", fingerprint(run) == before, "changed")
+        refusals = [(council(repo, "status", *w), want) for w, want in (
+            (("--widget", "--json"), "not both"), (("--preview",), "use it with --widget"), (("now",), "doesn't take"),
+            (("--watch",), "doesn't take --watch"))]
+        check("status: flag mistakes are refused, each saying why", all(c == 2 and want in e for (c, _, e), want in refusals),
+              [(c, e) for (c, _, e), _ in refusals])
+
+        rows_before = read(run / "seats.tsv")
+        refused = [council(repo, "correct", *w) for w in (
+            ("hunt", "tokens=160360"), ("hunt", "tokens=74.3k", "evidence=transcript A L1679"),
+            ("hunt", "tokens=160", "evidence=transcript A L1679"), ("nobody", "tokens=160360", "evidence=transcript A L1679"),
+            ("hunt", "evidence=transcript A L1679"))]
+        check("correct: no evidence, a rounded or implausible figure, an unknown seat or no figure at all are refused",
+              all(c == 2 for c, _, _ in refused), [e.strip()[-100:] for _, _, e in refused])
+        code, out, err = council(repo, "correct", "leach", "tokens=41234", "agents=1", "evidence=transcript B L42 uuid 1234abcd")
+        check("correct: an exact, evidenced figure is laid over the row — seats.tsv is untouched, the trail kept",
+              code == 0 and read(run / "seats.tsv") == rows_before and '"field":"tokens","from":"","to":41234' in read(run / "corrections.jsonl")
+              and "seat.usage_corrected" in read(run / "events.tsv"), out + err)
+        code, out, err = council(repo, "run", "close")
+        state = read(run / "session-state.md")
+        check("close: the cost line is a total only when every agent run's usage is known — here, with the correction, it is",
+              "actual: ~4776k tokens across 41 agent run(s)" in state, re.findall(r"^actual:.*$", state, re.MULTILINE))
+        ledger = read(repo / ".council" / "ledger.tsv")
+        check("ledger: rows carry checked figures (accounting 2), and the verifiers row stays even with an unknown cost",
+              ledger.startswith("date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\taccounting\n")
+              and "\thunt\t" in ledger and "\t110000\t2" in ledger and "\tleach\t" in ledger and "\t41234\t2" in ledger, ledger)
+
+        # A run from before this accounting, carried on by the new helper
+        code, out, err = council(repo, "run", "open", "council-review", "--alongside")
+        old = Path(out.strip())
+        plan(old, ("hunt", "beck"))
+        write(old / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\nhunt\tdone\tverifier\t160\t2026-09-20 18:07\t\t1\n")
+        council(repo, "seat", "beck", "done", "agent=b1", "tokens=90334", "--run", old.name)
+        lines = read(old / "seats.tsv").split("\n")
+        check("older record: the header gains the new column, the old row keeps its old shape, the new row is exact",
+              lines[0].endswith("\tagents\treported") and lines[1].count("\t") == 6 and lines[2].split("\t")[6:8] == ["1", "1"],
+              lines)
+        code, out, err = council(repo, "run", "close", "--run", old.name)
+        check("older record: its cost line says tokens aren't reliably recorded, and the agent count is a lower bound",
+              "tokens not reliably recorded (1 older row(s)) · at least 2 agent run(s)" in read(old / "session-state.md"),
+              read(old / "session-state.md"))
+
+passed = sum(good for _, good, _ in checks)
+for name, good, detail in checks:
+    print("[{}] {}".format("PASS" if good else "FAIL", name))
+    if not good:
+        print("       " + str(detail)[:900].replace("\n", "\n       "))
+print("\n{}/{} checks passed".format(passed, len(checks)))
+sys.exit(0 if passed == len(checks) else 1)

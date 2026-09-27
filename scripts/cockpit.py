@@ -29,7 +29,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-SCHEMA = "council.run-snapshot/1"
+SCHEMA = "council.run-snapshot/2"
 MAX_FILE = 4 * 1024 * 1024
 BOM = chr(0xFEFF)
 UNICODE = {"done": "✓", "running": "●", "queued": "○", "failed": "✗", "blocked": "■", "skipped": "–",
@@ -139,20 +139,28 @@ def parse_json(text):
 
 
 # --- the run's files ------------------------------------------------------------------------------------------
+def lines_of(text):
+    """Lines as the helper's awk splits them: on newline only. str.splitlines() would also split on
+    form feeds, file separators and Unicode line breaks inside a cell, and invent rows."""
+    return [line.rstrip("\r") for line in text.split("\n")]
+
+
 def header(run):
-    """The key: value lines of session-state.md, above its first heading."""
+    """The key: value lines of session-state.md, above its first heading — the first of a repeated
+    key and without a trailing '  # comment', as the helper's field() reads them."""
     fields = {}
-    for line in text_of(run / "session-state.md", run).splitlines():
+    for line in lines_of(text_of(run / "session-state.md", run)):
         if line.startswith("## "):
             break
         key, sep, value = line.partition(":")
-        if sep and re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", key.strip()):
-            fields[key.strip()] = clean(value)
+        key = key.strip()
+        if sep and re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", key) and key not in fields:
+            fields[key] = clean(re.sub(r"[ \t]{2,}#.*$", "", value))
     return fields
 
 
 def tsv(run, name):
-    lines = [line.rstrip("\r") for line in text_of(run / name, run).splitlines() if line.strip() and not line.startswith("#")]
+    lines = [line for line in lines_of(text_of(run / name, run)) if line.strip() and not line.startswith("#")]
     if not lines:
         return []
     keys = lines[0].split("\t")
@@ -161,7 +169,7 @@ def tsv(run, name):
 
 def jsonl(run, name):
     rows = []
-    for line in text_of(run / name, run).splitlines():
+    for line in lines_of(text_of(run / name, run)):
         row = parse_json(line)
         if isinstance(row, dict):
             rows.append(row)
@@ -175,8 +183,8 @@ def number(value):
 
 def plan_of(run):
     plan, seats = {}, {}
-    for line in text_of(run / "run-plan.tsv", run).splitlines():
-        cells = line.rstrip("\r").split("\t")
+    for line in lines_of(text_of(run / "run-plan.tsv", run)):
+        cells = line.split("\t")
         if not line.strip() or line.startswith("#") or len(cells) < 5 or cells[0] == "kind":
             continue
         kind, ident, field, value, reason = (clean(c) for c in cells[:5])
@@ -233,7 +241,7 @@ def events_of(run, last):
     path = run / "events.tsv"
     if too_large(path):
         return {"count": None, "malformed": 0, "last": [], "present": True, "header_ok": None, "too_large": True}
-    lines = [line.rstrip("\r") for line in text_of(path, run).splitlines() if line.strip()]
+    lines = [line for line in lines_of(text_of(path, run)) if line.strip()]
     rows = [line.split("\t") for line in lines[1:]]
     good = [r for r in rows if len(r) == 7]
     shown = [{"seq": clean(r[1]), "at": clean(r[2]), "type": clean(r[3]), "subject": clean(r[4]),
@@ -258,28 +266,123 @@ def proposals_in(home):
     return count
 
 
+def optional_number(value):
+    """A recorded count, or None when the cell is blank or not a plain number (never guessed as 0)."""
+    value = str(value if value is not None else "").strip()
+    return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else None
+
+
+def corrections_of(run):
+    """The latest evidence-backed correction per seat and field, from the append-only corrections.jsonl.
+    A correction never changes seats.tsv; it is laid over it here, and its evidence travels with it."""
+    latest = {}
+    for row in jsonl(run, "corrections.jsonl"):
+        seat, field, to = clean(row.get("seat", "")), clean(row.get("field", "")), integer(row.get("to"))
+        if seat and field in ("tokens", "agents") and to is not None and to >= 0 and clean(row.get("evidence", "")):
+            latest[(seat, field)] = {"seat": seat, "field": field, "to": to, "from": clean(row.get("from", "")),
+                                     "evidence": clean(row.get("evidence", ""))[:300], "at": clean(row.get("at", ""))}
+    return latest
+
+
+def seat_usage(row, fixes):
+    """One seat's agent runs and tokens, each with how far the record supports it (see
+    references/run-accounting.md). A row written before the accounting columns existed is 'legacy':
+    its token count was never checked for units, and its agent count is only a lower bound."""
+    slug, state = row["slug"], row["state"]
+    executed = state in ("running", "done", "failed", "blocked")
+    finished = state in ("done", "failed", "blocked")
+    recorded, runs, reported = optional_number(row["raw_tokens"]), optional_number(row["raw_agents"]), row["raw_reported"]
+    legacy = reported is None
+    fix_t, fix_a = fixes.get((slug, "tokens")), fixes.get((slug, "agents"))
+    if legacy:
+        agents, basis_a = None, "at-least"
+        at_least = max(runs or 0, 1 if executed else 0)
+    else:
+        agents, basis_a, at_least = (runs or 0), "counted", runs or 0
+    if fix_a:
+        agents, basis_a, at_least = fix_a["to"], "corrected", fix_a["to"]
+    if fix_t:
+        tokens, basis_t = fix_t["to"], "corrected"
+    elif legacy:
+        tokens, basis_t = None, "legacy"
+    elif not executed:
+        tokens, basis_t = None, "none"
+    elif reported == 0:
+        tokens, basis_t = None, ("pending" if not finished else "missing")
+    else:
+        tokens = recorded
+        basis_t = "reported" if agents is not None and reported >= agents else "partial"
+    if tokens is not None and 0 < tokens < 1000:
+        tokens, basis_t = None, "suspect"   # no agent run costs under a thousand tokens: a unit slip, not a count
+    missing = 0
+    if basis_t in ("missing", "partial") and agents is not None:
+        missing = max(0, agents - (reported or 0))
+    return {"tokens": tokens, "tokens_basis": basis_t, "tokens_recorded": recorded, "agents": agents,
+            "agents_basis": basis_a, "agents_at_least": at_least, "missing_runs": missing,
+            "executed": executed, "finished": finished}
+
+
+def usage_totals(seats):
+    """Run totals that are only as complete as their least complete seat: a total over rows that
+    cannot be trusted is not a total, so it is None and the basis says why."""
+    ran = [s for s in seats if s["executed"] or s["tokens_basis"] == "corrected"]
+    known = sum(s["tokens"] for s in ran if s["tokens"] is not None)
+    bases = {s["tokens_basis"] for s in ran}
+    if not ran:
+        basis = "none"
+    elif "legacy" in bases:
+        basis = "legacy"
+    elif "suspect" in bases:
+        basis = "suspect"
+    elif bases & {"pending"} or any(s["state"] == "running" for s in ran):
+        basis = "running"
+    elif bases & {"missing", "partial", "none"}:
+        basis = "partial"
+    else:
+        basis = "complete"
+    verifier = [s for s in ran if s["slug"].startswith(("verify-", "diagnose-"))]
+    complete = basis == "complete"
+    exact = ran and all(s["agents"] is not None for s in ran)
+    return {
+        "tokens": {"basis": basis, "known": known, "total": known if complete else None,
+                   "workers": sum(s["tokens"] for s in ran if s not in verifier) if complete else None,
+                   "verifiers": sum(s["tokens"] for s in verifier) if complete else None,
+                   "missing_runs": sum(s["missing_runs"] for s in ran),
+                   "legacy_seats": [s["slug"] for s in ran if s["tokens_basis"] == "legacy"],
+                   "suspect_seats": [s["slug"] for s in ran if s["tokens_basis"] == "suspect"],
+                   "corrected_seats": [s["slug"] for s in seats if "corrected" in (s["tokens_basis"], s["agents_basis"])]},
+        "agents": {"total": sum(s["agents"] for s in ran) if exact else None,
+                   "at_least": sum(s["agents_at_least"] for s in ran),
+                   "basis": "exact" if exact else ("at-least" if ran else "none")},
+    }
+
+
 def snapshot(run, home=None, last_events=8):
     run = Path(run)
     state = header(run)
+    fixes = corrections_of(run)
     seats = []
     for row in tsv(run, "seats.tsv"):
         slug = clean(row.get("slug", ""))
         if not slug:
             continue
-        seats.append({"slug": slug, "state": clean(row.get("state", "")), "agent": clean(row.get("agent", "")),
-                      "tokens": number(row.get("tokens")), "updated": clean(row.get("updated", "")),
-                      "note": clean(row.get("note", ""))[:120], "agents": number(row.get("agents")) or 1})
-    active = [s for s in seats if s["state"] not in ("queued", "skipped")]
-    verifier = [s for s in active if s["slug"].startswith(("verify-", "diagnose-"))]
+        seat = {"slug": slug, "state": clean(row.get("state", "")), "agent": clean(row.get("agent", "")),
+                "updated": clean(row.get("updated", "")), "note": clean(row.get("note", ""))[:120],
+                "raw_tokens": row.get("tokens"), "raw_agents": row.get("agents"),
+                "raw_reported": optional_number(row.get("reported"))}
+        seat.update(seat_usage(seat, fixes))
+        for key in ("raw_tokens", "raw_agents", "raw_reported"):
+            seat.pop(key)
+        seats.append(seat)
     return {
         "schema": SCHEMA,
         "run": {"id": clean(run.name), "path": str(run), **{k: state.get(k, "") for k in (
-            "status", "mode", "phase", "updated", "opened", "closed", "size", "ask", "deliverable", "next", "actual")}},
+            "status", "mode", "phase", "updated", "opened", "closed", "size", "ask", "deliverable", "next", "actual",
+            "waiting")}},
         "plan": plan_of(run),
         "seats": seats,
-        "tokens": {"workers": sum(s["tokens"] for s in active if s not in verifier),
-                   "verifiers": sum(s["tokens"] for s in verifier), "total": sum(s["tokens"] for s in active)},
-        "agents": sum(s["agents"] for s in active),
+        "usage": usage_totals(seats),
+        "corrections": sorted(fixes.values(), key=lambda f: (f["seat"], f["field"])),
         "gates": gates_of(run),
         "repairs": repairs_of(run),
         "claims": claims_of(run),
@@ -297,7 +400,41 @@ def shown(value):
     return "?" if value is None else str(value)
 
 
-def render(snap, ascii_only=False, width=None):
+def seat_tokens(seat):
+    """A seat's tokens: the trusted count, or an unverified recorded one marked with '?'."""
+    if seat["tokens"] is not None:
+        return k(seat["tokens"])
+    if seat.get("tokens_recorded"):
+        return str(seat["tokens_recorded"]) + "?"
+    return "—"
+
+
+def usage_line(tokens):
+    """Spent tokens as far as the records support: a total only when every agent run reported one."""
+    basis = tokens["basis"]
+    if basis == "complete":
+        return "{} (workers {}, verifiers {})".format(k(tokens["total"]), k(tokens["workers"]), k(tokens["verifiers"]))
+    if basis == "running":
+        return "{} so far".format(k(tokens["known"]))
+    if basis == "partial":
+        return "at least {} ({} agent run(s) without usage)".format(k(tokens["known"]), tokens["missing_runs"])
+    if basis == "legacy":
+        return "not reliably recorded (older records)"
+    if basis == "suspect":
+        return "not shown (implausible counts: {})".format(", ".join(tokens["suspect_seats"][:4]))
+    return "—"
+
+
+def reading_of(snap):
+    """The shared plain-language reading (scripts/status.py); the screen still draws without it."""
+    try:
+        import status
+        return status.interpret(snap)
+    except Exception:  # noqa: BLE001 — a headline must never stop the screen from drawing
+        return None
+
+
+def render(snap, ascii_only=False, width=None, reading=None):
     g = ASCII if ascii_only else UNICODE
     width = max(60, min(width or shutil.get_terminal_size((100, 30)).columns, 120))
     run, plan = snap["run"], snap["plan"]
@@ -311,17 +448,24 @@ def render(snap, ascii_only=False, width=None):
     add(g["top"] + g["rule"] + title + g["rule"] * max(0, width - len(title) - 2))
     add("  {} · phase {} · {} · updated {}".format(run["mode"] or "?", run["phase"] or "?", run["status"] or "?",
                                                    run["updated"] or "?"))
+    if reading:
+        add("  Status: {} — {}".format(reading["state"]["label"], reading["state"]["summary"]))
+        for item in reading["attention"][:4]:
+            add("  {} {}".format("!" if item["severity"] >= 2 else "·", item["text"]))
     if run["ask"]:
         add("  Request: " + run["ask"])
     if plan.get("size"):
         add("  Plan: {} · risk {} · complexity {} · uncertainty {} · verification {}".format(
             plan.get("size", "?"), plan.get("risk", "?"), plan.get("complexity", "?"), plan.get("uncertainty", "?"),
             plan.get("level", "?")))
-    budget = "  Budget: estimated {} · spent {} (workers {}, verifiers {}) · {} agent(s)".format(
-        k(number(plan.get("estimated-tokens"))), k(snap["tokens"]["total"]), k(snap["tokens"]["workers"]),
-        k(snap["tokens"]["verifiers"]), snap["agents"])
+    usage = snap["usage"]
+    spent = usage_line(usage["tokens"])
+    runs = usage["agents"]
+    budget = "  Budget: estimated {} · spent {} · {} agent run(s)".format(
+        k(number(plan.get("estimated-tokens"))), spent,
+        runs["total"] if runs["total"] is not None else "at least {}".format(runs["at_least"]))
     if plan.get("agent-cap"):
-        budget += " of {}".format(plan["agent-cap"])
+        budget += " (cap {})".format(plan["agent-cap"])
     add(budget)
     if run["next"] and run["status"] == "in-progress":
         add("  Next: " + run["next"])
@@ -333,7 +477,7 @@ def render(snap, ascii_only=False, width=None):
         drawn.add(seat["slug"])
         info = planned.get(seat["slug"], {})
         add("  {} {:<16} {:<8} {:>6}  {:<8} {}".format(g.get(seat["state"], "?"), seat["slug"][:16], seat["state"][:8],
-                                                     k(seat["tokens"]), info.get("role", "")[:8], info.get("context", "")))
+                                                     seat_tokens(seat), info.get("role", "")[:8], info.get("context", "")))
     for slug, info in sorted(planned.items()):
         if slug in drawn or info.get("disposition") not in ("selected", "skipped"):
             continue
@@ -425,7 +569,7 @@ def watch(run, home, events, ascii_only, interval):
     while True:
         snap = snapshot(run, home, events)
         status = snap["run"]["status"]
-        frame = render(snap, ascii_only)
+        frame = render(snap, ascii_only, reading=reading_of(snap))
         sys.stdout.write(("\x1b[2J\x1b[H" if interactive else "") + frame + "\n")
         sys.stdout.flush()
         if not status:
@@ -464,7 +608,8 @@ def main():
         print(json.dumps(snapshot(args.run, args.home, events), indent=2, sort_keys=True))
         return 0
     if not args.watch:
-        print(render(snapshot(args.run, args.home, events), ascii_only))
+        snap = snapshot(args.run, args.home, events)
+        print(render(snap, ascii_only, reading=reading_of(snap)))
         return 0
     try:
         return watch(args.run, args.home, events, ascii_only, max(0.5, min(args.interval, 60.0)))
