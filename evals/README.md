@@ -1,6 +1,6 @@
 # evals/
 
-Four automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
+Eight automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
 
 ## 1. Validation — will the plugin load?
 
@@ -66,6 +66,11 @@ Runs the helper against scaffolded git repos:
   away;
 - map status and the drift doctor (cards, repeated slugs, a changed stack).
 
+It calls the helper about 900 times, so it is slow where starting a process is slow: 16–17 minutes
+on Windows Git Bash (2026-09-26), longer still inside WSL on a `/mnt/c` checkout. Each result prints
+as it finishes and any failures are repeated at the end — a quiet stretch is one slow command, not
+a hang (each call has a 120 s timeout that is reported as a failed check).
+
 ## 4. Hook evals — do the hooks behave?
 
 ```bash
@@ -84,7 +89,85 @@ python evals/run_hook.py       # needs bash + git
 - a missing, malformed, empty or oversized file is blocked, but only once;
 - other agents are never touched.
 
-## 5. Phrase checks — advisory
+## 5. Impact evals — are direct dependencies and limits honest?
+
+```bash
+python evals/run_impact.py   # needs Python 3.8+, bash and git for the CLI handoff
+```
+
+Uses temporary repositories to check committed/staged/unstaged/untracked changes, renames and
+deletions, Python AST and literal JS/TS imports, likely test links, deterministic TSV, and the
+`council index` → `impact.tsv` handoff. This is not a claim of runtime coverage.
+
+## 6. Context evals — do seat packs stay relevant, small, and safe?
+
+```bash
+python evals/run_context.py   # needs Python 3.8+; bash and git for the CLI handoff
+```
+
+Uses temporary fixture runs to check selected-seat scope, shared hard constraints, direct caller
+and test links, context levels, byte reduction with relevant paths retained, deterministic Markdown
+and metrics, explicit expansion, path containment, and the index-only fallback. When Bash is
+available, it also checks `council context build <seat>` against a validated run plan.
+
+`python evals/run_context_pilot.py` is a separate, no-network Phase 5.5 measurement. It compares
+the **brief alone** with the **brief plus pack actually referenced at dispatch** on three fixture
+shapes. It also checks retention of known paths and a hard rule. Its byte counts are not agent
+tokens or finding-quality results. See `docs/validation/phase-5.5-context-pilot.md` for the
+measured result and the live paired-run protocol.
+
+## 7. Evidence evals — do claims retain their support and verification trail?
+
+```bash
+python evals/run_evidence.py   # needs Python 3.8+; bash for the CLI handoff
+```
+
+Uses temporary run artifacts to check provisional `UNVERIFIED` status, deterministic JSONL,
+provenance and verifier links, stale snapshots, refuted and conflicting verdicts, missing proof,
+proof traversal, missing state and cut-P1 verification. It does not judge the truth of a claim.
+
+## 8. Repair loop evals — are retries bounded and inspectable?
+
+```bash
+python evals/run_repair.py   # needs Python 3.8+; bash for the CLI handoff
+```
+
+Uses temporary build runs to check failure classification, suggested lenses, baseline labels,
+snapshot integrity, duplicate-event refusal, same-gate reruns, a recommendation for independent
+diagnosis after the second failure, a hard stop after the third, and a real nonempty pass to close.
+No model or target application code is run; the routing suggestions' usefulness still needs a live
+build evaluation.
+
+`python evals/run_memory.py` is a focused, no-model check of provenance-aware selection and scoped
+observed failures: which failures are refused (a verdict that establishes nothing, a scope of every
+run, a rule posing as a failure) and the evidence audit that keeps an entry out of briefs once its
+files are gone or no longer show its verdict. It also drives the proposal path through real helper
+runs — a review run's refuted claims and a build run's recorded gate failures, proposed, accepted
+and rejected — with its refusals, injection and redaction cases. The larger helper suite also
+covers legacy memory formats and anchor checks.
+
+`python evals/run_seats.py` checks seat learning (`council ledger advice`, `scripts/ledger.py`)
+without a model: runs that credited no items (council-init, builds) count toward tokens only; a
+seat is weighed only after 3 judged runs and 15 items of evidence, at most five from any one run, so
+one big run is never many runs' worth; each piece of advice (retain, lower, narrow, pair, drop?,
+unclear) is reached only well inside its region; and dropping a seat is only ever a question for the
+user after eight judged runs.
+
+```bash
+python evals/check_repair_trace.py --self-test --case evals/suite/build-repair-drill
+python3 evals/check_repair_trace.py <trace.jsonl> --repo <kept case dir> --case evals/suite/build-repair-drill
+```
+
+The suite's `tool_used` graders count calls — every agent's, subagents included — but cannot order
+them or say which agent made them. `check_repair_trace.py` reads a live trace (subagent calls carry
+`parent_tool_use_id`) and reports the order: each failed tests-gate run recorded once after a fresh
+run, the one diagnosis worker only after the second failure and read-only, no product change or
+fourth attempt after the stop, the drill rig untouched. With `--repo` it also reads the kept copy's
+`repairs.jsonl`, runs the helper's `repair check`, and compares the rig with a fresh scaffold, without
+running git in the kept copy. `--self-test` runs it and the drill's graders on synthetic traces of a
+correct drill and each kind of violation.
+
+## 9. Phrase checks — advisory
 
 ```bash
 python evals/run_phrases.py
@@ -93,7 +176,7 @@ python evals/run_phrases.py
 Looks for the wording of the field-tested rules and warns if one is missing. It never fails: a
 reworded rule shouldn't break the build, and a phrase proves nothing about behaviour.
 
-## 6. Behavioural suite — runs Claude for real, so it costs tokens
+## 10. Behavioural suite — runs Claude for real, so it costs tokens
 
 `evals/suite/` holds cases for `claude plugin eval` (plugin.json → `experimental.evals`). Each case runs
 with and without the plugin, and the report shows what the plugin adds (Δ). Graders are the answer
@@ -110,6 +193,8 @@ keys; the agent under test can't read them.
 | calibration | `verifier-calibration` | the verifier's verdicts on two true and two false claims, from a blind dispatch | moderate |
 | resume | `resume-unfinished-run` | an open run is offered for resume; no seat is dispatched again | moderate |
 | adaptation | `init-godot-roster` | council-init fits a non-web stack and asks before writing | moderate |
+| build, repair, drill | `build-repair-drill` | a **disclosed** drill: the tests gate is rigged red once the code changes, so the loop must run end to end — exactly three recorded failures, one read-only diagnosis worker after the second, a stop after the third, the before-check never counted, the rig untouched, an honest blocked receipt. Order is checked by `evals/check_repair_trace.py`. It shows the procedure works live, not that the Chair enters it unprompted. First live run (2026-09-26): counts exact, 8 of 9 graders, order unverified because the trace was lost | high (~$6 on Opus) |
+| build, conflict | `build-contract-conflict` | a build whose task collides with a protected contract test: the contract is never edited, the task is reported blocked or partly met, not done, and if the repair loop starts it stays bounded. It does not require the loop to start — its one live run (as `build-repair-bounded`) stopped before any gate failed | high (~$3 on Opus) |
 
 ```bash
 claude plugin eval . --model claude-opus-5 --scaffold --ablation none --runs 1 --tag triggering   # a quick smoke — no shell needed
@@ -142,7 +227,44 @@ python evals/record_eval.py                                                     
 - **CI:** `.github/workflows/evals.yml` runs on demand only: Claude Code and both models pinned, the
   Bash sandbox installed, Bash granted only past the triggering smoke, and a cost ceiling.
 
-## 7. Behavioral drills — run in Claude Code
+`python evals/run_tui.py` checks the read-only run cockpit (`council tui`, `scripts/cockpit.py`)
+against a real helper-made run: the plan, seats, gates, a repair's next step, evidence counts and
+memory proposals on screen; the `--json` snapshot; plain ASCII on request; escape codes in a file
+neutralised; a legacy run and malformed files still drawn; `--watch` stopping by itself when the
+run closes; and every file of the run and the council home byte-for-byte unchanged afterwards.
+
+`python evals/run_history.py` checks history across runs (`council history`, `scripts/history.py`):
+counts always, but a median, share or ratio only once five runs (not items) carry its data; a build's
+before/after proofs and gate probes kept apart from the project's gates; repairs, claims and
+estimate accuracy computed right on a synthetic home; missing and malformed data named; odd run
+folders survived; and nothing written.
+
+`python evals/run_tune.py` checks conservative self-tuning (`council tune`, `scripts/tune.py`):
+- the estimate is proposed only once five completed runs measure tokens per agent and it is off by
+  more than a quarter;
+- behaviour is held, and the roster goes through a refresh;
+- `apply` needs the value the user was shown and their words. Secret-looking text is redacted even
+  when split across lines. It writes one line, and the route then budgets with it;
+- only a ceiling the user gave shrinks a run;
+- `revert` puts back the exact bytes for six awkward file shapes, and refuses over a hand edit;
+- a failed config write leaves the log as it was;
+- BOM, CRLF, comments and file modes survive;
+- every refusal says why and writes nothing.
+
+## 11. Benchmark — Small Council against plain Claude Code
+
+```bash
+python evals/bench.py self-test        # no model: every case unsolved when untouched, solvable, traps scored
+```
+
+Three build cases in `evals/suite/bench-*` (tag `benchmark`) run through `claude plugin eval` with
+both arms: the same prompt, model, tools and project, with and without the plugin. Each kept run is
+scored afterwards by `evals/bench.py score` on hidden checks (encoded in `evals/bench/*.hidden`),
+restored original tests, frozen and protected files, scope, removed assertions and false completion
+claims; `compare` reports the arms side by side and refuses to call fewer than ten pairs a result.
+A pilot is paid — see `evals/bench/README.md` for the protocol and the cost.
+
+## 12. Behavioral drills — run in Claude Code
 
 See `behavioral-drills.md` (D1–D26). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

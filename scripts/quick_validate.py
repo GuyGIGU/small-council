@@ -257,6 +257,21 @@ for i, stage in enumerate(STAGES, 1):
     elif not read(path).startswith(f"# Stage {i} — "):
         errors.append(f"{rel}: first line must be '# Stage {i} — …'")
 
+# 8b. The machine-readable run plan template: the helper instantiates this for every new run.
+plan_path = os.path.join(ROOT, "references", "templates", "run-plan.tsv")
+if not os.path.isfile(plan_path):
+    errors.append("references/templates/run-plan.tsv: missing")
+else:
+    plan_lines = [line for line in read(plan_path).splitlines() if line and not line.startswith("#")]
+    if not plan_lines or plan_lines[0] != "kind\tid\tfield\tvalue\treason":
+        errors.append("references/templates/run-plan.tsv: header must be the five-column v1 contract")
+    for number, line in enumerate(read(plan_path).splitlines(), 1):
+        if line and not line.startswith("#") and len(line.split("\t")) != 5:
+            errors.append(f"references/templates/run-plan.tsv:{number}: expected exactly five tab-separated columns")
+    for token in ("{{RUN}}", "{{MODE}}", "{{AGENT_CAP}}"):
+        if token not in read(plan_path):
+            errors.append(f"references/templates/run-plan.tsv: missing substitution token {token}")
+
 # 9. Seat docs number their principles "Principle N" — P1–P3 are severities, and the two must never look
 #    alike (items cite "Principle 3", and a finding's severity is "P2")
 for doc in SEAT_DOCS:

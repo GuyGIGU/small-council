@@ -4,11 +4,15 @@ Give each seat exactly its slice, and each worker a budget.
 
 ## Steps
 
-1. **Match surfaces.** For each roster seat, match its Surface markers (the config's roster column:
-   globs and greps in this repo's idioms) against the in-scope files from the index or the scope
+1. **Match surfaces.** Use the Convene routing recommendation as a starting point, then map its
+   archetypes to the project's actual roster; a recommendation is never a substitute for the
+   project's Surface markers. For each roster seat, match its Surface markers (the config's roster
+   column: globs and greps in this repo's idioms) against the in-scope files from the index or the scope
    inventory. The match is the seat's slice. A config without markers yet → judge by the seat's
    lens, and suggest a council-init refresh. A lens with several roster rows (`dodds-web`,
-   `dodds-admin`) is several seats, each with its own surface.
+   `dodds-admin`) is several seats, each with its own surface. If `impact.tsv` exists, consider its
+   direct importers and likely tests as additional scope, but inspect them before assigning an
+   owner; low-confidence name/path hints are not proof of behavior.
 2. **No orphans.** Every in-scope file belongs to at least one seat; an unowned file is a coverage
    gap. That includes the files the index names past the 80-file cap (listed at its end, with no
    hunks): they are in scope, just not indexed. Leftovers go to the closest lens — structure takes
@@ -21,8 +25,16 @@ Give each seat exactly its slice, and each worker a budget.
 6. **Count agents.** Workers + the verifiers Challenge will need must fit the agent cap (default
    10). Over → pair more seats, or ask the user. A re-dispatch or a diagnosis worker counts too; a resumed worker
    (SendMessage to its agent id) doesn't.
-7. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
-   note="<reason>"` for every seat not called.
+7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat a `disposition`
+   (`selected` or `skipped`) and `role`, with the reason. Every selected seat gets a context level;
+   every selected seat gets a tool-call budget. Include the Chair as a selected
+   `chair` for Solo. Copy the recommendation's compatible risk, complexity band, uncertainty,
+   cap, and verification level only after checking them against what Prepare uncovered. If a
+   recommendation changed, record the evidence and reason in the plan. Run
+   `council run plan check`; fix every error before going on.
+8. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
+   note="<reason>"` for every seat not called. The helper refuses to queue or start a seat the valid
+   plan does not mark selected.
 
 ## Rules
 
@@ -33,4 +45,5 @@ Give each seat exactly its slice, and each worker a budget.
 
 ## Done when
 
-Every in-scope file has an owner and every worker has a slice and a budget. → `council state phase=brief`
+Every in-scope file has an owner, every worker has a slice and a budget, and `council run plan check`
+is clean. → `council state phase=brief` (the helper refuses this transition while the plan is invalid)

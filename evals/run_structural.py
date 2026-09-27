@@ -62,7 +62,13 @@ DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 # 1. Layout
 for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.json"), ("bin", "council"),
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
-             ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh")]:
+             ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"),
+             ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
+             ("references", "precision-context.md"), ("references", "evidence-model.md"),
+             ("references", "repair-loop.md"),
+             ("scripts", "impact.py"), ("scripts", "context.py"), ("scripts", "evidence.py"),
+             ("scripts", "repair.py"),
+             ("docs", "design", "precision-context-adr.md")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
 for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
@@ -102,6 +108,68 @@ check("kernel: approval threshold from the config", "approve without asking" in 
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
 check("kernel: resuming a run records this session as its driver (council run resume)",
       "council run resume" in core[core.find("## Resume"):])
+check("kernel: new runs require a validated run plan before Brief or dispatch",
+      "council run plan check" in core and "before Brief, Build or any worker starts" in core)
+check("kernel: adaptive routing is advisory before a run opens",
+      "council route recommend" in core and "advisory" in core)
+check("kernel: optional impact graph is available beside the change index",
+      "council impact" in core and "impact.tsv" in core)
+check("kernel: seat-specific context packs are available without replacing the brief",
+      "council context build" in core and "brief.md" in core and "contexts/" in core)
+check("kernel: context packs are opt-in via the config", "only if opted in" in core and "context packs: on" in core)
+check("kernel: evidence ledger is optional and does not replace synthesis", "council evidence build" in core and
+      "optional Python 3.8+" in core and "synthesis.md" in core)
+check("challenge: refreshed evidence links are checked", "council evidence build" in doctrine["08-challenge.md"] and
+      "council evidence check" in doctrine["08-challenge.md"])
+evidence_contract = read("references", "evidence-model.md")
+check("evidence: support states stay distinct from verifier verdicts",
+      all(state in evidence_contract for state in ("OBSERVED", "REPRODUCED", "INFERRED", "ASSUMED", "UNVERIFIED")) and
+      all(verdict in evidence_contract for verdict in ("CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED")) and
+      "separate" in evidence_contract)
+check("worker and verifier: declared support is blind to independent verification",
+      "Evidence state:" in worker and "which you do not receive" in verifier and "refute the claim" in verifier)
+check("modes: evidence states reach review, research, plan, build and post-game",
+      all("evidence-model.md" in skill[mode] for mode in MODES))
+repair_contract = read("references", "repair-loop.md")
+check("repair: build mode records bounded same-gate failures",
+      "council repair record" in skill["council-implement"] and "repair-loop.md" in skill["council-implement"] and
+      "same" in repair_contract and "Third" in repair_contract and "stop product-code mutation" in repair_contract.lower())
+check("repair: terminal gate stop cannot fall through to another fix or success commit",
+      "third failure stops the build" in repair_contract and
+      "do not attempt steps 6–7 as a fix path" in skill["council-implement"] and
+      "only if the task is not blocked" in skill["council-implement"] and
+      "commit only a task whose mandatory gates pass" in skill["council-implement"])
+check("repair: blocked work is excluded from the built count and helper cost is labelled",
+      "A task stopped" in skill["council-implement"] and
+      "is not counted as built" in skill["council-implement"] and
+      "helper-only usage" in skill["council-implement"])
+check("repair: helper and kernel expose inspectable repair trail",
+      "cmd_repair()" in cli and "council repair record" in cli and "council repair record" in core and
+      "repairs.jsonl" in core)
+check("memory: selected entries carry meaning and origin, failures stay observations",
+      "observed failure, not a rule" in cli and "origin:" in cli and
+      "Observed Failures" in read("references", "templates", "conventions.md") and
+      "keeping observed" in doctrine["04-brief.md"])
+check("memory: a failure is served only while its evidence supports it, and filed only on the user's words",
+      "failure_audit" in cli and "memory_replace" in cli and "--user-said" in cli and
+      os.path.isfile(os.path.join(ROOT, "scripts", "memory.py")) and
+      "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
+      "UNSUPPORTED" in doctrine["10-learn.md"])
+check("tune: one knob changed, only with the user's words; behaviour held until a benchmark shows it helps",
+      "cmd_tune" in cli and "configured_worker_estimate" in cli and
+      os.path.isfile(os.path.join(ROOT, "scripts", "tune.py")) and
+      "held" in read("scripts", "tune.py") and "council tune" in read("skills", "council-init", "SKILL.md"))
+check("history: a read-only report over run folders, with a stated bar for every rate",
+      "cmd_history" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "history.py")) and
+      "MIN_RUNS = 5" in read("scripts", "history.py"))
+check("tui: a read-only cockpit script, reached through the helper, never part of a stage",
+      "cmd_tui" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "cockpit.py")) and
+      "council tui" not in "".join(doctrine.values()))
+check("seat learning: roster advice weighs only judged runs, past a stated bar",
+      "cmd_ledger_advice" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
+      "council ledger advice" in doctrine["10-learn.md"] and
+      "council ledger advice 20" in read("skills/council-init/SKILL.md") and
+      "Below the bar" in read("skills/council-init/SKILL.md"))
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
@@ -111,7 +179,16 @@ for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
         check(f"{d}: hands off to {STAGES[i]}", f"council state phase={STAGES[i]}" in t)
     check(f"{d}: ≤ 6,000 chars", len(t) <= 6000, str(len(t)))
 check("01-convene: opens the run with the helper", "council run open" in doctrine["01-convene.md"])
+check("01-convene: weighs route advice before opening the run",
+      0 <= doctrine["01-convene.md"].find("council route recommend") < doctrine["01-convene.md"].find("**Open the run.**"))
+check("01-convene: a route needing rescope does not silently waive verification",
+      "needs-rescope" in doctrine["01-convene.md"] and "before opening or" in doctrine["01-convene.md"])
+check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
+check("02-prepare: distinguishes optional graph from the fallback index",
+      "impact.tsv" in doctrine["02-prepare.md"] and "fallback" in doctrine["02-prepare.md"])
+check("03-assign: impact hints need inspection before ownership",
+      "impact.tsv" in doctrine["03-assign.md"] and "before assigning" in doctrine["03-assign.md"])
 check("01-convene: checks the stack fingerprint", "council fingerprint check" in doctrine["01-convene.md"])
 check("01-convene: a config with no stack fingerprint is offered a refresh too", "no stack-fingerprint" in doctrine["01-convene.md"])
 check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
@@ -121,6 +198,8 @@ check("context-core: a Solo run selects the memory in scope too",
       "council memory select" in core.split("A **Solo** run", 1)[-1].split("\n\n", 1)[0])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
 check("03-assign: records every seat's state", "council seat" in doctrine["03-assign.md"])
+check("03-assign: validates the run plan before the Brief hand-off",
+      doctrine["03-assign.md"].find("council run plan check") < doctrine["03-assign.md"].find("council state phase=brief"))
 check("03-assign: files past the change index's cap still need an owner", "past the 80-file cap" in doctrine["03-assign.md"])
 check("04-brief: seat blocks carry ref / out / cap for collect", all(k in doctrine["04-brief.md"] for k in ["### <slug>", "- ref:", "- out:", "- cap:"]))
 check("05-work: records each worker with its agent id", "council seat <slug> running agent=" in doctrine["05-work.md"])
@@ -158,7 +237,7 @@ for label, t in texts.items():
         bad_flags += [f"{label}: council {c} {f}" for f in re.findall(r"--[a-z][a-z-]*", " ".join(own)) if f not in flags]
         if c not in known:
             bad.append(f"{label}: council {c}")
-        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume"}):
+        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume", "plan", "events"}):
             bad.append(f"{label}: council run {' '.join(rest[:1])}")
         elif c == "map" and (not rest or rest[0] != "status"):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")
@@ -281,6 +360,9 @@ check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_
 cfg, conv, mp = read("references", "templates", "council.config.md"), read("references", "templates", "conventions.md"), read("references", "templates", "map.md")
 check("template config: last-verified stamp", "last-verified:" in cfg)
 check("template config: run preferences", "## Run preferences" in cfg and "approve without asking: up to squad" in cfg and "agent cap: 10" in cfg)
+check("template config: context packs start off", "- context packs: off" in cfg)
+check("04-brief: packs are built only when opted in, brief-only is the normal path",
+      "Context packs are opt-in" in doctrine["04-brief.md"] and "context packs: on" in doctrine["04-brief.md"])
 check("template config: roster has slugs and surface markers", "| Seat | Slug | Lens | Surface | Reference | Recast note |" in cfg)
 check("template config: gates table", "| Gate | Command | Run at | Mandatory | Checked |" in cfg)
 check("template conventions: AP / EC / D / Proposed / Rejected", all(s in conv for s in ["## Accepted Patterns", "## Enforced Conventions", "## Decisions", "## Proposed", "## Rejected"]))
@@ -423,6 +505,20 @@ for c in cases:
         check(f"suite/{c}: asserts no council mode starts, in both arms", "max: 0" in body and "arm: both" in body)
         check(f"suite/{c}: also checks the ask was handled, so a run that never started can't pass",
               any("max: 0" not in g for g in graders.values()))
+bench_specs = json.loads(read("evals", "bench", "cases.json") or "{}").get("cases", {})
+bench_cases = [c for c in cases if c.startswith("bench-")]
+check("benchmark: every bench case has a scoring spec and an encoded hidden bundle, and every spec a case",
+      bool(bench_cases) and sorted(bench_cases) == sorted(bench_specs) and
+      all(os.path.isfile(os.path.join(ROOT, "evals", "bench", c + ".hidden")) for c in bench_cases),
+      ", ".join(sorted(set(bench_cases) ^ set(bench_specs))))
+check("benchmark: bench cases are tagged benchmark, and their in-run graders score both arms",
+      all("tags: [benchmark]" in read(suite_rel, c, "case.yaml") and
+          all("arm: both" in read(suite_rel, c, "graders", g)
+              for g in os.listdir(os.path.join(suite, c, "graders")) if g.endswith(".md"))
+          for c in bench_cases))
+check("benchmark: the same plain prompt for both arms — no council command in it",
+      all("/council" not in read(suite_rel, c, "prompt.md") and "Build the plan in" in read(suite_rel, c, "prompt.md")
+          for c in bench_cases))
 want_tags = {"triggering", "near-miss", "sizing", "dispatch", "fixture", "calibration", "resume", "adaptation",
              "postgame", "war-room"}
 check("suite: covers triggering, near-misses, sizing, an end-to-end dispatch, a seeded fixture, calibration, resume, "

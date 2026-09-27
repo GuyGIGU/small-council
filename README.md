@@ -31,9 +31,19 @@ skipped under load.
   - **`council-verifier`**: blind and adversarial — CONFIRMED / REFUTED / UNCERTAIN / MISCITED for
     claims, OK / INCOMPLETE / REGRESSION / SCOPE-CREEP for changes.
 - **The `council` helper** (bash + git, on PATH while the plugin is enabled). It does the
-  bookkeeping: opening and closing runs, the change index, gates judged by exit code, checking seat
-  files and citations, the memory entries in scope, earlier council work on the same files, each
-  seat's track record (the ledger), the stack fingerprint, and a drift doctor.
+  bookkeeping: opening and closing runs, validating the run plan before fan-out, the change index,
+  optional seat-specific context packs (`council context build <seat>`), gates judged by exit code, checking seat
+  files and citations, an optional evidence ledger (`council evidence build|check`) linking claims
+  to their sources and verifier rows, a bounded repair trail (`council repair record|show|check`) for
+  failed build gates, the memory entries in scope — an observed failure only while the evidence it
+  cites still shows it — and memory proposals drafted from a run's verified record, filed only with
+  the user's own words (`council memory propose|accept|reject`), earlier council work on the same
+  files, each seat's track record (the ledger) and how much it can support (`council ledger advice`:
+  advice only past a stated bar), history across runs (`council history`: a rate only once five
+  runs carry its data), conservative tuning (`council tune`: the estimate per worker from your own
+  runs, changed only on your words and undoable; behaviour held until a benchmark shows it helps),
+  the stack fingerprint, a drift doctor, and a read-only run cockpit
+  (`council tui --watch`) you can leave open in a terminal while a council works.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
   security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,
   accessibility, concurrency, untrusted input and operability — recast or dropped per project.
@@ -104,7 +114,7 @@ Works?: ran `npm start` and exported a 12-row file; the 3 new tests pass
 Checked by machine: gates: 3 ran — all pass (baseline: 1 FAIL)
 Shortcuts I took: the export limit is hardcoded at 5,000 rows (src/export.ts) — streaming needs a design call
 Not proved: nothing
-Cost: ~90k tokens across 3 agents · 2 of 2 fix(es) proved · 0 broken · 2 left a test behind · log: .council/logs/2026-09-16-csv.md
+Cost: helpers ~90k tokens across 3 agents; Chair usage unavailable · 2 of 2 fix(es) proved · 0 broken · 2 left a test behind · log: .council/logs/2026-09-16-csv.md
 ```
 
 "Shortcuts I took" and "Not proved" are never left out — `none` and `nothing` are answers, silence
@@ -136,7 +146,8 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
 2. **Prepare** — gather shared facts once: the map, memory in scope, the change index, earlier
    findings, grounding gates.
 3. **Assign** — match each seat's surface markers to the change; pair thin seats; set budgets.
-4. **Brief** — one set of orders on disk: the question at the top, the hard rules at the bottom.
+4. **Brief** — one set of orders on disk: the question at the top, the hard rules at the bottom;
+   if the project opts in, build a plan-sized evidence pack for each selected seat.
 5. **Work** — one isolated worker per seat, in parallel; each writes a file and returns one line.
 6. **Collect** — the helper checks every seat file and its proof of reading; stuck workers are resumed.
 7. **Judge** — a raw ledger of every finding before merging, a conflict pass, the cut — all written to
@@ -149,19 +160,47 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
 **Limits:** at most 10 agents per run, verifiers included; a war room adds tokens, not agents. Past runs averaged ~100k tokens per worker;
 estimates come from your own project's ledger once there is some.
 
+**Watching a run.** In a terminal of your own, in the project, run the helper's cockpit. Outside
+Claude Code the helper is not on your PATH, so give its full path: `bin/council` inside the plugin's
+folder. For the `~/.claude/skills/small-council/` install described under Install, that is:
+
+```bash
+bash ~/.claude/skills/small-council/bin/council tui --watch
+```
+
+For a marketplace install, use the folder Claude Code installed the plugin into instead.
+
+It redraws the plan, seats, gates, repairs, evidence and recent events every two seconds, and it
+stops when the run closes. It only reads: leaving it open changes nothing. It needs Python 3.8+. Add
+`--run <folder>` when more than one run is open. Set `COUNCIL_ASCII=1` if your console shows boxes
+as garbage.
+
+## Precision context (0.12)
+
+After writing `<run>/brief.md`, `council context build <seat>` uses that selected seat's validated
+`minimal`, `focused` or `full` run-plan level to build `<run>/contexts/<seat>.md`. The companion
+`<seat>.md.metrics.tsv` accounts for what was included and omitted; `council context show <seat>`
+prints both paths and the metrics. Repeated `--expand PATH` requests more evidence when inspection
+shows a gap. This is an inspectable, optional selection aid, not a new dispatcher or a substitute for
+the brief, reference docs, or project rules. Python 3.8+ is required only for building a pack; if it
+is unavailable, the existing complete brief is the fallback. Packs are **off by default** until
+their value is measured: set `- context packs: on` under `## Run preferences` in
+`.council/council.config.md`, or ask for them in a run. See
+[`references/precision-context.md`](references/precision-context.md) for the contract and limits.
+
 ## What it keeps in your repo
 
 ```
 .council/
 ├── council.config.md     roster (with surface markers), gates, hard rules, run preferences    tracked
 ├── conventions.md        memory: accepted patterns, conventions, your decisions,              tracked
-│                         proposals awaiting your yes/no, and rejected proposals
+│                         scoped observed failures, proposals and rejected proposals
 ├── map.md                where things live, hot spots, vocabulary                             tracked
 ├── cards/<slug>.md       each seat's doctrine translated to this project                      tracked
 ├── ledger.tsv            each seat's record: items raised, kept, refuted, tokens per run      tracked
 ├── plans/ reviews/ logs/ research/ postgames/ refs/   deliverables · project-local seat docs tracked
 ├── asks/                 your requests, word for word; every deliverable points at its own    local
-└── runs/<date-time>-<mode>/   state, brief, change index, seat files, synthesis, checks       ignored
+└── runs/<date-time>-<mode>/   state, run plan, events, brief, seat files, synthesis, checks     ignored
 ```
 
 Your requests are yours: `asks/` is gitignored, so nothing you typed is committed — write `!asks/` in
@@ -171,6 +210,22 @@ back when a run opens, so that a fresh council home can't file your words into g
 
 The council home is always the **main** checkout's `.council/`, even when you work in a git worktree.
 `council run status` shows open runs; `council doctor` finds anything that has drifted.
+New runs also keep a versioned `events.tsv` for CLI actions. `council run events show` displays its
+history and `council run events check` validates it; the [event contract](references/event-stream.md)
+defines the rows for tools that read the file directly.
+
+Before opening a run, `council route recommend --task "<work to do>"` gives an advisory council
+size, risk/complexity/uncertainty assessment, seat archetypes, verification level and estimated
+budget, with a reason for each choice. `--classic` shows the static baseline; explicit assessment,
+surface and cap flags let you test a different shape. The command only prints a proposal: the Chair
+maps archetypes to the project's real roster, makes any needed judgment calls, and records the final
+choice in the checked run plan. See the [adaptive routing contract](references/adaptive-routing.md).
+
+For a run with code changes, `council index` also builds `impact.tsv` when Python 3.8+ is available.
+It separates changed files from direct static importers and likely tests, with confidence and scan
+limits visible; `council impact` refreshes it after more edits. This is a scope aid, not proof of
+runtime coverage or an automatic routing decision. The Bash/Git index still works without Python.
+See the [impact graph contract](references/impact-graph.md).
 
 ## Repo layout
 
@@ -181,8 +236,8 @@ agents/                council-worker, council-verifier
 hooks/                 hooks.json · session-start.sh · seat-gate.sh
 bin/council            the helper
 references/            stage doctrine · seat docs · spec and test docs · roster catalog · templates
-evals/                 run_structural · run_cli · run_hook · run_phrases · behavioral-drills · fixtures
-scripts/               quick_validate.py
+evals/                 run_structural · run_cli · run_impact · run_hook · run_phrases · behavioral-drills · fixtures
+scripts/               quick_validate.py · optional impact.py provider
 docs/design/           the design behind the current doctrine
 examples/              an illustrative council-init output
 ```
@@ -193,11 +248,12 @@ examples/              an illustrative council-init output
 python scripts/quick_validate.py   # will it load? manifests, frontmatter, paths, scripts, doctrine
 python evals/run_structural.py     # is the design intact? laws, stages, commands, modes, budgets
 python evals/run_cli.py            # does the helper work? (needs bash + git)
+python evals/run_impact.py         # does the optional impact graph resolve direct relationships?
 python evals/run_hook.py           # do the hooks behave? (needs bash + git)
 python evals/run_phrases.py        # advisory: are the field-tested rules still worded in?
 ```
 
-CI runs all of them on Ubuntu and Windows. Before a release:
+CI runs all of them on Ubuntu, Windows and macOS. Before a release:
 - run the behavioral drills in [`evals/behavioral-drills.md`](evals/behavioral-drills.md);
 - if you have the CLI, run `claude plugin validate . --strict`.
 

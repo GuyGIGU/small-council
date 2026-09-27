@@ -4,6 +4,274 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Conservative self-tuning.** `council tune` proposes from the project's own record: the estimate
+  per worker that `council route recommend` budgets with (per agent), once five completed runs
+  measure it and it is off by more than a quarter; roster changes whose seat advice clears its bar (made only
+  through a council-init refresh); and nothing about behaviour — context packs, run size and
+  verification depth are held until a benchmark shows a change helps. `council tune apply budget
+  <value> --user-said "…"` writes the value the user was shown as one line under `## Run
+  preferences`, logging the evidence, the user's redacted words and the exact line it replaced in
+  `.council/tuning.md`; `council tune revert budget` puts those bytes back and refuses over a hand
+  edit. Only a ceiling the user gives can shrink a run. Without the line, the route is unchanged.
+  Optional Python 3.8+.
+
+- **History across runs, gated on enough data.** `council history [--json]` reads every run of the
+  council home and reports runs by status, mode and month, the project's gates (a build's
+  before/after proofs and gate probes counted apart), repair trails, claim verdicts, seat evidence
+  and missing data. A median, share or ratio — cost and agents per run, tokens per agent, actual
+  cost over the plan's estimate, repairs resolved, the verifier's catches — appears only once five
+  runs (not items) carry its data; below that it says "too few". Read-only; no database or
+  dashboard.
+
+- **A read-only run cockpit.** `council tui` draws one screen from the run's own files — the
+  plan's decisions and skipped seats with their reasons, seat states and tokens, agents against
+  the cap, gates, each repair task's next step, claim verdict counts, memory proposals waiting and
+  the last events. `--watch` redraws every two seconds and stops by itself when the run closes;
+  `--json` prints the same snapshot as data (`council.run-snapshot/1`). It never writes a file or
+  an event; strips control characters from every value it draws; draws legacy and malformed runs;
+  follows no link or junction; opens files on Windows so the helper can still replace them while it
+  reads; and prints plain ASCII with `COUNCIL_ASCII=1`. Optional Python 3.8+; no curses, no server.
+
+- **A baseline-versus-council benchmark harness.**
+  - **Cases.** Three build cases (`evals/suite/bench-*`, tag `benchmark`) run through
+    `claude plugin eval` with both arms: the same plain prompt, model, tools and project, with and
+    without the plugin.
+  - **`evals/bench.py score`** judges each kept run on hidden checks (encoded in
+    `evals/bench/*.hidden`), restored original tests, frozen and protected files, scope, removed
+    assertions, a required test and false completion claims.
+  - **`compare`** reports the arms side by side and calls nothing a result below ten pairs.
+  - **Tests the run cannot fake.** The scorer runs the hidden and original tests in an isolated
+    Python that imports the real `unittest` first, under random module names, with a nonce-tagged
+    result outside the project. A pass needs:
+    - the exact test count;
+    - no skips;
+    - a canary assertion that fails.
+
+    It also rules out six fakes, and reads final reports so that a product sentence ("cannot
+    delete") is not a disclosure while "not fixed yet" is.
+  - **`self-test`** (in CI, no model) proves each case is unsolved when untouched, solvable, and
+    scored as intended on every trap.
+  - **Budget.** A pilot is paid and awaits the owner's budget (see `evals/bench/README.md`).
+
+- **Seat learning, advisory only.** `council ledger advice [N] [--json]` says how much each seat's
+  record can support: runs that judged its items, useful items (kept and not refuted) with a 90%
+  plausible range that counts at most five items from any one run, refuted items among those
+  verified, and tokens per useful item. It advises (retain, lower priority, narrow, pair, drop?,
+  unclear) only past a stated bar of 3 judged runs and 15 items of evidence counted that way, and
+  "drop?" only after eight, as a question for the user. A council-init refresh proposes roster
+  changes only where the advice clears the bar. It never changes a roster, a route or a run.
+  Optional Python 3.8+. An independent review found that the first version capped evidence per run
+  only in total, so one big run could still count as three; that and seven smaller gaps are fixed.
+
+- **Phase 8 memory foundation.** Scoped selection includes a settled entry's meaning and origin
+  when recorded. User-confirmed observed failures have a separate F category with required scope,
+  origin, evidence and verdict; they are historical leads, never rules. Legacy AP/EC/D entries
+  remain readable. Focused local evals cover retrieval and incomplete-entry exclusion.
+
+- **Observed failures must be supported to be served.** An F entry reaches a brief only with a
+  verdict that establishes it (OBSERVED, REPRODUCED, or a verifier's CONFIRMED, REFUTED, MISCITED,
+  REGRESSION, INCOMPLETE, SCOPE-CREEP — never INFERRED, ASSUMED or UNCERTAIN), a scope narrower
+  than every run, and a Failure field; a Rule written into one is never shown as its meaning.
+  `council memory`, `select` and `check` open the files its Evidence names: an entry whose files are
+  gone, or whose cited lines no longer show a verifier's verdict, is left out with the reason, and
+  `memory check` (and `doctor`) report it. Memories without observed failures behave as before.
+  After an independent review, the audit also refuses an id two entries share, any spelling of an
+  every-run scope (read the way the scope matcher reads it), a verdict that is not the verifier's
+  own capitalised word on a cited line, the memory file cited as its own evidence, links that lead
+  outside the project and placeholder fields; and a cited line number too large to exist can no
+  longer make every memory command loop forever.
+
+- **Observed failures from a run's verified record, filed only with the user's words.** (Later: the
+  user's words are flattened to one line before redaction, so a secret split across lines is
+  still caught.)
+  `council memory propose claim <id>` drafts an F entry from a claim the blind verifier refuted or
+  miscited; `council memory propose repair <task> --scope <paths>` from a build task's recorded gate
+  failures. The helper fills the fields from `claims.jsonl` or `repairs.jsonl` — not from a summary —
+  redacts secret-looking text (a private key whole), keeps copied text from forming fields or
+  comments, scopes a claim only by cited files that exist, refuses duplicates and anything that could
+  not be served, and files the draft under `## Proposed` with an id no entry uses. `council memory accept|reject F-<n> --user-said "<their words>"`
+  applies the user's answer with the date and their words, and writes only when the result checks
+  out and nothing else in the memory changed. Optional Python 3.8+; the manual path remains.
+
+- **Phase 7 bounded repair trail.** `council repair record|show|check` snapshots each failed build
+  gate and its reruns, suggests an advisory failure category and expert lens, distinguishes a red
+  baseline, and stops after three failed executions of the same gate. The second failure recommends
+  independent read-only diagnosis; a nonempty pass closes the trail. It never runs a gate, dispatches
+  an agent, changes code or attributes a failure to the edit. Python 3.8+ is optional, with a manual
+  log fallback. Local fixture checks do not establish live model behavior.
+
+- **Phase 6 evidence ledger.** `council evidence build|show|check` projects synthesis claims,
+  evidence states, source-seat ids and blind-verifier rows into deterministic run-local
+  `claims.jsonl`. The existing Markdown remains authoritative. Checks flag absent or stale links,
+  missing reproduction artifacts and conflicting verifier rows; they do not establish claim truth.
+  Python 3.8+ is optional. Older runs remain readable without migration, though an evidence check
+  on one may flag missing new fields.
+
+### Changed
+
+- `council ledger` shows `-` rather than `0%` shipped for a seat that no run judged (a
+  council-init or build run credits no items), and points to `council ledger advice`.
+
+- A third failed build-gate execution now stops the build's product edits and cannot fall through to
+  a verifier fix or success commit. Blocked tasks do not count as built; helper-only token usage is
+  labelled as such on the receipt. No automatic rollback is performed.
+
+- **Context packs are opt-in.** The Chair builds seat context packs only when the project config
+  has `- context packs: on` under `## Run preferences`, or the user asks for them in a run. A
+  missing line means off; new configs start with `context packs: off`. Packs add material to every
+  worker and their effect on findings is unmeasured until the Phase 5.5 live paired run.
+  `council context build` and `show` are unchanged.
+
+### Fixed
+
+- **Context packs for a project reached through a link.** The pack builder resolved the code root
+  but checked the run, output and expansion paths as spelled, so under a link — macOS's `/var` is
+  one to `/private/var`, and a Windows temp folder can have an 8.3 name — it refused every pack as
+  outside the project. A path spelled through the root's own link is now read under the resolved
+  root; links below the root are still refused. Found by macOS CI, the first time it reached the
+  context evals.
+- **CI shows every failing suite.** Each check now runs even after an earlier one fails, so one run
+  reports them all, and the job still fails if any does. macOS had stopped at the first.
+- **macOS: a byte-order mark at the start of a state file is stripped again.** macOS's awk reads a
+  `/\357\273\277/` regex as three characters, so a session-state file starting with a mark kept it
+  there. A second run could then open on the same tree, and `council state` updated the wrong key.
+  The five strips now take the mark as a string from the environment.
+- **Windows CI.** The helper and hook evals resolve the runner's temp folder to its long name
+  (`RUNNER~1` → the real one), so two path checks no longer fail there only.
+
+The last two fixes were written on 2026-09-19 (`fix/0.7.1-ci`) but never merged, which is why `main`'s
+own CI has failed these four checks since then.
+
+## [0.12.0] — 2026-09-24
+
+The fifth evolution milestone makes a seat's assigned context level actionable without replacing
+the Chair's brief or the worker's reference docs.
+
+**Upgrading:** no migration or new mandatory dependency. New packs are generated only on request,
+after `brief.md` and a valid run plan exist. Older runs and brief-only dispatch still work.
+
+### Added
+
+- **`council context build <seat>` and `show`.** A selected seat receives a run-local Markdown pack
+  at its validated `minimal`, `focused` or `full` level. `--expand PATH` can be repeated to request
+  omitted evidence explicitly. The generated metrics sidecar makes the selection inspectable, and
+  successful builds are recorded in the run event stream when one exists.
+- **Precision-context contract and evals.** The provider is optional Python 3.8+; the contract
+  documents relevance signals, selection boundaries, explicit expansion and fallback behavior.
+
+### Known limits
+
+- Selection is a bounded heuristic, not proof that omitted files are irrelevant. It cannot override
+  the brief's hard constraints, infer runtime behavior, or modify a project's `CLAUDE.md`.
+- If Python is unavailable or generation fails, the complete brief and reference docs remain the
+  dispatch path; a missing pack must not be presented as built.
+
+## [0.11.0] — 2026-09-23
+
+The fourth evolution milestone adds a bounded, inspectable impact graph alongside the existing
+change index. It distinguishes what changed from direct static importers and likely tests without
+claiming complete runtime coverage.
+
+**Upgrading:** `council index` still works with Bash and Git alone. With optional Python 3.8+, it
+also writes `<run>/impact.tsv`; `council impact` refreshes that graph from the saved baseline.
+Older runs and the manual routing workflow need no migration.
+
+### Added
+
+- **Impact graph v1.** Versioned TSV rows record Git change provenance, touched definitions,
+  direct import/dependent links, likely tests, path-based surfaces and explicit provider limits.
+  The Git delta includes committed, staged, unstaged, untracked, renamed and deleted paths.
+- **Incremental language providers.** Python AST handles static imports and definitions, including
+  common `src/` layouts; JS/TS resolves literal relative imports and nearby declarations. Both
+  are bounded and evidence-labelled. No project code, compiler or external service is run.
+- **Focused impact evals and ADR.** Temporary-repository tests cover the graph contract, rename
+  and deletion consumers, deterministic output and the CLI integration on all CI platforms.
+
+### Fixed since 0.10.0
+
+- Run plans now reject a missing Chair, incompatible Solo/Full team sizes, or independent and
+  adversarial verification without a selected verifier.
+- Seat events preserve concurrent update order; abandoned event locks can be recovered.
+
+### Known limits
+
+- Relationships are direct and static. Dynamic imports, aliases, transitive dependencies and
+  actual test coverage require further evidence; a missing edge is not a clean bill of health.
+- Python is optional. If unavailable or the provider fails, the existing `index.md` remains the
+  fallback and the helper reports that the graph was not refreshed.
+
+## [0.10.0] — 2026-09-23
+
+The third evolution milestone adds an explainable, optional routing recommendation before a run.
+It is a deterministic heuristic, not a new dispatcher or a claim of measured cost savings.
+
+**Upgrading:** existing manual sizing and run plans still work. The routing command is read-only;
+it does not change past or current runs, select a model, or launch agents.
+
+### Added
+
+- **`council route recommend`.** Proposes task risk, complexity, uncertainty, council size,
+  generic seat archetypes, verification and an estimated token budget. Each choice carries a reason.
+  Explicit inputs can override the initial assessment; an agent cap and optional budget ceiling
+  constrain the proposal. Unaffordable or unverifiable recommendations say `needs-rescope` instead
+  of lowering required verification or disguising the estimate. `--classic` exposes a static
+  comparison policy.
+- **Adaptive routing contract.** `references/adaptive-routing.md` defines the advisory boundary,
+  manual roster mapping, plan validation and limits of the heuristic.
+
+### Known limits
+
+- The earlier no-history estimate was roughly 60–100k tokens per worker, and the existing docs
+  describe past runs as averaging around 100k. These are planning baselines, not proof that routing
+  improves outcomes or cost. Reliable per-task effectiveness data, impact analysis and learned
+  policy tuning are deferred.
+
+## [0.9.0] — 2026-09-23
+
+The second evolution milestone adds a run-local event stream for CLI-observable lifecycle actions.
+It is a small, versioned TSV contract for later inspection and analytics, without adding a server or UI.
+
+**Upgrading:** new runs get `events.tsv` automatically. Older runs continue without an event file;
+the helper does not invent history for them.
+
+### Added
+
+- **Append-only run events.** Run, phase, status, seat and gate actions add sequenced UTC rows under
+  a per-run lock. The schema and event meanings are documented in `references/event-stream.md`.
+- **`council run events show` and `check`.** Show gives a short chronological view; check validates
+  the schema and continuous sequence. `council doctor` also flags a missing or damaged event stream.
+
+## [0.8.0] — 2026-09-22
+
+The first evolution milestone makes the Council's routing decisions inspectable and enforceable
+without replacing its execution model. New runs now carry a small versioned plan before any context
+or worker is dispatched.
+
+**Upgrading:** nothing to migrate. Runs opened by an older version have no plan stamp and continue
+to work as legacy runs. Every new run gets `run-plan.tsv` automatically.
+
+### Added
+
+- **A versioned run-plan contract.** `run-plan.tsv` records size, risk, complexity, uncertainty,
+  selected and skipped seats with reasons, context allocation, agent and token budgets, and required
+  verification in five plain TSV columns.
+- **`council run plan check` and `show`.** The checker rejects placeholders, unknown or duplicate
+  fields, invalid vocabularies, mismatched run identity and mode, missing seat context or budget,
+  and a selected roster over either the plan or project cap. `show` renders a valid plan plainly.
+- **Pre-dispatch enforcement.** The helper refuses to enter Brief, Build or a later standard stage with an
+  invalid plan, and refuses to queue or start an identity the plan did not select. `council doctor`
+  reports incomplete early plans as warnings and invalid later plans as errors.
+
+### Changed
+
+- Convene now records run-level judgments in the starter plan; Assign completes and validates its
+  seat rows before it records workers. Brief starts from the checked plan, so its context and budgets
+  cannot silently drift from the routing decision.
+
 ## [0.7.1] — 2026-09-18
 
 A repair release. A deep review of 0.7.0 found its checks passing in places where they had not

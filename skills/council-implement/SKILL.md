@@ -11,7 +11,8 @@ One builder, one task at a time, in this window. Parallel agents read; one hand 
 2. **the build loop below**, in place of stages 3–7;
 3. then stages 8–10.
 
-The only agents you dispatch are verifiers, plus at most one diagnosis worker per stuck task.
+The only agents you dispatch are verifiers, plus at most one diagnosis worker per stuck task across
+gate and verifier failures.
 
 **Voice of the build:** Carmack. Make the smallest change that satisfies the task; write code that
 looks like the same team wrote it; no speculative generality; verify by machine, not by feel.
@@ -89,7 +90,9 @@ receipt's `Checked by machine:` line ends with **exactly one clause** about it �
 *"… · the test suite has been red since 4 August, so nothing here was verified by it"*. It disappears
 the moment it passes.
 
-Then `council state phase=build`, not `assign`: the build loop replaces the stages in between. When
+Before changing code, make sure the run plan names the inline Chair and expected verifiers with
+their context and tool budgets; `council run plan check` must pass. Then `council state phase=build`,
+not `assign`: the build loop replaces the stages in between. When
 the converge pass starts, `council state phase=challenge`.
 
 ## The build loop — for each task
@@ -112,6 +115,9 @@ the converge pass starts, `council state phase=challenge`.
      is reported as DIFFERENT-COMMAND, which is broken proof.
    - A genuinely untestable path (a race, a rendering bug, a hardware route) records
      `no permanent test possible — <why>` in the log, and that reason is reported, never swallowed.
+   - Label the task's support in the log with the evidence vocabulary from
+     `references/evidence-model.md`. `REPRODUCED` requires the saved before/after gate paths;
+     a passing command alone does not prove the changed path works.
 3. **Plan the change:**
    - which files;
    - the minimal diff;
@@ -134,9 +140,19 @@ the converge pass starts, `council state phase=challenge`.
      outputs side by side yourself before calling it unchanged. Keep the standing clause on the
      receipt.
    - **It can't run** → that's config drift: log it and tell the user.
-6. **After-evidence.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
+   - **It fails during this task** → use the bounded loop in `references/repair-loop.md`:
+     `council repair record T<n> <gate>`, inspect its advisory category, saved output and baseline,
+     then repair and rerun the **same** gate. The first failure stays with the builder; the second
+     calls for one independent read-only diagnosis if this task has not used that worker already;
+     otherwise stop and report. The third failed execution stops product-code mutation for this
+     task. Jump to blocked-task logging and the receipt; do not attempt steps 6–7 as a fix path,
+     start another gate trail, or commit it as complete. Preserve the diff and gate output; never
+     silently revert unrelated work. Read-only review cannot reopen repair.
+     Python 3.8+ is optional: if absent, record the same attempts and limit in the log. Never count
+     the intentionally failing `before-<n>` check as a repair attempt.
+6. **After-evidence — only if the task is not blocked.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
    must now pass.
-7. **Adversarial check.** Dispatch `small-council:council-verifier` with:
+7. **Adversarial check — only if the task is not blocked.** Dispatch `small-council:council-verifier` with:
    - the task and its Done-when;
    - the governing principle's own text, quoted from the reference doc — so the principle is checked,
      not merely cited;
@@ -148,7 +164,8 @@ the converge pass starts, `council state phase=challenge`.
    the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
      `c`), so the first verdict stays on disk.
-   - **A second failed verification** → a **clean-context diagnosis**: one council-worker, read-only.
+   - **A second failed verification** → a **clean-context diagnosis** if this task has not already
+     used its one diagnosis worker for a gate failure; otherwise stop and report. The worker is read-only.
      Its dispatch message is its whole brief — the task and its Done-when, both verdict files, the
      diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
      candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Track it with
@@ -159,9 +176,13 @@ the converge pass starts, `council state phase=challenge`.
      a memory candidate.
 8. **Log and state — now, not at the end.**
    - Append the task's entry to the log.
+   - Include each failed gate attempt's category, suggested lens, actual cause (or uncertainty),
+     snapshot paths and next action. `council repair check T<n>` checks saved snapshots when used.
    - Update the state: `council state next="task <n+1>: <title>" attempts="T<n> 1/3"`. Keep a short
      "tried and failed" list there too.
-   - If commits are on, commit the task.
+   - If commits are on, commit only a task whose mandatory gates pass and whose verifier has no
+     unresolved regression. Leave blocked work uncommitted; log its diff and state. Rollback needs
+     the user's decision.
 
 ## The log — `<home>/logs/<YYYY-MM-DD>-<slug>.md`, appended after every task
 
@@ -209,6 +230,9 @@ met, with evidence — written into the log's `## Converge` table.
 - Anything not met → one more task, or a logged follow-up.
 - Then run the final gates: `council gate --all --at verify`. Exit 4 means nothing was checked — say
   so; never report it as a pass.
+- If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
+  reported, never folded into a green receipt. Without optional Python, audit the log's attempt
+  list and saved gate outputs by hand.
 - Then `council check`. It reads every `before-<n>` / `after-<n>` verdict on disk and says, per task,
   whether the before-check really failed, whether the after-check really passed, and whether the
   command names a test the project now tracks. Its verdicts fill the `## Converge` table's **Proof**
@@ -223,17 +247,21 @@ The same six lines after every build, in this order, whatever happened. The shap
 after three builds the user reads it at a glance and notices the moment a line does:
 
 ```
-Built: <n> of <n> tasks — <what you can do now that you couldn't before> [· <n> partly met or blocked: <one clause each>]
+Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>]
 Works?: <what proved it — "ran <command> and <what happened>", or honestly "nobody ran it; proved by the tests and by reading the code">
 Checked by machine: <the gates' verdict line, baseline → now> | <the helper's own NOTHING WAS CHECKED line, quoted> [· <the standing red-baseline clause>]
 Shortcuts I took: <one line each> | none
 Not proved: <what nobody actually checked> | nothing
-Cost: ~<k>k tokens across <n> agents · <the proof line from council check> · log: <path>
+Cost: helpers ~<k>k tokens across <n> agents; Chair usage <actual total or "unavailable"> · <the proof line from council check> · log: <path>
 ```
 
-The `Built:` line is the one that carries a partly-met Done-when or a task blocked on something
-outside the build — "6 of 6 tasks · 1 partly met: exports stop at 5,000 rows" — so neither can hide
-behind a clean count. **Never omit the last three.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
+The first `Built:` number counts only fully met tasks with required proof, passing mandatory gates,
+and no unresolved verifier regression. A partly met or blocked task is named after the count but
+is not counted as built: "5 of 6 tasks · 1 partly met: exports stop at 5,000 rows". A task stopped
+by the repair limit is **blocked**, not merely partly met, even if some code works. A red mandatory
+gate or known regression cannot be hidden behind a clean count. `Cost:` labels helper-only usage
+as such; never imply that it includes the Chair or the whole session when those figures are not
+available. **Never omit the last three.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
 these — not a vibe: a hardcoded value, a skipped case, a swallowed error, a loosened or disabled
 check, a test that asserts less than the behaviour, a TODO left behind, or a fix whose only proof was
 a throwaway command. Every one also goes in the log's `## Shortcuts and concessions`.

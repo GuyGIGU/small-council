@@ -16,10 +16,11 @@
 
 set -u
 
-COUNCIL_VERSION="0.7.1"
+COUNCIL_VERSION="0.12.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
+export COUNCIL_BOM="$BOM"    # for awk as ENVIRON["COUNCIL_BOM"]: macOS's awk reads a /\357…/ regex as three characters
 NL='
 '
 CITE_AREA=0; CITE_NEEDS_PLACE=0; CITE_ROWS=""
@@ -28,6 +29,7 @@ die()     { printf 'council: %s\n' "$*" >&2; exit 2; }
 say()     { printf '%s\n' "$*"; }
 now_min() { date '+%Y-%m-%d %H:%M'; }
 now_sec() { date '+%Y-%m-%d %H:%M:%S'; }
+now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 here()    { pwd -W 2>/dev/null || pwd; }
 dash()    { if [ -n "$1" ]; then printf '%s' "$1"; else printf '%s' '-'; fi; }
 undash()  { if [ "$1" = "-" ]; then printf ''; else printf '%s' "$1"; fi; }
@@ -108,6 +110,28 @@ mode_skill() {
   esac
 }
 
+# The configured run-wide agent ceiling. Older configs and unreadable values keep the documented
+# default. A run plan may choose a lower ceiling, but never a higher one.
+configured_agent_cap() {
+  local cfg="$(council_home)/council.config.md" cap
+  cap="$(sed -n 's/^[[:space:]]*-[[:space:]]*agent cap:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$cfg" 2>/dev/null | head -n 1)"
+  case "$cap" in ''|*[!0-9]*) cap=10 ;; esac
+  [ "$cap" -gt 0 ] 2>/dev/null || cap=10
+  printf '%s' "$cap"
+}
+
+# The project's measured estimate of tokens per worker — `- estimate per worker: 150k` under Run
+# preferences, set by `council tune apply budget` on the user's words. Empty when unset or implausible,
+# so the route keeps its no-history default.
+configured_worker_estimate() {
+  local cfg="$(council_home)/council.config.md" v
+  v="$(sed -n 's/^[[:space:]]*-[[:space:]]*estimate per worker:[[:space:]]*\([0-9][0-9.,]*[[:space:]]*[kKmM]\{0,1\}\).*/\1/p' "$cfg" 2>/dev/null | head -n 1)"
+  [ -n "$v" ] || return 0
+  v="$(seat_tokens "$v")" || return 0
+  [ "${v:-0}" -ge 1000 ] 2>/dev/null && [ "$v" -le 1000000 ] 2>/dev/null && printf '%s' "$v"
+  return 0
+}
+
 # Runs, newest first, tab-separated, "-" for an empty value:
 #   dir mode phase code-root updated status actual session
 # $2 caps how many are listed; $3 = open (in-progress or paused, however old) | all (the newest).
@@ -127,7 +151,7 @@ list_runs() {
     $0 != "" {
       st = $0; split("", v); n = 0
       while ((getline line < st) > 0) {
-        if (++n == 1) sub(/^\357\273\277/, "", line)
+        if (++n == 1) sub("^" ENVIRON["COUNCIL_BOM"], "", line)
         gsub(/\r/, "", line)
         if (!match(line, /^[a-z][a-z0-9-]*:/)) continue
         k = substr(line, 1, RLENGTH - 1)
@@ -242,8 +266,156 @@ ensure_ignored() {
   return 0
 }
 
+# A run-local, append-only event stream. The header and every row have seven TSV cells; sequence is
+# allocated while holding a directory lock. Only CLI mechanics write events. Older runs have no
+# events-schema stamp and continue without a stream.
+event_cell() { printf '%s' "$1" | tr '\t\r\n' '   ' | LC_ALL=C tr -cd '\40-\176\200-\377'; }
+
+event_lock_stale() {
+  local lock="$1" owner modified now
+  [ -d "$lock" ] || return 1
+  if [ -f "$lock/owner" ]; then
+    IFS= read -r owner < "$lock/owner" || :
+    case "$owner" in
+      ''|*[!0-9]*) ;;
+      *) kill -0 "$owner" 2>/dev/null && return 1; return 0 ;;
+    esac
+  fi
+  # A writer can be killed between mkdir and writing owner. Do not mistake that short window
+  # for a stale lock; BSD stat is for macOS, GNU stat for Git Bash/Linux.
+  modified="$(stat -c %Y "$lock" 2>/dev/null || stat -f %m "$lock" 2>/dev/null)"
+  case "$modified" in ''|*[!0-9]*) return 1 ;; esac
+  now="$(date +%s)"
+  [ $((now - modified)) -ge 10 ]
+}
+
+event_unlock() {
+  rm -f "$1/owner" && rmdir "$1" 2>/dev/null
+}
+
+event_lock() {
+  local lock="$1" recovery="$1.recover" tries=0 owner="${BASHPID:-$$}"
+  while :; do
+    if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
+      # A reclaimer may have started just before mkdir succeeded. Yield this new lock to it.
+      if [ -d "$recovery" ]; then rmdir "$lock" 2>/dev/null; continue; fi
+      printf '%s\n' "$owner" > "$lock/owner" \
+        || { rm -f "$lock/owner"; rmdir "$lock" 2>/dev/null; return 1; }
+      return 0
+    fi
+    if event_lock_stale "$recovery"; then
+      rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
+    fi
+    if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
+      if printf '%s\n' "$owner" > "$recovery/owner"; then
+        if event_lock_stale "$lock"; then
+          rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null || :
+        fi
+      fi
+      event_unlock "$recovery" || :
+    fi
+    tries=$((tries + 1))
+    [ "$tries" -lt 200 ] || { printf 'council: event lock unavailable: %s\n' "$lock" >&2; return 1; }
+    sleep 0.1
+  done
+}
+
+event_append() {
+  local run="$1" type="$2" subject="$3" value="$4" detail="$5" file lock last seq rc=0 schema
+  schema="$(field events-schema "$run/session-state.md")"
+  case "$schema" in
+    '')
+      [ ! -f "$run/events.tsv" ] || { printf 'council: event file exists without an events-schema stamp: %s\n' "$run/events.tsv" >&2; return 1; }
+      return 0 ;;
+    1) ;;
+    *) printf 'council: unsupported events schema: %s\n' "$schema" >&2; return 1 ;;
+  esac
+  file="$run/events.tsv"; lock="$file.lock"
+  event_lock "$lock" || return 1
+  if [ ! -f "$file" ]; then
+    if [ "$type" = run.opened ]; then
+      printf 'schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n' > "$file" || rc=1
+    else
+      rc=1
+    fi
+  fi
+  if [ "$rc" -eq 0 ]; then
+    [ -z "$(tail -c 1 "$file")" ] || rc=1  # a torn final line must not be joined to the next event
+  fi
+  if [ "$rc" -eq 0 ]; then
+    last="$(tail -n 1 "$file" | tr -d '\r')"
+    if [ "$last" = "$(printf 'schema\tseq\tat\ttype\tsubject\tvalue\tdetail')" ]; then
+      seq=1
+    else
+      seq="$(printf '%s\n' "$last" | awk -F'\t' 'NF == 7 && $1 == "1" && $2 ~ /^[0-9]+$/ { print $2 + 1 }')"
+      [ -n "$seq" ] || rc=1
+    fi
+  fi
+  if [ "$rc" -eq 0 ]; then
+    printf '1\t%s\t%s\t%s\t%s\t%s\t%s\n' "$seq" "$(now_utc)" \
+      "$(event_cell "$type")" "$(event_cell "$subject")" "$(event_cell "$value")" "$(event_cell "$detail")" \
+      >> "$file" || rc=1
+  fi
+  event_unlock "$lock" || rc=1
+  [ "$rc" -eq 0 ] || printf 'council: could not append a valid event to %s\n' "$file" >&2
+  return "$rc"
+}
+
+event_check() {
+  local run="$1" file="$1/events.tsv" schema lock rc
+  schema="$(field events-schema "$run/session-state.md")"
+  case "$schema" in ''|1) ;; *) printf 'council: unsupported events schema: %s\n' "$schema" >&2; return 1 ;; esac
+  if [ -z "$schema" ] && [ ! -f "$file" ]; then
+    say "events: legacy run · no event stream · ${run##*/}"; return 0
+  fi
+  if [ -z "$schema" ]; then
+    printf 'council: event file exists without an events-schema stamp: %s\n' "$file" >&2; return 1
+  fi
+  lock="$file.lock"; event_lock "$lock" || return 1
+  if [ ! -f "$file" ]; then
+    event_unlock "$lock"
+    printf 'council: events.tsv is missing from %s\n' "${run##*/}" >&2; return 1
+  fi
+  if [ -n "$(tail -c 1 "$file")" ]; then
+    event_unlock "$lock"
+    say "events: final line is incomplete"; return 1
+  fi
+  awk -F'\t' '
+    NR == 1 { sub(/\r$/, ""); if ($0 != "schema\tseq\tat\ttype\tsubject\tvalue\tdetail") { print "events: bad header"; bad = 1 }; next }
+    {
+      sub(/\r$/, "")
+      if (NF != 7 || $1 != "1" || $2 !~ /^[0-9]+$/ || $2 != NR - 1 ||
+          $3 !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/ ||
+          $4 == "" || $5 == "" || $6 == "" || $7 == "" || (NR == 2 && $4 != "run.opened")) {
+        printf "events: invalid row %d\n", NR; bad = 1
+      }
+    }
+    END { if (NR < 2) { print "events: no events"; bad = 1 }
+          if (!bad) printf "events: valid · %d event(s)\n", NR - 1
+          exit bad ? 1 : 0 }
+  ' "$file"
+  rc=$?
+  event_unlock "$lock" || rc=1
+  return "$rc"
+}
+
+cmd_run_events() {
+  local run sub="${1:-show}" lock rc
+  run="$(resolve_run)" || exit 2
+  case "$sub" in
+    check) event_check "$run" ;;
+    show)
+      event_check "$run" || return 1
+      [ -f "$run/events.tsv" ] || return 0
+      lock="$run/events.tsv.lock"; event_lock "$lock" || return 1
+      awk -F'\t' 'NR > 1 { printf "%s  %s  %s  %s → %s  (%s)\n", $2, $3, $4, $5, $6, $7 }' "$run/events.tsv"
+      rc=$?; event_unlock "$lock" || rc=1; return "$rc" ;;
+    *) die "usage: council run events [show|check]" ;;
+  esac
+}
+
 cmd_run_open() {
-  local mode="${1:-}" short home top ts dir n existing paused session
+  local mode="${1:-}" short home top ts dir n existing paused session template cap
   case "$mode" in
     council-review|council-plan|council-implement|council-research|council-postgame|council-init|test-architect|context-core) ;;
     '') die "usage: council run open <mode> [--alongside] [--session=ID]   (the skill name, e.g. council-review)" ;;
@@ -279,14 +451,23 @@ updated: $(now_min)
 opened: $(now_sec)
 code-root: $top
 session: $session
+plan-schema: 1
+events-schema: 1
 size:
 base:
 deliverable:
 next: size the run and ask for the go-ahead
 ## Decisions so far
 EOF
+  template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan.tsv"
+  [ -f "$template" ] || die "run plan template is missing: $template"
+  cap="$(configured_agent_cap)"
+  RUN_NAME="${dir##*/}" RUN_MODE="$mode" AGENT_CAP="$cap" awk '
+    { gsub(/\{\{RUN\}\}/, ENVIRON["RUN_NAME"]); gsub(/\{\{MODE\}\}/, ENVIRON["RUN_MODE"]); gsub(/\{\{AGENT_CAP\}\}/, ENVIRON["AGENT_CAP"]); print }
+  ' "$template" > "$dir/run-plan.tsv" || die "cannot write $dir/run-plan.tsv"
   printf '# Run log — %s · opened %s\n' "$mode" "$(now_sec)" > "$dir/log.md"
   printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$dir/seats.tsv"
+  event_append "$dir" run.opened run "$mode" "phase=convene" || die "run opened, but its first event could not be recorded: $dir/events.tsv"
   [ -z "$existing" ] || printf 'council: another run is in progress on this working tree — pass --run %s to every command for this one\n' "${dir##*/}" >&2
   [ -z "$paused" ] || printf 'council: a paused run is also open here (%s) — it stays paused\n' "$paused" >&2
   case "$mode" in
@@ -297,12 +478,19 @@ EOF
 }
 
 cmd_state() {
-  local run st kv key tmp
+  local run st kv key tmp old_phase old_status new_phase new_status
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
+  old_phase="$(field phase "$st")"; old_status="$(field status "$st")"
+  for kv in ${1+"$@"}; do
+    case "$kv" in
+      phase=brief|phase=build|phase=work|phase=collect|phase=judge|phase=challenge|phase=deliver|phase=learn)
+        require_run_plan "$run" "advance to ${kv#phase=}" ;;
+    esac
+  done
   tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
-  awk 'NR == 1 { sub(/^\357\273\277/, "") } { print }' "$st" > "$tmp" || { rm -f "$tmp"; die "cannot update $st"; }
+  awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { print }' "$st" > "$tmp" || { rm -f "$tmp"; die "cannot update $st"; }
   for kv in ${1+"$@"}; do
     key="${kv%%=*}"
     if [ "$key" = "$kv" ]; then rm -f "$tmp"; die "expected key=value, got: $kv"; fi
@@ -321,7 +509,14 @@ cmd_state() {
     BEGIN { l = "updated: " ENVIRON["NOW"] }
     !d && index($0, "updated:") == 1 { print l; d = 1; next }
     { print }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
-  mv "$tmp" "$st"
+  mv "$tmp" "$st" || die "cannot update $st"
+  new_phase="$(field phase "$st")"; new_status="$(field status "$st")"
+  if [ "$old_phase" != "$new_phase" ]; then
+    event_append "$run" run.phase_changed run "$new_phase" "from=$old_phase" || die "state changed, but the phase event could not be recorded"
+  fi
+  if [ "$old_status" != "$new_status" ]; then
+    event_append "$run" run.status_changed run "$new_status" "from=$old_status" || die "state changed, but the status event could not be recorded"
+  fi
   say "state: phase $(field phase "$st") · $(field status "$st") · ${run##*/}"
 }
 
@@ -349,6 +544,7 @@ cmd_run_resume() {
   RUN_ARG="$run" cmd_state status=in-progress session="$session" >/dev/null || exit 2
   awk '/^## / { body = 1 } !body && index($0, "closed:") == 1 { next } { print }' "$st" > "$st.tmp$$" \
     && mv "$st.tmp$$" "$st" || { rm -f "$st.tmp$$"; die "cannot update $st"; }
+  event_append "$run" run.resumed run in-progress "from=$status" || die "run resumed, but its event could not be recorded"
   if [ -n "$session" ]; then drv="driven by this session"; else drv="no session id to record"; fi
   say "resumed $name — in progress · phase $(field phase "$st") · $drv"
   if [ -n "$old" ] && [ "$old" != "$session" ]; then
@@ -408,8 +604,16 @@ cmd_seat() {
     esac
   done
   run="$(resolve_run)" || exit 2
+  case "$state" in
+    queued|running)
+      require_run_plan "$run" "start seat $slug"
+      if [ -f "$run/run-plan.tsv" ]; then
+        run_plan_has_selected "$run/run-plan.tsv" "$slug" \
+          || die "cannot start seat $slug — run-plan.tsv does not mark it selected; update the plan and run: council run plan check --run ${run##*/}"
+      fi ;;
+  esac
   f="$run/seats.tsv"
-  lock_file "$f"                                     # calls made at the same moment take turns
+  event_lock "$f.lock" || die "seat lock unavailable: $f.lock"  # state and event keep the same order
   [ -s "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$f"
   SLUG="$slug" STATE="$state" AGENT="$agent" TOKENS="$tokens" NOTE="$note" NOW="$(now_min)" awk -F'\t' -v OFS='\t' '
     NR == 1 && $1 == "slug" { if (NF < 7) $0 = $0 "\tagents"; print; next }
@@ -426,8 +630,13 @@ cmd_seat() {
     }
     { print }
     END { if (!found) print ENVIRON["SLUG"], ENVIRON["STATE"], ENVIRON["AGENT"], ENVIRON["TOKENS"], ENVIRON["NOW"], ENVIRON["NOTE"], 1 }' \
-    "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
-  rm -f "$f.tmp$$"; rmdir "$f.lock" 2>/dev/null
+    "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; event_unlock "$f.lock"; die "cannot update $f"; }
+  rm -f "$f.tmp$$"
+  if ! event_append "$run" seat.updated "$slug" "$state" "tokens=$(seat_field "$run" "$slug" 4)"; then
+    event_unlock "$f.lock"
+    die "seat changed, but its event could not be recorded"
+  fi
+  event_unlock "$f.lock" || die "seat changed, but its lock could not be released: $f.lock"
   progress_line "$run"
 }
 
@@ -447,28 +656,12 @@ seat_tokens() {
   }'
 }
 
-# Take a lock folder next to a file; a lock left by a killed call is broken after ~10 s. The wait is
-# measured on the clock, not in loops: a fork costs far more on Git Bash than the sleep it runs.
-lock_file() {
-  local start tries=0
-  start="$(date +%s)"
-  while ! mkdir "$1.lock" 2>/dev/null; do
-    if [ $(( $(date +%s) - start )) -ge 10 ]; then
-      tries=$((tries + 1))
-      [ "$tries" -le 2 ] || return 0            # twice broken by someone else: carry on rather than hang
-      rm -rf "$1.lock"                          # what a killed call left behind
-      mkdir "$1.lock" 2>/dev/null && return 0   # lost the race: the other caller holds it, so wait again
-      start="$(date +%s)"
-    fi
-    sleep 0.1 2>/dev/null || sleep 1
-  done
-}
-
 cmd_run_close() {
-  local run status home ptr p tok=0 agents=0 line n lg busy=""
+  local run status home ptr p tok=0 agents=0 line n lg busy="" old_status event_type
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
+  old_status="$(field status "$run/session-state.md")"
   if [ -f "$run/seats.tsv" ]; then
     line="$(awk -F'\t' 'NR > 1 && $2 != "skipped" && $2 != "queued" { a += ($7 == "" ? 1 : $7); t += $4 } END { printf "%d %d", a, t }' "$run/seats.tsv")"
     agents="${line%% *}"; tok="${line#* }"
@@ -513,6 +706,10 @@ cmd_run_close() {
       fi
     fi
   fi
+  if [ "$old_status" != "$status" ]; then
+    event_type=run.closed; [ "$status" != paused ] || event_type=run.paused
+    event_append "$run" "$event_type" run "$status" "agents=$agents;tokens=$tok" || die "run closed, but its event could not be recorded"
+  fi
 }
 
 cmd_run_status() {
@@ -538,6 +735,201 @@ cmd_run_status() {
       for (i = 1; i <= no && i <= room; i++) print other[i]
       if (no > room) printf "… and %d more open in other working trees\n", no - room
     }'
+}
+
+# ------------------------------------------------------------------------------------------------
+# Run plan contract
+# ------------------------------------------------------------------------------------------------
+
+# Validate the versioned five-column plan. The file is deliberately plain TSV so a Chair can write
+# it directly and old shells can check it without jq or another runtime. QUIET=1 suppresses only the
+# success line; errors always remain visible.
+run_plan_validate() {
+  local run="$1" plan="$2" expected_mode max_cap
+  expected_mode="$(field mode "$run/session-state.md")"
+  max_cap="$(configured_agent_cap)"
+  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" QUIET="${QUIET:-0}" awk -F'\t' '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    function problem(line, msg) {
+      errors++
+      if (line > 0) printf "ERROR line %d: %s\n", line, msg
+      else printf "ERROR: %s\n", msg
+    }
+    function need(kind, id, field, label, key) {
+      key = kind SUBSEP id SUBSEP field
+      if (!(key in val)) problem(0, "missing " label " row (" kind "/" id "/" field ")")
+    }
+    function integer(s) { return s ~ /^[0-9]+$/ }
+    BEGIN { header = "kind\tid\tfield\tvalue\treason" }
+    {
+      sub(/\r$/, "")
+      if ($0 ~ /^[ \t]*$/ || $0 ~ /^#/) next
+      if (!got_header) {
+        got_header = 1
+        if ($0 != header) problem(NR, "header must be exactly: " header)
+        next
+      }
+      if (NF != 5) { problem(NR, "expected exactly 5 tab-separated columns, got " NF); next }
+      kind = trim($1); id = trim($2); fld = trim($3); v = trim($4); why = trim($5)
+      if (kind == "" || id == "" || fld == "" || v == "" || why == "") {
+        problem(NR, "kind, id, field, value and reason must all be present"); next
+      }
+      if (id !~ /^[A-Za-z0-9._-]+$/) problem(NR, "id must use letters, digits, dot, underscore or dash: " id)
+      if (v ~ /^<.*>$/ || v == "pending") problem(NR, "replace the placeholder value for " kind "/" id "/" fld)
+      if (why ~ /^<.*>$/) problem(NR, "replace the placeholder reason for " kind "/" id "/" fld)
+      key = kind SUBSEP id SUBSEP fld
+      if (key in val) { problem(NR, "duplicate row for " kind "/" id "/" fld); next }
+      val[key] = v; reason[key] = why; at[key] = NR
+
+      if (kind == "schema") {
+        if (id != "plan" || fld != "version") problem(NR, "unknown schema row")
+        else if (v != "1") problem(NR, "unsupported run-plan schema version: " v)
+      } else if (kind == "run") {
+        if (id != "run" || (fld != "id" && fld != "mode" && fld != "size")) problem(NR, "unknown run row")
+        else if (fld == "id" && v != ENVIRON["EXPECT_RUN"]) problem(NR, "run id must match its folder: " ENVIRON["EXPECT_RUN"])
+        else if (fld == "mode" && v != ENVIRON["EXPECT_MODE"]) problem(NR, "run mode must match session-state.md: " ENVIRON["EXPECT_MODE"])
+        else if (fld == "size" && v != "solo" && v != "squad" && v != "full") problem(NR, "run size must be solo, squad or full")
+      } else if (kind == "assessment") {
+        if (id != "run" || (fld != "risk" && fld != "complexity" && fld != "uncertainty")) problem(NR, "unknown assessment row")
+        else if (v != "low" && v != "medium" && v != "high") problem(NR, fld " must be low, medium or high")
+      } else if (kind == "seat") {
+        seats[id] = 1
+        if (fld == "disposition") {
+          if (v != "selected" && v != "skipped") problem(NR, "seat disposition must be selected or skipped")
+          disp[id] = v
+        } else if (fld == "role") {
+          if (v != "chair" && v != "worker" && v != "verifier") problem(NR, "seat role must be chair, worker or verifier")
+          role[id] = v
+        } else problem(NR, "unknown seat field: " fld)
+      } else if (kind == "context") {
+        if (fld != "level") problem(NR, "unknown context field: " fld)
+        else if (v != "minimal" && v != "focused" && v != "full") problem(NR, "context level must be minimal, focused or full")
+        ctx[id] = v
+      } else if (kind == "budget") {
+        if (id == "run") {
+          if (fld == "agent-cap") {
+            if (!integer(v) || v < 1) problem(NR, "agent-cap must be a positive integer")
+            else if (v > ENVIRON["MAX_CAP"] + 0) problem(NR, "agent-cap " v " exceeds the configured cap " ENVIRON["MAX_CAP"])
+            plan_cap = v + 0
+          } else if (fld == "estimated-tokens") {
+            if (!integer(v)) problem(NR, "estimated-tokens must be a non-negative integer")
+          } else problem(NR, "unknown run budget field: " fld)
+        } else {
+          if (fld != "tool-calls") problem(NR, "unknown seat budget field: " fld)
+          else if (!integer(v) || v < 1 || v > 200) problem(NR, "tool-calls must be an integer from 1 to 200")
+          calls[id] = v
+        }
+      } else if (kind == "verification") {
+        if (id != "run" || fld != "level") problem(NR, "unknown verification row")
+        else if (v != "self" && v != "independent" && v != "adversarial") problem(NR, "verification level must be self, independent or adversarial")
+      } else problem(NR, "unknown kind: " kind)
+    }
+    END {
+      if (!got_header) problem(0, "missing header")
+      need("schema", "plan", "version", "schema version")
+      need("run", "run", "id", "run id")
+      need("run", "run", "mode", "run mode")
+      need("run", "run", "size", "run size")
+      need("assessment", "run", "risk", "risk assessment")
+      need("assessment", "run", "complexity", "complexity assessment")
+      need("assessment", "run", "uncertainty", "uncertainty assessment")
+      need("budget", "run", "agent-cap", "agent cap")
+      need("budget", "run", "estimated-tokens", "token estimate")
+      need("verification", "run", "level", "verification level")
+
+      for (id in seats) {
+        if (!(id in disp)) problem(0, "seat " id " has no disposition row")
+        if (!(id in role)) problem(0, "seat " id " has no role row")
+      }
+      for (id in disp) {
+        if (!(id in role)) problem(0, "seat " id " has no role row")
+        if (disp[id] == "selected") {
+          selected++
+          if (!(id in ctx)) problem(0, "selected seat " id " has no context/level row")
+          if (!(id in calls)) problem(0, "selected " role[id] " " id " has no budget/tool-calls row")
+          if (role[id] == "chair") chairs++
+          else {
+            agents++
+            if (role[id] == "verifier") verifiers++
+          }
+        } else {
+          skipped++
+          if (id in ctx) problem(at["context" SUBSEP id SUBSEP "level"], "skipped seat " id " must not receive context")
+          if (id in calls) problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "skipped seat " id " must not receive a tool-call budget")
+        }
+      }
+      if (selected + skipped == 0) problem(0, "add at least one considered seat with a selected or skipped disposition")
+      for (id in ctx) if (!(id in disp) || disp[id] != "selected") problem(at["context" SUBSEP id SUBSEP "level"], "context belongs only to a selected seat: " id)
+      for (id in calls) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "a seat budget belongs only to a selected seat: " id)
+      if (chairs != 1) problem(0, "select exactly one Chair; found " chairs + 0)
+      size = val["run" SUBSEP "run" SUBSEP "size"]
+      verification = val["verification" SUBSEP "run" SUBSEP "level"]
+      if (size == "solo" && agents != 0) problem(0, "Solo must not select delegated agents")
+      if (size == "squad" && agents < 1) problem(0, "Squad needs at least one selected agent")
+      if (size == "full" && agents < 4) problem(0, "Full needs at least four selected agents")
+      if ((verification == "independent" || verification == "adversarial") && verifiers < 1)
+        problem(0, verification " verification needs a selected verifier")
+      if (verification == "self" && verifiers > 0)
+        problem(0, "self verification conflicts with a selected verifier")
+      if (plan_cap > 0 && agents > plan_cap) problem(0, agents " selected agents exceed the plan cap " plan_cap)
+
+      if (errors) {
+        printf "plan: %d error(s) · run-plan.tsv\n", errors
+        exit 1
+      }
+      if (ENVIRON["QUIET"] != "1") printf "plan: valid · %s · %d selected, %d skipped · %d agent(s) of cap %d\n", val["run" SUBSEP "run" SUBSEP "size"], selected, skipped, agents, plan_cap
+    }
+  ' "$plan"
+}
+
+run_plan_has_selected() {
+  [ -f "$1" ] || return 1
+  SLUG="$2" awk -F'\t' '$1 == "seat" && $2 == ENVIRON["SLUG"] && $3 == "disposition" && $4 == "selected" { found = 1 } END { exit !found }' "$1"
+}
+
+require_run_plan() {
+  local run="$1" action="$2" schema plan="$1/run-plan.tsv"
+  schema="$(field plan-schema "$run/session-state.md")"
+  if [ ! -f "$plan" ]; then
+    [ -z "$schema" ] && return 0                         # pre-v1 run: intentionally compatible
+    die "cannot $action — run-plan.tsv is missing; restore it from references/templates/run-plan.tsv"
+  fi
+  QUIET=1 run_plan_validate "$run" "$plan" || die "cannot $action — fix run-plan.tsv, then run: council run plan check --run ${run##*/}"
+}
+
+cmd_run_plan() {
+  local sub="${1:-check}" run plan schema
+  run="$(resolve_run)" || exit 2
+  plan="$run/run-plan.tsv"; schema="$(field plan-schema "$run/session-state.md")"
+  if [ ! -f "$plan" ]; then
+    if [ -z "$schema" ]; then say "plan: legacy run · no run-plan.tsv required · ${run##*/}"; return 0; fi
+    die "run-plan.tsv is missing from ${run##*/} — restore it from references/templates/run-plan.tsv"
+  fi
+  case "$sub" in
+    check) run_plan_validate "$run" "$plan" ;;
+    show)
+      run_plan_validate "$run" "$plan" || return 1
+      PLAN="$plan" awk -F'\t' '
+        $0 !~ /^#/ && NF == 5 { v[$1 SUBSEP $2 SUBSEP $3] = $4; why[$1 SUBSEP $2 SUBSEP $3] = $5; if ($1 == "seat" && $3 == "disposition") order[++n] = $2 }
+        END {
+          print "Run plan — " v["run" SUBSEP "run" SUBSEP "id"]
+          print "  mode: " v["run" SUBSEP "run" SUBSEP "mode"] " · size: " v["run" SUBSEP "run" SUBSEP "size"]
+          print "  risk: " v["assessment" SUBSEP "run" SUBSEP "risk"] " · complexity: " v["assessment" SUBSEP "run" SUBSEP "complexity"] " · uncertainty: " v["assessment" SUBSEP "run" SUBSEP "uncertainty"]
+          print "  budget: " v["budget" SUBSEP "run" SUBSEP "estimated-tokens"] " tokens · " v["budget" SUBSEP "run" SUBSEP "agent-cap"] " agents · verification: " v["verification" SUBSEP "run" SUBSEP "level"]
+          print "  seats:"
+          for (i = 1; i <= n; i++) {
+            id = order[i]; d = v["seat" SUBSEP id SUBSEP "disposition"]; r = v["seat" SUBSEP id SUBSEP "role"]
+            line = "    " d " — " id " (" r ")"
+            if (d == "selected") {
+              line = line " · context " v["context" SUBSEP id SUBSEP "level"]
+              calls = v["budget" SUBSEP id SUBSEP "tool-calls"]; if (calls != "") line = line " · " calls " tool calls"
+            }
+            print line " — " why["seat" SUBSEP id SUBSEP "disposition"]
+          }
+        }
+      ' "$plan" ;;
+    *) die "usage: council run plan [check|show]" ;;
+  esac
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -575,6 +967,151 @@ is_test_path() {
     test/*|tests/*|spec/*|*/test/*|*/tests/*|*/spec/*|*/__tests__/*|*/testing/*|test_*|*/test_*|*_test.*|*.test.*|*.spec.*|*_spec.*|*Test.*|*Tests.*) return 0 ;;
   esac
   return 1
+}
+
+impact_python() {
+  local candidate
+  for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import ast, sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+cmd_impact() {
+  local run top base py output
+  run="$(resolve_run)" || exit 2
+  top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
+  base="$(field base "$run/session-state.md")"
+  [ -n "$base" ] || die "impact needs a change baseline — run council index first"
+  output="$run/impact.tsv"
+  py="$(impact_python)" || { rm -f "$output"; printf 'council: impact needs optional Python 3.8+; index.md remains available\n' >&2; return 1; }
+  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/impact.py" --root "$top" --base "$base" --output "$output" \
+    || { rm -f "$output"; return 1; }
+}
+
+# Build a run-local, seat-specific context pack. The validated run plan is the source of truth for
+# both eligibility and level; the pack only supplements brief.md and never edits project guidance.
+context_seat() {
+  case "$1" in
+    ''|.|..|*[!A-Za-z0-9._-]*) die "context seat must be a single slug (letters, digits, dot, underscore or dash)" ;;
+  esac
+}
+
+cmd_context() {
+  local sub="$1" seat="$2" run output metrics top level py expand expand_count=0
+  context_seat "$seat"
+  run="$(resolve_run)" || exit 2
+  output="$run/contexts/$seat.md"
+  metrics="$output.metrics.tsv"
+  case "$sub" in
+    build)
+      [ -f "$run/run-plan.tsv" ] || die "context build needs a run-plan.tsv with a selected seat; legacy runs cannot infer a context level"
+      QUIET=1 run_plan_validate "$run" "$run/run-plan.tsv" || die "context build needs a valid run plan — run: council run plan check --run ${run##*/}"
+      run_plan_has_selected "$run/run-plan.tsv" "$seat" || die "context build needs a selected seat in run-plan.tsv: $seat"
+      [ -f "$run/brief.md" ] || die "context build needs the authoritative brief first: $run/brief.md"
+      level="$(SEAT="$seat" awk -F'\t' '$1 == "context" && $2 == ENVIRON["SEAT"] && $3 == "level" { print $4; exit }' "$run/run-plan.tsv" | tr -d '\r')"
+      [ -n "$level" ] || die "context level is missing for selected seat $seat"
+      top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
+      py="$(impact_python)" || die "context build needs optional Python 3.8+; brief.md remains available"
+      mkdir -p "$run/contexts" || die "cannot create $run/contexts"
+      set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/context.py" --root "$top" --run "$run" --seat "$seat" --level "$level" --output "$output"
+      for expand in "${CONTEXT_EXPANDS[@]+"${CONTEXT_EXPANDS[@]}"}"; do
+        set -- "$@" --expand "$expand"
+        expand_count=$((expand_count + 1))
+      done
+      "$@" || { printf 'council: context build failed; brief.md remains authoritative; any prior pack may be stale and must not be dispatched\n' >&2; return 1; }
+      [ -f "$output" ] && [ -f "$metrics" ] || die "context provider returned without the pack and metrics sidecar"
+      event_append "$run" context.built "$seat" "$level" "expands=$expand_count;metrics=$metrics" \
+        || die "context built, but its event could not be recorded"
+      say "context: $output"
+      say "metrics: $metrics" ;;
+    show)
+      [ ! -L "$run/contexts" ] && [ ! -L "$output" ] && [ ! -L "$metrics" ] \
+        || die "context show refuses a symlink in the generated pack path"
+      [ -f "$output" ] || die "context pack is missing for $seat — run: council context build $seat --run ${run##*/}"
+      say "context: $output"
+      if [ -f "$metrics" ]; then
+        say "metrics: $metrics"
+        cat "$metrics"
+      else
+        say "metrics: missing (rebuild the context pack to refresh its accounting)"
+      fi ;;
+    *) die "usage: council context build <seat> [--expand PATH ...] | context show <seat>" ;;
+  esac
+}
+
+# Index the human-readable synthesis and blind verifier tables without replacing them.
+# Python is optional: if unavailable, Chair keeps the existing manual evidence trail.
+cmd_evidence() {
+  local action="$1" run py
+  run="$(resolve_run)" || exit 2
+  py="$(impact_python)" || die "evidence needs optional Python 3.8+; use synthesis.md and verify tables directly"
+  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/evidence.py" "$action" --run "$run"
+}
+
+# A thin terminal cockpit over the run's own files (scripts/cockpit.py). It only reads: no state, no
+# event, no file is written, so it is safe beside a live run and never part of one.
+cmd_tui() {
+  local run py
+  run="$(resolve_run)" || exit 2
+  py="$(impact_python)" || die "tui needs optional Python 3.8+; council run status, run plan show and run events show give the same facts"
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/cockpit.py" --run "$run" --home "$(council_home)"
+  [ "$WATCH" -eq 0 ] || set -- "$@" --watch
+  [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
+  "$@"
+}
+
+# History across the council home's runs (scripts/history.py): counts always, a median, share or
+# ratio only when enough runs carry its data. Read-only, like the cockpit whose snapshot it reuses.
+cmd_history() {
+  local home py
+  home="$(council_home)"
+  [ -d "$home" ] || { say "no council here (no $home) — run council-init"; return 0; }
+  py="$(impact_python)" || die "history needs optional Python 3.8+; council run status --all and council ledger show the raw record"
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/history.py" --home "$home"
+  [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
+  "$@"
+}
+
+# Conservative self-tuning (scripts/tune.py). propose only reads; apply and revert change one line of
+# council.config.md — the estimate per worker — and only with the user's words, redacted here first and
+# logged in tuning.md. Roster changes go through a council-init refresh; behaviour is held until a
+# benchmark shows a change helps.
+cmd_tune() {
+  local action="$1" knob="${2:-}" value="${3:-}" home py tmpd
+  home="$(council_home)"
+  [ -d "$home" ] || die "no council here (no $home) — run council-init"
+  py="$(impact_python)" || die "tune needs optional Python 3.8+; nothing is tuned without it"
+  if [ "$action" = propose ]; then
+    set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" propose --home "$home"
+    [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
+    "$@"
+    return
+  fi
+  tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
+  { printf '%s' "$MEMORY_SAID_ARG" | tr '\r\n\t' '   '; printf '\n'; } > "$tmpd/said.raw" \
+    || { rm -rf "$tmpd"; die "cannot write $tmpd"; }
+  redact_copy "$tmpd/said.raw" "$tmpd/said" >/dev/null || { rm -rf "$tmpd"; die "could not redact the user's words"; }
+  if [ "$action" = apply ]; then
+    "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" apply "$knob" --value "$value" --home "$home" --said "$tmpd/said"
+  else
+    "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" "$action" "$knob" --home "$home" --said "$tmpd/said"
+  fi
+  set -- $?
+  rm -rf "$tmpd"
+  return "$1"
+}
+
+# Record a build's gate failure or repair outcome without rerunning commands or dispatching agents.
+cmd_repair() {
+  local action="$1" run py
+  shift
+  run="$(resolve_run)" || exit 2
+  py="$(impact_python)" || die "repair tracking needs optional Python 3.8+; record attempts in the build log"
+  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" "$action" ${1+"$@"} --run "$run"
 }
 
 # Definition names from diff lines (+/-) and hunk-header context. Heuristic and language-agnostic:
@@ -744,6 +1281,7 @@ cmd_index() {
   fi
   [ "$n_over" -eq 0 ] || say "index: $n_over more past the $cap-file cap — named at the end of the index but not indexed; give them an owner too"
   [ "$np" -eq 0 ] || say "earlier council work on these files: $np mention(s), listed at the end of the index"
+  RUN_ARG="$run" cmd_impact || printf 'council: optional impact graph was not refreshed; the change index is still valid\n' >&2
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -1009,6 +1547,8 @@ run_gate() {
     else
       say "gate $name: pass (exit 0, ${secs}s)"
     fi
+    event_append "$run" gate.finished "$name" passed "exit=0;seconds=$secs;empty=$GATE_EMPTY" \
+      || printf 'council: gate passed, but its event was not recorded\n' >&2
     return 0
   fi
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
@@ -1037,6 +1577,8 @@ run_gate() {
     fi
     rm -f "$base.seen" "$base.now"
   fi
+  event_append "$run" gate.finished "$name" failed "exit=$ec;seconds=$secs;empty=0" \
+    || printf 'council: gate failed, and its event was not recorded\n' >&2
   return "$ec"
 }
 
@@ -1315,7 +1857,7 @@ brief_seats() {
 # knows (Hebrew, Chinese) keeps its own letters instead, so it can still be proved.
 ref_title() {
   local raw t
-  raw="$(awk 'NR == 1 { sub(/^\357\273\277/, ""); if ($0 ~ /^---[ \t\r]*$/) { fm = 1; next } }
+  raw="$(awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], ""); if ($0 ~ /^---[ \t\r]*$/) { fm = 1; next } }
        fm { if ($0 ~ /^---[ \t\r]*$/) fm = 0; next }
        /^#+[ \t]/ { sub(/^#+[ \t]*/, ""); t = $0; exit }
        first == "" && /[^ \t\r]/ { first = $0 }
@@ -1807,8 +2349,10 @@ $seats
 SEATS
   if [ "$bad" -eq 0 ]; then
     if [ "$sat" -eq 0 ]; then say "collect: all $total seats in order"; else say "collect: all $total seats in order · $sat sat out (skipped)"; fi
+    event_append "$run" collect.finished run passed "seats=$total" || printf 'council: collection passed, but its event was not recorded\n' >&2
     return 0
   fi
+  event_append "$run" collect.finished run failed "seats=$total" || printf 'council: collection failed, and its event was not recorded\n' >&2
   if [ "$hard" -eq 0 ]; then
     say "collect: seats still working — after a compaction, wait for their notifications; if the session that started them has ended they are gone: mark them failed and re-dispatch each once (a war-room round-2 seat gets a fresh <slug>-r2 worker)"; return 1
   fi
@@ -1888,7 +2432,7 @@ cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what \
         mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
-        other=0 unreadt=0 empty=0 gone=0
+        other=0 unreadt=0 empty=0 gone=0 result
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -2105,6 +2649,9 @@ QUOTES
   else
     say "check: $rows items, $bad broken $what$extra → $out"
   fi
+  result=passed; [ "$((bad + other))" -eq 0 ] || result=failed
+  event_append "$run" verification.finished run "$result" "items=$rows;broken=$bad;other=$other" \
+    || printf 'council: verification finished, but its event was not recorded\n' >&2
   [ "$((bad + other))" -eq 0 ]
 }
 
@@ -2158,7 +2705,7 @@ ref_path() {
 }
 
 cmd_doctor() {
-  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck dir mode phase croot upd status actual ptr mem size pend stale fp map sha behind rows unk alt k orph skipped i
+  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck dir mode phase croot upd status actual ptr mem size pend stale mcheck unsup evid fp map sha behind rows unk alt k orph skipped i stfile schema plan_result event_result
   home="$(council_home)"; root="$(dirname "$home")"
   finding() {
     printf '%s  %s\n       Fix: %s\n' "$1" "$2" "$3"
@@ -2250,6 +2797,28 @@ GATES
   done <<RUNS
 $(list_runs "$home" 1000000 open)
 RUNS
+  while IFS= read -r stfile; do
+    [ -n "$stfile" ] || continue
+    dir="${stfile%/session-state.md}"; phase="$(field phase "$stfile")"; schema="$(field plan-schema "$stfile")"
+    if [ -f "$dir/run-plan.tsv" ]; then
+      if plan_result="$(QUIET=1 run_plan_validate "$dir" "$dir/run-plan.tsv" 2>&1)"; then :; else
+        plan_result="$(printf '%s\n' "$plan_result" | tail -n 1)"
+        case "$phase" in
+          convene|prepare|assign)
+            finding WARN "run ${dir##*/} has a run plan that is not ready yet ($plan_result)" "complete it before Brief, then run: council run plan check --run ${dir##*/}" ;;
+          *)
+            finding ERROR "run ${dir##*/} has an invalid run plan ($plan_result)" "fix it, then run: council run plan check --run ${dir##*/}" ;;
+        esac
+      fi
+    elif [ -n "$schema" ]; then
+      finding ERROR "run ${dir##*/} declares plan schema $schema but run-plan.tsv is missing" "restore it from references/templates/run-plan.tsv and complete it before dispatch"
+    fi
+    if event_result="$(event_check "$dir" 2>&1)"; then :; else
+      finding ERROR "run ${dir##*/} has an invalid event stream ($event_result)" "inspect $dir/events.tsv and run: council run events check --run ${dir##*/}"
+    fi
+  done <<RUN_PLANS
+$(find "$home/runs" -mindepth 2 -maxdepth 2 -name session-state.md 2>/dev/null | sort)
+RUN_PLANS
   ptr="$home/active-run"
   if [ -s "$ptr" ]; then
     p="$(head -n 1 "$ptr" | tr -d '\r')"
@@ -2271,14 +2840,19 @@ RUNS
       finding WARN "memory ($mem) names entry ids, but no entry could be read — nothing in it reaches a seat or a builder" "write each entry as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as the plugin's references/templates/conventions.md shows"
     fi
     unk="$(printf '%s\n' "$rows" | awk -F'\t' '$5 == "unknown" { n++ } END { print n + 0 }')"
-    [ "$unk" -eq 0 ] || finding WARN "$unk memory entr(ies) sit under a section the council doesn't read as settled, so they never reach a brief (council memory lists them)" "move them under Accepted Patterns, Enforced Conventions or Decisions — or under ## Retired if they no longer hold"
+    [ "$unk" -eq 0 ] || finding WARN "$unk memory entr(ies) are unrecognized or incomplete, so they never reach a brief (council memory lists them)" "complete observed failures, move settled rules under their proper section, or retire entries that no longer hold"
     skipped="$(MEM_SKIP=1 memory_entries "$mem")"
     [ -z "$skipped" ] || finding WARN "memory has line(s) that open like an entry but are not read, so they reach no brief: $skipped" "write each as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as references/templates/conventions.md shows"
     inplace="$(printf '%s\n' "$rows" | awk -F'\t' '$5 == "off" && $6 == "marked retired" { n++ } END { print n + 0 }')"
     [ "$inplace" -eq 0 ] || finding WARN "$inplace memory entr(ies) under a settled section are marked retired, so no brief sees them (council memory lists them)" "if they still hold, drop the retired mark; if not, move them under ## Retired"
     [ -z "$MEM_ALT" ] || finding WARN "a second memory file, $MEM_ALT, holds $MEM_ALT_N entries the council never reads (it reads $mem)" "merge the two, or point the '- conventions:' line under ## Memory in council.config.md at the one to keep"
-    stale="$(cmd_memory check 2>/dev/null | grep -c '^STALE' || true)"
+    mcheck="$(cmd_memory check 2>/dev/null)"
+    stale="$(printf '%s\n' "$mcheck" | grep -c '^STALE' || true)"
     [ "${stale:-0}" -eq 0 ] || finding WARN "$stale memory anchor(s) point at code that moved or no longer exists" "council memory check lists them; propose re-anchoring or retiring each at the next Learn"
+    unsup="$(printf '%s\n' "$mcheck" | awk '/^UNSUPPORTED/ && !($2 in s) { s[$2] = 1; n++ } END { print n + 0 }')"
+    evid="$(printf '%s\n' "$mcheck" | grep -c '^EVIDENCE' || true)"
+    [ "${unsup:-0}" -eq 0 ] || finding WARN "$unsup observed failure(s) in memory are no longer served: their evidence is gone or no longer shows their verdict" "council memory check lists them; propose re-anchoring the evidence or retiring each at the next Learn"
+    [ "${evid:-0}" -eq 0 ] || finding WARN "$evid piece(s) of observed-failure evidence can't be found or cite lines their file doesn't have" "council memory check lists them; re-anchor them to files that still hold the evidence"
     orph="$(cmd_memory index 2>/dev/null | grep -c 'matches no file, seat or mode' || true)"
     [ "${orph:-0}" -eq 0 ] || finding WARN "$orph memory scope item(s) match no file, seat or mode (an entry still reaches a brief through its other scope items, if it has any)" "council memory lists them — correct each path or slug, or drop the ones whose folder is gone"
     size="$(wc -c < "$mem" | tr -d ' ')"
@@ -2424,17 +2998,28 @@ memory_file() {
   done
 }
 
-# Memory entries as rows: id, title, scope, anchor, state, section ("-" when empty). An entry is a
+# Memory entries as rows: id, title, scope, anchor, state, section, meaning, origin, evidence,
+# verdict ("-" when empty). An entry is a
 # heading (## to ####), a top-level bullet or a numbered item whose bold text starts with its id:
 # "### AP-3: title", "### **AP-3**: title", "- **AP-3 — title.** text …", "1. **AP-3 — title.**" —
 # the id in any case, with or without its dash. Its **Scope:** and **Anchor:** may sit anywhere in its
 # body. state is "settled" under Accepted Patterns, Enforced Conventions, Decisions (or a heading that
-# says adopted, settled, rulings…) and at the top of the file; "off" under Proposed, Rejected, Retired,
-# Superseded… or when the entry is marked retired (a **Retired:** line, a struck-out id); "unknown"
-# under any other section. A section name is read by what it calls itself, not by every word in it:
+# says adopted, settled, rulings…) and at the top of the file; "observed" for an F- entry under
+# Observed Failures that has what an observed failure needs (below); "off" under Proposed, Rejected,
+# Retired, Superseded… or when marked retired; "unknown" under any other section — or for an F- entry
+# that lacks one of those, with the reason in its section column ("failure entry: …"). A section
+# name is read by what it calls itself, not by every word in it:
 # "## Accepted Patterns — never re-propose these" is settled, and an entry titled "Retired flags stay
 # registered" is live. With MEM_SKIP=1 it prints instead the ids of lines that look like entries but
 # are not read, so nothing drops out of a memory without a word.
+#
+# An observed failure is history, not a rule, so it is served only with **Failure:** (or
+# **Observation:** — what was seen; its meaning column), **Scope:**, **Origin:**, **Evidence:** and
+# **Verdict:**; a scope that names paths, seats or a mode — never every run; and a verdict that
+# establishes something: OBSERVED or REPRODUCED (seen, or seen again, in a named artifact), or a
+# verifier's CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE or SCOPE-CREEP. INFERRED, ASSUMED,
+# UNVERIFIED, UNCERTAIN or a guess keeps it out of every brief. A **Rule:** or **Pattern:** in one is
+# never shown as its meaning. Whether its evidence still exists is failure_audit's question.
 memory_entries() {
   LC_ALL=C awk '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
@@ -2448,11 +3033,13 @@ memory_entries() {
       if (strict) {
         w = h; sub(/[ \t].*$/, "", w)
         for (i = 1; i <= noff; i++) if (index(w, OFF[i])) return "off"
+        if (w == "observed" || w == "failures") return "observed"
         if (w ~ /^(ap|ec|d)s?$/) return "settled"
         for (i = 1; i <= nset; i++) if (index(w, SET[i])) return "settled"
         return ""
       }
       for (i = 1; i <= noff; i++) if (index(h, OFF[i])) return "off"
+      if (h ~ /^(observed failures|failure history|failures)([ \t]|$)/) return "observed"
       if (h ~ /^(ap|ec|d)s?$/ || l ~ /\((ap|ec|d)\)/) return "settled"       # "## EC", "## Rules (EC)"
       for (i = 1; i <= nset; i++) if (index(h, SET[i])) return "settled"
       for (i = 1; i <= noff; i++) if (index(l, OFF[i])) return "off"         # only the aside says it
@@ -2464,23 +3051,60 @@ memory_entries() {
     # that it can be named rather than dropped.
     function cand(txt, ln,   lo2, rest) {
       lo2 = tolower(txt); sub(/^[*_~`]+/, "", lo2)
-      if (!match(lo2, /^(ap|ec|d)-?[0-9]+/)) return
+      if (!match(lo2, /^(ap|ec|d|f)-?[0-9]+/)) return
       rest = substr(lo2, RLENGTH + 1)
       if (rest !~ /^[*_~`]*([ \t]*([:.)]|\342\200\224|\342\200\223|-[ \t])|[ \t]*$)/) return
       CID[++ncand] = idnorm(substr(lo2, 1, RLENGTH)); CLN[ncand] = ln
     }
-    function flush() {
+    # The first word of a verdict ("Refuted — see verify-2.md" is REFUTED; SCOPE-CREEP keeps its dash).
+    function vword(v,   w) { w = toupper(v); sub(/^[^A-Z]+/, "", w); return match(w, /^[A-Z]+(-[A-Z]+)*/) ? substr(w, 1, RLENGTH) : "" }
+    # Does any item of a scope reach every run ("all", "none", "*", "**/*", ".")? The same words the
+    # scope matcher reads as every run, and the globs that match every file.
+    function wholescope(s,   n, p, i, t) {
+      n = split(s, p, /[,;]/)
+      for (i = 1; i <= n; i++) {
+        t = tolower(trim(p[i])); if (t == "") continue
+        gsub(/[.`"\047]/, "", t); sub(/^\/+/, "", t); t = trim(t)      # ".", "./" and "/" leave nothing
+        if (t == "" || t ~ /^(all|all files|everywhere|every run|always|global|any|repo-wide|project-wide|whole repo|none|n\/a|\(none\)|\*|\*\*|\*\*\/\*|\*\*\/\*\*|-|\342\200\224|\342\200\223)$/) return 1
+      }
+      return 0
+    }
+    # A field left as a placeholder ("-", "—", "none", "n/a", "tbd", "?") says nothing.
+    function blank(v,   t) {
+      t = tolower(trim(v)); gsub(/[`"\047]/, "", t); t = trim(t)
+      return t == "" || t ~ /^(-+|\342\200\224|\342\200\223|none|n\/a|na|tbd|todo|\?+|\.\.\.|\342\200\246)$/
+    }
+    function flush(   why, miss) {
       if (id != "") {
         READ[id] = 1
-        if (!SKIP) printf "%s\t%s\t%s\t%s\t%s\t%s\n", id, (title == "" ? "-" : title), (scope == "" ? "-" : scope),
-          (anchor == "" ? "-" : anchor), est, (ewhere == "" ? "-" : ewhere)
+        if (id ~ /^F-/ && est != "off") {
+          why = ""
+          if (est != "observed") why = "it sits outside Observed Failures"
+          else {
+            miss = ""
+            if (blank(failure)) miss = miss ", Failure"
+            if (blank(scope)) miss = miss ", Scope"
+            if (blank(origin)) miss = miss ", Origin"
+            if (blank(evidence)) miss = miss ", Evidence"
+            if (blank(verdict)) miss = miss ", Verdict"
+            if (miss != "") why = "it has no " substr(miss, 3)
+            else if (wholescope(scope)) why = "its scope reaches every run; name the paths, seats or mode it concerns"
+            else if (!(vword(verdict) in FVERDICT)) why = "its verdict, " substr(verdict, 1, 40) ", does not establish a failure (" FVLIST ")"
+          }
+          if (why != "") { est = "unknown"; ewhere = "failure entry: " why }
+          meaning = failure                          # what was seen — never a rule written into it
+        }
+        if (id !~ /^F-/ && est == "observed") { est = "unknown"; ewhere = "not a failure entry, but under Observed Failures" }
+        if (!SKIP) printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, (title == "" ? "-" : title), (scope == "" ? "-" : scope),
+          (anchor == "" ? "-" : anchor), est, (ewhere == "" ? "-" : ewhere),
+          (meaning == "" ? "-" : meaning), (origin == "" ? "-" : origin), (evidence == "" ? "-" : evidence), (verdict == "" ? "-" : verdict)
       }
-      id = ""; pend = 0; bul = 0
+      id = ""; pend = 0; bul = 0; meaning = ""; failure = ""; origin = ""; evidence = ""; verdict = ""
     }
     function fieldval(line, name,    v) {
       if (!match(line, "\\*\\*" name ":\\*\\*")) return ""
       v = substr(line, RSTART + RLENGTH); sub(/[ \t]+\302\267[ \t]+\*\*.*$/, "", v)
-      gsub(/^[ \t]+|[ \t\r]+$/, "", v); gsub(/`/, "", v); return v
+      gsub(/^[ \t]+|[ \t\r]+$/, "", v); gsub(/`/, "", v); gsub(/\t/, " ", v); return v
     }
     # A field line of the entry: its scope, its anchor, or a line that retires it. "**Retired:** no"
     # and "**Superseded:** -" retire nothing, and a **Status:** line is read by its first word, so a
@@ -2488,6 +3112,11 @@ memory_entries() {
     function fields(line,   v, lo, w, i) {
       v = fieldval(line, "Scope"); if (v != "") scope = v
       v = fieldval(line, "Anchor"); if (v != "") anchor = v
+      for (i = 1; i <= nmeaning; i++) { v = fieldval(line, MEANING[i]); if (v != "") { meaning = v; break } }
+      v = fieldval(line, "Failure"); if (v == "" && failure == "") v = fieldval(line, "Observation"); if (v != "") failure = v
+      v = fieldval(line, "Origin"); if (v != "") origin = v
+      v = fieldval(line, "Evidence"); if (v != "") evidence = v
+      v = fieldval(line, "Verdict"); if (v != "") verdict = v
       lo = tolower(line)
       for (i = 1; i <= nmark; i++) {
         if (!match(lo, "\\*\\*" MARK[i] "( by)?:?\\*\\*:?")) continue
@@ -2504,7 +3133,7 @@ memory_entries() {
       lo = tolower(s); b = 0
       while (substr(lo, b + 1, 1) ~ /[*_~]/) b++
       t = substr(lo, b + 1)
-      if (!match(t, /^(ap|ec|d)-?[0-9]+/)) return 0
+      if (!match(t, /^(ap|ec|d|f)-?[0-9]+/)) return 0
       idt = substr(t, 1, RLENGTH); rest = substr(s, b + RLENGTH + 1)
       dashed = index(idt, "-") > 0
       if (rest ~ /^[A-Za-z0-9_]/ || rest ~ /^-[A-Za-z0-9]/) return 0
@@ -2524,7 +3153,7 @@ memory_entries() {
         else if (bullet) { pend = 1; ptitle = rest }       # a bold title that runs on to the next lines
       }
       title = cleantitle(rest)
-      scope = ""; anchor = ""
+      scope = ""; anchor = ""; meaning = ""; failure = ""; origin = ""; evidence = ""; verdict = ""
       est = (sub_st != "" ? sub_st : sec); ewhere = (sub_st != "" ? subname : secname)
       lt = tolower(title)
       # A marker, not a word of the title: "(retired 2026-09-01)" at either end, "Retired: …", a
@@ -2541,9 +3170,13 @@ memory_entries() {
       noff = split("propos reject retire supersede deprecat withdraw obsolete archived pending draft declined revoked", OFF, " ")
       nset = split("accepted enforced decision convention pattern adopted settled ruling", SET, " ")
       nmark = split("retired superseded withdrawn", MARK, " ")
+      nmeaning = split("Pattern Rule Convention Decision Failure Observation", MEANING, " ")
+      nfv = split("OBSERVED REPRODUCED CONFIRMED REFUTED MISCITED REGRESSION INCOMPLETE SCOPE-CREEP", FV, " ")
+      for (i = 1; i <= nfv; i++) FVERDICT[FV[i]] = 1
+      FVLIST = "OBSERVED, REPRODUCED, CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE or SCOPE-CREEP"
       sec = "settled"; secname = ""; sub_st = ""; sublvl = 0; subname = ""; elvl = 0
     }
-    { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub(/^\357\273\277/, "", line) }
+    { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub("^" ENVIRON["COUNCIL_BOM"], "", line) }
     incom { if (index(line, "-->")) incom = 0; next }
     line ~ /^[ \t]*<!--/ { if (!index(line, "-->")) incom = 1; next }
     line ~ /^[ \t]*(```|~~~)/ { fence = !fence; next }
@@ -2615,7 +3248,7 @@ memory_idlines() {
   LC_ALL=C awk '
     incom { if (index($0, "-->")) incom = 0; next }
     /^[ \t]*<!--/ { if (!index($0, "-->")) incom = 1; next }
-    /(^|[^A-Za-z0-9_])(AP|EC|D)-[0-9]+([^A-Za-z0-9_]|$)/ || /^(#+|[-*+])[ \t]*[*_]*([Aa][Pp]|[Ee][Cc]|D)-?[0-9]+/ { n++ }
+    /(^|[^A-Za-z0-9_])(AP|EC|D|F)-[0-9]+([^A-Za-z0-9_]|$)/ || /^(#+|[-*+])[ \t]*[*_]*([Aa][Pp]|[Ee][Cc]|D|F)-?[0-9]+/ { n++ }
     END { print n + 0 }' "$1" 2>/dev/null
 }
 
@@ -2631,6 +3264,242 @@ memory_unread() {
   skipped="$(MEM_SKIP=1 memory_entries "$1")"
   [ -n "$skipped" ] || return 0
   say "memory: WARNING — $1 has line(s) that open like an entry but are not read, so they reach no seat: $skipped. Write each entry as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as references/templates/conventions.md shows."
+}
+
+# The support behind each observed failure among the memory rows on stdin, as
+#   <id> TAB note|fatal TAB <what is wrong>
+# Every observed failure gets a hearing, and it never takes an entry's word for its support. It is
+# fatal — the entry reaches no brief — when two entries share its id; when its scope reaches every
+# run as the scope matcher reads it (spelled "all/", "?*", "{**,x}", "res://*", with blanks…); when its
+# evidence names no file; when none of the files it names can be read as cited; or when a verifier's
+# verdict (CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE, SCOPE-CREEP) is not on a cited line
+# (or, for a file cited whole, on any line) as the verifier writes it: a whole word, in capitals, so
+# UNCONFIRMED or "the user confirmed" is not CONFIRMED. OBSERVED and REPRODUCED name artifacts
+# rather than a verdict line, so for them the files must exist. A note is one piece that can't be
+# used — gone, a line its file doesn't have, a link, a place outside the project, the memory file
+# itself — while another piece still carries the entry.
+# Each evidence path — a word with a folder in it or a record's extension (a/b.txt, verify-2.md), with
+# or without lines (a.md:12,40-44, a.md#L12) — is looked for from the repo root ($2), then the council
+# home ($1). The memory file is $3. The files are read in one pass, however many entries there are.
+failure_audit() {
+  local home="$1" top="$2" mem="${3:-}" input pieces q=0 id w raw p lines kind g okg="" f d why inside ptop phome
+  local rows="" reqs="" results="" seenf="" nl='
+'
+  local -a files
+  files=()
+  input="$(cat)"
+  # What the rows alone decide: an id two entries share, and a scope that reaches every run — read by
+  # the select matcher's own items(), everyrun() and covers(), so no spelling of "everything" passes.
+  printf '%s\n' "$input" | LC_ALL=C awk -F'\t' "$AWK_SCOPE"'
+    $5 == "observed" { n[$1]++; S[$1] = $3; if (!($1 in seen)) { seen[$1] = 1; ids[++k] = $1 } }
+    END {
+      for (x = 1; x <= k; x++) {
+        id = ids[x]
+        if (n[id] > 1) { print id "\tfatal\tits id is used by more than one entry; give each its own number"; continue }
+        m = items(S[id], I)
+        for (i = 1; i <= m; i++)
+          if (everyrun(I[i]) || covers("zz9-probe/zz9-probe.zz9probe", I[i], ".*", 0) || covers("zz9-probe", I[i], ".*", 0)) {
+            print id "\tfatal\tits scope reaches every run; name the paths, seats or mode it concerns"; break
+          }
+      }
+    }'
+  pieces="$(printf '%s\n' "$input" | LC_ALL=C awk -F'\t' '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    function vword(v,   x) { x = toupper(v); sub(/^[^A-Z]+/, "", x); return match(x, /^[A-Z]+(-[A-Z]+)*/) ? substr(x, 1, RLENGTH) : "" }
+    # A word of evidence as a path: sets P (the path) and L (its lines, or "-"); false when it is not
+    # one — a URL, or a word with no folder, no record extension and no line.
+    function pathof(t) {
+      sub(/^[(\[<"\047`]+/, "", t); sub(/[)\]>"\047`.;]+$/, "", t); sub(/[:,]+$/, "", t)
+      P = t; L = "-"; C = t
+      if (match(P, /#L?[0-9]+(-L?[0-9]+)?$/)) { L = substr(P, RSTART + 1); gsub(/L/, "", L); P = substr(P, 1, RSTART - 1) }
+      else if (match(P, /:[0-9][0-9,-]*$/)) { L = substr(P, RSTART + 1); P = substr(P, 1, RSTART - 1) }
+      if (P == "" || P ~ /^[A-Za-z]+:\/\//) return 0
+      return P ~ /\// || tolower(P) ~ REC || (L != "-" && P ~ /\.[A-Za-z0-9]+$/)
+    }
+    # A piece of evidence is a path, or words around paths. A path may hold a blank ("docs/My Notes/
+    # out.txt"), and nothing in the text says which: the whole piece is tried first and its words only
+    # when no file has that whole name. A piece whose words hold no path is itself the candidate.
+    function emit(id, w, piece,   m, T, i, parts) {
+      if (piece !~ /[ \t]/) { if (!pathof(piece)) return 0; print id "\t" w "\t" C "\t" P "\t" L "\tonly\t" ++grp; return 1 }
+      m = split(piece, T, /[ \t]+/); parts = 0
+      for (i = 1; i <= m; i++) parts += pathof(T[i])
+      if (!pathof(piece)) { if (!parts) return 0 }
+      else print id "\t" w "\t" C "\t" P "\t" L "\t" (parts ? "whole" : "only") "\t" ++grp
+      if (!parts) return 1
+      if (!pathof(piece)) ++grp
+      for (i = 1; i <= m; i++) if (pathof(T[i])) print id "\t" w "\t" C "\t" P "\t" L "\tpart\t" grp
+      return 1
+    }
+    BEGIN {
+      REC = "\\.(md|txt|json|jsonl|tsv|csv|log|out|html|xml|yml|yaml)$"
+      nv = split("CONFIRMED REFUTED MISCITED REGRESSION INCOMPLETE SCOPE-CREEP", V, " ")
+      for (i = 1; i <= nv; i++) VER[V[i]] = 1
+    }
+    $5 == "observed" {
+      w = vword($10); if (!(w in VER)) w = "-"
+      ev = $9; gsub(/\\/, "/", ev); n = split(ev, PC, /[,;]/); cur = ""; k = 0
+      for (i = 1; i <= n; i++) {
+        p = trim(PC[i]); if (p == "") continue
+        if (cur ~ /:[0-9]/ && p ~ /^[0-9]+(-[0-9]+)?$/) { cur = cur "," p; continue }   # a.md:12,14 is one piece
+        if (cur != "") k += emit($1, w, cur)
+        cur = p
+      }
+      if (cur != "") k += emit($1, w, cur)
+      if (!k) print $1 "\t" w "\t-\t-\t-\tonly\t0"
+    }')"
+  [ -n "$pieces" ] || return 0
+  ptop="$(cd "$top" 2>/dev/null && pwd -P)"; phome="$(cd "$home" 2>/dev/null && pwd -P)"
+  while IFS="$TAB" read -r id w raw p lines kind g; do
+    [ -n "$id" ] || continue
+    [ "$kind" != part ] || [ "$g" != "$okg" ] || continue                  # its whole piece was a file
+    f=""; why="-"
+    case "/$p/" in
+      /-/) ;;
+      */../*) why="climbs out of the project" ;;
+      *) case "$p" in
+           /*|[A-Za-z]:*) case "$p" in "$top"/*|"$home"/*) [ ! -f "$p" ] || f="$p" ;; *) why="is outside this project" ;; esac ;;
+           *) if [ -f "$top/$p" ]; then f="$top/$p"; elif [ -f "$home/$p" ]; then f="$home/$p"; fi ;;
+         esac ;;
+    esac
+    if [ -n "$f" ]; then                         # a file, but one that may not be what it seems
+      d="$(cd "${f%/*}" 2>/dev/null && pwd -P)"
+      case "$d/" in "$ptop"/*|"$phome"/*) inside=1 ;; *) inside=0 ;; esac
+      if [ -L "$f" ]; then why="is a link; cite the file it points to"; f=""
+      elif [ "$inside" = 0 ]; then why="leads outside this project"; f=""
+      elif [ -n "$mem" ] && same_file "$f" "$mem"; then why="is the memory file itself"; f=""
+      fi
+    fi
+    if [ "$kind" = whole ]; then
+      [ -n "$f" ] || continue                                               # try its words instead
+      okg="$g"
+    fi
+    q=$((q + 1))
+    rows="$rows$q$TAB$id$TAB$w$TAB$raw$TAB${f:--}$TAB$why$nl"
+    [ -n "$f" ] || continue
+    reqs="$reqs$q$TAB$f$TAB$lines$TAB$w$nl"
+    case "$nl$seenf" in *"$nl$f$nl"*) ;; *) seenf="$seenf$f$nl"; files+=("$f") ;; esac
+  done <<EOF
+$pieces
+EOF
+  if [ -n "$reqs" ]; then       # per piece: q, what is wrong with its lines ("-" for nothing), and shown: 1, 0 or -
+    results="$(printf '%s' "$reqs" | LC_ALL=C awk -F'\t' '
+      # A line or a range ("12", "40-44"), in S and E; false for 0, or for a number no file reaches —
+      # past a billion, adding one to it can stop changing it, and a loop over it would never end.
+      function span(r,   j, t) {
+        S = r; E = r; j = index(r, "-"); if (j) { E = substr(r, j + 1); S = substr(r, 1, j - 1) }
+        if (length(S) > 9 || length(E) > 9) return 0
+        S += 0; E += 0; if (E < S) { t = S; S = E; E = t }
+        return S >= 1
+      }
+      # The verdict as the verifier writes it: a whole word, in capitals.
+      function says(s, w) { return (" " s " ") ~ ("[^A-Za-z0-9_-]" w "[^A-Za-z0-9_-]") }
+      FNR == NR {
+        F[$1] = $2; L[$1] = $3; W[$1] = $4; Q[++nq] = $1
+        if ($3 != "-") { m = split($3, R, ","); for (i = 1; i <= m; i++) if (span(R[i])) for (k = S; k <= E && k - S <= 2000; k++) NEED[$2, k] = 1 }
+        else if ($4 != "-") WANT[$2] = WANT[$2] " " $4
+        next
+      }
+      {
+        f = FILENAME; N[f] = FNR
+        if ((f, FNR) in NEED) T[f, FNR] = $0
+        if (f in WANT) { m = split(WANT[f], ws, " "); for (i = 1; i <= m; i++) if (says($0, ws[i])) HAS[f, ws[i]] = 1 }
+      }
+      END {
+        for (x = 1; x <= nq; x++) {
+          q = Q[x]; f = F[q]; n = (f in N) ? N[f] : 0; bad = "-"; shown = (W[q] == "-") ? "-" : 0
+          if (L[q] != "-") {
+            m = split(L[q], R, ",")
+            for (i = 1; i <= m; i++) {
+              if (!span(R[i]) || E > n) { bad = "the file has " n " line(s), not " R[i]; break }
+              if (W[q] != "-") for (k = S; k <= E && k - S <= 2000; k++) if (says(T[f, k], W[q])) shown = 1
+            }
+          } else if (W[q] != "-") shown = ((f, W[q]) in HAS) ? 1 : 0
+          print q "\t" bad "\t" shown
+        }
+      }' - "${files[@]}")"
+  fi
+  printf '%s\n\f\n%s\n\f\n%s\n' "$results" "$rows" "$input" | LC_ALL=C awk -F'\t' '
+    $0 == "\f" { part++; next }
+    part == 0 { if ($1 != "") { BAD[$1] = $2; SHOWN[$1] = $3 }; next }
+    part == 1 {
+      if ($2 == "") next
+      q = $1; id = $2; WV[id] = $3
+      if ($4 == "-") { nopath[id] = 1; next }
+      piece[id] = 1
+      if ($5 == "-") { print id "\tnote\tevidence " $4 " " ($6 != "-" ? $6 : "can\047t be found in this project"); next }
+      if (BAD[q] != "-") { print id "\tnote\tevidence " $4 ": " BAD[q]; next }
+      good[id]++; if (SHOWN[q] == "1") shows[id] = 1
+      next
+    }
+    $5 == "observed" && !($1 in listed) { listed[$1] = 1; ids[++nid] = $1 }       # every one gets a verdict
+    END {
+      for (x = 1; x <= nid; x++) {
+        id = ids[x]
+        if (nopath[id] || !(id in piece)) print id "\tfatal\tits evidence names no file that can be checked"
+        else if (!good[id]) print id "\tfatal\tnone of its evidence can be found and read as cited"
+        else if (WV[id] != "-" && !shows[id]) print id "\tfatal\tnone of the evidence it cites shows " WV[id] " as the verifier writes it"
+      }
+    }'
+}
+
+# The memory rows ($1) with each observed failure that failure_audit ($2) found unsupported turned
+# "unknown", the reason in its section column — so the index and select serve only what check would
+# stand behind.
+memory_served() {
+  [ -n "$2" ] || { printf '%s\n' "$1"; return 0; }
+  printf '%s\n\f\n%s\n' "$2" "$1" | LC_ALL=C awk -F'\t' -v OFS='\t' '
+    $0 == "\f" { part = 2; next }
+    !part { if ($2 == "fatal" && !($1 in W)) W[$1] = $3; next }
+    $5 == "observed" && ($1 in W) { $5 = "unknown"; $6 = "failure entry: " W[$1] }
+    { print }'
+}
+
+# Would entry $2 of memory file $1 reach a brief as an observed failure — the parser's rules and the
+# evidence audit both? Prints why not. $3 is the council home, $4 the repo root, $5 the project's
+# memory file (which no entry may cite as its own evidence).
+memory_would_serve() {
+  local row why nl='
+'
+  row="$(memory_entries "$1" | awk -F'\t' -v id="$2" '$1 == id')"
+  case "$row" in
+    '') printf 'it is not read as an entry'; return 1 ;;
+    *"$nl"*) printf 'it appears more than once'; return 1 ;;
+  esac
+  if [ "$(printf '%s\n' "$row" | cut -f5)" != observed ]; then
+    printf '%s' "$(printf '%s\n' "$row" | cut -f6 | sed 's/^failure entry: //')"; return 1
+  fi
+  why="$(printf '%s\n' "$row" | failure_audit "$3" "$4" "${5:-}" | awk -F'\t' '$2 == "fatal" { print $3; exit }')"
+  [ -z "$why" ] || { printf '%s' "$why"; return 1; }
+}
+
+# Replace memory file $1 with $3 — an edit of $2, a copy of $1 — only when the edit touched entry $4
+# alone and left it $5: proposed (off, under a Proposed section), observed (served, evidence and all)
+# or gone. Every other entry must read exactly as before, no line may start or stop going unread, and
+# $1 must not have changed since the copy was taken. Otherwise nothing is written. $6 is the council
+# home, $7 the repo root.
+memory_replace() {
+  local mem="$1" before="$2" after="$3" id="$4" want="$5" why had
+  # The entry's id was free before a draft, and a proposal's own before a yes or a no — never shared.
+  had="$(memory_entries "$before" | awk -F'\t' -v id="$id" '$1 == id { n++ } END { print n + 0 }')"
+  case "$want:$had" in proposed:0|observed:1|gone:1) ;;
+    *) printf 'council: %s is used by %s entr(ies) before this edit — nothing written; give each its own number\n' "$id" "$had" >&2; return 1 ;;
+  esac
+  [ "$(memory_entries "$before" | awk -F'\t' -v id="$id" '$1 != id')" = "$(memory_entries "$after" | awk -F'\t' -v id="$id" '$1 != id')" ] \
+    || { printf 'council: the edit would change other memory entries too — nothing written\n' >&2; return 1; }
+  [ "$(MEM_SKIP=1 memory_entries "$before" | sed 's/ (line [0-9]*)//g')" = "$(MEM_SKIP=1 memory_entries "$after" | sed 's/ (line [0-9]*)//g')" ] \
+    || { printf 'council: the edit would change which memory lines go unread — nothing written\n' >&2; return 1; }
+  case "$want" in
+    gone) [ -z "$(memory_entries "$after" | awk -F'\t' -v id="$id" '$1 == id')" ] \
+            || { printf 'council: %s is still in the memory file — nothing written\n' "$id" >&2; return 1; } ;;
+    proposed) memory_entries "$after" | awk -F'\t' -v id="$id" '$1 == id && $5 == "off" && tolower($6) ~ /^[#* ]*propos/ { n++ } END { exit n != 1 }' \
+            || { printf 'council: %s did not land under ## Proposed — nothing written\n' "$id" >&2; return 1; } ;;
+    observed) why="$(memory_would_serve "$after" "$id" "$6" "$7" "$mem")" \
+            || { printf 'council: %s would not be served (%s) — nothing written\n' "$id" "$why" >&2; return 1; } ;;
+  esac
+  cmp -s "$mem" "$before" || { printf 'council: %s changed while this ran — nothing written; run it again\n' "$mem" >&2; return 1; }
+  # Written beside the file and moved over it, so the memory is never half-written; the copy keeps its mode.
+  cp "$mem" "$mem.council-new" 2>/dev/null && cat "$after" > "$mem.council-new" && mv -f "$mem.council-new" "$mem" \
+    || { rm -f "$mem.council-new"; printf 'council: could not write %s\n' "$mem" >&2; return 1; }
 }
 
 # The awk that matches paths and slugs to scope items and areas. items() splits a list at commas and
@@ -2816,7 +3685,7 @@ anchor_rows() {
     BEGIN {
       EXT = "\\.(py|pyi|pyx|js|jsx|mjs|cjs|ts|tsx|gd|gdshader|tscn|tres|godot|cs|java|kt|kts|go|rs|rb|php|swift|c|h|cc|cpp|cxx|hpp|sh|bash|ps1|bat|cmd|sql|md|mdx|rst|txt|json|jsonc|yml|yaml|toml|ini|cfg|conf|xml|html|htm|css|scss|sass|less|vue|svelte|lock|csv|ipynb|lua|dart|ex|exs|scala|tf|proto|graphql|gradle|env)$"
     }
-    $5 == "settled" && $4 != "-" {
+    ($5 == "settled" || $5 == "observed") && $4 != "-" {
       a = $4; gsub(/;/, ",", a); n = split(a, piece, ","); cur = ""
       for (i = 1; i <= n; i++) {
         p = trim(piece[i]); gsub(/\342\200\223/, "-", p)
@@ -2898,7 +3767,7 @@ scope_orphans() {
     }
     $0 == "\f" { part = 2; next }
     part == 2 { if ($0 != "") F[++nf] = $0; next }
-    $5 == "settled" && $3 != "-" && !everyrun($3) { R[++nr] = $0 }
+    ($5 == "settled" || $5 == "observed") && $3 != "-" && !everyrun($3) { R[++nr] = $0 }
     END {
       for (r = 1; r <= nr; r++) {
         split(R[r], f, "\t"); m = items(f[3], I)
@@ -2928,7 +3797,7 @@ scope_orphans() {
 }
 
 cmd_memory() {
-  local sub="${1:-index}" home top tree mem entries n=0 stale=0 id title scope anchor state where item k keys run why nl='
+  local sub="${1:-index}" home top tree mem entries audit="" served py n=0 stale=0 id title scope anchor state where item k keys run why nl='
 ' tmpd rows found foundin counts kind p extra parts part f ln st last=""
   home="$(council_home)"; top="${home%/*}"
   memory_file "$home"; mem="$MEM"
@@ -2939,20 +3808,29 @@ cmd_memory() {
   [ -z "$MEM_NOTE" ] || printf 'council: %s — fix the - conventions: line under ## Memory in council.config.md\n' "$MEM_NOTE" >&2
   [ -z "$MEM_ALT" ] || printf 'council: WARNING — a second memory file, %s, holds %s entries the council never reads (it reads %s) — merge them, or point the - conventions: line under ## Memory in council.config.md at the one to keep\n' "$MEM_ALT" "$MEM_ALT_N" "$mem" >&2
   entries="$(memory_entries "$mem")"
+  # An observed failure is served only while the evidence it names still supports it.
+  case "$entries" in *"${TAB}observed${TAB}"*) audit="$(printf '%s\n' "$entries" | failure_audit "$home" "$top" "$mem")" ;; esac
+  if [ -n "$audit" ]; then served="$(memory_served "$entries" "$audit")"; else served="$entries"; fi
   [ $# -eq 0 ] || shift
   case "$sub" in
     index)
       if [ -z "$entries" ]; then say "memory: no entries yet in $mem"; memory_unread "$mem"; return 0; fi
-      printf '%s\n' "$entries" | LC_ALL=C awk -F'\t' "$AWK_SCOPE"'
+      printf '%s\n' "$served" | LC_ALL=C awk -F'\t' "$AWK_SCOPE"'
         function clip(t) { if (length(t) <= 60) return t; t = substr(t, 1, 60); sub(/ [^ ]*$/, "", t); return t " …" }
         $5 == "settled" {
           printf "%s · %s", $1, $2
           if ($3 != "-" && !everyrun($3)) printf " · scope: %s", $3; else printf " · every run"
           if ($4 != "-") printf " · anchor: %s", $4
+          if ($8 != "-") printf " · origin: %s", $8
           printf "\n"; next }
+        $5 == "observed" {
+          printf "%s · %s · observed failure, not a rule · scope: %s · verdict: %s · evidence: %s · origin: %s\n", $1, $2, $3, $10, $9, $8
+          next }
         $5 == "off" { printf "%s · %s · not served (%s)\n", $1, $2, ($6 ~ /^marked/ ? $6 : "under " clip($6)) ; next }
+        $6 ~ /^failure entry: / { printf "%s · %s · NOT SERVED as an observed failure — %s\n", $1, $2, substr($6, 16); u++; next }
+        $6 ~ /^not a failure entry/ { printf "%s · %s · NOT SERVED — only observed failures (F) belong under Observed Failures; move it to its own section\n", $1, $2; u++; next }
         { printf "%s · %s · NOT SERVED — its section, %s, is not one the council reads as settled\n", $1, $2, clip($6); u++ }
-        END { if (u) printf "memory: WARNING — %d entr%s never reach%s a brief: move %s under Accepted Patterns, Enforced Conventions or Decisions (or under ## Retired if %s no longer hold%s)\n", u, (u == 1 ? "y" : "ies"), (u == 1 ? "es" : ""), (u == 1 ? "it" : "them"), (u == 1 ? "it" : "they"), (u == 1 ? "s" : "") }'
+        END { if (u) printf "memory: WARNING — %d entr%s never reach%s a brief: move %s under a fitting settled section, complete Observed Failures, or ## Retired\n", u, (u == 1 ? "y" : "ies"), (u == 1 ? "es" : ""), (u == 1 ? "it" : "them") }'
       printf '%s\n' "$entries" | scope_orphans "$(this_tree)" "$(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"
       memory_unread "$mem"
       ;;
@@ -2984,7 +3862,7 @@ cmd_memory() {
 $(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"            # no seats recorded yet: the whole roster
         fi
       fi
-      printf '%s\n\f\n%s\n' "$keys" "$entries" | TOP="$tree" LC_ALL=C awk -F'\t' "$AWK_SCOPE"'
+      printf '%s\n\f\n%s\n' "$keys" "$served" | TOP="$tree" LC_ALL=C awk -F'\t' "$AWK_SCOPE"'
         BEGIN { top = ENVIRON["TOP"] }
         $0 == "\f" { part = 2; next }
         !part {                                     # the keys: paths, slugs, the mode
@@ -2998,28 +3876,41 @@ $(roster_rows "$home/council.config.md" | cut -f1 | grep -v '^-$')"            #
         }
         $1 == "" { next }
         $5 == "off" { off++; next }
-        $5 != "settled" { unk++; U = U (U == "" ? "" : ", ") $1; next }
+        $6 ~ /^failure entry: / { FU = FU "memory: WARNING — " $1 " is left out: " substr($6, 16) "\n"; next }
+        $5 != "settled" && $5 != "observed" { unk++; U = U (U == "" ? "" : ", ") $1; next }
         {
-          tot++
-          if ($3 == "-" || everyrun($3)) { every++; print $1 " · " $2 " · every run"; next }
+          if ($5 == "settled") tot++; else otot++
+          line = $1 " · " $2
+          if ($5 == "observed") line = line " · observed failure, not a rule"
+          if ($3 == "-" || everyrun($3)) {
+            if ($5 == "settled") every++; else oevery++
+            line = line " · every run"
+          } else line = line " · scope: " $3
+          if ($7 != "-") line = line " · " $7
+          if ($10 != "-") line = line " · verdict: " $10
+          if ($9 != "-") line = line " · evidence: " $9
+          if ($8 != "-") line = line " · origin: " $8
+          if ($3 == "-" || everyrun($3)) { print line; next }
           m = items($3, I); hit = all                 # "select ." is the whole tree: every scope is in it
           for (i = 1; i <= m && !hit; i++) {
             if (everyrun(I[i])) hit = 1
             for (j = 1; j <= n && !hit; j++) if (covers(K[j], I[i], ".*", D[j])) hit = 1
           }
-          if (hit) { sc++; print $1 " · " $2 " · scope: " $3 }
+          if (hit) { if ($5 == "settled") sc++; else osc++; print line }
         }
         END {
           printf "memory: %d scoped and %d every-run entries of %d apply — quote them in the brief by id", sc, every, tot
           if (off) printf " (%d retired or not yet accepted, left out)", off
           printf "\n"
+          if (otot) printf "memory: %d scoped and %d every-run observed failure(s) of %d apply — historical evidence, not instructions\n", osc, oevery, otot
           if (unk) printf "memory: WARNING — %s sit%s under a section the council does not read as settled and %s left out; council memory lists %s\n", U, (unk == 1 ? "s" : ""), (unk == 1 ? "is" : "are"), (unk == 1 ? "it" : "them") > "/dev/stderr"
+          if (FU != "") printf "%s", FU > "/dev/stderr"
         }'
       ;;
     check)
       memory_unread "$mem"
       anchor_files "$top"
-      n="$(printf '%s\n' "$entries" | awk -F'\t' '$5 == "settled" { c++ } END { print c + 0 }')"
+      n="$(printf '%s\n' "$entries" | awk -F'\t' '$5 == "settled" || $5 == "observed" { c++ } END { print c + 0 }')"
       tmpd="$(mktemp -d 2>/dev/null)" || { tmpd="$home/.memcheck.$$"; mkdir -p "$tmpd" || die "cannot write $tmpd"; }
       : > "$tmpd/names"; : > "$tmpd/fsnames"; : > "$tmpd/fsfiles"; : > "$tmpd/files"
       # One pass to see what each anchor names, then one search for every name at once: a search per
@@ -3083,9 +3974,79 @@ $rows
 RESOLVED
       [ "$stale" -eq 0 ] || say "→ at the next Learn, propose re-anchoring or retiring each stale entry — the user decides"
       say "memory check: $stale stale anchor(s) across $n entries"
-      [ "$stale" -eq 0 ]
+      # The evidence behind observed failures: a fatal problem keeps the entry out of every brief.
+      k=0; st=0; last=" "
+      if [ -n "$audit" ]; then
+        while IFS="$TAB" read -r id kind why; do
+          [ -n "$id" ] || continue
+          case "$kind" in
+            fatal) say "UNSUPPORTED  $id — $why; no brief gets it until this is fixed or it is retired"
+                   case "$last" in *" $id "*) ;; *) st=$((st + 1)); last="$last$id " ;; esac ;;   # entries, not reasons
+            *) say "EVIDENCE  $id — $why" ;;
+          esac
+          k=$((k + 1))
+        done <<AUDIT
+$audit
+AUDIT
+      fi
+      f="$(printf '%s\n' "$entries" | awk -F'\t' '$5 == "observed" { c++ } END { print c + 0 }')"
+      if [ "$f" -gt 0 ]; then
+        [ "$k" -eq 0 ] || say "→ at the next Learn, propose re-anchoring each one's evidence to a file that still shows it, or retiring it — the user decides"
+        say "memory check: $k evidence problem(s) across $f observed failure(s), $st no longer served"
+      fi
+      [ "$stale" -eq 0 ] && [ "$k" -eq 0 ]
       ;;
-    *) die "usage: council memory [index | select [path|slug …] | check]" ;;
+    propose)
+      # Draft an observed failure from one verified record of a run — a claim a blind verifier
+      # REFUTED or MISCITED (claims.jsonl), or a build task's failed gate trail (repairs.jsonl) — and
+      # file it under ## Proposed. It is refused unless, once the user says yes, it would be served.
+      [ ! -L "$mem" ] || die "the memory file is a link — write the proposal into the file it points to by hand"
+      run="$(resolve_run)" || exit 2
+      py="$(impact_python)" || die "memory propose needs optional Python 3.8+ — write the proposal under ## Proposed by hand (references/doctrine/10-learn.md)"
+      tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
+      printf '%s\n' "$MEMORY_SCOPE_ARG" > "$tmpd/scope" || { rm -rf "$tmpd"; die "cannot write $tmpd"; }
+      "$py" "$COUNCIL_PLUGIN_ROOT/scripts/memory.py" draft "$1" "$2" --run "$run" --top "$top" \
+        --scope-file "$tmpd/scope" --today "$(date +%Y-%m-%d)" > "$tmpd/raw" || { rm -rf "$tmpd"; exit 2; }
+      k="$(redact_copy "$tmpd/raw" "$tmpd/draft")" || { rm -rf "$tmpd"; die "could not redact the draft"; }
+      { printf '# probe\n## Observed Failures (F)\n'; cat "$tmpd/draft"; } > "$tmpd/probe"
+      why="$(memory_would_serve "$tmpd/probe" F-0 "$home" "$top" "$mem")" \
+        || { rm -rf "$tmpd"; die "nothing drafted — once accepted it would not be served: $why"; }
+      cp "$mem" "$tmpd/before" || { rm -rf "$tmpd"; die "cannot copy $mem"; }
+      id="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/memory.py" insert --memory "$tmpd/before" --block "$tmpd/draft" \
+        --out "$tmpd/after")" || { rm -rf "$tmpd"; exit 2; }
+      memory_replace "$mem" "$tmpd/before" "$tmpd/after" "$id" proposed "$home" "$top" || { rm -rf "$tmpd"; exit 1; }
+      rm -rf "$tmpd"
+      event_append "$run" memory.proposed "$id" "$1" "source=$2" || say "council: $id is drafted, but its event could not be recorded"
+      [ "${k:-0}" = 0 ] || say "memory: $k secret-looking string(s) in the draft were redacted"
+      say "memory: drafted $id under ## Proposed from $1 $2 of ${run##*/} — no brief reads it until the user says yes"
+      say "→ show the user the entry, then record their answer in their words:"
+      say "   yes: council memory accept $id --user-said \"<their words>\"   no: council memory reject $id --user-said \"<their words>\""
+      ;;
+    accept|reject)
+      # The user's answer to a drafted proposal, in their words: accept files it under Observed
+      # Failures with the date and those words; reject moves it to ## Rejected as one line.
+      case "$1" in F-*) case "${1#F-}" in ''|*[!0-9]*) die "memory $sub takes an observed-failure id such as F-3" ;; esac ;;
+                   *) die "memory $sub takes an observed-failure id such as F-3" ;; esac
+      [ ! -L "$mem" ] || die "the memory file is a link — move the entry in the file it points to by hand"
+      printf '%s\n' "$entries" | awk -F'\t' -v id="$1" '$1 == id { n++; if ($5 == "off" && tolower($6) ~ /^[#* ]*propos/) p++ } END { exit !(n == 1 && p == 1) }' \
+        || die "$1 is not one proposal awaiting the user's answer (none, or its id is shared) — council memory shows where it is"
+      py="$(impact_python)" || die "memory $sub needs optional Python 3.8+ — move the entry by hand (references/doctrine/10-learn.md)"
+      tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
+      { cp "$mem" "$tmpd/before" && { printf '%s' "$MEMORY_SAID_ARG" | tr '\r\n\t' '   '; printf '\n'; } > "$tmpd/said.raw"; } \
+        || { rm -rf "$tmpd"; die "cannot write $tmpd"; }   # one line, so a secret split across lines is still caught
+      redact_copy "$tmpd/said.raw" "$tmpd/said" >/dev/null || { rm -rf "$tmpd"; die "could not redact the user's words"; }
+      if [ "$sub" = accept ]; then k=observed; st=observed; else k=rejected; st=gone; fi
+      "$py" "$COUNCIL_PLUGIN_ROOT/scripts/memory.py" move "$1" --to "$k" --memory "$tmpd/before" --said "$tmpd/said" \
+        --today "$(date +%Y-%m-%d)" --out "$tmpd/after" || { rm -rf "$tmpd"; exit 2; }
+      memory_replace "$mem" "$tmpd/before" "$tmpd/after" "$1" "$st" "$home" "$top" || { rm -rf "$tmpd"; exit 1; }
+      rm -rf "$tmpd"
+      if [ "$sub" = accept ]; then
+        say "memory: $1 accepted with the user's words — runs whose files, seats or mode match its scope get it, as history to check, never as a rule"
+      else
+        say "memory: $1 rejected — one line under ## Rejected keeps the user's words and its evidence, so it is never proposed again"
+      fi
+      ;;
+    *) die "usage: council memory [index | select [path|slug …] | check | propose claim|repair <id> | accept|reject F-<n> --user-said \"…\"]" ;;
   esac
 }
 
@@ -3133,7 +4094,7 @@ prior_hits() {
       flush(); m = split(FILENAME, fp, "/"); disp = fp[m - 1] "/" fp[m]; na = 0; infm = 0; inareas = 0
       for (i = 1; i <= np; i++) hit[i] = ""
     }
-    { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub(/^\357\273\277/, "", line) }
+    { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub("^" ENVIRON["COUNCIL_BOM"], "", line) }
     FNR == 1 && line == "---" { infm = 1; next }
     infm {
       if (line == "---") { infm = 0; next }
@@ -3551,8 +4512,9 @@ cmd_ledger() {
   case "$last" in ''|*[!0-9]*) die "usage: council ledger [how many recent runs, default 10]" ;; esac
   [ -f "$ledger" ] || { say "no ledger yet — every completed run adds its seats to $ledger"; return 0; }
   LAST="$last" awk -F'\t' '
-    NR == 1 { next }
-    { row[NR] = $0; if (!($2 in seen)) { seen[$2] = 1; order[++nr] = $2 } }
+    NR == 1 || $2 == "" { next }                         # the header, and a blank or broken line
+    { row[NR] = $0; if (!($2 in seen)) { seen[$2] = 1; order[++nr] = $2 }
+      if ($4 != "(verifiers)" && $6 + $7 > 0) judged[$2] = 1 }   # a run whose synthesis credited items
     END {
       if (nr == 0) { print "the ledger has no runs yet"; exit }
       first = nr - ENVIRON["LAST"] + 1; if (first < 1) first = 1
@@ -3564,18 +4526,253 @@ cmd_ledger() {
         if (!(s in runs)) { names[++ns] = s; runs[s] = 0 }
         if (!((f[2], s) in counted)) { counted[f[2], s] = 1; runs[s]++ }
         raised[s] += f[5]; kept[s] += f[6]; cut[s] += f[7]; refd[s] += f[8]; tok[s] += f[9]
+        if (f[2] in judged) jraised[s] += f[5]                # shipped is a share of the items a synthesis judged
+        else if (f[5] > 0) unjudged = 1
       }
       printf "%-16s %4s %6s %5s %4s %7s %8s %9s\n", "seat", "runs", "raised", "kept", "cut", "refuted", "~k/run", "shipped"
       for (i = 1; i <= ns; i++) {
         s = names[i]; ship = kept[s] - refd[s]
-        pct = (raised[s] > 0) ? int(100 * ship / raised[s] + 0.5) "%" : "-"
+        pct = (jraised[s] > 0) ? int(100 * ship / jraised[s] + 0.5) "%" : "-"
         printf "%-16s %4d %6d %5d %4d %7d %8d %9s\n", s, runs[s], raised[s], kept[s], cut[s], refd[s], int(tok[s] / runs[s] / 1000 + 0.5), pct
       }
       printf "over the last %d completed run(s) · shipped = kept and not refuted, as a share of items raised\n", nr - first + 1
+      if (unjudged) print "raised counts every run; shipped only runs whose synthesis credited items (not council-init or a build) · - = never judged"
+      print "what this record can support, seat by seat: council ledger advice"
     }' "$ledger"
 }
 
+# Seat learning: each seat's record over the runs that judged its items, with a plausible range, and
+# advice only past a stated bar (scripts/ledger.py). Advisory: it never changes a roster, a route or a run.
+cmd_ledger_advice() {
+  local last="${1:-20}" py
+  case "$last" in ''|*[!0-9]*) die "usage: council ledger advice [how many recent runs, default 20] [--json]" ;; esac
+  [ "${#last}" -le 6 ] || die "ledger advice: keep N under a million runs"
+  [ "$last" -gt 0 ] || die "usage: council ledger advice [how many recent runs, default 20] [--json]"
+  py="$(impact_python)" || die "ledger advice needs optional Python 3.8+; council ledger shows the raw record — weigh no seat on fewer than 3 judged runs and 15 items, at most 5 from any one run"
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/ledger.py" advice --ledger "$(council_home)/ledger.tsv" --last "$last"
+  [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
+  "$@"
+}
+
 # ------------------------------------------------------------------------------------------------
+# Advisory routing. The TSV is a proposal, never a run plan or a dispatch instruction.
+# Keep the policy small and deterministic until actual outcome measurements can support learning.
+# ------------------------------------------------------------------------------------------------
+
+route_row() { printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5"; }
+route_cell() { printf '%s' "$1" | tr '\t\r\n' '   '; }
+
+route_positive() {
+  case "$2" in ''|*[!0-9]*) die "--$1 needs a positive integer" ;; esac
+  [ "${#2}" -le 7 ] && [ "$2" -gt 0 ] 2>/dev/null || die "--$1 must be between 1 and 9999999"
+}
+
+cmd_route_recommend() {
+  local task="$ROUTE_TASK_ARG" risk="$ROUTE_RISK_ARG" complexity="$ROUTE_COMPLEXITY_ARG" uncertainty="$ROUTE_UNCERTAINTY_ARG"
+  local project_cap cap budget max_budget size level policy band text surfaces="" surface s per per_reason
+  local security=0 data=0 frontend=0 architecture=0 performance=0 candidates="" selected="" count=0 limit=0
+  local slug why size_reason cap_reason budget_reason risk_reason complexity_reason uncertainty_reason
+  local required_level route_status verification_status chair_tokens worker_tokens verification_tokens selected_agents=0
+  [ -n "$(route_cell "$task" | tr -d '[:space:]')" ] || die "route recommend needs --task TEXT"
+  task="$(route_cell "$task")"
+  project_cap="$(configured_agent_cap)"
+  route_positive agent-cap "$project_cap"
+  cap="$project_cap"; cap_reason="project's configured agent cap"
+  if [ -n "$ROUTE_CAP_ARG" ]; then
+    route_positive agent-cap "$ROUTE_CAP_ARG"
+    [ "$ROUTE_CAP_ARG" -le "$project_cap" ] || die "--agent-cap cannot exceed the configured cap ($project_cap)"
+    cap="$ROUTE_CAP_ARG"; cap_reason="explicit cap within project's configured cap"
+  fi
+  if [ -n "$ROUTE_BUDGET_ARG" ]; then route_positive budget-tokens "$ROUTE_BUDGET_ARG"; fi
+  case "$risk" in ''|low|medium|high) ;; *) die "--risk must be low, medium or high" ;; esac
+  case "$uncertainty" in ''|low|medium|high) ;; *) die "--uncertainty must be low, medium or high" ;; esac
+  if [ -n "$complexity" ]; then
+    route_positive complexity "$complexity"
+    [ "$complexity" -le 10 ] || die "--complexity must be 1..10"
+  fi
+  for surface in "${ROUTE_SURFACES[@]+"${ROUTE_SURFACES[@]}"}"; do
+    [ -n "$(route_cell "$surface" | tr -d '[:space:]')" ] || die "--surface needs a non-empty name"
+    s="$(route_cell "$surface")"
+    case "$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]')" in data|database|db) data=1 ;; esac
+    [ -z "$surfaces" ] || surfaces="$surfaces, "
+    surfaces="$surfaces$s"
+  done
+  # Normalize punctuation (including path separators) into token boundaries. Substring matching
+  # misroutes ordinary words such as "author" as auth and "rapid" as API.
+  text=" $(printf '%s %s' "$task" "$surfaces" | tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c 'a-z0-9' ' ') "
+  case "$text" in *" auth "*|*" authentication "*|*" authorization "*|*" authorize "*|*" security "*|*" secure "*|*" crypto "*|*" cryptography "*|*" secret "*|*" secrets "*|*" permission "*|*" permissions "*|*" credential "*|*" credentials "*|*" access token "*|*" access tokens "*|*" refresh token "*|*" refresh tokens "*|*" bearer token "*|*" bearer tokens "*|*" session token "*|*" session tokens "*|*" api key "*|*" api keys "*) security=1 ;; esac
+  case "$text" in *" database "*|*" schema "*|*" migration "*|*" migrate "*|*" persistence "*|*" persistent "*|*" storage "*|*" sql "*|*" db "*) data=1 ;; esac
+  case "$text" in *" frontend "*|*" browser "*|*" accessibility "*|*" accessible "*|*" ui "*|*" ux "*|*" css "*|*" webpage "*|*" web "*) frontend=1 ;; esac
+  case "$text" in *" architecture "*|*" architectural "*|*" refactor "*|*" refactoring "*|*" api "*|*" interface "*|*" module "*|*" modules "*|*" design "*) architecture=1 ;; esac
+  case "$text" in *" performance "*|*" latency "*|*" throughput "*|*" hot path "*|*" optimize "*|*" optimization "*) performance=1 ;; esac
+  risk_reason="inferred from task and named surfaces"
+  if [ -z "$risk" ]; then
+    risk=low
+    if [ "$security" -eq 1 ] || [ "$data" -eq 1 ]; then risk=high
+    elif [ "$architecture" -eq 1 ] || [ "$frontend" -eq 1 ] || [ "$performance" -eq 1 ]; then risk=medium; fi
+    case "$text" in *" destructive "*|*" delete "*|*" deletion "*|*" production "*|*" deploy "*|*" deployment "*|*" breaking "*|*" public api "*) risk=high ;; esac
+  else risk_reason="explicit --risk override"; fi
+  complexity_reason="estimated from named surfaces and task wording"
+  if [ -z "$complexity" ]; then
+    complexity=2
+    [ "${#ROUTE_SURFACES[@]}" -eq 0 ] || complexity=$((complexity + ${#ROUTE_SURFACES[@]}))
+    [ "$architecture" -eq 0 ] || complexity=$((complexity + 2))
+    [ "$data" -eq 0 ] || complexity=$((complexity + 1))
+    [ "$security" -eq 0 ] || complexity=$((complexity + 1))
+    case "$text" in *" cross module "*|*" multiple "*|*" several "*|*" end to end "*) complexity=$((complexity + 2)) ;; esac
+    [ "$complexity" -le 10 ] || complexity=10
+  else complexity_reason="explicit --complexity override"; fi
+  if [ "$complexity" -le 3 ]; then band=low
+  elif [ "$complexity" -le 6 ]; then band=medium
+  else band=high; fi
+  uncertainty_reason="conservative default; limited evidence from task wording"
+  if [ -z "$uncertainty" ]; then uncertainty=medium
+  else uncertainty_reason="explicit --uncertainty override"; fi
+
+  required_level=self
+  if [ "$risk" = high ]; then required_level=adversarial
+  elif [ "$risk" = medium ] || [ "$complexity" -ge 4 ] || [ "$uncertainty" = high ]; then required_level=independent; fi
+  policy=adaptive; [ "$ROUTE_CLASSIC" -eq 0 ] || policy=classic
+  route_status=ready; verification_status=available
+  size=solo; size_reason="one bounded chain can stay with the Chair"
+  if [ "$ROUTE_CLASSIC" -eq 1 ]; then
+    size=squad; size_reason="classic fixed squad baseline, independent of inferred task signals"
+  elif [ "$risk" = high ] || [ "$complexity" -ge 7 ] || [ "$uncertainty" = high ]; then
+    size=full; size_reason="high risk, complexity or uncertainty warrants broader review"
+  elif [ "$risk" = medium ] || [ "$complexity" -ge 4 ] || [ "$security" -eq 1 ] || [ "$data" -eq 1 ]; then
+    size=squad; size_reason="multiple useful lenses and independent verification"
+  fi
+  max_budget="${ROUTE_BUDGET_ARG:-9999999}"
+  per="$(configured_worker_estimate)"; per_reason="configured estimate per worker (council.config.md)"
+  [ -n "$per" ] || { per=80000; per_reason="no-history estimate"; }
+  # Only a ceiling the user gave (--budget-tokens) can shrink a run; the estimate alone never does.
+  if [ "$size" = full ] && { [ "$cap" -lt 4 ] || { [ -n "$ROUTE_BUDGET_ARG" ] && [ "$max_budget" -lt $((20000 + 4 * per)) ]; }; }; then
+    size=squad; size_reason="full recommendation reduced by agent or token cap"
+    route_status=constrained
+  fi
+  if [ "$size" = squad ] && { [ "$cap" -lt 3 ] || { [ -n "$ROUTE_BUDGET_ARG" ] && [ "$max_budget" -lt $((20000 + 3 * per)) ]; }; }; then
+    size=solo; size_reason="squad recommendation reduced by agent or token cap; independent verification unavailable"
+    route_status=constrained
+  fi
+  case "$size" in
+    solo) limit=0 ;;
+    squad) limit=4 ;;
+    full) limit=7 ;;
+  esac
+  level="$required_level"
+  if [ "$size" != solo ] && [ "$level" = self ]; then level=independent; fi
+  if [ "$size" = solo ] && [ "$required_level" != self ]; then
+    route_status=needs-rescope
+    verification_status=unavailable
+  elif [ "$route_status" = constrained ]; then
+    verification_status=constrained
+  fi
+  route_row kind id field value reason
+  route_row schema route version 1 "versioned advisory recommendation"
+  route_row input route task "$task" "explicit task description"
+  route_row input route surfaces "${surfaces:--}" "explicit surfaces only; '-' means none"
+  route_row run route policy "$policy" "classic keeps a fixed baseline; adaptive uses task signals"
+  route_row run route size "$size" "$size_reason"
+  route_row assessment route risk "$risk" "$risk_reason"
+  route_row assessment route complexity "$complexity" "$complexity_reason"
+  route_row assessment route complexity-band "$band" "maps score 1-3 low, 4-6 medium, 7-10 high for run-plan v1"
+  route_row assessment route uncertainty "$uncertainty" "$uncertainty_reason"
+  route_row budget route agent-cap "$cap" "$cap_reason"
+  route_row budget route ceiling-tokens "${ROUTE_BUDGET_ARG:--}" "explicit advisory planning ceiling; '-' means no user ceiling; not runtime enforcement"
+  route_row verification route level "$level" "minimum depth from risk, uncertainty and run size; never reduced to fit a cap"
+  if [ "$size" = solo ]; then
+    route_row seat chair disposition selected "Solo stays with the Chair; the Chair does not count against agent cap"
+  else
+    route_row seat chair disposition selected "Chair coordinates and synthesizes; does not count against agent cap"
+  fi
+  # Priority is explicit, so capped recommendations are reproducible and explain omitted lenses.
+  candidates="implementation testing security data frontend architecture performance verification"
+  if [ "$size" != solo ]; then
+    selected="implementation testing"
+    count=2
+    if [ "$size" = full ]; then limit=7; else limit=4; fi
+    # Reserve one agent slot for the verifier and add specialists by relevance.
+    [ "$cap" -gt "$limit" ] || limit=$((cap - 1))
+    for slug in security data frontend architecture performance; do
+      [ "$ROUTE_CLASSIC" -eq 0 ] || break
+      [ "$count" -lt "$limit" ] || break
+      case "$slug" in
+        security) [ "$security" -eq 1 ] || continue ;;
+        data) [ "$data" -eq 1 ] || continue ;;
+        frontend) [ "$frontend" -eq 1 ] || continue ;;
+        architecture) [ "$architecture" -eq 1 ] || [ "$complexity" -ge 7 ] || continue ;;
+        performance) [ "$performance" -eq 1 ] || continue ;;
+      esac
+      selected="$selected $slug"; count=$((count + 1))
+    done
+    # Generic Full fallbacks come only after lenses actually indicated by the task/surfaces.
+    if [ "$ROUTE_CLASSIC" -eq 0 ] && [ "$size" = full ] && [ "$count" -lt "$limit" ] && [ "$risk" = high ]; then
+      case " $selected " in *" security "*) ;; *) selected="$selected security"; count=$((count + 1)) ;; esac
+    fi
+    if [ "$ROUTE_CLASSIC" -eq 0 ] && [ "$size" = full ] && [ "$count" -lt "$limit" ]; then
+      case " $selected " in *" architecture "*) ;; *) selected="$selected architecture"; count=$((count + 1)) ;; esac
+    fi
+    selected="$selected verification"
+    selected_agents=$((count + 1))
+  fi
+  if [ "$ROUTE_CLASSIC" -eq 0 ] && [ "$size" != solo ] && [ "$route_status" = ready ]; then
+    for slug in security data frontend architecture performance; do
+      case "$slug" in
+        security) [ "$security" -eq 1 ] || continue ;;
+        data) [ "$data" -eq 1 ] || continue ;;
+        frontend) [ "$frontend" -eq 1 ] || continue ;;
+        architecture) [ "$architecture" -eq 1 ] || [ "$complexity" -ge 7 ] || continue ;;
+        performance) [ "$performance" -eq 1 ] || continue ;;
+      esac
+      case " $selected " in *" $slug "*) ;; *) route_status=constrained; break ;; esac
+    done
+  fi
+  route_row budget route selected-agents "$selected_agents" "Chair is excluded; never exceeds agent cap"
+  chair_tokens=20000
+  if [ "$size" = solo ]; then worker_tokens=0; verification_tokens=0
+  else worker_tokens=$((count * per)); verification_tokens=$per; fi
+  budget=$((chair_tokens + worker_tokens + verification_tokens))
+  budget_reason="$per_reason: $(( (per + 500) / 1000 ))k per selected agent plus 20k Chair; not measured or enforced"
+  if [ -n "$ROUTE_BUDGET_ARG" ] && [ "$budget" -gt "$ROUTE_BUDGET_ARG" ]; then
+    route_status=needs-rescope
+    verification_status=unavailable
+  fi
+  route_row run route status "$route_status" "constrained means reduced size or omitted relevant lens; needs-rescope means estimated need exceeds ceiling or required verification cannot fit"
+  route_row verification route status "$verification_status" "unavailable requires more budget or agents before proceeding"
+  route_row budget route estimated-tokens "$budget" "$budget_reason"
+  route_row budget chair estimated-tokens "$chair_tokens" "advisory allocation; not measured or enforced"
+  route_row budget workers estimated-tokens "$worker_tokens" "shared across selected worker archetypes; not measured or enforced"
+  route_row budget verification estimated-tokens "$verification_tokens" "advisory allocation; not measured or enforced"
+  for slug in $candidates; do
+    case " $selected " in
+      *" $slug "*)
+        case "$slug" in
+          implementation) why="bounded implementation or primary investigation lens" ;;
+          testing) why="regression and test-design lens" ;;
+          verification) why="independent challenge of worker claims" ;;
+          security) [ "$security" -eq 0 ] && why="high-risk work merits a security challenge" || why="task or surface indicates a security lens" ;;
+          architecture) [ "$architecture" -eq 0 ] && why="full council needs a structural lens" || why="task or surface indicates an architecture lens" ;;
+          *) why="task or surface indicates a $slug lens" ;;
+        esac
+        route_row seat "$slug" disposition selected "$why" ;;
+      *)
+        if [ "$size" = solo ]; then why="Solo uses no delegated agents"
+        elif [ "$ROUTE_CLASSIC" -eq 1 ]; then why="classic policy keeps a fixed implementation, testing and verification roster"
+        elif [ "$slug" = verification ]; then why="no agent slot available for independent verification"
+        else
+          case "$slug" in
+            implementation|testing) why="not selected by routing policy" ;;
+            security) [ "$security" -eq 0 ] && why="no security signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
+            data) [ "$data" -eq 0 ] && why="no persistent-data signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
+            frontend) [ "$frontend" -eq 0 ] && why="no frontend signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
+            architecture) [ "$architecture" -eq 0 ] && [ "$complexity" -lt 7 ] && why="no architecture or high-complexity signal" || why="agent cap reserved for higher-priority lenses" ;;
+            performance) [ "$performance" -eq 0 ] && why="no performance signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
+          esac
+        fi
+        route_row seat "$slug" disposition skipped "$why" ;;
+    esac
+  done
+}
 
 usage() {
   cat <<'EOF'
@@ -3588,10 +4785,20 @@ council — the Small Council's helper (bash + git)
   council run close [--status complete|abandoned|paused]
   council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
                                          in progress again, this session recorded as its driver
+  council run plan [check|show]          validate the run plan · show its decisions in plain language
+  council run events [show|check]        inspect or validate the run's append-only event stream
   council state [key=value …]            show or update the run's session-state header
   council seat <slug> <state> [agent=ID] [tokens=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped
   council index [--base REF]             change index → <run>/index.md (hunks, symbols, callers, tests)
+  council impact [--run <folder>]        refresh <run>/impact.tsv from the index baseline (optional Python 3.8+)
+  council context build <seat> [--expand PATH ...]
+                                         build a seat's plan-sized context pack after brief.md
+  council context show <seat>            print the pack path and its selection metrics
+  council evidence build|show|check       index claims, provenance, states and verifier links from
+                                         synthesis.md and verify-*.md into run-local claims.jsonl
+  council repair record <task> <gate>     snapshot one completed gate attempt, classify its failure
+  council repair show|check [task]        inspect bounded repair advice or check saved proof
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
                                          inside it; output and exit code → <run>/gates/
   council gate --all [--at grounding|verify]
@@ -3603,12 +4810,39 @@ council — the Small Council's helper (bash + git)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md)
   council map status                     how far the map is behind HEAD, by area
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
-  council memory [index|check]           memory's one-line index · anchors that went stale
-  council memory select [path|slug …]    the entries in scope (default: the run's files and seats)
+  council memory [index|check]           memory's one-line index · stale anchors and failure evidence
+  council memory select [path|slug …]    scoped rules and observed failures with provenance
+  council memory propose claim|repair <id> [--scope …]
+                                         draft an observed failure from the run's verified record
+                                         under ## Proposed (a claim refuted or miscited by the
+                                         verifier; a build task's failed gate trail, --scope needed)
+  council memory accept|reject F-<n> --user-said "…"
+                                         the user's answer, in their words: file it under Observed
+                                         Failures, or move it to ## Rejected
   council prior [path …]                 earlier council work on these paths (default: the index)
   council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
                                          secret-looking strings are redacted; records ask= in the state
   council ledger [N]                     each seat's record over the last N completed runs (default 10)
+  council ledger advice [N] [--json]     how much each seat's record can support over the last N runs
+                                         (default 20), and advice only past the bar (optional Python 3.8+)
+  council route recommend --task TEXT [--risk low|medium|high] [--complexity 1..10]
+                         [--uncertainty low|medium|high] [--surface NAME ...]
+                         [--agent-cap N] [--budget-tokens N] [--classic]
+                                         advisory TSV recommendation; does not open or alter a run
+  council tune [propose] [--json]        tuning proposals from this project's own record: the estimate
+                                         per worker (when five runs measure it), roster changes (via a
+                                         refresh), behaviour held until a benchmark shows it helps
+  council tune apply budget <value> --user-said "…"
+                                         set the estimate per worker to the value it proposed, logged
+                                         in tuning.md with the exact line it replaced
+  council tune revert budget --user-said "…"
+                                         put that line back exactly
+  council history [--json]               every run of this council home: cost, estimate accuracy, gates,
+                                         repairs, verifier catches, seat evidence — a rate only when
+                                         enough runs carry its data (optional Python 3.8+)
+  council tui [--watch | --json]         a read-only cockpit for the run: plan, seats, gates, repairs,
+                                         evidence, memory proposals and recent events (--watch redraws
+                                         until the run stops; optional Python 3.8+)
   council doctor                         drift scan; every finding comes with a fix
 
 Run-scoped commands act on the one in-progress run on this working tree; otherwise pass --run <folder>
@@ -3634,13 +4868,17 @@ no_words() { local label="$1"; shift; [ $# -eq 0 ] || die "$label doesn't take '
 
 main() {
   RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" SESSION_ARG="" ALONGSIDE=0 FLAGS=""
+  ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
+  ROUTE_SURFACES=()
+  CONTEXT_EXPANDS=()
+  MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0 WATCH=0
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
   pos=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run|--code-root|--status|--base|--at|--session)
+      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said)
                    flag="${1#--}"
                    [ $# -ge 2 ] || case "$flag" in
                      run|code-root) die "--$flag needs a folder" ;;
@@ -3649,10 +4887,10 @@ main() {
                      *) die "--$flag needs a value" ;;
                    esac
                    val="$2"; shift 2 ;;
-      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*)
+      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --alongside|--all) flag="${1#--}"; val=1; shift ;;
-      --alongside=*|--all=*) die "${1%%=*} takes no value" ;;
+      --alongside|--all|--classic|--json|--watch) flag="${1#--}"; val=1; shift ;;
+      --alongside=*|--all=*|--classic=*|--json=*|--watch=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
                    [ $# -eq 0 ] || { pos+=("$1"); shift; }
                    continue ;;
@@ -3671,7 +4909,13 @@ main() {
     case "$flag" in
       run) RUN_ARG="$val" ;;       code-root) CODE_ROOT_ARG="$val" ;;  status) STATUS_ARG="$val" ;;
       base) BASE_ARG="$val" ;;     at) AT_ARG="$val" ;;                session) SESSION_ARG="$val" ;;
-      alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;
+      alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;                     json) JSON_OUT=1 ;;  watch) WATCH=1 ;;
+      task) ROUTE_TASK_ARG="$val" ;; risk) ROUTE_RISK_ARG="$val" ;;
+      complexity) ROUTE_COMPLEXITY_ARG="$val" ;; uncertainty) ROUTE_UNCERTAINTY_ARG="$val" ;;
+      surface) ROUTE_SURFACES+=("$val") ;; agent-cap) ROUTE_CAP_ARG="$val" ;;
+      budget-tokens) ROUTE_BUDGET_ARG="$val" ;; classic) ROUTE_CLASSIC=1 ;;
+      expand) CONTEXT_EXPANDS+=("$val") ;;
+      scope) MEMORY_SCOPE_ARG="$val" ;; user-said) MEMORY_SAID_ARG="$val" ;;
     esac
     FLAGS="$FLAGS $flag"
   done
@@ -3689,11 +4933,45 @@ main() {
         close)  takes_flags "run close" status; no_words "run close" ${1+"$@"}; cmd_run_close ;;
         status) takes_flags "run status" all; no_words "run status" ${1+"$@"}; cmd_run_status ;;
         resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
-        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>]" ;;
+        plan)   takes_flags "run plan"; [ $# -le 1 ] || die "usage: council run plan [check|show]"; cmd_run_plan ${1+"$@"} ;;
+        events) takes_flags "run events"; [ $# -le 1 ] || die "usage: council run events [show|check]"; cmd_run_events ${1+"$@"} ;;
+        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show] | run events [show|check]" ;;
       esac ;;
     state)   takes_flags state; cmd_state ${1+"$@"} ;;
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;
+    route)   sub="${1:-}"; [ $# -eq 0 ] || shift
+             case "$sub" in
+               recommend) takes_flags "route recommend" task risk complexity uncertainty surface agent-cap budget-tokens classic
+                          [ -z "$RUN_ARG" ] || die "route recommend does not take --run; it uses this project's config"
+                          no_words "route recommend" ${1+"$@"}; cmd_route_recommend ;;
+               *) die "usage: council route recommend --task TEXT [routing flags]" ;;
+             esac ;;
     index)   takes_flags index base; no_words index ${1+"$@"}; cmd_index ;;
+    impact)  takes_flags impact; no_words impact ${1+"$@"}; cmd_impact ;;
+    context) sub="${1:-}"; [ $# -eq 0 ] || shift
+             case "$sub" in
+               build) takes_flags "context build" expand
+                      [ $# -eq 1 ] || die "usage: council context build <seat> [--run <folder>] [--expand PATH ...]"
+                      cmd_context build "$1" ;;
+               show) takes_flags "context show"
+                     [ $# -eq 1 ] || die "usage: council context show <seat> [--run <folder>]"
+                     cmd_context show "$1" ;;
+               *) die "usage: council context build <seat> [--expand PATH ...] | context show <seat>" ;;
+             esac ;;
+    evidence) sub="${1:-}"; [ $# -eq 0 ] || shift
+              takes_flags "evidence $sub"; no_words "evidence $sub" ${1+"$@"}
+              case "$sub" in build|show|check) cmd_evidence "$sub" ;;
+                *) die "usage: council evidence build|show|check [--run <folder>]" ;;
+              esac ;;
+    repair) sub="${1:-}"; [ $# -eq 0 ] || shift
+            takes_flags "repair $sub"
+            case "$sub" in
+              record) [ $# -eq 2 ] || die "usage: council repair record <task> <gate> [--run <folder>]"
+                      cmd_repair record "$1" "$2" ;;
+              show|check) [ $# -le 1 ] || die "usage: council repair $sub [task] [--run <folder>]"
+                          cmd_repair "$sub" ${1+"$@"} ;;
+              *) die "usage: council repair record <task> <gate> | repair show|check [task]" ;;
+            esac ;;
     gate)    takes_flags gate all at --
              if [ "$ALL" = 1 ]; then
                no_words "gate --all" ${1+"$@"}
@@ -3713,12 +4991,49 @@ main() {
              [ $# -le 1 ] || die "usage: council fingerprint [check]"
              case "${1:-}" in ''|check) ;; *) die "usage: council fingerprint [check]" ;; esac
              cmd_fingerprint ${1+"$@"} ;;
-    memory)  takes_flags memory
-             case "${1:-index}" in select) ;; *) [ $# -le 1 ] || die "usage: council memory [index | select [path|slug …] | check]" ;; esac
+    memory)  case "${1:-index}" in
+               select)  takes_flags "memory select" ;;
+               propose) takes_flags "memory propose" scope
+                        case "$#:${2:-}" in 3:claim|3:repair) ;;
+                          *) die "usage: council memory propose claim <id> [--scope <paths>] | memory propose repair <task> --scope <paths> [--run <folder>]" ;;
+                        esac ;;
+               accept|reject) takes_flags "memory $1" user-said
+                        [ $# -eq 2 ] || die "usage: council memory $1 F-<n> --user-said \"<the user's words>\""
+                        [ -n "$MEMORY_SAID_ARG" ] || die "memory $1 needs --user-said \"<the user's own words>\" — their answer, not a summary of it" ;;
+               *)       takes_flags memory
+                        [ $# -le 1 ] || die "usage: council memory [index | select [path|slug …] | check | propose … | accept … | reject …]" ;;
+             esac
              cmd_memory ${1+"$@"} ;;
     prior)   takes_flags prior; cmd_prior ${1+"$@"} ;;
     ask)     takes_flags ask; [ $# -le 2 ] || die "usage: council ask save [slug]"; cmd_ask ${1+"$@"} ;;
-    ledger)  takes_flags ledger; [ $# -le 1 ] || die "usage: council ledger [N]"; cmd_ledger ${1+"$@"} ;;
+    ledger)  if [ "${1:-}" = advice ]; then
+               takes_flags "ledger advice" json
+               [ $# -le 2 ] || die "usage: council ledger advice [N] [--json]"
+               cmd_ledger_advice ${2+"$2"}
+             else
+               takes_flags ledger; [ $# -le 1 ] || die "usage: council ledger [N] | ledger advice [N] [--json]"; cmd_ledger ${1+"$@"}
+             fi ;;
+    tune)    case "${1:-propose}" in
+               propose)      takes_flags tune json; [ $# -le 1 ] || die "usage: council tune [propose] [--json]"
+                             [ -z "$RUN_ARG" ] || die "tune reads this council home's record; it does not take --run"
+                             cmd_tune propose ;;
+               apply|revert) takes_flags "tune $1" user-said
+                             if [ "$1" = apply ]; then
+                               [ $# -eq 3 ] || die "usage: council tune apply budget <the value council tune showed, e.g. 150k> --user-said \"<the user's words>\""
+                             else
+                               [ $# -eq 2 ] || die "usage: council tune revert budget --user-said \"<the user's words>\""
+                             fi
+                             [ -z "$RUN_ARG" ] || die "tune reads this council home's record; it does not take --run"
+                             [ -n "$MEMORY_SAID_ARG" ] || die "tune $1 needs --user-said \"<the user's own words>\" — their answer, not a summary of it"
+                             cmd_tune "$1" "$2" "${3:-}" ;;
+               *)            die "usage: council tune [propose] [--json] | tune apply budget <value> --user-said \"…\" | tune revert budget --user-said \"…\"" ;;
+             esac ;;
+    history) takes_flags history json; no_words history ${1+"$@"}
+             [ -z "$RUN_ARG" ] || die "history reads every run of this council home; it does not take --run"
+             cmd_history ;;
+    tui)     takes_flags tui watch json; no_words tui ${1+"$@"}
+             [ "$WATCH" -eq 0 ] || [ "$JSON_OUT" -eq 0 ] || die "tui takes --watch or --json, not both"
+             cmd_tui ;;
     doctor)  takes_flags doctor; no_words doctor ${1+"$@"}; cmd_doctor ;;
     version) takes_flags version; no_words version ${1+"$@"}; say "council $COUNCIL_VERSION" ;;
     help)    takes_flags help; no_words help ${1+"$@"}; usage ;;

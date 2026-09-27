@@ -30,9 +30,12 @@ compaction is lossy, and the disk is the only memory a reset can trust.
 8. **Aggregate, then judge; judge, then challenge.** The challenger never sees the author's reasoning.
 9. **The user rules; the council proposes.** Questions come last, numbered, in the chat. The user's
    request and every ruling are recorded in the user's own words.
-10. **Every run is sized, budgeted, reported and closed.** Estimate before, actual after, closed always.
+10. **Every run is sized, budgeted, reported and closed.** A validated `run-plan.tsv` records why
+    each seat is selected or skipped, its context and budget, and the required verification before
+    Brief or dispatch. Estimate before, actual after, closed always.
 11. **The council learns this project.** What it got wrong becomes memory; each seat's track record
-    shapes the next roster.
+    shapes the next roster. `council memory select` labels F entries as observed failures: they are
+    leads to check against current code, never settled rules or proof of today's cause.
 
 ## The stages
 
@@ -45,12 +48,12 @@ your mode's `## At <Stage>` section, if it has one. Each stage ends by recording
 |---|---|---|---|
 | 1 | convene | `01-convene.md` | an open, approved run |
 | 2 | prepare | `02-prepare.md` | index.md, gate results, earlier findings |
-| 3 | assign | `03-assign.md` | every seat's slice, budget and state |
-| 4 | brief | `04-brief.md` | brief.md, with the memory in scope |
+| 3 | assign | `03-assign.md` | a valid run-plan.tsv; every seat's slice, budget and state |
+| 4 | brief | `04-brief.md` | brief.md, with the memory in scope; seat context packs only if opted in (config `context packs: on`) |
 | 5 | work | `05-work.md` | seats/<slug>.md, one per worker |
 | 6 | collect | `06-collect.md` | a clean `council collect` |
-| 7 | judge | `07-judge.md` | synthesis.md |
-| 8 | challenge | `08-challenge.md` | check.md, verify-<n>.md |
+| 7 | judge | `07-judge.md` | synthesis.md, provisional claims.jsonl when Python is available |
+| 8 | challenge | `08-challenge.md` | check.md, verify-<n>.md, refreshed claims.jsonl |
 | 9 | deliver | `09-deliver.md` | the tracked deliverable |
 | 10 | learn | `10-learn.md` | memory proposals, a closed run |
 
@@ -67,16 +70,23 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 | Command | Use it to |
 |---|---|
-| `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one · carry one on in this session (see Resume) |
+| `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one · carry one on in this session (see Resume) |
+| `council run plan check` · `run plan show` | validate the run's routing, context, budgets and verification contract · show those decisions plainly |
+| `council route recommend --task "<summary>"` | inspect an advisory size, risk, seat archetypes, verification and budget before opening a run; use `--classic` for the fixed comparison path (see `${CLAUDE_PLUGIN_ROOT}/references/adaptive-routing.md`) |
+| `council run events show` · `run events check` | inspect or validate the run's mechanical event history (`events.tsv`); see `${CLAUDE_PLUGIN_ROOT}/references/event-stream.md` |
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
 | `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
-| `council index [--base <ref>]` | build the change index: hunks, symbols, callers, tests |
+| `council index [--base <ref>]` · `council impact` | build the change index and, when Python 3.8+ is available, the bounded `impact.tsv` graph · refresh that graph after code changes (see `${CLAUDE_PLUGIN_ROOT}/references/impact-graph.md`) |
+| `council context build <seat> [--expand PATH …]` · `council context show <seat>` | after `brief.md`, select a seat's context at its validated run-plan level · inspect its path and selection metrics (see `${CLAUDE_PLUGIN_ROOT}/references/precision-context.md`); optional Python 3.8+, with brief-only fallback |
+| `council evidence build` · `evidence check` · `evidence show` | index synthesis claims, support states, provenance and verifier links in run-local `claims.jsonl`; rebuild after Challenge, then check for missing or stale links (see `${CLAUDE_PLUGIN_ROOT}/references/evidence-model.md`); optional Python 3.8+ |
+| `council repair record <task> <gate>` · `repair show|check [task]` | record and inspect a build's bounded gate-repair trail without running a gate or changing code (see `${CLAUDE_PLUGIN_ROOT}/references/repair-loop.md`); optional Python 3.8+ |
 | `council gate <name> [-- '<command>']` · `council gate --all --at grounding` (or `verify`) | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved. From `--all`, **exit 4 = NOTHING WAS CHECKED** — no gate ran; say so, never report it as a pass. From a single gate, 4 is that command's own exit code |
 | `council changed [--glob '<pat>'] [--each] -- <cmd>` | run `<cmd>` over just the files this change touches — committed, staged, unstaged and new; exit 0 when none matched, so a newly fitted check is green on day one |
 | `council collect` · `council check` | check the seat files (and a war room's debate.md) · check citations, origin and request quotes — and, in a build, each fix's proof: did the before-check really fail, did the after-check really pass, is a test saved |
 | `council ask save [slug]` | file the run's ask.md — the user's words — under `.council/asks/`, redacting secrets; records `ask=` |
 | `council fingerprint check` · `council memory select` · `council prior` | a changed stack · the memory entries in scope · earlier council work on these paths |
-| `council ledger` · `council map status` · `council doctor` | each seat's track record · map freshness · drift scan with a fix per finding |
+| `council memory propose claim\|repair <id>` · `memory accept\|reject F-<n> --user-said "…"` | at Learn: draft an observed failure from the run's verified record under `## Proposed` · file the user's answer in their words; optional Python 3.8+ |
+| `council ledger` · `council ledger advice` · `council map status` · `council doctor` · `council tui` · `council history` · `council tune` | each seat's track record · what that record can support, with advice only past a bar · map freshness · drift scan with a fix per finding · a read-only screen of the run for the user (never needed by the Chair) · every run's cost, estimate accuracy and catches, a rate only past five runs · proposals from that record, applied only with the user's words |
 
 Commands act on the one in-progress run on this working tree. With a second one open
 (`--alongside`), pass `--run <folder>` every time; the helper never guesses.
@@ -92,7 +102,7 @@ linked worktree. **Code root** = the working tree you are reviewing or building.
 | `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
 | `plans/` `reviews/` `logs/` `research/` `postgames/` `refs/` | deliverables · project-local seat docs | tracked |
 | `asks/` | the user's requests, word for word — every deliverable points at its own | local — to share them, replace the `asks/` line in `.council/.gitignore` with `!asks/` |
-| `runs/<date-time>-<mode>/` | `session-state.md` `ask.md` `log.md` `seats.tsv` `index.md` `brief.md` `seats/` `debate.md` `synthesis.md` `check.md` `verify-<n>.md` `gates/` | ignored |
+| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `events.tsv` `ask.md` `log.md` `seats.tsv` `index.md` `impact.tsv` (optional) `brief.md` `contexts/<slug>.md` and `.md.metrics.tsv` (optional) `seats/` `debate.md` `synthesis.md` `claims.jsonl` (optional) `repairs.jsonl` and `repairs/` (optional) `check.md` `verify-<n>.md` `gates/` | ignored |
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
 `.council/refs/<file>.md` → under the council home. Workers always get absolute paths, and a seat
@@ -103,6 +113,9 @@ live at a legacy path; the config's Memory section says where.
 
 - **Agents:** at most 10 per run, verifiers included (config `agent cap`), unless the user raises it.
   A resumed worker (SendMessage to its agent id) isn't a new agent; a re-dispatch is.
+- **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts. Runs
+  created by an older plugin have no plan stamp and remain valid legacy runs. The exact v1 fields
+  and compatibility rule live in `references/run-plan.md`.
 - **Sizes:** Solo (you, inline) · Squad (2–4 seats + 1–2 verifiers) · Full (up to 7 seats +
   verifiers). Size a run as seats plus the verifiers Challenge will need; its overflow rule covers
   the rest. A post-game uses 1–3 verifiers and counts as Squad.

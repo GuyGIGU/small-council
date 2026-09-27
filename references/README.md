@@ -14,6 +14,14 @@ read at the start of a long run fades by its end; a rule read at the moment of a
 The laws, the stage index, the helper and the file layout live in `skills/context-core/SKILL.md`.
 Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is council-init.
 
+## Run contracts
+
+`adaptive-routing.md` documents the optional pre-run recommendation and its limits.
+`run-plan.md` defines the checked decision state for a run. `event-stream.md` defines the
+append-only record of CLI-observable actions. `impact-graph.md` defines the optional run-local
+graph of changed paths, direct dependencies and test hints.
+`precision-context.md` defines the optional, seat-specific context pack and its measurement limits.
+
 ## Seat reference docs — one per council seat
 
 `security.md` (Hunt) · `refactoring.md` (Fowler) · `quality-frontend.md` (Dodds) ·

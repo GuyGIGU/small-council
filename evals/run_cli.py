@@ -16,6 +16,7 @@ Needs bash and git; no LLM, no network. Covers:
 """
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -37,8 +38,15 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles d
 results = []
 
 
+def result_line(ok, name, detail):
+    return f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  ({detail.strip()[:400]})" if detail and not ok else "")
+
+
 def check(name, ok, detail=""):
     results.append((ok, name, detail))
+    # Printed as it happens: the suite runs the helper hundreds of times (about 17 minutes on Windows
+    # Git Bash), and a run that prints nothing until the end is easy to mistake for a stalled one.
+    print(result_line(ok, name, detail), flush=True)
 
 
 def council(cwd, *args, env=None):
@@ -82,6 +90,63 @@ def read(path):
         return ""
     with open(path, encoding="utf-8") as f:
         return f.read()
+
+
+def events(run):
+    """Parsed event rows, excluding the header."""
+    return [line.split("\t") for line in read(os.path.join(run, "events.tsv")).splitlines()[1:]]
+
+
+def route_table(output):
+    """Parse the advisory route's stable five-column TSV contract."""
+    lines = output.splitlines()
+    valid = bool(lines) and lines[0] == "kind\tid\tfield\tvalue\treason"
+    rows = [line.split("\t") for line in lines[1:]]
+    valid = valid and all(len(row) == 5 for row in rows)
+    return valid, {(row[0], row[1], row[2]): row[3:] for row in rows if len(row) == 5}
+
+
+def route_value(rows, kind, ident, field):
+    return rows.get((kind, ident, field), [""])[0]
+
+
+def write_plan(run, selected=("chair",), skipped=(), size="squad", risk="medium", complexity="medium",
+               uncertainty="medium", verification="independent", estimated_tokens=100000):
+    """Complete a run-plan v1 for tests whose subject is later than routing."""
+    selected = list(selected)
+    if "chair" not in selected:
+        selected.insert(0, "chair")
+    if size != "solo" and verification != "self" and not any(slug.startswith("verify-") for slug in selected):
+        selected.append("verify-plan")
+    state = read(os.path.join(run, "session-state.md"))
+    mode = re.search(r"^mode:\s*(.+)$", state, re.MULTILINE).group(1).strip()
+    rows = [
+        ("kind", "id", "field", "value", "reason"),
+        ("schema", "plan", "version", "1", "versioned test contract"),
+        ("run", "run", "id", os.path.basename(run), "bind this plan to the test run"),
+        ("run", "run", "mode", mode, "mode chosen by this test"),
+        ("run", "run", "size", size, "sized for this test"),
+        ("assessment", "run", "risk", risk, "test fixture risk"),
+        ("assessment", "run", "complexity", complexity, "test fixture complexity"),
+        ("assessment", "run", "uncertainty", uncertainty, "test fixture uncertainty"),
+        ("budget", "run", "agent-cap", "10", "default project cap"),
+        ("budget", "run", "estimated-tokens", str(estimated_tokens), "fixture estimate"),
+        ("verification", "run", "level", verification, "fixture verification"),
+    ]
+    for slug in selected:
+        role = "chair" if slug == "chair" else ("verifier" if slug.startswith("verify-") else "worker")
+        rows.extend([
+            ("seat", slug, "disposition", "selected", "needed by this test"),
+            ("seat", slug, "role", role, "fixture role"),
+            ("context", slug, "level", "focused", "only the fixture context"),
+            ("budget", slug, "tool-calls", "15", "small fixture slice"),
+        ])
+    for slug in skipped:
+        rows.extend([
+            ("seat", slug, "disposition", "skipped", "no surface in this fixture"),
+            ("seat", slug, "role", "worker", "roster seat"),
+        ])
+    write(os.path.join(run, "run-plan.tsv"), "\n".join("\t".join(row) for row in rows) + "\n")
 
 
 def slash(p):
@@ -147,6 +212,7 @@ if not BASH or not GIT:
     sys.exit(0)
 
 with tempfile.TemporaryDirectory() as tmp:
+    tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     repo = new_repo(tmp, "repo")
     write(os.path.join(repo, "src", "stats.py"),
           "def average(values):\n    total = 0\n    for v in values:\n        total += v\n    return total / len(values)\n")
@@ -189,15 +255,267 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run open: state records the code root", re.search(r"^code-root: .+/repo$", st, re.MULTILINE) is not None, st)
     check("run open: state records Claude Code's session id", "session: sess-123" in st, st)
     check("run open: seats.tsv and seats/ created", os.path.isfile(os.path.join(run, "seats.tsv")) and os.path.isdir(os.path.join(run, "seats")))
+    plan_path = os.path.join(run, "run-plan.tsv")
+    check("run open: creates and stamps a versioned run plan",
+          os.path.isfile(plan_path) and "plan-schema: 1" in st and "\t{{MODE}}\t" not in read(plan_path), read(plan_path) + st)
+    first_events = events(run)
+    check("run open: stamps and writes the first structured event",
+          "events-schema: 1" in st and len(first_events) == 1 and
+          first_events[0][0:2] == ["1", "1"] and first_events[0][3:6] == ["run.opened", "run", "council-review"],
+          read(os.path.join(run, "events.tsv")))
+    code, out, err = council(repo, "run", "events", "check")
+    check("run events check: accepts the opened stream", code == 0 and "1 event(s)" in out, out + err)
+    code, out, err = council(repo, "run", "events", "show")
+    check("run events show: renders the first event and its detail",
+          code == 0 and "run.opened  run → council-review  (phase=convene)" in out, out + err)
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: the starter plan is intentionally incomplete", code == 1 and "replace the placeholder" in out, out)
+    code, out, err = council(repo, "state", "phase=brief")
+    check("state: refuses to enter Brief while the run plan is invalid",
+          code == 2 and "cannot advance to brief" in err and "phase: convene" in read(os.path.join(run, "session-state.md")), out + err)
+    code, out, err = council(repo, "state", "phase=build")
+    check("state: refuses to enter an implement Build while the run plan is invalid",
+          code == 2 and "cannot advance to build" in err and "phase: convene" in read(os.path.join(run, "session-state.md")), out + err)
 
     # State
     code, out, _ = council(repo, "state", "phase=prepare", "next=build the index")
     st = read(os.path.join(run, "session-state.md"))
     check("state: updates header fields", code == 0 and "phase: prepare" in st and "next: build the index" in st, st)
+    check("state: the phase transition gets one event",
+          len(events(run)) == 2 and events(run)[1][3:7] == ["run.phase_changed", "run", "prepare", "from=convene"],
+          read(os.path.join(run, "events.tsv")))
     code, _, err = council(repo, "state", "status=bogus")
     check("state: rejects an invalid status", code == 2, err)
     code, _, err = council(repo, "state", "no-equals-sign")
     check("state: rejects a bare word", code == 2, err)
+
+    write_plan(run, selected=("fowler", "beck", "gone"), skipped=("ghost",))
+    code, out, err = council(repo, "run", "plan", "check")
+    check("run plan check: accepts a complete plan and counts selected agents",
+          code == 0 and "5 selected, 1 skipped" in out and "4 agent(s) of cap 10" in out, out + err)
+    code, out, err = council(repo, "state", "phase=brief")
+    check("state: enters Brief once the run plan is valid", code == 0 and "phase brief" in out, out + err)
+    code, out, err = council(repo, "run", "plan", "show")
+    check("run plan show: explains routing, context, budgets and verification",
+          code == 0 and "selected — fowler" in out and "skipped — ghost" in out and "verification: independent" in out, out + err)
+    good_plan = read(plan_path)
+
+    # Advisory routing is deterministic policy output, never a run mutation or agent dispatch.
+    route_before = {os.path.relpath(os.path.join(folder, name), run):
+                    Path(folder, name).read_bytes()
+                    for folder, _, names in os.walk(run) for name in names}
+    tiny_args = ("route", "recommend", "--task", "Fix a typo in README", "--risk", "low",
+                 "--complexity", "1", "--uncertainty", "low")
+    code, tiny, err = council(repo, *tiny_args)
+    table_ok, tiny_rows = route_table(tiny)
+    tiny_seats = [(key, value) for key, value in tiny_rows.items() if key[0] == "seat" and key[2] == "disposition"]
+    check("route recommend: tiny low-risk work gets a compatible solo plan",
+          code == 0 and table_ok and route_value(tiny_rows, "schema", "route", "version") == "1" and
+          route_value(tiny_rows, "run", "route", "policy") == "adaptive" and
+          route_value(tiny_rows, "run", "route", "size") == "solo" and
+          route_value(tiny_rows, "assessment", "route", "risk") == "low" and
+          route_value(tiny_rows, "assessment", "route", "complexity") == "1" and
+          route_value(tiny_rows, "assessment", "route", "complexity-band") == "low" and
+          route_value(tiny_rows, "assessment", "route", "uncertainty") == "low" and
+          route_value(tiny_rows, "verification", "route", "level") == "self" and
+          sum(value[0] == "selected" for _, value in tiny_seats) == 1 and
+          all(value[0] in ("selected", "skipped") and value[1] for _, value in tiny_seats), tiny + err)
+    code, tiny_again, err = council(repo, *tiny_args)
+    check("route recommend: identical inputs give byte-identical advice", code == 0 and tiny_again == tiny, tiny_again + err)
+    for wording in ("Author a README", "Build docs", "Fix a rapid typo", "Reduce token usage"):
+        code, advice, err = council(repo, "route", "recommend", "--task", wording)
+        table_ok, advice_rows = route_table(advice)
+        check("route recommend: incidental keyword letters do not inflate " + wording,
+              code == 0 and table_ok and route_value(advice_rows, "assessment", "route", "risk") == "low" and
+              route_value(advice_rows, "run", "route", "size") == "solo", advice + err)
+    code, auth_advice, err = council(repo, "route", "recommend", "--task", "Fix refresh token authorization")
+    table_ok, auth_rows = route_table(auth_advice)
+    check("route recommend: actual authorization work still activates security routing",
+          code == 0 and table_ok and route_value(auth_rows, "assessment", "route", "risk") == "high" and
+          route_value(auth_rows, "seat", "security", "disposition") == "selected", auth_advice + err)
+    code, refresh_advice, err = council(repo, "route", "recommend", "--task", "Rotate refresh tokens")
+    table_ok, refresh_rows = route_table(refresh_advice)
+    check("route recommend: refresh tokens infer security and adversarial verification without overrides",
+          code == 0 and table_ok and route_value(refresh_rows, "assessment", "route", "risk") == "high" and
+          route_value(refresh_rows, "seat", "security", "disposition") == "selected" and
+          route_value(refresh_rows, "verification", "route", "level") == "adversarial", refresh_advice + err)
+
+    code, high, err = council(repo, "route", "recommend", "--task", "Change authentication and persistent user records",
+                              "--risk", "high", "--complexity", "8", "--uncertainty", "high",
+                              "--surface", "security", "--surface", "data")
+    table_ok, high_rows = route_table(high)
+    high_seats = [(key, value) for key, value in high_rows.items() if key[0] == "seat" and key[2] == "disposition"]
+    check("route recommend: high-risk persistent security work escalates and explains seats",
+          code == 0 and table_ok and route_value(high_rows, "assessment", "route", "risk") == "high" and
+          route_value(high_rows, "run", "route", "size") == "full" and
+          route_value(high_rows, "assessment", "route", "complexity") == "8" and
+          route_value(high_rows, "assessment", "route", "complexity-band") == "high" and
+          route_value(high_rows, "assessment", "route", "uncertainty") == "high" and
+          route_value(high_rows, "verification", "route", "level") == "adversarial" and
+          route_value(high_rows, "seat", "security", "disposition") == "selected" and
+          route_value(high_rows, "seat", "data", "disposition") == "selected" and
+          sum(value[0] == "selected" for _, value in high_seats) > 1 and
+          all(value[1] for _, value in high_seats), high + err)
+    code, data_advice, err = council(repo, "route", "recommend", "--task", "Database migration", "--agent-cap", "4")
+    table_ok, data_rows = route_table(data_advice)
+    check("route recommend: a capped migration keeps its data specialist",
+          code == 0 and table_ok and route_value(data_rows, "assessment", "route", "risk") == "high" and
+          route_value(data_rows, "seat", "data", "disposition") == "selected" and
+          route_value(data_rows, "budget", "route", "selected-agents") == "4", data_advice + err)
+    code, mixed_advice, err = council(repo, "route", "recommend", "--task", "Auth database migration", "--agent-cap", "4")
+    table_ok, mixed_rows = route_table(mixed_advice)
+    check("route recommend: a cap-omitted relevant lens is called out as constrained",
+          code == 0 and table_ok and route_value(mixed_rows, "seat", "security", "disposition") == "selected" and
+          route_value(mixed_rows, "seat", "data", "disposition") == "skipped" and
+          route_value(mixed_rows, "run", "route", "status") == "constrained", mixed_advice + err)
+
+    code, capped, err = council(repo, "route", "recommend", "--task", "Change authentication and persistent user records",
+                                "--risk", "high", "--complexity", "8", "--uncertainty", "high",
+                                "--surface", "security", "--surface", "data", "--agent-cap", "1",
+                                "--budget-tokens", "1000")
+    table_ok, cap_rows = route_table(capped)
+    selected = sum(value[0] == "selected" for key, value in cap_rows.items()
+                   if key[0] == "seat" and key[1] != "chair" and key[2] == "disposition")
+    estimated = route_value(cap_rows, "budget", "route", "estimated-tokens")
+    check("route recommend: a small cap is honored without pretending high-risk work fits its token ceiling",
+          code == 0 and table_ok and route_value(cap_rows, "budget", "route", "agent-cap") == "1" and
+          selected <= 1 and route_value(cap_rows, "budget", "route", "selected-agents") == str(selected) and
+          route_value(cap_rows, "budget", "route", "ceiling-tokens") == "1000" and
+          estimated.isdigit() and int(estimated) > 1000 and
+          route_value(cap_rows, "verification", "route", "level") == "adversarial" and
+          route_value(cap_rows, "run", "route", "status") == "needs-rescope" and
+          route_value(cap_rows, "verification", "route", "status") == "unavailable",
+          capped + err)
+
+    code, classic, err = council(repo, "route", "recommend", "--task", "Fix a typo in README", "--classic")
+    table_ok, classic_rows = route_table(classic)
+    check("route recommend: classic static routing remains available",
+          code == 0 and table_ok and route_value(classic_rows, "run", "route", "policy") == "classic" and
+          route_value(classic_rows, "run", "route", "size") == "squad", classic + err)
+
+    for bad_args in (("route", "recommend"),
+                     ("route", "recommend", "--task", "x", "--risk", "urgent"),
+                     ("route", "recommend", "--task", "x", "--complexity", "0"),
+                     ("route", "recommend", "--task", "x", "--complexity", "11"),
+                     ("route", "recommend", "--task", "x", "--uncertainty", "unknown"),
+                     ("route", "recommend", "--task", "x", "--agent-cap", "0"),
+                     ("route", "recommend", "--task", "x", "--agent-cap", "11"),
+                     ("route", "recommend", "--task", "x", "--budget-tokens", "0"),
+                     ("route", "recommend", "--task", "x", "--run", run)):
+        code, _, err = council(repo, *bad_args)
+        check("route recommend: rejects invalid " + " ".join(bad_args[2:]), code == 2 and bool(err.strip()), err)
+    route_after = {os.path.relpath(os.path.join(folder, name), run):
+                   Path(folder, name).read_bytes()
+                   for folder, _, names in os.walk(run) for name in names}
+    check("route recommend: advice does not alter an existing run or dispatch seats",
+          route_after == route_before and read(plan_path) == good_plan, str(set(route_after) ^ set(route_before)))
+
+    append(plan_path, "schema\tplan\tversion\t1\tduplicate for the drill\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: rejects duplicate identities", code == 1 and "duplicate row" in out, out)
+    write(plan_path, good_plan.replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t2"))
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: rejects a roster over its plan cap", code == 1 and "selected agents exceed the plan cap" in out, out)
+    write(plan_path, "\n".join(line for line in good_plan.splitlines() if "\tchair\t" not in line) + "\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: requires exactly one selected Chair", code == 1 and "select exactly one Chair" in out, out)
+    write(plan_path, "\n".join(line for line in good_plan.splitlines() if "\tverify-plan\t" not in line) + "\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: independent verification needs a selected verifier",
+          code == 1 and "independent verification needs a selected verifier" in out, out)
+    write(plan_path, good_plan.replace("run\trun\tsize\tsquad", "run\trun\tsize\tsolo"))
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: Solo cannot select delegated agents", code == 1 and "Solo must not select" in out, out)
+    write(plan_path, "\n".join(line for line in good_plan.replace("run\trun\tsize\tsquad", "run\trun\tsize\tfull").splitlines()
+                                if "\tgone\t" not in line) + "\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: Full needs a broader selected team", code == 1 and "Full needs at least four" in out, out)
+    write(plan_path, good_plan)
+    code, out, err = council(repo, "seat", "outsider", "running", "agent=nope")
+    check("seat: refuses to start an identity the valid plan did not select",
+          code == 2 and "does not mark it selected" in err, out + err)
+
+    legacy = new_repo(tmp, "legacy-plan")
+    write(os.path.join(legacy, ".council", "council.config.md"), "# Council config — legacy plan\n")
+    _, legacy_run, _ = council(legacy, "run", "open", "council-review")
+    legacy_run = legacy_run.strip()
+    os.remove(os.path.join(legacy_run, "run-plan.tsv"))
+    write(os.path.join(legacy_run, "session-state.md"), read(os.path.join(legacy_run, "session-state.md")).replace("plan-schema: 1\n", ""))
+    os.remove(os.path.join(legacy_run, "events.tsv"))
+    write(os.path.join(legacy_run, "session-state.md"), read(os.path.join(legacy_run, "session-state.md")).replace("events-schema: 1\n", ""))
+    code, out, err = council(legacy, "run", "events", "check")
+    check("legacy run: no event stream is required", code == 0 and "legacy run" in out, out + err)
+    write(os.path.join(legacy_run, "events.tsv"), "schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n")
+    code, _, err = council(legacy, "run", "events", "check")
+    check("run events check: rejects a stream without a schema stamp",
+          code == 1 and "without an events-schema stamp" in err, err)
+    os.remove(os.path.join(legacy_run, "events.tsv"))
+    code, out, err = council(legacy, "seat", "old-worker", "running", "agent=old")
+    check("legacy run: a pre-contract run without a plan still works", code == 0 and "old-worker" in out, out + err)
+    council(legacy, "run", "close", "--status", "abandoned")
+
+    event_repo = new_repo(tmp, "event-contract")
+    write(os.path.join(event_repo, ".council", "council.config.md"), "# Council config — events\n")
+    _, event_run, _ = council(event_repo, "run", "open", "council-review")
+    event_run = event_run.strip()
+    jobs = [subprocess.Popen([BASH, CLI, "gate", f"parallel-{i}", "--run", event_run, "--", "true"],
+                             cwd=event_repo, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, encoding="utf-8", errors="replace") for i in range(3)]
+    outcomes = [p.communicate(timeout=120) for p in jobs]
+    code, out, err = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events: concurrent gate completions get distinct, continuous sequence numbers",
+          all(p.returncode == 0 for p in jobs) and code == 0 and len(events(event_run)) == 4 and
+          {e[4] for e in events(event_run)[1:]} == {"parallel-0", "parallel-1", "parallel-2"},
+          out + err + str(outcomes))
+    event_lock_path = os.path.join(event_run, "events.tsv.lock")
+    os.mkdir(event_lock_path)
+    write(os.path.join(event_lock_path, "owner"), "99999999\n")
+    code, out, err = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events: reclaims a lock left by a terminated writer",
+          code == 0 and "valid" in out and not os.path.exists(event_lock_path), out + err)
+    os.mkdir(event_lock_path)
+    old_time = time.time() - 30
+    os.utime(event_lock_path, (old_time, old_time))
+    code, out, err = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events: reclaims an old lock with no owner file",
+          code == 0 and "valid" in out and not os.path.exists(event_lock_path), out + err)
+
+    write_plan(event_run, selected=("racer",))
+    os.mkdir(event_lock_path)
+    future_time = time.time() + 300  # Hold this test lock while two seat commands contend.
+    os.utime(event_lock_path, (future_time, future_time))
+    first = subprocess.Popen([BASH, CLI, "seat", "racer", "running", "agent=a", "--run", event_run],
+                             cwd=event_repo, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, encoding="utf-8", errors="replace")
+    seat_file = os.path.join(event_run, "seats.tsv")
+    deadline = time.monotonic() + 8
+    while "racer\trunning\t" not in read(seat_file) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    first_wrote = "racer\trunning\t" in read(seat_file)
+    second = subprocess.Popen([BASH, CLI, "seat", "racer", "done", "agent=a", "--run", event_run],
+                              cwd=event_repo, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, encoding="utf-8", errors="replace")
+    time.sleep(0.5)
+    second_waited = "racer\trunning\t" in read(seat_file)
+    os.rmdir(event_lock_path)
+    first_result = first.communicate(timeout=120)
+    second_result = second.communicate(timeout=120)
+    racer_events = [row[5] for row in events(event_run) if row[3:5] == ["seat.updated", "racer"]]
+    check("run events: concurrent updates to one seat preserve state and event order",
+          first_wrote and second_waited and first.returncode == 0 and second.returncode == 0 and
+          racer_events == ["running", "done"] and "racer\tdone\t" in read(seat_file),
+          str((first_result, second_result, racer_events, read(seat_file))))
+    append(os.path.join(event_run, "events.tsv"), "1\t9\tbroken\n")
+    code, out, _ = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events check: rejects a truncated or discontinuous row", code == 1 and "invalid row" in out, out)
+    code, out, _ = council(event_repo, "doctor")
+    check("doctor: flags a damaged event stream", "invalid event stream" in out, out)
+    os.remove(os.path.join(event_run, "events.tsv"))
+    code, _, err = council(event_repo, "run", "events", "check", "--run", event_run)
+    check("run events check: a stamped run cannot silently lose its stream", code == 1 and "missing" in err, err)
+    code, _, err = council(event_repo, "gate", "after-loss", "--run", event_run, "--", "true")
+    check("run events: a later action reports a lost stream instead of silently recreating it",
+          code == 0 and "not recorded" in err and not os.path.exists(os.path.join(event_run, "events.tsv")), err)
 
     # Change index, with an earlier review on disk
     write(os.path.join(repo, ".council", "reviews", "2026-08-01-stats.md"),
@@ -344,6 +662,11 @@ with tempfile.TemporaryDirectory() as tmp:
     verdict = json.loads(read(os.path.join(gates, "bad.json")) or "{}")
     check("gate: a failing gate returns its own exit code", code == 3 and "FAIL (exit 3" in out, out)
     check("gate: the verdict JSON records the exit code", verdict.get("exit") == 3 and verdict.get("gate") == "bad", str(verdict))
+    gate_events = [e for e in events(run) if e[3] == "gate.finished"]
+    check("gate: passing and failing commands leave sequenced verdict events",
+          len(gate_events) >= 2 and gate_events[-2][4:6] == ["ok", "passed"] and
+          gate_events[-1][4:6] == ["bad", "failed"] and "exit=3" in gate_events[-1][6],
+          str(gate_events[-2:]))
     check("gate: a failure shows its error line", "Error: boom" in out, out)
     check("gate: saves the full output", "Error: boom" in read(os.path.join(gates, "bad.txt")))
     code, out, _ = council(repo, "gate", "noisy", "--", "for i in $(seq 1 60); do echo step $i; done; echo 'Error: boom at the end'; exit 3")
@@ -444,6 +767,7 @@ with tempfile.TemporaryDirectory() as tmp:
     write(os.path.join(tk, ".council", "council.config.md"), "# Council config — tokens\n")
     code, trun, _ = council(tk, "run", "open", "council-review")
     trun = trun.strip()
+    write_plan(trun, selected=tuple(f"par{i}" for i in range(6)) + ("afterlock",))
     council(tk, "seat", "hunt", "done", "agent=a1", "tokens=74.3k")
     council(tk, "seat", "beck", "done", "agent=a2", "tokens=1.2k")
     council(tk, "seat", "leach", "done", "agent=a3", "tokens=74,304")
@@ -507,6 +831,38 @@ with tempfile.TemporaryDirectory() as tmp:
     check("memory select: ** globs reach into subfolders", "EC-2" in out, out)
     code, out, _ = council(repo, "memory", "select")
     check("memory select: defaults to the run's changed files and seats", "AP-1" in out and "AP-2" in out and "EC-2" not in out, out)
+    mem8 = new_repo(tmp, "memory-evolution")
+    write(os.path.join(mem8, ".council", "council.config.md"), "# c\n")
+    # F-1's evidence: an observed failure is served only while the file it cites still shows its verdict.
+    write(os.path.join(mem8, ".council", "reviews", "run-12.md"),
+          "".join(f"line {n}\n" for n in range(1, 42)) + "| 4 | stale tokens | REFUTED — invalidated first | mw.py:3 |\n")
+    write(os.path.join(mem8, ".council", "conventions.md"),
+          "# Conventions\n## Accepted Patterns\n### AP-1: old title\n"
+          "**Pattern:** read the cache after revocation · **Origin:** review-12, user accepted 2026-09-26\n"
+          "**Scope:** src/auth/**\n"
+          "## Observed Failures (F)\n### F-1: stale token finding\n"
+          "**Failure:** a seat reported stale tokens, but middleware invalidates before lookup\n"
+          "**Scope:** src/auth/**\n**Origin:** run-12, 2026-09-26\n"
+          "**Evidence:** reviews/run-12.md:42\n**Verdict:** REFUTED\n"
+          "### F-2: unsupported failure\n**Failure:** guessed cause\n**Scope:** src/auth/**\n"
+          "**Origin:** run-13\n**Verdict:** INFERRED\n"
+          "## Proposed\n### F-3: not approved\n**Failure:** a proposal only\n"
+          "**Scope:** src/auth/**\n**Origin:** run-14\n**Evidence:** log.md\n**Verdict:** OBSERVED\n")
+    code, out, err = council(mem8, "memory", "select", "src/auth/session.py")
+    check("memory select: serves the rule itself and its origin, not only the title",
+          code == 0 and "AP-1 · old title · scope: src/auth/** · read the cache after revocation" in out
+          and "origin: review-12, user accepted 2026-09-26" in out, out + err)
+    check("memory select: scoped failure history is labelled as evidence, not a rule",
+          "F-1 · stale token finding · observed failure, not a rule" in out
+          and "verdict: REFUTED" in out and "evidence: reviews/run-12.md:42" in out
+          and "F-2" not in out and "F-3" not in out, out + err)
+    code, out, err = council(mem8, "memory", "select", "src/other.py")
+    check("memory select: failure history outside the touched scope stays out",
+          code == 0 and "F-1" not in out and "AP-1" not in out, out + err)
+    code, out, err = council(mem8, "memory")
+    check("memory index: incomplete failure provenance is visible but never served",
+          code == 0 and "F-2 · unsupported failure · NOT SERVED" in out
+          and "F-3 · not approved · not served" in out, out + err)
     code, out, _ = council(repo, "memory", "check")
     check("memory check: flags the anchors that no longer hold, and only those",
           code == 1 and "STALE  EC-2" in out and "AP-1" not in out and "AP-2" not in out and "3 stale anchor(s) across 7 entries" in out, out)
@@ -763,6 +1119,8 @@ with tempfile.TemporaryDirectory() as tmp:
           "## Enforced Conventions\n### EC-1: plans that touch migrations include a rollback task\n**Scope:** council-plan\n"
           "### EC-2: credentials come from the keyring on purpose\n**Scope:** hunt\n")
     code, selrun, _ = council(msel, "run", "open", "council-plan")
+    selrun = selrun.strip()
+    write_plan(selrun, selected=("hunt",))
     council(msel, "seat", "hunt", "queued")
     code, out, _ = council(msel, "memory", "select", "webapp/backend")
     check("memory select: with a run open, the paths given add to the run's seats and mode",
@@ -772,7 +1130,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("memory select: with several runs open, only the paths given count — and it says so",
           code == 0 and "AP-1" in out and "EC-1" not in out and "several runs are open" in err, out + err)
     council(msel, "run", "close", "--run", selrun2.strip(), "--status", "abandoned")
-    council(msel, "run", "close", "--run", selrun.strip(), "--status", "abandoned")
+    council(msel, "run", "close", "--run", selrun, "--status", "abandoned")
 
     # Citation and origin check
     write(os.path.join(run, "synthesis.md"),
@@ -1415,6 +1773,15 @@ with tempfile.TemporaryDirectory() as tmp:
     st = read(os.path.join(run, "session-state.md"))
     check("run close: marks complete and stamps the actual cost (re-dispatches count, skipped seats don't)",
           "status: complete" in st and "actual: ~86k tokens across 4 agents" in st, st)
+    final_events = events(run)
+    code_ev, out_ev, err_ev = council(repo, "run", "events", "check", "--run", run)
+    check("run events: seat updates and completion survive with a continuous sequence",
+          code_ev == 0 and any(e[3] == "seat.updated" for e in final_events) and
+          any(e[3] == "collect.finished" for e in final_events) and
+          any(e[3] == "verification.finished" for e in final_events) and
+          final_events[-1][3:6] == ["run.closed", "run", "complete"] and
+          [int(e[1]) for e in final_events] == list(range(1, len(final_events) + 1)),
+          out_ev + err_ev + str(final_events[-3:]))
     check("run close: prints the actual cost", "~86k tokens across 4 agents" in out, out)
     ledger = read(os.path.join(repo, ".council", "ledger.tsv"))
     check("run close: records each seat in the ledger", "ledger: 3 seat row(s) recorded" in out
@@ -1555,6 +1922,8 @@ with tempfile.TemporaryDirectory() as tmp:
     bom = new_repo(tmp, "bom")
     write(os.path.join(bom, ".council", "council.config.md"), "# Council config — bom\n")
     code, bomrun, _ = council(bom, "run", "open", "council-review")
+    bomrun = bomrun.strip()
+    write_plan(bomrun)
     bom_state = os.path.join(bomrun.strip(), "session-state.md")
     body = read(bom_state)
     with open(bom_state, "w", encoding="utf-8-sig", newline="\n") as f:
@@ -1614,6 +1983,7 @@ with tempfile.TemporaryDirectory() as tmp:
     write(os.path.join(rs, ".council", "council.config.md"), "# Council config — resume\n")
     code, rrun, _ = council(rs, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sess-old"})
     rrun = rrun.strip()
+    write_plan(rrun, selected=("hunt", "beck"))
     rname, rstate = os.path.basename(rrun), os.path.join(rrun, "session-state.md")
     council(rs, "seat", "hunt", "running", "agent=a1")
     council(rs, "run", "close", "--status", "paused")
@@ -1739,6 +2109,7 @@ with tempfile.TemporaryDirectory() as tmp:
     council(req, "run", "close")
     code, irun, _ = council(req, "run", "open", "council-implement")
     irun = irun.strip()
+    write_plan(irun, selected=("leach",))
     council(req, "state", f"ask=.council/asks/{filed[0]}")
     code, out, _ = council(req, "memory", "select")
     check("memory select: ... and not in another mode's runs", code == 0 and "EC-1" not in out and "memory: 0 scoped" in out, out)
@@ -1992,7 +2363,9 @@ with tempfile.TemporaryDirectory() as tmp:
     cl = new_repo(tmp, "closelog")
     write(os.path.join(cl, ".council", "council.config.md"), "# Council config — close\n")
     code, clrun, _ = council(cl, "run", "open", "council-implement")
-    cln = os.path.basename(clrun.strip())
+    clrun = clrun.strip()
+    write_plan(clrun, selected=("builder", "verify-1"))
+    cln = os.path.basename(clrun)
     council(cl, "state", "ask-saved=x")
     write(os.path.join(cl, ".council", "logs", "2026-09-17-zz-build.md"),
           f"# Build log\nInput: `x` · Run: {cln} · Start: abc123\n\n## Shortcuts and concessions\nnone\n")
@@ -2791,6 +3164,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # A war room's round 2: collect waits for a running seat; a fresh round-2 worker counts as its seat
     code, wr, _ = council(req, "run", "open", "council-plan")
     wr = wr.strip()
+    write_plan(wr, selected=("leach",))
     write(os.path.join(wr, "brief.md"), "# Brief\n## Seats\n### leach — Data (Leach)\n- ref: none\n- out: seats/leach.md\n")
     write(os.path.join(wr, "seats", "leach.md"), "# Leach — Data (council-plan)\nref: none\n## Index\n1 · must · Principle 1 · a.txt:1 · x\n")
     write(os.path.join(wr, "debate.md"), "# War room\n## Seats\n### leach-r2 — Data (Leach), round 2\n- ref: none\n- out: seats/leach-r2.md\n")
@@ -2881,8 +3255,11 @@ with tempfile.TemporaryDirectory() as tmp:
     check("every command refuses a word or flag it doesn't take: exit 2, with a message", not took, "; ".join(took))
 
 passed = sum(1 for ok, *_ in results if ok)
-for ok, name, detail in results:
-    print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  ({detail.strip()[:400]})" if detail and not ok else ""))
+if passed != len(results):                     # the failures again, so none scrolls out of sight
+    print("\nFailed:")
+    for ok, name, detail in results:
+        if not ok:
+            print(result_line(ok, name, detail))
 if BASH:
     print(f"\nbash: {BASH} ({subprocess.run([BASH, '-c', 'echo $BASH_VERSION'], capture_output=True, text=True).stdout.strip()})")
 print(f"\n{passed}/{len(results)} checks passed")

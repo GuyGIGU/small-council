@@ -19,15 +19,27 @@ Decide whether to convene, whom, and at what cost — then get the user's go-ahe
      the config's roster.
 
    One chain → Solo, or one builder. Independent slices → seats.
-5. **Size it.** Solo: you, inline. Squad: 2–4 seats + 1–2 verifiers. Full: up to 7 seats +
-   verifiers. Count the verifiers Challenge will need — one for each P1 or protected item you
-   expect, one for the rest — and keep seats + verifiers within the agent cap (config `agent cap`,
-   default 10).
+5. **Size it.** Start with `council route recommend --task "<short task>"`, adding explicit
+   `--risk`, `--complexity`, `--uncertainty`, or `--surface` inputs only when the known evidence
+   warrants them. Treat its routing and budget as a recommendation, not an authorization or a
+   dispatch order. Compare it with the actual roster, surfaces, project history, and task risks;
+   record any override and why in the run plan. `--classic` shows a fixed comparison policy;
+   manual sizing remains available regardless of either recommendation. If the route says
+   `needs-rescope`, resolve the budget or verification shortfall with the user before opening or
+   dispatching a run; a lower-cost Solo label does not waive required independent challenge.
+   Solo: you, inline. Squad: 2–4 seats + 1–2 verifiers. Full: up to 7 seats + verifiers. Count
+   the verifiers Challenge will need — one for each P1 or protected item you expect, one for the
+   rest — and keep seats + verifiers within the agent cap (config `agent cap`, default 10).
 6. **Estimate from this project's history.** `council ledger` shows each seat's average tokens per
    run; `council run status --all` shows whole runs. With no history, assume ~60–100k tokens per
-   worker.
+   worker. The route budgets with the config's `estimate per worker` when the user set one through
+   `council tune`; otherwise with 80k.
 7. **Open the run.** `council run open <mode>` prints the run folder and records this session's id,
-   so a compaction resumes the right run. Record the size:
+   so a compaction resumes the right run. It also creates `<run>/run-plan.tsv`: fill its run size,
+   risk, complexity, uncertainty, token estimate and verification level from the decision you just
+   made. Assign completes its seat rows. A Solo run or a mode that skips Assign completes every seat
+   row here too (the inline Chair plus any expected verifiers), then runs `council run plan check`.
+   Record the same size on the status board:
    `council state size="squad — 3 seats + 1 verifier, est. ~300k tokens"`.
 8. **Save the request** — right after opening the run, before anything else. Write `<run>/ask.md`:
    ```
