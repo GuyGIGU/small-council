@@ -47,8 +47,8 @@ def make_runs(home, n, per_agent, start=1):
         write(run / "session-state.md", "status: complete\nmode: council-review\nphase: deliver\n## Decisions so far\n")
         write(run / "run-plan.tsv", "kind\tid\tfield\tvalue\treason\nrun\trun\tsize\tsquad\tr\n"
               "budget\trun\testimated-tokens\t260000\tr\n")
-        write(run / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n" + "".join(
-            "{}\tdone\ta\t{}\t-\t-\t1\n".format(slug, per_agent) for slug in ("hunt", "beck", "verify-1")))
+        write(run / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n" + "".join(
+            "{}\tdone\ta\t{}\t-\t-\t1\t1\n".format(slug, per_agent) for slug in ("hunt", "beck", "verify-1")))
 
 
 def council(repo, *args, timeout=60):

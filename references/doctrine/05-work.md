@@ -27,14 +27,18 @@ Write <abs run>/seats/<slug>.md, then return one line.
   objective, slice, hard constraints or reference docs.
   With no pack, dispatch still uses the complete brief. Do not imply that omitted paths are safe.
 
-- **Right after dispatching:** `council seat <slug> running agent=<agentId>` for each worker.
+- **Right after dispatching:** `council seat <slug> running agent=<agentId>` for each worker — the id
+  the Agent or Workflow tool returned, never a role name. The first time a run dispatches, show its
+  status once (context-core, "Talking to the user").
 
 ## While they work
 
 - Wait for the completion notifications. Never poll, and never open a subagent's transcript or
   output log.
-- **On each notification:** `council seat <slug> done tokens=<total from the notification>`, or
-  `failed note="…"`. It prints a progress line — relay it to the user as one short line: "3 of 5
+- **On each notification:** `council seat <slug> done tokens=<the notification's figure, as given>`,
+  or `failed note="…"` (with its tokens if it reported any). Once per finished agent run; a resumed
+  worker's later figure is its running total, so record it as given. A Workflow's notification:
+  `agents=<agent_count> tokens=<subagent_tokens>`. It prints a progress line — relay it to the user as one short line: "3 of 5
   seats in — Security, Structure, Tests · ~210k tokens so far".
 - **No notification comes from a worker that died with its session.** After a compaction, keep
   waiting. In a new session, follow Resume in context-core.

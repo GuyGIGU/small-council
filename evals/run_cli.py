@@ -735,9 +735,9 @@ with tempfile.TemporaryDirectory() as tmp:
     council(repo, "seat", "fowler", "done", "tokens=40000")
     council(repo, "seat", "beck", "running", "agent=a2")
     code, out, _ = council(repo, "seat", "beck", "done", "tokens=35500")
-    check("seat: progress line counts done agents and tokens", "agents: 2 of 2 done" in out and "~76k tokens so far" in out, out)
+    check("seat: progress line counts done seats (not agents) and tokens", "seats: 2 of 2 done" in out and "~76k tokens so far" in out, out)
     code, out, _ = council(repo, "seat", "ghost", "skipped", "note=no surface")
-    check("seat: skipped seats don't count as agents", code == 0 and "agents: 2 of 2 done" in out, out)
+    check("seat: skipped seats don't count", code == 0 and "seats: 2 of 2 done" in out, out)
     code, _, err = council(repo, "seat", "beck", "sleeping")
     check("seat: rejects an unknown state", code == 2, err)
     code, out, _ = council(repo, "seat", "gone", "failed", "note=timed out")
@@ -760,7 +760,7 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "collect")
     check("collect: a seat that is running again is a hole, file or not", code == 1 and "state:running" in row(out, "beck"), out)
     code, out, _ = council(repo, "seat", "beck", "done", "tokens=10000")
-    check("seat: a re-dispatched worker adds its tokens instead of replacing them", "agents: 3 of 3 done" in out and "~86k tokens so far" in out, out)
+    check("seat: a re-dispatched worker adds its tokens instead of replacing them", "seats: 3 of 3 done" in out and "~86k tokens so far" in out, out)
 
     # Token counts as the UI shows them; several workers recorded at the same moment
     tk = new_repo(tmp, "tokens")
@@ -786,7 +786,7 @@ with tempfile.TemporaryDirectory() as tmp:
         p.wait(timeout=120)
     tlines = read(os.path.join(trun, "seats.tsv")).splitlines()
     check("seat: six workers recorded at the same moment keep six rows, and the header stays first",
-          tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents"] and sum(1 for x in tlines if x.startswith("par")) == 6,
+          tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported"] and sum(1 for x in tlines if x.startswith("par")) == 6,
           "\n".join(tlines))
     os.makedirs(os.path.join(trun, "seats.tsv.lock"), exist_ok=True)   # what a killed seat call leaves behind
     started = time.time()
@@ -1771,8 +1771,9 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run close: empties the old active-run pointer when it names the run", read(os.path.join(repo, ".council", "active-run")).strip() == "")
     code, out, _ = council(repo, "run", "close")
     st = read(os.path.join(run, "session-state.md"))
-    check("run close: marks complete and stamps the actual cost (re-dispatches count, skipped seats don't)",
-          "status: complete" in st and "actual: ~86k tokens across 4 agents" in st, st)
+    check("run close: marks complete and stamps the actual cost (a re-dispatch is an agent run; a skipped seat, or one "
+          "with no agent on record, is none)",
+          "status: complete" in st and "actual: ~86k tokens across 3 agent run(s)" in st, st)
     final_events = events(run)
     code_ev, out_ev, err_ev = council(repo, "run", "events", "check", "--run", run)
     check("run events: seat updates and completion survive with a continuous sequence",
@@ -1782,18 +1783,18 @@ with tempfile.TemporaryDirectory() as tmp:
           final_events[-1][3:6] == ["run.closed", "run", "complete"] and
           [int(e[1]) for e in final_events] == list(range(1, len(final_events) + 1)),
           out_ev + err_ev + str(final_events[-3:]))
-    check("run close: prints the actual cost", "~86k tokens across 4 agents" in out, out)
+    check("run close: prints the actual cost", "~86k tokens across 3 agent run(s)" in out, out)
     ledger = read(os.path.join(repo, ".council", "ledger.tsv"))
     check("run close: records each seat in the ledger", "ledger: 3 seat row(s) recorded" in out
           and "\tcouncil-review\tfowler\t1\t1\t0\t0\t40000" in ledger and "\tbeck\t1\t1\t0\t1\t45500" in ledger
-          and "\tgone\t0\t0\t1\t0\t0" in ledger, out + ledger)
+          and "\tgone\t0\t0\t1\t0\t-\t2" in ledger, out + ledger)
     code, out, _ = council(repo, "ledger")
     check("ledger: each seat's record — shipped means kept and not refuted",
           re.search(r"^fowler\s+1\s+1\s+1\s+0\s+0\s+40\s+100%", out, re.MULTILINE) is not None
           and re.search(r"^beck\s+1\s+1\s+1\s+0\s+1\s+46\s+0%", out, re.MULTILINE) is not None, out)
     with open(os.path.join(repo, ".council", "ledger.tsv"), "a", encoding="utf-8", newline="\n") as f:
-        f.write("2026-09-16\t2026-09-16-000000-review\tcouncil-review\thunt-a\t2\t1\t0\t0\t10000\n"
-                "2026-09-16\t2026-09-16-000000-review\tcouncil-review\thunt-b\t2\t1\t0\t0\t20000\n")
+        f.write("2026-09-16\t2026-09-16-000000-review\tcouncil-review\thunt-a\t2\t1\t0\t0\t10000\t2\n"
+                "2026-09-16\t2026-09-16-000000-review\tcouncil-review\thunt-b\t2\t1\t0\t0\t20000\t2\n")
     code, out, _ = council(repo, "ledger")
     check("ledger: a split worker's rows count as one seat in one run", re.search(r"^hunt\s+1\s+4\s+2\s+0\s+0\s+30\s+50%", out, re.MULTILINE) is not None, out)
 
@@ -2157,7 +2158,7 @@ with tempfile.TemporaryDirectory() as tmp:
           "leach-r2 lost round 2" in out and "council seat <slug>-r2 running" in out, out)
     council(req, "seat", "leach", "running", "note=round 2")
     code, out, _ = council(req, "seat", "leach", "done", "tokens=6000")
-    check("seat: a resumed worker adds tokens, not agents", "agents: 1 of 1 done" in out and "~26k tokens so far" in out, out)
+    check("seat: a resumed worker adds tokens, not agents", "seats: 1 of 1 done" in out and "~26k tokens so far" in out, out)
     code, out, _ = council(req, "collect")
     check("collect: both rounds in order", code == 0 and "all 2 seats in order" in out, out)
 
@@ -3229,7 +3230,7 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(req, "collect")
     check("collect: a fresh round-2 worker is judged by its own row", code == 1 and "state:failed" in row(out, "leach-r2"), out)
     council(req, "seat", "leach", "failed", "note=interrupted")
-    council(req, "seat", "leach-r2", "done", "agent=w9", "tokens=900")
+    council(req, "seat", "leach-r2", "done", "agent=w9", "tokens=9000")
     write(os.path.join(fr, "seats", "leach-r2.md"), "# Leach — Data (council-plan, round 2)\nref: none\n## Index\n1 · hold · P1 x#1 · a.txt:1 · y\n")
     code, out, _ = council(req, "collect")
     check("collect: once a fresh round-2 worker is done, the lost round-1 seat is judged by its file",
@@ -3248,7 +3249,8 @@ with tempfile.TemporaryDirectory() as tmp:
                  ("fingerprint", "x"), ("memory", "check", "x"), ("ask", "save", "a", "b"), ("ledger", "5", "x"),
                  ("doctor", "x"), ("version", "x"), ("help", "x"), ("doctor", "--frobnicate"), ("run", "close", "--base", "main"),
                  ("run", "status", "--at=verify"), ("index", "--", "x"), ("doctor", "--all=yes"), ("run", "close", "--status="),
-                 ("run", "resume", "x"), ("run", "resume", "--status", "paused")]:
+                 ("run", "resume", "x"), ("run", "resume", "--status", "paused"), ("status", "x"), ("status", "--all"),
+                 ("correct", "a", "x")]:
         code, out, err = council(repo, *args)
         if code != 2 or not err.strip():
             took.append(" ".join(args) + f" (exit {code})")

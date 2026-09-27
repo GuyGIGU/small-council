@@ -75,7 +75,7 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 | `council route recommend --task "<summary>"` | inspect an advisory size, risk, seat archetypes, verification and budget before opening a run; use `--classic` for the fixed comparison path (see `${CLAUDE_PLUGIN_ROOT}/references/adaptive-routing.md`) |
 | `council run events show` · `run events check` | inspect or validate the run's mechanical event history (`events.tsv`); see `${CLAUDE_PLUGIN_ROOT}/references/event-stream.md` |
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
-| `council seat <slug> <state> [agent=… tokens=…]` | record a worker's state; prints the progress line to relay |
+| `council seat <slug> <state> [agent=… tokens=… agents=…]` | record a worker's state, and once per finished agent run its usage: the id the tool returned, the notification's figure as given, a Workflow's agent count (`${CLAUDE_PLUGIN_ROOT}/references/run-accounting.md`); prints the progress line to relay |
 | `council index [--base <ref>]` · `council impact` | build the change index and, when Python 3.8+ is available, the bounded `impact.tsv` graph · refresh that graph after code changes (see `${CLAUDE_PLUGIN_ROOT}/references/impact-graph.md`) |
 | `council context build <seat> [--expand PATH …]` · `council context show <seat>` | after `brief.md`, select a seat's context at its validated run-plan level · inspect its path and selection metrics (see `${CLAUDE_PLUGIN_ROOT}/references/precision-context.md`); optional Python 3.8+, with brief-only fallback |
 | `council evidence build` · `evidence check` · `evidence show` | index synthesis claims, support states, provenance and verifier links in run-local `claims.jsonl`; rebuild after Challenge, then check for missing or stale links (see `${CLAUDE_PLUGIN_ROOT}/references/evidence-model.md`); optional Python 3.8+ |
@@ -86,7 +86,8 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 | `council ask save [slug]` | file the run's ask.md — the user's words — under `.council/asks/`, redacting secrets; records `ask=` |
 | `council fingerprint check` · `council memory select` · `council prior` | a changed stack · the memory entries in scope · earlier council work on these paths |
 | `council memory propose claim\|repair <id>` · `memory accept\|reject F-<n> --user-said "…"` | at Learn: draft an observed failure from the run's verified record under `## Proposed` · file the user's answer in their words; optional Python 3.8+ |
-| `council ledger` · `council ledger advice` · `council map status` · `council doctor` · `council tui` · `council history` · `council tune` | each seat's track record · what that record can support, with advice only past a bar · map freshness · drift scan with a fix per finding · a read-only screen of the run for the user (never needed by the Chair) · every run's cost, estimate accuracy and catches, a rate only past five runs · proposals from that record, applied only with the user's words |
+| `council status [--widget]` · `council correct <seat> …` | the run in plain words for the user: a widget card, or text ending with the terminal view's command · lay an exact, evidenced figure over a seat's record |
+| `council ledger` · `council ledger advice` · `council map status` · `council doctor` · `council tui` · `council history` · `council tune` | each seat's track record · what that record can support, with advice only past a bar · map freshness · drift scan with a fix per finding · a read-only terminal view of the run, for the user · every run's cost, estimate accuracy and catches, a rate only past five runs · proposals from that record, applied only with the user's words |
 
 Commands act on the one in-progress run on this working tree. With a second one open
 (`--alongside`), pass `--run <folder>` every time; the helper never guesses.
@@ -147,3 +148,10 @@ live at a legacy path; the config's Memory section says where.
 
 Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
 Questions come last, numbered.
+
+**The run's status.** Show it once, right after the first agents are dispatched. If a `show_widget`
+tool is available, call its `read_me` once, then pass it `council status --widget` output verbatim;
+otherwise relay `council status`, which ends with the terminal view's command. After that, only when
+the user asks — never a card per progress line. A card is a snapshot, not live; if one fails to
+render, give the text and carry on. When you stop for the user's answer, `council state
+waiting="<the question>"`; clear it with `waiting=` when the answer comes.

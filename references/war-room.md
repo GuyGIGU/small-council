@@ -84,8 +84,8 @@ Seats named by no point stay idle.
 
 **Bookkeeping.**
 - `council seat <slug> running agent=<same id> note="round 2"`, then `council seat <slug> done
-  tokens=<n>`. The same agent id adds tokens, not agents. If the notification's figure is at least the
-  seat's recorded round-1 total, it's cumulative: record the difference.
+  tokens=<n>`, the notification's figure as given. The same agent id adds tokens, not agents: a
+  figure at least its last one is the agent's running total and replaces it; a smaller one is added.
 - `council state war-room="round 2 — waiting: leach, fowler"`, then `war-room=done`.
 - Then one `council collect` checks both rounds.
 

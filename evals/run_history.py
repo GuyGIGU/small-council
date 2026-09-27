@@ -36,14 +36,19 @@ def write(path, text):
 
 def make_run(home, name, status="complete", mode="council-review", size="squad", estimate="200000",
              seats=(("hunt", "done", 60000), ("verify-1", "done", 20000)), gates=(("tests", 0),),
-             repairs=(), claims=(), events=True, plan=True):
+             repairs=(), claims=(), events=True, plan=True, older=False):
     run = home / "runs" / name
     write(run / "session-state.md", "status: {}\nmode: {}\nphase: deliver\n## Decisions so far\n".format(status, mode))
     if plan:
         write(run / "run-plan.tsv", "kind\tid\tfield\tvalue\treason\nrun\trun\tsize\t{}\tr\n"
               "budget\trun\testimated-tokens\t{}\tr\n".format(size, estimate))
-    write(run / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n"
-          + "".join("{}\t{}\ta\t{}\t-\t-\t1\n".format(s, st, t) for s, st, t in seats))
+    if older:     # a record from before usage.tsv: its token figures were never checked for units
+        write(run / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n"
+              + "".join("{}\t{}\ta\t{}\t-\t-\t1\n".format(s, st, t) for s, st, t in seats))
+    else:         # every agent run reported its usage (references/run-accounting.md)
+        write(run / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
+              + "".join("{}\t{}\ta\t{}\t-\t-\t1\t{}\n".format(s, st, t, 1 if st != "running" else 0)
+                        for s, st, t in seats))
     for gate, code in gates:
         write(run / "gates" / (gate + ".json"), json.dumps({"gate": gate, "command": "x", "exit": code, "seconds": 1,
                                                            "when": name[:10] + " 10:00:00"}) + "\n")
@@ -119,6 +124,17 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
     check("estimates: agents' tokens over the plan's estimate less the Chair's 20k (80k of 180k)",
           data["estimates"]["actual_over_estimate"]["median"] == 0.444 and "0.44× the plan's estimate less the Chair" in out,
           out)
+    mixed = Path(temporary) / "mixed" / ".council"
+    for n in range(5):
+        make_run(mixed, "2026-09-{:02d}-100000-review".format(n + 1))
+    for n in range(2):
+        make_run(mixed, "2026-08-{:02d}-100000-review".format(n + 1), older=True, seats=(("hunt", "done", 160),))
+    mixed_data = history.history(mixed)
+    mixed_out = history.render(mixed_data)
+    check("older-format completed runs are left out of cost figures and named, never counted as tiny costs",
+          mixed_data["cost"]["tokens_per_agent"]["median"] == 40000 and mixed_data["cost"]["left_out"] == {
+              "older records (units never checked)": 2} and "2 completed run(s) left out of cost figures" in mixed_out,
+          (mixed_data["cost"], mixed_out))
     check("a build's before/after proofs and gate probes are kept apart from the project's gates",
           data["gates"] == {"tests": {"runs": 5, "failed_runs": 1}}
           and data["proofs"]["before_failed_as_intended"] == 5 and data["proofs"]["probes"] == 5
@@ -201,7 +217,7 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
             parsed = json.loads(out)
         except ValueError:
             parsed = {}
-        check("helper: --json is the same report as data", code == 0 and parsed.get("schema") == "council.history/2"
+        check("helper: --json is the same report as data", code == 0 and parsed.get("schema") == "council.history/3"
               and parsed["runs"]["total"] == 2, out[:300] + err)
         refusals = [(council(repo, *w), want) for w, want in (
             (("history", "--run", "x"), "does not take --run"), (("history", "x"), "history doesn't take 'x'"),

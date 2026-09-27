@@ -108,15 +108,18 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
           and "4 claim(s)" in out and "2 CONFIRMED" in out and "1 REFUTED" in out
           and "2 proposal(s) wait" in out, out)
     check("tui: the timeline shows the recorded events", "gate.finished" in out and "seat.updated" in out, out)
-    check("tui: budget is estimated against spent, with agents against the cap",
-          "estimated 260k" in out and "spent 58k" in out and "of 10" in out, out)
+    check("tui: budget is estimated against spent so far (a seat still runs), with agent runs against the cap",
+          "estimated 260k" in out and "spent 58k so far" in out and "2 agent run(s) (cap 10)" in out, out)
+    check("tui: the shared plain-language status heads the screen, with what needs attention",
+          "Status: Fixing a failed check" in out and "Check lint failed" in out and "attempt 2 of 3" in out, out)
     code, out, err = council(repo, "tui", "--json")
     try:
         snap = json.loads(out)
     except ValueError:
         snap = {}
     check("tui --json: the same facts as data, under a versioned schema",
-          code == 0 and snap.get("schema") == "council.run-snapshot/1" and snap["tokens"]["total"] == 58000
+          code == 0 and snap.get("schema") == "council.run-snapshot/2" and snap["usage"]["tokens"]["known"] == 58000
+          and snap["usage"]["tokens"]["basis"] == "running" and snap["usage"]["tokens"]["total"] is None
           and snap["plan"]["seats"]["nygard"]["disposition"] == "skipped" and snap["events"]["header_ok"]
           and snap["claims"]["total"] == 4, out[:600] + err)
     code, out, err = council(repo, "tui", env_extra={"COUNCIL_ASCII": "1"})
