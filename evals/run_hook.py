@@ -169,6 +169,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("full council: counts 2 pending proposals (ignores the comment)", "2 memory proposal(s)" in out, out)
     check("full council: lists council-postgame among the modes", "council-postgame" in out, out)
     check("full council: no open-run warning", "UNFINISHED" not in out and "COMPACTED" not in out, out)
+    check("no open run: no status card commands", "council status --run" not in out and
+          "council status --widget" not in out, out)
 
     runs = os.path.join(full, ".council", "runs")
     run_a = os.path.join(runs, "2026-09-15-100000-review")
@@ -176,6 +178,8 @@ with tempfile.TemporaryDirectory() as tmp:
     write(os.path.join(run_a, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\trunning\ta1\t\t10:00\tround 2\nbeck\tdone\ta2\t50000\t10:05\t\n")
     code, out = run_hook(full, "startup")
     check("open run found by scanning (no pointer needed)", "UNFINISHED COUNCIL RUN" in out, out)
+    check("open run: status text, widget and read_me instructions", "council status --run <name>" in out and
+          "council status --widget" in out and "call its read_me first" in out, out)
     check("open run: shows the mode and phase", "council-review" in out and "phase: work" in out, out)
     check("open run, new session: running seats are gone, done ones listed",
           "were running when that session ended" in out and "hunt" in out and "done: beck" in out, out)
@@ -192,6 +196,8 @@ with tempfile.TemporaryDirectory() as tmp:
         write(os.path.join(run_a, "session-state.md"), state(closed, code_root=top))
         code, out = run_hook(full, "startup")
         check(f"{closed} run: no warning", "UNFINISHED" not in out and "PAUSED" not in out, out)
+        check(f"{closed} run: no status card commands", "council status --run" not in out and
+              "council status --widget" not in out, out)
     write(os.path.join(run_a, "session-state.md"), state("paused", code_root=top))
     code, out = run_hook(full, "startup")
     check("paused run: reported as paused, not unfinished", "PAUSED COUNCIL RUN" in out and "UNFINISHED" not in out, out)

@@ -65,6 +65,8 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 ## The helper
 
+Run checks on their own; never hide refusals through `| tail`/`| head` (Challenge, step 5).
+
 `council` does the bookkeeping. It is on PATH while the plugin is enabled; if it isn't, call it as
 `bash "${CLAUDE_PLUGIN_ROOT}/bin/council"`.
 

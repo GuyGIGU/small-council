@@ -701,6 +701,27 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "\nactual:" not in read(paused / "session-state.md") and "\nclosed:" not in read(paused / "session-state.md"),
               read(paused / "session-state.md"))
 
+with tempfile.TemporaryDirectory(prefix="council-stale-status-") as temporary:
+    stale_run = Path(temporary)
+    write(stale_run / "session-state.md", "status: in-progress\nmode: council-review\nphase: challenge\n")
+    write(stale_run / "claims.jsonl", '{"id":"1","verdict":"CONFIRMED"}\n')
+    index_at = (stale_run / "claims.jsonl").stat().st_mtime
+    for source in ("synthesis.md", "verify-1-a.md"):
+        write(stale_run / source, "# Source\n")
+        os.utime(stale_run / source, (index_at + 5, index_at + 5))
+        before = fingerprint(stale_run)
+        snap = cockpit.snapshot(stale_run)
+        reading = status.interpret(snap, now=NOW)
+        labels = [item["label"] for item in reading["evidence"]]
+        check("status: newer " + source + " hides stale verdicts and labels the index",
+              snap["claims"]["stale"] and not snap["claims"]["by_verdict"] and
+              "Claims index out of date" in labels, labels)
+        check("status: stale " + source + " read writes nothing", before == fingerprint(stale_run))
+        os.utime(stale_run / source, (index_at - 5, index_at - 5))
+    check("status: a current index keeps its verdicts", cockpit.claims_of(stale_run)["by_verdict"] == {"CONFIRMED": 1})
+    (stale_run / "claims.jsonl").unlink()
+    check("status: missing claim index is visible", cockpit.claims_of(stale_run)["stale"])
+
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:
     print("[{}] {}".format("PASS" if good else "FAIL", name))

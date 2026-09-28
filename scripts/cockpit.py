@@ -229,13 +229,29 @@ def repairs_of(run):
     return tasks
 
 
+def claim_index_stale(run):
+    """Fail closed on missing/unreadable indexes; reading never refreshes the index."""
+    sources = [p for p in [run / "synthesis.md"] + list(run.glob("verify-*.md")) if p.is_file()]
+    if not sources:
+        return False
+    try:
+        index = run / "claims.jsonl"
+        if linked(index) or any(linked(p) for p in sources):
+            return True
+        return any(p.stat().st_mtime_ns > index.stat().st_mtime_ns for p in sources)
+    except OSError:
+        return True
+
+
 def claims_of(run):
+    if claim_index_stale(run):
+        return {"total": 0, "by_verdict": {}, "stale": True}
     rows = jsonl(run, "claims.jsonl")
     verdicts = {}
     for row in rows:
         verdict = clean(row.get("verdict") or "UNVERIFIED").upper()[:24] or "UNVERIFIED"
         verdicts[verdict] = verdicts.get(verdict, 0) + 1
-    return {"total": len(rows), "by_verdict": dict(sorted(verdicts.items()))}
+    return {"total": len(rows), "by_verdict": dict(sorted(verdicts.items())), "stale": False}
 
 
 def events_of(run, last):
@@ -552,7 +568,11 @@ def render(snap, ascii_only=False, width=None, reading=None):
         for task, info in sorted(snap["repairs"].items()):
             add("  {} {}: attempt {} {} · {} · next {}".format(task, info["gate"], shown(info["attempts"]), info["result"],
                                                              info["category"] or "-", info["next"] or "-"))
-    if snap["claims"]["total"]:
+    if snap["claims"].get("stale"):
+        add()
+        add(" Evidence")
+        add("  Claims index out of date")
+    elif snap["claims"]["total"]:
         add()
         add(" Evidence")
         add("  {} claim(s) · ".format(snap["claims"]["total"])

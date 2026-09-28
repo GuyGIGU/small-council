@@ -24,6 +24,13 @@ is a Workflow the Chair runs: its `agent_count` is its agent runs.
 **Display is not storage.** "160k" is how a figure is shown. The stored value is the whole number
 (160360). A figure is never rounded when stored, and a rounded figure is never accepted.
 
+The display formats differ intentionally: the bash close/progress lines use whole thousands,
+rounding halves up; the TUI uses Python half-to-even rounding to whole thousands. The status
+card/text uses whole thousands below 995,000 and one decimal million at or above that threshold
+(Python rounding, with a trailing `.0` omitted). Thus 26,430,386 appears as `~26430k` on the
+close line and `26.4M` on the card; 2,500 appears as `~3k` versus `2k`. These are display
+differences only: the stored totals and accounting bases agree.
+
 ## Where it is written
 
 | File | What it holds |
@@ -64,7 +71,7 @@ The `seat.updated` event carries a seat's totals so far, so summing events count
 
 | Basis | When | Said as |
 |---|---|---|
-| complete | every agent run's usage is known (reported or corrected) | a total, "~4,675k tokens across 39 agent runs" |
+| complete | every agent run's usage is known (reported or corrected) | a total, "~4675k tokens across 39 agent run(s) on the close line; 4.7M on the card" |
 | running | some seats are still working | "so far" |
 | partial | a finished agent run has no usage report, or a seat has no agent on record | "at least …, N without a usage report" / "no agent on record for …" |
 | older | a row written before 0.14 (no `reported` value) and not corrected | "not reliably recorded"; agent runs "at least N" |
@@ -102,3 +109,21 @@ unknown seat, and a missing source.
   is right for a fresh count and wrong if the harness ever reported less than before for the same
   agent.
 - The token figure measures context size, not spend (see above).
+
+## Status JSON contract
+
+`council status --json [--run <name>]` needs optional Python 3.8+ and returns
+`schema: "council.run-status/1"`. Reading writes nothing. Its main fields are:
+
+- `snapshot_at`: UTC time of this reading.
+- `run`: identity, path, project, mode, status, phase, stage and open/close times.
+- `state`: machine key, visible label, role, icon and summary.
+- `attention`: issues with kind, severity and text; `progress`: seats, checks, working, next and counts.
+- `latest_check`, `checks`: saved check results; `recent` and `recent_source`: recent recorded activity.
+- `freshness`: last activity time, quiet minutes and whether the run is stale.
+- `usage`: token and agent-run figures with their basis and display wording; unknown values stay null.
+- `seats`: names, states, tokens, token bases, agent-run counts and notes.
+- `evidence`: labels and paths to supporting records. An absent or older claim index is labelled
+  "Claims index out of date" instead of showing obsolete verdicts.
+
+This is a snapshot, not a subscription. Without Python, relay `council run status` for phase and cost.

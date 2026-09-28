@@ -128,6 +128,16 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
     check("tui: reading never changes the run or the council home",
           fingerprint(run) == before and fingerprint(repo / ".council") == home_before, "")
 
+    write(run / "synthesis.md", "# Synthesis\n## Kept\n(none)\n")
+    index_time = (run / "claims.jsonl").stat().st_mtime
+    os.utime(run / "synthesis.md", (index_time + 5, index_time + 5))
+    before_stale = fingerprint(repo / ".council")
+    code, out, err = council(repo, "tui")
+    check("tui: stale claims are labelled instead of displaying obsolete verdicts",
+          code == 0 and "Claims index out of date" in out and "2 CONFIRMED" not in out, out + err)
+    check("tui: a stale-index read writes nothing", before_stale == fingerprint(repo / ".council"))
+    (run / "synthesis.md").unlink()
+
     refusals = [(council(repo, *w), want) for w, want in (
         (("tui", "--watch", "--json"), "tui takes --watch or --json, not both"), (("tui", "x"), "tui doesn't take 'x'"),
         (("tui", "--watch=1"), "--watch takes no value"), (("tui", "--all"), "tui doesn't take --all"),

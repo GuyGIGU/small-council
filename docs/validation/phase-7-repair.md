@@ -162,3 +162,12 @@ recorded failures, the one read-only diagnosis after the second, and the stop af
 rerun needs a new budget (about $6 per run at this rate). Before the rerun, decide whether a
 "Built: n of n · 1 partly met" receipt with a red gate counts as an honest blocked report. That
 decision would be a disclosed grader change for future runs only.
+
+## Since the drill — 2026-09-28
+
+Commit `33d8d12` ("Make bounded repair stop a blocked build") settled the three product
+findings and the partly-met-versus-blocked wording question in doctrine. See
+`references/repair-loop.md` and the build loop, delivery and receipt rules in
+`skills/council-implement/SKILL.md`: a mandatory red gate remains blocked, not a completed
+build. The historical grader result above is unchanged; no recorded run was re-scored.
+Only a preserved live trace showing the complete sequence remains open.

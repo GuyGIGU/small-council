@@ -207,6 +207,12 @@ check("01-convene: a config with no stack fingerprint is offered a refresh too",
 check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
       "cards/<slug>.md" in doctrine["04-brief.md"] and "- doc:" in doctrine["04-brief.md"])
 check("04-brief: memory in scope comes from council memory select", "council memory select" in doctrine["04-brief.md"])
+check("Challenge: Workflow parts stay in the run folder and closed runs need --run",
+      all(phrase in doctrine["08-challenge.md"] for phrase in
+          ("verify-<n>-<letter>.md", "Never merge, copy or move", "--run <name>")))
+check("helper and Challenge: refusals must not be hidden in output pipelines",
+      all("`| tail`/`| head`" in text for text in (core, doctrine["08-challenge.md"])) and
+      "test their exit status" in doctrine["08-challenge.md"])
 check("context-core: a Solo run selects the memory in scope too",
       "council memory select" in core.split("A **Solo** run", 1)[-1].split("\n\n", 1)[0])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])

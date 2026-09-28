@@ -21,6 +21,9 @@ Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is
 append-only record of CLI-observable actions. `impact-graph.md` defines the optional run-local
 graph of changed paths, direct dependencies and test hints.
 `precision-context.md` defines the optional, seat-specific context pack and its measurement limits.
+`run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.
+`evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
+`war-room.md` defines the second round; `guardrails.md` defines protected subjects and constraints.
 
 ## Seat reference docs — one per council seat
 

@@ -1,5 +1,8 @@
 # Stage 5 — Work
 
+If `council status` reports it needs optional Python 3.8+, relay `council run status` instead:
+it gives the run's phase and cost line without Python.
+
 The seats work in parallel, each in its own window. You dispatch, then wait.
 
 ## Dispatch

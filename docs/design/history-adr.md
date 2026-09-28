@@ -27,6 +27,8 @@ trends.
 
 Option 3, as `council history [--json]` (`scripts/history.py`, schema `council.history/2`).
 
+This schema is superseded in 0.14 by `council.history/3`; the original decision below is retained.
+
 - **Always shown.** Counts are always reported: runs by status, mode and month.
 - **Shown only past the bar.** A median, a share or a ratio needs **5 runs that carry its data** —
   five runs, not five items: five claims in one run are still one run. A share's range counts at

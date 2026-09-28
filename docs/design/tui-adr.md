@@ -31,6 +31,9 @@ helper commands. The roadmap asks for a live cockpit that is not part of the orc
 
 ## Decision
 
+The original schema below is superseded in 0.14 by `council.run-snapshot/2`,
+which replaces flat token totals with a `usage` block.
+
 Option 3, as `council tui [--watch | --json]` (`scripts/cockpit.py`). The snapshot
 (`council.run-snapshot/1`) collects:
 - the run header;

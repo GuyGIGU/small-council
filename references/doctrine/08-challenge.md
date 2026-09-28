@@ -32,6 +32,9 @@ Catch what's wrong before the user sees it.
    - Include every cut P1: a lone dissenter may be right.
    - Each verifier writes its own file, `<run>/verify-<n>.md` (n counts verifiers, not items). Track them like workers
      (`council seat verify-<n> running agent=<id>`, then `done tokens=…`).
+   - A Workflow of verifiers is one seat `verify-<n>` recorded with `agents=N`. Each agent writes
+     `<run>/verify-<n>-<letter>.md` in the run folder itself. Never merge, copy or move them:
+     `council evidence build` reads every `verify-*.md` there. After `run close`, pass `--run <name>`.
    - **Over the cap?** P1s and protected items get their own verifiers first; keep one for the
      batch of everything else. If even that doesn't fit, pair P1s two to a verifier. Tell the user
      what shared a verifier.
@@ -47,8 +50,11 @@ Catch what's wrong before the user sees it.
    - A cut P1 that comes back CONFIRMED is restored.
 4. **Every shipped item has a verdict** — check before you move on.
 5. **Refresh the claim index.** After verifier files exist, `council evidence build`, then
-   `council evidence check`. Fix missing provenance, evidence-state declarations, proof artifacts,
-   verifier rows or conflicting rows. `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
+   `council evidence check`. Run `evidence build`/`check`, `collect` and `check` on their own
+   (or test their exit status);
+   never chain them through `| tail`/`| head`, which can swallow a refusal.
+   Fix missing provenance, evidence-state declarations, proof artifacts, verifier rows or conflicting
+   rows. `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
    If optional Python is unavailable, check the same links by hand. This applies to synthesis
    claims in review, plan and research; build and post-game keep their own proof contracts.
 6. **Verification gates**, for modes that changed code: `council gate --all --at verify`.

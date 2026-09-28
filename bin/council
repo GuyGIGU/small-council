@@ -793,7 +793,8 @@ corrections_tsv() {
 
 # Each executed seat's figures under the one per-seat rule of references/run-accounting.md — the same
 # rule scripts/cockpit.py's seat_usage states, so the close line, the ledger and the status widget
-# agree. Corrections are laid over the rows. One line per seat:
+# agree on exact totals and bases; display rounding differs (run-accounting.md).
+# Corrections are laid over the rows. One line per seat:
 # "slug<TAB>state<TAB>basis<TAB>agent runs<TAB>runs with usage<TAB>tokens or -<TAB>exact 1|0<TAB>missing<TAB>pending".
 # Bases: reported, corrected, pending, partial, missing, unrecorded (no agent on record: unknown),
 # no-agent (declared), suspect, legacy. A seat never recorded but added from evidence reads as done.
@@ -881,7 +882,7 @@ usage_words() {
 }
 
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -909,6 +910,20 @@ cmd_run_close() {
   if [ -n "$busy" ] && [ "$status" != abandoned ]; then
     printf 'council: seats still marked running or queued: %s — their results will not be collected; wait for them, or record each (council seat <slug> failed or skipped) before closing\n' "$busy" >&2
   fi
+  case "$(field mode "$run/session-state.md")" in
+    council-review|council-plan|council-research)
+      if [ -f "$run/synthesis.md" ] && py="$(impact_python)"; then
+        "$py" "$COUNCIL_PLUGIN_ROOT/scripts/evidence.py" check --run "$run" >/dev/null 2>&1 || :
+        stale=""
+        [ -f "$run/claims.jsonl" ] || stale=1
+        for source in "$run/synthesis.md" "$run"/verify-*.md; do
+          [ ! -f "$source" ] || [ ! "$source" -nt "$run/claims.jsonl" ] || stale=1
+        done
+        if [ -n "$stale" ]; then
+          printf 'council: the claim index is missing or out of date — council evidence build --run %s, then evidence check\n' "${run##*/}" >&2
+        fi
+      fi ;;
+  esac
   if [ "$status" = complete ]; then
     n="$(ledger_record "$run")"
     [ "${n:-0}" -eq 0 ] 2>/dev/null || say "ledger: $n seat row(s) recorded — council ledger shows each seat's record"
@@ -1323,7 +1338,7 @@ ps_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"; }
 # recorded, the exact value, and where the evidence is. Every reader lays the latest correction over
 # the row. A figure is corrected only to an exact number its source shows, never to a guess.
 cmd_correct() {
-  local run slug="${1:-}" kv tokens="" runs="" evidence="" f field to from line added=""
+  local run slug="${1:-}" kv tokens="" runs="" evidence="" f field to from line added="" ad=""
   [ -n "$slug" ] || die "usage: council correct <seat> tokens=<exact> agents=<exact> [unrecorded=yes] evidence=\"<where the figure comes from>\""
   case "$slug" in *[!A-Za-z0-9._-]*) die "correct: bad seat slug: $slug" ;; esac
   shift
@@ -1361,12 +1376,13 @@ cmd_correct() {
     [ -n "$(seat_field "$run" "$slug" 1)" ] || die "correct: $slug is not a seat of ${run##*/} — only a recorded seat can be corrected (an agent run never recorded: unrecorded=yes)"
   fi
   f="$run/corrections.jsonl"
+  [ -z "$added" ] || ad='"added":true,'
   event_lock "$run/seats.tsv.lock" || die "seat lock unavailable: $run/seats.tsv.lock"
   for field in tokens agents; do
     if [ "$field" = tokens ]; then to="$tokens"; from="$(seat_field "$run" "$slug" 4)"; else to="$runs"; from="$(seat_field "$run" "$slug" 7)"; fi
     [ -n "$to" ] || continue
     line="$(printf '{"schema":1,"at":"%s","seat":"%s","field":"%s","from":"%s","to":%s,%s"evidence":"%s"}' \
-      "$(now_utc)" "$slug" "$field" "$(json_esc "$from")" "$to" "${added:+\"added\":true,}" "$(json_esc "$evidence")")"
+      "$(now_utc)" "$slug" "$field" "$(json_esc "$from")" "$to" "$ad" "$(json_esc "$evidence")")"
     printf '%s\n' "$line" >> "$f" || { event_unlock "$run/seats.tsv.lock"; die "cannot write $f"; }
     if ! event_append "$run" seat.usage_corrected "$slug" "$field" "from=$from;to=$to"; then
       event_unlock "$run/seats.tsv.lock"; die "corrected, but the event could not be recorded"
@@ -2589,6 +2605,11 @@ $(brief_seats "$run/debate.md")"                      # a war room's round-2 fil
   printf '%-16s %-8s %-7s %-4s %-9s %-7s %s\n' seat file items KB ref cites tokens
   while IFS="$TAB" read -r slug ref out cap; do
     [ -n "$slug" ] || continue
+    if [ -f "$run/run-plan.tsv" ] && SLUG="$slug" awk -F'\t' '
+      $1 == "seat" && $2 == ENVIRON["SLUG"] && $3 == "role" && $4 == "verifier" { found=1 }
+      END { exit !found }' "$run/run-plan.tsv"; then
+      continue  # Challenge verifiers do not produce worker seat files.
+    fi
     total=$((total + 1)); note=""
     case "$out" in /*|[A-Za-z]:*) f="$out" ;; *) f="$run/$out" ;; esac
     if [ "${slug%-r2}" != "$slug" ] && [ -z "$(seat_field "$run" "$slug" 2)" ]; then

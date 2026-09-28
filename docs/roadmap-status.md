@@ -21,17 +21,17 @@ Checks passing is never counted as validation in real use. The real runs so far:
 | 1 Structured run model (run plan) | 0.8 | `run_cli` | Yes: the fresh run's plan was checked, and seats were gated on it. It counted 3 planned agents where 6 really ran (the verifier was a 4-agent Workflow), which only the new accounting shows. | Enforcing the agent cap at dispatch |
 | 2 Event contract | 0.9 | `run_cli` | Yes: the fresh run wrote 32 events, and `events check` passed | — |
 | 3 Adaptive routing | 0.10 | `run_cli` | No: the fresh run was sized by hand | — |
-| 4 Impact engine | 0.11 | `run_impact` | Ran on the fresh run's diff (18 files); its correctness was not judged | Transitive and dynamic imports |
+| 4 Impact engine | 0.11 | `run_impact` | Both real reviews produced 0 dependency/test/limit rows: sibling-script imports were missed | Transitive and dynamic imports |
 | 5 Precision context | 0.12 (opt-in, off) | `run_context`, byte pilot | No | The paired live comparison |
-| 6 Evidence model | 0.13 | `run_evidence` | Partly: the fresh run built 12 claims, but its verifier file format left them unlinked | — |
+| 6 Evidence model | 0.13 | `run_evidence` | Partly: copied verifier parts caused duplicate conflicts; a later rebuild omitted --run after close and failed, leaving the Judge-time index stale. The second run never built an index | — |
 | 7 Closed-loop diagnosis | 0.13 | `run_repair`, and `run_status` drives it through the helper | Partly: an earlier live drill recorded three failures, but its trace was lost | — |
 | 8 Memory evolution | 0.13 | `run_memory` | No | — |
-| 9 Seat learning | 0.13 | `run_seats` | The fresh run wrote the first checked ledger rows; advice needs three judged runs | — |
+| 9 Seat learning | 0.13 | `run_seats` | The first checked ledger rows exist only in temporary review clones; no durable council home has accounting-2 rows. Advice needs three judged runs | — |
 | 10 Benchmark harness | 0.13 (never run) | `bench.py self-test` | No | The paid comparison |
-| 11 TUI | 0.13, plus the shared status line (unreleased) | `run_tui` | Yes: it drew the in-progress Chrollo run and the fresh run | Navigation and per-area screens |
+| 11 TUI | 0.13, plus the shared status line (unreleased) | `run_tui` | It drew the in-progress Chrollo run and the fresh run; --watch has never been watched end to end on a live run | Navigation and per-area screens |
 | 12 Historical analytics | 0.13 (`council history`) | `run_history` | No: no council home has five complete, exact runs yet | The history dashboard |
 | 13 Self-tuning | 0.13 (one knob) | `run_tune` | No: needs five measured runs; five make a proposal eligible, not reliable | Behaviour knobs (held until the benchmark) |
 | Run accounting | Unreleased | `run_status`, `run_cli`, `run_seats`, `run_history`, `run_tune` | Yes: both fresh runs' figures are exact from their notifications (627k across 6 agent runs; 235k across 3). The Chrollo run was corrected from transcripts, each figure derived twice, including 8 agent runs it never recorded: 26.4M across 220 | — |
-| Status widget | Unreleased | `run_status`, `run_structural` | Partly: five cards rendered in the desktop app (the Chrollo preview; the first fresh run at start, at a controlled failing check, and at completion; the second at start), and every read left the run unchanged. Waiting and paused were read as text only. Recovery in progress, blocked, stale and unknown are simulated only | Live updates (the host shows snapshots); claude.ai/code and IDE extensions not verified |
+| Status widget | Unreleased | `run_status`, `run_structural` | Partly: five cards rendered in the desktop app (the Chrollo preview; the first fresh run at start, at a controlled failing check, and at completion; the second at start), and every read left the run unchanged. Waiting and paused were read as text only. Stale was seen on the real Chrollo card. Recovery in progress and blocked are test-only; unknown is a missing/unreadable-record fault state | Live updates (the host shows snapshots); claude.ai/code and IDE extensions not verified |
 
 Whether the council beats plain Claude Code is unmeasured.

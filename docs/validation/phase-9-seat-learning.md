@@ -108,4 +108,8 @@ stated judgment calls, not fitted values.
 
 - Whether any advice, followed, improves a later run.
 - A live Chair using `council ledger advice` at a refresh.
-- macOS and Linux (CI runs `run_seats.py` on all three platforms once pushed).
+
+## Platform check update — 2026-09-28
+
+Automatic macOS and Linux checks passed for the released code in CI runs
+`36305577961` and `36319880515`; this is not validation by a person using those hosts.

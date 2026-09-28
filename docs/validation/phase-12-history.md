@@ -102,4 +102,8 @@ None beyond the counts: no project has enough runs to show a rate.
 ## Not verified
 
 - A project with enough runs to show a rate.
-- macOS and Linux (CI runs the checks once pushed).
+
+## Platform check update — 2026-09-28
+
+Automatic macOS and Linux checks passed for the released code in CI runs
+`36305577961` and `36319880515`; this is not validation by a person using those hosts.

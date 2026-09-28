@@ -6,45 +6,43 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-**TL;DR:** a run's status as a snapshot card in chat, from records that now count agents and tokens
-exactly and say "unknown" instead of guessing. Old runs stay readable; their figures are never
-totalled.
+**TL;DR:** chat status cards and exact run accounting, with missing figures left unknown.
 
 ### Added
 
-- `council status [--widget | --json]`: a run in plain words — what is happening, whether it moves,
-  what needs you, where the evidence is. `--widget` is a card for the desktop app's chat; elsewhere,
-  text that ends with the exact terminal-view command.
-- The Chair shows the card once at first dispatch, then only when asked; a new session can show any
-  open run's card on request.
-- `council correct <seat> tokens=… agents=… evidence="…"`: an exact, evidenced figure laid over a seat's
-  record; the original stays in `seats.tsv`, the evidence in `corrections.jsonl`. `unrecorded=yes` adds
-  an agent run the record missed.
-- `usage.tsv`: every dispatch and usage report of a run, the trail behind its seat figures.
-- `council seat … agents=N` for a Workflow's agent count, and `agents=0` for a seat no agent ran;
-  `council state waiting="…"` for a question the run waits on (with its own event).
-- `references/run-accounting.md`: what a seat, an agent run, a check and a token mean.
+- `council status [--widget | --json]` shows run progress; card and text need optional Python 3.8+.
+- The Chair shows one card at first dispatch; SessionStart explains how to request another.
+- `council correct` saves evidenced corrections and missed agent runs without rewriting old seats.
+- `usage.tsv` records dispatches and usage; `agents=N` counts Workflow agents and `agents=0` Chair work.
+- `council state waiting="…"` records a question and its waiting-change event.
+- `references/run-accounting.md` documents usage, corrections, display rounding and status JSON.
 
 ### Changed
 
-- Token counts: one exact number, stored whole; two numbers, a sign, an exponent, a decimal comma, a
-  rounded figure (`74.3k`) or anything under 1,000 is refused. A repeated or resumed report counts
-  once. A seat with no agent on record has an unknown agent count, never 0.
-- Every reader (widget, `tui`, close line, ledger, history, tune) states a total only when every agent
-  run's usage is known; missing is "at least", older runs "not reliably recorded".
-- History and tuning cost only complete, exact runs and name the ones left out. Five runs make a
-  proposal eligible, not reliable.
-- The progress line counts seats as seats; queued seats are no longer "still working".
-- Resuming a run drops its stale cost line.
+- Token inputs must be exact plausible counts; repeated or resumed reports are counted once.
+- All readers distinguish complete, partial, older and unknown usage.
+- History and tuning cost only complete exact runs; five make a proposal eligible, not reliable.
+- JSON schemas are now `council.run-snapshot/2` (a `usage` block) and `council.history/3`.
+- GitHub Actions use current Node 24 majors; the behavioural runner installs Node 24.
 
 ### Fixed
 
-- A role name passed as `agent=` is refused, and a Workflow's agent count is recorded with `agents=`.
-- The ledger no longer drops a line whose cost is unknown, and prices only checked figures.
-- A line break inside a note no longer creates a phantom seat in the cockpit.
+- Progress counts seats; resuming a run clears the old cost line.
+- Agent role names are refused as ids; the ledger retains rows with unknown costs.
+- A note's line break cannot create a phantom seat in the terminal view.
+- Identical copied verifier rows count once; genuinely different rows still conflict.
+- Collection ignores planned verifiers; close warns about a missing or outdated claim index.
+- Status and TUI label an outdated claim index instead of showing stale verdicts.
+- SessionStart asks for widget instructions first; correction JSON avoids a bash 3.2 quoting risk.
 
-Details: `docs/validation/status-widget.md`, `docs/design/status-widget-adr.md`,
-`docs/roadmap-status.md`.
+### Upgrade notes
+
+- Older ledger rows show `-` for ~k/run and are never priced.
+- History and tune leave out pre-0.14 runs; tune needs five new complete exact runs.
+- Continuing an older run preserves its old rows as "older" unless corrected from evidence.
+- Without Python, use `council run status` for the phase and cost line.
+
+Details: `docs/validation/status-widget.md`, `docs/design/status-widget-adr.md`, `docs/roadmap-status.md`.
 
 ## [0.13.0] — 2026-09-27
 

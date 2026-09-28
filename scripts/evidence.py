@@ -190,9 +190,13 @@ def verifier_rows(run, claims):
             if len(words) != 1 or not leading:
                 issues.append("{}:{}: unknown or ambiguous claim verdict".format(path.name, line_no))
                 continue
-            by_id[claim_id]["verification"].append({
+            verdict = words.pop()
+            links = by_id[claim_id]["verification"]
+            if any(link["verdict"] == verdict and link["evidence"] == cells[3] for link in links):
+                continue  # A copied row is the same evidence, not another independent verdict.
+            links.append({
                 "ref": "{}:{}".format(path.name, line_no),
-                "verdict": words.pop(),
+                "verdict": verdict,
                 "evidence": cells[3],
             })
     for claim in claims:

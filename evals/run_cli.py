@@ -756,6 +756,18 @@ with tempfile.TemporaryDirectory() as tmp:
     council(repo, "seat", "gone", "done")
     code, out, _ = council(repo, "collect")
     check("collect: passes once every seat is right", code == 0 and "all 3 seats in order" in out, out)
+    brief_before = read(os.path.join(run, "brief.md"))
+    plan_before = read(os.path.join(run, "run-plan.tsv"))
+    write(os.path.join(run, "brief.md"), brief_before.replace("## Seats not called",
+          "### verify-1 — Blind verifier\n- ref: none\n- out: verify-1.md\n## Seats not called"))
+    append(os.path.join(run, "run-plan.tsv"), "seat\tverify-1\trole\tverifier\tChallenge only\n")
+    council(repo, "seat", "verify-1", "queued")
+    code, out, _ = council(repo, "collect")
+    check("collect: a queued plan verifier in the brief does not count as a missing worker",
+          code == 0 and "all 3 seats in order" in out and "verify-1" not in out, out)
+    write(os.path.join(run, "brief.md"), brief_before)
+    write(os.path.join(run, "run-plan.tsv"), plan_before)
+    council(repo, "seat", "verify-1", "skipped")
     council(repo, "seat", "beck", "running", "agent=a3")
     code, out, _ = council(repo, "collect")
     check("collect: a seat that is running again is a hole, file or not", code == 1 and "state:running" in row(out, "beck"), out)
@@ -3237,6 +3249,31 @@ with tempfile.TemporaryDirectory() as tmp:
     check("collect: once a fresh round-2 worker is done, the lost round-1 seat is judged by its file",
           code == 0 and "all 2 seats in order" in out, out)
     council(req, "run", "close", "--status", "abandoned")
+
+    # Closing a synthesis run warns about an absent or outdated claim index without rebuilding it.
+    stale_repo = new_repo(tmp, "stale-claims")
+    write(os.path.join(stale_repo, ".council", "council.config.md"), "# Council config\n")
+    _, stale_run, _ = council(stale_repo, "run", "open", "council-review")
+    stale_run = stale_run.strip()
+    write(os.path.join(stale_run, "synthesis.md"), "# Synthesis\n## Kept\n(none)\n## Cut\n(none)\n")
+    warning = "the claim index is missing or out of date"
+    code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
+    check("close: missing claims warn with an explicit run rebuild command",
+          code == 0 and warning in err and "evidence build --run " + os.path.basename(stale_run) in err
+          and not os.path.exists(os.path.join(stale_run, "claims.jsonl")), err)
+    council(stale_repo, "evidence", "build", "--run", stale_run)
+    code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
+    check("close: a current claim index does not warn", code == 0 and warning not in err, err)
+    index_before = read(os.path.join(stale_run, "claims.jsonl"))
+    for source in ("synthesis.md", "verify-1-a.md"):
+        path = os.path.join(stale_run, source)
+        write(path, read(path) or "# Verification\n")
+        newer = os.stat(os.path.join(stale_run, "claims.jsonl")).st_mtime + 5
+        os.utime(path, (newer, newer))
+        code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
+        check("close: newer " + source + " warns without changing the index",
+              code == 0 and warning in err and read(os.path.join(stale_run, "claims.jsonl")) == index_before, err)
+        os.utime(path, (newer - 10, newer - 10))
 
     # Usage
     code, out, _ = council(repo, "help")

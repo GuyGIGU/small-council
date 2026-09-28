@@ -334,7 +334,9 @@ def evidence_of(snap, run_path):
     if verifies:
         items.append({"label": "Verifier reports ({})".format(verifies), "path": rel(run) + "/verify-*.md"})
     claims = snap["claims"]
-    if claims["total"]:
+    if claims.get("stale"):
+        items.append({"label": "Claims index out of date", "path": rel(run / "claims.jsonl")})
+    elif claims["total"]:
         verdicts = ", ".join("{} {}".format(n, v.lower()) for v, n in claims["by_verdict"].items())
         items.append({"label": "Claims and their verdicts ({})".format(verdicts), "path": rel(run / "claims.jsonl")})
     if snap["gates"]:

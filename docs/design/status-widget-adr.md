@@ -24,7 +24,7 @@ showed:
 
 - The Claude desktop app's Code tab has a `visualize` tool pair (`read_me`, `show_widget`). It renders
   an HTML fragment inline in chat, inside a sandbox. It is undocumented in the Claude Code docs.
-- **Checked in this session:** four cards rendered, with inline styles, the host's CSS variables, one
+- **Checked in this session:** five cards rendered, with inline styles, the host's CSS variables, one
   inline script, and a native `<details>`.
 - **Reported (not checked here):**
   - `show_widget` is also available on claude.ai/code;

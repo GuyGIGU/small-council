@@ -167,9 +167,10 @@ needs you, and — under "Details and evidence" — the seats, checks, cost and 
 Ask "how's the council run going?" (or "council status") any time for a fresh card. A card is a
 snapshot: it shows when it was taken, counts its age up in the page, and says so when it is over an
 hour old; it never updates itself, and nothing on it can stop or change a run. Where the app can't
-show cards (the terminal, IDE extensions), you get the same reading as a few lines of text, ending
+show cards, text provides the same reading (reported, not verified, for IDE extensions), ending
 with the exact command for the live terminal view below. Cost appears only when the run's records
-support it (see `references/run-accounting.md`).
+support it (see `references/run-accounting.md`). Both the card and text need optional Python 3.8+;
+without Python, `council run status` gives the phase and cost line.
 
 Two times show on every card:
 - **the snapshot** — when the card was drawn, with its age counting up;
@@ -254,9 +255,11 @@ agents/                council-worker, council-verifier
 hooks/                 hooks.json · session-start.sh · seat-gate.sh
 bin/council            the helper
 references/            stage doctrine · seat docs · spec and test docs · roster catalog · templates
-evals/                 run_structural · run_cli · run_impact · run_hook · run_phrases · behavioral-drills · fixtures
-scripts/               quick_validate.py · optional impact.py provider
+evals/                 17 CI checks (see evals/README.md) · behavioral drills · benchmark and paid-suite fixtures
+scripts/               quick_validate · impact · context · evidence · repair · memory · ledger · cockpit · status · history · tune
 docs/design/           the design behind the current doctrine
+docs/validation/       automatic checks, real-use evidence and limits
+docs/roadmap-status.md implemented, tested, used and deferred work
 examples/              an illustrative council-init output
 ```
 
@@ -272,7 +275,8 @@ python evals/run_status.py         # run accounting and the status widget (needs
 python evals/run_phrases.py        # advisory: are the field-tested rules still worded in?
 ```
 
-CI runs all of them on Ubuntu, Windows and macOS. Before a release:
+These are selected local checks. The full 17-step list is in [CI](.github/workflows/ci.yml)
+and [evals/README.md](evals/README.md), run on Ubuntu, Windows and macOS. Before a release:
 - run the behavioral drills in [`evals/behavioral-drills.md`](evals/behavioral-drills.md);
 - if you have the CLI, run `claude plugin validate . --strict`.
 

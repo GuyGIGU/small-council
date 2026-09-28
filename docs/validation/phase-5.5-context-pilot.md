@@ -74,13 +74,14 @@ This machine has Python and Git, but no `claude` command or usable Claude evalua
 the current environment. The only saved smoke result (`evals/suite/results/smoke-triggering.json`)
 is partial with `auth_failed` and zero cost; it is not a baseline. Therefore no live agent outcome
 or cost comparison has been made. Keep context packs as an optional aid, do not advertise savings,
-and do not make context-depth decisions self-tuning. Once a Claude evaluation runtime is configured,
+and do not make context-depth decisions self-tuning. Once a paid comparison is approved,
 run the paired protocol before deciding whether packs should be default, conditional, simplified,
 or removed. Phase 6's evidence model can proceed independently, but should not be justified by
 unmeasured Phase 5 gains.
 
-**Decision (2026-09-24):** the live paired run is deferred — setting up a sandboxed Claude
-evaluation runtime (WSL2 or Linux) was not worth it at this point. Until it runs, packs are
+**Updated decision (2026-09-28):** the WSL evaluation runner has worked since 2026-09-25.
+The paired run is now deferred for cost: the owner declined the benchmark on 2026-09-27.
+The earlier authentication failure is historical, not the current blocker. Until it runs, packs are
 **opt-in**: the Chair builds them only when the project config says `context packs: on` or the
 user asks in a run. Brief-only dispatch is the default. The protocol above is unchanged and is the
 path to reconsidering the default.

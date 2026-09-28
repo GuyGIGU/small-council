@@ -79,6 +79,24 @@ with tempfile.TemporaryDirectory() as folder:
     invoke(run, "build")
     check("repeated build is byte-identical", (run / "claims.jsonl").read_bytes() == stable)
 
+    header = "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+    part_a = "| 1 | Expiry skipped | CONFIRMED | current path via src/auth.py:4 |\n"
+    part_b = "| C1 | Intentional guard | REFUTED | guard at src/auth.py:8 |\n"
+    (run / "verify-1.md").unlink()
+    write(run, "verify-1-a.md", header + part_a)
+    write(run, "verify-1-b.md", header + part_b)
+    check("Workflow parts link every claim", invoke(run, "build").returncode == 0 and
+          all(len(c["verification"]) == 1 for c in claims(run)))
+    write(run, "verify-1.md", header + part_a + part_b)
+    check("joined copy of Workflow parts counts each identical row once", invoke(run, "build").returncode == 0 and
+          all(len(c["verification"]) == 1 for c in claims(run)) and invoke(run, "check").returncode == 0)
+    write(run, "verify-2.md", header + "| 1 | Expiry skipped | REFUTED | opposite trace |\n")
+    check("Workflow copy deduplication preserves conflicting verdict refusal", invoke(run, "build").returncode == 2)
+    write(run, "verify-2.md", header + "| 1 | Expiry skipped | CONFIRMED | different evidence |\n")
+    check("same verdict with different evidence still requires resolution", invoke(run, "build").returncode == 2)
+    for name in ("verify-1-a.md", "verify-1-b.md", "verify-2.md"):
+        (run / name).unlink()
+
     write(run, "verify-1.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | Expiry skipped | REFUTED | upstream guard at src/auth.py:2 |\n")
     check("changed verifier makes ledger stale", invoke(run, "check").returncode == 1)

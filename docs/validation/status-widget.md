@@ -64,13 +64,13 @@ History and tuning would have learned from those numbers.
 
 | Suite | Result | Covers |
 |---|---|---|
-| `evals/run_status.py` (new) | 81/81 | accounting through the helper; the two readers agreeing on eleven helper-written cases, including added and no-agent runs; corrections and their refusals; every state, including failing, recovering and blocked driven through `council gate` and `council repair`; the widget's escaping, size, time and labels |
+| `evals/run_status.py` (new) | 81/81 | accounting through the helper; the two readers agreeing on eleven helper-written cases, including no-agent runs; the added-run check is separate; corrections and their refusals; every state, including failing, recovering and blocked driven through `council gate` and `council repair`; the widget's escaping, size, time and labels |
 | `evals/run_cli.py` | 520/520 | the whole helper, with the progress line, the close line and ledger rows updated to the new definitions |
 | `evals/run_tui.py` | 22/22 | cockpit, including the shared status line and snapshot/2 |
 | `evals/run_history.py` | 18/18 | older runs left out and named |
 | `evals/run_tune.py` | 25/25 | tuning from complete runs only |
 | `evals/run_seats.py` | 33/33 | unknown and older ledger costs never priced; a verified run with an unknown cost stays verified |
-| `evals/run_hook.py` | 135/135 | session start, with the new status line |
+| `evals/run_hook.py` | 135/135 | session start; the new status line was not covered at this commit (covered by the Track A follow-up) |
 | `evals/run_structural.py` | 629/629 | the kernel names the widget rule; the doctrine asks for exact usage |
 | `evals/run_impact.py`, `run_context.py`, `run_evidence.py`, `run_repair.py`, `run_memory.py` | 21/21, 37/37, 21/21, 37/37, 55/55 | unchanged areas, rerun to catch side effects |
 | `evals/bench.py self-test`, `run_context_pilot.py`, `run_phrases.py` | 46/46, runs clean, 74/74 | unchanged areas; the phrase check is advisory |
@@ -93,7 +93,7 @@ Three real runs, with real agents. Each record below was checked against its sou
   unchanged.
 - Both readers now give 26,430,386 tokens across 220 agent runs: every agent run the transcripts show.
   A chat preview card showed the run, taken before the 8 missed runs were added (it read 24.8M
-  across 212).
+  across 212), and showed the real stale state: "No recent activity … 3 h 50 min".
 
 **2. A fresh council review of this change** (clone of the branch, run `2026-09-27-193355-review`).
 - Real agents: two expert seats, then four blind verifiers dispatched as one Workflow.
@@ -108,7 +108,7 @@ Three real runs, with real agents. Each record below was checked against its sou
   - waiting: set and cleared by the Chair before dispatch, as a deliberate exercise;
   - paused and resumed.
 - **Shown only by simulated runs and helper-driven tests, never in a real run:** recovery in
-  progress, blocked, stale, and unknown.
+  progress and blocked. Unknown is a fault state for a missing/unreadable status file; stale was seen on the real Chrollo preview.
 - Every read was fingerprinted, and none changed the run.
 - **The code was patched and pulled in the clone during this run** (for each finding below), so
   this run mixes versions.
@@ -152,7 +152,7 @@ Code remains unmeasured (the paid benchmark is deferred).
 - **Where the widget works:**
   - verified in the Claude desktop app's Code tab;
   - reportedly also on claude.ai/code;
-  - absent from the terminal and the IDE extensions, which get the text and the command.
+  - terminal text is supported; IDE extensions reportedly show text and the command, but that host behaviour is unverified.
 - **What the token figure measures.** It is the harness's own figure for each agent run. It tracks
   context size, not spend.
 - **Chair discipline matters:**
@@ -172,9 +172,14 @@ Code remains unmeasured (the paid benchmark is deferred).
 
 - **The validation reviews were the Chair's own tasks**, derived from the Phase 5 instruction; the
   user never asked for those reviews.
-- **Its synthesis was written as an index only**, so `council evidence check` reports the claims
-  without declared evidence states. The verifier Workflow wrote one file per agent; they were merged
-  into `verify-1.md` and the parts moved aside. The card honestly shows the claims as unverified.
+- **Its synthesis omitted evidence states**, producing 13 missing-state issues. Workflow parts
+  were readable (12/12 claims linked), but copying them into a joined file created duplicate rows
+  and a conflict. After moving the parts, the Chair rebuilt after close without `--run`; the
+  refusal was hidden by `| tail -1`, and the run closed with its stale Judge-time claim index.
+  The card therefore showed 12 unverified claims despite 10 confirmed and 2 refuted verdicts.
+  The second review never built its claim index and wrote one part outside the verifier glob.
+- **Both reviews falsely failed collect:** the brief listed the queued verifier as a worker.
+  Track A excludes planned verifiers from worker collection and tests the corrected behaviour.
 - **The waiting state was set and cleared by the Chair** to exercise it. The go-ahead came from the
   user's standing instruction.
 - **The controlled failure** was `test -f .council/smoke-ok` before and after creating the file.
@@ -182,8 +187,8 @@ Code remains unmeasured (the paid benchmark is deferred).
 ## What was not verified
 
 - macOS and Linux (CI will run them when the branch is pushed).
-- Recovery in progress, blocked, stale and unknown in a real run (simulated and helper-driven only).
+- Recovery in progress and blocked in a real run (simulated and helper-driven only).
 - claude.ai/code and the IDE extensions.
 - A card after an app restart.
 - A Chair other than this session following the new doctrine unprompted.
-- Stale and unknown states (fixture-tested only).
+- A false stale warning during a long Workflow; unknown remains a fixture-tested fault state.

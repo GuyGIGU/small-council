@@ -238,7 +238,7 @@ run closes; and every file of the run and the council home byte-for-byte unchang
 - **Accounting, through the helper.** A token count is one plausible number stored whole. A repeated
   or resumed report counts once. A Workflow reports its agent count. Missing and older figures stay
   unknown. A correction is normalised, bounded, and keeps the original and its evidence.
-- **Two readers.** Nine helper-written runs, one per basis, read the same by the helper (close line,
+- **Two readers.** Eleven helper-written cases, plus a separate added-run check, read the same by the helper (close line,
   ledger) and by the snapshot (widget, `tui`, history), seat by seat and for the run.
 - **Status, from hand-made runs read at a fixed time.** Every state the widget shows (starting,
   running, waiting, failing, recovering, blocked, completed, paused, stopped, stale, unknown).
