@@ -21,15 +21,17 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import ledger  # noqa: E402  (the helper's own seat-learning code)
 
 checks = []
-HEADER = "date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\n"
+HEADER = "date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\taccounting\n"
 
 
 def check(name, good, detail=""):
     checks.append((name, good, detail))
 
 
-def row(run, seat, raised, kept, cut, refuted, tokens=50000, mode="council-review"):
-    return "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(run[:10], run, mode, seat, raised, kept, cut, refuted, tokens)
+def row(run, seat, raised, kept, cut, refuted, tokens=50000, mode="council-review", checked=True):
+    """A ledger row as the helper writes it: accounting 2 marks a checked token figure (or "-")."""
+    return "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}\n".format(run[:10], run, mode, seat, raised, kept, cut, refuted, tokens,
+                                                         "\t2" if checked else "")
 
 
 def runs_of(seat, n, raised, kept, cut=0, refuted=0, tokens=50000, start=1, mode="council-review"):
@@ -78,7 +80,7 @@ check("a split or round-2 worker is its seat; a hyphenated name is not split",
 # --- which runs count --------------------------------------------------------------------------------
 data, seats = advise(row("2026-09-17-113250-init", "engine", 8, 0, 0, 0, 74304, "council-init")
                      + row("2026-09-20-013508-plan", "fowler", 8, 6, 2, 4, 200562, "council-plan")
-                     + "2026-09-20\t2026-09-20-013508-plan\tcouncil-plan\t(verifiers)\t-\t-\t-\t-\t406202\n")
+                     + "2026-09-20\t2026-09-20-013508-plan\tcouncil-plan\t(verifiers)\t-\t-\t-\t-\t406202\t2\n")
 check("a run that credited no items is not judged: its seat is 'never judged', not 0% useful",
       seats["engine"]["advice"] == "collect" and "never judged" in seats["engine"]["reason"]
       and seats["engine"]["useful_share"] is None and data["window"] == {"last": 20, "runs": 2, "judged": 1}, data)
@@ -128,6 +130,21 @@ data, seats = advise(row("2026-09-20-013508-plan", "nygard-perf", 8, 5, 4, 1) + 
 check("kept and cut beyond raised is noted, and a run's useful items never exceed its raised items",
       any("credited loosely" in note for note in data["notes"]) and seats["z"]["useful"] == 2
       and seats["z"]["useful_share"]["share"] == 1.0, (data["notes"], seats["z"]["useful_share"]))
+# --- which token figures may be priced (references/run-accounting.md) -------------------------------------
+data, seats = advise("".join(row("2026-09-{:02d}-0000{:02d}-review".format(1 + i, 1 + i), "old", 6, 6, 0, 0, 160, checked=False)
+                             for i in range(3)) + runs_of("new", 3, 6, 6, tokens=150000, start=10))
+check("an older ledger row's token figure is never priced: its units were never checked",
+      seats["old"]["tokens_per_run"] is None and seats["old"]["tokens_per_useful"] is None
+      and seats["new"]["tokens_per_run"] == 150000 and seats["old"]["advice"] == "retain"
+      and any("no checked token figure" in n for n in data["notes"]), (seats["old"], data["notes"]))
+data, seats = advise(runs_of("seen", 3, 6, 6, tokens="-") + "".join(
+    row("2026-09-{:02d}-0000{:02d}-review".format(1 + (1 + i) % 28, 1 + i), "(verifiers)", "-", "-", "-", "-", "-")
+    for i in range(3)) + runs_of("seen", 1, 6, 6, refuted=3, tokens="-", start=1))
+check("a checked row with an unknown cost ('-') is read, not dropped, and costs nothing it doesn't know",
+      "seen" in seats and not any("could not be read" in n for n in data["notes"])
+      and seats["seen"]["tokens_per_run"] is None, (data["notes"], seats.get("seen")))
+check("a verifiers row with an unknown cost still marks its run as verified",
+      seats["seen"]["refuted_share"] is not None and len(seats["seen"]["verified_runs"]) == 3, seats["seen"])
 data, seats = advise(runs_of("hunt", 3, 5, 1, cut=4) + "".join(
     row("2026-09-{:02d}-0000{:02d}-review".format(1 + (1 + i) % 28, 1 + i), "hunt-r2", 0, 4, 0, 0) for i in range(3)))
 check("credit that arrives through a round-2 worker is folded in before the loose-credit check",

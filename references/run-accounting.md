@@ -1,0 +1,129 @@
+# Run accounting — what a run's numbers mean
+
+A run records who worked, how many agents ran and what they reported using. Every reader (the
+status widget, `council tui`, the close line, the ledger, `council history`, `council tune`) says a
+number only as far as the record supports it. Blank is unknown, never zero.
+
+## Words
+
+| Word | Meaning |
+|---|---|
+| **Seat** | A named slot of a run: one row of `seats.tsv` (`security`, `verify-3`, `task-4`). |
+| **Agent run** | One agent the Chair started for a seat: an Agent tool call, or each agent a Workflow started — errored ones too, because they ran. A SendMessage resume of the same agent id is **not** a new agent run. A later pass of an agent already counted under another seat adds none. The Chair is never an agent run. |
+| **Check** | One gate command (`council gate`), saved under `gates/` with a `gate.finished` event. A check is not an agent run and is never counted as one. |
+| **Tokens** | The figure Claude Code reports for a finished agent run (`subagent_tokens` in its completion notification; a Workflow's notification gives one figure for all its agents), stored as whole tokens. |
+
+**What the token figure measures.** Checked against real transcripts (a build run of September 2026), it
+tracks the size of the agent's final context — not the sum of every call it made, and not a
+bill. One verifier reported 160,360 while its 54 calls added up to 5.3 million. Compare runs with it;
+don't price them with it.
+
+**Nesting.** Workers and verifiers cannot start agents (their contracts forbid it), so the only nesting
+is a Workflow the Chair runs: its `agent_count` is its agent runs.
+
+**Display is not storage.** "160k" is how a figure is shown. The stored value is the whole number
+(160360). A figure is never rounded when stored, and a rounded figure is never accepted.
+
+The display formats differ intentionally: the bash close/progress lines use whole thousands,
+rounding halves up; the TUI uses Python half-to-even rounding to whole thousands. The status
+card/text uses whole thousands below 995,000 and one decimal million at or above that threshold
+(Python rounding, with a trailing `.0` omitted). Thus 26,430,386 appears as `~26430k` on the
+close line and `26.4M` on the card; 2,500 appears as `~3k` versus `2k`. These are display
+differences only: the stored totals and accounting bases agree.
+
+## Where it is written
+
+| File | What it holds |
+|---|---|
+| `usage.tsv` (0.14+) | Append-only: every dispatch (`kind` dispatched) and every usage report (`kind` finished), with `at`, `seat`, `agent`, `runs` and `tokens`. The audit trail. |
+| `seats.tsv` columns `tokens`, `agents`, `reported` | Derived from `usage.tsv` on every `council seat` call: the seat's tokens, its agent runs, and how many of those reported usage. |
+| `corrections.jsonl` | Evidence-backed corrections (`council correct`), laid over `seats.tsv` by every reader. `seats.tsv` itself is never edited. |
+
+How `usage.tsv` becomes a seat's figures:
+- **Per agent id, the latest report counts.** A resumed agent reports a running total (one verifier
+  reported 413,657, was resumed, then reported 463,078 for the same agent). A later figure at least
+  as large replaces the earlier one, so a repeated report never adds twice. A smaller later figure is
+  taken as a count of its own and added.
+- **A report with no agent id stands alone.** It cannot be matched, so a repeat would add. Record
+  the id at dispatch.
+- **A dispatched id that never reported** counts as one agent run with no usage.
+- **A seat with no agent on record** (no id, no report) has an unknown agent count — its `agents` cell
+  stays blank, never 0. `agents=0` on a finished report is the one way to say that no agent ran (the
+  Chair did the work).
+
+`seats.tsv` holds the summary and `usage.tsv` its parts. A reader uses one or the other, never both.
+The `seat.updated` event carries a seat's totals so far, so summing events counts twice.
+
+## Recording (`council seat`)
+
+- `agent=` takes the id the Agent or Workflow tool returned. A role name (`workflow`,
+  `council-verifier`) is refused.
+- `tokens=` takes one exact number: `159812`, `159,812`, `159 812`. It is refused when it holds two
+  numbers ("12 tool uses, 45000 tokens"), a sign, an exponent, a decimal comma, a rounded figure
+  (`160k`, `1.2M`), or anything under 1,000. No agent run costs less than that, so 160 is a slip, and
+  the helper never guesses what it meant.
+- `tokens=` and `agents=` come with a finished run (`done`, `failed` or `blocked`), once per agent
+  run, with the notification's figure as given. A Workflow gives `agents=<agent_count>
+  tokens=<subagent_tokens>`.
+- A seat the Chair did itself, with no agent: `council seat <slug> done agents=0`.
+
+## What may be said
+
+| Basis | When | Said as |
+|---|---|---|
+| complete | every agent run's usage is known (reported or corrected) | a total, "~4675k tokens across 39 agent run(s) on the close line; 4.7M on the card" |
+| running | some seats are still working | "so far" |
+| partial | a finished agent run has no usage report, or a seat has no agent on record | "at least …, N without a usage report" / "no agent on record for …" |
+| older | a row written before 0.14 (no `reported` value) and not corrected | "not reliably recorded"; agent runs "at least N" |
+| suspect | a figure under 1,000 tokens for an agent run | not shown; the seat is named |
+| none | no agent run on record | nothing to cost |
+
+- **The close line** (`actual:` in `session-state.md`) uses the same bases.
+- **The ledger** marks rows it writes with `accounting` 2. Their tokens are a checked figure or "-".
+  Rows without the mark are older, and their tokens are never priced by `council ledger advice`.
+- **`council history` costs only completed runs whose basis is complete, with an exact agent-run
+  count.** It counts every other run under "left out", with the reason.
+- **`council tune` reads that history.** Five measured runs make a proposal eligible; they do not
+  make it reliable. Read its spread.
+
+## Correcting a record (`council correct`)
+
+`council correct <seat> tokens=<exact> agents=<exact> evidence="<source>"` appends a line per field to
+`corrections.jsonl`: the value as recorded, the exact value, and where the evidence is (a transcript
+file and line, a message id). It refuses a rounded figure, a figure under 1,000 other than 0, an
+unknown seat, and a missing source.
+- A seat no agent ran for (the Chair did the work) is `tokens=0 agents=0`.
+- A later pass of an agent counted under another seat gets `agents=0` and the difference between that
+  agent's consecutive reports.
+- An agent run that never got a seat row is added with `unrecorded=yes` (both figures, a new slug).
+  Every reader counts it as a done seat; `seats.tsv` is not touched.
+- Only an exact figure the source shows is a correction. 160 is never read as 160,000 because it
+  looks small.
+
+## Known limits
+
+- A dispatched agent the Chair never recorded is not counted until it is added from evidence. One
+  real build run had 8 such agent runs (a first check of a task, two surveys, and a 5-agent survey
+  workflow); all were added from its transcripts.
+- The resumed-agent rule assumes running totals, as observed. A smaller later figure is added, which
+  is right for a fresh count and wrong if the harness ever reported less than before for the same
+  agent.
+- The token figure measures context size, not spend (see above).
+
+## Status JSON contract
+
+`council status --json [--run <name>]` needs optional Python 3.8+ and returns
+`schema: "council.run-status/1"`. Reading writes nothing. Its main fields are:
+
+- `snapshot_at`: UTC time of this reading.
+- `run`: identity, path, project, mode, status, phase, stage and open/close times.
+- `state`: machine key, visible label, role, icon and summary.
+- `attention`: issues with kind, severity and text; `progress`: seats, checks, working, next and counts.
+- `latest_check`, `checks`: saved check results; `recent` and `recent_source`: recent recorded activity.
+- `freshness`: last activity time, quiet minutes and whether the run is stale.
+- `usage`: token and agent-run figures with their basis and display wording; unknown values stay null.
+- `seats`: names, states, tokens, token bases, agent-run counts and notes.
+- `evidence`: labels and paths to supporting records. An absent or older claim index is labelled
+  "Claims index out of date" instead of showing obsolete verdicts.
+
+This is a snapshot, not a subscription. Without Python, relay `council run status` for phase and cost.

@@ -115,14 +115,20 @@ def proposals(home):
     budget = {"id": "budget", "kind": "budget", "knob": KNOB, "current": current, "default": DEFAULT_PER_WORKER,
               "line": line, "lines": len(LINES.findall(text))}
     if not worker["enough"]:
-        budget.update(status="waiting", why="too few completed runs with agents to measure it ({} of {} needed)".format(
-            worker["n"], history.MIN_RUNS))
+        left = sum((data["cost"].get("left_out") or {}).values())
+        budget.update(status="waiting", why="too few completed runs with agents to measure it ({} of {} needed{})".format(
+            worker["n"], history.MIN_RUNS,
+            "; {} more left out for incomplete records".format(left) if left else ""))
     else:
         median = worker["median"]
         proposed = min(MAX_PER_WORKER, max(5000, int(round(median / 5000.0)) * 5000))
         off = abs(median - estimate) / estimate
-        evidence = "median {} tokens per agent over {} completed runs (10–90%: {}–{})".format(
-            k(median), worker["n"], k(worker["p10"]), k(worker["p90"]))
+        evidence = ("median {} tokens per agent over {} completed runs (10–90%: {}–{}); {} runs make this "
+                    "eligible, not reliable").format(k(median), worker["n"], k(worker["p10"]), k(worker["p90"]),
+                                                     history.MIN_RUNS)
+        left = data["cost"].get("left_out") or {}
+        if left:
+            evidence += "; {} completed run(s) left out for incomplete records".format(sum(left.values()))
         ratio = data["estimates"]["actual_over_estimate"]
         if ratio["enough"]:
             evidence += "; agents cost {:.2f}× their plan's estimate at the median".format(ratio["median"])

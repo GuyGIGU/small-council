@@ -42,7 +42,8 @@ skipped under load.
   advice only past a stated bar), history across runs (`council history`: a rate only once five
   runs carry its data), conservative tuning (`council tune`: the estimate per worker from your own
   runs, changed only on your words and undoable; behaviour held until a benchmark shows it helps),
-  the stack fingerprint, a drift doctor, and a read-only run cockpit
+  the stack fingerprint, a drift doctor, a plain-language status for a run (`council status`: a
+  snapshot card in chat where the app can show one, text elsewhere), and a read-only run cockpit
   (`council tui --watch`) you can leave open in a terminal while a council works.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
   security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,
@@ -160,7 +161,25 @@ Each stage has its own short doctrine file, which the Chair reads as it enters t
 **Limits:** at most 10 agents per run, verifiers included; a war room adds tokens, not agents. Past runs averaged ~100k tokens per worker;
 estimates come from your own project's ledger once there is some.
 
-**Watching a run.** In a terminal of your own, in the project, run the helper's cockpit. Outside
+**Seeing how a run is going.** In the Claude desktop app, the council shows a small status card in
+the chat once, when it first sends out its experts: what is happening, whether it is moving, what
+needs you, and — under "Details and evidence" — the seats, checks, cost and where the records are.
+Ask "how's the council run going?" (or "council status") any time for a fresh card. A card is a
+snapshot: it shows when it was taken, counts its age up in the page, and says so when it is over an
+hour old; it never updates itself, and nothing on it can stop or change a run. Where the app can't
+show cards, text provides the same reading (reported, not verified, for IDE extensions), ending
+with the exact command for the live terminal view below. Cost appears only when the run's records
+support it (see `references/run-accounting.md`). Both the card and text need optional Python 3.8+;
+without Python, `council run status` gives the phase and cost line.
+
+Two times show on every card:
+- **the snapshot** — when the card was drawn, with its age counting up;
+- **last activity** — the newest thing the run recorded.
+
+If an open run has recorded nothing for an hour, the card says **No recent activity**. That can mean
+a long job is still running, or that the session stopped; the card says both.
+
+**Watching a run live.** In a terminal of your own, in the project, run the helper's cockpit. Outside
 Claude Code the helper is not on your PATH, so give its full path: `bin/council` inside the plugin's
 folder. For the `~/.claude/skills/small-council/` install described under Install, that is:
 
@@ -236,9 +255,11 @@ agents/                council-worker, council-verifier
 hooks/                 hooks.json · session-start.sh · seat-gate.sh
 bin/council            the helper
 references/            stage doctrine · seat docs · spec and test docs · roster catalog · templates
-evals/                 run_structural · run_cli · run_impact · run_hook · run_phrases · behavioral-drills · fixtures
-scripts/               quick_validate.py · optional impact.py provider
+evals/                 17 CI checks (see evals/README.md) · behavioral drills · benchmark and paid-suite fixtures
+scripts/               quick_validate · impact · context · evidence · repair · memory · ledger · cockpit · status · history · tune
 docs/design/           the design behind the current doctrine
+docs/validation/       automatic checks, real-use evidence and limits
+docs/roadmap-status.md implemented, tested, used and deferred work
 examples/              an illustrative council-init output
 ```
 
@@ -250,10 +271,12 @@ python evals/run_structural.py     # is the design intact? laws, stages, command
 python evals/run_cli.py            # does the helper work? (needs bash + git)
 python evals/run_impact.py         # does the optional impact graph resolve direct relationships?
 python evals/run_hook.py           # do the hooks behave? (needs bash + git)
+python evals/run_status.py         # run accounting and the status widget (needs bash + git)
 python evals/run_phrases.py        # advisory: are the field-tested rules still worded in?
 ```
 
-CI runs all of them on Ubuntu, Windows and macOS. Before a release:
+These are selected local checks. The full 17-step list is in [CI](.github/workflows/ci.yml)
+and [evals/README.md](evals/README.md), run on Ubuntu, Windows and macOS. Before a release:
 - run the behavioral drills in [`evals/behavioral-drills.md`](evals/behavioral-drills.md);
 - if you have the CLI, run `claude plugin validate . --strict`.
 

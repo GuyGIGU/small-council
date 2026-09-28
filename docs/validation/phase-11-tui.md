@@ -89,6 +89,7 @@ None: this is an inspection tool. There is no claim that it improves runs.
 ## Not verified
 
 - A live council run watched end to end.
-- macOS Terminal and Linux terminals (CI runs the checks on all three once pushed).
+- A person looking at real macOS and Linux terminals. Automatic checks passed for the released
+  code in CI runs `36305577961` and `36319880515` (checked 2026-09-28).
 - Windows' legacy console. The cockpit asks it for ANSI support, and `COUNCIL_ASCII=1` is the
   fallback.

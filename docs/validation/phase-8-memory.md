@@ -138,8 +138,8 @@ session and was left alone).
   in its place); one passed only vacuously there, because the draft it inspects had the wrong id.
   `evals/run_cli.py` keeps its own Phase 8 cases with a real evidence file.
 - With this change, the structural (600), hook (135), repair (37) and evidence (21) suites pass on
-  Windows. The broad helper suite is rerun on it separately (it takes 17 minutes). macOS (bash
-  3.2, BSD awk) and Linux legs have not been run for this change; CI runs them on a pull request.
+  Windows. Update 2026-09-28: the released code also passed macOS (bash 3.2, BSD awk)
+  and Linux CI in runs `36305577961` and `36319880515`; automatic checks are not live validation.
 - No live Claude run or claim of improved findings is part of this slice. The Phase 7 live check
   remains open; context packs remain opt-in.
 

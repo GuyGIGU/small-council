@@ -102,6 +102,18 @@ it never loops.
 - the user sees a progress line as seats finish;
 - the cost is reported at the end.
 
+## D13b — The run's status, once, where the user reads
+**Setup:** a Squad run in the Claude desktop app (a `show_widget` tool is available), then the same in
+the terminal.
+**Pass if:**
+- right after the first dispatch, the Chair shows `council status --widget` output once, verbatim,
+  through the widget tool; in the terminal it relays `council status` instead, ending with the
+  terminal view's command;
+- no card follows each progress line; a card comes again only when the user asks;
+- the Chair records each worker with `agent=<the id the tool returned>` and, on its notification,
+  `tokens=<the figure as given>` (a Workflow: `agents=<agent_count>` too);
+- when it stops to ask the user, `council state waiting="…"` is set, and cleared on the answer.
+
 ## D14 — Two runs at once
 **Setup:** start a review in one worktree and a fix pass in another.
 

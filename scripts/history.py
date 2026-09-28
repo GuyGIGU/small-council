@@ -6,8 +6,14 @@ trails caught, and how much each seat's record supports. It reads every run fold
 <home>/runs through the cockpit's read-only snapshot, and the seat ledger through
 `council ledger advice`'s code. It writes nothing. A count is always shown. A median, a share or a
 ratio needs MIN_RUNS runs that carry its data; below that the report says "too few" and gives the
-count, never a number that could be mistaken for a trend. Nothing here tunes anything: `council tune`
-reads this report and proposes, and the user decides.
+count, never a number that could be mistaken for a trend. Five runs make a figure eligible to be
+shown; they do not make it reliable. Nothing here tunes anything: `council tune` reads this report and
+proposes, and the user decides.
+
+Cost figures use only completed runs whose records support them (references/run-accounting.md):
+every agent run's tokens reported or corrected from evidence, and an exact agent-run count. A run
+from before that accounting, with a missing usage report or an implausible count, is left out and
+counted under "Data", never folded in as a zero or a guess.
 """
 
 import argparse
@@ -26,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cockpit  # noqa: E402  (the read-only run snapshot)
 import ledger   # noqa: E402  (seat evidence and advice)
 
-SCHEMA = "council.history/2"
+SCHEMA = "council.history/3"
 MIN_RUNS = 5          # runs that carry a fact before a median, share or ratio over them is shown
 MAX_RUNS = 1000       # the most recent runs read
 SEAT_WINDOW = 20      # the runs of the ledger read for seat evidence, as council ledger advice reads them
@@ -66,6 +72,33 @@ def rate(pairs):
             "high": got["high"]}
 
 
+def total_of(snap):
+    return snap["usage"]["tokens"]["total"]
+
+
+def runs_of(snap):
+    return snap["usage"]["agents"]["total"]
+
+
+def cost_gap(snap):
+    """Why a completed run's cost can't be counted, or '' when it can: tokens known for every agent
+    run, an exact agent-run count, and something spent."""
+    tokens, agents = snap["usage"]["tokens"], snap["usage"]["agents"]
+    if tokens["basis"] == "none":
+        return "no agent runs recorded"
+    if tokens["basis"] == "legacy":
+        return "older records (units never checked)"
+    if tokens["basis"] == "suspect":
+        return "implausible token counts"
+    if tokens["basis"] != "complete":
+        return "usage reports missing"
+    if agents["total"] is None:
+        return "agent-run count not exact"
+    if not tokens["total"] or not agents["total"]:
+        return "nothing spent on record"
+    return ""
+
+
 def month_of(name):
     match = re.match(r"(\d{4}-\d{2})-\d{2}-", name)
     return match.group(1) if match else "unknown"
@@ -81,13 +114,19 @@ def history(home):
         by_mode[info["mode"] or "unknown"] = by_mode.get(info["mode"] or "unknown", 0) + 1
         by_month[month_of(info["id"])] = by_month.get(month_of(info["id"]), 0) + 1
     complete = [s for s in runs if s["run"]["status"] == "complete"]
-    costed = [s for s in complete if s["tokens"]["total"] > 0]
+    costed, left_out = [], {}
+    for snap in complete:                # only a run whose record supports a total is costed
+        why = cost_gap(snap)
+        if why:
+            left_out[why] = left_out.get(why, 0) + 1
+        else:
+            costed.append(snap)
     ratios = []
     for snap in costed:                  # agents' tokens against the plan's estimate less the Chair's share
         estimate = cockpit.number(snap["plan"].get("estimated-tokens")) - CHAIR_ESTIMATE
         if estimate > 0:
-            ratios.append(snap["tokens"]["total"] / estimate)
-    agents = [s["tokens"]["total"] / s["agents"] for s in costed if s["agents"] > 0]
+            ratios.append(total_of(snap) / estimate)
+    agents = [total_of(s) / runs_of(s) for s in costed]
     sizes = {}
     for snap in runs:
         size = snap["plan"].get("size", "")
@@ -137,9 +176,10 @@ def history(home):
         "schema": SCHEMA, "home": str(home), "min_runs": MIN_RUNS,
         "runs": {"total": len(runs), "by_status": by_status, "by_mode": by_mode, "by_month": dict(sorted(by_month.items())),
                  "first": opened[0] if opened else None, "last": opened[-1] if opened else None, "sizes": sizes},
-        "cost": {"tokens_per_run": spread([s["tokens"]["total"] for s in costed]),
-                 "agents_per_run": spread([s["agents"] for s in costed]),
-                 "tokens_per_agent": spread(agents)},
+        "cost": {"tokens_per_run": spread([total_of(s) for s in costed]),
+                 "agents_per_run": spread([runs_of(s) for s in costed]),
+                 "tokens_per_agent": spread(agents),
+                 "left_out": dict(sorted(left_out.items()))},
         "estimates": {"actual_over_estimate": spread(ratios)},
         "gates": {name: {"runs": len(e["runs"]), "failed_runs": len(e["failed_runs"])} for name, e in sorted(gates.items())},
         "proofs": {"before_checks": proofs["before"][0], "before_failed_as_intended": proofs["before"][1],
@@ -172,8 +212,8 @@ def render(data):
     lines = ["council history · {} run(s) · {} → {} · {}".format(
         runs["total"], runs["first"], runs["last"],
         ", ".join("{} {}".format(n, s) for s, n in sorted(runs["by_status"].items()))),
-        "a median, share or ratio needs {} runs that carry its data; below that you see the count only".format(
-            data["min_runs"]), ""]
+        "a median, share or ratio needs {} runs that carry its data; below that you see the count only. "
+        "Reaching {} makes a figure eligible, not reliable: read its spread".format(data["min_runs"], data["min_runs"]), ""]
     lines.append("Runs by mode: " + " · ".join("{} {}".format(m, n) for m, n in sorted(runs["by_mode"].items())))
     lines.append("Runs by month: " + " · ".join("{} {}".format(m, n) for m, n in runs["by_month"].items()))
     if runs["sizes"]:
@@ -229,6 +269,9 @@ def render(data):
     lines.append("Seats: {} in the ledger · {} weighed{} — council ledger advice".format(
         s["in_ledger"], len(s["weighed"]), " ({})".format(", ".join(s["weighed"])) if s["weighed"] else ""))
     q, notes = data["quality"], []
+    if cost["left_out"]:
+        notes.append("{} completed run(s) left out of cost figures: {}".format(
+            sum(cost["left_out"].values()), ", ".join("{} {}".format(n, why) for why, n in cost["left_out"].items())))
     if q["open"]:
         notes.append("{} run(s) still open or paused".format(q["open"]))
     if q["no_plan"]:

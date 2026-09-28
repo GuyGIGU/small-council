@@ -99,7 +99,7 @@ There are now checks for:
 ## Evidence on real data
 
 No project has five completed runs with workers. On the Chrollo record `council history` gives
-2 of 5, so `council tune` there would answer "waiting".
+0 of 5 under the 0.14 exact-accounting rules, so `council tune` there would answer "waiting".
 
 ## Metrics / baseline comparison
 
@@ -122,4 +122,8 @@ Behaviour knobs (context packs, run size, verification depth). Each needs:
 
 - A real project reaching the budget bar.
 - A Chair presenting a tuning proposal in a live refresh.
-- macOS and Linux (CI once pushed).
+
+## Platform check update — 2026-09-28
+
+Automatic macOS and Linux checks passed for the released code in CI runs
+`36305577961` and `36319880515`; this is not validation by a person using those hosts.

@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.13.0"
+COUNCIL_VERSION="0.14.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -41,6 +41,17 @@ field() {
 }
 
 json_esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\t\r\n' '   '; }
+
+# A session-state header key: the first one above the first "## " heading, leading space dropped, then
+# a trailing "  # comment" — the rule scripts/cockpit.py's header() reads by, so both see one value.
+state_field() {
+  K="$1" awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { sub(/\r$/, "") }
+    /^## / { exit }
+    index($0, ENVIRON["K"] ":") == 1 {
+      v = substr($0, length(ENVIRON["K"]) + 2); sub(/^[ \t]+/, "", v); sub(/[ \t][ \t]+#.*$/, "", v)
+      print v; exit
+    }' "$2" 2>/dev/null
+}
 
 # Shorten each line to about N characters, at a space, so a multibyte character is never cut in half.
 clip() { awk -v n="$1" '{ if (length($0) > n) { t = substr($0, 1, n); sub(/ [^ ]*$/, "", t); $0 = t " …" } print }'; }
@@ -466,7 +477,7 @@ EOF
     { gsub(/\{\{RUN\}\}/, ENVIRON["RUN_NAME"]); gsub(/\{\{MODE\}\}/, ENVIRON["RUN_MODE"]); gsub(/\{\{AGENT_CAP\}\}/, ENVIRON["AGENT_CAP"]); print }
   ' "$template" > "$dir/run-plan.tsv" || die "cannot write $dir/run-plan.tsv"
   printf '# Run log — %s · opened %s\n' "$mode" "$(now_sec)" > "$dir/log.md"
-  printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$dir/seats.tsv"
+  printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n' > "$dir/seats.tsv"
   event_append "$dir" run.opened run "$mode" "phase=convene" || die "run opened, but its first event could not be recorded: $dir/events.tsv"
   [ -z "$existing" ] || printf 'council: another run is in progress on this working tree — pass --run %s to every command for this one\n' "${dir##*/}" >&2
   [ -z "$paused" ] || printf 'council: a paused run is also open here (%s) — it stays paused\n' "$paused" >&2
@@ -478,11 +489,11 @@ EOF
 }
 
 cmd_state() {
-  local run st kv key tmp old_phase old_status new_phase new_status
+  local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
-  old_phase="$(field phase "$st")"; old_status="$(field status "$st")"
+  old_phase="$(field phase "$st")"; old_status="$(field status "$st")"; old_waiting="$(state_field waiting "$st")"
   for kv in ${1+"$@"}; do
     case "$kv" in
       phase=brief|phase=build|phase=work|phase=collect|phase=judge|phase=challenge|phase=deliver|phase=learn)
@@ -517,6 +528,12 @@ cmd_state() {
   if [ "$old_status" != "$new_status" ]; then
     event_append "$run" run.status_changed run "$new_status" "from=$old_status" || die "state changed, but the status event could not be recorded"
   fi
+  new_waiting="$(state_field waiting "$st")"           # the question the run waits on the user for, if any
+  if [ -z "$old_waiting" ] && [ -n "$new_waiting" ]; then
+    event_append "$run" run.waiting_changed run on "from=off" || die "state changed, but the waiting event could not be recorded"
+  elif [ -n "$old_waiting" ] && [ -z "$new_waiting" ]; then
+    event_append "$run" run.waiting_changed run off "from=on" || die "state changed, but the waiting event could not be recorded"
+  fi
   say "state: phase $(field phase "$st") · $(field status "$st") · ${run##*/}"
 }
 
@@ -542,7 +559,7 @@ cmd_run_resume() {
   old="$(field session "$st")"
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
   RUN_ARG="$run" cmd_state status=in-progress session="$session" >/dev/null || exit 2
-  awk '/^## / { body = 1 } !body && index($0, "closed:") == 1 { next } { print }' "$st" > "$st.tmp$$" \
+  awk '/^## / { body = 1 } !body && (index($0, "closed:") == 1 || index($0, "actual:") == 1) { next } { print }' "$st" > "$st.tmp$$" \
     && mv "$st.tmp$$" "$st" || { rm -f "$st.tmp$$"; die "cannot update $st"; }
   event_append "$run" run.resumed run in-progress "from=$status" || die "run resumed, but its event could not be recorded"
   if [ -n "$session" ]; then drv="driven by this session"; else drv="no session id to record"; fi
@@ -563,22 +580,26 @@ cmd_run_resume() {
   fi
 }
 
-# Tokens accumulate per seat (one completion notification = one agent); a new agent id on a seat
-# counts as another agent — a resumed or re-dispatched worker never erases the earlier cost.
+# The line the Chair relays after each seat call: seats (not agents) done, who is working, who waits,
+# and the tokens reported so far. Rows from before usage.tsv never add to the tokens: their units
+# were never checked (references/run-accounting.md).
 progress_line() {
   awk -F'\t' '
     NR > 1 && $2 != "skipped" {
       n++
       if ($2 == "done") d++
-      else if ($2 == "running" || $2 == "queued") w = w (w ? ", " : "") $1
+      else if ($2 == "running") w = w (w ? ", " : "") $1
+      else if ($2 == "queued") q = q (q ? ", " : "") $1
       else if ($2 == "failed" || $2 == "blocked") f = f (f ? ", " : "") $1
-      t += $4
+      if (NF < 8 || $8 == "") { if ($4 + 0 > 0) old = 1 } else t += $4
     }
     END {
-      printf "agents: %d of %d done", d, n
+      printf "seats: %d of %d done", d, n
       if (w) printf " · still working: %s", w
+      if (q) printf " · queued: %s", q
       if (f) printf " · failed: %s", f
       if (t > 0) printf " · ~%dk tokens so far", int((t + 500) / 1000)
+      if (old) printf " · older rows'"'"' tokens not counted"
       printf "\n"
     }' "$1/seats.tsv"
 }
@@ -588,22 +609,89 @@ seat_field() {
   S="$2" awk -F'\t' -v c="$3" 'NR > 1 && $1 == ENVIRON["S"] { print $c; exit }' "$1/seats.tsv"
 }
 
+# Accounting (references/run-accounting.md). A seat is a named slot of the run; an agent run is one
+# agent the Chair started for it (an Agent call, or each agent a Workflow started, errored ones too) —
+# a resume of the same agent id is not a new run. Every dispatch and every usage report is one row of
+# the run's usage.tsv; a seat's agents, reported and tokens columns in seats.tsv are derived from it:
+# - per agent id, the latest report counts (a resumed agent reports a running total, and a repeated
+#   report must not add twice);
+# - a report with no agent id stands on its own;
+# - an id dispatched but never reported is one agent run with no usage.
+# - agents=0 on a finished report declares that no agent ran (the Chair did the work).
+# Prints "<agent runs> <runs with usage> <tokens> <declared no agent 1|0>".
+seat_usage() {
+  [ -f "$1/usage.tsv" ] || { printf '0 0 0 0'; return 0; }
+  SLUG="$2" awk -F'\t' '
+    NR == 1 || $2 != ENVIRON["SLUG"] { next }
+    $5 !~ /^[0-9]*$/ || $6 !~ /^[0-9]*$/ || length($6) > 12 { next }   # not a count: never read as one
+    $4 == "finished" && $5 == "0" { d = 1 }
+    $3 == "" {
+      if ($4 == "finished") { k = ($5 == "" ? 1 : $5 + 0); e += k; if ($6 != "") { r += k; t += $6 } }
+      next
+    }
+    { id = $3; if (!(id in seen)) { seen[id] = 1; ids[++n] = id } }
+    $4 == "finished" {
+      runs[id] = ($5 == "" ? 1 : $5 + 0); fin[id] = 1
+      if ($6 == "") next
+      f = $6 + 0; has[id] = 1
+      if (!(id in last)) tok[id] = f
+      else if (f >= last[id]) tok[id] += f - last[id]   # a running total: the new figure replaces the last
+      else tok[id] += f                                  # a smaller figure is a fresh count of its own
+      last[id] = f
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        id = ids[i]; k = (id in fin) ? runs[id] : 1; e += k
+        if (id in has) { r += k; t += tok[id] }
+      }
+      printf "%d %d %.0f %d", e, r, t, d
+    }' "$1/usage.tsv"
+}
+
 cmd_seat() {
-  local run slug="${1:-}" state="${2:-}" agent="" tokens="" note="" kv f
-  [ -n "$slug" ] && [ -n "$state" ] || die "usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [note=TEXT]"
+  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell
+  [ -n "$slug" ] && [ -n "$state" ] || die "usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [agents=N] [note=TEXT]"
   case "$state" in queued|running|done|failed|blocked|skipped) ;; *) die "seat state must be queued, running, done, failed, blocked or skipped" ;; esac
   case "$slug" in *[!A-Za-z0-9._-]*) die "bad seat slug: $slug" ;; esac
   shift 2
   for kv in ${1+"$@"}; do                            # ${1+…}: bash 3.2 calls an empty "$@" unbound under set -u
     case "$kv" in
-      agent=*)  agent="${kv#agent=}" ;;
-      tokens=*) tokens="$(seat_tokens "${kv#tokens=}")" \
-                  || die "tokens= takes a number of tokens (74304, 74,304 or 74.3k), got: ${kv#tokens=}" ;;
-      note=*)   note="$(printf '%s' "${kv#note=}" | tr '\t\r\n' '   ')" ;;
-      *) die "unknown seat field: $kv (use agent=, tokens=, note=)" ;;
+      agent=*)  agent="${kv#agent=}"
+                case "$agent" in *[!A-Za-z0-9._:-]*) die "agent= takes the id the Agent or Workflow tool returned, got: $agent" ;; esac
+                case "$(printf '%s' "$agent" | tr '[:upper:]' '[:lower:]')" in
+                  agent|worker|verifier|workflow|builder|chair|explore|general-purpose|council-worker|council-verifier|small-council:council-worker|small-council:council-verifier)
+                    die "agent=$agent is a role, not an agent id — pass the id the Agent or Workflow tool returned (like a0a66e66dae8005a1 or wf_1b2fc8d3-b14), or leave agent= out" ;;
+                esac ;;
+      tokens=*) case "$(printf '%s' "${kv#tokens=}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+                              -e 's/[[:space:]]*[Tt][Oo][Kk][Ee][Nn][Ss]\{0,1\}$//')" in
+                  *[kKmM]*) die "tokens=${kv#tokens=} is a rounded figure — pass the exact count the usage report gives (like 159812)" ;;
+                esac
+                tokens="$(seat_tokens "${kv#tokens=}")" \
+                  || die "tokens= takes one exact token count (74304, 74,304 or 74 304), got: ${kv#tokens=}"
+                [ "$tokens" -ge 1000 ] 2>/dev/null \
+                  || die "tokens=${kv#tokens=} is below any real agent run (1,000 tokens) — pass the exact figure the usage report gives (like 159812)" ;;
+      agents=*) runs="${kv#agents=}"
+                case "$runs" in ''|*[!0-9]*) die "agents= takes how many agent runs this report covers (0 = none ran), got: $runs" ;; esac
+                [ "$runs" -ge 0 ] 2>/dev/null && [ "$runs" -le 1000 ] || die "agents= takes a count from 0 to 1000, got: $runs" ;;
+      note=*)   note="$(printf '%s' "${kv#note=}" | tr '\t\r\n\013\014' '     ')" ;;
+      *) die "unknown seat field: $kv (use agent=, tokens=, agents=, note=)" ;;
     esac
   done
+  if [ -n "$tokens$runs" ]; then
+    case "$state" in done|failed|blocked) ;;
+      *) die "tokens= and agents= report a finished agent run — record them with done, failed or blocked, not $state" ;;
+    esac
+  fi
+  if [ "$runs" = 0 ] && [ -n "$tokens" ]; then
+    die "agents=0 says no agent ran for this seat — it takes no tokens="
+  fi
   run="$(resolve_run)" || exit 2
+  if [ "$runs" = 0 ] && { [ -n "$agent" ] || [ -n "$(seat_field "$run" "$slug" 3)" ]; }; then
+    die "agents=0 says no agent ran for $slug, but an agent id is on record for it — report that agent's usage instead"
+  fi
+  if [ -n "$(corrections_tsv "$run" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] && $4 == 1 { print; exit }')" ]; then
+    die "$slug was added from evidence as an agent run the record missed — record new work under a new slug"
+  fi
   case "$state" in
     queued|running)
       require_run_plan "$run" "start seat $slug"
@@ -612,27 +700,45 @@ cmd_seat() {
           || die "cannot start seat $slug — run-plan.tsv does not mark it selected; update the plan and run: council run plan check --run ${run##*/}"
       fi ;;
   esac
-  f="$run/seats.tsv"
-  event_lock "$f.lock" || die "seat lock unavailable: $f.lock"  # state and event keep the same order
-  [ -s "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n' > "$f"
-  SLUG="$slug" STATE="$state" AGENT="$agent" TOKENS="$tokens" NOTE="$note" NOW="$(now_min)" awk -F'\t' -v OFS='\t' '
-    NR == 1 && $1 == "slug" { if (NF < 7) $0 = $0 "\tagents"; print; next }
-    NR == 1 { print "slug", "state", "agent", "tokens", "updated", "note", "agents" }   # a lost header comes back
+  f="$run/seats.tsv"; u="$run/usage.tsv"
+  event_lock "$f.lock" || die "seat lock unavailable: $f.lock"  # state, usage and event keep the same order
+  [ -s "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n' > "$f"
+  [ -s "$u" ] || printf 'at\tseat\tagent\tkind\truns\ttokens\n' > "$u" || { event_unlock "$f.lock"; die "cannot write $u"; }
+  cur="$(seat_field "$run" "$slug" 3)"
+  if [ -n "$agent" ] && [ "$agent" != "$cur" ]; then
+    printf '%s\t%s\t%s\tdispatched\t\t\n' "$(now_utc)" "$slug" "$agent" >> "$u" || { event_unlock "$f.lock"; die "cannot write $u"; }
+  fi
+  if [ -n "$tokens$runs" ]; then
+    printf '%s\t%s\t%s\tfinished\t%s\t%s\n' "$(now_utc)" "$slug" "${agent:-$cur}" "${runs:-1}" "$tokens" >> "$u" \
+      || { event_unlock "$f.lock"; die "cannot write $u"; }
+  fi
+  usage="$(seat_usage "$run" "$slug")"
+  set -- $usage; e="$1"; r="$2"; t="$3"; d="$4"
+  ecell="$e"; [ "$e" -gt 0 ] || [ "$d" = 1 ] || ecell=""   # no agent on record: unknown, never a zero
+  SLUG="$slug" STATE="$state" AGENT="$agent" TOKENS="$tokens" NOTE="$note" NOW="$(now_min)" E="$ecell" R="$r" T="$t" awk -F'\t' -v OFS='\t' '
+    NR == 1 && $1 == "slug" { if (NF < 7) $0 = $0 "\tagents"; if (NF < 8) $0 = $0 "\treported"; print; next }
+    NR == 1 { print "slug", "state", "agent", "tokens", "updated", "note", "agents", "reported" }   # a lost header comes back
     $1 == ENVIRON["SLUG"] {
       found = 1
-      ag = ($7 == "" ? 1 : $7 + 0)
-      if (ENVIRON["AGENT"] != "" && $3 != "" && ENVIRON["AGENT"] != $3) ag++
-      a = ENVIRON["AGENT"]  != "" ? ENVIRON["AGENT"] : $3
-      t = ENVIRON["TOKENS"] != "" ? $4 + ENVIRON["TOKENS"] : $4
-      n = ENVIRON["NOTE"]   != "" ? ENVIRON["NOTE"] : $6
-      print $1, ENVIRON["STATE"], a, t, ENVIRON["NOW"], n, ag
+      a = ENVIRON["AGENT"] != "" ? ENVIRON["AGENT"] : $3
+      n = ENVIRON["NOTE"]  != "" ? ENVIRON["NOTE"]  : $6
+      if (NF < 8 || $8 == "") {                        # a row from before usage.tsv keeps its old rules, marked as older
+        ag = ($7 == "" ? 1 : $7 + 0)
+        if (ENVIRON["AGENT"] != "" && $3 != "" && ENVIRON["AGENT"] != $3) ag++
+        t = ENVIRON["TOKENS"] != "" ? $4 + ENVIRON["TOKENS"] : $4
+        print $1, ENVIRON["STATE"], a, t, ENVIRON["NOW"], n, ag
+      } else {
+        print $1, ENVIRON["STATE"], a, (ENVIRON["T"] + 0 > 0 ? ENVIRON["T"] : ""), ENVIRON["NOW"], n, ENVIRON["E"], ENVIRON["R"]
+      }
       next
     }
     { print }
-    END { if (!found) print ENVIRON["SLUG"], ENVIRON["STATE"], ENVIRON["AGENT"], ENVIRON["TOKENS"], ENVIRON["NOW"], ENVIRON["NOTE"], 1 }' \
+    END { if (!found) print ENVIRON["SLUG"], ENVIRON["STATE"], ENVIRON["AGENT"], (ENVIRON["T"] + 0 > 0 ? ENVIRON["T"] : ""),
+                            ENVIRON["NOW"], ENVIRON["NOTE"], ENVIRON["E"], ENVIRON["R"] }' \
     "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; event_unlock "$f.lock"; die "cannot update $f"; }
   rm -f "$f.tmp$$"
-  if ! event_append "$run" seat.updated "$slug" "$state" "tokens=$(seat_field "$run" "$slug" 4)"; then
+  if ! event_append "$run" seat.updated "$slug" "$state" \
+       "tokens=$(seat_field "$run" "$slug" 4);agent_runs=$(seat_field "$run" "$slug" 7);reported=$(seat_field "$run" "$slug" 8)"; then
     event_unlock "$f.lock"
     die "seat changed, but its event could not be recorded"
   fi
@@ -640,35 +746,153 @@ cmd_seat() {
   progress_line "$run"
 }
 
-# A token count as a notification or the UI gives it: 74304, 74,304, "74 304", "74304 tokens", 74.3k,
-# 1.2M. Empty stays empty; anything with no number fails.
+# One token count, as a notification or the UI gives it: 74304, 74,304, "74 304", "74304 tokens",
+# 74.3k, 1.2M — stored as whole tokens. Anything else fails rather than being guessed at: two numbers
+# ("12 tool uses, 45000 tokens"), a sign, an exponent, or a comma that is not a thousands separator
+# ("74,3k"). Empty stays empty. Plausibility (no agent run costs under 1,000) is the caller's check.
 seat_tokens() {
   [ -n "$1" ] || return 0
   V="$1" awk 'BEGIN {
-    s = ENVIRON["V"]; gsub(/,/, "", s)
-    while (match(s, /[0-9][ \t]+[0-9]/))              # a space between digits is a thousands separator
-      s = substr(s, 1, RSTART) substr(s, RSTART + RLENGTH - 1)
-    if (!match(s, /[0-9]+(\.[0-9]+)?[ \t]*[kKmM]?/)) exit 1
-    t = substr(s, RSTART, RLENGTH); m = 1
-    if (t ~ /[kK]$/) m = 1000; else if (t ~ /[mM]$/) m = 1000000
-    sub(/[ \t]*[kKmM]$/, "", t)
-    printf "%d", int(t * m + 0.5)
+    s = ENVIRON["V"]; gsub(/^[ \t]+|[ \t]+$/, "", s)
+    if (match(tolower(s), /[ \t]*tokens?$/)) s = substr(s, 1, RSTART - 1)
+    if (s ~ /^[0-9][0-9]?[0-9]?([, ][0-9][0-9][0-9])+$/ || s ~ /^[0-9]+$/) {
+      gsub(/[, ]/, "", s); sub(/^0+/, "", s); if (s == "") s = "0"
+      if (length(s) > 12) exit 1                          # more than any agent run reports (and than readers take)
+      printf "%s", s; exit 0
+    }
+    if (s !~ /^[0-9]+(\.[0-9]+)?[ \t]*[kKmM]$/) exit 1
+    m = (s ~ /[kK]$/) ? 1000 : 1000000
+    sub(/[ \t]*[kKmM]$/, "", s)
+    v = int(s * m + 0.5); if (v >= 1000000000000) exit 1
+    printf "%.0f", v
   }'
 }
 
+# The latest evidence-backed correction per seat and field (council correct), as
+# "slug<TAB>field<TAB>value<TAB>added 1|0" lines (added: an agent run never recorded, added from evidence). corrections.jsonl is written only by that command, one object a
+# line in a fixed order, so its three fields are read by pattern; a line without evidence is ignored.
+corrections_tsv() {
+  [ -f "$1/corrections.jsonl" ] || return 0
+  awk '
+    function value(pattern, key,   v) {                      # the text of "key": <v>, spacing as JSON allows
+      if (!match(s, pattern)) return ""
+      v = substr(s, RSTART, RLENGTH); sub("^\"" key "\"[ \t]*:[ \t]*", "", v); gsub(/^"|"$|[ \t,}]+$/, "", v)
+      return v
+    }
+    {
+      s = $0
+      if (s !~ /"evidence"[ \t]*:[ \t]*"[^"]*[A-Za-z0-9]/) next               # evidence that names something
+      slug = value("\"seat\"[ \t]*:[ \t]*\"[^\"]*\"", "seat"); if (slug == "") next
+      f = value("\"field\"[ \t]*:[ \t]*\"(tokens|agents)\"", "field"); if (f == "") next
+      v = value("\"to\"[ \t]*:[ \t]*(0|[1-9][0-9]*)[ \t]*[,}]", "to")          # a JSON whole number, as Python reads it
+      if (v == "" || v !~ /^[0-9]+$/ || length(v) > 12) next
+      k = slug "\t" f; if (!(k in last)) order[++n] = k; last[k] = v; added[k] = (s ~ /"added"[ \t]*:[ \t]*true/) ? 1 : 0
+    }
+    END { for (i = 1; i <= n; i++) print order[i] "\t" last[order[i]] "\t" added[order[i]] }' "$1/corrections.jsonl"
+}
+
+# Each executed seat's figures under the one per-seat rule of references/run-accounting.md — the same
+# rule scripts/cockpit.py's seat_usage states, so the close line, the ledger and the status widget
+# agree on exact totals and bases; display rounding differs (run-accounting.md).
+# Corrections are laid over the rows. One line per seat:
+# "slug<TAB>state<TAB>basis<TAB>agent runs<TAB>runs with usage<TAB>tokens or -<TAB>exact 1|0<TAB>missing<TAB>pending".
+# Bases: reported, corrected, pending, partial, missing, unrecorded (no agent on record: unknown),
+# no-agent (declared), suspect, legacy. A seat never recorded but added from evidence reads as done.
+seat_rows() {
+  [ -f "$1/seats.tsv" ] || [ -f "$1/corrections.jsonl" ] || return 0
+  { corrections_tsv "$1"; printf '%s\n' "--seats--"; [ ! -f "$1/seats.tsv" ] || cat "$1/seats.tsv"; } | awk -F'\t' '
+    $0 == "--seats--" { body = 1; next }
+    !body { c[$1 SUBSEP $2] = $3; if ($4 == 1) add[$1] = 1; next }
+    ++row == 1 { next }
+    { seen[$1] = 1 }
+    $2 == "skipped" || $2 == "queued" || $1 == "" { next }
+    {
+      slug = $1; st = $2; ct = ((slug SUBSEP "tokens") in c); ca = ((slug SUBSEP "agents") in c)
+      c7 = $7; gsub(/^[ \t]+|[ \t]+$/, "", c7); c8 = $8; gsub(/^[ \t]+|[ \t]+$/, "", c8)
+      n7 = (c7 ~ /^[0-9]+$/ && length(c7) <= 12); n8 = (c8 ~ /^[0-9]+$/ && length(c8) <= 12)
+      older = !n8                                                   # as the snapshot reads the reported cell
+      cell = $4; gsub(/^[ \t]+|[ \t]+$/, "", cell)
+      rec = (cell ~ /^[0-9]+$/ && length(cell) <= 12) ? cell : ""
+      unknown = (!older && !ca && !n7)                                  # no agent on record
+      if (ca) k = c[slug, "agents"] + 0
+      else if (older) k = (n7 && c7 + 0 >= 1) ? c7 + 0 : 1
+      else k = n7 ? c7 + 0 : 0
+      R = older ? 0 : c8 + 0
+      exact = (ca || (!older && !unknown)) ? 1 : 0
+      miss = 0; pend = 0; tok = "-"; rep = 0
+      if (ct) {
+        t = c[slug, "tokens"]
+        if (t + 0 > 0 && t + 0 < 1000) b = "suspect"; else { b = "corrected"; tok = t; rep = k }
+      }
+      else if (older) b = "legacy"
+      else if (unknown) b = "unrecorded"
+      else if (k == 0 && R == 0) b = "no-agent"
+      else if (R > 0 && (rec == "" || rec + 0 < 1000)) b = "suspect"
+      else if (R >= k && R > 0) { b = "reported"; tok = rec; rep = k }
+      else {
+        rep = R; gap = k - R; if (gap < 0) gap = 0; if (R > 0) tok = rec     # an at-least figure
+        if (st == "running") { b = "pending"; pend = gap } else { b = (R > 0 ? "partial" : "missing"); miss = gap }
+      }
+      printf "%s\t%s\t%s\t%d\t%d\t%s\t%d\t%d\t%d\n", slug, st, b, k, rep, tok, exact, miss, pend
+    }
+    END {                                         # agent runs never recorded, added from evidence
+      for (slug in add) {
+        if ((slug in seen) || !((slug SUBSEP "agents") in c)) continue
+        k = c[slug, "agents"] + 0
+        if (!((slug SUBSEP "tokens") in c)) printf "%s\tdone\tmissing\t%d\t0\t-\t1\t%d\t0\n", slug, k, k
+        else if (c[slug, "tokens"] + 0 > 0 && c[slug, "tokens"] + 0 < 1000) printf "%s\tdone\tsuspect\t%d\t0\t-\t1\t0\t0\n", slug, k
+        else printf "%s\tdone\tcorrected\t%d\t%d\t%s\t1\t0\t0\n", slug, k, k, c[slug, "tokens"]
+      }
+    }'
+}
+
+# What a run cost, said only as far as its records support: "<basis> <agent runs> <runs with usage>
+# <tokens> <older rows> <agent count exact 1|0> <still working> <seats with no agent on record>".
+# The basis is older (a row predates usage.tsv and was not corrected: its units were never checked),
+# suspect, partial (a finished run's usage is unknown, or a seat has no agent on record), none (no
+# agent ran), running (a seat is still at work), or complete — the order scripts/cockpit.py's
+# usage_totals uses.
+run_usage() {
+  seat_rows "$1" | awk -F'\t' '
+    { e += $4; r += $5; if ($6 != "-") t += $6; m += $8; p += $9
+      if ($3 == "legacy") old++; if ($3 == "suspect") sus++; if ($3 == "unrecorded") u++; if ($7 == 0) inexact = 1
+      if ($2 == "running") busy = 1; if ($6 != "-") priced = 1 }
+    END {
+      b = old ? "older" : (sus ? "suspect" : ((m > 0 || u > 0) ? "partial" : ((NR == 0 || (e == 0 && !priced)) ? "none" : ((p > 0 || busy) ? "running" : "complete"))))
+      printf "%s %d %d %.0f %d %d %d %d", b, e, r, t, old, inexact ? 0 : 1, p, u
+    }'
+}
+
+# The words for the state file's actual: and the close line.
+usage_words() {
+  local runs tail
+  set -- $1
+  runs="$2"; [ "$6" = 1 ] || runs="at least $2"
+  case "$1" in
+    complete) printf '~%sk tokens across %s agent run(s)' "$(( ($4 + 500) / 1000 ))" "$runs" ;;
+    running)  printf '~%sk tokens so far across %s agent run(s) — still working' \
+                "$(( ($4 + 500) / 1000 ))" "$runs" ;;
+    partial)  tail=""
+              [ "$(( $2 - $3 - $7 ))" -le 0 ] || tail="$(( $2 - $3 - $7 )) without a usage report"
+              [ "${8:-0}" -eq 0 ] || tail="${tail:+$tail, }$8 seat(s) with no agent on record"
+              printf 'at least ~%sk tokens across %s agent run(s) — %s' "$(( ($4 + 500) / 1000 ))" "$runs" "$tail" ;;
+    older)    printf 'tokens not reliably recorded (%s older row(s)) · %s agent run(s)' "$5" "$runs" ;;
+    suspect)  printf 'tokens not stated — a recorded count no agent run can have · %s agent run(s)' "$runs" ;;
+  esac
+}
+
 cmd_run_close() {
-  local run status home ptr p tok=0 agents=0 line n lg busy="" old_status event_type
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
   old_status="$(field status "$run/session-state.md")"
+  usage="$(run_usage "$run")"; words="$(usage_words "$usage")"
   if [ -f "$run/seats.tsv" ]; then
-    line="$(awk -F'\t' 'NR > 1 && $2 != "skipped" && $2 != "queued" { a += ($7 == "" ? 1 : $7); t += $4 } END { printf "%d %d", a, t }' "$run/seats.tsv")"
-    agents="${line%% *}"; tok="${line#* }"
     busy="$(awk -F'\t' 'NR > 1 && ($2 == "running" || $2 == "queued") { printf "%s%s", (n++ ? ", " : ""), $1 }' "$run/seats.tsv")"
   fi
-  if [ "$tok" -gt 0 ] 2>/dev/null; then
-    RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" actual="~$(( (tok + 500) / 1000 ))k tokens across $agents agents" >/dev/null
+  if [ -n "$words" ]; then
+    RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" actual="$words" >/dev/null
   else
     RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" >/dev/null
   fi
@@ -678,14 +902,34 @@ cmd_run_close() {
     case "$p" in /*|[A-Za-z]:*) ;; *) p="$(dirname "$home")/$p" ;; esac
     [ "$p" = "$run" ] && : > "$ptr"
   fi
-  if [ "$tok" -gt 0 ] 2>/dev/null; then
-    say "closed ${run##*/} — $status · ~$(( (tok + 500) / 1000 ))k tokens across $agents agents"
+  if [ -n "$words" ]; then
+    say "closed ${run##*/} — $status · $words"
   else
     say "closed ${run##*/} — $status"
   fi
   if [ -n "$busy" ] && [ "$status" != abandoned ]; then
     printf 'council: seats still marked running or queued: %s — their results will not be collected; wait for them, or record each (council seat <slug> failed or skipped) before closing\n' "$busy" >&2
   fi
+  case "$(field mode "$run/session-state.md")" in
+    council-review|council-plan|council-research)
+      if { [ -f "$run/synthesis.md" ] || [ -f "$run/claims.jsonl" ]; } \
+          && py="$(impact_python)"; then
+        stale=""
+        # check compares the index to the sources it can still read, so it also
+        # detects a verifier report that was deleted after the index was built.
+        if "$py" "$COUNCIL_PLUGIN_ROOT/scripts/evidence.py" check --run "$run" 2>&1 \
+            | grep -Fq 'claims.jsonl is missing or stale'; then stale=1; fi
+        # A missing synthesis is itself a stale source set when an index remains.
+        [ -f "$run/synthesis.md" ] || [ ! -f "$run/claims.jsonl" ] || stale=1
+        [ -f "$run/claims.jsonl" ] || stale=1
+        for source in "$run/synthesis.md" "$run"/verify-*.md; do
+          [ ! -f "$source" ] || [ ! "$source" -nt "$run/claims.jsonl" ] || stale=1
+        done
+        if [ -n "$stale" ]; then
+          printf 'council: the claim index is missing or out of date — council evidence build --run %s, then evidence check\n' "${run##*/}" >&2
+        fi
+      fi ;;
+  esac
   if [ "$status" = complete ]; then
     n="$(ledger_record "$run")"
     [ "${n:-0}" -eq 0 ] 2>/dev/null || say "ledger: $n seat row(s) recorded — council ledger shows each seat's record"
@@ -708,7 +952,8 @@ cmd_run_close() {
   fi
   if [ "$old_status" != "$status" ]; then
     event_type=run.closed; [ "$status" != paused ] || event_type=run.paused
-    event_append "$run" "$event_type" run "$status" "agents=$agents;tokens=$tok" || die "run closed, but its event could not be recorded"
+    set -- $usage
+    event_append "$run" "$event_type" run "$status" "agent_runs=$2;reported=$3;tokens=$4;basis=$1" || die "run closed, but its event could not be recorded"
   fi
 }
 
@@ -1062,6 +1307,95 @@ cmd_tui() {
   [ "$WATCH" -eq 0 ] || set -- "$@" --watch
   [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
   "$@"
+}
+
+# The run's status in plain words (scripts/status.py): the one reading the chat widget (--widget),
+# the short summary (the default) and the cockpit's headline share. Read-only — nothing is written, so
+# it is safe beside a live run, and a widget is a snapshot that says when it was taken. It hands the
+# summary the exact command for the terminal view, for hosts that cannot show a widget.
+cmd_status() {
+  local run py root where bash_exe
+  run="$(resolve_run)" || exit 2
+  py="$(impact_python)" || die "status needs optional Python 3.8+; council run status gives the run's phase and cost line"
+  root="$(cd "$COUNCIL_PLUGIN_ROOT" 2>/dev/null && here)"; where="$(cd "$run" 2>/dev/null && here)"
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/status.py" --run "$run" --home "$(council_home)"
+  if command -v cygpath >/dev/null 2>&1 && bash_exe="$(cygpath -m "$BASH" 2>/dev/null)" && [ -n "$bash_exe" ]; then
+    case "$bash_exe" in                          # Git's usr/bin/bash.exe has no tools on PATH outside Git Bash;
+      */usr/bin/bash.exe) [ ! -f "${bash_exe%/usr/bin/bash.exe}/bin/bash.exe" ] \
+                            || bash_exe="${bash_exe%/usr/bin/bash.exe}/bin/bash.exe" ;;   # its bin/bash.exe sets them up
+    esac
+    set -- "$@" --tui-command "PowerShell: & $(ps_quote "$bash_exe") $(ps_quote "$root/bin/council") tui --watch --run $(ps_quote "$where")" \
+               --tui-command "Git Bash: bash $(sh_quote "$root/bin/council") tui --watch --run $(sh_quote "$where")"
+  else
+    set -- "$@" --tui-command "bash $(sh_quote "$root/bin/council") tui --watch --run $(sh_quote "$where")"
+  fi
+  [ "$WIDGET" -eq 0 ] || set -- "$@" --widget
+  [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
+  [ "$PREVIEW" -eq 0 ] || set -- "$@" --preview
+  "$@"
+}
+
+# Literal quoting for a command the user will paste: nothing inside is expanded or run.
+sh_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+ps_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"; }
+
+# An evidence-backed correction to a seat's recorded tokens or agent runs (references/run-accounting.md).
+# It never edits seats.tsv. It appends one line per field to the run's corrections.jsonl: the value as
+# recorded, the exact value, and where the evidence is. Every reader lays the latest correction over
+# the row. A figure is corrected only to an exact number its source shows, never to a guess.
+cmd_correct() {
+  local run slug="${1:-}" kv tokens="" runs="" evidence="" f field to from line added="" ad=""
+  [ -n "$slug" ] || die "usage: council correct <seat> tokens=<exact> agents=<exact> [unrecorded=yes] evidence=\"<where the figure comes from>\""
+  case "$slug" in *[!A-Za-z0-9._-]*) die "correct: bad seat slug: $slug" ;; esac
+  shift
+  for kv in ${1+"$@"}; do
+    case "$kv" in
+      tokens=*)   tokens="${kv#tokens=}"
+                  case "$tokens" in ''|*[!0-9]*) die "correct: tokens= takes the exact whole number the evidence shows (no k, M or commas), got: $tokens" ;; esac
+                  tokens="$(printf '%s' "$tokens" | sed 's/^0*//')"; [ -n "$tokens" ] || tokens=0
+                  [ "${#tokens}" -le 12 ] || die "correct: tokens=${kv#tokens=} is more than any agent run reports" ;;
+      agents=*)   runs="${kv#agents=}"
+                  case "$runs" in ''|*[!0-9]*) die "correct: agents= takes the exact number of agent runs, 0 or more, got: $runs" ;; esac
+                  runs="$(printf '%s' "$runs" | sed 's/^0*//')"; [ -n "$runs" ] || runs=0
+                  [ "${#runs}" -le 4 ] && [ "$runs" -le 1000 ] || die "correct: agents= takes a count from 0 to 1000, got: ${kv#agents=}" ;;
+      evidence=*) evidence="$(printf '%s' "${kv#evidence=}" | tr '\t\r\n' '   ' | tr -d '\000-\010\013\014\016-\037' | cut -c1-1000)" ;;
+      unrecorded=yes) added=1 ;;
+      *) die "correct: unknown field $kv (use tokens=, agents=, unrecorded=yes, evidence=)" ;;
+    esac
+  done
+  [ -n "$tokens$runs" ] || die "correct: give tokens=, agents= or both"
+  case "$evidence" in *[A-Za-z0-9]*) ;; *) evidence="" ;; esac     # spaces or marks alone name nothing
+  [ "${#evidence}" -ge 12 ] || die "correct: evidence= must say where the exact figure comes from (a file and line, a message id) — a correction without its source is a guess"
+  if [ -n "$tokens" ] && [ "$tokens" -ne 0 ] && [ "$tokens" -lt 1000 ]; then
+    die "correct: tokens=$tokens is below any real agent run (1,000); a seat no agent ran for is tokens=0 agents=0"
+  fi
+  if [ "$tokens" = 0 ] && [ -n "$runs" ] && [ "$runs" -gt 0 ]; then
+    die "correct: tokens=0 with agents=$runs — an agent run always costs something; if its figure is unknown, leave tokens= out"
+  fi
+  run="$(resolve_run)" || exit 2
+  if [ -n "$added" ]; then                     # an agent run the Chair never recorded: both figures, a new slug
+    [ -n "$runs" ] && [ "$runs" -gt 0 ] || die "correct: unrecorded=yes adds an agent run the record missed — give agents= (1 or more), and tokens= if the source shows its figure"
+    [ -z "$(seat_field "$run" "$slug" 1)" ] || die "correct: $slug is already a seat of ${run##*/} — correct it without unrecorded=yes"
+    [ -z "$(corrections_tsv "$run" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] && $4 == 1 { print; exit }')" ] \
+      || die "correct: $slug was already added — name a second missed agent run with a new slug"
+  else
+    [ -n "$(seat_field "$run" "$slug" 1)" ] || die "correct: $slug is not a seat of ${run##*/} — only a recorded seat can be corrected (an agent run never recorded: unrecorded=yes)"
+  fi
+  f="$run/corrections.jsonl"
+  [ -z "$added" ] || ad='"added":true,'
+  event_lock "$run/seats.tsv.lock" || die "seat lock unavailable: $run/seats.tsv.lock"
+  for field in tokens agents; do
+    if [ "$field" = tokens ]; then to="$tokens"; from="$(seat_field "$run" "$slug" 4)"; else to="$runs"; from="$(seat_field "$run" "$slug" 7)"; fi
+    [ -n "$to" ] || continue
+    line="$(printf '{"schema":1,"at":"%s","seat":"%s","field":"%s","from":"%s","to":%s,%s"evidence":"%s"}' \
+      "$(now_utc)" "$slug" "$field" "$(json_esc "$from")" "$to" "$ad" "$(json_esc "$evidence")")"
+    printf '%s\n' "$line" >> "$f" || { event_unlock "$run/seats.tsv.lock"; die "cannot write $f"; }
+    if ! event_append "$run" seat.usage_corrected "$slug" "$field" "from=$from;to=$to"; then
+      event_unlock "$run/seats.tsv.lock"; die "corrected, but the event could not be recorded"
+    fi
+    say "corrected $slug $field: ${from:-blank} → $to (seats.tsv keeps the original; corrections.jsonl keeps the evidence)"
+  done
+  event_unlock "$run/seats.tsv.lock" || die "corrected, but the seat lock could not be released"
 }
 
 # History across the council home's runs (scripts/history.py): counts always, a median, share or
@@ -2277,13 +2611,20 @@ $(brief_seats "$run/debate.md")"                      # a war room's round-2 fil
   printf '%-16s %-8s %-7s %-4s %-9s %-7s %s\n' seat file items KB ref cites tokens
   while IFS="$TAB" read -r slug ref out cap; do
     [ -n "$slug" ] || continue
+    if [ -f "$run/run-plan.tsv" ] && SLUG="$slug" awk -F'\t' '
+      $1 == "seat" && $2 == ENVIRON["SLUG"] && $3 == "role" && $4 == "verifier" { found=1 }
+      END { exit !found }' "$run/run-plan.tsv"; then
+      continue  # Challenge verifiers do not produce worker seat files.
+    fi
     total=$((total + 1)); note=""
     case "$out" in /*|[A-Za-z]:*) f="$out" ;; *) f="$run/$out" ;; esac
     if [ "${slug%-r2}" != "$slug" ] && [ -z "$(seat_field "$run" "$slug" 2)" ]; then
       tok="-"; state="$(seat_field "$run" "${slug%-r2}" 2)"     # round 2 by the round-1 worker, resumed
     else                                                         # (a fresh round-2 worker has its own row)
-      tok="$(seat_field "$run" "$slug" 4)"
-      if [ -n "$tok" ] && [ "$tok" -gt 0 ] 2>/dev/null; then tok="~$(( (tok + 500) / 1000 ))k"; else tok="-"; fi
+      tok="$(seat_field "$run" "$slug" 4)"                     # an older row's figure was never checked: "?"
+      if [ -n "$tok" ] && [ "$tok" -gt 0 ] 2>/dev/null; then
+        if [ -n "$(seat_field "$run" "$slug" 8)" ]; then tok="~$(( (tok + 500) / 1000 ))k"; else tok="$tok?"; fi
+      else tok="-"; fi
       state="$(seat_field "$run" "$slug" 2)"
     fi
     # A fresh round-2 worker (<slug>-r2) took over a lost round-1 worker: judge the round-1 row by its file.
@@ -4467,9 +4808,17 @@ synthesis_counts() {
     }' "$run/synthesis.md" ${1+"$@"}
 }
 
+# Each executed seat of a run with the tokens the ledger may trust, under the one per-seat rule
+# (seat_rows): a reported or corrected figure; "-" otherwise.
+ledger_tokens() {
+  seat_rows "$1" | awk -F'\t' '{ print $1 "\t" (($3 == "reported" || $3 == "corrected") ? $6 : "-") }'
+}
+
 # Record a completed run's seats in the ledger; re-recording a run replaces its rows. Prints the count.
+# Rows it writes carry accounting 2: their tokens are trusted figures or "-". A row without it is
+# older, and its tokens are never priced (scripts/ledger.py).
 ledger_record() {
-  local run="$1" home ledger name mode date counts new="" slug tok f raised line rows=0 vt=0
+  local run="$1" home ledger name mode date counts new="" slug tok f raised line rows=0 vt=0 nv=0 vunk=0
   case "$run" in */runs/*) home="${run%/runs/*}" ;; *) home="$(council_home)" ;; esac   # the run's own council home
   ledger="$home/ledger.tsv"
   [ -f "$run/seats.tsv" ] || { printf '0'; return 0; }
@@ -4477,7 +4826,9 @@ ledger_record() {
   counts="$(synthesis_counts "$run")"
   while IFS="$TAB" read -r slug tok; do
     [ -n "$slug" ] || continue
-    case "$slug" in verify-*|diagnose-*) vt=$((vt + tok)); continue ;; esac
+    case "$slug" in
+      verify-*|diagnose-*) nv=$((nv + 1)); if [ "$tok" = "-" ]; then vunk=1; else vt=$((vt + tok)); fi; continue ;;
+    esac
     f="$(seat_out "$run" "$slug")"
     case "$slug" in
       *-r[0-9]*) raised=0 ;;                           # a war room's round 2 raises nothing new: from: cites round 1
@@ -4485,16 +4836,19 @@ ledger_record() {
     esac
     line="$(printf '%s\n' "$counts" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] { print $2 "\t" $3 "\t" $4; exit }')"
     [ -n "$line" ] || line="$(printf '0\t0\t0')"
-    new="$new$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$date" "$name" "${mode:--}" "$slug" "${raised:-0}" "$line" "$tok")
+    new="$new$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t2' "$date" "$name" "${mode:--}" "$slug" "${raised:-0}" "$line" "$tok")
 "
     rows=$((rows + 1))
   done <<SEATS
-$(awk -F'\t' 'NR > 1 && $2 != "skipped" && $2 != "queued" { print $1 "\t" (($4 ~ /^[0-9]+$/) ? $4 : 0) }' "$run/seats.tsv")
+$(ledger_tokens "$run")
 SEATS
-  [ "$vt" -eq 0 ] || new="$new$(printf '%s\t%s\t%s\t(verifiers)\t-\t-\t-\t-\t%s' "$date" "$name" "${mode:--}" "$vt")
+  if [ "$nv" -gt 0 ]; then                                # a verified run keeps its row even when its cost is unknown
+    [ "$vunk" -eq 0 ] || vt="-"
+    new="$new$(printf '%s\t%s\t%s\t(verifiers)\t-\t-\t-\t-\t%s\t2' "$date" "$name" "${mode:--}" "$vt")
 "
+  fi
   [ -n "$new" ] || { printf '0'; return 0; }
-  if [ ! -f "$ledger" ] && ! printf 'date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\n' > "$ledger" 2>/dev/null; then
+  if [ ! -f "$ledger" ] && ! printf 'date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\taccounting\n' > "$ledger" 2>/dev/null; then
     printf 'council: could not write %s — the ledger was not updated\n' "$ledger" >&2; printf '0'; return 0
   fi
   if { RUN="$name" awk -F'\t' '$2 != ENVIRON["RUN"]' "$ledger"; printf '%s' "$new"; } > "$ledger.tmp$$" 2>/dev/null \
@@ -4525,7 +4879,8 @@ cmd_ledger() {
         s = f[4]; sub(/-(r[0-9]+|[a-z])$/, "", s)        # a split worker (hunt-a) or a fresh round-2 one (hunt-r2) is its seat
         if (!(s in runs)) { names[++ns] = s; runs[s] = 0 }
         if (!((f[2], s) in counted)) { counted[f[2], s] = 1; runs[s]++ }
-        raised[s] += f[5]; kept[s] += f[6]; cut[s] += f[7]; refd[s] += f[8]; tok[s] += f[9]
+        raised[s] += f[5]; kept[s] += f[6]; cut[s] += f[7]; refd[s] += f[8]
+        if (f[10] == "2" && f[9] ~ /^[0-9]+$/ && length(f[9]) <= 12) { tok[s] += f[9]; if (!((f[2], s) in priced)) { priced[f[2], s] = 1; truns[s]++ } }
         if (f[2] in judged) jraised[s] += f[5]                # shipped is a share of the items a synthesis judged
         else if (f[5] > 0) unjudged = 1
       }
@@ -4533,10 +4888,13 @@ cmd_ledger() {
       for (i = 1; i <= ns; i++) {
         s = names[i]; ship = kept[s] - refd[s]
         pct = (jraised[s] > 0) ? int(100 * ship / jraised[s] + 0.5) "%" : "-"
-        printf "%-16s %4d %6d %5d %4d %7d %8d %9s\n", s, runs[s], raised[s], kept[s], cut[s], refd[s], int(tok[s] / runs[s] / 1000 + 0.5), pct
+        kr = (truns[s] > 0) ? int(tok[s] / truns[s] / 1000 + 0.5) : "-"
+        if (truns[s] == 0) untrusted = 1
+        printf "%-16s %4d %6d %5d %4d %7d %8s %9s\n", s, runs[s], raised[s], kept[s], cut[s], refd[s], kr, pct
       }
       printf "over the last %d completed run(s) · shipped = kept and not refuted, as a share of items raised\n", nr - first + 1
       if (unjudged) print "raised counts every run; shipped only runs whose synthesis credited items (not council-init or a build) · - = never judged"
+      if (untrusted) print "~k/run counts only runs whose token figures were checked (0.14+ or corrected) · - = none yet"
       print "what this record can support, seat by seat: council ledger advice"
     }' "$ledger"
 }
@@ -4788,8 +5146,14 @@ council — the Small Council's helper (bash + git)
   council run plan [check|show]          validate the run plan · show its decisions in plain language
   council run events [show|check]        inspect or validate the run's append-only event stream
   council state [key=value …]            show or update the run's session-state header
-  council seat <slug> <state> [agent=ID] [tokens=N] [note=TEXT]
-                                         record a worker: queued|running|done|failed|blocked|skipped
+  council seat <slug> <state> [agent=ID] [tokens=N] [agents=N] [note=TEXT]
+                                         record a worker: queued|running|done|failed|blocked|skipped;
+                                         tokens= and agents= (a Workflow's agent count) come with the
+                                         finished run's usage report, once per agent run
+  council correct <seat> tokens=N agents=N [unrecorded=yes] evidence="<source>"
+                                         lay an exact, evidence-backed figure over a seat's record
+                                         (or add an agent run the record missed); seats.tsv keeps
+                                         the original, corrections.jsonl the evidence
   council index [--base REF]             change index → <run>/index.md (hunks, symbols, callers, tests)
   council impact [--run <folder>]        refresh <run>/impact.tsv from the index baseline (optional Python 3.8+)
   council context build <seat> [--expand PATH ...]
@@ -4843,6 +5207,10 @@ council — the Small Council's helper (bash + git)
   council tui [--watch | --json]         a read-only cockpit for the run: plan, seats, gates, repairs,
                                          evidence, memory proposals and recent events (--watch redraws
                                          until the run stops; optional Python 3.8+)
+  council status [--widget [--preview] | --json]
+                                         the run in plain words: what is happening, whether it moves,
+                                         what needs the user, where the evidence is; --widget prints
+                                         a snapshot card for a chat widget host (optional Python 3.8+)
   council doctor                         drift scan; every finding comes with a fix
 
 Run-scoped commands act on the one in-progress run on this working tree; otherwise pass --run <folder>
@@ -4871,7 +5239,7 @@ main() {
   ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
   ROUTE_SURFACES=()
   CONTEXT_EXPANDS=()
-  MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0 WATCH=0
+  MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0 WATCH=0 WIDGET=0 PREVIEW=0
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
@@ -4889,8 +5257,8 @@ main() {
                    val="$2"; shift 2 ;;
       --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --alongside|--all|--classic|--json|--watch) flag="${1#--}"; val=1; shift ;;
-      --alongside=*|--all=*|--classic=*|--json=*|--watch=*) die "${1%%=*} takes no value" ;;
+      --alongside|--all|--classic|--json|--watch|--widget|--preview) flag="${1#--}"; val=1; shift ;;
+      --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--preview=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
                    [ $# -eq 0 ] || { pos+=("$1"); shift; }
                    continue ;;
@@ -4910,6 +5278,7 @@ main() {
       run) RUN_ARG="$val" ;;       code-root) CODE_ROOT_ARG="$val" ;;  status) STATUS_ARG="$val" ;;
       base) BASE_ARG="$val" ;;     at) AT_ARG="$val" ;;                session) SESSION_ARG="$val" ;;
       alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;                     json) JSON_OUT=1 ;;  watch) WATCH=1 ;;
+      widget) WIDGET=1 ;;          preview) PREVIEW=1 ;;
       task) ROUTE_TASK_ARG="$val" ;; risk) ROUTE_RISK_ARG="$val" ;;
       complexity) ROUTE_COMPLEXITY_ARG="$val" ;; uncertainty) ROUTE_UNCERTAINTY_ARG="$val" ;;
       surface) ROUTE_SURFACES+=("$val") ;; agent-cap) ROUTE_CAP_ARG="$val" ;;
@@ -5034,6 +5403,11 @@ main() {
     tui)     takes_flags tui watch json; no_words tui ${1+"$@"}
              [ "$WATCH" -eq 0 ] || [ "$JSON_OUT" -eq 0 ] || die "tui takes --watch or --json, not both"
              cmd_tui ;;
+    status)  takes_flags status widget json preview; no_words status ${1+"$@"}
+             [ "$WIDGET" -eq 0 ] || [ "$JSON_OUT" -eq 0 ] || die "status takes --widget or --json, not both"
+             [ "$PREVIEW" -eq 0 ] || [ "$WIDGET" -eq 1 ] || die "--preview labels a widget: use it with --widget"
+             cmd_status ;;
+    correct) takes_flags correct; cmd_correct ${1+"$@"} ;;
     doctor)  takes_flags doctor; no_words doctor ${1+"$@"}; cmd_doctor ;;
     version) takes_flags version; no_words version ${1+"$@"}; say "council $COUNCIL_VERSION" ;;
     help)    takes_flags help; no_words help ${1+"$@"}; usage ;;

@@ -4,7 +4,9 @@ past a stated bar.
 
 It reads .council/ledger.tsv (a row per seat per completed run) and writes nothing. A run counts
 toward a seat's usefulness only when its synthesis credited some items (kept or cut); a run that
-credited none (council-init, a build) adds tokens only. Ranges are Wilson intervals that count at
+credited none (council-init, a build) adds tokens only. Tokens are priced only from rows the helper
+marked as checked (accounting 2, see references/run-accounting.md); an older row's token figure was
+never checked for units, and "-" is an unknown cost, never a zero. Ranges are Wilson intervals that count at
 most a few items per run, because one run's items share a brief, a model and a day. The advice is
 for the Chair to put to the user at a refresh; it never changes a roster, a route or a run.
 """
@@ -24,6 +26,7 @@ if hasattr(sys.stdout, "reconfigure"):
 SCHEMA = "council.seat-advice/1"
 MAX_LEDGER = 8 * 1024 * 1024
 COLUMNS = ("date", "run", "mode", "seat", "raised", "kept", "cut", "refuted", "tokens")
+CHECKED = "2"           # the accounting column of a row whose tokens are a checked figure or "-"
 VERIFIERS = "(verifiers)"
 # The bar, stated once so the report, the doctrine and the tests read the same numbers.
 BAR = {
@@ -59,6 +62,18 @@ def count(cell):
     return int(cell)
 
 
+def tokens_of(cells):
+    """A row's trusted token figure: a number on a checked row, else None (unknown or unchecked)."""
+    checked = len(cells) > 9 and cells[9].strip() == CHECKED
+    cell = cells[8].strip()
+    if cell in ("-", ""):
+        if checked:
+            return None
+        raise ValueError(cell)
+    value = count(cell)
+    return value if checked else None
+
+
 def read_ledger(path):
     """Rows of the ledger as dicts, and how many lines could not be read. None when there is no ledger."""
     path = Path(path)
@@ -80,10 +95,10 @@ def read_ledger(path):
                "seat": CONTROL.sub("", cells[3].strip())}
         try:
             if row["seat"] == VERIFIERS:
-                row.update(raised=0, kept=0, cut=0, refuted=0, tokens=count(cells[8]))
+                row.update(raised=0, kept=0, cut=0, refuted=0, tokens=tokens_of(cells))
             else:
                 row.update(raised=count(cells[4]), kept=count(cells[5]), cut=count(cells[6]),
-                           refuted=count(cells[7]), tokens=count(cells[8]))
+                           refuted=count(cells[7]), tokens=tokens_of(cells))
         except ValueError:
             bad += 1
             continue
@@ -133,7 +148,7 @@ def records(rows, runs):
         fact = facts[row["run"]]
         fact["mode"] = row["mode"] if fact["mode"] == "-" else fact["mode"]
         if row["seat"] == VERIFIERS:
-            fact["verified"] = fact["verified"] or row["tokens"] > 0
+            fact["verified"] = True       # the helper writes this row only when verifiers ran
             continue
         fact["seat_rows"] += 1
         fact["judged"] = fact["judged"] or row["kept"] + row["cut"] > 0
@@ -144,17 +159,22 @@ def records(rows, runs):
             continue
         seat = seats.setdefault(seat_of(row["seat"]), {"seat": seat_of(row["seat"]), "per_run": {}})
         tally = seat["per_run"].setdefault(row["run"], dict.fromkeys(("raised", "kept", "cut", "refuted", "tokens"), 0))
-        for key in tally:
+        for key in ("raised", "kept", "cut", "refuted"):
             tally[key] += row[key]
+        if tally["tokens"] is not None:   # one unknown row makes the seat's cost in that run unknown
+            tally["tokens"] = None if row["tokens"] is None else tally["tokens"] + row["tokens"]
     for name, seat in seats.items():
         tallies = seat["per_run"]
         mine = [run for run in runs if run in tallies]
         judged = [run for run in mine if facts[run]["judged"]]
         verified = [run for run in judged if facts[run]["verified"]]
+        priced = [run for run in mine if tallies[run]["tokens"] is not None]
+        priced_judged = [run for run in judged if tallies[run]["tokens"] is not None]
         seat.update(runs=mine, judged_runs=judged, verified_runs=verified, modes={},
                     verified_kept=sum(tallies[run]["kept"] for run in verified),
-                    tokens=sum(tallies[run]["tokens"] for run in mine),
-                    judged_tokens=sum(tallies[run]["tokens"] for run in judged))
+                    priced_runs=priced, priced_judged_runs=priced_judged,
+                    tokens=sum(tallies[run]["tokens"] for run in priced),
+                    judged_tokens=sum(tallies[run]["tokens"] for run in priced_judged))
         for key in ("raised", "kept", "cut", "refuted"):
             seat[key] = sum(tallies[run][key] for run in judged)
         for run in judged:
@@ -174,8 +194,10 @@ def judge(seat, bar=BAR):
     useful = seat["useful_share"]["k"] if seat["useful_share"] else 0     # each run's useful capped at its items
     counted = seat["useful_share"]["counted"] if seat["useful_share"] else 0
     seat["useful"] = useful
-    seat["tokens_per_run"] = round(seat["tokens"] / len(seat["runs"])) if seat["runs"] else None
-    seat["tokens_per_useful"] = round(seat["judged_tokens"] / useful) if useful else None
+    seat["tokens_per_run"] = round(seat["tokens"] / len(seat["priced_runs"])) if seat["priced_runs"] else None
+    priced_useful = sum(max(0, min(tallies[r]["kept"] - tallies[r]["refuted"], tallies[r]["raised"]))
+                        for r in seat["priced_judged_runs"])
+    seat["tokens_per_useful"] = round(seat["judged_tokens"] / priced_useful) if priced_useful else None
     seat["weighed"] = judged >= bar["min_runs"] and counted >= bar["min_items"]
     if not judged:
         return "collect", ("never judged: no synthesis credited its items in {} run(s) — its runs count "
@@ -236,7 +258,11 @@ def report(ledger, last, bar=BAR):
                      "loosely, so shares are capped at 100%".format(len(loose), loose[0][0], loose[0][1]))
     if bad:
         notes.append("{} ledger line(s) could not be read and were left out".format(bad))
-    per_run = sorted(t["tokens"] for s in seats.values() for t in s["per_run"].values() if t["tokens"] > 0)
+    per_run = sorted(t["tokens"] for s in seats.values() for t in s["per_run"].values() if t["tokens"])
+    unpriced = sum(1 for s in seats.values() for t in s["per_run"].values() if t["tokens"] is None)
+    if unpriced:
+        notes.append("{} seat-run(s) have no checked token figure (older rows, or usage not reported): "
+                     "they are left out of every cost figure".format(unpriced))
     tokens = None
     if per_run:
         tokens = {"seat_runs": len(per_run), "median": round(statistics.median(per_run)),

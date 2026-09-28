@@ -46,6 +46,7 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 
 ## Rules
 
+- `## Seats` lists worker seats only; a verifier is briefed at Challenge, step 2.
 - **Write for a worker with zero context.** If a fact isn't in the brief or the worker's reference
   doc, the worker doesn't have it.
 - **Keep the seat blocks exact.** `council collect` reads the `### <slug>` headings and their `ref:`,

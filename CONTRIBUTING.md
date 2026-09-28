@@ -78,7 +78,8 @@ python evals/run_hook.py           # do the hooks behave?    (bash + git)
 python evals/run_phrases.py        # advisory wording checks — never fails
 ```
 
-`.github/workflows/ci.yml` runs all of them on Ubuntu and Windows.
+These are selected local checks. [CI](.github/workflows/ci.yml) and [evals/README.md](evals/README.md)
+list all 17 checks, run on Ubuntu, Windows and macOS. Automatic checks do not replace real-use validation.
 
 **Releasing:**
 1. Bump `version` in `.claude-plugin/plugin.json` — installed users only get an update when it
@@ -86,6 +87,10 @@ python evals/run_phrases.py        # advisory wording checks — never fails
 2. Bump `COUNCIL_VERSION` in `bin/council`.
 3. Add the matching `CHANGELOG.md` entry. An eval checks that all three agree.
 4. Run the behavioral drills and, with the Claude Code CLI, `claude plugin validate . --strict`.
+5. After green CI and owner approval, merge with a merge commit only; do not squash or rebase.
+6. Create an annotated `vX.Y.Z` tag on that merge commit and push it with owner approval.
+7. Fast-forward the live main folder only after green CI and owner approval; verify it matches the tested tree.
+8. GitHub Release objects are optional.
 
 ## The rule
 

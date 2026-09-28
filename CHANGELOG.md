@@ -6,6 +6,46 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-09-28
+
+**TL;DR:** chat status cards and exact run accounting, with missing figures left unknown.
+
+### Added
+
+- `council status [--widget | --json]` shows run progress; card and text need optional Python 3.8+.
+- The Chair shows one card at first dispatch; SessionStart explains how to request another.
+- `council correct` saves evidenced corrections and missed agent runs without rewriting old seats.
+- `usage.tsv` records dispatches and usage; `agents=N` counts Workflow agents and `agents=0` Chair work.
+- `council state waiting="…"` records a question and its waiting-change event.
+- `references/run-accounting.md` documents usage, corrections, display rounding and status JSON.
+
+### Changed
+
+- Token inputs must be exact plausible counts; repeated or resumed reports are counted once.
+- All readers distinguish complete, partial, older and unknown usage.
+- History and tuning cost only complete exact runs; five make a proposal eligible, not reliable.
+- JSON schemas are now `council.run-snapshot/2` (a `usage` block) and `council.history/3`.
+- GitHub Actions use current Node 24 majors; the behavioural runner installs Node 24.
+
+### Fixed
+
+- Progress counts seats; resuming a run clears the old cost line.
+- Agent role names are refused as ids; the ledger retains rows with unknown costs.
+- A note's line break cannot create a phantom seat in the terminal view.
+- Identical copied verifier rows count once; genuinely different rows still conflict.
+- Collection ignores planned verifiers; close warns about a missing or outdated claim index.
+- Status and TUI label an outdated claim index instead of showing stale verdicts.
+- SessionStart asks for widget instructions first; correction JSON avoids a bash 3.2 quoting risk.
+
+### Upgrade notes
+
+- Older ledger rows show `-` for ~k/run and are never priced.
+- History and tune leave out pre-0.14 runs; tune needs five new complete exact runs.
+- Continuing an older run preserves its old rows as "older" unless corrected from evidence.
+- Without Python, use `council run status` for the phase and cost line.
+
+Details: `docs/validation/status-widget.md`, `docs/design/status-widget-adr.md`, `docs/roadmap-status.md`.
+
 ## [0.13.0] — 2026-09-27
 
 **TL;DR:** every run now leaves a checkable record, and the council learns from it only as far as
