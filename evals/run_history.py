@@ -62,6 +62,7 @@ def make_run(home, name, status="complete", mode="council-review", size="squad",
                              "action": "resolved"})
         write(run / "repairs.jsonl", "".join(json.dumps(row) + "\n" for row in rows))
     if claims:
+        write(run / "synthesis.md", "# Synthesis\n## Kept\n(none)\n")
         write(run / "claims.jsonl", "".join(json.dumps({"id": str(i), "verdict": v}) + "\n" for i, v in enumerate(claims)))
     if events:
         write(run / "events.tsv", "schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n1\t1\t2026-09-01T10:00:00Z\trun.opened\trun\t{}\t-\n"

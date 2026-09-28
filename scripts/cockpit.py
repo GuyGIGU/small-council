@@ -248,7 +248,9 @@ def claim_index_stale(run):
             return True
         for row in jsonl(run, "claims.jsonl"):
             refs = [row.get("source", "")]
-            refs.extend(link.get("ref", "") for link in row.get("verification", []) if isinstance(link, dict))
+            links = row.get("verification")
+            if isinstance(links, list):
+                refs.extend(link.get("ref", "") for link in links if isinstance(link, dict))
             for ref in refs:
                 name = str(ref).split(":", 1)[0]
                 if name == "synthesis.md" or re.fullmatch(r"verify-[A-Za-z0-9._-]+\.md", name):

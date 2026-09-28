@@ -93,6 +93,7 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
     council(repo, "gate", "lint", "--", "false")
     write(run / "repairs.jsonl", json.dumps({"task": "T1", "gate": "tests", "attempt": 2, "result": "failed",
                                              "category": "TEST_FAILURE", "action": "independent-diagnosis"}) + "\n")
+    write(run / "synthesis.md", "# Synthesis\n## Kept\n(none)\n")
     write(run / "claims.jsonl", "".join(json.dumps({"id": str(n), "verdict": v}) + "\n"
                                         for n, v in enumerate(["CONFIRMED", "CONFIRMED", "REFUTED", "UNVERIFIED"]))
           + "not json\n")
@@ -136,7 +137,7 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
     check("tui: stale claims are labelled instead of displaying obsolete verdicts",
           code == 0 and "Claims index out of date" in out and "2 CONFIRMED" not in out, out + err)
     check("tui: a stale-index read writes nothing", before_stale == fingerprint(repo / ".council"))
-    (run / "synthesis.md").unlink()
+    os.utime(run / "synthesis.md", (index_time - 5, index_time - 5))
 
     refusals = [(council(repo, *w), want) for w, want in (
         (("tui", "--watch", "--json"), "tui takes --watch or --json, not both"), (("tui", "x"), "tui doesn't take 'x'"),
@@ -167,7 +168,8 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
     write(run / "gates" / "nulls.json", json.dumps({"gate": "nulls", "exit": None, "seconds": [1]}) + "\n")
     write(run / "gates" / "list.json", json.dumps({"gate": "list", "exit": [1], "seconds": {"a": 1}}) + "\n")
     write(run / "gates" / "deep.json", "[" * 200000 + "]" * 200000)
-    write(run / "claims.jsonl", "[" * 200000 + "\n" + json.dumps({"id": "2", "verdict": "CONFIRMED"}) + "\n")
+    write(run / "claims.jsonl", "[" * 200000 + "\n" + json.dumps({"id": "2", "verdict": "CONFIRMED",
+                                                        "verification": None}) + "\n")
     code, out, err = council(repo, "tui")
     code2, out2, err2 = council(repo, "tui", "--json")
     check("tui: a null or list exit, a list of seconds and 200,000-deep JSON draw as unknown instead of crashing",
