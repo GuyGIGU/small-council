@@ -277,6 +277,19 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           snap["usage"]["tokens"]["total"] == 361318 and snap["usage"]["agents"]["total"] == 2
           and sorted(snap["usage"]["tokens"]["corrected_seats"]) == ["beck", "hunt"], snap["usage"])
 
+    # --- the agent cap ------------------------------------------------------------------------------------
+    capbase = base / "capcfg"
+    write(capbase / ".council" / "council.config.md", "# Council config\n- agent cap: 3\n")
+    r = reading(make_run(capbase, "over", seats=[v2("wf", "done", 500000, 5, 5)]))
+    check("cap: a run with no plan is held to the project's configured cap, and an open run over it needs the user",
+          any(a["kind"] == "cap" and a["severity"] == 2 and "5 agent runs, over its limit of 3" in a["text"] for a in r["attention"])
+          and r["usage"]["text"].endswith("(limit 3)"), (r["attention"], r["usage"]))
+    r = reading(make_run(capbase, "over-closed", status_value="complete", phase="learn", seats=[v2("wf", "done", 500000, 5, 5)]))
+    check("cap: a finished run over its cap keeps a note, not a call to act",
+          any(a["kind"] == "cap" and a["severity"] == 1 and "used 5 agent runs" in a["text"] for a in r["attention"]), r["attention"])
+    r = reading(make_run(capbase, "at-cap", seats=[v2("wf", "done", 300000, 3, 3)]))
+    check("cap: a run exactly at its cap is not flagged", not any(a["kind"] == "cap" for a in r["attention"]), r["attention"])
+
     # --- history leaves out what it can't count ------------------------------------------------------------
     home = base / "hist"
     for i in range(5):
@@ -402,9 +415,11 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               seat_row(run, "hunt")[3:4] == ["110000"] and seat_row(run, "hunt")[6:8] == ["2", "2"], seat_row(run, "hunt"))
         check("progress: the line counts seats as seats, not agents", out.startswith("seats: 1 of 1 done") and "~110k tokens so far" in out, out)
         council(repo, "seat", "wf", "running", "agent=wf_1b2fc8d3-b14")
-        council(repo, "seat", "wf", "done", "agents=38", "tokens=4625154")
+        _, _, cap_err = council(repo, "seat", "wf", "done", "agents=38", "tokens=4625154")
         check("seat: a Workflow's report carries its agent count — 38 agent runs, not one",
               seat_row(run, "wf")[3:4] == ["4625154"] and seat_row(run, "wf")[6:8] == ["38", "38"], seat_row(run, "wf"))
+        check("cap: the record that takes the run past its agent cap tells the Chair — every agent a Workflow started counts",
+              "over its cap of 10" in cap_err and "ask before starting more" in cap_err, cap_err)
         council(repo, "seat", "beck", "queued")
         code, out, _ = council(repo, "seat", "leach", "running", "agent=a5")
         check("progress: queued seats are queued, not 'still working'", "queued: beck" in out and "still working: leach" in out, out)
@@ -421,6 +436,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "\trun.waiting_changed\trun\ton\t" in events and "\trun.waiting_changed\trun\toff\t" in events, events[-400:])
         code, out, err = council(repo, "run", "events", "check")
         check("events: the stream with the new detail fields and event types still checks", code == 0, out + err)
+        check("cap: passing the agent cap is recorded once, however many records follow",
+              events.count("\trun.cap_passed\trun\t") == 1 and "\tcap=10\n" in events, events[-600:])
 
         council(repo, "gate", "smoke", "--", "false")
         failing = json.loads(council(repo, "status", "--json")[1])
@@ -429,8 +446,14 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("status: a check re-run under the same name after failing reads as recovered — its saved result is "
               "overwritten, so the failure comes from the event stream (found on a real run)",
               failing["state"]["key"] == "failing" and passing["state"]["key"] == "running"
-              and "1 recovered after failing" in passing["progress"]["checks"] and not passing["attention"],
+              and "1 recovered after failing" in passing["progress"]["checks"]
+              and [a["kind"] for a in passing["attention"]] == ["cap"],
               (failing["state"], passing["progress"], passing["attention"]))
+        cap_items = [a for a in passing["attention"] if a["kind"] == "cap"]
+        check("cap: the card says the open run is over its agent limit, as something that needs the user",
+              len(cap_items) == 1 and cap_items[0]["severity"] == 2 and "41 agent runs, over its limit of 10" in cap_items[0]["text"]
+              and "(limit 10)" in passing["usage"]["agent_runs_text"] + passing["usage"]["text"],
+              (passing["attention"], passing["usage"]))
         before = fingerprint(run)
         code, text_out, err = council(repo, "status")
         code_w, widget_out, err_w = council(repo, "status", "--widget")
@@ -447,6 +470,29 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
             (("--watch",), "doesn't take --watch"))]
         check("status: flag mistakes are refused, each saying why", all(c == 2 and want in e for (c, _, e), want in refusals),
               [(c, e) for (c, _, e), _ in refusals])
+
+        capped = base / "capped"
+        capped.mkdir()
+        subprocess.run([GIT, "init", "-q"], cwd=capped, check=True)
+        write(capped / ".council" / "council.config.md", "# Council config\n")
+        crun = Path(council(capped, "run", "open", "council-review")[1].strip())
+        plan(crun, ("a", "verify-1"))
+        write(crun / "run-plan.tsv", read(crun / "run-plan.tsv").replace("agent-cap\t10", "agent-cap\t2"))
+        _, _, e1 = council(capped, "seat", "a", "running", "agent=x1")
+        _, _, e2 = council(capped, "seat", "verify-1", "running", "agent=x2")
+        check("cap: reaching the cap tells the Chair to ask before starting more; below it, nothing is said",
+              "agent runs" not in e1 and "used all 2 agent runs of its cap" in e2, (e1, e2))
+        _, _, e3 = council(capped, "seat", "a", "done", "agents=3", "tokens=9000")
+        council(capped, "seat", "verify-1", "done", "tokens=6000")
+        cev = read(crun / "events.tsv")
+        creading = json.loads(council(capped, "status", "--json")[1])
+        citems = [x for x in creading["attention"] if x["kind"] == "cap"]
+        check("cap: past the cap — once in the events, every time to the Chair, and on the card with the real count",
+              "used 4 agent runs, over its cap of 2" in e3 and cev.count("\trun.cap_passed\t") == 1 and "\tcap=2\n" in cev
+              and len(citems) == 1 and "4 agent runs, over its limit of 2" in citems[0]["text"],
+              (e3, cev[-300:], creading["attention"]))
+        code, out, err = council(capped, "run", "events", "check")
+        check("cap: the stream with the cap event still checks", code == 0, out + err)
 
         rows_before = read(run / "seats.tsv")
         refused = [council(repo, "correct", *w) for w in (

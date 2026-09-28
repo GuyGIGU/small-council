@@ -18,7 +18,7 @@ Checks passing is never counted as validation in real use. The real runs so far:
 | Phase | Implemented | Automatically tested | Validated in real use | Deferred |
 |---|---|---|---|---|
 | 0 Baseline and audit | 0.8 (docs) | — | — | — |
-| 1 Structured run model (run plan) | 0.8 | `run_cli` | Yes: the fresh run's plan was checked, and seats were gated on it. It counted 3 planned agents where 6 really ran (the verifier was a 4-agent Workflow), which only the new accounting shows. | Enforcing the agent cap at dispatch |
+| 1 Structured run model (run plan) | 0.8 | `run_cli` | Yes: the fresh run's plan was checked, and seats were gated on it. It counted 3 planned agents where 6 really ran (the verifier was a 4-agent Workflow), which only the new accounting shows. | Stopping an agent before it starts (the helper hears of it only afterwards; it warns at the cap and the card flags a run past it — unreleased) |
 | 2 Event contract | 0.9 | `run_cli` | Yes: the fresh run wrote 32 events, and `events check` passed | — |
 | 3 Adaptive routing | 0.10 | `run_cli` | No: the fresh run was sized by hand | — |
 | 4 Impact engine | 0.11 | `run_impact` | Both real reviews produced 0 dependency/test/limit rows: sibling-script imports were missed | Transitive and dynamic imports |

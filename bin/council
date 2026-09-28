@@ -743,7 +743,35 @@ cmd_seat() {
     die "seat changed, but its event could not be recorded"
   fi
   event_unlock "$f.lock" || die "seat changed, but its lock could not be released: $f.lock"
+  cap_note "$run"
   progress_line "$run"
+}
+
+# The run's agent ceiling: its plan's budget/run/agent-cap, or the configured cap for a run with no plan.
+run_agent_cap() {
+  local cap=""
+  [ ! -f "$1/run-plan.tsv" ] || cap="$(awk -F'\t' '$1 == "budget" && $2 == "run" && $3 == "agent-cap" { v = $4 }
+                                        END { gsub(/[ \t\r]/, "", v); print v }' "$1/run-plan.tsv")"
+  case "$cap" in ''|0|*[!0-9]*) cap="$(configured_agent_cap)" ;; esac
+  printf '%s' "$cap"
+}
+
+# The helper cannot stop an agent from starting — it only hears about it afterwards — so it tells the
+# Chair when the run has used its cap, and records the first time the run passes it (the status card
+# reads the same count). Every agent run counts: each agent a Workflow started, errored ones too.
+cap_note() {
+  local run="$1" cap e
+  cap="$(run_agent_cap "$run")"
+  set -- $(run_usage "$run"); e="${2:-0}"
+  case "$e" in ''|*[!0-9]*) return 0 ;; esac
+  if [ "$e" -gt "$cap" ]; then
+    printf 'council: this run has used %s agent runs, over its cap of %s — tell the user, and ask before starting more\n' "$e" "$cap" >&2
+    if [ -f "$run/events.tsv" ] && ! awk -F'\t' '$4 == "run.cap_passed" { f = 1 } END { exit !f }' "$run/events.tsv"; then
+      event_append "$run" run.cap_passed run "$e" "cap=$cap" || printf 'council: the cap event could not be recorded\n' >&2
+    fi
+  elif [ "$e" -eq "$cap" ]; then
+    printf 'council: this run has used all %s agent runs of its cap — ask the user before starting more\n' "$cap" >&2
+  fi
 }
 
 # One token count, as a notification or the UI gives it: 74304, 74,304, "74 304", "74304 tokens",
@@ -1059,6 +1087,9 @@ run_plan_validate() {
           } else if (fld == "estimated-tokens") {
             if (!integer(v)) problem(NR, "estimated-tokens must be a non-negative integer")
           } else problem(NR, "unknown run budget field: " fld)
+        } else if (fld == "agent-runs") {                # a Workflow seat starts several agents
+          if (!integer(v) || v < 1 || v > 1000) problem(NR, "agent-runs must be an integer from 1 to 1000")
+          aruns[id] = v + 0
         } else {
           if (fld != "tool-calls") problem(NR, "unknown seat budget field: " fld)
           else if (!integer(v) || v < 1 || v > 200) problem(NR, "tool-calls must be an integer from 1 to 200")
@@ -1092,9 +1123,11 @@ run_plan_validate() {
           selected++
           if (!(id in ctx)) problem(0, "selected seat " id " has no context/level row")
           if (!(id in calls)) problem(0, "selected " role[id] " " id " has no budget/tool-calls row")
-          if (role[id] == "chair") chairs++
-          else {
-            agents++
+          if (role[id] == "chair") {
+            chairs++
+            if (id in aruns) problem(at["budget" SUBSEP id SUBSEP "agent-runs"], "the Chair is not an agent run — remove budget/" id "/agent-runs")
+          } else {
+            agents++; runs += (id in aruns) ? aruns[id] : 1
             if (role[id] == "verifier") verifiers++
           }
         } else {
@@ -1106,6 +1139,7 @@ run_plan_validate() {
       if (selected + skipped == 0) problem(0, "add at least one considered seat with a selected or skipped disposition")
       for (id in ctx) if (!(id in disp) || disp[id] != "selected") problem(at["context" SUBSEP id SUBSEP "level"], "context belongs only to a selected seat: " id)
       for (id in calls) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "a seat budget belongs only to a selected seat: " id)
+      for (id in aruns) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "agent-runs"], "a seat budget belongs only to a selected seat: " id)
       if (chairs != 1) problem(0, "select exactly one Chair; found " chairs + 0)
       size = val["run" SUBSEP "run" SUBSEP "size"]
       verification = val["verification" SUBSEP "run" SUBSEP "level"]
@@ -1116,13 +1150,13 @@ run_plan_validate() {
         problem(0, verification " verification needs a selected verifier")
       if (verification == "self" && verifiers > 0)
         problem(0, "self verification conflicts with a selected verifier")
-      if (plan_cap > 0 && agents > plan_cap) problem(0, agents " selected agents exceed the plan cap " plan_cap)
+      if (plan_cap > 0 && runs > plan_cap) problem(0, runs " planned agent runs exceed the plan cap " plan_cap " (a Workflow seat counts every agent it starts: budget/<seat>/agent-runs)")
 
       if (errors) {
         printf "plan: %d error(s) · run-plan.tsv\n", errors
         exit 1
       }
-      if (ENVIRON["QUIET"] != "1") printf "plan: valid · %s · %d selected, %d skipped · %d agent(s) of cap %d\n", val["run" SUBSEP "run" SUBSEP "size"], selected, skipped, agents, plan_cap
+      if (ENVIRON["QUIET"] != "1") printf "plan: valid · %s · %d selected, %d skipped · %d agent run(s) of cap %d\n", val["run" SUBSEP "run" SUBSEP "size"], selected, skipped, runs, plan_cap
     }
   ' "$plan"
 }
@@ -1168,6 +1202,7 @@ cmd_run_plan() {
             if (d == "selected") {
               line = line " · context " v["context" SUBSEP id SUBSEP "level"]
               calls = v["budget" SUBSEP id SUBSEP "tool-calls"]; if (calls != "") line = line " · " calls " tool calls"
+              ar = v["budget" SUBSEP id SUBSEP "agent-runs"]; if (ar != "") line = line " · " ar " agent runs"
             }
             print line " — " why["seat" SUBSEP id SUBSEP "disposition"]
           }
