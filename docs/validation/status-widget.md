@@ -84,7 +84,9 @@ outside the repository under `Documents/Small Council Validation/2026-09-28`. A 
 verified all 372 copied files against the temporary originals, including the fixture-failure logs and
 the final green run.
 
-PR CI runs every suite on Windows, macOS and Linux. macOS and Linux results for this branch are pending.
+The [PR CI run 36415912716](https://github.com/GuyGIGU/small-council/actions/runs/36415912716)
+completed successfully on Ubuntu, Windows and macOS for head `62cfa51` (2026-09-28).
+All three required `evals` jobs passed. This is automatic validation, not a new live council run.
 
 **CI maintenance (2026-09-28).** Both workflows now use v7 of
 [checkout](https://github.com/actions/checkout),
@@ -214,7 +216,6 @@ Code remains unmeasured (the paid benchmark is deferred).
 
 ## What was not verified
 
-- macOS and Linux (CI will run them when the branch is pushed).
 - Recovery in progress and blocked in a real run (simulated and helper-driven only).
 - claude.ai/code and the IDE extensions.
 - A card after an app restart.
