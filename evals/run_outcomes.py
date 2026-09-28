@@ -142,7 +142,7 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
         write(bad_run / "index.md", "# Change index — review\nbase: abc · head: def + uncommitted changes\n")
         uncertain = outcomes.outcomes(home, repo)
         row = next(r for r in uncertain["runs"] if r["run"] == bad_run.name)
-        check("baseline mismatch means can't tell", row["claims"][0]["outcome"] == "can't tell", row)
+        check("dirty index means can't tell", row["claims"][0]["outcome"] == "can't tell", row)
         check("dirty index is can't tell and labels are sanitized",
               row["mode"] == "council-review [31m" and "\u001b" not in outcomes.render(uncertain),
               (row["mode"], outcomes.render(uncertain)))
