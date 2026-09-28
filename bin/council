@@ -756,13 +756,25 @@ run_agent_cap() {
   printf '%s' "$cap"
 }
 
+run_budget_value() {
+  local value=""
+  [ ! -f "$1/run-plan.tsv" ] || value="$(awk -F'\t' -v field="$2" '
+    $1 == "budget" && $2 == "run" && $3 == field { v = $4 }
+    END { gsub(/[ \t\r]/, "", v); print v }' "$1/run-plan.tsv")"
+  case "$value" in ''|*[!0-9]*) return 0 ;; esac
+  value="$(printf '%s' "$value" | sed 's/^0*//')"; [ -n "$value" ] || value=0
+  [ "$value" -ge 0 ] 2>/dev/null || return 0
+  [ "$2" = estimated-tokens ] || [ "$value" -gt 0 ] || return 0
+  printf '%s' "$value"
+}
+
 # The helper cannot stop an agent from starting — it only hears about it afterwards — so it tells the
 # Chair when the run has used its cap, and records the first time the run passes it (the status card
 # reads the same count). Every agent run counts: each agent a Workflow started, errored ones too.
 cap_note() {
-  local run="$1" cap e
+  local run="$1" cap e t estimate ceiling
   cap="$(run_agent_cap "$run")"
-  set -- $(run_usage "$run"); e="${2:-0}"
+  set -- $(run_usage "$run"); e="${2:-0}"; t="${4:-0}"
   case "$e" in ''|*[!0-9]*) return 0 ;; esac
   if [ "$e" -gt "$cap" ]; then
     printf 'council: this run has used %s agent runs, over its cap of %s — tell the user, and ask before starting more\n' "$e" "$cap" >&2
@@ -771,6 +783,20 @@ cap_note() {
     fi
   elif [ "$e" -eq "$cap" ]; then
     printf 'council: this run has used all %s agent runs of its cap — ask the user before starting more\n' "$cap" >&2
+  fi
+  case "$t" in ''|*[!0-9]*) return 0 ;; esac
+  estimate="$(run_budget_value "$run" estimated-tokens)"
+  ceiling="$(run_budget_value "$run" token-ceiling)"
+  if [ -n "$estimate" ] && [ "$t" -gt "$estimate" ]; then
+    if [ -f "$run/events.tsv" ] && ! awk -F'\t' '$4 == "run.estimate_passed" { f = 1 } END { exit !f }' "$run/events.tsv"; then
+      event_append "$run" run.estimate_passed run "$t" "estimate=$estimate" || printf 'council: the estimate event could not be recorded\n' >&2
+    fi
+  fi
+  if [ -n "$ceiling" ] && [ "$t" -gt "$ceiling" ]; then
+    printf 'council: this run has used %s tokens, over its ceiling of %s — tell the user, and ask before starting more\n' "$t" "$ceiling" >&2
+    if [ -f "$run/events.tsv" ] && ! awk -F'\t' '$4 == "run.ceiling_passed" { f = 1 } END { exit !f }' "$run/events.tsv"; then
+      event_append "$run" run.ceiling_passed run "$t" "ceiling=$ceiling" || printf 'council: the ceiling event could not be recorded\n' >&2
+    fi
   fi
 }
 
@@ -910,12 +936,22 @@ usage_words() {
 }
 
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type py source stale
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
   old_status="$(field status "$run/session-state.md")"
   usage="$(run_usage "$run")"; words="$(usage_words "$usage")"
+  estimate="$(run_budget_value "$run" estimated-tokens)"
+  if [ -n "$words" ] && [ -n "$estimate" ]; then
+    set -- $usage; basis="$1"; total="$4"
+    words="$words · estimated ~$(( (estimate + 500) / 1000 ))k"
+    if [ "$estimate" -gt 0 ] && [ "$total" -gt "$estimate" ]; then
+      over="$(( ((total - estimate) * 100 + estimate / 2) / estimate ))"
+      if [ "$basis" = complete ]; then words="$words (about $over% over)"
+      else words="$words (at least about $over% over)"; fi
+    fi
+  fi
   if [ -f "$run/seats.tsv" ]; then
     busy="$(awk -F'\t' 'NR > 1 && ($2 == "running" || $2 == "queued") { printf "%s%s", (n++ ? ", " : ""), $1 }' "$run/seats.tsv")"
   fi
@@ -1086,6 +1122,8 @@ run_plan_validate() {
             plan_cap = v + 0
           } else if (fld == "estimated-tokens") {
             if (!integer(v)) problem(NR, "estimated-tokens must be a non-negative integer")
+          } else if (fld == "token-ceiling") {
+            if (!integer(v) || v < 1) problem(NR, "token-ceiling must be a positive integer")
           } else problem(NR, "unknown run budget field: " fld)
         } else if (fld == "agent-runs") {                # a Workflow seat starts several agents
           if (!integer(v) || v < 1 || v > 1000) problem(NR, "agent-runs must be an integer from 1 to 1000")
@@ -1195,6 +1233,8 @@ cmd_run_plan() {
           print "  mode: " v["run" SUBSEP "run" SUBSEP "mode"] " · size: " v["run" SUBSEP "run" SUBSEP "size"]
           print "  risk: " v["assessment" SUBSEP "run" SUBSEP "risk"] " · complexity: " v["assessment" SUBSEP "run" SUBSEP "complexity"] " · uncertainty: " v["assessment" SUBSEP "run" SUBSEP "uncertainty"]
           print "  budget: " v["budget" SUBSEP "run" SUBSEP "estimated-tokens"] " tokens · " v["budget" SUBSEP "run" SUBSEP "agent-cap"] " agents · verification: " v["verification" SUBSEP "run" SUBSEP "level"]
+          ceiling = v["budget" SUBSEP "run" SUBSEP "token-ceiling"]
+          if (ceiling != "") print "  owner ceiling: " ceiling " tokens"
           print "  seats:"
           for (i = 1; i <= n; i++) {
             id = order[i]; d = v["seat" SUBSEP id SUBSEP "disposition"]; r = v["seat" SUBSEP id SUBSEP "role"]
@@ -5133,6 +5173,9 @@ cmd_route_recommend() {
   route_row run route status "$route_status" "constrained means reduced size or omitted relevant lens; needs-rescope means estimated need exceeds ceiling or required verification cannot fit"
   route_row verification route status "$verification_status" "unavailable requires more budget or agents before proceeding"
   route_row budget route estimated-tokens "$budget" "$budget_reason"
+  if [ -n "$ROUTE_BUDGET_ARG" ]; then
+    route_row budget run token-ceiling "$ROUTE_BUDGET_ARG" "explicit ceiling from --budget-tokens; copy to run-plan.tsv"
+  fi
   route_row budget chair estimated-tokens "$chair_tokens" "advisory allocation; not measured or enforced"
   route_row budget workers estimated-tokens "$worker_tokens" "shared across selected worker archetypes; not measured or enforced"
   route_row budget verification estimated-tokens "$verification_tokens" "advisory allocation; not measured or enforced"

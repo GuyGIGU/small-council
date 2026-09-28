@@ -46,6 +46,8 @@ Write <abs run>/seats/<slug>.md, then return one line.
 - **The agent cap.** If `council seat` says the run has used its cap, start no more agents — no
   re-dispatch, diagnosis worker or extra verifier — until the user says go. If it says the run is
   over its cap, tell the user in one line how many agent runs it used against the cap.
+- **The token ceiling.** If `council seat` says the run passed the owner's token ceiling, start
+  nothing more until the user says go. Report the known usage and ceiling in one short line.
 - **No notification comes from a worker that died with its session.** After a compaction, keep
   waiting. In a new session, follow Resume in context-core.
 - **Whatever dispatches the workers** — the Agent tool, a Workflow script, background agents — the

@@ -290,6 +290,48 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     r = reading(make_run(capbase, "at-cap", seats=[v2("wf", "done", 300000, 3, 3)]))
     check("cap: a run exactly at its cap is not flagged", not any(a["kind"] == "cap" for a in r["attention"]), r["attention"])
 
+    spendbase = base / "spend"
+    under = make_run(spendbase, "under", seats=[v2("wf", "done", 300000, 1, 1)])
+    plan(under, ("wf",))
+    write(under / "run-plan.tsv", read(under / "run-plan.tsv").replace("estimated-tokens\t260000", "estimated-tokens\t420000")
+          + "budget\trun\ttoken-ceiling\t600000\towner limit\n")
+    r = reading(under)
+    check("spend: below the estimate, the card and JSON show the plan without an alarm",
+          r["usage"]["estimate"] == 420000 and r["usage"]["ceiling"] == 600000 and
+          "spent 300k of estimated 420k" in r["usage"]["spend_text"] and
+          not any(a["kind"] in ("estimate", "ceiling") for a in r["attention"]) and
+          "Spend:" in status.widget(r), r["usage"])
+    over = make_run(spendbase, "over", seats=[v2("wf", "done", 627000, 1, 1)])
+    plan(over, ("wf",))
+    write(over / "run-plan.tsv", read(over / "run-plan.tsv").replace("estimated-tokens\t260000", "estimated-tokens\t420000")
+          + "budget\trun\ttoken-ceiling\t600000\towner limit\n")
+    r = reading(over)
+    check("spend: 627k against 420k is about 49% over in card, text and JSON",
+          "about 49% over estimate" in r["usage"]["spend_text"] and
+          "about 49% over estimate" in status.widget(r) and
+          "about 49% over estimate" in status.text(r) and
+          r["usage"]["estimate"] == 420000, r["usage"])
+    check("spend: an open run over its ceiling asks before more work",
+          any(a["kind"] == "estimate" and a["severity"] == 1 for a in r["attention"]) and
+          any(a["kind"] == "ceiling" and a["severity"] == 2 and "only after you say so" in a["text"]
+              for a in r["attention"]), r["attention"])
+    partial = make_run(spendbase, "partial", seats=[v2("wf", "done", 627000, 2, 1)])
+    plan(partial, ("wf",))
+    write(partial / "run-plan.tsv", read(partial / "run-plan.tsv").replace("estimated-tokens\t260000", "estimated-tokens\t420000")
+          + "budget\trun\ttoken-ceiling\t600000\towner limit\n")
+    r = reading(partial)
+    check("spend: missing usage makes the comparison a lower bound",
+          r["usage"]["basis"] == "partial" and
+          "at least 627k used" in r["usage"]["spend_text"] and
+          "at least about 49% over" in r["usage"]["spend_text"], r["usage"])
+    closed = make_run(spendbase, "closed", status_value="complete", seats=[v2("wf", "done", 627000, 1, 1)])
+    plan(closed, ("wf",))
+    write(closed / "run-plan.tsv", read(closed / "run-plan.tsv").replace("estimated-tokens\t260000", "estimated-tokens\t420000")
+          + "budget\trun\ttoken-ceiling\t600000\towner limit\n")
+    r = reading(closed)
+    check("spend: a closed run over its ceiling keeps a note instead of asking to stop",
+          any(a["kind"] == "ceiling" and a["severity"] == 1 for a in r["attention"]), r["attention"])
+
     # --- history leaves out what it can't count ------------------------------------------------------------
     home = base / "hist"
     for i in range(5):
@@ -447,7 +489,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "overwritten, so the failure comes from the event stream (found on a real run)",
               failing["state"]["key"] == "failing" and passing["state"]["key"] == "running"
               and "1 recovered after failing" in passing["progress"]["checks"]
-              and [a["kind"] for a in passing["attention"]] == ["cap"],
+              and not any(a["kind"] in ("failure", "recovering") for a in passing["attention"]),
               (failing["state"], passing["progress"], passing["attention"]))
         cap_items = [a for a in passing["attention"] if a["kind"] == "cap"]
         check("cap: the card says the open run is over its agent limit, as something that needs the user",

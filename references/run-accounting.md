@@ -31,6 +31,13 @@ card/text uses whole thousands below 995,000 and one decimal million at or above
 close line and `26.4M` on the card; 2,500 appears as `~3k` versus `2k`. These are display
 differences only: the stored totals and accounting bases agree.
 
+The status card, text and JSON compare known exact agent-token figures with the **whole**
+`budget/run/estimated-tokens` plan value, including its advisory Chair share. They do not subtract
+that share as history does when estimating a future worker. A partial record says "at least";
+unknown usage never becomes zero. An optional `budget/run/token-ceiling` is the owner's limit.
+Passing either number emits one event, and passing the ceiling on an open run asks the Chair to stop
+starting work until the owner says go. These token figures are context size, not a bill.
+
 ## Where it is written
 
 | File | What it holds |

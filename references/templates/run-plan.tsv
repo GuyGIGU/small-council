@@ -11,6 +11,7 @@ assessment	run	complexity	<pending>	how many surfaces or dependent decisions are
 assessment	run	uncertainty	<pending>	how much is unknown before the work starts
 budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
 budget	run	estimated-tokens	<pending>	estimate from the ledger or the no-history default
+# budget	run	token-ceiling	<positive integer>	optional ceiling the owner set for this run
 verification	run	level	<pending>	self, independent or adversarial, and why
 # seat	<slug>	disposition	selected|skipped	why this seat is or is not called
 # seat	<slug>	role	chair|worker|verifier	what this selected seat does
