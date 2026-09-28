@@ -58,28 +58,52 @@ History and tuning would have learned from those numbers.
   - events add `run.waiting_changed` and `seat.usage_corrected`, and their details carry the new
     figures.
 - **The TUI** gains the shared status line and the new cost wording, and stops listing the Chair as a
-  planned seat. Nothing else changed.
+  planned seat. It also labels outdated claim indexes.
 
-## Tests (automatic; Windows, Git Bash 5.3.9, Python 3.14; every suite run on the final code, 869d5cf)
+## Tests (automatic; Windows, Git Bash 5.3.9, Python 3.14; all 17 checks run on committed code 6bd6bb9, 2026-09-28)
 
 | Suite | Result | Covers |
 |---|---|---|
-| `evals/run_status.py` (new) | 81/81 | accounting through the helper; the two readers agreeing on eleven helper-written cases, including no-agent runs; the added-run check is separate; corrections and their refusals; every state, including failing, recovering and blocked driven through `council gate` and `council repair`; the widget's escaping, size, time and labels |
-| `evals/run_cli.py` | 520/520 | the whole helper, with the progress line, the close line and ledger rows updated to the new definitions |
-| `evals/run_tui.py` | 22/22 | cockpit, including the shared status line and snapshot/2 |
+| `evals/run_status.py` (new) | 87/87 | accounting through the helper; the two readers agreeing on eleven helper-written cases, including no-agent runs; the added-run check is separate; corrections and their refusals; every state, including failing, recovering and blocked driven through `council gate` and `council repair`; the widget's escaping, size, time and labels |
+| `evals/run_cli.py` | 525/525 | the whole helper, including accounting, planned-verifier collection and missing/stale-index close warnings |
+| `evals/run_tui.py` | 24/24 | cockpit, shared status line, snapshot/2, and stale-index labels with no writes |
 | `evals/run_history.py` | 18/18 | older runs left out and named |
 | `evals/run_tune.py` | 25/25 | tuning from complete runs only |
 | `evals/run_seats.py` | 33/33 | unknown and older ledger costs never priced; a verified run with an unknown cost stays verified |
-| `evals/run_hook.py` | 135/135 | session start; the new status line was not covered at this commit (covered by the Track A follow-up) |
-| `evals/run_structural.py` | 629/629 | the kernel names the widget rule; the doctrine asks for exact usage |
-| `evals/run_impact.py`, `run_context.py`, `run_evidence.py`, `run_repair.py`, `run_memory.py` | 21/21, 37/37, 21/21, 37/37, 55/55 | unchanged areas, rerun to catch side effects |
+| `evals/run_hook.py` | 139/139 | session start; open runs name text/widget commands and read_me; closed or absent runs do not |
+| `evals/run_structural.py` | 631/631 | widget/exact-usage rules, Workflow file placement, and refusal-preserving helper calls |
+| `evals/run_impact.py`, `run_context.py`, `run_evidence.py`, `run_repair.py`, `run_memory.py` | 21/21, 37/37, 25/25, 37/37, 55/55 | evidence covers Workflow parts, joined copies and true conflicts; other suites check side effects |
 | `evals/bench.py self-test`, `run_context_pilot.py`, `run_phrases.py` | 46/46, runs clean, 74/74 | unchanged areas; the phrase check is advisory |
 | `scripts/quick_validate.py` | 0 warnings | |
+
+All checks above ran in a detached throwaway worktree at `6bd6bb9`; subsequent changes are
+validation-document updates only. There were no model calls or paid evaluations.
 
 CI runs every suite on Windows, macOS and Linux. The branch is not pushed, so those two platforms are
 not yet run.
 
+**CI maintenance (2026-09-28).** Both workflows now use v7 of
+[checkout](https://github.com/actions/checkout),
+[setup-python](https://github.com/actions/setup-python),
+[setup-node](https://github.com/actions/setup-node) and
+[upload-artifact](https://github.com/actions/upload-artifact), where applicable; their v7 action
+manifests were checked to use Node 24. The behavioural workflow also installs Node 24.
+The [Ubuntu 26.04 image rollout](https://github.com/actions/runner-images/issues/14748) starts
+2026-10-19 and is scheduled to finish 2026-11-19. On the first CI run after rollout begins, inspect
+the runner image and Tool versions output before attributing a failure to code. No run on that
+future image is claimed here.
+
+**Automatic replay of the recorded failure (2026-09-28, `6bd6bb9`).** In a disposable copy of
+`2026-09-27-193355-review`, the four verifier parts were restored beside the joined file.
+`evidence build` exited 0 with 12 claims, exactly one link per claim, 10 CONFIRMED and 2 REFUTED.
+SHA-256 fingerprints confirmed the original run files were unchanged. This checks the fix against
+the original inputs; it is not a new live council run or a re-score of the old review.
+
 ## Validated in real use
+
+The Track A follow-up of 2026-09-28 fixes copied verifier rows, false collection gaps, stale claim
+index display and close warnings, SessionStart widget instructions, and portable correction JSON.
+These fixes have regression checks; a new real council run has not yet validated them.
 
 Three real runs, with real agents. Each record below was checked against its source.
 

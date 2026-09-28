@@ -68,12 +68,12 @@ only if quality is not worse. A missed critical issue or false completion is a s
 signal, not something an average score should hide. Save raw traces and the rubric/answer key, and
 label missing token accounting as unavailable rather than estimating it from bytes.
 
-## Current status and next decision (2026-09-24)
+## Current status and next decision (updated 2026-09-28)
 
-This machine has Python and Git, but no `claude` command or usable Claude evaluation credential in
-the current environment. The only saved smoke result (`evals/suite/results/smoke-triggering.json`)
-is partial with `auth_failed` and zero cost; it is not a baseline. Therefore no live agent outcome
-or cost comparison has been made. Keep context packs as an optional aid, do not advertise savings,
+On 2026-09-24, this environment lacked a usable Claude evaluation runtime. Its saved smoke result
+(`evals/suite/results/smoke-triggering.json`) was partial with `auth_failed` and zero cost; it is not
+a baseline. The runner now works, but no paired live outcome or cost comparison has been made.
+Keep context packs as an optional aid, do not advertise savings,
 and do not make context-depth decisions self-tuning. Once a paid comparison is approved,
 run the paired protocol before deciding whether packs should be default, conditional, simplified,
 or removed. Phase 6's evidence model can proceed independently, but should not be justified by
