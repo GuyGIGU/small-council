@@ -60,12 +60,12 @@ History and tuning would have learned from those numbers.
 - **The TUI** gains the shared status line and the new cost wording, and stops listing the Chair as a
   planned seat. It also labels outdated claim indexes.
 
-## Tests (automatic; Windows, Git Bash 5.3.9, Python 3.14; all 17 checks run on committed code 6bd6bb9, 2026-09-28)
+## Tests (automatic; Windows, Git Bash 5.3.9, Python 3.14; all 17 checks run on committed code c02a0a0, 2026-09-28)
 
 | Suite | Result | Covers |
 |---|---|---|
-| `evals/run_status.py` (new) | 87/87 | accounting through the helper; the two readers agreeing on eleven helper-written cases, including no-agent runs; the added-run check is separate; corrections and their refusals; every state, including failing, recovering and blocked driven through `council gate` and `council repair`; the widget's escaping, size, time and labels |
-| `evals/run_cli.py` | 525/525 | the whole helper, including accounting, planned-verifier collection and missing/stale-index close warnings |
+| `evals/run_status.py` (new) | 89/89 | accounting through the helper; the two readers agreeing on eleven helper-written cases, including no-agent runs; the added-run check is separate; corrections and their refusals; every state, including failing, recovering and blocked driven through `council gate` and `council repair`; the widget's escaping, size, time, labels and deleted claim sources |
+| `evals/run_cli.py` | 528/528 | the whole helper, including accounting, planned-verifier collection and close warnings for missing, outdated or deleted claim sources |
 | `evals/run_tui.py` | 24/24 | cockpit, shared status line, snapshot/2, and stale-index labels with no writes |
 | `evals/run_history.py` | 18/18 | older runs left out and named |
 | `evals/run_tune.py` | 25/25 | tuning from complete runs only |
@@ -76,15 +76,15 @@ History and tuning would have learned from those numbers.
 | `evals/bench.py self-test`, `run_context_pilot.py`, `run_phrases.py` | 46/46, runs clean, 74/74 | unchanged areas; the phrase check is advisory |
 | `scripts/quick_validate.py` | 0 warnings | |
 
-All checks above ran in a detached throwaway worktree at `6bd6bb9`; subsequent changes are
+All checks above ran in a detached throwaway worktree at `c02a0a0`; subsequent changes are
 validation-document updates only. There were no model calls or paid evaluations.
 
 The raw run records, rendered cards, older suite logs, Track A test logs and replay report are saved
 outside the repository under `Documents/Small Council Validation/2026-09-28`. A SHA-256 manifest there
-verified all 336 copied files against the temporary originals.
+verified all 372 copied files against the temporary originals, including the fixture-failure logs and
+the final green run.
 
-CI runs every suite on Windows, macOS and Linux. The branch is not pushed, so those two platforms are
-not yet run.
+PR CI runs every suite on Windows, macOS and Linux. macOS and Linux results for this branch are pending.
 
 **CI maintenance (2026-09-28).** Both workflows now use v7 of
 [checkout](https://github.com/actions/checkout),
