@@ -477,8 +477,18 @@ def snapshot(run, home=None, last_events=8):
 
 
 # --- drawing --------------------------------------------------------------------------------------------------
+def format_tokens(tokens):
+    """Round token displays half up in both the helper and Python readers."""
+    if tokens >= 995000:
+        tenths = int(tokens + 50000) // 100000
+        if tenths % 10 == 0:
+            return "{}M".format(tenths // 10)
+        return "{}.{}M".format(tenths // 10, tenths % 10)
+    return "{}k".format(int(tokens + 500) // 1000)
+
+
 def k(tokens):
-    return "{}k".format(round(tokens / 1000)) if tokens else "—"
+    return format_tokens(tokens) if tokens is not None else "—"
 
 
 def shown(value):

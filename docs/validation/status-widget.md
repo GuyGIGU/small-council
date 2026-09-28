@@ -2,6 +2,11 @@
 
 ## What changed
 
+- **One token display rule.** The progress and close lines, status card/text, TUI and history round
+  half up to a whole thousand below 995,000 tokens, then to one decimal million. The stored counts
+  remain exact. `evals/run_status.py` checks ties, the threshold and million-sized counts across all
+  five surfaces. This is automatic testing; a new live run has not yet shown the changed display.
+
 - **Run records** (see `references/run-accounting.md`):
   - A run's `usage.tsv` holds every dispatch and usage report. The seat figures in `seats.tsv`
     (tokens, agent runs, runs with usage) are derived from it.

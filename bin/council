@@ -611,7 +611,11 @@ progress_line() {
       if (w) printf " · still working: %s", w
       if (q) printf " · queued: %s", q
       if (f) printf " · failed: %s", f
-      if (t > 0) printf " · ~%dk tokens so far", int((t + 500) / 1000)
+      if (t >= 995000) {
+        tenths = int((t + 50000) / 100000); major = int(tenths / 10); minor = tenths % 10
+        if (minor == 0) printf " · ~%dM tokens so far", major
+        else printf " · ~%d.%dM tokens so far", major, minor
+      } else if (t > 0) printf " · ~%dk tokens so far", int((t + 500) / 1000)
       if (old) printf " · older rows'"'"' tokens not counted"
       printf "\n"
     }' "$1/seats.tsv"
@@ -860,7 +864,7 @@ corrections_tsv() {
 
 # Each executed seat's figures under the one per-seat rule of references/run-accounting.md — the same
 # rule scripts/cockpit.py's seat_usage states, so the close line, the ledger and the status widget
-# agree on exact totals and bases; display rounding differs (run-accounting.md).
+# agree on exact totals and bases; display rounding is half up in both readers (run-accounting.md).
 # Corrections are laid over the rows. One line per seat:
 # "slug<TAB>state<TAB>basis<TAB>agent runs<TAB>runs with usage<TAB>tokens or -<TAB>exact 1|0<TAB>missing<TAB>pending".
 # Bases: reported, corrected, pending, partial, missing, unrecorded (no agent on record: unknown),
@@ -930,19 +934,32 @@ run_usage() {
     }'
 }
 
+# Exact token counts are rounded half up in bash and Python. M starts at 995,000.
+usage_token_text() {
+  local tokens tenths major minor
+  tokens="${1:-0}"
+  if [ "$tokens" -ge 995000 ] 2>/dev/null; then
+    tenths=$(( (tokens + 50000) / 100000 ))
+    major=$(( tenths / 10 )); minor=$(( tenths % 10 ))
+    if [ "$minor" -eq 0 ]; then printf '%sM' "$major"; else printf '%s.%sM' "$major" "$minor"; fi
+  else
+    printf '%sk' "$(( (tokens + 500) / 1000 ))"
+  fi
+}
+
 # The words for the state file's actual: and the close line.
 usage_words() {
   local runs tail
   set -- $1
   runs="$2"; [ "$6" = 1 ] || runs="at least $2"
   case "$1" in
-    complete) printf '~%sk tokens across %s agent run(s)' "$(( ($4 + 500) / 1000 ))" "$runs" ;;
-    running)  printf '~%sk tokens so far across %s agent run(s) — still working' \
-                "$(( ($4 + 500) / 1000 ))" "$runs" ;;
+    complete) printf '~%s tokens across %s agent run(s)' "$(usage_token_text "$4")" "$runs" ;;
+    running)  printf '~%s tokens so far across %s agent run(s) — still working' \
+                "$(usage_token_text "$4")" "$runs" ;;
     partial)  tail=""
               [ "$(( $2 - $3 - $7 ))" -le 0 ] || tail="$(( $2 - $3 - $7 )) without a usage report"
               [ "${8:-0}" -eq 0 ] || tail="${tail:+$tail, }$8 seat(s) with no agent on record"
-              printf 'at least ~%sk tokens across %s agent run(s) — %s' "$(( ($4 + 500) / 1000 ))" "$runs" "$tail" ;;
+              printf 'at least ~%s tokens across %s agent run(s) — %s' "$(usage_token_text "$4")" "$runs" "$tail" ;;
     older)    printf 'tokens not reliably recorded (%s older row(s)) · %s agent run(s)' "$5" "$runs" ;;
     suspect)  printf 'tokens not stated — a recorded count no agent run can have · %s agent run(s)' "$runs" ;;
   esac

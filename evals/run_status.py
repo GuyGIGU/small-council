@@ -633,7 +633,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         code, out, err = council(repo, "run", "close")
         state = read(run / "session-state.md")
         check("close: the cost line is a total only when every agent run's usage is known — here, with the correction, it is",
-              "actual: ~4776k tokens across 41 agent run(s)" in state, re.findall(r"^actual:.*$", state, re.MULTILINE))
+              "actual: ~4.8M tokens across 41 agent run(s)" in state, re.findall(r"^actual:.*$", state, re.MULTILINE))
         ledger = read(repo / ".council" / "ledger.tsv")
         check("ledger: rows carry checked figures (accounting 2), and the verifiers row stays even with an unknown cost",
               ledger.startswith("date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\taccounting\n")
@@ -740,6 +740,32 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         except Exception:  # noqa: BLE001
             crashed = True
         check("status: a 13-digit token cell reads as suspect, never a crash (review finding 3)", not crashed)
+        display_cases = [(2500, "3k"), (994999, "995k"), (995000, "1M"), (1049999, "1M"),
+                         (1050000, "1.1M"), (26430386, "26.4M")]
+        display_mismatch = []
+        for tokens, expected in display_cases:
+            bash = sourced(agree, "usage_token_text {}".format(tokens)).strip()
+            close = sourced(agree, 'usage_words "complete 1 1 {} 0 1 0 0"'.format(tokens)).strip()
+            snapshot = {"usage": {"tokens": {"basis": "complete", "total": tokens},
+                                  "agents": {"total": 1, "at_least": 1}}}
+            card = status.tokens_text(tokens)
+            status_line = status.usage_of(snapshot)["text"]
+            tui = cockpit.k(tokens)
+            history_line = history.k(tokens)
+            display_dir = agree / "display"
+            write(display_dir / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
+                  "a\tdone\ta1\t{}\t-\t-\t1\t1\n".format(tokens))
+            progress = sourced(agree, 'progress_line "{}"'.format(str(display_dir).replace("\\", "/")))
+            progress_amount = "~{} tokens so far".format(expected)
+            actual = (bash, card, "{} tokens across 1 agent run".format(card), tui, history_line,
+                      close, progress_amount if progress_amount in progress else progress)
+            wanted = (expected, expected, "{} tokens across 1 agent run".format(expected), expected,
+                      "~" + expected, "~" + expected + " tokens across 1 agent run(s)",
+                      "~" + expected + " tokens so far")
+            if actual != wanted or expected not in status_line:
+                display_mismatch.append((tokens, actual, wanted, status_line))
+        check("display: progress, close, card, TUI and history use half-up rounding and the same M threshold",
+              not display_mismatch, display_mismatch)
 
         # --- corrections are normalised and bounded, so both readers read the same line (review finding 2) ---
         run_j = fresh("corrections", ("a",))
