@@ -12,7 +12,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 GIT = shutil.which("git")
-BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
+BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash") or (
+    r"C:\Program Files\Git\bin\bash.exe" if Path(r"C:\Program Files\Git\bin\bash.exe").is_file() else None)
 sys.path.insert(0, str(ROOT / "scripts"))
 import outcomes  # noqa: E402
 
@@ -135,9 +136,9 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
             check("helper: history includes finding outcome summary", code == 0
                   and "Finding outcomes:" in out and "does not prove cause" in out, out + err)
         else:
-            check("bash is available for CLI integration checks", False)
+            print("[SKIP] bash unavailable — CLI integration checks skipped")
     else:
-        check("Git is available for fixture-repository tests", False)
+        print("[SKIP] Git unavailable — fixture-repository checks skipped")
 
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:

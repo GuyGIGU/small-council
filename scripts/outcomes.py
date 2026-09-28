@@ -36,7 +36,7 @@ def git(repo, *args):
                                 stderr=subprocess.PIPE, universal_newlines=True, timeout=20, env=env)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return result.stdout if result.returncode == 0 else None
+    return result.stdout.strip() if result.returncode == 0 else None
 
 
 def state_fields(path):
