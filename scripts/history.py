@@ -31,6 +31,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cockpit  # noqa: E402  (the read-only run snapshot)
 import ledger   # noqa: E402  (seat evidence and advice)
+import outcomes as finding_outcomes  # noqa: E402  (read-only finding follow-up)
 
 SCHEMA = "council.history/3"
 MIN_RUNS = 5          # runs that carry a fact before a median, share or ratio over them is shown
@@ -172,6 +173,7 @@ def history(home):
                                  (not s["events"]["header_ok"] or s["events"]["malformed"])),
                "open": by_status.get("in-progress", 0) + by_status.get("paused", 0)}
     opened = sorted(s["run"]["id"][:10] for s in runs)
+    outcome_data = finding_outcomes.outcomes(home, Path.cwd())
     return {
         "schema": SCHEMA, "home": str(home), "min_runs": MIN_RUNS,
         "runs": {"total": len(runs), "by_status": by_status, "by_mode": by_mode, "by_month": dict(sorted(by_month.items())),
@@ -191,6 +193,8 @@ def history(home):
                     "categories": dict(sorted(categories.items()))},
         "claims": {"runs": claim_runs, "verdicts": dict(sorted(verdicts.items())),
                    "caught_share": rate(checked_runs)},
+        "outcomes": {"runs": len(outcome_data["runs"]), "kept": outcome_data["totals"]["kept"],
+                     "cut": outcome_data["totals"]["cut"]},
         "seats": {"in_ledger": len(seats["seats"]), "advice": dict(sorted(advice.items())),
                   "weighed": sorted(s["seat"] for s in seats["seats"] if s.get("weighed"))},
         "quality": quality,
@@ -265,6 +269,9 @@ def render(data):
             if caught["enough"] else too_few(caught["runs"], "runs with checked claims")))
     else:
         lines.append("Claims: none recorded (no run built an evidence ledger)")
+    o = data["outcomes"]
+    lines.append("Finding outcomes: {} run(s) · Kept {} changed at cited lines · Cut {} · changed after the run does not prove cause".format(
+        o["runs"], o["kept"]["changed at cited lines"], o["cut"]["changed at cited lines"]))
     s = data["seats"]
     lines.append("Seats: {} in the ledger · {} weighed{} — council ledger advice".format(
         s["in_ledger"], len(s["weighed"]), " ({})".format(", ".join(s["weighed"])) if s["weighed"] else ""))
