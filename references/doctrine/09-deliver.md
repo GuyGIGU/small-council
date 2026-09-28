@@ -44,3 +44,4 @@
 ## Done when
 
 The deliverable is on disk and the summary is shown. → `council state phase=learn`
+The closing card follows `council run close` in Learn, when its status and cost are final.
