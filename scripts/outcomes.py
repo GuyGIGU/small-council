@@ -99,7 +99,8 @@ def reviewed_uncommitted(index):
             return False
         with index.open("r", encoding="utf-8-sig") as stream:
             first = stream.readline(4096)
-        return first.startswith("# Change index") and "+ uncommitted changes" in first
+            second = stream.readline(4096)
+        return first.startswith("# Change index") and "+ uncommitted changes" in second
     except (OSError, UnicodeError):
         return False
 
