@@ -3275,6 +3275,31 @@ with tempfile.TemporaryDirectory() as tmp:
               code == 0 and warning in err and read(os.path.join(stale_run, "claims.jsonl")) == index_before, err)
         os.utime(path, (newer - 10, newer - 10))
 
+    # Closing also detects deleted sources, which cannot be caught by comparing
+    # the mtimes of files that remain beside the index.
+    deleted_repo = new_repo(tmp, "deleted-claim-source")
+    write(os.path.join(deleted_repo, ".council", "council.config.md"), "# Council config\n")
+    _, deleted_run, _ = council(deleted_repo, "run", "open", "council-review")
+    deleted_run = deleted_run.strip()
+    write(os.path.join(deleted_run, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P2 · principle · source.py:1 · indexed claim\n## Cut\n(none)\n")
+    write(os.path.join(deleted_run, "verify-1.md"), "# Verification\n| # | Item | Verdict | Evidence |\n"
+          "|---|---|---|---|\n| 1 | claim | CONFIRMED | checked source.py:1 |\n")
+    council(deleted_repo, "evidence", "build", "--run", deleted_run)
+    code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
+    check("close: current verifier-backed claim index does not warn",
+          code == 0 and warning not in err, err)
+    os.unlink(os.path.join(deleted_run, "verify-1.md"))
+    code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
+    check("close: a deleted verifier source warns even when remaining sources are older",
+          code == 0 and warning in err, err)
+    write(os.path.join(deleted_run, "verify-1.md"), "# Verification\n| # | Item | Verdict | Evidence |\n"
+          "|---|---|---|---|\n| 1 | claim | CONFIRMED | checked source.py:1 |\n")
+    council(deleted_repo, "evidence", "build", "--run", deleted_run)
+    os.unlink(os.path.join(deleted_run, "synthesis.md"))
+    code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
+    check("close: a deleted synthesis source warns", code == 0 and warning in err, err)
+
     # Usage
     code, out, _ = council(repo, "help")
     check("help: prints the command list", code == 0 and "council run open" in out and "council doctor" in out, out)

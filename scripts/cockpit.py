@@ -232,13 +232,30 @@ def repairs_of(run):
 def claim_index_stale(run):
     """Fail closed on missing/unreadable indexes; reading never refreshes the index."""
     sources = [p for p in [run / "synthesis.md"] + list(run.glob("verify-*.md")) if p.is_file()]
-    if not sources:
-        return False
     try:
         index = run / "claims.jsonl"
         if linked(index) or any(linked(p) for p in sources):
             return True
-        return any(p.stat().st_mtime_ns > index.stat().st_mtime_ns for p in sources)
+        if not index.is_file():
+            return bool(sources)
+        # An index with no source files is an orphan. The indexed rows also name
+        # their source files, which catches a deleted verifier even when every
+        # remaining source is older than the index.
+        if not sources or not (run / "synthesis.md").is_file():
+            return True
+        index_at = index.stat().st_mtime_ns
+        if any(p.stat().st_mtime_ns > index_at for p in sources):
+            return True
+        for row in jsonl(run, "claims.jsonl"):
+            refs = [row.get("source", "")]
+            refs.extend(link.get("ref", "") for link in row.get("verification", []) if isinstance(link, dict))
+            for ref in refs:
+                name = str(ref).split(":", 1)[0]
+                if name == "synthesis.md" or re.fullmatch(r"verify-[A-Za-z0-9._-]+\.md", name):
+                    source = run / name
+                    if linked(source) or not source.is_file():
+                        return True
+        return False
     except OSError:
         return True
 

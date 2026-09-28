@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.13.0"
+COUNCIL_VERSION="0.14.0"
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -912,9 +912,15 @@ cmd_run_close() {
   fi
   case "$(field mode "$run/session-state.md")" in
     council-review|council-plan|council-research)
-      if [ -f "$run/synthesis.md" ] && py="$(impact_python)"; then
-        "$py" "$COUNCIL_PLUGIN_ROOT/scripts/evidence.py" check --run "$run" >/dev/null 2>&1 || :
+      if { [ -f "$run/synthesis.md" ] || [ -f "$run/claims.jsonl" ]; } \
+          && py="$(impact_python)"; then
         stale=""
+        # check compares the index to the sources it can still read, so it also
+        # detects a verifier report that was deleted after the index was built.
+        if "$py" "$COUNCIL_PLUGIN_ROOT/scripts/evidence.py" check --run "$run" 2>&1 \
+            | grep -Fq 'claims.jsonl is missing or stale'; then stale=1; fi
+        # A missing synthesis is itself a stale source set when an index remains.
+        [ -f "$run/synthesis.md" ] || [ ! -f "$run/claims.jsonl" ] || stale=1
         [ -f "$run/claims.jsonl" ] || stale=1
         for source in "$run/synthesis.md" "$run"/verify-*.md; do
           [ ! -f "$source" ] || [ ! "$source" -nt "$run/claims.jsonl" ] || stale=1

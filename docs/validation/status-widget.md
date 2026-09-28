@@ -79,6 +79,10 @@ History and tuning would have learned from those numbers.
 All checks above ran in a detached throwaway worktree at `6bd6bb9`; subsequent changes are
 validation-document updates only. There were no model calls or paid evaluations.
 
+The raw run records, rendered cards, older suite logs, Track A test logs and replay report are saved
+outside the repository under `Documents/Small Council Validation/2026-09-28`. A SHA-256 manifest there
+verified all 336 copied files against the temporary originals.
+
 CI runs every suite on Windows, macOS and Linux. The branch is not pushed, so those two platforms are
 not yet run.
 

@@ -704,8 +704,10 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
 with tempfile.TemporaryDirectory(prefix="council-stale-status-") as temporary:
     stale_run = Path(temporary)
     write(stale_run / "session-state.md", "status: in-progress\nmode: council-review\nphase: challenge\n")
-    write(stale_run / "claims.jsonl", '{"id":"1","verdict":"CONFIRMED"}\n')
+    write(stale_run / "claims.jsonl", '{"id":"1","source":"synthesis.md:3","verdict":"CONFIRMED",'
+          '"verification":[{"ref":"verify-1-a.md:4","verdict":"CONFIRMED"}]}\n')
     index_at = (stale_run / "claims.jsonl").stat().st_mtime
+    write(stale_run / "verify-1-a.md", "# Verification\n")
     for source in ("synthesis.md", "verify-1-a.md"):
         write(stale_run / source, "# Source\n")
         os.utime(stale_run / source, (index_at + 5, index_at + 5))
@@ -719,6 +721,15 @@ with tempfile.TemporaryDirectory(prefix="council-stale-status-") as temporary:
         check("status: stale " + source + " read writes nothing", before == fingerprint(stale_run))
         os.utime(stale_run / source, (index_at - 5, index_at - 5))
     check("status: a current index keeps its verdicts", cockpit.claims_of(stale_run)["by_verdict"] == {"CONFIRMED": 1})
+    (stale_run / "verify-1-a.md").unlink()
+    deleted_verifier = cockpit.claims_of(stale_run)
+    check("status: a deleted verifier referenced by the index marks claims stale",
+          deleted_verifier["stale"] and not deleted_verifier["by_verdict"], deleted_verifier)
+    (stale_run / "verify-1-a.md").write_text("# Verification\n", encoding="utf-8")
+    (stale_run / "synthesis.md").unlink()
+    deleted_synthesis = cockpit.claims_of(stale_run)
+    check("status: a deleted synthesis referenced by the index marks claims stale",
+          deleted_synthesis["stale"] and not deleted_synthesis["by_verdict"], deleted_synthesis)
     (stale_run / "claims.jsonl").unlink()
     check("status: missing claim index is visible", cockpit.claims_of(stale_run)["stale"])
 
