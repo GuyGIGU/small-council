@@ -77,6 +77,11 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
         env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"]
         run_git(repo, "commit", "-q", "-m", "baseline", env=env)
         base = run_git(repo, "rev-parse", "HEAD")
+        write(repo / "src/between.py", "committed before close\n")
+        run_git(repo, "add", ".")
+        env["GIT_AUTHOR_DATE"] = "2020-01-02T11:00:00+00:00"
+        env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"]
+        run_git(repo, "commit", "-q", "-m", "before close", env=env)
 
         home.mkdir()
         write(home / "council.config.md", "# Council config\n")
@@ -115,15 +120,32 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
               and data["totals"]["cut"]["changed at cited lines"] == 1, data["totals"])
         check("mode and originating seat breakdowns are present", "council-review" in data["by_mode"]
               and data["by_seat"]["hunt"]["kept"]["changed at cited lines"] == 1, data["by_seat"])
+        check("each run summary keeps Kept and Cut as separate groups",
+              data["runs"][0]["summary"]["kept"]["changed at cited lines"] == 1
+              and data["runs"][0]["summary"]["cut"]["changed at cited lines"] == 1,
+              data["runs"][0]["summary"])
         check("close commit comparison writes nothing", before == after)
         check("wording warns that time order does not establish cause", "does not show" in outcomes.render(data))
+        mismatched_base_run = home / "runs" / "2020-01-02-123000-review"
+        write(mismatched_base_run / "session-state.md", "status: complete\nmode: council-review\n"
+              "closed: 2020-01-02 12:30:00\nbase: {}\n".format("0" * 40))
+        write(mismatched_base_run / "claims.jsonl", json.dumps({"id": "8", "disposition": "kept",
+              "citation": "src/stable.py:1", "provenance": ["hunt#5"]}) + "\n")
+        uncertain = outcomes.outcomes(home, repo)
+        row = next(r for r in uncertain["runs"] if r["run"] == mismatched_base_run.name)
+        check("the diff base need not equal the commit at close", row["claims"][0]["outcome"] == "unchanged", row)
+
         bad_run = home / "runs" / "2020-01-04-120000-review"
-        write(bad_run / "session-state.md", "status: complete\nmode: council-review\n"
+        write(bad_run / "session-state.md", "status: complete\nmode: council-review\u001b[31m\n"
               "closed: 2020-01-04 12:00:00\nbase: {}\n".format("0" * 40))
         write(bad_run / "claims.jsonl", json.dumps(claims[0]) + "\n")
+        write(bad_run / "index.md", "# Change index — review\nbase: abc · head: def + uncommitted changes\n")
         uncertain = outcomes.outcomes(home, repo)
         row = next(r for r in uncertain["runs"] if r["run"] == bad_run.name)
         check("baseline mismatch means can't tell", row["claims"][0]["outcome"] == "can't tell", row)
+        check("dirty index is can't tell and labels are sanitized",
+              row["mode"] == "council-review [31m" and "\u001b" not in outcomes.render(uncertain),
+              (row["mode"], outcomes.render(uncertain)))
         if BASH:
             code, out, err = council(repo, "outcomes", "--json")
             try:

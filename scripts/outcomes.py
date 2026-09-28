@@ -92,6 +92,18 @@ def read_claims(path):
     return claims
 
 
+def reviewed_uncommitted(index):
+    """Recognize the explicit dirty-tree marker written by council index."""
+    try:
+        if index.is_symlink() or not index.is_file() or index.stat().st_size > MAX_ARTIFACT:
+            return False
+        with index.open("r", encoding="utf-8-sig") as stream:
+            first = stream.readline(4096)
+        return first.startswith("# Change index") and "+ uncommitted changes" in first
+    except (OSError, UnicodeError):
+        return False
+
+
 def commit_at_close(repo, closed):
     if not closed:
         return None
@@ -136,9 +148,11 @@ def classify(repo, close_commit, head, claim):
     diff = git(repo, "diff", "--no-ext-diff", "--no-renames", "--unified=0", close_commit, head, "--", path)
     if diff is None:
         return "can't tell"
+    if "Binary files " in diff:
+        return "file changed elsewhere"
     spans = parse_hunks(diff)
     if not spans:
-        return "unchanged"
+        return "file changed elsewhere" if diff else "unchanged"
     for start, end, insertion in spans:
         if not insertion and start <= last and end >= first:
             return "changed at cited lines"
@@ -167,13 +181,12 @@ def outcomes(home, repo):
             if claims is None:
                 continue
             close_commit = commit_at_close(repo, state["closed"])
-            # A recorded base that differs from the close snapshot means the run may have reviewed
-            # intervening work; do not attribute later diffs to its citations.
-            if not re.fullmatch(r"[0-9a-fA-F]{40,64}", state.get("base", "")) or \
-                    close_commit is None or state.get("base", "").lower() != close_commit.lower():
+            # `base` is council index's merge-base, not a close-time snapshot. The index's explicit
+            # dirty marker is the available evidence that the run reviewed uncommitted files.
+            if close_commit is None or reviewed_uncommitted(folder / "index.md"):
                 close_commit = None
-            mode = state.get("mode") or "unknown"
-            run_data = {"run": folder.name, "mode": mode, "claims": []}
+            mode = cockpit.clean(state.get("mode") or "unknown") or "unknown"
+            run_data = {"run": cockpit.clean(folder.name), "mode": mode, "claims": []}
             for claim in claims:
                 disposition = str(claim.get("disposition", "")).lower()
                 if disposition not in ("kept", "cut"):
@@ -186,18 +199,18 @@ def outcomes(home, repo):
                     sources = []
                 claim_data = {"id": str(claim.get("id", "?")), "disposition": disposition,
                               "citation": claim.get("citation", "-"), "outcome": outcome,
-                              "seats": sorted(set(source.split("#", 1)[0] for source in sources
+                              "seats": sorted(set(cockpit.clean(source.split("#", 1)[0]) for source in sources
                                                   if isinstance(source, str) and source and
-                                                  not source.startswith("gate:")))}
+                                                  not source.startswith("gate:") and cockpit.clean(source.split("#", 1)[0])))}
                 run_data["claims"].append(claim_data)
                 add_count(totals, disposition, outcome)
                 add_count(modes.setdefault(mode, {}), disposition, outcome)
                 for seat in claim_data["seats"]:
                     add_count(seats.setdefault(seat, {}), disposition, outcome)
             if run_data["claims"]:
-                counts = {name: 0 for name in OUTCOMES}
+                counts = {kind: {name: 0 for name in OUTCOMES} for kind in ("kept", "cut")}
                 for item in run_data["claims"]:
-                    counts[item["outcome"]] += 1
+                    counts[item["disposition"]][item["outcome"]] += 1
                 run_data["summary"] = counts
                 runs.append(run_data)
     return {"schema": SCHEMA, "head": head, "runs": runs, "totals": totals,
@@ -214,14 +227,33 @@ def render(data):
         kept[OUTCOMES[0]], kept[OUTCOMES[1]], kept[OUTCOMES[2]], kept[OUTCOMES[3]], kept[OUTCOMES[4]]))
     lines.append("Cut comparison: {} at cited lines · {} elsewhere · {} unchanged · {} gone or renamed · {} can't tell".format(
         cut[OUTCOMES[0]], cut[OUTCOMES[1]], cut[OUTCOMES[2]], cut[OUTCOMES[3]], cut[OUTCOMES[4]]))
+    if data["runs"]:
+        run_lines = []
+        for run in data["runs"]:
+            parts = []
+            for kind in ("kept", "cut"):
+                counts = run["summary"][kind]
+                n = sum(counts.values())
+                parts.append("{} {}/{} at cited lines".format(kind.title(), counts[OUTCOMES[0]], n))
+            run_lines.append("{} [{}]: {}".format(run["run"], run["mode"], ", ".join(parts)))
+        lines.append("By run: " + " · ".join(run_lines))
     if data["by_mode"]:
-        lines.append("By mode: " + " · ".join("{}: {} claim(s)".format(mode, sum(
-            sum(values.values()) for values in grouped.values())) for mode, grouped in data["by_mode"].items()))
+        lines.append("By mode: " + " · ".join(group_text(mode, grouped)
+                                             for mode, grouped in data["by_mode"].items()))
     if data["by_seat"]:
-        lines.append("By seat: " + " · ".join("{}: {} claim(s)".format(seat, sum(
-            sum(values.values()) for values in grouped.values())) for seat, grouped in data["by_seat"].items()))
+        lines.append("By seat: " + " · ".join(group_text(seat, grouped)
+                                             for seat, grouped in data["by_seat"].items()))
     lines.append(data["note"])
     return "\n".join(lines)
+
+
+def group_text(label, grouped):
+    parts = []
+    for kind in ("kept", "cut"):
+        counts = grouped.get(kind)
+        if counts:
+            parts.append("{} {}/{} at cited lines".format(kind.title(), counts[OUTCOMES[0]], sum(counts.values())))
+    return "{}: {}".format(label, ", ".join(parts) if parts else "no claims")
 
 
 def main():

@@ -5,14 +5,17 @@ after the run closed. It groups the five outcomes by run, mode and originating s
 claims separately as a comparison group. `council history` includes the number of Kept and Cut
 citations whose cited lines changed.
 
-The comparison is deliberately conservative. A run needs a close timestamp and a recorded Git base
-that matches the commit at close. Missing or unreadable claims, missing Git history, an invalid
-citation, or a baseline mismatch becomes `can't tell`. A cited file deleted or renamed after close
-is `file gone or renamed`. A diff hunk overlapping the citation's original line span is `changed at
-cited lines`; a change elsewhere in that file is `file changed elsewhere`; no diff is `unchanged`.
+The comparison is deliberately conservative. It finds the latest commit at or before the run's
+`closed:` time; `base:` is the change index's merge-base and does not need to match that commit. If
+the saved `index.md` records `+ uncommitted changes`, the run's claims become `can't tell`. Missing
+or unreadable claims, missing Git history, or an invalid citation also becomes `can't tell`. A cited
+file deleted or renamed after close is `file gone or renamed`. A diff hunk overlapping the citation's
+original line span is `changed at cited lines`; a change elsewhere in that file is `file changed
+elsewhere`; no diff is `unchanged`.
 
 These are timing observations. A line changing after a run does not prove the council found the issue,
 that the finding caused the change, or that the change was correct. The comparison is especially weak
-when Kept and Cut lines change at similar rates. Uncommitted changes at the time of the review cannot
-be reconstructed from Git history; use the result as a conservative record of committed changes only.
+when Kept and Cut lines change at similar rates. The saved index can identify a dirty tree when it was
+created; Git cannot reconstruct later uncommitted edits at review time if the index did not record
+them. Treat results as a comparison of committed snapshots, not proof of causation or correctness.
 The command reads run records and Git history and writes nothing.
