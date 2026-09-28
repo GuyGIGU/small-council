@@ -283,6 +283,26 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("state: unreadable run records read as unknown, never as fine", r["state"]["key"] == "unknown"
           and any(a["kind"] == "data" for a in r["attention"]), r["state"])
 
+    memorybase = base / "large-memory"
+    write(memorybase / ".council" / "conventions.md", "x" * 30000)
+    memoryrun = make_run(memorybase, "memory")
+    r = reading(memoryrun)
+    check("memory size: a 30 KB file is a note on the open card, without changing the file",
+          any(a["kind"] == "memory-size" and a["severity"] == 1 and "30 KB" in a["text"]
+              for a in r["attention"]) and (memorybase / ".council" / "conventions.md").stat().st_size == 30000,
+          r["attention"])
+    write(memorybase / ".council" / "conventions.md", "x" * 20000)
+    r = reading(memoryrun)
+    check("memory size: a 20 KB file has no warning",
+          not any(a["kind"] == "memory-size" for a in r["attention"]), r["attention"])
+    write(memorybase / ".council" / "council.config.md",
+          "# Council config\n## Memory\n- conventions: docs/project-memory.md\n")
+    write(memorybase / "docs" / "project-memory.md", "x" * 65864)
+    r = reading(memoryrun)
+    check("memory size: the card follows the configured memory path",
+          any(a["kind"] == "memory-size" and "project-memory.md is 66 KB" in a["text"]
+              for a in r["attention"]), r["attention"])
+
     # --- what the numbers may say ----------------------------------------------------------------------
     legacy = make_run(base, "legacy", seats=[("hunt", "done", "verifier", "160", local(5)[:16], "", "1"),
                                              ("beck", "done", "", "201000", local(4)[:16], "", "1")],

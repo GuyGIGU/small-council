@@ -33,6 +33,7 @@ import cockpit  # noqa: E402  (the read-only run snapshot)
 SCHEMA = "council.run-status/1"
 QUIET_MINUTES = 60         # an open run with no recorded activity for this long reads as quiet (stale)
 OLD_SNAPSHOT_MINUTES = 60  # a widget older than this tells the viewer to ask for a new one
+MEMORY_SIZE_LIMIT = 25600   # bytes, shared with the helper's run-open warning
 ATTEMPTS = 3               # the repair loop's stop limit (scripts/repair.py)
 STAGES = (("convene", "Setting up"), ("prepare", "Gathering context"), ("assign", "Choosing the experts"),
           ("brief", "Writing the briefs"), ("work", "Experts at work"), ("collect", "Collecting results"),
@@ -321,6 +322,44 @@ def spend_of(snap, usage):
     return {"estimate": estimate, "ceiling": ceiling, "spend_text": message}
 
 
+def oversized_memory(run_path):
+    """Size the file council memory reads: configured path first, then the usual fallbacks."""
+    if run_path.parent.name != "runs":
+        return None
+    home = run_path.parent.parent
+    root = home.parent
+    config = cockpit.text_of(home / "council.config.md", home)
+    in_memory = False
+    configured = ""
+    for line in config.splitlines():
+        if re.match(r"^##[ \t]+", line):
+            in_memory = bool(re.match(r"^##[ \t]+Memory(?:\W|$)", line, re.I))
+        elif in_memory:
+            match = re.match(r"^[ \t]*[-*][ \t]*conventions:[ \t]*(.*)$", line, re.I)
+            if match:
+                configured = match.group(1).strip().strip('`"\'')
+                configured = re.sub(r"[ \t]+\([^()]*\)[ \t]*$", "", configured)
+                configured = re.sub(r"[ \t]+[—–-][ \t].*$", "", configured).strip()
+                break
+    choices = []
+    if configured:
+        for raw in (configured, configured.split()[0]):
+            path = Path(raw)
+            choices.append(path if path.is_absolute() else root / path)
+    choices.extend((home / "conventions.md", root / "conventions.md"))
+    for path in choices:
+        try:
+            if path.is_file():
+                size = path.stat().st_size
+                if size > MEMORY_SIZE_LIMIT:
+                    return {"name": cockpit.clean(path.name)[:80], "bytes": size,
+                            "kb": (size + 500) // 1000}
+                return None
+        except OSError:
+            continue
+    return None
+
+
 def brief_names(snap):
     """Seat names as the brief gives them — "### <slug> — <what it checks> (<Seat name>)" — so the
     user reads "Tests", not a slug. Read once per snapshot, like every other run file."""
@@ -532,6 +571,11 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
     if snap["memory"].get("proposed"):
         attention.append({"kind": "memory", "severity": 1, "text": "{} for your yes or no.".format(
             plural(snap["memory"]["proposed"], "drafted lesson waits", "drafted lessons wait"))})
+    large_memory = oversized_memory(run_path)
+    if open_run and large_memory:
+        attention.append({"kind": "memory-size", "severity": 1, "text": (
+            "{} is {} KB, over the ~25 KB the council expects. At Learn, propose a consolidation.".format(
+                large_memory["name"], large_memory["kb"]))})
     if not status:
         attention.append({"kind": "data", "severity": 2, "text": "The run's status file is missing or can't be read."})
     attention.sort(key=lambda a: -a["severity"])

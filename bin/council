@@ -17,6 +17,7 @@
 set -u
 
 COUNCIL_VERSION="0.14.0"
+COUNCIL_MEMORY_SIZE_LIMIT=25600  # bytes: about 25 KB of project memory is the expected upper bound
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -479,6 +480,7 @@ EOF
   printf '# Run log — %s · opened %s\n' "$mode" "$(now_sec)" > "$dir/log.md"
   printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n' > "$dir/seats.tsv"
   event_append "$dir" run.opened run "$mode" "phase=convene" || die "run opened, but its first event could not be recorded: $dir/events.tsv"
+  memory_size_note "$home"
   [ -z "$existing" ] || printf 'council: another run is in progress on this working tree — pass --run %s to every command for this one\n' "${dir##*/}" >&2
   [ -z "$paused" ] || printf 'council: a paused run is also open here (%s) — it stays paused\n' "$paused" >&2
   case "$mode" in
@@ -486,6 +488,17 @@ EOF
       printf "council: save the user's request word for word in %s/ask.md before anything else\n" "$dir" >&2 ;;
   esac
   say "$dir"
+}
+
+memory_size_note() {
+  local bytes kb
+  memory_file "$1"                       # use the same configured file as council memory
+  [ -f "$MEM" ] || return 0
+  bytes="$(wc -c < "$MEM" 2>/dev/null | tr -d '[:space:]')"
+  case "$bytes" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$bytes" -gt "$COUNCIL_MEMORY_SIZE_LIMIT" ] || return 0
+  kb=$(( (bytes + 500) / 1000 ))
+  printf 'council: %s is %s KB, over the ~25 KB the council expects — every run reads it; at Learn, propose a consolidation\n' "${MEM##*/}" "$kb" >&2
 }
 
 cmd_state() {
