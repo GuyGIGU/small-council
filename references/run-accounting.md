@@ -136,3 +136,5 @@ unknown seat, and a missing source.
   "Claims index out of date" instead of showing obsolete verdicts.
 
 This is a snapshot, not a subscription. Without Python, relay `council run status` for phase and cost.
+`council status --line` is a separate, under-200-character plain sentence for an owner notification.
+It prints nothing when `.council/council.config.md` has `- notifications: off`.

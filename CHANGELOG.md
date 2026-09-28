@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
+- `council status --line` gives one short owner notification at a blocking question, stopped build,
+  agent/token limit or completion; `- notifications: off` suppresses it.
 - Closed runs now have a final status card, text view and JSON block for the filed request,
   deliverable, verifier counts, checks, spend, agent runs and owner follow-ups.
 - The card, status text and close line compare known token use with the run estimate and optional owner ceiling.

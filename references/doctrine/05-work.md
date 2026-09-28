@@ -48,6 +48,11 @@ Write <abs run>/seats/<slug>.md, then return one line.
   over its cap, tell the user in one line how many agent runs it used against the cap.
 - **The token ceiling.** If `council seat` says the run passed the owner's token ceiling, start
   nothing more until the user says go. Report the known usage and ceiling in one short line.
+- **Notify when the owner is needed.** Right after setting `council state waiting="…"`, or when an
+  agent cap or token ceiling stops further work, run `council status --line`. If it prints a line
+  and `PushNotification` is available, send that line once with the tool. Never notify for routine
+  progress. A project can disable these alerts with `- notifications: off` in
+  `.council/council.config.md`; then `--line` prints nothing.
 - **No notification comes from a worker that died with its session.** After a compaction, keep
   waiting. In a new session, follow Resume in context-core.
 - **Whatever dispatches the workers** — the Agent tool, a Workflow script, background agents — the

@@ -148,6 +148,8 @@ the converge pass starts, `council state phase=challenge`.
      task. Jump to blocked-task logging and the receipt; do not attempt steps 6–7 as a fix path,
      start another gate trail, or commit it as complete. Preserve the diff and gate output; never
      silently revert unrelated work. Read-only review cannot reopen repair.
+     When the build stops blocked, run `council status --line`; if it prints a line and
+     `PushNotification` is available, send that line once. See Work's notification rule.
      Python 3.8+ is optional: if absent, record the same attempts and limit in the log. Never count
      the intentionally failing `before-<n>` check as a repair attempt.
 6. **After-evidence — only if the task is not blocked.** Run the same check again, `council gate after-<n> -- '<same command>'`. It

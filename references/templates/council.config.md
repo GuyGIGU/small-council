@@ -14,6 +14,9 @@ deploy target, domain. Name the one thing that must never break.>
 - approve without asking: up to squad
 - agent cap: 10
 - context packs: off
+<!-- Add `- notifications: off` here to suppress `council status --line` and council phone alerts.
+     Without that line, four owner-facing moments may notify when PushNotification is available:
+     a blocking question, a stopped build, a cap/ceiling stop, and run completion. -->
 <!-- "approve without asking": solo | squad | full — a /command starts runs up to this size without a
      second question; bigger runs always ask. "agent cap": agents per run, verifiers included.
      "context packs": off | on — on builds a seat-specific evidence pack for each dispatched worker

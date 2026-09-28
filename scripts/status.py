@@ -680,6 +680,38 @@ def text(status, tui_commands=()):
     return "\n".join(lines)
 
 
+def notification_line(status):
+    """A short plain line for one owner notification, not a progress report."""
+    run, state = status["run"], status["state"]
+    priority = ("blocked", "waiting", "cap", "ceiling")
+    top = next((item for kind in priority for item in status["attention"] if item["kind"] == kind), None)
+    if state["key"] == "completed":
+        message = "Run finished. See the closing card for the deliverable and next steps."
+    elif top:
+        message = top["text"]
+    elif run["status"] == "in-progress" and (
+            status["usage"]["agent_runs"] if status["usage"]["agent_runs"] is not None
+            else status["usage"]["agent_runs_at_least"]) >= status["usage"]["agent_cap"]:
+        message = "Agent limit reached ({}). Ask before starting more.".format(status["usage"]["agent_cap"])
+    elif state["key"] == "interrupted":
+        message = state["summary"]
+    else:
+        message = state["summary"]
+    line = "{} council: {}".format(run["project"] or "Project", message)
+    line = re.sub(r"\s+", " ", cockpit.clean(line))
+    line = re.sub(r"[`*_#\[\]<>]", "", line).strip()
+    return line if len(line) < 200 else line[:196].rstrip() + "..."
+
+
+def notifications_off(home):
+    """A project can suppress notification output without changing ordinary status."""
+    if home is None:
+        return False
+    root = Path(home)
+    content = cockpit.text_of(root / "council.config.md", root, limit=65536)
+    return bool(re.search(r"(?im)^[ \t]*-[ \t]*notifications:[ \t]*off[ \t]*(?:#.*)?$", content))
+
+
 # --- the chat widget ------------------------------------------------------------------------------------------
 STYLE = (
     "<style>"
@@ -850,6 +882,7 @@ def main():
     parser.add_argument("--home", type=Path)
     parser.add_argument("--widget", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--line", action="store_true", help="one short line for a notification")
     parser.add_argument("--preview", action="store_true")
     parser.add_argument("--at", help="read the run as of this UTC time (YYYY-MM-DDTHH:MM:SSZ), for tests")
     parser.add_argument("--tui-command", action="append", default=[],
@@ -862,11 +895,15 @@ def main():
     if args.at and not now:
         print("status: --at takes a UTC time like 2026-09-27T15:40:00Z", file=sys.stderr)
         return 2
+    if args.line and notifications_off(args.home or args.run.parent.parent):
+        return 0
     reading = interpret(cockpit.snapshot(args.run, args.home, 40), now)
     if args.json:
         print(json.dumps(reading, indent=2, sort_keys=True))
     elif args.widget:
         print(widget(reading, preview=args.preview))
+    elif args.line:
+        print(notification_line(reading))
     else:
         print(text(reading, args.tui_command))
     return 0
