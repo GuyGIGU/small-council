@@ -58,7 +58,6 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
     repo = temp / "repo"
     home = repo / ".council"
     repo.mkdir()
-    home.mkdir()
     if GIT:
         run_git(repo, "init", "-q")
         run_git(repo, "config", "user.name", "Council eval")
