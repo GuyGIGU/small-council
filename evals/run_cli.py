@@ -459,6 +459,7 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 2 and "does not mark it selected" in err, out + err)
 
     budget_repo = new_repo(tmp, "spend-ceiling")
+    write(os.path.join(budget_repo, ".council", "council.config.md"), "# Council config\n")
     _, budget_run, _ = council(budget_repo, "run", "open", "council-review")
     budget_run = budget_run.strip()
     write_plan(budget_run, selected=("worker",), verification="self", estimated_tokens=420000)
