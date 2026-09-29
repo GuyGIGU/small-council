@@ -299,6 +299,12 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run plan show: explains routing, context, budgets and verification",
           code == 0 and "selected — fowler" in out and "skipped — ghost" in out and "verification: independent" in out, out + err)
     good_plan = read(plan_path)
+    for bad in ("0", "-1", "many"):
+        write(plan_path, good_plan + "budget\trun\ttoken-ceiling\t{}\towner limit\n".format(bad))
+        code, out, _ = council(repo, "run", "plan", "check")
+        check("run plan check: refuses invalid token ceiling " + bad,
+              code == 1 and "token-ceiling must be a positive integer" in out, out)
+    write(plan_path, good_plan)
 
     # Advisory routing is deterministic policy output, never a run mutation or agent dispatch.
     route_before = {os.path.relpath(os.path.join(folder, name), run):
@@ -381,6 +387,7 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and table_ok and route_value(cap_rows, "budget", "route", "agent-cap") == "1" and
           selected <= 1 and route_value(cap_rows, "budget", "route", "selected-agents") == str(selected) and
           route_value(cap_rows, "budget", "route", "ceiling-tokens") == "1000" and
+          route_value(cap_rows, "budget", "run", "token-ceiling") == "1000" and
           estimated.isdigit() and int(estimated) > 1000 and
           route_value(cap_rows, "verification", "route", "level") == "adversarial" and
           route_value(cap_rows, "run", "route", "status") == "needs-rescope" and
@@ -450,6 +457,36 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, err = council(repo, "seat", "outsider", "running", "agent=nope")
     check("seat: refuses to start an identity the valid plan did not select",
           code == 2 and "does not mark it selected" in err, out + err)
+
+    budget_repo = new_repo(tmp, "spend-ceiling")
+    write(os.path.join(budget_repo, ".council", "council.config.md"), "# Council config\n")
+    _, budget_run, _ = council(budget_repo, "run", "open", "council-review")
+    budget_run = budget_run.strip()
+    write_plan(budget_run, selected=("worker",), verification="self", estimated_tokens=420000)
+    append(os.path.join(budget_run, "run-plan.tsv"), "budget\trun\ttoken-ceiling\t600000\towner limit\n")
+    code, out, err = council(budget_repo, "run", "plan", "check")
+    check("spend: a positive optional ceiling is a valid plan row", code == 0, out + err)
+    code, out, err = council(budget_repo, "run", "plan", "show")
+    check("spend: the checked plan shows the owner's ceiling", code == 0 and "owner ceiling: 600000 tokens" in out, out + err)
+    council(budget_repo, "seat", "worker", "running", "agent=a1")
+    council(budget_repo, "seat", "worker", "done", "agent=a1", "tokens=300000")
+    check("spend: usage below estimate raises no budget event",
+          not any(e[3] in ("run.estimate_passed", "run.ceiling_passed") for e in events(budget_run)))
+    council(budget_repo, "seat", "worker", "running", "agent=a2")
+    code, _, err = council(budget_repo, "seat", "worker", "done", "agent=a2", "tokens=327000")
+    check("spend: crossing the ceiling tells the Chair to ask before more work",
+          code == 0 and "over its ceiling of 600000" in err and "ask before starting more" in err, err)
+    council(budget_repo, "seat", "worker", "done", "agent=a2", "tokens=327000")
+    budget_events = [e[3] for e in events(budget_run)]
+    check("spend: each estimate and ceiling event is recorded once, even after a repeated report",
+          budget_events.count("run.estimate_passed") == 1 and budget_events.count("run.ceiling_passed") == 1,
+          budget_events)
+    code, out, err = council(budget_repo, "run", "events", "check")
+    check("spend: the stream with the two budget events remains valid", code == 0, out + err)
+    code, out, err = council(budget_repo, "run", "close")
+    check("close: exact usage is compared with the whole estimate",
+          code == 0 and "estimated ~420k (about 49% over)" in out and
+          "estimated ~420k (about 49% over)" in read(os.path.join(budget_run, "session-state.md")), out + err)
 
     legacy = new_repo(tmp, "legacy-plan")
     write(os.path.join(legacy, ".council", "council.config.md"), "# Council config — legacy plan\n")

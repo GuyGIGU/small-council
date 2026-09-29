@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
+- The card, status text and close line compare known token use with the run estimate and optional owner ceiling.
 - The agent cap counts agent runs, not seats: a Workflow seat declares how many agents it starts
   (`budget/<seat>/agent-runs`), and the plan check counts them.
 - Reaching the cap, `council seat` tells the Chair to ask before starting more; passing it records

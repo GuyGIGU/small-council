@@ -197,6 +197,10 @@ def event_text(event, snap):
         return "A lesson was drafted for your yes or no"
     if kind == "run.cap_passed":
         return "Went past the agent limit ({} agent runs, limit {})".format(value, (event.get("detail") or "").replace("cap=", ""))
+    if kind == "run.estimate_passed":
+        return "Went past the run's token estimate"
+    if kind == "run.ceiling_passed":
+        return "Went past the owner's token ceiling"
     return None                          # context builds and other bookkeeping stay out of the main view
 
 
@@ -287,6 +291,34 @@ def agent_cap(snap, run_path):
         config = ""
     found = re.search(r"(?m)^[ \t]*-[ \t]*agent cap:[ \t]*([0-9]{1,6})", config)
     return int(found.group(1)) if found and int(found.group(1)) > 0 else 10
+
+
+def spend_of(snap, usage):
+    """Compare only known exact token counts with the run's planned estimate and ceiling."""
+    plan = snap.get("plan") or {}
+    def planned(field):
+        value = str(plan.get(field) or "").strip()
+        return (int(value) if re.fullmatch(r"[0-9]{1,12}", value)
+                and (field == "estimated-tokens" or int(value) > 0) else None)
+
+    estimate, ceiling = planned("estimated-tokens"), planned("token-ceiling")
+    known = usage["tokens_known"]
+    if estimate is None and ceiling is None:
+        message = ""
+    elif usage["basis"] == "complete":
+        message = "spent {}".format(tokens_text(known))
+    elif known:
+        message = "at least {} used".format(tokens_text(known))
+    else:
+        message = "usage not known yet"
+    if estimate is not None:
+        message += " of estimated {}".format(tokens_text(estimate)) if known else " against estimated {}".format(tokens_text(estimate))
+    if ceiling is not None:
+        message += "; ceiling {}".format(tokens_text(ceiling))
+    if estimate is not None and known > estimate and estimate > 0:
+        over = ((known - estimate) * 100 + estimate // 2) // estimate
+        message += " ({}about {}% over estimate)".format("at least " if usage["basis"] != "complete" else "", over)
+    return {"estimate": estimate, "ceiling": ceiling, "spend_text": message}
 
 
 def brief_names(snap):
@@ -420,6 +452,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
     if status == "paused":
         attention.append({"kind": "paused", "severity": 1, "text": "The run is paused. Ask to resume it when you're ready."})
     usage = usage_of(snap)
+    usage.update(spend_of(snap, usage))
     cap = agent_cap(snap, run_path)
     used = usage["agent_runs"] if usage["agent_runs"] is not None else usage["agent_runs_at_least"]
     usage["agent_cap"] = cap
@@ -434,6 +467,14 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
                 "This run has used {}, over its limit of {}. More should start only after you say so.".format(many, cap))})
         else:
             attention.append({"kind": "cap", "severity": 1, "text": "This run used {}, over its limit of {}.".format(many, cap)})
+    known = usage["tokens_known"]
+    if usage["estimate"] is not None and known > usage["estimate"]:
+        attention.append({"kind": "estimate", "severity": 1,
+                          "text": "Token use is over the run's estimate."})
+    if usage["ceiling"] and known > usage["ceiling"]:
+        attention.append({"kind": "ceiling", "severity": 2 if open_run else 1,
+                          "text": ("Token use is over the run's ceiling. More should start only after you say so."
+                                   if open_run else "The run used more tokens than its ceiling.")})
     if snap["memory"].get("proposed"):
         attention.append({"kind": "memory", "severity": 1, "text": "{} for your yes or no.".format(
             plural(snap["memory"]["proposed"], "drafted lesson waits", "drafted lessons wait"))})
@@ -565,6 +606,8 @@ def text(status, tui_commands=()):
     usage = status["usage"]
     lines.append("Token use: " + usage["text"] + ("" if usage["basis"] == "complete" else
                                                   " · Agent runs: " + usage["agent_runs_text"]))
+    if usage["spend_text"]:
+        lines.append("Spend: " + usage["spend_text"])
     lines.append("As of {} (last activity {}).".format(clock(now, now), fresh["last_activity_clock"] or "unknown"))
     for command in tui_commands or ():
         lines.append("Live view in a terminal — " + command)
@@ -641,6 +684,9 @@ def widget(status, preview=False, limit=5):
     out.append('<div class="tiles">' + "".join(
         '<div class="tile"><p class="muted">{}</p><p style="font-weight:500">{}</p></div>'.format(esc(k), esc(v))
         for k, v in tiles) + "</div>")
+    if status["usage"]["spend_text"]:
+        out.append('<p style="margin-top:8px"><span class="muted">Spend:</span> {}</p>'.format(
+            esc(status["usage"]["spend_text"])))
     if status["latest_check"]:
         c = status["latest_check"]
         out.append('<p class="muted" style="margin-top:10px">Latest check: {} {} at {}</p>'.format(

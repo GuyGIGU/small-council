@@ -36,6 +36,8 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `run.closed` | `run` | `complete` or `abandoned` | as `run.paused` |
 | `run.waiting_changed` | `run` | `on` or `off` | `from=<off or on>` — the run started or stopped waiting on the user (0.14) |
 | `run.cap_passed` | `run` | agent runs recorded | `cap=<n>` — the first seat record that took the run past its agent cap (after 0.14) |
+| `run.estimate_passed` | `run` | known exact tokens | `estimate=<n>` — first seat record above the run's whole estimate |
+| `run.ceiling_passed` | `run` | known exact tokens | `ceiling=<n>` — first seat record above the owner's token ceiling |
 | `seat.updated` | seat slug | new state | `tokens=<seat total>;agent_runs=<n>;reported=<n>` (0.14; before: `tokens=<cumulative tokens>`) — totals so far, never to be summed across events |
 | `seat.usage_corrected` | seat slug | `tokens` or `agents` | `from=<recorded>;to=<exact>` — an evidence-backed correction, whose evidence is in `corrections.jsonl` (0.14) |
 | `context.built` | seat slug | context level | `expands=<n>;metrics=<run-local path>` (see `precision-context.md`) |
