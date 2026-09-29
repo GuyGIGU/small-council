@@ -24,12 +24,11 @@ is a Workflow the Chair runs: its `agent_count` is its agent runs.
 **Display is not storage.** "160k" is how a figure is shown. The stored value is the whole number
 (160360). A figure is never rounded when stored, and a rounded figure is never accepted.
 
-The display formats differ intentionally: the bash close/progress lines use whole thousands,
-rounding halves up; the TUI uses Python half-to-even rounding to whole thousands. The status
-card/text uses whole thousands below 995,000 and one decimal million at or above that threshold
-(Python rounding, with a trailing `.0` omitted). Thus 26,430,386 appears as `~26430k` on the
-close line and `26.4M` on the card; 2,500 appears as `~3k` versus `2k`. These are display
-differences only: the stored totals and accounting bases agree.
+Every display uses one rule: round half up to a whole thousand below 995,000 tokens, and to one
+decimal million at or above 995,000; omit a trailing `.0`. The progress and close lines, status
+card/text, TUI and history now agree: 26,430,386 appears as `26.4M` everywhere (the close line
+and history prefix estimated totals with `~`), and 2,500 appears as `3k`. Only the display is
+rounded; the stored totals and accounting bases stay exact.
 
 The status card, text and JSON compare known exact agent-token figures with the **whole**
 `budget/run/estimated-tokens` plan value, including its advisory Chair share. They do not subtract
@@ -78,7 +77,7 @@ The `seat.updated` event carries a seat's totals so far, so summing events count
 
 | Basis | When | Said as |
 |---|---|---|
-| complete | every agent run's usage is known (reported or corrected) | a total, "~4675k tokens across 39 agent run(s) on the close line; 4.7M on the card" |
+| complete | every agent run's usage is known (reported or corrected) | a total, "~4.7M tokens across 39 agent run(s) on the close line; 4.7M on the card" |
 | running | some seats are still working | "so far" |
 | partial | a finished agent run has no usage report, or a seat has no agent on record | "at least …, N without a usage report" / "no agent on record for …" |
 | older | a row written before 0.14 (no `reported` value) and not corrected | "not reliably recorded"; agent runs "at least N" |

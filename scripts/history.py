@@ -206,7 +206,7 @@ def too_few(n, what="runs"):
 
 
 def k(tokens):
-    return "~{}k".format(round(tokens / 1000))
+    return "~{}".format(cockpit.format_tokens(tokens))
 
 
 def render(data):

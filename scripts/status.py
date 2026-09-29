@@ -109,14 +109,10 @@ def minutes_between(earlier, later):
 
 # --- numbers --------------------------------------------------------------------------------------------------
 def tokens_text(value):
-    """A display form (160k, 1.2M) of an exact token count; the stored value is never rounded."""
+    """A display form of an exact token count; the stored value is never rounded."""
     if value is None:
         return "unknown"
-    if value >= 995000:
-        return "{:.1f}M".format(value / 1000000.0).replace(".0M", "M")
-    if value >= 1000:
-        return "{}k".format(int(round(value / 1000.0)))
-    return str(value)
+    return cockpit.format_tokens(value)
 
 
 def plural(n, one, many=None):
