@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- The impact graph lists each changed file it can't read (shell, hooks, Markdown, config) as "not inspected", and its summary counts them.
+
+### Fixed
+
+- The impact graph now finds scripts that import a file sitting next to them (medium confidence).
+
 ## [0.15.0] — 2026-09-29
 
 **TL;DR:** runs stop at their agent limit until you say go, show spend against the estimate, end

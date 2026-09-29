@@ -33,27 +33,36 @@ decode escapes before interpreting a path.
 | `impact` | changed or former path → importer | A direct reverse dependency. `former-path-importer` means a consumer still names a renamed path. |
 | `test` | changed path → likely test | `direct-import` has resolved import evidence; `name-match` is only a low-confidence filename hint. |
 | `surface` | changed path → domain | Low-confidence path/extension hint: configuration, persistent data, security, frontend or public interface. |
-| `limit` | scan or path → reason | Explicitly records files omitted or a provider that could not inspect a file. |
+| `limit` | scan or path → reason | Explicitly records files omitted, a provider that could not inspect a file, or a changed file no provider reads (`not-inspected`). |
 
 `high` confidence means Git or Python AST evidence was observed, **not** that the dependent code
-executes at runtime or a test covers the behavior. `medium` is used for JS/TS lexical import and declaration hints;
-`low` is used for path and filename heuristics. A missing row is never proof of no impact.
+executes at runtime or a test covers the behavior. `medium` is used for JS/TS lexical import and declaration hints
+and for `script-dir` sibling imports; `low` is used for path and filename heuristics. A missing row is never
+proof of no impact.
 
 ## Providers and bounds
 
 The Git provider combines the index baseline with the current working tree, including committed,
 staged, unstaged, untracked, renamed and deleted paths. The Python provider uses the standard
 library AST for static `import` and `from` statements, including relative imports and common
-`src/` layouts (exact package paths take precedence over `src/` aliases). The JS/TS provider
-resolves literal relative `import`, `export from`, `require` and `import()` paths; it does not run
-a compiler or resolve package aliases. Both follow direct links only. Imports of deleted files
+`src/` layouts (exact package paths take precedence over `src/` aliases). The `script-dir` provider
+covers scripts and test files that import a neighbour by bare name, because a script run directly
+has its own folder on `sys.path`: `import X`, `import X as Y`, `from X import Y` and comma lists
+resolve to `X.py` (or package `X/`) in the importer's own folder, unless that folder has an
+`__init__.py`. A name with no sibling file (standard library, third-party) stays unresolved; a file
+the AST provider already resolves keeps only its `high` row; other `sys.path` changes are not
+followed. The JS/TS provider resolves literal relative `import`, `export from`, `require` and
+`import()` paths; it does not run a compiler or resolve package aliases. Each provider follows
+direct links only. Imports of deleted files
 and former rename paths remain visible when a consumer still uses them. Nonliteral dynamic
 imports, multi-hop re-exports, runtime dispatch, generated code and actual test coverage are
 not inferred.
 
 Scanning is bounded to 2,000 source files, 64 MiB total and 512 KiB per file, with changed files
 considered first. Definition extraction and filename test hints consider at most 200 changed files
-each. `limit` rows disclose truncation, large/binary files and Python syntax errors.
+each. `limit` rows disclose truncation, large/binary files and Python syntax errors. Every changed
+file no import provider reads — shell scripts, hooks, Markdown, configuration, or source outside the
+scan — gets a `not-inspected` row, so silence never reads as "no impact".
 Source-file symlinks are not followed; a changed symlink remains in the Git delta, but its target
 is not read by the provider.
 The graph is deliberately a lightweight run artifact rather than a persistent repository-wide

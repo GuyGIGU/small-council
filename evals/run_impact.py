@@ -69,6 +69,22 @@ with tempfile.TemporaryDirectory() as folder:
     write(repo, "legacy_user.py", "from legacy import legacy_name\n")
     write(repo, "old.py", "def old_name():\n    return 1\n")
     write(repo, "old_user.py", "from old import old_name\n")
+    # A script folder whose entry point imports its neighbours by bare name (its folder is on
+    # sys.path when it runs); json, math and requests have no sibling file here.
+    write(repo, "tools/main.py", "import json\nimport math\nimport requests\nimport helper\nimport shared as sh\n"
+                                 "from settings_io import VALUE\nimport alpha, beta\nfrom sub import mod\n")
+    siblings = ("helper", "shared", "settings_io", "alpha", "beta", "sub/mod")
+    for name in siblings:
+        write(repo, f"tools/{name}.py", "VALUE = 1\n")
+    write(repo, "tools/sub/__init__.py", "")
+    write(repo, "lone/runner.py", "import lib\n")       # lone.lib exists only as the src/lone/lib.py alias
+    write(repo, "src/lone/lib.py", "VALUE = 1\n")
+    write(repo, "pkg/model.py", "import types\n")       # in a package, a bare name is absolute: stdlib types
+    write(repo, "pkg/types.py", "VALUE = 1\n")
+    write(repo, "src/solo.py", "VALUE = 1\n")
+    write(repo, "src/solo_user.py", "import solo\nfrom solo import VALUE\n")  # both providers agree
+    write(repo, "run.sh", "#!/bin/sh\necho one\n")
+    write(repo, "vendor/dep.py", "VALUE = 1\n")
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "baseline")
     base = git(repo, "rev-parse", "HEAD")
@@ -84,6 +100,14 @@ with tempfile.TemporaryDirectory() as folder:
     git(repo, "mv", "legacy.py", "renamed.py")
     git(repo, "rm", "-q", "old.py")
     write(repo, "new.py", "def new_name():\n    return 2\n")
+    for name in siblings:
+        write(repo, f"tools/{name}.py", "VALUE = 2\n")
+    write(repo, "src/solo.py", "VALUE = 2\n")
+    write(repo, "src/lone/lib.py", "VALUE = 2\n")
+    write(repo, "pkg/types.py", "VALUE = 2\n")
+    write(repo, "run.sh", "#!/bin/sh\necho two\n")
+    write(repo, "notes.md", "# Notes\n")
+    write(repo, "vendor/dep.py", "VALUE = 2\n")
     outside = Path(folder) / "outside.py"
     outside.write_text("def private_outside_symbol():\n    return 3\n", encoding="utf-8")
     try:
@@ -134,6 +158,39 @@ with tempfile.TemporaryDirectory() as folder:
           any(row[2] == "configuration" and row[5] == "low" for row in matching("surface", "config/settings.yaml")))
     check("impact: external packages are not invented as local dependencies",
           not any(row[2].startswith("sorted") for row in rows if row[0] == "dependency"))
+
+    def sibling_edge(target, line, text):
+        return (("dependency", "tools/main.py", target, "imports", f"script-dir:tools/main.py:{line}:{text}", "medium")
+                in rows and ("impact", target, "tools/main.py", "direct-importer", f"script-dir:tools/main.py:{line}",
+                             "medium") in rows)
+
+    check("impact: script-dir resolves `import X` to a sibling file, at medium confidence",
+          sibling_edge("tools/helper.py", 4, "import helper"), str(matching("impact", "tools/helper.py")))
+    check("impact: script-dir resolves `import X as Y`", sibling_edge("tools/shared.py", 5, "import shared"))
+    check("impact: script-dir resolves `from X import Y`",
+          sibling_edge("tools/settings_io.py", 6, "from settings_io import"))
+    check("impact: script-dir resolves every name in `import X, Y`",
+          sibling_edge("tools/alpha.py", 7, "import alpha") and sibling_edge("tools/beta.py", 7, "import beta"))
+    check("impact: script-dir resolves a sibling package's submodule", sibling_edge("tools/sub/mod.py", 8, "from sub import"))
+    check("impact: no edge for a name with no sibling file (json, math, requests)",
+          {row[2] for row in matching("dependency", "tools/main.py")} == {f"tools/{name}.py" for name in siblings},
+          str(matching("dependency", "tools/main.py")))
+    check("impact: script-dir matches only the importer's own folder, never a src/ alias",
+          not [row for row in rows if row[0] in ("dependency", "impact") and "lone/runner.py" in row[1:3]])
+    check("impact: script-dir skips package folders, where a bare import is absolute",
+          not [row for row in rows if row[0] in ("dependency", "impact") and "pkg/model.py" in row[1:3]])
+    solo = matching("impact", "src/solo.py", "src/solo_user.py")
+    check("impact: an import python-ast resolves is not repeated as a medium sibling edge",
+          len(solo) == 2 and all(row[4].startswith("python-ast:") and row[5] == "high" for row in solo), str(solo))
+    unread = {row[1]: row for row in rows if row[0] == "limit" and row[3] == "not-inspected"}
+    check("impact: every changed file no provider reads gets a limit row (shell, Markdown, YAML)",
+          all(path in unread and unread[path][2] == "-" and unread[path][5] == "high"
+              for path in ("run.sh", "notes.md", "config/settings.yaml")), str(sorted(unread)))
+    check("impact: a changed source file outside the import scan gets a limit row", "vendor/dep.py" in unread)
+    check("impact: scanned, deleted and renamed source files get no not-inspected row",
+          not set(unread) & {"pkg/math.py", "web/util.ts", "tools/helper.py", "old.py", "renamed.py"}, str(sorted(unread)))
+    check("impact: the summary line counts the files not inspected",
+          f", {4 + has_symlink} not inspected -> impact.tsv" in first.stdout, first.stdout)
     if has_symlink:
         check("impact: source symlinks are not followed outside the repository",
               bool(matching("change", "linked.py")) and not matching("symbol", "linked.py") and
@@ -160,6 +217,30 @@ with tempfile.TemporaryDirectory() as folder:
         check("impact CLI: explicit refresh uses the saved baseline",
               refreshed.returncode == 0 and "impact:" in refreshed.stdout and graph.is_file(),
               refreshed.stdout + refreshed.stderr)
+
+# Real history: in this range scripts/status.py, history.py and tune.py import their neighbours
+# after putting their own folder on sys.path, and the helper and a hook change too. A shallow
+# clone (CI's default checkout) lacks these commits, so there the check is skipped, not failed.
+RANGE = ("132dc3715053cefdac3b587a652681b8e50f853c", "869d5cf1b0dbd2c493a6401498e7c42e40e44eac")
+if all(run(ROOT, "git", "cat-file", "-e", sha + "^{commit}").returncode == 0 for sha in RANGE):
+    with tempfile.TemporaryDirectory() as folder:
+        clone = Path(folder) / "range"
+        git(ROOT, "clone", "-q", "--shared", "--no-checkout", str(ROOT), str(clone))
+        git(clone, "checkout", "-q", "--detach", RANGE[1])
+        output = Path(folder) / "impact.tsv"
+        ran = run(clone, sys.executable, str(ENGINE), "--root", str(clone), "--base", RANGE[0], "--output", str(output))
+        real = table(output)[1] if ran.returncode == 0 else []
+        edges = {(row[1], row[2]) for row in real
+                 if row[0] == "dependency" and row[4].startswith("script-dir:") and row[5] == "medium"}
+        check("impact: real history yields status->cockpit, history->cockpit/ledger, tune->history/ledger",
+              {("scripts/status.py", "scripts/cockpit.py"), ("scripts/history.py", "scripts/cockpit.py"),
+               ("scripts/history.py", "scripts/ledger.py"), ("scripts/tune.py", "scripts/history.py"),
+               ("scripts/tune.py", "scripts/ledger.py")} <= edges, ran.stdout + ran.stderr + str(sorted(edges)))
+        check("impact: real history names bin/council and hooks/session-start.sh as not inspected",
+              {("limit", "bin/council", "not-inspected"), ("limit", "hooks/session-start.sh", "not-inspected")}
+              <= {(row[0], row[1], row[3]) for row in real}, ran.stdout + ran.stderr)
+else:
+    print("[SKIP] impact: real-history check needs commits 132dc37 and 869d5cf (absent from a shallow clone)")
 
 passed = sum(ok for _, ok, _ in results)
 for name, okay, detail in results:
