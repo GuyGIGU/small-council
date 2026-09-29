@@ -70,26 +70,18 @@ Run checks on their own; never hide refusals through `| tail`/`| head` (Challeng
 `council` does the bookkeeping. It is on PATH while the plugin is enabled; if it isn't, call it as
 `bash "${CLAUDE_PLUGIN_ROOT}/bin/council"`.
 
-| Command | Use it to |
-|---|---|
-| `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one · carry one on in this session (see Resume) |
-| `council run plan check` · `run plan show` | validate the run's routing, context, budgets and verification contract · show those decisions plainly |
-| `council route recommend --task "<summary>"` | inspect an advisory size, risk, seat archetypes, verification and budget before opening a run; use `--classic` for the fixed comparison path (see `${CLAUDE_PLUGIN_ROOT}/references/adaptive-routing.md`) |
-| `council run events show` · `run events check` | inspect or validate the run's mechanical event history (`events.tsv`); see `${CLAUDE_PLUGIN_ROOT}/references/event-stream.md` |
-| `council state key=value …` | update the run's state header: phase, next, size, deliverable |
-| `council seat <slug> <state> [agent=… tokens=… agents=…]` | record a worker's state, and once per finished agent run its usage: the id the tool returned, the notification's figure as given, a Workflow's agent count (`${CLAUDE_PLUGIN_ROOT}/references/run-accounting.md`); prints the progress line to relay |
-| `council index [--base <ref>]` · `council impact` | build the change index and, when Python 3.8+ is available, the bounded `impact.tsv` graph · refresh that graph after code changes (see `${CLAUDE_PLUGIN_ROOT}/references/impact-graph.md`) |
-| `council context build <seat> [--expand PATH …]` · `council context show <seat>` | after `brief.md`, select a seat's context at its validated run-plan level · inspect its path and selection metrics (see `${CLAUDE_PLUGIN_ROOT}/references/precision-context.md`); optional Python 3.8+, with brief-only fallback |
-| `council evidence build` · `evidence check` · `evidence show` | index synthesis claims, support states, provenance and verifier links in run-local `claims.jsonl`; rebuild after Challenge, then check for missing or stale links (see `${CLAUDE_PLUGIN_ROOT}/references/evidence-model.md`); optional Python 3.8+ |
-| `council repair record <task> <gate>` · `repair show|check [task]` | record and inspect a build's bounded gate-repair trail without running a gate or changing code (see `${CLAUDE_PLUGIN_ROOT}/references/repair-loop.md`); optional Python 3.8+ |
-| `council gate <name> [-- '<command>']` · `council gate --all --at grounding` (or `verify`) | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved. From `--all`, **exit 4 = NOTHING WAS CHECKED** — no gate ran; say so, never report it as a pass. From a single gate, 4 is that command's own exit code |
-| `council changed [--glob '<pat>'] [--each] -- <cmd>` | run `<cmd>` over just the files this change touches — committed, staged, unstaged and new; exit 0 when none matched, so a newly fitted check is green on day one |
-| `council collect` · `council check` | check the seat files (and a war room's debate.md) · check citations, origin and request quotes — and, in a build, each fix's proof: did the before-check really fail, did the after-check really pass, is a test saved |
-| `council ask save [slug]` | file the run's ask.md — the user's words — under `.council/asks/`, redacting secrets; records `ask=` |
-| `council fingerprint check` · `council memory select` · `council prior` | a changed stack · the memory entries in scope · earlier council work on these paths |
-| `council memory propose claim\|repair <id>` · `memory accept\|reject F-<n> --user-said "…"` | at Learn: draft an observed failure from the run's verified record under `## Proposed` · file the user's answer in their words; optional Python 3.8+ |
-| `council status [--widget\|--line]` · `council correct <seat> …` | the run in plain words for the user: a widget card, one notification line, or text ending with the terminal view's command · lay an exact, evidenced figure over a seat's record |
-| `council ledger` · `council ledger advice` · `council map status` · `council doctor` · `council tui` · `council history` · `council tune` | each seat's track record · what that record can support, with advice only past a bar · map freshness · drift scan with a fix per finding · a read-only terminal view of the run, for the user · every run's cost, estimate accuracy and catches, a rate only past five runs · proposals from that record, applied only with the user's words |
+For command syntax and purposes, use council help and
+`${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`. The stage doctrine says when to run each
+command. Keep these rules here because they apply to every run:
+
+- `council route recommend` is advisory before a run opens; record final choices in the plan.
+  `council run plan check` validates that plan before Brief, Build or any worker starts.
+- `council impact` adds an optional `impact.tsv` beside the change index. `council context build`
+  adds opt-in `contexts/` after `brief.md`; it does not replace the brief.
+- `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
+  It needs optional Python 3.8+. `council repair record` leaves a bounded trail in `repairs.jsonl`.
+- Run checks on their own. `council gate --all` exit 4 means NOTHING WAS CHECKED: never report
+  that as a pass. A single gate's exit 4 is that command's own exit code.
 
 Commands act on the one in-progress run on this working tree. With a second one open
 (`--alongside`), pass `--run <folder>` every time; the helper never guesses.

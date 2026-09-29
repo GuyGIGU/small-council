@@ -64,6 +64,7 @@ for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"),
              ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
+             ("references", "helper-commands.md"),
              ("references", "precision-context.md"), ("references", "evidence-model.md"),
              ("references", "repair-loop.md"),
              ("scripts", "impact.py"), ("scripts", "context.py"), ("scripts", "evidence.py"),
@@ -81,6 +82,7 @@ check("layout: no per-skill manifest.json", not any(os.path.isfile(os.path.join(
 
 skill = {s: read("skills", s, "SKILL.md") for s in SKILLS}
 core = skill["context-core"]
+helper_reference = read("references", "helper-commands.md")
 doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
@@ -97,6 +99,9 @@ for i, law in enumerate(LAWS, 1):
 pos = [core.find(f"`{d}`") for d in DOCTRINE]
 check("kernel: the stage table lists all ten doctrine files, in order", -1 not in pos and pos == sorted(pos), str(pos))
 check("kernel: points at the doctrine folder", "${CLAUDE_PLUGIN_ROOT}/references/doctrine/" in core)
+check("kernel: moved command table remains available from its pointer",
+      "${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md" in core and
+      "| Command | Use it to |" in helper_reference and "council help" in helper_reference)
 check("kernel: the sentence naming NOTHING WAS CHECKED calls it never a pass (wording; drill D24 is the behaviour)",
       never_a_pass(core, "NOTHING WAS CHECKED"))
 check("02-prepare: the sentence naming Exit 4 calls it not a pass (wording)", never_a_pass(doctrine["02-prepare.md"], "Exit 4"))
@@ -243,7 +248,8 @@ for c in sorted(known):
     check(f"helper: '{c}' is dispatched in main", re.search(rf"^\s+{c}\)", cli, re.MULTILINE) is not None)
 texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
          "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
-         "references/war-room.md": warroom, "references/guardrails.md": guardrails}
+         "references/war-room.md": warroom, "references/guardrails.md": guardrails,
+         "references/helper-commands.md": helper_reference}
 flag_src = cli[cli.find("main() {"):] + cli[cli.find("cmd_changed() {"):cli.find("cmd_changed() {") + 2000]
 flags = {alt.split("=")[0]                  # case patterns may list several: --run|--base=*)
          for alts in re.findall(r"^\s+((?:--[a-z][a-z-]*(?:=\*)?\|)*--[a-z][a-z-]*(?:=\*)?)\)", flag_src, re.MULTILINE)
@@ -428,6 +434,7 @@ for s in SKILLS:
     check(f"{s}: ≤ 500 lines", skill[s].count("\n") <= 500, str(skill[s].count("\n")))
     check(f"{s}: description ≤ 600 chars", len(description(skill[s])) <= 600, str(len(description(skill[s]))))
 check("kernel: ≤ 14,000 chars (read on every run)", len(core) <= 14000, str(len(core)))
+check("kernel: ≤ 11,000 chars after moving command reference", len(core) <= 11000, str(len(core)))
 for label, t in [("worker", worker), ("verifier", verifier)]:
     check(f"{label}: ≤ 8,000 chars", len(t) <= 8000, str(len(t)))
 

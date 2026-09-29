@@ -11,11 +11,13 @@ read at the start of a long run fades by its end; a rule read at the moment of a
 `01-convene.md` · `02-prepare.md` · `03-assign.md` · `04-brief.md` · `05-work.md` · `06-collect.md` ·
 `07-judge.md` · `08-challenge.md` · `09-deliver.md` · `10-learn.md`
 
-The laws, the stage index, the helper and the file layout live in `skills/context-core/SKILL.md`.
+The laws, stage index and essential helper rules live in `skills/context-core/SKILL.md`.
+The full command-purpose table lives in `helper-commands.md`; `council help` gives exact syntax.
 Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is council-init.
 
 ## Run contracts
 
+`helper-commands.md` lists the helper commands by purpose without loading that table on every run.
 `adaptive-routing.md` documents the optional pre-run recommendation and its limits.
 `run-plan.md` defines the checked decision state for a run. `event-stream.md` defines the
 append-only record of CLI-observable actions. `impact-graph.md` defines the optional run-local

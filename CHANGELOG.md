@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format is based on
 - Opening a run warns when the configured project memory exceeds about 25 KB; the status card flags it too.
 
 ### Changed
+- The always-loaded core instructions are shorter; the full helper command table lives in `references/helper-commands.md`.
 - `council status --line` gives one short owner notification at a blocking question, stopped build,
   agent/token limit or completion; `- notifications: off` suppresses it.
 - Closed runs now have a final status card, text view and JSON block for the filed request,

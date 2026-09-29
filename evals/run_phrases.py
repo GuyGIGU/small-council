@@ -21,7 +21,8 @@ def read(*parts):
 
 doctrine_dir = os.path.join(ROOT, "references", "doctrine")
 TEXTS = {
-    "kernel+doctrine": read("skills", "context-core", "SKILL.md") + "\n" + "\n".join(
+    "kernel+doctrine": read("skills", "context-core", "SKILL.md") + "\n" +
+        read("references", "helper-commands.md") + "\n" + "\n".join(
         read("references", "doctrine", f) for f in sorted(os.listdir(doctrine_dir)) if f.endswith(".md")),
     "worker": read("agents", "council-worker.md"),
     "verifier": read("agents", "council-verifier.md"),
