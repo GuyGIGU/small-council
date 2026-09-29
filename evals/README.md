@@ -119,8 +119,11 @@ python evals/run_impact.py   # needs Python 3.8+, bash and git for the CLI hando
 ```
 
 Uses temporary repositories to check committed/staged/unstaged/untracked changes, renames and
-deletions, Python AST and literal JS/TS imports, likely test links, deterministic TSV, and the
-`council index` → `impact.tsv` handoff. This is not a claim of runtime coverage.
+deletions, Python AST, sibling-script and literal JS/TS imports, likely test links, `not-inspected`
+limit rows for files no provider reads, deterministic TSV, and the `council index` → `impact.tsv`
+handoff. With full Git history it also graphs a real range of this repository (`132dc37..869d5cf`,
+where helper scripts import their neighbours); a shallow clone skips that check. This is not a
+claim of runtime coverage.
 
 ## 6. Context evals — do seat packs stay relevant, small, and safe?
 
@@ -269,6 +272,12 @@ run closes; and every file of the run and the council home byte-for-byte unchang
 - **The widget.** Every record value escaped. No network, and one inline script. The state is given in
   words, not colour alone. The snapshot time is carried. A long run stays under 16 KB with capped
   lists. Reading writes nothing.
+- **The stop at the limit.** No go, a go that covers the next agent, a used-up go, torn or garbage
+  rows, the ceiling, a closed run and values too large for bash: the card, text, `--line` and JSON
+  say "stopped" or "your go", and read the same as `cap_standing` and `council cap` on each folder.
+- **The desktop pet** (`council pet`, `scripts/pet.py`), with no window: it imports without a display;
+  the design's paths keep their shapes; each status reading gets its pose and bubble; argument,
+  no-tkinter and no-display refusals are one line; one pet per project, and `--stop` closes it.
 
 `python evals/run_history.py` checks history across runs (`council history`, `scripts/history.py`):
 counts always, but a median, share or ratio only once five runs (not items) carry its data; a build's

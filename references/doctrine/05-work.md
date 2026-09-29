@@ -2,6 +2,8 @@
 
 If `council status` reports it needs optional Python 3.8+, relay `council run status` instead:
 it gives the run's phase and cost line without Python.
+When the user asks to see the pet, run `council pet`: it opens the desktop pet and returns at once
+(`council pet --stop` closes it). Never open it unasked.
 
 The seats work in parallel, each in its own window. You dispatch, then wait.
 

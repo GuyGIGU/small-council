@@ -198,6 +198,9 @@ def event_text(event, snap):
         return "Went past the run's token estimate"
     if kind == "run.ceiling_passed":
         return "Went past the owner's token ceiling"
+    if kind == "run.cap_allowed":
+        until = re.search(r"(?:^|;)until=([0-9]{1,9})(?:;|$)", event.get("detail") or "")
+        return "Your go: up to {} agent runs".format(until.group(1)) if until else "Your go was recorded"
     return None                          # context builds and other bookkeeping stay out of the main view
 
 
@@ -276,29 +279,84 @@ def usage_of(snap):
             "corrected_seats": tokens.get("corrected_seats", [])}
 
 
-def agent_cap(snap, run_path):
-    """The run's agent ceiling, as the helper reads it: the plan's agent cap, else the project's
-    configured cap (`- agent cap: N` in council.config.md), else 10."""
-    value = str(snap["plan"].get("agent-cap") or "").strip()
-    if re.fullmatch(r"[0-9]{1,6}", value) and int(value) > 0:
-        return int(value)
+# --- the stop at the limit, read as the helper reads it (bin/council: run_agent_cap, run_budget_value,
+# cap_allowed_until and cap_standing) — the hook refuses agents on the helper's reading, so the card
+# must say the same thing. references/run-accounting.md, "The stop at the limit".
+INTMAX = 2 ** 63 - 1    # the largest whole number bash's test reads; a comparison with more fails, and stops nothing
+
+
+def plan_budget(run_path, field):
+    """The last `budget run <field>` row's value in run-plan.tsv, spaces, tabs and carriage returns
+    removed ('' when there is none)."""
+    value = ""
+    for line in cockpit.text_of(Path(run_path) / "run-plan.tsv", run_path).split("\n"):
+        cells = line.split("\t")
+        if cells[:3] == ["budget", "run", field]:
+            value = cells[3] if len(cells) > 3 else ""
+    return re.sub(r"[ \t\r]", "", value)
+
+
+def budget_value(run_path, field):
+    """A run-wide budget as a whole number, or None: missing, not a number, too large for bash, or a
+    zero ceiling (an estimate may be 0)."""
+    value = plan_budget(run_path, field)
+    if not re.fullmatch(r"[0-9]+", value) or int(value) > INTMAX:
+        return None
+    return int(value) if field == "estimated-tokens" or int(value) > 0 else None
+
+
+def configured_cap(home):
+    """The project's `- agent cap: N` (the first such line of council.config.md), else 10."""
     try:
-        config = (run_path.parent.parent / "council.config.md").read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        config = ""
-    found = re.search(r"(?m)^[ \t]*-[ \t]*agent cap:[ \t]*([0-9]{1,6})", config)
-    return int(found.group(1)) if found and int(found.group(1)) > 0 else 10
+        config = (Path(home) / "council.config.md").read_bytes().decode("utf-8", errors="replace")
+    except (OSError, TypeError):
+        return 10
+    for line in config.split("\n"):
+        found = re.match(r"[ \t\n\r\f\v]*-[ \t\n\r\f\v]*agent cap:[ \t\n\r\f\v]*([0-9]+)", line)
+        if found:
+            return int(found.group(1)) if 0 < int(found.group(1)) <= INTMAX else 10
+    return 10
 
 
-def spend_of(snap, usage):
+def run_agent_cap(run_path, home=None):
+    """The run's agent ceiling: its plan's budget/run/agent-cap, else the configured cap."""
+    value = plan_budget(run_path, "agent-cap")
+    if value in ("", "0") or not re.fullmatch(r"[0-9]+", value):
+        return configured_cap(home if home is not None else Path(run_path).parent.parent)
+    return int(value)
+
+
+def allowed_until(run_path):
+    """The user's latest go (council cap allow): the until of the last readable row of
+    cap-allowances.tsv (at, used, n, until, said) — agent runs may start below that count. A torn or
+    garbage row is passed over; None when no go is on record."""
+    until = None
+    for n, line in enumerate(cockpit.text_of(Path(run_path) / "cap-allowances.tsv", run_path).split("\n")):
+        cells = line.split("\t")
+        if n and len(cells) >= 4 and re.fullmatch(r"[0-9]{1,9}", cells[3]):
+            until = int(cells[3])
+    return until
+
+
+def cap_standing(snap, run_path, home=None):
+    """Where the run stands, as the helper's cap_standing computes it: agent runs used, the cap, known
+    tokens, the ceiling, the user's go, over and stopped. Over: at the cap (the next agent would pass
+    it) or past the ceiling. Stopped: over, and no go of the user's covers the next agent. A value
+    bash's test can't read never stops anything."""
+    agents = (snap.get("usage") or {}).get("agents") or {}
+    used = agents["total"] if agents.get("total") is not None else (agents.get("at_least") or 0)
+    tokens = ((snap.get("usage") or {}).get("tokens") or {}).get("known") or 0
+    cap = run_agent_cap(run_path, home)
+    ceiling = budget_value(run_path, "token-ceiling")
+    until = allowed_until(run_path)
+    over = (cap <= INTMAX and used >= cap) or (ceiling is not None and tokens <= INTMAX and tokens > ceiling)
+    return {"agent_runs": used, "agent_cap": cap, "tokens": tokens, "ceiling": ceiling, "allowed_until": until,
+            "over": over, "stopped": over and (until is None or used >= until)}
+
+
+def spend_of(snap, usage, run_path):
     """Compare only known exact token counts with the run's planned estimate and ceiling."""
-    plan = snap.get("plan") or {}
-    def planned(field):
-        value = str(plan.get(field) or "").strip()
-        return (int(value) if re.fullmatch(r"[0-9]{1,12}", value)
-                and (field == "estimated-tokens" or int(value) > 0) else None)
-
-    estimate, ceiling = planned("estimated-tokens"), planned("token-ceiling")
+    estimate, ceiling = budget_value(run_path, "estimated-tokens"), budget_value(run_path, "token-ceiling")
     known = usage["tokens_known"]
     if estimate is None and ceiling is None:
         message = ""
@@ -487,7 +545,7 @@ def closing_of(snap, run_path, usage, check_text, attention):
 
 
 # --- the reading ----------------------------------------------------------------------------------------------
-def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
+def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     run = snap["run"]
     status = (run.get("status") or "").split(" ")[0]
@@ -541,19 +599,31 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
     if status == "paused":
         attention.append({"kind": "paused", "severity": 1, "text": "The run is paused. Ask to resume it when you're ready."})
     usage = usage_of(snap)
-    usage.update(spend_of(snap, usage))
-    cap = agent_cap(snap, run_path)
-    used = usage["agent_runs"] if usage["agent_runs"] is not None else usage["agent_runs_at_least"]
+    usage.update(spend_of(snap, usage, run_path))
+    limit = cap_standing(snap, run_path, home)
+    cap, used = limit["agent_cap"], limit["agent_runs"]
     usage["agent_cap"] = cap
     if used and usage["basis"] == "complete":
         usage["text"] += " (limit {})".format(cap)
     elif used:
         usage["agent_runs_text"] += " (limit {})".format(cap)
+    # The stop holds only while the run is in progress (council cap, the agent gate); a go the user
+    # gave is said as such, so "stopped, waiting for your go" never reads like "over, on your go".
+    held = open_run and limit["stopped"]
+    if held:
+        go = "Stopped at the limit — waiting for your go."
+    elif open_run and limit["over"] and limit["allowed_until"] is not None:
+        go = "Your go allows up to {}.".format(plural(limit["allowed_until"], "agent run"))
+    else:
+        go = ""
+    limit.update({"stopped": held, "text": go})
+    usage["limit"] = limit
     if used and used > cap:
         many = ("" if usage["agent_runs"] is not None else "at least ") + plural(used, "agent run")
         if open_run:
-            attention.append({"kind": "cap", "severity": 2, "text": (
-                "This run has used {}, over its limit of {}. More should start only after you say so.".format(many, cap))})
+            attention.append({"kind": "cap", "severity": 2 if held else 1, "text": (
+                "This run has used {}, over its limit of {}. {}".format(
+                    many, cap, go or "More should start only after you say so."))})
         else:
             attention.append({"kind": "cap", "severity": 1, "text": "This run used {}, over its limit of {}.".format(many, cap)})
     known = usage["tokens_known"]
@@ -561,9 +631,11 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
         attention.append({"kind": "estimate", "severity": 1,
                           "text": "Token use is over the run's estimate."})
     if usage["ceiling"] and known > usage["ceiling"]:
-        attention.append({"kind": "ceiling", "severity": 2 if open_run else 1,
-                          "text": ("Token use is over the run's ceiling. More should start only after you say so."
+        attention.append({"kind": "ceiling", "severity": (2 if held else 1) if open_run else 1,
+                          "text": ("Token use is over the run's ceiling. " + (go or "More should start only after you say so.")
                                    if open_run else "The run used more tokens than its ceiling.")})
+    if go and not any(a["kind"] in ("cap", "ceiling") for a in attention):     # exactly at the cap
+        attention.append({"kind": "stop", "severity": 1, "text": "Agent limit reached ({}). {}".format(cap, go)})
     if snap["memory"].get("proposed"):
         attention.append({"kind": "memory", "severity": 1, "text": "{} for your yes or no.".format(
             plural(snap["memory"]["proposed"], "drafted lesson waits", "drafted lessons wait"))})
@@ -723,18 +795,12 @@ def text(status, tui_commands=()):
 def notification_line(status):
     """A short plain line for one owner notification, not a progress report."""
     run, state = status["run"], status["state"]
-    priority = ("blocked", "waiting", "cap", "ceiling")
+    priority = ("blocked", "waiting", "cap", "ceiling", "stop")
     top = next((item for kind in priority for item in status["attention"] if item["kind"] == kind), None)
     if state["key"] == "completed":
         message = "Run finished. See the closing card for the deliverable and next steps."
     elif top:
         message = top["text"]
-    elif run["status"] == "in-progress" and (
-            status["usage"]["agent_runs"] if status["usage"]["agent_runs"] is not None
-            else status["usage"]["agent_runs_at_least"]) >= status["usage"]["agent_cap"]:
-        message = "Agent limit reached ({}). Ask before starting more.".format(status["usage"]["agent_cap"])
-    elif state["key"] == "interrupted":
-        message = state["summary"]
     else:
         message = state["summary"]
     line = "{} council: {}".format(run["project"] or "Project", message)
@@ -937,7 +1003,7 @@ def main():
         return 2
     if args.line and notifications_off(args.home or args.run.parent.parent):
         return 0
-    reading = interpret(cockpit.snapshot(args.run, args.home, 40), now)
+    reading = interpret(cockpit.snapshot(args.run, args.home, 40), now, home=args.home)
     if args.json:
         print(json.dumps(reading, indent=2, sort_keys=True))
     elif args.widget:
