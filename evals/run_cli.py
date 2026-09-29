@@ -1003,6 +1003,13 @@ with tempfile.TemporaryDirectory() as tmp:
           and not os.path.exists(os.path.join(old_stop, "events.tsv")), "\n".join(rows) + out + err)
     code, out, err = council(stop, "cap", "check", "--session", "s1")
     check("cap check: with both runs covered — exit 0", code == 0 and not out, out + err)
+    absurd = new_repo(tmp, "agent-stop-absurd")        # a cap bash can't compare: the gate never fails closed
+    write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n")
+    _, absurd_run, _ = council(absurd, "run", "open", "council-review")
+    append(os.path.join(absurd_run.strip(), "run-plan.tsv"), "budget\trun\tagent-cap\t99999999999999999999999\tunreadable\n")
+    council(absurd, "seat", "w1", "done", "agent=a1", "tokens=5000")
+    code, out, err = council(absurd, "cap", "check")
+    check("cap check: a cap too large to compare never stops an agent — exit 0", code == 0 and not out, out + err)
 
     # Memory: scopes and anchors
     conv_text = ("# Conventions\n## Accepted Patterns (AP) — intentional; never flag these\n"

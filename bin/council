@@ -1012,8 +1012,8 @@ cap_standing() {
   case "$tokens" in ''|*[!0-9]*) tokens=0 ;; esac
   ceiling="$(run_budget_value "$run" token-ceiling)"
   upto="$(cap_allowed_until "$run")"
-  [ "$used" -lt "$cap" ] || over=1
-  if [ -n "$ceiling" ] && [ "$tokens" -gt "$ceiling" ]; then over=1; fi
+  if [ "$used" -ge "$cap" ] 2>/dev/null; then over=1; fi                   # a value test can't read never stops an agent
+  if [ -n "$ceiling" ] && [ "$tokens" -gt "$ceiling" ] 2>/dev/null; then over=1; fi
   if [ "$over" = 1 ] && { [ -z "$upto" ] || [ "$used" -ge "$upto" ]; }; then stopped=1; fi
   printf '%s %s %s %s %s %s %s\n' "$used" "$cap" "$tokens" "$(dash "$ceiling")" "$(dash "$upto")" "$over" "$stopped"
 }
