@@ -44,10 +44,12 @@ Write <abs run>/seats/<slug>.md, then return one line.
   `agents=<agent_count> tokens=<subagent_tokens>`. A seat you did yourself: `done agents=0`. It prints a progress line — relay it to the user as one short line: "3 of 5
   seats in — Security, Structure, Tests · ~210k tokens so far".
 - **The agent cap.** If `council seat` says the run has used its cap, start no more agents — no
-  re-dispatch, diagnosis worker or extra verifier — until the user says go. If it says the run is
-  over its cap, tell the user in one line how many agent runs it used against the cap.
+  re-dispatch, diagnosis worker or extra verifier — until the user says go. The next agent will be
+  refused until their go is recorded: `council cap allow <n> --user-said "<their words>"`. If it says
+  the run is over its cap, tell the user in one line how many agent runs it used against the cap.
 - **The token ceiling.** If `council seat` says the run passed the owner's token ceiling, start
-  nothing more until the user says go. Report the known usage and ceiling in one short line.
+  nothing more until the user says go. Report the known usage and ceiling in one short line. The
+  next agent will be refused until their go is recorded with `council cap allow`.
 - **Notify when the owner is needed.** Right after setting `council state waiting="…"`, or when an
   agent cap or token ceiling stops further work, run `council status --line`. If it prints a line
   and `PushNotification` is available, send that line once with the tool. Never notify for routine

@@ -42,8 +42,8 @@ declares `budget/<slug>/agent-runs` (1 to 1000; 1 when absent). The selected wor
 agent runs must fit both the plan's agent cap and the project's configured cap. During the run the
 helper counts the agent runs actually recorded (`references/run-accounting.md`): once they reach the
 cap, `council seat` tells the Chair to ask the user before starting more; the first time they pass
-it, it records `run.cap_passed` and the status card says so. The helper cannot stop an agent from
-starting — it hears of one only afterwards — so asking first is the Chair's job.
+it, it records `run.cap_passed` and the status card says so. From the cap on, a hook refuses the next
+agent until the user's go is recorded with `council cap allow` (`references/run-accounting.md`).
 
 Exactly one Chair must be selected. Solo selects no delegated agents; Squad selects at least one,
 and Full selects at least four. Independent or adversarial verification requires a selected
