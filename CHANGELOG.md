@@ -8,10 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- `council pet`: a small pumpkin-ghost on your desktop that shows how the council run is going; ask the Chair to show the pet.
 - The impact graph lists each changed file it can't read (shell, hooks, Markdown, config) as "not inspected", and its summary counts them.
 
 ### Changed
 
+- The status card, text, `--line` and JSON (`usage.limit`) say whether new agents are stopped at the limit or allowed on your go.
 - CI runs the free suites side by side (`evals/run_all.py`, the helper suite in groups); every check still runs.
 
 ### Fixed
