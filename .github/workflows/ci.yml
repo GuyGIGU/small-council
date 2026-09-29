@@ -38,76 +38,10 @@ jobs:
           git --version
           awk --version 2>/dev/null | head -n 1 || awk -W version 2>/dev/null | head -n 1 || echo "awk: $(command -v awk) (BSD)"
 
-      # Every check below runs even when an earlier one failed, so one run shows every failing
-      # suite (the job still fails if any does).
-      - name: Validate plugin
+      # One step runs every suite: several at a time (the helper suite split into its groups), with the
+      # ones that time the helper or race its locks run alone first. Every suite runs even when another
+      # fails; the step fails if any does. Each suite's output is a collapsible group in the log, and a
+      # summary table (result, time, checks per suite) ends the log and the run's summary page.
+      - name: Evals (every suite, several at a time; see evals/run_all.py)
         if: ${{ !cancelled() }}
-        run: python scripts/quick_validate.py
-
-      - name: Structural evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_structural.py
-
-      - name: Helper evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_cli.py
-
-      - name: Impact evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_impact.py
-
-      - name: Context evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_context.py
-
-      - name: Context delivery pilot (byte accounting, no model calls)
-        if: ${{ !cancelled() }}
-        run: python evals/run_context_pilot.py
-
-      - name: Evidence model evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_evidence.py
-
-      - name: Repair loop evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_repair.py
-
-      - name: Memory evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_memory.py
-
-      - name: Seat learning evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_seats.py
-
-      - name: Run cockpit evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_tui.py
-
-      - name: Status and accounting evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_status.py
-
-      - name: Run history evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_history.py
-
-      - name: Finding outcomes evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_outcomes.py
-
-      - name: Tuning evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_tune.py
-
-      - name: Benchmark harness self-test (no model calls)
-        if: ${{ !cancelled() }}
-        run: python evals/bench.py self-test
-
-      - name: Hook evals
-        if: ${{ !cancelled() }}
-        run: python evals/run_hook.py
-
-      - name: Phrase checks (advisory — never fails)
-        if: ${{ !cancelled() }}
-        run: python evals/run_phrases.py
+        run: python evals/run_all.py

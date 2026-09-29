@@ -10,6 +10,10 @@ All notable changes to this project are documented here. The format is based on
 
 - The impact graph lists each changed file it can't read (shell, hooks, Markdown, config) as "not inspected", and its summary counts them.
 
+### Changed
+
+- CI runs the free suites side by side (`evals/run_all.py`, the helper suite in groups); every check still runs.
+
 ### Fixed
 
 - The impact graph now finds scripts that import a file sitting next to them (medium confidence).
