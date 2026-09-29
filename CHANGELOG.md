@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-09-29
+
+**TL;DR:** a pumpkin-ghost desktop pet shows how a run is going; the card says whether new agents are
+stopped or allowed on your go; the impact graph finds scripts' neighbours; CI takes half as long.
+
 ### Added
 
 - `council pet`: a small pumpkin-ghost on your desktop that shows how the council run is going; ask the Chair to show the pet.
@@ -14,11 +19,19 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 - The status card, text, `--line` and JSON (`usage.limit`) say whether new agents are stopped at the limit or allowed on your go.
-- CI runs the free suites side by side (`evals/run_all.py`, the helper suite in groups); every check still runs.
+- CI runs the free suites side by side (`evals/run_all.py`, the helper suite in groups): Windows takes
+  about 15 min instead of 32, and every check still runs.
 
 ### Fixed
 
 - The impact graph now finds scripts that import a file sitting next to them (medium confidence).
+
+### Upgrade notes
+
+- Nothing to do. `council status --json` gains a `usage.limit` block and `impact.tsv` gains
+  `not-inspected` rows; neither schema version changes.
+- On an open run at its limit, the card now reads "Stopped at the limit — waiting for your go", or
+  "Your go allows up to N agent runs" once the go is recorded.
 
 ## [0.15.0] — 2026-09-29
 
