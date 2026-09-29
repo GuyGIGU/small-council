@@ -397,7 +397,12 @@ check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_
 cfg, conv, mp = read("references", "templates", "council.config.md"), read("references", "templates", "conventions.md"), read("references", "templates", "map.md")
 check("template config: last-verified stamp", "last-verified:" in cfg)
 check("template config: run preferences", "## Run preferences" in cfg and "approve without asking: up to squad" in cfg and "agent cap: 10" in cfg)
-check("template config: context packs start off", "- context packs: off" in cfg)
+check("template config: experimental routing options start off",
+      "- context packs: off" in cfg and "- seat models: off" in cfg)
+check("model routing: plan, doctrine and ADR state the opt-in boundary",
+      "seat/<slug>/model" in read("references", "run-plan.md") and
+      "seat models: on" in read("references", "doctrine", "03-assign.md") and
+      os.path.isfile(os.path.join(ROOT, "docs", "design", "model-routing-adr.md")))
 check("04-brief: packs are built only when opted in, brief-only is the normal path",
       "Context packs are opt-in" in doctrine["04-brief.md"] and "context packs: on" in doctrine["04-brief.md"])
 check("template config: roster has slugs and surface markers", "| Seat | Slug | Lens | Surface | Reference | Recast note |" in cfg)

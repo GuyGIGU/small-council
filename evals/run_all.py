@@ -34,6 +34,7 @@ SUITES = [
     ("Validate plugin", ["scripts/quick_validate.py"], "shared"),
     ("Structural evals", ["evals/run_structural.py"], "shared"),
     ("Helper evals", ["evals/run_cli.py"], "groups"),
+    ("Model routing evals", ["evals/run_model_routing.py"], "shared"),
     ("Impact evals", ["evals/run_impact.py"], "shared"),
     ("Context evals", ["evals/run_context.py"], "shared"),
     ("Context delivery pilot (byte accounting, no model calls)", ["evals/run_context_pilot.py"], "shared"),

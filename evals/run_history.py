@@ -36,12 +36,14 @@ def write(path, text):
 
 def make_run(home, name, status="complete", mode="council-review", size="squad", estimate="200000",
              seats=(("hunt", "done", 60000), ("verify-1", "done", 20000)), gates=(("tests", 0),),
-             repairs=(), claims=(), events=True, plan=True, older=False):
+             repairs=(), claims=(), events=True, plan=True, older=False,
+             models=(("hunt", "sonnet"), ("verify-1", "inherit"))):
     run = home / "runs" / name
     write(run / "session-state.md", "status: {}\nmode: {}\nphase: deliver\n## Decisions so far\n".format(status, mode))
     if plan:
         write(run / "run-plan.tsv", "kind\tid\tfield\tvalue\treason\nrun\trun\tsize\t{}\tr\n"
-              "budget\trun\testimated-tokens\t{}\tr\n".format(size, estimate))
+              "budget\trun\testimated-tokens\t{}\tr\n".format(size, estimate)
+              + "".join("seat\t{}\tmodel\t{}\tplanned model\n".format(s, m) for s, m in models))
     if older:     # a record from before usage.tsv: its token figures were never checked for units
         write(run / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n"
               + "".join("{}\t{}\ta\t{}\t-\t-\t1\n".format(s, st, t) for s, st, t in seats))
@@ -122,6 +124,20 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
     check("five completed runs: median cost, agents and tokens per agent are shown",
           cost["tokens_per_run"]["enough"] and cost["tokens_per_run"]["median"] == 80000 and cost["agents_per_run"]["median"] == 2
           and cost["tokens_per_agent"]["median"] == 40000 and "median ~80k tokens" in out, (cost, out))
+    check("history groups exact token counts by planned model and explains the limits",
+          cost["tokens_by_planned_model"] == {
+              "inherit": {"tokens": 100000, "seats": 5, "runs": 5},
+              "sonnet": {"tokens": 300000, "seats": 5, "runs": 5}}
+          and "sonnet: 300000 tokens" in out and "inherit: 100000 tokens" in out
+          and "not money" in out and "inherited seats' actual model is unknown" in out, (cost, out))
+    plain = Path(temporary) / "plain" / ".council"
+    for n in range(5):
+        make_run(plain, "2026-09-{:02d}-100000-review".format(n + 1), models=())
+    plain_data = history.history(plain)
+    plain_out = history.render(plain_data)
+    check("plans with no model row count as inherit, and the text says nothing about models (routing unused)",
+          plain_data["cost"]["tokens_by_planned_model"] == {"inherit": {"tokens": 400000, "seats": 10, "runs": 5}}
+          and "planned model" not in plain_out, (plain_data["cost"], plain_out))
     check("estimates: agents' tokens over the plan's estimate less the Chair's 20k (80k of 180k)",
           data["estimates"]["actual_over_estimate"]["median"] == 0.444 and "0.44× the plan's estimate less the Chair" in out,
           out)
@@ -218,7 +234,7 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
             parsed = json.loads(out)
         except ValueError:
             parsed = {}
-        check("helper: --json is the same report as data", code == 0 and parsed.get("schema") == "council.history/3"
+        check("helper: --json is the same report as data", code == 0 and parsed.get("schema") == "council.history/4"
               and parsed["runs"]["total"] == 2, out[:300] + err)
         refusals = [(council(repo, *w), want) for w, want in (
             (("history", "--run", "x"), "does not take --run"), (("history", "x"), "history doesn't take 'x'"),

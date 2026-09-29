@@ -144,6 +144,13 @@ configured_worker_estimate() {
   return 0
 }
 
+# Model overrides are opt-in. Missing or invalid settings leave routing off.
+configured_seat_models() {
+  local cfg="$(council_home)/council.config.md" setting
+  setting="$(sed -n 's/^[[:space:]]*-[[:space:]]*seat models:[[:space:]]*\([[:alpha:]]*\)[[:space:]]*$/\1/p' "$cfg" 2>/dev/null | head -n 1)"
+  [ "$setting" = on ] && printf 'on' || printf 'off'
+}
+
 # Runs, newest first, tab-separated, "-" for an empty value:
 #   dir mode phase code-root updated status actual session
 # $2 caps how many are listed; $3 = open (in-progress or paused, however old) | all (the newest).
@@ -1249,10 +1256,13 @@ cmd_run_status() {
 # it directly and old shells can check it without jq or another runtime. QUIET=1 suppresses only the
 # success line; errors always remain visible.
 run_plan_validate() {
-  local run="$1" plan="$2" expected_mode max_cap
+  local run="$1" plan="$2" expected_mode max_cap seat_models
   expected_mode="$(field mode "$run/session-state.md")"
   max_cap="$(configured_agent_cap)"
-  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" QUIET="${QUIET:-0}" awk -F'\t' '
+  seat_models="$(configured_seat_models)"
+  # A closed run already dispatched under the setting of its day; today's on/off doesn't judge it.
+  case "$(field status "$run/session-state.md")" in complete|abandoned) seat_models=closed ;; esac
+  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" SEAT_MODELS="$seat_models" QUIET="${QUIET:-0}" awk -F'\t' '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function problem(line, msg) {
       errors++
@@ -1304,6 +1314,12 @@ run_plan_validate() {
         } else if (fld == "role") {
           if (v != "chair" && v != "worker" && v != "verifier") problem(NR, "seat role must be chair, worker or verifier")
           role[id] = v
+        } else if (fld == "model") {
+          if (v != "inherit" && v != "sonnet" && v != "haiku") problem(NR, "seat model must be inherit, sonnet or haiku")
+          model[id] = v; model_line[id] = NR
+        } else if (fld == "purpose") {
+          if (v != "mapping" && v != "survey" && v != "other") problem(NR, "seat purpose must be mapping, survey or other")
+          purpose[id] = v; purpose_line[id] = NR
         } else problem(NR, "unknown seat field: " fld)
       } else if (kind == "context") {
         if (fld != "level") problem(NR, "unknown context field: " fld)
@@ -1373,6 +1389,16 @@ run_plan_validate() {
       for (id in ctx) if (!(id in disp) || disp[id] != "selected") problem(at["context" SUBSEP id SUBSEP "level"], "context belongs only to a selected seat: " id)
       for (id in calls) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "a seat budget belongs only to a selected seat: " id)
       for (id in aruns) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "agent-runs"], "a seat budget belongs only to a selected seat: " id)
+      for (id in purpose) if (!(id in disp) || disp[id] != "selected" || role[id] != "worker")
+        problem(purpose_line[id], "a purpose belongs only to a selected worker seat: " id)
+      for (id in model) {
+        if (!(id in disp) || disp[id] != "selected") problem(model_line[id], "a model choice belongs only to a selected seat: " id)
+        else if (model[id] != "inherit") {
+          if (role[id] != "worker") problem(model_line[id], "only worker seats can use sonnet or haiku; " id " has role " role[id])
+          if (ENVIRON["SEAT_MODELS"] == "off") problem(model_line[id], "seat model overrides are off; enable seat models: on in council.config.md")
+          if (purpose[id] != "mapping" && purpose[id] != "survey") problem(model_line[id], "sonnet or haiku needs seat/" id "/purpose = mapping or survey")
+        }
+      }
       if (chairs != 1) problem(0, "select exactly one Chair; found " chairs + 0)
       size = val["run" SUBSEP "run" SUBSEP "size"]
       verification = val["verification" SUBSEP "run" SUBSEP "level"]
@@ -1422,7 +1448,8 @@ cmd_run_plan() {
     show)
       run_plan_validate "$run" "$plan" || return 1
       PLAN="$plan" awk -F'\t' '
-        $0 !~ /^#/ && NF == 5 { v[$1 SUBSEP $2 SUBSEP $3] = $4; why[$1 SUBSEP $2 SUBSEP $3] = $5; if ($1 == "seat" && $3 == "disposition") order[++n] = $2 }
+        $0 !~ /^#/ && NF == 5 { v[$1 SUBSEP $2 SUBSEP $3] = $4; why[$1 SUBSEP $2 SUBSEP $3] = $5; if ($1 == "seat" && $3 == "disposition") order[++n] = $2
+                                if ($1 == "seat" && $3 == "model" && $4 != "inherit") routed = 1 }
         END {
           print "Run plan — " v["run" SUBSEP "run" SUBSEP "id"]
           print "  mode: " v["run" SUBSEP "run" SUBSEP "mode"] " · size: " v["run" SUBSEP "run" SUBSEP "size"]
@@ -1438,6 +1465,9 @@ cmd_run_plan() {
               line = line " · context " v["context" SUBSEP id SUBSEP "level"]
               calls = v["budget" SUBSEP id SUBSEP "tool-calls"]; if (calls != "") line = line " · " calls " tool calls"
               ar = v["budget" SUBSEP id SUBSEP "agent-runs"]; if (ar != "") line = line " · " ar " agent runs"
+              purpose = v["seat" SUBSEP id SUBSEP "purpose"]; if (purpose != "") line = line " · purpose " purpose
+              model = v["seat" SUBSEP id SUBSEP "model"]; if (model == "") model = "inherit"
+              if (routed) line = line " · model " model    # only once some seat asks for another model
             }
             print line " — " why["seat" SUBSEP id SUBSEP "disposition"]
           }

@@ -14,6 +14,7 @@ deploy target, domain. Name the one thing that must never break.>
 - approve without asking: up to squad
 - agent cap: 10
 - context packs: off
+- seat models: off
 <!-- Add `- notifications: off` here to suppress `council status --line` and council phone alerts.
      Without that line, four owner-facing moments may notify when PushNotification is available:
      a blocking question, a stopped build, a cap/ceiling stop, and run completion. -->
@@ -21,6 +22,7 @@ deploy target, domain. Name the one thing that must never break.>
      second question; bigger runs always ask. "agent cap": agents per run, verifiers included.
      "context packs": off | on — on builds a seat-specific evidence pack for each dispatched worker
      (experimental: it adds material and its benefit is unmeasured). Missing means off. Yours to change.
+     "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.
      "estimate per worker" (e.g. 150k) is added only by `council tune apply budget` on your words,
      from what this project's agents measure; the route budgets each agent with it, 80k without it. -->
 

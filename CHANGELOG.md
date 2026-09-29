@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- Optional, disabled-by-default model requests let mapping and survey workers use `sonnet` or `haiku`;
+  Chair and verifier seats continue to inherit the session model.
+- `council history` groups recorded tokens by planned model (once a run asks for one) and labels
+  inherited models as unknown; tokens are not a money measure. History JSON advances to
+  `council.history/4`.
+
 ## [0.16.1] — 2026-09-29
 
 **TL;DR:** a rare lost record, when two council calls record at the same moment, is fixed.
