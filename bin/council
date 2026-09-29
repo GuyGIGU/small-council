@@ -1598,6 +1598,30 @@ cmd_status() {
   "$@"
 }
 
+# The desktop pet (scripts/pet.py), only on the user's request: a small window that shows how this
+# tree's run is going, from `council status --json` every few seconds — it only reads. The window is
+# its own process (pythonw on Windows), so this returns at once and never holds up the caller; one pet
+# per working tree, and `council pet --stop` closes it. Its lock and pid live in the OS temp folder.
+cmd_pet() {
+  local py root bash_exe=""
+  py="$(impact_python)" || die "pet needs optional Python 3.8+ with tkinter; council status gives the same reading as text"
+  root="$(cd "$COUNCIL_PLUGIN_ROOT" 2>/dev/null && here)"
+  if command -v cygpath >/dev/null 2>&1; then bash_exe="$(cygpath -m "$BASH" 2>/dev/null)"; fi
+  case "$bash_exe" in
+    '') bash_exe="$BASH" ;;
+    */usr/bin/bash.exe) [ ! -f "${bash_exe%/usr/bin/bash.exe}/bin/bash.exe" ] \
+                          || bash_exe="${bash_exe%/usr/bin/bash.exe}/bin/bash.exe" ;;   # it sets up Git's tools
+  esac
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/pet.py" --project "$(this_tree)" --home "$(council_home)" \
+         --council "$root/bin/council" --bash "$bash_exe"
+  [ -z "${CLAUDE_CODE_SESSION_ID:-}" ] || set -- "$@" --session "$CLAUDE_CODE_SESSION_ID"
+  [ "$PET_DEMO" -eq 0 ] || set -- "$@" --demo
+  [ "$PET_STILL" -eq 0 ] || set -- "$@" --still
+  [ -z "$PET_POSE_ARG" ] || set -- "$@" --pose "$PET_POSE_ARG"
+  [ -z "$PET_EXIT_ARG" ] || set -- "$@" --exit-after "$PET_EXIT_ARG"
+  if [ "$PET_STOP" -eq 1 ]; then "$@" --stop; else "$@" --launch; fi
+}
+
 # Literal quoting for a command the user will paste: nothing inside is expanded or run.
 sh_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 ps_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"; }
@@ -5498,6 +5522,10 @@ council — the Small Council's helper (bash + git)
                                          what needs the user, where the evidence is; --widget prints
                                          a snapshot card for a chat widget host; --line gives a short
                                          notification sentence (optional Python 3.8+)
+  council pet [--demo | --pose <name>] [--still] [--exit-after <s>]
+                                         a desktop pet that shows how this tree's run is going — only
+                                         when the user asks; opens a small window and returns at once
+                                         (optional Python 3.8+ with tkinter) · pet --stop closes it
   council doctor                         drift scan; every finding comes with a fix
 
 Run-scoped commands act on the one in-progress run on this working tree; otherwise pass --run <folder>
@@ -5527,13 +5555,14 @@ main() {
   ROUTE_SURFACES=()
   CONTEXT_EXPANDS=()
   MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0 WATCH=0 WIDGET=0 LINE=0 PREVIEW=0
+  PET_STOP=0 PET_DEMO=0 PET_STILL=0 PET_POSE_ARG="" PET_EXIT_ARG=""
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
   pos=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said)
+      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said|--pose|--exit-after)
                    flag="${1#--}"
                    [ $# -ge 2 ] || case "$flag" in
                      run|code-root) die "--$flag needs a folder" ;;
@@ -5542,10 +5571,10 @@ main() {
                      *) die "--$flag needs a value" ;;
                    esac
                    val="$2"; shift 2 ;;
-      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*)
+      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --alongside|--all|--classic|--json|--watch|--widget|--line|--preview) flag="${1#--}"; val=1; shift ;;
-      --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*) die "${1%%=*} takes no value" ;;
+      --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still) flag="${1#--}"; val=1; shift ;;
+      --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
                    [ $# -eq 0 ] || { pos+=("$1"); shift; }
                    continue ;;
@@ -5572,6 +5601,8 @@ main() {
       budget-tokens) ROUTE_BUDGET_ARG="$val" ;; classic) ROUTE_CLASSIC=1 ;;
       expand) CONTEXT_EXPANDS+=("$val") ;;
       scope) MEMORY_SCOPE_ARG="$val" ;; user-said) MEMORY_SAID_ARG="$val" ;;
+      stop) PET_STOP=1 ;;          demo) PET_DEMO=1 ;;           still) PET_STILL=1 ;;
+      pose) PET_POSE_ARG="$val" ;; exit-after) PET_EXIT_ARG="$val" ;;
     esac
     FLAGS="$FLAGS $flag"
   done
@@ -5710,6 +5741,9 @@ main() {
              [ $((WIDGET + JSON_OUT + LINE)) -le 1 ] || die "status takes --widget, --json or --line, not together"
              [ "$PREVIEW" -eq 0 ] || [ "$WIDGET" -eq 1 ] || die "--preview labels a widget: use it with --widget"
              cmd_status ;;
+    pet)     takes_flags pet stop demo still pose exit-after; no_words pet ${1+"$@"}
+             [ -z "$RUN_ARG" ] || die "pet follows this session's run on this working tree; it does not take --run"
+             cmd_pet ;;
     correct) takes_flags correct; cmd_correct ${1+"$@"} ;;
     doctor)  takes_flags doctor; no_words doctor ${1+"$@"}; cmd_doctor ;;
     version) takes_flags version; no_words version ${1+"$@"}; say "council $COUNCIL_VERSION" ;;

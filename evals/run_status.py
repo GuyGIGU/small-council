@@ -2,14 +2,16 @@
 """Focused, no-model checks for run accounting and the plain-language status: `council seat`,
 `council correct`, `council status [--widget | --json]`, scripts/status.py and the cockpit's reading.
 
-Two halves:
+Three parts:
 - Accounting, through the helper. A token count is one number, stored as whole tokens. A repeated or
   resumed report never adds twice. A Workflow reports its agent count. Missing and older figures stay
   unknown, never zero. A correction keeps the original and its evidence.
 - Status, from hand-made run folders read at a fixed time. It covers every state the widget shows
   (starting, running, waiting, a failing check, recovery, blocked, completed, interrupted, stale and
   unknown). A recovered failure is no current problem. A long run stays compact, and a record never
-  reaches the widget unescaped. Reading a run writes nothing.
+  reaches the widget unescaped. Reading a run writes nothing. The stop at the limit and the user's go
+  read the same on the card as in the helper (`cap_standing`, `council cap`).
+- The desktop pet (`council pet`, scripts/pet.py), never with a window: CI has no display.
 """
 
 import hashlib
@@ -30,6 +32,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(ROOT / "scripts"))
 import cockpit  # noqa: E402
 import history  # noqa: E402
+import pet  # noqa: E402  (the desktop pet: imported without a display, as CI has none)
 import status  # noqa: E402
 
 checks = []
@@ -479,6 +482,157 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "over": True, "stopped": False, "text": go6}, lim["go covers, over"]["usage"]["limit"])
     check("stop: reading the stop and the go writes nothing", fingerprint(stopbase) == before)
 
+    # --- the desktop pet (scripts/pet.py) — no window: CI has no display ----------------------------------------
+    check("pet: scripts/pet.py imports without a display, and without loading tkinter", "tkinter" not in sys.modules)
+    boxes, marks = {}, {}
+    for pose in pet.POSES:
+        steps = pet.shapes(pose)
+        pts = [p for s in steps if s[0] in ("polygon", "line") for p in s[1]]
+        pts += [(s[1][0] + dx * s[1][2], s[1][1] + dy * s[1][2]) for s in steps if s[0] == "oval" for dx, dy in ((-1, -1), (1, 1))]
+        boxes[pose] = tuple(round(f(p[i] for p in pts), 1) for i, f in ((0, min), (1, min), (0, max), (1, max)))
+        marks[pose] = (sorted(s[2] for s in steps if s[0] == "text"), sum(1 for s in steps if s[0] == "oval"))
+    body = pet.path_points(pet.BODY)
+    half_moon = pet.path_points("M31 49 h14 a7 7 0 0 1 -14 0 Z")[0][0]
+    check("pet: the design's paths are sampled into shapes of the same extent — the body 20..80 by 20..88, a "
+          "half-moon eye below its line, everything inside the 100 x 100 box",
+          len(body) == 1 and body[0][1] and tuple(round(f(p[i] for p in body[0][0]), 1) for i, f in (
+              (0, min), (1, min), (0, max), (1, max))) == (20.0, 20.0, 80.0, 88.0)
+          and min(p[1] for p in half_moon) == 49.0 and round(max(p[1] for p in half_moon), 1) == 56.0
+          and all(0 <= b[0] and 0 <= b[1] and b[2] <= 100 and b[3] <= 100 for b in boxes.values()), (boxes, body[0][0][:4]))
+    check("pet: each pose keeps its marks — 'z z' asleep, the '?' badge needing you, five confetti dots when done",
+          marks == {"asleep": (["z", "z"], 0), "working": ([], 0), "needs-you": (["?"], 5), "stopped": ([], 0),
+                    "done": ([], 5)}, marks)
+
+    def pet_view(folder):
+        return pet.view({"kind": "status", "status": json.loads(json.dumps(reading(folder)))})
+
+    runs_at = base / ".council" / "runs"
+    seen = {"no go": pet_view(stops["no go"]), "go covers": pet_view(stops["go covers"]),
+            "ceiling": pet_view(stops["ceiling"]), "waiting": pet_view(runs_at / "waiting"),
+            "blocked": pet_view(runs_at / "blocked"), "running": pet_view(runs_at / "running"),
+            "done": pet_view(closing_base / ".council" / "runs" / "closing"), "paused": pet_view(runs_at / "paused"),
+            "abandoned": pet_view(runs_at / "abandoned"), "stale": pet_view(runs_at / "stale"),
+            "unreadable": pet_view(runs_at / "broken"), "no run": pet.view({"kind": "none"}),
+            "error": pet.view({"kind": "error", "note": "Can't read the run right now"}),
+            "garbage": pet.view({"kind": "status", "status": {"run": [], "usage": 3}})}
+    want = {"no go": ("stopped", "4 of 4 agents used · your go?", "warning"),
+            "go covers": ("working", "1 of 1 seats in · 50k", "neutral"),
+            "ceiling": ("stopped", "627k of 600k tokens · your go?", "warning"),
+            "waiting": ("needs-you", "Approve the 3-seat plan (~300k tokens)?", "accent"),
+            "blocked": ("needs-you", "Build stopped · your decision?", "accent"),
+            "running": ("working", "1 of 2 seats in · 50k", "neutral"),
+            "done": ("done", "Review done · 2 findings confirmed", "success"),
+            "paused": ("asleep", "Run paused", "neutral"), "abandoned": ("asleep", "Run stopped early", "neutral"),
+            "stale": ("asleep", "Quiet for 3 h 10 min", "neutral"),
+            "unreadable": ("asleep", "Can't read the run's records", "neutral"),
+            "no run": ("asleep", "No run open", "neutral"), "error": ("asleep", "Can't read the run right now", "neutral"),
+            "garbage": ("asleep", "Can't read the run right now", "neutral")}
+    check("pet: each reading of council status --json gets its pose and bubble — stopped at the limit (Part A's field), "
+          "needs you, working, done, asleep, and a calm fallback for anything unreadable",
+          seen == want, {k: (seen[k], want[k]) for k in want if seen.get(k) != want[k]})
+    long_ask = pet_view(long_wait)
+    check("pet: a long or marked-up question becomes one short plain bubble",
+          long_ask[0] == "needs-you" and len(long_ask[1]) <= 48 and long_ask[1].endswith("…")
+          and not re.search(r"[<>*\n]", long_ask[1]), long_ask)
+    rows = [(Path("r5"), "/elsewhere", "s-other"), (Path("r4"), "/tree", "s-other"), (Path("r3"), "/tree", ""),
+            (Path("r2"), "/elsewhere", "s-me"), (Path("r1"), "", "")]
+    check("pet: it follows the session's run, else this tree's run with no session, else any on this tree",
+          (pet.pick(rows, "/tree", "s-me"), pet.pick(rows, "/tree", "s-new"), pet.pick(rows, "/tree", ""),
+           pet.pick(rows[:1], "/tree", "s-me")) == (Path("r2"), Path("r3"), Path("r4"), None),
+          (pet.pick(rows, "/tree", "s-me"), pet.pick(rows, "/tree", "s-new"), pet.pick(rows, "/tree", "")))
+
+    follow_home = base / "follow" / ".council"
+    write(follow_home / "runs" / "2026-09-27-100000-review" / "session-state.md", "status: in-progress\nsession: s1\n## D\n")
+    canned = [{"run": {"status": "in-progress"}, "state": {"key": "running"}}]
+
+    class Canned(pet.Follower):
+        def helper(self, *words):
+            return 0, json.dumps(canned[0]), ""
+
+    follower = Canned("bash", "council", follow_home, str(base / "follow"), "s1", str(base / "follow"))
+    first = follower.read(now=1000.0)
+    write(follow_home / "runs" / "2026-09-27-100000-review" / "session-state.md", "status: complete\nsession: s1\n## D\n")
+    canned[0] = {"run": {"status": "complete", "mode_label": "Review"}, "state": {"key": "completed"}}
+    shown_done = follower.read(now=1001.0)
+    later = follower.read(now=1001.0 + pet.DONE_SECONDS + 1)
+    check("pet: a finished run stays on show as done for a while, then the pet goes back to sleep",
+          pet.view(first)[0] == "working" and pet.view(shown_done)[0] == "done" and later == {"kind": "none"},
+          (first, shown_done, later))
+
+    def pet_args(*argv):
+        try:
+            opts = pet.parse_args(list(argv))
+            return (opts.pose, opts.demo, opts.still, opts.exit_after)
+        except pet.UsageError as exc:
+            return str(exc)
+    parsed = {argv: pet_args(*argv) for argv in (("--pose", "sleepy"), ("--demo", "--pose", "done"), ("--stop", "--demo"),
+                                                 ("--exit-after", "0"), ("--exit-after", "nan"), ("--exit", "3"),
+                                                 ("--exit-after", "2.5", "--pose", "needs-you", "--still"), ("--demo",))}
+    check("pet: arguments — an unknown pose, --demo with --pose, --stop with anything, a bad --exit-after or an "
+          "abbreviation are refused, each in one line; good ones parse",
+          all(isinstance(parsed[a], str) and "\n" not in parsed[a] for a in list(parsed)[:6])
+          and "asleep, working, needs-you, stopped or done" in parsed[("--pose", "sleepy")]
+          and parsed[("--exit-after", "2.5", "--pose", "needs-you", "--still")] == ("needs-you", False, True, 2.5)
+          and parsed[("--demo",)] == (None, True, False, None), parsed)
+    same = pet.pet_files(base / "proj")["pid"] == pet.pet_files(str(base / "proj") + os.sep)["pid"]
+    check("pet: one pet per project — its files sit in the OS temp folder, keyed by the project path, never in .council/",
+          same and pet.pet_files(base / "proj")["pid"] != pet.pet_files(base / "other")["pid"]
+          and Path(pet.pet_files(base / "proj")["pid"]).parent == Path(tempfile.gettempdir())
+          and ".council" not in pet.pet_files(base / "proj")["pid"], pet.pet_files(base / "proj"))
+
+    fakes = base / "fake-tk"
+    write(fakes / "none" / "tkinter" / "__init__.py", "raise ImportError(\"No module named '_tkinter'\")\n")
+    write(fakes / "headless" / "tkinter" / "__init__.py", "class TclError(Exception):\n    pass\n\n\n"
+          "def Tk(*args, **kwargs):\n    raise TclError('no display name and no $DISPLAY environment variable')\n")
+    plain = {}
+    for kind in ("none", "headless"):
+        env = dict(os.environ, PYTHONPATH=str(fakes / kind))
+        done = subprocess.run([sys.executable, str(ROOT / "scripts" / "pet.py"), "--launch", "--demo", "--project",
+                               str(base / ("proj-" + kind))], capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", env=env, timeout=60)
+        plain[kind] = (done.returncode, done.stdout, done.stderr.strip())
+    check("pet: no tkinter, or no display — one plain line, exit 1, no traceback, nothing started",
+          plain["none"][0] == 1 and plain["none"][2].startswith("council: the pet needs Python's tkinter")
+          and plain["headless"][0] == 1 and plain["headless"][2].startswith("council: there is no screen")
+          and all(p[1] == "" and "\n" not in p[2] and "Traceback" not in p[2] for p in plain.values())
+          and not pet.running(base / "proj-none"), plain)
+
+    project = base / "proj-held"
+    holder = ("import os, sys, time\nsys.path.insert(0, {scripts!r})\nimport pet\n"
+              "files = pet.pet_files({project!r})\nlock = pet.Lock(files['lock'])\nassert lock.take()\n"
+              "open(files['pid'], 'w').write(str(os.getpid()))\nprint('ready', flush=True)\nstart = time.time()\n"
+              "while time.time() - start < 60 and not ({listens} and os.path.exists(files['stop'])):\n    time.sleep(0.05)\n"
+              "os.remove(files['pid'])\nlock.release()\n")
+
+    def hold(listens):
+        proc = subprocess.Popen([sys.executable, "-c", holder.format(scripts=str(ROOT / "scripts"), project=str(project),
+                                                                        listens=listens)],
+                                stdout=subprocess.PIPE, text=True)
+        proc.stdout.readline()
+        return proc
+
+    gentle = hold(True)
+    held = pet.running(project)
+    again = subprocess.run([sys.executable, str(ROOT / "scripts" / "pet.py"), "--launch", "--demo", "--project", str(project)],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    stopped_out = subprocess.run([sys.executable, str(ROOT / "scripts" / "pet.py"), "--stop", "--project", str(project)],
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    gentle_code = gentle.wait(timeout=10)
+    stubborn = hold(False)
+    forced = pet.stop_pet(project, grace=0.5)
+    stubborn_code = stubborn.wait(timeout=10)
+    none_out = subprocess.run([sys.executable, str(ROOT / "scripts" / "pet.py"), "--stop", "--project", str(project)],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    check("pet: while one runs, a second is refused; --stop asks it to close, ends one that doesn't, and says when none "
+          "is open — its lock, pid and stop files cleared",
+          held and again.returncode == 0 and "already on the desktop" in again.stdout
+          and stopped_out.returncode == 0 and stopped_out.stdout.strip() == "The pet is closed." and gentle_code == 0
+          and forced is True and stubborn_code != 0 and not pet.running(project)
+          and none_out.stdout.strip() == "No pet is open for this project."
+          and not os.path.exists(pet.pet_files(project)["pid"]) and not os.path.exists(pet.pet_files(project)["stop"]),
+          (held, again.stdout, again.stderr, stopped_out.stdout, stopped_out.stderr, gentle_code, forced, stubborn_code,
+           none_out.stdout))
+
     # --- history leaves out what it can't count ------------------------------------------------------------
     home = base / "hist"
     for i in range(5):
@@ -731,6 +885,37 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               and via["go covers"]["usage"]["limit"]["stopped"] is False and go6 in line_l,
               ([v.get("usage", {}).get("limit") for v in via.values()], line_l, err_l))
         check("status through the helper: reading the stop and the go writes nothing", fingerprint(stopbase / ".council") == before)
+
+        # --- council pet, through the helper — never a window here ---------------------------------------------
+        follower = pet.Follower(BASH, str(ROOT / "bin" / "council"), stopbase / ".council", str(stopbase), "", str(stopbase))
+        followed = follower.read()
+        followed_limit = followed.get("status", {}).get("usage", {}).get("limit", {})
+        check("pet: it follows this tree's newest open run through `council status --json` (the user's go included), "
+              "and reading writes nothing",
+              followed.get("kind") == "status" and followed["status"].get("run", {}).get("id") == "torn-row"
+              and followed_limit.get("allowed_until") == 6 and followed_limit.get("stopped") is False
+              and pet.view(followed)[0] in pet.POSES and fingerprint(stopbase / ".council") == before,
+              (followed.get("kind"), followed.get("detail"), followed.get("status", {}).get("run", {}).get("id"),
+               followed_limit, pet.view(followed)))
+        refused = [(council(stopbase, "pet", *w), w) for w in (
+            ("--pose", "sleepy"), ("now",), ("--run", "x"), ("--stop", "--demo"), ("--still=1",), ("--exit-after", "0"))]
+        check("pet: council pet refuses a bad pose, a word, --run, --stop with another option, a value on a switch and a "
+              "bad --exit-after — exit 2, one line, before any window",
+              all(c == 2 and e.strip() and "\n" not in e.strip() and "Traceback" not in e for (c, _, e), _ in refused),
+              [(w, c, e.strip()) for (c, _, e), w in refused])
+        code, out, err = council(stopbase, "pet", "--stop")
+        os.environ["PYTHONPATH"], saved = str(fakes / "none"), os.environ.get("PYTHONPATH")
+        try:
+            code_t, out_t, err_t = council(stopbase, "pet", "--demo")
+        finally:
+            if saved is None:
+                os.environ.pop("PYTHONPATH", None)
+            else:
+                os.environ["PYTHONPATH"] = saved
+        check("pet: council pet --stop with none open says so; without tkinter it says so in one line and exits non-zero",
+              code == 0 and out.strip() == "No pet is open for this project." and code_t == 1 and out_t == ""
+              and err_t.strip().startswith("council: the pet needs Python's tkinter") and "Traceback" not in err_t,
+              (code, out, err, code_t, out_t, err_t))
 
         rows_before = read(run / "seats.tsv")
         refused = [council(repo, "correct", *w) for w in (
