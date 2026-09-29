@@ -198,6 +198,20 @@ stops when the run closes. It only reads: leaving it open changes nothing. It ne
 `--run <folder>` when more than one run is open. Set `COUNCIL_ASCII=1` if your console shows boxes
 as garbage.
 
+**Desktop pet.** Ask the Chair to show the pet, and a small pumpkin-ghost sits on your desktop, on
+top of other windows, following this project's council run. A one-line bubble under it says what is
+happening:
+- **Asleep** — no run is open (or it is paused, or has gone quiet).
+- **Working** — the experts are at it: "2 of 4 seats in · 132k".
+- **Needs you** — it hops with a blue "?" when the run waits for your answer or a build stopped.
+- **Stopped at the limit** — a stern face: the run used its agent limit or token ceiling and waits
+  for your go.
+- **Done** — a big grin and confetti when the run finishes; then it goes back to sleep.
+
+Drag it wherever you like. To close it, right-click it and choose Close, or ask the Chair to close
+the pet (`council pet --stop`). It only reads the run, never changes it. It needs Python 3.8+ with
+tkinter, which most Python installs include.
+
 ## Precision context (0.12)
 
 After writing `<run>/brief.md`, `council context build <seat>` uses that selected seat's validated
@@ -260,7 +274,7 @@ hooks/                 hooks.json · session-start.sh · agent-gate.sh · seat-g
 bin/council            the helper
 references/            stage doctrine · seat docs · spec and test docs · roster catalog · templates
 evals/                 17 CI checks (see evals/README.md) · behavioral drills · benchmark and paid-suite fixtures
-scripts/               quick_validate · impact · context · evidence · repair · memory · ledger · cockpit · status · history · tune
+scripts/               quick_validate · impact · context · evidence · repair · memory · ledger · cockpit · status · pet · history · tune
 docs/design/           the design behind the current doctrine
 docs/validation/       automatic checks, real-use evidence and limits
 docs/roadmap-status.md implemented, tested, used and deferred work
@@ -275,7 +289,7 @@ python evals/run_structural.py     # is the design intact? laws, stages, command
 python evals/run_cli.py            # does the helper work? (needs bash + git)
 python evals/run_impact.py         # does the optional impact graph resolve direct relationships?
 python evals/run_hook.py           # do the hooks behave? (needs bash + git)
-python evals/run_status.py         # run accounting and the status widget (needs bash + git)
+python evals/run_status.py         # run accounting, the status widget and the desktop pet (needs bash + git)
 python evals/run_phrases.py        # advisory: are the field-tested rules still worded in?
 python evals/run_all.py            # every suite CI runs, several at a time
 ```
