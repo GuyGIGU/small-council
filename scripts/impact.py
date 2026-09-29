@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Optional, bounded impact provider for a Small Council run.
 
-The Git delta is authoritative. Python AST and literal relative JS/TS imports add direct
-relationships, not a complete call graph. Everything emitted is evidence-labelled TSV.
+The Git delta is authoritative. Python AST imports (plus bare names that match a sibling file in
+the importer's folder) and literal relative JS/TS imports add direct relationships, not a complete
+call graph. A changed file no provider reads gets a limit row. Everything emitted is
+evidence-labelled TSV.
 """
 
 import argparse
@@ -131,7 +133,16 @@ def python_module_names(path):
     return names
 
 
-def python_imports(path, content, modules):
+def from_targets(name, node, modules):
+    candidates = [name] if name else []
+    candidates.extend(".".join(filter(None, (name, alias.name))) for alias in node.names if alias.name != "*")
+    resolved = [candidate for candidate in candidates if candidate in modules]
+    # A submodule is more specific than its package; a symbol import resolves to the package file.
+    return {modules[candidate] for candidate in resolved
+            if candidate != name or not any(other.startswith(name + ".") for other in resolved)}
+
+
+def python_imports(path, content, modules, exact, packages):
     try:
         tree = ast.parse(content, filename=path)
     except SyntaxError:
@@ -139,11 +150,22 @@ def python_imports(path, content, modules):
     current = python_module(path)
     package = current if path.endswith("/__init__.py") else current.rpartition(".")[0]
     found = set()
+    # script-dir: a script run directly (or a test under pytest's default import mode) has its own
+    # folder on sys.path, so a bare name may be a sibling file. A package folder (with __init__.py)
+    # is not put there, only exact paths count (a src/ alias is not a sibling), a root file needs no
+    # prefix, and a name with no sibling file (stdlib, third-party) stays unresolved.
+    script_dir = package and str(PurePosixPath(path).parent) not in packages
+    sibling = package + "." if script_dir else None
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name in modules:
-                    found.add((modules[alias.name], f"import {alias.name}", node.lineno))
+                text = f"import {alias.name}"
+                target = modules.get(alias.name)
+                if target:
+                    found.add((target, text, node.lineno, "python-ast"))
+                near = exact.get(sibling + alias.name) if sibling else None
+                if near and near != target:
+                    found.add((near, text, node.lineno, "script-dir"))
         elif isinstance(node, ast.ImportFrom):
             if node.level:
                 parts = package.split(".") if package else []
@@ -152,13 +174,12 @@ def python_imports(path, content, modules):
                 name = ".".join(filter(None, (prefix, node.module or "")))
             else:
                 name = node.module or ""
-            candidates = [name] if name else []
-            candidates.extend(".".join(filter(None, (name, alias.name))) for alias in node.names if alias.name != "*")
-            resolved = [candidate for candidate in candidates if candidate in modules]
-            # A submodule is more specific than its package; a symbol import resolves to the package file.
-            for candidate in resolved:
-                if candidate != name or not any(other.startswith(name + ".") for other in resolved):
-                    found.add((modules[candidate], f"from {name or '.'} import", node.lineno))
+            text = f"from {name or '.'} import"
+            targets = from_targets(name, node, modules)
+            found.update((target, text, node.lineno, "python-ast") for target in targets)
+            if sibling and name and not node.level:
+                found.update((near, text, node.lineno, "script-dir")
+                             for near in from_targets(sibling + name, node, exact) - targets)
     return found
 
 
@@ -297,6 +318,18 @@ def build(root, base):
     ordered, omitted = source_paths(root, changes)
     if omitted:
         emit(rows, "limit", "scan", str(omitted), "files-omitted", f"first {MAX_FILES} source files scanned", "high")
+    # Silence must not read as "no impact": name each changed file no import provider reads.
+    scanned = set(ordered)
+    unread = 0
+    for path, (status, _) in changes.items():
+        if not path.endswith((".py",) + JS_EXTENSIONS):
+            reason = "no provider reads this file type; dependents unknown"
+        elif status != "D" and path not in scanned:
+            reason = "outside the import scan (excluded folder, link or file cap); importers unknown"
+        else:
+            continue
+        unread += 1
+        emit(rows, "limit", path, "-", "not-inspected", reason, "high")
     former_paths = {old: path for path, (status, old) in changes.items() if status == "R" and old != "-"}
     removed_paths = {path for path, (status, _) in changes.items() if status == "D"}
     affected_targets = set(changes) | set(former_paths)
@@ -308,6 +341,8 @@ def build(root, base):
             name = python_module(path)
             if name:
                 modules.setdefault(name, path)
+    exact = dict(modules)  # real paths only, before src/ aliases: what the script-dir provider may match
+    packages = {str(PurePosixPath(path).parent) for path in ordered if PurePosixPath(path).name == "__init__.py"}
     for path in module_paths:
         if path.endswith(".py"):
             for alias in python_module_names(path)[1:]:
@@ -325,15 +360,13 @@ def build(root, base):
             continue
         consumed += len(content.encode("utf-8", "replace"))
         if path.endswith(".py"):
-            found = python_imports(path, content, modules)
+            found = python_imports(path, content, modules, exact, packages)
             if found is None:
                 emit(rows, "limit", path, "-", "syntax-error", "Python AST provider skipped this file", "high")
                 continue
-            provider = "python-ast"
         else:
-            found = js_imports(path, content, universe)
-            provider = "js-literal-import"
-        for target, text, line in found:
+            found = {item + ("js-literal-import",) for item in js_imports(path, content, universe)}
+        for target, text, line, provider in found:
             if target != path:
                 imports.add((path, target, text, line, provider))
 
@@ -387,7 +420,7 @@ def build(root, base):
         for name in names:
             provider = "python-ast" if path.endswith(".py") else "js-diff-definition"
             emit(rows, "symbol", path, name, "changed-definition", provider, "high" if path.endswith(".py") else "medium")
-    return rows, len(changes), len(impacted), len(test_links)
+    return rows, len(changes), len(impacted), len(test_links), unread
 
 
 def main():
@@ -397,7 +430,7 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     root = args.root.resolve()
-    rows, changes, impacted, tests = build(root, args.base)
+    rows, changes, impacted, tests, unread = build(root, args.base)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=args.output.parent,
                                      prefix=".impact-", delete=False) as stream:
@@ -406,7 +439,8 @@ def main():
         for row in sorted(rows, key=lambda row: (row[0] != "schema", row)):
             stream.write("\t".join(row) + "\n")
     os.replace(temp, args.output)
-    print(f"impact: {changes} changed, {impacted} direct importer(s), {tests} linked test(s) -> impact.tsv")
+    print(f"impact: {changes} changed, {impacted} direct importer(s), {tests} linked test(s), "
+          f"{unread} not inspected -> impact.tsv")
 
 
 if __name__ == "__main__":

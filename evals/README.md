@@ -2,6 +2,15 @@
 
 Eight automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
 
+**Every free suite at once:** `python evals/run_all.py` is what CI runs on Ubuntu, Windows and macOS.
+It runs each suite as its own process with the command shown in its section below, several at a time
+(`--jobs N`, default: the number of CPUs), and the helper evals as their groups side by side. Suites
+and groups that time the helper or race its locks (the hook evals, the cockpit evals and the helper's
+`timing` group) run alone first, with nothing else running. Every suite runs even when another fails;
+each one's output is printed whole when it finishes, then a table of results, times and check counts,
+and it exits 1 if any suite failed. `--list` shows the jobs. A new `evals/run_*.py` must be added to
+its list, or the run fails, so no suite can be left out of CI.
+
 ## 1. Validation — will the plugin load?
 
 ```bash
@@ -71,6 +80,12 @@ on Windows Git Bash (2026-09-26), longer still inside WSL on a `/mnt/c` checkout
 as it finishes and any failures are repeated at the end — a quiet stretch is one slow command, not
 a hang (each call has a 120 s timeout that is reported as a failed check).
 
+Its checks come in blocks, and each block belongs to a group (`@part("…")` in the file). A group runs
+in one process and needs nothing from another, so `run_all.py` runs the groups side by side:
+`--list` prints them, `--group runs,gates` runs only those. With no options every group runs, in file
+order, as before. The `timing` group (six workers on one lock, a stale lock, speed limits) runs alone.
+A block left without a group stops the suite, so none can be skipped.
+
 ## 4. Hook evals — do the hooks behave?
 
 ```bash
@@ -101,8 +116,11 @@ python evals/run_impact.py   # needs Python 3.8+, bash and git for the CLI hando
 ```
 
 Uses temporary repositories to check committed/staged/unstaged/untracked changes, renames and
-deletions, Python AST and literal JS/TS imports, likely test links, deterministic TSV, and the
-`council index` → `impact.tsv` handoff. This is not a claim of runtime coverage.
+deletions, Python AST, sibling-script and literal JS/TS imports, likely test links, `not-inspected`
+limit rows for files no provider reads, deterministic TSV, and the `council index` → `impact.tsv`
+handoff. With full Git history it also graphs a real range of this repository (`132dc37..869d5cf`,
+where helper scripts import their neighbours); a shallow clone skips that check. This is not a
+claim of runtime coverage.
 
 ## 6. Context evals — do seat packs stay relevant, small, and safe?
 
