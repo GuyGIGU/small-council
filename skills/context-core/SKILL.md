@@ -88,7 +88,7 @@ Run checks on their own; never hide refusals through `| tail`/`| head` (Challeng
 | `council ask save [slug]` | file the run's ask.md — the user's words — under `.council/asks/`, redacting secrets; records `ask=` |
 | `council fingerprint check` · `council memory select` · `council prior` | a changed stack · the memory entries in scope · earlier council work on these paths |
 | `council memory propose claim\|repair <id>` · `memory accept\|reject F-<n> --user-said "…"` | at Learn: draft an observed failure from the run's verified record under `## Proposed` · file the user's answer in their words; optional Python 3.8+ |
-| `council status [--widget]` · `council correct <seat> …` | the run in plain words for the user: a widget card, or text ending with the terminal view's command · lay an exact, evidenced figure over a seat's record |
+| `council status [--widget\|--line]` · `council correct <seat> …` | the run in plain words for the user: a widget card, one notification line, or text ending with the terminal view's command · lay an exact, evidenced figure over a seat's record |
 | `council ledger` · `council ledger advice` · `council map status` · `council doctor` · `council tui` · `council history` · `council tune` | each seat's track record · what that record can support, with advice only past a bar · map freshness · drift scan with a fix per finding · a read-only terminal view of the run, for the user · every run's cost, estimate accuracy and catches, a rate only past five runs · proposals from that record, applied only with the user's words |
 
 Commands act on the one in-progress run on this working tree. With a second one open

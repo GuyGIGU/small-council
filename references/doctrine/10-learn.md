@@ -71,3 +71,6 @@ After `council run close`, show `council status --widget` once if `show_widget` 
 otherwise relay `council status`. This closing card adds to the chat summary from Deliver. It shows
 the filed request, deliverable, verdict counts, checks, cost and any actions left for the user.
 Do not show a new card for every progress line.
+For a completed run, also run `council status --line`; if it prints a line and `PushNotification`
+is available, send that line once. The project off switch suppresses the line. Do not send
+progress notifications.

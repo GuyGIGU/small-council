@@ -182,6 +182,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           r["state"]["key"] == "waiting" and r["attention"][0]["kind"] == "waiting"
           and "approve the 3-seat plan" in r["attention"][0]["text"] and not any(a["kind"] == "stale" for a in r["attention"]),
           (r["state"], r["attention"]))
+    notice = status.notification_line(r)
+    check("notification: a waiting question leads one plain line under 200 characters",
+          "Waiting for your answer" in notice and
+          "approve the 3-seat plan" in notice and len(notice) < 200 and "\n" not in notice, notice)
+    long_wait = make_run(base, "long-wait", extra_state="waiting: " + "*choose* <format> " * 35 + "\n")
+    notice = status.notification_line(reading(long_wait))
+    check("notification: long or marked-up questions are shortened to one plain line",
+          len(notice) < 200 and "\n" not in notice and "*" not in notice and "<" not in notice and
+          "..." == notice[-3:], notice)
 
     r = reading(make_run(base, "failing", seats=[v2("beck", "done", 50000, 1, 1)], gates=[("tests", 0, 30), ("lint", 1, 10)]))
     check("state: a check whose latest run failed, with no repair under way, is a failing check needing attention",
@@ -209,12 +218,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("state: a build stopped at the repair limit is blocked, and that comes first",
           r["state"]["key"] == "blocked" and r["attention"][0]["kind"] == "blocked"
           and "needs your decision" in r["attention"][0]["text"], (r["state"], r["attention"]))
+    check("notification: a blocked build leads with the stop", "build stopped" in status.notification_line(r),
+          status.notification_line(r))
 
     r = reading(make_run(base, "completed", status_value="complete", phase="learn",
                          seats=[v2("beck", "done", 50000, 1, 1)], gates=[("tests", 0, 30)],
                          extra_state="next: nothing\nclosed: {}\n".format(local(20))))
     check("state: a completed run says so, and shows no next step", r["state"]["key"] == "completed"
           and not r["progress"]["next"] and r["state"]["label"] == "Completed", r["state"])
+    check("notification: completion has one owner-facing line", "Run finished" in status.notification_line(r))
 
     closing_base = base / "closing"
     filed = closing_base / ".council" / "asks" / "filed.md"
@@ -326,6 +338,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           any(a["kind"] == "cap" and a["severity"] == 1 and "used 5 agent runs" in a["text"] for a in r["attention"]), r["attention"])
     r = reading(make_run(capbase, "at-cap", seats=[v2("wf", "done", 300000, 3, 3)]))
     check("cap: a run exactly at its cap is not flagged", not any(a["kind"] == "cap" for a in r["attention"]), r["attention"])
+    check("notification: reaching the cap gives an actionable line even before it is exceeded",
+          "Agent limit reached (3)" in status.notification_line(r), status.notification_line(r))
 
     spendbase = base / "spend"
     under = make_run(spendbase, "under", seats=[v2("wf", "done", 300000, 1, 1)])
@@ -543,9 +557,21 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("status: --widget prints one self-contained fragment; --json the same reading as data",
               code_w == 0 and widget_out.lstrip().startswith("<style>") and code_j == 0
               and json.loads(json_out)["schema"] == "council.run-status/1", (widget_out[:200], json_out[:200], err_w, err_j))
+        code_l, line_out, err_l = council(repo, "status", "--line")
+        check("status: --line prints a short plain owner notice through the helper",
+              code_l == 0 and len(line_out.strip()) < 200 and "\n" not in line_out.strip() and
+              "over its limit" in line_out, (code_l, line_out, err_l))
+        config_path = repo / ".council" / "council.config.md"
+        original_config = read(config_path)
+        write(config_path, original_config + "\n- notifications: off\n")
+        code_l, line_out, err_l = council(repo, "status", "--line")
+        check("status: project off switch makes --line print nothing", code_l == 0 and line_out == "",
+              (code_l, line_out, err_l))
+        write(config_path, original_config)
         check("status: reading a run — summary, widget or data — writes nothing", fingerprint(run) == before, "changed")
         refusals = [(council(repo, "status", *w), want) for w, want in (
-            (("--widget", "--json"), "not both"), (("--preview",), "use it with --widget"), (("now",), "doesn't take"),
+            (("--widget", "--json"), "not together"), (("--line", "--json"), "not together"),
+            (("--preview",), "use it with --widget"), (("now",), "doesn't take"),
             (("--watch",), "doesn't take --watch"))]
         check("status: flag mistakes are refused, each saying why", all(c == 2 and want in e for (c, _, e), want in refusals),
               [(c, e) for (c, _, e), _ in refusals])

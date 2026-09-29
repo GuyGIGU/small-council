@@ -40,6 +40,15 @@ records are named as unknown; the card does not fill them with zero. A snapshot 
 every recorded value is escaped in HTML. The Chair shows this card once after closing in Learn,
 alongside the chat summary already given in Deliver. A new real run has not yet exercised it.
 
+### Owner notifications (implemented; automatically tested, not yet seen on a phone)
+
+`council status --line` gives one plain sentence under 200 characters, led by an action needed for
+a blocking question, stopped build or agent/token limit, or by completion after a run closes. The
+Chair sends it once with `PushNotification` only if that tool is available. It sends no routine
+progress alerts. A project with `- notifications: off` in `.council/council.config.md` gets no line,
+so no alert. Tests cover the line and off switch; phone delivery still needs a real Remote Control
+session.
+
 ## Why
 
 Council work starts in chat, but a run could only be watched from a terminal, and its numbers could
