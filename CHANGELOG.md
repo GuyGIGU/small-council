@@ -22,8 +22,12 @@ All notable changes to this project are documented here. The format is based on
   (`budget/<seat>/agent-runs`), and the plan check counts them.
 - Reaching the cap, `council seat` tells the Chair to ask before starting more; passing it records
   `run.cap_passed`, and the status card flags it. The card shows each run's limit.
-### Fixed
+- Optional, disabled-by-default model requests let mapping and survey workers use `sonnet` or `haiku`;
+  Chair and verifier seats continue to inherit the session model.
+- `council history` groups recorded tokens by planned model and labels inherited models as unknown;
+  tokens are not a money measure. History JSON advances to `council.history/4`.
 
+### Fixed
 - Every token display rounds half up; bash progress and close lines use the same M form as Python.
 
 ## [0.14.0] — 2026-09-28

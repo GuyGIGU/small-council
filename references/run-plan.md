@@ -45,6 +45,11 @@ cap, `council seat` tells the Chair to ask the user before starting more; the fi
 it, it records `run.cap_passed` and the status card says so. The helper cannot stop an agent from
 starting — it hears of one only afterwards — so asking first is the Chair's job.
 
+An optional `seat/<slug>/model` row is `inherit`, `sonnet`, or `haiku`. Missing means `inherit`.
+Overrides require `- seat models: on` in `council.config.md`, and only selected worker seats may use
+`sonnet` or `haiku`; keep the Chair and verifier on `inherit`. Assign/Work permits these overrides
+only for mapping or survey work.
+
 Exactly one Chair must be selected. Solo selects no delegated agents; Squad selects at least one,
 and Full selects at least four. Independent or adversarial verification requires a selected
 `verifier`; a plan marked `self` cannot also select one. The Chair receives a context level but

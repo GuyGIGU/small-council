@@ -12,6 +12,8 @@ cockpit's read-only snapshot, and the seat ledger through the advice code. It re
   - repair trails and failure categories;
   - claim verdict totals;
   - seat evidence;
+  - exact recorded tokens grouped by the run plan's requested model (tokens are not money; inherited
+    seats' actual model is unknown);
   - missing or malformed data.
 - **Only when 5 runs carry the data:**
   - the median cost, agents and tokens per agent;
@@ -38,8 +40,8 @@ says how far the data is from the bar.
 
 ## Tests
 
-`evals/run_history.py`: 17 checks on Windows, 18 where symlinks can be made, after the review below
-(14 before). No model, about 3 s.
+`evals/run_history.py` checks history, and `evals/run_model_routing.py` checks the model plan rules.
+Both run without model calls or paid work.
 They check that:
 - no runs is said plainly;
 - four runs give counts and "too few (4 of 5 needed)", never a median;

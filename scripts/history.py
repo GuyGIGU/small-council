@@ -33,7 +33,7 @@ import cockpit  # noqa: E402  (the read-only run snapshot)
 import ledger   # noqa: E402  (seat evidence and advice)
 import outcomes as finding_outcomes  # noqa: E402  (read-only finding follow-up)
 
-SCHEMA = "council.history/3"
+SCHEMA = "council.history/4"
 MIN_RUNS = 5          # runs that carry a fact before a median, share or ratio over them is shown
 MAX_RUNS = 1000       # the most recent runs read
 SEAT_WINDOW = 20      # the runs of the ledger read for seat evidence, as council ledger advice reads them
@@ -122,6 +122,21 @@ def history(home):
             left_out[why] = left_out.get(why, 0) + 1
         else:
             costed.append(snap)
+    # Tokens are grouped by the plan's requested model, never inferred as the actual model used.
+    # Only fully costed runs are included, under the same evidence bar as run totals above.
+    by_planned_model = {}
+    for snap in costed:
+        planned = snap["plan"].get("seats", {})
+        for seat in snap["seats"]:
+            if not seat.get("executed") or seat.get("tokens") is None:
+                continue
+            model = planned.get(seat["slug"], {}).get("model") or "inherit"
+            entry = by_planned_model.setdefault(model, {"tokens": 0, "seats": 0, "runs": set()})
+            entry["tokens"] += seat["tokens"]
+            entry["seats"] += 1
+            entry["runs"].add(snap["run"]["id"])
+    model_usage = {model: {"tokens": entry["tokens"], "seats": entry["seats"], "runs": len(entry["runs"])}
+                   for model, entry in sorted(by_planned_model.items())}
     ratios = []
     for snap in costed:                  # agents' tokens against the plan's estimate less the Chair's share
         estimate = cockpit.number(snap["plan"].get("estimated-tokens")) - CHAIR_ESTIMATE
@@ -181,6 +196,7 @@ def history(home):
         "cost": {"tokens_per_run": spread([total_of(s) for s in costed]),
                  "agents_per_run": spread([runs_of(s) for s in costed]),
                  "tokens_per_agent": spread(agents),
+                 "tokens_by_planned_model": model_usage,
                  "left_out": dict(sorted(left_out.items()))},
         "estimates": {"actual_over_estimate": spread(ratios)},
         "gates": {name: {"runs": len(e["runs"]), "failed_runs": len(e["failed_runs"])} for name, e in sorted(gates.items())},
@@ -231,6 +247,10 @@ def render(data):
     lines.append("Tokens per agent (workers and verifiers): " + (
         "median {} (10–90%: {}–{})".format(k(w["median"]), k(w["p10"]), k(w["p90"]))
         if w["enough"] else too_few(w["n"], "completed runs with agents")))
+    if cost["tokens_by_planned_model"]:
+        lines.append("Tokens by planned model (not money; inherited seats' actual model is unknown): " + " · ".join(
+            "{}: {} tokens across {} seat(s), {} run(s)".format(model, info["tokens"], info["seats"], info["runs"])
+            for model, info in cost["tokens_by_planned_model"].items()))
     e = data["estimates"]["actual_over_estimate"]
     lines.append("Estimates: " + (
         "agents cost {:.2f}× the plan's estimate less the Chair's 20k, at the median (10–90%: {:.2f}–{:.2f}×)".format(

@@ -33,6 +33,9 @@ Give each seat exactly its slice, and each worker a budget.
    cap, and verification level only after checking them against what Prepare uncovered. If a
    recommendation changed, record the evidence and reason in the plan. Run
    `council run plan check`; fix every error before going on.
+   If `- seat models: on` is set in `council.config.md`, a selected mapping or survey worker may get
+   `seat/<slug>/model = sonnet` or `haiku`; otherwise omit the row (`inherit`). Keep the Chair and
+   verifier at `inherit`. A model choice is a request for dispatch, not proof of which model ran.
 8. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
    note="<reason>"` for every seat not called. The helper refuses to queue or start a seat the valid
    plan does not mark selected.

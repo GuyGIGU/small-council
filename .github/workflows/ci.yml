@@ -52,6 +52,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: python evals/run_cli.py
 
+      - name: Model routing evals
+        if: ${{ !cancelled() }}
+        run: python evals/run_model_routing.py
+
       - name: Impact evals
         if: ${{ !cancelled() }}
         run: python evals/run_impact.py

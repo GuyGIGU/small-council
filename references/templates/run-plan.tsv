@@ -15,6 +15,7 @@ budget	run	estimated-tokens	<pending>	estimate from the ledger or the no-history
 verification	run	level	<pending>	self, independent or adversarial, and why
 # seat	<slug>	disposition	selected|skipped	why this seat is or is not called
 # seat	<slug>	role	chair|worker|verifier	what this selected seat does
+# seat	<slug>	model	inherit|sonnet|haiku	optional request; non-inherit only when seat models are on, for mapping/survey workers
 # context	<slug>	level	minimal|focused|full	context allocated to this selected seat
 # budget	<slug>	tool-calls	<positive integer>	tool-call cap for this selected seat
 # budget	<slug>	agent-runs	<positive integer>	only for a seat that starts several agents (a Workflow); 1 when absent

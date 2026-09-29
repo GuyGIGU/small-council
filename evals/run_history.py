@@ -41,7 +41,9 @@ def make_run(home, name, status="complete", mode="council-review", size="squad",
     write(run / "session-state.md", "status: {}\nmode: {}\nphase: deliver\n## Decisions so far\n".format(status, mode))
     if plan:
         write(run / "run-plan.tsv", "kind\tid\tfield\tvalue\treason\nrun\trun\tsize\t{}\tr\n"
-              "budget\trun\testimated-tokens\t{}\tr\n".format(size, estimate))
+              "budget\trun\testimated-tokens\t{}\tr\n"
+              "seat\thunt\tmodel\tsonnet\tplanned model\n"
+              "seat\tverify-1\tmodel\tinherit\tplanned model\n".format(size, estimate))
     if older:     # a record from before usage.tsv: its token figures were never checked for units
         write(run / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n"
               + "".join("{}\t{}\ta\t{}\t-\t-\t1\n".format(s, st, t) for s, st, t in seats))
@@ -122,6 +124,12 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
     check("five completed runs: median cost, agents and tokens per agent are shown",
           cost["tokens_per_run"]["enough"] and cost["tokens_per_run"]["median"] == 80000 and cost["agents_per_run"]["median"] == 2
           and cost["tokens_per_agent"]["median"] == 40000 and "median ~80k tokens" in out, (cost, out))
+    check("history groups exact token counts by planned model and explains the limits",
+          cost["tokens_by_planned_model"] == {
+              "inherit": {"tokens": 100000, "seats": 5, "runs": 5},
+              "sonnet": {"tokens": 300000, "seats": 5, "runs": 5}}
+          and "sonnet: 300000 tokens" in out and "inherit: 100000 tokens" in out
+          and "not money" in out and "inherited seats' actual model is unknown" in out, (cost, out))
     check("estimates: agents' tokens over the plan's estimate less the Chair's 20k (80k of 180k)",
           data["estimates"]["actual_over_estimate"]["median"] == 0.444 and "0.44× the plan's estimate less the Chair" in out,
           out)
@@ -218,7 +226,7 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
             parsed = json.loads(out)
         except ValueError:
             parsed = {}
-        check("helper: --json is the same report as data", code == 0 and parsed.get("schema") == "council.history/3"
+        check("helper: --json is the same report as data", code == 0 and parsed.get("schema") == "council.history/4"
               and parsed["runs"]["total"] == 2, out[:300] + err)
         refusals = [(council(repo, *w), want) for w, want in (
             (("history", "--run", "x"), "does not take --run"), (("history", "x"), "history doesn't take 'x'"),
