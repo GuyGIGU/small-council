@@ -6,9 +6,9 @@ Eight automated layers, an advisory one, and hand-run drills. A skill isn't done
 It runs each suite as its own process with the command shown in its section below, several at a time
 (`--jobs N`, default: the number of CPUs), and the helper and hook evals as their groups side by
 side. Suites and groups that time the helper or a hook, or race the helper's locks (the cockpit evals
-and the `timing` groups of the helper and hook evals), run alone first, with nothing else running. Every suite runs even when another fails;
-each one's output is printed whole when it finishes, then a table of results, times and check counts,
-and it exits 1 if any suite failed. `--list` shows the jobs. A new `evals/run_*.py` must be added to
+and the `timing` groups of the helper and hook evals), run alone first, with nothing else running.
+Every suite runs even when another fails; each one's output is printed whole when it finishes, then a
+table of results, times and check counts, and it exits 1 if any suite failed. `--list` shows the jobs. A new `evals/run_*.py` must be added to
 its list, or the run fails, so no suite can be left out of CI.
 
 ## 1. Validation — will the plugin load?
