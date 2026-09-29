@@ -4,9 +4,9 @@ Eight automated layers, an advisory one, and hand-run drills. A skill isn't done
 
 **Every free suite at once:** `python evals/run_all.py` is what CI runs on Ubuntu, Windows and macOS.
 It runs each suite as its own process with the command shown in its section below, several at a time
-(`--jobs N`, default: the number of CPUs), and the helper evals as their groups side by side. Suites
-and groups that time the helper or race its locks (the hook evals, the cockpit evals and the helper's
-`timing` group) run alone first, with nothing else running. Every suite runs even when another fails;
+(`--jobs N`, default: the number of CPUs), and the helper and hook evals as their groups side by
+side. Suites and groups that time the helper or a hook, or race the helper's locks (the cockpit evals
+and the `timing` groups of the helper and hook evals), run alone first, with nothing else running. Every suite runs even when another fails;
 each one's output is printed whole when it finishes, then a table of results, times and check counts,
 and it exits 1 if any suite failed. `--list` shows the jobs. A new `evals/run_*.py` must be added to
 its list, or the run fails, so no suite can be left out of CI.
@@ -108,6 +108,9 @@ python evals/run_hook.py       # needs bash + git
 - valid files pass;
 - a missing, malformed, empty or oversized file is blocked, but only once;
 - other agents are never touched.
+
+Its checks come in two groups, like the helper evals' (`--list`, `--group`): `timing`, which times
+the hooks against their 15 s limit and runs alone, and `main`.
 
 ## 5. Impact evals — are direct dependencies and limits honest?
 

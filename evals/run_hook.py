@@ -32,6 +32,7 @@ PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and match
   - reads session_id and cwd from the top level only (a Windows cwd with escaped backslashes too), never
     from text inside another value.
 """
+import argparse
 import json
 import os
 import re
@@ -164,12 +165,23 @@ def compacted(out):
     return [line for line in out.splitlines() if "COMPACTED DURING A COUNCIL RUN" in line]
 
 
-if not BASH or not GIT:
-    print("[SKIP] bash or git not on PATH — hook evals need both")
-    sys.exit(0)
+PARTS = []                   # (group, block), in file order
+ALONE = {"timing"}           # groups that must run with nothing else running (see evals/run_all.py)
 
-with tempfile.TemporaryDirectory() as tmp:
-    tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
+
+def part(group):
+    """Adds the block below to a group. A group runs in one process, its blocks in file order, and
+    what one block leaves for a later one stays inside its group, so each group runs on its own.
+    With no options every block runs, in file order, in this one process."""
+    def add(block):
+        PARTS.append((group, block))
+        return block
+    return add
+
+
+@part("main")
+def session_start(tmp):
+    global full   # the memory-file block carries on with it
     # --- SessionStart --------------------------------------------------------------------------
     plain = new_repo(tmp, "plain")
     code, out = run_hook(plain)
@@ -351,6 +363,8 @@ with tempfile.TemporaryDirectory() as tmp:
           "UNFINISHED COUNCIL RUN" in line and "were running when that session ended" in line
           and "council run resume --run 2026-09-15-130000-review" in line and "--status abandoned" in line, out)
 
+@part("timing")
+def many_open_runs(tmp):
     # Many open runs: other trees' runs never hide this tree's, and the hook stays fast and short
     crowd = new_repo(tmp, "crowd")
     ctop = git(crowd, "rev-parse", "--show-toplevel")
@@ -415,6 +429,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("legacy run holding its final deliverable: offered to close as complete, not abandoned",
           "--status complete" in line and "--status abandoned" not in line and "FINAL-REVIEW.md" in line, out)
 
+@part("main")
+def memory_file_and_seat_check(tmp):
     # The hook names the memory file every council command reads — the config's own path included —
     # and says when a second one holds entries nobody reads.
     memcfg = new_repo(tmp, "memcfg")
@@ -669,6 +685,8 @@ with tempfile.TemporaryDirectory() as tmp:
     code, err = run_gate(verifier, f"Wrote {met} — 1 met, 0 partly met, 2 not met, 0 can't tell, 1 missing, 0 not asked")
     check("seat check: a post-game verifier file passes", code == 0, err)
 
+@part("timing")
+def agent_gate(tmp):
     # --- PreToolUse agent gate -----------------------------------------------------------------
     with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
         pre_groups = json.load(f)["hooks"].get("PreToolUse", [])
@@ -683,10 +701,12 @@ with tempfile.TemporaryDirectory() as tmp:
     check("agent gate: the matcher takes Agent, Task and Workflow — never TaskCreate, TaskStop or Bash",
           taken == ["Agent", "Task", "Workflow"], f"matcher {matcher!r} takes {taken}")
 
+    bare_home = new_repo(tmp, "no-council")   # a repo with no council home
+
     def said(code, out, err):
         return f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()}"
 
-    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", plain), plain)
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", bare_home), bare_home)
     check("agent gate: no council home — the agent starts, nothing said", code == 0 and not out and not err, said(code, out, err))
     cap3 = new_repo(tmp, "agent-gate")
     write(os.path.join(cap3, ".council", "council.config.md"), "# Council config\n## Run preferences\n- agent cap: 3\n")
@@ -719,7 +739,7 @@ with tempfile.TemporaryDirectory() as tmp:
         os.symlink(cap3, far)
     code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", far), tmp)
     check(f"agent gate: {label} is found", code == 2 and gname in err, said(code, out, err))
-    decoy = {"context": {"session_id": "sB", "cwd": plain}, "note": '{"session_id":"sB","cwd":"%s"}' % plain}
+    decoy = {"context": {"session_id": "sB", "cwd": bare_home}, "note": '{"session_id":"sB","cwd":"%s"}' % bare_home}
     code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", cap3, before=decoy,
                                                           prompt='use "cwd": "/nowhere" and \\"session_id\\": \\"sB\\"'), tmp)
     check("agent gate: session_id and cwd come from the top level — never a nested object or text quoted in a value",
@@ -764,6 +784,35 @@ with tempfile.TemporaryDirectory() as tmp:
         code, out, err, _ = run_agent_gate(gate_cmd, raw, nos)
         check(f"agent gate: {label}, no open run — the agent starts, nothing said", code == 0 and not out and not err,
               said(code, out, err))
+
+parser = argparse.ArgumentParser(description="Hook evals: run the plugin's hooks against scaffolded repos.")
+parser.add_argument("--list", action="store_true",
+                    help="print each group, whether it must run alone, and its blocks; run nothing")
+parser.add_argument("--group", metavar="NAME[,NAME...]", help="run only these groups (default: all, in file order)")
+opts = parser.parse_args()
+GROUPS = list(dict.fromkeys(group for group, _ in PARTS))
+blocks = [block for _, block in PARTS]
+stray = [name for name, value in list(globals().items())
+         if getattr(value, "__module__", None) == "__main__" and hasattr(value, "__code__")
+         and value.__code__.co_firstlineno > blocks[0].__code__.co_firstlineno and value not in blocks]
+if stray:   # a block without @part would never run, here or in CI
+    sys.exit("run_hook.py: %s has no @part(...) group, so it would never run" % ", ".join(stray))
+if opts.list:
+    for group in GROUPS:
+        print("%s\t%s\t%s" % (group, "alone" if group in ALONE else "shared",
+                              " ".join(block.__name__ for g, block in PARTS if g == group)))
+    sys.exit(0)
+chosen = opts.group.split(",") if opts.group else GROUPS
+if any(group not in GROUPS for group in chosen):
+    parser.error("unknown group in %r (groups: %s)" % (opts.group, ", ".join(GROUPS)))
+if not BASH or not GIT:
+    print("[SKIP] bash or git not on PATH — hook evals need both")
+    sys.exit(0)
+with tempfile.TemporaryDirectory() as tmp:
+    tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
+    for group, block in PARTS:
+        if group in chosen:
+            block(tmp)
 
 passed = sum(1 for ok, *_ in results if ok)
 for ok, name, detail in results:

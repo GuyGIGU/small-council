@@ -6,11 +6,11 @@
     python evals/run_all.py --list     # the jobs, without running them
 
 Each suite runs as its own process with the same command CI used to run it on its own, so each keeps
-its own temporary folders. The helper evals (run_cli.py) are the long pole, so they run as their
-groups (run_cli.py --list), side by side. Suites and groups that time the helper or race its locks
-run alone, before the rest start, so a busy machine can't make them fail. Every suite runs even when
-another fails; each one's output is printed whole once it finishes, then a summary. Exits 1 if any
-suite failed, or if an evals/run_*.py file is missing from the list below.
+its own temporary folders. The helper evals (run_cli.py, the long pole) and the hook evals run as
+their groups (--list), side by side. Suites and groups that time the helper or a hook, or race the
+helper's locks, run alone, before the rest start, so a busy machine can't make them fail. Every suite
+runs even when another fails; each one's output is printed whole once it finishes, then a summary.
+Exits 1 if any suite failed, or if an evals/run_*.py file is missing from the list below.
 
 Python 3.8+, standard library only.
 """
@@ -27,27 +27,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
 
-# (name, command, runs alone) in CI's old step order. "Runs alone": the suite times the helper or a hook
-# against a limit, or races its locks, so it runs with nothing else running.
+# (name, command, how) in CI's old step order. "alone": the suite times the helper or a hook against a
+# limit, or races its locks, so it runs with nothing else running. "groups": one job per group the suite
+# lists (--list), each run with --group; the suite says which of its groups run alone.
 SUITES = [
-    ("Validate plugin", ["scripts/quick_validate.py"], False),
-    ("Structural evals", ["evals/run_structural.py"], False),
-    ("Helper evals", ["evals/run_cli.py"], False),   # split into its groups; see helper_jobs()
-    ("Impact evals", ["evals/run_impact.py"], False),
-    ("Context evals", ["evals/run_context.py"], False),
-    ("Context delivery pilot (byte accounting, no model calls)", ["evals/run_context_pilot.py"], False),
-    ("Evidence model evals", ["evals/run_evidence.py"], False),
-    ("Repair loop evals", ["evals/run_repair.py"], False),
-    ("Memory evals", ["evals/run_memory.py"], False),
-    ("Seat learning evals", ["evals/run_seats.py"], False),
-    ("Run cockpit evals", ["evals/run_tui.py"], True),     # a rename race and a watcher's timing
-    ("Status and accounting evals", ["evals/run_status.py"], False),
-    ("Run history evals", ["evals/run_history.py"], False),
-    ("Finding outcomes evals", ["evals/run_outcomes.py"], False),
-    ("Tuning evals", ["evals/run_tune.py"], False),
-    ("Benchmark harness self-test (no model calls)", ["evals/bench.py", "self-test"], False),
-    ("Hook evals", ["evals/run_hook.py"], True),           # hooks timed against their 15 s limit
-    ("Phrase checks (advisory, never fails)", ["evals/run_phrases.py"], False),
+    ("Validate plugin", ["scripts/quick_validate.py"], "shared"),
+    ("Structural evals", ["evals/run_structural.py"], "shared"),
+    ("Helper evals", ["evals/run_cli.py"], "groups"),
+    ("Impact evals", ["evals/run_impact.py"], "shared"),
+    ("Context evals", ["evals/run_context.py"], "shared"),
+    ("Context delivery pilot (byte accounting, no model calls)", ["evals/run_context_pilot.py"], "shared"),
+    ("Evidence model evals", ["evals/run_evidence.py"], "shared"),
+    ("Repair loop evals", ["evals/run_repair.py"], "shared"),
+    ("Memory evals", ["evals/run_memory.py"], "shared"),
+    ("Seat learning evals", ["evals/run_seats.py"], "shared"),
+    ("Run cockpit evals", ["evals/run_tui.py"], "alone"),     # a rename race and a watcher's timing
+    ("Status and accounting evals", ["evals/run_status.py"], "shared"),
+    ("Run history evals", ["evals/run_history.py"], "shared"),
+    ("Finding outcomes evals", ["evals/run_outcomes.py"], "shared"),
+    ("Tuning evals", ["evals/run_tune.py"], "shared"),
+    ("Benchmark harness self-test (no model calls)", ["evals/bench.py", "self-test"], "shared"),
+    ("Hook evals", ["evals/run_hook.py"], "groups"),
+    ("Phrase checks (advisory, never fails)", ["evals/run_phrases.py"], "shared"),
 ]
 
 
@@ -65,13 +66,13 @@ class Job:
         return (int(found[-1][0]), int(found[-1][1])) if found else None
 
 
-def helper_jobs(name, args):
-    """One job per run_cli.py group. If the groups can't be listed, the whole suite as one job."""
+def group_jobs(name, args):
+    """One job per group the suite lists. If it can't list them, the whole suite as one job, run alone."""
     listing = subprocess.run([PY, *args, "--list"], cwd=ROOT, capture_output=True, text=True,
                              encoding="utf-8", errors="replace")
     groups = [line.split("\t") for line in listing.stdout.splitlines() if line.count("\t") == 2]
     if listing.returncode != 0 or not groups:
-        return [Job(name, args, False)], "%s --list failed (exit %s): %s" % (
+        return [Job(name, args, True)], "%s --list failed (exit %s): %s" % (
             " ".join(args), listing.returncode, (listing.stdout + listing.stderr).strip()[:400])
     return [Job("%s: %s" % (name, group), [*args, "--group", group], how == "alone")
             for group, how, _ in groups], None
@@ -100,14 +101,14 @@ def main():
     opts = parser.parse_args()
 
     jobs, problems = [], []
-    for name, args, alone in SUITES:
-        if args[0] == "evals/run_cli.py":
-            more, problem = helper_jobs(name, args)
+    for name, args, how in SUITES:
+        if how == "groups":
+            more, problem = group_jobs(name, args)
             jobs += more
             if problem:
                 problems.append(problem)
         else:
-            jobs.append(Job(name, args, alone))
+            jobs.append(Job(name, args, how == "alone"))
     problems += ["%s is not in evals/run_all.py's list, so it would never run" % f for f in unlisted()]
     if opts.list:
         for job in jobs:
@@ -149,10 +150,11 @@ def main():
         counts = job.checks()
         print("%-62s %-7s %5.0fs  %s" % (job.name[:62], "pass" if job.code == 0 else "FAIL", job.seconds,
                                          "%d/%d" % counts if counts else "-"))
-    helper = [j.checks() for j in jobs if j.args[0] == "evals/run_cli.py"]
-    if helper and all(helper):
-        print("%-62s %-7s %6s  %d/%d" % ("Helper evals, all groups", "", "", sum(c[0] for c in helper),
-                                          sum(c[1] for c in helper)))
+    for name, args, how in SUITES:   # a split suite's groups add up to the suite
+        counts = [j.checks() for j in jobs if j.args[0] == args[0]]
+        if how == "groups" and len(counts) > 1 and all(counts):
+            print("%-62s %-7s %6s  %d/%d" % (name + ", all groups", "", "", sum(c[0] for c in counts),
+                                              sum(c[1] for c in counts)))
     failed = [j for j in jobs if j.code != 0]
     print("\n%d jobs, %d failed, %.0f s in all (%.0f s of suite time)" % (
         len(jobs), len(failed), wall, sum(j.seconds for j in jobs)))
@@ -173,7 +175,7 @@ def main():
 # still runs; it just starts after the ones listed.
 WEIGHTS = {"Helper evals: runs": 345, "Helper evals: requests": 313, "Status and accounting evals": 196,
            "Helper evals: collect": 191, "Helper evals: filing": 155, "Helper evals: gates": 137,
-           "Helper evals: citations": 115, "Memory evals": 105, "Tuning evals": 75}
+           "Helper evals: citations": 115, "Memory evals": 105, "Tuning evals": 75, "Hook evals: main": 60}
 
 
 def weight(job):
