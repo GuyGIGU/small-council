@@ -22,6 +22,10 @@ All notable changes to this project are documented here. The format is based on
   (`budget/<seat>/agent-runs`), and the plan check counts them.
 - Reaching the cap, `council seat` tells the Chair to ask before starting more; passing it records
   `run.cap_passed`, and the status card flags it. The card shows each run's limit.
+- Convene first asks whether the council is needed: a small, fully specified request is done
+  directly, with no run (never on a protected subject, and never for a review or post-game).
+- Small, same-kind parts share an agent: each agent of a Workflow takes a group of them, and a build
+  verifies up to five small tasks of one kind together.
 ### Fixed
 
 - Every token display rounds half up; bash progress and close lines use the same M form as Python.
