@@ -92,6 +92,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: python evals/run_history.py
 
+      - name: Finding outcomes evals
+        if: ${{ !cancelled() }}
+        run: python evals/run_outcomes.py
+
       - name: Tuning evals
         if: ${{ !cancelled() }}
         run: python evals/run_tune.py

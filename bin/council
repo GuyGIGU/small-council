@@ -1499,6 +1499,18 @@ cmd_history() {
   "$@"
 }
 
+# Finding follow-up (scripts/outcomes.py): compare closed runs' citations with later commits.
+# A change after a finding is not evidence that the finding caused it.
+cmd_outcomes() {
+  local home py
+  home="$(council_home)"
+  [ -d "$home" ] || { say "no council here (no $home) — run council-init"; return 0; }
+  py="$(impact_python)" || die "outcomes needs optional Python 3.8+; inspect claims.jsonl and Git history manually"
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/outcomes.py" --home "$home" --repo "$(this_tree)"
+  [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
+  "$@"
+}
+
 # Conservative self-tuning (scripts/tune.py). propose only reads; apply and revert change one line of
 # council.config.md — the estimate per worker — and only with the user's words, redacted here first and
 # logged in tuning.md. Roster changes go through a council-init refresh; behaviour is held until a
@@ -5296,6 +5308,8 @@ council — the Small Council's helper (bash + git)
   council history [--json]               every run of this council home: cost, estimate accuracy, gates,
                                          repairs, verifier catches, seat evidence — a rate only when
                                          enough runs carry its data (optional Python 3.8+)
+  council outcomes [--json]              cited lines changed after closed runs; Kept/Cut comparison and per-run,
+                                         mode and seat counts (optional Python 3.8+)
   council tui [--watch | --json]         a read-only cockpit for the run: plan, seats, gates, repairs,
                                          evidence, memory proposals and recent events (--watch redraws
                                          until the run stops; optional Python 3.8+)
@@ -5493,6 +5507,9 @@ main() {
     history) takes_flags history json; no_words history ${1+"$@"}
              [ -z "$RUN_ARG" ] || die "history reads every run of this council home; it does not take --run"
              cmd_history ;;
+    outcomes) takes_flags outcomes json; no_words outcomes ${1+"$@"}
+              [ -z "$RUN_ARG" ] || die "outcomes reads every run of this council home's record; it does not take --run"
+              cmd_outcomes ;;
     tui)     takes_flags tui watch json; no_words tui ${1+"$@"}
              [ "$WATCH" -eq 0 ] || [ "$JSON_OUT" -eq 0 ] || die "tui takes --watch or --json, not both"
              cmd_tui ;;

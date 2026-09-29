@@ -42,6 +42,8 @@ skipped under load.
   advice only past a stated bar), history across runs (`council history`: a rate only once five
   runs carry its data), conservative tuning (`council tune`: the estimate per worker from your own
   runs, changed only on your words and undoable; behaviour held until a benchmark shows it helps),
+  and finding follow-up (`council outcomes`: whether cited lines changed after a closed run; timing
+  does not establish cause),
   the stack fingerprint, a drift doctor, a plain-language status for a run (`council status`: a
   snapshot card in chat where the app can show one, text elsewhere), and a read-only run cockpit
   (`council tui --watch`) you can leave open in a terminal while a council works.
