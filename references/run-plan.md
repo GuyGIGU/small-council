@@ -47,8 +47,9 @@ starting — it hears of one only afterwards — so asking first is the Chair's 
 
 An optional `seat/<slug>/model` row is `inherit`, `sonnet`, or `haiku`. Missing means `inherit`.
 Overrides require `- seat models: on` in `council.config.md`, and only selected worker seats may use
-`sonnet` or `haiku`; keep the Chair and verifier on `inherit`. Assign/Work permits these overrides
-only for mapping or survey work.
+`sonnet` or `haiku`; keep the Chair and verifier on `inherit`. A worker requesting an override must
+also declare `seat/<slug>/purpose = mapping` or `survey`. `other` cannot receive an override.
+The checker verifies this declared purpose; the Chair must ensure the dispatched task actually fits it.
 
 Exactly one Chair must be selected. Solo selects no delegated agents; Squad selects at least one,
 and Full selects at least four. Independent or adversarial verification requires a selected

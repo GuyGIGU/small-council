@@ -5,7 +5,9 @@
 Record an optional `seat/<slug>/model` choice in the run plan: `inherit`, `sonnet`, or `haiku`.
 Missing rows mean `inherit`. Overrides are rejected unless `council.config.md` says
 `- seat models: on`. Only selected worker seats may use an override; the Chair and verifier stay on
-`inherit`. Assign/Work limits the choice to mapping and survey workers. Routing is off by default.
+`inherit`. An override also requires a declared `seat/<slug>/purpose` of `mapping` or `survey`.
+The checker can verify the declaration; the Chair checks that the actual assignment matches it.
+Routing is off by default.
 
 When dispatching, the Chair passes an override as the Agent call's per-invocation `model` parameter.
 Claude Code documents that this parameter takes precedence over agent frontmatter and the

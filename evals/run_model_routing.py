@@ -67,7 +67,8 @@ def main():
         code, out, err = call(repo, "run", "open", "council-review")
         check("run opens for the plan fixture", code == 0, out + err)
         run = Path(out.strip())
-        write_plan(run, "seat\tmapper\tmodel\thaiku\troutine survey\n")
+        write_plan(run, "seat\tmapper\tpurpose\tsurvey\troutine survey\n"
+                   "seat\tmapper\tmodel\thaiku\troutine survey\n")
         code, out, err = call(repo, "run", "plan", "check")
         check("non-inherit choice is refused by default", code == 1 and "seat model overrides are off" in out,
               out + err)
@@ -75,7 +76,17 @@ def main():
         code, out, err = call(repo, "run", "plan", "check")
         check("enabled worker model choice passes", code == 0, out + err)
         code, out, err = call(repo, "run", "plan", "show")
-        check("plan display shows the requested model", code == 0 and "model haiku" in out, out + err)
+        check("plan display shows purpose and requested model", code == 0
+              and "purpose survey" in out and "model haiku" in out, out + err)
+        write_plan(run, "seat\tmapper\tmodel\thaiku\tmissing purpose\n")
+        code, out, err = call(repo, "run", "plan", "check")
+        check("override without a declared mapping or survey purpose is refused", code == 1
+              and "needs seat/mapper/purpose = mapping or survey" in out, out + err)
+        write_plan(run, "seat\tmapper\tpurpose\tother\timplementation work\n"
+                   "seat\tmapper\tmodel\thaiku\tinvalid override\n")
+        code, out, err = call(repo, "run", "plan", "check")
+        check("override for declared other work is refused", code == 1
+              and "needs seat/mapper/purpose = mapping or survey" in out, out + err)
         for slug, label in (("chair", "Chair"), ("verify-check", "verifier")):
             write_plan(run, "seat\t{}\tmodel\tsonnet\ttest invalid override\n".format(slug))
             code, out, err = call(repo, "run", "plan", "check")

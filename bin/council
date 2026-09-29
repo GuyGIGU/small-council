@@ -1150,6 +1150,9 @@ run_plan_validate() {
         } else if (fld == "model") {
           if (v != "inherit" && v != "sonnet" && v != "haiku") problem(NR, "seat model must be inherit, sonnet or haiku")
           model[id] = v; model_line[id] = NR
+        } else if (fld == "purpose") {
+          if (v != "mapping" && v != "survey" && v != "other") problem(NR, "seat purpose must be mapping, survey or other")
+          purpose[id] = v; purpose_line[id] = NR
         } else problem(NR, "unknown seat field: " fld)
       } else if (kind == "context") {
         if (fld != "level") problem(NR, "unknown context field: " fld)
@@ -1219,11 +1222,14 @@ run_plan_validate() {
       for (id in ctx) if (!(id in disp) || disp[id] != "selected") problem(at["context" SUBSEP id SUBSEP "level"], "context belongs only to a selected seat: " id)
       for (id in calls) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "a seat budget belongs only to a selected seat: " id)
       for (id in aruns) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "agent-runs"], "a seat budget belongs only to a selected seat: " id)
+      for (id in purpose) if (!(id in disp) || disp[id] != "selected" || role[id] != "worker")
+        problem(purpose_line[id], "a purpose belongs only to a selected worker seat: " id)
       for (id in model) {
         if (!(id in disp) || disp[id] != "selected") problem(model_line[id], "a model choice belongs only to a selected seat: " id)
         else if (model[id] != "inherit") {
           if (role[id] != "worker") problem(model_line[id], "only worker seats can use sonnet or haiku; " id " has role " role[id])
           if (ENVIRON["SEAT_MODELS"] != "on") problem(model_line[id], "seat model overrides are off; enable seat models: on in council.config.md")
+          if (purpose[id] != "mapping" && purpose[id] != "survey") problem(model_line[id], "sonnet or haiku needs seat/" id "/purpose = mapping or survey")
         }
       }
       if (chairs != 1) problem(0, "select exactly one Chair; found " chairs + 0)
@@ -1291,6 +1297,7 @@ cmd_run_plan() {
               line = line " · context " v["context" SUBSEP id SUBSEP "level"]
               calls = v["budget" SUBSEP id SUBSEP "tool-calls"]; if (calls != "") line = line " · " calls " tool calls"
               ar = v["budget" SUBSEP id SUBSEP "agent-runs"]; if (ar != "") line = line " · " ar " agent runs"
+              purpose = v["seat" SUBSEP id SUBSEP "purpose"]; if (purpose != "") line = line " · purpose " purpose
               model = v["seat" SUBSEP id SUBSEP "model"]; if (model == "") model = "inherit"
               line = line " · model " model
             }
