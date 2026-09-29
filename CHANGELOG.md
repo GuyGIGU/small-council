@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format is based on
 - Opening a run warns when the configured project memory exceeds about 25 KB; the status card flags it too.
 - `council outcomes` compares finding citations with later committed changes in each run's code root;
   history includes a conservative summary.
+- A run at its agent cap or past its token ceiling now stops new agents until the user says go (`council cap allow`).
 
 ### Changed
 - The always-loaded core instructions are shorter; the full helper command table lives in `references/helper-commands.md`.

@@ -84,6 +84,11 @@ python evals/run_hook.py       # needs bash + git
 - after a compaction, says "resume, don't restart" for this session's run only;
 - handles paused runs, runs in other worktrees, legacy runs, stale maps and garbage input.
 
+**PreToolUse agent gate:**
+- silent without a council, an in-progress run, or a run within its limits;
+- refuses a new agent at the cap or past the ceiling, until the user's go is recorded;
+- never stops a session for a run another session drives.
+
 **SubagentStop seat check:**
 - valid files pass;
 - a missing, malformed, empty or oversized file is blocked, but only once;

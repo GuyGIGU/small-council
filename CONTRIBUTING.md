@@ -18,8 +18,8 @@ you change anything.
 - **The agents carry the contracts.** The seat worker's rules live in `agents/council-worker.md`, the
   verifier's in `agents/council-verifier.md`. Dispatch messages point at the brief and never restate
   a contract.
-- **The hooks enforce what prose can't.** SessionStart handles orientation and resume; SubagentStop
-  checks the seat file.
+- **The hooks enforce what prose can't.** SessionStart handles orientation and resume; PreToolUse
+  stops new agents at a run's limit; SubagentStop checks the seat file.
 
 If you find yourself writing map, dispatch or aggregate logic inside a mode, stop: it belongs in the
 doctrine or the helper.

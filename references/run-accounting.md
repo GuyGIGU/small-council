@@ -106,6 +106,21 @@ unknown seat, and a missing source.
 - Only an exact figure the source shows is a correction. 160 is never read as 160,000 because it
   looks small.
 
+## The stop at the limit
+
+A hook (`hooks/agent-gate.sh`) runs `council cap check` before every Agent, Task or Workflow call.
+While an in-progress run has used its agent cap, or its known tokens passed its ceiling, the call is
+refused, and Claude is told to ask the user. Their go, in their words, is recorded with
+`council cap allow <n> --user-said "…"` (`cap-allowances.tsv`, and a `run.cap_allowed` event): n more
+agent runs may start before the stop holds again. `council cap` shows where a run stands. Limits:
+- A Workflow that is already running isn't stopped: the agents it starts are not checked, so one
+  started below the cap can pass it.
+- Agents started together in one message are all checked before any of them is recorded, so one
+  batch can pass the cap before the stop takes hold.
+- A run driven by another session doesn't stop this one. A run that recorded no session stops every
+  session on its working tree.
+- While a run is over its limit, the hook also refuses agents that have nothing to do with the council.
+
 ## Known limits
 
 - A dispatched agent the Chair never recorded is not counted until it is added from evidence. One
