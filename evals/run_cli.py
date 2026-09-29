@@ -69,6 +69,34 @@ def council_quoted(cwd, *args):
     return p.returncode, p.stdout, p.stderr
 
 
+def council_together(cwd, *calls):
+    """Start several council calls at the same moment; return each one's (exit code, stderr) once all
+    have finished. A call still running after 120 s is stopped and reads as exit 124, as in council()."""
+    procs = [subprocess.Popen([BASH, CLI, *args], cwd=cwd, env=GIT_ENV, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+             for args in calls]
+    finished = []
+    for p in procs:
+        try:
+            err = p.communicate(timeout=120)[1]
+            finished.append((p.returncode, err))
+        except subprocess.TimeoutExpired:
+            p.kill()
+            finished.append((124, p.communicate()[1] + " (still running after 120 s)"))
+    return finished
+
+
+def workers_detail(finished, expected=()):
+    """Each worker's exit code, then whatever else it said on stderr: first in a check's detail,
+    which is cut at 400 characters."""
+    said = []
+    for i, (_, err) in enumerate(finished):
+        lines = [x for x in err.splitlines() if x.strip() and not any(e in x for e in expected)]
+        if lines:
+            said.append("worker %d: %s" % (i, " / ".join(lines)))
+    return "exit codes %s%s" % ([code for code, _ in finished], "".join("; " + s for s in said))
+
+
 def git(cwd, *args):
     return subprocess.run([GIT, "-c", "core.autocrlf=false", *args], cwd=cwd, check=True,
                           capture_output=True, text=True, env=GIT_ENV).stdout.strip()
@@ -504,6 +532,16 @@ with tempfile.TemporaryDirectory() as tmp:
     check("close: exact usage is compared with the whole estimate",
           code == 0 and "estimated ~420k (about 49% over)" in out and
           "estimated ~420k (about 49% over)" in read(os.path.join(budget_run, "session-state.md")), out + err)
+    million = new_repo(tmp, "spend-million")
+    write(os.path.join(million, ".council", "council.config.md"), "# Council config\n")
+    _, million_run, _ = council(million, "run", "open", "council-review")
+    million_run = million_run.strip()
+    write_plan(million_run, selected=("worker",), verification="self", estimated_tokens=1500000)
+    council(million, "seat", "worker", "done", "agent=m1", "tokens=1,600,000")
+    code, out, err = council(million, "run", "close")
+    check("close: an estimate past a million is written as the total is — ~1.5M, never ~1500k",
+          code == 0 and "~1.6M tokens across 1 agent run(s) · estimated ~1.5M (about 7% over)" in out and
+          "estimated ~1.5M (about 7% over)" in read(os.path.join(million_run, "session-state.md")), out + err)
 
     legacy = new_repo(tmp, "legacy-plan")
     write(os.path.join(legacy, ".council", "council.config.md"), "# Council config — legacy plan\n")
@@ -863,14 +901,12 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat: a space between digits is a thousands separator, not the end of the number",
           "\nspaced\tdone\ta5\t74304\t" in tseats, tseats)
     check("seat: a tokens= value with no number in it is refused", code == 2 and "tokens" in err and "\ndodds\t" not in tseats, out + err)
-    procs = [subprocess.Popen([BASH, CLI, "seat", f"par{i}", "running", f"agent=p{i}", "--run", trun], cwd=tk, env=GIT_ENV,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for i in range(6)]
-    for p in procs:
-        p.wait(timeout=120)
+    workers = council_together(tk, *[("seat", f"par{i}", "running", f"agent=p{i}", "--run", trun) for i in range(6)])
     tlines = read(os.path.join(trun, "seats.tsv")).splitlines()
-    check("seat: six workers recorded at the same moment keep six rows, and the header stays first",
-          tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported"] and sum(1 for x in tlines if x.startswith("par")) == 6,
-          "\n".join(tlines))
+    check("seat: six workers recorded at the same moment all succeed and keep six rows, and the header stays first",
+          all(code == 0 for code, _ in workers)
+          and tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported"] and sum(1 for x in tlines if x.startswith("par")) == 6,
+          workers_detail(workers) + "\n" + "\n".join(tlines))
     os.makedirs(os.path.join(trun, "seats.tsv.lock"), exist_ok=True)   # what a killed seat call leaves behind
     started = time.time()
     code, out, err = council(tk, "seat", "afterlock", "running", "agent=a9", "--run", trun)
@@ -878,6 +914,29 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat: a lock a killed call left behind is broken after about ten seconds, not a minute",
           code == 0 and took < 40 and "\nafterlock\t" in read(os.path.join(trun, "seats.tsv")),
           "%.1f s · %s%s" % (took, out, err))
+
+    # Once-only events: whether one is on record is checked under the events lock, so seat records that
+    # pass the cap, the estimate and the ceiling together still record each passing once.
+    race = new_repo(tmp, "cap-race")
+    write(os.path.join(race, ".council", "council.config.md"), "# Council config — once-only events\n")
+    _, race_run, _ = council(race, "run", "open", "council-review")
+    race_run = race_run.strip()
+    write_plan(race_run, selected=("wf", "r0", "r1", "r2", "late"), verification="self", estimated_tokens=505000)
+    append(os.path.join(race_run, "run-plan.tsv"), "budget\trun\ttoken-ceiling\t515000\towner limit\n")
+    council(race, "seat", "wf", "done", "agent=wf1", "agents=10", "tokens=500000")   # the whole cap, just under both token limits
+    workers = council_together(race, *[("seat", f"r{i}", "done", f"agent=x{i}", "tokens=20000", "--run", race_run) for i in range(3)])
+    once = ("run.cap_passed", "run.estimate_passed", "run.ceiling_passed")
+    kinds = [e[3] for e in events(race_run)]
+    check("seat: three workers that pass the cap, the estimate and the ceiling together record each passing once",
+          [kinds.count(k) for k in once] == [1, 1, 1],
+          "cap, estimate, ceiling events %s; %s" % ([kinds.count(k) for k in once],
+                                                    workers_detail(workers, ("over its cap of 10", "over its ceiling of 515000"))))
+    council(race, "seat", "late", "done", "agent=x9", "tokens=20000")
+    code, out, err = council(race, "run", "events", "check")
+    kinds = [e[3] for e in events(race_run)]
+    check("seat: a later record past all three limits adds no second passing event, and the stream stays valid",
+          [kinds.count(k) for k in once] == [1, 1, 1] and code == 0,
+          "cap, estimate, ceiling events %s; %s%s" % ([kinds.count(k) for k in once], out, err))
 
     # Memory: scopes and anchors
     conv_text = ("# Conventions\n## Accepted Patterns (AP) — intentional; never flag these\n"
