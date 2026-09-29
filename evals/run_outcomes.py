@@ -146,6 +146,39 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
         check("dirty index is can't tell and labels are sanitized",
               row["mode"] == "council-review [31m" and "\u001b" not in outcomes.render(uncertain),
               (row["mode"], outcomes.render(uncertain)))
+        other = temp / "other-repo"
+        other.mkdir()
+        run_git(other, "init", "-q")
+        run_git(other, "config", "user.name", "Council eval")
+        run_git(other, "config", "user.email", "eval@example.invalid")
+        write(other / "src/stable.py", "target\n")
+        run_git(other, "add", ".")
+        env["GIT_AUTHOR_DATE"] = "2020-01-02T11:00:00+00:00"
+        env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"]
+        run_git(other, "commit", "-q", "-m", "other before close", env=env)
+        write(other / "src/stable.py", "changed\n")
+        run_git(other, "add", ".")
+        env["GIT_AUTHOR_DATE"] = "2020-01-03T11:00:00+00:00"
+        env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"]
+        run_git(other, "commit", "-q", "-m", "other after close", env=env)
+        other_run = home / "runs" / "2020-01-02-130000-other"
+        write(other_run / "session-state.md", "status: complete\nmode: council-review\n"
+              "closed: 2020-01-02 13:00:00\ncode-root: {}\n".format(other))
+        write(other_run / "claims.jsonl", json.dumps({"id": "other", "disposition": "kept",
+              "citation": "src/stable.py:1", "provenance": ["hunt#6"]}) + "\n")
+        other_data = outcomes.outcomes(home, repo)
+        row = next(r for r in other_data["runs"] if r["run"] == other_run.name)
+        check("each run compares against its recorded code root, not the caller's unchanged file",
+              row["claims"][0]["outcome"] == "changed at cited lines", row)
+        absent_run = home / "runs" / "2020-01-02-140000-missing"
+        write(absent_run / "session-state.md", "status: complete\nmode: council-review\n"
+              "closed: 2020-01-02 14:00:00\ncode-root: {}\n".format(temp / "missing-repo"))
+        write(absent_run / "claims.jsonl", json.dumps({"id": "missing", "disposition": "kept",
+              "citation": "src/changed.py:2", "provenance": ["hunt#7"]}) + "\n")
+        absent_data = outcomes.outcomes(home, repo)
+        row = next(r for r in absent_data["runs"] if r["run"] == absent_run.name)
+        check("an unavailable recorded code root is can't tell, not a comparison with the caller",
+              row["claims"][0]["outcome"] == "can't tell", row)
         if BASH:
             code, out, err = council(repo, "outcomes", "--json")
             try:

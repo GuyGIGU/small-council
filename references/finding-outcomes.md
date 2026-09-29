@@ -5,8 +5,10 @@ after the run closed. It groups the five outcomes by run, mode and originating s
 claims separately as a comparison group. `council history` includes the number of Kept and Cut
 citations whose cited lines changed.
 
-The comparison is deliberately conservative. It finds the latest commit at or before the run's
-`closed:` time; `base:` is the change index's merge-base and does not need to match that commit. If
+The comparison is deliberately conservative. It uses each run's recorded `code-root:` repository,
+then finds its latest commit at or before the run's `closed:` time. An unavailable recorded code root
+is `can't tell`; older runs without one use the caller's repository. `base:` is the change index's
+merge-base and does not need to match the close-time commit. If
 the saved `index.md` records `+ uncommitted changes`, the run's claims become `can't tell`. Missing
 or unreadable claims, missing Git history, or an invalid citation also becomes `can't tell`. A cited
 file deleted or renamed after close is `file gone or renamed`. A diff hunk overlapping the citation's

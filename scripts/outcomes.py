@@ -55,6 +55,20 @@ def state_fields(path):
     return fields
 
 
+def run_code_root(state, default):
+    """Use a run's recorded working tree; only legacy runs without one use the caller's tree."""
+    recorded = state.get("code-root")
+    if not recorded or recorded == "-":
+        return default
+    if "\x00" in recorded:
+        return None
+    try:
+        root = Path(recorded)
+        return root if root.is_absolute() else None
+    except (OSError, ValueError):
+        return None
+
+
 def parse_citation(value):
     if not isinstance(value, str):
         return None
@@ -181,7 +195,12 @@ def outcomes(home, repo):
             claims = read_claims(folder / "claims.jsonl")
             if claims is None:
                 continue
-            close_commit = commit_at_close(repo, state["closed"])
+            # A council home can hold runs for several working trees. Compare each citation with
+            # the code root recorded by that run; a missing recorded root is unknown, not a reason
+            # to silently compare it with the caller's unrelated repository.
+            run_repo = run_code_root(state, repo)
+            run_head = git(run_repo, "rev-parse", "--verify", "HEAD") if run_repo else None
+            close_commit = commit_at_close(run_repo, state["closed"]) if run_repo else None
             # `base` is council index's merge-base, not a close-time snapshot. The index's explicit
             # dirty marker is the available evidence that the run reviewed uncommitted files.
             if close_commit is None or reviewed_uncommitted(folder / "index.md"):
@@ -194,7 +213,7 @@ def outcomes(home, repo):
                     disposition = "kept" if disposition == "keep" else "unknown"
                 if disposition == "unknown":
                     continue
-                outcome = classify(repo, close_commit, head, claim)
+                outcome = classify(run_repo, close_commit, run_head, claim)
                 sources = claim.get("provenance")
                 if not isinstance(sources, list):
                     sources = []
