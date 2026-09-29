@@ -13,6 +13,15 @@ All notable changes to this project are documented here. The format is based on
 - `council history` groups recorded tokens by planned model and labels inherited models as unknown;
   tokens are not a money measure. History JSON advances to `council.history/4`.
 
+## [0.16.1] — 2026-09-29
+
+**TL;DR:** a rare lost record, when two council calls record at the same moment, is fixed.
+
+### Fixed
+
+- Two council calls recording at the same moment could lose one record: the one waiting its turn crashed
+  if the other finished at that instant. It now waits quietly, and every record is kept.
+
 ## [0.16.0] — 2026-09-29
 
 **TL;DR:** a pumpkin-ghost desktop pet shows how a run is going; the card says whether new agents are

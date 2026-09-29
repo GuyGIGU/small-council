@@ -44,11 +44,17 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles d
 results = []
 
 
+FULL_DETAIL = set()   # checks whose detail is printed whole: every worker's exit code and stderr of a race
+
+
 def result_line(ok, name, detail):
-    return f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  ({detail.strip()[:400]})" if detail and not ok else "")
+    cut = None if name in FULL_DETAIL else 400
+    return f"[{'PASS' if ok else 'FAIL'}] {name}" + (f"  ({detail.strip()[:cut]})" if detail and not ok else "")
 
 
-def check(name, ok, detail=""):
+def check(name, ok, detail="", full=False):
+    if full:
+        FULL_DETAIL.add(name)
     results.append((ok, name, detail))
     # Printed as it happens: the suite runs the helper hundreds of times (about 17 minutes on Windows
     # Git Bash), and a run that prints nothing until the end is easy to mistake for a stalled one.
@@ -92,9 +98,33 @@ def council_together(cwd, *calls):
     return finished
 
 
+def gates_together(cwd, run, names):
+    """Start `council gate <name> --run <run> -- true` for every name at the same moment; return each
+    one's (exit code, stdout, stderr) once all have finished, as council_together does."""
+    procs = [subprocess.Popen([BASH, CLI, "gate", name, "--run", run, "--", "true"], cwd=cwd, env=GIT_ENV,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                              errors="replace") for name in names]
+    finished = []
+    for p in procs:
+        try:
+            out, err = p.communicate(timeout=120)
+            finished.append((p.returncode, out, err))
+        except subprocess.TimeoutExpired:
+            p.kill()
+            out, err = p.communicate()
+            finished.append((124, out, err + " (still running after 120 s)"))
+    return finished
+
+
+def gates_detail(finished):
+    """Every gate worker's exit code, stdout and whole stderr, for a race check's detail."""
+    return "\n".join("worker %d: exit %d · stdout %r · stderr %r" % (i, code, out, err)
+                     for i, (code, out, err) in enumerate(finished))
+
+
 def workers_detail(finished, expected=()):
-    """Each worker's exit code, then whatever else it said on stderr: first in a check's detail,
-    which is cut at 400 characters."""
+    """Each worker's exit code, then whatever else it said on stderr: first in a check's detail, which
+    a race check prints whole (check(..., full=True)) so a rare failure shows every worker."""
     said = []
     for i, (_, err) in enumerate(finished):
         lines = [x for x in err.splitlines() if x.strip() and not any(e in x for e in expected)]
@@ -586,15 +616,12 @@ def event_races(tmp):
     write(os.path.join(event_repo, ".council", "council.config.md"), "# Council config — events\n")
     _, event_run, _ = council(event_repo, "run", "open", "council-review")
     event_run = event_run.strip()
-    jobs = [subprocess.Popen([BASH, CLI, "gate", f"parallel-{i}", "--run", event_run, "--", "true"],
-                             cwd=event_repo, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             text=True, encoding="utf-8", errors="replace") for i in range(3)]
-    outcomes = [p.communicate(timeout=120) for p in jobs]
+    finished = gates_together(event_repo, event_run, [f"parallel-{i}" for i in range(3)])
     code, out, err = council(event_repo, "run", "events", "check", "--run", event_run)
     check("run events: concurrent gate completions get distinct, continuous sequence numbers",
-          all(p.returncode == 0 for p in jobs) and code == 0 and len(events(event_run)) == 4 and
+          all(rc == 0 for rc, _, _ in finished) and code == 0 and len(events(event_run)) == 4 and
           {e[4] for e in events(event_run)[1:]} == {"parallel-0", "parallel-1", "parallel-2"},
-          out + err + str(outcomes))
+          out + err + "\n" + gates_detail(finished), full=True)
     event_lock_path = os.path.join(event_run, "events.tsv.lock")
     os.mkdir(event_lock_path)
     write(os.path.join(event_lock_path, "owner"), "99999999\n")
@@ -632,7 +659,8 @@ def event_races(tmp):
     check("run events: concurrent updates to one seat preserve state and event order",
           first_wrote and second_waited and first.returncode == 0 and second.returncode == 0 and
           racer_events == ["running", "done"] and "racer\tdone\t" in read(seat_file),
-          str((first_result, second_result, racer_events, read(seat_file))))
+          str((first.returncode, first_result, second.returncode, second_result, racer_events, read(seat_file))),
+          full=True)
     append(os.path.join(event_run, "events.tsv"), "1\t9\tbroken\n")
     code, out, _ = council(event_repo, "run", "events", "check", "--run", event_run)
     check("run events check: rejects a truncated or discontinuous row", code == 1 and "invalid row" in out, out)
@@ -644,6 +672,27 @@ def event_races(tmp):
     code, _, err = council(event_repo, "gate", "after-loss", "--run", event_run, "--", "true")
     check("run events: a later action reports a lost stream instead of silently recreating it",
           code == 0 and "not recorded" in err and not os.path.exists(os.path.join(event_run, "events.tsv")), err)
+
+
+@part("timing")
+def event_lock_stress(tmp):
+    """Rounds of six gates at once on one run. A call waiting for the events lock once died under set -u
+    when the holder released between its look at the owner file and its read, and its event was lost."""
+    stress = new_repo(tmp, "event-stress")
+    write(os.path.join(stress, ".council", "council.config.md"), "# Council config — event stress\n")
+    _, stress_run, _ = council(stress, "run", "open", "council-review")
+    stress_run = stress_run.strip()
+    trouble = []
+    for r in range(2):   # about 4 s a round on Windows Git Bash
+        names = [f"r{r}-g{i}" for i in range(6)]
+        finished = gates_together(stress, stress_run, names)
+        got = sorted(e[4] for e in events(stress_run) if e[3] == "gate.finished" and e[4].startswith(f"r{r}-"))
+        if got != names or any(rc != 0 or err.strip() for rc, _, err in finished):
+            trouble.append("round %d recorded %s\n%s" % (r, got, gates_detail(finished)))
+    code, out, err = council(stress, "run", "events", "check", "--run", stress_run)
+    check("run events: two rounds of six gates at once record all 12 events; every worker exits 0 and is silent on stderr",
+          not trouble and code == 0 and len(events(stress_run)) == 13, out + err + "\n".join(trouble), full=True)
+
 
 @part("runs")
 def runs_change_index(tmp):
@@ -934,7 +983,7 @@ def seat_races(tmp):
     check("seat: six workers recorded at the same moment all succeed and keep six rows, and the header stays first",
           all(code == 0 for code, _ in workers)
           and tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported"] and sum(1 for x in tlines if x.startswith("par")) == 6,
-          workers_detail(workers) + "\n" + "\n".join(tlines))
+          workers_detail(workers) + "\n" + "\n".join(tlines), full=True)
     os.makedirs(os.path.join(trun, "seats.tsv.lock"), exist_ok=True)   # what a killed seat call leaves behind
     started = time.time()
     code, out, err = council(tk, "seat", "afterlock", "running", "agent=a9", "--run", trun)
@@ -958,7 +1007,8 @@ def seat_races(tmp):
     check("seat: three workers that pass the cap, the estimate and the ceiling together record each passing once",
           [kinds.count(k) for k in once] == [1, 1, 1],
           "cap, estimate, ceiling events %s; %s" % ([kinds.count(k) for k in once],
-                                                    workers_detail(workers, ("over its cap of 10", "over its ceiling of 515000"))))
+                                                    workers_detail(workers, ("over its cap of 10", "over its ceiling of 515000"))),
+          full=True)
     council(race, "seat", "late", "done", "agent=x9", "tokens=20000")
     code, out, err = council(race, "run", "events", "check")
     kinds = [e[3] for e in events(race_run)]
