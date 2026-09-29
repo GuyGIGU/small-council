@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.16.0"
+COUNCIL_VERSION="0.16.1"
 COUNCIL_MEMORY_SIZE_LIMIT=25600  # bytes: about 25 KB of project memory is the expected upper bound
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
@@ -284,13 +284,21 @@ ensure_ignored() {
 event_cell() { printf '%s' "$1" | tr '\t\r\n' '   ' | LC_ALL=C tr -cd '\40-\176\200-\377'; }
 
 event_lock_stale() {
-  local lock="$1" owner modified now
+  local lock="$1" owner='' again='' modified='' now=''
   [ -d "$lock" ] || return 1
   if [ -f "$lock/owner" ]; then
-    IFS= read -r owner < "$lock/owner" || :
+    # The holder can release between that test and this read. A vanished owner file is a release in
+    # progress, not a stale lock: say nothing, and never leave owner unset (set -u once killed a waiting
+    # writer here, and its record was lost).
+    { IFS= read -r owner < "$lock/owner"; } 2>/dev/null || [ -n "$owner" ] || [ -f "$lock/owner" ] || return 1
     case "$owner" in
       ''|*[!0-9]*) ;;
-      *) kill -0 "$owner" 2>/dev/null && return 1; return 0 ;;
+      *)
+        kill -0 "$owner" 2>/dev/null && return 1
+        # Stale only while the file still names that writer: one that released and exited after the
+        # read has removed it, and a writer that took the lock since has written its own number.
+        { IFS= read -r again < "$lock/owner"; } 2>/dev/null || :
+        [ "$again" = "$owner" ]; return ;;
     esac
   fi
   # A writer can be killed between mkdir and writing owner. Do not mistake that short window
@@ -4656,7 +4664,7 @@ AUDIT
         --out "$tmpd/after")" || { rm -rf "$tmpd"; exit 2; }
       memory_replace "$mem" "$tmpd/before" "$tmpd/after" "$id" proposed "$home" "$top" || { rm -rf "$tmpd"; exit 1; }
       rm -rf "$tmpd"
-      event_append "$run" memory.proposed "$id" "$1" "source=$2" || say "council: $id is drafted, but its event could not be recorded"
+      event_append "$run" memory.proposed "$id" "$1" "source=$2" || printf 'council: %s is drafted, but its event could not be recorded\n' "$id" >&2
       [ "${k:-0}" = 0 ] || say "memory: $k secret-looking string(s) in the draft were redacted"
       say "memory: drafted $id under ## Proposed from $1 $2 of ${run##*/} — no brief reads it until the user says yes"
       say "→ show the user the entry, then record their answer in their words:"
