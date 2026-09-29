@@ -2,6 +2,13 @@
 
 Decide whether to convene, whom, and at what cost — then get the user's go-ahead.
 
+**Whether, first.** A request that is fully specified in one short message, and that you could
+finish in one turn without questions — a typo, a rename, a one-line fix, a single lookup — doesn't
+need the council. Do it or answer it directly, say in one line why no run was opened, and open none;
+the user can still ask for one. This never applies to a protected subject (authorization, data
+loss, injection, secrets, concurrency or ordering, public contracts), or to a review or post-game,
+which exist to add a second look.
+
 ## Steps
 
 1. **Open runs first.** `council run status`. An open run on this working tree → ask the user:

@@ -202,6 +202,13 @@ check("01-convene: weighs route advice before opening the run",
       0 <= doctrine["01-convene.md"].find("council route recommend") < doctrine["01-convene.md"].find("**Open the run.**"))
 check("01-convene: a route needing rescope does not silently waive verification",
       "needs-rescope" in doctrine["01-convene.md"] and "before opening or" in doctrine["01-convene.md"])
+check("01-convene: asks whether a run is needed before its steps — never for a protected subject, a review or a post-game",
+      0 <= doctrine["01-convene.md"].find("**Whether, first.**") < doctrine["01-convene.md"].find("**Open runs first.**") and
+      all(p in doctrine["01-convene.md"] for p in ("open none", "protected subject", "review or post-game")))
+check("03-assign and 08-challenge: a Workflow's agents each take a group of small parts, not one each",
+      "never one small part each" in doctrine["03-assign.md"] and
+      "batches of up to 8" in doctrine["08-challenge.md"].split("A Workflow of verifiers", 1)[-1])
+check("implement: small tasks of one kind share a verifier", "up to five of one kind" in skill["council-implement"])
 check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
 check("02-prepare: distinguishes optional graph from the fallback index",
