@@ -25,6 +25,13 @@ All notable changes to this project are documented here. The format is based on
 ### Fixed
 
 - Every token display rounds half up; bash progress and close lines use the same M form as Python.
+- `council outcomes` no longer counts a line-ending-only change as a change at the cited lines.
+- `council outcomes` counts lines inserted inside or right next to a cited span as a change there.
+- `council outcomes` reads diffs the same whatever the user's colour, hunk-context or text-conversion settings.
+- `council outcomes` and `council history` no longer crash on a diff byte the Windows code page can't decode.
+- `council history` diffs each cited file once per run; `council tune` skips the comparison it never reads.
+- The close line gives the estimate in the same units as the total (`~1.5M`, not `~1500k`).
+- A run passing its cap, estimate or ceiling is recorded once, even when two seats finish together.
 
 ## [0.14.0] — 2026-09-28
 
