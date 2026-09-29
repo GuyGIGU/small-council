@@ -277,10 +277,11 @@ python evals/run_impact.py         # does the optional impact graph resolve dire
 python evals/run_hook.py           # do the hooks behave? (needs bash + git)
 python evals/run_status.py         # run accounting and the status widget (needs bash + git)
 python evals/run_phrases.py        # advisory: are the field-tested rules still worded in?
+python evals/run_all.py            # every suite CI runs, several at a time
 ```
 
-These are selected local checks. The full 17-step list is in [CI](.github/workflows/ci.yml)
-and [evals/README.md](evals/README.md), run on Ubuntu, Windows and macOS. Before a release:
+These are selected local checks. [CI](.github/workflows/ci.yml) runs every suite with
+`evals/run_all.py` on Ubuntu, Windows and macOS; [evals/README.md](evals/README.md) lists them. Before a release:
 - run the behavioral drills in [`evals/behavioral-drills.md`](evals/behavioral-drills.md);
 - if you have the CLI, run `claude plugin validate . --strict`.
 
