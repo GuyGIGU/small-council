@@ -40,6 +40,7 @@ POSES = ("asleep", "working", "needs-you", "stopped", "done")
 POLL_SECONDS = 5          # how often the run is read
 DONE_SECONDS = 120        # how long a finished (or paused) run stays on show before the pet sleeps
 START_SECONDS = 15        # how long `council pet` waits for the window to show
+PET_PIXELS = 150          # the pet's size on screen at 100% display scaling (the design's 100 x 100 box)
 
 # The design's colours: a coral body with a cream outline and face, a green stem and leaf. On review, the
 # first design's brown face lines and the needing-you pupils were dropped: the cream outline is enough.
@@ -660,11 +661,11 @@ def show(opts, files):
     root.configure(bg=background)
     ratio = max(1.0, root.winfo_fpixels("1i") / 96.0)
     family = tkfont.nametofont("TkDefaultFont").actual("family")
-    scale = 1.12 * ratio                      # view-box units to pixels: a 112-pixel pet
-    width = int(round(240 * ratio))
+    scale = PET_PIXELS / 100.0 * ratio        # view-box units to pixels
+    width = int(round((PET_PIXELS + 114) * ratio))   # the pet, and room for its bubble
     top = 8 * scale                           # room for a hop
     left = (width - 100 * scale) / 2.0
-    bubble_font = tkfont.Font(root=root, family=family, size=-int(round(12 * ratio)))
+    bubble_font = tkfont.Font(root=root, family=family, size=-int(round(13 * ratio)))
     pad_x, pad_y = 8 * ratio, 4 * ratio
     bubble_top = top + 95 * scale
     height = int(round(bubble_top + bubble_font.metrics("linespace") + 2 * pad_y + 4 * ratio))
