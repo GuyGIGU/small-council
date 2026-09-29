@@ -129,6 +129,8 @@ unknown seat, and a missing source.
 - `latest_check`, `checks`: saved check results; `recent` and `recent_source`: recent recorded activity.
 - `freshness`: last activity time, quiet minutes and whether the run is stale.
 - `usage`: token and agent-run figures with their basis and display wording; unknown values stay null.
+- `closing`: null for an open run; after close, the filed request, deliverable, verdict counts (null
+  when missing or stale), checks, spend, agent runs against the cap, and owner follow-ups.
 - `seats`: names, states, tokens, token bases, agent-run counts and notes.
 - `evidence`: labels and paths to supporting records. An absent or older claim index is labelled
   "Claims index out of date" instead of showing obsolete verdicts.

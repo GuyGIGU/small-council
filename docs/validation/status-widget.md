@@ -21,13 +21,24 @@
   - a snapshot card for the desktop app's chat;
   - text ending with the exact terminal command;
   - the headline of `council tui`.
+
 - **The doctrine:**
-  - the Chair shows the card once at first dispatch, then only on request;
+  - the Chair shows the card at first dispatch and once after close, then only on request;
   - it records exact usage;
   - it sets `council state waiting="…"` when it stops for the user.
 - **The SessionStart hook** tells a new session it may show any open run's card.
 - **History and tune** cost only complete, exact runs, and name the rest. The ledger prices only
   checked figures.
+
+### Closing card (implemented; automatically tested, not yet seen in a new real run)
+
+After `council run close`, a completed, paused or abandoned run gets a final layout in the widget,
+text and optional `closing` JSON block. It reads the filed redacted request only from `.council/asks`,
+then shows the deliverable path, claim verdict counts when the index is current, machine checks,
+spend against the estimate, agent runs against the cap, and what needs the owner. Missing or stale
+records are named as unknown; the card does not fill them with zero. A snapshot is read-only and
+every recorded value is escaped in HTML. The Chair shows this card once after closing in Learn,
+alongside the chat summary already given in Deliver. A new real run has not yet exercised it.
 
 ## Why
 

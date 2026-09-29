@@ -67,3 +67,7 @@ seat by seat; a council-init refresh proposes roster changes only where the advi
 - A run the user paused → `--status paused`. When they want it back, `council run resume --run <folder>`.
 
 **Close every run you open.**
+After `council run close`, show `council status --widget` once if `show_widget` is available;
+otherwise relay `council status`. This closing card adds to the chat summary from Deliver. It shows
+the filed request, deliverable, verdict counts, checks, cost and any actions left for the user.
+Do not show a new card for every progress line.

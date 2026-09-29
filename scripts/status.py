@@ -397,6 +397,60 @@ def evidence_of(snap, run_path):
     return items
 
 
+def filed_request(run_path, filed):
+    """Read only the filed, redacted request under this project's asks folder."""
+    run = Path(run_path)
+    if run.parent.name != "runs" or not filed:
+        return "No filed request recorded."
+    root = run.parent.parent.parent
+    asks = root / ".council" / "asks"
+    path = Path(filed)
+    if not path.is_absolute():
+        path = root / path
+    if cockpit.linked(asks) or not cockpit.contained(path, asks):
+        return "No filed request recorded."
+    content = cockpit.text_of(path, asks, limit=65536)
+    if not content:
+        return "No filed request recorded."
+    lines = content.splitlines()
+    title = cockpit.clean(lines[0].lstrip("# "))[:160] if lines else ""
+    in_words = False
+    for line in lines[1:]:
+        if line.startswith("## "):
+            in_words = line.lower().startswith("## in your words")
+            continue
+        if in_words and line.strip():
+            words = cockpit.clean(line.strip())[:220]
+            return "{} — {}".format(title, words) if title and words != title else (words or title)
+    return title or "Filed request; no short description recorded."
+
+
+def closing_of(snap, run_path, usage, check_text, attention):
+    """A compact final reading. Missing or stale evidence is named, never counted as zero."""
+    run = snap["run"]
+    if run.get("status", "").split(" ")[0] not in ("complete", "paused", "abandoned"):
+        return None
+    claims = snap["claims"]
+    if claims["stale"]:
+        verified = "Claim index out of date; verifier counts unknown."
+        counts = None
+    elif claims["total"]:
+        verdicts = claims["by_verdict"]
+        confirmed, refuted = verdicts.get("CONFIRMED", 0), verdicts.get("REFUTED", 0)
+        unverified = claims["total"] - confirmed - refuted
+        counts = {"confirmed": confirmed, "refuted": refuted, "unverified": unverified}
+        verified = "{} confirmed, {} refuted, {} not verified".format(confirmed, refuted, unverified)
+    else:
+        verified, counts = "No claim verdicts recorded.", None
+    return {"request": filed_request(run_path, run.get("ask", "")),
+            "deliverable": cockpit.clean(run.get("deliverable") or "")[:240] or "No deliverable path recorded.",
+            "verification": verified, "verdict_counts": counts, "checks": check_text,
+            "spend": usage["spend_text"] or usage["text"],
+            "agent_runs": usage["agent_runs_text"] + (
+                "" if "(limit " in usage["agent_runs_text"] else " (limit {})".format(usage["agent_cap"])),
+            "left_for_you": [a["text"] for a in attention] + ["Rulings and next steps: see the summary in chat."]}
+
+
 # --- the reading ----------------------------------------------------------------------------------------------
 def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -570,6 +624,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
         "freshness": {"last_activity": iso(moment), "last_activity_clock": clock(moment, now) if moment else None,
                       "quiet_minutes": None if quiet is None else int(quiet), "quiet": key == "stale"},
         "usage": usage,
+        "closing": closing_of(snap, run_path, usage, check_text, attention),
         "checks": checks,
         "seats": [{"slug": s["slug"], "name": seat_name(snap, s["slug"]), "state": s["state"], "tokens": s.get("tokens"),
                    "tokens_basis": s.get("tokens_basis", ""), "agent_runs": s.get("agents"),
@@ -581,6 +636,17 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
 # --- text -----------------------------------------------------------------------------------------------------
 def text(status, tui_commands=()):
     run, state = status["run"], status["state"]
+    if status.get("closing"):
+        closing = status["closing"]
+        lines = ["{} · {} · {}".format(run["project"] or "council", run["mode_label"], run["id"]),
+                 "Status: {}. {}".format(state["label"], state["summary"]),
+                 "Asked: " + closing["request"], "Delivered: " + closing["deliverable"],
+                 "Verified: " + closing["verification"], "Checks: " + closing["checks"],
+                 "Spend: " + closing["spend"], "Agent runs: " + closing["agent_runs"],
+                 "Left for you:"]
+        lines.extend("- " + item for item in closing["left_for_you"])
+        lines.extend("Live view in a terminal — " + command for command in tui_commands or ())
+        return "\n".join(lines)
     now = utc_time(status["snapshot_at"])
     lines = ["{} · {} · {}".format(run["project"] or "council", run["mode_label"], run["id"])]
     stage = status["run"]["stage"]
@@ -648,9 +714,44 @@ def esc(value):
     return html.escape(cockpit.clean(value), quote=True)
 
 
+def closing_widget(status, preview=False):
+    """Final card shown after close; all recorded values remain escaped."""
+    run, state, closing = status["run"], status["state"], status["closing"]
+    now = utc_time(status["snapshot_at"])
+    out = [STYLE, '<div class="sc"><h2 class="sr">{}</h2>'.format(esc(
+        "{} {}: {}. {}".format(run["project"], run["mode_label"], state["label"], state["summary"]))),
+           '<div class="card" id="sc-card" data-at="{}">'.format(esc(status["snapshot_at"]))]
+    if preview:
+        out.append('<p class="box neutral" style="margin:0 0 12px">Preview built from a fixed snapshot taken {}. '
+                   'It does not update.</p>'.format(esc(clock(now, now))))
+    out.append('<div class="row"><span class="badge {}"><i class="ti {}" aria-hidden="true"></i>{}</span>'
+               '<span style="font-weight:500">{}</span><span class="muted">{}</span></div>'.format(
+                   state["role"], state["icon"], esc(state["label"]), esc(run["project"] or "Council run"),
+                   esc(run["mode_label"])))
+    out.append('<p style="margin-top:6px">{}</p>'.format(esc(state["summary"])))
+    for label, value in (("What you asked", closing["request"]), ("Delivered", closing["deliverable"]),
+                         ("Verified", closing["verification"]), ("Machine checks", closing["checks"])):
+        out.append('<p style="margin-top:10px"><span class="muted">{}:</span> {}</p>'.format(esc(label), esc(value)))
+    out.append('<div class="tiles"><div class="tile"><p class="muted">Spend</p><p>{}</p></div>'
+               '<div class="tile"><p class="muted">Agent runs</p><p>{}</p></div></div>'.format(
+                   esc(closing["spend"]), esc(closing["agent_runs"])))
+    out.append('<div class="box neutral"><p style="font-weight:500">Left for you</p><ul>{}</ul></div>'.format(
+        "".join("<li>{}</li>".format(esc(item)) for item in closing["left_for_you"])))
+    out.append('<p class="muted" style="margin-top:12px">Snapshot {} (<span id="sc-age">{}</span>)</p>'.format(
+        esc(clock(now, now)), "at " + esc(clock(now, now))))
+    if not preview:
+        out.append('<p class="muted" id="sc-old" hidden>This card is over an hour old. Ask for the council status '
+                   'to see the run now.</p>')
+    out.append(details(status))
+    out.extend(("</div></div>", SCRIPT))
+    return "".join(out).encode("ascii", "xmlcharrefreplace").decode("ascii")
+
+
 def widget(status, preview=False, limit=5):
     """One self-contained HTML fragment for a chat widget host (no page, no network, no local reads).
     Every value from the run is escaped; the script only computes the snapshot's age from its time."""
+    if status.get("closing"):
+        return closing_widget(status, preview)
     run, state, prog = status["run"], status["state"], status["progress"]
     now = utc_time(status["snapshot_at"])
     stage = run["stage"]

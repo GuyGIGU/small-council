@@ -216,12 +216,49 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("state: a completed run says so, and shows no next step", r["state"]["key"] == "completed"
           and not r["progress"]["next"] and r["state"]["label"] == "Completed", r["state"])
 
+    closing_base = base / "closing"
+    filed = closing_base / ".council" / "asks" / "filed.md"
+    write(filed, "# Ask — Review the parser\nrun: closing\nmode: council-review\n\n"
+          "## In your words\nFind the unsafe <script>alert(1)</script> path.\n")
+    closed = make_run(closing_base, "closing", status_value="complete", phase="learn",
+                      seats=[v2("beck", "done", 627000, 1, 1)], gates=[("tests", 0, 30)],
+                      extra_state="ask: .council/asks/filed.md\ndeliverable: reviews/report-<final>.md\n"
+                                  "closed: {}\n".format(local(20)))
+    plan(closed, ("beck",))
+    write(closed / "run-plan.tsv", read(closed / "run-plan.tsv").replace(
+        "estimated-tokens\t260000", "estimated-tokens\t420000"))
+    write(closed / "synthesis.md", "# Synthesis\n")
+    write(closed / "claims.jsonl", "".join(json.dumps({"id": str(i), "verdict": verdict,
+        "source": "synthesis.md:1"}) + "\n" for i, verdict in enumerate(
+            ("CONFIRMED", "CONFIRMED", "REFUTED", "UNVERIFIED"), 1)))
+    before = fingerprint(closing_base)
+    r = reading(closed)
+    card, plain = status.widget(r), status.text(r)
+    final = r["closing"]
+    check("closing card: request, deliverable, verdicts, checks, spend and agent limit are in every view",
+          final["verdict_counts"] == {"confirmed": 2, "refuted": 1, "unverified": 1} and
+          "Find the unsafe" in final["request"] and "reviews/report-<final>.md" == final["deliverable"] and
+          "2 confirmed, 1 refuted, 1 not verified" in card and "1 passing" in card and
+          "about 49% over estimate" in card and final["agent_runs"] == "1 (limit 10)" and
+          all(word in plain for word in ("Asked:", "Delivered:", "Verified:", "Checks:", "Spend:",
+                                        "Agent runs:", "Left for you:")) and
+          "Rulings and next steps" in json.dumps(final), (final, plain, card[-1800:]))
+    check("closing card: filed request and deliverable HTML are escaped",
+          "&lt;script&gt;" in card and "&lt;final&gt;" in card and
+          "<script>alert(1)</script>" not in card and "report-<final>" not in card, card[:1800])
+    check("closing card: snapshot, text and widget write nothing", fingerprint(closing_base) == before)
+    write(closed / "session-state.md", read(closed / "session-state.md").replace(
+        "ask: .council/asks/filed.md", "ask: ../../outside.md"))
+    check("closing card: unfiled paths never read arbitrary files", reading(closed)["closing"]["request"] ==
+          "No filed request recorded.")
+
     r = reading(make_run(base, "paused", status_value="paused", seats=[v2("beck", "done", 50000, 1, 1)]))
     check("state: a paused run reads as interrupted ('Paused') with a note on how to go on",
           r["state"]["key"] == "interrupted" and r["state"]["label"] == "Paused"
           and any(a["kind"] == "paused" for a in r["attention"]), (r["state"], r["attention"]))
     r = reading(make_run(base, "abandoned", status_value="abandoned"))
-    check("state: an abandoned run reads as stopped early", r["state"]["label"] == "Stopped early", r["state"])
+    check("state: an abandoned run reads as stopped early", r["state"]["label"] == "Stopped early"
+          and "Stopped early" in status.widget(r) and "Stopped early" in status.text(r), r["state"])
 
     r = reading(make_run(base, "stale", seats=[v2("hunt", "running", "", 1, 0, 190)], updated_min=190))
     check("state: an open run with nothing recorded for over an hour reads as quiet, with how long",
