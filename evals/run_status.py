@@ -13,6 +13,7 @@ Two halves:
 """
 
 import hashlib
+from html import unescape
 import json
 import os
 from pathlib import Path
@@ -384,7 +385,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           r["usage"]["estimate"] == 420000, r["usage"])
     check("spend: an open run over its ceiling asks before more work",
           any(a["kind"] == "estimate" and a["severity"] == 1 for a in r["attention"]) and
-          any(a["kind"] == "ceiling" and a["severity"] == 2 and "only after you say so" in a["text"]
+          any(a["kind"] == "ceiling" and a["severity"] == 2 and "waiting for your go" in a["text"]
               for a in r["attention"]), r["attention"])
     partial = make_run(spendbase, "partial", seats=[v2("wf", "done", 627000, 2, 1)])
     plan(partial, ("wf",))
@@ -402,6 +403,81 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     r = reading(closed)
     check("spend: a closed run over its ceiling keeps a note instead of asking to stop",
           any(a["kind"] == "ceiling" and a["severity"] == 1 for a in r["attention"]), r["attention"])
+
+    # --- the stop at the limit, and the user's go (council cap allow → cap-allowances.tsv) -----------------
+    stopbase = base / "stop"
+    write(stopbase / ".council" / "council.config.md", "# Council config\n- agent cap: 4\n")
+    GO_HEADER = "at\tused\tn\tuntil\tsaid\n"
+
+    def go_rows(*rows, tail=""):
+        return GO_HEADER + "".join("2026-09-27T11:{:02d}:00Z\t{}\t{}\t{}\t{}\n".format(i, *row)
+                                   for i, row in enumerate(rows)) + tail
+
+    def stop_run(name, runs, tokens=50000, allowances=None, status_value="in-progress", ceiling=None, cap=None):
+        run = make_run(stopbase, name, status_value=status_value, phase="work" if status_value == "in-progress" else "learn",
+                       seats=[v2("wf", "done", tokens, runs, runs)])
+        if ceiling is not None or cap is not None:
+            plan(run, ("wf",))
+            write(run / "run-plan.tsv", read(run / "run-plan.tsv").replace("agent-cap\t10", "agent-cap\t{}".format(cap or 10))
+                  + ("budget\trun\ttoken-ceiling\t{}\towner limit\n".format(ceiling) if ceiling is not None else ""))
+        if allowances is not None:
+            write(run / "cap-allowances.tsv", allowances)
+        return run
+
+    STOPPED, go6 = "Stopped at the limit — waiting for your go.", "Your go allows up to 6 agent runs."
+    stops = {"below": stop_run("below", 2),
+             "no go": stop_run("no-go", 4),
+             "go covers": stop_run("go-covers", 4, allowances=go_rows((4, 2, 6, "yes, two more"))),
+             "go covers, over": stop_run("go-covers-over", 5, allowances=go_rows((4, 2, 6, "yes, two more"))),
+             "go used up": stop_run("go-used-up", 6, allowances=go_rows((4, 2, 6, "yes, two more"))),
+             "torn last row": stop_run("torn-row", 4, allowances=go_rows((4, 2, 6, "go on"), tail="2026-09-27T11:59:00Z\t4\t")),
+             "garbage last rows": stop_run("garbage-row", 4, allowances=go_rows(
+                 (4, 2, 6, "go on"), ("x", "y", "seven", "junk"), (4, 1, 1234567890, "ten digits"))),
+             "garbage only": stop_run("garbage-only", 4, allowances=GO_HEADER + "not a row\n\tno\tuntil\t-\n"),
+             "ceiling": stop_run("ceiling", 1, tokens=627000, ceiling=600000),
+             "ceiling, go": stop_run("ceiling-go", 1, tokens=627000, ceiling=600000,
+                                     allowances=go_rows((1, 2, 3, "fine, two more"))),
+             "closed over": stop_run("closed-over", 5, status_value="complete"),
+             "unreadable cap": stop_run("huge-cap", 12, cap="99999999999999999999"),
+             "unreadable ceiling": stop_run("huge-ceiling", 1, tokens=627000, ceiling="99999999999999999999")}
+    before = fingerprint(stopbase)
+    lim = {name: reading(folder) for name, folder in stops.items()}
+    shown = {name: (r["usage"]["limit"]["over"], r["usage"]["limit"]["stopped"], r["usage"]["limit"]["allowed_until"],
+                    r["usage"]["limit"]["text"]) for name, r in lim.items()}
+    check("stop: no go on record — at the cap, new agents are stopped and the card says it waits for the user's go",
+          shown["no go"] == (True, True, None, STOPPED) and shown["below"] == (False, False, None, ""), shown)
+    check("stop: a go that covers the next agent reads as 'your go', never as stopped (at the cap and past it)",
+          shown["go covers"] == (True, False, 6, go6) and shown["go covers, over"] == (True, False, 6, go6), shown)
+    check("stop: a go that is used up stops again", shown["go used up"] == (True, True, 6, STOPPED), shown)
+    check("stop: a torn or garbage last row is passed over — the last readable row counts, and garbage alone is no go",
+          shown["torn last row"] == (True, False, 6, go6) and shown["garbage last rows"] == (True, False, 6, go6)
+          and shown["garbage only"] == (True, True, None, STOPPED), shown)
+    check("stop: past the token ceiling below the agent cap stops too, and a go covers it",
+          shown["ceiling"] == (True, True, None, STOPPED)
+          and shown["ceiling, go"] == (True, False, 3, "Your go allows up to 3 agent runs."), shown)
+    check("stop: a closed run over its cap is over, but nothing is stopped and no go is asked for",
+          shown["closed over"] == (True, False, None, ""), shown)
+    check("stop: a cap or ceiling too large for bash to compare stops nothing, as in the helper",
+          shown["unreadable cap"] == (False, False, None, "") and shown["unreadable ceiling"] == (False, False, None, ""), shown)
+    items = {name: [(a["kind"], a["severity"]) for a in r["attention"] if a["kind"] in ("cap", "ceiling", "stop")]
+             for name, r in lim.items()}
+    check("stop: over the cap or ceiling needs the user only while stopped; on the user's go it is a note, and "
+          "exactly at the cap it is a note",
+          items["go used up"] == [("cap", 2)] and items["go covers, over"] == [("cap", 1)] and items["ceiling"] == [("ceiling", 2)]
+          and items["ceiling, go"] == [("ceiling", 1)] and items["no go"] == [("stop", 1)] and items["go covers"] == [("stop", 1)]
+          and items["below"] == [] and items["closed over"] == [("cap", 1)], items)
+    views = {name: (status.text(r), unescape(status.widget(r)), status.notification_line(r)) for name, r in lim.items()}
+    check("stop: text, widget and --line each carry the phrase — 'waiting for your go' versus 'your go allows up to'",
+          all(STOPPED in view for name in ("no go", "go used up", "ceiling", "garbage only") for view in views[name])
+          and all(go6 in view and "waiting for your go" not in view for name in ("go covers", "go covers, over")
+                  for view in views[name])
+          and not any("your go" in view.lower() for view in views["below"] + views["closed over"]),
+          {name: views[name][2] for name in views})
+    check("stop: the JSON carries the counts the stop reads, the user's go and the phrase",
+          json.loads(json.dumps(lim["go covers, over"]))["usage"]["limit"] == {
+              "agent_runs": 5, "agent_cap": 4, "tokens": 50000, "ceiling": None, "allowed_until": 6,
+              "over": True, "stopped": False, "text": go6}, lim["go covers, over"]["usage"]["limit"])
+    check("stop: reading the stop and the go writes nothing", fingerprint(stopbase) == before)
 
     # --- history leaves out what it can't count ------------------------------------------------------------
     home = base / "hist"
@@ -618,6 +694,43 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               (e3, cev[-300:], creading["attention"]))
         code, out, err = council(capped, "run", "events", "check")
         check("cap: the stream with the cap event still checks", code == 0, out + err)
+
+        # --- the card's stop and the helper's, on the same folders (the hook refuses on the helper's reading) ---
+        subprocess.run([GIT, "init", "-q"], cwd=stopbase, check=True)
+        before = fingerprint(stopbase / ".council")
+        bash_lines = sourced(stopbase, "; ".join('cap_standing "{}"'.format(str(folder).replace("\\", "/"))
+                                                 for folder in stops.values())).splitlines()
+        disagree = []
+        for (name, folder), line in zip(stops.items(), bash_lines + [""] * len(stops)):
+            py = status.cap_standing(cockpit.snapshot(folder, None, 8), folder)
+            mine = " ".join(["-" if v is None else str(v) for v in (py["agent_runs"], py["agent_cap"], py["tokens"],
+                                                                     py["ceiling"], py["allowed_until"])]
+                            + [str(int(py["over"])), str(int(py["stopped"]))])
+            if line.strip() != mine:
+                disagree.append((name, line, mine))
+        check("readers: the card's stop and the helper's cap_standing read every case the same — agent runs, cap, "
+              "tokens, ceiling, the user's go, over and stopped", not disagree and len(bash_lines) == len(stops), disagree)
+        mismatch = []
+        for name, folder in stops.items():
+            code, out, err = council(stopbase, "cap", "--run", str(folder))
+            said, want = out.splitlines() + ["", ""], lim[name]["usage"]["limit"]
+            counts = re.search(r": ([0-9]+) of ([0-9]+) agent runs used", said[0])
+            go = re.search(r"the user's go allows up to ([0-9]+)", said[0])
+            got = (code, counts and (int(counts.group(1)), int(counts.group(2))), go and int(go.group(1)),
+                   said[1].startswith("new agents: stopped"))
+            if got != (0, (want["agent_runs"], want["agent_cap"]), want["allowed_until"], want["stopped"]):
+                mismatch.append((name, got, want, out + err))
+        check("readers: `council cap` says what the card says on every case — agent runs, cap, the user's go, and "
+              "whether new agents are stopped (a closed run's never are)", not mismatch, mismatch)
+        via = {name: json.loads(council(stopbase, "status", "--json", "--run", str(stops[name]))[1] or "{}")
+               for name in ("no go", "go covers")}
+        code_l, line_l, err_l = council(stopbase, "status", "--line", "--run", str(stops["go covers"]))
+        check("status through the helper: --json carries usage.limit, and --line says the user's go",
+              via["no go"].get("usage", {}).get("limit", {}).get("stopped") is True
+              and via["go covers"].get("usage", {}).get("limit", {}).get("allowed_until") == 6
+              and via["go covers"]["usage"]["limit"]["stopped"] is False and go6 in line_l,
+              ([v.get("usage", {}).get("limit") for v in via.values()], line_l, err_l))
+        check("status through the helper: reading the stop and the go writes nothing", fingerprint(stopbase / ".council") == before)
 
         rows_before = read(run / "seats.tsv")
         refused = [council(repo, "correct", *w) for w in (
