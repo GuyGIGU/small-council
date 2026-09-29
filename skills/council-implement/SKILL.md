@@ -162,8 +162,8 @@ the converge pass starts, `council state phase=challenge`.
    - the before, after and gate outputs in `gates/`.
 
    Verify every P1 fix and every risky task (data writes, security, core logic) on its own; batch
-   small tasks two or three per verifier. Track each with `council seat verify-<n> …`. Then act on
-   the verdict:
+   small tasks two or three per verifier, or up to five of one kind (renames, copy edits). Track each
+   with `council seat verify-<n> …`. Then act on the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
      `c`), so the first verdict stays on disk.
    - **A second failed verification** → a **clean-context diagnosis** if this task has not already
