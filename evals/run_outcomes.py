@@ -16,6 +16,8 @@ BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash") or (
     r"C:\Program Files\Git\bin\bash.exe" if Path(r"C:\Program Files\Git\bin\bash.exe").is_file() else None)
 sys.path.insert(0, str(ROOT / "scripts"))
 import outcomes  # noqa: E402
+import history  # noqa: E402
+import tune  # noqa: E402
 
 checks = []
 
@@ -179,6 +181,125 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
         row = next(r for r in absent_data["runs"] if r["run"] == absent_run.name)
         check("an unavailable recorded code root is can't tell, not a comparison with the caller",
               row["claims"][0]["outcome"] == "can't tell", row)
+
+        # Line endings, colour settings and pure insertions, in a second fixture repository that its
+        # run records as its code root (so history, run from any folder, compares with it too).
+        edge = temp / "edge-repo"
+        edge_home = edge / ".council"
+        edge.mkdir()
+        run_git(edge, "init", "-q")
+        run_git(edge, "config", "user.name", "Council eval")
+        run_git(edge, "config", "user.email", "eval@example.invalid")
+        run_git(edge, "config", "core.autocrlf", "false")   # commit the CRLF bytes exactly as written
+        eight = "".join("line {}\n".format(n) for n in range(1, 9)).encode("ascii")
+        crlf = eight.replace(b"\n", b"\r\n")
+        changes = {
+            "crlf/only.py": crlf,                                                    # line endings only
+            "crlf/at.py": crlf.replace(b"line 2\r", b"fixed 2\r"),                   # ... and an edit at line 2
+            "crlf/elsewhere.py": crlf.replace(b"line 6\r", b"fixed 6\r"),            # ... and an edit at line 6
+            "insert/inside.py": eight.replace(b"line 5\n", b"line 5\nguard\n"),      # after line 5 of 4-6
+            "insert/after.py": eight.replace(b"line 2\n", b"line 2\nguard\n"),       # right after line 2
+            "insert/before.py": eight.replace(b"line 3\n", b"line 3\nguard\n"),      # right before line 4
+            "insert/away.py": eight.replace(b"line 4\n", b"line 4\nguard\n"),        # two lines past line 2
+            "fix/target.py": eight.replace(b"line 2\n", b"fixed 2\n"),
+            "fused/two.py": eight.replace(b"line 2\n", b"fixed 2\n").replace(b"line 6\n", b"fixed 6\n"),
+            "text/bytes.py": eight.replace(b"line 2\n", "café Á ".encode("utf-8") + b"\xff\n"),
+        }
+        for name in changes:
+            (edge / name).parent.mkdir(parents=True, exist_ok=True)
+            (edge / name).write_bytes(eight)
+        run_git(edge, "add", "--", *changes)
+        env["GIT_AUTHOR_DATE"] = "2020-01-01T10:00:00+00:00"
+        env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"]
+        run_git(edge, "commit", "-q", "-m", "edge baseline", env=env)
+        write(edge_home / "council.config.md", "# Council config\n")
+        edge_run = edge_home / "runs" / "2020-01-02-120000-review"
+        write(edge_run / "session-state.md", "status: complete\nmode: council-review\n"
+              "closed: 2020-01-02 12:00:00\ncode-root: {}\n".format(edge))
+        edge_claims = {"crlf-only": "crlf/only.py:2", "crlf-at": "crlf/at.py:2", "crlf-elsewhere": "crlf/elsewhere.py:2",
+                       "insert-inside": "insert/inside.py:4-6", "insert-after": "insert/after.py:2",
+                       "insert-before": "insert/before.py:4", "insert-away": "insert/away.py:2",
+                       "fix-at": "fix/target.py:2", "fix-elsewhere": "fix/target.py:6", "fix-span": "fix/target.py:1-3",
+                       "fused": "fused/two.py:4", "bytes": "text/bytes.py:2"}
+        write(edge_run / "claims.jsonl", "".join(json.dumps({"id": ident, "disposition": "kept", "citation": cited,
+                                                             "provenance": ["hunt#1"]}) + "\n"
+                                                 for ident, cited in edge_claims.items()))
+        for name, text in changes.items():
+            (edge / name).write_bytes(text)
+        run_git(edge, "add", "--", *changes)
+        env["GIT_AUTHOR_DATE"] = "2020-01-03T10:00:00+00:00"
+        env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"]
+        run_git(edge, "commit", "-q", "-m", "edge after close", env=env)
+
+        git_calls = []
+        real_git = outcomes.git
+
+        def counting_git(where, *args):
+            git_calls.append(args)
+            return real_git(where, *args)
+
+        outcomes.git = counting_git
+        try:
+            plain = outcomes.outcomes(edge_home, edge)
+        finally:
+            outcomes.git = real_git
+        edge_got = {claim["id"]: claim["outcome"] for claim in plain["runs"][0]["claims"]}
+        for name, ident, want in (
+                ("a file whose only change is LF to CRLF is unchanged", "crlf-only", "unchanged"),
+                ("a CRLF rewrite with a real edit at the cited line is changed at cited lines", "crlf-at",
+                 "changed at cited lines"),
+                ("a CRLF rewrite with a real edit elsewhere is file changed elsewhere", "crlf-elsewhere",
+                 "file changed elsewhere"),
+                ("lines inserted strictly inside a cited span are changed at cited lines", "insert-inside",
+                 "changed at cited lines"),
+                ("lines inserted right after a one-line citation are changed at cited lines", "insert-after",
+                 "changed at cited lines"),
+                ("lines inserted right before a citation are changed at cited lines", "insert-before",
+                 "changed at cited lines"),
+                ("lines inserted two lines past a citation are file changed elsewhere", "insert-away",
+                 "file changed elsewhere"),
+                ("a diff holding bytes the locale cannot decode is still compared", "bytes",
+                 "changed at cited lines")):
+            check(name, edge_got.get(ident) == want, (ident, edge_got.get(ident)))
+        diffs = [args for args in git_calls if args[0] == "diff" and args[-1] == "fix/target.py"]
+        looks = [args for args in git_calls if args[0] == "cat-file" and args[-1].endswith(":fix/target.py")]
+        check("claims citing one file share one diff and one tracked check at each commit",
+              len(diffs) == 1 and len(looks) == 2 and [edge_got.get(i) for i in ("fix-at", "fix-elsewhere", "fix-span")]
+              == ["changed at cited lines", "file changed elsewhere", "changed at cited lines"],
+              (diffs, looks, edge_got))
+
+        run_git(edge, "config", "color.diff", "always")
+        colored = outcomes.outcomes(edge_home, edge)
+        colored_got = {claim["id"]: claim["outcome"] for claim in colored["runs"][0]["claims"]}
+        check("with color.diff always, a fix at the cited line still reads changed at cited lines, and every "
+              "outcome matches the uncoloured comparison",
+              colored_got.get("fix-at") == "changed at cited lines" and colored_got == edge_got, colored_got)
+        run_git(edge, "config", "diff.interHunkContext", "5")
+        fused = outcomes.outcomes(edge_home, edge)
+        fused_got = {claim["id"]: claim["outcome"] for claim in fused["runs"][0]["claims"]}
+        check("with diff.interHunkContext 5, edits at lines 2 and 6 leave a citation of line 4 file changed elsewhere",
+              fused_got.get("fused") == "file changed elsewhere", fused_got.get("fused"))
+
+        compared = []
+        real_outcomes = outcomes.outcomes
+
+        def counting_outcomes(*args, **kwargs):
+            compared.append(args)
+            return real_outcomes(*args, **kwargs)
+
+        outcomes.outcomes = counting_outcomes
+        try:
+            full = history.history(edge_home)
+            on = len(compared)
+            skipped = history.history(edge_home, outcomes=False)
+            tune.proposals(edge_home)
+            off = len(compared) - on
+        finally:
+            outcomes.outcomes = real_outcomes
+        check("history compares finding outcomes by default; history(outcomes=False) and tune run no comparison",
+              on == 1 and off == 0 and skipped["outcomes"] is None
+              and full["outcomes"] == {"runs": 1, "kept": plain["totals"]["kept"], "cut": plain["totals"]["cut"]},
+              (on, off, full["outcomes"], skipped["outcomes"]))
         if BASH:
             code, out, err = council(repo, "outcomes", "--json")
             try:

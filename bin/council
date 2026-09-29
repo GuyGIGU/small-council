@@ -332,8 +332,10 @@ event_lock() {
   done
 }
 
+# A trailing `once` records the event only while no row of its type exists. That check is made under the
+# lock, so two calls that pass the same limit together cannot both record the first time.
 event_append() {
-  local run="$1" type="$2" subject="$3" value="$4" detail="$5" file lock last seq rc=0 schema
+  local run="$1" type="$2" subject="$3" value="$4" detail="$5" once="${6:-}" file lock last seq rc=0 schema
   schema="$(field events-schema "$run/session-state.md")"
   case "$schema" in
     '')
@@ -344,6 +346,10 @@ event_append() {
   esac
   file="$run/events.tsv"; lock="$file.lock"
   event_lock "$lock" || return 1
+  if [ "$once" = once ] && [ -f "$file" ] \
+      && TYPE="$type" awk -F'\t' 'NR > 1 && $4 == ENVIRON["TYPE"] { f = 1; exit } END { exit !f }' "$file"; then
+    event_unlock "$lock"; return    # already on record: nothing to add
+  fi
   if [ ! -f "$file" ]; then
     if [ "$type" = run.opened ]; then
       printf 'schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n' > "$file" || rc=1
@@ -795,8 +801,8 @@ cap_note() {
   case "$e" in ''|*[!0-9]*) return 0 ;; esac
   if [ "$e" -gt "$cap" ]; then
     printf 'council: this run has used %s agent runs, over its cap of %s — tell the user, and ask before starting more\n' "$e" "$cap" >&2
-    if [ -f "$run/events.tsv" ] && ! awk -F'\t' '$4 == "run.cap_passed" { f = 1 } END { exit !f }' "$run/events.tsv"; then
-      event_append "$run" run.cap_passed run "$e" "cap=$cap" || printf 'council: the cap event could not be recorded\n' >&2
+    if [ -f "$run/events.tsv" ]; then
+      event_append "$run" run.cap_passed run "$e" "cap=$cap" once || printf 'council: the cap event could not be recorded\n' >&2
     fi
   elif [ "$e" -eq "$cap" ]; then
     printf 'council: this run has used all %s agent runs of its cap — ask the user before starting more\n' "$cap" >&2
@@ -805,14 +811,14 @@ cap_note() {
   estimate="$(run_budget_value "$run" estimated-tokens)"
   ceiling="$(run_budget_value "$run" token-ceiling)"
   if [ -n "$estimate" ] && [ "$t" -gt "$estimate" ]; then
-    if [ -f "$run/events.tsv" ] && ! awk -F'\t' '$4 == "run.estimate_passed" { f = 1 } END { exit !f }' "$run/events.tsv"; then
-      event_append "$run" run.estimate_passed run "$t" "estimate=$estimate" || printf 'council: the estimate event could not be recorded\n' >&2
+    if [ -f "$run/events.tsv" ]; then
+      event_append "$run" run.estimate_passed run "$t" "estimate=$estimate" once || printf 'council: the estimate event could not be recorded\n' >&2
     fi
   fi
   if [ -n "$ceiling" ] && [ "$t" -gt "$ceiling" ]; then
     printf 'council: this run has used %s tokens, over its ceiling of %s — tell the user, and ask before starting more\n' "$t" "$ceiling" >&2
-    if [ -f "$run/events.tsv" ] && ! awk -F'\t' '$4 == "run.ceiling_passed" { f = 1 } END { exit !f }' "$run/events.tsv"; then
-      event_append "$run" run.ceiling_passed run "$t" "ceiling=$ceiling" || printf 'council: the ceiling event could not be recorded\n' >&2
+    if [ -f "$run/events.tsv" ]; then
+      event_append "$run" run.ceiling_passed run "$t" "ceiling=$ceiling" once || printf 'council: the ceiling event could not be recorded\n' >&2
     fi
   fi
 }
@@ -975,7 +981,7 @@ cmd_run_close() {
   estimate="$(run_budget_value "$run" estimated-tokens)"
   if [ -n "$words" ] && [ -n "$estimate" ]; then
     set -- $usage; basis="$1"; total="$4"
-    words="$words · estimated ~$(( (estimate + 500) / 1000 ))k"
+    words="$words · estimated ~$(usage_token_text "$estimate")"   # the same units as the total: ~1.5M, never ~1500k
     if [ "$estimate" -gt 0 ] && [ "$total" -gt "$estimate" ]; then
       over="$(( ((total - estimate) * 100 + estimate / 2) / estimate ))"
       if [ "$basis" = complete ]; then words="$words (about $over% over)"
