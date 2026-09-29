@@ -499,9 +499,12 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               (0, min), (1, min), (0, max), (1, max))) == (20.0, 20.0, 80.0, 88.0)
           and min(p[1] for p in half_moon) == 49.0 and round(max(p[1] for p in half_moon), 1) == 56.0
           and all(0 <= b[0] and 0 <= b[1] and b[2] <= 100 and b[3] <= 100 for b in boxes.values()), (boxes, body[0][0][:4]))
-    check("pet: each pose keeps its marks — 'z z' asleep, the '?' badge needing you, five confetti dots when done",
-          marks == {"asleep": (["z", "z"], 0), "working": ([], 0), "needs-you": (["?"], 5), "stopped": ([], 0),
+    check("pet: each pose keeps its marks — 'z z' asleep, two eyes with no pupils and the '?' badge needing you, "
+          "five confetti dots when done",
+          marks == {"asleep": (["z", "z"], 0), "working": ([], 0), "needs-you": (["?"], 3), "stopped": ([], 0),
                     "done": ([], 5)}, marks)
+    check("pet: no brown face lines in any pose — the cream outline is enough",
+          not any(step[0] == "line" and step[2].upper() == "#993C1D" for pose in pet.POSES for step in pet.shapes(pose)))
 
     def pet_view(folder):
         return pet.view({"kind": "status", "status": json.loads(json.dumps(reading(folder)))})

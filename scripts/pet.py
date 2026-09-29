@@ -41,8 +41,9 @@ POLL_SECONDS = 5          # how often the run is read
 DONE_SECONDS = 120        # how long a finished (or paused) run stays on show before the pet sleeps
 START_SECONDS = 15        # how long `council pet` waits for the window to show
 
-# The design's colours: a coral body with a cream outline and face, darker ribs, a green stem and leaf.
-CORAL, CREAM, RIB, STEM, PUPIL = "#D85A30", "#FAECE7", "#993C1D", "#639922", "#4A1B0C"
+# The design's colours: a coral body with a cream outline and face, a green stem and leaf. On review, the
+# first design's brown face lines and the needing-you pupils were dropped: the cream outline is enough.
+CORAL, CREAM, STEM, MOUTH = "#D85A30", "#FAECE7", "#639922", "#4A1B0C"
 LEAF, BLUE, WHITE, SOFT = "#97C459", "#378ADD", "#FFFFFF", "#888780"
 AMBER, PURPLE, TEAL = "#EF9F27", "#7F77DD", "#1D9E75"
 TONES = {"neutral": ("#F1EFE8", "#444441"), "accent": ("#E6F1FB", "#0C447C"),
@@ -58,7 +59,6 @@ BASE = [
     ("ellipse", (60, 11, 6, 3, -25), {"fill": LEAF}),
     ("path", BODY, {"fill": CORAL}),
     ("path", BODY, {"stroke": CREAM, "width": 2, "shrink": (50, 58, 0.86)}),
-    ("path", "M30 34 Q24 58 29 82 M70 34 Q76 58 71 82", {"stroke": RIB, "width": 1.5}),
 ]
 
 
@@ -72,9 +72,8 @@ FACES = {
                ("text", (80, 26, "z", 13, "start"), {"fill": SOFT}), ("text", (88, 16, "z", 11, "start"), {"fill": SOFT})],
     "working": [("path", "M31 49 h14 a7 7 0 0 1 -14 0 Z M55 49 h14 a7 7 0 0 1 -14 0 Z", {"fill": CREAM}), _nose(60),
                 ("path", "M38 69 l4 4 l4 -4 l4 4 l4 -4 l4 4 l4 -4", {"stroke": CREAM, "width": 2.5})],
-    "needs-you": [("circle", (38, 50, 7.5), {"fill": CREAM}), ("circle", (62, 50, 7.5), {"fill": CREAM}),
-                  ("circle", (38, 50, 3.5), {"fill": PUPIL}), ("circle", (62, 50, 3.5), {"fill": PUPIL}), _nose(61),
-                  ("ellipse", (50, 72, 3.5, 4.5, 0), {"fill": PUPIL, "stroke": CREAM, "width": 2}),
+    "needs-you": [("circle", (38, 50, 7.5), {"fill": CREAM}), ("circle", (62, 50, 7.5), {"fill": CREAM}), _nose(61),
+                  ("ellipse", (50, 72, 3.5, 4.5, 0), {"fill": MOUTH, "stroke": CREAM, "width": 2}),
                   ("circle", (14, 18, 10), {"fill": BLUE}), ("text", (14, 23, "?", 14, "middle"), {"fill": WHITE, "bold": True})],
     "stopped": [("path", "M30 45 L46 52 Q44 60 37 60 Q29 58 30 45 Z M70 45 L54 52 Q56 60 63 60 Q71 58 70 45 Z",
                  {"fill": CREAM}), _nose(62),
