@@ -116,8 +116,11 @@ python evals/run_impact.py   # needs Python 3.8+, bash and git for the CLI hando
 ```
 
 Uses temporary repositories to check committed/staged/unstaged/untracked changes, renames and
-deletions, Python AST and literal JS/TS imports, likely test links, deterministic TSV, and the
-`council index` → `impact.tsv` handoff. This is not a claim of runtime coverage.
+deletions, Python AST, sibling-script and literal JS/TS imports, likely test links, `not-inspected`
+limit rows for files no provider reads, deterministic TSV, and the `council index` → `impact.tsv`
+handoff. With full Git history it also graphs a real range of this repository (`132dc37..869d5cf`,
+where helper scripts import their neighbours); a shallow clone skips that check. This is not a
+claim of runtime coverage.
 
 ## 6. Context evals — do seat packs stay relevant, small, and safe?
 
