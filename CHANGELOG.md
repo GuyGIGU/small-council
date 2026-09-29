@@ -6,13 +6,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-09-29
+
+**TL;DR:** runs stop at their agent limit until you say go, show spend against the estimate, end
+with a closing card and can alert your phone; small asks skip the council.
+
 ### Added
+
 - Opening a run warns when the configured project memory exceeds about 25 KB; the status card flags it too.
 - `council outcomes` compares finding citations with later committed changes in each run's code root;
   history includes a conservative summary.
 - A run at its agent cap or past its token ceiling now stops new agents until the user says go (`council cap allow`).
 
 ### Changed
+
 - The always-loaded core instructions are shorter; the full helper command table lives in `references/helper-commands.md`.
 - `council status --line` gives one short owner notification at a blocking question, stopped build,
   agent/token limit or completion; `- notifications: off` suppresses it.
@@ -27,6 +34,7 @@ All notable changes to this project are documented here. The format is based on
   directly, with no run (never on a protected subject, and never for a review or post-game).
 - Small, same-kind parts share an agent: each agent of a Workflow takes a group of them, and a build
   verifies up to five small tasks of one kind together.
+
 ### Fixed
 
 - Every token display rounds half up; bash progress and close lines use the same M form as Python.
@@ -37,6 +45,12 @@ All notable changes to this project are documented here. The format is based on
 - `council history` diffs each cited file once per run; `council tune` skips the comparison it never reads.
 - The close line gives the estimate in the same units as the total (`~1.5M`, not `~1500k`).
 - A run passing its cap, estimate or ceiling is recorded once, even when two seats finish together.
+
+### Upgrade notes
+
+- An open run already at or past its agent cap stops at its next agent too; `council cap` shows
+  where it stands, and `council cap allow` records the user's go.
+- A small, fully specified request may now be done directly, with no run; ask for the council to get one.
 
 ## [0.14.0] — 2026-09-28
 
