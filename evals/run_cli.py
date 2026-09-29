@@ -12,7 +12,9 @@ Needs bash and git; no LLM, no network. Covers:
   - gates judged by exit code, with the command passed intact, and table cells that never shift;
   - seat-file collection: ref: proof of reading (paired seats too), caps, broken citations, list-style
     and unreadable index lines, failed and re-dispatched workers;
-  - citation and origin checks (single lines, ranges and comma lists); map status; the drift doctor.
+  - citation and origin checks (single lines, ranges and comma lists); map status; the drift doctor;
+  - the agent stop: council cap's standing, cap allow's refusals and record (older runs too), cap check's
+    exit codes.
 """
 import json
 import os
@@ -937,6 +939,70 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat: a later record past all three limits adds no second passing event, and the stream stays valid",
           [kinds.count(k) for k in once] == [1, 1, 1] and code == 0,
           "cap, estimate, ceiling events %s; %s%s" % ([kinds.count(k) for k in once], out, err))
+
+    # The agent stop: council cap says where a run stands, cap allow records the user's go in their words,
+    # cap check is the agent gate's decision (hooks/agent-gate.sh) — exit 2 and the reason while stopped.
+    stop = new_repo(tmp, "agent-stop")
+    write(os.path.join(stop, ".council", "council.config.md"), "# Council config — the agent stop\n- agent cap: 2\n")
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: a council with no run — exit 0, nothing printed", code == 0 and not out and not err, out + err)
+    _, stop_run, _ = council(stop, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "s1"})
+    stop_run = stop_run.strip()
+    council(stop, "seat", "w1", "done", "agent=a1", "tokens=30000")
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: a run under its cap — exit 0, nothing printed", code == 0 and not out and not err, out + err)
+    council(stop, "seat", "w2", "done", "agent=a2", "tokens=30000")
+    code, out, err = council(stop, "cap")
+    check("cap: the agent runs used against the cap, and that new agents are stopped now",
+          code == 0 and "2 of 2 agent runs used" in out and "new agents: stopped" in out, out + err)
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: at the cap — exit 2, the reason on stdout, naming council cap allow",
+          code == 2 and out.startswith("Small Council:") and "2 of its 2 agent runs" in out and "council cap allow" in out,
+          out + err)
+    code, out, err = council(stop, "cap", "check", "--session", "someone-else")
+    check("cap check: a run another session drives is not this session's to stop — exit 0", code == 0 and not out, out + err)
+    for args, want in ((("cap", "allow", "2"), "needs --user-said"),
+                       (("cap", "allow", "2", "--user-said", "   "), "needs --user-said"),
+                       (("cap", "allow", "two", "--user-said", "yes"), "a whole number from 1 to 1000"),
+                       (("cap", "allow", "0", "--user-said", "yes"), "a whole number from 1 to 1000"),
+                       (("cap", "allow", "1001", "--user-said", "yes"), "a whole number from 1 to 1000")):
+        code, out, err = council(stop, *args)
+        check(f"cap allow: refuses {' '.join(repr(a) for a in args[2:])}", code == 2 and want in err, out + err)
+    code, out, err = council(stop, "cap", "allow", "3", "--user-said", "yes\tgo on, three more")
+    rows = read(os.path.join(stop_run, "cap-allowances.tsv")).splitlines()
+    cells = rows[1].split("\t") if len(rows) == 2 else []
+    check("cap allow: records one row (the refused ones none) — used, n, until, and the user's words on one line",
+          code == 0 and rows[:1] == ["at\tused\tn\tuntil\tsaid"] and cells[1:] == ["2", "3", "5", "yes go on, three more"],
+          "\n".join(rows) + out + err)
+    check("cap allow: says how many more agent runs may start, and up to what count",
+          "3 more agent run(s) may start, up to 5" in out, out)
+    allowed = [e for e in events(stop_run) if e[3] == "run.cap_allowed"]
+    check("cap allow: records a run.cap_allowed event", len(allowed) == 1 and allowed[0][4:] == ["run", "3", "used=2;until=5"],
+          allowed)
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: after the go — exit 0", code == 0 and not out, out + err)
+    code, out, err = council(stop, "cap")
+    check("cap: shows the go and how many more agent runs it covers",
+          "the user's go allows up to 5" in out and "3 more under the user's go" in out, out + err)
+    code, out, err = council(stop, "seat", "w3", "done", "agent=a3", "tokens=30000")
+    check("seat: past the cap under the user's go, the note says the go covers it, not to ask again",
+          "the user's go covers up to 5" in err and "ask before starting more" not in err, err)
+    code, out, err = council(stop, "run", "events", "check")
+    check("cap allow: the event stream holding run.cap_allowed stays valid", code == 0 and len(allowed) == 1, out + err)
+    old_stop = os.path.join(stop, ".council", "runs", "2026-09-01-100000-review")   # from before event streams and run plans
+    write(os.path.join(old_stop, "session-state.md"), "status: in-progress\nmode: council-review\nphase: work\n")
+    write(os.path.join(old_stop, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\n"
+                                               "beck\tdone\ta2\t50000\t10:07\t\n")
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: an older run with no session, at its cap on this tree — exit 2", code == 2 and "2026-09-01-100000-review" in out,
+          out + err)
+    code, out, err = council(stop, "cap", "allow", "1", "--run", "2026-09-01-100000-review", "--user-said", "fine, one more")
+    rows = read(os.path.join(old_stop, "cap-allowances.tsv")).splitlines()
+    check("cap allow: works on an older run with no events.tsv or run-plan.tsv, and adds no event file",
+          code == 0 and len(rows) == 2 and rows[1].split("\t")[1:] == ["2", "1", "3", "fine, one more"]
+          and not os.path.exists(os.path.join(old_stop, "events.tsv")), "\n".join(rows) + out + err)
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: with both runs covered — exit 0", code == 0 and not out, out + err)
 
     # Memory: scopes and anchors
     conv_text = ("# Conventions\n## Accepted Patterns (AP) — intentional; never flag these\n"
@@ -3442,7 +3508,8 @@ with tempfile.TemporaryDirectory() as tmp:
                  ("doctor", "x"), ("version", "x"), ("help", "x"), ("doctor", "--frobnicate"), ("run", "close", "--base", "main"),
                  ("run", "status", "--at=verify"), ("index", "--", "x"), ("doctor", "--all=yes"), ("run", "close", "--status="),
                  ("run", "resume", "x"), ("run", "resume", "--status", "paused"), ("status", "x"), ("status", "--all"),
-                 ("correct", "a", "x")]:
+                 ("correct", "a", "x"), ("cap", "x"), ("cap", "--session", "s1"), ("cap", "allow", "1", "2", "--user-said", "go"),
+                 ("cap", "check", "x"), ("cap", "check", "--run", "x"), ("cap", "check", "--user-said", "go")]:
         code, out, err = council(repo, *args)
         if code != 2 or not err.strip():
             took.append(" ".join(args) + f" (exit {code})")
