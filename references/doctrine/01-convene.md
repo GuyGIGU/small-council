@@ -29,7 +29,8 @@ Decide whether to convene, whom, and at what cost — then get the user's go-ahe
    dispatching a run; a lower-cost Solo label does not waive required independent challenge.
    Solo: you, inline. Squad: 2–4 seats + 1–2 verifiers. Full: up to 7 seats + verifiers. Count
    the verifiers Challenge will need — one for each P1 or protected item you expect, one for the
-   rest — and keep seats + verifiers within the agent cap (config `agent cap`, default 10).
+   rest — and keep their agent runs within the agent cap (config `agent cap`, default 10): a seat run
+   as a Workflow counts every agent it starts.
 6. **Estimate from this project's history.** `council ledger` shows each seat's average tokens per
    run; `council run status --all` shows whole runs. With no history, assume ~60–100k tokens per
    worker. The route budgets with the config's `estimate per worker` when the user set one through

@@ -33,8 +33,15 @@ The required run rows are:
 Every considered seat has `seat/<slug>/disposition` (`selected` or `skipped`) and
 `seat/<slug>/role` (`chair`, `worker`, or `verifier`). Every selected seat has a context level
 (`minimal`, `focused`, or `full`) and a positive tool-call budget. The selected Chair is budgeted but
-does not count as an agent. Skipped seats receive neither context nor budget. The selected workers and verifiers must
-fit both the plan's agent cap and the project's configured cap.
+does not count as an agent. Skipped seats receive neither context nor budget.
+
+The cap counts agent runs, not seats: a seat run as a Workflow starts one agent per part, so it
+declares `budget/<slug>/agent-runs` (1 to 1000; 1 when absent). The selected workers' and verifiers'
+agent runs must fit both the plan's agent cap and the project's configured cap. During the run the
+helper counts the agent runs actually recorded (`references/run-accounting.md`): once they reach the
+cap, `council seat` tells the Chair to ask the user before starting more; the first time they pass
+it, it records `run.cap_passed` and the status card says so. The helper cannot stop an agent from
+starting — it hears of one only afterwards — so asking first is the Chair's job.
 
 Exactly one Chair must be selected. Solo selects no delegated agents; Squad selects at least one,
 and Full selects at least four. Independent or adversarial verification requires a selected

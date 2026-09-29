@@ -292,7 +292,7 @@ with tempfile.TemporaryDirectory() as tmp:
     write_plan(run, selected=("fowler", "beck", "gone"), skipped=("ghost",))
     code, out, err = council(repo, "run", "plan", "check")
     check("run plan check: accepts a complete plan and counts selected agents",
-          code == 0 and "5 selected, 1 skipped" in out and "4 agent(s) of cap 10" in out, out + err)
+          code == 0 and "5 selected, 1 skipped" in out and "4 agent run(s) of cap 10" in out, out + err)
     code, out, err = council(repo, "state", "phase=brief")
     check("state: enters Brief once the run plan is valid", code == 0 and "phase brief" in out, out + err)
     code, out, err = council(repo, "run", "plan", "show")
@@ -415,7 +415,23 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run plan check: rejects duplicate identities", code == 1 and "duplicate row" in out, out)
     write(plan_path, good_plan.replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t2"))
     code, out, _ = council(repo, "run", "plan", "check")
-    check("run plan check: rejects a roster over its plan cap", code == 1 and "selected agents exceed the plan cap" in out, out)
+    check("run plan check: rejects a roster over its plan cap", code == 1 and "planned agent runs exceed the plan cap" in out, out)
+    write(plan_path, good_plan + "budget\tverify-plan\tagent-runs\t8\ta Workflow of eight verifiers\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: a Workflow seat counts every agent it starts — three workers and eight verifiers are 11 of cap 10",
+          code == 1 and "11 planned agent runs exceed the plan cap 10" in out, out)
+    write(plan_path, good_plan + "budget\tverify-plan\tagent-runs\t7\ta Workflow of seven verifiers\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    code_s, shown, _ = council(repo, "run", "plan", "show")
+    check("run plan check: agent runs that fit the cap pass, and the plan shows the Workflow's count",
+          code == 0 and "10 agent run(s) of cap 10" in out and code_s == 0 and "7 agent runs" in shown, out + shown)
+    for bad, want in (("budget\tchair\tagent-runs\t2\tno\n", "the Chair is not an agent run"),
+                      ("budget\tverify-plan\tagent-runs\t0\tno\n", "agent-runs must be an integer from 1 to 1000"),
+                      ("budget\tghost\tagent-runs\t2\tno\n", "a seat budget belongs only to a selected seat: ghost")):
+        write(plan_path, good_plan + bad)
+        code, out, _ = council(repo, "run", "plan", "check")
+        check("run plan check: agent-runs is refused — " + want, code == 1 and want in out, out)
+    write(plan_path, good_plan)
     write(plan_path, "\n".join(line for line in good_plan.splitlines() if "\tchair\t" not in line) + "\n")
     code, out, _ = council(repo, "run", "plan", "check")
     check("run plan check: requires exactly one selected Chair", code == 1 and "select exactly one Chair" in out, out)

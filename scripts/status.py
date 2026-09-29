@@ -195,6 +195,8 @@ def event_text(event, snap):
         return "Verification finished ({})".format(value)
     if kind == "memory.proposed":
         return "A lesson was drafted for your yes or no"
+    if kind == "run.cap_passed":
+        return "Went past the agent limit ({} agent runs, limit {})".format(value, (event.get("detail") or "").replace("cap=", ""))
     return None                          # context builds and other bookkeeping stay out of the main view
 
 
@@ -271,6 +273,20 @@ def usage_of(snap):
     return {"tokens": total if basis == "complete" else None, "tokens_known": known, "basis": basis,
             "text": text, "agent_runs": runs, "agent_runs_at_least": at_least, "agent_runs_text": runs_text,
             "corrected_seats": tokens.get("corrected_seats", [])}
+
+
+def agent_cap(snap, run_path):
+    """The run's agent ceiling, as the helper reads it: the plan's agent cap, else the project's
+    configured cap (`- agent cap: N` in council.config.md), else 10."""
+    value = str(snap["plan"].get("agent-cap") or "").strip()
+    if re.fullmatch(r"[0-9]{1,6}", value) and int(value) > 0:
+        return int(value)
+    try:
+        config = (run_path.parent.parent / "council.config.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        config = ""
+    found = re.search(r"(?m)^[ \t]*-[ \t]*agent cap:[ \t]*([0-9]{1,6})", config)
+    return int(found.group(1)) if found and int(found.group(1)) > 0 else 10
 
 
 def brief_names(snap):
@@ -403,6 +419,21 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
                 span(quiet)))})
     if status == "paused":
         attention.append({"kind": "paused", "severity": 1, "text": "The run is paused. Ask to resume it when you're ready."})
+    usage = usage_of(snap)
+    cap = agent_cap(snap, run_path)
+    used = usage["agent_runs"] if usage["agent_runs"] is not None else usage["agent_runs_at_least"]
+    usage["agent_cap"] = cap
+    if used and usage["basis"] == "complete":
+        usage["text"] += " (limit {})".format(cap)
+    elif used:
+        usage["agent_runs_text"] += " (limit {})".format(cap)
+    if used and used > cap:
+        many = ("" if usage["agent_runs"] is not None else "at least ") + plural(used, "agent run")
+        if open_run:
+            attention.append({"kind": "cap", "severity": 2, "text": (
+                "This run has used {}, over its limit of {}. More should start only after you say so.".format(many, cap))})
+        else:
+            attention.append({"kind": "cap", "severity": 1, "text": "This run used {}, over its limit of {}.".format(many, cap)})
     if snap["memory"].get("proposed"):
         attention.append({"kind": "memory", "severity": 1, "text": "{} for your yes or no.".format(
             plural(snap["memory"]["proposed"], "drafted lesson waits", "drafted lessons wait"))})
@@ -458,7 +489,6 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5):
                   "clock": clock(local_time(g["when"]), now)}
     items, source = recent_of(snap, now, recent)
     stage = stage_of(phase)
-    usage = usage_of(snap)
     next_step = run.get("next") if open_run else ""
     if key == "completed":
         summary = "The run finished."
