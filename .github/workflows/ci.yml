@@ -38,10 +38,11 @@ jobs:
           git --version
           awk --version 2>/dev/null | head -n 1 || awk -W version 2>/dev/null | head -n 1 || echo "awk: $(command -v awk) (BSD)"
 
-      # One step runs every suite: several at a time (the helper suite split into its groups), with the
-      # ones that time the helper or race its locks run alone first. Every suite runs even when another
-      # fails; the step fails if any does. Each suite's output is a collapsible group in the log, and a
-      # summary table (result, time, checks per suite) ends the log and the run's summary page.
+      # One step runs every suite: several at a time (the helper and hook suites split into their
+      # groups), with the ones that time the helper or a hook, or race its locks, run alone first.
+      # Every suite runs even when another fails; the step fails if any does. Each suite's output is a
+      # collapsible group in the log, and a summary table (result, time, checks per suite) ends the log
+      # and the run's summary page.
       - name: Evals (every suite, several at a time; see evals/run_all.py)
         if: ${{ !cancelled() }}
         run: python evals/run_all.py
