@@ -161,8 +161,10 @@ def file_changes(repo, close_commit, head, path):
         return "file gone or renamed"
     # --no-color: a colour setting of "always" would wrap the @@ headers in escape codes.
     # --ignore-cr-at-eol: a file whose only change is its line endings (LF to CRLF) has no hunks.
-    diff = git(repo, "diff", "--no-color", "--no-ext-diff", "--no-renames", "--ignore-cr-at-eol",
-               "--unified=0", close_commit, head, "--", path)
+    # --inter-hunk-context=0: a diff.interHunkContext setting would fuse nearby hunks over unchanged lines.
+    # --no-textconv: a textconv driver would number its converted text's lines, not the file's.
+    diff = git(repo, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--ignore-cr-at-eol",
+               "--inter-hunk-context=0", "--unified=0", close_commit, head, "--", path)
     if diff is None:
         return "can't tell"
     if any(line.startswith("Binary files ") for line in diff.splitlines()):

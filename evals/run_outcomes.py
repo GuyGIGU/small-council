@@ -202,6 +202,7 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
             "insert/before.py": eight.replace(b"line 3\n", b"line 3\nguard\n"),      # right before line 4
             "insert/away.py": eight.replace(b"line 4\n", b"line 4\nguard\n"),        # two lines past line 2
             "fix/target.py": eight.replace(b"line 2\n", b"fixed 2\n"),
+            "fused/two.py": eight.replace(b"line 2\n", b"fixed 2\n").replace(b"line 6\n", b"fixed 6\n"),
             "text/bytes.py": eight.replace(b"line 2\n", "café Á ".encode("utf-8") + b"\xff\n"),
         }
         for name in changes:
@@ -219,7 +220,7 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
                        "insert-inside": "insert/inside.py:4-6", "insert-after": "insert/after.py:2",
                        "insert-before": "insert/before.py:4", "insert-away": "insert/away.py:2",
                        "fix-at": "fix/target.py:2", "fix-elsewhere": "fix/target.py:6", "fix-span": "fix/target.py:1-3",
-                       "bytes": "text/bytes.py:2"}
+                       "fused": "fused/two.py:4", "bytes": "text/bytes.py:2"}
         write(edge_run / "claims.jsonl", "".join(json.dumps({"id": ident, "disposition": "kept", "citation": cited,
                                                              "provenance": ["hunt#1"]}) + "\n"
                                                  for ident, cited in edge_claims.items()))
@@ -273,6 +274,11 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
         check("with color.diff always, a fix at the cited line still reads changed at cited lines, and every "
               "outcome matches the uncoloured comparison",
               colored_got.get("fix-at") == "changed at cited lines" and colored_got == edge_got, colored_got)
+        run_git(edge, "config", "diff.interHunkContext", "5")
+        fused = outcomes.outcomes(edge_home, edge)
+        fused_got = {claim["id"]: claim["outcome"] for claim in fused["runs"][0]["claims"]}
+        check("with diff.interHunkContext 5, edits at lines 2 and 6 leave a citation of line 4 file changed elsewhere",
+              fused_got.get("fused") == "file changed elsewhere", fused_got.get("fused"))
 
         compared = []
         real_outcomes = outcomes.outcomes
