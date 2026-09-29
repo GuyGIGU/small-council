@@ -8,8 +8,10 @@
      commas; a path:line may list lines, as in `src/api/auth.py:42,60-71` — a path or a symbol
      survives edits; a line number can drift). Brief reads only the entries in scope
      (`council memory select`); `council memory check` flags an entry whose anchored file, line or
-     symbol is gone. Give a one-line **Pattern:**, **Rule:** or **Decision:** and **Origin:** when
+     symbol is gone. Give a short **Pattern:**, **Rule:** or **Decision:** and **Origin:** when
      accepting a new entry; selection includes those fields so a title alone need not carry the rule.
+     A field may wrap onto the lines below it: a blank line, the next **Field:** or a heading ends it
+     (a **Scope:** or **Anchor:** list wraps only after a comma).
      An entry is a heading (### AP-1: title), a bullet (- **AP-1 — title** …) or a numbered item
      (1. **AP-1 — title** …); a bullet inside a heading entry belongs to that entry. Runs read entries
      only under Accepted Patterns, Enforced Conventions and Decisions (a heading that says Adopted or

@@ -3777,7 +3777,7 @@ memory_entries() {
           (anchor == "" ? "-" : anchor), est, (ewhere == "" ? "-" : ewhere),
           (meaning == "" ? "-" : meaning), (origin == "" ? "-" : origin), (evidence == "" ? "-" : evidence), (verdict == "" ? "-" : verdict)
       }
-      id = ""; pend = 0; bul = 0; meaning = ""; failure = ""; origin = ""; evidence = ""; verdict = ""
+      id = ""; pend = 0; bul = 0; meaning = ""; failure = ""; origin = ""; evidence = ""; verdict = ""; para = ""
     }
     function fieldval(line, name,    v) {
       if (!match(line, "\\*\\*" name ":\\*\\*")) return ""
@@ -3804,6 +3804,19 @@ memory_entries() {
       }
       v = fieldval(lo, "status")
       if (v != "") { w = v; sub(/[ \t].*$/, "", w); gsub(/[^a-z]/, "", w); if (kind(w) == "off") { est = "off"; ewhere = "marked " v } }
+    }
+    # A line that may open a field. A field runs on, as a Markdown paragraph does, over the lines
+    # that follow it until a blank line, the next **Field:**, a heading or a list item: a rule
+    # hard-wrapped over three lines is served whole, not cut off after its first.
+    function fline(l) { para = (l ~ /\*\*[A-Za-z][^*]*(:\*\*|\*\*:)/ ? l : ""); fbefore = failure; fields(l) }
+    # Does the field that ends the paragraph so far run on? A list (a scope, anchors, evidence) does
+    # only while it ends in a comma or a semicolon, or has no value yet: a sentence written under
+    # **Scope:** is not one more path.
+    function runson(   s, f, v) {
+      s = para; f = ""
+      while (match(s, /\*\*[A-Za-z][^*]*(:\*\*|\*\*:)/)) { f = substr(s, RSTART + 2, RLENGTH - 5); s = substr(s, RSTART + RLENGTH) }
+      f = tolower(trim(f)); v = trim(s)
+      return (f != "scope" && f != "anchor" && f != "evidence") || v == "" || v ~ /[,;]$/
     }
     function cleantitle(t) { gsub(/~~/, "", t); gsub(/[ \t]+/, " ", t); t = trim(t); sub(/[.:]$/, "", t); return t }
     # Is s (a heading text, or a bullet after its dash) an entry? Sets id, title and the entry state.
@@ -3840,7 +3853,7 @@ memory_entries() {
           || lt ~ /^[(\[](retired|superseded|withdrawn)/ \
           || lt ~ /^(retired|superseded|withdrawn)[ \t]*[-:.\342\200\224\342\200\223]/ \
           || lt ~ /[(\[](retired|superseded|withdrawn)[^)\]]*[)\]][ \t]*$/)) { est = "off"; ewhere = "marked retired" }
-      if (bullet) fields(after)
+      if (bullet) fline(after)
       return 1
     }
     BEGIN {
@@ -3856,14 +3869,14 @@ memory_entries() {
     }
     { line = $0; sub(/\r$/, "", line); if (FNR == 1) sub("^" ENVIRON["COUNCIL_BOM"], "", line) }
     incom { if (index(line, "-->")) incom = 0; next }
-    line ~ /^[ \t]*<!--/ { if (!index(line, "-->")) incom = 1; next }
-    line ~ /^[ \t]*(```|~~~)/ { fence = !fence; next }
+    line ~ /^[ \t]*<!--/ { if (!index(line, "-->")) incom = 1; para = ""; next }
+    line ~ /^[ \t]*(```|~~~)/ { fence = !fence; para = ""; next }
     fence { next }
     line ~ /^#+[ \t]/ {
       lvl = 0; while (substr(line, lvl + 1, 1) == "#") lvl++
       txt = trim(substr(line, lvl + 1))
       if (lvl >= 2 && lvl <= 4 && entry(txt, 0)) { elvl = lvl; anyhead = 1; next }
-      if (id != "" && !bul && lvl > elvl) { fields(line); bodyline = 1; next }   # a sub-heading inside an entry
+      if (id != "" && !bul && lvl > elvl) { fields(line); bodyline = 1; para = ""; next }   # a sub-heading inside an entry
       flush()
       k = kind(txt, lvl > 2); name = substr(line, 1, lvl) " " txt
       if (lvl <= 2) {
@@ -3879,23 +3892,23 @@ memory_entries() {
       txt = line; sub(/^[-*+][ \t]+/, "", txt)
       # A bullet right under the title of a heading entry is an entry of its own; once that entry has
       # a body, its bullets belong to it — they are the rules it points at, not new entries.
-      if (id != "" && !bul && bodyline) { cand(txt, FNR); fields(line); next }
+      if (id != "" && !bul && bodyline) { cand(txt, FNR); fline(line); next }
       if (entry(txt, 1)) next
       cand(txt, FNR)
-      if (bul) flush(); else if (id != "") fields(line)   # another top-level bullet ends a bullet entry
+      if (bul) flush(); else if (id != "") fline(line)   # another top-level bullet ends a bullet entry
       next
     }
     line ~ /^[0-9]+[.)][ \t]/ {                          # "1. **AP-3 — title.**" is an entry too
       txt = line; sub(/^[0-9]+[.)][ \t]+/, "", txt)
       if ((id == "" || bul) && entry(txt, 1)) next
       cand(txt, FNR)
-      if (id != "") fields(line)
+      if (id != "") fline(line)
       next
     }
     line ~ /^[ \t]+([-*+]|[0-9]+[.)])[ \t]/ {            # an indented bullet is never an entry: say so
       txt = line; sub(/^[ \t]+([-*+]|[0-9]+[.)])[ \t]+/, "", txt)
       cand(txt, FNR)
-      if (id != "") fields(line)
+      if (id != "") fline(line)
       next
     }
     line ~ /^(\*\*|__)[^*_]/ && (id == "" || bul) {          # a bold line used as a heading
@@ -3907,10 +3920,16 @@ memory_entries() {
     }
     pend {
       j = index(line, "**"); if (!j) j = index(line, "__")
-      if (j) { title = cleantitle(ptitle " " substr(line, 1, j - 1)); pend = 0; fields(substr(line, j + 2)); next }
+      if (j) { title = cleantitle(ptitle " " substr(line, 1, j - 1)); pend = 0; fline(substr(line, j + 2)); next }
       if (++pn >= 3 || line ~ /^[ \t]*$/) pend = 0; else ptitle = ptitle " " line
     }
-    id != "" { fields(line); if (line ~ /[^ 	]/) bodyline = 1 }
+    # A line that goes on with the field above it is read with that field, as if written on its line;
+    # a blank line, a line that opens with a **Field:** or a rule (---) starts afresh.
+    id != "" && para != "" && line ~ /[^ \t]/ && line !~ /^[ \t]*(\302\267[ \t]*)?\*\*[A-Za-z][^*]*(:\*\*|\*\*:)/ &&
+        line !~ /^[ \t]*(([-*_][ \t]*)([-*_][ \t]*)([-*_][ \t]*)+|=+[ \t]*)$/ && runson() {
+      para = para " " trim(line); failure = fbefore; fields(para); bodyline = 1; next
+    }
+    id != "" { fline(line); if (line ~ /[^ 	]/) bodyline = 1 }
     END {
       flush()
       if (!SKIP) exit

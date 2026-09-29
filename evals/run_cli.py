@@ -1159,6 +1159,49 @@ def runs_memory(tmp):
     check("memory index: incomplete failure provenance is visible but never served",
           code == 0 and "F-2 · unsupported failure · NOT SERVED" in out
           and "F-3 · not approved · not served" in out, out + err)
+    # A field hard-wrapped over several lines, as Chrollo's conventions.md had them, is served whole:
+    # it runs on until a blank line, the next **Field:** or a heading, as a Markdown paragraph does.
+    mwrap = new_repo(tmp, "memwrapped")
+    write(os.path.join(mwrap, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(mwrap, ".council", "reviews", "run-12.md"), "line 1\n| 4 | stale tokens | REFUTED — invalidated first | mw.py:3 |\n")
+    write(os.path.join(mwrap, ".council", "conventions.md"),
+          "# Conventions\n## Enforced Conventions (EC)\n### EC-20: A telemetry lane never widens the blast radius\n"
+          "**Convention:** Measure-only passengers (refusal telemetry, probes, shadow reads) get their own\n"
+          "containment at EVERY layer they ride, and ordering\nthat puts the paying artifact first.\n"
+          "**Origin:** Council Review 2026-07-26-2156 (engine/near-miss-lane,\nfindings 2/5/6); operator-delegated 2026-07-26\n"
+          "**Principle:** a lane is a passenger,\nnever the driver\n"
+          "### EC-21: wrapped scope\n**Rule:** never cache a session · **Why:** revocation must\nbite at once\n"
+          "**Scope:** src/auth/**,\nsrc/session/**\n\nA paragraph after a blank line is not part of the rule.\n"
+          "### EC-24: a sentence under a scope\n**Rule:** keep tokens short-lived\n**Scope:** src/auth/**\n"
+          "A sentence under the scope is not one more path.\n"
+          "## Accepted Patterns (AP)\n"
+          "- **AP-1 — a bullet entry.** **Pattern:** every deadline is in seconds,\n  never a tick count\n  · **Why:** frame rates vary\n"
+          "- **AP-2 — the next bullet.** **Pattern:** one line only\n"
+          "## Observed Failures (F)\n### F-1: stale token finding\n"
+          "**Observation:** a seat reported stale tokens,\nbut middleware invalidates before lookup\n"
+          "**Scope:** src/auth/**\n**Origin:** run-12, 2026-09-26\n**Evidence:** reviews/run-12.md:2\n**Verdict:** REFUTED\n")
+    code, out, err = council(mwrap, "memory", "select", "src/session/store.py", "src/auth/login.py")
+    check("memory select: a hard-wrapped rule and origin are served whole, not cut at the first line's end",
+          code == 0 and "EC-20 · A telemetry lane never widens the blast radius · every run · Measure-only passengers "
+          "(refusal telemetry, probes, shadow reads) get their own containment at EVERY layer they ride, and ordering "
+          "that puts the paying artifact first. · origin: Council Review 2026-07-26-2156 (engine/near-miss-lane, "
+          "findings 2/5/6); operator-delegated 2026-07-26\n" in out, out + err)
+    check("memory select: a wrapped scope still matches its second line, and a wrapped bullet rule reads whole",
+          "EC-21 · wrapped scope · scope: src/auth/**, src/session/** · never cache a session\n" in out
+          and "AP-1 · a bullet entry · every run · every deadline is in seconds, never a tick count\n" in out
+          and "AP-2 · the next bullet · every run · one line only\n" in out
+          and "2 scoped and 3 every-run entries of 5 apply" in out, out + err)
+    check("memory select: the next field, a blank line or a '· **Why:**' ends a wrapped field — nothing else leaks in",
+          not any(t in out for t in ["passenger,", "never the driver", "bite at once", "A paragraph after", "frame rates"]), out)
+    check("memory select: a scope runs on only while its line ends in a comma — a sentence under it is not a path",
+          "EC-24 · a sentence under a scope · scope: src/auth/** · keep tokens short-lived\n" in out and "one more path" not in out, out)
+    check("memory select: a wrapped observation reads whole too",
+          "F-1 · stale token finding · observed failure, not a rule · scope: src/auth/** · a seat reported stale tokens, "
+          "but middleware invalidates before lookup · verdict: REFUTED" in out, out + err)
+    code, out, err = council(mwrap, "memory")
+    check("memory index: a wrapped origin shows whole",
+          code == 0 and "origin: Council Review 2026-07-26-2156 (engine/near-miss-lane, findings 2/5/6); operator-delegated 2026-07-26\n" in out
+          and "WARNING" not in out + err, out + err)
     code, out, _ = council(repo, "memory", "check")
     check("memory check: flags the anchors that no longer hold, and only those",
           code == 1 and "STALE  EC-2" in out and "AP-1" not in out and "AP-2" not in out and "3 stale anchor(s) across 7 entries" in out, out)
