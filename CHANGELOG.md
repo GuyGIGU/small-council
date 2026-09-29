@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-09-29
+
+**TL;DR:** memory rules wrapped over several lines now reach seats whole; mapping and survey seats can
+optionally run on a cheaper model.
+
 ### Changed
 
 - Optional, disabled-by-default model requests let mapping and survey workers use `sonnet` or `haiku`;
@@ -17,6 +22,11 @@ All notable changes to this project are documented here. The format is based on
 ### Fixed
 
 - A memory rule or origin wrapped over several lines reached seats cut off after its first line; `council memory` now reads it whole.
+
+### Upgrade notes
+
+- Nothing to do. Model requests stay off until `- seat models: on` is set in `council.config.md`.
+- Tools that read `council history --json` should expect `council.history/4`.
 
 ## [0.16.1] — 2026-09-29
 
