@@ -12,8 +12,14 @@ Needs bash and git; no LLM, no network. Covers:
   - gates judged by exit code, with the command passed intact, and table cells that never shift;
   - seat-file collection: ref: proof of reading (paired seats too), caps, broken citations, list-style
     and unreadable index lines, failed and re-dispatched workers;
-  - citation and origin checks (single lines, ranges and comma lists); map status; the drift doctor.
+  - citation and origin checks (single lines, ranges and comma lists); map status; the drift doctor;
+  - the agent stop: council cap's standing, cap allow's refusals and record (older runs too), cap check's
+    exit codes.
+
+Each block of checks belongs to a group (@part below); `--list` prints the groups, `--group NAME` runs
+one, and evals/run_all.py runs them side by side. With no options every group runs, in file order.
 """
+import argparse
 import json
 import os
 from pathlib import Path
@@ -67,6 +73,34 @@ def council_quoted(cwd, *args):
     p = subprocess.run(line, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
                        errors="replace", env=GIT_ENV, timeout=120)
     return p.returncode, p.stdout, p.stderr
+
+
+def council_together(cwd, *calls):
+    """Start several council calls at the same moment; return each one's (exit code, stderr) once all
+    have finished. A call still running after 120 s is stopped and reads as exit 124, as in council()."""
+    procs = [subprocess.Popen([BASH, CLI, *args], cwd=cwd, env=GIT_ENV, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+             for args in calls]
+    finished = []
+    for p in procs:
+        try:
+            err = p.communicate(timeout=120)[1]
+            finished.append((p.returncode, err))
+        except subprocess.TimeoutExpired:
+            p.kill()
+            finished.append((124, p.communicate()[1] + " (still running after 120 s)"))
+    return finished
+
+
+def workers_detail(finished, expected=()):
+    """Each worker's exit code, then whatever else it said on stderr: first in a check's detail,
+    which is cut at 400 characters."""
+    said = []
+    for i, (_, err) in enumerate(finished):
+        lines = [x for x in err.splitlines() if x.strip() and not any(e in x for e in expected)]
+        if lines:
+            said.append("worker %d: %s" % (i, " / ".join(lines)))
+    return "exit codes %s%s" % ([code for code, _ in finished], "".join("; " + s for s in said))
 
 
 def git(cwd, *args):
@@ -207,12 +241,24 @@ last-verified: 2026-09-15 @ eval
 - conventions: .council/conventions.md
 """
 
-if not BASH or not GIT:
-    print("[SKIP] bash or git not on PATH — helper evals need both")
-    sys.exit(0)
+PARTS = []                   # (group, block), in file order
+ALONE = {"timing"}           # groups that must run with nothing else running (see evals/run_all.py)
 
-with tempfile.TemporaryDirectory() as tmp:
-    tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
+
+def part(group):
+    """Adds the block below to a group. A group runs in one process, its blocks in file order, and
+    what one block leaves for a later one (a repo, a run) stays inside its group, so each group runs
+    on its own. With no options every block runs, in file order, in this one process."""
+    def add(block):
+        PARTS.append((group, block))
+        return block
+    return add
+
+
+@part("runs")
+def runs_open(tmp):
+    """The main scaffolded repo: its council home, its first run, the run's state and routing."""
+    global repo, top, plain, run   # later "runs" blocks carry on with these
     repo = new_repo(tmp, "repo")
     write(os.path.join(repo, "src", "stats.py"),
           "def average(values):\n    total = 0\n    for v in values:\n        total += v\n    return total / len(values)\n")
@@ -504,6 +550,16 @@ with tempfile.TemporaryDirectory() as tmp:
     check("close: exact usage is compared with the whole estimate",
           code == 0 and "estimated ~420k (about 49% over)" in out and
           "estimated ~420k (about 49% over)" in read(os.path.join(budget_run, "session-state.md")), out + err)
+    million = new_repo(tmp, "spend-million")
+    write(os.path.join(million, ".council", "council.config.md"), "# Council config\n")
+    _, million_run, _ = council(million, "run", "open", "council-review")
+    million_run = million_run.strip()
+    write_plan(million_run, selected=("worker",), verification="self", estimated_tokens=1500000)
+    council(million, "seat", "worker", "done", "agent=m1", "tokens=1,600,000")
+    code, out, err = council(million, "run", "close")
+    check("close: an estimate past a million is written as the total is — ~1.5M, never ~1500k",
+          code == 0 and "~1.6M tokens across 1 agent run(s) · estimated ~1.5M (about 7% over)" in out and
+          "estimated ~1.5M (about 7% over)" in read(os.path.join(million_run, "session-state.md")), out + err)
 
     legacy = new_repo(tmp, "legacy-plan")
     write(os.path.join(legacy, ".council", "council.config.md"), "# Council config — legacy plan\n")
@@ -524,6 +580,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("legacy run: a pre-contract run without a plan still works", code == 0 and "old-worker" in out, out + err)
     council(legacy, "run", "close", "--status", "abandoned")
 
+@part("timing")
+def event_races(tmp):
     event_repo = new_repo(tmp, "event-contract")
     write(os.path.join(event_repo, ".council", "council.config.md"), "# Council config — events\n")
     _, event_run, _ = council(event_repo, "run", "open", "council-review")
@@ -587,6 +645,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run events: a later action reports a lost stream instead of silently recreating it",
           code == 0 and "not recorded" in err and not os.path.exists(os.path.join(event_run, "events.tsv")), err)
 
+@part("runs")
+def runs_change_index(tmp):
     # Change index, with an earlier review on disk
     write(os.path.join(repo, ".council", "reviews", "2026-08-01-stats.md"),
           "---\ntitle: Stats review\nkind: review\nareas: src/**\ndate: 2026-08-01\nstatus: final\nrun: 2026-08-01-100000-review\n---\n"
@@ -644,6 +704,8 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(pr, "prior", "src/a.py")
     check("prior: past 40 mentions it says how many it left out", out.count("src/a.py — ") == 40 and "prior: 40 of 45 mention(s) shown" in out, out)
 
+@part("collect")
+def index_limits(tmp):
     # The change index past its file cap (80 files; lowered here, since 80 take minutes on a busy Windows machine)
     big = new_repo(tmp, "bigchange")
     write(os.path.join(big, "a.txt"), "x\n")
@@ -719,6 +781,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("index: a staged-only change is noted as uncommitted", "+ uncommitted changes" in read(os.path.join(srun.strip(), "index.md")),
           read(os.path.join(srun.strip(), "index.md")))
 
+@part("runs")
+def runs_gates_and_seats(tmp):
     # Gates
     gates = os.path.join(run, "gates")
     code, out, _ = council(repo, "gates")
@@ -844,6 +908,8 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "seat", "beck", "done", "tokens=10000")
     check("seat: a re-dispatched worker adds its tokens instead of replacing them", "seats: 3 of 3 done" in out and "~86k tokens so far" in out, out)
 
+@part("timing")
+def seat_races(tmp):
     # Token counts as the UI shows them; several workers recorded at the same moment
     tk = new_repo(tmp, "tokens")
     write(os.path.join(tk, ".council", "council.config.md"), "# Council config — tokens\n")
@@ -863,14 +929,12 @@ with tempfile.TemporaryDirectory() as tmp:
     check("seat: a space between digits is a thousands separator, not the end of the number",
           "\nspaced\tdone\ta5\t74304\t" in tseats, tseats)
     check("seat: a tokens= value with no number in it is refused", code == 2 and "tokens" in err and "\ndodds\t" not in tseats, out + err)
-    procs = [subprocess.Popen([BASH, CLI, "seat", f"par{i}", "running", f"agent=p{i}", "--run", trun], cwd=tk, env=GIT_ENV,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for i in range(6)]
-    for p in procs:
-        p.wait(timeout=120)
+    workers = council_together(tk, *[("seat", f"par{i}", "running", f"agent=p{i}", "--run", trun) for i in range(6)])
     tlines = read(os.path.join(trun, "seats.tsv")).splitlines()
-    check("seat: six workers recorded at the same moment keep six rows, and the header stays first",
-          tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported"] and sum(1 for x in tlines if x.startswith("par")) == 6,
-          "\n".join(tlines))
+    check("seat: six workers recorded at the same moment all succeed and keep six rows, and the header stays first",
+          all(code == 0 for code, _ in workers)
+          and tlines[:1] == ["slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported"] and sum(1 for x in tlines if x.startswith("par")) == 6,
+          workers_detail(workers) + "\n" + "\n".join(tlines))
     os.makedirs(os.path.join(trun, "seats.tsv.lock"), exist_ok=True)   # what a killed seat call leaves behind
     started = time.time()
     code, out, err = council(tk, "seat", "afterlock", "running", "agent=a9", "--run", trun)
@@ -879,6 +943,105 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and took < 40 and "\nafterlock\t" in read(os.path.join(trun, "seats.tsv")),
           "%.1f s · %s%s" % (took, out, err))
 
+    # Once-only events: whether one is on record is checked under the events lock, so seat records that
+    # pass the cap, the estimate and the ceiling together still record each passing once.
+    race = new_repo(tmp, "cap-race")
+    write(os.path.join(race, ".council", "council.config.md"), "# Council config — once-only events\n")
+    _, race_run, _ = council(race, "run", "open", "council-review")
+    race_run = race_run.strip()
+    write_plan(race_run, selected=("wf", "r0", "r1", "r2", "late"), verification="self", estimated_tokens=505000)
+    append(os.path.join(race_run, "run-plan.tsv"), "budget\trun\ttoken-ceiling\t515000\towner limit\n")
+    council(race, "seat", "wf", "done", "agent=wf1", "agents=10", "tokens=500000")   # the whole cap, just under both token limits
+    workers = council_together(race, *[("seat", f"r{i}", "done", f"agent=x{i}", "tokens=20000", "--run", race_run) for i in range(3)])
+    once = ("run.cap_passed", "run.estimate_passed", "run.ceiling_passed")
+    kinds = [e[3] for e in events(race_run)]
+    check("seat: three workers that pass the cap, the estimate and the ceiling together record each passing once",
+          [kinds.count(k) for k in once] == [1, 1, 1],
+          "cap, estimate, ceiling events %s; %s" % ([kinds.count(k) for k in once],
+                                                    workers_detail(workers, ("over its cap of 10", "over its ceiling of 515000"))))
+    council(race, "seat", "late", "done", "agent=x9", "tokens=20000")
+    code, out, err = council(race, "run", "events", "check")
+    kinds = [e[3] for e in events(race_run)]
+    check("seat: a later record past all three limits adds no second passing event, and the stream stays valid",
+          [kinds.count(k) for k in once] == [1, 1, 1] and code == 0,
+          "cap, estimate, ceiling events %s; %s%s" % ([kinds.count(k) for k in once], out, err))
+
+@part("collect")
+def agent_stop(tmp):
+    # The agent stop: council cap says where a run stands, cap allow records the user's go in their words,
+    # cap check is the agent gate's decision (hooks/agent-gate.sh) — exit 2 and the reason while stopped.
+    stop = new_repo(tmp, "agent-stop")
+    write(os.path.join(stop, ".council", "council.config.md"), "# Council config — the agent stop\n- agent cap: 2\n")
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: a council with no run — exit 0, nothing printed", code == 0 and not out and not err, out + err)
+    _, stop_run, _ = council(stop, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "s1"})
+    stop_run = stop_run.strip()
+    council(stop, "seat", "w1", "done", "agent=a1", "tokens=30000")
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: a run under its cap — exit 0, nothing printed", code == 0 and not out and not err, out + err)
+    council(stop, "seat", "w2", "done", "agent=a2", "tokens=30000")
+    code, out, err = council(stop, "cap")
+    check("cap: the agent runs used against the cap, and that new agents are stopped now",
+          code == 0 and "2 of 2 agent runs used" in out and "new agents: stopped" in out, out + err)
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: at the cap — exit 2, the reason on stdout, naming council cap allow",
+          code == 2 and out.startswith("Small Council:") and "2 of its 2 agent runs" in out and "council cap allow" in out,
+          out + err)
+    code, out, err = council(stop, "cap", "check", "--session", "someone-else")
+    check("cap check: a run another session drives is not this session's to stop — exit 0", code == 0 and not out, out + err)
+    for args, want in ((("cap", "allow", "2"), "needs --user-said"),
+                       (("cap", "allow", "2", "--user-said", "   "), "needs --user-said"),
+                       (("cap", "allow", "two", "--user-said", "yes"), "a whole number from 1 to 1000"),
+                       (("cap", "allow", "0", "--user-said", "yes"), "a whole number from 1 to 1000"),
+                       (("cap", "allow", "1001", "--user-said", "yes"), "a whole number from 1 to 1000")):
+        code, out, err = council(stop, *args)
+        check(f"cap allow: refuses {' '.join(repr(a) for a in args[2:])}", code == 2 and want in err, out + err)
+    code, out, err = council(stop, "cap", "allow", "3", "--user-said", "yes\tgo on, three more")
+    rows = read(os.path.join(stop_run, "cap-allowances.tsv")).splitlines()
+    cells = rows[1].split("\t") if len(rows) == 2 else []
+    check("cap allow: records one row (the refused ones none) — used, n, until, and the user's words on one line",
+          code == 0 and rows[:1] == ["at\tused\tn\tuntil\tsaid"] and cells[1:] == ["2", "3", "5", "yes go on, three more"],
+          "\n".join(rows) + out + err)
+    check("cap allow: says how many more agent runs may start, and up to what count",
+          "3 more agent run(s) may start, up to 5" in out, out)
+    allowed = [e for e in events(stop_run) if e[3] == "run.cap_allowed"]
+    check("cap allow: records a run.cap_allowed event", len(allowed) == 1 and allowed[0][4:] == ["run", "3", "used=2;until=5"],
+          allowed)
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: after the go — exit 0", code == 0 and not out, out + err)
+    code, out, err = council(stop, "cap")
+    check("cap: shows the go and how many more agent runs it covers",
+          "the user's go allows up to 5" in out and "3 more under the user's go" in out, out + err)
+    code, out, err = council(stop, "seat", "w3", "done", "agent=a3", "tokens=30000")
+    check("seat: past the cap under the user's go, the note says the go covers it, not to ask again",
+          "the user's go covers up to 5" in err and "ask before starting more" not in err, err)
+    code, out, err = council(stop, "run", "events", "check")
+    check("cap allow: the event stream holding run.cap_allowed stays valid", code == 0 and len(allowed) == 1, out + err)
+    old_stop = os.path.join(stop, ".council", "runs", "2026-09-01-100000-review")   # from before event streams and run plans
+    write(os.path.join(old_stop, "session-state.md"), "status: in-progress\nmode: council-review\nphase: work\n")
+    write(os.path.join(old_stop, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\n"
+                                               "beck\tdone\ta2\t50000\t10:07\t\n")
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: an older run with no session, at its cap on this tree — exit 2", code == 2 and "2026-09-01-100000-review" in out,
+          out + err)
+    code, out, err = council(stop, "cap", "allow", "1", "--run", "2026-09-01-100000-review", "--user-said", "fine, one more")
+    rows = read(os.path.join(old_stop, "cap-allowances.tsv")).splitlines()
+    check("cap allow: works on an older run with no events.tsv or run-plan.tsv, and adds no event file",
+          code == 0 and len(rows) == 2 and rows[1].split("\t")[1:] == ["2", "1", "3", "fine, one more"]
+          and not os.path.exists(os.path.join(old_stop, "events.tsv")), "\n".join(rows) + out + err)
+    code, out, err = council(stop, "cap", "check", "--session", "s1")
+    check("cap check: with both runs covered — exit 0", code == 0 and not out, out + err)
+    absurd = new_repo(tmp, "agent-stop-absurd")        # a cap bash can't compare: the gate never fails closed
+    write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n")
+    _, absurd_run, _ = council(absurd, "run", "open", "council-review")
+    append(os.path.join(absurd_run.strip(), "run-plan.tsv"), "budget\trun\tagent-cap\t99999999999999999999999\tunreadable\n")
+    council(absurd, "seat", "w1", "done", "agent=a1", "tokens=5000")
+    code, out, err = council(absurd, "cap", "check")
+    check("cap check: a cap too large to compare never stops an agent — exit 0", code == 0 and not out, out + err)
+
+@part("runs")
+def runs_memory(tmp):
+    global ms, ms_conv, rs, rs_cfg, msec, msec_conv, msc   # later "runs" blocks carry on with these
     # Memory: scopes and anchors
     conv_text = ("# Conventions\n## Accepted Patterns (AP) — intentional; never flag these\n"
           "### AP-1: median returns the upper middle on purpose\n**Pattern:** even lists return the upper middle · **Why:** the spec\n"
@@ -1070,6 +1233,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("memory: flags a scope item that matches no file, seat or mode",
           '"webapp/fronted/**" (EC-13) matches no file, seat or mode' in out and not any(f"({e})" in out for e in ["EC-1", "EC-3", "EC-5", "EC-6"]), out)
 
+@part("timing")
+def memory_speed(tmp):
     # Scopes and keys as projects really write them: a folder with a blank in its name, a Godot
     # res:// path, the absolute path Git Bash prints, and "." for the whole tree.
     msp = new_repo(tmp, "memspaced")
@@ -1192,6 +1357,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("memory check: a memory with an anchor on every entry is checked in seconds, not minutes",
           code == 1 and "69 stale anchor(s) across 69 entries" in out and took < 60, f"{took:.1f} s: {out}")
 
+@part("runs")
+def runs_citation_check(tmp):
     # Memory: with a run open, the paths given add to the run's own keys
     msel = new_repo(tmp, "memsel")
     write(os.path.join(msel, ".council", "council.config.md"), CONFIG)
@@ -1240,6 +1407,8 @@ with tempfile.TemporaryDirectory() as tmp:
     check("check: reads cut items too", re.search(r"synthesis#C1\s+src/report\.py:99\s+bad-line", out) is not None, out)
     check("check: writes check.md", os.path.isfile(os.path.join(run, "check.md")))
 
+@part("citations")
+def citation_shapes(tmp):
     # Citation shapes models really write: every place a field names is read and checked, a shape
     # the reader can't parse says so, and nothing it couldn't check is ever counted as fine.
     cites = new_repo(tmp, "cites")
@@ -1543,6 +1712,9 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 2 and "no such file" in err, out + err)
     council(cites, "run", "close", "--status", "abandoned")
 
+@part("runs")
+def runs_second_run(tmp):
+    global run2   # later "runs" blocks carry on with these
     # A second run: refused, then alongside; never guessing
     code, _, err = council(repo, "run", "open", "council-research")
     check("run open: refuses a second in-progress run on this tree", code == 2 and "already in progress" in err and "--alongside" in err, err)
@@ -1645,6 +1817,8 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, _ = council(repo, "collect", "--run", run2)
     check("collect: a paired seat missing one ref: line is a mismatch", "MISMATCH" in row(out, "pair"), out)
 
+@part("collect")
+def collect_one_bad_seat(tmp):
     # One bad seat on its own fails collect: each problem alone, exit code included
     lone = new_repo(tmp, "lone")
     write(os.path.join(lone, ".council", "council.config.md"), "# Council config\n")
@@ -1733,6 +1907,9 @@ with tempfile.TemporaryDirectory() as tmp:
     check("collect: a first-round seat marked skipped with no file is still a hole",
           code == 1 and re.search(r"^ghost\s+missing", out, re.MULTILINE) is not None, out)
 
+@part("runs")
+def runs_worktrees_close_and_find(tmp):
+    global fresh   # later "runs" blocks carry on with these
     # A linked worktree
     wt = os.path.join(tmp, "wt")
     git(repo, "worktree", "add", "-q", "-b", "other", wt)
@@ -2062,6 +2239,8 @@ with tempfile.TemporaryDirectory() as tmp:
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
 
+@part("gates")
+def resume(tmp):
     # Carrying on with a run: council run resume
     rs = new_repo(tmp, "resume")
     write(os.path.join(rs, ".council", "council.config.md"), "# Council config — resume\n")
@@ -2101,6 +2280,8 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and "status: in-progress" in read(os.path.join(p1.strip(), "session-state.md"))
           and "status: paused" in read(os.path.join(p2.strip(), "session-state.md")), out + err)
 
+@part("runs")
+def runs_fingerprint_and_ledger(tmp):
     # The stack fingerprint
     code, out, _ = council(fresh, "fingerprint")
     fp = out.strip()
@@ -2143,6 +2324,9 @@ with tempfile.TemporaryDirectory() as tmp:
           "\thunt\t" in read(os.path.join(fresh, ".council", "ledger.tsv"))
           and not os.path.exists(os.path.join(plain, ".council", "ledger.tsv")) and "ledger: 1 seat row" in out, out + err)
 
+@part("requests")
+def requests_and_proofs(tmp):
+    global req, asks, filed   # later "requests" blocks carry on with these
     # 0.6 — the user's request word for word, a war room's round 2, the post-game
     req = new_repo(tmp, "req")
     write(os.path.join(req, "a.txt"), "one\ntwo\n")
@@ -2594,6 +2778,8 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and "pass \u2014 but nothing to check (0 files matched)" in out
           and "1 had nothing to check (lint \u2014 0 files matched)" in out, out)
 
+@part("gates")
+def gates_table(tmp):
     # The Gates table's small vocabularies \u2014 Run at, Mandatory, Checked \u2014 and what gate --all may run unasked
     vocab = new_repo(tmp, "vocab")
     write(os.path.join(vocab, "a.txt"), "a\n")
@@ -2835,6 +3021,8 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and os.path.isdir(pg)
           and {"runs/", "asks/"} <= set(read(os.path.join(nohome, ".council", ".gitignore")).split()), pg + err)
 
+@part("runs")
+def runs_gitignore(tmp):
     # Every run open keeps run scratch and the user's words out of git — in a home with no .gitignore, in a
     # 0.6.0 home whose .gitignore predates asks/, in its own line endings — unless the user shares requests
     def status_lines(repo):
@@ -2905,6 +3093,8 @@ with tempfile.TemporaryDirectory() as tmp:
           sorted(loose_gi) == ["active-run", "asks/", "runs/"]
           and not [l for l in out.splitlines() if "runs/" in l or "asks/" in l], " ".join(loose_gi) + " · " + out)
 
+@part("requests")
+def requests_postgame_and_redaction(tmp):
     # A post-game's index hides earlier council work from its verifier
     append(os.path.join(req, "a.txt"), "three\n")
     code, rv, _ = council(req, "run", "open", "council-review")
@@ -2946,6 +3136,8 @@ with tempfile.TemporaryDirectory() as tmp:
           "(new)" in out and len([f for f in os.listdir(asks) if "secrets" in f]) == 1, out)
     council(req, "run", "close", "--status", "abandoned")
 
+@part("filing")
+def redaction_widened(tmp):
     # Redaction, widened: each token shape on its own (so only its own rule can catch it), secrets named by
     # their context, key blocks in any indentation, and the ordinary text around them left alone. Every
     # fake secret is assembled here at run time, so no file in the repo holds a real-looking key.
@@ -3083,6 +3275,8 @@ with tempfile.TemporaryDirectory() as tmp:
           rm_body.split("tracing:", 1)[-1][-900:])
     council(rdm, "run", "close", "--status", "abandoned")
 
+@part("requests")
+def requests_bookkeeping(tmp):
     # The request's bookkeeping: continues:, refusals, one section per run, the close warning
     code, crun, _ = council(req, "run", "open", "council-implement")
     crun = crun.strip()
@@ -3105,6 +3299,8 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out, err = council(req, "run", "close")
     check("run close: warns when a continuing run never filed its words", "no request was filed" in err, err)
 
+@part("filing")
+def filed_request_paths(tmp):
     # The filed request stays inside asks/, in every legitimate spelling; a re-save replaces only its own run's words
     ap = new_repo(tmp, "askpaths")
     readme = "# Project\nImportant tracked readme.\n"
@@ -3245,6 +3441,8 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and "-rotate" in out and "abcdefghij" not in out.lower() and "live" not in out, out)
     council(ap, "run", "close", "--status", "abandoned")
 
+@part("requests")
+def requests_war_room(tmp):
     # A war room's round 2: collect waits for a running seat; a fresh round-2 worker counts as its seat
     code, wr, _ = council(req, "run", "open", "council-plan")
     wr = wr.strip()
@@ -3320,6 +3518,8 @@ with tempfile.TemporaryDirectory() as tmp:
           code == 0 and "all 2 seats in order" in out, out)
     council(req, "run", "close", "--status", "abandoned")
 
+@part("filing")
+def close_claim_index(tmp):
     # Closing a synthesis run warns about an absent or outdated claim index without rebuilding it.
     stale_repo = new_repo(tmp, "stale-claims")
     write(os.path.join(stale_repo, ".council", "council.config.md"), "# Council config\n")
@@ -3370,6 +3570,8 @@ with tempfile.TemporaryDirectory() as tmp:
     code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
     check("close: a deleted synthesis source warns", code == 0 and warning in err, err)
 
+@part("runs")
+def runs_usage(tmp):
     # Usage
     code, out, _ = council(repo, "help")
     check("help: prints the command list", code == 0 and "council run open" in out and "council doctor" in out, out)
@@ -3383,11 +3585,41 @@ with tempfile.TemporaryDirectory() as tmp:
                  ("doctor", "x"), ("version", "x"), ("help", "x"), ("doctor", "--frobnicate"), ("run", "close", "--base", "main"),
                  ("run", "status", "--at=verify"), ("index", "--", "x"), ("doctor", "--all=yes"), ("run", "close", "--status="),
                  ("run", "resume", "x"), ("run", "resume", "--status", "paused"), ("status", "x"), ("status", "--all"),
-                 ("correct", "a", "x")]:
+                 ("correct", "a", "x"), ("cap", "x"), ("cap", "--session", "s1"), ("cap", "allow", "1", "2", "--user-said", "go"),
+                 ("cap", "check", "x"), ("cap", "check", "--run", "x"), ("cap", "check", "--user-said", "go")]:
         code, out, err = council(repo, *args)
         if code != 2 or not err.strip():
             took.append(" ".join(args) + f" (exit {code})")
     check("every command refuses a word or flag it doesn't take: exit 2, with a message", not took, "; ".join(took))
+
+parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
+parser.add_argument("--list", action="store_true",
+                    help="print each group, whether it must run alone, and its blocks; run nothing")
+parser.add_argument("--group", metavar="NAME[,NAME...]", help="run only these groups (default: all, in file order)")
+opts = parser.parse_args()
+GROUPS = list(dict.fromkeys(group for group, _ in PARTS))
+blocks = [block for _, block in PARTS]
+stray = [name for name, value in list(globals().items())
+         if getattr(value, "__module__", None) == "__main__" and hasattr(value, "__code__")
+         and value.__code__.co_firstlineno > blocks[0].__code__.co_firstlineno and value not in blocks]
+if stray:   # a block without @part would never run, here or in CI
+    sys.exit("run_cli.py: %s has no @part(...) group, so it would never run" % ", ".join(stray))
+if opts.list:
+    for group in GROUPS:
+        print("%s\t%s\t%s" % (group, "alone" if group in ALONE else "shared",
+                              " ".join(block.__name__ for g, block in PARTS if g == group)))
+    sys.exit(0)
+chosen = opts.group.split(",") if opts.group else GROUPS
+if any(group not in GROUPS for group in chosen):
+    parser.error("unknown group in %r (groups: %s)" % (opts.group, ", ".join(GROUPS)))
+if not BASH or not GIT:
+    print("[SKIP] bash or git not on PATH — helper evals need both")
+    sys.exit(0)
+with tempfile.TemporaryDirectory() as tmp:
+    tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
+    for group, block in PARTS:
+        if group in chosen:
+            block(tmp)
 
 passed = sum(1 for ok, *_ in results if ok)
 if passed != len(results):                     # the failures again, so none scrolls out of sight

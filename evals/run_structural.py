@@ -62,7 +62,7 @@ DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 # 1. Layout
 for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.json"), ("bin", "council"),
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
-             ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"),
+             ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"), ("hooks", "agent-gate.sh"),
              ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
              ("references", "helper-commands.md"),
              ("references", "precision-context.md"), ("references", "evidence-model.md"),
@@ -86,6 +86,7 @@ helper_reference = read("references", "helper-commands.md")
 doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
+agent_gate = read("hooks", "agent-gate.sh")
 warroom = read("references", "war-room.md")
 guardrails = read("references", "guardrails.md")
 
@@ -201,6 +202,13 @@ check("01-convene: weighs route advice before opening the run",
       0 <= doctrine["01-convene.md"].find("council route recommend") < doctrine["01-convene.md"].find("**Open the run.**"))
 check("01-convene: a route needing rescope does not silently waive verification",
       "needs-rescope" in doctrine["01-convene.md"] and "before opening or" in doctrine["01-convene.md"])
+check("01-convene: asks whether a run is needed before its steps — never for a protected subject, a review or a post-game",
+      0 <= doctrine["01-convene.md"].find("**Whether, first.**") < doctrine["01-convene.md"].find("**Open runs first.**") and
+      all(p in doctrine["01-convene.md"] for p in ("open none", "protected subject", "review or post-game")))
+check("03-assign and 08-challenge: a Workflow's agents each take a group of small parts, not one each",
+      "never one small part each" in doctrine["03-assign.md"] and
+      "batches of up to 8" in doctrine["08-challenge.md"].split("A Workflow of verifiers", 1)[-1])
+check("implement: small tasks of one kind share a verifier", "up to five of one kind" in skill["council-implement"])
 check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
 check("02-prepare: distinguishes optional graph from the fallback index",
@@ -379,6 +387,10 @@ check("hook: seat-gate's code (not a comment) exits early on stop_hook_active �
 check("hook: seat-gate's code looks for BLOCKED at a line's start — run_hook tests the forms",
       "'^[[:space:]>*_]*blocked" in gate_code)
 check("hook: session-start resumes only this session's run", "field session" in hook and "session_id" in hook)
+check("hook: PreToolUse runs agent-gate.sh for the Agent, Task and Workflow tools only",
+      any(g.get("matcher") == "^(Agent|Task|Workflow)$" and any("hooks/agent-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
+          for g in hooks_json.get("PreToolUse", [])))
+check("hook: agent-gate leaves the decision to the helper (council cap check) — run_hook tests it", "cap check" in agent_gate)
 check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_ID" in cli)
 
 # 8. Templates
@@ -444,15 +456,16 @@ for label, t in [("worker", worker), ("verifier", verifier)]:
     check(f"{label}: ≤ 8,000 chars", len(t) <= 8000, str(len(t)))
 
 # 11. Bash portability (macOS ships bash 3.2)
-for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks/seat-gate.sh", gate)]:
+for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks/seat-gate.sh", gate),
+                 ("hooks/agent-gate.sh", agent_gate)]:
     code_only = "\n".join(l for l in t.split("\n") if not l.lstrip().startswith("#"))   # comments may name what's avoided
     hit = re.search(r"declare -A|\bmapfile\b|\breadarray\b|,,\}|\^\^\}", code_only)
     check(f"{label}: bash 3.2 portable (no declare -A, mapfile, readarray, case-conversion expansions)",
-          hit is None, hit.group(0) if hit else "")
+          bool(t) and hit is None, hit.group(0) if hit else ("" if t else "the file is missing or empty"))
     # bash 3.2 under set -u calls an empty "$@" unbound: every loop over the arguments uses ${1+"$@"}
     bare = re.findall(r'^\s*for \w+ in "\$@"', code_only, re.MULTILINE)
     check(f"{label}: loops over the arguments survive an empty \"$@\" on bash 3.2 (${{1+\"$@\"}})",
-          not bare, "; ".join(bare))
+          bool(t) and not bare, "; ".join(bare))
 
 # bash 3.2 calls an empty "$@" or $* unbound under set -u, so the argument dispatch always guards them.
 bare = []
@@ -470,15 +483,15 @@ check("bin/council: the argument dispatch never expands an empty \"$@\" or $* (u
 # 12. Rename, and no project leakage in anything that ships as behaviour
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
            "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
-           "hooks/seat-gate.sh": gate, "bin/council": cli}
+           "hooks/seat-gate.sh": gate, "hooks/agent-gate.sh": agent_gate, "bin/council": cli}
 for d in ["references", os.path.join("references", "roster"), os.path.join("references", "templates")]:
     for f in os.listdir(os.path.join(ROOT, d)):
         if f.endswith(".md"):
             shipped[f"{d}/{f}"] = read(d, f)
 for label, text in shipped.items():
     stale = re.sub(r"ultra-council:(begin|end)", "", text)
-    check(f"{label}: no 'Ultra Council' branding", re.search(r"ultra[ -]?council", stale, re.IGNORECASE) is None)
-    check(f"{label}: no hard-coded project leakage", "chrollo" not in text.lower())
+    check(f"{label}: no 'Ultra Council' branding", bool(text) and re.search(r"ultra[ -]?council", stale, re.IGNORECASE) is None)
+    check(f"{label}: no hard-coded project leakage", bool(text) and "chrollo" not in text.lower())
 
 # 13. Versions agree: plugin.json, the newest CHANGELOG release, and the helper
 plugin = json.loads(read(".claude-plugin", "plugin.json") or "{}")

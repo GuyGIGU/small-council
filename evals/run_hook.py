@@ -23,9 +23,18 @@ SubagentStop (hooks/seat-gate.sh):
   - blocks once (exit 2, reason on stderr) on a missing, malformed, oversized or empty file, an index
     line it can't read, or a reply with no "Wrote" line;
   - never blocks when stop_hook_active is set, on a line that starts with BLOCKED, or for other agents.
+PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and matcher:
+  - silent (exit 0) with no council, no open run, a run under its cap, a paused run, another session's
+    run, or input it can't read;
+  - refuses a new agent (exit 2, the reason on stderr, stdout empty) at the cap, past the token ceiling,
+    and for a session-less run on this tree, naming council cap allow; lets the agents a recorded go
+    covers through, then stops again;
+  - reads session_id and cwd from the top level only (a Windows cwd with escaped backslashes too), never
+    from text inside another value.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -97,6 +106,26 @@ def run_gate(agent, message, active=False, cwd=None, compact=False, payload=None
     p = subprocess.run(argv, input=payload, capture_output=True, text=True, encoding="utf-8",
                        errors="replace", timeout=60, env=dict(os.environ, **(env or {})))
     return p.returncode, p.stderr
+
+
+def pre_tool(session="sA", cwd="", tool="Agent", before=None, prompt="Review the change"):
+    """A PreToolUse input as Claude Code writes it: compact JSON. session=None leaves session_id out;
+    before: fields placed ahead of session_id and cwd."""
+    fields = dict(before or {})
+    if session is not None:
+        fields["session_id"] = session
+    fields.update({"transcript_path": "/x/t.jsonl", "cwd": cwd, "permission_mode": "default",
+                   "hook_event_name": "PreToolUse", "tool_name": tool,
+                   "tool_input": {"description": "d", "prompt": prompt, "subagent_type": "general-purpose"}})
+    return json.dumps(fields, separators=(",", ":"))
+
+
+def run_agent_gate(command, payload, cwd):
+    """hooks.json's PreToolUse command, run with bash -c from cwd; returns (exit code, stdout, stderr, seconds)."""
+    t0 = time.time()
+    p = subprocess.run([BASH, "-c", command], input=payload, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=60, cwd=cwd, env=dict(GIT_ENV, CLAUDE_PLUGIN_ROOT=ROOT))
+    return p.returncode, p.stdout, p.stderr, time.time() - t0
 
 
 def git(cwd, *args):
@@ -639,6 +668,102 @@ with tempfile.TemporaryDirectory() as tmp:
                "| M1 | admins only | NOT MET | asked, no part covers it |\n")
     code, err = run_gate(verifier, f"Wrote {met} — 1 met, 0 partly met, 2 not met, 0 can't tell, 1 missing, 0 not asked")
     check("seat check: a post-game verifier file passes", code == 0, err)
+
+    # --- PreToolUse agent gate -----------------------------------------------------------------
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        pre_groups = json.load(f)["hooks"].get("PreToolUse", [])
+    gate_groups = [g for g in pre_groups if any("hooks/agent-gate.sh" in h.get("command", "") for h in g.get("hooks", []))]
+    gate_cmd = next((h["command"] for g in gate_groups for h in g["hooks"] if "hooks/agent-gate.sh" in h["command"]),
+                    "echo 'no agent gate in hooks.json' >&2; exit 1")   # with no gate, no check below can pass
+    check("agent gate: hooks.json runs agent-gate.sh before a tool call, with a 15 s timeout",
+          len(gate_groups) == 1 and all(h.get("timeout") == 15 for h in gate_groups[0]["hooks"]), json.dumps(pre_groups))
+    matcher = gate_groups[0].get("matcher") if gate_groups else None
+    taken = [n for n in ("Agent", "Task", "Workflow", "TaskCreate", "TaskStop", "TaskOutput", "Bash", "SendMessage")
+             if matcher and re.search(matcher, n)]
+    check("agent gate: the matcher takes Agent, Task and Workflow — never TaskCreate, TaskStop or Bash",
+          taken == ["Agent", "Task", "Workflow"], f"matcher {matcher!r} takes {taken}")
+
+    def said(code, out, err):
+        return f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()}"
+
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", plain), plain)
+    check("agent gate: no council home — the agent starts, nothing said", code == 0 and not out and not err, said(code, out, err))
+    cap3 = new_repo(tmp, "agent-gate")
+    write(os.path.join(cap3, ".council", "council.config.md"), "# Council config\n## Run preferences\n- agent cap: 3\n")
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", cap3), cap3)
+    check("agent gate: a council with no open run — the agent starts", code == 0 and not out and not err, said(code, out, err))
+    _, grun, _ = council(cap3, "run", "open", "council-review", session="sA")
+    gname = os.path.basename(grun)
+    council(cap3, "seat", "w1", "done", "agent=a1", "agents=2", "tokens=20000")
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", cap3), cap3)
+    check("agent gate: 2 of 3 agent runs used — the agent starts", code == 0 and not out and not err, said(code, out, err))
+    council(cap3, "seat", "w2", "done", "agent=a2", "tokens=10000")
+    code, out, err, took = run_agent_gate(gate_cmd, pre_tool("sA", cap3), cap3)
+    check("agent gate: at the cap (3 of 3) the agent is refused — exit 2, the reason on stderr, nothing on stdout",
+          code == 2 and not out and "3 of its 3 agent runs" in err and gname in err, said(code, out, err))
+    check("agent gate: the reason says to ask the user, and how their go lifts the stop",
+          "ask whether to continue" in err and f"council cap allow <n> --run {gname} --user-said" in err, err)
+    check("agent gate: a refusal, its longest path, comes well inside the 15 s limit", code == 2 and took < 10,
+          f"exit {code}, {took:.1f} s")
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", cap3, tool="Workflow"), cap3)
+    check("agent gate: a Workflow is refused too", code == 2, said(code, out, err))
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sB", cap3), cap3)
+    check("agent gate: a run another session drives never stops this session's agents", code == 0 and not err, said(code, out, err))
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool(None, cap3), cap3)
+    check("agent gate: an input with no session id — every in-progress run on this tree counts", code == 2, said(code, out, err))
+    # The run is found from the input's own cwd, read at the top level only.
+    if os.name == "nt":
+        far, label = cap3.replace("/", "\\"), "a Windows cwd (C:\\…, its backslashes escaped in the JSON)"
+    else:
+        far, label = os.path.join(tmp, "back\\slash"), "a cwd with a backslash in it, escaped in the JSON"
+        os.symlink(cap3, far)
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", far), tmp)
+    check(f"agent gate: {label} is found", code == 2 and gname in err, said(code, out, err))
+    decoy = {"context": {"session_id": "sB", "cwd": plain}, "note": '{"session_id":"sB","cwd":"%s"}' % plain}
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", cap3, before=decoy,
+                                                          prompt='use "cwd": "/nowhere" and \\"session_id\\": \\"sB\\"'), tmp)
+    check("agent gate: session_id and cwd come from the top level — never a nested object or text quoted in a value",
+          code == 2 and gname in err, said(code, out, err))
+    council(cap3, "cap", "allow", "2", "--user-said", "yes, two more")
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", cap3), cap3)
+    check("agent gate: after council cap allow 2, the agent starts", code == 0 and not err, said(code, out, err))
+    council(cap3, "seat", "w3", "done", "agent=a3", "tokens=10000")
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", cap3), cap3)
+    check("agent gate: ... and so does the second agent run it allowed", code == 0 and not err, said(code, out, err))
+    council(cap3, "seat", "w4", "done", "agent=a4", "tokens=10000")
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", cap3), cap3)
+    check("agent gate: once the two agent runs allowed are recorded, it stops again",
+          code == 2 and "5 of its 3 agent runs" in err and "allowed up to 5" in err, said(code, out, err))
+
+    ceil = new_repo(tmp, "agent-gate-ceiling")
+    write(os.path.join(ceil, ".council", "council.config.md"), "# Council config\n")
+    other_tree = os.path.join(tmp, "agent-gate-other-tree").replace("\\", "/")
+    os.makedirs(other_tree)
+    _, crun, _ = council(ceil, "run", "open", "council-review", "--code-root", other_tree, session="sC")
+    with open(os.path.join(crun, "run-plan.tsv"), "a", encoding="utf-8", newline="") as f:
+        f.write("budget\trun\ttoken-ceiling\t50000\towner limit\n")
+    council(ceil, "seat", "w1", "done", "agent=c1", "tokens=60000", "--run", os.path.basename(crun))
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sC", ceil), ceil)
+    check("agent gate: past the token ceiling but under the cap, the agent is refused (the run's code root is another "
+          "tree, but this session drives it)", code == 2 and "60k tokens, over its 50k ceiling" in err, said(code, out, err))
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool(None, ceil), ceil)
+    check("agent gate: with no session id, a run on another working tree is not this tree's", code == 0 and not err,
+          said(code, out, err))
+
+    nos = new_repo(tmp, "agent-gate-sessionless")
+    write(os.path.join(nos, ".council", "council.config.md"), "# Council config\n- agent cap: 1\n")
+    council(nos, "run", "open", "council-review")          # no session id to record
+    council(nos, "seat", "w1", "done", "agent=n1", "tokens=5000")
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sX", nos), nos)
+    check("agent gate: a run on this tree that recorded no session stops any session's agents", code == 2, said(code, out, err))
+    council(nos, "run", "close", "--status", "paused")
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sX", nos), nos)
+    check("agent gate: a paused run at its cap stops nothing", code == 0 and not err, said(code, out, err))
+    for label, raw in (("garbage", "\x00not json at all"), ("an empty input", ""),
+                       ("a truncated object", '{"session_id":"sX","cwd":"')):
+        code, out, err, _ = run_agent_gate(gate_cmd, raw, nos)
+        check(f"agent gate: {label}, no open run — the agent starts, nothing said", code == 0 and not out and not err,
+              said(code, out, err))
 
 passed = sum(1 for ok, *_ in results if ok)
 for ok, name, detail in results:

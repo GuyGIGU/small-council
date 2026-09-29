@@ -33,7 +33,8 @@ Catch what's wrong before the user sees it.
    - Each verifier writes its own file, `<run>/verify-<n>.md` (n counts verifiers, not items). Track them like workers
      (`council seat verify-<n> running agent=<id>`, then `done tokens=…`).
    - A Workflow of verifiers is one seat `verify-<n>` recorded with `agents=N`, and planned with
-     `budget/verify-<n>/agent-runs` — each of its agents counts against the cap. Each agent writes
+     `budget/verify-<n>/agent-runs` — each of its agents counts against the cap, and takes items the
+     same way: a P1 or protected item alone, the rest in batches of up to 8. Each agent writes
      `<run>/verify-<n>-<letter>.md` in the run folder itself. Never merge, copy or move them:
      `council evidence build` reads every `verify-*.md` there. After `run close`, pass `--run <name>`.
    - **Over the cap?** P1s and protected items get their own verifiers first; keep one for the

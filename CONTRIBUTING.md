@@ -18,8 +18,8 @@ you change anything.
 - **The agents carry the contracts.** The seat worker's rules live in `agents/council-worker.md`, the
   verifier's in `agents/council-verifier.md`. Dispatch messages point at the brief and never restate
   a contract.
-- **The hooks enforce what prose can't.** SessionStart handles orientation and resume; SubagentStop
-  checks the seat file.
+- **The hooks enforce what prose can't.** SessionStart handles orientation and resume; PreToolUse
+  stops new agents at a run's limit; SubagentStop checks the seat file.
 
 If you find yourself writing map, dispatch or aggregate logic inside a mode, stop: it belongs in the
 doctrine or the helper.
@@ -76,10 +76,12 @@ python evals/run_structural.py     # is the design intact?
 python evals/run_cli.py            # does the helper work?   (bash + git)
 python evals/run_hook.py           # do the hooks behave?    (bash + git)
 python evals/run_phrases.py        # advisory wording checks — never fails
+python evals/run_all.py            # every suite CI runs, several at a time, then a summary
 ```
 
-These are selected local checks. [CI](.github/workflows/ci.yml) and [evals/README.md](evals/README.md)
-list all 17 checks, run on Ubuntu, Windows and macOS. Automatic checks do not replace real-use validation.
+These are selected local checks. [CI](.github/workflows/ci.yml) runs every suite with
+`evals/run_all.py` on Ubuntu, Windows and macOS; [evals/README.md](evals/README.md) lists them.
+A new `evals/run_*.py` goes into `run_all.py`'s list. Automatic checks do not replace real-use validation.
 
 **Releasing:**
 1. Bump `version` in `.claude-plugin/plugin.json` — installed users only get an update when it

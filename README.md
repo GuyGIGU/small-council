@@ -50,9 +50,11 @@ skipped under load.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
   security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,
   accessibility, concurrency, untrusted input and operability — recast or dropped per project.
-- **Two hooks.**
+- **Three hooks.**
   - **SessionStart**: orients council-enabled sessions, lists open runs, and after a compaction says
     "resume from disk, don't restart". It prints nothing in other projects.
+  - **PreToolUse**: at its agent cap or past its token ceiling, a council run refuses new agents
+    until you say go.
   - **SubagentStop**: a council agent can't finish without the file its contract requires.
 
 ## Install
@@ -196,6 +198,20 @@ stops when the run closes. It only reads: leaving it open changes nothing. It ne
 `--run <folder>` when more than one run is open. Set `COUNCIL_ASCII=1` if your console shows boxes
 as garbage.
 
+**Desktop pet.** Ask the Chair to show the pet, and a small pumpkin-ghost sits on your desktop, on
+top of other windows, following this project's council run. A one-line bubble under it says what is
+happening:
+- **Asleep** — no run is open (or it is paused, or has gone quiet).
+- **Working** — the experts are at it: "2 of 4 seats in · 132k".
+- **Needs you** — it hops with a blue "?" when the run waits for your answer or a build stopped.
+- **Stopped at the limit** — a stern face: the run used its agent limit or token ceiling and waits
+  for your go.
+- **Done** — a big grin and confetti when the run finishes; then it goes back to sleep.
+
+Drag it wherever you like. To close it, right-click it and choose Close, or ask the Chair to close
+the pet (`council pet --stop`). It only reads the run, never changes it. It needs Python 3.8+ with
+tkinter, which most Python installs include.
+
 ## Precision context (0.12)
 
 After writing `<run>/brief.md`, `council context build <seat>` uses that selected seat's validated
@@ -254,11 +270,11 @@ See the [impact graph contract](references/impact-graph.md).
 .claude-plugin/        plugin.json + marketplace.json (this repo is its own marketplace)
 skills/                the nine skills
 agents/                council-worker, council-verifier
-hooks/                 hooks.json · session-start.sh · seat-gate.sh
+hooks/                 hooks.json · session-start.sh · agent-gate.sh · seat-gate.sh
 bin/council            the helper
 references/            stage doctrine · seat docs · spec and test docs · roster catalog · templates
 evals/                 17 CI checks (see evals/README.md) · behavioral drills · benchmark and paid-suite fixtures
-scripts/               quick_validate · impact · context · evidence · repair · memory · ledger · cockpit · status · history · tune
+scripts/               quick_validate · impact · context · evidence · repair · memory · ledger · cockpit · status · pet · history · tune
 docs/design/           the design behind the current doctrine
 docs/validation/       automatic checks, real-use evidence and limits
 docs/roadmap-status.md implemented, tested, used and deferred work
@@ -273,12 +289,13 @@ python evals/run_structural.py     # is the design intact? laws, stages, command
 python evals/run_cli.py            # does the helper work? (needs bash + git)
 python evals/run_impact.py         # does the optional impact graph resolve direct relationships?
 python evals/run_hook.py           # do the hooks behave? (needs bash + git)
-python evals/run_status.py         # run accounting and the status widget (needs bash + git)
+python evals/run_status.py         # run accounting, the status widget and the desktop pet (needs bash + git)
 python evals/run_phrases.py        # advisory: are the field-tested rules still worded in?
+python evals/run_all.py            # every suite CI runs, several at a time
 ```
 
-These are selected local checks. The full 17-step list is in [CI](.github/workflows/ci.yml)
-and [evals/README.md](evals/README.md), run on Ubuntu, Windows and macOS. Before a release:
+These are selected local checks. [CI](.github/workflows/ci.yml) runs every suite with
+`evals/run_all.py` on Ubuntu, Windows and macOS; [evals/README.md](evals/README.md) lists them. Before a release:
 - run the behavioral drills in [`evals/behavioral-drills.md`](evals/behavioral-drills.md);
 - if you have the CLI, run `claude plugin validate . --strict`.
 

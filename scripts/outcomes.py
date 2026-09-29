@@ -32,8 +32,10 @@ def git(repo, *args):
     try:
         env = os.environ.copy()
         env["GIT_OPTIONAL_LOCKS"] = "0"
+        # A diff carries the project's own bytes, which the locale's code page may not decode; only
+        # Git's ASCII headers are parsed, so an undecodable byte is replaced rather than fatal.
         result = subprocess.run(["git", "-C", str(repo)] + list(args), stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, universal_newlines=True, timeout=20, env=env)
+                                stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=20, env=env)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return result.stdout.strip() if result.returncode == 0 else None
@@ -130,7 +132,7 @@ def tracked(repo, commit, path):
 
 
 def parse_hunks(diff):
-    """Return old-side line spans from unified diff; zero-length spans are insertions."""
+    """Return old-side line spans from unified diff; a zero-length span is an insertion after `start`."""
     spans = []
     for line in diff.splitlines():
         match = re.match(r"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@", line)
@@ -141,17 +143,14 @@ def parse_hunks(diff):
     return spans
 
 
-def classify(repo, close_commit, head, claim):
-    parsed = parse_citation(claim.get("citation"))
-    if parsed is None or close_commit is None or head is None:
-        return "can't tell"
-    path, first, last = parsed
+def file_changes(repo, close_commit, head, path):
+    """One file's change from close to HEAD: an outcome for every citation of it, or its old-side hunks."""
     if not tracked(repo, close_commit, path):
         # A citation that was not present at the run's recorded close cannot be compared reliably.
         return "can't tell"
     if not tracked(repo, head, path):
         # git diff --name-status is consulted to distinguish a rename from a plain deletion.
-        names = git(repo, "diff", "--name-status", "-M", close_commit, head, "--", path)
+        names = git(repo, "diff", "--no-color", "--name-status", "-M", close_commit, head, "--", path)
         if names:
             for row in names.splitlines():
                 columns = row.split("\t")
@@ -160,16 +159,45 @@ def classify(repo, close_commit, head, claim):
                 if columns and columns[0] == "D":
                     return "file gone or renamed"
         return "file gone or renamed"
-    diff = git(repo, "diff", "--no-ext-diff", "--no-renames", "--unified=0", close_commit, head, "--", path)
+    # --no-color: a colour setting of "always" would wrap the @@ headers in escape codes.
+    # --ignore-cr-at-eol: a file whose only change is its line endings (LF to CRLF) has no hunks.
+    # --inter-hunk-context=0: a diff.interHunkContext setting would fuse nearby hunks over unchanged lines.
+    # --no-textconv: a textconv driver would number its converted text's lines, not the file's.
+    diff = git(repo, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--ignore-cr-at-eol",
+               "--inter-hunk-context=0", "--unified=0", close_commit, head, "--", path)
     if diff is None:
         return "can't tell"
-    if "Binary files " in diff:
+    if any(line.startswith("Binary files ") for line in diff.splitlines()):
         return "file changed elsewhere"
-    spans = parse_hunks(diff)
+    # With no hunk, no line changed: Git may still print the file's header (or a mode change) when
+    # every change was ignored, so an empty list, not empty output, is what reads as unchanged.
+    return parse_hunks(diff)
+
+
+def classify(repo, close_commit, head, claim, cache=None):
+    """Sort one claim; `cache` is shared by one run's claims, so a file cited twice is compared once."""
+    parsed = parse_citation(claim.get("citation"))
+    if parsed is None or close_commit is None or head is None:
+        return "can't tell"
+    path, first, last = parsed
+    cache = {} if cache is None else cache
+    key = (close_commit, head, path)
+    if key not in cache:
+        cache[key] = file_changes(repo, close_commit, head, path)
+    spans = cache[key]
+    if isinstance(spans, str):
+        return spans
     if not spans:
-        return "file changed elsewhere" if diff else "unchanged"
+        return "unchanged"
     for start, end, insertion in spans:
-        if not insertion and start <= last and end >= first:
+        if insertion:
+            # Lines inserted after old line `start`, inside or right next to the cited span, touch it:
+            # a missing guard can only be cited by the lines around the gap (the helper's cite_hunks rule).
+            touched = first - 1 <= start <= last
+        else:
+            # A modified or deleted old-side span must overlap the cited lines.
+            touched = start <= last and end >= first
+        if touched:
             return "changed at cited lines"
     return "file changed elsewhere"
 
@@ -207,13 +235,14 @@ def outcomes(home, repo):
                 close_commit = None
             mode = cockpit.clean(state.get("mode") or "unknown") or "unknown"
             run_data = {"run": cockpit.clean(folder.name), "mode": mode, "claims": []}
+            cache = {}  # this run's claims share each cited file's tracked checks and diff
             for claim in claims:
                 disposition = str(claim.get("disposition", "")).lower()
                 if disposition not in ("kept", "cut"):
                     disposition = "kept" if disposition == "keep" else "unknown"
                 if disposition == "unknown":
                     continue
-                outcome = classify(run_repo, close_commit, run_head, claim)
+                outcome = classify(run_repo, close_commit, run_head, claim, cache)
                 sources = claim.get("provenance")
                 if not isinstance(sources, list):
                     sources = []

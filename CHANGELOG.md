@@ -6,12 +6,54 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- Optional, disabled-by-default model requests let mapping and survey workers use `sonnet` or `haiku`;
+  Chair and verifier seats continue to inherit the session model.
+- `council history` groups recorded tokens by planned model and labels inherited models as unknown;
+  tokens are not a money measure. History JSON advances to `council.history/4`.
+
+## [0.16.0] — 2026-09-29
+
+**TL;DR:** a pumpkin-ghost desktop pet shows how a run is going; the card says whether new agents are
+stopped or allowed on your go; the impact graph finds scripts' neighbours; CI takes half as long.
+
 ### Added
+
+- `council pet`: a small pumpkin-ghost on your desktop that shows how the council run is going; ask the Chair to show the pet.
+- The impact graph lists each changed file it can't read (shell, hooks, Markdown, config) as "not inspected", and its summary counts them.
+
+### Changed
+
+- The status card, text, `--line` and JSON (`usage.limit`) say whether new agents are stopped at the limit or allowed on your go.
+- CI runs the free suites side by side (`evals/run_all.py`, the helper suite in groups): Windows takes
+  about 15 min instead of 32, and every check still runs.
+
+### Fixed
+
+- The impact graph now finds scripts that import a file sitting next to them (medium confidence).
+
+### Upgrade notes
+
+- Nothing to do. `council status --json` gains a `usage.limit` block and `impact.tsv` gains
+  `not-inspected` rows; neither schema version changes.
+- On an open run at its limit, the card now reads "Stopped at the limit — waiting for your go", or
+  "Your go allows up to N agent runs" once the go is recorded.
+
+## [0.15.0] — 2026-09-29
+
+**TL;DR:** runs stop at their agent limit until you say go, show spend against the estimate, end
+with a closing card and can alert your phone; small asks skip the council.
+
+### Added
+
 - Opening a run warns when the configured project memory exceeds about 25 KB; the status card flags it too.
 - `council outcomes` compares finding citations with later committed changes in each run's code root;
   history includes a conservative summary.
+- A run at its agent cap or past its token ceiling now stops new agents until the user says go (`council cap allow`).
 
 ### Changed
+
 - The always-loaded core instructions are shorter; the full helper command table lives in `references/helper-commands.md`.
 - `council status --line` gives one short owner notification at a blocking question, stopped build,
   agent/token limit or completion; `- notifications: off` suppresses it.
@@ -22,13 +64,27 @@ All notable changes to this project are documented here. The format is based on
   (`budget/<seat>/agent-runs`), and the plan check counts them.
 - Reaching the cap, `council seat` tells the Chair to ask before starting more; passing it records
   `run.cap_passed`, and the status card flags it. The card shows each run's limit.
-- Optional, disabled-by-default model requests let mapping and survey workers use `sonnet` or `haiku`;
-  Chair and verifier seats continue to inherit the session model.
-- `council history` groups recorded tokens by planned model and labels inherited models as unknown;
-  tokens are not a money measure. History JSON advances to `council.history/4`.
+- Convene first asks whether the council is needed: a small, fully specified request is done
+  directly, with no run (never on a protected subject, and never for a review or post-game).
+- Small, same-kind parts share an agent: each agent of a Workflow takes a group of them, and a build
+  verifies up to five small tasks of one kind together.
 
 ### Fixed
+
 - Every token display rounds half up; bash progress and close lines use the same M form as Python.
+- `council outcomes` no longer counts a line-ending-only change as a change at the cited lines.
+- `council outcomes` counts lines inserted inside or right next to a cited span as a change there.
+- `council outcomes` reads diffs the same whatever the user's colour, hunk-context or text-conversion settings.
+- `council outcomes` and `council history` no longer crash on a diff byte the Windows code page can't decode.
+- `council history` diffs each cited file once per run; `council tune` skips the comparison it never reads.
+- The close line gives the estimate in the same units as the total (`~1.5M`, not `~1500k`).
+- A run passing its cap, estimate or ceiling is recorded once, even when two seats finish together.
+
+### Upgrade notes
+
+- An open run already at or past its agent cap stops at its next agent too; `council cap` shows
+  where it stands, and `council cap allow` records the user's go.
+- A small, fully specified request may now be done directly, with no run; ask for the council to get one.
 
 ## [0.14.0] — 2026-09-28
 

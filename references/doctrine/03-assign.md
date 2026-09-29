@@ -24,8 +24,10 @@ Give each seat exactly its slice, and each worker a budget.
 5. **Budgets from slice size:** ~15 tool calls for up to 5 files, ~30 for up to 15, ~45 for up to 25.
 6. **Count agents.** Workers + the verifiers Challenge will need must fit the agent cap (default
    10). Count agent runs, not seats: a seat you will run as a Workflow counts every agent it starts —
-   give it `budget/<slug>/agent-runs` in the plan. Over → pair more seats, or ask the user. A
-   re-dispatch or a diagnosis worker counts too; a resumed worker (SendMessage to its agent id) doesn't.
+   give it `budget/<slug>/agent-runs` in the plan. Give each of its agents a group of small,
+   same-kind parts (files, tasks, items), never one small part each. Over → pair more seats, or ask
+   the user. A re-dispatch or a diagnosis worker counts too; a resumed worker (SendMessage to its
+   agent id) doesn't.
 7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat a `disposition`
    (`selected` or `skipped`) and `role`, with the reason. Every selected seat gets a context level;
    every selected seat gets a tool-call budget. Include the Chair as a selected

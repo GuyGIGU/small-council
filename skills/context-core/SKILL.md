@@ -107,7 +107,9 @@ live at a legacy path; the config's Memory section says where.
 ## Limits
 
 - **Agents:** at most 10 per run, verifiers included (config `agent cap`), unless the user raises it.
-  A resumed worker (SendMessage to its agent id) isn't a new agent; a re-dispatch is.
+  A resumed worker (SendMessage to its agent id) isn't a new agent; a re-dispatch is. At the cap or
+  past the token ceiling, a hook refuses new agents: ask the user, record their go with
+  `council cap allow <n> --user-said "…"`, and never work around the stop.
 - **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts. Runs
   created by an older plugin have no plan stamp and remain valid legacy runs. The exact v1 fields
   and compatibility rule live in `references/run-plan.md`.

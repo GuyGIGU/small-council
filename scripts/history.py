@@ -105,7 +105,9 @@ def month_of(name):
     return match.group(1) if match else "unknown"
 
 
-def history(home):
+def history(home, outcomes=True):
+    """The run history report. outcomes=False skips the finding-outcome comparison (a few Git processes
+    per cited file in every closed run) for a caller that never reads it; its section is then None."""
     home = Path(home)
     runs = [cockpit.snapshot(folder, None, last_events=0) for folder in run_folders(home)]  # memory is not read
     by_status, by_mode, by_month = {}, {}, {}
@@ -188,7 +190,7 @@ def history(home):
                                  (not s["events"]["header_ok"] or s["events"]["malformed"])),
                "open": by_status.get("in-progress", 0) + by_status.get("paused", 0)}
     opened = sorted(s["run"]["id"][:10] for s in runs)
-    outcome_data = finding_outcomes.outcomes(home, Path.cwd())
+    outcome_data = finding_outcomes.outcomes(home, Path.cwd()) if outcomes else None
     return {
         "schema": SCHEMA, "home": str(home), "min_runs": MIN_RUNS,
         "runs": {"total": len(runs), "by_status": by_status, "by_mode": by_mode, "by_month": dict(sorted(by_month.items())),
@@ -210,7 +212,7 @@ def history(home):
         "claims": {"runs": claim_runs, "verdicts": dict(sorted(verdicts.items())),
                    "caught_share": rate(checked_runs)},
         "outcomes": {"runs": len(outcome_data["runs"]), "kept": outcome_data["totals"]["kept"],
-                     "cut": outcome_data["totals"]["cut"]},
+                     "cut": outcome_data["totals"]["cut"]} if outcome_data is not None else None,
         "seats": {"in_ledger": len(seats["seats"]), "advice": dict(sorted(advice.items())),
                   "weighed": sorted(s["seat"] for s in seats["seats"] if s.get("weighed"))},
         "quality": quality,
@@ -290,8 +292,9 @@ def render(data):
     else:
         lines.append("Claims: none recorded (no run built an evidence ledger)")
     o = data["outcomes"]
-    lines.append("Finding outcomes: {} run(s) · Kept {} changed at cited lines · Cut {} · changed after the run does not prove cause".format(
-        o["runs"], o["kept"]["changed at cited lines"], o["cut"]["changed at cited lines"]))
+    if o is not None:
+        lines.append("Finding outcomes: {} run(s) · Kept {} changed at cited lines · Cut {} · changed after the run does not prove cause".format(
+            o["runs"], o["kept"]["changed at cited lines"], o["cut"]["changed at cited lines"]))
     s = data["seats"]
     lines.append("Seats: {} in the ledger · {} weighed{} — council ledger advice".format(
         s["in_ledger"], len(s["weighed"]), " ({})".format(", ".join(s["weighed"])) if s["weighed"] else ""))

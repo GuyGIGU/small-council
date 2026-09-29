@@ -108,7 +108,7 @@ def shown_before(value, line):
 def proposals(home):
     home = Path(home)
     _, text = read_config(home)
-    data = history.history(home)
+    data = history.history(home, outcomes=False)   # tune never reads finding outcomes: skip their Git work
     current, line = configured(text)
     estimate = current or DEFAULT_PER_WORKER
     worker = data["cost"]["tokens_per_agent"]

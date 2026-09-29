@@ -11,9 +11,10 @@ is `can't tell`; older runs without one use the caller's repository. `base:` is 
 merge-base and does not need to match the close-time commit. If
 the saved `index.md` records `+ uncommitted changes`, the run's claims become `can't tell`. Missing
 or unreadable claims, missing Git history, or an invalid citation also becomes `can't tell`. A cited
-file deleted or renamed after close is `file gone or renamed`. A diff hunk overlapping the citation's
-original line span is `changed at cited lines`; a change elsewhere in that file is `file changed
-elsewhere`; no diff is `unchanged`.
+file deleted or renamed after close is `file gone or renamed`. A diff hunk that changes or removes a
+line of the citation's original span, or inserts lines inside that span or right next to it, is
+`changed at cited lines`; a change elsewhere in that file is `file changed elsewhere`; a file with no
+changed line is `unchanged`. A change to line endings alone (LF to CRLF) is not a changed line.
 
 These are timing observations. A line changing after a run does not prove the council found the issue,
 that the finding caused the change, or that the change was correct. The comparison is especially weak

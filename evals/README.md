@@ -2,6 +2,15 @@
 
 Eight automated layers, an advisory one, and hand-run drills. A skill isn't done until it's tested.
 
+**Every free suite at once:** `python evals/run_all.py` is what CI runs on Ubuntu, Windows and macOS.
+It runs each suite as its own process with the command shown in its section below, several at a time
+(`--jobs N`, default: the number of CPUs), and the helper evals as their groups side by side. Suites
+and groups that time the helper or race its locks (the hook evals, the cockpit evals and the helper's
+`timing` group) run alone first, with nothing else running. Every suite runs even when another fails;
+each one's output is printed whole when it finishes, then a table of results, times and check counts,
+and it exits 1 if any suite failed. `--list` shows the jobs. A new `evals/run_*.py` must be added to
+its list, or the run fails, so no suite can be left out of CI.
+
 ## 1. Validation — will the plugin load?
 
 ```bash
@@ -71,6 +80,12 @@ on Windows Git Bash (2026-09-26), longer still inside WSL on a `/mnt/c` checkout
 as it finishes and any failures are repeated at the end — a quiet stretch is one slow command, not
 a hang (each call has a 120 s timeout that is reported as a failed check).
 
+Its checks come in blocks, and each block belongs to a group (`@part("…")` in the file). A group runs
+in one process and needs nothing from another, so `run_all.py` runs the groups side by side:
+`--list` prints them, `--group runs,gates` runs only those. With no options every group runs, in file
+order, as before. The `timing` group (six workers on one lock, a stale lock, speed limits) runs alone.
+A block left without a group stops the suite, so none can be skipped.
+
 ## 4. Hook evals — do the hooks behave?
 
 ```bash
@@ -84,6 +99,11 @@ python evals/run_hook.py       # needs bash + git
 - after a compaction, says "resume, don't restart" for this session's run only;
 - handles paused runs, runs in other worktrees, legacy runs, stale maps and garbage input.
 
+**PreToolUse agent gate:**
+- silent without a council, an in-progress run, or a run within its limits;
+- refuses a new agent at the cap or past the ceiling, until the user's go is recorded;
+- never stops a session for a run another session drives.
+
 **SubagentStop seat check:**
 - valid files pass;
 - a missing, malformed, empty or oversized file is blocked, but only once;
@@ -96,8 +116,11 @@ python evals/run_impact.py   # needs Python 3.8+, bash and git for the CLI hando
 ```
 
 Uses temporary repositories to check committed/staged/unstaged/untracked changes, renames and
-deletions, Python AST and literal JS/TS imports, likely test links, deterministic TSV, and the
-`council index` → `impact.tsv` handoff. This is not a claim of runtime coverage.
+deletions, Python AST, sibling-script and literal JS/TS imports, likely test links, `not-inspected`
+limit rows for files no provider reads, deterministic TSV, and the `council index` → `impact.tsv`
+handoff. With full Git history it also graphs a real range of this repository (`132dc37..869d5cf`,
+where helper scripts import their neighbours); a shallow clone skips that check. This is not a
+claim of runtime coverage.
 
 ## 6. Context evals — do seat packs stay relevant, small, and safe?
 
@@ -246,6 +269,12 @@ run closes; and every file of the run and the council home byte-for-byte unchang
 - **The widget.** Every record value escaped. No network, and one inline script. The state is given in
   words, not colour alone. The snapshot time is carried. A long run stays under 16 KB with capped
   lists. Reading writes nothing.
+- **The stop at the limit.** No go, a go that covers the next agent, a used-up go, torn or garbage
+  rows, the ceiling, a closed run and values too large for bash: the card, text, `--line` and JSON
+  say "stopped" or "your go", and read the same as `cap_standing` and `council cap` on each folder.
+- **The desktop pet** (`council pet`, `scripts/pet.py`), with no window: it imports without a display;
+  the design's paths keep their shapes; each status reading gets its pose and bubble; argument,
+  no-tkinter and no-display refusals are one line; one pet per project, and `--stop` closes it.
 
 `python evals/run_history.py` checks history across runs (`council history`, `scripts/history.py`):
 counts always, but a median, share or ratio only once five runs (not items) carry its data; a build's
