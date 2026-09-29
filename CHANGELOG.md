@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Opening a run warns when the configured project memory exceeds about 25 KB; the status card flags it too.
+
 ### Changed
 - `council status --line` gives one short owner notification at a blocking question, stopped build,
   agent/token limit or completion; `- notifications: off` suppresses it.

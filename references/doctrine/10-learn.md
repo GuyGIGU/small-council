@@ -42,7 +42,8 @@
     `council memory reject …` on a no. Run it only after they answered in the chat — it records
     their words and the date, and checks the entry would be served before filing it.
   - **Decisions (D)** are recorded only in the user's own words.
-- **Memory over ~25 KB** → propose a consolidation as numbered operations ("merge AP-7 into AP-3",
+- **Memory over ~25 KB** → the helper warns at run open and the card notes it; propose a
+  consolidation as numbered operations ("merge AP-7 into AP-3",
   "retire EC-2 — superseded by EC-9"). Apply them one by one on the user's yes. Never rewrite the
   file wholesale. To retire an entry, move it under `## Retired` with a
   `**Retired:** <date> — <why>` line; no run reads it after that.

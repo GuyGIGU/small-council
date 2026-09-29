@@ -255,6 +255,23 @@ with tempfile.TemporaryDirectory() as tmp:
     check("run open: state records the code root", re.search(r"^code-root: .+/repo$", st, re.MULTILINE) is not None, st)
     check("run open: state records Claude Code's session id", "session: sess-123" in st, st)
     check("run open: seats.tsv and seats/ created", os.path.isfile(os.path.join(run, "seats.tsv")) and os.path.isdir(os.path.join(run, "seats")))
+
+    large_memory = new_repo(tmp, "large-memory")
+    write(os.path.join(large_memory, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(large_memory, ".council", "conventions.md"), "x" * 30000)
+    code, _, err = council(large_memory, "run", "open", "council-review")
+    check("run open: a 30 KB project memory warns and points to consolidation",
+          code == 0 and "conventions.md is 30 KB" in err and "propose a consolidation" in err, err)
+    write(os.path.join(large_memory, ".council", "conventions.md"), "x" * 20000)
+    code, _, err = council(large_memory, "run", "open", "council-review", "--alongside")
+    check("run open: a 20 KB project memory does not warn", code == 0 and "over the ~25 KB" not in err, err)
+    configured_memory = new_repo(tmp, "configured-memory")
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- conventions: docs/project-memory.md\n")
+    write(os.path.join(configured_memory, "docs", "project-memory.md"), "x" * 65864)
+    code, _, err = council(configured_memory, "run", "open", "council-review")
+    check("run open: the configured memory file, not only the default, is measured",
+          code == 0 and "project-memory.md is 66 KB" in err, err)
     plan_path = os.path.join(run, "run-plan.tsv")
     check("run open: creates and stamps a versioned run plan",
           os.path.isfile(plan_path) and "plan-schema: 1" in st and "\t{{MODE}}\t" not in read(plan_path), read(plan_path) + st)
