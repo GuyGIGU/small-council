@@ -44,3 +44,8 @@ before representative outcome benchmarks exist.
 
 Real project fixtures show missing high-value dependencies, or benchmarks justify an optional
 Tree-sitter/LSP provider. Preserve the v1 row meaning and version any incompatible change.
+
+First revisit: real reviews got no dependency or limit rows, because helper scripts import their
+neighbours by bare name and most changed files were shell or Markdown. A medium-confidence
+`script-dir` provider now resolves sibling files outside package folders, and every changed file
+no provider reads gets a `not-inspected` limit row. Both fit v1 rows, so the schema stays 1.
