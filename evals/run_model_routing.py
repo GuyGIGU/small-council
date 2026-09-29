@@ -97,6 +97,41 @@ def main():
         check("unsupported model alias is refused", code == 1 and "must be inherit, sonnet or haiku" in out,
               out + err)
 
+        config.write_text("# Test council config\n- seat models: off\n", encoding="utf-8", newline="\n")
+        write_plan(run, "seat\tmapper\tpurpose\tsurvey\troutine survey\n"
+                   "seat\tmapper\tmodel\thaiku\troutine survey\n")
+        code, out, err = call(repo, "run", "plan", "check")
+        check("an explicit seat models: off refuses an override", code == 1 and "seat model overrides are off" in out,
+              out + err)
+        for label, rows in (("no model row", ""), ("only inherit rows", "seat\tmapper\tmodel\tinherit\tdefault\n")):
+            write_plan(run, rows)
+            code, out, err = call(repo, "run", "plan", "show")
+            check("routing unused ({}): plan display says nothing about models".format(label),
+                  code == 0 and "seat" in out and "model" not in out, out + err)
+
+        # A finished run is not judged by today's setting: turning seat models back off must not make
+        # doctor call a closed run's plan invalid. An open run with the same plan is still flagged.
+        routed = "seat\tmapper\tpurpose\tmapping\tcodebase map\nseat\tmapper\tmodel\thaiku\tcodebase map\n"
+        config.write_text("# Test council config\n- seat models: on\n", encoding="utf-8", newline="\n")
+        write_plan(run, routed)
+        code, out, err = call(repo, "state", "phase=deliver")
+        closed_ok = code == 0
+        code, out, err = call(repo, "run", "close", "--status", "complete")
+        check("a routed run reaches Deliver and closes", closed_ok and code == 0, out + err)
+        code, out, err = call(repo, "run", "open", "council-review")
+        second = Path(out.strip())
+        write_plan(second, routed)
+        code, out, err = call(repo, "state", "phase=deliver")
+        check("a second routed run is open at Deliver", code == 0, out + err)
+        config.write_text("# Test council config\n- seat models: off\n", encoding="utf-8", newline="\n")
+        code, out, err = call(repo, "doctor")
+        check("doctor: a closed run's plan stays valid after seat models go back off",
+              "run {} has".format(run.name) not in out + err, out + err)
+        check("doctor: an open run's override is still flagged once seat models are off",
+              "run {} has an invalid run plan".format(second.name) in out + err, out + err)
+        code, out, err = call(repo, "run", "plan", "check", "--run", run.name)
+        check("plan check on the closed run still passes", code == 0, out + err)
+
     for name, passed, detail in checks:
         print("[{}] {}{}".format("PASS" if passed else "FAIL", name,
                                   " — " + detail.strip() if detail.strip() and not passed else ""))

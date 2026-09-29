@@ -1260,6 +1260,8 @@ run_plan_validate() {
   expected_mode="$(field mode "$run/session-state.md")"
   max_cap="$(configured_agent_cap)"
   seat_models="$(configured_seat_models)"
+  # A closed run already dispatched under the setting of its day; today's on/off doesn't judge it.
+  case "$(field status "$run/session-state.md")" in complete|abandoned) seat_models=closed ;; esac
   EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" SEAT_MODELS="$seat_models" QUIET="${QUIET:-0}" awk -F'\t' '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function problem(line, msg) {
@@ -1393,7 +1395,7 @@ run_plan_validate() {
         if (!(id in disp) || disp[id] != "selected") problem(model_line[id], "a model choice belongs only to a selected seat: " id)
         else if (model[id] != "inherit") {
           if (role[id] != "worker") problem(model_line[id], "only worker seats can use sonnet or haiku; " id " has role " role[id])
-          if (ENVIRON["SEAT_MODELS"] != "on") problem(model_line[id], "seat model overrides are off; enable seat models: on in council.config.md")
+          if (ENVIRON["SEAT_MODELS"] == "off") problem(model_line[id], "seat model overrides are off; enable seat models: on in council.config.md")
           if (purpose[id] != "mapping" && purpose[id] != "survey") problem(model_line[id], "sonnet or haiku needs seat/" id "/purpose = mapping or survey")
         }
       }
@@ -1446,7 +1448,8 @@ cmd_run_plan() {
     show)
       run_plan_validate "$run" "$plan" || return 1
       PLAN="$plan" awk -F'\t' '
-        $0 !~ /^#/ && NF == 5 { v[$1 SUBSEP $2 SUBSEP $3] = $4; why[$1 SUBSEP $2 SUBSEP $3] = $5; if ($1 == "seat" && $3 == "disposition") order[++n] = $2 }
+        $0 !~ /^#/ && NF == 5 { v[$1 SUBSEP $2 SUBSEP $3] = $4; why[$1 SUBSEP $2 SUBSEP $3] = $5; if ($1 == "seat" && $3 == "disposition") order[++n] = $2
+                                if ($1 == "seat" && $3 == "model" && $4 != "inherit") routed = 1 }
         END {
           print "Run plan — " v["run" SUBSEP "run" SUBSEP "id"]
           print "  mode: " v["run" SUBSEP "run" SUBSEP "mode"] " · size: " v["run" SUBSEP "run" SUBSEP "size"]
@@ -1464,7 +1467,7 @@ cmd_run_plan() {
               ar = v["budget" SUBSEP id SUBSEP "agent-runs"]; if (ar != "") line = line " · " ar " agent runs"
               purpose = v["seat" SUBSEP id SUBSEP "purpose"]; if (purpose != "") line = line " · purpose " purpose
               model = v["seat" SUBSEP id SUBSEP "model"]; if (model == "") model = "inherit"
-              line = line " · model " model
+              if (routed) line = line " · model " model    # only once some seat asks for another model
             }
             print line " — " why["seat" SUBSEP id SUBSEP "disposition"]
           }

@@ -5,9 +5,14 @@
 Record an optional `seat/<slug>/model` choice in the run plan: `inherit`, `sonnet`, or `haiku`.
 Missing rows mean `inherit`. Overrides are rejected unless `council.config.md` says
 `- seat models: on`. Only selected worker seats may use an override; the Chair and verifier stay on
-`inherit`. An override also requires a declared `seat/<slug>/purpose` of `mapping` or `survey`.
-The checker can verify the declaration; the Chair checks that the actual assignment matches it.
-Routing is off by default.
+`inherit`. An override also requires a declared `seat/<slug>/purpose` of `mapping` or `survey`
+(`mapping` charts code for `map.md`; `survey` gathers facts for others to judge; `other` is
+everything else). The checker can verify the declaration; the Chair checks that the actual
+assignment matches it. Routing is off by default.
+
+These rules are checked in the run plan only. Dispatch itself isn't gated: no hook stops an Agent
+call that passes `model: "haiku"` for the Chair or a verifier. The doctrine tells the Chair to
+follow the plan; there is no hook enforcement.
 
 When dispatching, the Chair passes an override as the Agent call's per-invocation `model` parameter.
 Claude Code documents that this parameter takes precedence over agent frontmatter and the
@@ -28,6 +33,10 @@ and is weak evidence. Keep routing disabled until the owner chooses to enable it
 ## Consequences
 
 - Existing plans stay valid; no model row means `inherit`.
+- A closed run (complete or abandoned) is not rechecked against today's on/off setting, so turning
+  routing off later does not make a finished run's plan invalid in `council doctor`.
+- With routing unused (no non-`inherit` row), `run plan show` and `council history` print what they
+  printed before; history JSON still carries the planned-model totals.
 - History reports planned-model token totals alongside a plain caveat, not comparative cost savings.
 - No per-seat model is hard-coded in the worker or verifier agent definitions, because the choice is
   run-specific.

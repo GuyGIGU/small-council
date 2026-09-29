@@ -37,8 +37,9 @@ Give each seat exactly its slice, and each worker a budget.
    `council run plan check`; fix every error before going on.
    If `- seat models: on` is set in `council.config.md`, a selected mapping or survey worker may get
    `seat/<slug>/purpose = mapping` or `survey` and `seat/<slug>/model = sonnet` or `haiku`;
-   otherwise omit the model row (`inherit`). Keep the Chair and
-   verifier at `inherit`. A model choice is a request for dispatch, not proof of which model ran.
+   otherwise omit the model row (`inherit`). Mapping charts code for `map.md`; survey gathers facts
+   for others to judge. Keep the Chair and verifier at `inherit` — the plan check enforces this, but
+   dispatch itself isn't gated. A model choice is a request for dispatch, not proof of which model ran.
 8. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
    note="<reason>"` for every seat not called. The helper refuses to queue or start a seat the valid
    plan does not mark selected.

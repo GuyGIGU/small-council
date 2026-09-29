@@ -249,7 +249,7 @@ def render(data):
     lines.append("Tokens per agent (workers and verifiers): " + (
         "median {} (10–90%: {}–{})".format(k(w["median"]), k(w["p10"]), k(w["p90"]))
         if w["enough"] else too_few(w["n"], "completed runs with agents")))
-    if cost["tokens_by_planned_model"]:
+    if any(model != "inherit" for model in cost["tokens_by_planned_model"]):   # only once routing is used
         lines.append("Tokens by planned model (not money; inherited seats' actual model is unknown): " + " · ".join(
             "{}: {} tokens across {} seat(s), {} run(s)".format(model, info["tokens"], info["seats"], info["runs"])
             for model, info in cost["tokens_by_planned_model"].items()))
