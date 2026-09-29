@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 - Opening a run warns when the configured project memory exceeds about 25 KB; the status card flags it too.
+- `council outcomes` compares finding citations with later committed changes in each run's code root;
+  history includes a conservative summary.
 
 ### Changed
 - The always-loaded core instructions are shorter; the full helper command table lives in `references/helper-commands.md`.
