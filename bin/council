@@ -3067,11 +3067,12 @@ cite_mode() {
 # A seat-file problem. It's a hard one unless the seat's worker is still running: its file may just not
 # be done yet, so the Chair waits instead of resuming or re-dispatching it. "collect_flag cite" marks a
 # problem with citations only: the seat's work is there, so the lines are fixed in place.
-collect_flag() { bad=1; [ "${live:-0}" = 1 ] || { hard=1; [ "${1:-}" = cite ] || deep=1; }; }
+collect_flag() { bad=1; [ "${stray:-0}" = 0 ] || strays_bad=1; [ "${live:-0}" = 1 ] || { hard=1; [ "${1:-}" = cite ] || deep=1; }; }
 
 cmd_collect() {
   local run top base brief seats slug ref out cap f size refok r t got shape items unparsed hasnone okc allc nol unc \
-        n sev pr cite title sec tok state bad=0 total=0 note hard=0 deep=0 live=0 sat=0 r2lost=""
+        n sev pr cite title sec tok state bad=0 total=0 note hard=0 deep=0 live=0 sat=0 r2lost="" \
+        named="" l1="" stray=0 strays=0 strays_bad=0 extra=""
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="$(field base "$run/session-state.md")"
@@ -3082,6 +3083,16 @@ cmd_collect() {
   [ -n "$seats" ] || die "brief.md has no seat blocks under '## Seats' (### <slug> — …)"
   [ ! -f "$run/debate.md" ] || seats="$seats
 $(brief_seats "$run/debate.md")"                      # a war room's round-2 files, from debate.md's own ## Seats
+  # Every other .md in seats/ is held to the same contract. The seat-check hook runs only for the
+  # council's own agent types, so a file a Workflow's agent wrote reaches nothing else before Judge. Such
+  # a row's slug is its file name, its ref "?" (no brief block names a doc) and its cap "-" (none set).
+  named="$(printf '%s\n' "$seats" | cut -f3 | while IFS= read -r f; do f="${f##*/}"; printf '%s\n' "${f##*\\}"; done)"
+  for f in "$run"/seats/*.md; do
+    [ -f "$f" ] || continue
+    ! printf '%s\n' "$named" | grep -qxF -- "${f##*/}" || continue
+    seats="$seats
+${f##*/}$TAB?${TAB}seats/${f##*/}$TAB-"
+  done
   printf '%-16s %-8s %-7s %-4s %-9s %-7s %s\n' seat file items KB ref cites tokens
   while IFS="$TAB" read -r slug ref out cap; do
     [ -n "$slug" ] || continue
@@ -3090,7 +3101,8 @@ $(brief_seats "$run/debate.md")"                      # a war room's round-2 fil
       END { exit !found }' "$run/run-plan.tsv"; then
       continue  # Challenge verifiers do not produce worker seat files.
     fi
-    total=$((total + 1)); note=""
+    note=""; stray=0
+    if [ "$ref" = "?" ]; then stray=1; strays=$((strays + 1)); note=" not-in-brief"; else total=$((total + 1)); fi
     case "$out" in /*|[A-Za-z]:*) f="$out" ;; *) f="$run/$out" ;; esac
     if [ "${slug%-r2}" != "$slug" ] && [ -z "$(seat_field "$run" "$slug" 2)" ]; then
       tok="-"; state="$(seat_field "$run" "${slug%-r2}" 2)"     # round 2 by the round-1 worker, resumed
@@ -3109,7 +3121,7 @@ $(brief_seats "$run/debate.md")"                      # a war room's round-2 fil
       if [ "${slug%-r2}" = "$slug" ] && printf '%s\n' "$seats" | cut -f1 | grep -qxF -- "$slug-r2"; then state=done; fi ;;
     esac
     live=0; case "$state" in running|queued) live=1 ;; esac     # its file may simply not be done yet
-    case "$state" in failed|blocked|running|queued) note=" state:$state"; collect_flag ;; esac
+    case "$state" in failed|blocked|running|queued) note="$note state:$state"; collect_flag ;; esac
     case "$slug:$state" in *-r2:failed|*-r2:blocked) r2lost="$r2lost${r2lost:+, }$slug" ;; esac
     if [ ! -s "$f" ] && [ "$state" = skipped ] && [ "${slug%-r2}" != "$slug" ]; then   # sat round 2 out (war-room.md)
       t="$(seat_field "$run" "$slug" 6)"
@@ -3122,9 +3134,14 @@ $(brief_seats "$run/debate.md")"                      # a war room's round-2 fil
       printf '%-16s %-8s %s\n' "$slug" blocked "$(sed -n '2,9p' "$f" | grep -m 1 '^BLOCKED' | tr -d '\r' | clip 140)"; collect_flag; continue
     fi
     size="$(( ($(wc -c < "$f") + 1023) / 1024 ))"
+    l1="$(sed -n '1p' "$f" | tr -d '\r')"; l1="${l1#"$BOM"}"       # the seat-check hook's line 1
+    case "$l1" in '# '*) ;; *) note="$note no-heading"; collect_flag ;; esac
     refok=ok
     if [ "$ref" = none ]; then
       refok=n/a
+    elif [ "$ref" = "?" ]; then                      # no brief block names its doc: only the line is checked
+      refok=-
+      sed -n '2,9p' "$f" | grep -q '^ref:' || { refok=no-ref; collect_flag; }
     else
       got="$(sed -n '2,9p' "$f" | grep '^ref:' | sed 's/^ref:[[:space:]]*//' | while IFS= read -r l; do
                printf '%s' "$l" | norm; printf '\n'; printf '%s' "$l" | norm_wide; done)"
@@ -3141,7 +3158,7 @@ REFS
     grep -q '^## Index' "$f" || { note="$note no-index"; collect_flag; }
     [ "${unparsed:-0}" -eq 0 ] || { note="$note unparsed-index($unparsed)"; collect_flag; }
     if [ "${items:-0}" -eq 0 ] && [ "${hasnone:-0}" -eq 0 ] && [ "${unparsed:-0}" -eq 0 ]; then note="$note empty-index"; collect_flag; fi
-    [ "${items:-0}" -le "${cap:-8}" ] || { note="$note over-cap"; collect_flag; }
+    [ "$cap" = - ] || [ "${items:-0}" -le "${cap:-8}" ] || { note="$note over-cap"; collect_flag; }
     [ "$size" -le 16 ] || { note="$note over-16KB"; collect_flag; }
     okc=0; allc=0; nol=0; unc=0              # a path with no line counts as found; no path at all as unchecked
     while IFS="$TAB" read -r n sev pr cite title sec; do
@@ -3163,7 +3180,9 @@ ITEMS
 $seats
 SEATS
   if [ "$bad" -eq 0 ]; then
-    if [ "$sat" -eq 0 ]; then say "collect: all $total seats in order"; else say "collect: all $total seats in order · $sat sat out (skipped)"; fi
+    [ "$sat" -eq 0 ] || extra=" · $sat sat out (skipped)"
+    [ "$strays" -eq 0 ] || extra="$extra · $strays other file(s) in seats/ in order too"
+    say "collect: all $total seats in order$extra"
     event_append "$run" collect.finished run passed "seats=$total" || printf 'council: collection passed, but its event was not recorded\n' >&2
     return 0
   fi
@@ -3176,6 +3195,7 @@ SEATS
     return 1
   fi
   say "collect: fix the rows above — resume that worker (message its agent id) or re-dispatch it once"
+  [ "$strays_bad" -eq 0 ] || say "collect: a not-in-brief row is a file in seats/ no seat block names — likely a Workflow agent's, which the seat-check hook never checks. Fix it to the seat-file shape (line 1 '# <Seat> — <lane> (<mode>)', a ref: line, an ## Index of index lines, under 16 KB), or ask the agent that wrote it"
   [ -z "$r2lost" ] || say "collect: $r2lost lost round 2 with its worker — dispatch a fresh round-2 worker for each and record it as 'council seat <slug>-r2 running'; round 1 is done, don't re-run it"
   return 1
 }
@@ -5676,7 +5696,8 @@ council — the Small Council's helper (bash + git)
   council gates                          list the configured gates
   council changed [--glob '<pat>'] [--each] -- <cmd>
                                          run <cmd> over just the files this change touches (0 when none)
-  council collect                        check every seat file named in the brief (and a war room's debate.md)
+  council collect                        check every seat file: the brief's, a war room's debate.md's, and
+                                         any other .md in seats/ (a Workflow's agents skip the seat hook)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md)
   council map status                     how far the map is behind HEAD, by area
   council fingerprint [check]            the stack's fingerprint; check compares it with the config

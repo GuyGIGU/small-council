@@ -2153,6 +2153,8 @@ def collect_one_bad_seat(tmp):
          "# S\nref: none\n## Index\n1 · P1 · P · a.txt:40 · x\n2 · P1 · P · nope.py:3 · y\n", "broken-cites"),
         ("an item with no citation field", "- ref: none", "# S\nref: none\n## Index\n1 · P2 · just a title\n",
          "unparsed-index(1)"),
+        ("a first line that isn't a '# ' heading (the seat-check hook's line 1)", "- ref: none",
+         "S — Lane (council-review)\nref: none\n## Index\n" + one, "no-heading"),
     ]
     for what, block, seat, flag in lone_cases:
         code, out = lone_collect(block, seat)
@@ -2177,6 +2179,22 @@ def collect_one_bad_seat(tmp):
     code, out = lone_collect(f"- ref: {design}", "# S\nquestion: q\n## Index\n" + one)
     check("collect: a seat with no ref: line never passes the proof of reading",
           code == 1 and "MISMATCH" in row(out, "s1"), out)
+
+    # A Workflow's agents are typed workflow-subagent, so the seat-check hook never sees their files:
+    # collect holds every .md in seats/ to the same shape, named in the brief or not.
+    def workflow_files(r, bad=True):
+        write(os.path.join(r, "seats", "wf-b.md"), "# S — Lane, part B (council-review)\nref: none\n## Index\n" + one)
+        if bad:
+            write(os.path.join(r, "seats", "wf-a.md"), "Verdicts for part A\n\nAll fine.\n" + "x" * 20000 + "\n")
+
+    code, out = lone_collect("- ref: none", "# S\nref: none\n## Index\n" + one, extra=workflow_files)
+    check("collect: a file in seats/ that no seat block names is checked like a seat file, and a bad one fails collect",
+          code == 1 and all(f in row(out, r"wf-a\.md") for f in ("not-in-brief", "no-heading", "no-index", "over-16KB", "no-ref"))
+          and "not-in-brief" in row(out, r"wf-b\.md") and "no-heading" not in row(out, r"wf-b\.md")
+          and "seat-check hook never checks" in out and "seats in order" not in out, out)
+    code, out = lone_collect("- ref: none", "# S\nref: none\n## Index\n" + one, extra=lambda r: workflow_files(r, bad=False))
+    check("collect: a well-formed file in seats/ outside the brief passes, and the summary counts it apart from the seats",
+          code == 0 and "all 1 seats in order · 1 other file(s) in seats/ in order too" in out, out)
 
     heb = os.path.join(lone, "HEBREW.md")
     write(heb, "# \u05de\u05d3\u05e8\u05d9\u05da \u05d0\u05d1\u05d8\u05d7\u05d4\nbody\n")
