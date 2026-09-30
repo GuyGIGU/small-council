@@ -25,6 +25,7 @@ text, so any other form asks the user every time. Only if it isn't on PATH, writ
 | `council changed [--glob '<pat>'] [--each] -- <cmd>` | run `<cmd>` over just the files this change touches — committed, staged, unstaged and new; exit 0 when none matched, so a newly fitted check is green on day one |
 | `council collect` · `council check` | check the seat files (and a war room's debate.md) · check citations, origin and request quotes — and, in a build, each fix's proof: did the before-check really fail, did the after-check really pass, is a test saved |
 | `council ask save [slug]` | file the run's ask.md — the user's words — under `.council/asks/`, redacting secrets; records `ask=` |
+| `council home` · `home rule` | where the council lives (the main checkout's `.council/`) · the Edit permission rule for that folder, in the form Claude Code matches — council-init offers it |
 | `council fingerprint check` · `council memory select` · `council prior` | a changed stack · the memory entries in scope · earlier council work on these paths |
 | `council memory propose claim\|repair <id>` · `memory accept\|reject F-<n> --user-said "…"` | at Learn: draft an observed failure from the run's verified record under `## Proposed` · file the user's answer in their words; optional Python 3.8+ |
 | `council status [--widget\|--line]` · `council correct <seat> …` | the run in plain words for the user: a widget card, one notification line, or text ending with the terminal view's command · lay an exact, evidenced figure over a seat's record |

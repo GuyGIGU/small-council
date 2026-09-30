@@ -222,9 +222,10 @@ Adjust on request. On confirmation, write:
    ] } }
    ```
 
-   Edit rules cover Write too. Add the council home's real path as well — `Edit(//<what `council home`
-   printed>/**)` — because the home belongs to the **main** checkout, so the relative rule misses it
-   from a linked worktree or a subdirectory.
+   Edit rules cover Write too. Add the council home's real path as well, exactly as `council home
+   rule` prints it — the home belongs to the **main** checkout, so the relative rule misses it from a
+   linked worktree or a subdirectory. On Windows that is `Edit(//c/Users/…/.council/**)`: Claude
+   Code matches the drive lower-case with no colon, so `//C:/Users/…` never matches.
 
    **These rules match the command text.** They cover `council run status` typed plainly and nothing
    else: a call through a shell variable, an alias or `bash <path>/bin/council` matches none of them
@@ -243,7 +244,8 @@ Adjust on request. On confirmation, write:
    `council correct`.
 
    At a **refresh**, read `.claude/settings.local.json` first: if it holds `Bash(council *)` or a
-   `council gate` rule from an earlier version, offer to replace it with this list, and say why. If
+   `council gate` rule from an earlier version, offer to replace it with this list, and say why; an
+   `Edit(//C:/…)` rule never matched, so offer the one `council home rule` prints in its place. If
    it holds an earlier, shorter version of this list, offer to add the rules it lacks: name them, use
    the form the file already uses, leave every other rule in the file as it is, and write only on a
    yes.

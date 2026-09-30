@@ -333,6 +333,22 @@ def runs_open(tmp):
     os.makedirs(plain)
     code, out, _ = council(plain, "home")
     check("home: outside git it is ./.council", code == 0 and slash(out).lower().endswith("/plain/.council"), out)
+    # The permission rule for the home's real path, in the form Claude Code matches: //<absolute path>/**,
+    # and a Windows drive as /c/… — a rule written //C:/… (what `council home` prints there) never matches.
+    _, home_out, _ = council(repo, "home")
+    code, out, _ = council(repo, "home", "rule")
+    want = slash(home_out)
+    if re.match(r"^[A-Za-z]:/", want):
+        want = "/" + want[0].lower() + want[2:]
+    check("home rule: prints the Edit rule for the council home's real path",
+          code == 0 and out.strip() == "Edit(/" + want + "/**)" and ":" not in out.strip()[5:], out)
+    code, out, err = council(repo, "home", "rule", "x")
+    check("home rule: refuses a word it doesn't take", code == 2 and "doesn't take" in err, out + err)
+    p = subprocess.run([BASH, "-c", 'H="$2"; source "$1"; council_home() { printf "%s\\n" "$H"; }; home_rule', "council",
+                        CLI.replace("\\", "/"), "C:/Users/Me/My Project/.council"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", env=GIT_ENV)
+    check("home rule: a Windows home is written with the drive lower-case and no colon, blanks kept",
+          p.stdout.strip() == "Edit(//c/Users/Me/My Project/.council/**)", p.stdout + p.stderr)
 
     # Opening a run
     code, out, err = council(repo, "run", "open", "nonsense")

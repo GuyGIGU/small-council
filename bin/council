@@ -111,6 +111,17 @@ WORKTREES
   printf '%s/.council\n' "$main"
 }
 
+# The Edit permission rule for the council home's real path, as Claude Code matches it: an absolute path
+# after //, and a Windows drive as /c/… (lower-case, no colon) — a //C:/… rule never matches anything.
+home_rule() {
+  local h drive
+  h="$(council_home)"
+  case "$h" in
+    [A-Za-z]:/*) drive="$(printf '%s' "${h%%:*}" | tr '[:upper:]' '[:lower:]')"; h="/$drive${h#?:}" ;;
+  esac
+  printf 'Edit(/%s/**)\n' "$h"
+}
+
 # The working tree a run's code-root is compared with.
 this_tree() { local t; t="$(council_toplevel)"; [ -n "$t" ] || t="$(here)"; printf '%s' "$t"; }
 
@@ -5598,6 +5609,8 @@ usage() {
 council — the Small Council's helper (bash + git)
 
   council home                           where the council lives (.council/ of the main checkout)
+  council home rule                      the Edit permission rule for that folder, in the form Claude Code
+                                         matches (on Windows the drive as //c/…, never //C:/…)
   council run open <mode> [--alongside] [--session=ID]
                                          open a run for a mode, e.g. council-review; prints its folder
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
@@ -5772,7 +5785,12 @@ main() {
   [ $# -gt 0 ] || { [ -z "$FLAGS" ] || die "a flag needs a command — see: council help"; usage; exit 0; }
   cmd="$1"; shift
   case "$cmd" in
-    home)    takes_flags home; no_words home ${1+"$@"}; council_home ;;
+    home)    takes_flags home
+             case "${1:-}" in
+               '')   council_home ;;
+               rule) shift; no_words "home rule" ${1+"$@"}; home_rule ;;
+               *)    die "usage: council home [rule]" ;;
+             esac ;;
     run)
       sub="${1:-}"; [ $# -eq 0 ] || shift
       case "$sub" in

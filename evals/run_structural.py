@@ -365,6 +365,7 @@ for label, text, needles in [
                                 "council changed", "Mandatory: no", "plans/guardrails.md", "council-implement",
                                 "proved both ways", "No coverage threshold", "No commit hook", "multiple of 256"]),
     ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
+                    "council home rule", "//C:/Users/…` never matches",
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
                     "last-verified", "council doctor", "council run open council-init", "run plan opens ready for setup",
                     "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash",
