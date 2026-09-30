@@ -100,7 +100,7 @@ the converge pass starts, `council state phase=challenge`.
 1. **Load the governing reference doc first.**
    - `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`.
    - Project-local `.council/refs/…` → under the council home.
-   - It is the constraint set, not background reading. Cross-referenced docs inform specific decisions.
+   - It is the constraint set, not background reading.
 2. **Before-evidence — the check that outlives the run.** Write the check that shows the problem
    (fix mode) or the missing behaviour (plan task) as **a test in the project's own suite**, saved
    with the code. A throwaway command or query only when the project has no test runner at all — and
@@ -111,10 +111,10 @@ the converge pass starts, `council state phase=challenge`.
      verdicts at converge and calls it broken proof.
    - **Name the test's own path in the command** — `pytest tests/test_expiry.py::test_expired_token`,
      not a bare `pytest` — or nothing can confirm a test was saved, and the receipt has to say so.
-   - **The after-check is the same command, word for word.** A different command that happens to pass
-     is reported as DIFFERENT-COMMAND, which is broken proof.
+   - **The after-check is the same command, word for word.** A different one that passes is
+     reported as DIFFERENT-COMMAND: broken proof.
    - A genuinely untestable path (a race, a rendering bug, a hardware route) records
-     `no permanent test possible — <why>` in the log, and that reason is reported, never swallowed.
+     `no permanent test possible — <why>` in the log, and that reason is reported.
    - Label the task's support in the log with the evidence vocabulary from
      `references/evidence-model.md`. `REPRODUCED` requires the saved before/after gate paths;
      a passing command alone does not prove the changed path works.
@@ -149,33 +149,33 @@ the converge pass starts, `council state phase=challenge`.
      do not attempt steps 6–7 as a fix path, start another gate trail, or commit it as complete.
      Preserve the diff and gate output; never silently revert unrelated work. Read-only review
      cannot reopen repair. When the build stops blocked, run `council status --line`; if it prints
-     a line and `PushNotification` is available, send it once (Work's notification rule).
+     a line, send it once with a `PushNotification` tool (deferred? search the tools first).
      Without Python 3.8+, log the same attempts and limit. Never count the intentionally failing
      `before-<n>` check as a repair attempt.
 6. **After-evidence — only if the task is not blocked.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
    must now pass.
 7. **Adversarial check — only if the task is not blocked.** Dispatch `small-council:council-verifier` with:
    - the task and its Done-when;
-   - the governing principle's own text, quoted from the reference doc — so the principle is checked,
-     not merely cited;
+   - the governing principle's own text, quoted from the reference doc, so it is checked, not cited;
    - the diff, written to `<run>/diff-<n>.patch`, passed by path;
    - the before, after and gate outputs in `gates/`.
 
    Verify every P1 fix and every risky task (data writes, security, core logic) on its own; batch
    small tasks two or three per verifier, or up to five of one kind (renames, copy edits). Track each
-   with `council seat verify-<n> …`. Then act on the verdict:
+   with `council seat verify-<n> …`; one stopped at its turn limit is resumed with SendMessage
+   ("write your file now"), never re-dispatched. Then act on the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
      `c`), so the first verdict stays on disk.
    - **A second failed verification** → a **clean-context diagnosis** if this task has not already
      used its one diagnosis worker for a gate failure; otherwise stop and report. The worker is read-only.
      Its dispatch message is its whole brief — the task and its Done-when, both verdict files, the
      diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
-     candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Track it with
-     `council seat diagnose-<n> …`. Then one more attempt; still failing → stop and report.
+     candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it
+     (`council run plan check`), then `council seat diagnose-<n> …`. Then one more attempt; still
+     failing → stop and report.
    - **SCOPE-CREEP** → revert the extra change.
    - **CANNOT VERIFY** → add the missing check, or record why it can't exist.
-   - **A finding that turns out to be wrong** → don't "fix" it. Log it as refuted, with evidence; it's
-     a memory candidate.
+   - **A finding that turns out to be wrong** → don't "fix" it; log it as refuted, with evidence.
 8. **Log and state — now, not at the end.**
    - Append the task's entry to the log.
    - Include each failed gate attempt's category, suggested lens, actual cause (or uncertainty),

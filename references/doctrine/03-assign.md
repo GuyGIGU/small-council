@@ -30,8 +30,8 @@ Give each seat exactly its slice, and each worker a budget.
    agent id) doesn't.
 7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat a `disposition`
    (`selected` or `skipped`) and `role`, with the reason. Every selected seat gets a context level;
-   every selected seat gets a tool-call budget. Include the Chair as a selected
-   `chair` for Solo. Copy the recommendation's compatible risk, complexity band, uncertainty,
+   every selected seat gets a tool-call budget. Always include the Chair as a selected
+   `chair` (the plan check needs one). Copy the recommendation's compatible risk, complexity band, uncertainty,
    cap, and verification level only after checking them against what Prepare uncovered. If a
    recommendation changed, record the evidence and reason in the plan. Run
    `council run plan check`; fix every error before going on.

@@ -674,8 +674,10 @@ cmd_run_resume() {
   old="$(field session "$st")"
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
   RUN_ARG="$run" cmd_state status=in-progress session="$session" >/dev/null || exit 2
+  event_lock "$st.lock" || die "state lock unavailable: $st.lock"   # cmd_state's lock, taken after it returned
   awk '/^## / { body = 1 } !body && (index($0, "closed:") == 1 || index($0, "actual:") == 1) { next } { print }' "$st" > "$st.tmp$$" \
-    && mv "$st.tmp$$" "$st" || { rm -f "$st.tmp$$"; die "cannot update $st"; }
+    && mv "$st.tmp$$" "$st" || { rm -f "$st.tmp$$"; event_unlock "$st.lock" || :; die "cannot update $st"; }
+  event_unlock "$st.lock" || :
   event_append "$run" run.resumed run in-progress "from=$status" || die "run resumed, but its event could not be recorded"
   if [ -n "$session" ]; then drv="driven by this session"; else drv="no session id to record"; fi
   say "resumed $name — in progress · phase $(field phase "$st") · $drv"
@@ -1297,9 +1299,9 @@ RUNS
   fi
   [ "$n" -gt 0 ] || return 0
   if [ "$n" -eq 1 ]; then
-    say "Small Council: $said. No new agents until the user says go. Tell them what it has used, and ask whether to continue and for how many more agent runs; every agent a Workflow starts counts. On their go: \`council cap allow <n> --run $last --user-said \"<their words>\"\`. If the run is finished: \`council run close --run $last\`."
+    say "Small Council: $said. No new agents until the user says go. Tell them what it has used, and ask whether to continue and for how many more agent runs; every agent a Workflow starts counts. On their go: \`council cap allow <n> --run $last --user-said \"<their words>\"\`. If the run is finished: \`council run close --run $last\`. Alert the owner once: send what \`council status --line --run $last\` prints with a PushNotification tool (it may be a deferred tool: search the tools for it first)."
   else
-    say "Small Council: $said. No new agents until the user says go. Tell them what each run has used, and ask whether to continue and for how many more agent runs; every agent a Workflow starts counts. On their go: \`council cap allow <n> --run <folder> --user-said \"<their words>\"\` for each run. If a run is finished: \`council run close --run <folder>\`."
+    say "Small Council: $said. No new agents until the user says go. Tell them what each run has used, and ask whether to continue and for how many more agent runs; every agent a Workflow starts counts. On their go: \`council cap allow <n> --run <folder> --user-said \"<their words>\"\` for each run. If a run is finished: \`council run close --run <folder>\`. Alert the owner once: send what \`council status --line --run <folder>\` prints with a PushNotification tool (it may be a deferred tool: search the tools for it first)."
   fi
   exit 2
 }
@@ -3431,6 +3433,7 @@ cmd_collect() {
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="$(field base "$run/session-state.md")"
   cite_mode "$(field mode "$run/session-state.md")"
+  CITE_RUN="$run"                              # a citation of the run's own files (gates/…) is found there
   brief="$run/brief.md"
   [ -f "$brief" ] || die "no brief.md in $run — write the brief first"
   seats="$(brief_seats "$brief")"
@@ -3895,7 +3898,7 @@ ref_path() {
 }
 
 cmd_doctor() {
-  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck dir mode phase croot upd status actual ptr mem size pend stale mcheck unsup evid fp map sha behind rows unk alt k orph skipped i stfile schema plan_result event_result
+  local home root cfg errs=0 warns=0 refs slug seat ref p card src dups gates g gc gat gm gk gchk gside gneeds ghk ghas gst gmd gck dir mode phase croot upd status actual ptr mem size pend stale mcheck unsup evid fp map sha behind rows unk alt k orph skipped i stfile schema plan_result event_result nt
   home="$(council_home)"; root="$(dirname "$home")"
   finding() {
     printf '%s  %s\n       Fix: %s\n' "$1" "$2" "$3"
@@ -3954,7 +3957,15 @@ REFS
         if [ "$gk" != "$ghk" ]; then
           finding WARN "gate '$g' has $gk cells where the header has $ghk — the columns have shifted (an unescaped pipe?)" "wrap the command in backticks and escape any pipe as \\|, or remove it"
         fi
-        case "$gc" in *'|'*) finding WARN "gate '$g' pipes its output — its exit code may not be the test runner's" "remove the pipe from that command in council.config.md" ;; esac
+        if [ "$gc" = "-" ]; then          # config_gates gives '-' for an empty Command cell
+          finding WARN "gate '$g' has an empty Command cell, so it never runs" "fill in its command in council.config.md, or delete the row"
+          continue
+        fi
+        while IFS= read -r nt; do         # the same exit-code hazards a gate run names: pipe, fallback, capture
+          [ -z "$nt" ] || finding WARN "gate '$g' $nt" "fix that command in council.config.md"
+        done <<NOTES
+$(shape_notes "$gc")
+NOTES
         if gate_backslash "$gc"; then
           finding WARN "gate '$g' $(backslash_note)" "gate commands run under bash (Git Bash on Windows): write tools/run.ps1, or put the path in quotes"
         fi

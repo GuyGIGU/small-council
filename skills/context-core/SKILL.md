@@ -116,7 +116,7 @@ live at a legacy path; the config's Memory section says where.
 - **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts. Runs
   created by an older plugin have no plan stamp and remain valid legacy runs. The exact v1 fields
   and compatibility rule live in `references/run-plan.md`.
-- **Sizes:** Solo (you, inline) · Squad (2–4 seats + 1–2 verifiers) · Full (up to 7 seats +
+- **Sizes:** Solo (you alone) · Squad (up to 4 seats + 1–2 verifiers) · Full (up to 7 seats +
   verifiers). Size a run as seats plus the verifiers Challenge will need; its overflow rule covers
   the rest. A post-game uses 1–3 verifiers and counts as Squad.
 - **Approval:** a `/command` approves runs up to the config's `approve without asking` size (default

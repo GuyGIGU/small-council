@@ -292,6 +292,7 @@ python evals/run_cli.py            # does the helper work? (needs bash + git)
 python evals/run_impact.py         # does the optional impact graph resolve direct relationships?
 python evals/run_hook.py           # do the hooks behave? (needs bash + git)
 python evals/run_status.py         # run accounting, the status widget and the desktop pet (needs bash + git)
+python evals/run_audit.py          # council run audit on a run-1-shaped run and a clean run (needs bash + git)
 python evals/run_phrases.py        # advisory: are the field-tested rules still worded in?
 python evals/run_all.py            # every suite CI runs, several at a time
 ```

@@ -342,6 +342,20 @@ def allowed_until(run_path):
     return until
 
 
+def agent_starts(run_path):
+    """The agent starts the gate let through (bin/council cap_starts): the rows of agent-starts.tsv after
+    its header. A Workflow is one start."""
+    lines = cockpit.text_of(Path(run_path) / "agent-starts.tsv", run_path).split("\n")
+    return sum(1 for line in lines[1:] if line.strip())
+
+
+def planned_run(run_path):
+    """Opened with plans and agent limits: session-state.md has a plan-schema: value. A run opened before
+    them is never stopped (bin/council cap_standing)."""
+    text = cockpit.text_of(Path(run_path) / "session-state.md", run_path)
+    return re.search(r"^\ufeff?plan-schema:[ \t]*[^ \t\r\n#]", text, re.MULTILINE) is not None
+
+
 def cap_standing(snap, run_path, home=None):
     """Where the run stands, as the helper's cap_standing computes it: agent runs used, the cap, known
     tokens, the ceiling, the user's go, over and stopped. Over: at the cap (the next agent would pass
@@ -349,13 +363,14 @@ def cap_standing(snap, run_path, home=None):
     bash's test can't read never stops anything."""
     agents = (snap.get("usage") or {}).get("agents") or {}
     used = agents["total"] if agents.get("total") is not None else (agents.get("at_least") or 0)
+    used = max(used, agent_starts(run_path))          # an agent counts from its start, once
     tokens = ((snap.get("usage") or {}).get("tokens") or {}).get("known") or 0
     cap = run_agent_cap(run_path, home)
     ceiling = budget_value(run_path, "token-ceiling")
     until = allowed_until(run_path)
     over = (cap <= INTMAX and used >= cap) or (ceiling is not None and tokens <= INTMAX and tokens > ceiling)
     return {"agent_runs": used, "agent_cap": cap, "tokens": tokens, "ceiling": ceiling, "allowed_until": until,
-            "over": over, "stopped": over and (until is None or used >= until)}
+            "over": over, "stopped": over and planned_run(run_path) and (until is None or used >= until)}
 
 
 def spend_of(snap, usage, run_path):
@@ -628,6 +643,8 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
         go = "Stopped at the limit — waiting for your go."
     elif open_run and limit["over"] and limit["allowed_until"] is not None:
         go = "Your go allows up to {}.".format(plural(limit["allowed_until"], "agent run"))
+    elif open_run and limit["over"] and not planned_run(run_path):
+        go = "It was opened before agent limits, so new agents are not stopped."
     else:
         go = ""
     limit.update({"stopped": held, "text": go})

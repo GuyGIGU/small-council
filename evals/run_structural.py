@@ -260,6 +260,7 @@ check("08-challenge: names council check before the verifier dispatch",
       -1 < doctrine["08-challenge.md"].find("council check") < doctrine["08-challenge.md"].find("council-verifier"))
 check("08-challenge: one verify-<n>.md per verifier", "verify-<n>.md" in doctrine["08-challenge.md"])
 check("10-learn: closes the run", "council run close" in doctrine["10-learn.md"])
+check("10-learn: the Chair audits its closed run", "council run audit --run <folder>" in doctrine["10-learn.md"])
 check("10-learn: a paused run comes back with council run resume", "council run resume" in doctrine["10-learn.md"])
 check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
 check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])

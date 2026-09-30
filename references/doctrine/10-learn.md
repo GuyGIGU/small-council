@@ -6,8 +6,8 @@
   deliberate design is the best candidate.
 - **Enforced conventions:** always/never rules the user adopted along with the fixes.
 - **Observed failures:** evidence-backed history that would prevent a repeat; it is not a new rule.
-  Propose the observation and its verdict, not a guessed cause. A future run treats it as a lead to
-  check, never as proof that the same cause applies again.
+  Propose the observation and its verdict, not a guessed cause; a future run treats it as a lead to
+  check, never as proof.
 - **Write each one in plain words, with evidence and effect:**
   `- PROPOSED accepted pattern: stop flagging <X> in <paths> — <why it's deliberate> (evidence: <path:line>; scope: <paths or seat slugs>; from <deliverable path>, <date>)`
 - For a failure proposal, name the observed failure, scope, origin, evidence path, verdict and the
@@ -35,19 +35,19 @@
 - **On the user's answer:**
   - Yes → move the entry into its section with the next number, carrying **Scope:** (its scope),
     **Origin:** and **Anchor:** (if one exists). An F entry also needs **Failure:**, **Evidence:**
-    and **Verdict:** before selection will serve it. Later runs read only what applies.
+    and **Verdict:** before selection will serve it.
   - No → move it to `## Rejected` as title · date · their reason.
   - A drafted F entry: `council memory accept F-<n> --user-said "<their words>"` on a yes,
     `council memory reject …` on a no. Run it only after they answered in the chat — it records
     their words and the date, and checks the entry would be served before filing it.
   - **Decisions (D)** are recorded only in the user's own words.
-- **Memory over ~25 KB** → the helper warns at run open and the card notes it; propose a
+- **Memory over ~25 KB** → the helper warns at run open; propose a
   consolidation as numbered operations ("merge AP-7 into AP-3", "retire EC-2 — superseded by
   EC-9"), applied one by one on the user's yes. Never rewrite the file wholesale. To retire an entry, move it under `## Retired` with a
   `**Retired:** <date> — <why>` line; no run reads it after that.
 - **Stale anchors:** `council memory check` lists entries whose anchored file, line or symbol is
   gone. Propose re-anchoring or retiring each, as operations like the ones above. Anchor new entries
-  to a path or a symbol where you can; a line number drifts unnoticed.
+  to a path or a symbol; a line number drifts unnoticed.
 - **Unsupported failures:** the same check lists each observed failure whose evidence file is gone
   or whose cited lines no longer show its verdict (`UNSUPPORTED` — no brief gets it). Propose
   re-anchoring its evidence to a file that still shows it, or retiring it; never restore it by
@@ -57,21 +57,23 @@
 
 `council run close` stamps the status and the actual cost. For a completed run it also adds each
 seat's row to the ledger — items raised, kept, cut and refuted, and tokens — counted from the seat
-files, synthesis.md's `from:` lines and the verify tables, so keep those exact. It also warns (never
+files, synthesis.md's `from:` lines and the verify tables, so keep those exact. It warns (never
 refuses) when a completed run never filed its request (`council ask save --run <folder>`), never
-reached Deliver, ends with a required check red, has no deliverable, or (review, plan) no verdicts:
-tell the user. `council ledger` shows the record: Convene estimates from it. `council ledger advice` says how much it supports,
+reached Deliver, ends with a required check red, or has no deliverable or (review, plan) no
+verdicts: tell the user. `council ledger` shows the record: Convene estimates from it. `council ledger advice` says how much it supports,
 seat by seat; a council-init refresh proposes roster changes only where the advice clears its bar.
 - A run stopped for good → `--status abandoned`.
 - A run the user paused → `--status paused`. When they want it back, `council run resume --run <folder>`.
 
-**Close every run you open** — three steps, in order:
-1. `council run close`. It prints the close line, any warnings, then a reminder of step 2.
+**Close every run you open** — four steps, in order:
+1. `council run close`. It prints the close line, any warnings and a reminder of step 2.
 2. **Show the closing card, once.** Pass the output of `council status --widget --run <folder>` to a
-   `show_widget` tool (it may be a deferred tool: search the tools for it before deciding there is
-   none); with none, relay `council status --run <folder>`. A closed run needs `--run`. The card adds
-   to Deliver's summary: the request, deliverable, verdict counts, checks, cost and what is left for
-   the user. Never a card per progress line.
-3. For a completed run, `council status --line --run <folder>`: if it prints a line and
-   `PushNotification` is available, send it once. The project off switch suppresses the line. No
-   progress notifications.
+   `show_widget` tool (it may be a deferred tool: search the tools for it first); with none, relay
+   `council status --run <folder>`. A closed run needs `--run`. The card adds to Deliver's summary:
+   request, deliverable, verdicts, checks, cost, what is left for the user. Never a card per progress
+   line.
+3. For a completed run, `council status --line --run <folder>`: if it prints a line, send it once
+   with a `PushNotification` tool (deferred too: search first). The project off switch suppresses
+   the line. No progress notifications.
+4. `council run audit --run <folder>` reads the run back against the method; tell the user each FAIL
+   line, in plain words.

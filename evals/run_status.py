@@ -143,10 +143,13 @@ def local(minutes_before):
 
 
 def make_run(base, name, status_value="in-progress", phase="work", seats=(), gates=(), repairs=(), extra_state="",
-             events=None, seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported", updated_min=5):
+             events=None, seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported", updated_min=5,
+             planned=True):
+    """planned=False: a run opened before plans and agent limits (no plan-schema), never stopped at the cap."""
     run = Path(base) / ".council" / "runs" / name
-    write(run / "session-state.md", "status: {}\nmode: council-review\nphase: {}\nupdated: {}\nopened: {}\n{}"
-          "## Decisions so far\n".format(status_value, phase, local(updated_min)[:16], local(300), extra_state))
+    write(run / "session-state.md", "status: {}\nmode: council-review\nphase: {}\nupdated: {}\nopened: {}\n{}{}"
+          "## Decisions so far\n".format(status_value, phase, local(updated_min)[:16], local(300),
+                                        "plan-schema: 1\n" if planned else "", extra_state))
     write(run / "seats.tsv", seats_header + "\n" + "".join("\t".join(str(c) for c in s) + "\n" for s in seats))
     for n, (gate, code, minutes) in enumerate(gates):
         write(run / "gates" / "{}-{}.json".format(gate, n), json.dumps(
@@ -1333,15 +1336,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         council(agree, "seat", "n", "done", "tokens=5000", "--run", run_k.name)
         check("seat: a smaller later figure from the same agent is a count of its own and is added — still one agent run",
               seat_row(run_k, "s")[3:4] == ["26000"] and seat_row(run_k, "s")[6:8] == ["1", "1"], seat_row(run_k, "s"))
-        check("seat: a report with no agent id stands alone, so the same one twice counts twice — record the id at dispatch",
-              seat_row(run_k, "n")[3:4] == ["10000"] and seat_row(run_k, "n")[6:8] == ["2", "2"], seat_row(run_k, "n"))
+        check("seat: the same report twice with no agent id is a repeat, counted once — record the id at dispatch",
+              seat_row(run_k, "n")[3:4] == ["5000"] and seat_row(run_k, "n")[6:8] == ["1", "1"], seat_row(run_k, "n"))
         code, _, _ = council(agree, "seat", "s", "done", "tokens=1000", "--run", run_k.name)
         check("seat: exactly 1,000 tokens is accepted — the floor is 'under 1,000' (review finding 12)", code == 0)
         with open(run_k / "usage.tsv", "a", encoding="utf-8", newline="\n") as trail:
             trail.write("2026-09-27T12:00:00Z\tn\tn9\tfinished\t1\t12abc\n")
         council(agree, "seat", "n", "done", "--run", run_k.name)
         check("seat: a usage.tsv cell that is not a count (a hand edit) is never read as one (review finding 8)",
-              seat_row(run_k, "n")[3:4] == ["10000"] and seat_row(run_k, "n")[6:8] == ["2", "2"], seat_row(run_k, "n"))
+              seat_row(run_k, "n")[3:4] == ["5000"] and seat_row(run_k, "n")[6:8] == ["1", "1"], seat_row(run_k, "n"))
 
         # --- one reading of the waiting: key (review finding 9) ---------------------------------------------------
         run_l = fresh("waiting", ("a",))

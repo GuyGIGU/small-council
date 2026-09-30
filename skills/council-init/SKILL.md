@@ -96,7 +96,8 @@ build/compile, and any e2e or regression harness.
   `|| true`, passes with the tool missing — green for ever. Dry-run its own command once more with
   the tool broken (name misspelt, path pointing nowhere):
   `council gate probe-<name>-broken -- '<broken command>'` must fail. Record both in its Probe cell
-  (`` `<fast form>` · broken: fail, exit <n> ``); a gate that still passes is ✗ until fixed.
+  (`` `<fast form>` · broken: fail, exit <n> ``); a gate that still passes is ✗ until fixed — for a
+  runner kept in `$( )`, add `|| exit $?` right after it.
 - **Record more than the command** — the config's Gates columns: the **Probe** (the exact dry-run
   you ran), what it **Needs** (tools, env vars, credentials, hardware) and its **Side effects**
   (none, writes the tree, network, cost, hardware, deploy, credentials). `council gate --all` never runs a gate

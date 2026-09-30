@@ -31,7 +31,9 @@ Catch what's wrong before the user sees it.
      its table's `#` column: the ledger matches verdicts to seats by it.
    - Include every cut P1: a lone dissenter may be right.
    - Each verifier writes its own file, `<run>/verify-<n>.md` (n counts verifiers, not items). Track them like workers
-     (`council seat verify-<n> running agent=<id>`, then `done tokens=…`).
+     (`council seat verify-<n> running agent=<id>`, then `done tokens=…`). One stopped at its
+     60-turn limit may leave no file: resume it with SendMessage ("write your file now, then
+     finish"), never re-dispatch it.
    - **If these verifiers are the run's first dispatch** (a Solo run, a post-game), show the user
      the run's status now, once — Work, "Right after dispatching", step 2. The helper's reminder
      says when.
@@ -40,6 +42,8 @@ Catch what's wrong before the user sees it.
      same way: a P1 or protected item alone, the rest in batches of up to 8. Each agent writes
      `<run>/verify-<n>-<letter>.md` in the run folder itself. Never merge, copy or move them:
      `council evidence build` reads every `verify-*.md` there. After `run close`, pass `--run <name>`.
+     The seat-check hook never sees a Workflow's agents: give them the file rules in their prompt
+     (line 1 `# Verification — <run title>`, the verdict table, under 16 KB; write the file first).
    - **Over the cap?** P1s and protected items get their own verifiers first; keep one for the
      batch of everything else. If even that doesn't fit, pair P1s two to a verifier. Tell the user
      what shared a verifier.

@@ -39,8 +39,10 @@ does not count as an agent. Skipped seats receive neither context nor budget.
 
 The cap counts agent runs, not seats: a seat run as a Workflow starts one agent per part, so it
 declares `budget/<slug>/agent-runs` (1 to 1000; 1 when absent). The selected workers' and verifiers'
-agent runs must fit both the plan's agent cap and the project's configured cap. During the run the
-helper counts the agent runs actually recorded (`references/run-accounting.md`): once they reach the
+agent runs must fit both the plan's agent cap and the project's configured cap — or, after the
+user's go past the cap (`council cap allow`), the count their go allows. During the run the helper
+counts the larger of the agent runs recorded and the agent starts the hook let through
+(`references/run-accounting.md`): once they reach the
 cap, `council seat` tells the Chair to ask the user before starting more; the first time they pass
 it, it records `run.cap_passed` and the status card says so. From the cap on, a hook refuses the next
 agent until the user's go is recorded with `council cap allow` (`references/run-accounting.md`).
