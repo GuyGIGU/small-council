@@ -3426,6 +3426,11 @@ def gates_table(tmp):
           and "test_old" not in out, out)
     council(redbase, "gate", "--all", "--at", "verify")
     check("gate --all --at verify: never replaces the baseline", "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt")))
+    code, out, _ = council(redbase, "gate", "--all")      # a plain second run, after the change: it writes baselines too
+    check("gate --all a second time: the first snapshot stays the baseline, so the change's failure is still named new",
+          "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt"))
+          and "test_new" not in read(os.path.join(rgates, "baseline", "tests.txt"))
+          and code == 1 and "not at the baseline" in out and "test_new" in out.split("not at the baseline")[-1], out)
     # The comparison is by failing test, not by line: a runner's timed summary is never a "new" failure,
     # and a swap (one test fixed, another broken) is never "nothing new".
     gates_cfg(redbase, "| timed | `if [ -f .fixed ]; then t=0.81; else t=0.26; fi;"
@@ -4216,6 +4221,8 @@ parser = argparse.ArgumentParser(description="Helper evals: run bin/council agai
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
 parser.add_argument("--group", metavar="NAME[,NAME...]", help="run only these groups (default: all, in file order)")
+parser.add_argument("--allow-skip", action="store_true",
+                    help="exit 0 when bash or git is missing (default: exit 3, so a run that checked nothing never passes)")
 opts = parser.parse_args()
 GROUPS = list(dict.fromkeys(group for group, _ in PARTS))
 blocks = [block for _, block in PARTS]
@@ -4233,8 +4240,8 @@ chosen = opts.group.split(",") if opts.group else GROUPS
 if any(group not in GROUPS for group in chosen):
     parser.error("unknown group in %r (groups: %s)" % (opts.group, ", ".join(GROUPS)))
 if not BASH or not GIT:
-    print("[SKIP] bash or git not on PATH — helper evals need both")
-    sys.exit(0)
+    print("[SKIP] bash or git not on PATH — helper evals need both; nothing was checked")
+    sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     for group, block in PARTS:

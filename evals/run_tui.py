@@ -66,9 +66,9 @@ PLAN = [("schema", "plan", "version", "1"), ("run", "run", "size", "squad"), ("r
         ("context", "verify-1", "level", "focused"), ("budget", "verify-1", "tool-calls", "30"),
         ("seat", "nygard", "disposition", "skipped"), ("seat", "nygard", "role", "worker")]
 
-if not BASH or not GIT:
-    print("[SKIP] bash or git unavailable")
-    raise SystemExit(0)
+if not BASH or not GIT:        # nothing checked is not a pass, unless asked for (--allow-skip)
+    print("[SKIP] bash or git unavailable; nothing was checked")
+    raise SystemExit(0 if "--allow-skip" in sys.argv else 3)
 
 with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
     repo = Path(temporary) / "repo"

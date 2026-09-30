@@ -1889,6 +1889,24 @@ cmd_outcomes() {
   "$@"
 }
 
+# A finished run checked against the method (scripts/audit.py): its records, and with --transcript the
+# session's own calls — pass, warn or FAIL per item, exit 1 on a FAIL. Read-only. With no --run and no
+# in-progress run here, it reads this working tree's newest run, the one just closed.
+cmd_run_audit() {
+  local run="" py="" transcript="$TRANSCRIPT_ARG"
+  if [ -n "$RUN_ARG" ] || [ -n "${COUNCIL_RUN:-}" ] || [ -n "$(runs_here "$(council_home)" "$(this_tree)" in-progress)" ]; then
+    run="$(resolve_run)" || exit 2
+  else
+    run="$(list_runs "$(council_home)" 1000000 all | TOP="$(this_tree)" awk -F'\t' '$4 == ENVIRON["TOP"] || $4 == "-" { print $1; exit }')"
+    [ -n "$run" ] || die "no run on this working tree to audit — pass --run <folder>"
+  fi
+  py="$(impact_python)" || die "run audit needs optional Python 3.8+; council run events show and council run status give the raw record"
+  if [ -n "$transcript" ] && command -v cygpath >/dev/null 2>&1; then transcript="$(cygpath -m "$transcript" 2>/dev/null || printf '%s' "$transcript")"; fi
+  set -- "$py" "$COUNCIL_PLUGIN_ROOT/scripts/audit.py" --run "$run"
+  [ -z "$transcript" ] || set -- "$@" --transcript "$transcript"
+  "$@"
+}
+
 # Conservative self-tuning (scripts/tune.py). propose only reads; apply and revert change one line of
 # council.config.md — the estimate per worker — and only with the user's words, redacted here first and
 # logged in tuning.md. Roster changes go through a council-init refresh; behaviour is held until a
@@ -5932,6 +5950,11 @@ council — the Small Council's helper (bash + git)
                                          in progress again, this session recorded as its driver
   council run plan [check|show]          validate the run plan · show its decisions in plain language
   council run events [show|check]        inspect or validate the run's append-only event stream
+  council run audit [--transcript <session .jsonl>]
+                                         after close: check the run against the method from its
+                                         records, and with the session transcript what the Chair
+                                         showed and ran — pass, warn or FAIL per item, exit 1 on a
+                                         FAIL; reads only (optional Python 3.8+)
   council state [key=value …]            show or update the run's session-state header; phase= takes a
                                          stage name; waiting="<question>" prints the alert reminder
   council seat <slug> <state> [agent=ID] [tokens=N] [agents=N] [note=TEXT]
@@ -6048,14 +6071,14 @@ main() {
   ROUTE_SURFACES=()
   CONTEXT_EXPANDS=()
   MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0 WATCH=0 WIDGET=0 LINE=0 PREVIEW=0
-  PET_STOP=0 PET_DEMO=0 PET_STILL=0 PET_POSE_ARG="" PET_EXIT_ARG=""
+  PET_STOP=0 PET_DEMO=0 PET_STILL=0 PET_POSE_ARG="" PET_EXIT_ARG="" TRANSCRIPT_ARG=""
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
   pos=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said|--pose|--exit-after)
+      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said|--pose|--exit-after|--transcript)
                    flag="${1#--}"
                    [ $# -ge 2 ] || case "$flag" in
                      run|code-root) die "--$flag needs a folder" ;;
@@ -6064,7 +6087,7 @@ main() {
                      *) die "--$flag needs a value" ;;
                    esac
                    val="$2"; shift 2 ;;
-      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*)
+      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*|--transcript=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
       --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still) flag="${1#--}"; val=1; shift ;;
       --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*) die "${1%%=*} takes no value" ;;
@@ -6096,6 +6119,7 @@ main() {
       scope) MEMORY_SCOPE_ARG="$val" ;; user-said) MEMORY_SAID_ARG="$val" ;;
       stop) PET_STOP=1 ;;          demo) PET_DEMO=1 ;;           still) PET_STILL=1 ;;
       pose) PET_POSE_ARG="$val" ;; exit-after) PET_EXIT_ARG="$val" ;;
+      transcript) TRANSCRIPT_ARG="$val" ;;
     esac
     FLAGS="$FLAGS $flag"
   done
@@ -6120,7 +6144,8 @@ main() {
         resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
         plan)   takes_flags "run plan"; [ $# -le 1 ] || die "usage: council run plan [check|show]"; cmd_run_plan ${1+"$@"} ;;
         events) takes_flags "run events"; [ $# -le 1 ] || die "usage: council run events [show|check]"; cmd_run_events ${1+"$@"} ;;
-        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show] | run events [show|check]" ;;
+        audit)  takes_flags "run audit" transcript; no_words "run audit" ${1+"$@"}; cmd_run_audit ;;
+        *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show] | run events [show|check] | run audit [--transcript <file>]" ;;
       esac ;;
     state)   takes_flags state; cmd_state ${1+"$@"} ;;
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;

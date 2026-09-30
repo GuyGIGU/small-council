@@ -10,7 +10,8 @@ its own temporary folders. The helper evals (run_cli.py, the long pole) and the 
 their groups (--list), side by side. Suites and groups that time the helper or a hook, or race the
 helper's locks, run alone, before the rest start, so a busy machine can't make them fail. Every suite
 runs even when another fails; each one's output is printed whole once it finishes, then a summary.
-Exits 1 if any suite failed, or if an evals/run_*.py file is missing from the list below.
+Exits 1 if any suite failed, or reported no "N/N checks passed" line or zero checks (a suite that
+skipped everything), or if an evals/run_*.py file is missing from the list below.
 
 Python 3.8+, standard library only.
 """
@@ -47,10 +48,16 @@ SUITES = [
     ("Run history evals", ["evals/run_history.py"], "shared"),
     ("Finding outcomes evals", ["evals/run_outcomes.py"], "shared"),
     ("Tuning evals", ["evals/run_tune.py"], "shared"),
+    ("Run audit evals", ["evals/run_audit.py"], "shared"),
     ("Benchmark harness self-test (no model calls)", ["evals/bench.py", "self-test"], "shared"),
     ("Hook evals", ["evals/run_hook.py"], "groups"),
     ("Phrase checks (advisory, never fails)", ["evals/run_phrases.py"], "shared"),
 ]
+
+
+# These say pass their own way (a validation line, a JSON measurement, advisory phrases), not with a
+# "N/N checks passed" line; every other job must print one, with at least one check.
+NO_COUNT = {"scripts/quick_validate.py", "evals/run_context_pilot.py", "evals/run_phrases.py"}
 
 
 class Job:
@@ -65,6 +72,19 @@ class Job:
     def checks(self):
         found = re.findall(rb"^(\d+)/(\d+) checks passed", self.output, re.MULTILINE)
         return (int(found[-1][0]), int(found[-1][1])) if found else None
+
+    @property
+    def ok(self):
+        """Exit 0 and, for a suite that counts its checks, at least one check run: a suite that skipped
+        everything (no bash, say) has checked nothing, so it never counts as a pass."""
+        counts = self.checks()
+        return self.code == 0 and (self.args[0] in NO_COUNT or bool(counts and counts[1] > 0))
+
+    @property
+    def verdict(self):
+        if self.code != 0:
+            return "FAILED (exit %d)" % self.code
+        return "passed" if self.ok else "FAILED (no checks ran)"
 
 
 def group_jobs(name, args):
@@ -126,8 +146,7 @@ def main():
             if job is None:
                 print(line, flush=True)
                 return
-            verdict = "passed" if job.code == 0 else "FAILED (exit %d)" % job.code
-            title = "%s: %s in %.0f s" % (job.name, verdict, job.seconds)
+            title = "%s: %s in %.0f s" % (job.name, job.verdict, job.seconds)
             print(("::group::" if actions else "\n===== ") + title, flush=True)
             sys.stdout.buffer.write(job.output if job.output.endswith(b"\n") or not job.output else job.output + b"\n")
             sys.stdout.buffer.flush()
@@ -149,18 +168,18 @@ def main():
     print("%-62s %-7s %6s  %s" % ("suite", "result", "time", "checks"))
     for job in jobs:
         counts = job.checks()
-        print("%-62s %-7s %5.0fs  %s" % (job.name[:62], "pass" if job.code == 0 else "FAIL", job.seconds,
+        print("%-62s %-7s %5.0fs  %s" % (job.name[:62], "pass" if job.ok else "FAIL", job.seconds,
                                          "%d/%d" % counts if counts else "-"))
     for name, args, how in SUITES:   # a split suite's groups add up to the suite
         counts = [j.checks() for j in jobs if j.args[0] == args[0]]
         if how == "groups" and len(counts) > 1 and all(counts):
             print("%-62s %-7s %6s  %d/%d" % (name + ", all groups", "", "", sum(c[0] for c in counts),
                                               sum(c[1] for c in counts)))
-    failed = [j for j in jobs if j.code != 0]
+    failed = [j for j in jobs if not j.ok]
     print("\n%d jobs, %d failed, %.0f s in all (%.0f s of suite time)" % (
         len(jobs), len(failed), wall, sum(j.seconds for j in jobs)))
     if os.environ.get("GITHUB_STEP_SUMMARY"):   # the same table on the run's summary page
-        rows = ["| %s | %s | %.0f s | %s |" % (j.name, "pass" if j.code == 0 else "**FAIL**", j.seconds,
+        rows = ["| %s | %s | %.0f s | %s |" % (j.name, "pass" if j.ok else "**FAIL**", j.seconds,
                                                "%d/%d" % j.checks() if j.checks() else "-") for j in jobs]
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
             out.write("| suite | result | time | checks |\n|---|---|---|---|\n" + "\n".join(rows) +

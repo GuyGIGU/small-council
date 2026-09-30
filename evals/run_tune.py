@@ -99,9 +99,9 @@ def round_trip(base, name, config_bytes, per_agent=150000, value="150k"):
     return code, code2, (repo / ".council" / "council.config.md").read_bytes(), out + err + out2 + err2
 
 
-if not BASH or not GIT:
-    print("[SKIP] bash or git unavailable")
-    raise SystemExit(0)
+if not BASH or not GIT:        # nothing checked is not a pass, unless asked for (--allow-skip)
+    print("[SKIP] bash or git unavailable; nothing was checked")
+    raise SystemExit(0 if "--allow-skip" in sys.argv else 3)
 
 with tempfile.TemporaryDirectory(prefix="council-tune-") as temporary:
     base = Path(temporary)

@@ -53,9 +53,9 @@ def failure(ident, title, *, failure="a seat claimed tokens stay valid", scope="
     return text + extra
 
 
-if not BASH or not GIT:
-    print("[SKIP] bash or git unavailable")
-    raise SystemExit(0)
+if not BASH or not GIT:        # nothing checked is not a pass, unless asked for (--allow-skip)
+    print("[SKIP] bash or git unavailable; nothing was checked")
+    raise SystemExit(0 if "--allow-skip" in sys.argv else 3)
 
 def line_of(out, prefix):
     return next((line for line in out.splitlines() if line.startswith(prefix)), "")

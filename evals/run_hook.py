@@ -814,6 +814,8 @@ parser = argparse.ArgumentParser(description="Hook evals: run the plugin's hooks
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
 parser.add_argument("--group", metavar="NAME[,NAME...]", help="run only these groups (default: all, in file order)")
+parser.add_argument("--allow-skip", action="store_true",
+                    help="exit 0 when bash or git is missing (default: exit 3, so a run that checked nothing never passes)")
 opts = parser.parse_args()
 GROUPS = list(dict.fromkeys(group for group, _ in PARTS))
 blocks = [block for _, block in PARTS]
@@ -831,8 +833,8 @@ chosen = opts.group.split(",") if opts.group else GROUPS
 if any(group not in GROUPS for group in chosen):
     parser.error("unknown group in %r (groups: %s)" % (opts.group, ", ".join(GROUPS)))
 if not BASH or not GIT:
-    print("[SKIP] bash or git not on PATH — hook evals need both")
-    sys.exit(0)
+    print("[SKIP] bash or git not on PATH — hook evals need both; nothing was checked")
+    sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     for group, block in PARTS:
