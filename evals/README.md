@@ -305,6 +305,11 @@ first dispatch or after close, the helper called through a shell variable, its o
 `| tail`, a refusal never tried again. A clean run driven through the real helper must pass every item.
 Reading writes nothing. It also checks the dispatch case's graders for the status card and the close.
 
+The helper, hook, memory, cockpit, tuning and audit suites need bash and git. Without them they print
+`[SKIP]` and exit 3, so a run that checked nothing never passes; `--allow-skip` makes them exit 0.
+`run_all.py` also fails a suite that reports no `N/N checks passed` line, or zero checks.
+`run_audit.py` checks both.
+
 ## 11. Benchmark — Small Council against plain Claude Code
 
 ```bash

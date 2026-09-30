@@ -12,7 +12,9 @@ runs are built here from nothing (no real project's content):
 - one clean run driven through the real helper, and the transcript of a Chair who does what the
   method says. It must pass every item.
 Reading must write nothing, in the runs, the council homes or the transcripts. It also checks the
-paid suite's graders for `council status` and `council run close` on synthetic traces. About 30 s.
+paid suite's graders for `council status` and `council run close` on synthetic traces, and that a
+suite which checked nothing never passes: with no bash or git on PATH the suites that need them exit
+3 unless given --allow-skip, and run_all.py fails a job that reports no checks. About a minute.
 
     python evals/run_audit.py
     python evals/run_audit.py --allow-skip   # exit 0 when bash or git is missing (nothing is checked)
@@ -454,6 +456,49 @@ check("graders: no card at all and no close fails both (run status and tui are n
       "status-shown" in failed and "run-closed" in failed, failed)
 found, failed = graded(trace_rows(["council status"] * 3 + ["council status --widget"] * 4 + ["council run close"]))
 check("graders: a card per progress line (seven) fails status-shown", "status-shown" in failed, failed)
+
+# A suite that checked nothing never passes: without bash and git the five suites that need them
+# stop at once — exit 3, unless --allow-skip — and run_all.py fails a job that reports no checks.
+with tempfile.TemporaryDirectory(prefix="council-noshell-") as empty:
+    env = {"PATH": empty, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"}
+    for var in ("SYSTEMROOT", "TEMP", "TMP"):              # Windows needs these to start Python at all
+        if os.environ.get(var):
+            env[var] = os.environ[var]
+    if shutil.which("bash", path=empty) or shutil.which("git", path=empty):
+        check("no-shell: an empty PATH hides bash and git", False, empty)
+    else:
+        runs = {}
+        for suite in ("run_cli.py", "run_hook.py", "run_memory.py", "run_tui.py", "run_tune.py"):
+            for extra in ([], ["--allow-skip"]):
+                try:
+                    done = subprocess.run([sys.executable, str(ROOT / "evals" / suite), *extra], cwd=str(ROOT), env=env,
+                                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+                    runs[suite, bool(extra)] = (done.returncode, done.stdout + done.stderr)
+                except subprocess.TimeoutExpired:
+                    runs[suite, bool(extra)] = (124, "still running after 60 s")
+        check("no-shell: each suite that needs bash and git says it checked nothing and exits 3, not 0",
+              all(runs[s, False][0] == 3 and "nothing was checked" in runs[s, False][1] for s, a in runs if not a),
+              dict((s, r) for (s, a), r in runs.items() if not a))
+        check("no-shell: --allow-skip is the one way such a run exits 0",
+              all(runs[s, True][0] == 0 for s, a in runs if a), dict((s, r) for (s, a), r in runs.items() if a))
+sys.path.insert(0, str(ROOT / "evals"))
+import run_all                                                       # noqa: E402  (bytecode is off)
+
+
+def job_result(script, code, output):
+    job = run_all.Job("x", [script], False)
+    job.code, job.output = code, output
+    return job.ok, job.verdict
+
+
+check("run_all: a suite that exits 0 with no 'N/N checks passed' line, or 0/0, fails; a counted pass passes",
+      job_result("evals/run_tui.py", 0, b"[SKIP] bash or git unavailable\n") == (False, "FAILED (no checks ran)")
+      and not job_result("evals/run_tui.py", 0, b"\n0/0 checks passed\n")[0]
+      and job_result("evals/run_tui.py", 0, b"\n12/12 checks passed\n") == (True, "passed")
+      and job_result("evals/run_tui.py", 1, b"\n11/12 checks passed\n") == (False, "FAILED (exit 1)"))
+check("run_all: only the suites that report their own way are spared the count, and each is on the list",
+      run_all.NO_COUNT <= set(args[0] for _, args, _ in run_all.SUITES)
+      and job_result("scripts/quick_validate.py", 0, b"validation OK: 0 warning(s)\n")[0])
 
 passed = sum(1 for _, good, _ in checks if good)
 for name, good, detail in checks:
