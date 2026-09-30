@@ -408,6 +408,16 @@ check("worker: rulings capped, lanes kept", "## Needs a ruling" in worker and "#
 check("worker: tells it to return 'BLOCKED: <reason>' rather than proceed blind (wording)",
       "Never proceed blind" in worker and "`BLOCKED: <reason>`" in worker)
 check("verifier: states the 16 KB file limit the seat check enforces", "16 KB" in verifier)
+check("worker and verifier: each is told its 60-turn limit; the verifier writes its file first and adds a row "
+      "per item as it settles it (a real verifier used ~414k tokens and left nothing)",
+      "60 turns" in worker and "60 turns" in verifier and "## Write your file first" in verifier
+      and verifier.find("## Write your file first") < verifier.find("## Verifying a claim"))
+check("verifier: scratch files stay out of the run folder, nothing runs in the background, and its answer is "
+      "final and one line",
+      all(p in flat(verifier) for p in ("never in the project or the run folder", "Nothing in the background",
+                                        "never rewrite your file", "nothing before or after it")))
+check("05-work: says the seat-check hook does not cover a Workflow's agents, and that collect checks their files",
+      "workflow-subagent" in doctrine["05-work.md"] and "every file in `seats/`" in flat(doctrine["05-work.md"]))
 check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"]))
 check("verifier: change verdicts", all(v in verifier for v in ["OK", "INCOMPLETE", "REGRESSION", "SCOPE-CREEP", "CANNOT VERIFY"]))
 check("verifier: can open a research claim's URL", re.search(r"^tools:.*\bWebFetch\b", verifier, re.MULTILINE) is not None)
