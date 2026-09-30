@@ -1238,8 +1238,47 @@ RUNS
   exit 2
 }
 
+# What a run closed as complete still lacks, each said on stderr in one plain line — it warns, never
+# refuses: a real run closed "complete" with five stages never entered, and the close line was all the
+# owner saw. Prints the short codes (phase,check,deliverable,verdicts) for the close event.
+close_warnings() {
+  local run="$1" mode phase red level f verdicts=0 codes=""
+  mode="$(field mode "$run/session-state.md")"
+  case "$mode" in council-review|council-plan|council-implement|council-research|council-postgame) ;; *) return 0 ;; esac
+  phase="$(field phase "$run/session-state.md")"
+  case "$phase" in
+    deliver|learn) ;;
+    *) codes="phase"
+       printf 'council: closed as complete at stage %s, so it never reached Deliver — if it stopped early, tell the user, or close it as abandoned: council run close --run %s --status abandoned\n' "${phase:-unknown}" "${run##*/}" >&2 ;;
+  esac
+  # A required gate (Mandatory not "no") whose latest run in this run failed. An ad-hoc gate — the
+  # intentionally red before-<n> — is not in the table, so it is never counted.
+  red="$(NAMES="$(config_gates "$(council_home)/council.config.md" | awk -F'\t' '$12 != "no" { print $1 }')" awk -F'\t' '
+    BEGIN { n = split(ENVIRON["NAMES"], a, "\n"); for (i = 1; i <= n; i++) if (a[i] != "") m[a[i]] = 1 }
+    $4 == "gate.finished" && ($5 in m) { last[$5] = $6 }
+    END { for (g in last) if (last[g] == "failed") print g }' "$run/events.tsv" 2>/dev/null | sort | paste -sd ',' - | sed 's/,/, /g')"
+  if [ -n "$red" ]; then
+    codes="${codes:+$codes,}check"
+    printf 'council: closed as complete with a required check failing on its last run: %s — say so to the user\n' "$red" >&2
+  fi
+  if [ -z "$(field deliverable "$run/session-state.md")" ]; then
+    codes="${codes:+$codes,}deliverable"
+    printf 'council: closed as complete with no deliverable recorded — council state deliverable=<path> --run %s\n' "${run##*/}" >&2
+  fi
+  case "$mode" in
+    council-review|council-plan)            # a solo run with self-verification has no verifier to hear from
+      level="$(awk -F'\t' '$1 == "verification" && $2 == "run" && $3 == "level" { print $4; exit }' "$run/run-plan.tsv" 2>/dev/null)"
+      for f in "$run"/verify-*.md; do [ ! -f "$f" ] || verdicts=1; done
+      if [ "$verdicts" = 0 ] && [ "$level" != self ]; then
+        codes="${codes:+$codes,}verdicts"
+        printf 'council: closed as complete with no verifier verdicts (no verify-*.md in the run folder)\n' >&2
+      fi ;;
+  esac
+  printf '%s' "$codes"
+}
+
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -1298,6 +1337,7 @@ cmd_run_close() {
       fi ;;
   esac
   if [ "$status" = complete ]; then
+    warn="$(close_warnings "$run")"
     n="$(ledger_record "$run")"
     [ "${n:-0}" -eq 0 ] 2>/dev/null || say "ledger: $n seat row(s) recorded — council ledger shows each seat's record"
     case "$(field mode "$run/session-state.md")" in       # a deliverable without the user's words can't be post-gamed
@@ -1320,7 +1360,7 @@ cmd_run_close() {
   if [ "$old_status" != "$status" ]; then
     event_type=run.closed; [ "$status" != paused ] || event_type=run.paused
     set -- $usage
-    event_append "$run" "$event_type" run "$status" "agent_runs=$2;reported=$3;tokens=$4;basis=$1" || die "run closed, but its event could not be recorded"
+    event_append "$run" "$event_type" run "$status" "agent_runs=$2;reported=$3;tokens=$4;basis=$1${warn:+;warnings=$warn}" || die "run closed, but its event could not be recorded"
     status_nudge "$run" close
   fi
 }
@@ -1879,12 +1919,52 @@ cmd_tune() {
 }
 
 # Record a build's gate failure or repair outcome without rerunning commands or dispatching agents.
+# allow <gate>: the user's go, in their words, for a gate whose trail stopped at three failures —
+# `council gate <gate>` refuses it until then. The row goes to <run>/repair-allowances.tsv (at, gate,
+# task, seq of the stopping gate run, said) under the run's event lock, as cap allow does, then a
+# repair.allowed event. The stopped trail stays closed: a later failure starts a new task id.
 cmd_repair() {
-  local action="$1" run py
+  local action="$1" run py trail task seq words file lock tmpd rc=0
   shift
   run="$(resolve_run)" || exit 2
   py="$(impact_python)" || die "repair tracking needs optional Python 3.8+; record attempts in the build log"
-  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" "$action" ${1+"$@"} --run "$run"
+  if [ "$action" != allow ]; then
+    "$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" "$action" ${1+"$@"} --run "$run"
+    return
+  fi
+  trail="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" trail "$1" --run "$run")" || exit 2
+  case "$trail" in
+    stop"$TAB"*) ;;
+    allowed"$TAB"*) say "repair: the user's go for gate $1 is already on record — it may run"; return 0 ;;
+    *) die "gate $1 has no stopped repair trail in ${run##*/} — there is nothing to allow" ;;
+  esac
+  task="$(printf '%s' "$trail" | cut -f2)"; seq="$(printf '%s' "$trail" | cut -f3)"
+  tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
+  { printf '%s' "$MEMORY_SAID_ARG" | tr '\t\r\n\013\014' '     '; printf '\n'; } > "$tmpd/said.raw" \
+    || { rm -rf "$tmpd"; die "cannot write $tmpd"; }
+  redact_copy "$tmpd/said.raw" "$tmpd/said" >/dev/null || { rm -rf "$tmpd"; die "could not redact the user's words"; }
+  words="$(tr -d '\r\n' < "$tmpd/said")"; rm -rf "$tmpd"
+  [ -n "$words" ] || words="[redacted]"
+  file="$run/repair-allowances.tsv"; lock="$run/events.tsv.lock"
+  event_lock "$lock" || die "the go was not recorded: the run's event lock is unavailable ($lock)"
+  [ -s "$file" ] || printf 'at\tgate\ttask\tseq\tsaid\n' > "$file" || rc=1
+  if [ "$rc" -eq 0 ] && [ -n "$(tail -c 1 "$file")" ]; then printf '\n' >> "$file" || rc=1; fi   # never join a torn line
+  [ "$rc" -ne 0 ] || printf '%s\t%s\t%s\t%s\t%s\n' "$(now_utc)" "$1" "$task" "$seq" "$words" >> "$file" || rc=1
+  event_unlock "$lock" || :
+  [ "$rc" -eq 0 ] || die "the go was not recorded: cannot write $file"
+  event_append "$run" repair.allowed "$1" "$task" "stop_seq=$seq" \
+    || printf 'council: the go is on record, but its event could not be written\n' >&2
+  say "repair: the user's go is on record — gate $1 may run again; $task's trail stays closed, so a new failure is recorded under a new task id (the gate names one)"
+}
+
+# One gate's repair trail in a build run, "<state><TAB><task><TAB><seq>" (scripts/repair.py trail):
+# none when the run keeps no trail, nothing at all when it can't be read — a fault of the trail's own
+# never stops a gate.
+repair_trail() {
+  local py
+  [ -f "$1/repairs.jsonl" ] || { printf 'none\t-\t-\n'; return 0; }
+  py="$(impact_python)" || return 0
+  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" trail "$2" --run "$1" 2>/dev/null || :
 }
 
 # Definition names from diff lines (+/-) and hunk-header context. Heuristic and language-agnostic:
@@ -2068,7 +2148,7 @@ cmd_index() {
 # matter; for Mandatory and Checked the first word that decides wins and the rest of the cell is a note.
 # Columns are found by their header names (case, spaces and dashes ignored), so an older table (no Side
 # effects or Needs) still reads. Cells split on "|" outside backticks and unescaped, so a quoted pipe
-# can't shift the columns.
+# can't shift the columns. A row with a name and an empty Command cell comes out with "-" as its command.
 config_gates() {
   [ -f "$1" ] || return 0
   awk '
@@ -2141,7 +2221,8 @@ config_gates() {
       side = cs ? trim(f[cs]) : ""; needs = cn ? trim(f[cn]) : ""
       gsub(/`/, "", cmd)
       if (name == "" || name ~ /^:?-+:?$/ || name ~ /^</) next
-      if (cmd == "" || cmd ~ /^</) next
+      if (cmd ~ /^</) next                              # the template placeholder row
+      if (cmd == "") cmd = "-"                          # an empty cell is said where it matters, never dropped
       print name "\t" cmd "\t" dash(at) "\t" dash(mand) "\t" k "\t" dash(chk) "\t" dash(side) "\t" dash(needs) "\t" hk "\t" (cs ? 1 : 0) \
         "\t" stages(at) "\t" mandatory(mand) "\t" checked(chk)
     }' "$1"
@@ -2196,6 +2277,67 @@ gate_winswitch() {
 }
 winswitch_note() { printf '%s' 'has a Windows switch such as /p:… that Git Bash on Windows turns into a path (/p:Configuration=Release reaches the tool as p:Configuration=Release) — write -p:… where the tool takes it (msbuild and dotnet do), else //p:…'; }
 
+# The ways a command's exit code stops being its check's, one word per line. pipe: a | outside quotes —
+# never ||, nor a case pattern's a|b (a real setup session was told its case bar was a pipe). masked:
+# its last step, after ; or ||, is echo, printf, true, : or exit 0, which always succeeds. capture: it
+# keeps a runner's output in $( ) and judges it by its text (case, grep) without the runner's own exit
+# code, so a runner that is missing or crashes without printing that text passes (tactics-v2's boot gate).
+gate_shape() {
+  C="$1" awk 'BEGIN {
+    s = ENVIRON["C"]; sq = sprintf("%c", 39); q = ""; n = length(s); w = ""
+    cw = 0; pat = 0; cd = 0; pd = 0; pipe = 0; sep = ""; step = 1
+    for (i = 1; i <= n + 1; i++) {
+      c = (i <= n) ? substr(s, i, 1) : " "
+      if (q == sq) { if (c == sq) q = ""; continue }
+      if (q == "\"") { if (c == "\\") i++; else if (c == "\"") q = ""; continue }
+      if (c ~ /[A-Za-z0-9_]/) { w = w c; continue }
+      if (w == "case") cw = 1
+      else if (w == "in" && cw) { cw = 0; pat = 1; cd++ }
+      else if (w == "esac" && cd > 0) { cd--; pat = 0 }
+      w = ""
+      if (c == "\\") { i++; continue }
+      if (c == sq || c == "\"") { q = c; continue }
+      if (c == "(") { pd++; continue }
+      if (c == ")") { if (pat && cd > 0) pat = 0; else if (pd > 0) pd--; continue }
+      d = substr(s, i + 1, 1)
+      if (c == ";" && (d == ";" || d == "&")) { i++; if (cd > 0) pat = 1; continue }
+      if (c == "|" && d == "|") { i++; if (!pd && !cd) { sep = "||"; step = i + 1 }; continue }
+      if (c == "&" && d == "&") { i++; if (!pd && !cd) { sep = "&&"; step = i + 1 }; continue }
+      if (c == ";") { if (!pd && !cd) { sep = ";"; step = i + 1 }; continue }
+      if (c == "|" && !pat) pipe = 1
+    }
+    if (pipe) print "pipe"
+    last = substr(s, step); sub(/^[ \t]+/, "", last)
+    errexit = (s ~ /set[ \t]+-[a-z]*e|errexit/)
+    keeps = errexit || s ~ /(^|[^A-Za-z0-9_])exit[ \t]+([1-9]|\$)/     # it exits on a failure itself
+    if ((sep == ";" || sep == "||") && !keeps && last !~ /\|/ && last ~ /^((echo|printf|true|:)([ \t;]|$)|exit[ \t]+0([ \t;]|$))/) print "masked"
+    if (s ~ /[A-Za-z_][A-Za-z0-9_]*="?\$\(/ && s ~ /(^|[^A-Za-z0-9_])(case|grep)[ \t]/ && s !~ /\$\?|\|\|[ \t]*exit/ && !errexit) print "capture"
+  }'
+}
+# One plain note per word gate_shape found, each finishing "the command …".
+shape_notes() {
+  local w
+  for w in $(gate_shape "$1"); do
+    case "$w" in
+      pipe)    say "pipes its output, so its exit code is the last command's, not the check's — drop the pipe, or begin the command with set -o pipefail;" ;;
+      masked)  say "ends with a step that always succeeds (; echo …, || true), so it passes whatever the check did — join the steps with && and drop the fallback" ;;
+      capture) say "keeps a runner's output in \$( ) and judges it by its text, so a runner that is missing, or crashes without printing that text, passes — add || exit \$? right after the \$( )" ;;
+    esac
+  done
+}
+
+# The line of a passing gate's output that says no test ran — pytest's "collected 0 items" / "no tests
+# ran", unittest's "Ran 0 tests", jest's "No tests found", mocha's "0 passing", "0 tests", go's "[no test
+# files]" — unless some other line shows tests did run (go prints "ok <package>" for one that ran them).
+zero_tests() {
+  awk '
+    { l = $0; gsub(/\r/, "", l); t = tolower(l) }
+    t ~ /^ok[ \t]+[^ \t]+\t/ && t !~ /\[no test/ { ran = 1 }
+    hit == "" && (t ~ /collected 0 items|no tests ran|ran 0 tests|no tests found|no test files|no tests to run|(^|[^0-9.])0 passing/ \
+                  || t ~ /(^|[^0-9.])0 tests?([ \t]+(ran|run|found|collected|executed|in)([^a-z]|$)|[ \t]*[.,;]|[ \t]*$)/) { hit = l }
+    END { if (hit != "" && !ran) print hit }' "$1" 2>/dev/null | clip 120
+}
+
 # A gate name as the user would type it back: quoted when it holds a space or anything unusual.
 qname() { case "$1" in *[!A-Za-z0-9._-]*) printf '"%s"' "$1" ;; *) printf '%s' "$1" ;; esac; }
 
@@ -2213,10 +2355,15 @@ cmd_gates() {
   fi
   while IFS="$TAB" read -r name cmd at mand rest rest side rest; do
     [ -n "$name" ] || continue
+    if [ "$cmd" = "-" ]; then
+      printf '%s · (no command: its Command cell is empty, so it never runs) · run at: %s · mandatory: %s\n' "$name" "$at" "$mand"
+      continue
+    fi
     printf '%s · %s · run at: %s · mandatory: %s' "$name" "$cmd" "$at" "$mand"
     [ "$side" = "-" ] || printf ' · side effects: %s' "$side"
     if gate_backslash "$cmd"; then printf ' · note: the command %s' "$(backslash_note)"; fi
     if gate_winswitch "$cmd"; then printf ' · note: the command %s' "$(winswitch_note)"; fi
+    shape_notes "$cmd" | while IFS= read -r rest; do printf ' · note: the command %s' "$rest"; done
     printf '\n'
   done <<GATES
 $gates
@@ -2260,7 +2407,8 @@ failure_ids() {
       gsub(/^[ \t\[]+|[ \t,.:;\]]+$/, "", s)
       return s
     }
-    function emit(s) { s = norm(s); if (s != "" && !(s in seen)) { seen[s] = 1; print s } }
+    # A log line ("ERROR 2026-09-30 10:07:44 could not reach cache") names a moment, not a test.
+    function emit(s) { s = norm(s); if (s != "" && s !~ /^[0-9]+[-:\/.][0-9]/ && !(s in seen)) { seen[s] = 1; print s } }
     {
       l = $0; gsub(/\r/, "", l); gsub(/\033\[[0-9;]*[A-Za-z]/, "", l)
       if (match(l, /^[ \t]*(FAILED|ERROR)[ \t]+[^ \t]/))            { emit(substr(l, RSTART + RLENGTH - 1)); next }
@@ -2344,8 +2492,8 @@ gate_lock() {
 # In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
 # so a later failure can be told apart from one the untouched code already had.
 run_gate() {
-  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0 rcmd never=0 nnote=""
-  GATE_EMPTY=0
+  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0 rcmd never=0 nnote="" rbase zt=""
+  GATE_EMPTY=0                        # 1: 0 files matched · 2: its output says no test ran · 3: a test gate printed nothing
   base="$(gate_base "$run" "$name")"; out="$base.txt"; bl="$run/gates/baseline/${base##*/}"
   pat='error|fail|exception|traceback|assert|panic|cannot|not found|undefined'
   mkdir -p "$run/gates"
@@ -2359,12 +2507,28 @@ run_gate() {
       rcmd="$(printf '%s' "$cmd" \
         | sed -E 's#(^|[[:space:];&|(])([cC][mM][dD](\.[eE][xX][eE])?)([[:space:]]+)/([cCkK])([[:space:]]|$)#\1\2\4//\5\6#g')" ;;
   esac
+  # The run's recorded base (council index) goes to the command as COUNCIL_BASE, so a `council changed`
+  # inside it looks at what this run reviews or builds — on the default branch, with the work committed,
+  # the merge-base is HEAD itself and the committed change would be skipped. Empty clears an inherited one.
+  rbase="$(field base "$run/session-state.md")"
   start="$(date +%s)"
-  ( cd "$top" 2>/dev/null || exit 97; bash -c "$rcmd" < /dev/null ) > "$out" 2>&1
+  ( cd "$top" 2>/dev/null || exit 97; COUNCIL_BASE="$rbase" bash -c "$rcmd" < /dev/null ) > "$out" 2>&1
   ec=$?
   secs=$(( $(date +%s) - start ))
   if [ "$ec" -eq 0 ] && cmd_never_ran "$out"; then   # a prompt and a banner: the command never ran
     ec=1; never=1; nnote=', "note": "cmd opened its prompt and ran nothing"'
+  fi
+  if [ "$ec" -eq 0 ]; then            # exit 0 with nothing behind it is said, never a plain pass
+    if grep -q '^changed: no files matched' "$out" 2>/dev/null; then
+      GATE_EMPTY=1
+    elif zt="$(zero_tests "$out")" && [ -n "$zt" ]; then
+      GATE_EMPTY=2; nnote=', "note": "exit 0, but its output says no test ran"'
+    elif [ -z "$(tr -d '[:space:]' < "$out" 2>/dev/null)" ]; then
+      # A test runner always prints its count; a linter or type checker may say nothing when clean.
+      case "$(printf '%s %s' "$name" "$cmd" | tr 'A-Z' 'a-z')" in
+        *test*|*spec*|*jest*|*mocha*) GATE_EMPTY=3; nnote=', "note": "exit 0, but it printed nothing"' ;;
+      esac
+    fi
   fi
   printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"%s}\n' \
     "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" "$nnote" > "$base.json"
@@ -2372,13 +2536,13 @@ run_gate() {
     mkdir -p "$run/gates/baseline" && cp "$out" "$bl.txt" && cp "$base.json" "$bl.json" && fresh=1
   fi
   if [ "$ec" -eq 0 ]; then
-    if grep -q '^changed: no files matched' "$out" 2>/dev/null; then
-      GATE_EMPTY=1                    # it passed because there was nothing to look at, not because it looked
-      say "gate $name: pass — but nothing to check (0 files matched)"
-    else
-      say "gate $name: pass (exit 0, ${secs}s)"
-    fi
-    event_append "$run" gate.finished "$name" passed "exit=0;seconds=$secs;empty=$GATE_EMPTY" \
+    case "$GATE_EMPTY" in             # it passed because there was nothing to look at, not because it looked
+      1) say "gate $name: pass — but nothing to check (0 files matched)" ;;
+      2) say "gate $name: pass — but nothing ran: its output says \"$zt\" (exit 0, ${secs}s)" ;;
+      3) say "gate $name: pass — but nothing ran that it shows: it printed nothing (exit 0, ${secs}s)" ;;
+      *) say "gate $name: pass (exit 0, ${secs}s)" ;;
+    esac
+    event_append "$run" gate.finished "$name" passed "exit=0;seconds=$secs;empty=$((GATE_EMPTY > 0))" \
       || printf 'council: gate passed, but its event was not recorded\n' >&2
     return 0
   fi
@@ -2393,7 +2557,9 @@ run_gate() {
   printf '%s\n' "$hits" | clip 220 | sed 's/^/    /'
   if [ "$fresh" = 0 ] && [ -f "$bl.txt" ]; then   # it may have been red before the change too: say what is new
     failure_ids "$bl.txt" > "$base.seen"; failure_ids "$out" > "$base.now"
-    if [ -s "$base.now" ] && [ -s "$base.seen" ]; then
+    if [ "$(gate_exit "$bl.json")" = 0 ]; then       # green at the baseline: there is nothing old to subtract
+      say "    this gate passed at the baseline (gates/baseline/${bl##*/}.txt), so every failure here is new"
+    elif [ -s "$base.now" ] && [ -s "$base.seen" ]; then
       hits="$(grep -v -x -F -f "$base.seen" "$base.now" | head -n 12)"
       if [ -n "$hits" ]; then
         say "    failing now and not at the baseline (gates/baseline/${bl##*/}.txt):"
@@ -2421,7 +2587,8 @@ skip_gate() {
 
 cmd_gate() {
   local run top cfg name cmd at mand k chk side needs hk hascol stg ism ckd extra row ran=0 skipped=0 failed=0 gates \
-        passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0 GATE_BASELINE=0
+        passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0 GATE_BASELINE=0 \
+        nothing=0 nran="" nt="" slug files="" other trail="" rtask="" mode="" ec=0
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
@@ -2470,6 +2637,10 @@ cmd_gate() {
         [ "$ismand" -eq 0 ] || skip_gate "its Run at cell says '$at', so it runs only by name: council gate $(qname "$name")"
         continue
       fi
+      if [ "$cmd" = "-" ]; then       # a cleared cell: named and counted, never a gate that quietly vanished
+        skip_gate "its Command cell is empty; fill it in, or run it by name with its command: council gate $(qname "$name") -- '<command>'"
+        continue
+      fi
       [ "$ism" != '?' ] || say "note: gate $name — its Mandatory cell says '$mand', which isn't yes or no, so it counts as mandatory; write yes or no"
       case "$ckd" in
         not) skip_gate "the config marks it not runnable here ($chk)"; continue ;;
@@ -2487,12 +2658,27 @@ cmd_gate() {
         fi
         continue
       fi
+      # Two names that differ only in punctuation (unit tests, unit_tests) save to one gates/ file, and
+      # the second would overwrite the first's record.
+      slug="$(gate_base "$run" "$name")"; slug="${slug##*/}"
+      other="$(printf '%s' "$files" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] { print $2; exit }')"
+      if [ -n "$other" ]; then
+        skip_gate "it would overwrite the record of gate $other (both save as gates/$slug.txt); rename one of them"
+        continue
+      fi
+      files="$files$slug$TAB$name$NL"
       if gate_backslash "$cmd"; then say "note: gate $name — its command $(backslash_note)"; fi
       if gate_winswitch "$cmd"; then say "note: gate $name — its command $(winswitch_note)"; fi
+      while IFS= read -r nt; do [ -z "$nt" ] || say "note: gate $name — its command $nt"; done <<NOTES
+$(shape_notes "$cmd")
+NOTES
       ran=$((ran + 1))
       if run_gate "$run" "$name" "$cmd" "$top"; then
         passed=$((passed + 1))
-        [ "$GATE_EMPTY" != 1 ] || { empty=$((empty + 1)); noth="${noth:+$noth, }$name"; }
+        case "$GATE_EMPTY" in
+          1) empty=$((empty + 1)); noth="${noth:+$noth, }$name" ;;
+          2|3) nothing=$((nothing + 1)); nran="${nran:+$nran, }$name" ;;
+        esac
       else
         red="${red:+$red, }$name"       # already delimited: a gate name may contain spaces
         [ "$ismand" -eq 0 ] || failed=1
@@ -2516,6 +2702,7 @@ GATES
       [ "$skipm" -eq 0 ] || tail="$tail ($skipm of them required: $reds — so this run proves less than it looks)"
     fi
     [ "$empty" -eq 0 ] || tail="$tail · $empty had nothing to check ($noth — 0 files matched)"
+    [ "$nothing" -eq 0 ] || tail="$tail · $nothing passed with nothing run ($nran — see above)"
     if [ "$nfail" -eq 0 ]; then
       say "gates: $ran ran — all pass$tail"
     else
@@ -2527,12 +2714,24 @@ GATES
   fi
   name="${1+$*}"                      # a name with a space may arrive as several words
   [ -n "$name" ] || die "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
+  # A build's three failed repair attempts stop this gate until the user's go is on record (the stop
+  # was advice only, and a real build never recorded a single attempt).
+  mode="$(field mode "$run/session-state.md")"
+  if [ "$mode" = council-implement ]; then
+    trail="$(repair_trail "$run" "$name")"
+    case "$trail" in
+      stop"$TAB"*)
+        rtask="$(printf '%s' "$trail" | cut -f2)"
+        die "gate $name is stopped: it failed three repair attempts for task $rtask (council repair show $rtask). Change no more code for it; tell the user what failed and what is left, and ask how to go on. Only on their go: council repair allow $(qname "$name") --user-said \"<their words>\" — then it runs again" ;;
+    esac
+  fi
   gate_lock "$run"
   cmd="$GATE_CMD"
   if [ -z "$cmd" ]; then
     row="$(config_gates "$cfg" | NAME="$name" awk -F'\t' '$1 == ENVIRON["NAME"] { print; exit }')"
     [ -n "$row" ] || die "no gate named '$name' in council.config.md — pass the command after --"
     cmd="$(printf '%s' "$row" | cut -f2)"; chk="$(printf '%s' "$row" | cut -f6)"; side="$(printf '%s' "$row" | cut -f7)"
+    [ "$cmd" != "-" ] || die "gate '$name' has an empty Command cell in council.config.md — fill it in, or pass its command: council gate $(qname "$name") -- '<command>'"
     needs="$(printf '%s' "$row" | cut -f8)"; hascol="$(printf '%s' "$row" | cut -f10)"; ckd="$(printf '%s' "$row" | cut -f13)"
     [ "$ckd" != not ] || say "note: the config marks this gate not runnable here ($chk)"
     if ! gate_safe "$side" "$needs" "$hascol"; then
@@ -2546,10 +2745,26 @@ GATES
       fi
     fi
   fi
-  case "$cmd" in *'|'*) say "note: this gate command contains a pipe — its exit code may not be the test runner's" ;; esac
+  while IFS= read -r nt; do [ -z "$nt" ] || say "note: this gate command $nt"; done <<NOTES
+$(shape_notes "$cmd")
+NOTES
   if gate_backslash "$cmd"; then say "note: this gate command $(backslash_note)"; fi
   if gate_winswitch "$cmd"; then say "note: this gate command $(winswitch_note)"; fi
-  run_gate "$run" "$name" "$cmd" "$top"
+  run_gate "$run" "$name" "$cmd" "$top" && return 0
+  ec=$?
+  # In a build a failed gate is a repair attempt; the count exists only once it is recorded, so the
+  # exact line is printed here. The intentionally red before-<n> check and its after-<n> are not.
+  if [ "$mode" = council-implement ] && [ "$(field phase "$run/session-state.md")" = build ]; then
+    case "$name" in
+      before-*|after-*) ;;
+      *) rtask="$(printf '%s' "$trail" | cut -f2)"    # an open trail's task, or the fresh id after a go
+         case "$rtask" in ''|-) rtask="$(field next "$run/session-state.md" | sed -n 's/^[Tt]ask[[:space:]]*\([0-9][0-9]*\).*/T\1/p')" ;; esac
+         if [ -n "$rtask" ]; then nt="council repair record $rtask $(qname "$name")"
+         else nt="council repair record T<n> $(qname "$name") (T<n>: the task you are on)"; fi
+         say "repair: record this attempt — $nt; a third failed attempt stops the build (references/repair-loop.md)" ;;
+    esac
+  fi
+  return "$ec"
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -2579,7 +2794,7 @@ glob_expand() {
 }
 
 cmd_changed() {
-  local top ref base each=0 f g worst=0 st len=0 cap alive=0
+  local top ref base from each=0 f g worst=0 st len=0 cap alive=0
   local -a globs files chunk
   globs=(); files=(); chunk=()
   while [ $# -gt 0 ]; do
@@ -2607,14 +2822,24 @@ GLOBS
     done
     [ "$alive" = 1 ] || die "the --glob pattern(s) $(printf "'%s' " "${globs[@]}")match no file in this project, so this check could never look at anything — fix the --glob (a git pathspec: case matters, and a pattern with a / in it is anchored at the repo root, so 'src/*.py' covers every folder under a top-level src/ but not web/src/)"
   fi
-  if [ -n "$BASE_ARG" ]; then
-    ref="$BASE_ARG"
+  # The base: --base, else the run's recorded base when a gate runs this (run_gate passes it as
+  # COUNCIL_BASE), else where this branch left the default branch. The line on stderr says which.
+  if [ -n "$BASE_ARG" ] || [ -n "${COUNCIL_BASE:-}" ]; then
+    if [ -n "$BASE_ARG" ]; then ref="$BASE_ARG"; from="--base $BASE_ARG"; else ref="$COUNCIL_BASE"; from="the run's recorded base"; fi
     base="$(git merge-base HEAD "$ref" 2>/dev/null)" \
       || base="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null)" \
-      || die "council changed: '$ref' is not a ref in this repository — the committed half of the change would be skipped in silence"
+      || die "council changed: '$ref' ($from) is not a ref in this repository — the committed half of the change would be skipped in silence"
   else
     ref="$(default_branch)" || ref="HEAD"
     base="$(git merge-base HEAD "$ref" 2>/dev/null)" || base=""
+    from="where this branch left $ref"
+  fi
+  if [ -z "$base" ]; then
+    printf 'changed: uncommitted and new files only (no base found)\n' >&2
+  elif [ "$base" = "$(git rev-parse -q --verify HEAD 2>/dev/null)" ]; then
+    printf 'changed: uncommitted and new files only — the base, %s (%s), is the last commit; pass --base <ref> to include commits\n' "$(git rev-parse --short "$base")" "$from" >&2
+  else
+    printf 'changed: files changed since %s (%s), plus uncommitted and new ones\n' "$(git rev-parse --short "$base")" "$from" >&2
   fi
   while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -5733,6 +5958,9 @@ council — the Small Council's helper (bash + git)
                                          synthesis.md and verify-*.md into run-local claims.jsonl
   council repair record <task> <gate>     snapshot one completed gate attempt, classify its failure
   council repair show|check [task]        inspect bounded repair advice or check saved proof
+  council repair allow <gate> --user-said "…"
+                                         the user's go, in their words, for a gate stopped at three
+                                         failed repair attempts: it may run again
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
                                          inside it; output and exit code → <run>/gates/
   council gate --all [--at grounding|verify]
@@ -5740,7 +5968,8 @@ council — the Small Council's helper (bash + git)
                                          a second is refused (exit 2) and writes nothing — wait for the first
   council gates                          list the configured gates
   council changed [--glob '<pat>'] [--each] -- <cmd>
-                                         run <cmd> over just the files this change touches (0 when none)
+                                         run <cmd> over just the files this change touches (0 when none);
+                                         inside a gate, since the run's recorded base
   council collect                        check every seat file: the brief's, a war room's debate.md's, and
                                          any other .md in seats/ (a Workflow's agents skip the seat hook)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md)
@@ -5933,13 +6162,19 @@ main() {
                 *) die "usage: council evidence build|show|check [--run <folder>]" ;;
               esac ;;
     repair) sub="${1:-}"; [ $# -eq 0 ] || shift
-            takes_flags "repair $sub"
             case "$sub" in
-              record) [ $# -eq 2 ] || die "usage: council repair record <task> <gate> [--run <folder>]"
+              record) takes_flags "repair $sub"
+                      [ $# -eq 2 ] || die "usage: council repair record <task> <gate> [--run <folder>]"
                       cmd_repair record "$1" "$2" ;;
-              show|check) [ $# -le 1 ] || die "usage: council repair $sub [task] [--run <folder>]"
+              show|check) takes_flags "repair $sub"
+                          [ $# -le 1 ] || die "usage: council repair $sub [task] [--run <folder>]"
                           cmd_repair "$sub" ${1+"$@"} ;;
-              *) die "usage: council repair record <task> <gate> | repair show|check [task]" ;;
+              allow)  takes_flags "repair allow" user-said
+                      [ $# -ge 1 ] || die "usage: council repair allow <gate> --user-said \"<the user's words>\" [--run <folder>]"
+                      [ -n "$(printf '%s' "$MEMORY_SAID_ARG" | tr -d '[:space:]')" ] \
+                        || die "repair allow needs --user-said \"<the user's own words>\" — their answer, not a summary of it"
+                      cmd_repair allow "${1+$*}" ;;     # a gate name with a space may arrive as several words
+              *) die "usage: council repair record <task> <gate> | repair show|check [task] | repair allow <gate> --user-said \"…\"" ;;
             esac ;;
     gate)    takes_flags gate all at --
              if [ "$ALL" = 1 ]; then
