@@ -366,7 +366,7 @@ for label, text, needles in [
                                 "proved both ways", "No coverage threshold", "No commit hook", "multiple of 256"]),
     ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
-                    "last-verified", "council doctor", "council run open council-init",
+                    "last-verified", "council doctor", "council run open council-init", "run plan opens ready for setup",
                     "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash",
                     "needs an open run", "every command into the Gates table"]),
     ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier",

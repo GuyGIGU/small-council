@@ -449,7 +449,7 @@ cmd_run_events() {
 }
 
 cmd_run_open() {
-  local mode="${1:-}" short home top ts dir n existing paused session template cap
+  local mode="${1:-}" short home top ts dir n existing paused session template cap nxt="$COUNCIL_NEXT_AT_OPEN"
   case "$mode" in
     council-review|council-plan|council-implement|council-research|council-postgame|council-init|test-architect|context-core) ;;
     '') die "usage: council run open <mode> [--alongside] [--session=ID]   (the skill name, e.g. council-review)" ;;
@@ -477,6 +477,14 @@ cmd_run_open() {
   while [ -e "$dir" ]; do dir="$home/runs/$ts-$short-$n"; n=$((n + 1)); done
   mkdir -p "$dir/seats" "$dir/gates" 2>/dev/null || die "cannot create $dir"
   { : > "$dir/.write-check"; } 2>/dev/null && rm -f "$dir/.write-check" || die "cannot write in $dir"
+  # Setup follows its own phases, not the stages, and is the Chair's own work: its run opens with a plan
+  # already valid for that (run-plan-init.tsv) and a next step of its own, so nothing waits on Convene.
+  template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan.tsv"
+  if [ "$mode" = council-init ]; then
+    template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan-init.tsv"
+    nxt="follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
+  fi
+  [ -f "$template" ] || die "run plan template is missing: $template"
   cat > "$dir/session-state.md" <<EOF
 status: in-progress
 mode: $mode
@@ -490,11 +498,9 @@ events-schema: 1
 size:
 base:
 deliverable:
-next: $COUNCIL_NEXT_AT_OPEN
+next: $nxt
 ## Decisions so far
 EOF
-  template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan.tsv"
-  [ -f "$template" ] || die "run plan template is missing: $template"
   cap="$(configured_agent_cap)"
   RUN_NAME="${dir##*/}" RUN_MODE="$mode" AGENT_CAP="$cap" awk '
     { gsub(/\{\{RUN\}\}/, ENVIRON["RUN_NAME"]); gsub(/\{\{MODE\}\}/, ENVIRON["RUN_MODE"]); gsub(/\{\{AGENT_CAP\}\}/, ENVIRON["AGENT_CAP"]); print }
@@ -3556,7 +3562,7 @@ GATES
         || finding WARN "the Gates table has no Side effects column (an older layout)" "a council-init refresh adds Probe, Needs and Side effects — until then council gate --all runs none of its gates unasked"
     fi
   fi
-  local stale_runs rsess
+  local stale_runs rsess rclosed=""
   stale_runs="$NL$(find "$home/runs" -mindepth 2 -maxdepth 2 -name session-state.md -mtime +2 2>/dev/null)$NL"   # one pass
   while IFS="$TAB" read -r dir mode phase croot upd status actual rsess; do
     [ -n "$dir" ] || continue
@@ -3567,10 +3573,14 @@ GATES
   done <<RUNS
 $(list_runs "$home" 1000000 open)
 RUNS
+  # A closed run's plan is its record of what was decided then: today's settings (a lower agent cap) never
+  # judge it, and nobody should rewrite it after the fact. Only open runs' plans are checked.
   while IFS= read -r stfile; do
     [ -n "$stfile" ] || continue
     dir="${stfile%/session-state.md}"; phase="$(field phase "$stfile")"; schema="$(field plan-schema "$stfile")"
-    if [ -f "$dir/run-plan.tsv" ]; then
+    rclosed=""; case "$(field status "$stfile")" in complete*|abandoned*) rclosed=1 ;; esac
+    if [ -n "$rclosed" ]; then :
+    elif [ -f "$dir/run-plan.tsv" ]; then
       if plan_result="$(QUIET=1 run_plan_validate "$dir" "$dir/run-plan.tsv" 2>&1)"; then :; else
         plan_result="$(printf '%s\n' "$plan_result" | tail -n 1)"
         case "$phase" in

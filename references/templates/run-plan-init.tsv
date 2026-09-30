@@ -1,0 +1,25 @@
+# Small Council run plan v1, as council-init opens it. Keep exactly five tab-separated columns.
+# Setup is the Chair's own work, so this plan is valid as it opens. Change a value only where this
+# repo differs, and say why in its reason. A large repo's mapping squad (council-init Phase D) makes
+# the run a squad: set size to squad, add each mapping worker's rows as below, then council run plan check.
+kind	id	field	value	reason
+schema	plan	version	1	versioned run-plan contract
+run	run	id	{{RUN}}	bind this plan to its run folder
+run	run	mode	{{MODE}}	mode chosen when the run opened
+run	run	size	solo	setup default: the Chair sets the council up itself
+assessment	run	risk	low	setup default: it writes the council's own files, and CLAUDE.md and local settings only on a yes; it installs nothing
+assessment	run	complexity	low	setup default: council-init's fixed phases, on the council's own files
+assessment	run	uncertainty	medium	setup default: the stack and its checks are unknown until Phases A and C measure them
+budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
+budget	run	estimated-tokens	0	setup default: a solo run starts no agents
+verification	run	level	self	setup default: the gate dry-runs and the user's yes to the proposal (Phase E) are its checks
+seat	chair	disposition	selected	the Chair runs setup
+seat	chair	role	chair	setup is the Chair's own work
+context	chair	level	focused	config and skeleton files only: map the repo, don't deep-read it
+budget	chair	tool-calls	200	setup default: detection, dry-runs, cards and wiring are many small steps
+# A mapping worker, one per top-level area (large repo only); add its estimate to estimated-tokens:
+# seat	map-<area>	disposition	selected	maps <the area's paths>
+# seat	map-<area>	role	worker	one area of the map
+# seat	map-<area>	purpose	mapping	charts its area for map.md
+# context	map-<area>	level	focused	its area's paths only
+# budget	map-<area>	tool-calls	30	one area, map rows only

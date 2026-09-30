@@ -2480,6 +2480,66 @@ def runs_worktrees_close_and_find(tmp):
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
 
+@part("runs")
+def runs_init_plan(tmp):
+    """A setup run opens with a plan that fits setup; doctor judges only open runs' plans."""
+    ip = new_repo(tmp, "initplan")
+    write(os.path.join(ip, "a.py"), "x = 1\n")
+    git(ip, "add", "-A")
+    git(ip, "commit", "-q", "-m", "init")
+    _, irun, _ = council(ip, "run", "open", "council-init")
+    irun = irun.strip()
+    code, out, err = council(ip, "run", "plan", "check")
+    check("run open council-init: its plan is valid as it opens — solo, the Chair only, self-verified",
+          code == 0 and "plan: valid · solo · 1 selected, 0 skipped · 0 agent run(s)" in out, out + err)
+    plan = read(os.path.join(irun, "run-plan.tsv"))
+    rows = {tuple(x.split("\t")[:3]): x.split("\t") for x in plan.splitlines() if x and not x.startswith("#")}
+    chosen = [("run", "run", "size"), ("assessment", "run", "risk"), ("assessment", "run", "complexity"),
+              ("assessment", "run", "uncertainty"), ("budget", "run", "estimated-tokens"), ("verification", "run", "level")]
+    check("run open council-init: every value the helper chose says in its reason that it is setup's default",
+          all(len(rows.get(k, [])) == 5 and rows[k][4].startswith("setup default:") for k in chosen)
+          and rows.get(("run", "run", "id"), ["", "", "", ""])[3] == os.path.basename(irun), plan)
+    st = read(os.path.join(irun, "session-state.md"))
+    check("run open council-init: its next step is setup's, not Convene's",
+          "next: follow council-init" in st and "size the run and ask" not in st, st)
+    # A large repo's mapping squad, as council-init Phase D says: the worker rows at the plan's foot
+    mapping = [x[2:].replace("<area>", "src").replace("<the area's paths>", "src/**")
+               for x in plan.splitlines() if x.startswith("# ") and "\tmap-<area>\t" in x]
+    squad = re.sub(r"^run\trun\tsize\tsolo\t.*$", "run\trun\tsize\tsquad\ta large repo: one mapping worker per area",
+                   plan, flags=re.MULTILINE).replace("\testimated-tokens\t0\t", "\testimated-tokens\t80000\t")
+    write(os.path.join(irun, "run-plan.tsv"), squad + "\n".join(mapping) + "\n")
+    code, out, err = council(ip, "run", "plan", "check")
+    check("council-init plan: the mapping rows at its foot make a valid squad",
+          code == 0 and "squad · 2 selected" in out, out + err + "\n".join(mapping))
+    code, out, err = council(ip, "seat", "map-src", "running", "agent=a1")
+    code2, out2, err2 = council(ip, "state", "phase=work")
+    check("council-init: a mapping worker is recorded and the run moves on, with no plan error",
+          code == 0 and code2 == 0 and "ERROR" not in out + err + out2 + err2, out + err + out2 + err2)
+    council(ip, "seat", "map-src", "done", "agent=a1", "tokens=30000")
+    council(ip, "run", "close")
+
+    # Doctor judges only open runs' plans: a closed run's plan is the record of what was decided then
+    write(os.path.join(ip, ".council", "council.config.md"), "# Council config — initplan\n\n## Run preferences\n- agent cap: 10\n")
+    _, done, _ = council(ip, "run", "open", "council-review")
+    done = done.strip()
+    write_plan(done, selected=("hunt", "beck"))
+    council(ip, "state", "phase=learn")
+    council(ip, "run", "close")
+    _, left, _ = council(ip, "run", "open", "council-review")
+    left = left.strip()
+    council(ip, "run", "close", "--status", "abandoned")
+    write(os.path.join(ip, ".council", "council.config.md"), "# Council config — initplan\n\n## Run preferences\n- agent cap: 2\n")
+    _, live, _ = council(ip, "run", "open", "council-review")
+    live = live.strip()
+    write_plan(live, selected=("hunt", "beck"))
+    write(os.path.join(live, "session-state.md"), read(os.path.join(live, "session-state.md")).replace("phase: convene", "phase: work"))
+    code, out, _ = council(ip, "doctor")
+    named = [os.path.basename(r) for r in (irun, done, left) if os.path.basename(r) in out]
+    check("doctor: never judges a closed run's plan — setup's, an unfinished abandoned one, or one made under a higher agent cap",
+          not named, out)
+    check("doctor: an open run's plan past Assign is still checked against today's agent cap",
+          f"run {os.path.basename(live)} has an invalid run plan" in out, out)
+
 @part("gates")
 def resume(tmp):
     # Carrying on with a run: council run resume

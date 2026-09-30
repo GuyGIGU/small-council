@@ -83,6 +83,9 @@ build/compile, and any e2e or regression harness.
   open through Phase D (don't open a second one). Bash drops a `\` outside quotes: write paths with
   `/`, or quote them. Judge a gate by what `council gate` reports, not by your own shell: a `cmd /c`
   run straight from a Bash tool exits 0 without running anything.
+- **Its run plan opens ready for setup:** `run-plan.tsv` is solo, the Chair only, self-verified, each
+  default saying so in its reason. Change a value only where this repo differs, with the reason,
+  then `council run plan check`.
 - **Mark each one** ✓ runnable, or ✗ with the reason. A gate that can't run here is worse than no
   gate, because it fakes a green.
 - **Never probe** a gate that deploys, spends money, flashes hardware or needs credentials: ask
@@ -135,16 +138,19 @@ Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`
   - hot spots, from git history (`git log --since=12.months --name-only --format= | sort | uniq -c | sort -rn | head`);
   - the vocabulary;
   - the conventions new code must match.
-- **A small repo** → do it yourself.
+- **A small repo** → do it yourself, then `council run close`.
 - **A large repo** → a mapping squad of at most 4 workers, run like any council run:
   1. The run you opened for Phase C's dry-runs (`council run open council-init` if none is open yet —
      it creates `.council/` and its `.gitignore`). One run, not two.
-  2. Write a brief whose `## Seats` has one block per top-level area: `ref: none`,
+  2. Make its plan a squad: `size` squad, and one mapping worker per area from the rows at the foot
+     of `run-plan.tsv`, their estimate added to `estimated-tokens`; then `council run plan check`.
+     The helper starts no worker the plan doesn't select.
+  3. Write a brief whose `## Seats` has one block per top-level area: `ref: none`,
      `out: seats/<area>.md`, `cap: 8`, the area's paths as the slice. Format: "an `## Index` of at
      most 8 map rows, each `<n> · map · <section> · <path> · <one-line fact>`, then the map template's
      sections for your area, a path on every row".
-  3. Dispatch them following stage 5, then run `council collect`.
-  4. Merge the results into one map of at most ~250 lines, then `council run close`.
+  4. Dispatch them following stage 5, then run `council collect`.
+  5. Merge the results into one map of at most ~250 lines, then `council run close`.
 
 ## Phase E — Propose, then write
 
