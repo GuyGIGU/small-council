@@ -258,6 +258,12 @@ with tempfile.TemporaryDirectory() as folder:
           built.returncode == 0 and [c["verdict"] for c in claims(planned)] == ["REFUTED", "UNCERTAIN"] and
           [len(c["verification"]) for c in claims(planned)] == [2, 2] and invoke(planned, "check").returncode == 0,
           built.stdout + built.stderr)
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import evidence                    # noqa: E402  (memory propose reads the index through it)
+    again, _ = evidence.synthesis(planned)
+    check("plan: a reader that doesn't name the mode (memory propose) finds the index current",
+          evidence.verifier_rows(planned, again) == [] and
+          evidence.render(again) == (planned / "claims.jsonl").read_text(encoding="utf-8"))
     reviewed = fresh(folder, "not-a-plan", "council-review", plan_syn, {"verify-1.md": plan_rows})
     check("review: several rows for one claim are still a conflict to resolve", invoke(reviewed, "build").returncode == 2)
 
