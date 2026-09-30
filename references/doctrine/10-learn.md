@@ -67,11 +67,13 @@ seat by seat; a council-init refresh proposes roster changes only where the advi
 - A run stopped for good → `--status abandoned`.
 - A run the user paused → `--status paused`. When they want it back, `council run resume --run <folder>`.
 
-**Close every run you open.**
-After `council run close`, show `council status --widget` once if `show_widget` is available;
-otherwise relay `council status`. This closing card adds to the chat summary from Deliver. It shows
-the filed request, deliverable, verdict counts, checks, cost and any actions left for the user.
-Do not show a new card for every progress line.
-For a completed run, also run `council status --line`; if it prints a line and `PushNotification`
-is available, send that line once. The project off switch suppresses the line. Do not send
-progress notifications.
+**Close every run you open** — three steps, in order:
+1. `council run close`. It prints the close line, then a reminder of step 2.
+2. **Show the closing card, once.** Pass the output of `council status --widget --run <folder>` to a
+   `show_widget` tool (it may be a deferred tool: search the tools for it before deciding there is
+   none); with none, relay `council status --run <folder>`. A closed run needs `--run`. The card adds
+   to Deliver's summary: the request, deliverable, verdict counts, checks, cost and what is left for
+   the user. Never a card per progress line.
+3. For a completed run, `council status --line --run <folder>`: if it prints a line and
+   `PushNotification` is available, send it once. The project off switch suppresses the line. No
+   progress notifications.

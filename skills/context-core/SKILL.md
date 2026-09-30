@@ -145,9 +145,11 @@ live at a legacy path; the config's Memory section says where.
 Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
 Questions come last, numbered.
 
-**The run's status.** Show it after first dispatch and after close. If a `show_widget`
-tool is available, call its `read_me` once, then pass it `council status --widget` output verbatim;
-otherwise relay `council status`, which ends with the terminal view's command. Otherwise, only when
-the user asks — never a card per progress line. A card is a snapshot, not live; if one fails to
-render, give the text and carry on. When you stop for the user's answer, `council state
-waiting="<the question>"`; clear it with `waiting=` when the answer comes.
+**The run's status.** Show it twice: at the run's first dispatch (Work) and after
+`council run close` (Learn) — the helper reminds you at both. With a `show_widget` tool — it may be
+deferred: search the tools before deciding there is none — call its `read_me` once, then pass it
+`council status --widget` output verbatim; otherwise relay `council status`, which ends with the
+terminal view's command. Otherwise, only when the user asks — never a card per progress line. A card
+is a snapshot, not live; if one fails to render, give the text and carry on. When you stop for the
+user's answer, `council state waiting="<the question>"`; clear it with `waiting=` when the answer
+comes.

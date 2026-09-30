@@ -909,6 +909,57 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "\nnext:\n" in read(srun / "session-state.md"), read(srun / "session-state.md"))
         council(stepping, "run", "close", "--status", "abandoned")
 
+        # The user is shown the run's status at its first dispatch and at its close. A real run showed
+        # neither, so the helper reminds the Chair at both moments — once each, never per seat.
+        nudged = base / "nudged"
+        nudged.mkdir()
+        subprocess.run([GIT, "init", "-q"], cwd=nudged, check=True)
+        write(nudged / ".council" / "council.config.md", "# Council config\n")
+        nrun = Path(council(nudged, "run", "open", "council-review")[1].strip())
+        plan(nrun, ("a", "b", "verify-1"))
+        said = {"queued": council(nudged, "seat", "a", "queued")[2],
+                "first": council(nudged, "seat", "a", "running", "agent=x1")[2],
+                "second": council(nudged, "seat", "b", "running", "agent=x2")[2],
+                "done": council(nudged, "seat", "a", "done", "tokens=5000")[2],
+                "again": council(nudged, "seat", "a", "running", "agent=x3")[2]}
+        first_line = [x for x in said["first"].splitlines() if "first dispatch of this run" in x]
+        check("status reminder: the run's first dispatch — and no other seat record — tells the Chair to show the "
+              "run's status now: the widget through a show_widget tool, which may need looking up, else the text",
+              len(first_line) == 1 and "show the user its status now, once" in first_line[0]
+              and "`council status --widget` to a show_widget tool" in first_line[0] and "deferred tool" in first_line[0]
+              and "else relay `council status`" in first_line[0]
+              and not any("show the user" in said[k] for k in ("queued", "second", "done", "again")), said)
+        council(nudged, "seat", "a", "done", "tokens=6000")
+        council(nudged, "seat", "b", "done", "tokens=7000")
+        code, out, err = council(nudged, "run", "close")
+        close_line = [x for x in err.splitlines() if "closing card" in x]
+        check("status reminder: a close that succeeds tells the Chair to show the closing card, and its commands name "
+              "the closed run",
+              code == 0 and out.startswith("closed " + nrun.name) and len(close_line) == 1
+              and "`council status --widget --run {}`".format(nrun.name) in close_line[0]
+              and "else relay `council status --run {}`".format(nrun.name) in close_line[0]
+              and "deferred tool" in close_line[0], out + err)
+        code_bare, _, err_bare = council(nudged, "status", "--widget")
+        code_named, card, err_named = council(nudged, "status", "--widget", "--run", nrun.name)
+        check("status reminder: that is the command that works — a closed run's card needs --run",
+              code_bare == 2 and "no open run" in err_bare and code_named == 0 and ">Completed</span>" in card,
+              (code_bare, err_bare, code_named, err_named, card[:300]))
+        code, out, err = council(nudged, "run", "close", "--run", nrun.name)
+        check("status reminder: closing an already closed run again adds no second reminder",
+              code == 0 and "closing card" not in err, out + err)
+        late = Path(council(nudged, "run", "open", "council-review")[1].strip())
+        plan(late, ("verify-1",))
+        _, _, own_err = council(nudged, "seat", "chair", "done", "agents=0")
+        _, _, late_err = council(nudged, "seat", "verify-1", "done", "agent=v1", "tokens=94152", "--run", late.name)
+        check("status reminder: work the Chair did itself is no dispatch; a worker first recorded only when it "
+              "finished (as the real run's was) still counts, and a call given --run gets it back in the command",
+              "show the user" not in own_err and late_err.count("first dispatch of this run") == 1
+              and "`council status --widget --run {}`".format(late.name) in late_err, (own_err, late_err))
+        _, _, paused_err = council(nudged, "run", "close", "--status", "paused")
+        check("status reminder: a paused close is a close too",
+              paused_err.count("closing card") == 1 and "--run " + late.name in paused_err, paused_err)
+        council(nudged, "run", "close", "--status", "abandoned", "--run", late.name)
+
         capped = base / "capped"
         capped.mkdir()
         subprocess.run([GIT, "init", "-q"], cwd=capped, check=True)

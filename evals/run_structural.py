@@ -178,6 +178,16 @@ check("status: one plain-language reading shared by the widget, the summary and 
       "council status --widget" in kernel_text and "show_widget" in kernel_text and "never a card per progress line" in kernel_text
       and "waiting=" in kernel_text and "interpret" in read("scripts", "status.py")
       and "status.interpret" in read("scripts", "cockpit.py"))
+check("status: showing it is a step where it happens — Work's dispatch, Challenge when its verifiers are the first "
+      "dispatch, Learn's close — a show_widget tool is looked up before it is called missing, and the helper "
+      "reminds the Chair at both moments (a real run showed neither card)",
+      all(p in doctrine["05-work.md"] for p in ("2. **Show the user the run's status", "council status --widget",
+                                               "deferred tool", "never a card per progress line")) and
+      "the run's first dispatch" in doctrine["08-challenge.md"] and
+      all(p in doctrine["10-learn.md"] for p in ("2. **Show the closing card, once.**", "deferred tool",
+                                                "`council status --widget --run <folder>`")) and
+      "deferred" in kernel_text and "status_nudge()" in cli and
+      'status_nudge "$run" dispatch' in cli and 'status_nudge "$run" close' in cli)
 check("accounting: seats record exact usage per agent run, a Workflow's agent count, and the two readers "
       "share one per-seat rule",
       os.path.isfile(os.path.join(ROOT, "references", "run-accounting.md")) and

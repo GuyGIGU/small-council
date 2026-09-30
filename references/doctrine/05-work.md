@@ -38,9 +38,14 @@ Write <abs run>/seats/<slug>.md, then return one line.
   objective, slice, hard constraints or reference docs.
   With no pack, dispatch still uses the complete brief. Do not imply that omitted paths are safe.
 
-- **Right after dispatching:** `council seat <slug> running agent=<agentId>` for each worker — the id
-  the Agent or Workflow tool returned, never a role name. The first time a run dispatches, show its
-  status once (context-core, "Talking to the user").
+- **Right after dispatching, two steps, in order:**
+  1. **Record each worker:** `council seat <slug> running agent=<agentId>` — the id the Agent or
+     Workflow tool returned, never a role name.
+  2. **Show the user the run's status — at the run's first dispatch, once.** The helper prints a
+     reminder on that first record. With a `show_widget` tool, call its `read_me` once, then pass it
+     the output of `council status --widget` verbatim. `show_widget` may be a deferred tool: search
+     the tools for it before deciding there is none. With none, relay `council status`. Later
+     dispatches show nothing — never a card per progress line.
 
 ## While they work
 

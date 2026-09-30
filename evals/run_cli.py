@@ -1128,6 +1128,18 @@ def seat_races(tmp):
           code == 0 and took < 40 and "\nafterlock\t" in read(os.path.join(trun, "seats.tsv")),
           "%.1f s · %s%s" % (took, out, err))
 
+    # The reminder to show the run's status comes once per run: which record is the run's first dispatch
+    # is settled under the seat lock.
+    fd = new_repo(tmp, "first-dispatch")
+    write(os.path.join(fd, ".council", "council.config.md"), "# Council config — first dispatch\n")
+    _, fd_run, _ = council(fd, "run", "open", "council-review")
+    fd_run = fd_run.strip()
+    write_plan(fd_run, selected=tuple(f"w{i}" for i in range(4)))
+    workers = council_together(fd, *[("seat", f"w{i}", "running", f"agent=f{i}", "--run", fd_run) for i in range(4)])
+    check("seat: of four workers first recorded at the same moment, exactly one call is told to show the run's status",
+          all(code == 0 for code, _ in workers) and sum(err.count("first dispatch of this run") for _, err in workers) == 1,
+          workers_detail(workers), full=True)
+
     # Once-only events: whether one is on record is checked under the events lock, so seat records that
     # pass the cap, the estimate and the ceiling together still record each passing once.
     race = new_repo(tmp, "cap-race")

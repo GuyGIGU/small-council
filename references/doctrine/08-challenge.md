@@ -32,6 +32,9 @@ Catch what's wrong before the user sees it.
    - Include every cut P1: a lone dissenter may be right.
    - Each verifier writes its own file, `<run>/verify-<n>.md` (n counts verifiers, not items). Track them like workers
      (`council seat verify-<n> running agent=<id>`, then `done tokens=…`).
+   - **If these verifiers are the run's first dispatch** (a Solo run, a post-game), show the user
+     the run's status now, once — Work, "Right after dispatching", step 2. The helper's reminder
+     says when.
    - A Workflow of verifiers is one seat `verify-<n>` recorded with `agents=N`, and planned with
      `budget/verify-<n>/agent-runs` — each of its agents counts against the cap, and takes items the
      same way: a P1 or protected item alone, the rest in batches of up to 8. Each agent writes
