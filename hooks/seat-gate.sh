@@ -119,6 +119,18 @@ fi
 
 problems=""
 add() { problems="${problems}${problems:+; }$1"; }
+engine="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/scripts/evidence.py"
+py=""; table=""; rc=0; n=0
+# Python 3.8+, as the helper finds it; without it the claim index isn't built either.
+pick_python() {
+  local c
+  for c in python3 python; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+      printf '%s' "$c"; return 0
+    fi
+  done
+  return 1
+}
 
 if [ ! -s "$path" ]; then
   add "the file you named ($path) doesn't exist or is empty"
@@ -171,7 +183,19 @@ else
     fi
   else
     case "$l1" in '# Verification'*) ;; *) add "line 1 must be '# Verification — <run title>'" ;; esac
-    grep -q '^|' "$path" || add "add the verdict table: | # | Item | Verdict | Evidence |"
+    if ! grep -q '^[[:space:]]*|' "$path"; then
+      add "add the verdict table: | # | Item | Verdict | Evidence |"
+    elif [ -f "$engine" ] && py="$(pick_python)"; then
+      # The claim index's own reading of the table (evidence.py table): what the index could not read,
+      # the verifier fixes now — not the Chair, by hand, after it. 1 is "problems"; anything else passes.
+      table="$("$py" "$engine" table --file "$path" 2>/dev/null)"; rc=$?
+      if [ "$rc" -eq 1 ] && [ -n "$table" ]; then
+        n="$(printf '%s\n' "$table" | grep -c .)"
+        table="$(printf '%s\n' "$table" | head -n 3 | awk 'NR > 1 { printf "; " } { printf "%s", $0 }')"
+        [ "$n" -le 3 ] || table="$table; and $((n - 3)) more"
+        add "$table"
+      fi
+    fi
   fi
   size="$(wc -c < "$path" | tr -d ' ')"
   if [ "$size" -gt 16384 ]; then

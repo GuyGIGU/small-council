@@ -21,7 +21,7 @@ SessionStart (hooks/session-start.sh):
 SubagentStop (hooks/seat-gate.sh):
   - lets a valid worker or verifier file through, including list-style index lines and prose;
   - blocks once (exit 2, reason on stderr) on a missing, malformed, oversized or empty file, an index
-    line it can't read, or a reply with no "Wrote" line;
+    line it can't read, a verifier table the claim index can't read, or a reply with no "Wrote" line;
   - never blocks when stop_hook_active is set, on a line that starts with BLOCKED, or for other agents.
 PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and matcher:
   - silent (exit 0) with no council, no open run, a run under its cap, a paused run, another session's
@@ -684,6 +684,31 @@ def memory_file_and_seat_check(tmp):
                "| M1 | admins only | NOT MET | asked, no part covers it |\n")
     code, err = run_gate(verifier, f"Wrote {met} — 1 met, 0 partly met, 2 not met, 0 can't tell, 1 missing, 0 not asked")
     check("seat check: a post-game verifier file passes", code == 0, err)
+    # The claim index's own reading of a review's verifier table (evidence.py table): in run 1 the stop
+    # check passed a table the index couldn't read, and the Chair fixed the blind verifier's file by hand.
+    review_run = os.path.join(tmp, "review-run")
+    write(os.path.join(review_run, "session-state.md"), "status: in-progress\nmode: council-review\n")
+    write(os.path.join(review_run, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P1 · P · a.py:1 · One · state: OBSERVED · from: hunt#1\n"
+          "2 · P2 · P · a.py:2 · Two · state: OBSERVED · from: hunt#1\n## Cut\n(none)\n")
+    claimed = os.path.join(review_run, "verify-1.md")
+    head = "# Verification — eval\n\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+    for label, body, reason in [
+            ("another heading", "# Verification — eval\n| # | Claim | Verdict | Notes |\n|---|---|---|---|\n"
+                                "| 1 | One | CONFIRMED | a.py:1 |\n| 2 | Two | REFUTED | a.py:2 |\n", "heading isn't"),
+            ("a number the synthesis doesn't have", head + "| 1 | One | CONFIRMED | a.py:1 |\n"
+                                                          "| 9 | Two | REFUTED | a.py:2 |\n", "unknown claim 9"),
+            ("two verdicts in one cell", head + "| 1 | One | CONFIRMED or REFUTED | a.py:1 |\n"
+                                               "| 2 | Two | REFUTED | a.py:2 |\n", "ambiguous claim verdict")]:
+        write(claimed, body)
+        code, err = run_gate(verifier, f"Wrote {claimed} — 1 confirmed, 1 refuted")
+        check(f"seat check: a review verifier table the claim index can't read is sent back — {label}",
+              code == 2 and reason in err and "Fix the file" in err, err)
+    write(claimed, "# Verification — eval\n| # | Item | Verdict | Evidence (path:line) |\n|---|---|---|---|\n"
+                   "  | **1** | One | **CONFIRMED** | `grep x a.py | wc -l` is 1\n| #2 | Two | REFUTED — guarded | a.py:2 |\n")
+    code, err = run_gate(verifier, f"Wrote {claimed} — 1 confirmed, 1 refuted")
+    check("seat check: a review verifier table the index reads (bold, #2, a | in the evidence, no closing pipe) passes",
+          code == 0, err)
 
 @part("timing")
 def agent_gate(tmp):
