@@ -2191,6 +2191,64 @@ cmd_never_ran() {
   tail -n 1 "$1" | tr -d '\r' | grep -q '>[ ]*$'
 }
 
+# One `council gate` per run at a time. Two copies write the same gates/<name>.txt and .json: a real run
+# started `gate --all` twice, the second copy overwrote the first's output and was stopped, and its
+# results became the run's events and its baseline — a test failure that never happened. The lock is
+# <run>/gates.lock, a directory whose owner file holds the holder's process id, then when it started.
+# A second call never waits: it refuses before it writes anything. The holder releases on exit, a
+# stopped one too where the shell still runs its exit trap; a lock whose process is gone is cleared by
+# the next call, which says so (event_lock_stale, and the same recovery step as the event lock).
+GATE_LOCK="" GATE_LOCK_PID=""
+
+gate_unlock() {
+  local lock="$GATE_LOCK" pid=''
+  [ -n "$lock" ] || return 0
+  GATE_LOCK=""
+  { IFS= read -r pid < "$lock/owner"; } 2>/dev/null || :
+  [ "$pid" = "$GATE_LOCK_PID" ] || return 0      # no longer this call's lock: leave it alone
+  event_unlock "$lock" || :
+}
+
+gate_lock() {
+  local run="$1" lock="$1/gates.lock" recovery="$1/gates.lock.recover" me="${BASHPID:-$$}" pid='' since='' tries=0
+  while :; do
+    if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
+      if [ -d "$recovery" ]; then rmdir "$lock" 2>/dev/null; continue; fi   # a reclaimer got in first: yield
+      printf '%s\n%s\n' "$me" "$(now_sec)" > "$lock/owner" \
+        || { rm -f "$lock/owner"; rmdir "$lock" 2>/dev/null; die "cannot write the gate lock $lock — nothing was started"; }
+      GATE_LOCK="$lock"; GATE_LOCK_PID="$me"
+      trap gate_unlock EXIT                          # every way out: a finished set, a die, a caught signal
+      trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
+      return 0
+    fi
+    # Who holds it. The holder writes its owner file just after mkdir and removes it just before rmdir,
+    # so a file that is missing or vanishes under this read is a lock being taken or released — never
+    # a stale one, and never a reason to stop (pid and since stay set, empty, under set -u).
+    pid=''; since=''
+    { { IFS= read -r pid && IFS= read -r since; } < "$lock/owner"; } 2>/dev/null || :
+    if event_lock_stale "$recovery"; then
+      rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
+    fi
+    if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
+      if printf '%s\n' "$me" > "$recovery/owner" && event_lock_stale "$lock"; then
+        rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null \
+          && printf 'council: cleared a gate lock left by a call that is no longer running%s\n' \
+               "${pid:+ (process $pid, started ${since:-unknown})}" >&2
+      fi
+      event_unlock "$recovery" || :
+    fi
+    case "$pid" in
+      ''|*[!0-9]*) ;;                                # no owner to read yet: look again
+      *) if kill -0 "$pid" 2>/dev/null; then
+           die "checks are already running for this run (${run##*/}, started ${since:-a moment ago}, process $pid) — wait for them to finish; nothing was started"
+         fi ;;
+    esac
+    tries=$((tries + 1))
+    [ "$tries" -lt 150 ] || die "the gate lock is unavailable: $lock — nothing was started"
+    sleep 0.1
+  done
+}
+
 # Run one gate; full output to <run>/gates/<name>.txt, the verdict to <name>.json. Returns its exit code.
 # In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
 # so a later failure can be told apart from one the untouched code already had.
@@ -2284,6 +2342,7 @@ cmd_gate() {
         *) die "--at takes grounding or verify (got '$AT_ARG')" ;;
       esac
     fi
+    gate_lock "$run"                     # refuses, before anything is written, while another gate call runs
     [ "$atl" = v ] || GATE_BASELINE=1    # the untouched code: each gate's first output is its baseline
     gates="$(config_gates "$cfg")"
     if [ -z "$gates" ]; then      # a green report with nothing behind it is the worst outcome there is
@@ -2377,6 +2436,7 @@ GATES
   fi
   name="${1+$*}"                      # a name with a space may arrive as several words
   [ -n "$name" ] || die "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
+  gate_lock "$run"
   cmd="$GATE_CMD"
   if [ -z "$cmd" ]; then
     row="$(config_gates "$cfg" | NAME="$name" awk -F'\t' '$1 == ENVIRON["NAME"] { print; exit }')"
@@ -5542,7 +5602,8 @@ council — the Small Council's helper (bash + git)
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
                                          inside it; output and exit code → <run>/gates/
   council gate --all [--at grounding|verify]
-                                         run the configured gates
+                                         run the configured gates · a run takes one gate call at a time:
+                                         a second is refused (exit 2) and writes nothing — wait for the first
   council gates                          list the configured gates
   council changed [--glob '<pat>'] [--each] -- <cmd>
                                          run <cmd> over just the files this change touches (0 when none)

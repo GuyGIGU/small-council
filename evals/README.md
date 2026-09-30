@@ -83,7 +83,7 @@ a hang (each call has a 120 s timeout that is reported as a failed check).
 Its checks come in blocks, and each block belongs to a group (`@part("…")` in the file). A group runs
 in one process and needs nothing from another, so `run_all.py` runs the groups side by side:
 `--list` prints them, `--group runs,gates` runs only those. With no options every group runs, in file
-order, as before. The `timing` group (six workers on one lock, a stale lock, speed limits) runs alone.
+order, as before. The `timing` group (six workers on one lock, a stale lock, the gate lock, speed limits) runs alone.
 A block left without a group stops the suite, so none can be skipped.
 
 ## 4. Hook evals — do the hooks behave?

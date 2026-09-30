@@ -9,7 +9,8 @@ Needs bash and git; no LLM, no network. Covers:
     a byte-order mark; a Windows --run path;
   - the change index: files, symbols (code only, shell functions included), callers, tests; files past
     the cap named; renames, non-ASCII names, binaries, nested worktrees, a relative --run;
-  - gates judged by exit code, with the command passed intact, and table cells that never shift;
+  - gates judged by exit code, with the command passed intact, and table cells that never shift; one
+    gate call per run at a time, a second refused before it writes anything;
   - seat-file collection: ref: proof of reading (paired seats too), caps, broken citations, list-style
     and unreadable index lines, failed and re-dispatched workers;
   - citation and origin checks (single lines, ranges and comma lists); map status; the drift doctor;
@@ -101,9 +102,23 @@ def council_together(cwd, *calls):
 def gates_together(cwd, run, names):
     """Start `council gate <name> --run <run> -- true` for every name at the same moment; return each
     one's (exit code, stdout, stderr) once all have finished, as council_together does."""
-    procs = [subprocess.Popen([BASH, CLI, "gate", name, "--run", run, "--", "true"], cwd=cwd, env=GIT_ENV,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
-                              errors="replace") for name in names]
+    return all_finished([subprocess.Popen([BASH, CLI, "gate", name, "--run", run, "--", "true"], cwd=cwd, env=GIT_ENV,
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                                          errors="replace") for name in names])
+
+
+def events_together(cwd, run, names):
+    """Append one event per name to the run's stream at the same moment — each from its own bash with
+    the helper sourced, as the SessionStart hook sources it — and return each one's (exit code, stdout,
+    stderr). Gate calls no longer contend for the events lock (a run takes one `council gate` at a
+    time), so the lock's races are driven straight through event_append."""
+    script = 'source "$1"; event_append "$2" gate.finished "$3" passed "exit=0;seconds=0;empty=0"'
+    return all_finished([subprocess.Popen([BASH, "-c", script, "council", CLI.replace("\\", "/"), run, name], cwd=cwd,
+                                          env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                          encoding="utf-8", errors="replace") for name in names])
+
+
+def all_finished(procs):
     finished = []
     for p in procs:
         try:
@@ -616,9 +631,9 @@ def event_races(tmp):
     write(os.path.join(event_repo, ".council", "council.config.md"), "# Council config — events\n")
     _, event_run, _ = council(event_repo, "run", "open", "council-review")
     event_run = event_run.strip()
-    finished = gates_together(event_repo, event_run, [f"parallel-{i}" for i in range(3)])
+    finished = events_together(event_repo, event_run, [f"parallel-{i}" for i in range(3)])
     code, out, err = council(event_repo, "run", "events", "check", "--run", event_run)
-    check("run events: concurrent gate completions get distinct, continuous sequence numbers",
+    check("run events: records appended at the same moment get distinct, continuous sequence numbers",
           all(rc == 0 for rc, _, _ in finished) and code == 0 and len(events(event_run)) == 4 and
           {e[4] for e in events(event_run)[1:]} == {"parallel-0", "parallel-1", "parallel-2"},
           out + err + "\n" + gates_detail(finished), full=True)
@@ -676,22 +691,143 @@ def event_races(tmp):
 
 @part("timing")
 def event_lock_stress(tmp):
-    """Rounds of six gates at once on one run. A call waiting for the events lock once died under set -u
+    """Rounds of six records at once on one run. A call waiting for the events lock once died under set -u
     when the holder released between its look at the owner file and its read, and its event was lost."""
     stress = new_repo(tmp, "event-stress")
     write(os.path.join(stress, ".council", "council.config.md"), "# Council config — event stress\n")
     _, stress_run, _ = council(stress, "run", "open", "council-review")
     stress_run = stress_run.strip()
     trouble = []
-    for r in range(2):   # about 4 s a round on Windows Git Bash
+    for r in range(4):   # about a second a round on Windows Git Bash; the old lock lost a record about one round in six
         names = [f"r{r}-g{i}" for i in range(6)]
-        finished = gates_together(stress, stress_run, names)
+        finished = events_together(stress, stress_run, names)
         got = sorted(e[4] for e in events(stress_run) if e[3] == "gate.finished" and e[4].startswith(f"r{r}-"))
         if got != names or any(rc != 0 or err.strip() for rc, _, err in finished):
             trouble.append("round %d recorded %s\n%s" % (r, got, gates_detail(finished)))
     code, out, err = council(stress, "run", "events", "check", "--run", stress_run)
-    check("run events: two rounds of six gates at once record all 12 events; every worker exits 0 and is silent on stderr",
-          not trouble and code == 0 and len(events(stress_run)) == 13, out + err + "\n".join(trouble), full=True)
+    check("run events: four rounds of six records at once leave all 24 events; every writer exits 0 and is silent on stderr",
+          not trouble and code == 0 and len(events(stress_run)) == 25, out + err + "\n".join(trouble), full=True)
+
+
+@part("timing")
+def gate_lock(tmp):
+    """One `council gate` per run at a time. A real run started `gate --all` twice: the second copy
+    overwrote the first's saved output and was stopped, and its results became the run's events and
+    baseline. A second call must refuse before it writes anything."""
+    lk = new_repo(tmp, "gate-lock")
+    waits = 'echo started; echo x >> ran.log; while [ ! -f go.flag ]; do sleep 0.2; done; echo finished'
+    write(os.path.join(lk, ".council", "council.config.md"),
+          "# Council config — gate lock\n\n## Gates\n"
+          "| Gate | Command | Run at | Mandatory | Checked | Needs | Side effects |\n|---|---|---|---|---|---|---|\n"
+          f"| tests | `{waits}` | grounding | yes | ok | — | none |\n"
+          "| lint | `echo lint-ok` | grounding | yes | ok | — | none |\n")
+    _, lrun, _ = council(lk, "run", "open", "council-review")
+    lrun = lrun.strip()
+    lock, saved = os.path.join(lrun, "gates.lock"), os.path.join(lrun, "gates", "tests.txt")
+
+    def folder():
+        """Every file under the run folder with its bytes — what a refused call must leave as it was."""
+        seen = {}
+        for base, _, names in os.walk(lrun):
+            for name in names:
+                with open(os.path.join(base, name), "rb") as f:
+                    seen[slash(os.path.relpath(os.path.join(base, name), lrun))] = f.read()
+        return seen
+
+    first = subprocess.Popen([BASH, CLI, "gate", "--all", "--at", "grounding", "--run", lrun], cwd=lk, env=GIT_ENV,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+    deadline = time.monotonic() + 60
+    while not (os.path.isfile(os.path.join(lock, "owner")) and "started" in read(saved)) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    held = read(os.path.join(lock, "owner")).splitlines()
+    before = folder()
+    second = [council(lk, "gate", "--run", lrun, *args) for args in (
+        ("--all", "--at", "grounding"), ("--all", "--at", "verify"), ("tests",), ("lint",),
+        ("adhoc", "--", "echo second-copy"))]
+    after = folder()
+    check("gate lock: while one gate call runs, its lock names the process and when it started",
+          len(held) == 2 and held[0].isdigit() and re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", held[1]) is not None,
+          str(held))
+    check("gate lock: a second gate call for the same run — the set again, another stage, the same gate, another gate, "
+          "an ad-hoc one — is refused with exit 2 and says which run, since when, and that nothing was started",
+          len(held) == 2 and all(code == 2 and out == "" and "checks are already running for this run" in err
+                                 and os.path.basename(lrun) in err and "started " + held[1] in err
+                                 and "wait for them to finish; nothing was started" in err for code, out, err in second),
+          "\n".join("exit %d · stdout %r · stderr %r" % s for s in second), full=True)
+    check("gate lock: a refused call writes nothing — no output file touched, no event, no baseline, no new file",
+          after == before and sorted(n for n in after if n.startswith("gates/")) == ["gates/tests.txt"]
+          and after.get("gates/tests.txt") == b"started\n" and len(events(lrun)) == 1,
+          "changed: %s" % sorted(n for n in set(before) | set(after) if before.get(n) != after.get(n)), full=True)
+    write(os.path.join(lk, "go.flag"), "")
+    try:
+        out1, err1 = first.communicate(timeout=120)
+    except subprocess.TimeoutExpired:
+        first.kill()
+        out1, err1 = first.communicate()
+        err1 += " (still running after 120 s)"
+    done = [e[4:6] for e in events(lrun) if e[3] == "gate.finished"]
+    check("gate lock: the first call finishes as if nobody had tried — each gate ran once, its own output is the saved "
+          "one and the baseline, one event per gate — and its lock is gone",
+          first.returncode == 0 and "gates: 2 ran — all pass" in out1 and err1.strip() == ""
+          and read(os.path.join(lk, "ran.log")) == "x\n" and read(saved) == "started\nfinished\n"
+          and read(os.path.join(lrun, "gates", "baseline", "tests.txt")) == "started\nfinished\n"
+          and done == [["tests", "passed"], ["lint", "passed"]] and not os.path.exists(lock),
+          "exit %s · stdout %r · stderr %r · events %s" % (first.returncode, out1, err1, done), full=True)
+    code, out, err = council(lk, "gate", "lint", "--run", lrun)
+    code2, out2, err2 = council(lk, "gate", "--all", "--at", "grounding", "--run", lrun)
+    check("gate lock: gate calls one after another still run, and each leaves no lock behind",
+          code == 0 and "gate lint: pass" in out and err.strip() == "" and code2 == 0 and "gates: 2 ran — all pass" in out2
+          and err2.strip() == "" and len([e for e in events(lrun) if e[3] == "gate.finished"]) == 5
+          and not os.path.exists(lock), out + err + out2 + err2)
+
+    # A lock whose process is gone is cleared by the next call, which says so in one line.
+    os.mkdir(lock)
+    write(os.path.join(lock, "owner"), "99999999\n2026-01-01 00:00:00\n")
+    code, out, err = council(lk, "gate", "lint", "--run", lrun)
+    check("gate lock: a lock left by a process that is gone is cleared, in one line, and the gate runs",
+          code == 0 and "gate lint: pass" in out and not os.path.exists(lock)
+          and [x for x in err.splitlines() if x.strip()] == [
+              "council: cleared a gate lock left by a call that is no longer running "
+              "(process 99999999, started 2026-01-01 00:00:00)"], out + err)
+    os.mkdir(lock)                                   # a call stopped between taking the lock and signing it
+    old_time = time.time() - 30
+    os.utime(lock, (old_time, old_time))
+    code, out, err = council(lk, "gate", "lint", "--run", lrun)
+    check("gate lock: an old lock with no owner file is cleared too",
+          code == 0 and "gate lint: pass" in out and "cleared a gate lock" in err and not os.path.exists(lock), out + err)
+
+    # The holder stopped: by a signal its shell can catch, it releases the lock itself and records no
+    # verdict for the stopped gate; killed outright, the next call clears what it left.
+    owner = slash(os.path.join(lock, "owner"))
+    before_stop = len(events(lrun))
+    code, out, err = council(lk, "gate", "stopped", "--run", lrun, "--",
+                             "kill -TERM \"$(head -n 1 '%s')\"; sleep 1; echo went-on" % owner)
+    check("gate lock: a gate call stopped by a signal releases its lock and records no result for the stopped gate",
+          code == 143 and not os.path.exists(lock) and len(events(lrun)) == before_stop
+          and not os.path.exists(os.path.join(lrun, "gates", "stopped.json")), "exit %d · %s%s" % (code, out, err))
+    code, out, err = council(lk, "gate", "killed", "--run", lrun, "--", "kill -9 \"$(head -n 1 '%s')\"" % owner)
+    left = os.path.isdir(lock)
+    code2, out2, err2 = council(lk, "gate", "lint", "--run", lrun)
+    check("gate lock: a gate call killed outright leaves its lock, and the next call clears it and runs",
+          code != 0 and left and len(events(lrun)) == before_stop + 1 and code2 == 0 and "gate lint: pass" in out2
+          and "cleared a gate lock left by a call that is no longer running" in err2 and not os.path.exists(lock),
+          "killed: exit %d · %s%s · lock left: %s · next: exit %d · %s%s" % (code, out, err, left, code2, out2, err2))
+
+    # Started at the same moment: whichever wins runs; every other either ran after it or was refused
+    # whole. Each gate that ran has exactly one event, and none is left half-recorded.
+    names = [f"race-{i}" for i in range(4)]
+    before_race = len(events(lrun))
+    finished = gates_together(lk, lrun, names)
+    ran = [name for name, (rc, _, _) in zip(names, finished) if rc == 0]
+    raced = sorted(e[4] for e in events(lrun)[before_race:])
+    code, out, err = council(lk, "run", "events", "check", "--run", lrun)
+    check("gate lock: four gate calls at the same moment — at least one runs, every other runs or is refused whole, and "
+          "only the ones that ran leave an event and files",
+          ran and all(rc == 0 and "pass" in o and e.strip() == "" or rc == 2 and o == "" and "nothing was started" in e
+                      for rc, o, e in finished)
+          and raced == sorted(ran) and code == 0 and not os.path.exists(lock)
+          and sorted(n[:-4] for n in os.listdir(os.path.join(lrun, "gates")) if n.startswith("race-") and n.endswith(".txt")) == sorted(ran),
+          out + err + "\n" + gates_detail(finished), full=True)
 
 
 @part("runs")
