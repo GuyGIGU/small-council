@@ -310,7 +310,11 @@ def settle(claims, several):
     return issues
 
 
-def verifier_rows(run, claims, several=False):
+def verifier_rows(run, claims, several=None):
+    """Link every verify-*.md row to its claim. several: may a claim have several rows (a plan)? By
+    default the run's own mode says, so every reader of the index settles it the same way."""
+    if several is None:
+        several = run_fields(run)["mode"] == "council-plan"
     issues = []
     by_id = {claim["id"]: claim for claim in claims}
     for path in sorted(run.glob("verify-*.md")):
