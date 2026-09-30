@@ -54,6 +54,10 @@ STATES = {  # key: (label, role, icon) — the role colours the badge, the words
     "stale": ("No recent activity", "warning", "ti-clock"),
     "unknown": ("Status unknown", "neutral", "ti-help-circle"),
 }
+VERDICT_NAMES = (("confirmed", "CONFIRMED", "confirmed"), ("refuted", "REFUTED", "refuted"),   # the closing card
+                 ("miscited", "MISCITED", "cited in the wrong place"), ("uncertain", "UNCERTAIN", "unsure"),
+                 ("conflict", "CONFLICT", "with conflicting verdicts"),
+                 ("not_sent", "UNVERIFIED", "not sent to a verifier"))
 SEAT_WORDS = {"running": "started", "done": "finished", "failed": "failed", "blocked": "reported it was blocked",
               "queued": "queued", "skipped": "skipped"}
 
@@ -527,12 +531,22 @@ def closing_of(snap, run_path, usage, check_text, attention):
     if claims["stale"]:
         verified = "Claim index out of date; verifier counts unknown."
         counts = None
+    elif claims.get("shipped"):
+        # Kept claims, and cut ones a verifier saw: an item the Chair set aside is no unverified finding.
+        # Each verdict by its own name — a wrong place or an unsure verdict is still a verdict.
+        shipped = dict(claims["shipped"])
+        counts = {key: shipped.pop(verdict, 0) for key, verdict, _ in VERDICT_NAMES}
+        counts["other"] = sum(shipped.values())
+        counts["self_checked"] = claims.get("self_checked", 0)
+        verified = ", ".join("{} {}".format(counts[key], words) for key, _, words in VERDICT_NAMES
+                             if counts[key] or key in ("confirmed", "refuted"))
+        if counts["other"]:
+            verified += ", {} with another verdict".format(counts["other"])
+        if counts["self_checked"]:
+            verified += " ({} checked by the Chair itself, not by an independent verifier)".format(
+                "all" if counts["self_checked"] == sum(claims["shipped"].values()) else counts["self_checked"])
     elif claims["total"]:
-        verdicts = claims["by_verdict"]
-        confirmed, refuted = verdicts.get("CONFIRMED", 0), verdicts.get("REFUTED", 0)
-        unverified = claims["total"] - confirmed - refuted
-        counts = {"confirmed": confirmed, "refuted": refuted, "unverified": unverified}
-        verified = "{} confirmed, {} refuted, {} not verified".format(confirmed, refuted, unverified)
+        verified, counts = "No kept claims to verify.", None
     else:
         verified, counts = "No claim verdicts recorded.", None
     return {"request": filed_request(run_path, run.get("ask", "")),

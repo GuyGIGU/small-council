@@ -292,9 +292,10 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     card, plain = status.widget(r), status.text(r)
     final = r["closing"]
     check("closing card: request, deliverable, verdicts, checks, spend and agent limit are in every view",
-          final["verdict_counts"] == {"confirmed": 2, "refuted": 1, "unverified": 1} and
+          final["verdict_counts"] == {"confirmed": 2, "refuted": 1, "miscited": 0, "uncertain": 0, "conflict": 0,
+                                      "not_sent": 1, "other": 0, "self_checked": 0} and
           "Find the unsafe" in final["request"] and "reviews/report-<final>.md" == final["deliverable"] and
-          "2 confirmed, 1 refuted, 1 not verified" in card and "1 passing" in card and
+          "2 confirmed, 1 refuted, 1 not sent to a verifier" in card and "1 passing" in card and
           "about 49% over estimate" in card and final["agent_runs"] == "1 (limit 10)" and
           all(word in plain for word in ("Asked:", "Delivered:", "Verified:", "Checks:", "Spend:",
                                         "Agent runs:", "Left for you:")) and
@@ -307,6 +308,42 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         "ask: .council/asks/filed.md", "ask: ../../outside.md"))
     check("closing card: unfiled paths never read arbitrary files", reading(closed)["closing"]["request"] ==
           "No filed request recorded.")
+
+    original_claims = read(closed / "claims.jsonl")             # put back below: the pet reads this run later
+
+    def closing_claims(rows):
+        write(closed / "verify-1.md", "# Verification\n")      # the index is current only while its sources exist
+        write(closed / "claims.jsonl", "".join(json.dumps(dict(row, source="synthesis.md:1")) + "\n" for row in rows))
+        return reading(closed)["closing"]
+
+    def link(verdict, own=False):
+        return [dict({"ref": "verify-1.md:4", "verdict": verdict, "evidence": "x"}, **({"self": True} if own else {}))]
+
+    # Run 1's card read "4 confirmed, 0 refuted, 3 not verified" though every shipped finding was confirmed:
+    # the 3 were items the Chair cut and never sent. A wrong place or an unsure verdict is a verdict too.
+    final = closing_claims(
+        [{"id": "1", "disposition": "kept", "verdict": "CONFIRMED", "verification": link("CONFIRMED")},
+         {"id": "2", "disposition": "kept", "verdict": "MISCITED", "verification": link("MISCITED")},
+         {"id": "3", "disposition": "kept", "verdict": "UNCERTAIN", "verification": link("UNCERTAIN")},
+         {"id": "C4", "disposition": "kept", "restored": True, "verdict": "CONFIRMED", "verification": link("CONFIRMED")},
+         {"id": "C1", "disposition": "cut", "verdict": "UNVERIFIED", "verification": []},
+         {"id": "C2", "disposition": "cut", "verdict": "UNVERIFIED", "verification": []},
+         {"id": "C3", "disposition": "cut", "verdict": "REFUTED", "verification": link("REFUTED")}])
+    check("closing card: counts kept claims and the cut ones a verifier saw, each verdict by its name",
+          final["verification"] == "2 confirmed, 1 refuted, 1 cited in the wrong place, 1 unsure" and
+          final["verdict_counts"]["not_sent"] == 0, final)
+    final = closing_claims(
+        [{"id": "1", "disposition": "kept", "verdict": "CONFIRMED", "verification": link("CONFIRMED", own=True)},
+         {"id": "2", "disposition": "kept", "verdict": "REFUTED", "verification": link("REFUTED", own=True)},
+         {"id": "3", "disposition": "kept", "verdict": "UNVERIFIED", "verification": []}])
+    check("closing card: a Solo run's own check is shown as the Chair's, and a kept claim with no verdict as not sent",
+          final["verification"] == "1 confirmed, 1 refuted, 1 not sent to a verifier (2 checked by the Chair itself, "
+          "not by an independent verifier)" and final["verdict_counts"]["self_checked"] == 2, final)
+    final = closing_claims([{"id": "C1", "disposition": "cut", "verdict": "UNVERIFIED", "verification": []}])
+    check("closing card: a run whose every item was cut says so, not 'not verified'",
+          final["verification"] == "No kept claims to verify." and final["verdict_counts"] is None, final)
+    (closed / "verify-1.md").unlink()
+    write(closed / "claims.jsonl", original_claims)
 
     r = reading(make_run(base, "paused", status_value="paused", seats=[v2("beck", "done", 50000, 1, 1)]))
     check("state: a paused run reads as interrupted ('Paused') with a note on how to go on",
@@ -1085,6 +1122,24 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("older record: its cost line says tokens aren't reliably recorded, and the agent count is a lower bound",
               "tokens not reliably recorded (1 older row(s)) · at least 2 agent run(s)" in read(old / "session-state.md"),
               read(old / "session-state.md"))
+
+        # A run the helper closed with a check still failing: the closing card must say so, twice — on the
+        # Checks line and under "Left for you" (the only closing-card fixture had every check passing).
+        red = base / "red-close"
+        red.mkdir()
+        subprocess.run([GIT, "init", "-q"], cwd=red, check=True)
+        write(red / ".council" / "council.config.md", "# Council config\n")
+        code, out, err = council(red, "run", "open", "council-review")
+        red_run = Path(out.strip())
+        council(red, "gate", "tests", "--", "true")
+        council(red, "gate", "lint", "--", "false")
+        code, out, err = council(red, "run", "close")
+        red_text = status.text(reading(red_run))
+        red_checks = [line for line in red_text.splitlines() if line.startswith("Checks:")]
+        check("closing card: a run closed through the helper with a failing check says '1 failing' and names it "
+              "under Left for you", code == 0 and red_checks == ["Checks: 1 passing, 1 failing"] and
+              "- The run ended with check lint failing." in red_text.split("Left for you:", 1)[-1],
+              (code, err[-300:], red_text))
 
 
         # --- the two readers: one helper-written run per basis, read by both (review finding 1) --------------
