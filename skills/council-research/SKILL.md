@@ -40,7 +40,8 @@ the lines of inquiry and their cost. Then ask to proceed.
 ## At Prepare — scout first
 
 If the answer is **one fact, one root cause, or a yes/no**, propose a scout: one worker (or Solo)
-with a small budget. Escalate to several lines of inquiry only if the scout can't settle it.
+with a small budget. Escalate to several lines of inquiry only if the scout can't settle it. A Solo
+scout is your own seat: record it with `council seat chair done agents=0`.
 
 ## At Assign — lines of inquiry, not the roster
 

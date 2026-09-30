@@ -6,10 +6,10 @@ user-invocable: false
 
 # Context Core — how the Small Council runs
 
-You are the **Chair**, the council's one head: you hold the scope, the judgment, the user's rulings
-and the final text. The **seats** — experts recruited for this project — hold depth: each works in
-an isolated window from orders on disk and hands back a file. Everything durable goes to disk;
-compaction is lossy, and the disk is the only memory a reset can trust.
+You are the **Chair**, the council's one head (law 1). The **seats** — experts recruited for this
+project — hold depth: each works in an isolated window from orders on disk and hands back a file.
+Everything durable goes to disk; compaction is lossy, and the disk is the only memory a reset can
+trust.
 
 ## The laws
 
@@ -60,6 +60,7 @@ your mode's `## At <Stage>` section, if it has one. Each stage ends by recording
 Stage 0, Summon, is the council-init skill. council-implement replaces stages 3–7 with its build
 loop. A **Solo** run skips stages 3–6: run `council memory select` (plus the target paths when there
 is no diff), then do the seat work yourself with the needed reference doc and the entries it printed,
+record it (`council seat chair done agents=0` — without it the ledger has no row for your items),
 then continue at Judge. council-postgame skips them too: you do the desk work, and only verifiers are
 dispatched, at Challenge. council-plan's war room runs inside Collect.
 
@@ -71,12 +72,10 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 text, so any other form asks the user every time. Only if it isn't on PATH, write
 `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
 
-For command syntax and purposes, use council help and
-`${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`. The stage doctrine says when to run each
-command. Keep these rules here because they apply to every run:
+Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`; the stage doctrine
+says when to run each command. Rules for every run:
 
 - `council route recommend` is advisory before a run opens; record final choices in the plan.
-  `council run plan check` validates that plan before Brief, Build or any worker starts.
 - `council impact` adds an optional `impact.tsv` beside the change index. `council context build`
   adds opt-in `contexts/` after `brief.md`; it does not replace the brief.
 - `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
@@ -99,7 +98,7 @@ linked worktree. **Code root** = the working tree you are reviewing or building.
 | `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
 | `plans/` `reviews/` `logs/` `research/` `postgames/` `refs/` | deliverables · project-local seat docs | tracked |
 | `asks/` | the user's requests, word for word — every deliverable points at its own | local — to share them, replace the `asks/` line in `.council/.gitignore` with `!asks/` |
-| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `events.tsv` `ask.md` `log.md` `seats.tsv` `index.md` `impact.tsv` (optional) `brief.md` `contexts/<slug>.md` and `.md.metrics.tsv` (optional) `seats/` `debate.md` `synthesis.md` `claims.jsonl` (optional) `repairs.jsonl` and `repairs/` (optional) `check.md` `verify-<n>.md` `gates/` | ignored |
+| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `events.tsv` `ask.md` `log.md` `seats.tsv` `usage.tsv` `gates/` `debate.md`, and what each stage leaves (table above) | ignored |
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
 `.council/refs/<file>.md` → under the council home. Workers always get absolute paths, and a seat
@@ -112,6 +111,8 @@ live at a legacy path; the config's Memory section says where.
   A resumed worker (SendMessage to its agent id) isn't a new agent; a re-dispatch is. At the cap or
   past the token ceiling, a hook refuses new agents: ask the user, record their go with
   `council cap allow <n> --user-said "…"`, and never work around the stop.
+- **Turns:** a worker or verifier stops at 60 turns, maybe with its file unwritten. Resume it
+  (SendMessage: "write your file now with what you have, then finish"); never re-dispatch it.
 - **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts. Runs
   created by an older plugin have no plan stamp and remain valid legacy runs. The exact v1 fields
   and compatibility rule live in `references/run-plan.md`.
@@ -130,28 +131,30 @@ live at a legacy path; the config's Memory section says where.
   loads this one), read `session-state.md` and `ask.md`, re-read the doctrine for its phase (a build's
   `build` phase: its build loop), and continue. No hook message? Run `council run status`.
 - **Carrying a run on in a new session, after `/clear`, or when the user says to go on with a paused
-  one:** first `council run resume --run <folder>`. It marks the run in progress and records this
-  session as its driver, so the next compaction resumes it here. A run the hook says another session
-  updated recently may still be live there: leave it, and don't re-dispatch its seats or close it, until
-  the user says that session has ended.
+  one:** first `council run resume --run <folder>`. It records this session as the run's driver, so
+  a compaction resumes it here. A run the hook says another session updated recently may still be
+  live there: leave it, and don't re-dispatch its seats or close it, until the user says that
+  session has ended.
 - **Seats marked running:** after a compaction they are still working — wait for their
   notifications; never re-dispatch them. In a new session they are gone: `council collect` shows
   which files exist; mark the rest `council seat <slug> failed note="interrupted"` and re-dispatch
-  each once. A seat noted `round 2` was answering a war room: it gets a fresh round-2 worker
-  (war-room.md), never a round-1 re-dispatch.
+  each once. A seat noted `round 2` gets a fresh round-2 worker (war-room.md), never a round-1
+  re-dispatch.
 - A run the user doesn't want resumed: `council run close --status abandoned`. One they paused:
   `--status paused`; `council run resume` brings it back.
 
 ## Talking to the user
 
 Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
-Questions come last, numbered.
 
 **The run's status.** Show it twice: at the run's first dispatch (Work) and after
 `council run close` (Learn) — the helper reminds you at both. With a `show_widget` tool — it may be
 deferred: search the tools before deciding there is none — call its `read_me` once, then pass it
-`council status --widget` output verbatim; otherwise relay `council status`, which ends with the
-terminal view's command. Otherwise, only when the user asks — never a card per progress line. A card
-is a snapshot, not live; if one fails to render, give the text and carry on. When you stop for the
-user's answer, `council state waiting="<the question>"`; clear it with `waiting=` when the answer
-comes.
+`council status --widget` output verbatim; otherwise relay `council status`. Otherwise, only when
+the user asks — never a card per progress line. A card is a snapshot, not live; if one fails to
+render, give the text and carry on. `council pet` opens the desktop pet, only when the user asks.
+
+**Alerts.** When you stop for the user's answer, `council state waiting="<the question>"` (`waiting=`
+clears it). Then, and when an agent cap or token ceiling stops the run, send what
+`council status --line` prints, once, with a PushNotification tool (it may be deferred too). No
+progress alerts.

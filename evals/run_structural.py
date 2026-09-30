@@ -111,6 +111,13 @@ check("09-deliver: a run that proved nothing by machine never reads as a pass (w
       never_a_pass(doctrine["09-deliver.md"], "proved nothing by machine"))
 check("kernel: agent cap of 10, verifiers included", re.search(r"\b10\b[^.]*verifiers included", flat(core)) is not None)
 check("kernel: approval threshold from the config", "approve without asking" in core)
+# Solo, build and post-game runs never read 05-work.md, so the steps every run needs sit in the kernel
+# (a real Solo run skipped the Chair's seat record and wrote no ledger row for its findings).
+check("kernel: the steps every run needs — the Chair's own seat record, the owner alert after waiting=, "
+      "the pet only when asked, and a resume (never a re-dispatch) at an agent's turn limit",
+      "`council seat chair done agents=0`" in core and "council status --line" in flat(core)
+      and "PushNotification" in core and "`council pet`" in core and "60 turns" in core
+      and "never re-dispatch it" in core)
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
 check("kernel: resuming a run records this session as its driver (council run resume)",
       "council run resume" in core[core.find("## Resume"):])
@@ -403,6 +410,16 @@ check("worker: rulings capped, lanes kept", "## Needs a ruling" in worker and "#
 check("worker: tells it to return 'BLOCKED: <reason>' rather than proceed blind (wording)",
       "Never proceed blind" in worker and "`BLOCKED: <reason>`" in worker)
 check("verifier: states the 16 KB file limit the seat check enforces", "16 KB" in verifier)
+check("worker and verifier: each is told its 60-turn limit; the verifier writes its file first and adds a row "
+      "per item as it settles it (a real verifier used ~414k tokens and left nothing)",
+      "60 turns" in worker and "60 turns" in verifier and "## Write your file first" in verifier
+      and verifier.find("## Write your file first") < verifier.find("## Verifying a claim"))
+check("verifier: scratch files stay out of the run folder, nothing runs in the background, and its answer is "
+      "final and one line",
+      all(p in flat(verifier) for p in ("never in the project or the run folder", "Nothing in the background",
+                                        "never rewrite your file", "nothing before or after it")))
+check("05-work: says the seat-check hook does not cover a Workflow's agents, and that collect checks their files",
+      "workflow-subagent" in doctrine["05-work.md"] and "every file in `seats/`" in flat(doctrine["05-work.md"]))
 check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"]))
 check("verifier: change verdicts", all(v in verifier for v in ["OK", "INCOMPLETE", "REGRESSION", "SCOPE-CREEP", "CANNOT VERIFY"]))
 check("verifier: can open a research claim's URL", re.search(r"^tools:.*\bWebFetch\b", verifier, re.MULTILINE) is not None)

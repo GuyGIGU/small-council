@@ -2,8 +2,6 @@
 
 If `council status` reports it needs optional Python 3.8+, relay `council run status` instead:
 it gives the run's phase and cost line without Python.
-When the user asks to see the pet, run `council pet`: it opens the desktop pet and returns at once
-(`council pet --stop` closes it). Never open it unasked.
 
 The seats work in parallel, each in its own window. You dispatch, then wait.
 
@@ -54,8 +52,13 @@ Write <abs run>/seats/<slug>.md, then return one line.
 - **On each notification:** `council seat <slug> done tokens=<the notification's figure, as given>`,
   or `failed note="…"` (with its tokens if it reported any). Once per finished agent run; a resumed
   worker's later figure is its running total, so record it as given. A Workflow's notification:
-  `agents=<agent_count> tokens=<subagent_tokens>`. A seat you did yourself: `done agents=0`. It prints a progress line — relay it to the user as one short line: "3 of 5
-  seats in — Security, Structure, Tests · ~210k tokens so far".
+  `agents=<agent_count> tokens=<subagent_tokens>`. Seat work you did yourself:
+  `council seat chair done agents=0`. It prints a progress line — relay it to the user as one short
+  line: "3 of 5 seats in — Security, Structure, Tests · ~210k tokens so far".
+- **A worker that stopped at its turn limit** (60 turns; the notification says so) may have left its
+  file unwritten. Resume it with SendMessage to its agent id — "write your file now with what you
+  have, then finish" — and record the notification that follows. Never re-dispatch it for this: a
+  new agent pays for the whole read again.
 - **The agent cap.** If `council seat` says the run has used its cap, start no more agents — no
   re-dispatch, diagnosis worker or extra verifier — until the user says go. The next agent will be
   refused until their go is recorded: `council cap allow <n> --user-said "<their words>"`. If it says
@@ -63,15 +66,19 @@ Write <abs run>/seats/<slug>.md, then return one line.
 - **The token ceiling.** If `council seat` says the run passed the owner's token ceiling, start
   nothing more until the user says go. Report the known usage and ceiling in one short line. The
   next agent will be refused until their go is recorded with `council cap allow`.
-- **Notify when the owner is needed.** Right after setting `council state waiting="…"`, or when an
-  agent cap or token ceiling stops further work, run `council status --line`. If it prints a line
-  and `PushNotification` is available, send that line once with the tool. Never notify for routine
-  progress. A project can disable these alerts with `- notifications: off` in
-  `.council/council.config.md`; then `--line` prints nothing.
+- **Notify when the owner is needed.** Right after setting `council state waiting="…"` (the helper
+  reminds you), or when an agent cap or token ceiling stops further work, run
+  `council status --line`. If it prints a line, send it once with a `PushNotification` tool. It may
+  be a deferred tool: search the tools for it before deciding there is none. Never notify for
+  routine progress. A project can disable these alerts with `- notifications: off` in
+  `.council/council.config.md`; then `--line` prints nothing and the helper stays quiet.
 - **No notification comes from a worker that died with its session.** After a compaction, keep
   waiting. In a new session, follow Resume in context-core.
 - **Whatever dispatches the workers** — the Agent tool, a Workflow script, background agents — the
-  file contract holds: one file per seat in `seats/`.
+  file contract holds: one file per seat in `seats/`. The seat-check hook covers only
+  `council-worker` and `council-verifier` agents, never a Workflow's (their type is
+  `workflow-subagent`), so give a Workflow's agents the worker's file rules in their prompt;
+  `council collect` then checks every file in `seats/`, named in the brief or not.
 
 ## Done when
 
