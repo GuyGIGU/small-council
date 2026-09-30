@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- The permission rules council-init offers now cover nine more helper commands the council runs (status, evidence, context, repair, impact, route, history, outcomes, version), so they stop asking each time; `council gate`, `changed`, `cap`, `tune` and `correct` still ask. A council-init refresh offers the new rules to projects already set up.
+
 ## [0.17.0] — 2026-09-29
 
 **TL;DR:** memory rules wrapped over several lines now reach seats whole; mapping and survey seats can

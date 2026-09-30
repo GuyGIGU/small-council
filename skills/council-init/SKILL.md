@@ -201,7 +201,10 @@ Adjust on request. On confirmation, write:
      "Bash(council run:*)", "Bash(council state:*)", "Bash(council seat:*)", "Bash(council index:*)",
      "Bash(council collect:*)", "Bash(council check:*)", "Bash(council ask:*)", "Bash(council prior:*)",
      "Bash(council memory:*)", "Bash(council ledger:*)", "Bash(council gates:*)", "Bash(council map:*)",
-     "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)"
+     "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)",
+     "Bash(council status:*)", "Bash(council evidence:*)", "Bash(council context:*)",
+     "Bash(council repair:*)", "Bash(council impact:*)", "Bash(council route:*)",
+     "Bash(council history:*)", "Bash(council outcomes:*)", "Bash(council version:*)"
    ] } }
    ```
 
@@ -216,8 +219,15 @@ Adjust on request. On confirmation, write:
    a gate runs whatever command it names. Don't pick 'don't ask again' for `council gate` or
    `council changed`."* Never widen this list to `council *`.
 
+   **`council cap` stays off too**: `council cap allow` records the user's go past the agent stop,
+   so it must ask every time. So do `council tune` (`tune apply` changes the config) and
+   `council correct`.
+
    At a **refresh**, read `.claude/settings.local.json` first: if it holds `Bash(council *)` or a
-   `council gate` rule from an earlier version, offer to replace it with this list, and say why.
+   `council gate` rule from an earlier version, offer to replace it with this list, and say why. If
+   it holds an earlier, shorter version of this list, offer to add the rules it lacks: name them, use
+   the form the file already uses, leave every other rule in the file as it is, and write only on a
+   yes.
 3. **Nothing else to install.** The plugin's hooks already orient council-enabled sessions, flag open
    runs, restore the method after a compaction, and check every seat file before a worker can finish.
 
@@ -257,6 +267,8 @@ council":
   preferences, and show the diff.
 - **Legacy run folders** (`.council/<mode>-output/`) stay where they are as history. An old run still
   marked open → close it on the user's say-so: `council run close --run <dir> --status abandoned`.
+- **Permission rules:** bring the council rules in `.claude/settings.local.json` up to Phase F's
+  list, as Phase F step 2 says — on a yes.
 - **Refresh the map** if `council map status` shows it far behind.
 
 ## Output
