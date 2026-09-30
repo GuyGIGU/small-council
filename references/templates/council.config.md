@@ -46,7 +46,7 @@ or pattern-matching?"). Not a seat.
 ## Gates
 | Gate | Command | Run at | Mandatory | Checked | Probe | Needs | Side effects |
 |---|---|---|---|---|---|---|---|
-| tests | `<command>` | grounding, verify | yes | ✓ <date> | `<its fast dry-run, e.g. --collect-only>` | <tools, env vars, services> | none |
+| tests | `<command>` | grounding, verify | yes | ✓ <date> | `<its fast dry-run, e.g. --collect-only>` · broken: fail, exit <n> | <tools, env vars, services> | none |
 | lint | `<command>` | verify | no | ✓ <date> | `<command> --version` | — | none |
 | build | `<command>` | verify | yes | ✗ <date>: <why it couldn't run here> | `<probe>` | <an SDK, a device> | writes the tree |
 
@@ -54,7 +54,9 @@ or pattern-matching?"). Not a seat.
      them by exit code. Never put `| tail`, `| head` or `| grep` in a gate command.
      Commands run under bash (Git Bash on Windows), as written: bash drops a \ outside quotes, so
      write paths with / or quote them (cmd /c ".\run.bat").
-     Probe: the exact dry-run council-init ran. Needs: tools, env vars, credentials, hardware.
+     Probe: the exact dry-run council-init ran — for a mandatory gate, also its run with the tool
+     deliberately broken, which must fail (a gate that passes without its tool fakes a green).
+     Needs: tools, env vars, credentials, hardware.
      Run at: grounding · verify · both · manual (by name only). Mandatory: yes · no.
      Checked: ✓ <date> · ✗ <date>: <why it can't run here> · ✗ not probed: <why> (init didn't dry-run it).
      The helper names any other word in these three cells rather than guessing what it means.

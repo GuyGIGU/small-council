@@ -111,6 +111,17 @@ WORKTREES
   printf '%s/.council\n' "$main"
 }
 
+# The Edit permission rule for the council home's real path, as Claude Code matches it: an absolute path
+# after //, and a Windows drive as /c/… (lower-case, no colon) — a //C:/… rule never matches anything.
+home_rule() {
+  local h drive
+  h="$(council_home)"
+  case "$h" in
+    [A-Za-z]:/*) drive="$(printf '%s' "${h%%:*}" | tr '[:upper:]' '[:lower:]')"; h="/$drive${h#?:}" ;;
+  esac
+  printf 'Edit(/%s/**)\n' "$h"
+}
+
 # The working tree a run's code-root is compared with.
 this_tree() { local t; t="$(council_toplevel)"; [ -n "$t" ] || t="$(here)"; printf '%s' "$t"; }
 
@@ -236,15 +247,23 @@ resolve_run() {
 }
 
 # A --run value as a run folder: backslashes read as /, trailing separators dropped, a relative path
-# made absolute (commands may change folder), a bare name looked up under runs/.
+# made absolute (commands may change folder), a bare name looked up under runs/. A relative
+# .council/runs/<name> that isn't there — written from the main checkout, used in a linked worktree,
+# whose council home is the main checkout's — is that name under this council home's runs/.
 run_path() {
-  local bs='\' r
+  local bs='\' r home
   r="${1//"$bs"//}"
   while [ "${r%/}" != "$r" ] && [ -n "${r%/}" ]; do r="${r%/}"; done
+  home="$(council_home)"
   if [ -f "$r/session-state.md" ]; then
     case "$r" in /*|[A-Za-z]:/*) ;; *) r="$(cd "$r" 2>/dev/null && here)" || r="$1" ;; esac
-  elif [ -f "$(council_home)/runs/$r/session-state.md" ]; then
-    r="$(council_home)/runs/$r"
+  elif [ -f "$home/runs/$r/session-state.md" ]; then
+    r="$home/runs/$r"
+  else
+    case "$r" in
+      /*|[A-Za-z]:/*) ;;
+      runs/*|*/runs/*) [ ! -f "$home/runs/${r##*/}/session-state.md" ] || r="$home/runs/${r##*/}" ;;
+    esac
   fi
   printf '%s' "$r"
 }
@@ -449,7 +468,7 @@ cmd_run_events() {
 }
 
 cmd_run_open() {
-  local mode="${1:-}" short home top ts dir n existing paused session template cap
+  local mode="${1:-}" short home top ts dir n existing paused session template cap nxt="$COUNCIL_NEXT_AT_OPEN"
   case "$mode" in
     council-review|council-plan|council-implement|council-research|council-postgame|council-init|test-architect|context-core) ;;
     '') die "usage: council run open <mode> [--alongside] [--session=ID]   (the skill name, e.g. council-review)" ;;
@@ -477,6 +496,14 @@ cmd_run_open() {
   while [ -e "$dir" ]; do dir="$home/runs/$ts-$short-$n"; n=$((n + 1)); done
   mkdir -p "$dir/seats" "$dir/gates" 2>/dev/null || die "cannot create $dir"
   { : > "$dir/.write-check"; } 2>/dev/null && rm -f "$dir/.write-check" || die "cannot write in $dir"
+  # Setup follows its own phases, not the stages, and is the Chair's own work: its run opens with a plan
+  # already valid for that (run-plan-init.tsv) and a next step of its own, so nothing waits on Convene.
+  template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan.tsv"
+  if [ "$mode" = council-init ]; then
+    template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan-init.tsv"
+    nxt="follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
+  fi
+  [ -f "$template" ] || die "run plan template is missing: $template"
   cat > "$dir/session-state.md" <<EOF
 status: in-progress
 mode: $mode
@@ -490,11 +517,9 @@ events-schema: 1
 size:
 base:
 deliverable:
-next: $COUNCIL_NEXT_AT_OPEN
+next: $nxt
 ## Decisions so far
 EOF
-  template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan.tsv"
-  [ -f "$template" ] || die "run plan template is missing: $template"
   cap="$(configured_agent_cap)"
   RUN_NAME="${dir##*/}" RUN_MODE="$mode" AGENT_CAP="$cap" awk '
     { gsub(/\{\{RUN\}\}/, ENVIRON["RUN_NAME"]); gsub(/\{\{MODE\}\}/, ENVIRON["RUN_MODE"]); gsub(/\{\{AGENT_CAP\}\}/, ENVIRON["AGENT_CAP"]); print }
@@ -3556,7 +3581,7 @@ GATES
         || finding WARN "the Gates table has no Side effects column (an older layout)" "a council-init refresh adds Probe, Needs and Side effects — until then council gate --all runs none of its gates unasked"
     fi
   fi
-  local stale_runs rsess
+  local stale_runs rsess rclosed=""
   stale_runs="$NL$(find "$home/runs" -mindepth 2 -maxdepth 2 -name session-state.md -mtime +2 2>/dev/null)$NL"   # one pass
   while IFS="$TAB" read -r dir mode phase croot upd status actual rsess; do
     [ -n "$dir" ] || continue
@@ -3567,10 +3592,14 @@ GATES
   done <<RUNS
 $(list_runs "$home" 1000000 open)
 RUNS
+  # A closed run's plan is its record of what was decided then: today's settings (a lower agent cap) never
+  # judge it, and nobody should rewrite it after the fact. Only open runs' plans are checked.
   while IFS= read -r stfile; do
     [ -n "$stfile" ] || continue
     dir="${stfile%/session-state.md}"; phase="$(field phase "$stfile")"; schema="$(field plan-schema "$stfile")"
-    if [ -f "$dir/run-plan.tsv" ]; then
+    rclosed=""; case "$(field status "$stfile")" in complete*|abandoned*) rclosed=1 ;; esac
+    if [ -n "$rclosed" ]; then :
+    elif [ -f "$dir/run-plan.tsv" ]; then
       if plan_result="$(QUIET=1 run_plan_validate "$dir" "$dir/run-plan.tsv" 2>&1)"; then :; else
         plan_result="$(printf '%s\n' "$plan_result" | tail -n 1)"
         case "$phase" in
@@ -5588,6 +5617,8 @@ usage() {
 council — the Small Council's helper (bash + git)
 
   council home                           where the council lives (.council/ of the main checkout)
+  council home rule                      the Edit permission rule for that folder, in the form Claude Code
+                                         matches (on Windows the drive as //c/…, never //C:/…)
   council run open <mode> [--alongside] [--session=ID]
                                          open a run for a mode, e.g. council-review; prints its folder
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
@@ -5762,7 +5793,12 @@ main() {
   [ $# -gt 0 ] || { [ -z "$FLAGS" ] || die "a flag needs a command — see: council help"; usage; exit 0; }
   cmd="$1"; shift
   case "$cmd" in
-    home)    takes_flags home; no_words home ${1+"$@"}; council_home ;;
+    home)    takes_flags home
+             case "${1:-}" in
+               '')   council_home ;;
+               rule) shift; no_words "home rule" ${1+"$@"}; home_rule ;;
+               *)    die "usage: council home [rule]" ;;
+             esac ;;
     run)
       sub="${1:-}"; [ $# -eq 0 ] || shift
       case "$sub" in

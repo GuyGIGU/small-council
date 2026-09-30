@@ -83,12 +83,20 @@ build/compile, and any e2e or regression harness.
   open through Phase D (don't open a second one). Bash drops a `\` outside quotes: write paths with
   `/`, or quote them. Judge a gate by what `council gate` reports, not by your own shell: a `cmd /c`
   run straight from a Bash tool exits 0 without running anything.
+- **Its run plan opens ready for setup:** `run-plan.tsv` is solo, the Chair only, self-verified, each
+  default saying so in its reason. Change a value only where this repo differs, with the reason,
+  then `council run plan check`.
 - **Mark each one** ✓ runnable, or ✗ with the reason. A gate that can't run here is worse than no
   gate, because it fakes a green.
 - **Never probe** a gate that deploys, spends money, flashes hardware or needs credentials: ask
   first. If it stays unprobed, its Checked cell reads `✗ not probed: <why>`, and `council gate --all`
   skips it.
 - **Mark which gates are mandatory.**
+- **Prove each mandatory gate can fail.** One that only greps its tool's output, or ends in
+  `|| true`, passes with the tool missing — green for ever. Dry-run its own command once more with
+  the tool broken (name misspelt, path pointing nowhere):
+  `council gate probe-<name>-broken -- '<broken command>'` must fail. Record both in its Probe cell
+  (`` `<fast form>` · broken: fail, exit <n> ``); a gate that still passes is ✗ until fixed.
 - **Record more than the command** — the config's Gates columns: the **Probe** (the exact dry-run
   you ran), what it **Needs** (tools, env vars, credentials, hardware) and its **Side effects**
   (none, writes the tree, network, cost, hardware, deploy, credentials). `council gate --all` never runs a gate
@@ -135,16 +143,19 @@ Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`
   - hot spots, from git history (`git log --since=12.months --name-only --format= | sort | uniq -c | sort -rn | head`);
   - the vocabulary;
   - the conventions new code must match.
-- **A small repo** → do it yourself.
+- **A small repo** → do it yourself, then `council run close`.
 - **A large repo** → a mapping squad of at most 4 workers, run like any council run:
   1. The run you opened for Phase C's dry-runs (`council run open council-init` if none is open yet —
      it creates `.council/` and its `.gitignore`). One run, not two.
-  2. Write a brief whose `## Seats` has one block per top-level area: `ref: none`,
+  2. Make its plan a squad: `size` squad, and one mapping worker per area from the rows at the foot
+     of `run-plan.tsv`, their estimate added to `estimated-tokens`; then `council run plan check`.
+     The helper starts no worker the plan doesn't select.
+  3. Write a brief whose `## Seats` has one block per top-level area: `ref: none`,
      `out: seats/<area>.md`, `cap: 8`, the area's paths as the slice. Format: "an `## Index` of at
      most 8 map rows, each `<n> · map · <section> · <path> · <one-line fact>`, then the map template's
      sections for your area, a path on every row".
-  3. Dispatch them following stage 5, then run `council collect`.
-  4. Merge the results into one map of at most ~250 lines, then `council run close`.
+  4. Dispatch them following stage 5, then run `council collect`.
+  5. Merge the results into one map of at most ~250 lines, then `council run close`.
 
 ## Phase E — Propose, then write
 
@@ -211,9 +222,10 @@ Adjust on request. On confirmation, write:
    ] } }
    ```
 
-   Edit rules cover Write too. Add the council home's real path as well — `Edit(//<what `council home`
-   printed>/**)` — because the home belongs to the **main** checkout, so the relative rule misses it
-   from a linked worktree or a subdirectory.
+   Edit rules cover Write too. Add the council home's real path as well, exactly as `council home
+   rule` prints it — the home belongs to the **main** checkout, so the relative rule misses it from a
+   linked worktree or a subdirectory. On Windows that is `Edit(//c/Users/…/.council/**)`: Claude
+   Code matches the drive lower-case with no colon, so `//C:/Users/…` never matches.
 
    **These rules match the command text.** They cover `council run status` typed plainly and nothing
    else: a call through a shell variable, an alias or `bash <path>/bin/council` matches none of them
@@ -232,7 +244,8 @@ Adjust on request. On confirmation, write:
    `council correct`.
 
    At a **refresh**, read `.claude/settings.local.json` first: if it holds `Bash(council *)` or a
-   `council gate` rule from an earlier version, offer to replace it with this list, and say why. If
+   `council gate` rule from an earlier version, offer to replace it with this list, and say why; an
+   `Edit(//C:/…)` rule never matched, so offer the one `council home rule` prints in its place. If
    it holds an earlier, shorter version of this list, offer to add the rules it lacks: name them, use
    the form the file already uses, leave every other rule in the file as it is, and write only on a
    yes.

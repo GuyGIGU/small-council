@@ -68,11 +68,17 @@ resized or given a higher cap before Brief or dispatch.
 The remaining placeholders make the starter deliberately invalid. Convene fills the run-level
 decisions; Assign records all considered seats and runs `council run plan check`.
 
+A `council-init` run is the exception. Setup follows its own phases and is the Chair's own work, so it
+opens from `templates/run-plan-init.tsv`, already valid: solo, the Chair only, self-verified, each
+default saying so in its reason. A large repo's mapping squad makes it a squad, one mapping worker
+per area (council-init Phase D).
+
 The helper refuses to enter Brief, Build, or a later standard stage while the plan is invalid. It also
 refuses to queue or start a worker not marked selected. `council run plan show` renders the checked
-contract in plain language for briefing and review. `council doctor` checks plans too; an incomplete
-plan is expected during Convene, Prepare, or Assign and is a warning there, but invalid after that
-is an error.
+contract in plain language for briefing and review. `council doctor` checks the plans of open runs
+too; an incomplete plan is expected during Convene, Prepare, or Assign and is a warning there, but
+invalid after that is an error. A closed run's plan is the record of what was decided then: doctor
+never judges it by today's settings, and nobody rewrites it after the fact.
 
 When routing changes, edit the plan, state the reason, and check it again before acting on the new
 decision. The file is the current contract, not an event history; `log.md` remains the history.

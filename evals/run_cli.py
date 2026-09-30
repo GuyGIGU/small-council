@@ -333,6 +333,22 @@ def runs_open(tmp):
     os.makedirs(plain)
     code, out, _ = council(plain, "home")
     check("home: outside git it is ./.council", code == 0 and slash(out).lower().endswith("/plain/.council"), out)
+    # The permission rule for the home's real path, in the form Claude Code matches: //<absolute path>/**,
+    # and a Windows drive as /c/… — a rule written //C:/… (what `council home` prints there) never matches.
+    _, home_out, _ = council(repo, "home")
+    code, out, _ = council(repo, "home", "rule")
+    want = slash(home_out)
+    if re.match(r"^[A-Za-z]:/", want):
+        want = "/" + want[0].lower() + want[2:]
+    check("home rule: prints the Edit rule for the council home's real path",
+          code == 0 and out.strip() == "Edit(/" + want + "/**)" and ":" not in out.strip()[5:], out)
+    code, out, err = council(repo, "home", "rule", "x")
+    check("home rule: refuses a word it doesn't take", code == 2 and "doesn't take" in err, out + err)
+    p = subprocess.run([BASH, "-c", 'H="$2"; source "$1"; council_home() { printf "%s\\n" "$H"; }; home_rule', "council",
+                        CLI.replace("\\", "/"), "C:/Users/Me/My Project/.council"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", env=GIT_ENV)
+    check("home rule: a Windows home is written with the drive lower-case and no colon, blanks kept",
+          p.stdout.strip() == "Edit(//c/Users/Me/My Project/.council/**)", p.stdout + p.stderr)
 
     # Opening a run
     code, out, err = council(repo, "run", "open", "nonsense")
@@ -2480,6 +2496,66 @@ def runs_worktrees_close_and_find(tmp):
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
 
+@part("runs")
+def runs_init_plan(tmp):
+    """A setup run opens with a plan that fits setup; doctor judges only open runs' plans."""
+    ip = new_repo(tmp, "initplan")
+    write(os.path.join(ip, "a.py"), "x = 1\n")
+    git(ip, "add", "-A")
+    git(ip, "commit", "-q", "-m", "init")
+    _, irun, _ = council(ip, "run", "open", "council-init")
+    irun = irun.strip()
+    code, out, err = council(ip, "run", "plan", "check")
+    check("run open council-init: its plan is valid as it opens — solo, the Chair only, self-verified",
+          code == 0 and "plan: valid · solo · 1 selected, 0 skipped · 0 agent run(s)" in out, out + err)
+    plan = read(os.path.join(irun, "run-plan.tsv"))
+    rows = {tuple(x.split("\t")[:3]): x.split("\t") for x in plan.splitlines() if x and not x.startswith("#")}
+    chosen = [("run", "run", "size"), ("assessment", "run", "risk"), ("assessment", "run", "complexity"),
+              ("assessment", "run", "uncertainty"), ("budget", "run", "estimated-tokens"), ("verification", "run", "level")]
+    check("run open council-init: every value the helper chose says in its reason that it is setup's default",
+          all(len(rows.get(k, [])) == 5 and rows[k][4].startswith("setup default:") for k in chosen)
+          and rows.get(("run", "run", "id"), ["", "", "", ""])[3] == os.path.basename(irun), plan)
+    st = read(os.path.join(irun, "session-state.md"))
+    check("run open council-init: its next step is setup's, not Convene's",
+          "next: follow council-init" in st and "size the run and ask" not in st, st)
+    # A large repo's mapping squad, as council-init Phase D says: the worker rows at the plan's foot
+    mapping = [x[2:].replace("<area>", "src").replace("<the area's paths>", "src/**")
+               for x in plan.splitlines() if x.startswith("# ") and "\tmap-<area>\t" in x]
+    squad = re.sub(r"^run\trun\tsize\tsolo\t.*$", "run\trun\tsize\tsquad\ta large repo: one mapping worker per area",
+                   plan, flags=re.MULTILINE).replace("\testimated-tokens\t0\t", "\testimated-tokens\t80000\t")
+    write(os.path.join(irun, "run-plan.tsv"), squad + "\n".join(mapping) + "\n")
+    code, out, err = council(ip, "run", "plan", "check")
+    check("council-init plan: the mapping rows at its foot make a valid squad",
+          code == 0 and "squad · 2 selected" in out, out + err + "\n".join(mapping))
+    code, out, err = council(ip, "seat", "map-src", "running", "agent=a1")
+    code2, out2, err2 = council(ip, "state", "phase=work")
+    check("council-init: a mapping worker is recorded and the run moves on, with no plan error",
+          code == 0 and code2 == 0 and "ERROR" not in out + err + out2 + err2, out + err + out2 + err2)
+    council(ip, "seat", "map-src", "done", "agent=a1", "tokens=30000")
+    council(ip, "run", "close")
+
+    # Doctor judges only open runs' plans: a closed run's plan is the record of what was decided then
+    write(os.path.join(ip, ".council", "council.config.md"), "# Council config — initplan\n\n## Run preferences\n- agent cap: 10\n")
+    _, done, _ = council(ip, "run", "open", "council-review")
+    done = done.strip()
+    write_plan(done, selected=("hunt", "beck"))
+    council(ip, "state", "phase=learn")
+    council(ip, "run", "close")
+    _, left, _ = council(ip, "run", "open", "council-review")
+    left = left.strip()
+    council(ip, "run", "close", "--status", "abandoned")
+    write(os.path.join(ip, ".council", "council.config.md"), "# Council config — initplan\n\n## Run preferences\n- agent cap: 2\n")
+    _, live, _ = council(ip, "run", "open", "council-review")
+    live = live.strip()
+    write_plan(live, selected=("hunt", "beck"))
+    write(os.path.join(live, "session-state.md"), read(os.path.join(live, "session-state.md")).replace("phase: convene", "phase: work"))
+    code, out, _ = council(ip, "doctor")
+    named = [os.path.basename(r) for r in (irun, done, left) if os.path.basename(r) in out]
+    check("doctor: never judges a closed run's plan — setup's, an unfinished abandoned one, or one made under a higher agent cap",
+          not named, out)
+    check("doctor: an open run's plan past Assign is still checked against today's agent cap",
+          f"run {os.path.basename(live)} has an invalid run plan" in out, out)
+
 @part("gates")
 def resume(tmp):
     # Carrying on with a run: council run resume
@@ -2520,6 +2596,24 @@ def resume(tmp):
     check("run resume --run: resumes the named run only",
           code == 0 and "status: in-progress" in read(os.path.join(p1.strip(), "session-state.md"))
           and "status: paused" in read(os.path.join(p2.strip(), "session-state.md")), out + err)
+    # From a linked worktree, the run's usual relative path (.council/runs/<name>, written from the main
+    # checkout) names the same run: the worktree's council home is the main checkout's.
+    write(os.path.join(rs, "a.txt"), "x\n")
+    git(rs, "add", "a.txt")
+    git(rs, "commit", "-q", "-m", "init")
+    rwt = os.path.join(tmp, "resume-wt")
+    git(rs, "worktree", "add", "-q", "-b", "resume-wt", rwt)
+    council(rs, "run", "close", "--run", os.path.basename(p1.strip()), "--status", "paused")
+    p2name = os.path.basename(p2.strip())
+    code, out, err = council(rwt, "run", "resume", "--run", ".council/runs/" + p2name)
+    check("run resume --run .council/runs/<name>: works from a linked worktree too",
+          code == 0 and f"resumed {p2name}" in out and "status: in-progress" in read(os.path.join(p2.strip(), "session-state.md")),
+          out + err)
+    code, out, err = council(rwt, "state", "--run", ".council\\runs\\" + os.path.basename(p1.strip()) + "\\")
+    check("--run .council\\runs\\<name>\\ (backslashes) from a linked worktree names the same run",
+          code == 0 and "mode: council-plan" in out, out + err)
+    code, _, err = council(rwt, "state", "--run", ".council/runs/2020-01-01-000000-review")
+    check("--run: a relative path that names no run is still refused", code == 2 and "not a run folder" in err, err)
 
 @part("runs")
 def runs_fingerprint_and_ledger(tmp):
