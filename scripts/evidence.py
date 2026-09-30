@@ -327,13 +327,13 @@ def table_check(path):
     stops): what the index could not read, the verifier fixes now. Rows are matched to the synthesis
     ids only in a mode that indexes claims; build and post-game tables are checked for shape."""
     run = path.parent
-    rows, issues = verdict_rows(path.name, read_file(path))
-    if not rows and not issues:
-        return ["{}: no verdict table headed '{}'".format(path.name, TABLE_HEAD)]
     fields = run_fields(run)
+    rows, issues = verdict_rows(path.name, read_file(path))
     if fields["mode"] not in CLAIM_MODES or not (run / "synthesis.md").is_file():
         return issues + ["{}:{}: expected four columns: {}".format(path.name, n, TABLE_HEAD)
                          for n, cells in rows if len(cells) < 4 and claim_id_of(cells[0]) not in ("", "-")]
+    if not rows and not issues:
+        return ["{}: no verdict table headed '{}'".format(path.name, TABLE_HEAD)]
     claims, _ = synthesis(run)         # the synthesis's own problems are the Chair's, not the verifier's
     issues = read_links(path, read_file(path), {claim["id"]: claim for claim in claims})
     return issues + settle(claims, fields["mode"] == "council-plan")
