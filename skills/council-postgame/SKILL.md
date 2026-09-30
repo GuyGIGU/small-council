@@ -214,7 +214,7 @@ same request file.
 - A lesson about the council's own process is scoped to a mode — `Scope: council-plan`, for example
   "plans that touch migrations include a rollback task" — so only that mode's runs read it.
 - A part the user ruled out is proposed as a Decision, in their words.
-- Then close the run: `council run close`.
+- Then close the run: `council run close`, and show its closing card (Learn's Close, step 2).
 
 ## Notes
 

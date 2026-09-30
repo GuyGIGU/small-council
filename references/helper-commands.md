@@ -3,20 +3,25 @@
 The Chair uses `council` for mechanical steps. Run council help for exact syntax;
 the stage doctrine says when each command belongs in a run.
 
+Call it as a plain `council <command>` — never through a shell variable or alias, and never as
+`bash <path>/bin/council` while `command -v council` succeeds. Permission rules match the command
+text, so any other form asks the user every time. Only if it isn't on PATH, write
+`bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
+
 | Command | Use it to |
 |---|---|
-| `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one · carry one on in this session (see Resume) |
+| `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one, then a reminder to show the user its closing card (`council status --widget --run <folder>`) · carry one on in this session (see Resume) |
 | `council run plan check` · `run plan show` | validate the run's routing, context, budgets and verification contract · show those decisions plainly |
 | `council route recommend --task "<summary>"` | inspect an advisory size, risk, seat archetypes, verification and budget before opening a run; use `--classic` for the fixed comparison path (see `${CLAUDE_PLUGIN_ROOT}/references/adaptive-routing.md`) |
 | `council run events show` · `run events check` | inspect or validate the run's mechanical event history (`events.tsv`); see `${CLAUDE_PLUGIN_ROOT}/references/event-stream.md` |
 | `council state key=value …` | update the run's state header: phase, next, size, deliverable |
-| `council seat <slug> <state> [agent=… tokens=… agents=…]` | record a worker's state, and once per finished agent run its usage: the id the tool returned, the notification's figure as given, a Workflow's agent count (`${CLAUDE_PLUGIN_ROOT}/references/run-accounting.md`); prints the progress line to relay |
+| `council seat <slug> <state> [agent=… tokens=… agents=…]` | record a worker's state, and once per finished agent run its usage: the id the tool returned, the notification's figure as given, a Workflow's agent count (`${CLAUDE_PLUGIN_ROOT}/references/run-accounting.md`); prints the progress line to relay — and, at the run's first dispatch only, a reminder to show the user the run's status |
 | `council cap` · `cap allow <n> --user-said "…"` · `cap check` | where the run stands against its agent cap and token ceiling, and whether new agents are stopped · record the user's go past them, in their words: n more agent runs may start · the agent gate's decision, for `hooks/agent-gate.sh` (exit 2 while stopped) |
 | `council index [--base <ref>]` · `council impact` | build the change index and, when Python 3.8+ is available, the bounded `impact.tsv` graph · refresh that graph after code changes (see `${CLAUDE_PLUGIN_ROOT}/references/impact-graph.md`) |
 | `council context build <seat> [--expand PATH …]` · `council context show <seat>` | after `brief.md`, select a seat's context at its validated run-plan level · inspect its path and selection metrics (see `${CLAUDE_PLUGIN_ROOT}/references/precision-context.md`); optional Python 3.8+, with brief-only fallback |
 | `council evidence build` · `evidence check` · `evidence show` | index synthesis claims, support states, provenance and verifier links in run-local `claims.jsonl`; rebuild after Challenge, then check for missing or stale links (see `${CLAUDE_PLUGIN_ROOT}/references/evidence-model.md`); optional Python 3.8+ |
 | `council repair record <task> <gate>` · `repair show|check [task]` | record and inspect a build's bounded gate-repair trail without running a gate or changing code (see `${CLAUDE_PLUGIN_ROOT}/references/repair-loop.md`); optional Python 3.8+ |
-| `council gate <name> [-- '<command>']` · `council gate --all --at grounding` (or `verify`) | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved. From `--all`, **exit 4 = NOTHING WAS CHECKED** — no gate ran; say so, never report it as a pass. From a single gate, 4 is that command's own exit code |
+| `council gate <name> [-- '<command>']` · `council gate --all --at grounding` (or `verify`) | run one gate (an ad-hoc one: quote the whole command) or the configured set, judged by exit code, output saved. From `--all`, **exit 4 = NOTHING WAS CHECKED** — no gate ran; say so, never report it as a pass. From a single gate, 4 is that command's own exit code. A run takes one gate call at a time: while one runs, a second is refused (exit 2, "checks are already running") and writes nothing — wait for the first, never start another copy |
 | `council changed [--glob '<pat>'] [--each] -- <cmd>` | run `<cmd>` over just the files this change touches — committed, staged, unstaged and new; exit 0 when none matched, so a newly fitted check is green on day one |
 | `council collect` · `council check` | check the seat files (and a war room's debate.md) · check citations, origin and request quotes — and, in a build, each fix's proof: did the before-check really fail, did the after-check really pass, is a test saved |
 | `council ask save [slug]` | file the run's ask.md — the user's words — under `.council/asks/`, redacting secrets; records `ask=` |

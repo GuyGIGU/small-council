@@ -178,6 +178,16 @@ check("status: one plain-language reading shared by the widget, the summary and 
       "council status --widget" in kernel_text and "show_widget" in kernel_text and "never a card per progress line" in kernel_text
       and "waiting=" in kernel_text and "interpret" in read("scripts", "status.py")
       and "status.interpret" in read("scripts", "cockpit.py"))
+check("status: showing it is a step where it happens — Work's dispatch, Challenge when its verifiers are the first "
+      "dispatch, Learn's close — a show_widget tool is looked up before it is called missing, and the helper "
+      "reminds the Chair at both moments (a real run showed neither card)",
+      all(p in doctrine["05-work.md"] for p in ("2. **Show the user the run's status", "council status --widget",
+                                               "deferred tool", "never a card per progress line")) and
+      "the run's first dispatch" in doctrine["08-challenge.md"] and
+      all(p in doctrine["10-learn.md"] for p in ("2. **Show the closing card, once.**", "deferred tool",
+                                                "`council status --widget --run <folder>`")) and
+      "deferred" in kernel_text and "status_nudge()" in cli and
+      'status_nudge "$run" dispatch' in cli and 'status_nudge "$run" close' in cli)
 check("accounting: seats record exact usage per agent run, a Workflow's agent count, and the two readers "
       "share one per-seat rule",
       os.path.isfile(os.path.join(ROOT, "references", "run-accounting.md")) and
@@ -275,6 +285,25 @@ for label, t in texts.items():
         elif c == "map" and (not rest or rest[0] != "status"):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")
 check("every `council …` command mentioned exists in the helper", not bad, "; ".join(bad[:8]))
+# A permission rule such as Bash(council run:*) matches the command's text. A real run reached the helper
+# only as C="bash <path>/bin/council"; $C run status — a form no rule can match — so the call form is pinned.
+CALL_FORM = ("plain `council <command>`", "shell variable", "`command -v council`", "match the command")
+lacking = [f"{label}: {p}" for label, t in (("kernel", core), ("init", skill["council-init"]), ("helper-commands", helper_reference))
+           for p in CALL_FORM if p not in flat(t)]
+check("helper call form: a plain `council <command>` — never a shell variable, an alias or bash <path>/bin/council "
+      "while it is on PATH — with the reason, in the kernel, council-init and the command reference",
+      not lacking, "; ".join(lacking))
+check("init: the permission offer says its rules match the command text, so only the plain form is covered",
+      "**These rules match the command text.**" in skill["council-init"].split("**Offer permission rules**", 1)[-1])
+through_variable = [label for label, t in texts.items()
+                    if re.search(r"""\$\{?(C|COUNCIL)\}? (run|state|seat|gate|status|index|collect|check)\b|\b(C|COUNCIL)=["']?bash """, t)]
+check("helper call form: no skill, doctrine, agent or reference shows a council call through a variable",
+      not through_variable, ", ".join(through_variable))
+# The session-start hook is the first thing a session reads about the helper; the real run copied the
+# full path it printed into that variable.
+check("hook: session-start teaches the plain `council <command>` call, with the reason",
+      "plain \\`council <command>\\`" in hook and "match the command text" in hook
+      and "if it isn't on PATH, run it as" not in hook)
 check("every --option those mentions use exists in the helper", bool(flags) and not bad_flags, "; ".join(bad_flags[:8]))
 
 # 5. Modes

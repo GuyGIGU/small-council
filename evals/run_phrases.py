@@ -72,6 +72,8 @@ RULES = [  # (where, the rule, the phrase that carries it)
     ("kernel+doctrine", "questions numbered, last", "numbered"),
     ("kernel+doctrine", "plain language to the user", "Plain language"),
     ("kernel+doctrine", "close every run", "Close every run you open"),
+    ("kernel+doctrine", "the helper is called by its plain name", "never through a shell variable or alias"),
+    ("kernel+doctrine", "one gate call per run at a time", "never start another copy"),
     ("kernel+doctrine", "wait for notifications, never poll", "Never poll"),
     ("kernel+doctrine", "Solo skips stages 3–6", "skips stages 3–6"),
     ("kernel+doctrine", "resume re-invokes the run's own mode", "Re-invoke the skill named by the run's `mode:`"),

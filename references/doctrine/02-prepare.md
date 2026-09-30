@@ -25,6 +25,9 @@ Gather every shared fact once, so no seat has to.
 6. **Grounding gates.** `council gate --all --at grounding` — in the background if the suite is
    slow. Judge by exit code. For a failure, read the excerpt the helper prints, or Grep the saved
    `<run>/gates/<name>.txt`; never read the whole file.
+   - **Start it once.** A run takes one gate call at a time: while one runs, the helper refuses a
+     second `council gate` ("checks are already running") and writes nothing. Wait for the first —
+     never start another copy.
    - **Exit 4 is NOTHING WAS CHECKED**, not a pass. The helper's line names which of the three it is
      — no check configured at all, none that runs at this stage, or every one skipped — so carry
      those words rather than a cause of your own. In a mode that changes code, say it at Deliver and

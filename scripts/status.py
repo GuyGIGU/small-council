@@ -714,7 +714,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
     elif key == "recovering":
         summary = "A repair is under way."
     elif key == "failing":
-        summary = "A check failed."
+        summary = ""           # the label says it and the attention line names the check: said once
     elif key == "starting":
         summary = "Setting up the run."
     else:
@@ -746,12 +746,17 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
 
 
 # --- text -----------------------------------------------------------------------------------------------------
+def headline(state):
+    """The state in words, said once: its label, then its summary when that adds something."""
+    return "{}. {}".format(state["label"], state["summary"]) if state["summary"] else state["label"] + "."
+
+
 def text(status, tui_commands=()):
     run, state = status["run"], status["state"]
     if status.get("closing"):
         closing = status["closing"]
         lines = ["{} · {} · {}".format(run["project"] or "council", run["mode_label"], run["id"]),
-                 "Status: {}. {}".format(state["label"], state["summary"]),
+                 "Status: " + headline(state),
                  "Asked: " + closing["request"], "Delivered: " + closing["deliverable"],
                  "Verified: " + closing["verification"], "Checks: " + closing["checks"],
                  "Spend: " + closing["spend"], "Agent runs: " + closing["agent_runs"],
@@ -763,7 +768,7 @@ def text(status, tui_commands=()):
     lines = ["{} · {} · {}".format(run["project"] or "council", run["mode_label"], run["id"])]
     stage = status["run"]["stage"]
     where = run["phase_label"] + (" (stage {} of {})".format(stage["n"], stage["of"]) if stage else "")
-    line = "Status: {}. {}".format(state["label"], state["summary"])
+    line = "Status: " + headline(state)
     if state["key"] not in ("completed", "interrupted"):
         line += " Stage: {}.".format(where)
     lines.append(line)
@@ -802,7 +807,7 @@ def notification_line(status):
     elif top:
         message = top["text"]
     else:
-        message = state["summary"]
+        message = state["summary"] or state["label"] + "."
     line = "{} council: {}".format(run["project"] or "Project", message)
     line = re.sub(r"\s+", " ", cockpit.clean(line))
     line = re.sub(r"[`*_#\[\]<>]", "", line).strip()
@@ -857,7 +862,7 @@ def closing_widget(status, preview=False):
     run, state, closing = status["run"], status["state"], status["closing"]
     now = utc_time(status["snapshot_at"])
     out = [STYLE, '<div class="sc"><h2 class="sr">{}</h2>'.format(esc(
-        "{} {}: {}. {}".format(run["project"], run["mode_label"], state["label"], state["summary"]))),
+        "{} {}: {}".format(run["project"], run["mode_label"], headline(state)))),
            '<div class="card" id="sc-card" data-at="{}">'.format(esc(status["snapshot_at"]))]
     if preview:
         out.append('<p class="box neutral" style="margin:0 0 12px">Preview built from a fixed snapshot taken {}. '
@@ -866,7 +871,8 @@ def closing_widget(status, preview=False):
                '<span style="font-weight:500">{}</span><span class="muted">{}</span></div>'.format(
                    state["role"], state["icon"], esc(state["label"]), esc(run["project"] or "Council run"),
                    esc(run["mode_label"])))
-    out.append('<p style="margin-top:6px">{}</p>'.format(esc(state["summary"])))
+    if state["summary"]:
+        out.append('<p style="margin-top:6px">{}</p>'.format(esc(state["summary"])))
     for label, value in (("What you asked", closing["request"]), ("Delivered", closing["deliverable"]),
                          ("Verified", closing["verification"]), ("Machine checks", closing["checks"])):
         out.append('<p style="margin-top:10px"><span class="muted">{}:</span> {}</p>'.format(esc(label), esc(value)))
@@ -895,8 +901,8 @@ def widget(status, preview=False, limit=5):
     stage = run["stage"]
     out = [STYLE]
     attention = status["attention"]
-    sr = "{} {}: {}. {} Seats: {}. {}".format(
-        run["project"], run["mode_label"], state["label"], state["summary"], prog["seats"],
+    sr = "{} {}: {} Seats: {}. {}".format(
+        run["project"], run["mode_label"], headline(state), prog["seats"],
         "{} needs your attention.".format(plural(len(attention), "item")) if attention else "Nothing needs your attention.")
     out.append('<div class="sc"><h2 class="sr">{}</h2>'.format(esc(sr)))
     out.append('<div class="card" id="sc-card" data-at="{}">'.format(esc(status["snapshot_at"])))
@@ -907,7 +913,8 @@ def widget(status, preview=False, limit=5):
                '<span style="font-weight:500">{}</span><span class="muted">{} · {}</span></div>'.format(
                    state["role"], state["icon"], esc(state["label"]), esc(run["project"] or "Council run"),
                    esc(run["mode_label"]), esc("started " + run["started"] if run.get("started") else run["id"])))
-    out.append('<p style="margin-top:6px">{}</p>'.format(esc(state["summary"])))
+    if state["summary"]:
+        out.append('<p style="margin-top:6px">{}</p>'.format(esc(state["summary"])))
     if attention:
         top = attention[0]["severity"]
         role = "danger" if any(a["kind"] == "blocked" for a in attention) else ("warning" if top >= 1 else "neutral")

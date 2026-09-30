@@ -18,6 +18,7 @@ set -u
 
 COUNCIL_VERSION="0.17.0"
 COUNCIL_MEMORY_SIZE_LIMIT=25600  # bytes: about 25 KB of project memory is the expected upper bound
+COUNCIL_NEXT_AT_OPEN="size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -489,7 +490,7 @@ events-schema: 1
 size:
 base:
 deliverable:
-next: size the run and ask for the go-ahead
+next: $COUNCIL_NEXT_AT_OPEN
 ## Decisions so far
 EOF
   template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan.tsv"
@@ -550,6 +551,16 @@ cmd_state() {
       { print }
       END { if (!done) print line }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
   done
+  # The next: a run opens with is Convene's own step, and nothing replaces it on its own. Past convene it
+  # is stale, so it is emptied here; a next the Chair wrote stays. (The status readers skip it too, for
+  # runs an older helper moved on: scripts/cockpit.py's next_step.)
+  case "$(field phase "$tmp")" in
+    ''|convene) ;;
+    *) if [ "$(state_field next "$tmp")" = "$COUNCIL_NEXT_AT_OPEN" ]; then
+         awk '/^## / { body = 1 } !body && !d && index($0, "next:") == 1 { print "next:"; d = 1; next } { print }' \
+           "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
+       fi ;;
+  esac
   NOW="$(now_min)" awk '
     BEGIN { l = "updated: " ENVIRON["NOW"] }
     !d && index($0, "updated:") == 1 { print l; d = 1; next }
@@ -686,8 +697,25 @@ seat_usage() {
     }' "$1/usage.tsv"
 }
 
+# The user is shown the run's status at two moments: the run's first dispatch, and its close. The
+# doctrine says so, and a real run skipped both, so the helper says it too — one line for the Chair, on
+# stderr, once per moment: never per seat, never per progress line. A closed run is no longer "the run
+# on this tree", so its commands carry --run. Without Python there is no card: council run status
+# serves the first moment, and the close line itself the second.
+status_nudge() {
+  local run="$1" when="$2" at="" lead="first dispatch of this run — show the user its status now, once"
+  [ -z "$RUN_ARG" ] || at=" --run ${run##*/}"
+  if [ "$when" = close ]; then at=" --run ${run##*/}"; lead="run closed — show the user its closing card now, once"; fi
+  if impact_python >/dev/null 2>&1; then
+    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s`\n' \
+      "$lead" "$at" "$at" >&2
+  elif [ "$when" != close ]; then
+    printf 'council: %s: relay `council run status` (no Python 3.8+ here, so there is no status card)\n' "$lead" >&2
+  fi
+}
+
 cmd_seat() {
-  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell
+  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0
   [ -n "$slug" ] && [ -n "$state" ] || die "usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [agents=N] [note=TEXT]"
   case "$state" in queued|running|done|failed|blocked|skipped) ;; *) die "seat state must be queued, running, done, failed, blocked or skipped" ;; esac
   case "$slug" in *[!A-Za-z0-9._-]*) die "bad seat slug: $slug" ;; esac
@@ -744,6 +772,8 @@ cmd_seat() {
   [ -s "$u" ] || printf 'at\tseat\tagent\tkind\truns\ttokens\n' > "$u" || { event_unlock "$f.lock"; die "cannot write $u"; }
   cur="$(seat_field "$run" "$slug" 3)"
   if [ -n "$agent" ] && [ "$agent" != "$cur" ]; then
+    # Under the seat lock, so of several workers recorded together exactly one is the run's first dispatch.
+    awk -F'\t' 'NR > 1 && $4 == "dispatched" { f = 1; exit } END { exit !f }' "$u" || first=1
     printf '%s\t%s\t%s\tdispatched\t\t\n' "$(now_utc)" "$slug" "$agent" >> "$u" || { event_unlock "$f.lock"; die "cannot write $u"; }
   fi
   if [ -n "$tokens$runs" ]; then
@@ -783,6 +813,7 @@ cmd_seat() {
   event_unlock "$f.lock" || die "seat changed, but its lock could not be released: $f.lock"
   cap_note "$run"
   progress_line "$run"
+  [ "$first" -eq 0 ] || status_nudge "$run" dispatch
 }
 
 # The run's agent ceiling: its plan's budget/run/agent-cap, or the configured cap for a run with no plan.
@@ -1220,6 +1251,7 @@ cmd_run_close() {
     event_type=run.closed; [ "$status" != paused ] || event_type=run.paused
     set -- $usage
     event_append "$run" "$event_type" run "$status" "agent_runs=$2;reported=$3;tokens=$4;basis=$1" || die "run closed, but its event could not be recorded"
+    status_nudge "$run" close
   fi
 }
 
@@ -2180,6 +2212,64 @@ cmd_never_ran() {
   tail -n 1 "$1" | tr -d '\r' | grep -q '>[ ]*$'
 }
 
+# One `council gate` per run at a time. Two copies write the same gates/<name>.txt and .json: a real run
+# started `gate --all` twice, the second copy overwrote the first's output and was stopped, and its
+# results became the run's events and its baseline — a test failure that never happened. The lock is
+# <run>/gates.lock, a directory whose owner file holds the holder's process id, then when it started.
+# A second call never waits: it refuses before it writes anything. The holder releases on exit, a
+# stopped one too where the shell still runs its exit trap; a lock whose process is gone is cleared by
+# the next call, which says so (event_lock_stale, and the same recovery step as the event lock).
+GATE_LOCK="" GATE_LOCK_PID=""
+
+gate_unlock() {
+  local lock="$GATE_LOCK" pid=''
+  [ -n "$lock" ] || return 0
+  GATE_LOCK=""
+  { IFS= read -r pid < "$lock/owner"; } 2>/dev/null || :
+  [ "$pid" = "$GATE_LOCK_PID" ] || return 0      # no longer this call's lock: leave it alone
+  event_unlock "$lock" || :
+}
+
+gate_lock() {
+  local run="$1" lock="$1/gates.lock" recovery="$1/gates.lock.recover" me="${BASHPID:-$$}" pid='' since='' tries=0
+  while :; do
+    if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
+      if [ -d "$recovery" ]; then rmdir "$lock" 2>/dev/null; continue; fi   # a reclaimer got in first: yield
+      printf '%s\n%s\n' "$me" "$(now_sec)" > "$lock/owner" \
+        || { rm -f "$lock/owner"; rmdir "$lock" 2>/dev/null; die "cannot write the gate lock $lock — nothing was started"; }
+      GATE_LOCK="$lock"; GATE_LOCK_PID="$me"
+      trap gate_unlock EXIT                          # every way out: a finished set, a die, a caught signal
+      trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
+      return 0
+    fi
+    # Who holds it. The holder writes its owner file just after mkdir and removes it just before rmdir,
+    # so a file that is missing or vanishes under this read is a lock being taken or released — never
+    # a stale one, and never a reason to stop (pid and since stay set, empty, under set -u).
+    pid=''; since=''
+    { { IFS= read -r pid && IFS= read -r since; } < "$lock/owner"; } 2>/dev/null || :
+    if event_lock_stale "$recovery"; then
+      rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
+    fi
+    if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
+      if printf '%s\n' "$me" > "$recovery/owner" && event_lock_stale "$lock"; then
+        rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null \
+          && printf 'council: cleared a gate lock left by a call that is no longer running%s\n' \
+               "${pid:+ (process $pid, started ${since:-unknown})}" >&2
+      fi
+      event_unlock "$recovery" || :
+    fi
+    case "$pid" in
+      ''|*[!0-9]*) ;;                                # no owner to read yet: look again
+      *) if kill -0 "$pid" 2>/dev/null; then
+           die "checks are already running for this run (${run##*/}, started ${since:-a moment ago}, process $pid) — wait for them to finish; nothing was started"
+         fi ;;
+    esac
+    tries=$((tries + 1))
+    [ "$tries" -lt 150 ] || die "the gate lock is unavailable: $lock — nothing was started"
+    sleep 0.1
+  done
+}
+
 # Run one gate; full output to <run>/gates/<name>.txt, the verdict to <name>.json. Returns its exit code.
 # In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
 # so a later failure can be told apart from one the untouched code already had.
@@ -2273,6 +2363,7 @@ cmd_gate() {
         *) die "--at takes grounding or verify (got '$AT_ARG')" ;;
       esac
     fi
+    gate_lock "$run"                     # refuses, before anything is written, while another gate call runs
     [ "$atl" = v ] || GATE_BASELINE=1    # the untouched code: each gate's first output is its baseline
     gates="$(config_gates "$cfg")"
     if [ -z "$gates" ]; then      # a green report with nothing behind it is the worst outcome there is
@@ -2366,6 +2457,7 @@ GATES
   fi
   name="${1+$*}"                      # a name with a space may arrive as several words
   [ -n "$name" ] || die "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
+  gate_lock "$run"
   cmd="$GATE_CMD"
   if [ -z "$cmd" ]; then
     row="$(config_gates "$cfg" | NAME="$name" awk -F'\t' '$1 == ENVIRON["NAME"] { print; exit }')"
@@ -5500,6 +5592,7 @@ council — the Small Council's helper (bash + git)
                                          open a run for a mode, e.g. council-review; prints its folder
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
   council run close [--status complete|abandoned|paused]
+                                         close the run; then a reminder to show the user its closing card
   council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
                                          in progress again, this session recorded as its driver
   council run plan [check|show]          validate the run plan · show its decisions in plain language
@@ -5508,7 +5601,8 @@ council — the Small Council's helper (bash + git)
   council seat <slug> <state> [agent=ID] [tokens=N] [agents=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped;
                                          tokens= and agents= (a Workflow's agent count) come with the
-                                         finished run's usage report, once per agent run
+                                         finished run's usage report, once per agent run; the run's first
+                                         dispatch also prints a reminder to show the user the run's status
   council cap                            agent runs used against the cap, tokens against the ceiling, the
                                          user's go on record, and whether new agents are stopped now
   council cap allow <n> --user-said "…"  the user's go past the cap or ceiling, in their words: n more
@@ -5531,7 +5625,8 @@ council — the Small Council's helper (bash + git)
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
                                          inside it; output and exit code → <run>/gates/
   council gate --all [--at grounding|verify]
-                                         run the configured gates
+                                         run the configured gates · a run takes one gate call at a time:
+                                         a second is refused (exit 2) and writes nothing — wait for the first
   council gates                          list the configured gates
   council changed [--glob '<pat>'] [--each] -- <cmd>
                                          run <cmd> over just the files this change touches (0 when none)

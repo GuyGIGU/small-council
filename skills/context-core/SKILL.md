@@ -65,10 +65,11 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 ## The helper
 
-Run checks on their own; never hide refusals through `| tail`/`| head` (Challenge, step 5).
-
-`council` does the bookkeeping. It is on PATH while the plugin is enabled; if it isn't, call it as
-`bash "${CLAUDE_PLUGIN_ROOT}/bin/council"`.
+`council` does the bookkeeping; it is on PATH while the plugin is enabled. **Call it as a plain
+`council <command>`** — never through a shell variable or alias, and never as
+`bash <path>/bin/council` while `command -v council` succeeds: permission rules match the command
+text, so any other form asks the user every time. Only if it isn't on PATH, write
+`bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
 
 For command syntax and purposes, use council help and
 `${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`. The stage doctrine says when to run each
@@ -80,8 +81,9 @@ command. Keep these rules here because they apply to every run:
   adds opt-in `contexts/` after `brief.md`; it does not replace the brief.
 - `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
   It needs optional Python 3.8+. `council repair record` leaves a bounded trail in `repairs.jsonl`.
-- Run checks on their own. `council gate --all` exit 4 means NOTHING WAS CHECKED: never report
-  that as a pass. A single gate's exit 4 is that command's own exit code.
+- Run checks on their own; never hide refusals through `| tail`/`| head` (Challenge, step 5).
+  `council gate --all` exit 4 means NOTHING WAS CHECKED: never report that as a pass. A single
+  gate's exit 4 is that command's own exit code.
 
 Commands act on the one in-progress run on this working tree. With a second one open
 (`--alongside`), pass `--run <folder>` every time; the helper never guesses.
@@ -145,9 +147,11 @@ live at a legacy path; the config's Memory section says where.
 Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
 Questions come last, numbered.
 
-**The run's status.** Show it after first dispatch and after close. If a `show_widget`
-tool is available, call its `read_me` once, then pass it `council status --widget` output verbatim;
-otherwise relay `council status`, which ends with the terminal view's command. Otherwise, only when
-the user asks — never a card per progress line. A card is a snapshot, not live; if one fails to
-render, give the text and carry on. When you stop for the user's answer, `council state
-waiting="<the question>"`; clear it with `waiting=` when the answer comes.
+**The run's status.** Show it twice: at the run's first dispatch (Work) and after
+`council run close` (Learn) — the helper reminds you at both. With a `show_widget` tool — it may be
+deferred: search the tools before deciding there is none — call its `read_me` once, then pass it
+`council status --widget` output verbatim; otherwise relay `council status`, which ends with the
+terminal view's command. Otherwise, only when the user asks — never a card per progress line. A card
+is a snapshot, not live; if one fails to render, give the text and carry on. When you stop for the
+user's answer, `council state waiting="<the question>"`; clear it with `waiting=` when the answer
+comes.
