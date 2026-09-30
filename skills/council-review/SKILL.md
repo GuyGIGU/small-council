@@ -106,7 +106,8 @@ line, then:
   - the title and `path:line`;
   - `<what it checks> (<Seat>) × Carmack — <principle>`;
   - its origin;
-  - its evidence state and synthesis id, so the citation and verifier row can be traced;
+  - its evidence state and synthesis id (a restored cut claim keeps its `C` id), so the citation
+    and verifier row can be traced;
   - what's wrong, the consequence and the fix;
   - the verifier's verdict.
 - **Pre-existing problems nearby:** one line each.
