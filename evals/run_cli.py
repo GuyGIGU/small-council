@@ -1276,6 +1276,23 @@ def agent_stop(tmp):
           and not os.path.exists(os.path.join(old_stop, "events.tsv")), "\n".join(rows) + out + err)
     code, out, err = council(stop, "cap", "check", "--session", "s1")
     check("cap check: with both runs covered — exit 0", code == 0 and not out, out + err)
+    # A usage report repeated with no agent id (to add a note, say) is the same agent run, not a second one:
+    # counted twice, it inflated the agent count the stop reads, the cost line and the ledger.
+    rep = new_repo(tmp, "agent-stop-repeat")
+    write(os.path.join(rep, ".council", "council.config.md"), "# Council config — repeated report\n- agent cap: 2\n")
+    _, rep_run, _ = council(rep, "run", "open", "council-review")
+    rep_run = rep_run.strip()
+    council(rep, "seat", "beck", "done", "tokens=80000")
+    code, out, err = council(rep, "seat", "beck", "done", "tokens=80000", "note=fixed the note")
+    beck = next((line.split("\t") for line in read(os.path.join(rep_run, "seats.tsv")).splitlines() if line.startswith("beck\t")), [])
+    check("seat: the same report repeated with no agent id counts once, says so, and still takes the note",
+          code == 0 and "~80k tokens so far" in out and "not counted again" in err
+          and beck[3:4] == ["80000"] and beck[5:8] == ["fixed the note", "1", "1"], out + err + str(beck))
+    code, out, err = council(rep, "cap")
+    check("cap: a repeated report does not bring the run to its cap", "1 of 2 agent runs used" in out, out + err)
+    code, out, err = council(rep, "seat", "beck", "done", "tokens=60000")
+    check("seat: a different figure with no agent id is another agent run, and adds", "~140k tokens so far" in out
+          and "not counted again" not in err, out + err)
     absurd = new_repo(tmp, "agent-stop-absurd")        # a cap bash can't compare: the gate never fails closed
     write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n")
     _, absurd_run, _ = council(absurd, "run", "open", "council-review")

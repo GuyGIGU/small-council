@@ -50,8 +50,8 @@ How `usage.tsv` becomes a seat's figures:
   reported 413,657, was resumed, then reported 463,078 for the same agent). A later figure at least
   as large replaces the earlier one, so a repeated report never adds twice. A smaller later figure is
   taken as a count of its own and added.
-- **A report with no agent id stands alone.** It cannot be matched, so a repeat would add. Record
-  the id at dispatch.
+- **A report with no agent id stands alone.** It cannot be matched: the same figures again for that
+  seat are taken as a repeat and recorded once, and a different figure adds. Record the id at dispatch.
 - **A dispatched id that never reported** counts as one agent run with no usage.
 - **A seat with no agent on record** (no id, no report) has an unknown agent count — its `agents` cell
   stays blank, never 0. `agents=0` on a finished report is the one way to say that no agent ran (the

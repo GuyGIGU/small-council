@@ -664,7 +664,8 @@ seat_field() {
 # the run's usage.tsv; a seat's agents, reported and tokens columns in seats.tsv are derived from it:
 # - per agent id, the latest report counts (a resumed agent reports a running total, and a repeated
 #   report must not add twice);
-# - a report with no agent id stands on its own;
+# - a report with no agent id stands on its own — but the same figures again for that seat are a repeated
+#   report (a note added, say), not a second agent run: cmd_seat records them once;
 # - an id dispatched but never reported is one agent run with no usage.
 # - agents=0 on a finished report declares that no agent ran (the Chair did the work).
 # Prints "<agent runs> <runs with usage> <tokens> <declared no agent 1|0>".
@@ -776,7 +777,11 @@ cmd_seat() {
     awk -F'\t' 'NR > 1 && $4 == "dispatched" { f = 1; exit } END { exit !f }' "$u" || first=1
     printf '%s\t%s\t%s\tdispatched\t\t\n' "$(now_utc)" "$slug" "$agent" >> "$u" || { event_unlock "$f.lock"; die "cannot write $u"; }
   fi
-  if [ -n "$tokens$runs" ]; then
+  if [ -n "$tokens$runs" ] && [ -z "${agent:-$cur}" ] \
+     && SLUG="$slug" RUNS="${runs:-1}" TOK="$tokens" awk -F'\t' 'NR > 1 && $2 == ENVIRON["SLUG"] && $3 == "" && $4 == "finished" &&
+          $5 == ENVIRON["RUNS"] && $6 == ENVIRON["TOK"] { f = 1; exit } END { exit !f }' "$u"; then
+    printf 'council: %s already has this usage report on record, with no agent id to tell two agent runs apart — not counted again (another agent run needs its agent=<id>)\n' "$slug" >&2
+  elif [ -n "$tokens$runs" ]; then
     printf '%s\t%s\t%s\tfinished\t%s\t%s\n' "$(now_utc)" "$slug" "${agent:-$cur}" "${runs:-1}" "$tokens" >> "$u" \
       || { event_unlock "$f.lock"; die "cannot write $u"; }
   fi
