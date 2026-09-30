@@ -8,8 +8,9 @@ SessionStart (hooks/session-start.sh):
     unfinished on startup (its running seats died with the old session); paused as paused, even right
     after a compaction; a run in another working tree as "leave it alone";
   - after a compaction, resumes only the run this session was driving — the one whose session: matches
-    (also after `council run resume` in a new session), else the newest recent in-progress run that
-    recorded none — never a paused one or another tree's, and only lists the rest;
+    (also after `council run resume` in a new session, and when its code is in a linked worktree), else
+    the newest recent in-progress run that recorded none — never a paused one or another session's run
+    in another tree, and only lists the rest;
   - never offers to re-dispatch or close a run another session updated in the last 2 hours;
   - stays fast and short with many open runs: other trees' runs summed up, gone trees named, at most 5
     of this tree's runs described;
@@ -334,6 +335,29 @@ def session_start(tmp):
     c = compacted(out)
     check("a run resumed in a new session (council run resume) is that session's run at its next compaction",
           len(c) == 1 and hname in c[0], out)
+
+    # A build whose code lives in a linked worktree, driven by a session whose project dir is the main
+    # checkout (the real Chrollo build: nine compactions, each told to leave its own run alone).
+    wmain = new_repo(tmp, "wt-main")
+    write(os.path.join(wmain, ".council", "council.config.md"), "# Council config\n")
+    wtree = os.path.join(wmain, ".claude", "worktrees", "feat")
+    git(wmain, "worktree", "add", "-q", wtree, "-b", "feat")
+    wtop = git(wtree, "rev-parse", "--show-toplevel")
+    code, wrun, _ = council(wtree, "run", "open", "council-implement", session="S1")
+    wname = os.path.basename(wrun)
+    code, out = run_hook(wmain, "compact", session="S1")
+    c = compacted(out) or [""]
+    check("after compaction: this session's run whose code is in a linked worktree is resumed, never 'left alone'",
+          len(c) == 1 and wname in c[0] and "Re-invoke the council-implement skill" in c[0]
+          and "different working tree" not in out and "Leave it alone" not in out, out)
+    check("after compaction: ... and it says where the run's code is, with --run",
+          f"another working tree, {wtop}" in c[0] and f"--run {wname}" in c[0], out)
+    code, out = run_hook(wmain, "startup", session="S1")
+    check("on startup or resume: this session's worktree run is offered to resume, not called another tree's",
+          "UNFINISHED COUNCIL RUN" in line_with(out, wname) and "Leave it alone" not in out, out)
+    code, out = run_hook(wmain, "compact", session="S2")
+    check("after compaction: another session's worktree run is still left alone",
+          not compacted(out) and "Leave it alone" in line_with(out, wname), out)
 
     # A run another session updated recently may still be live there
     live = new_repo(tmp, "live")

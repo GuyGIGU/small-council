@@ -12,7 +12,8 @@
 # It sources bin/council, so the hook and the helper find the council home the same way. It must never
 # break a session: every failure path is silent and the script always exits 0. It must also stay well
 # inside Claude Code's 15 s limit however many runs were left open: every state file is read in one
-# pass, only this tree's runs are described (at most 5), and other trees' runs are summed up.
+# pass, only this tree's runs and this session's own are described (at most 5), and other trees' runs
+# are summed up.
 
 set -u
 
@@ -82,13 +83,19 @@ fi
 driving=""
 runs="$(list_runs "$home" 100000 open)"
 if [ -n "$runs" ]; then
-  # Split them: this tree's runs (a run with no code-root counts as this tree's), other trees' runs, and
-  # runs whose working tree no longer exists. Other trees' runs are only summed up.
+  # Split them: this tree's runs (a run with no code-root counts as this tree's) and the runs this session
+  # drives (its id in session:) on any working tree, other trees' runs, and runs whose working tree no
+  # longer exists. Other trees' runs are only summed up. A mine row ends with the run's code root when it
+  # is another tree ("-" when it is this one).
   mine=""; here_n=0; others=""; n_other=0; gone=""; n_gone=0
   while IFS="$TAB" read -r dir mode phase croot updated status actual rsid; do
     [ -n "$dir" ] || continue
     if [ "$croot" = - ] || [ "$croot" = "$top" ]; then     # rows keep "-" for an empty value (read merges tabs)
-      mine="$mine$dir$TAB$mode$TAB$phase$TAB$updated$TAB$status$TAB$rsid$NL"; here_n=$((here_n + 1))
+      mine="$mine$dir$TAB$mode$TAB$phase$TAB$updated$TAB$status$TAB$rsid$TAB-$NL"; here_n=$((here_n + 1))
+    elif [ -d "$croot" ] && [ -n "$sid" ] && [ "$rsid" = "$sid" ]; then
+      # Its code is in a linked worktree while the session sits in the main checkout (the project dir):
+      # still this session's own run, as the agent gate reads it, never a stranger's to leave alone.
+      mine="$mine$dir$TAB$mode$TAB$phase$TAB$updated$TAB$status$TAB$rsid$TAB$croot$NL"
     elif [ -d "$croot" ]; then
       n_other=$((n_other + 1))
       [ "$phase" != - ] || phase="?"
@@ -102,11 +109,12 @@ $runs
 RUNS
 
   # After a compaction, only the run this session was driving is resumed: the in-progress run whose
-  # session: matches this session's id, or — for a run that recorded none — the newest in-progress run
-  # on this tree, if it was touched in the last 12 hours. Every other open run is only listed.
+  # session: matches this session's id (on any working tree), or — for a run that recorded none — the
+  # newest in-progress run on this tree, if it was touched in the last 12 hours. Every other open run is
+  # only listed.
   if [ "$event" = compact ]; then
     fallback=""
-    while IFS="$TAB" read -r dir mode phase updated status rsid; do
+    while IFS="$TAB" read -r dir mode phase updated status rsid where; do
       [ -n "$dir" ] || continue
       [ "$status" = in-progress ] || continue
       [ "$rsid" != - ] || rsid=""
@@ -124,21 +132,21 @@ RUNS
   # Described first: the run being resumed, then in-progress runs, then paused ones (each newest first).
   ordered=""
   for pass in driving in-progress other; do
-    while IFS="$TAB" read -r dir mode phase updated status rsid; do
+    while IFS="$TAB" read -r dir mode phase updated status rsid where; do
       [ -n "$dir" ] || continue
       case "$pass" in
         driving)     [ "$dir" = "$driving" ] || continue ;;
         in-progress) [ "$dir" != "$driving" ] && [ "$status" = in-progress ] || continue ;;
         other)       [ "$dir" != "$driving" ] && [ "$status" != in-progress ] || continue ;;
       esac
-      ordered="$ordered$dir$TAB$mode$TAB$phase$TAB$updated$TAB$status$TAB$rsid$NL"
+      ordered="$ordered$dir$TAB$mode$TAB$phase$TAB$updated$TAB$status$TAB$rsid$TAB$where$NL"
     done <<RUNS
 $mine
 RUNS
   done
 
   shown=0; more=""; n_more=0
-  while IFS="$TAB" read -r dir mode phase updated status rsid; do
+  while IFS="$TAB" read -r dir mode phase updated status rsid where; do
     [ -n "$dir" ] || continue
     name="${dir##*/}"
     if [ "$shown" -ge 5 ]; then
@@ -151,10 +159,12 @@ RUNS
     [ "$updated" != - ] || updated=""
     [ "$rsid" != - ] || rsid=""
     skill="$(mode_skill "$mode")"
-    runflag=""
-    [ "$here_n" -le 1 ] || runflag=" Several runs are open on this tree: pass --run $name to every council command for this one."
+    away=""
+    [ "$where" = - ] || away=" Its code is in another working tree, $where: work there, and pass --run $name to every council command for it."
+    runflag="$away"
+    [ -n "$away" ] || [ "$here_n" -le 1 ] || runflag=" Several runs are open on this tree: pass --run $name to every council command for this one."
     if [ "$status" = paused ]; then
-      say "- PAUSED COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}). Resume it only when the user asks: council run resume --run $name, then re-invoke the $skill skill and read its session-state.md."
+      say "- PAUSED COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}, updated: ${updated:-unknown}). Resume it only when the user asks: council run resume --run $name, then re-invoke the $skill skill and read its session-state.md.$away"
     elif [ "$event" = compact ] && [ "$dir" = "$driving" ]; then
       case "$phase" in
         build) redo="re-read its build loop and the build log" ;;    # a build replaces the stages between Prepare and Challenge
@@ -164,7 +174,8 @@ RUNS
       say "- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: $dir ($skill, phase: ${phase:-unknown}). Re-invoke the $skill skill (it loads context-core), read $dir/session-state.md (and ask.md, if present), $redo, and continue from there.${seats:+ Seats — $seats.} Do not restart, do not re-dispatch seats that are running or done (wait for their notifications), do not skip the completeness check.$runflag"
     elif [ "$event" = compact ] && [ -n "$sid" ] && [ "$rsid" = "$sid" ]; then
       # This session opened it too (council run open … --alongside): its own work, not a stranger's.
-      say "- Also open on this working tree, opened alongside by this same session: $name ($skill, phase ${phase:-?}). It is yours too — pass --run $name to every council command meant for it."
+      if [ -n "$away" ]; then at="in another working tree ($where)"; else at="on this working tree"; fi
+      say "- Also open $at, opened alongside by this same session: $name ($skill, phase ${phase:-?}). It is yours too — pass --run $name to every council command meant for it."
     elif [ "$event" = compact ]; then
       say "- Also open on this working tree, not this session's run: $name ($skill, phase ${phase:-?}). Leave it unless the user asks."
     elif [ -n "$rsid" ] && [ "$rsid" != "$sid" ] && [ -n "$(find "$dir" -type f -mmin -120 2>/dev/null | head -n 1)" ]; then
