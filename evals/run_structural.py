@@ -111,6 +111,13 @@ check("09-deliver: a run that proved nothing by machine never reads as a pass (w
       never_a_pass(doctrine["09-deliver.md"], "proved nothing by machine"))
 check("kernel: agent cap of 10, verifiers included", re.search(r"\b10\b[^.]*verifiers included", flat(core)) is not None)
 check("kernel: approval threshold from the config", "approve without asking" in core)
+# Solo, build and post-game runs never read 05-work.md, so the steps every run needs sit in the kernel
+# (a real Solo run skipped the Chair's seat record and wrote no ledger row for its findings).
+check("kernel: the steps every run needs — the Chair's own seat record, the owner alert after waiting=, "
+      "the pet only when asked, and a resume (never a re-dispatch) at an agent's turn limit",
+      "`council seat chair done agents=0`" in core and "council status --line" in flat(core)
+      and "PushNotification" in core and "`council pet`" in core and "60 turns" in core
+      and "never re-dispatch it" in core)
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
 check("kernel: resuming a run records this session as its driver (council run resume)",
       "council run resume" in core[core.find("## Resume"):])
