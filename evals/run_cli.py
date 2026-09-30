@@ -3180,6 +3180,11 @@ def gates_table(tmp):
           and "test_old" not in out, out)
     council(redbase, "gate", "--all", "--at", "verify")
     check("gate --all --at verify: never replaces the baseline", "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt")))
+    code, out, _ = council(redbase, "gate", "--all")      # a plain second run, after the change: it writes baselines too
+    check("gate --all a second time: the first snapshot stays the baseline, so the change's failure is still named new",
+          "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt"))
+          and "test_new" not in read(os.path.join(rgates, "baseline", "tests.txt"))
+          and code == 1 and "not at the baseline" in out and "test_new" in out.split("not at the baseline")[-1], out)
     # The comparison is by failing test, not by line: a runner's timed summary is never a "new" failure,
     # and a swap (one test fixed, another broken) is never "nothing new".
     gates_cfg(redbase, "| timed | `if [ -f .fixed ]; then t=0.81; else t=0.26; fi;"
