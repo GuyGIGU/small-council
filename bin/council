@@ -1068,11 +1068,11 @@ cap_starts() {
   printf '%s' "$n"
 }
 
-# Where a run stands: "<agent runs> <cap> <tokens> <ceiling|-> <until|-> <over 0|1> <stopped 0|1>
-# <recorded> <starts>". Agent runs: the larger of those recorded and the starts the gate let through, so
-# an agent in flight counts before it is recorded, and counts once after. Over: at its cap (the next
-# agent would pass it) or past its ceiling. Stopped: over, and no go of the user's covers the next agent.
-# The counts are the ones the card and cap_note read.
+# Where a run stands: "<agent runs> <cap> <tokens> <ceiling|-> <until|-> <over 0|1> <stopped 0|1>".
+# Agent runs: the larger of those recorded and the starts the gate let through, so an agent in flight
+# counts before it is recorded, and counts once after. Over: at its cap (the next agent would pass it) or
+# past its ceiling. Stopped: over, and no go of the user's covers the next agent — never for a run opened
+# before plans and agent limits (no plan-schema). The counts are the ones the card and cap_note read.
 cap_standing() {
   local run="$1" cap used rec starts tokens ceiling upto over=0 stopped=0
   cap="$(run_agent_cap "$run")"
@@ -1086,8 +1086,8 @@ cap_standing() {
   if [ "$used" -ge "$cap" ] 2>/dev/null; then over=1; fi                   # a value test can't read never stops an agent
   if [ -n "$ceiling" ] && [ "$tokens" -gt "$ceiling" ] 2>/dev/null; then over=1; fi
   if [ "$over" = 1 ] && { [ -z "$upto" ] || [ "$used" -ge "$upto" ]; }; then stopped=1; fi
-  printf '%s %s %s %s %s %s %s %s %s\n' "$used" "$cap" "$tokens" "$(dash "$ceiling")" "$(dash "$upto")" "$over" "$stopped" \
-    "$rec" "$starts"
+  [ -n "$(field plan-schema "$run/session-state.md")" ] || stopped=0
+  printf '%s %s %s %s %s %s %s\n' "$used" "$cap" "$tokens" "$(dash "$ceiling")" "$(dash "$upto")" "$over" "$stopped"
 }
 
 # "run <name> has used 12 of its 10 agent runs and 1.5M tokens, over its 1.2M ceiling" — from a standing.
@@ -1104,11 +1104,13 @@ cap_words() {
 
 # council cap [--run <folder>] — where the run stands, in one or two plain lines.
 cmd_cap_show() {
-  local run status line
+  local run status line starts rec
   run="$(resolve_run)" || exit 2
+  starts="$(cap_starts "$run")"; rec=""
+  [ "$starts" -eq 0 ] || { set -- $(run_usage "$run"); rec="${2:-0}"; }
   set -- $(cap_standing "$run")
   line="${run##*/}: $1 of $2 agent runs used"
-  [ "$9" -le "$8" ] || line="$line ($9 started through the agent gate, $8 recorded)"
+  [ -z "$rec" ] || [ "$starts" -le "$rec" ] || line="$line ($starts started through the agent gate, $rec recorded)"
   [ "$4" = - ] || line="$line · $(usage_token_text "$3") tokens of a $(usage_token_text "$4") ceiling"
   [ "$5" = - ] || line="$line · the user's go allows up to $5"
   say "$line"
