@@ -248,6 +248,19 @@ def new_repo(base, name):
     return repo
 
 
+def small_council_repo(tmp, name, gate_rows):
+    """A committed repo whose config holds only a Gates table (with Side effects, so gate --all runs them)."""
+    repo = new_repo(tmp, name)
+    write(os.path.join(repo, "a.txt"), "a\n")
+    write(os.path.join(repo, ".council", "council.config.md"),
+          "# Council config — x\nlast-verified: 2026-09-15 @ x\n\n## Gates\n"
+          "| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs |\n"
+          "|---|---|---|---|---|---|---|---|\n" + gate_rows + "\n## Hard rules\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    return repo
+
+
 def row(out, slug):
     m = re.search(rf"^{slug}\s.*$", out, re.MULTILINE)
     return m.group(0) if m else ""
@@ -3019,6 +3032,51 @@ def requests_and_proofs(tmp):
           code == 0 and "pass \u2014 but nothing to check (0 files matched)" in out
           and "1 had nothing to check (lint \u2014 0 files matched)" in out, out)
 
+@part("requests")
+def close_unfinished(tmp):
+    # A run closed as complete that never finished is said plainly — warned, never refused
+    repo = small_council_repo(tmp, "closeearly", "| tests | `echo '1 failed'; exit 1` | grounding, verify | yes | ok | `true` | none | - |\n"
+                                                 "| lint | `exit 1` | grounding, verify | no | ok | `true` | none | - |\n")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    council(repo, "state", "phase=prepare")
+    council(repo, "gate", "--all")
+    council(repo, "gate", "before-1", "--", "exit 1")        # an ad-hoc red check is never a required one
+    code, out, err = council(repo, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("run close: a run closed complete at an early stage says it never reached Deliver",
+          code == 0 and "closed as complete at stage prepare, so it never reached Deliver" in err
+          and "--status abandoned" in err, err)
+    check("run close: names the required check whose last run failed, and only that one",
+          "a required check failing on its last run: tests —" in err and "lint" not in err and "before-1" not in err, err)
+    check("run close: says no deliverable was recorded, and a review has no verifier verdicts",
+          "no deliverable recorded" in err and "no verifier verdicts" in err, err)
+    check("run close: the close event records the warnings",
+          closed and "warnings=phase,check,deliverable,verdicts" in closed[-1][6], str(closed))
+    check("run close: the run is still closed as complete (a warning, not a refusal)",
+          "status: complete" in read(os.path.join(run, "session-state.md")), read(os.path.join(run, "session-state.md")))
+
+    done = small_council_repo(tmp, "closedone", "| tests | `if [ -f .fixed ]; then echo '3 passed'; exit 0; fi; exit 1` | grounding, verify | yes | ok | `true` | none | - |\n")
+    code, run, _ = council(done, "run", "open", "council-review")
+    run = run.strip()
+    council(done, "gate", "--all")
+    write(os.path.join(done, ".fixed"), "")
+    council(done, "gate", "tests")                              # red at first, green on its last run
+    write_plan(run)
+    write(os.path.join(run, "verify-1.md"), "| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    code, out, err = council(done, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
+    code, out, err = council(done, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("run close: a finished run with its checks green, a deliverable and verdicts closes without a warning",
+          code == 0 and "closed as complete" not in err and closed and "warnings=" not in closed[-1][6], err + str(closed))
+    early = small_council_repo(tmp, "closestop", "| tests | `exit 1` | grounding | yes | ok | `true` | none | - |\n")
+    council(early, "run", "open", "council-review")
+    council(early, "gate", "--all")
+    code, out, err = council(early, "run", "close", "--status", "abandoned")
+    check("run close --status abandoned: an unfinished run given up on raises none of these warnings",
+          code == 0 and "closed as complete" not in err, err)
+
+
 @part("gates")
 def gates_table(tmp):
     # The Gates table's small vocabularies \u2014 Run at, Mandatory, Checked \u2014 and what gate --all may run unasked
@@ -3261,6 +3319,139 @@ def gates_table(tmp):
     check("run open council-postgame: works with no council yet, and creates one",
           code == 0 and os.path.isdir(pg)
           and {"runs/", "asks/"} <= set(read(os.path.join(nohome, ".council", ".gitignore")).split()), pg + err)
+
+
+@part("gates")
+def gates_nothing_behind_a_pass(tmp):
+    # A pass with nothing behind it is said: no test ran, an empty Command cell, an exit code the command
+    # hides, a record another gate overwrites, a committed change a ratchet never looked at
+    godot = 'out=$("${GODOT:-/nowhere/Godot.exe}" --headless 2>&1); printf "%s\\n" "$out"; case "$out" in *"ERROR:"*) exit 1 ;; esac'
+    repo = small_council_repo(tmp, "nothingran",
+        "| zero | `printf 'collected 0 items\\n\\nno tests ran in 0.01s\\n'` | verify | yes | ok | `true` | none | - |\n"
+        "| unit tests | `true` | verify | no | ok | `true` | none | - |\n"
+        "| types | `true` | verify | no | ok | `true` | none | - |\n"
+        "| real | `printf 'collected 3 items\\n3 passed in 0.1s\\n'` | verify | yes | ok | `true` | none | - |\n"
+        "| cleared |  | verify | yes | ok | `true` | none | - |\n"
+        "| piped | `false \\| tee log.txt` | verify | no | ok | `true` | none | - |\n"
+        "| fallback | `true \\|\\| echo fallback` | verify | no | ok | `true` | none | - |\n"
+        "| alt | `case x in a\\|x) exit 0 ;; esac` | verify | no | ok | `true` | none | - |\n"
+        "| boot | `" + godot + "` | verify | yes | ok | `true` | none | - |\n"
+        "| unit_tests | `true` | verify | no | ok | `true` | none | - |\n")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    gates = os.path.join(run.strip(), "gates")
+    code, out, _ = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a runner that exits 0 after collecting no test is a pass with nothing run, never a plain pass",
+          'gate zero: pass — but nothing ran: its output says "collected 0 items"' in out
+          and "gate real: pass (exit 0" in out, out)
+    check("gate --all: a test gate that printed nothing is flagged; a quiet type check is not",
+          "gate unit tests: pass — but nothing ran that it shows: it printed nothing" in out
+          and "gate types: pass (exit 0" in out, out)
+    check("gate --all: the verdict line counts the gates that passed with nothing run",
+          "2 passed with nothing run (zero, unit tests" in out, out)
+    check("gate: a pass that ran no test is recorded as empty, so it can never close a repair trail",
+          any(e[3] == "gate.finished" and e[4] == "zero" and "empty=1" in e[6] for e in events(run.strip())),
+          str(events(run.strip())))
+    check("gate --all: a required gate whose Command cell is empty is named and counted, never dropped",
+          "gate cleared: skipped — its Command cell is empty" in out and "required: cleared" in out, out)
+    code2, lst, _ = council(repo, "gates")
+    check("gates: lists a gate whose Command cell is empty", "cleared · (no command" in lst, lst)
+    code2, out2, err2 = council(repo, "gate", "cleared")
+    check("gate <name>: a gate with an empty Command cell is refused with the way to run it",
+          code2 == 2 and "empty Command cell" in err2 and "council gate cleared -- '<command>'" in err2, out2 + err2)
+    check("gate --all: a piped command gets the pipe note, as it does by name",
+          "note: gate piped — its command pipes its output" in out, out)
+    check("gate --all: || and a case pattern's bar are not called a pipe; a fallback that always succeeds is named",
+          "gate fallback — its command ends with a step that always succeeds" in out
+          and "gate fallback — its command pipes" not in out and "gate alt —" not in out, out)
+    check("gate --all: a runner kept in $( ) and judged by its text is named (it passes with the engine missing)",
+          "gate boot: pass" in out and "note: gate boot — its command keeps a runner's output in $( )" in out
+          and "|| exit $?" in out, out)
+    check("gate --all: a gate whose record would overwrite another's is skipped and named, not run over it",
+          "gate unit_tests: skipped — it would overwrite the record of gate unit tests" in out
+          and json.loads(read(os.path.join(gates, "unit_tests.json")) or "{}").get("gate") == "unit tests", out)
+    code, out, _ = council(repo, "gate", "fallback")
+    check("gate <name>: || is never called a pipe", "contains a pipe" not in out and "pipes its output" not in out
+          and "always succeeds" in out, out)
+
+    # The baseline: green before means every failure is new; a log line's time is not a test
+    base = small_council_repo(tmp, "wasgreen",
+        "| green | `if [ -f .broken ]; then echo 'FAILED tests/test_c.py::test_new - boom'; exit 1; fi; echo '5 passed'` | grounding, verify | no | ok | `true` | none | - |\n"
+        "| logs | `if [ -f .broken ]; then t=10:07:44; else t=10:00:01; fi; echo \"ERROR 2026-09-30 $t could not reach cache\"; echo 'FAILED tests/test_a.py::test_old'; exit 1` | grounding, verify | no | ok | `true` | none | - |\n")
+    council(base, "run", "open", "council-implement")
+    council(base, "gate", "--all", "--at", "grounding")
+    write(os.path.join(base, ".broken"), "")
+    code, out, _ = council(base, "gate", "--all", "--at", "verify")
+    check("gate: a gate green at the baseline says every failure is new, not that nothing can be compared",
+          "this gate passed at the baseline" in out and "the baseline's output names no failing test" not in out, out)
+    check("gate: a timestamped log line is not read as a newly failing test",
+          "the same test(s) are failing as at the baseline (gates/baseline/logs.txt)" in out
+          and "10:07:44 could not reach cache" not in out.split("gate logs:")[-1].split("baseline")[-1], out)
+
+    # A ratchet gate on the default branch, the change committed: the run's recorded base reaches it
+    ratchet = small_council_repo(tmp, "runbase", "| compile | `bash '" + slash(CLI) + "' changed --glob '*.py' -- '"
+                                 + slash(sys.executable) + "' -m py_compile` | verify | yes | ok | `true` | none | - |\n")
+    write(os.path.join(ratchet, "good.py"), "x = 1\n")
+    git(ratchet, "add", "-A")
+    git(ratchet, "commit", "-q", "-m", "good")
+    write(os.path.join(ratchet, "bad.py"), "def broken(:\n    return 1\n")
+    git(ratchet, "add", "-A")
+    git(ratchet, "commit", "-q", "-m", "the change under review")
+    code, rrun, _ = council(ratchet, "run", "open", "council-review")
+    council(ratchet, "index", "--base", "HEAD~1")
+    code, out, _ = council(ratchet, "gate", "--all", "--at", "verify")
+    saved = read(os.path.join(rrun.strip(), "gates", "compile.txt"))
+    check("gate: council changed inside a gate uses the run's recorded base, so a committed change on main is checked",
+          code == 1 and "gate compile: FAIL" in out and "SyntaxError" in saved
+          and "(the run's recorded base)" in saved, out + saved)
+    code, out, err = council_quoted(ratchet, "changed", "--glob", "*.py")
+    check("changed: outside a gate, on the default branch, it says it sees only uncommitted files and how to widen it",
+          code == 0 and "no files matched" in out and "uncommitted and new files only" in err and "--base" in err, out + err)
+
+
+@part("gates")
+def gates_repair_stop(tmp):
+    # In a build a failed gate names the exact repair record line; three recorded failures stop the gate
+    # until the user's go is on record in their words
+    repo = small_council_repo(tmp, "repairstop",
+        "| unit | `if [ -f .fixed ]; then echo '3 passed'; exit 0; fi; echo 'FAILED tests/test_x.py::test_a - AssertionError'; exit 1`"
+        " | grounding, verify | yes | ok | `true` | none | - |\n")
+    code, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=build")
+    code, out, _ = council(repo, "gate", "unit")
+    check("gate <name>: a failure in a build prints the repair record line to run",
+          code == 1 and "repair: record this attempt — council repair record T<n> unit (T<n>: the task you are on)" in out, out)
+    code, out, _ = council(repo, "gate", "before-1", "--", "exit 1")
+    check("gate <name>: the intentionally red before-check is never called a repair attempt", "repair:" not in out, out)
+    council(repo, "state", "next=task 2: export the rows")
+    for _ in range(3):
+        council(repo, "gate", "unit")
+        council(repo, "repair", "record", "T2", "unit")
+    code, out, err = council(repo, "gate", "unit")
+    check("gate <name>: a gate whose repair trail stopped is refused, with the way forward",
+          code == 2 and "gate unit is stopped" in err and "council repair show T2" in err
+          and 'council repair allow unit --user-said "<their words>"' in err, out + err)
+    before = len([e for e in events(run) if e[3] == "gate.finished"])
+    council(repo, "gate", "unit")
+    check("gate <name>: a refused gate runs nothing and records nothing",
+          len([e for e in events(run) if e[3] == "gate.finished"]) == before, str(events(run)[-2:]))
+    code, out, err = council(repo, "repair", "allow", "unit")
+    check("repair allow: refused without the user's own words", code == 2 and "--user-said" in err, err)
+    code, out, err = council(repo, "repair", "allow", "unit", "--user-said", "go on, try the other approach")
+    allowed = read(os.path.join(run, "repair-allowances.tsv"))
+    check("repair allow: records the user's go in their words, with an event",
+          code == 0 and "go on, try the other approach" in allowed and "\tunit\tT2\t" in allowed
+          and any(e[3] == "repair.allowed" and e[4] == "unit" for e in events(run)), out + err + allowed)
+    code, out, err = council(repo, "gate", "unit")
+    check("gate <name>: after the go the gate runs again, and a new failure goes under a new task id",
+          code == 1 and "council repair record T2-2 unit" in out, out + err)
+    code, out, err = council(repo, "repair", "record", "T2-2", "unit")
+    check("repair record: the new task id opens a new trail", code == 0 and "attempt 1" in out, out + err)
+    write(os.path.join(repo, ".fixed"), "")
+    code, out, err = council(repo, "repair", "allow", "nosuch", "--user-said", "yes")
+    check("repair allow: a gate with no stopped trail is refused", code == 2 and "nothing to allow" in err, err)
+
 
 @part("runs")
 def runs_gitignore(tmp):
