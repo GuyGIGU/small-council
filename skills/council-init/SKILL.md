@@ -201,7 +201,10 @@ Adjust on request. On confirmation, write:
      "Bash(council run:*)", "Bash(council state:*)", "Bash(council seat:*)", "Bash(council index:*)",
      "Bash(council collect:*)", "Bash(council check:*)", "Bash(council ask:*)", "Bash(council prior:*)",
      "Bash(council memory:*)", "Bash(council ledger:*)", "Bash(council gates:*)", "Bash(council map:*)",
-     "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)"
+     "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)",
+     "Bash(council status:*)", "Bash(council evidence:*)", "Bash(council context:*)",
+     "Bash(council repair:*)", "Bash(council impact:*)", "Bash(council route:*)",
+     "Bash(council history:*)", "Bash(council outcomes:*)", "Bash(council version:*)"
    ] } }
    ```
 
@@ -215,6 +218,10 @@ Adjust on request. On confirmation, write:
    Say this to the user in one line: *"the checks will ask you each time — that's on purpose, because
    a gate runs whatever command it names. Don't pick 'don't ask again' for `council gate` or
    `council changed`."* Never widen this list to `council *`.
+
+   **`council cap` stays off too**: `council cap allow` records the user's go past the agent stop,
+   so it must ask every time. So do `council tune` (`tune apply` changes the config) and
+   `council correct`.
 
    At a **refresh**, read `.claude/settings.local.json` first: if it holds `Bash(council *)` or a
    `council gate` rule from an earlier version, offer to replace it with this list, and say why.

@@ -227,7 +227,8 @@ and no dependency audit.
   of erroring for ever;
 - a fitted test runner's report says what the suite is actually worth ("1 test; it proves the app
   starts and nothing else");
-- the permission rules it offers never include `Bash(council *)` or `council gate`.
+- the permission rules it offers never include `Bash(council *)`, `council gate`, `council changed`
+  or `council cap`.
 
 ## D26 — The receipt
 **Setup:** any council-implement run, including one where you know a corner was cut.

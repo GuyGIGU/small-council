@@ -304,6 +304,14 @@ check("init: never offers a blanket council allowlist (gate and changed run arbi
       '"Bash(council *)"' not in skill["council-init"] and '"Bash(council gate:' not in skill["council-init"]
       and '"Bash(council changed' not in skill["council-init"]
       and "`Bash(council *)`" in skill["council-init"])   # named only to warn against it
+check("init: the permission offer covers the helper commands the modes run without asking",
+      all(f'"Bash(council {c}:*)"' in skill["council-init"] for c in [
+          "run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
+          "doctor", "home", "fingerprint", "status", "evidence", "context", "repair", "impact", "route", "history",
+          "outcomes", "version"]))
+check("init: cap, tune and correct keep asking (cap allow records the user's go past the agent stop)",
+      not any(f'"Bash(council {c}' in skill["council-init"] for c in ["cap", "tune", "correct"])
+      and "`council cap` stays off" in skill["council-init"])
 review, plan, impl, research, init = (skill[k] for k in ["council-review", "council-plan", "council-implement", "council-research", "council-init"])
 for label, text, needles in [
     ("review", review, ["merge-base", "council index --base", "Origin:", "Basis:", "Refuted if:", "Not a finding", "council-implement"]),
