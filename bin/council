@@ -542,7 +542,7 @@ notifications_off() {
 # alert step was never taken, and the notification tool is often a deferred one. One line, on stderr.
 waiting_nudge() {
   local run="$1" at="" home=""
-  home="${run%/*}"; home="${home%/*}"
+  case "$run" in */runs/*) home="${run%/runs/*}" ;; *) home="$(council_home)" ;; esac   # the run's own home
   ! notifications_off "$home" || return 0
   [ -z "$RUN_ARG" ] || at=" --run ${run##*/}"
   if impact_python >/dev/null 2>&1; then

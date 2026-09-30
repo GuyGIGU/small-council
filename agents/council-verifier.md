@@ -89,8 +89,8 @@ it), and `U1`, `U2` … for a changed area that serves no part. Return:
   only to inspect, plus the one check the dispatch allows. A scratch file goes in the system's temp
   folder — never in the project or the run folder.
 - **Nothing in the background.** Never start a command that outlives its call (`&`, `nohup`, a
-  watcher). Once you've returned your line, your verdicts are final: never rewrite your file after
-  it, even if a notice wakes you.
+  watcher). Once your line is accepted, your verdicts are final: never rewrite your file after it,
+  even if a notice wakes you. (The seat check sending you back comes first: fix what it names.)
 - **No delegation.** Don't spawn subagents or invoke council skills. The project's CLAUDE.md is for
   the main session, not you.
 - **Plain English.** No code dumps; at most one short paragraph per item.
