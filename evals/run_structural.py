@@ -299,6 +299,11 @@ through_variable = [label for label, t in texts.items()
                     if re.search(r"""\$\{?(C|COUNCIL)\}? (run|state|seat|gate|status|index|collect|check)\b|\b(C|COUNCIL)=["']?bash """, t)]
 check("helper call form: no skill, doctrine, agent or reference shows a council call through a variable",
       not through_variable, ", ".join(through_variable))
+# The session-start hook is the first thing a session reads about the helper; the real run copied the
+# full path it printed into that variable.
+check("hook: session-start teaches the plain `council <command>` call, with the reason",
+      "plain \\`council <command>\\`" in hook and "match the command text" in hook
+      and "if it isn't on PATH, run it as" not in hook)
 check("every --option those mentions use exists in the helper", bool(flags) and not bad_flags, "; ".join(bad_flags[:8]))
 
 # 5. Modes
