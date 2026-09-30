@@ -10,6 +10,15 @@ All notable changes to this project are documented here. The format is based on
 
 - The permission rules council-init offers now cover nine more helper commands the council runs (status, evidence, context, repair, impact, route, history, outcomes, version), so they stop asking each time; `council gate`, `changed`, `cap`, `tune` and `correct` still ask. A council-init refresh offers the new rules to projects already set up.
 
+### Fixed
+
+Four problems the first real run showed:
+
+- The status card was never shown: showing it is now a numbered step at the first dispatch and at the close, and the helper reminds the Chair at both moments.
+- Two copies of the checks could run at once and leave a test failure on record that never happened: a run now takes one `council gate` at a time, and a second one is refused before it writes anything.
+- The status text said "A check is failing. A check failed." and, at the last stage, "Next: size the run and ask for the go-ahead": a failing check is now said once, and that opening step is no longer shown once the run has moved on.
+- The Chair reached the helper only through a full path, which no permission rule can match: the method now says to call it as a plain `council <command>`, and why.
+
 ## [0.17.0] — 2026-09-29
 
 **TL;DR:** memory rules wrapped over several lines now reach seats whole; mapping and survey seats can
