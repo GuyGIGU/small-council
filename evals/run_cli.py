@@ -1220,8 +1220,17 @@ def agent_stop(tmp):
     write(os.path.join(old_stop, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\n"
                                                "beck\tdone\ta2\t50000\t10:07\t\n")
     code, out, err = council(stop, "cap", "check", "--session", "s1")
-    check("cap check: an older run with no session, at its cap on this tree — exit 2", code == 2 and "2026-09-01-100000-review" in out,
-          out + err)
+    check("cap check: an older run opened before plans and agent limits, past its cap on this tree, never stops an agent",
+          code == 0 and not out, out + err)
+    code, out, err = council(stop, "cap", "--run", "2026-09-01-100000-review")
+    check("cap: an older run past its cap says so, and that the stop does not hold for it",
+          "2 of 2 agent runs used" in out and "not stopped" in out and "opened before plans and agent limits" in out, out + err)
+    old_seats = os.path.join(old_stop, "seats.tsv")
+    code, out, err = council(stop, "seat", "gamma", "done", "agents=1", "--run", "2026-09-01-100000-review")
+    check("seat: past the cap, an older run's note warns — new agents are not stopped, tell the user",
+          "more than the cap of 2" in err and "not stopped" in err and "refused" not in err, err)
+    write(old_seats, "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\nbeck\tdone\ta2\t50000\t10:07\t\n")
+    os.remove(os.path.join(old_stop, "usage.tsv"))                                  # back to the two older rows
     code, out, err = council(stop, "cap", "allow", "1", "--run", "2026-09-01-100000-review", "--user-said", "fine, one more")
     rows = read(os.path.join(old_stop, "cap-allowances.tsv")).splitlines()
     check("cap allow: works on an older run with no events.tsv or run-plan.tsv, and adds no event file",

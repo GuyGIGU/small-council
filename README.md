@@ -55,7 +55,8 @@ skipped under load.
   - **SessionStart**: orients council-enabled sessions, lists open runs, and after a compaction says
     "resume from disk, don't restart". It prints nothing in other projects.
   - **PreToolUse**: at its agent cap or past its token ceiling, a council run refuses new agents
-    until you say go.
+    until you say go. It counts each agent as it starts (a Workflow as at least one), so agents
+    started together can't slip past the limit.
   - **SubagentStop**: a council agent can't finish without the file its contract requires.
 
 ## Install
