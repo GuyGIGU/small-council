@@ -65,10 +65,11 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 ## The helper
 
-Run checks on their own; never hide refusals through `| tail`/`| head` (Challenge, step 5).
-
-`council` does the bookkeeping. It is on PATH while the plugin is enabled; if it isn't, call it as
-`bash "${CLAUDE_PLUGIN_ROOT}/bin/council"`.
+`council` does the bookkeeping; it is on PATH while the plugin is enabled. **Call it as a plain
+`council <command>`** — never through a shell variable or alias, and never as
+`bash <path>/bin/council` while `command -v council` succeeds: permission rules match the command
+text, so any other form asks the user every time. Only if it isn't on PATH, write
+`bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
 
 For command syntax and purposes, use council help and
 `${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`. The stage doctrine says when to run each
@@ -80,8 +81,9 @@ command. Keep these rules here because they apply to every run:
   adds opt-in `contexts/` after `brief.md`; it does not replace the brief.
 - `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
   It needs optional Python 3.8+. `council repair record` leaves a bounded trail in `repairs.jsonl`.
-- Run checks on their own. `council gate --all` exit 4 means NOTHING WAS CHECKED: never report
-  that as a pass. A single gate's exit 4 is that command's own exit code.
+- Run checks on their own; never hide refusals through `| tail`/`| head` (Challenge, step 5).
+  `council gate --all` exit 4 means NOTHING WAS CHECKED: never report that as a pass. A single
+  gate's exit 4 is that command's own exit code.
 
 Commands act on the one in-progress run on this working tree. With a second one open
 (`--alongside`), pass `--run <folder>` every time; the helper never guesses.

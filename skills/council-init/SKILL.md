@@ -10,8 +10,11 @@ a repo and it builds the fit.
 - Follow the council's discipline: **map the repo, don't deep-read it.**
 - First read `${CLAUDE_PLUGIN_ROOT}/references/roster/expert-catalog.md`: the seats, their "applies
   when" rules, and the recast rules.
-- The council home is the main checkout's `.council/`; `council home` prints it. If the helper isn't
-  on PATH, run it as `bash "${CLAUDE_PLUGIN_ROOT}/bin/council"`.
+- The council home is the main checkout's `.council/`; `council home` prints it. Call the helper as a
+  plain `council <command>` — never through a shell variable or alias, and never as
+  `bash <path>/bin/council` while `command -v council` succeeds: permission rules match the command
+  text. Only if it isn't on PATH, write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in
+  full each time.
 
 ## Phase A — Detect the stack and surfaces (classify, don't review)
 
@@ -210,8 +213,13 @@ Adjust on request. On confirmation, write:
 
    Edit rules cover Write too. Add the council home's real path as well — `Edit(//<what `council home`
    printed>/**)` — because the home belongs to the **main** checkout, so the relative rule misses it
-   from a linked worktree or a subdirectory. If the helper isn't on PATH here, add the fallback form
-   the same way: `Bash(bash *bin/council run:*)` and so on, or the list does nothing.
+   from a linked worktree or a subdirectory.
+
+   **These rules match the command text.** They cover `council run status` typed plainly and nothing
+   else: a call through a shell variable, an alias or `bash <path>/bin/council` matches none of them
+   and asks every time. So every council call is a plain `council <command>` (context-core, "The
+   helper"). Only if `command -v council` fails here, add the fallback form the same way —
+   `Bash(bash *bin/council run:*)` and so on — or the list does nothing.
 
    **`council gate` and `council changed` are deliberately not on the list**: both run whatever
    command they are given, so a blanket `Bash(council *)` would allow every command on the machine.

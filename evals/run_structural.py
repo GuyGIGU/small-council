@@ -285,6 +285,20 @@ for label, t in texts.items():
         elif c == "map" and (not rest or rest[0] != "status"):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")
 check("every `council …` command mentioned exists in the helper", not bad, "; ".join(bad[:8]))
+# A permission rule such as Bash(council run:*) matches the command's text. A real run reached the helper
+# only as C="bash <path>/bin/council"; $C run status — a form no rule can match — so the call form is pinned.
+CALL_FORM = ("plain `council <command>`", "shell variable", "`command -v council`", "match the command")
+lacking = [f"{label}: {p}" for label, t in (("kernel", core), ("init", skill["council-init"]), ("helper-commands", helper_reference))
+           for p in CALL_FORM if p not in flat(t)]
+check("helper call form: a plain `council <command>` — never a shell variable, an alias or bash <path>/bin/council "
+      "while it is on PATH — with the reason, in the kernel, council-init and the command reference",
+      not lacking, "; ".join(lacking))
+check("init: the permission offer says its rules match the command text, so only the plain form is covered",
+      "**These rules match the command text.**" in skill["council-init"].split("**Offer permission rules**", 1)[-1])
+through_variable = [label for label, t in texts.items()
+                    if re.search(r"""\$\{?(C|COUNCIL)\}? (run|state|seat|gate|status|index|collect|check)\b|\b(C|COUNCIL)=["']?bash """, t)]
+check("helper call form: no skill, doctrine, agent or reference shows a council call through a variable",
+      not through_variable, ", ".join(through_variable))
 check("every --option those mentions use exists in the helper", bool(flags) and not bad_flags, "; ".join(bad_flags[:8]))
 
 # 5. Modes

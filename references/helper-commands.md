@@ -3,6 +3,11 @@
 The Chair uses `council` for mechanical steps. Run council help for exact syntax;
 the stage doctrine says when each command belongs in a run.
 
+Call it as a plain `council <command>` — never through a shell variable or alias, and never as
+`bash <path>/bin/council` while `command -v council` succeeds. Permission rules match the command
+text, so any other form asks the user every time. Only if it isn't on PATH, write
+`bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
+
 | Command | Use it to |
 |---|---|
 | `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one, then a reminder to show the user its closing card (`council status --widget --run <folder>`) · carry one on in this session (see Resume) |
