@@ -52,21 +52,27 @@ Catch what's wrong before the user sees it.
    - REFUTED drops. Keep it for memory: deliberate design is a candidate accepted pattern.
    - UNCERTAIN ships labelled, and is never dropped if its subject is protected.
    - MISCITED ships with the corrected location.
-   - A cut P1 that comes back CONFIRMED is restored.
+   - Any cut claim a verifier CONFIRMED (or MISCITED) is restored: move its line under `## Kept`,
+     id unchanged (`C4`), and ship it under that id. If it truly stays cut, add `still-cut: <why>`
+     before `from:`. `council evidence check` holds the run until one or the other is done.
 4. **Every shipped item has a verdict** — check before you move on.
 5. **Refresh the claim index.** After verifier files exist, `council evidence build`, then
    `council evidence check`. Run `evidence build`/`check`, `collect` and `check` on their own
    (or test their exit status);
    never chain them through `| tail`/`| head`, which can swallow a refusal.
    Fix missing provenance, evidence-state declarations, proof artifacts, verifier rows or conflicting
-   rows. `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
+   rows (a plan's several rows for one recommendation are expected: the worst verdict stands).
+   `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
    If optional Python is unavailable, check the same links by hand. This applies to synthesis
    claims in review, plan and research; build and post-game keep their own proof contracts.
 6. **Verification gates**, for modes that changed code: `council gate --all --at verify`.
 
 ## Solo runs
 
-Verify yourself, item by item, against the real code, with the same verdicts.
+Verify yourself, item by item, against the real code, with the same verdicts. Write them to
+`<run>/verify-self.md`: line 1 `# Self-check — <run title>`, then the same
+`| # | Item | Verdict | Evidence |` table. The claim index and the closing card label them
+self-checked, never independent. A run with any verifier is Squad, not Solo.
 
 ## Done when
 
