@@ -247,15 +247,23 @@ resolve_run() {
 }
 
 # A --run value as a run folder: backslashes read as /, trailing separators dropped, a relative path
-# made absolute (commands may change folder), a bare name looked up under runs/.
+# made absolute (commands may change folder), a bare name looked up under runs/. A relative
+# .council/runs/<name> that isn't there — written from the main checkout, used in a linked worktree,
+# whose council home is the main checkout's — is that name under this council home's runs/.
 run_path() {
-  local bs='\' r
+  local bs='\' r home
   r="${1//"$bs"//}"
   while [ "${r%/}" != "$r" ] && [ -n "${r%/}" ]; do r="${r%/}"; done
+  home="$(council_home)"
   if [ -f "$r/session-state.md" ]; then
     case "$r" in /*|[A-Za-z]:/*) ;; *) r="$(cd "$r" 2>/dev/null && here)" || r="$1" ;; esac
-  elif [ -f "$(council_home)/runs/$r/session-state.md" ]; then
-    r="$(council_home)/runs/$r"
+  elif [ -f "$home/runs/$r/session-state.md" ]; then
+    r="$home/runs/$r"
+  else
+    case "$r" in
+      /*|[A-Za-z]:/*) ;;
+      runs/*|*/runs/*) [ ! -f "$home/runs/${r##*/}/session-state.md" ] || r="$home/runs/${r##*/}" ;;
+    esac
   fi
   printf '%s' "$r"
 }

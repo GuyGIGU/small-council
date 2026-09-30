@@ -2596,6 +2596,24 @@ def resume(tmp):
     check("run resume --run: resumes the named run only",
           code == 0 and "status: in-progress" in read(os.path.join(p1.strip(), "session-state.md"))
           and "status: paused" in read(os.path.join(p2.strip(), "session-state.md")), out + err)
+    # From a linked worktree, the run's usual relative path (.council/runs/<name>, written from the main
+    # checkout) names the same run: the worktree's council home is the main checkout's.
+    write(os.path.join(rs, "a.txt"), "x\n")
+    git(rs, "add", "a.txt")
+    git(rs, "commit", "-q", "-m", "init")
+    rwt = os.path.join(tmp, "resume-wt")
+    git(rs, "worktree", "add", "-q", "-b", "resume-wt", rwt)
+    council(rs, "run", "close", "--run", os.path.basename(p1.strip()), "--status", "paused")
+    p2name = os.path.basename(p2.strip())
+    code, out, err = council(rwt, "run", "resume", "--run", ".council/runs/" + p2name)
+    check("run resume --run .council/runs/<name>: works from a linked worktree too",
+          code == 0 and f"resumed {p2name}" in out and "status: in-progress" in read(os.path.join(p2.strip(), "session-state.md")),
+          out + err)
+    code, out, err = council(rwt, "state", "--run", ".council\\runs\\" + os.path.basename(p1.strip()) + "\\")
+    check("--run .council\\runs\\<name>\\ (backslashes) from a linked worktree names the same run",
+          code == 0 and "mode: council-plan" in out, out + err)
+    code, _, err = council(rwt, "state", "--run", ".council/runs/2020-01-01-000000-review")
+    check("--run: a relative path that names no run is still refused", code == 2 and "not a run folder" in err, err)
 
 @part("runs")
 def runs_fingerprint_and_ledger(tmp):
