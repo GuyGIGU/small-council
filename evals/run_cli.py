@@ -396,6 +396,37 @@ def runs_open(tmp):
     check("state: rejects an invalid status", code == 2, err)
     code, _, err = council(repo, "state", "no-equals-sign")
     check("state: rejects a bare word", code == 2, err)
+    # A stage name is checked: a typo skipped the plan check, and an empty one wrote an event row that
+    # failed the stream for good.
+    for bad_phase in ("", "Brief", "working"):
+        code, _, err = council(repo, "state", "phase=" + bad_phase, "next=never written")
+        st = read(os.path.join(run, "session-state.md"))
+        check(f"state: refuses the stage name {bad_phase!r} and writes nothing, not even the other keys",
+              code == 2 and "is not a stage" in err and "phase: prepare" in st and "never written" not in st, err + st)
+    code, out, err = council(repo, "run", "events", "check")
+    check("state: refused stage names leave the event stream valid, with no row for them",
+          code == 0 and len(events(run)) == 2, out + err)
+    steps = new_repo(tmp, "init-steps")
+    write(os.path.join(steps, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- notifications: off\n")
+    council(steps, "run", "open", "council-init")
+    code, out, err = council(steps, "state", "phase=propose")
+    code2, _, err2 = council(steps, "state", "phase=Propose")
+    check("state: an init run may name its own steps in lower case, never with capitals",
+          code == 0 and "phase propose" in out and code2 == 2 and "is not a stage" in err2, out + err + err2)
+    # Waiting on the user: the helper reminds the Chair to alert them, once per question (the step was
+    # never taken in 33 real sessions), unless the project turned alerts off.
+    code, _, err = council(steps, "state", "waiting=Which export cap?")
+    check("state: with notifications off, a waiting question prints no alert reminder",
+          code == 0 and "PushNotification" not in err, err)
+    council(steps, "state", "waiting=")
+    write(os.path.join(steps, ".council", "council.config.md"), "# Council config\n")
+    code, _, err = council(steps, "state", "waiting=Which export cap?")
+    code2, _, err2 = council(steps, "state", "waiting=Which export cap?", "next=wait")
+    council(steps, "state", "waiting=")
+    check("state: a run that starts waiting on the user is told once to send the alert with a PushNotification "
+          "tool, which may be a deferred one",
+          code == 0 and "waits on the user" in err and "PushNotification" in err and "deferred tool" in err
+          and code2 == 0 and "PushNotification" not in err2, err + " | " + err2)
 
     write_plan(run, selected=("fowler", "beck", "gone"), skipped=("ghost",))
     code, out, err = council(repo, "run", "plan", "check")
@@ -1163,6 +1194,34 @@ def seat_races(tmp):
     check("seat: a later record past all three limits adds no second passing event, and the stream stays valid",
           [kinds.count(k) for k in once] == [1, 1, 1] and code == 0,
           "cap, estimate, ceiling events %s; %s%s" % ([kinds.count(k) for k in once], out, err))
+
+@part("timing")
+def state_races(tmp):
+    """State updates at the same moment: session-state.md is rewritten under a lock, so none is lost. Before,
+    six at once all said they had succeeded and one key survived."""
+    sr = new_repo(tmp, "state-race")
+    write(os.path.join(sr, ".council", "council.config.md"), "# Council config — state races\n")
+    _, srun, _ = council(sr, "run", "open", "council-review")
+    srun = srun.strip()
+    workers = []
+    for rnd in range(3):
+        workers += council_together(sr, *[("state", f"k{rnd}{i}=v", "--run", srun) for i in range(6)])
+    st = read(os.path.join(srun, "session-state.md"))
+    kept = [f"k{rnd}{i}" for rnd in range(3) for i in range(6) if f"\nk{rnd}{i}: v\n" in st]
+    check("state: eighteen updates made six at a time all succeed and all eighteen keys are kept",
+          all(code == 0 for code, _ in workers) and len(kept) == 18,
+          workers_detail(workers) + "\nkept %d: %s" % (len(kept), " ".join(kept)), full=True)
+    lost = []
+    for rnd, phase in enumerate(("prepare", "convene", "prepare", "convene")):
+        pair = council_together(sr, ("state", f"phase={phase}", "--run", srun), ("state", f"next=step {rnd}", "--run", srun))
+        st = read(os.path.join(srun, "session-state.md"))
+        if any(code != 0 for code, _ in pair) or f"\nphase: {phase}\n" not in st or f"\nnext: step {rnd}\n" not in st:
+            lost.append("round %d: %s · %s" % (rnd, workers_detail(pair), st.split("## ")[0].replace("\n", " | ")))
+    last_phase = [e[5] for e in events(srun) if e[3] == "run.phase_changed"][-1:]
+    code, out, err = council(sr, "run", "events", "check", "--run", srun)
+    check("state: a stage change made together with another update keeps both, and the last stage event matches the file",
+          not lost and last_phase == ["convene"] and code == 0, "\n".join(lost) + " · last phase event %s · %s%s" % (last_phase, out, err),
+          full=True)
 
 @part("collect")
 def agent_stop(tmp):

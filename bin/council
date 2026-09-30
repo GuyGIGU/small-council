@@ -523,27 +523,66 @@ memory_size_note() {
   printf 'council: %s is %s KB, over the ~25 KB the council expects — every run reads it; at Learn, propose a consolidation\n' "${MEM##*/}" "$kb" >&2
 }
 
+# A stage name council state accepts: the ten stages and a build's own. An empty or misspelt one would
+# skip the plan check below, and an empty one writes an event row that fails the stream for good. A
+# council-init or test-architect run names its own steps, so any lower-case word does there.
+stage_name_ok() {
+  case "$1" in convene|prepare|assign|brief|work|collect|judge|challenge|deliver|learn|build) return 0 ;; esac
+  case "$2" in council-init|test-architect) ;; *) return 1 ;; esac
+  case "$1" in ''|-*|*[!a-z-]*) return 1 ;; esac
+}
+
+# `- notifications: off` in the project's config silences the owner's phone alerts (as status.py reads it).
+notifications_off() {
+  [ -f "$1/council.config.md" ] || return 1
+  tr -d '\r' < "$1/council.config.md" 2>/dev/null | grep -q -i -E '^[[:space:]]*-[[:space:]]*notifications:[[:space:]]*off[[:space:]]*(#.*)?$'
+}
+
+# A run that starts waiting on the user tells the Chair to alert them: in 33 real sessions the doctrine's
+# alert step was never taken, and the notification tool is often a deferred one. One line, on stderr.
+waiting_nudge() {
+  local run="$1" at="" home=""
+  home="${run%/*}"; home="${home%/*}"
+  ! notifications_off "$home" || return 0
+  [ -z "$RUN_ARG" ] || at=" --run ${run##*/}"
+  if impact_python >/dev/null 2>&1; then
+    printf 'council: the run now waits on the user: send the line `council status --line%s` prints, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none)\n' "$at" >&2
+  else
+    printf 'council: the run now waits on the user: send them the question in one short line, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none)\n' >&2
+  fi
+}
+
 cmd_state() {
-  local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting
+  local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting mode lock=''
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
-  old_phase="$(field phase "$st")"; old_status="$(field status "$st")"; old_waiting="$(state_field waiting "$st")"
-  for kv in ${1+"$@"}; do
+  mode="$(field mode "$st")"
+  for kv in ${1+"$@"}; do                              # every word is checked before anything is written
+    key="${kv%%=*}"
+    [ "$key" != "$kv" ] || die "expected key=value, got: $kv"
+    case "$key" in ''|*[!a-z0-9-]*) die "bad key: $key (lowercase letters, digits, dashes)" ;; esac
+    case "$kv" in
+      status=*)
+        case "${kv#*=}" in in-progress|paused|complete|abandoned) ;; *) die "status must be in-progress, paused, complete or abandoned" ;; esac ;;
+      phase=*)
+        stage_name_ok "${kv#phase=}" "$mode" \
+          || die "phase=${kv#phase=} is not a stage — use one of convene, prepare, assign, brief, work, collect, judge, challenge, deliver, learn, or build in a build (lower case)" ;;
+    esac
     case "$kv" in
       phase=brief|phase=build|phase=work|phase=collect|phase=judge|phase=challenge|phase=deliver|phase=learn)
         require_run_plan "$run" "advance to ${kv#phase=}" ;;
     esac
   done
+  # Several commands rewrite this file (state, index, ask save, close, resume); two at once would each
+  # write over the other's change. The lock also keeps the events below in the order of the writes.
+  lock="$st.lock"; event_lock "$lock" || die "state lock unavailable: $lock"
+  old_phase="$(field phase "$st")"; old_status="$(field status "$st")"; old_waiting="$(state_field waiting "$st")"
   tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
-  awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { print }' "$st" > "$tmp" || { rm -f "$tmp"; die "cannot update $st"; }
+  awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { print }' "$st" > "$tmp" \
+    || { rm -f "$tmp"; event_unlock "$lock" || :; die "cannot update $st"; }
   for kv in ${1+"$@"}; do
     key="${kv%%=*}"
-    if [ "$key" = "$kv" ]; then rm -f "$tmp"; die "expected key=value, got: $kv"; fi
-    case "$key" in ''|*[!a-z0-9-]*) rm -f "$tmp"; die "bad key: $key (lowercase letters, digits, dashes)" ;; esac
-    if [ "$key" = status ]; then
-      case "${kv#*=}" in in-progress|paused|complete|abandoned) ;; *) rm -f "$tmp"; die "status must be in-progress, paused, complete or abandoned" ;; esac
-    fi
     K="$key" V="$(printf '%s' "${kv#*=}" | tr '\r\n' '  ')" awk '
       BEGIN { k = ENVIRON["K"] ":"; line = ENVIRON["K"] ": " ENVIRON["V"] }
       !done && index($0, k) == 1 { print line; done = 1; next }
@@ -565,20 +604,26 @@ cmd_state() {
     BEGIN { l = "updated: " ENVIRON["NOW"] }
     !d && index($0, "updated:") == 1 { print l; d = 1; next }
     { print }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
-  mv "$tmp" "$st" || die "cannot update $st"
+  mv "$tmp" "$st" || { rm -f "$tmp"; event_unlock "$lock" || :; die "cannot update $st"; }
   new_phase="$(field phase "$st")"; new_status="$(field status "$st")"
   if [ "$old_phase" != "$new_phase" ]; then
-    event_append "$run" run.phase_changed run "$new_phase" "from=$old_phase" || die "state changed, but the phase event could not be recorded"
+    event_append "$run" run.phase_changed run "$new_phase" "from=$old_phase" \
+      || { event_unlock "$lock" || :; die "state changed, but the phase event could not be recorded"; }
   fi
   if [ "$old_status" != "$new_status" ]; then
-    event_append "$run" run.status_changed run "$new_status" "from=$old_status" || die "state changed, but the status event could not be recorded"
+    event_append "$run" run.status_changed run "$new_status" "from=$old_status" \
+      || { event_unlock "$lock" || :; die "state changed, but the status event could not be recorded"; }
   fi
   new_waiting="$(state_field waiting "$st")"           # the question the run waits on the user for, if any
   if [ -z "$old_waiting" ] && [ -n "$new_waiting" ]; then
-    event_append "$run" run.waiting_changed run on "from=off" || die "state changed, but the waiting event could not be recorded"
+    event_append "$run" run.waiting_changed run on "from=off" \
+      || { event_unlock "$lock" || :; die "state changed, but the waiting event could not be recorded"; }
   elif [ -n "$old_waiting" ] && [ -z "$new_waiting" ]; then
-    event_append "$run" run.waiting_changed run off "from=on" || die "state changed, but the waiting event could not be recorded"
+    event_append "$run" run.waiting_changed run off "from=on" \
+      || { event_unlock "$lock" || :; die "state changed, but the waiting event could not be recorded"; }
   fi
+  event_unlock "$lock" || die "state changed, but its lock could not be released: $lock"
+  [ -z "$new_waiting" ] || [ "$new_waiting" = "$old_waiting" ] || waiting_nudge "$run"
   say "state: phase $(field phase "$st") · $(field status "$st") · ${run##*/}"
 }
 
@@ -5597,7 +5642,8 @@ council — the Small Council's helper (bash + git)
                                          in progress again, this session recorded as its driver
   council run plan [check|show]          validate the run plan · show its decisions in plain language
   council run events [show|check]        inspect or validate the run's append-only event stream
-  council state [key=value …]            show or update the run's session-state header
+  council state [key=value …]            show or update the run's session-state header; phase= takes a
+                                         stage name; waiting="<question>" prints the alert reminder
   council seat <slug> <state> [agent=ID] [tokens=N] [agents=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped;
                                          tokens= and agents= (a Workflow's agent count) come with the
