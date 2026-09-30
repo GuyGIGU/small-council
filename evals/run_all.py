@@ -47,6 +47,7 @@ SUITES = [
     ("Run history evals", ["evals/run_history.py"], "shared"),
     ("Finding outcomes evals", ["evals/run_outcomes.py"], "shared"),
     ("Tuning evals", ["evals/run_tune.py"], "shared"),
+    ("Run audit evals", ["evals/run_audit.py"], "shared"),
     ("Benchmark harness self-test (no model calls)", ["evals/bench.py", "self-test"], "shared"),
     ("Hook evals", ["evals/run_hook.py"], "groups"),
     ("Phrase checks (advisory, never fails)", ["evals/run_phrases.py"], "shared"),

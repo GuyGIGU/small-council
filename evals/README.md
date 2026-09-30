@@ -297,6 +297,14 @@ folders survived; and nothing written.
 - BOM, CRLF, comments and file modes survive;
 - every refusal says why and writes nothing.
 
+`python evals/run_audit.py` checks `council run audit` (`scripts/audit.py`), the check that reads what
+a Chair actually did in a finished run. A run built with the first real run's pattern, and its session
+transcript, must fail on each known problem: a stage skipped, the verifier recorded only when it
+finished, two copies of the checks at once, no record of the Chair's own seat, no status card at the
+first dispatch or after close, the helper called through a shell variable, its output cut by
+`| tail`, a refusal never tried again. A clean run driven through the real helper must pass every item.
+Reading writes nothing. It also checks the dispatch case's graders for the status card and the close.
+
 ## 11. Benchmark — Small Council against plain Claude Code
 
 ```bash

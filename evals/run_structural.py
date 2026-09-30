@@ -233,6 +233,8 @@ check("04-brief: memory in scope comes from council memory select", "council mem
 check("Challenge: Workflow parts stay in the run folder and closed runs need --run",
       all(phrase in doctrine["08-challenge.md"] for phrase in
           ("verify-<n>-<letter>.md", "Never merge, copy or move", "--run <name>")))
+# Wording only; the behaviour is checked by `council run audit --transcript`, which names every helper
+# call a Chair piped through tail or head (evals/run_audit.py).
 check("helper and Challenge: refusals must not be hidden in output pipelines",
       all("`| tail`/`| head`" in text for text in (core, doctrine["08-challenge.md"])) and
       "test their exit status" in doctrine["08-challenge.md"])
@@ -280,7 +282,7 @@ for label, t in texts.items():
         bad_flags += [f"{label}: council {c} {f}" for f in re.findall(r"--[a-z][a-z-]*", " ".join(own)) if f not in flags]
         if c not in known:
             bad.append(f"{label}: council {c}")
-        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume", "plan", "events"}):
+        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume", "plan", "events", "audit"}):
             bad.append(f"{label}: council run {' '.join(rest[:1])}")
         elif c == "map" and (not rest or rest[0] != "status"):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")
