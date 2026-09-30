@@ -207,6 +207,9 @@ def session_start(tmp):
     check("full council: exits 0", code == 0, str(code))
     check("full council: orientation line", "[Small Council]" in out and "map.md" in out, out)
     check("full council: points at the helper", "council run status" in out and "bin/council" in out, out)
+    check("full council: the helper runs in the Bash tool (Git Bash on Windows), never from PowerShell",
+          "Bash tool (Git Bash on Windows)" in line_with(out, "plain `council <command>`")
+          and "PowerShell" in line_with(out, "plain `council <command>`"), out)
     check("full council: fresh map is not 'behind'", "behind" not in out, out)
     check("full council: counts 2 pending proposals (ignores the comment)", "2 memory proposal(s)" in out, out)
     check("full council: lists council-postgame among the modes", "council-postgame" in out, out)
