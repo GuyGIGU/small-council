@@ -1345,15 +1345,18 @@ cmd_run_status() {
 
 # Validate the versioned five-column plan. The file is deliberately plain TSV so a Chair can write
 # it directly and old shells can check it without jq or another runtime. QUIET=1 suppresses only the
-# success line; errors always remain visible.
+# success line; errors always remain visible. The user's latest go past the cap (council cap allow, the
+# until of cap-allowances.tsv) lets the plan hold agent runs up to it: the extra seat their go allowed
+# gets its plan rows, and the run moves on.
 run_plan_validate() {
-  local run="$1" plan="$2" expected_mode max_cap seat_models
+  local run="$1" plan="$2" expected_mode max_cap seat_models go
   expected_mode="$(field mode "$run/session-state.md")"
   max_cap="$(configured_agent_cap)"
+  go="$(cap_allowed_until "$run")"
   seat_models="$(configured_seat_models)"
   # A closed run already dispatched under the setting of its day; today's on/off doesn't judge it.
   case "$(field status "$run/session-state.md")" in complete|abandoned) seat_models=closed ;; esac
-  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" SEAT_MODELS="$seat_models" QUIET="${QUIET:-0}" awk -F'\t' '
+  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" GO="$go" SEAT_MODELS="$seat_models" QUIET="${QUIET:-0}" awk -F'\t' '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function problem(line, msg) {
       errors++
@@ -1365,6 +1368,8 @@ run_plan_validate() {
       if (!(key in val)) problem(0, "missing " label " row (" kind "/" id "/" field ")")
     }
     function integer(s) { return s ~ /^[0-9]+$/ }
+    function under_go(n) { return ENVIRON["GO"] != "" && n <= ENVIRON["GO"] + 0 }
+    function go_words() { return ENVIRON["GO"] == "" ? "" : " or the user\047s go up to " ENVIRON["GO"] " agent runs (council cap allow)" }
     BEGIN { header = "kind\tid\tfield\tvalue\treason" }
     {
       sub(/\r$/, "")
@@ -1420,7 +1425,7 @@ run_plan_validate() {
         if (id == "run") {
           if (fld == "agent-cap") {
             if (!integer(v) || v < 1) problem(NR, "agent-cap must be a positive integer")
-            else if (v > ENVIRON["MAX_CAP"] + 0) problem(NR, "agent-cap " v " exceeds the configured cap " ENVIRON["MAX_CAP"])
+            else if (v > ENVIRON["MAX_CAP"] + 0 && !under_go(v + 0)) problem(NR, "agent-cap " v " exceeds the configured cap " ENVIRON["MAX_CAP"] go_words())
             plan_cap = v + 0
           } else if (fld == "estimated-tokens") {
             if (!integer(v)) problem(NR, "estimated-tokens must be a non-negative integer")
@@ -1500,13 +1505,15 @@ run_plan_validate() {
         problem(0, verification " verification needs a selected verifier")
       if (verification == "self" && verifiers > 0)
         problem(0, "self verification conflicts with a selected verifier")
-      if (plan_cap > 0 && runs > plan_cap) problem(0, runs " planned agent runs exceed the plan cap " plan_cap " (a Workflow seat counts every agent it starts: budget/<seat>/agent-runs)")
+      if (plan_cap > 0 && runs > plan_cap && !under_go(runs))
+        problem(0, runs " planned agent runs exceed the plan cap " plan_cap go_words() " (a Workflow seat counts every agent it starts: budget/<seat>/agent-runs)")
+      went = (plan_cap > 0 && (runs > plan_cap || plan_cap > ENVIRON["MAX_CAP"] + 0)) ? " — past the cap under the user\047s go, up to " ENVIRON["GO"] " (council cap allow)" : ""
 
       if (errors) {
         printf "plan: %d error(s) · run-plan.tsv\n", errors
         exit 1
       }
-      if (ENVIRON["QUIET"] != "1") printf "plan: valid · %s · %d selected, %d skipped · %d agent run(s) of cap %d\n", val["run" SUBSEP "run" SUBSEP "size"], selected, skipped, runs, plan_cap
+      if (ENVIRON["QUIET"] != "1") printf "plan: valid · %s · %d selected, %d skipped · %d agent run(s) of cap %d%s\n", val["run" SUBSEP "run" SUBSEP "size"], selected, skipped, runs, plan_cap, went
     }
   ' "$plan"
 }

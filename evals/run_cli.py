@@ -1215,6 +1215,44 @@ def agent_stop(tmp):
           "the user's go covers up to 5" in err and "ask before starting more" not in err, err)
     code, out, err = council(stop, "run", "events", "check")
     check("cap allow: the event stream holding run.cap_allowed stays valid", code == 0 and len(allowed) == 1, out + err)
+    # The user's go past the cap lets the plan hold the agent runs it allowed: a real build jammed here, its
+    # extra verifier refused by the plan check, and the run unable to move on.
+    grow = new_repo(tmp, "agent-stop-plan-go")
+    write(os.path.join(grow, ".council", "council.config.md"), "# Council config — plan under a go\n- agent cap: 3\n")
+    _, grow_run, _ = council(grow, "run", "open", "council-review")
+    grow_run = grow_run.strip()
+    grow_plan = os.path.join(grow_run, "run-plan.tsv")
+    write_plan(grow_run, selected=("w1", "w2"))                                  # w1, w2 and verify-plan: 3 agent runs
+    three = read(grow_plan).replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t3")
+    extra = "".join(f"{k}\tverify-2\t{f}\t{v}\tthe extra check\n" for k, f, v in
+                    (("seat", "disposition", "selected"), ("seat", "role", "verifier"), ("context", "level", "focused"),
+                     ("budget", "tool-calls", "15")))
+    write(grow_plan, three)
+    for slug in ("w1", "w2", "verify-plan"):
+        council(grow, "seat", slug, "done", f"agent=g-{slug}", "tokens=20000")
+    write(grow_plan, three + extra)
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: with no go on record, a fourth agent run past the cap of 3 is refused",
+          code == 1 and "4 planned agent runs exceed the plan cap 3 (" in out, out)
+    council(grow, "cap", "allow", "2", "--user-said", "yes, two more checks")
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: after the user's go for two more, the extra seat's plan rows pass, and the go is named",
+          code == 0 and "4 agent run(s) of cap 3 — past the cap under the user's go, up to 5" in out, out)
+    code, out, err = council(grow, "seat", "verify-2", "running", "agent=g-v2")
+    code2, out2, err2 = council(grow, "state", "phase=deliver")
+    check("seat and state: under the go, the extra seat starts and the run moves on", code == 0 and code2 == 0,
+          out + err + out2 + err2)
+    write(grow_plan, three.replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t5") + extra)
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: a plan cap raised to the user's go (5) passes", code == 0, out)
+    write(grow_plan, three.replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t6") + extra)
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: a plan cap past the go is refused, naming the configured cap and the go",
+          code == 1 and "agent-cap 6 exceeds the configured cap 3 or the user's go up to 5 agent runs" in out, out)
+    write(grow_plan, three + extra + extra.replace("verify-2", "verify-3") + extra.replace("verify-2", "verify-4"))
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: planned agent runs past the go are refused, naming the go",
+          code == 1 and "6 planned agent runs exceed the plan cap 3 or the user's go up to 5" in out, out)
     old_stop = os.path.join(stop, ".council", "runs", "2026-09-01-100000-review")   # from before event streams and run plans
     write(os.path.join(old_stop, "session-state.md"), "status: in-progress\nmode: council-review\nphase: work\n")
     write(os.path.join(old_stop, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\n"
