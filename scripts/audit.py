@@ -253,7 +253,7 @@ def agents_on_record(run, say):
     elif not count:
         say(PASS, label, "no agent was dispatched")
     else:
-        say(PASS, label, "%d agent run(s), each recorded as running before it finished" % count)
+        say(PASS, label, "%d dispatch(es), each recorded as running before it finished" % count)
 
 
 def gates(run, say):
