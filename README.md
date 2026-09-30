@@ -30,7 +30,8 @@ skipped under load.
   - **`council-worker`**: one seat, one slice, read-only; it returns one line.
   - **`council-verifier`**: blind and adversarial — CONFIRMED / REFUTED / UNCERTAIN / MISCITED for
     claims, OK / INCOMPLETE / REGRESSION / SCOPE-CREEP for changes.
-- **The `council` helper** (bash + git, on PATH while the plugin is enabled). It does the
+- **The `council` helper** (bash + git, on PATH while the plugin is enabled; Claude runs it in the
+  Bash tool, which is Git Bash on Windows, since PowerShell cannot run it). It does the
   bookkeeping: opening and closing runs, validating the run plan before fan-out, the change index,
   optional seat-specific context packs (`council context build <seat>`), gates judged by exit code, checking seat
   files and citations, an optional evidence ledger (`council evidence build|check`) linking claims
@@ -54,7 +55,8 @@ skipped under load.
   - **SessionStart**: orients council-enabled sessions, lists open runs, and after a compaction says
     "resume from disk, don't restart". It prints nothing in other projects.
   - **PreToolUse**: at its agent cap or past its token ceiling, a council run refuses new agents
-    until you say go.
+    until you say go. It counts each agent as it starts (a Workflow as at least one), so agents
+    started together can't slip past the limit.
   - **SubagentStop**: a council agent can't finish without the file its contract requires.
 
 ## Install

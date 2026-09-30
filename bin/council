@@ -340,8 +340,8 @@ event_unlock() {
   rm -f "$1/owner" && rmdir "$1" 2>/dev/null
 }
 
-event_lock() {
-  local lock="$1" recovery="$1.recover" tries=0 owner="${BASHPID:-$$}"
+event_lock() {                                   # $2: how many 0.1 s tries before giving up (default 200)
+  local lock="$1" recovery="$1.recover" tries=0 most="${2:-200}" owner="${BASHPID:-$$}"
   while :; do
     if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
       # A reclaimer may have started just before mkdir succeeded. Yield this new lock to it.
@@ -362,7 +362,7 @@ event_lock() {
       event_unlock "$recovery" || :
     fi
     tries=$((tries + 1))
-    [ "$tries" -lt 200 ] || { printf 'council: event lock unavailable: %s\n' "$lock" >&2; return 1; }
+    [ "$tries" -lt "$most" ] || { printf 'council: event lock unavailable: %s\n' "$lock" >&2; return 1; }
     sleep 0.1
   done
 }
@@ -734,7 +734,8 @@ seat_field() {
 # the run's usage.tsv; a seat's agents, reported and tokens columns in seats.tsv are derived from it:
 # - per agent id, the latest report counts (a resumed agent reports a running total, and a repeated
 #   report must not add twice);
-# - a report with no agent id stands on its own;
+# - a report with no agent id stands on its own — but the same figures again for that seat are a repeated
+#   report (a note added, say), not a second agent run: cmd_seat records them once;
 # - an id dispatched but never reported is one agent run with no usage.
 # - agents=0 on a finished report declares that no agent ran (the Chair did the work).
 # Prints "<agent runs> <runs with usage> <tokens> <declared no agent 1|0>".
@@ -846,7 +847,11 @@ cmd_seat() {
     awk -F'\t' 'NR > 1 && $4 == "dispatched" { f = 1; exit } END { exit !f }' "$u" || first=1
     printf '%s\t%s\t%s\tdispatched\t\t\n' "$(now_utc)" "$slug" "$agent" >> "$u" || { event_unlock "$f.lock"; die "cannot write $u"; }
   fi
-  if [ -n "$tokens$runs" ]; then
+  if [ -n "$tokens$runs" ] && [ -z "${agent:-$cur}" ] \
+     && SLUG="$slug" RUNS="${runs:-1}" TOK="$tokens" awk -F'\t' 'NR > 1 && $2 == ENVIRON["SLUG"] && $3 == "" && $4 == "finished" &&
+          $5 == ENVIRON["RUNS"] && $6 == ENVIRON["TOK"] { f = 1; exit } END { exit !f }' "$u"; then
+    printf 'council: %s already has this usage report on record, with no agent id to tell two agent runs apart — not counted again (another agent run needs its agent=<id>)\n' "$slug" >&2
+  elif [ -n "$tokens$runs" ]; then
     printf '%s\t%s\t%s\tfinished\t%s\t%s\n' "$(now_utc)" "$slug" "${agent:-$cur}" "${runs:-1}" "$tokens" >> "$u" \
       || { event_unlock "$f.lock"; die "cannot write $u"; }
   fi
@@ -907,17 +912,23 @@ run_budget_value() {
   printf '%s' "$value"
 }
 
-# The helper hears of an agent only after it started; the agent gate (hooks/agent-gate.sh, council cap
-# check) refuses the next one once the run is at its cap or past its ceiling. Here the Chair is told when
-# the run has used its cap, and the first time the run passes it is recorded (the status card reads the
-# same count). Every agent run counts: each agent a Workflow started, errored ones too. While a go of
-# the user's (council cap allow) still covers the next agent, the note says so instead of asking again.
+# The agent gate (hooks/agent-gate.sh, council cap check) counts each agent start it lets through and
+# refuses the next one once the run is at its cap or past its ceiling. Here the Chair is told when the
+# run has used its cap, and the first time the run passes it is recorded (the status card reads the same
+# count). Every agent run counts: each agent a Workflow started, errored ones too. While a go of the
+# user's (council cap allow) still covers the next agent, the note says so instead of asking again. A run
+# opened before plans and agent limits (no plan-schema) is never stopped: the note only says so.
 CAP_GO_HINT='the next agent is refused until their go is recorded: council cap allow <n> --user-said "<their words>"'
 cap_note() {
-  local run="$1" cap e t estimate ceiling upto go=""
+  local run="$1" cap e t s estimate ceiling upto go=""
   cap="$(run_agent_cap "$run")"
   set -- $(run_usage "$run"); e="${2:-0}"; t="${4:-0}"
   case "$e" in ''|*[!0-9]*) return 0 ;; esac
+  s="$(cap_starts "$run")"; [ "$s" -le "$e" ] || e="$s"
+  if [ -z "$(field plan-schema "$run/session-state.md")" ]; then
+    [ "$e" -le "$cap" ] || printf 'council: this run has used %s agent runs, more than the cap of %s — it was opened before agent limits, so new agents are not stopped; tell the user\n' "$e" "$cap" >&2
+    return 0
+  fi
   upto="$(cap_allowed_until "$run")"
   [ -z "$upto" ] || [ "$e" -ge "$upto" ] || go="the user's go covers up to $upto agent runs"
   if [ "$e" -gt "$cap" ]; then
@@ -1117,20 +1128,35 @@ cap_allowed_until() {
     "$1/cap-allowances.tsv" 2>/dev/null
 }
 
+# The agent starts the gate let through (council cap check <tool>, from hooks/agent-gate.sh): the rows of
+# <run>/agent-starts.tsv (at, tool, session). The helper hears of an agent there before the Chair records
+# it. A Workflow is one start, however many agents it runs: its recorded agent count says the rest.
+cap_starts() {
+  local n=""
+  [ ! -f "$1/agent-starts.tsv" ] || n="$(awk 'NR > 1 && NF { n++ } END { print n + 0 }' "$1/agent-starts.tsv" 2>/dev/null)"
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  printf '%s' "$n"
+}
+
 # Where a run stands: "<agent runs> <cap> <tokens> <ceiling|-> <until|-> <over 0|1> <stopped 0|1>".
-# Over: at its cap (the next agent would pass it) or past its ceiling. Stopped: over, and no go of the
-# user's covers the next agent. The counts are the ones the card and cap_note read.
+# Agent runs: the larger of those recorded and the starts the gate let through, so an agent in flight
+# counts before it is recorded, and counts once after. Over: at its cap (the next agent would pass it) or
+# past its ceiling. Stopped: over, and no go of the user's covers the next agent — never for a run opened
+# before plans and agent limits (no plan-schema). The counts are the ones the card and cap_note read.
 cap_standing() {
-  local run="$1" cap used tokens ceiling upto over=0 stopped=0
+  local run="$1" cap used rec starts tokens ceiling upto over=0 stopped=0
   cap="$(run_agent_cap "$run")"
-  set -- $(run_usage "$run"); used="${2:-0}"; tokens="${4:-0}"
-  case "$used" in ''|*[!0-9]*) used=0 ;; esac
+  set -- $(run_usage "$run"); rec="${2:-0}"; tokens="${4:-0}"
+  case "$rec" in ''|*[!0-9]*) rec=0 ;; esac
   case "$tokens" in ''|*[!0-9]*) tokens=0 ;; esac
+  starts="$(cap_starts "$run")"
+  used="$rec"; [ "$starts" -le "$used" ] || used="$starts"
   ceiling="$(run_budget_value "$run" token-ceiling)"
   upto="$(cap_allowed_until "$run")"
   if [ "$used" -ge "$cap" ] 2>/dev/null; then over=1; fi                   # a value test can't read never stops an agent
   if [ -n "$ceiling" ] && [ "$tokens" -gt "$ceiling" ] 2>/dev/null; then over=1; fi
   if [ "$over" = 1 ] && { [ -z "$upto" ] || [ "$used" -ge "$upto" ]; }; then stopped=1; fi
+  [ -n "$(field plan-schema "$run/session-state.md")" ] || stopped=0
   printf '%s %s %s %s %s %s %s\n' "$used" "$cap" "$tokens" "$(dash "$ceiling")" "$(dash "$upto")" "$over" "$stopped"
 }
 
@@ -1148,16 +1174,21 @@ cap_words() {
 
 # council cap [--run <folder>] — where the run stands, in one or two plain lines.
 cmd_cap_show() {
-  local run status line
+  local run status line starts rec
   run="$(resolve_run)" || exit 2
+  starts="$(cap_starts "$run")"; rec=""
+  [ "$starts" -eq 0 ] || { set -- $(run_usage "$run"); rec="${2:-0}"; }
   set -- $(cap_standing "$run")
   line="${run##*/}: $1 of $2 agent runs used"
+  [ -z "$rec" ] || [ "$starts" -le "$rec" ] || line="$line ($starts started through the agent gate, $rec recorded)"
   [ "$4" = - ] || line="$line · $(usage_token_text "$3") tokens of a $(usage_token_text "$4") ceiling"
   [ "$5" = - ] || line="$line · the user's go allows up to $5"
   say "$line"
   status="$(field status "$run/session-state.md")"; status="${status%% *}"
   if [ "$status" != in-progress ]; then
     say "new agents: not stopped — the stop holds only while a run is in progress (this one is ${status:-without a status})"
+  elif [ -z "$(field plan-schema "$run/session-state.md")" ]; then
+    say "new agents: not stopped — this run was opened before plans and agent limits, so the stop does not hold for it; tell the user when it passes the cap"
   elif [ "$7" = 1 ]; then
     say "new agents: stopped until the user says go — then: council cap allow <n> --user-said \"<their words>\""
   elif [ "$6" = 1 ]; then
@@ -1187,7 +1218,7 @@ cmd_cap_allow() {
   [ -n "$words" ] || words="[redacted]"
   file="$run/cap-allowances.tsv"; lock="$run/events.tsv.lock"
   event_lock "$lock" || die "the go was not recorded: the run's event lock is unavailable ($lock)"
-  set -- $(run_usage "$run"); used="${2:-0}"
+  set -- $(cap_standing "$run"); used="${1:-0}"                  # the stop's own count: recorded, or started if more
   case "$used" in ''|*[!0-9]*) used=0 ;; esac
   upto=$((used + n))
   [ -s "$file" ] || printf 'at\tused\tn\tuntil\tsaid\n' > "$file" || rc=1
@@ -1202,24 +1233,37 @@ cmd_cap_allow() {
   say "cap: the user's go is on record — $n more agent run(s) may start, up to $upto in all for ${run##*/}"
 }
 
-# council cap check [--session ID] — the agent gate's decision (hooks/agent-gate.sh): silent, exit 0,
-# while agents may start; the reason on stdout and exit 2 while a run this session may be driving is
-# stopped. Only in-progress runs count: with a session id (--session, else CLAUDE_CODE_SESSION_ID), the
-# runs that session drives, on any working tree, and this tree's runs that recorded none; without one,
-# every in-progress run on this tree. A fault of its own never stops an agent: it returns 0, or dies
-# (stderr, nothing on stdout), which the hook lets through.
+# council cap check [--session ID] [<tool>] — the agent gate's decision (hooks/agent-gate.sh): silent,
+# exit 0, while agents may start; the reason on stdout and exit 2 while a run this session may be driving
+# is stopped. Only in-progress runs count: with a session id (--session, else CLAUDE_CODE_SESSION_ID),
+# the runs that session drives, on any working tree, and this tree's runs that recorded none; without
+# one, every in-progress run on this tree. A run opened before plans and agent limits (no plan-schema)
+# is never stopped; council cap and the seat notes say when it passes the cap. Given the tool about to
+# start (the hook passes Agent, Task or Workflow), a pass also counts one agent start for the run this
+# session drives by its id, when it drives exactly one — under that run's lock, so agents started
+# together cannot all take its last place. A fault of its own never stops an agent: it returns 0, or
+# dies (stderr, nothing on stdout), which the hook lets through.
 cmd_cap_check() {
-  local home session runs run n=0 said="" last="" first
+  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock
   home="$(council_home)"
   [ -d "$home/runs" ] || return 0
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
-  runs="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
+  runs="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' -v OFS='\t' '
     $6 != "in-progress" { next }
-    ENVIRON["SID"] != "" && $8 == ENVIRON["SID"] { print $1; next }
-    (ENVIRON["SID"] == "" || $8 == "-") && ($4 == ENVIRON["TOP"] || $4 == "-") { print $1 }')"
+    ENVIRON["SID"] != "" && $8 == ENVIRON["SID"] { print $1, 1; next }
+    (ENVIRON["SID"] == "" || $8 == "-") && ($4 == ENVIRON["TOP"] || $4 == "-") { print $1, 0 }')"
   [ -n "$runs" ] || return 0
-  while IFS= read -r run; do
+  while IFS="$TAB" read -r run own; do
     [ -n "$run" ] || continue
+    [ -n "$(field plan-schema "$run/session-state.md")" ] || continue     # opened before agent limits
+    kept="$kept$run$NL"
+    [ "$own" != 1 ] || { n_mine=$((n_mine + 1)); mine="$run"; }
+  done <<RUNS
+$runs
+RUNS
+  [ -n "$tool" ] && [ "$n_mine" -eq 1 ] || mine=""        # which of several this start is for is unknown
+  while IFS= read -r run; do
+    [ -n "$run" ] && [ "$run" != "$mine" ] || continue    # the run a start counts for is judged under its lock
     set -- $(cap_standing "$run")
     [ "${7:-0}" = 1 ] || continue
     n=$((n + 1)); last="${run##*/}"
@@ -1227,8 +1271,30 @@ cmd_cap_check() {
     [ "$n" -eq 1 ] || first="R${first#r}"
     said="${said:+$said. }$first"
   done <<RUNS
-$runs
+$kept
 RUNS
+  if [ -n "$mine" ]; then
+    file="$mine/agent-starts.tsv"; lock="$file.lock"
+    if [ "$n" -gt 0 ]; then
+      set -- $(cap_standing "$mine")                      # refused anyway: named too if stopped, not counted
+    elif event_lock "$lock" 50 2>/dev/null; then
+      set -- $(cap_standing "$mine")
+      if [ "${7:-0}" != 1 ]; then
+        { [ -s "$file" ] || printf 'at\ttool\tsession\n' > "$file"
+          [ -z "$(tail -c 1 "$file")" ] || printf '\n' >> "$file"      # never join a torn line
+          printf '%s\t%s\t%s\n' "$(now_utc)" "$tool" "${session//$TAB/ }" >> "$file"; } 2>/dev/null || :
+      fi
+      event_unlock "$lock" 2>/dev/null || :
+    else
+      set -- 0 0 0 - - 0 0                                # the lock never came: the agent starts, uncounted
+    fi
+    if [ "${7:-0}" = 1 ]; then
+      n=$((n + 1)); last="${mine##*/}"
+      first="$(cap_words "$last" "$1" "$2" "$3" "$4" "$5")"
+      [ "$n" -eq 1 ] || first="R${first#r}"
+      said="${said:+$said. }$first"
+    fi
+  fi
   [ "$n" -gt 0 ] || return 0
   if [ "$n" -eq 1 ]; then
     say "Small Council: $said. No new agents until the user says go. Tell them what it has used, and ask whether to continue and for how many more agent runs; every agent a Workflow starts counts. On their go: \`council cap allow <n> --run $last --user-said \"<their words>\"\`. If the run is finished: \`council run close --run $last\`."
@@ -1396,15 +1462,18 @@ cmd_run_status() {
 
 # Validate the versioned five-column plan. The file is deliberately plain TSV so a Chair can write
 # it directly and old shells can check it without jq or another runtime. QUIET=1 suppresses only the
-# success line; errors always remain visible.
+# success line; errors always remain visible. The user's latest go past the cap (council cap allow, the
+# until of cap-allowances.tsv) lets the plan hold agent runs up to it: the extra seat their go allowed
+# gets its plan rows, and the run moves on.
 run_plan_validate() {
-  local run="$1" plan="$2" expected_mode max_cap seat_models
+  local run="$1" plan="$2" expected_mode max_cap seat_models go
   expected_mode="$(field mode "$run/session-state.md")"
   max_cap="$(configured_agent_cap)"
+  go="$(cap_allowed_until "$run")"
   seat_models="$(configured_seat_models)"
   # A closed run already dispatched under the setting of its day; today's on/off doesn't judge it.
   case "$(field status "$run/session-state.md")" in complete|abandoned) seat_models=closed ;; esac
-  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" SEAT_MODELS="$seat_models" QUIET="${QUIET:-0}" awk -F'\t' '
+  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" GO="$go" SEAT_MODELS="$seat_models" QUIET="${QUIET:-0}" awk -F'\t' '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function problem(line, msg) {
       errors++
@@ -1416,6 +1485,8 @@ run_plan_validate() {
       if (!(key in val)) problem(0, "missing " label " row (" kind "/" id "/" field ")")
     }
     function integer(s) { return s ~ /^[0-9]+$/ }
+    function under_go(n) { return ENVIRON["GO"] != "" && n <= ENVIRON["GO"] + 0 }
+    function go_words() { return ENVIRON["GO"] == "" ? "" : " or the user\047s go up to " ENVIRON["GO"] " agent runs (council cap allow)" }
     BEGIN { header = "kind\tid\tfield\tvalue\treason" }
     {
       sub(/\r$/, "")
@@ -1471,7 +1542,7 @@ run_plan_validate() {
         if (id == "run") {
           if (fld == "agent-cap") {
             if (!integer(v) || v < 1) problem(NR, "agent-cap must be a positive integer")
-            else if (v > ENVIRON["MAX_CAP"] + 0) problem(NR, "agent-cap " v " exceeds the configured cap " ENVIRON["MAX_CAP"])
+            else if (v > ENVIRON["MAX_CAP"] + 0 && !under_go(v + 0)) problem(NR, "agent-cap " v " exceeds the configured cap " ENVIRON["MAX_CAP"] go_words())
             plan_cap = v + 0
           } else if (fld == "estimated-tokens") {
             if (!integer(v)) problem(NR, "estimated-tokens must be a non-negative integer")
@@ -1551,13 +1622,15 @@ run_plan_validate() {
         problem(0, verification " verification needs a selected verifier")
       if (verification == "self" && verifiers > 0)
         problem(0, "self verification conflicts with a selected verifier")
-      if (plan_cap > 0 && runs > plan_cap) problem(0, runs " planned agent runs exceed the plan cap " plan_cap " (a Workflow seat counts every agent it starts: budget/<seat>/agent-runs)")
+      if (plan_cap > 0 && runs > plan_cap && !under_go(runs))
+        problem(0, runs " planned agent runs exceed the plan cap " plan_cap go_words() " (a Workflow seat counts every agent it starts: budget/<seat>/agent-runs)")
+      went = (plan_cap > 0 && (runs > plan_cap || plan_cap > ENVIRON["MAX_CAP"] + 0)) ? " — past the cap under the user\047s go, up to " ENVIRON["GO"] " (council cap allow)" : ""
 
       if (errors) {
         printf "plan: %d error(s) · run-plan.tsv\n", errors
         exit 1
       }
-      if (ENVIRON["QUIET"] != "1") printf "plan: valid · %s · %d selected, %d skipped · %d agent run(s) of cap %d\n", val["run" SUBSEP "run" SUBSEP "size"], selected, skipped, runs, plan_cap
+      if (ENVIRON["QUIET"] != "1") printf "plan: valid · %s · %d selected, %d skipped · %d agent run(s) of cap %d%s\n", val["run" SUBSEP "run" SUBSEP "size"], selected, skipped, runs, plan_cap, went
     }
   ' "$plan"
 }
@@ -5966,8 +6039,10 @@ council — the Small Council's helper (bash + git)
                                          user's go on record, and whether new agents are stopped now
   council cap allow <n> --user-said "…"  the user's go past the cap or ceiling, in their words: n more
                                          agent runs may start before the stop holds again
-  council cap check [--session ID]       the agent gate's decision (hooks/agent-gate.sh): exit 2 and the
-                                         reason while a run this session may be driving is stopped
+  council cap check [--session ID] [<tool>]
+                                         the agent gate's decision (hooks/agent-gate.sh): exit 2 and the
+                                         reason while a run this session may be driving is stopped; with
+                                         the tool about to start, a pass counts it as an agent start
   council correct <seat> tokens=N agents=N [unrecorded=yes] evidence="<source>"
                                          lay an exact, evidence-backed figure over a seat's record
                                          (or add an agent run the record missed); seats.tsv keeps
@@ -6157,10 +6232,14 @@ main() {
                       [ -n "$(printf '%s' "$MEMORY_SAID_ARG" | tr -d '[:space:]')" ] \
                         || die "cap allow needs --user-said \"<the user's own words>\" — their answer, not a summary of it"
                       cmd_cap_allow "$1" ;;
-               check) takes_flags "cap check" session; no_words "cap check" ${1+"$@"}
+               check) takes_flags "cap check" session
                       [ -z "$RUN_ARG" ] || die "cap check looks at every in-progress run this session may be driving; it does not take --run"
-                      cmd_cap_check ;;
-               *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID]" ;;
+                      case "${1:-}" in
+                        Agent|Task|Workflow) [ $# -eq 1 ] || no_words "cap check" "${@:2}" ;;
+                        *) no_words "cap check" ${1+"$@"} ;;
+                      esac
+                      cmd_cap_check ${1+"$@"} ;;
+               *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool>]" ;;
              esac ;;
     route)   sub="${1:-}"; [ $# -eq 0 ] || shift
              case "$sub" in

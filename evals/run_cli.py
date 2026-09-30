@@ -1303,13 +1303,60 @@ def agent_stop(tmp):
           "the user's go covers up to 5" in err and "ask before starting more" not in err, err)
     code, out, err = council(stop, "run", "events", "check")
     check("cap allow: the event stream holding run.cap_allowed stays valid", code == 0 and len(allowed) == 1, out + err)
+    # The user's go past the cap lets the plan hold the agent runs it allowed: a real build jammed here, its
+    # extra verifier refused by the plan check, and the run unable to move on.
+    grow = new_repo(tmp, "agent-stop-plan-go")
+    write(os.path.join(grow, ".council", "council.config.md"), "# Council config — plan under a go\n- agent cap: 3\n")
+    _, grow_run, _ = council(grow, "run", "open", "council-review")
+    grow_run = grow_run.strip()
+    grow_plan = os.path.join(grow_run, "run-plan.tsv")
+    write_plan(grow_run, selected=("w1", "w2"))                                  # w1, w2 and verify-plan: 3 agent runs
+    three = read(grow_plan).replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t3")
+    extra = "".join(f"{k}\tverify-2\t{f}\t{v}\tthe extra check\n" for k, f, v in
+                    (("seat", "disposition", "selected"), ("seat", "role", "verifier"), ("context", "level", "focused"),
+                     ("budget", "tool-calls", "15")))
+    write(grow_plan, three)
+    for slug in ("w1", "w2", "verify-plan"):
+        council(grow, "seat", slug, "done", f"agent=g-{slug}", "tokens=20000")
+    write(grow_plan, three + extra)
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: with no go on record, a fourth agent run past the cap of 3 is refused",
+          code == 1 and "4 planned agent runs exceed the plan cap 3 (" in out, out)
+    council(grow, "cap", "allow", "2", "--user-said", "yes, two more checks")
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: after the user's go for two more, the extra seat's plan rows pass, and the go is named",
+          code == 0 and "4 agent run(s) of cap 3 — past the cap under the user's go, up to 5" in out, out)
+    code, out, err = council(grow, "seat", "verify-2", "running", "agent=g-v2")
+    code2, out2, err2 = council(grow, "state", "phase=deliver")
+    check("seat and state: under the go, the extra seat starts and the run moves on", code == 0 and code2 == 0,
+          out + err + out2 + err2)
+    write(grow_plan, three.replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t5") + extra)
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: a plan cap raised to the user's go (5) passes", code == 0, out)
+    write(grow_plan, three.replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t6") + extra)
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: a plan cap past the go is refused, naming the configured cap and the go",
+          code == 1 and "agent-cap 6 exceeds the configured cap 3 or the user's go up to 5 agent runs" in out, out)
+    write(grow_plan, three + extra + extra.replace("verify-2", "verify-3") + extra.replace("verify-2", "verify-4"))
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: planned agent runs past the go are refused, naming the go",
+          code == 1 and "6 planned agent runs exceed the plan cap 3 or the user's go up to 5" in out, out)
     old_stop = os.path.join(stop, ".council", "runs", "2026-09-01-100000-review")   # from before event streams and run plans
     write(os.path.join(old_stop, "session-state.md"), "status: in-progress\nmode: council-review\nphase: work\n")
     write(os.path.join(old_stop, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\n"
                                                "beck\tdone\ta2\t50000\t10:07\t\n")
     code, out, err = council(stop, "cap", "check", "--session", "s1")
-    check("cap check: an older run with no session, at its cap on this tree — exit 2", code == 2 and "2026-09-01-100000-review" in out,
-          out + err)
+    check("cap check: an older run opened before plans and agent limits, past its cap on this tree, never stops an agent",
+          code == 0 and not out, out + err)
+    code, out, err = council(stop, "cap", "--run", "2026-09-01-100000-review")
+    check("cap: an older run past its cap says so, and that the stop does not hold for it",
+          "2 of 2 agent runs used" in out and "not stopped" in out and "opened before plans and agent limits" in out, out + err)
+    old_seats = os.path.join(old_stop, "seats.tsv")
+    code, out, err = council(stop, "seat", "gamma", "done", "agents=1", "--run", "2026-09-01-100000-review")
+    check("seat: past the cap, an older run's note warns — new agents are not stopped, tell the user",
+          "more than the cap of 2" in err and "not stopped" in err and "refused" not in err, err)
+    write(old_seats, "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\nbeck\tdone\ta2\t50000\t10:07\t\n")
+    os.remove(os.path.join(old_stop, "usage.tsv"))                                  # back to the two older rows
     code, out, err = council(stop, "cap", "allow", "1", "--run", "2026-09-01-100000-review", "--user-said", "fine, one more")
     rows = read(os.path.join(old_stop, "cap-allowances.tsv")).splitlines()
     check("cap allow: works on an older run with no events.tsv or run-plan.tsv, and adds no event file",
@@ -1317,6 +1364,23 @@ def agent_stop(tmp):
           and not os.path.exists(os.path.join(old_stop, "events.tsv")), "\n".join(rows) + out + err)
     code, out, err = council(stop, "cap", "check", "--session", "s1")
     check("cap check: with both runs covered — exit 0", code == 0 and not out, out + err)
+    # A usage report repeated with no agent id (to add a note, say) is the same agent run, not a second one:
+    # counted twice, it inflated the agent count the stop reads, the cost line and the ledger.
+    rep = new_repo(tmp, "agent-stop-repeat")
+    write(os.path.join(rep, ".council", "council.config.md"), "# Council config — repeated report\n- agent cap: 2\n")
+    _, rep_run, _ = council(rep, "run", "open", "council-review")
+    rep_run = rep_run.strip()
+    council(rep, "seat", "beck", "done", "tokens=80000")
+    code, out, err = council(rep, "seat", "beck", "done", "tokens=80000", "note=fixed the note")
+    beck = next((line.split("\t") for line in read(os.path.join(rep_run, "seats.tsv")).splitlines() if line.startswith("beck\t")), [])
+    check("seat: the same report repeated with no agent id counts once, says so, and still takes the note",
+          code == 0 and "~80k tokens so far" in out and "not counted again" in err
+          and beck[3:4] == ["80000"] and beck[5:8] == ["fixed the note", "1", "1"], out + err + str(beck))
+    code, out, err = council(rep, "cap")
+    check("cap: a repeated report does not bring the run to its cap", "1 of 2 agent runs used" in out, out + err)
+    code, out, err = council(rep, "seat", "beck", "done", "tokens=60000")
+    check("seat: a different figure with no agent id is another agent run, and adds", "~140k tokens so far" in out
+          and "not counted again" not in err, out + err)
     absurd = new_repo(tmp, "agent-stop-absurd")        # a cap bash can't compare: the gate never fails closed
     write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n")
     _, absurd_run, _ = council(absurd, "run", "open", "council-review")

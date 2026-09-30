@@ -8,8 +8,9 @@ SessionStart (hooks/session-start.sh):
     unfinished on startup (its running seats died with the old session); paused as paused, even right
     after a compaction; a run in another working tree as "leave it alone";
   - after a compaction, resumes only the run this session was driving — the one whose session: matches
-    (also after `council run resume` in a new session), else the newest recent in-progress run that
-    recorded none — never a paused one or another tree's, and only lists the rest;
+    (also after `council run resume` in a new session, and when its code is in a linked worktree), else
+    the newest recent in-progress run that recorded none — never a paused one or another session's run
+    in another tree, and only lists the rest;
   - never offers to re-dispatch or close a run another session updated in the last 2 hours;
   - stays fast and short with many open runs: other trees' runs summed up, gone trees named, at most 5
     of this tree's runs described;
@@ -29,6 +30,9 @@ PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and match
   - refuses a new agent (exit 2, the reason on stderr, stdout empty) at the cap, past the token ceiling,
     and for a session-less run on this tree, naming council cap allow; lets the agents a recorded go
     covers through, then stops again;
+  - counts each agent start it lets through for the run this session drives, so agents started with
+    nothing recorded (together, too) meet the stop, and the same agents recorded later count once; a
+    run opened before plans and agent limits is never stopped;
   - reads session_id and cwd from the top level only (a Windows cwd with escaped backslashes too), never
     from text inside another value.
 """
@@ -206,6 +210,9 @@ def session_start(tmp):
     check("full council: exits 0", code == 0, str(code))
     check("full council: orientation line", "[Small Council]" in out and "map.md" in out, out)
     check("full council: points at the helper", "council run status" in out and "bin/council" in out, out)
+    check("full council: the helper runs in the Bash tool (Git Bash on Windows), never from PowerShell",
+          "Bash tool (Git Bash on Windows)" in line_with(out, "plain `council <command>`")
+          and "PowerShell" in line_with(out, "plain `council <command>`"), out)
     check("full council: fresh map is not 'behind'", "behind" not in out, out)
     check("full council: counts 2 pending proposals (ignores the comment)", "2 memory proposal(s)" in out, out)
     check("full council: lists council-postgame among the modes", "council-postgame" in out, out)
@@ -334,6 +341,29 @@ def session_start(tmp):
     c = compacted(out)
     check("a run resumed in a new session (council run resume) is that session's run at its next compaction",
           len(c) == 1 and hname in c[0], out)
+
+    # A build whose code lives in a linked worktree, driven by a session whose project dir is the main
+    # checkout (the real Chrollo build: nine compactions, each told to leave its own run alone).
+    wmain = new_repo(tmp, "wt-main")
+    write(os.path.join(wmain, ".council", "council.config.md"), "# Council config\n")
+    wtree = os.path.join(wmain, ".claude", "worktrees", "feat")
+    git(wmain, "worktree", "add", "-q", wtree, "-b", "feat")
+    wtop = git(wtree, "rev-parse", "--show-toplevel")
+    code, wrun, _ = council(wtree, "run", "open", "council-implement", session="S1")
+    wname = os.path.basename(wrun)
+    code, out = run_hook(wmain, "compact", session="S1")
+    c = compacted(out) or [""]
+    check("after compaction: this session's run whose code is in a linked worktree is resumed, never 'left alone'",
+          len(c) == 1 and wname in c[0] and "Re-invoke the council-implement skill" in c[0]
+          and "different working tree" not in out and "Leave it alone" not in out, out)
+    check("after compaction: ... and it says where the run's code is, with --run",
+          f"another working tree, {wtop}" in c[0] and f"--run {wname}" in c[0], out)
+    code, out = run_hook(wmain, "startup", session="S1")
+    check("on startup or resume: this session's worktree run is offered to resume, not called another tree's",
+          "UNFINISHED COUNCIL RUN" in line_with(out, wname) and "Leave it alone" not in out, out)
+    code, out = run_hook(wmain, "compact", session="S2")
+    check("after compaction: another session's worktree run is still left alone",
+          not compacted(out) and "Leave it alone" in line_with(out, wname), out)
 
     # A run another session updated recently may still be live there
     live = new_repo(tmp, "live")
@@ -809,6 +839,82 @@ def agent_gate(tmp):
         code, out, err, _ = run_agent_gate(gate_cmd, raw, nos)
         check(f"agent gate: {label}, no open run — the agent starts, nothing said", code == 0 and not out and not err,
               said(code, out, err))
+
+@part("timing")
+def agent_gate_counts_starts(tmp):
+    # The gate counts the agent starts it lets through, so agents started together, or recorded only after
+    # they finished, still meet the stop (in a real run a verifier was recorded three minutes after it began).
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        gate_cmd = next(h["command"] for g in json.load(f)["hooks"]["PreToolUse"] for h in g["hooks"]
+                        if "hooks/agent-gate.sh" in h["command"])
+
+    def said(code, err):
+        return f"exit {code} · stderr {err.strip()[:200]}"
+
+    def starts(run):
+        path = os.path.join(run, "agent-starts.tsv")
+        return max(0, len(open(path, encoding="utf-8").read().splitlines()) - 1) if os.path.exists(path) else 0
+
+    fly = new_repo(tmp, "gate-counts")
+    write(os.path.join(fly, ".council", "council.config.md"), "# Council config\n- agent cap: 3\n")
+    _, frun, _ = council(fly, "run", "open", "council-review", session="sA")
+    fname = os.path.basename(frun)
+    for _ in range(3):
+        council(fly, "cap", "check", "--session", "sA")
+    check("agent gate: council cap check with no tool only reads — it counts nothing", starts(frun) == 0, str(starts(frun)))
+    codes = [run_agent_gate(gate_cmd, pre_tool("sA", fly), fly)[0] for _ in range(3)]
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sA", fly), fly)
+    check("agent gate: three agents started with nothing recorded pass, and the fourth is stopped at the cap of 3",
+          codes == [0, 0, 0] and code == 2 and f"run {fname} has used 3 of its 3 agent runs" in err,
+          f"{codes} then {said(code, err)}")
+    code, out, err = council(fly, "cap", "--run", fname)
+    check("cap: counts the agents started through the gate, and says how many are recorded",
+          "3 of 3 agent runs used (3 started through the agent gate, 0 recorded)" in out and "stopped" in out, out + err)
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sB", fly), fly)
+    check("agent gate: another session's agents are neither stopped nor counted by this run",
+          code == 0 and starts(frun) == 3, f"{said(code, err)} · {starts(frun)} starts")
+    for i in range(1, 4):
+        council(fly, "seat", f"w{i}", "done", f"agent=a{i}", "tokens=20000", "--run", fname)
+    code, out, err = council(fly, "cap", "--run", fname)
+    code2, _, err2, _ = run_agent_gate(gate_cmd, pre_tool("sA", fly), fly)
+    check("agent gate: the same three agents recorded later are not counted twice (3 of 3, not 6)",
+          "3 of 3 agent runs used" in out and "started through" not in out and code2 == 2
+          and "3 of its 3 agent runs" in err2, out + said(code2, err2))
+    council(fly, "cap", "allow", "1", "--run", fname, "--user-said", "one more")
+    codes = [run_agent_gate(gate_cmd, pre_tool("sA", fly), fly)[0] for _ in range(2)]
+    check("agent gate: after the user's go for one more, one agent starts and the next is stopped", codes == [0, 2], str(codes))
+
+    wf = new_repo(tmp, "gate-counts-workflow")
+    write(os.path.join(wf, ".council", "council.config.md"), "# Council config\n- agent cap: 2\n")
+    council(wf, "run", "open", "council-review", session="sW")
+    codes = [run_agent_gate(gate_cmd, pre_tool("sW", wf, tool=t), wf)[0] for t in ("Workflow", "Agent", "Agent")]
+    check("agent gate: a Workflow counts as at least one agent start", codes == [0, 0, 2], str(codes))
+
+    # Agents started in one message reach the hook together: the count and the check share one lock.
+    batch = new_repo(tmp, "gate-counts-batch")
+    write(os.path.join(batch, ".council", "council.config.md"), "# Council config\n- agent cap: 3\n")
+    _, brun, _ = council(batch, "run", "open", "council-review", session="sT")
+    env = dict(GIT_ENV, CLAUDE_PLUGIN_ROOT=ROOT)
+    procs = [subprocess.Popen([BASH, "-c", gate_cmd], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              cwd=batch, env=env) for _ in range(6)]
+    for p in procs:
+        p.stdin.write(pre_tool("sT", batch).encode("utf-8"))
+        p.stdin.close()
+    codes = sorted(p.wait(timeout=120) for p in procs)
+    check("agent gate: six agents started together on a cap of 3 — exactly three start, three are stopped",
+          codes == [0, 0, 0, 2, 2, 2] and starts(brun) == 3, f"{codes}, {starts(brun)} starts recorded")
+
+    # A run opened before plans and agent limits (no plan-schema): past the cap, it warns, never stops.
+    old = new_repo(tmp, "gate-old-run")
+    write(os.path.join(old, ".council", "council.config.md"), "# Council config\n- agent cap: 1\n")
+    orun = os.path.join(old, ".council", "runs", "2026-09-20-173008-implement")
+    write(os.path.join(orun, "session-state.md"), state("in-progress", mode="council-implement", phase="build",
+                                                        code_root=git(old, "rev-parse", "--show-toplevel"), session="sO"))
+    write(os.path.join(orun, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\n"
+                                           "beck\tdone\ta2\t50000\t10:07\t\n")
+    code, out, err, _ = run_agent_gate(gate_cmd, pre_tool("sO", old), old)
+    check("agent gate: a run opened before plans and agent limits, past the cap — the agent starts, uncounted",
+          code == 0 and not err and starts(orun) == 0, f"{said(code, err)} · {starts(orun)} starts")
 
 parser = argparse.ArgumentParser(description="Hook evals: run the plugin's hooks against scaffolded repos.")
 parser.add_argument("--list", action="store_true",
