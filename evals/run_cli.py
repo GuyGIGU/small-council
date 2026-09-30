@@ -1837,6 +1837,23 @@ def citation_shapes(tmp):
     check("check: lines away from the change stay 'pre-existing'",
           "synthesis#5  app/old.py:2  ok · pre-existing" in out and "synthesis#6  app/api.py:1  ok · pre-existing" in out
           and "7 items, 1 broken citation(s)" in out, out)
+    # The run's own files, cited the way the helper names them: found in the run, never "missing-file"
+    write(os.path.join(mrun.strip(), "gates", "tests.txt"), "1 passed\n2 failed: test_admin_only\n")
+    write(os.path.join(mrun.strip(), "context", "note.md"), "# Note\nthe guard moved\n")
+    write(os.path.join(mrun.strip(), "verify-1.md"), "# Verification\n\n| # | Item | Verdict | Evidence |\n")
+    write(os.path.join(mrun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P1 · Tests · gates/tests.txt:2 · the admin test fails · from: gate:tests\n"
+          "2 · P2 · Context · context/note.md:2 · the brief's note · from: hunt#1\n"
+          "3 · P2 · Verifier · verify-1.md:3 · the verifier's table · from: hunt#2\n"
+          "4 · P2 · Past the end · context/note.md:9 · a line the note hasn't · from: hunt#3\n"
+          "5 · P2 · Nowhere · gates/lint.txt:1 · a file nobody wrote · from: hunt#4\n")
+    code, out, _ = council(moved, "check")
+    check("check: citations of the run's own files (gates/…, context/…, verify-1.md) are found in the run",
+          "synthesis#1  gates/tests.txt:2  ok · run file" in out and "synthesis#2  context/note.md:2  ok · run file" in out
+          and "synthesis#3  verify-1.md:3  ok · run file" in out, out)
+    check("check: ... and a run file's lines are still checked, and a run file that isn't there is still missing",
+          "synthesis#4  context/note.md:9  bad-line" in out and "synthesis#5  gates/lint.txt:1  missing-file" in out
+          and "5 items, 2 broken citation(s)" in out, out)
     if os.path.isfile(os.path.join(moved, "APP", "OLD.PY")):         # a file system that ignores case
         write(os.path.join(mrun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
               "1 · P3 · Naming · APP/OLD.PY:2 · the path in the wrong case · from: hunt#1\n")

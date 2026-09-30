@@ -25,7 +25,7 @@ BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes on
 export COUNCIL_BOM="$BOM"    # for awk as ENVIRON["COUNCIL_BOM"]: macOS's awk reads a /\357…/ regex as three characters
 NL='
 '
-CITE_AREA=0; CITE_NEEDS_PLACE=0; CITE_ROWS=""
+CITE_AREA=0; CITE_NEEDS_PLACE=0; CITE_ROWS=""; CITE_RUN=""
 
 die()     { printf 'council: %s\n' "$*" >&2; exit 2; }
 say()     { printf '%s\n' "$*"; }
@@ -2858,14 +2858,24 @@ cite_rel() {
   printf '%s' "$2"
 }
 
+# A relative path the code root has nothing by, that is a file of the run being checked ($CITE_RUN) —
+# named the way the helper names them: gates/tests.txt, context/notes.md, verify-1.md.
+run_cited() {
+  [ -n "$CITE_RUN" ] || return 1
+  case "$1" in /*|[A-Za-z]:*|..|../*|*/../*|*/..) return 1 ;; esac
+  [ ! -e "$2/$1" ] && [ -e "$CITE_RUN/$1" ]
+}
+
 # One place: ok | deleted | no-line | missing-file | area | bad-line (…) | unreadable (…). A path that
 # isn't on disk but is in the base ($2; HEAD without one) was deleted by the change: its lines are
 # checked against the base's copy. With CITE_AREA=1 (a plan, research or a post-game, where the field
 # is "<path or area>"), a bare path that is on disk nowhere is an area or a file still to be written.
+# A file of the run itself is checked where it is (see run_cited).
 cite_place() {
   local top="$1" base="${2:-HEAD}" kind="$3" p="$4" l="${5:-}" f rel n
   if [ "$kind" = U ]; then printf 'unreadable (%s — write it as path:line)' "$p"; return; fi
   case "$p" in /*|[A-Za-z]:*) f="$p" ;; *) f="$top/$p" ;; esac
+  if run_cited "$p" "$top"; then f="$CITE_RUN/$p"; fi
   if [ "$kind" = P ] && [ -e "$f" ]; then printf 'no-line'; return; fi
   if [ "$kind" = L ] && [ -f "$f" ]; then cite_lines "$l" "$(awk 'END { print NR }' "$f")"; return; fi
   if [ "$kind" = L ] && [ -d "$f" ]; then printf 'bad-line (a folder has no lines)'; return; fi
@@ -2954,10 +2964,12 @@ cite_hunks() {
 # as new only because its line ending changed, the origin is unknown rather than a guess. In a file the
 # change only renamed, the diff calls every line new, so blame alone decides there.
 cite_origin() {
-  local top="$1" c="$2" base="$3" kind p l f rel real ranges r shas sha old=0 new=0 near=0 unknown=0 crlf=0 untracked=0 po pn d dn di dnew
+  local top="$1" c="$2" base="$3" kind p l f rel real ranges r shas sha old=0 new=0 near=0 unknown=0 crlf=0 untracked=0 po pn d dn di dnew \
+        own=0
   while IFS="$TAB" read -r kind p l; do
     [ "$kind" = L ] || continue
     ranges="$(cite_ranges "$l")" || continue
+    if run_cited "$p" "$top"; then own=$((own + 1)); continue; fi               # the run's own record, not code
     case "$p" in /*|[A-Za-z]:*) f="$p" ;; *) f="$top/$p" ;; esac
     rel="$(cite_rel "$top" "$f")"
     if [ ! -f "$f" ]; then
@@ -2996,6 +3008,7 @@ ROWS
   if [ "$old" -eq 0 ] && [ "$new" -eq 0 ]; then
     if [ "$near" -gt 0 ]; then printf 'touched'
     elif [ "$untracked" -gt 0 ]; then printf 'new file'
+    elif [ "$own" -gt 0 ]; then printf 'run file'
     elif [ "$crlf" -gt 0 ]; then printf 'origin unknown (only line endings changed)'
     elif [ "$unknown" -gt 0 ]; then printf 'origin unknown'
     fi
@@ -3208,6 +3221,7 @@ cmd_check() {
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
   mode="$(field mode "$run/session-state.md")"
   cite_mode "$mode"
+  CITE_RUN="$run"                              # a citation of the run's own files (gates/…) is found there
   if [ $# -eq 0 ]; then
     if [ -f "$run/synthesis.md" ]; then set -- "$run/synthesis.md"; else set -- "$run"/seats/*.md; fi
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
