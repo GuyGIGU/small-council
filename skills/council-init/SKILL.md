@@ -224,7 +224,10 @@ Adjust on request. On confirmation, write:
    `council correct`.
 
    At a **refresh**, read `.claude/settings.local.json` first: if it holds `Bash(council *)` or a
-   `council gate` rule from an earlier version, offer to replace it with this list, and say why.
+   `council gate` rule from an earlier version, offer to replace it with this list, and say why. If
+   it holds an earlier, shorter version of this list, offer to add the rules it lacks: name them, use
+   the form the file already uses, leave every other rule in the file as it is, and write only on a
+   yes.
 3. **Nothing else to install.** The plugin's hooks already orient council-enabled sessions, flag open
    runs, restore the method after a compaction, and check every seat file before a worker can finish.
 
@@ -264,6 +267,8 @@ council":
   preferences, and show the diff.
 - **Legacy run folders** (`.council/<mode>-output/`) stay where they are as history. An old run still
   marked open → close it on the user's say-so: `council run close --run <dir> --status abandoned`.
+- **Permission rules:** bring the council rules in `.claude/settings.local.json` up to Phase F's
+  list, as Phase F step 2 says — on a yes.
 - **Refresh the map** if `council map status` shows it far behind.
 
 ## Output

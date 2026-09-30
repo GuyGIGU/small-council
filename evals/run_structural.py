@@ -312,6 +312,9 @@ check("init: the permission offer covers the helper commands the modes run witho
 check("init: cap, tune and correct keep asking (cap allow records the user's go past the agent stop)",
       not any(f'"Bash(council {c}' in skill["council-init"] for c in ["cap", "tune", "correct"])
       and "`council cap` stays off" in skill["council-init"])
+check("init: a refresh offers an earlier, shorter permission list the rules it lacks",
+      "offer to add the rules it lacks" in " ".join(skill["council-init"].split())
+      and "**Permission rules:**" in skill["council-init"].split("## Refresh (re-runs)")[1])
 review, plan, impl, research, init = (skill[k] for k in ["council-review", "council-plan", "council-implement", "council-research", "council-init"])
 for label, text, needles in [
     ("review", review, ["merge-base", "council index --base", "Origin:", "Basis:", "Refuted if:", "Not a finding", "council-implement"]),
