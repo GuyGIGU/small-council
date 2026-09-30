@@ -200,6 +200,46 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("state: a check whose latest run failed, with no repair under way, is a failing check needing attention",
           r["state"]["key"] == "failing" and any(a["kind"] == "failure" and "lint" in a["text"] for a in r["attention"]),
           (r["state"], r["attention"]))
+    plain, card = status.text(r), status.widget(r)
+    frame = cockpit.render(cockpit.snapshot(base / ".council" / "runs" / "failing", None, 8), reading=r)
+    check("status: a failing check is said once — the label, then the stage; the attention line names the check "
+          "(a real run read 'A check is failing. A check failed.')",
+          plain.splitlines()[1] == "Status: A check is failing. Stage: Experts at work (stage 5 of 10)."
+          and "Needs you: Check lint failed" in plain and "A check failed" not in plain + card + frame
+          and card.count("A check is failing") == 2       # the screen-reader line and the badge, nothing under it
+          and re.search(r'<h2 class="sr">[^<]*: A check is failing\. Seats:', card) is not None
+          and "  Status: A check is failing" in frame.splitlines()[2:3]
+          and status.notification_line(r).endswith("council: A check is failing."),
+          (plain, card[:900], frame, status.notification_line(r)))
+    check("pet: a failing check still has its own short line",
+          pet.view({"kind": "status", "status": json.loads(json.dumps(r))})[1] == "A check failed",
+          pet.view({"kind": "status", "status": json.loads(json.dumps(r))}))
+    r = reading(make_run(base, "failing-busy", seats=[v2("hunt", "running", "", 1, 0, 3)], gates=[("lint", 1, 10)]))
+    check("status: a failing check with a seat at work still says who is working",
+          status.text(r).splitlines()[1].startswith("Status: A check is failing. Working now: ") and
+          "Hunt" in r["state"]["summary"], status.text(r))
+
+    # --- the next step: the one written at run open is Convene's, and stale once the run has left it ------
+    default_next = "next: {}\n".format(cockpit.NEXT_AT_OPEN)
+    at_open = make_run(base, "next-at-convene", phase="convene", extra_state=default_next)
+    late = make_run(base, "next-late", phase="learn", seats=[v2("beck", "done", 50000, 1, 1)], extra_state=default_next)
+    own = make_run(base, "next-own", phase="learn", seats=[v2("beck", "done", 50000, 1, 1)],
+                   extra_state="next: send the report to the owner\n")
+    views = {}
+    for name, folder in (("open", at_open), ("late", late), ("own", own)):
+        snap = cockpit.snapshot(folder, None, 8)
+        r = reading(folder)
+        views[name] = (r["progress"]["next"], status.text(r), status.widget(r), cockpit.render(snap, reading=r),
+                       snap["run"]["next"])
+    check("next: the step written at run open shows while the run is still at convene",
+          views["open"][0] == cockpit.NEXT_AT_OPEN and all("Next:" in v for v in views["open"][1:4]), views["open"][:2])
+    check("next: past convene that open-time step is never shown — not in the data, the summary, the card or the "
+          "terminal view (a real run read 'Next: size the run…' at stage 10 of 10)",
+          views["late"][0] == "" and views["late"][4] == ""
+          and not any("Next:" in v or "size the run" in v for v in views["late"][1:4]), views["late"][:2])
+    check("next: a step the Chair recorded still shows past convene",
+          views["own"][0] == "send the report to the owner"
+          and all("send the report to the owner" in v for v in views["own"][1:4]), views["own"][:2])
 
     rec = [{"task": "T2", "gate": "tests", "attempt": 1, "result": "failed", "category": "TEST_FAILURE",
             "action": "builder-diagnose"}]
@@ -828,6 +868,46 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
             (("--watch",), "doesn't take --watch"))]
         check("status: flag mistakes are refused, each saying why", all(c == 2 and want in e for (c, _, e), want in refusals),
               [(c, e) for (c, _, e), _ in refusals])
+
+        # The next step a run opens with is Convene's: the helper empties it once the run leaves convene.
+        stepping = base / "stepping"
+        stepping.mkdir()
+        subprocess.run([GIT, "init", "-q"], cwd=stepping, check=True)
+        write(stepping / ".council" / "council.config.md", "# Council config\n")
+        srun = Path(council(stepping, "run", "open", "council-review")[1].strip())
+        at_open_line = "\nnext: {}\n".format(cockpit.NEXT_AT_OPEN)
+        opened = read(srun / "session-state.md")
+        council(stepping, "state", "size=solo")
+        sized = read(srun / "session-state.md")
+        shown_at_convene = council(stepping, "status")[1]
+        council(stepping, "state", "phase=prepare")
+        moved = read(srun / "session-state.md")
+        check("next: a run opens with Convene's step (the helper and the readers agree on its words) and keeps it "
+              "while it is at convene",
+              at_open_line in opened and at_open_line in sized and "Next: " + cockpit.NEXT_AT_OPEN in shown_at_convene,
+              opened + shown_at_convene)
+        check("next: leaving convene empties that step in the run's state, and the status shows no Next line",
+              "\nnext:\n" in moved and "size the run" not in moved and "\nphase: prepare\n" in moved
+              and "Next:" not in council(stepping, "status")[1], moved)
+        council(stepping, "state", "next=read the diff first")
+        council(stepping, "state", "phase=assign")
+        check("next: a step the Chair recorded stays through later phase changes",
+              "\nnext: read the diff first\n" in read(srun / "session-state.md")
+              and "Next: read the diff first" in council(stepping, "status")[1], read(srun / "session-state.md"))
+        write(srun / "session-state.md", read(srun / "session-state.md").replace(
+            "next: read the diff first", "next: " + cockpit.NEXT_AT_OPEN))      # as a run an older helper moved on
+        stale_text = council(stepping, "status")[1]
+        stale_data = json.loads(council(stepping, "status", "--json")[1])
+        stale_card = council(stepping, "status", "--widget")[1]
+        stale_tui = council(stepping, "tui")[1]
+        check("next: a run already past convene with the open-time step still in its file shows no next step — "
+              "summary, data, card and terminal view",
+              "Next:" not in stale_text and stale_data["progress"]["next"] == "" and "Next:" not in stale_card
+              and "Next:" not in stale_tui and "Status:" in stale_tui, (stale_text, stale_data["progress"], stale_tui))
+        council(stepping, "state", "size=squad")
+        check("next: that run's next state update empties the stale step too",
+              "\nnext:\n" in read(srun / "session-state.md"), read(srun / "session-state.md"))
+        council(stepping, "run", "close", "--status", "abandoned")
 
         capped = base / "capped"
         capped.mkdir()

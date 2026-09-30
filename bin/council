@@ -18,6 +18,7 @@ set -u
 
 COUNCIL_VERSION="0.17.0"
 COUNCIL_MEMORY_SIZE_LIMIT=25600  # bytes: about 25 KB of project memory is the expected upper bound
+COUNCIL_NEXT_AT_OPEN="size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 TAB="$(printf '\t')"
 BOM=$'\357\273\277'          # a UTF-8 byte-order mark (PowerShell 5.1 writes one): never part of the first line
@@ -489,7 +490,7 @@ events-schema: 1
 size:
 base:
 deliverable:
-next: size the run and ask for the go-ahead
+next: $COUNCIL_NEXT_AT_OPEN
 ## Decisions so far
 EOF
   template="$COUNCIL_PLUGIN_ROOT/references/templates/run-plan.tsv"
@@ -550,6 +551,16 @@ cmd_state() {
       { print }
       END { if (!done) print line }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
   done
+  # The next: a run opens with is Convene's own step, and nothing replaces it on its own. Past convene it
+  # is stale, so it is emptied here; a next the Chair wrote stays. (The status readers skip it too, for
+  # runs an older helper moved on: scripts/cockpit.py's next_step.)
+  case "$(field phase "$tmp")" in
+    ''|convene) ;;
+    *) if [ "$(state_field next "$tmp")" = "$COUNCIL_NEXT_AT_OPEN" ]; then
+         awk '/^## / { body = 1 } !body && !d && index($0, "next:") == 1 { print "next:"; d = 1; next } { print }' \
+           "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
+       fi ;;
+  esac
   NOW="$(now_min)" awk '
     BEGIN { l = "updated: " ENVIRON["NOW"] }
     !d && index($0, "updated:") == 1 { print l; d = 1; next }

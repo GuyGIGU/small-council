@@ -40,6 +40,7 @@ ASCII = {"done": "+", "running": "*", "queued": "o", "failed": "x", "blocked": "
 # and paragraph separators: none may reach the terminal from a file.
 CONTROL = re.compile("[" + chr(0) + "-" + chr(0x1F) + chr(0x7F) + "-" + chr(0x9F) + chr(0x2028) + chr(0x2029) + "]")
 PLAIN = {"·": "|", "—": "-", "–": "-", "…": "...", "→": "->", "’": "'", "“": '"', "”": '"'}
+NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # the helper's next: at run open (COUNCIL_NEXT_AT_OPEN)
 
 
 # --- reading without getting in a live run's way ----------------------------------------------------------
@@ -158,6 +159,16 @@ def header(run):
         if sep and re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", key) and key not in fields:
             fields[key] = clean(re.sub(r"[ \t]{2,}#.*$", "", value.lstrip(" \t")))
     return fields
+
+
+def next_step(state):
+    """The run's recorded next step. The one written at run open is Convene's own: nothing replaces it
+    on its own, so once the run has left convene it is stale and reads as no step at all. A step the
+    Chair recorded is shown as written."""
+    step = state.get("next", "")
+    if step.strip() == NEXT_AT_OPEN and state.get("phase", "") not in ("", "convene"):
+        return ""
+    return step
 
 
 def tsv(run, name):
@@ -436,6 +447,8 @@ def usage_totals(seats):
 def snapshot(run, home=None, last_events=8):
     run = Path(run)
     state = header(run)
+    if "next" in state:
+        state["next"] = next_step(state)     # every reader — the screen, the card, the summary — shares this
     fixes = corrections_of(run)
     seats = []
     for row in tsv(run, "seats.tsv"):
@@ -544,7 +557,8 @@ def render(snap, ascii_only=False, width=None, reading=None):
     add("  {} · phase {} · {} · updated {}".format(run["mode"] or "?", run["phase"] or "?", run["status"] or "?",
                                                    run["updated"] or "?"))
     if reading:
-        add("  Status: {} — {}".format(reading["state"]["label"], reading["state"]["summary"]))
+        said = reading["state"]
+        add("  Status: " + (" — ".join((said["label"], said["summary"])) if said["summary"] else said["label"]))
         for item in reading["attention"][:4]:
             add("  {} {}".format("!" if item["severity"] >= 2 else "·", item["text"]))
     if run["ask"]:
