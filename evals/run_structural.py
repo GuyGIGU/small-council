@@ -368,7 +368,8 @@ for label, text, needles in [
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
                     "last-verified", "council doctor", "council run open council-init", "run plan opens ready for setup",
                     "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash",
-                    "needs an open run", "every command into the Gates table"]),
+                    "needs an open run", "every command into the Gates table", "Prove each mandatory gate can fail",
+                    "probe-<name>-broken"]),
     ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier",
                                                  "verify-<n>.md"]),
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
