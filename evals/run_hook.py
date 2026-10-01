@@ -213,6 +213,7 @@ def session_start(tmp):
     check("full council: the helper runs in the Bash tool (Git Bash on Windows), never from PowerShell",
           "Bash tool (Git Bash on Windows)" in line_with(out, "plain `council <command>`")
           and "PowerShell" in line_with(out, "plain `council <command>`"), out)
+    check("full council, team by default: no just-me line", "Just me:" not in out, out)
     check("full council: fresh map is not 'behind'", "behind" not in out, out)
     check("full council: counts 2 pending proposals (ignores the comment)", "2 memory proposal(s)" in out, out)
     check("full council: lists council-postgame among the modes", "council-postgame" in out, out)
@@ -392,6 +393,13 @@ def session_start(tmp):
     check("a run another session left hours ago: unfinished, its running seats gone, resume or close offered",
           "UNFINISHED COUNCIL RUN" in line and "were running when that session ended" in line
           and "council run resume --run 2026-09-15-130000-review" in line and "--status abandoned" in line, out)
+
+    private = new_repo(tmp, "just-me")
+    write(os.path.join(private, ".council", "council.config.md"),
+          "# Council config\n\n## Run preferences\n- sharing: just me\n", crlf=True)
+    code, out = run_hook(private)
+    check("a just-me council: the session hears that teammates never meet it — no council runs, ids or paths in commits, PRs or shared docs",
+          code == 0 and "commit messages" in line_with(out, "Just me:") and ".council/ paths" in line_with(out, "Just me:"), out)
 
 @part("timing")
 def many_open_runs(tmp):

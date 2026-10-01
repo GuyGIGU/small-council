@@ -16,7 +16,7 @@
 
 set -u
 
-COUNCIL_VERSION="0.18.0"
+COUNCIL_VERSION="0.19.0"
 COUNCIL_MEMORY_SIZE_LIMIT=25600  # bytes: about 25 KB of project memory is the expected upper bound
 COUNCIL_NEXT_AT_OPEN="size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
@@ -301,6 +301,241 @@ ensure_ignored() {
   done 2>/dev/null
   if [ -n "$added" ] && [ -n "$(git -C "$(dirname "$1")" ls-files -- "${1##*/}/asks" 2>/dev/null | head -n 1)" ]; then
     printf "council: %s now ignores asks/, so new requests stay on this machine; the ones already in git stay tracked. To share requests with the team, write '!asks/' in place of that line.\n" "${1##*/}/.gitignore" >&2
+  fi
+  return 0
+}
+
+# ------------------------------------------------------------------------------------------------
+# Sharing: the team's council, or just me
+# ------------------------------------------------------------------------------------------------
+
+# The marked blocks "just me" takes out or puts in: council-init's note in CLAUDE.md / AGENTS.md (under
+# its older name too), and the council's lines in git's own exclude list.
+NOTE_BEGIN_RE="^[ $TAB]*<!-- (small|ultra)-council:begin -->"   # no end anchor: a CRLF line matches too
+NOTE_END_RE="^[ $TAB]*<!-- (small|ultra)-council:end -->"
+EXCL_BEGIN='# small-council:begin (just me: the council stays on this machine; council sharing team removes this)'
+EXCL_BEGIN_RE='^# small-council:begin'
+EXCL_END='# small-council:end'
+EXCL_END_RE='^# small-council:end'
+
+# The config's "- sharing:" line under Run preferences. "just me" keeps the council on this machine;
+# missing, "team" or anything else means team, the council every version before 0.19 kept.
+configured_sharing() {
+  local v
+  v="$(sed -n 's/^[[:space:]]*-[[:space:]]*sharing:[[:space:]]*//p' "${1:-$(council_home)}/council.config.md" 2>/dev/null \
+       | head -n 1 | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
+  case "$v" in
+    'just me' | 'just me '* | just-me | 'just-me '* | private | 'private '*) printf 'just me' ;;
+    *) printf 'team' ;;
+  esac
+}
+
+# git's own ignore list for this clone (info/exclude, one for every worktree): never committed, never
+# pushed, so what it lists stays on this machine. Empty outside git.
+sharing_exclude() {
+  local p
+  p="$(cd "$1" 2>/dev/null && git rev-parse --git-path info/exclude 2>/dev/null)" || return 0
+  [ -n "$p" ] || return 0
+  case "$p" in /* | [A-Za-z]:*) ;; *) p="$1/$p" ;; esac
+  printf '%s' "$p"
+}
+
+# Take the block from the line matching ERE $2 to the line matching ERE $3 out of file $1, leaving every
+# other line as it was (its line endings too); where that leaves a blank line on both sides, one goes.
+# Written in place, so a CLAUDE.md that links to AGENTS.md stays a link. Exit 0: removed · 1: no block ·
+# 3: a begin with no end (nothing changed) · 5: removed, and nothing but blank lines is left.
+drop_block() {
+  local f="$1" tmp rc=0
+  [ -f "$f" ] || return 1
+  tmp="$f.council.$$"
+  B="$2" E="$3" awk '
+    BEGIN { BINMODE = 3 }   # gawk on Windows otherwise drops every CR it reads; other awks ignore it
+    { l[NR] = $0; t = $0; sub(/\r$/, "", t); txt[NR] = t; blank[NR] = (t ~ /^[ \t]*$/) }
+    END {
+      inb = 0; cuts = 0
+      for (i = 1; i <= NR; i++) {
+        if (!inb && txt[i] ~ ENVIRON["B"]) { inb = 1; s = i }
+        if (inb) { drop[i] = 1; if (txt[i] ~ ENVIRON["E"]) { inb = 0; cs[++cuts] = s; ce[cuts] = i } }
+      }
+      if (inb) exit 3
+      if (!cuts) exit 1
+      for (c = 1; c <= cuts; c++) {
+        p = 0; for (i = cs[c] - 1; i >= 1; i--) if (!drop[i]) { p = i; break }
+        q = 0; for (i = ce[c] + 1; i <= NR; i++) if (!drop[i]) { q = i; break }
+        if (q && blank[q] && (!p || blank[p])) drop[q] = 1
+        else if (!q && p && blank[p]) drop[p] = 1
+      }
+      left = 0
+      for (i = 1; i <= NR; i++) if (!drop[i]) { print l[i]; if (!blank[i]) left = 1 }
+      exit left ? 0 : 5
+    }' "$f" > "$tmp" 2>/dev/null || rc=$?
+  case "$rc" in
+    0 | 5) cat "$tmp" > "$f" || rc=2 ;;
+  esac
+  rm -f "$tmp"
+  return "$rc"
+}
+
+# Set "- sharing: <value>" in the config, in its own line endings: replaced where it is, else added under
+# ## Run preferences, else in a new Run preferences section at the end.
+set_config_sharing() {
+  local cfg="$1" cr="" tmp rc=0
+  [ "$(tr -cd '\r' < "$cfg" | wc -c | tr -d ' ')" = 0 ] || cr="$(printf '\r')"
+  tmp="$cfg.council.$$"
+  V="$2" CR="$cr" awk '
+    BEGIN { BINMODE = 3 }   # keep the CR at the end of each line (see drop_block)
+    { l[NR] = $0; t = $0; sub(/\r$/, "", t)
+      if (!has && t ~ /^[ \t]*-[ \t]*sharing:/) has = NR
+      if (!head && t ~ /^##[ \t]+Run preferences[ \t]*$/) head = NR }
+    END {
+      line = "- sharing: " ENVIRON["V"] ENVIRON["CR"]
+      for (i = 1; i <= NR; i++) {
+        if (i == has) { print line; continue }
+        print l[i]
+        if (!has && i == head) print line
+      }
+      if (!has && !head) { print ENVIRON["CR"]; print "## Run preferences" ENVIRON["CR"]; print line }
+    }' "$cfg" > "$tmp" && cat "$tmp" > "$cfg" || rc=1
+  rm -f "$tmp"
+  return "$rc"
+}
+
+# The folders council-init may have written its note in: the main checkout, and this working tree when
+# the session sits in another one.
+note_dirs() {
+  local root="$1" top
+  printf '%s\n' "$root"
+  top="$(this_tree)"
+  [ "$top" = "$root" ] || printf '%s\n' "$top"
+}
+
+# What "just me" needs, one row each: ok|problem <TAB> what <TAB> the fix ("-" when ok). doctor warns
+# on the problems; council sharing shows every row.
+sharing_rows() {
+  local home="$1" root n d f files=""
+  root="$(dirname "$home")"
+  if ! git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
+    printf 'ok\tnot a git repository, so nothing here is committed or shared\t-\n'
+  else
+    if git -C "$root" check-ignore -q --no-index -- .council/council.config.md 2>/dev/null; then
+      printf 'ok\tgit ignores .council/ on this machine\t-\n'
+    else
+      printf "problem\tsharing is just me, but git doesn't ignore .council/, so its files can be committed for the team\tcouncil sharing just-me\n"
+    fi
+    n="$(git -C "$root" ls-files -- .council 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "${n:-0}" -gt 0 ]; then
+      printf "problem\t%s council file(s) are still in git, so teammates have them (git keeps tracking a file even once it is ignored)\tgit rm -r --cached .council, then commit: your copies stay, and teammates see them removed\n" "$n"
+    else
+      printf 'ok\tno council files in git\t-\n'
+    fi
+  fi
+  while IFS= read -r d; do
+    for f in CLAUDE.md AGENTS.md; do
+      grep -qE "$NOTE_BEGIN_RE" "$d/$f" 2>/dev/null || continue
+      [ "$d" = "$root" ] || f="$d/$f"
+      files="$files${files:+ and }$f"
+    done
+  done <<DIRS
+$(note_dirs "$root")
+DIRS
+  if [ -n "$files" ]; then
+    printf "problem\tthe Small Council note is still in %s, so teammates' AI sessions read it\tcouncil sharing just-me takes it out\n" "$files"
+  else
+    printf 'ok\tno Small Council note in CLAUDE.md or AGENTS.md\t-\n'
+  fi
+}
+
+cmd_sharing_show() {
+  local home root k msg fix why src
+  home="$(council_home)"; root="$(dirname "$home")"
+  if [ "$(configured_sharing "$home")" = "just me" ]; then
+    say "sharing: just me — the council stays on this machine (council.config.md says so)"
+    while IFS="$TAB" read -r k msg fix; do
+      [ -n "$k" ] || continue
+      if [ "$k" = ok ]; then say "- ok: $msg"; else say "- NOT YET: $msg"; say "  Fix: $fix"; fi
+    done <<ROWS
+$(sharing_rows "$home")
+ROWS
+  else
+    if grep -qE '^[[:space:]]*-[[:space:]]*sharing:' "$home/council.config.md" 2>/dev/null; then
+      why="council.config.md says so"
+    else
+      why="the default: council.config.md has no sharing line"
+    fi
+    say "sharing: team ($why) — .council/ is committed with the project, and the Small Council note in CLAUDE.md points teammates' sessions at it"
+    src="$(git -C "$root" check-ignore -v --no-index -- .council/council.config.md 2>/dev/null)"
+    [ -z "$src" ] || say "- but git ignores .council/ (${src%%"$TAB"*}), so none of it is shared even so; if that is on purpose, say so: council sharing just-me"
+    say "- To keep the council to yourself: council sharing just-me"
+  fi
+}
+
+# council sharing just-me | team — switch who sees the council, and say what is left for the user.
+cmd_sharing_set() {
+  local want="$1" home root cfg excl cr="" d f shown rc n src committed label=team
+  home="$(council_home)"; root="$(dirname "$home")"; cfg="$home/council.config.md"
+  [ "$want" != just-me ] || label="just me"
+  if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
+    excl="$(sharing_exclude "$root")"
+    [ -n "$excl" ] || die "couldn't find git's exclude list for $root"
+    mkdir -p "$(dirname "$excl")" 2>/dev/null || die "couldn't create $(dirname "$excl")"
+    [ -f "$excl" ] || : > "$excl" || die "couldn't write $excl"
+    rc=0; drop_block "$excl" "$EXCL_BEGIN_RE" "$EXCL_END_RE" || rc=$?
+    [ "$rc" != 3 ] || die "$excl has a '$EXCL_END' line missing after its begin line: fix it by hand, then run this again"
+    if [ "$want" = just-me ]; then
+      [ "$(tr -cd '\r' < "$excl" | wc -c | tr -d ' ')" = 0 ] || cr="$(printf '\r')"
+      if [ -s "$excl" ] && [ -n "$(tail -c 1 "$excl")" ]; then printf '%s\n' "$cr" >> "$excl"; fi
+      {
+        printf '%s%s\n' "$EXCL_BEGIN" "$cr"
+        printf '/.council/%s\n' "$cr"
+        git -C "$root" check-ignore -q --no-index -- .claude/settings.local.json 2>/dev/null \
+          || printf '/.claude/settings.local.json%s\n' "$cr"
+        printf '%s%s\n' "$EXCL_END" "$cr"
+      } >> "$excl" || die "couldn't write $excl"
+      say "git now ignores .council/ (and your .claude/settings.local.json) on this machine only — $excl is git's own list, never committed or pushed"
+    else
+      src="$(git -C "$root" check-ignore -v --no-index -- .council/council.config.md 2>/dev/null)"
+      if [ -n "$src" ]; then
+        say "the council's lines are gone from $excl, but git still ignores .council/ (${src%%"$TAB"*}): take that line out to share it"
+      else
+        say "git sees .council/ again: commit it (git add .council) to share it with the team"
+      fi
+    fi
+  else
+    say "not a git repository, so nothing here is committed or shared"
+  fi
+  if [ "$want" = just-me ]; then
+    while IFS= read -r d; do
+      for f in CLAUDE.md AGENTS.md; do
+        shown="$f"; [ "$d" = "$root" ] || shown="$d/$f"
+        committed=""
+        if git -C "$d" cat-file -e "HEAD:$f" 2>/dev/null && git -C "$d" show "HEAD:$f" 2>/dev/null | grep -qE "$NOTE_BEGIN_RE"; then
+          committed=" — it was committed, so commit this change too (teammates see the note go)"
+        fi
+        rc=0; drop_block "$d/$f" "$NOTE_BEGIN_RE" "$NOTE_END_RE" || rc=$?
+        case "$rc" in
+          0) say "took the Small Council note out of $shown$committed" ;;
+          5) rm -f "$d/$f" && say "removed $shown, which held only the Small Council note$committed" ;;
+          3) say "$shown has a Small Council begin line with no end line: nothing changed — take the note out by hand" ;;
+          2) say "couldn't rewrite $shown: take the Small Council note out by hand" ;;
+        esac
+      done
+    done <<DIRS
+$(note_dirs "$root")
+DIRS
+  fi
+  if [ -f "$cfg" ]; then
+    set_config_sharing "$cfg" "$label" || die "couldn't write $cfg"
+    say "council.config.md: - sharing: $label"
+  else
+    say "no council.config.md yet: council-init writes '- sharing: $label' under ## Run preferences"
+  fi
+  if [ "$want" = just-me ]; then
+    n="$(git -C "$root" ls-files -- .council 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "${n:-0}" -gt 0 ]; then
+      say "$n council file(s) are already in git, so teammates have them; git keeps tracking a file even once it is ignored. To take them out of the shared project: git rm -r --cached .council, then commit — your copies stay, and teammates see them removed."
+    fi
+  else
+    say "council-init adds the Small Council note to CLAUDE.md again (a refresh does it)"
   fi
   return 0
 }
@@ -4131,6 +4366,14 @@ RUN_PLANS
   if ! home_ignores "$home" asks/x && ! asks_shared "$home"; then
     finding WARN ".council/.gitignore doesn't ignore asks/ — the user's own words would be committed" "the next council run open adds 'asks/'; if the team shares requests on purpose, write '!asks/' instead"
   fi
+  if [ "$(configured_sharing "$home")" = "just me" ]; then
+    local sk smsg sfix
+    while IFS="$TAB" read -r sk smsg sfix; do
+      [ "$sk" = problem ] && finding WARN "$smsg" "$sfix"
+    done <<SHARING
+$(sharing_rows "$home")
+SHARING
+  fi
   say "doctor: $errs error(s), $warns warning(s)"
   [ "$errs" -eq 0 ]
 }
@@ -6061,6 +6304,9 @@ council — the Small Council's helper (bash + git)
   council home                           where the council lives (.council/ of the main checkout)
   council home rule                      the Edit permission rule for that folder, in the form Claude Code
                                          matches (on Windows the drive as //c/…, never //C:/…)
+  council sharing [just-me|team]         who sees the council: team (the default — .council/ is committed and
+                                         CLAUDE.md points at it) or just me (git ignores it through its own
+                                         exclude list, and the CLAUDE.md note goes); no word shows what's left
   council run open <mode> [--alongside] [--session=ID]
                                          open a run for a mode, e.g. council-review; prints its folder
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
@@ -6254,6 +6500,13 @@ main() {
                '')   council_home ;;
                rule) shift; no_words "home rule" ${1+"$@"}; home_rule ;;
                *)    die "usage: council home [rule]" ;;
+             esac ;;
+    sharing) takes_flags sharing
+             [ -z "$RUN_ARG" ] || die "sharing is the whole council's setting; it does not take --run"
+             case "${1:-}" in
+               '')           cmd_sharing_show ;;
+               just-me|team) [ $# -eq 1 ] || no_words "sharing $1" "${@:2}"; cmd_sharing_set "$1" ;;
+               *)            die "usage: council sharing [just-me|team]" ;;
              esac ;;
     run)
       sub="${1:-}"; [ $# -eq 0 ] || shift

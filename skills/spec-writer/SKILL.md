@@ -165,7 +165,9 @@ acceptance criterion above and list any unmet requirements."
 ### Output location:
 
 - Inside a codebase: `specs/[feature-name].md` (create `specs/` if needed), unless the project uses
-  another convention (e.g. `docs/specs/`).
+  another convention (e.g. `docs/specs/`). On a just-me council (`- sharing: just me` in
+  `.council/council.config.md`), save it to `.council/specs/` instead and say so. That copy stays on
+  this machine, and the user moves it into the project when they want the team to see it.
 - Conversational: present inline and offer to save it as a file.
 
 ---

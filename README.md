@@ -247,6 +247,15 @@ place of that line if you'd rather your team saw them. (Since 0.7.1 a missing `a
 back when a run opens, so that a fresh council home can't file your words into git by accident;
 `!asks/` is how you say you meant it.)
 
+**Working on a shared project? Keep the council to yourself.** Setup asks whether the council is the team's or
+yours alone. Your teammates never have to install or use anything either way. On **just me**:
+- git ignores `.council/` through its own exclude list (`.git/info/exclude`), which is never committed or pushed;
+- CLAUDE.md gets no Small Council note;
+- your commit messages don't mention the council.
+
+Teammates never meet it. Switch any time with `council sharing just-me` or `council sharing team`;
+`council sharing` shows what's left (council files already in git stay until you take them out).
+
 The council home is always the **main** checkout's `.council/`, even when you work in a git worktree.
 `council run status` shows open runs; `council doctor` finds anything that has drifted.
 New runs also keep a versioned `events.tsv` for CLI actions. `council run events show` displays its
