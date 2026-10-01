@@ -554,7 +554,8 @@ memory_size_note() {
 stage_name_ok() {
   case "$1" in convene|prepare|assign|brief|work|collect|judge|challenge|deliver|learn|build) return 0 ;; esac
   case "$2" in council-init|test-architect) ;; *) return 1 ;; esac
-  case "$1" in ''|-*|*[!a-z-]*) return 1 ;; esac
+  # The letters spelled out: macOS bash 3.2 reads [a-z] by the locale's order, which takes capitals too.
+  case "$1" in ''|-*|*[!abcdefghijklmnopqrstuvwxyz-]*) return 1 ;; esac
 }
 
 # `- notifications: off` in the project's config silences the owner's phone alerts (as status.py reads it).
@@ -586,7 +587,7 @@ cmd_state() {
   for kv in ${1+"$@"}; do                              # every word is checked before anything is written
     key="${kv%%=*}"
     [ "$key" != "$kv" ] || die "expected key=value, got: $kv"
-    case "$key" in ''|*[!a-z0-9-]*) die "bad key: $key (lowercase letters, digits, dashes)" ;; esac
+    case "$key" in ''|*[!abcdefghijklmnopqrstuvwxyz0123456789-]*) die "bad key: $key (lowercase letters, digits, dashes)" ;; esac
     case "$kv" in
       status=*)
         case "${kv#*=}" in in-progress|paused|complete|abandoned) ;; *) die "status must be in-progress, paused, complete or abandoned" ;; esac ;;
