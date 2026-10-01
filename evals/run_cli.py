@@ -2775,7 +2775,12 @@ def runs_cost_like_with_like(tmp):
     check("close: run 1's record reads " + want + " — the verifier against the agents' share, not the whole 120k",
           code == 0 and want in out, out + err)
     code, out, err = council(cr, "status", "--run", name)
-    check("status: the closing card says the same", code == 0 and want in out, out + err)
+    check("status: the closing card says the same, and its note is about the agents' share",
+          code == 0 and want in out and "over the agents' share of the estimate" in out and "over the run's estimate" not in out,
+          out + err)
+    code, out, err = council(cr, "route", "recommend", "--task", "review the auth change")
+    check("route recommend: the Chair's share comes as a plan row to copy (budget run chair-tokens)",
+          code == 0 and "budget\trun\tchair-tokens\t" in out and "copy to run-plan.tsv" in line_of(out, "chair-tokens"), out + err)
     write(os.path.join(run, "run-plan.tsv"), read(os.path.join(run, "run-plan.tsv")).replace("chair-tokens\t40000", "chair-tokens\t130000"))
     code, out, err = council(cr, "run", "plan", "check", "--run", name)
     check("run plan: a Chair share larger than the whole estimate is refused", code == 1 and "more than the whole estimate" in out, out + err)

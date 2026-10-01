@@ -721,7 +721,8 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
     known = usage["tokens_known"]
     if usage.get("share") is not None and known > usage["share"]:
         attention.append({"kind": "estimate", "severity": 1,
-                          "text": "Token use is over the run's estimate."})
+                          "text": "Token use is over the agents' share of the estimate." if usage.get("share") != usage["estimate"]
+                                  else "Token use is over the run's estimate."})
     if usage["ceiling"] and known > usage["ceiling"]:
         attention.append({"kind": "ceiling", "severity": (2 if held else 1) if open_run else 1,
                           "text": ("Token use is over the run's ceiling. " + (go or "More should start only after you say so.")

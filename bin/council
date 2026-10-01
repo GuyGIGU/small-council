@@ -6453,7 +6453,7 @@ cmd_route_recommend() {
   if [ -n "$ROUTE_BUDGET_ARG" ]; then
     route_row budget run token-ceiling "$ROUTE_BUDGET_ARG" "explicit ceiling from --budget-tokens; copy to run-plan.tsv"
   fi
-  route_row budget chair estimated-tokens "$chair_tokens" "advisory allocation; not measured or enforced"
+  route_row budget run chair-tokens "$chair_tokens" "the Chair's own share of the estimate; copy to run-plan.tsv — agents are compared with the rest"
   route_row budget workers estimated-tokens "$worker_tokens" "shared across selected worker archetypes; not measured or enforced"
   route_row budget verification estimated-tokens "$verification_tokens" "advisory allocation; not measured or enforced"
   for slug in $candidates; do

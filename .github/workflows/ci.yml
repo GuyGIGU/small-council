@@ -54,11 +54,14 @@ jobs:
           sc() { "${COUNCIL_EVAL_BASH:-bash}" bin/council changed --base "$base" --glob 'bin/council' --glob '*.sh' -- shellcheck -S error; }
           rf() { "${COUNCIL_EVAL_BASH:-bash}" bin/council changed --base "$base" --glob '*.py' -- python -m ruff check --isolated --select E9,F63,F7,F82; }
           sc && rf
+          # A planted fault must fail with the linter's own rule code: a tool that never ran also fails.
           printf 'echo "never closed\n' > planted-lint.sh
-          if sc; then echo "::error::ShellCheck passed a planted parse error"; exit 1; fi
+          if out="$(sc 2>&1)"; then echo "::error::ShellCheck passed a planted parse error"; exit 1; fi
+          printf '%s\n' "$out" | grep -q 'SC10[0-9][0-9]' || { printf '%s\n' "$out"; echo "::error::ShellCheck did not run on the planted fault"; exit 1; }
           rm planted-lint.sh
           printf 'print(name_that_is_nowhere)\n' > planted_lint.py
-          if rf; then echo "::error::ruff passed a planted undefined name"; exit 1; fi
+          if out="$(rf 2>&1)"; then echo "::error::ruff passed a planted undefined name"; exit 1; fi
+          printf '%s\n' "$out" | grep -q 'F821' || { printf '%s\n' "$out"; echo "::error::ruff did not run on the planted fault"; exit 1; }
           rm planted_lint.py
           sc && rf
 
