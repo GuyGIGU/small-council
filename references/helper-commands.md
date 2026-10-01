@@ -10,7 +10,7 @@ text, so any other form asks the user every time. Only if it isn't on PATH, writ
 
 | Command | Use it to |
 |---|---|
-| `council run open <mode>` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`) · list runs · close one, then a reminder to show the user its closing card (`council status --widget --run <folder>`) · carry one on in this session (see Resume) |
+| `council run open <mode> [--code-root <worktree>]` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`; with the code in a worktree, open it from the main checkout with `--code-root`, and later commands find it by this session — never drive a run from a session isolated in a worktree, which can't write the council home) · list runs · close one, then a reminder to show the user its closing card (`council status --widget --run <folder>`) · carry one on in this session (see Resume) |
 | `council run plan check` · `run plan show` | validate the run's routing, context, budgets and verification contract · show those decisions plainly |
 | `council route recommend --task "<summary>"` | inspect an advisory size, risk, seat archetypes, verification and budget before opening a run; use `--classic` for the fixed comparison path (see `${CLAUDE_PLUGIN_ROOT}/references/adaptive-routing.md`) |
 | `council run events show` · `run events check` | inspect or validate the run's mechanical event history (`events.tsv`); see `${CLAUDE_PLUGIN_ROOT}/references/event-stream.md` |

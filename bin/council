@@ -205,6 +205,13 @@ runs_here() {
     ($4 == ENVIRON["TOP"] || $4 == "-") && (ENVIRON["ST"] == "" || $6 == ENVIRON["ST"]) { print $1 }'
 }
 
+# In-progress runs this session drives (the session: line), on any working tree — the rule the agent stop
+# counts starts by (cmd_cap_check), so a run whose code root is a worktree is found from the main checkout.
+session_runs() {
+  [ -n "$2" ] || return 0
+  list_runs "$1" 1000000 open | SID="$2" awk -F'\t' '$6 == "in-progress" && $8 == ENVIRON["SID"] { print $1 }'
+}
+
 # Run folders (one per line) → "name, name".
 names() { awk -F/ '{ printf "%s%s", (NR > 1 ? ", " : ""), $NF }'; }
 
@@ -221,8 +228,8 @@ seat_summary() {
 }
 
 # The run a command acts on: --run (a path, or a folder name under runs/), then $COUNCIL_RUN, then
-# the one in-progress run on this working tree. Never guesses between several, and never picks a
-# paused run on its own.
+# the one in-progress run on this working tree, then the one this session drives on any tree. Never
+# guesses between several, never picks another session's run, and never picks a paused run on its own.
 resolve_run() {
   local home mine count paused p
   if [ -n "$RUN_ARG" ]; then
@@ -237,6 +244,12 @@ resolve_run() {
   if [ "${count:-0}" -eq 1 ]; then printf '%s\n' "$mine"; return 0; fi
   if [ "${count:-0}" -gt 1 ]; then
     die "several runs are open on this working tree — pass --run <folder>: $(printf '%s\n' "$mine" | names)"
+  fi
+  mine="$(session_runs "$home" "${CLAUDE_CODE_SESSION_ID:-}")"
+  count="$(printf '%s' "$mine" | grep -c . || true)"
+  if [ "${count:-0}" -eq 1 ]; then printf '%s\n' "$mine"; return 0; fi
+  if [ "${count:-0}" -gt 1 ]; then
+    die "this session drives several open runs on other working trees — pass --run <folder>: $(printf '%s\n' "$mine" | names)"
   fi
   paused="$(runs_here "$home" "$(this_tree)" paused)"
   if [ -n "$paused" ]; then

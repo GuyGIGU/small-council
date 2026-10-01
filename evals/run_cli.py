@@ -2336,6 +2336,32 @@ def collect_one_bad_seat(tmp):
           code == 1 and re.search(r"^ghost\s+missing", out, re.MULTILINE) is not None, out)
 
 @part("runs")
+def runs_found_by_session(tmp):
+    # A run whose code root is a worktree is found from the main checkout by the session that drives it
+    # (in run 2 every command needed --run) — never another session's run, and never one of several.
+    main = new_repo(tmp, "by-session")
+    write(os.path.join(main, "a.txt"), "a\n")
+    write(os.path.join(main, ".council", "council.config.md"), "# Council config\n")
+    git(main, "add", "-A")
+    git(main, "commit", "-q", "-m", "init")
+    wt, wt2 = os.path.join(main, ".claude", "worktrees", "feat"), os.path.join(main, ".claude", "worktrees", "feat2")
+    git(main, "worktree", "add", "-q", "-b", "feat", wt)
+    git(main, "worktree", "add", "-q", "-b", "feat2", wt2)
+    me, other = {"CLAUDE_CODE_SESSION_ID": "sess-me"}, {"CLAUDE_CODE_SESSION_ID": "sess-other"}
+    _, out, _ = council(main, "run", "open", "council-review", "--code-root", wt, env=me)
+    run = out.strip().splitlines()[-1] if out.strip() else ""
+    code, out, err = council(main, "state", "next=found by session", env=me)
+    check("state: from the main checkout, the run this session drives is found though its code root is a worktree",
+          code == 0 and run != "" and "next: found by session" in read(os.path.join(run, "session-state.md")), out + err)
+    code, out, err = council(main, "state", "next=not mine", env=other)
+    check("state: another session's run on another tree is never picked — the refusal still names --run",
+          code == 2 and "--run" in err and "not mine" not in read(os.path.join(run, "session-state.md")), out + err)
+    council(wt2, "run", "open", "council-review", env=me)
+    code, out, err = council(main, "state", "next=which one", env=me)
+    check("state: a session driving two runs on other trees is told to pass --run, and nothing is written",
+          code == 2 and "--run" in err and "which one" not in read(os.path.join(run, "session-state.md")), out + err)
+
+@part("runs")
 def runs_worktrees_close_and_find(tmp):
     global fresh   # later "runs" blocks carry on with these
     # A linked worktree
@@ -4308,6 +4334,8 @@ parser = argparse.ArgumentParser(description="Helper evals: run bin/council agai
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
 parser.add_argument("--group", metavar="NAME[,NAME...]", help="run only these groups (default: all, in file order)")
+parser.add_argument("--block", metavar="NAME[,NAME...]",
+                    help="run only these blocks of the chosen groups — for a block that sets up all it needs")
 parser.add_argument("--allow-skip", action="store_true",
                     help="exit 0 when bash or git is missing (default: exit 3, so a run that checked nothing never passes)")
 opts = parser.parse_args()
@@ -4326,13 +4354,16 @@ if opts.list:
 chosen = opts.group.split(",") if opts.group else GROUPS
 if any(group not in GROUPS for group in chosen):
     parser.error("unknown group in %r (groups: %s)" % (opts.group, ", ".join(GROUPS)))
+only = opts.block.split(",") if opts.block else None
+if only and any(name not in [block.__name__ for g, block in PARTS if g in chosen] for name in only):
+    parser.error("unknown block in %r for the chosen groups" % opts.block)
 if not BASH or not GIT:
     print("[SKIP] bash or git not on PATH — helper evals need both; nothing was checked")
     sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     for group, block in PARTS:
-        if group in chosen:
+        if group in chosen and (only is None or block.__name__ in only):
             block(tmp)
 
 passed = sum(1 for ok, *_ in results if ok)
