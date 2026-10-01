@@ -148,12 +148,10 @@ live at a legacy path; the config's Memory section says where.
 
 Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
 
-**The run's status.** Show it twice: at the run's first dispatch (Work) and after
-`council run close` (Learn) — the helper reminds you at both. With a `show_widget` tool — it may be
-deferred: search the tools before deciding there is none — call its `read_me` once, then pass it
-`council status --widget` output verbatim (after close, add `--run <folder>`); otherwise relay
-`council status`. Otherwise, only when the user asks — never a card per progress line. A card is
-a snapshot; if one fails, give the text. `council pet` opens the desktop pet, only when the user asks.
+**The run's status.** Show it twice — at the run's first dispatch and after `council run close` —
+as the helper's reminder then says: `council status --widget` to a `show_widget` tool (deferred: search
+for it first; call its `read_me` once), else relay `council status`. Otherwise only when the user
+asks — never a card per progress line. `council pet` opens the desktop pet, only when the user asks.
 
 **Alerts.** When you stop for the user's answer, `council state waiting="<the question>"`. At the
 turn's end a hook records a wait you didn't and sends you back once to send what `council status

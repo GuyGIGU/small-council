@@ -951,13 +951,28 @@ seat_usage() {
 # stderr, once per moment: never per seat, never per progress line. A closed run is no longer "the run
 # on this tree", so its commands carry --run. Without Python there is no card: council run status
 # serves the first moment, and the close line itself the second.
+# The owner's phone alert at a moment that waits on them (a completed close, a build stopped at its third
+# failure): one line on stderr, unless the project turned notifications off.
+alert_note() {
+  local home
+  case "$1" in */runs/*) home="${1%/runs/*}" ;; *) home="$(council_home)" ;; esac
+  ! notifications_off "$home" || return 0
+  impact_python >/dev/null 2>&1 || return 0
+  printf 'council: %s — send the owner the line `council status --line --run %s` prints, once, with a PushNotification tool (it may be a deferred tool: search the tools for it first)\n' "$2" "${1##*/}" >&2
+}
+
 status_nudge() {
-  local run="$1" when="$2" at="" lead="first dispatch of this run — show the user its status now, once" follow=""
+  local run="$1" when="$2" at="" lead="first dispatch of this run — show the user its status now, once" al="" home="" follow=""
   [ -z "$RUN_ARG" ] || at=" --run ${run##*/}"
   if [ "$when" = close ]; then at=" --run ${run##*/}"; lead="run closed — show the user its closing card now, once"; follow="${FOLLOW:-}"; fi
   if impact_python >/dev/null 2>&1; then
-    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s`%s\n' \
-      "$lead" "$at" "$at" "${follow:+; and tell them, from the record — $follow}" >&2
+    al=""                                           # a completed run's alert rides on the same last line
+    if [ "$when" = close ] && [ "$(field status "$run/session-state.md")" = complete ]; then
+      case "$run" in */runs/*) home="${run%/runs/*}" ;; *) home="$(council_home)" ;; esac
+      notifications_off "$home" || al="; then send the owner the line \`council status --line$at\` prints, once, with a PushNotification tool"
+    fi
+    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s`%s%s\n' \
+      "$lead" "$at" "$at" "${follow:+; and tell them, from the record — $follow}" "$al" >&2
   elif [ "$when" != close ]; then
     printf 'council: %s: relay `council run status` (no Python 3.8+ here, so there is no status card)\n' "$lead" >&2
   fi
@@ -3045,6 +3060,7 @@ repair_auto() {
   fi
   if out="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" record "$task" "$name" --run "$run" 2>&1)"; then
     say "$out"
+    case "$out" in *"next stop"*) alert_note "$run" "the build is blocked: tell the user what failed and what is left" ;; esac
   else
     say "repair: not counted — ${out#repair: } (council repair check)"
   fi

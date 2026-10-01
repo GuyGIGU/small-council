@@ -4200,6 +4200,35 @@ def gates_could_not_run_and_slow(tmp):
           "gate 'suite' runs at grounding" in said and "run it at verify" in out, out + err)
 
 @part("gates")
+def gates_alerts_from_the_helper(tmp):
+    # The owner's alert is said by the helper at the moments that wait on them, so the method can point at it:
+    # a completed close and a build stopped at its third failure (verify-5 of the plan run).
+    done = small_council_repo(tmp, "alert-close", "")
+    _, run, _ = council(done, "run", "open", "council-review")
+    run = run.strip()
+    write_plan(run)
+    council(done, "state", "phase=deliver")
+    code, out, err = council(done, "run", "close")
+    check("run close: a completed run's close says to send the owner's alert, with the command, once",
+          code == 0 and err.count("PushNotification") == 1 and "council status --line --run " + os.path.basename(run) in err, err)
+    quiet = small_council_repo(tmp, "alert-off", "")
+    with open(os.path.join(quiet, ".council", "council.config.md"), "a", encoding="utf-8") as f:
+        f.write("- notifications: off\n")
+    _, qrun, _ = council(quiet, "run", "open", "council-review")
+    write_plan(qrun.strip())
+    code, out, err = council(quiet, "run", "close")
+    check("run close: with notifications off, no alert line", code == 0 and "PushNotification" not in err, err)
+    rows = "| unit | `echo 'FAILED tests/test_x.py::test_a'; exit 1` | verify | yes | ok | `true` | none | - |\n"
+    blk = small_council_repo(tmp, "alert-blocked", rows)
+    _, brun, _ = council(blk, "run", "open", "council-implement")
+    write_plan(brun.strip())
+    council(blk, "state", "phase=build")
+    said = [council(blk, "gate", "unit") for _ in range(3)]
+    check("gate: the third failure that stops the build says to alert the owner; the first two don't",
+          all("PushNotification" not in o + e for _, o, e in said[:2]) and "PushNotification" in said[2][1] + said[2][2],
+          said[2][1] + said[2][2])
+
+@part("gates")
 def gates_repair_stop(tmp):
     # In a build a failed gate names the exact repair record line; three recorded failures stop the gate
     # until the user's go is on record in their words

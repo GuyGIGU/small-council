@@ -119,6 +119,11 @@ check("kernel: the steps every run needs — the Chair's own seat record, the ow
       and "PushNotification" in core and "`council pet`" in core and "60 turns" in core
       and "never re-dispatch it" in core)
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
+# The method a review run reads before it touches the project (method-vs-helper-10: 59,407 bytes before
+# stage 2, 61,746 after it): a rule the helper now says keeps one pointer here, not its whole text.
+load = sum(len(read(*p).encode("utf-8")) for p in [("skills", "context-core", "SKILL.md"), ("skills", "council-review", "SKILL.md")]
+           + [("references", "doctrine", name) for name in sorted(doctrine)])
+check("method: what a review run reads (context-core, doctrine 01-10, council-review) is under 59,407 bytes", load < 59407, str(load))
 check("kernel: resuming a run records this session as its driver (council run resume)",
       "council run resume" in core[core.find("## Resume"):])
 check("kernel: new runs require a validated run plan before Brief or dispatch",
@@ -188,11 +193,11 @@ check("status: one plain-language reading shared by the widget, the summary and 
 check("status: showing it is a step where it happens — Work's dispatch, Challenge when its verifiers are the first "
       "dispatch, Learn's close — a show_widget tool is looked up before it is called missing, and the helper "
       "reminds the Chair at both moments (a real run showed neither card)",
-      all(p in doctrine["05-work.md"] for p in ("2. **Show the user the run's status", "council status --widget",
-                                               "deferred tool", "never a card per progress line")) and
+      "2. **Show the user the run's status" in doctrine["05-work.md"] and
       "the run's first dispatch" in doctrine["08-challenge.md"] and
-      all(p in doctrine["10-learn.md"] for p in ("2. **Show the closing card, once.**", "deferred tool",
-                                                "`council status --widget --run <folder>`")) and
+      "2. **Show the closing card, once" in doctrine["10-learn.md"] and
+      all(p in cli.split("status_nudge() {", 1)[-1].split("\n}", 1)[0] for p in
+          ("council status --widget", "deferred tool", "show_widget", "closing card")) and
       "deferred" in kernel_text and "status_nudge()" in cli and
       'status_nudge "$run" dispatch' in cli and 'status_nudge "$run" close' in cli)
 check("accounting: seats record exact usage per agent run, a Workflow's agent count, and the two readers "
