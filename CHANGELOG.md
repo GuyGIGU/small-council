@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-10-01
+
+**TL;DR:** the fixes from the first real run and the 2026-09-30 bug hunt. After a compaction the council
+picks its own run back up, the agent limit and the build's three-failure stop hold, the checks stop
+reporting wrong passes, and `council run audit` checks each finished run against the method.
+
 ### Changed
 
 - The permission rules council-init offers now cover nine more helper commands the council runs (status, evidence, context, repair, impact, route, history, outcomes, version), so they stop asking each time; `council gate`, `changed`, `cap`, `tune` and `correct` still ask. A council-init refresh offers the new rules to projects already set up.
@@ -53,6 +59,12 @@ Setup, agents and the method:
 
 Tests:
 - A suite that couldn't find bash or git no longer reports a pass after checking nothing, and the full run fails any suite that ran no checks.
+
+### Upgrade notes
+
+- Nothing to do for open runs. A run opened before agent limits existed is never stopped at the cap; it only warns.
+- A council-init refresh offers the wider permission rules, and `council home rule` prints the rule for the council's own folder.
+- Runs opened from now on record agent starts in `agent-starts.tsv`; tools that read a run folder may see that file.
 
 ## [0.17.0] — 2026-09-29
 
