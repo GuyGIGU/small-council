@@ -4624,6 +4624,7 @@ memory_entries() {
       rest = substr(lo2, RLENGTH + 1)
       if (rest !~ /^[*_~`]*([ \t]*([:.)]|\342\200\224|\342\200\223|-[ \t])|[ \t]*$)/) return
       CID[++ncand] = idnorm(substr(lo2, 1, RLENGTH)); CLN[ncand] = ln
+      return 1
     }
     # The first word of a verdict ("Refuted — see verify-2.md" is REFUTED; SCOPE-CREEP keeps its dash).
     function vword(v,   w) { w = toupper(v); sub(/^[^A-Z]+/, "", w); return match(w, /^[A-Z]+(-[A-Z]+)*/) ? substr(w, 1, RLENGTH) : "" }
@@ -4767,6 +4768,7 @@ memory_entries() {
       lvl = 0; while (substr(line, lvl + 1, 1) == "#") lvl++
       txt = trim(substr(line, lvl + 1))
       if (lvl >= 2 && lvl <= 4 && entry(txt, 0)) { elvl = lvl; anyhead = 1; next }
+      if (lvl > 4 && cand(txt, FNR)) { flush(); para = ""; next }   # too deep to read: named, never folded into the entry above
       if (id != "" && !bul && lvl > elvl) { fields(line); bodyline = 1; para = ""; next }   # a sub-heading inside an entry
       flush()
       k = kind(txt, lvl > 2); name = substr(line, 1, lvl) " " txt
@@ -4801,6 +4803,10 @@ memory_entries() {
       cand(txt, FNR)
       if (id != "") fline(line)
       next
+    }
+    line ~ /^[ \t]*\|/ {                                   # a table row is never an entry: one with an id is named
+      txt = line; sub(/^[ \t]*\|[ \t]*/, "", txt); sub(/[ \t]*\|.*$/, "", txt)
+      if (cand(txt, FNR)) { if (id != "") fline(line); para = ""; next }
     }
     line ~ /^(\*\*|__)[^*_]/ && (id == "" || bul) {          # a bold line used as a heading
       t = line; sub(/[ \t]+$/, "", t)
@@ -4843,7 +4849,9 @@ memory_idlines() {
 # The loud line for a memory file whose entries the council can't read — the whole file, or single
 # lines that open like an entry (a plain bullet, an indented one) — or nothing when all of it reads.
 memory_unread() {
-  local skipped
+  local skipped dup
+  dup="$(memory_entries "$1" | cut -f1 | sort | uniq -d | awk 'NF { printf "%s%s", (n++ ? ", " : ""), $0 }')"
+  [ -z "$dup" ] || say "memory: WARNING — $1 gives one id to more than one entry: $dup — seats get both under one name, and accept, reject and retire can't tell them apart; give each its own number."
   if [ -z "$(memory_entries "$1")" ]; then
     [ "$(memory_idlines "$1")" -gt 0 ] || return 0
     say "memory: WARNING — $1 names entry ids, but no entry could be read, so nothing in it reaches a seat or a builder. Write each entry as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …), as references/templates/conventions.md shows."

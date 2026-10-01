@@ -24,6 +24,7 @@ if hasattr(sys.stdout, "reconfigure"):
 MAX_MEMORY = 1024 * 1024
 FAILURE_VERDICTS = ("REFUTED", "MISCITED")
 HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*$")
+TABLE_CELL = re.compile(r"^[ \t]*\|[ \t]*([^|]*?)[ \t]*\|")      # a table row's first cell
 # Every spelling of an F id the parser reads — "F-4", "f4", "F4" — so a new number is never a reused one.
 FID = re.compile(r"(?<![A-Za-z0-9_])[Ff]-?([0-9]+)(?![0-9])")
 FIELD = re.compile(r"^\*\*([A-Za-z]+):\*\*[ \t]*(.*)$")
@@ -326,12 +327,22 @@ def insert(memory, block_path, out):
 
 
 def find_entry(lines, wanted):
+    """An entry's lines, as bin/council's memory parser reads them: a heading deeper than #### or a table
+    row is never an entry (it names them as not read), and any entry heading ends the entry above it."""
+    unread = ["line {}: a heading deeper than ####".format(index + 1) for index, level, text, _ in headings(lines)
+              if level > 4 and entry_id(text) == wanted]
+    unread += ["line {}: a table row".format(index + 1) for index, text in visible(lines)
+               if TABLE_CELL.match(text) and entry_id(TABLE_CELL.match(text).group(1)) == wanted]
+    if unread:
+        raise MemoryError_("{} opens like an entry where the memory parser reads none ({}) — write it as a "
+                           "heading (### {}) first".format(wanted, "; ".join(unread), wanted))
     hits = [(index, level) for index, level, _, ident in headings(lines) if ident == wanted]
     if len(hits) != 1:
         raise MemoryError_("{} must appear exactly once as a heading entry (found {}); move a "
                            "hand-written proposal by hand".format(wanted, len(hits)))
     start, level = hits[0]
-    end = next((index for index, lvl, _, _ in headings(lines) if index > start and lvl <= level), len(lines))
+    end = next((index for index, lvl, text, _ in headings(lines)
+                if index > start and (lvl <= level or entry_id(text))), len(lines))
     while end > start + 1 and lines[end - 1].strip() == "":
         end -= 1
     return start, end

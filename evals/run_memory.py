@@ -471,6 +471,40 @@ with tempfile.TemporaryDirectory(prefix="council-memory-") as temporary:
     check("a private key in copied text is removed whole, even when the text is cut short",
           "MIIE" not in flat and "Rnrq" not in flat and "MIIE" not in cut and "redacted" in flat + cut, flat + " | " + cut)
 
+    # One fixture both readers must agree on (helper-checks-10): a shared id, an entry heading too deep to
+    # read inside another entry, and an id in a table row — each named, none serving another's rule.
+    agree = Path(temporary) / "agree"
+    agree.mkdir()
+    subprocess.run([GIT, "init", "-q"], cwd=agree, check=True)
+    write(agree / ".council" / "council.config.md", "# Council config\n")
+    write(agree / ".council" / "conventions.md", "# Conventions\n## Accepted Patterns\n"
+          "### AP-1: first rule\n**Rule:** keep the first.\n### AP-1: second rule\n**Rule:** keep the second.\n"
+          "## Enforced Conventions\n#### EC-5 — the shallow one\n**Rule:** deep\n##### EC-6 — **Rule:** deeper\n"
+          "| EC-8 | a rule kept in a table |\n"
+          "## Proposed — awaiting the user's yes/no\n### F-1: one\n**Failure:** a\n### F-1: two\n**Failure:** b\n"
+          "### F-5: five\n**Failure:** five failed\n##### F-6 — **Failure:** a deeper one\n| F-8 | in a table |\n")
+    code, out, err = council(agree, "memory")
+    said = out + err
+    check("memory: names every line that opens like an entry but is not read — a heading deeper than ####, a table row",
+          all("{} (line".format(i) in said for i in ("EC-6", "EC-8", "F-6", "F-8")), said)
+    check("memory: names an id given to more than one entry", "more than one entry: AP-1, F-1" in said, said)
+    code, out, err = council(agree, "memory", "select", ".")
+    ec5 = line_of(out, "EC-5")
+    check("memory select: EC-5 is served with its own rule, never the deeper heading's below it, and EC-6 and EC-8 not at all",
+          ec5.endswith("deep") and "EC-6" not in out and "EC-8" not in out, out + err)
+    mlines, _ = memory_script.load_memory(agree / ".council" / "conventions.md")
+    start, end = memory_script.find_entry(mlines, "F-5")
+    refused = {}
+    for ident in ("F-6", "F-8", "F-1"):
+        try:
+            memory_script.find_entry(mlines, ident)
+            refused[ident] = "found"
+        except memory_script.MemoryError_ as exc:
+            refused[ident] = str(exc)
+    check("memory.py agrees: F-5 ends at the deeper entry heading, and F-6, F-8 and the shared F-1 are refused, each saying why",
+          "F-6" not in "".join(mlines[start:end]) and "deeper than ####" in refused["F-6"]
+          and "a table row" in refused["F-8"] and "found 2" in refused["F-1"], str(refused))
+
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:
     print(f"[{'PASS' if good else 'FAIL'}] {name}" +
