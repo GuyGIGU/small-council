@@ -141,7 +141,8 @@ def history(home, outcomes=True):
                    for model, entry in sorted(by_planned_model.items())}
     ratios = []
     for snap in costed:                  # agents' tokens against the plan's estimate less the Chair's share
-        estimate = cockpit.number(snap["plan"].get("estimated-tokens")) - CHAIR_ESTIMATE
+        chair = snap["plan"].get("chair-tokens")      # the plan's own Chair share, when it names one
+        estimate = cockpit.number(snap["plan"].get("estimated-tokens")) - (cockpit.number(chair) if chair else CHAIR_ESTIMATE)
         if estimate > 0:
             ratios.append(total_of(snap) / estimate)
     agents = [total_of(s) / runs_of(s) for s in costed]
@@ -255,7 +256,7 @@ def render(data):
             for model, info in cost["tokens_by_planned_model"].items()))
     e = data["estimates"]["actual_over_estimate"]
     lines.append("Estimates: " + (
-        "agents cost {:.2f}× the plan's estimate less the Chair's 20k, at the median (10–90%: {:.2f}–{:.2f}×)".format(
+        "agents cost {:.2f}× the plan's estimate less the Chair's share (the plan's, else 20k), at the median (10–90%: {:.2f}–{:.2f}×)".format(
             e["median"], e["p10"], e["p90"]) if e["enough"]
         else too_few(e["n"], "completed runs with both an estimate and a cost")))
     lines.append("")

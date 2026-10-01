@@ -46,6 +46,7 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `collect.finished` | `run` | `passed` or `failed` | `seats=<n>` |
 | `verification.finished` | `run` | `passed` or `failed` | `items=<n>;broken=<n>;other=<n>` |
 | `memory.proposed` | the drafted entry's id (`F-<n>`) | `claim` or `repair` | `source=<claim id or task id>` |
+| `run.events_repaired` | `run` | `torn-tail` | `dropped=<bytes>;copy=<events.tsv.bak-… file>` — `council run events repair` dropped a torn last line, keeping a byte copy (0.19) |
 
 The stable columns, version and sequence let later readers follow runs without parsing prose.
 `references/run-accounting.md` says what the token and agent-run figures mean, and which basis a
@@ -57,6 +58,9 @@ zero. Skipped gates have no `gate.finished` event because no command ran.
 Events are written after the corresponding state or gate result. A process killed between those
 writes can leave a missing event; an event write failure is reported by the CLI and `council doctor`
 detects a missing or malformed stream. The checker cannot infer an event that was never appended.
+`state`, `seat`, `correct` and `close` check the stream before they write: a torn last line refuses the
+call with nothing written until `council run events repair` mends it; a lost stream is never rebuilt
+(close still closes, without events).
 Human-authored work, including edits to the run plan and seat files, is not automatically observed.
 `log.md` remains the place for those decisions. Future phases can add explicit event producers where
 there is a useful mechanical boundary.

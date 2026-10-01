@@ -8,17 +8,52 @@ All notable changes to this project are documented here. The format is based on
 
 ## [0.19.0] — 2026-10-01
 
-**TL;DR:** a "just me" setup for shared projects. The council stays on your machine, and teammates
-never have to see or use it.
+**TL;DR:** two things. The council fixed its own open items, as its second real run (a plan, then
+a build of 15 tasks, each checked by a blind verifier): the phone alert and the build's three-failure
+stop no longer depend on the Chair remembering a step, a closed run stays closed, a run in a
+worktree is found from anywhere, and two linters check every change. And a "just me" setup keeps
+the council on your machine in a shared project, so teammates never have to see or use it.
 
 ### Added
 
+- A turn-end hook: when the Chair stops for you with no agent working, the run records that it waits on you, and the Chair is sent back once to alert your phone (`- notifications: off` turns it off).
+- `council state decision="<your words>"` records a ruling or go-ahead in your words; the status card shows the latest.
+- `council run events repair` mends an event file whose last line was cut off, keeping a byte copy.
+- `council seat … tools=<n>` measures each agent's tool calls against the plan's budget.
+- The run plan can name the Chair's own share of the estimate (`budget/run/chair-tokens`); agents are then compared with their share.
+- CI runs ShellCheck and ruff on the files a change touches, on every OS, proved on a planted fault.
 - Setup asks whether the council is the team's or just yours. On **just me**, git ignores `.council/` through its own exclude list (never committed or pushed), CLAUDE.md gets no Small Council note, and the config records `- sharing: just me`.
 - `council sharing` shows who sees the council and what's left to do; `council sharing just-me` and `council sharing team` switch it, and also work on a council that's already set up.
 - `council doctor` warns when a just-me council still shows up for the team: council files in git, the note in CLAUDE.md, or `.council/` not ignored.
 - On just me, sessions are told to keep council runs, finding ids and `.council/` paths out of commit messages, PR text and shared docs, and specs save to `.council/specs/`.
 
-**Upgrade:** nothing to do. A council with no `- sharing:` line stays a team council, as before.
+### Changed
+
+- In a build, `council gate` records each failed attempt itself; the three-failure stop no longer needs a typed `repair record`.
+- A seat can't be marked done without its file; the seat-check hook sends back an empty, multi-line or file-less reply once.
+- A closed run takes only what its close asks for (the deliverable, the request, a correction, the Chair's own record).
+- Every stage change records that stage's next step; a completed close says once what the record has to tell you.
+- Reminders are the last line a command prints, so a cut output keeps them.
+- The method the Chair reads is shorter than before 0.18: each rule the helper now says is one pointer.
+
+### Fixed
+
+- Commands find the run this session drives from any working tree (`run open --code-root`).
+- A state, seat or close call does all of its writes or none; a damaged event file refuses before anything changes.
+- `council run audit` judges this run's real close, not a refused one or another run's.
+- The status card says "no agent ran" and "dry runs only, no check yet", and no longer counts skipped seats.
+- Memory lines in deep headings or tables, and an id used twice, are named instead of misread.
+- The cost line compares agents' tokens with the agents' share ("about 18% over the agents' 80k share").
+- A gate whose tool is missing reads "could not run (exit 127)"; `council doctor` names a slow gate at grounding.
+- The plan check says each problem once.
+- A review fix's red proof (`regress-<n>`) no longer reads as a failing check on the card.
+
+### Upgrade notes
+
+- The new Stop hook runs at the end of every turn; it is silent outside a council run.
+- A verifier's seat is done only with its file: a Workflow's verifiers write `verify-<n>-<letter>.md` in the run folder.
+- "Just me" needs nothing: a council with no `- sharing:` line stays a team council, as before.
+
 
 ## [0.18.0] — 2026-10-01
 

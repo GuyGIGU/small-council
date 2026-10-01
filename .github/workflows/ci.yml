@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0    # the linters judge the files this change touched, against its base
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -37,6 +39,31 @@ jobs:
           "${COUNCIL_EVAL_BASH:-bash}" -c 'echo "bash $BASH_VERSION"'
           git --version
           awk --version 2>/dev/null | head -n 1 || awk -W version 2>/dev/null | head -n 1 || echo "awk: $(command -v awk) (BSD)"
+
+      # The linters judge only the files this change touched (council changed), so a rule fitted today
+      # never fails on the code it found; on every OS each is proved to fail on a planted fault and to
+      # pass once it is gone — a linter that can only pass is worse than none.
+      - name: Linters on the changed files (ShellCheck errors, ruff's broken-Python rules)
+        if: ${{ !cancelled() }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          python -m pip install --quiet shellcheck-py ruff
+          base="$BASE"
+          git cat-file -e "${base}^{commit}" 2>/dev/null || base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
+          sc() { "${COUNCIL_EVAL_BASH:-bash}" bin/council changed --base "$base" --glob 'bin/council' --glob '*.sh' -- shellcheck -S error; }
+          rf() { "${COUNCIL_EVAL_BASH:-bash}" bin/council changed --base "$base" --glob '*.py' -- python -m ruff check --isolated --select E9,F63,F7,F82; }
+          sc && rf
+          # A planted fault must fail with the linter's own rule code: a tool that never ran also fails.
+          printf 'echo "never closed\n' > planted-lint.sh
+          if out="$(sc 2>&1)"; then echo "::error::ShellCheck passed a planted parse error"; exit 1; fi
+          printf '%s\n' "$out" | grep -q 'SC10[0-9][0-9]' || { printf '%s\n' "$out"; echo "::error::ShellCheck did not run on the planted fault"; exit 1; }
+          rm planted-lint.sh
+          printf 'print(name_that_is_nowhere)\n' > planted_lint.py
+          if out="$(rf 2>&1)"; then echo "::error::ruff passed a planted undefined name"; exit 1; fi
+          printf '%s\n' "$out" | grep -q 'F821' || { printf '%s\n' "$out"; echo "::error::ruff did not run on the planted fault"; exit 1; }
+          rm planted_lint.py
+          sc && rf
 
       # One step runs every suite: several at a time (the helper and hook suites split into their
       # groups), with the ones that time the helper or a hook, or race its locks, run alone first.

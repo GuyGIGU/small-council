@@ -149,6 +149,16 @@ def proposals(home):
                     for e in log_entries(home)]}
 
 
+def brief(data):
+    """The close's follow-up (council run close): one plain line when the record has a proposal for the user."""
+    parts = []
+    if data["budget"]["status"] == "proposed":
+        parts.append("the estimate per worker can be tuned to {} (council tune shows the evidence)".format(k(data["budget"]["value"])))
+    if data["roster"]:
+        parts.append("{} seat(s) clear the bar for a roster change (council tune)".format(len(data["roster"])))
+    return "; ".join(parts)
+
+
 def render(data):
     b = data["budget"]
     lines = ["council tune · proposals from this project's own record; nothing changes without the user's words", ""]
@@ -368,9 +378,15 @@ def main():
     parser.add_argument("--said", type=Path)
     parser.add_argument("--value")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--brief", action="store_true", help="one plain line when there is a proposal, else nothing")
     args = parser.parse_args()
     if args.action == "propose":
         data = proposals(args.home)
+        if args.brief:
+            line = brief(data)
+            if line:
+                print(line)
+            return 0
         print(json.dumps(data, indent=2, sort_keys=True) if args.json else render(data))
         return 0
     if args.knob != "budget":

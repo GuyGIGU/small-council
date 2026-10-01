@@ -132,8 +132,9 @@ def listing(names, limit=4):
 
 # --- reading the snapshot -------------------------------------------------------------------------------------
 def gate_kind(name):
-    """A build's before-proof is meant to fail and a probe is a dry run: neither is a check of the work."""
-    if name.startswith("before-"):
+    """A build's before-proof is meant to fail — and so is a review fix's regress-proof, the new check run on the
+    version a verifier saw — and a probe is a dry run: none is a check of the work."""
+    if name.startswith(("before-", "regress-")):
         return "proof"
     if name.startswith("probe-"):
         return "probe"
@@ -270,6 +271,9 @@ def usage_of(snap):
         text = "not reliably recorded (this run uses the older record format)"
     elif basis == "suspect":
         text = "not shown — some recorded counts look wrong ({})".format(listing(tokens.get("suspect_seats", []), 3))
+    elif not at_least and not agent_starts(snap["run"].get("path") or "."):   # a known zero is not an unknown
+        closed = snap["run"].get("status", "").split(" ")[0] in ("complete", "abandoned", "paused")
+        text = "no agent ran" if closed else "no agent has run yet"
     else:
         text = "no usage recorded yet"
     if runs is not None:
@@ -398,7 +402,15 @@ def cap_standing(snap, run_path, home=None):
 def spend_of(snap, usage, run_path):
     """Compare only known exact token counts with the run's planned estimate and ceiling."""
     estimate, ceiling = budget_value(run_path, "estimated-tokens"), budget_value(run_path, "token-ceiling")
+    chair = budget_value(run_path, "chair-tokens")       # seats record agents only: compare them with their share
+    share = estimate - chair if estimate is not None and chair is not None and chair < estimate else estimate
+    whose = "" if share == estimate else " the agents' {} share".format(tokens_text(share))
     known = usage["tokens_known"]
+    if usage["text"].startswith("no agent"):           # nothing to compare: say so, and the estimate if there was one
+        message = usage["text"] + (" (estimated {})".format(tokens_text(estimate)) if estimate else "")
+        if ceiling is not None:
+            message += "; ceiling {}".format(tokens_text(ceiling))
+        return {"estimate": estimate, "ceiling": ceiling, "spend_text": message}
     if estimate is None and ceiling is None:
         message = ""
     elif usage["basis"] == "complete":
@@ -407,14 +419,16 @@ def spend_of(snap, usage, run_path):
         message = "at least {} used".format(tokens_text(known))
     else:
         message = "usage not known yet"
-    if estimate is not None:
+    if estimate is not None and whose:
+        message += " of{} (estimated {})".format(whose, tokens_text(estimate))
+    elif estimate is not None:
         message += " of estimated {}".format(tokens_text(estimate)) if known else " against estimated {}".format(tokens_text(estimate))
     if ceiling is not None:
         message += "; ceiling {}".format(tokens_text(ceiling))
-    if estimate is not None and known > estimate and estimate > 0:
-        over = ((known - estimate) * 100 + estimate // 2) // estimate
-        message += " ({}about {}% over estimate)".format("at least " if usage["basis"] != "complete" else "", over)
-    return {"estimate": estimate, "ceiling": ceiling, "spend_text": message}
+    if share is not None and known > share and share > 0:
+        over = ((known - share) * 100 + share // 2) // share
+        message += " ({}about {}% over{})".format("at least " if usage["basis"] != "complete" else "", over, whose or " estimate")
+    return {"estimate": estimate, "share": share, "ceiling": ceiling, "spend_text": message}
 
 
 def oversized_memory(run_path):
@@ -470,9 +484,32 @@ def brief_names(snap):
     return cached
 
 
+def roster_names(snap):
+    """Seat names from the council config's roster table (| Seat | Slug | Lens | …): "Lens (Seat)" per slug —
+    for a seat no brief names, a skipped one most often. Read once per snapshot."""
+    cached = snap.get("_roster")
+    if cached is None:
+        cached, cols = {}, None
+        home = Path(snap["run"].get("path") or ".").parent.parent
+        for line in cockpit.lines_of(cockpit.text_of(home / "council.config.md", home)):
+            if not line.lstrip().startswith("|"):
+                cols = None
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            lower = [c.lower() for c in cells]
+            if {"seat", "slug", "lens"} <= set(lower):
+                cols = (lower.index("seat"), lower.index("slug"), lower.index("lens"))
+            elif cols and len(cells) > max(cols) and not set(cells[0]) <= set("-: "):
+                seat, slug, lens = (cockpit.clean(cells[i]).strip("`") for i in cols)
+                if slug and lens and seat:
+                    cached[slug] = "{} ({})".format(lens, seat)[:40]
+        snap["_roster"] = cached
+    return cached
+
+
 def seat_name(snap, slug):
-    """A seat in plain words: the brief's name for it, else its slug made readable."""
-    named = brief_names(snap).get(slug)
+    """A seat in plain words: the brief's name for it, else the roster's, else its slug made readable."""
+    named = brief_names(snap).get(slug) or roster_names(snap).get(slug)
     if named:
         return named
     for prefix, word in (("verify-", "Verifier"), ("diagnose-", "Diagnosis"), ("task-", "Task")):
@@ -683,9 +720,10 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
         else:
             attention.append({"kind": "cap", "severity": 1, "text": "This run used {}, over its limit of {}.".format(many, cap)})
     known = usage["tokens_known"]
-    if usage["estimate"] is not None and known > usage["estimate"]:
+    if usage.get("share") is not None and known > usage["share"]:
         attention.append({"kind": "estimate", "severity": 1,
-                          "text": "Token use is over the run's estimate."})
+                          "text": "Token use is over the agents' share of the estimate." if usage.get("share") != usage["estimate"]
+                                  else "Token use is over the run's estimate."})
     if usage["ceiling"] and known > usage["ceiling"]:
         attention.append({"kind": "ceiling", "severity": (2 if held else 1) if open_run else 1,
                           "text": ("Token use is over the run's ceiling. " + (go or "More should start only after you say so.")
@@ -728,7 +766,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
     if key == "interrupted":
         label = "Paused" if status == "paused" else "Stopped early"
 
-    total = len(seats) + len(planned)
+    total = len([s for s in seats if s["state"] != "skipped"]) + len(planned)    # a skipped seat is none to finish
     parts = []
     if total:
         parts.append("{} of {} done".format(counts.get("done", 0), total))
@@ -737,10 +775,12 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
             parts.append("{} {}".format(counts[state], word))
     if planned:
         parts.append("{} not started".format(len(planned)))
-    seat_text = " · ".join(parts) if parts else "no seats recorded yet"
+    seat_text = " · ".join(parts) if parts else (
+        "none to run · {} skipped".format(counts["skipped"]) if counts.get("skipped") else "no seats recorded yet")
     passed = sum(1 for c in checks if c["result"] == "passed")
     recovered = sum(1 for c in checks if c["recovered"])
-    check_text = "no checks run yet" if not checks else "{} passing{}{}".format(
+    probes = any(gate_kind(g["name"]) == "probe" for g in snap["gates"])
+    check_text = ("dry runs only, no check yet" if probes else "no checks run yet") if not checks else "{} passing{}{}".format(
         passed, ", {} failing".format(len(failing)) if failing else "",
         " ({} recovered after failing)".format(recovered) if recovered else "")
     latest = None
@@ -798,6 +838,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
                    "tokens_basis": s.get("tokens_basis", ""), "agent_runs": s.get("agents"),
                    "note": s["note"]} for s in seats],
         "evidence": evidence_of(snap, run_path),
+        "decisions": list(snap.get("decisions", []))[-3:],
     }
 
 
@@ -839,6 +880,8 @@ def text(status, tui_commands=()):
         lines.append("Latest check: {} {} at {}".format(c["name"], c["result"], c["clock"]))
     if status["progress"]["next"]:
         lines.append("Next: " + status["progress"]["next"][:200])
+    if status.get("decisions"):
+        lines.append("Decisions: " + " · ".join(d[:120] for d in status["decisions"]))
     if status["recent"]:
         lines.append("Recent: " + " · ".join("{} {}".format(i["clock"], i["text"]) for i in status["recent"][-4:]))
     fresh = status["freshness"]
@@ -996,6 +1039,9 @@ def widget(status, preview=False, limit=5):
     if prog["next"]:
         next_text = prog["next"] if len(prog["next"]) <= 220 else prog["next"][:219] + "…"
         out.append('<p style="margin-top:8px"><span class="muted">Next:</span> {}</p>'.format(esc(next_text)))
+    if status.get("decisions"):
+        out.append('<p class="muted" style="margin-top:10px">Decisions</p><ul>{}</ul>'.format(
+            "".join("<li>{}</li>".format(esc(d[:200])) for d in status["decisions"])))
     if status["recent"]:
         out.append('<p class="muted" style="margin-top:10px">Recent{}</p><ul>{}</ul>'.format(
             "" if status["recent_source"] == "events" else " (from older records)",

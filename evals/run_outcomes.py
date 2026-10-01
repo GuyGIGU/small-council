@@ -120,6 +120,10 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
             "7": "changed at cited lines"}, got)
         check("Kept and Cut remain separate comparison groups", data["totals"]["kept"]["changed at cited lines"] == 1
               and data["totals"]["cut"]["changed at cited lines"] == 1, data["totals"])
+        quiet = {"totals": {kind: {name: 0 for name in outcomes.OUTCOMES} for kind in ("kept", "cut")}}
+        check("brief: one plain line for the close when a kept finding's cited lines changed, and nothing otherwise",
+              outcomes.brief(data).startswith("1 kept finding") and "council outcomes" in outcomes.brief(data)
+              and outcomes.brief(quiet) == "", outcomes.brief(data))
         check("mode and originating seat breakdowns are present", "council-review" in data["by_mode"]
               and data["by_seat"]["hunt"]["kept"]["changed at cited lines"] == 1, data["by_seat"])
         check("each run summary keeps Kept and Cut as separate groups",

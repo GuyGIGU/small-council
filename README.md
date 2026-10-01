@@ -51,13 +51,15 @@ skipped under load.
 - **Fourteen expert seats** in the catalog, each with a doc that says how to apply it to any stack:
   security, structure, tests, frontend, backend, data integrity, performance, LLM pipelines, UI, UX,
   accessibility, concurrency, untrusted input and operability — recast or dropped per project.
-- **Three hooks.**
+- **Four hooks.**
   - **SessionStart**: orients council-enabled sessions, lists open runs, and after a compaction says
     "resume from disk, don't restart". It prints nothing in other projects.
   - **PreToolUse**: at its agent cap or past its token ceiling, a council run refuses new agents
     until you say go. It counts each agent as it starts (a Workflow as one, then as all its agents
     once their count is recorded), so agents started together can't slip past the limit.
   - **SubagentStop**: a council agent can't finish without the file its contract requires.
+  - **Stop**: when the Chair ends a turn with no agent working, the run records that it waits on you,
+    and the Chair is sent back once to alert your phone (unless `- notifications: off`).
 
 ## Install
 
@@ -281,7 +283,7 @@ See the [impact graph contract](references/impact-graph.md).
 .claude-plugin/        plugin.json + marketplace.json (this repo is its own marketplace)
 skills/                the nine skills
 agents/                council-worker, council-verifier
-hooks/                 hooks.json · session-start.sh · agent-gate.sh · seat-gate.sh
+hooks/                 hooks.json · session-start.sh · agent-gate.sh · seat-gate.sh · turn-end.sh
 bin/council            the helper
 references/            stage doctrine · seat docs · spec and test docs · roster catalog · templates
 evals/                 17 CI checks (see evals/README.md) · behavioral drills · benchmark and paid-suite fixtures

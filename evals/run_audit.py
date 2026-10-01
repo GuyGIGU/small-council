@@ -320,6 +320,50 @@ def transcript_clean(path, run):
     log.save(path)
 
 
+def transcript_refused_close(path, run, card_after_real):
+    """Another run's close and this run's refused close, each followed by a card, then this run's real close —
+    with a card after it or not. A refused call is written as a real transcript writes a failed Bash call:
+    is_error, its output starting "Exit code 2"."""
+    events = [line.split("\t") for line in (run / "events.tsv").read_text(encoding="utf-8").splitlines()[1:]]
+    opened, closed = utc(events[0][2]), utc(events[-1][2])
+    other = "2026-10-01-190000-init"
+    log = Transcript("session-clean", opened - timedelta(seconds=30))
+    log.prompt("/council-review the change on this branch")
+    log.at(opened - timedelta(seconds=2)).bash("council run open council-review", str(run))
+    log.at(closed - timedelta(seconds=40)).bash("council run close --run %s" % other, "closed %s — complete" % other)
+    log.bash("council status --run %s" % other, "Project · Setup · %s\nStatus: Done. Setup is finished." % other)
+    log.text("**Status:** Done. Setup is finished.")
+    log.call("Bash", {"command": "council run close", "description": "Close the run"},
+             "Exit code 2\ncouncil: the event stream is torn (its last line is cut off) — mend it: council run events "
+             "repair --run %s" % run.name, error=True)
+    log.bash("council status", "Project · Review · %s\nStatus: Working. Its event stream needs a repair." % run.name)
+    log.text("**Status:** Working. Its event stream needs a repair.")
+    log.at(closed - timedelta(seconds=1)).bash("council run close", "closed %s — complete" % run.name)
+    if card_after_real:
+        log.bash("council status --run %s" % run.name, "Project · Review · %s\nStatus: Done. The review is finished." % run.name)
+        log.text("**Status:** Done. The review is finished.")
+    log.at(closed + timedelta(minutes=5)).prompt("thanks")
+    log.save(path)
+
+
+def transcript_pause_then_close(path, run):
+    """One session pauses the run (a card after it), then closes it complete in a call whose last command
+    fails — so the result is an error, though its output says the run closed — with no card after."""
+    events = [line.split("\t") for line in (run / "events.tsv").read_text(encoding="utf-8").splitlines()[1:]]
+    opened, closed = utc(events[0][2]), utc(events[-1][2])
+    log = Transcript("session-clean", opened - timedelta(seconds=30))
+    log.prompt("/council-review the change on this branch")
+    log.at(opened - timedelta(seconds=2)).bash("council run open council-review", str(run))
+    log.at(closed - timedelta(seconds=60)).bash("council run close --status paused", "closed %s — paused" % run.name)
+    log.bash("council status --run %s" % run.name, "Project · Review · %s\nStatus: Paused. The review waits." % run.name)
+    log.text("**Status:** Paused. The review waits.")
+    log.at(closed - timedelta(seconds=1)).call("Bash", {"command": "council run close && council nosuch", "description": "x"},
+                                               "Exit code 2\nclosed %s — complete\ncouncil: unknown command: nosuch" % run.name,
+                                               error=True)
+    log.at(closed + timedelta(minutes=5)).prompt("thanks")
+    log.save(path)
+
+
 # --- the paid suite's graders, on synthetic traces ---------------------------------------------------------------
 def graded(rows):
     sys.path.insert(0, str(ROOT / "evals"))
@@ -446,6 +490,34 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
           codes == [0, 0, 0, 0] and code == 0 and all(item(out, label)[0] == "pass" for label in
                                                       ("Closed after Deliver", "Deliverable", "Every seat on record")),
           "%s exit %s: %s %s" % (codes, code, re.findall(r"^  (?:warn|FAIL) .*$", out, re.MULTILINE), err))
+
+    # The close the audit judges is this run's own, as the helper did it: a refused close, or another run's
+    # close earlier in the window, is not it (run 2's setup: the card after the first close in the window was
+    # judged). And a complete run whose stream lost its close event reads the state's own stamp.
+    if run2 is not None:
+        for name, shown in (("refused-close.jsonl", False), ("refused-close-shown.jsonl", True)):
+            transcript_refused_close(base / "more" / name, run2, shown)
+        code, out, err = council(repo, "run", "audit", "--transcript", str(base / "more" / "refused-close.jsonl"))
+        verdict, words = item(out, "Closing card")
+        check("closing card: judged after this run's real close — not after a refused close or another run's close, "
+              "though a card followed each", verdict == "FAIL" and "not shown after the close" in words, words)
+        code, out, err = council(repo, "run", "audit", "--transcript", str(base / "more" / "refused-close-shown.jsonl"))
+        check("closing card: a card after this run's real close passes", item(out, "Closing card")[0] == "pass",
+              item(out, "Closing card")[1])
+        transcript_pause_then_close(base / "more" / "pause-then-close.jsonl", run2)
+        code, out, err = council(repo, "run", "audit", "--transcript", str(base / "more" / "pause-then-close.jsonl"))
+        verdict, words = item(out, "Closing card")
+        check("closing card: judged after this run's last close — not its pause — even when the close's call ended in "
+              "an error after the close printed its line", verdict == "FAIL" and "not shown after the close" in words, words)
+        lost = base / "more" / "no-close-event" / ".council" / "runs" / run2.name
+        shutil.copytree(str(run2), str(lost))
+        rows = (lost / "events.tsv").read_text(encoding="utf-8").splitlines(True)
+        write(lost / "events.tsv", "".join(r for r in rows if "\trun.closed\t" not in r))
+        stamped = re.search(r"^closed: (.+)$", (lost / "session-state.md").read_text(encoding="utf-8"), re.MULTILINE).group(1)
+        code, out, err = council(base, "run", "audit", "--run", str(lost))
+        verdict, words = item(out, "Closed after Deliver")
+        check("a complete run whose stream holds no close event reads the state's closed: stamp, and warns rather than fails",
+              verdict == "warn" and stamped.strip() in words, words)
 
     # Run 1's records with the changes the review asked about, in a copy.
     def run1_copy(name, synthesis=None, claims=None):

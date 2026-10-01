@@ -201,7 +201,12 @@ def closing(run, say):
         say(WARN, label, "no event stream (a run from before events.tsv), so when it closed can't be read")
     elif run.status == "complete":
         if not closed:
-            say(FAIL, label, "the state says complete, but no close is recorded; close it with: council run close --run %s" % run.name)
+            stamped = field(run.state, "closed")
+            if stamped:                            # the close's own stamp, with its event lost or never written
+                say(WARN, label, "closed complete at %s by the state's own stamp, but the event stream holds no close "
+                    "event, so whether Deliver came first can't be read" % stamped)
+            else:
+                say(FAIL, label, "the state says complete, but no close is recorded; close it with: council run close --run %s" % run.name)
             return
         if run.mode not in MODES:                  # council-init, test-architect: their own phases, no Deliver
             say(PASS, label, "closed complete at %s (%s has no Deliver stage)" % (clock(closed["t"]), run.mode or "this mode"))
@@ -376,8 +381,8 @@ def seats_on_record(run, say):
     missing = [s for s in run.selected if s not in recorded and s not in chair]
     chair = [s for s in chair if s in recorded]
     if missing_chair:
-        say(FAIL, label, "the Chair's own seat (%s) has no record: council seat %s done agents=0%s" % (
-            ", ".join(missing_chair), missing_chair[0], "; nor has %s" % listed(missing) if missing else ""))
+        say(FAIL, label, "the Chair's own seat (%s) has no record: council seat %s done agents=0 --run %s%s" % (
+            ", ".join(missing_chair), missing_chair[0], run.name, "; nor has %s" % listed(missing) if missing else ""))
     elif missing:
         say(FAIL, label, "selected in the plan but never recorded: %s" % listed(missing))
     else:
@@ -634,14 +639,25 @@ def transcript(run, path, say):
                 "council status followed%s" % (clock(part[sent[0]][0]), " before its result was recorded at %s"
                                                % clock(part[end][0]) if done else ""))
 
-    # The closing card: after the run close call, to the end of that turn.
+    # The closing card: after this run's own close, to the end of that turn. A close the helper refused
+    # (is_error, "Exit code …", and no "closed <this run>" line) is no close, and another run's close in the
+    # same window is not this one's: this run's last close that printed its line is — a pause before it is
+    # not — else the last one that went through.
     label = "Closing card"
-    close_at = next(((n, k) for n, t, block, found, _ in calls for k, i in enumerate(found) if i["sub"] == "run close"), None)
+    mine = r"\bclosed %s\b" % re.escape(run.name)
+    refused = set(b.get("tool_use_id") for _, kind, b in part if kind == "result"
+                  and (b.get("is_error") or block_text(b.get("content")).startswith("Exit code ")))
+    closes = [(n, k, output) for n, t, block, found, output in calls if block.get("id") not in refused or re.search(mine, output)
+              for k, i in enumerate(found) if i["sub"] == "run close"]
+    named = [c for c in closes if re.search(mine, c[2])]
+    close_at = (named[-1:] or closes[-1:] or [None])[0]
     if close_at is None:
-        if closed:
-            say(WARN, label, "no council run close call in the transcript's window, so it can't be checked")
+        tried = any(i["sub"] == "run close" for c in calls for i in c[3])
+        if closed or tried:
+            say(WARN, label, "every council run close call in the window was refused, so the close can't be found"
+                if tried else "no council run close call in the transcript's window, so it can't be checked")
     else:
-        n0, k0 = close_at
+        n0, k0, _ = close_at
         shown = False
         for n, t, block, found, output in calls:
             if n < n0:

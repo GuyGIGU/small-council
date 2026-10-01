@@ -44,8 +44,8 @@ which exist to add a second look.
    worker. The route budgets with the config's `estimate per worker` (set by `council tune`), else 80k.
 7. **Open the run.** `council run open <mode>` prints the run folder and records this session's id,
    so a compaction resumes the right run. It also creates `<run>/run-plan.tsv`: fill its run size,
-   risk, complexity, uncertainty, token estimate and verification level from the decision you just
-   made. Assign completes its seat rows. A Solo run (you alone) or a mode that skips Assign
+   risk, complexity, uncertainty, token estimate, the route's `chair-tokens` and verification level
+   from your decision. Assign completes its seat rows. A Solo run (you alone) or a mode that skips Assign
    (you plus the expected verifiers) completes every seat row here, then runs `council run plan check`.
    Record the same size on the status board:
    `council state size="squad — 3 seats + 1 verifier, est. ~300k tokens"`.
@@ -81,7 +81,7 @@ which exist to add a second look.
 - After the go-ahead, work to the deliverable without check-ins. Stop only for a destructive step,
   growth beyond the approved scope, or a ruling that belongs to the user.
 - The user can say "stop — give me what you have" at any time; Collect handles a partial delivery.
-- Record the go-ahead under `## Decisions so far` in session-state.md.
+- Record the go-ahead: `council state decision="<their words>"`.
 
 ## Done when
 

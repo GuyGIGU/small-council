@@ -161,6 +161,18 @@ def header(run):
     return fields
 
 
+def decisions(run, limit=20):
+    """The lines under session-state.md's '## Decisions so far' (council state decision=), oldest first."""
+    found, inside = [], False
+    for line in lines_of(text_of(run / "session-state.md", run)):
+        if line.startswith("## "):
+            inside = line.strip() == "## Decisions so far"
+            continue
+        if inside and line.startswith("- "):
+            found.append(clean(line[2:])[:300])
+    return found[-limit:]
+
+
 def next_step(state):
     """The run's recorded next step. The one written at run open is Convene's own: nothing replaces it
     on its own, so once the run has left convene it is stale and reads as no step at all. A step the
@@ -487,6 +499,7 @@ def snapshot(run, home=None, last_events=8):
             "status", "mode", "phase", "updated", "opened", "closed", "size", "ask", "deliverable", "next", "actual",
             "waiting")}},
         "plan": plan_of(run),
+        "decisions": decisions(run),
         "seats": seats,
         "usage": usage_totals(seats),
         "corrections": sorted(fixes.values(), key=lambda f: (f["seat"], f["field"])),

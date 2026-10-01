@@ -76,16 +76,17 @@ Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`; 
 says when to run each command. Rules for every run:
 
 - `council route recommend` is advisory before a run opens; record final choices in the plan.
-- `council impact` adds an optional `impact.tsv` beside the change index. `council context build`
-  adds opt-in `contexts/` after `brief.md`; it does not replace the brief.
+- `council impact` adds an optional `impact.tsv`; `council context build`, opt-in `contexts/`
+  beside `brief.md`, never replacing it.
 - `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
   It needs optional Python 3.8+. `council repair record` leaves a bounded trail in `repairs.jsonl`.
 - Run checks on their own; never hide refusals through `| tail`/`| head` (Challenge, step 5).
   `council gate --all` exit 4 means NOTHING WAS CHECKED: never report that as a pass. A single
   gate's exit 4 is that command's own exit code.
 
-Commands act on the one in-progress run on this working tree. With a second one open
-(`--alongside`), pass `--run <folder>` every time; the helper never guesses.
+Commands act on this tree's in-progress run, else the one this session drives on any tree (code
+in a worktree: `run open --code-root`). With a second one open (`--alongside`), pass
+`--run <folder>`; the helper never guesses.
 
 ## Where things live
 
@@ -147,14 +148,11 @@ live at a legacy path; the config's Memory section says where.
 
 Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
 
-**The run's status.** Show it twice: at the run's first dispatch (Work) and after
-`council run close` (Learn) — the helper reminds you at both. With a `show_widget` tool — it may be
-deferred: search the tools before deciding there is none — call its `read_me` once, then pass it
-`council status --widget` output verbatim (after close, add `--run <folder>`); otherwise relay
-`council status`. Otherwise, only when the user asks — never a card per progress line. A card is
-a snapshot; if one fails to render, give the text and carry on. `council pet` opens the desktop pet, only when the user asks.
+**The run's status.** Show it twice — at the run's first dispatch and after `council run close` —
+as the helper's reminder then says: `council status --widget` to a `show_widget` tool (deferred: search
+for it first; call its `read_me` once), else relay `council status`. Otherwise only when the user
+asks — never a card per progress line. `council pet` opens the desktop pet, only when the user asks.
 
-**Alerts.** When you stop for the user's answer, `council state waiting="<the question>"` (`waiting=`
-clears it). Then, and when an agent cap or token ceiling stops the run, send what
-`council status --line` prints, once, with a PushNotification tool (it may be deferred too). No
-progress alerts.
+**Alerts.** When you stop for the user's answer, `council state waiting="<the question>"`. At the
+turn's end a hook records a wait you didn't and sends you back once to send what `council status
+--line` prints with a PushNotification tool (it may be deferred too). No progress alerts.

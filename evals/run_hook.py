@@ -133,6 +133,28 @@ def run_agent_gate(command, payload, cwd):
     return p.returncode, p.stdout, p.stderr, time.time() - t0
 
 
+def stop_input(session="sA", cwd="", active=False, message="Which of the two should I build first?"):
+    """A Stop input as Claude Code writes it: compact JSON."""
+    return json.dumps({"session_id": session, "transcript_path": "/x/t.jsonl", "cwd": cwd, "permission_mode": "default",
+                       "hook_event_name": "Stop", "stop_hook_active": active, "last_assistant_message": message},
+                      separators=(",", ":"))
+
+
+def valid_plan(run, seats=("chair", "w1")):
+    """A complete run-plan v1, so the helper starts the seats a test names."""
+    rows = [("kind", "id", "field", "value", "reason"), ("schema", "plan", "version", "1", "test"),
+            ("run", "run", "id", os.path.basename(run), "test"), ("run", "run", "mode", "council-review", "test"),
+            ("run", "run", "size", "squad", "test"), ("assessment", "run", "risk", "low", "test"),
+            ("assessment", "run", "complexity", "low", "test"), ("assessment", "run", "uncertainty", "low", "test"),
+            ("budget", "run", "agent-cap", "10", "test"), ("budget", "run", "estimated-tokens", "100000", "test"),
+            ("verification", "run", "level", "independent", "test")]
+    for slug in list(seats) + ["verify-plan"]:
+        role = "chair" if slug == "chair" else ("verifier" if slug.startswith("verify-") else "worker")
+        rows += [("seat", slug, "disposition", "selected", "test"), ("seat", slug, "role", role, "test"),
+                 ("context", slug, "level", "focused", "test"), ("budget", slug, "tool-calls", "15", "test")]
+    write(os.path.join(run, "run-plan.tsv"), "\n".join("\t".join(r) for r in rows) + "\n")
+
+
 def git(cwd, *args):
     return subprocess.run([GIT, "-c", "core.autocrlf=false", *args], cwd=cwd, check=True,
                           capture_output=True, text=True, env=GIT_ENV).stdout.strip()
@@ -468,6 +490,30 @@ def many_open_runs(tmp):
           "--status complete" in line and "--status abandoned" not in line and "FINAL-REVIEW.md" in line, out)
 
 @part("main")
+def seat_gate_replies(tmp):
+    # The seat check reads the reply honestly: a reply that is there but empty (an agent stopped at its turn
+    # limit before answering) is sent back once; a missing field is the host's and passes; more than one line
+    # is sent back once; a "Wrote" that names no file, or a relative name it can't find, asks for the full path.
+    folder = os.path.join(tmp, "seat-replies")
+    good = os.path.join(folder, "seats", "w1.md")
+    write(good, "# Tests — tests (review)\nref: x\n## Index\n1 · P2 · Principle 1 · a.py:1 · a thing\n")
+    worker = "small-council:council-worker"
+    code, err = run_gate(worker, "")
+    check("seat check: a reply that is there but empty is sent back once, with the file rule", code == 2 and "Wrote" in err, err)
+    bare = json.dumps({"hook_event_name": "SubagentStop", "agent_type": worker, "agent_id": "a1", "stop_hook_active": False, "cwd": ""})
+    code, err = run_gate(worker, "", payload=bare)
+    check("seat check: no reply field at all (an older host) lets the agent stop", code == 0 and not err, err)
+    code, err = run_gate(worker, "Wrote %s — 1 item (1 P2)\nAlso, a summary of what I found." % good)
+    check("seat check: a good file with a reply of more than one line is sent back once for the one line",
+          code == 2 and "exactly one line" in err, err)
+    code, err = run_gate(worker, "Wrote my findings — 1 item")
+    check("seat check: a Wrote line that names no file asks for the file's full path", code == 2 and "full path" in err, err)
+    code, err = run_gate(worker, "Wrote seats/nowhere.md — 1 item", cwd=folder)
+    check("seat check: a relative name it can't find is sent back once for the full path", code == 2 and "full path" in err, err)
+    code, err = run_gate(worker, "Wrote %s — 1 item (1 P2)" % good)
+    check("seat check: a good file and a one-line reply pass", code == 0 and not err, err)
+
+@part("main")
 def memory_file_and_seat_check(tmp):
     # The hook names the memory file every council command reads — the config's own path included —
     # and says when a second one holds entries nobody reads.
@@ -543,7 +589,8 @@ def memory_file_and_seat_check(tmp):
     session_dir = os.path.join(tmp, "session")                        # Claude Code sends the session's folder
     os.makedirs(session_dir)
     code, err = run_gate(worker, "Wrote seats/hunt.md — 1 items", cwd=session_dir)
-    check("seat check: a relative path it can't find from the session's folder is let through", code == 0, err)
+    check("seat check: a relative path it can't find from the session's folder is sent back once for the full path "
+          "(the next stop always passes, so it can't trap the agent)", code == 2 and "full path" in err, err)
     nope = os.path.join(seats, "nope.md")
     code, err = run_gate(worker, f"Wrote {nope} — 0 items")
     check("seat check: a missing file blocks (exit 2)", code == 2 and "doesn't exist" in err, err)
@@ -749,6 +796,83 @@ def memory_file_and_seat_check(tmp):
           code == 0, err)
 
 @part("timing")
+def turn_end(tmp):
+    # --- Stop hook: the run notices when the Chair stops for the user (promised-4: across 33 real sessions
+    # no waiting state was recorded and no alert sent; the rule lived only in the Chair's memory) ----------
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        stop_groups = json.load(f)["hooks"].get("Stop", [])
+    hooks_here = [h for g in stop_groups for h in g.get("hooks", []) if "hooks/turn-end.sh" in h.get("command", "")]
+    cmd = hooks_here[0]["command"] if hooks_here else "echo 'no turn-end hook in hooks.json' >&2; exit 1"
+    check("turn end: hooks.json runs turn-end.sh when a turn ends, with a 15 s timeout",
+          len(hooks_here) == 1 and hooks_here[0].get("timeout") == 15, json.dumps(stop_groups))
+
+    def said(code, out, err):
+        return f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()}"
+
+    bare = new_repo(tmp, "turn-no-council")
+    code, out, err, took = run_agent_gate(cmd, stop_input("sA", bare), bare)
+    check("turn end: no council home — the turn ends, nothing said, well inside the 15 s limit",
+          code == 0 and not out and not err and took < 10, said(code, out, err) + " · {:.1f} s".format(took))
+    te = new_repo(tmp, "turn-end")
+    write(os.path.join(te, ".council", "council.config.md"), "# Council config\n")
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: a council with no open run — the turn ends, nothing said", code == 0 and not out and not err,
+          said(code, out, err))
+    _, out, _ = council(te, "run", "open", "council-review", session="sA")
+    run = out.splitlines()[-1]
+    name, st = os.path.basename(run), os.path.join(run, "session-state.md")
+    valid_plan(run)
+
+    def waiting():
+        m = re.search(r"^waiting:[ \t]*(.*)$", open(st, encoding="utf-8").read(), re.MULTILINE)
+        return m.group(1).strip() if m else ""
+
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sB", te), te)
+    check("turn end: another session's turn never touches this run", code == 0 and not err and not waiting(), said(code, out, err))
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te, active=True), te)
+    check("turn end: a stop the hook already sent back ends there — nothing said, nothing recorded",
+          code == 0 and not err and not waiting(), said(code, out, err))
+    council(te, "seat", "w1", "running", "agent=a1", session="sA")
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: with a seat still working the run waits on its agent, not the user — nothing said or recorded",
+          code == 0 and not err and not waiting(), said(code, out, err))
+    council(te, "seat", "w1", "queued", session="sA")              # planned, not started: no agent is at work
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: a seat only queued is no agent at work — the wait is recorded", code == 2 and waiting() != "",
+          said(code, out, err))
+    council(te, "state", "phase=assign", session="sA")
+    council(te, "seat", "w1", "done", "agent=a1", "tokens=20000", session="sA")
+    code, out, err, took = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: the driving session stops with no seat working — the wait is recorded, and the Chair is sent "
+          "back once to alert the owner with council status --line (exit 2, the reason on stderr, nothing on stdout)",
+          code == 2 and not out and f"council status --line --run {name}" in err and "PushNotification" in err
+          and "unless you already sent" in err and waiting() != "", said(code, out, err))
+    check("turn end: the wait is an event in the run's stream",
+          any(e.split("\t")[3:6] == ["run.waiting_changed", "run", "on"]
+              for e in open(os.path.join(run, "events.tsv"), encoding="utf-8").read().splitlines()[1:]))
+    check("turn end: sending the Chair back comes well inside the 15 s limit", took < 10, f"{took:.1f} s")
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: the next turn end of the same wait says nothing — never twice for one wait",
+          code == 0 and not out and not err, said(code, out, err))
+    council(te, "state", "phase=prepare", session="sA")
+    check("turn end: the next helper action (a stage change) ends the wait", waiting() == "", waiting())
+    council(te, "state", "waiting=Ship the plan as it is, or cut task 3?", session="sA")
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: the Chair's own question is kept, and not asked about again — the helper asked for the alert "
+          "when it was recorded, so the owner gets one alert per wait",
+          code == 0 and not err and waiting() == "Ship the plan as it is, or cut task 3?", said(code, out, err))
+    council(te, "seat", "w1", "done", "agent=a1", "tokens=25000", session="sA")
+    check("turn end: a seat record ends the wait too", waiting() == "", waiting())
+    with open(os.path.join(te, ".council", "council.config.md"), "a", encoding="utf-8") as f:
+        f.write("- notifications: off\n")
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: with notifications off, the wait is still recorded but nobody is sent back",
+          code == 0 and not out and not err and waiting() != "", said(code, out, err))
+    council(te, "cap", "allow", "1", "--user-said", "yes, one more", session="sA")
+    check("turn end: the user's go (cap allow) ends the wait", waiting() == "", waiting())
+
+
+@part("timing")
 def agent_gate(tmp):
     # --- PreToolUse agent gate -----------------------------------------------------------------
     with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
@@ -903,6 +1027,8 @@ def agent_gate_counts_starts(tmp):
     write(os.path.join(wf3, ".council", "council.config.md"), "# Council config\n- agent cap: 5\n")
     _, w3run, _ = council(wf3, "run", "open", "council-review", session="sV")
     first = run_agent_gate(gate_cmd, pre_tool("sV", wf3, tool="Workflow"), wf3)[0]
+    write(os.path.join(w3run, "verify-1-a.md"), "# Verification — w\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | a | CONFIRMED | a.py:1 |\n")                       # a seat is done only with its file
     council(wf3, "seat", "verify-1", "done", "agent=wf_1", "agents=3", "tokens=60000", "--run", os.path.basename(w3run))
     codes = [first] + [run_agent_gate(gate_cmd, pre_tool("sV", wf3), wf3)[0] for _ in range(4)]
     check("agent gate: after a Workflow of 3 recorded on a cap of 5, two more agents start and the third is stopped "
@@ -949,6 +1075,8 @@ parser = argparse.ArgumentParser(description="Hook evals: run the plugin's hooks
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
 parser.add_argument("--group", metavar="NAME[,NAME...]", help="run only these groups (default: all, in file order)")
+parser.add_argument("--block", metavar="NAME[,NAME...]",
+                    help="run only these blocks of the chosen groups — for a block that sets up all it needs")
 parser.add_argument("--allow-skip", action="store_true",
                     help="exit 0 when bash or git is missing (default: exit 3, so a run that checked nothing never passes)")
 opts = parser.parse_args()
@@ -967,13 +1095,16 @@ if opts.list:
 chosen = opts.group.split(",") if opts.group else GROUPS
 if any(group not in GROUPS for group in chosen):
     parser.error("unknown group in %r (groups: %s)" % (opts.group, ", ".join(GROUPS)))
+only = opts.block.split(",") if opts.block else None
+if only and any(name not in [block.__name__ for g, block in PARTS if g in chosen] for name in only):
+    parser.error("unknown block in %r for the chosen groups" % opts.block)
 if not BASH or not GIT:
     print("[SKIP] bash or git not on PATH — hook evals need both; nothing was checked")
     sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     for group, block in PARTS:
-        if group in chosen:
+        if group in chosen and (only is None or block.__name__ in only):
             block(tmp)
 
 passed = sum(1 for ok, *_ in results if ok)

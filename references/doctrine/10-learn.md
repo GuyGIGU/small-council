@@ -55,25 +55,16 @@
 
 ## Close
 
-`council run close` stamps the status and the actual cost. For a completed run it also adds each
-seat's row to the ledger — items raised, kept, cut and refuted, and tokens — counted from the seat
-files, synthesis.md's `from:` lines and the verify tables, so keep those exact. It warns (never
-refuses) when a completed run never filed its request (`council ask save --run <folder>`), never
-reached Deliver, ends with a required check red, or has no deliverable or (review, plan) no
-verdicts: tell the user. `council ledger` shows the record: Convene estimates from it. `council ledger advice` says how much it supports,
+`council run close` stamps the status and the actual cost and, for a completed run, adds each
+seat's row to the ledger — counted from the seat files, synthesis.md's `from:` lines and the verify
+tables, so keep those exact. Its warnings are for the user: tell them. `council ledger` shows the record: Convene estimates from it. `council ledger advice` says how much it supports,
 seat by seat; a council-init refresh proposes roster changes only where the advice clears its bar.
 - A run stopped for good → `--status abandoned`.
 - A run the user paused → `--status paused`. When they want it back, `council run resume --run <folder>`.
 
-**Close every run you open** — four steps, in order:
-1. `council run close`. It prints the close line, any warnings and a reminder of step 2.
-2. **Show the closing card, once.** Pass the output of `council status --widget --run <folder>` to a
-   `show_widget` tool (it may be a deferred tool: search the tools for it first); with none, relay
-   `council status --run <folder>`. A closed run needs `--run`. The card adds to Deliver's summary:
-   request, deliverable, verdicts, checks, cost, what is left for the user. Never a card per progress
-   line.
-3. For a completed run, `council status --line --run <folder>`: if it prints a line, send it once
-   with a `PushNotification` tool (deferred too: search first). The project off switch suppresses
-   the line. No progress notifications.
-4. `council run audit --run <folder>` reads the run back against the method; tell the user each FAIL
+**Close every run you open** — in order:
+1. `council run close`.
+2. **Show the closing card, once,** then send the owner's alert — each as the close's own lines say
+   (a closed run needs `--run <folder>`).
+3. `council run audit --run <folder>` reads the run back against the method; tell the user each FAIL
    line, in plain words.

@@ -252,12 +252,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           and not any(a["kind"] == "failure" for a in r["attention"]), (r["state"], r["attention"]))
 
     r = reading(make_run(base, "recovered", seats=[v2("beck", "done", 50000, 1, 1)],
-                         gates=[("tests", 1, 60), ("tests", 0, 20), ("before-1", 1, 50), ("after-1", 0, 40)]))
+                         gates=[("tests", 1, 60), ("tests", 0, 20), ("before-1", 1, 50), ("after-1", 0, 40),
+                                ("regress-1", 1, 30)]))   # a review fix's red step, on the version a verifier saw
     check("state: a failure that later passed is recovered — no longer a problem, still shown as history",
           r["state"]["key"] == "running" and not r["attention"] and "1 recovered after failing" in r["progress"]["checks"],
           (r["state"], r["attention"], r["progress"]))
-    check("checks: a build's before-proof failing first is not a failure, and the latest check shown is a real one",
-          r["latest_check"]["name"] == "tests" and all(c["name"] != "before-1" for c in r["checks"]), r["latest_check"])
+    check("checks: a build's before-proof failing first, or a review fix's regress-proof, is not a failure, and the "
+          "latest check shown is a real one",
+          r["latest_check"]["name"] == "tests" and all(c["name"] not in ("before-1", "regress-1") for c in r["checks"]),
+          r["latest_check"])
 
     stop = rec + [{"task": "T2", "gate": "tests", "attempt": 2, "result": "failed", "action": "independent-diagnosis"},
                   {"task": "T2", "gate": "tests", "attempt": 3, "result": "failed", "action": "stop"}]
@@ -444,6 +447,26 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("cap: a run exactly at its cap is not flagged", not any(a["kind"] == "cap" for a in r["attention"]), r["attention"])
     check("notification: reaching the cap gives an actionable line even before it is exceeded",
           "Agent limit reached (3)" in status.notification_line(r), status.notification_line(r))
+
+    # make_run invents nothing: its files and state keys are ones the helper itself writes (tests-real-6).
+    conform = base / "conform"
+    conform.mkdir()
+    subprocess.run([GIT, "init", "-q"], cwd=conform, check=True)
+    write(conform / ".council" / "council.config.md", "# Council config\n")
+    code, out, err = council(conform, "run", "open", "council-review")
+    real = Path(out.strip().splitlines()[-1]) if code == 0 and out.strip() else conform
+
+    def header_keys(run):
+        head = (run / "session-state.md").read_text(encoding="utf-8").split("## ")[0]
+        return {line.split(":", 1)[0] for line in head.splitlines() if ":" in line}
+
+    fake = make_run(base / "conform-fake", "made", events=[("2026-10-01T10:00:00Z", "run.opened", "run", "council-review", "phase=convene")],
+                    repairs=[{"schema": 1}])
+    fake_files = {p.name for p in fake.iterdir() if p.is_file()} - {"repairs.jsonl"}    # a build writes it later
+    real_files = {p.name for p in real.iterdir() if p.is_file()}
+    check("make_run writes only the files and state keys a run the helper opens has",
+          header_keys(fake) <= header_keys(real) and fake_files <= real_files,
+          (sorted(header_keys(fake) - header_keys(real)), sorted(fake_files - real_files)))
 
     spendbase = base / "spend"
     under = make_run(spendbase, "under", seats=[v2("wf", "done", 300000, 1, 1)])
@@ -926,16 +949,17 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "while it is at convene",
               at_open_line in opened and at_open_line in sized and "Next: " + cockpit.NEXT_AT_OPEN in shown_at_convene,
               opened + shown_at_convene)
-        check("next: leaving convene empties that step in the run's state, and the status shows no Next line",
-              "\nnext:\n" in moved and "size the run" not in moved and "\nphase: prepare\n" in moved
-              and "Next:" not in council(stepping, "status")[1], moved)
+        check("next: leaving convene replaces that step with Prepare's own, naming its doctrine file",
+              "\nnext: Prepare" in moved and "02-prepare.md" in moved and "size the run" not in moved
+              and "\nphase: prepare\n" in moved and "Next: Prepare" in council(stepping, "status")[1], moved)
         council(stepping, "state", "next=read the diff first")
+        mine = read(srun / "session-state.md")
         council(stepping, "state", "phase=assign")
-        check("next: a step the Chair recorded stays through later phase changes",
-              "\nnext: read the diff first\n" in read(srun / "session-state.md")
-              and "Next: read the diff first" in council(stepping, "status")[1], read(srun / "session-state.md"))
-        write(srun / "session-state.md", read(srun / "session-state.md").replace(
-            "next: read the diff first", "next: " + cockpit.NEXT_AT_OPEN))      # as a run an older helper moved on
+        check("next: a step the Chair recorded shows until the stage changes, and the new stage records its own",
+              "\nnext: read the diff first\n" in mine and "03-assign.md" in read(srun / "session-state.md")
+              and "Next: Assign" in council(stepping, "status")[1], read(srun / "session-state.md"))
+        write(srun / "session-state.md", re.sub(r"\nnext: [^\n]*\n", "\nnext: " + cockpit.NEXT_AT_OPEN + "\n",
+                                                read(srun / "session-state.md"), count=1))   # as a run an older helper moved on
         stale_text = council(stepping, "status")[1]
         stale_data = json.loads(council(stepping, "status", "--json")[1])
         stale_card = council(stepping, "status", "--widget")[1]
@@ -990,6 +1014,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         late = Path(council(nudged, "run", "open", "council-review")[1].strip())
         plan(late, ("verify-1",))
         _, _, own_err = council(nudged, "seat", "chair", "done", "agents=0")
+        write(late / "verify-1.md", "# Verification — late\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+              "| 1 | a | CONFIRMED | a.py:1 |\n")                  # a seat is done only with its file
         _, _, late_err = council(nudged, "seat", "verify-1", "done", "agent=v1", "tokens=94152", "--run", late.name)
         check("status reminder: work the Chair did itself is no dispatch; a worker first recorded only when it "
               "finished (as the real run's was) still counts, and a call given --run gets it back in the command",

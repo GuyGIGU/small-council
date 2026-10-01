@@ -1,8 +1,5 @@
 # Stage 5 — Work
 
-If `council status` reports it needs optional Python 3.8+, relay `council run status` instead:
-it gives the run's phase and cost line without Python.
-
 The seats work in parallel, each in its own window. You dispatch, then wait.
 
 ## Dispatch
@@ -39,39 +36,25 @@ Write <abs run>/seats/<slug>.md, then return one line.
 - **Right after dispatching, two steps, in order:**
   1. **Record each worker:** `council seat <slug> running agent=<agentId>` — the id the Agent or
      Workflow tool returned, never a role name.
-  2. **Show the user the run's status — at the run's first dispatch, once.** The helper prints a
-     reminder on that first record. With a `show_widget` tool, call its `read_me` once, then pass it
-     the output of `council status --widget` verbatim. `show_widget` may be a deferred tool: search
-     the tools for it before deciding there is none. With none, relay `council status`. Later
-     dispatches show nothing — never a card per progress line.
+  2. **Show the user the run's status — at the run's first dispatch, once,** as the helper's
+     reminder on that first record says. Later dispatches show nothing.
 
 ## While they work
 
 - Wait for the completion notifications. Never poll, and never open a subagent's transcript or
   output log.
-- **On each notification:** `council seat <slug> done tokens=<the notification's figure, as given>`,
+- **On each notification:** `council seat <slug> done tokens=<the figure, as given> tools=<tool_uses>`,
   or `failed note="…"` (with its tokens if it reported any). Once per finished agent run; a resumed
   worker's later figure is its running total, so record it as given. A Workflow's notification:
   `agents=<agent_count> tokens=<subagent_tokens>`. Seat work you did yourself:
   `council seat chair done agents=0`. It prints a progress line — relay it to the user as one short
   line: "3 of 5 seats in — Security, Structure, Tests · ~210k tokens so far".
-- **A worker that stopped at its turn limit** (60 turns; the notification says so) may have left its
-  file unwritten. Resume it with SendMessage to its agent id — "write your file now with what you
-  have, then finish" — and record the notification that follows. Never re-dispatch it for this: a
-  new agent pays for the whole read again.
-- **The agent cap.** If `council seat` says the run has used its cap, start no more agents — no
-  re-dispatch, diagnosis worker or extra verifier — until the user says go. The next agent will be
-  refused until their go is recorded: `council cap allow <n> --user-said "<their words>"`. If it says
-  the run is over its cap, tell the user in one line how many agent runs it used against the cap.
-- **The token ceiling.** If `council seat` says the run passed the owner's token ceiling, start
-  nothing more until the user says go. Report the known usage and ceiling in one short line. The
-  next agent will be refused until their go is recorded with `council cap allow`.
-- **Notify when the owner is needed.** Right after setting `council state waiting="…"` (the helper
-  reminds you), or when an agent cap or token ceiling stops further work, run
-  `council status --line`. If it prints a line, send it once with a `PushNotification` tool. It may
-  be a deferred tool: search the tools for it before deciding there is none. Never notify for
-  routine progress. A project can disable these alerts with `- notifications: off` in
-  `.council/council.config.md`; then `--line` prints nothing and the helper stays quiet.
+- **A worker stopped at its turn limit** (60 turns) may have left no file: `council seat … done`
+  refuses without it and names the resume (SendMessage); never re-dispatch it.
+- **The agent cap and the token ceiling.** When `council seat` says the run reached either, start no
+  more agents — no re-dispatch, diagnosis worker or extra verifier — until the user says go; the
+  hook refuses the next one until `council cap allow <n> --user-said "<their words>"` records it.
+- **Alerts:** context-core, Alerts — the helper and the turn-end hook say when. Never for progress.
 - **No notification comes from a worker that died with its session.** After a compaction, keep
   waiting. In a new session, follow Resume in context-core.
 - **Whatever dispatches the workers** — the Agent tool, a Workflow script, background agents — the

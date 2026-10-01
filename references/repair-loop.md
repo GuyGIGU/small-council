@@ -6,13 +6,16 @@ dispatches a worker, changes code, or claims that the current edit caused a fail
 
 ## One task, one gate, at most three failed attempts
 
-After a task's relevant configured gate fails, run `council repair record <task-id> <gate-name>`.
-In a build, `council gate <name>` prints that exact line after a failure, with the task id when it
-knows it (an open trail, or `next: task <n>: …` in the state). Use a short stable task id such as
-`T2`. Inspect the saved output and the baseline before acting.
-After a repair, run the **same** gate again, then record that new result with the same task and gate.
-Do not count the intentionally red `before-<n>` proof, or every gate in `gate --all`, as separate
-repair attempts. `council repair show [task-id]` displays the trail; `council repair check [task-id]`
+In a build, `council gate <name>` records each failure itself as an attempt on the task `next:` names
+(`task <n>: …` — `phase=build` sets task 1, the Chair the next one after each receipt); with no task id
+it says the attempt was not counted, and why. A pass closes the trail. `council repair record
+<task-id> <gate-name>` is for a result recorded any other way; for one the gate recorded it says so
+and changes nothing. Inspect the saved output and the baseline before acting.
+After a repair, run the **same** gate again: its result is recorded the same way.
+The intentionally red `before-<n>` proof is never an attempt, nor is `regress-<n>` — a review fix's new
+check run on the version the verifier saw, red by design (the card treats both as proofs, never failing
+checks). `gate --all` records no attempts: it skips
+a stopped gate and closes an open trail when the gate passes. `council repair show [task-id]` displays the trail; `council repair check [task-id]`
 checks that saved snapshots still match it.
 
 | Failed execution | Next step |
@@ -25,7 +28,7 @@ Once a trail records its third failure, `council gate <that gate>` refuses to ru
 do: tell the user what failed and what is left, and ask how to go on. Only on their go, in their own
 words, `council repair allow <gate> --user-said "<their words>"` records it (`repair-allowances.tsv`,
 and a `repair.allowed` event); the gate then runs again. The stopped trail stays closed, so a new
-failure goes under the new task id the gate names (`T2-2`). `gate --all` still runs it, for the record.
+failure goes under the new task id the gate names (`T2-2`). `gate --all` skips it, named and counted.
 
 The third failure stops the build, not just this gate. Do not start later tasks or continue to the
 after-evidence step, a verifier's fix path, another gate-repair trail, or a success commit for the

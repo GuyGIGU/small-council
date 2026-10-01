@@ -191,7 +191,8 @@ def record(run, task, gate):
     if any(row.get("gate") != gate for row in prior):
         raise RepairError("use the same gate for every attempt on task " + task)
     if any(row.get("event_seq") == event["seq"] for row in rows):
-        raise RepairError("this gate execution was already recorded; rerun the same gate after repair")
+        print("repair: this gate run is already recorded — council gate records a build's attempts itself")
+        return 0
     if prior and prior[-1].get("action") in ("resolved", "stop"):
         raise RepairError("task repair is closed; do not retry under the same task id")
     if verdict["exit"] == 0 and not prior:
