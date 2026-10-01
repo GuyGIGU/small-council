@@ -624,6 +624,7 @@ EOF
     council-review|council-plan|council-implement|council-research|council-postgame)
       printf "council: save the user's request word for word in %s/ask.md before anything else\n" "$dir" >&2 ;;
   esac
+  printf 'council: if the user asks how the run is going: council status --run %s (with a show_widget tool, call its read_me, then pass it council status --widget --run %s)\n' "${dir##*/}" "${dir##*/}" >&2
   say "$dir"
 }
 
@@ -652,6 +653,22 @@ stage_name_ok() {
 notifications_off() {
   [ -f "$1/council.config.md" ] || return 1
   tr -d '\r' < "$1/council.config.md" 2>/dev/null | grep -q -i -E '^[[:space:]]*-[[:space:]]*notifications:[[:space:]]*off[[:space:]]*(#.*)?$'
+}
+
+# The next step a stage change records when the call names none: the stage's doctrine file, so the card
+# never shows a step from a stage already left (method-vs-helper-9: Convene's stayed to the end).
+stage_next() {
+  case "$1" in
+    prepare)   printf 'Prepare: the change index, the checks and earlier findings (doctrine 02-prepare.md)' ;;
+    assign)    printf 'Assign: fill the run plan, then council run plan check (doctrine 03-assign.md)' ;;
+    brief)     printf 'Brief: write brief.md with the memory in scope (doctrine 04-brief.md)' ;;
+    work)      printf 'Work: start the seats and record each one (doctrine 05-work.md)' ;;
+    collect)   printf 'Collect: council collect until it is clean (doctrine 06-collect.md)' ;;
+    judge)     printf 'Judge: weigh the findings into synthesis.md (doctrine 07-judge.md)' ;;
+    challenge) printf 'Challenge: verify what is kept (doctrine 08-challenge.md)' ;;
+    deliver)   printf 'Deliver: write the deliverable and file the request (doctrine 09-deliver.md)' ;;
+    learn)     printf 'Learn: memory proposals, then close the run (doctrine 10-learn.md)' ;;
+  esac                                     # build: task 1, set where the build loop's gates read it
 }
 
 # A run that starts waiting on the user tells the Chair to alert them: in 33 real sessions the doctrine's
@@ -691,6 +708,8 @@ cmd_state() {
         case "${kv#*=}" in in-progress|paused|complete|abandoned) ;; *) die "status must be in-progress, paused, complete or abandoned" ;; esac ;;
       closed=*)
         [ "${CLOSING:-}" = 1 ] || die "closed= is the close's own stamp — close the run with: council run close" ;;
+      decision=*)
+        case "${kv#decision=}" in *[![:space:]]*) ;; *) die "decision= takes the user's words — their ruling or go-ahead, as they said it" ;; esac ;;
       phase=*)
         stage_name_ok "${kv#phase=}" "$mode" \
           || die "phase=${kv#phase=} is not a stage — use one of convene, prepare, assign, brief, work, collect, judge, challenge, deliver, learn, or build in a build (lower case)" ;;
@@ -728,6 +747,19 @@ cmd_state() {
     || { rm -f "$tmp"; event_unlock "$lock" || :; die "cannot update $st"; }
   for kv in ${1+"$@"}; do
     key="${kv%%=*}"
+    if [ "$key" = decision ]; then                 # the user's words, redacted, under Decisions so far
+      { printf '%s' "${kv#decision=}" | tr '\t\r\n\013\014' '     '; printf '\n'; } > "$tmp.said" \
+        && redact_copy "$tmp.said" "$tmp.red" >/dev/null \
+        && D="- $(now_min): \"$(tr -d '\r\n' < "$tmp.red")\"" awk '
+             { sub(/\r$/, "") }
+             ind && /^## / { print ENVIRON["D"]; ind = 0; done = 1 }
+             $0 == "## Decisions so far" { ind = 1 }
+             { print }
+             END { if (ind) print ENVIRON["D"]; else if (!done) { print "## Decisions so far"; print ENVIRON["D"] } }' "$tmp" > "$tmp.2" \
+        && mv "$tmp.2" "$tmp" || { rm -f "$tmp" "$tmp.2" "$tmp.said" "$tmp.red"; event_unlock "$lock" || :; die "cannot record the decision in $st"; }
+      rm -f "$tmp.said" "$tmp.red"
+      continue
+    fi
     K="$key" V="$(printf '%s' "${kv#*=}" | tr '\r\n' '  ')" awk '
       BEGIN { k = ENVIRON["K"] ":"; line = ENVIRON["K"] ": " ENVIRON["V"] }
       !done && index($0, k) == 1 { print line; done = 1; next }
@@ -743,9 +775,16 @@ cmd_state() {
       "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp" \
       || { rm -f "$tmp" "$tmp.2"; event_unlock "$lock" || :; die "cannot update $st"; }
   fi
-  # The next: a run opens with is Convene's own step, and nothing replaces it on its own. Past convene it
-  # is stale, so it is emptied here; a next the Chair wrote stays. (The status readers skip it too, for
-  # runs an older helper moved on: scripts/cockpit.py's next_step.)
+  # A stage change records its stage's next step unless the call names one (stage_next). A mode's own
+  # phase (council-init's) keeps the older rule: the next: a run opens with is Convene's own step, stale
+  # past convene, so it is emptied; a next the Chair wrote stays. (The status readers skip a stale one
+  # too, for runs an older helper moved on: scripts/cockpit.py's next_step.)
+  new_phase="$(field phase "$tmp")"
+  if [ "$new_phase" != "$old_phase" ] && [ -z "$gave_next" ] && [ -n "$(stage_next "$new_phase")" ]; then
+    NX="$(stage_next "$new_phase")" awk '/^## / { body = 1 } !body && !d && index($0, "next:") == 1 { print "next: " ENVIRON["NX"]; d = 1; next } { print }' \
+      "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp" \
+      || { rm -f "$tmp" "$tmp.2"; event_unlock "$lock" || :; die "cannot update $st"; }
+  fi
   case "$(field phase "$tmp")" in
     ''|convene) ;;
     *) if [ "$(state_field next "$tmp")" = "$COUNCIL_NEXT_AT_OPEN" ]; then
@@ -1591,7 +1630,7 @@ close_claims_note() {
 }
 
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake=""
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" follow=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -1654,6 +1693,12 @@ cmd_run_close() {
         [ -n "$(field ask-saved "$run/session-state.md")" ] \
           || printf 'council: no request was filed for this run — council ask save --run %s\n' "${run##*/}" >&2 ;;
     esac
+    if py="$(impact_python)"; then              # what the record now has to say: one line, or nothing
+      follow="$({ "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" propose --home "$home" --brief
+                  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/outcomes.py" --home "$home" --repo "$(this_tree)" --brief; } 2>/dev/null \
+                | awk 'NF { printf "%s%s", (n++ ? " · " : ""), $0 }')"
+      [ -z "$follow" ] || printf 'council: from the record — %s\n' "$follow" >&2
+    fi
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
       # The log whose Run: line names this run — as a name or as the folder's full path, which is what
       # council run open prints; failing that, the first log that mentions it.
@@ -6404,7 +6449,9 @@ council — the Small Council's helper (bash + git)
                                          showed and ran — pass, warn or FAIL per item, exit 1 on a
                                          FAIL; reads only (optional Python 3.8+)
   council state [key=value …]            show or update the run's session-state header; phase= takes a
-                                         stage name; waiting="<question>" prints the alert reminder
+                                         stage name and records its next step; waiting="<question>" prints
+                                         the alert reminder; decision="<the user's words>" goes under
+                                         Decisions so far
   council seat <slug> <state> [agent=ID] [tokens=N] [agents=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped;
                                          tokens= and agents= (a Workflow's agent count) come with the

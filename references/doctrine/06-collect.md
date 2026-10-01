@@ -29,7 +29,7 @@ Prove every seat reported before anyone judges.
 ## Partial delivery
 
 The user may say "enough — give me what you have". Then judge what's in, mark the deliverable
-**PARTIAL** with the missing seats listed, and record the ruling under Decisions so far.
+**PARTIAL** with the missing seats listed, and record the ruling: `council state decision="<their words>"`.
 
 ## Done when
 

@@ -268,6 +268,14 @@ def outcomes(home, repo):
             "note": "Changed after the run describes timing; it does not show that a council finding caused the change."}
 
 
+def brief(data):
+    """The close's follow-up (council run close): one plain line when kept findings' cited lines changed since."""
+    n = data["totals"]["kept"][OUTCOMES[0]]
+    if not n:
+        return ""
+    return "{} kept finding(s) from earlier runs saw their cited lines change since (council outcomes; timing, not proof)".format(n)
+
+
 def render(data):
     kept, cut = data["totals"]["kept"], data["totals"]["cut"]
     lines = ["council outcomes · {} run(s) · {} Kept · {} Cut".format(
@@ -310,8 +318,13 @@ def main():
     parser.add_argument("--home", required=True, type=Path)
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--brief", action="store_true", help="one plain line when there is something to say, else nothing")
     args = parser.parse_args()
     data = outcomes(args.home, args.repo)
+    if args.brief:
+        if brief(data):
+            print(brief(data))
+        return 0
     print(json.dumps(data, indent=2, sort_keys=True) if args.json else render(data))
     return 0
 

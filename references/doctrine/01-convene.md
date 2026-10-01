@@ -81,7 +81,7 @@ which exist to add a second look.
 - After the go-ahead, work to the deliverable without check-ins. Stop only for a destructive step,
   growth beyond the approved scope, or a ruling that belongs to the user.
 - The user can say "stop — give me what you have" at any time; Collect handles a partial delivery.
-- Record the go-ahead under `## Decisions so far` in session-state.md.
+- Record the go-ahead: `council state decision="<their words>"`.
 
 ## Done when
 

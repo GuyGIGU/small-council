@@ -1242,9 +1242,9 @@ def state_races(tmp):
           workers_detail(workers) + "\nkept %d: %s" % (len(kept), " ".join(kept)), full=True)
     lost = []
     for rnd, phase in enumerate(("prepare", "convene", "prepare", "convene")):
-        pair = council_together(sr, ("state", f"phase={phase}", "--run", srun), ("state", f"next=step {rnd}", "--run", srun))
+        pair = council_together(sr, ("state", f"phase={phase}", "--run", srun), ("state", f"focus=step {rnd}", "--run", srun))
         st = read(os.path.join(srun, "session-state.md"))
-        if any(code != 0 for code, _ in pair) or f"\nphase: {phase}\n" not in st or f"\nnext: step {rnd}\n" not in st:
+        if any(code != 0 for code, _ in pair) or f"\nphase: {phase}\n" not in st or f"\nfocus: step {rnd}\n" not in st:
             lost.append("round %d: %s · %s" % (rnd, workers_detail(pair), st.split("## ")[0].replace("\n", " | ")))
     last_phase = [e[5] for e in events(srun) if e[3] == "run.phase_changed"][-1:]
     code, out, err = council(sr, "run", "events", "check", "--run", srun)
@@ -2598,6 +2598,80 @@ def runs_tool_calls(tmp):
     check("seat tools=: a count that isn't digits, or tools= on a start, is refused", not bad, str(bad))
     code, out, err = council(tc, "collect")
     check("collect: shows a seat's tool calls against its budget", "tools 70/15" in out, out + err)
+
+@part("runs")
+def runs_helper_carries_next_steps(tmp):
+    # What the status board shows is the helper's to keep (method-vs-helper-9: the card read "size the run
+    # and ask for the go-ahead" to the end, and no command recorded a decision; promised-6: no stage ever
+    # ran outcomes or tune; promised-8: the card hint was printed only when a run was already open).
+    nx = new_repo(tmp, "next-steps")
+    write(os.path.join(nx, ".council", "council.config.md"), "# Council config\n")
+    code, out, err = council(nx, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    name, st = os.path.basename(run), os.path.join(run, "session-state.md")
+    check("run open: says how to show the user the run's status card", f"council status --run {name}" in err, err)
+    write_plan(run, selected=("chair", "w1"))
+
+    def nxt():
+        m = re.search(r"^next:[ \t]*(.*)$", read(st), re.MULTILINE)
+        return m.group(1).strip() if m else ""
+
+    council(nx, "state", "phase=prepare")
+    at_prepare = nxt()
+    council(nx, "state", "phase=assign", "next=ask the owner about the scope")
+    mine = nxt()
+    council(nx, "state", "phase=brief")
+    check("state phase=: every stage change records that stage's next step, naming its doctrine file — unless the "
+          "call names its own", "02-prepare.md" in at_prepare and mine == "ask the owner about the scope"
+          and "04-brief.md" in nxt(), str((at_prepare, mine, nxt())))
+    code, out, err = council(nx, "state", "decision=Go ahead with the Squad, four seats")
+    council(nx, "state", "decision=Use the key token=abc123notarealvalue for the test server")
+    body = read(st).split("## Decisions so far", 1)[-1]
+    check("state decision=: the user's words go under Decisions so far, with the time, never as a header key",
+          code == 0 and re.search(r'^- \d{4}-\d\d-\d\d \d\d:\d\d: "Go ahead with the Squad, four seats"$', body, re.MULTILINE)
+          is not None and "\ndecision:" not in read(st), read(st))
+    check("state decision=: a secret-looking value in the words is redacted", "abc123notarealvalue" not in read(st), body)
+    code, out, err = council(nx, "status")
+    check("status: the card shows the decisions", code == 0 and "Decisions:" in out and "Go ahead with the Squad" in out, out + err)
+    code, out, err = council(nx, "status", "--widget")
+    check("status --widget: the card's widget shows them too", code == 0 and "Go ahead with the Squad" in out, err)
+    refused = council(nx, "state", "decision=   ")[0]
+    check("state decision=: blank words are refused", refused == 2, str(refused))
+    council(nx, "state", "phase=deliver")
+    council(nx, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    code, out, err = council(nx, "run", "close")
+    check("run close: with nothing in the record to report, no follow-up line", code == 0 and "from the record" not in err, err)
+    # Five completed runs whose agents spent 150k each against an 80k estimate: tune has a proposal.
+    tn = new_repo(tmp, "close-followup")
+    write(os.path.join(tn, ".council", "council.config.md"), "# Council config\n")
+    for i in range(5):
+        past = os.path.join(tn, ".council", "runs", "2026-09-{:02d}-100000-review".format(i + 1))
+        write(os.path.join(past, "session-state.md"), "status: complete\nmode: council-review\nphase: deliver\n## Decisions so far\n")
+        write(os.path.join(past, "run-plan.tsv"), "kind\tid\tfield\tvalue\treason\nrun\trun\tsize\tsquad\tr\n"
+              "budget\trun\testimated-tokens\t260000\tr\n")
+        write(os.path.join(past, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n" + "".join(
+            "{}\tdone\ta\t150000\t-\t-\t1\t1\n".format(slug) for slug in ("hunt", "beck", "verify-1")))
+
+    def close_one(env=None):
+        _, out, _ = council(tn, "run", "open", "council-review", env=env)
+        r = out.strip().splitlines()[-1]
+        write_plan(r, selected=("chair", "w1"))
+        council(tn, "state", "phase=deliver", env=env)
+        council(tn, "seat", "w1", "done", "agent=a1", "tokens=20000", env=env)
+        return council(tn, "run", "close", env=env)
+
+    code, out, err = close_one()
+    follow = [line for line in err.splitlines() if "from the record" in line]
+    check("run close: with a tuning proposal on record, one follow-up line names it and its command",
+          code == 0 and len(follow) == 1 and "council tune" in follow[0], err)
+    dirs = [os.path.dirname(shutil.which(t)) for t in ("bash", "git") if shutil.which(t)]
+    bare_path = os.pathsep.join(dict.fromkeys(dirs))
+    if len(dirs) == 2 and not (shutil.which("python", path=bare_path) or shutil.which("python3", path=bare_path)):
+        code, out, err = close_one(env={"PATH": bare_path})
+        check("run close: without Python, no follow-up line and no error", code == 0 and "from the record" not in err
+              and "Traceback" not in err, err)
+    else:
+        print("note: python sits beside bash or git here, so the no-Python close is not checked on this system")
 
 @part("runs")
 def runs_worktrees_close_and_find(tmp):

@@ -926,16 +926,17 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "while it is at convene",
               at_open_line in opened and at_open_line in sized and "Next: " + cockpit.NEXT_AT_OPEN in shown_at_convene,
               opened + shown_at_convene)
-        check("next: leaving convene empties that step in the run's state, and the status shows no Next line",
-              "\nnext:\n" in moved and "size the run" not in moved and "\nphase: prepare\n" in moved
-              and "Next:" not in council(stepping, "status")[1], moved)
+        check("next: leaving convene replaces that step with Prepare's own, naming its doctrine file",
+              "\nnext: Prepare" in moved and "02-prepare.md" in moved and "size the run" not in moved
+              and "\nphase: prepare\n" in moved and "Next: Prepare" in council(stepping, "status")[1], moved)
         council(stepping, "state", "next=read the diff first")
+        mine = read(srun / "session-state.md")
         council(stepping, "state", "phase=assign")
-        check("next: a step the Chair recorded stays through later phase changes",
-              "\nnext: read the diff first\n" in read(srun / "session-state.md")
-              and "Next: read the diff first" in council(stepping, "status")[1], read(srun / "session-state.md"))
-        write(srun / "session-state.md", read(srun / "session-state.md").replace(
-            "next: read the diff first", "next: " + cockpit.NEXT_AT_OPEN))      # as a run an older helper moved on
+        check("next: a step the Chair recorded shows until the stage changes, and the new stage records its own",
+              "\nnext: read the diff first\n" in mine and "03-assign.md" in read(srun / "session-state.md")
+              and "Next: Assign" in council(stepping, "status")[1], read(srun / "session-state.md"))
+        write(srun / "session-state.md", re.sub(r"\nnext: [^\n]*\n", "\nnext: " + cockpit.NEXT_AT_OPEN + "\n",
+                                                read(srun / "session-state.md"), count=1))   # as a run an older helper moved on
         stale_text = council(stepping, "status")[1]
         stale_data = json.loads(council(stepping, "status", "--json")[1])
         stale_card = council(stepping, "status", "--widget")[1]

@@ -798,6 +798,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
                    "tokens_basis": s.get("tokens_basis", ""), "agent_runs": s.get("agents"),
                    "note": s["note"]} for s in seats],
         "evidence": evidence_of(snap, run_path),
+        "decisions": list(snap.get("decisions", []))[-3:],
     }
 
 
@@ -839,6 +840,8 @@ def text(status, tui_commands=()):
         lines.append("Latest check: {} {} at {}".format(c["name"], c["result"], c["clock"]))
     if status["progress"]["next"]:
         lines.append("Next: " + status["progress"]["next"][:200])
+    if status.get("decisions"):
+        lines.append("Decisions: " + " · ".join(d[:120] for d in status["decisions"]))
     if status["recent"]:
         lines.append("Recent: " + " · ".join("{} {}".format(i["clock"], i["text"]) for i in status["recent"][-4:]))
     fresh = status["freshness"]
@@ -996,6 +999,9 @@ def widget(status, preview=False, limit=5):
     if prog["next"]:
         next_text = prog["next"] if len(prog["next"]) <= 220 else prog["next"][:219] + "…"
         out.append('<p style="margin-top:8px"><span class="muted">Next:</span> {}</p>'.format(esc(next_text)))
+    if status.get("decisions"):
+        out.append('<p class="muted" style="margin-top:10px">Decisions</p><ul>{}</ul>'.format(
+            "".join("<li>{}</li>".format(esc(d[:200])) for d in status["decisions"])))
     if status["recent"]:
         out.append('<p class="muted" style="margin-top:10px">Recent{}</p><ul>{}</ul>'.format(
             "" if status["recent_source"] == "events" else " (from older records)",
