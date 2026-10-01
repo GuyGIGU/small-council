@@ -2721,7 +2721,10 @@ def runs_init_plan(tmp):
     write_plan(live, selected=("hunt", "beck"))
     write(os.path.join(live, "session-state.md"), read(os.path.join(live, "session-state.md")).replace("phase: convene", "phase: work"))
     code, out, _ = council(ip, "doctor")
-    named = [os.path.basename(r) for r in (irun, done, left) if os.path.basename(r) in out]
+    # Whole names only: runs opened in the same second are <ts>-review, <ts>-review-2, …, so a closed run's
+    # name is part of the open one's (a fast CI runner did exactly that).
+    named = [os.path.basename(r) for r in (irun, done, left)
+             if re.search(re.escape(os.path.basename(r)) + r"(?![\w-])", out)]
     check("doctor: never judges a closed run's plan — setup's, an unfinished abandoned one, or one made under a higher agent cap",
           not named, out)
     check("doctor: an open run's plan past Assign is still checked against today's agent cap",
