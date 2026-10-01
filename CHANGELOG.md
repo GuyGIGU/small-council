@@ -46,6 +46,7 @@ the council on your machine in a shared project, so teammates never have to see 
 - The cost line compares agents' tokens with the agents' share ("about 18% over the agents' 80k share").
 - A gate whose tool is missing reads "could not run (exit 127)"; `council doctor` names a slow gate at grounding.
 - The plan check says each problem once.
+- A review fix's red proof (`regress-<n>`) no longer reads as a failing check on the card.
 
 ### Upgrade notes
 
