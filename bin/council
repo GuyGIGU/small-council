@@ -875,8 +875,8 @@ cmd_run_resume() {
 # The line the Chair relays after each seat call: seats (not agents) done, who is working, who waits,
 # and the tokens reported so far. Rows from before usage.tsv never add to the tokens: their units
 # were never checked (references/run-accounting.md).
-progress_line() {
-  awk -F'\t' '
+progress_line() {                                   # $2: a note for the same line (a seat over its tool budget)
+  NOTE="${2:-}" awk -F'\t' '
     NR > 1 && $2 != "skipped" {
       n++
       if ($2 == "done") d++
@@ -896,6 +896,7 @@ progress_line() {
         else printf " · ~%d.%dM tokens so far", major, minor
       } else if (t > 0) printf " · ~%dk tokens so far", int((t + 500) / 1000)
       if (old) printf " · older rows'"'"' tokens not counted"
+      if (ENVIRON["NOTE"] != "") printf " · %s", ENVIRON["NOTE"]
       printf "\n"
     }' "$1/seats.tsv"
 }
@@ -951,19 +952,19 @@ seat_usage() {
 # on this tree", so its commands carry --run. Without Python there is no card: council run status
 # serves the first moment, and the close line itself the second.
 status_nudge() {
-  local run="$1" when="$2" at="" lead="first dispatch of this run — show the user its status now, once"
+  local run="$1" when="$2" at="" lead="first dispatch of this run — show the user its status now, once" follow=""
   [ -z "$RUN_ARG" ] || at=" --run ${run##*/}"
-  if [ "$when" = close ]; then at=" --run ${run##*/}"; lead="run closed — show the user its closing card now, once"; fi
+  if [ "$when" = close ]; then at=" --run ${run##*/}"; lead="run closed — show the user its closing card now, once"; follow="${FOLLOW:-}"; fi
   if impact_python >/dev/null 2>&1; then
     printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s`%s\n' \
-      "$lead" "$at" "$at" "${FOLLOW:+; and tell them, from the record — $FOLLOW}" >&2
+      "$lead" "$at" "$at" "${follow:+; and tell them, from the record — $follow}" >&2
   elif [ "$when" != close ]; then
     printf 'council: %s: relay `council run status` (no Python 3.8+ here, so there is no status card)\n' "$lead" >&2
   fi
 }
 
 cmd_seat() {
-  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 tools="" tb tt closed_out="" n dup=""
+  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 tools="" tb tt closed_out="" n dup="" over=""
   [ -n "$slug" ] && [ -n "$state" ] || die "usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [agents=N] [note=TEXT]"
   case "$state" in queued|running|done|failed|blocked|skipped) ;; *) die "seat state must be queued, running, done, failed, blocked or skipped" ;; esac
   case "$slug" in *[!A-Za-z0-9._-]*) die "bad seat slug: $slug" ;; esac
@@ -1086,12 +1087,13 @@ cmd_seat() {
     { [ -s "$run/tools.tsv" ] || printf 'at\tseat\tagent\ttools\n'; printf '%s\t%s\t%s\t%s\n' "$(now_utc)" "$slug" "${agent:-$cur}" "$tools"; } \
       >> "$run/tools.tsv" 2>/dev/null || printf 'council: the tool-call count was not recorded (%s)\n' "$run/tools.tsv" >&2
   fi
-  progress_line "$run"
-  tb="$(seat_tool_budget "$run" "$slug")"           # the seat's tool calls next to the progress line …
+  tb="$(seat_tool_budget "$run" "$slug")"; over=""  # a seat over its tool budget is said on the progress line …
   if [ -n "$tools" ]; then
     tt="$(seat_tools "$run" "$slug")"
-    [ -z "$tb" ] || [ "$tt" -le "$tb" ] || printf 'council: seat %s used %s tool calls, over its plan budget of %s — say so in the log, and budget the next run of this lens higher or its slice smaller\n' "$slug" "$tt" "$tb" >&2
-  elif [ -n "$tokens" ] && [ -z "$runs" ] && [ -n "$tb" ] && [ ! -s "$run/tools.tsv" ] \
+    [ -z "$tb" ] || [ "$tt" -le "$tb" ] || over="$slug used $tt tool calls, over its plan budget of $tb — say so in the log"
+  fi
+  progress_line "$run" "$over"
+  if [ -z "$tools" ] && [ -n "$tokens" ] && [ -z "$runs" ] && [ -n "$tb" ] && [ ! -s "$run/tools.tsv" ] \
        && [ "$(awk -F'\t' 'NR > 1 && $4 == "finished"' "$u" 2>/dev/null | grep -c .)" -le 1 ]; then   # once: the run's first report
     printf "council: add tools=<the notification's tool_uses> to measure seat %s against its tool budget of %s\n" "$slug" "$tb" >&2
   fi

@@ -2604,8 +2604,8 @@ def runs_tool_calls(tmp):
     write(os.path.join(run, "brief.md"), "# Brief\n## Seats\n### w1 — w (W)\n- ref: none\n- out: seats/w1.md\n- cap: 8\n")
     write(os.path.join(run, "seats", "w1.md"), "# W — w (review)\nref: none\n## Index\n(none) — nothing\n")
     code, out, err = council(tc, "seat", "w1", "done", "agent=a1", "tokens=20000", "tools=57")
-    check("seat done tools=: a seat over its plan's tool-call budget is said, with both numbers",
-          code == 0 and "57 tool calls" in out + err and "15" in out + err, out + err)
+    check("seat done tools=: a seat over its plan's tool-call budget is said on the progress line, with both numbers",
+          code == 0 and "57 tool calls" in line_of(out, "seats:") and "budget of 15" in line_of(out, "seats:"), out + err)
     council(tc, "seat", "w2", "done", "tokens=20000", "tools=9")
     code, out, err = council(tc, "seat", "w2", "done", "tokens=20000", "tools=9")      # the same report again, no agent id
     check("seat tools=: a report not counted again (no agent id, same figures) adds no tool calls either",
