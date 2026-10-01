@@ -2735,6 +2735,19 @@ def runs_card_says_what_is_known(tmp):
     code, out, err = council(sk, "run", "plan", "check")
     check("run plan check: one missing role row is one error, said once", code == 1 and "plan: 1 error(s)" in out
           and out.count("seat s8 has no role row") == 1, out + err)
+    write(os.path.join(krun, "run-plan.tsv"), "".join(rows) + "seat\tw!x\trole\t<pending>\tr\n")
+    code, out, err = council(sk, "run", "plan", "check")
+    check("run plan check: two different problems on one line are both said", code == 1 and "id must use letters" in out
+          and "replace the placeholder value for seat/w!x/role" in out, out + err)
+    solo = new_repo(tmp, "card-solo")
+    write(os.path.join(solo, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(solo, "run", "open", "council-review")
+    write_plan(out.strip().splitlines()[-1], selected=("chair",), skipped=("s1", "s2"), size="solo", verification="self")
+    for slug in ("s1", "s2"):
+        council(solo, "seat", slug, "skipped", "note=no surface")
+    code, out, err = council(solo, "status")
+    check("status: a run whose only recorded seats are skipped says so, not 'no seats recorded yet'",
+          code == 0 and "2 skipped" in out and "no seats recorded yet" not in out, out + err)
 
 @part("runs")
 def runs_cost_like_with_like(tmp):

@@ -234,6 +234,17 @@ def entry_id(heading_text):
     return ident if dashed else re.sub(r"([0-9]+)$", r"-\1", ident)
 
 
+def cand_id(text):
+    """The id of a line that opens like an entry, as bin/council's cand() reads one — an id, then a
+    separator or nothing (`F-6 — …`, `F-6:`; never `F-6 follow up`) — or ''."""
+    lower = text.lower().lstrip("*_~`")
+    match = re.match(r"(ap|ec|d|f)-?[0-9]+", lower)
+    if not match or not re.match(r"[*_~`]*([ \t]*([:.)]|—|–|-[ \t])|[ \t]*$)", lower[match.end():]):
+        return ""
+    ident = match.group(0).upper()
+    return ident if "-" in ident else re.sub(r"([0-9]+)$", r"-\1", ident)
+
+
 def headings(lines):
     """(index, level, text, entry id) for every heading the parser reads."""
     for index, text in visible(lines):
@@ -329,20 +340,21 @@ def insert(memory, block_path, out):
 def find_entry(lines, wanted):
     """An entry's lines, as bin/council's memory parser reads them: a heading deeper than #### or a table
     row is never an entry (it names them as not read), and any entry heading ends the entry above it."""
-    unread = ["line {}: a heading deeper than ####".format(index + 1) for index, level, text, _ in headings(lines)
-              if level > 4 and entry_id(text) == wanted]
-    unread += ["line {}: a table row".format(index + 1) for index, text in visible(lines)
-               if TABLE_CELL.match(text) and entry_id(TABLE_CELL.match(text).group(1)) == wanted]
+    hits = [(index, level) for index, level, _, ident in headings(lines) if ident == wanted]
+    unread = [] if hits else (
+        ["line {}: a heading deeper than ####".format(index + 1) for index, level, text, _ in headings(lines)
+         if level > 4 and cand_id(text) == wanted]
+        + ["line {}: a table row".format(index + 1) for index, text in visible(lines)
+           if TABLE_CELL.match(text) and cand_id(TABLE_CELL.match(text).group(1)) == wanted])
     if unread:
         raise MemoryError_("{} opens like an entry where the memory parser reads none ({}) — write it as a "
                            "heading (### {}) first".format(wanted, "; ".join(unread), wanted))
-    hits = [(index, level) for index, level, _, ident in headings(lines) if ident == wanted]
     if len(hits) != 1:
         raise MemoryError_("{} must appear exactly once as a heading entry (found {}); move a "
                            "hand-written proposal by hand".format(wanted, len(hits)))
     start, level = hits[0]
-    end = next((index for index, lvl, text, _ in headings(lines)
-                if index > start and (lvl <= level or entry_id(text))), len(lines))
+    end = next((index for index, lvl, text, ident in headings(lines)
+                if index > start and (lvl <= level or ident or (lvl > 4 and cand_id(text)))), len(lines))
     while end > start + 1 and lines[end - 1].strip() == "":
         end -= 1
     return start, end

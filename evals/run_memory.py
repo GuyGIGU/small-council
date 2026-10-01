@@ -501,6 +501,16 @@ with tempfile.TemporaryDirectory(prefix="council-memory-") as temporary:
             refused[ident] = "found"
         except memory_script.MemoryError_ as exc:
             refused[ident] = str(exc)
+    idx = ["# Conventions\n", "## Proposed — awaiting the user's yes/no\n", "| F-7 | an index row |\n", "### F-7: seven\n",
+           "**Failure:** x\n", "##### F-8 follow up\n", "more of F-7\n", "**Evidence:** a.md:1\n"]
+    try:
+        s7, e7 = memory_script.find_entry(idx, "F-7")
+        f7 = "".join(idx[s7:e7])
+    except memory_script.MemoryError_ as exc:
+        f7 = "refused: " + str(exc)
+    check("memory.py agrees off the fixture: an index row with the same id doesn't block a read entry, and a deep "
+          "sub-heading with no separator stays inside it, as the helper reads them",
+          f7.startswith("### F-7") and f7.endswith("**Evidence:** a.md:1\n"), f7)
     check("memory.py agrees: F-5 ends at the deeper entry heading, and F-6, F-8 and the shared F-1 are refused, each saying why",
           "F-6" not in "".join(mlines[start:end]) and "deeper than ####" in refused["F-6"]
           and "a table row" in refused["F-8"] and "found 2" in refused["F-1"], str(refused))

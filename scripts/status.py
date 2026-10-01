@@ -773,7 +773,8 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
             parts.append("{} {}".format(counts[state], word))
     if planned:
         parts.append("{} not started".format(len(planned)))
-    seat_text = " · ".join(parts) if parts else "no seats recorded yet"
+    seat_text = " · ".join(parts) if parts else (
+        "none to run · {} skipped".format(counts["skipped"]) if counts.get("skipped") else "no seats recorded yet")
     passed = sum(1 for c in checks if c["result"] == "passed")
     recovered = sum(1 for c in checks if c["recovered"])
     probes = any(gate_kind(g["name"]) == "probe" for g in snap["gates"])

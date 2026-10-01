@@ -640,15 +640,17 @@ def transcript(run, path, say):
                                                % clock(part[end][0]) if done else ""))
 
     # The closing card: after this run's own close, to the end of that turn. A close the helper refused
-    # (is_error, "Exit code …") is no close, and another run's close in the same window is not this one's:
-    # the close that printed "closed <this run>" is, else the last one that went through.
+    # (is_error, "Exit code …", and no "closed <this run>" line) is no close, and another run's close in the
+    # same window is not this one's: this run's last close that printed its line is — a pause before it is
+    # not — else the last one that went through.
     label = "Closing card"
+    mine = r"\bclosed %s\b" % re.escape(run.name)
     refused = set(b.get("tool_use_id") for _, kind, b in part if kind == "result"
                   and (b.get("is_error") or block_text(b.get("content")).startswith("Exit code ")))
-    closes = [(n, k, output) for n, t, block, found, output in calls if block.get("id") not in refused
+    closes = [(n, k, output) for n, t, block, found, output in calls if block.get("id") not in refused or re.search(mine, output)
               for k, i in enumerate(found) if i["sub"] == "run close"]
-    named = [c for c in closes if re.search(r"\bclosed %s\b" % re.escape(run.name), c[2])]
-    close_at = (named or closes[-1:] or [None])[0]
+    named = [c for c in closes if re.search(mine, c[2])]
+    close_at = (named[-1:] or closes[-1:] or [None])[0]
     if close_at is None:
         tried = any(i["sub"] == "run close" for c in calls for i in c[3])
         if closed or tried:
