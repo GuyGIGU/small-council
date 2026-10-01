@@ -30,9 +30,10 @@ card/text, TUI and history now agree: 26,430,386 appears as `26.4M` everywhere (
 and history prefix estimated totals with `~`), and 2,500 appears as `3k`. Only the display is
 rounded; the stored totals and accounting bases stay exact.
 
-The status card, text and JSON compare known exact agent-token figures with the **whole**
-`budget/run/estimated-tokens` plan value, including its advisory Chair share. They do not subtract
-that share as history does when estimating a future worker. A partial record says "at least";
+The close line, the status card, text and JSON and the estimate event compare known exact
+agent-token figures with the **agents' share**: `budget/run/estimated-tokens` less the plan's
+`budget/run/chair-tokens` (the Chair's own reading and judging, which no seat records) — "about 18%
+over the agents' 80k share". A plan that names no Chair share is compared with the whole estimate. A partial record says "at least";
 unknown usage never becomes zero. An optional `budget/run/token-ceiling` is the owner's limit.
 Passing either number emits one event, and passing the ceiling on an open run asks the Chair to stop
 starting work until the owner says go. These token figures are context size, not a bill.

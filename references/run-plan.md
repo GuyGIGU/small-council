@@ -28,6 +28,8 @@ The required run rows are:
 - `run/run/id`, `mode`, and `size` (`solo`, `squad`, or `full`)
 - `assessment/run/risk`, `complexity`, and `uncertainty` (`low`, `medium`, or `high`)
 - `budget/run/agent-cap` and `estimated-tokens`
+- optional `budget/run/chair-tokens`, the Chair's own share of `estimated-tokens` (its reading and
+  judging, which no seat records); agents' tokens are compared with the rest, never with the whole
 - optional `budget/run/token-ceiling`, a positive whole-token limit the owner gave; copy it from
   `route recommend --budget-tokens` when that flag was used
 - `verification/run/level` (`self`, `independent`, or `adversarial`)

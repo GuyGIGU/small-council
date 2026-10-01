@@ -141,7 +141,8 @@ def history(home, outcomes=True):
                    for model, entry in sorted(by_planned_model.items())}
     ratios = []
     for snap in costed:                  # agents' tokens against the plan's estimate less the Chair's share
-        estimate = cockpit.number(snap["plan"].get("estimated-tokens")) - CHAIR_ESTIMATE
+        chair = snap["plan"].get("chair-tokens")      # the plan's own Chair share, when it names one
+        estimate = cockpit.number(snap["plan"].get("estimated-tokens")) - (cockpit.number(chair) if chair else CHAIR_ESTIMATE)
         if estimate > 0:
             ratios.append(total_of(snap) / estimate)
     agents = [total_of(s) / runs_of(s) for s in costed]

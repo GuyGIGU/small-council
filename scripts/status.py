@@ -401,6 +401,9 @@ def cap_standing(snap, run_path, home=None):
 def spend_of(snap, usage, run_path):
     """Compare only known exact token counts with the run's planned estimate and ceiling."""
     estimate, ceiling = budget_value(run_path, "estimated-tokens"), budget_value(run_path, "token-ceiling")
+    chair = budget_value(run_path, "chair-tokens")       # seats record agents only: compare them with their share
+    share = estimate - chair if estimate is not None and chair is not None and chair < estimate else estimate
+    whose = "" if share == estimate else " the agents' {} share".format(tokens_text(share))
     known = usage["tokens_known"]
     if usage["text"].startswith("no agent"):           # nothing to compare: say so, and the estimate if there was one
         message = usage["text"] + (" (estimated {})".format(tokens_text(estimate)) if estimate else "")
@@ -415,14 +418,16 @@ def spend_of(snap, usage, run_path):
         message = "at least {} used".format(tokens_text(known))
     else:
         message = "usage not known yet"
-    if estimate is not None:
+    if estimate is not None and whose:
+        message += " of{} (estimated {})".format(whose, tokens_text(estimate))
+    elif estimate is not None:
         message += " of estimated {}".format(tokens_text(estimate)) if known else " against estimated {}".format(tokens_text(estimate))
     if ceiling is not None:
         message += "; ceiling {}".format(tokens_text(ceiling))
-    if estimate is not None and known > estimate and estimate > 0:
-        over = ((known - estimate) * 100 + estimate // 2) // estimate
-        message += " ({}about {}% over estimate)".format("at least " if usage["basis"] != "complete" else "", over)
-    return {"estimate": estimate, "ceiling": ceiling, "spend_text": message}
+    if share is not None and known > share and share > 0:
+        over = ((known - share) * 100 + share // 2) // share
+        message += " ({}about {}% over{})".format("at least " if usage["basis"] != "complete" else "", over, whose or " estimate")
+    return {"estimate": estimate, "share": share, "ceiling": ceiling, "spend_text": message}
 
 
 def oversized_memory(run_path):
@@ -714,7 +719,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
         else:
             attention.append({"kind": "cap", "severity": 1, "text": "This run used {}, over its limit of {}.".format(many, cap)})
     known = usage["tokens_known"]
-    if usage["estimate"] is not None and known > usage["estimate"]:
+    if usage.get("share") is not None and known > usage["share"]:
         attention.append({"kind": "estimate", "severity": 1,
                           "text": "Token use is over the run's estimate."})
     if usage["ceiling"] and known > usage["ceiling"]:

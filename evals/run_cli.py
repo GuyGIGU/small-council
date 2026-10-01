@@ -652,7 +652,7 @@ def runs_open(tmp):
     code, out, err = council(budget_repo, "run", "events", "check")
     check("spend: the stream with the two budget events remains valid", code == 0, out + err)
     code, out, err = council(budget_repo, "run", "close")
-    check("close: exact usage is compared with the whole estimate",
+    check("close: with no Chair share in the plan, exact usage is compared with the whole estimate",
           code == 0 and "estimated ~420k (about 49% over)" in out and
           "estimated ~420k (about 49% over)" in read(os.path.join(budget_run, "session-state.md")), out + err)
     million = new_repo(tmp, "spend-million")
@@ -2735,6 +2735,46 @@ def runs_card_says_what_is_known(tmp):
     code, out, err = council(sk, "run", "plan", "check")
     check("run plan check: one missing role row is one error, said once", code == 1 and "plan: 1 error(s)" in out
           and out.count("seat s8 has no role row") == 1, out + err)
+
+@part("runs")
+def runs_cost_like_with_like(tmp):
+    # Run 1's real record, the owner's complaint (tests-real-7): the plan's 120k was ~40k for the Chair and
+    # ~80k for the one verifier, which spent 94,152 — over its share, though under the whole estimate. The
+    # expected words come from those numbers, written here before the code.
+    share, spent = 120000 - 40000, 94152
+    over = ((spent - share) * 100 + share // 2) // share                    # 18
+    want = "about {}% over the agents' 80k share".format(over)
+    cr = new_repo(tmp, "cost-like-with-like")
+    write(os.path.join(cr, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(cr, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    name = os.path.basename(run)
+    write_plan(run, selected=("chair", "verify-1"), estimated_tokens=120000)
+    append(os.path.join(run, "run-plan.tsv"), "budget\trun\tchair-tokens\t40000\tthe Chair's own reading and judging\n")
+    code, out, err = council(cr, "run", "plan", "check")
+    check("run plan: the Chair's share of the estimate is a plan row of its own", code == 0, out + err)
+    write(os.path.join(run, "verify-1.md"), "# Verification — run 1\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | the finding | CONFIRMED | notes.md:5 |\n")              # a seat is done only with its file (task 6)
+    council(cr, "seat", "verify-1", "done", "agent=v1", "tokens=94152")
+    check("seat: passing the agents' share, not the whole estimate, is the event",
+          any(e[3] == "run.estimate_passed" and "estimate=80000" in e[6] for e in events(run)), str(events(run)[-3:]))
+    code, out, err = council(cr, "run", "close")
+    check("close: run 1's record reads " + want + " — the verifier against the agents' share, not the whole 120k",
+          code == 0 and want in out, out + err)
+    code, out, err = council(cr, "status", "--run", name)
+    check("status: the closing card says the same", code == 0 and want in out, out + err)
+    write(os.path.join(run, "run-plan.tsv"), read(os.path.join(run, "run-plan.tsv")).replace("chair-tokens\t40000", "chair-tokens\t130000"))
+    code, out, err = council(cr, "run", "plan", "check", "--run", name)
+    check("run plan: a Chair share larger than the whole estimate is refused", code == 1 and "more than the whole estimate" in out, out + err)
+    # A check that failed, then passed, read through the helper's own records (tests-real-6).
+    gr = new_repo(tmp, "recovered-gate")
+    write(os.path.join(gr, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(gr, "run", "open", "council-review")
+    write_plan(out.strip().splitlines()[-1], selected=("chair", "w1"))
+    council(gr, "gate", "lint", "--", "exit 1")
+    council(gr, "gate", "lint", "--", "true")
+    code, out, err = council(gr, "status")
+    check("status: a check the helper ran red, then green, reads as recovered", "1 passing (1 recovered after failing)" in out, out + err)
 
 @part("runs")
 def runs_worktrees_close_and_find(tmp):

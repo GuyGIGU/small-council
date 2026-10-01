@@ -445,6 +445,26 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("notification: reaching the cap gives an actionable line even before it is exceeded",
           "Agent limit reached (3)" in status.notification_line(r), status.notification_line(r))
 
+    # make_run invents nothing: its files and state keys are ones the helper itself writes (tests-real-6).
+    conform = base / "conform"
+    conform.mkdir()
+    subprocess.run([GIT, "init", "-q"], cwd=conform, check=True)
+    write(conform / ".council" / "council.config.md", "# Council config\n")
+    code, out, err = council(conform, "run", "open", "council-review")
+    real = Path(out.strip().splitlines()[-1]) if code == 0 and out.strip() else conform
+
+    def header_keys(run):
+        head = (run / "session-state.md").read_text(encoding="utf-8").split("## ")[0]
+        return {line.split(":", 1)[0] for line in head.splitlines() if ":" in line}
+
+    fake = make_run(base / "conform-fake", "made", events=[("2026-10-01T10:00:00Z", "run.opened", "run", "council-review", "phase=convene")],
+                    repairs=[{"schema": 1}])
+    fake_files = {p.name for p in fake.iterdir() if p.is_file()} - {"repairs.jsonl"}    # a build writes it later
+    real_files = {p.name for p in real.iterdir() if p.is_file()}
+    check("make_run writes only the files and state keys a run the helper opens has",
+          header_keys(fake) <= header_keys(real) and fake_files <= real_files,
+          (sorted(header_keys(fake) - header_keys(real)), sorted(fake_files - real_files)))
+
     spendbase = base / "spend"
     under = make_run(spendbase, "under", seats=[v2("wf", "done", 300000, 1, 1)])
     plan(under, ("wf",))

@@ -1110,6 +1110,15 @@ run_agent_cap() {
   printf '%s' "$cap"
 }
 
+# The agents' share of a run's estimate: estimated-tokens less the plan's chair-tokens (the Chair's own
+# reading and judging, which no seat records), or the whole estimate when the plan names no Chair share.
+agents_share() {
+  local est chair
+  est="$(run_budget_value "$1" estimated-tokens)"; [ -n "$est" ] || return 0
+  chair="$(run_budget_value "$1" chair-tokens)"
+  if [ -n "$chair" ] && [ "$chair" -lt "$est" ]; then printf '%s' "$((est - chair))"; else printf '%s' "$est"; fi
+}
+
 run_budget_value() {
   local value=""
   [ ! -f "$1/run-plan.tsv" ] || value="$(awk -F'\t' -v field="$2" '
@@ -1158,7 +1167,7 @@ cap_note() {
     fi
   fi
   case "$t" in ''|*[!0-9]*) return 0 ;; esac
-  estimate="$(run_budget_value "$run" estimated-tokens)"
+  estimate="$(agents_share "$run")"                 # seats record agents only: compare them with their share
   ceiling="$(run_budget_value "$run" token-ceiling)"
   if [ -n "$estimate" ] && [ "$t" -gt "$estimate" ]; then
     if [ -f "$run/events.tsv" ]; then
@@ -1635,7 +1644,7 @@ close_claims_note() {
 }
 
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" follow=""
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" share whose follow=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -1659,10 +1668,12 @@ cmd_run_close() {
   if [ -n "$words" ] && [ -n "$estimate" ]; then
     set -- $usage; basis="$1"; total="$4"
     words="$words · estimated ~$(usage_token_text "$estimate")"   # the same units as the total: ~1.5M, never ~1500k
-    if [ "$estimate" -gt 0 ] && [ "$total" -gt "$estimate" ]; then
-      over="$(( ((total - estimate) * 100 + estimate / 2) / estimate ))"
-      if [ "$basis" = complete ]; then words="$words (about $over% over)"
-      else words="$words (at least about $over% over)"; fi
+    share="$(agents_share "$run")"; whose=""        # the agents' tokens against the agents' share (run 1's complaint)
+    [ "$share" = "$estimate" ] || whose=" the agents' $(usage_token_text "$share") share"
+    if [ "$share" -gt 0 ] && [ "$total" -gt "$share" ]; then
+      over="$(( ((total - share) * 100 + share / 2) / share ))"
+      if [ "$basis" = complete ]; then words="$words (about $over% over$whose)"
+      else words="$words (at least about $over% over$whose)"; fi
     fi
   fi
   if [ -f "$run/seats.tsv" ]; then
@@ -1845,6 +1856,9 @@ run_plan_validate() {
             if (!integer(v)) problem(NR, "estimated-tokens must be a non-negative integer")
           } else if (fld == "token-ceiling") {
             if (!integer(v) || v < 1) problem(NR, "token-ceiling must be a positive integer")
+          } else if (fld == "chair-tokens") {             # the share the Chair keeps for itself: agents are compared with the rest
+            if (!integer(v)) problem(NR, "chair-tokens must be a non-negative integer — the Chair\047s own share of estimated-tokens")
+            else { chairtok = v + 0; chairline = NR }
           } else problem(NR, "unknown run budget field: " fld)
         } else if (fld == "agent-runs") {                # a Workflow seat starts several agents
           if (!integer(v) || v < 1 || v > 1000) problem(NR, "agent-runs must be an integer from 1 to 1000")
@@ -1895,6 +1909,9 @@ run_plan_validate() {
           if (id in calls) problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "skipped seat " id " must not receive a tool-call budget")
         }
       }
+      ek = "budget" SUBSEP "run" SUBSEP "estimated-tokens"
+      if (chairline && (ek in val) && integer(val[ek]) && chairtok > val[ek] + 0)
+        problem(chairline, "chair-tokens " chairtok " is more than the whole estimate (" val[ek] ")")
       if (selected + skipped == 0) problem(0, "add at least one considered seat with a selected or skipped disposition")
       for (id in ctx) if (!(id in disp) || disp[id] != "selected") problem(at["context" SUBSEP id SUBSEP "level"], "context belongs only to a selected seat: " id)
       for (id in calls) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "a seat budget belongs only to a selected seat: " id)
@@ -1969,6 +1986,8 @@ cmd_run_plan() {
           print "  budget: " v["budget" SUBSEP "run" SUBSEP "estimated-tokens"] " tokens · " v["budget" SUBSEP "run" SUBSEP "agent-cap"] " agents · verification: " v["verification" SUBSEP "run" SUBSEP "level"]
           ceiling = v["budget" SUBSEP "run" SUBSEP "token-ceiling"]
           if (ceiling != "") print "  owner ceiling: " ceiling " tokens"
+          chair = v["budget" SUBSEP "run" SUBSEP "chair-tokens"]
+          if (chair != "") print "  the Chair\047s own share: " chair " tokens (agents are compared with the rest)"
           print "  seats:"
           for (i = 1; i <= n; i++) {
             id = order[i]; d = v["seat" SUBSEP id SUBSEP "disposition"]; r = v["seat" SUBSEP id SUBSEP "role"]
