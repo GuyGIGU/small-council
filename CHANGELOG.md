@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-10-01
+
+**TL;DR:** a "just me" setup for shared projects. The council stays on your machine, and teammates
+never have to see or use it.
+
+### Added
+
+- Setup asks whether the council is the team's or just yours. On **just me**, git ignores `.council/` through its own exclude list (never committed or pushed), CLAUDE.md gets no Small Council note, and the config records `- sharing: just me`.
+- `council sharing` shows who sees the council and what's left to do; `council sharing just-me` and `council sharing team` switch it, and also work on a council that's already set up.
+- `council doctor` warns when a just-me council still shows up for the team: council files in git, the note in CLAUDE.md, or `.council/` not ignored.
+- On just me, sessions are told to keep council runs, finding ids and `.council/` paths out of commit messages, PR text and shared docs, and specs save to `.council/specs/`.
+
+**Upgrade:** nothing to do. A council with no `- sharing:` line stays a team council, as before.
+
 ## [0.18.0] — 2026-10-01
 
 **TL;DR:** the fixes from the first real run and the 2026-09-30 bug hunt. After a compaction the council

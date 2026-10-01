@@ -5,8 +5,7 @@ description: Summon the Small Council for this project — detect the stack and 
 
 # Council Init — summon the council for this project (stage 0)
 
-One installed plugin gives each repo a bespoke council. Instead of hand-editing experts, point this at
-a repo and it builds the fit.
+One installed plugin gives each repo a bespoke council, built to fit it.
 - Follow the council's discipline: **map the repo, don't deep-read it.**
 - First read `${CLAUDE_PLUGIN_ROOT}/references/roster/expert-catalog.md`: the seats, their "applies
   when" rules, and the recast rules.
@@ -23,8 +22,7 @@ a repo and it builds the fit.
   - list config-like files up to two levels deep;
   - read what CI runs.
 
-  This catches firmware, Xcode projects, notebooks and game engines that a list of manifest files
-  would miss.
+  It catches firmware, Xcode projects, notebooks and game engines that a manifest list misses.
 - **Then confirm with manifests:** `package.json`, `tsconfig.json`, `pyproject.toml` /
   `requirements.txt`, `go.mod`, `Cargo.toml`, `pom.xml` / `build.gradle`, `*.csproj` / `*.sln`,
   `Gemfile`, `composer.json`, `mix.exs`, `pubspec.yaml`, `Package.swift` / `*.xcodeproj`,
@@ -164,14 +162,15 @@ Present:
 - the roster, with recasts, drops, the reasons, and each seat's surface markers;
 - for each seat, two lines on what its card will say is P1 here and where it will look;
 - the gates (✓/✗) and their side effects;
-- the run preferences;
+- the run preferences, sharing included: team or just me (when to ask:
+  `${CLAUDE_PLUGIN_ROOT}/references/sharing.md`);
 - a three-line summary of the map.
 
 Adjust on request. On confirmation, write:
 - **`.council/council.config.md`** from `${CLAUDE_PLUGIN_ROOT}/references/templates/council.config.md`,
   stamped `last-verified: <date> @ <short sha>`, with the `stack-fingerprint:` line `council
   fingerprint` printed. Run preferences start at the defaults, which are the user's to change:
-  approve without asking up to Squad, agent cap 10, context packs off.
+  approve without asking up to Squad, agent cap 10, context packs off, sharing as answered.
 - **`.council/cards/<slug>.md`**, one per seat, from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`.
   A card translates the seat's doc to this project, in at most ~6 KB:
   - every principle of the doc, numbered as in the doc, one line each on what it means here — the
@@ -207,6 +206,8 @@ Adjust on request. On confirmation, write:
    ignore this section.
    <!-- small-council:end -->
    ```
+
+   **Just me** (refreshes too): no note; run `council sharing just-me` and relay what it says is left.
 2. **Offer permission rules** — written only on a yes — in `.claude/settings.local.json`, so the
    bookkeeping doesn't prompt at every step:
 
@@ -255,8 +256,7 @@ Adjust on request. On confirmation, write:
 
 ## Refresh (re-runs)
 
-Configs drift: docs get renamed, files get deleted, suite counts change. On a re-run, or "refresh the
-council":
+Configs drift. On a re-run, or "refresh the council":
 - Run `council doctor` and fix what it reports. `council fingerprint check` says whether the stack
   moved; `council memory check` lists memory entries whose anchored file, line or symbol is gone.
 - **Memory:** offer to add Scope and Anchor to entries that lack them — one proposal per entry, as
@@ -266,8 +266,8 @@ council":
 - **Roster changes from the record.** `council ledger advice 20` weighs each seat only on runs that
   judged its items, gives a plausible range, and advises only past its bar (3 judged runs, 15 items
   of evidence, at most 5 from any run). Propose a roster change only where it advises one, with the
-  numbers shown — "UX (Friedman): 6 judged runs, 8 of 30 items useful (plausible 16–41%), the
-  verifier refuted 12 of 20 kept (42–76%) — narrow its surface to `src/ui/**`?" Below the bar, say
+  numbers shown — "UX (Friedman): 6 judged runs, 8 of 30 items useful (plausible 16–41%) — narrow
+  its surface to `src/ui/**`?" Below the bar, say
   the record is too thin and change nothing. A lens the runs keep flagging outside their lanes is a
   separate proposal: name the runs. The user decides; nothing changes without a yes.
 - **Tuning from the record.** `council tune` proposes the estimate per worker once five completed
@@ -280,8 +280,8 @@ council":
 - **A Gates section still written as a list** (backticked commands under `## Gates`, no table): move
   every command into the Gates table, one row each, dry-run them as in Phase C, and fill Run at,
   Mandatory, Checked, Probe, Needs and Side effects. Until that is done the helper can read no gate
-  and every report says NOTHING WAS CHECKED, so this is not a section to leave as the user wrote it —
-  show the diff and say what each row came from.
+  and every report says NOTHING WAS CHECKED, so don't leave it as written: show the diff and say what
+  each row came from.
 - **Merge, don't overwrite.** Show a diff. Any section the user added or edited — hard rules, a
   pinned gate, a manual recast, Notes — is theirs: merge around it and surface conflicts for them to
   resolve.

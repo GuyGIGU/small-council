@@ -15,6 +15,7 @@ deploy target, domain. Name the one thing that must never break.>
 - agent cap: 10
 - context packs: off
 - seat models: off
+- sharing: team
 <!-- Add `- notifications: off` here to suppress `council status --line` and council phone alerts.
      Without that line, four owner-facing moments may notify when PushNotification is available:
      a blocking question, a stopped build, a cap/ceiling stop, and run completion. -->
@@ -23,6 +24,9 @@ deploy target, domain. Name the one thing that must never break.>
      "context packs": off | on — on builds a seat-specific evidence pack for each dispatched worker
      (experimental: it adds material and its benefit is unmeasured). Missing means off. Yours to change.
      "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.
+     "sharing": team | just me — team commits .council/ with the project; just me keeps it on this
+     machine (git's own exclude list ignores it, and CLAUDE.md gets no note), so teammates never meet
+     the council. `council sharing just-me` / `council sharing team` switches it; missing means team.
      "estimate per worker" (e.g. 150k) is added only by `council tune apply budget` on your words,
      from what this project's agents measure; the route budgets each agent with it, 80k without it. -->
 
