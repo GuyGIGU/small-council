@@ -802,8 +802,9 @@ def turn_end(tmp):
         return f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()}"
 
     bare = new_repo(tmp, "turn-no-council")
-    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", bare), bare)
-    check("turn end: no council home — the turn ends, nothing said", code == 0 and not out and not err, said(code, out, err))
+    code, out, err, took = run_agent_gate(cmd, stop_input("sA", bare), bare)
+    check("turn end: no council home — the turn ends, nothing said, well inside the 15 s limit",
+          code == 0 and not out and not err and took < 10, said(code, out, err) + " · {:.1f} s".format(took))
     te = new_repo(tmp, "turn-end")
     write(os.path.join(te, ".council", "council.config.md"), "# Council config\n")
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
@@ -827,6 +828,11 @@ def turn_end(tmp):
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: with a seat still working the run waits on its agent, not the user — nothing said or recorded",
           code == 0 and not err and not waiting(), said(code, out, err))
+    council(te, "seat", "w1", "queued", session="sA")              # planned, not started: no agent is at work
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: a seat only queued is no agent at work — the wait is recorded", code == 2 and waiting() != "",
+          said(code, out, err))
+    council(te, "state", "phase=assign", session="sA")
     council(te, "seat", "w1", "done", "agent=a1", "tokens=20000", session="sA")
     code, out, err, took = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: the driving session stops with no seat working — the wait is recorded, and the Chair is sent "
@@ -844,8 +850,9 @@ def turn_end(tmp):
     check("turn end: the next helper action (a stage change) ends the wait", waiting() == "", waiting())
     council(te, "state", "waiting=Ship the plan as it is, or cut task 3?", session="sA")
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
-    check("turn end: a new wait — the Chair's own question — is kept, and asked about once",
-          code == 2 and waiting() == "Ship the plan as it is, or cut task 3?", said(code, out, err))
+    check("turn end: the Chair's own question is kept, and not asked about again — the helper asked for the alert "
+          "when it was recorded, so the owner gets one alert per wait",
+          code == 0 and not err and waiting() == "Ship the plan as it is, or cut task 3?", said(code, out, err))
     council(te, "seat", "w1", "done", "agent=a1", "tokens=25000", session="sA")
     check("turn end: a seat record ends the wait too", waiting() == "", waiting())
     with open(os.path.join(te, ".council", "council.config.md"), "a", encoding="utf-8") as f:
@@ -853,6 +860,8 @@ def turn_end(tmp):
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: with notifications off, the wait is still recorded but nobody is sent back",
           code == 0 and not out and not err and waiting() != "", said(code, out, err))
+    council(te, "cap", "allow", "1", "--user-said", "yes, one more", session="sA")
+    check("turn end: the user's go (cap allow) ends the wait", waiting() == "", waiting())
 
 
 @part("timing")

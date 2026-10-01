@@ -690,7 +690,7 @@ waiting_nudge() {
 wait_over() {
   [ -n "$(state_field waiting "$1/session-state.md")" ] || return 0
   ! run_closed "$1" || return 0
-  ( RUN_ARG="$1" cmd_state waiting= alerted= ) >/dev/null 2>&1 || :
+  ( RUN_ARG="$1" cmd_state waiting= ) >/dev/null 2>&1 || :
 }
 
 cmd_state() {
@@ -738,9 +738,9 @@ cmd_state() {
   fi
   for kv in ${1+"$@"}; do case "$kv" in next=*) gave_next=1 ;; esac; done
   for kv in ${1+"$@"}; do                            # a stage or status change ends a wait, unless it names one
-    case "$kv" in waiting=*) wkey=keep; break ;; phase=*|status=*) wkey=clear ;; esac
+    case "$kv" in waiting=*) wkey=keep; break ;; phase=*|status=*|decision=*) wkey=clear ;; esac
   done
-  [ "$wkey" != clear ] || [ -z "$(state_field waiting "$st")" ] || set -- "$@" waiting= alerted=
+  [ "$wkey" != clear ] || [ -z "$(state_field waiting "$st")" ] || set -- "$@" waiting=
   old_phase="$(field phase "$st")"; old_status="$(field status "$st")"; old_waiting="$(state_field waiting "$st")"
   tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
   awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { print }' "$st" > "$tmp" \
@@ -1013,7 +1013,6 @@ cmd_seat() {
   fi
   [ "$state" != done ] || [ "$runs" = 0 ] || seat_file_ready "$run" "$slug"
   events_writable "$run"
-  wait_over "$run"
   if [ "$runs" = 0 ] && { [ -n "$agent" ] || [ -n "$(seat_field "$run" "$slug" 3)" ]; }; then
     die "agents=0 says no agent ran for $slug, but an agent id is on record for it — report that agent's usage instead"
   fi
@@ -1028,6 +1027,7 @@ cmd_seat() {
           || die "cannot start seat $slug — run-plan.tsv does not mark it selected; update the plan and run: council run plan check --run ${run##*/}"
       fi ;;
   esac
+  wait_over "$run"                                  # the call is good: the run moves on
   f="$run/seats.tsv"; u="$run/usage.tsv"
   event_lock "$f.lock" || die "seat lock unavailable: $f.lock"  # state, usage and event keep the same order
   [ -s "$f" ] || printf 'slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n' > "$f"
@@ -1451,16 +1451,18 @@ cmd_cap_allow() {
     event_append "$run" run.cap_allowed run "$n" "used=$used;until=$upto" \
       || printf 'council: the go is on record, but its event could not be written\n' >&2
   fi
+  wait_over "$run"
   say "cap: the user's go is on record — $n more agent run(s) may start, up to $upto in all for ${run##*/}"
 }
 
 # council run turn-end --session ID — the Stop hook's decision (hooks/turn-end.sh). Each in-progress run
-# that session drives, with no seat working, now waits on the user: the wait is recorded (the Chair's own
-# question kept). With notifications on, the first turn end of each wait prints what the Chair is sent
-# back for — the owner's alert — and exits 2; alerted: names that wait (the seq of its event), so it is
-# asked once. Otherwise silent, exit 0. A fault of its own dies, which the hook lets through.
+# that session drives, with no seat running, now waits on the user. A wait the Chair recorded itself
+# (state waiting=) was asked for then, so it is left alone: one alert per wait. One it didn't, the hook
+# records, and with notifications on prints what the Chair is sent back for — the owner's alert — and
+# exits 2; the next turn end of that wait finds it recorded. Otherwise silent, exit 0. A fault of its
+# own dies, which the hook lets through.
 cmd_run_turn_end() {
-  local home session run st seq names="" n=0 last="" how at="<folder>" label=run
+  local home session run st names="" n=0 last="" how at="<folder>" label=run
   home="$(council_home)"
   [ -d "$home/runs" ] || return 0
   session="${SESSION_ARG:-}"
@@ -1468,12 +1470,10 @@ cmd_run_turn_end() {
   while IFS= read -r run; do
     [ -n "$run" ] || continue
     st="$run/session-state.md"
-    ! awk -F'\t' 'NR > 1 && ($2 == "running" || $2 == "queued") { f = 1; exit } END { exit !f }' "$run/seats.tsv" 2>/dev/null || continue
-    [ -n "$(state_field waiting "$st")" ] || ( RUN_ARG="$run" cmd_state waiting="your answer in the chat" ) >/dev/null 2>&1 || continue
+    ! awk -F'\t' 'NR > 1 && $2 == "running" { f = 1; exit } END { exit !f }' "$run/seats.tsv" 2>/dev/null || continue
+    [ -z "$(state_field waiting "$st")" ] || continue          # recorded already: asked for when it was
+    ( RUN_ARG="$run" cmd_state waiting="your answer in the chat" ) >/dev/null 2>&1 || continue
     ! notifications_off "$home" || continue
-    seq="$(awk -F'\t' '$4 == "run.waiting_changed" && $6 == "on" { s = $2 } END { print s }' "$run/events.tsv" 2>/dev/null)"
-    [ -n "$seq" ] && [ "$(state_field alerted "$st")" != "$seq" ] || continue
-    ( RUN_ARG="$run" cmd_state alerted="$seq" ) >/dev/null 2>&1 || continue
     names="$names${names:+, }${run##*/}"; n=$((n + 1)); last="${run##*/}"
   done <<RUNS
 $(session_runs "$home" "$session")
@@ -2340,6 +2340,7 @@ cmd_repair() {
   [ "$rc" -eq 0 ] || die "the go was not recorded: cannot write $file"
   event_append "$run" repair.allowed "$1" "$task" "stop_seq=$seq" \
     || printf 'council: the go is on record, but its event could not be written\n' >&2
+  wait_over "$run"
   say "repair: the user's go is on record — gate $1 may run again; $task's trail stays closed, so a new failure is recorded under a new task id (the gate names one)"
 }
 
