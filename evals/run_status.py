@@ -990,6 +990,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         late = Path(council(nudged, "run", "open", "council-review")[1].strip())
         plan(late, ("verify-1",))
         _, _, own_err = council(nudged, "seat", "chair", "done", "agents=0")
+        write(late / "verify-1.md", "# Verification — late\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+              "| 1 | a | CONFIRMED | a.py:1 |\n")                  # a seat is done only with its file
         _, _, late_err = council(nudged, "seat", "verify-1", "done", "agent=v1", "tokens=94152", "--run", late.name)
         check("status reminder: work the Chair did itself is no dispatch; a worker first recorded only when it "
               "finished (as the real run's was) still counts, and a call given --run gets it back in the command",

@@ -460,6 +460,30 @@ def many_open_runs(tmp):
           "--status complete" in line and "--status abandoned" not in line and "FINAL-REVIEW.md" in line, out)
 
 @part("main")
+def seat_gate_replies(tmp):
+    # The seat check reads the reply honestly: a reply that is there but empty (an agent stopped at its turn
+    # limit before answering) is sent back once; a missing field is the host's and passes; more than one line
+    # is sent back once; a "Wrote" that names no file, or a relative name it can't find, asks for the full path.
+    folder = os.path.join(tmp, "seat-replies")
+    good = os.path.join(folder, "seats", "w1.md")
+    write(good, "# Tests — tests (review)\nref: x\n## Index\n1 · P2 · Principle 1 · a.py:1 · a thing\n")
+    worker = "small-council:council-worker"
+    code, err = run_gate(worker, "")
+    check("seat check: a reply that is there but empty is sent back once, with the file rule", code == 2 and "Wrote" in err, err)
+    bare = json.dumps({"hook_event_name": "SubagentStop", "agent_type": worker, "agent_id": "a1", "stop_hook_active": False, "cwd": ""})
+    code, err = run_gate(worker, "", payload=bare)
+    check("seat check: no reply field at all (an older host) lets the agent stop", code == 0 and not err, err)
+    code, err = run_gate(worker, "Wrote %s — 1 item (1 P2)\nAlso, a summary of what I found." % good)
+    check("seat check: a good file with a reply of more than one line is sent back once for the one line",
+          code == 2 and "exactly one line" in err, err)
+    code, err = run_gate(worker, "Wrote my findings — 1 item")
+    check("seat check: a Wrote line that names no file asks for the file's full path", code == 2 and "full path" in err, err)
+    code, err = run_gate(worker, "Wrote seats/nowhere.md — 1 item", cwd=folder)
+    check("seat check: a relative name it can't find is sent back once for the full path", code == 2 and "full path" in err, err)
+    code, err = run_gate(worker, "Wrote %s — 1 item (1 P2)" % good)
+    check("seat check: a good file and a one-line reply pass", code == 0 and not err, err)
+
+@part("main")
 def memory_file_and_seat_check(tmp):
     # The hook names the memory file every council command reads — the config's own path included —
     # and says when a second one holds entries nobody reads.
@@ -535,7 +559,8 @@ def memory_file_and_seat_check(tmp):
     session_dir = os.path.join(tmp, "session")                        # Claude Code sends the session's folder
     os.makedirs(session_dir)
     code, err = run_gate(worker, "Wrote seats/hunt.md — 1 items", cwd=session_dir)
-    check("seat check: a relative path it can't find from the session's folder is let through", code == 0, err)
+    check("seat check: a relative path it can't find from the session's folder is sent back once for the full path "
+          "(the next stop always passes, so it can't trap the agent)", code == 2 and "full path" in err, err)
     nope = os.path.join(seats, "nope.md")
     code, err = run_gate(worker, f"Wrote {nope} — 0 items")
     check("seat check: a missing file blocks (exit 2)", code == 2 and "doesn't exist" in err, err)
@@ -895,6 +920,8 @@ def agent_gate_counts_starts(tmp):
     write(os.path.join(wf3, ".council", "council.config.md"), "# Council config\n- agent cap: 5\n")
     _, w3run, _ = council(wf3, "run", "open", "council-review", session="sV")
     first = run_agent_gate(gate_cmd, pre_tool("sV", wf3, tool="Workflow"), wf3)[0]
+    write(os.path.join(w3run, "verify-1-a.md"), "# Verification — w\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | a | CONFIRMED | a.py:1 |\n")                       # a seat is done only with its file
     council(wf3, "seat", "verify-1", "done", "agent=wf_1", "agents=3", "tokens=60000", "--run", os.path.basename(w3run))
     codes = [first] + [run_agent_gate(gate_cmd, pre_tool("sV", wf3), wf3)[0] for _ in range(4)]
     check("agent gate: after a Workflow of 3 recorded on a cap of 5, two more agents start and the third is stopped "
@@ -941,6 +968,8 @@ parser = argparse.ArgumentParser(description="Hook evals: run the plugin's hooks
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
 parser.add_argument("--group", metavar="NAME[,NAME...]", help="run only these groups (default: all, in file order)")
+parser.add_argument("--block", metavar="NAME[,NAME...]",
+                    help="run only these blocks of the chosen groups — for a block that sets up all it needs")
 parser.add_argument("--allow-skip", action="store_true",
                     help="exit 0 when bash or git is missing (default: exit 3, so a run that checked nothing never passes)")
 opts = parser.parse_args()
@@ -959,13 +988,16 @@ if opts.list:
 chosen = opts.group.split(",") if opts.group else GROUPS
 if any(group not in GROUPS for group in chosen):
     parser.error("unknown group in %r (groups: %s)" % (opts.group, ", ".join(GROUPS)))
+only = opts.block.split(",") if opts.block else None
+if only and any(name not in [block.__name__ for g, block in PARTS if g in chosen] for name in only):
+    parser.error("unknown block in %r for the chosen groups" % opts.block)
 if not BASH or not GIT:
     print("[SKIP] bash or git not on PATH — hook evals need both; nothing was checked")
     sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     for group, block in PARTS:
-        if group in chosen:
+        if group in chosen and (only is None or block.__name__ in only):
             block(tmp)
 
 passed = sum(1 for ok, *_ in results if ok)

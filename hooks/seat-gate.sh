@@ -3,8 +3,9 @@
 #
 # A council agent may not finish without the file its contract requires. When that file is missing or
 # malformed, the hook blocks the stop once: exit 2, and the reason on stderr goes back to the agent so
-# it can fix the file. The next stop always passes (stop_hook_active), so it can never loop. Anything
-# it can't read, it lets through — this hook must never trap an agent on a guess.
+# it can fix the file. The next stop always passes (stop_hook_active), so it can never loop. A reply that
+# is there but empty, runs to more than one line, names no .md file or names one it can't find is sent
+# back the same once. Anything it can't read, it lets through — this hook must never trap an agent on a guess.
 
 set -u
 
@@ -49,7 +50,13 @@ case "$(json_str agent_type)" in
 esac
 
 msg="$(json_str last_assistant_message)"
-[ -n "$msg" ] || exit 0
+empty=0
+if [ -z "$msg" ]; then
+  # No reply field (an older host, input it can't read) is the host's affair: let it through. A reply that
+  # is there but empty is an agent that stopped before answering — a turn limit: send it back once.
+  printf '%s' "$input" | grep -q '"last_assistant_message"[[:space:]]*:[[:space:]]*""' || exit 0
+  empty=1
+fi
 # BLOCKED at a line's start, after spaces, a quote mark or markdown (**BLOCKED:**): in capitals on any line,
 # or "Blocked:" in any case as the reply's first line — so a finding like "* Blocked users can …" is no reply.
 if printf '%s\n' "$msg" | grep -q -E '^[[:space:]>*_]*BLOCKED([^[:alpha:]]|$)'; then exit 0; fi
@@ -60,6 +67,8 @@ if [ "$kind" = worker ]; then
 else
   finish="finish by writing your verdicts to the file your dispatch named (<run>/verify-<n>.md), then reply with exactly one line: Wrote <path> — <count of each verdict>. If you couldn't do the check, reply BLOCKED: <reason> instead."
 fi
+
+[ "$empty" = 0 ] || block "you stopped without a reply — $finish"
 
 # The line that names the file: "Wrote <path>" anywhere, or at a line's start "Wrote:", "**Wrote**", "wrote".
 line="$(printf '%s\n' "$msg" | grep -m 1 -i -E '^[[:space:]>*_]*wrote[*_:]*[[:space:]].*\.md' || true)"
@@ -95,7 +104,7 @@ cands="$(printf '%s\n' "$line" | LC_ALL=C awk '
       rest = substr(rest, i + 3); off = end
     }
   }')"
-[ -n "$cands" ] || exit 0
+[ -n "$cands" ] || block "your reply names no .md file — give the full path of the file you wrote: Wrote <full path> — <counts>"
 cwd="$(json_str cwd)"
 path=""; named=""
 while IFS= read -r c; do
@@ -112,8 +121,9 @@ done <<EOF
 $cands
 EOF
 if [ -z "$path" ]; then
-  # Only relative names, joined to the folder Claude Code sends — which may not be the run's: can't tell.
-  [ -n "$named" ] || exit 0
+  # Only relative names, joined to the folder Claude Code sends — which may not be the run's: ask for the
+  # full path (the one block), rather than let a file nobody has seen pass.
+  [ -n "$named" ] || block "no file at the name you gave (looked in ${cwd:-the folder the session sent}) — reply with the file's full path: Wrote <full path> — <counts>"
   path="$named"
 fi
 
@@ -208,5 +218,9 @@ else
   fi
 fi
 
-[ -z "$problems" ] && exit 0
+if [ -z "$problems" ]; then                     # the file is right: now the reply must be its one line
+  [ "$(printf '%s\n' "$msg" | grep -c '[^[:space:]]')" -le 1 ] \
+    || block "$path is in order — now reply with exactly one line, nothing else: Wrote <path> — <counts>"
+  exit 0
+fi
 block "$path — $problems. Fix the file, then reply again with your one line."

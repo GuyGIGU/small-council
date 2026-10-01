@@ -2529,6 +2529,52 @@ def runs_closed_run_stays_closed(tmp):
           and hname in read(os.path.join(hand, ".council", "ledger.tsv")) and any(e[3] == "run.closed" for e in events(hrun)), out + err)
 
 @part("runs")
+def runs_seat_files(tmp):
+    # A seat is done only with its file (sessions-seats-1: a verifier out of turns was recorded done with
+    # nothing written), and every verify file in the run folder is checked, a Workflow's too (sessions-seats-4).
+    sf = new_repo(tmp, "seat-files")
+    write(os.path.join(sf, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(sf, "run", "open", "council-implement")
+    run = out.strip().splitlines()[-1]
+    write_plan(run, selected=("chair", "w1", "verify-1"))
+    write(os.path.join(run, "brief.md"), "# Brief\n## Seats\n### w1 — tests (Beck)\n- ref: none\n- out: seats/w1.md\n- cap: 8\n")
+    code, out, err = council(sf, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    check("seat done: a briefed seat with no file is refused, naming the resume and failed",
+          code == 2 and "SendMessage" in err and "failed" in err and "w1\tdone" not in read(os.path.join(run, "seats.tsv")), err)
+    code, out, err = council(sf, "seat", "verify-1", "done", "agent=v1", "tokens=20000")
+    check("seat done: a verifier with no verify file is refused the same way", code == 2 and "SendMessage" in err, err)
+    write(os.path.join(run, "seats", "w1.md"), "# Tests — tests (implement)\nref: none\n## Index\n(none) — nothing\n")
+    code, out, err = council(sf, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    check("seat done: with its file written, the seat is done", code == 0, out + err)
+    code, out, err = council(sf, "seat", "w1", "failed", "note=interrupted")
+    check("seat failed: needs no file", code == 0, out + err)
+    write(os.path.join(run, "verify-9-a.md"), "Some notes a Workflow agent wrote, with no heading and no table.\n")
+    code, out, err = council(sf, "collect")
+    check("collect: a verify file with no heading and no verdict table is named, in a build too",
+          code == 1 and "verify-9-a.md" in out and "Verification" in out, out + err)
+    write(os.path.join(run, "verify-10.md"), "# Verification — x\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | OK | a.py:1 |\n")
+    code, out, err = council(sf, "seat", "verify-1", "done", "agent=v1", "tokens=20000")
+    check("seat done: verify-10.md is not verify-1's file", code == 2 and "SendMessage" in err, err)
+    ok = new_repo(tmp, "seat-files-only-verify")
+    write(os.path.join(ok, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(ok, "run", "open", "council-review")
+    orun = out.strip().splitlines()[-1]
+    write_plan(orun, selected=("chair", "w1"))
+    write(os.path.join(orun, "brief.md"), "# Brief\n## Seats\n### w1 — tests (Beck)\n- ref: none\n- out: seats/w1.md\n- cap: 8\n")
+    write(os.path.join(orun, "seats", "w1.md"), "# Tests — tests (review)\nref: none\n## Index\n(none) — nothing\n")
+    council(ok, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    write(os.path.join(orun, "verify-2-a.md"), "Notes with no heading and no table.\n")
+    write(os.path.join(orun, "verify-self.md"), "# Self-check — x\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | CONFIRMED | a.py:1 |\n")
+    code, out, err = council(ok, "collect")
+    check("collect: when only a verify file is out of shape, it says to fix it — not that seats are still working",
+          code == 1 and "fix the rows above" in out and "still working" not in out and "verify-self.md" not in out, out + err)
+    council(ok, "state", "phase=deliver")
+    code, out, err = council(ok, "run", "close")
+    check("run close: names the out-of-shape verify file and how to mend it, never a Solo run's verify-self.md",
+          code == 0 and "verify-2-a.md is out of shape" in err and "verify-self.md" not in err and "council collect" not in line_of(err, "verify-2-a.md"),
+          err)
+
+@part("runs")
 def runs_worktrees_close_and_find(tmp):
     global fresh   # later "runs" blocks carry on with these
     # A linked worktree
@@ -3508,7 +3554,7 @@ def close_unfinished(tmp):
     write(os.path.join(done, ".fixed"), "")
     council(done, "gate", "tests")                              # red at first, green on its last run
     write_plan(run)
-    write(os.path.join(run, "verify-1.md"), "| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    write(os.path.join(run, "verify-1.md"), "# Verification — finished\n| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
     code, out, err = council(done, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
     code, out, err = council(done, "run", "close")
     closed = [e for e in events(run) if e[3] == "run.closed"]

@@ -957,6 +957,7 @@ cmd_seat() {
     esac
     [ -n "$closed_out" ] || refuse_closed "$run" "it takes only the Chair's own record (seat <chair> done agents=0) or a seat left working marked failed; a late agent report goes through: council correct <seat> tokens=… agents=… evidence=\"…\" --run ${run##*/}"
   fi
+  [ "$state" != done ] || [ "$runs" = 0 ] || seat_file_ready "$run" "$slug"
   events_writable "$run"
   if [ "$runs" = 0 ] && { [ -n "$agent" ] || [ -n "$(seat_field "$run" "$slug" 3)" ]; }; then
     die "agents=0 says no agent ran for $slug, but an agent id is on record for it — report that agent's usage instead"
@@ -1486,6 +1487,12 @@ close_warnings() {
     codes="${codes:+$codes,}check"
     printf 'council: closed as complete with a required check failing on its last run: %s — say so to the user\n' "$red" >&2
   fi
+  for f in "$run"/verify-*.md; do
+    [ -f "$f" ] && [ "${f##*/}" != verify-self.md ] && [ -n "$(verify_shape "$f")" ] || continue
+    codes="${codes:+$codes,}verify"
+    printf 'council: %s is out of shape (%s) — mend it, or resume the verifier that wrote it\n' "${f##*/}" "$(verify_shape "$f" | sed 's/; $//')" >&2
+    break
+  done
   if [ -z "$(field deliverable "$run/session-state.md")" ]; then
     codes="${codes:+$codes,}deliverable"
     printf 'council: closed as complete with no deliverable recorded — council state deliverable=<path> --run %s\n' "${run##*/}" >&2
@@ -3661,7 +3668,7 @@ collect_flag() { bad=1; [ "${stray:-0}" = 0 ] || strays_bad=1; [ "${live:-0}" = 
 cmd_collect() {
   local run top base brief seats slug ref out cap f size refok r t got shape items unparsed hasnone okc allc nol unc \
         n sev pr cite title sec tok state bad=0 total=0 note hard=0 deep=0 live=0 sat=0 r2lost="" \
-        named="" l1="" stray=0 strays=0 strays_bad=0 extra=""
+        named="" l1="" stray=0 strays=0 strays_bad=0 extra="" vs=""
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="$(field base "$run/session-state.md")"
@@ -3769,6 +3776,12 @@ ITEMS
   done <<SEATS
 $seats
 SEATS
+  for f in "$run"/verify-*.md; do                   # every verifier's file, a Workflow agent's too
+    [ -f "$f" ] && [ "${f##*/}" != verify-self.md ] || continue    # a Solo Chair's self-check has its own line 1
+    vs="$(verify_shape "$f")"; [ -n "$vs" ] || continue
+    printf '%-16s %s\n' "${f##*/}" "out of shape: ${vs%; } — the seat-check hook never sees a Workflow's agents"
+    bad=$((bad + 1)); hard=1; deep=1
+  done
   if [ "$bad" -eq 0 ]; then
     [ "$sat" -eq 0 ] || extra=" · $sat sat out (skipped)"
     [ "$strays" -eq 0 ] || extra="$extra · $strays other file(s) in seats/ in order too"
@@ -5833,6 +5846,34 @@ cmd_ask() {
 # ------------------------------------------------------------------------------------------------
 # Seat ledger — one row per seat per completed run, tracked in the council home
 # ------------------------------------------------------------------------------------------------
+
+# A seat is done only with its file: a briefed worker's out: file, or a verifier's <run>/<slug>*.md (a
+# re-check's verify-<n>b.md, a Workflow's verify-<n>-<letter>.md). An agent stopped at its turn limit may
+# have written nothing; the Chair resumes it rather than recording an empty "done". Seats no brief names,
+# and agents=0, keep today's behaviour.
+seat_file_ready() {
+  local run="$1" slug="$2" f
+  case "$slug" in
+    verify-*) for f in "$run/$slug.md" "$run/$slug"[abcdefghijklmnopqrstuvwxyz].md "$run/$slug"-*.md; do
+                [ ! -s "$f" ] || return 0
+              done; f="$run/$slug.md" ;;
+    *) brief_seats "$run/brief.md" 2>/dev/null | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] { f = 1 } END { exit !f }' || return 0
+       f="$(seat_out "$run" "$slug")"
+       case "$(seat_field "$run" "$slug" 6)" in *"round 2"*) f="${f%.md}-r2.md" ;; esac
+       [ ! -s "$f" ] || return 0 ;;
+  esac
+  die "seat $slug has no file yet ($f), so it isn't done — resume its agent with SendMessage (\"write your file now with what you have, then finish\"), or record it: council seat $slug failed note=\"…\""
+}
+
+# The shape every verify file needs, the hook's rule for a verifier (hooks/seat-gate.sh: change both
+# together): line 1 '# Verification — <run title>', a verdict table, at most 16 KB. Prints its problems.
+verify_shape() {
+  local l1
+  l1="$(sed -n '1p' "$1" | tr -d '\r')"; l1="${l1#"$(printf '\357\273\277')"}"
+  case "$l1" in '# Verification'*) ;; *) printf "line 1 isn't '# Verification — <run title>'; " ;; esac
+  grep -q '^[[:space:]]*|' "$1" || printf 'no verdict table (| # | Item | Verdict | Evidence |); '
+  [ "$(wc -c < "$1" | tr -d ' ')" -le 16384 ] || printf 'over 16 KB; '
+}
 
 # A seat's output file, from its brief block (default seats/<slug>.md).
 seat_out() {
