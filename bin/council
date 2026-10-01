@@ -2975,6 +2975,8 @@ run_gate() {
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
   if [ "$never" = 1 ]; then
     say "gate $name: FAIL — cmd opened its prompt and ran nothing (${secs}s): write its switch as //c, e.g. cmd //c \"<command>\" — full output: $out"
+  elif [ "$ec" -eq 127 ]; then                   # the shell's "command not found": nothing was checked
+    say "gate $name: could not run (exit 127, ${secs}s) — a command it calls was not found; install it, or fix the gate's command — full output: $out"
   else
     say "gate $name: FAIL (exit $ec, ${secs}s) — full output: $out"
   fi
@@ -4361,6 +4363,13 @@ NOTES
           -)     finding WARN "gate '$g' has an empty Run at cell, so it runs in no set" "write grounding, verify, both or manual" ;;
         esac
         [ "$gmd" != '?' ] || finding WARN "gate '$g' has a Mandatory value that isn't yes or no: '$gm' — it counts as mandatory" "write yes or no"
+        case "$gst" in *g*)                  # a slow gate at grounding: every review waits for it before starting
+          gs="$(gate_base "$home/runs/x" "$g")"; gs="${gs##*/}"
+          gs="$(ls -t "$home"/runs/*/gates/"$gs".json 2>/dev/null | head -n 1)"
+          gs="$( [ -z "$gs" ] || sed -n 's/.*"seconds": *\([0-9][0-9]*\).*/\1/p' "$gs" | head -n 1)"
+          [ -z "$gs" ] || [ "$gs" -le 300 ] \
+            || finding WARN "gate '$g' runs at grounding, and its last run took $((gs / 60)) min — every review waits for it before it starts" "run it at verify (Run at: verify) unless a review needs its result first" ;;
+        esac
         [ "$gck" != '?' ] || finding WARN "gate '$g' has a Checked value that isn't ✓ or ✗: '$gchk'" "write ✓ <date> once it has run cleanly here, or ✗ <date>: <why it can't>"
       done <<GATES
 $gates

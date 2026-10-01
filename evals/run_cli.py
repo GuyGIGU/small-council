@@ -4177,6 +4177,29 @@ def gates_build_records_attempts(tmp):
           code == 1 and "not counted — the same tests fail as at the baseline" in out, out + err)
 
 @part("gates")
+def gates_could_not_run_and_slow(tmp):
+    # A gate whose command isn't there says so (run 2: a misplaced --run made the command one word, exit 127,
+    # read as a FAIL); a gate that runs at grounding and is slow is named (sessions-chrollo-6: a Markdown-only
+    # review waited 21 minutes for the whole suite before it started).
+    nc = small_council_repo(tmp, "could-not-run", "| lint | `no-such-linter-xyz --check` | verify | yes | ok | `true` | none | - |\n")
+    _, run, _ = council(nc, "run", "open", "council-review")
+    write_plan(run.strip())
+    code, out, err = council(nc, "gate", "lint")
+    check("gate: a command that isn't there reads 'could not run (exit 127)', with its own exit code",
+          code == 127 and "could not run (exit 127" in out and "FAIL (exit 127" not in out, out + err)
+    slow = small_council_repo(tmp, "slow-grounding", "| suite | `true` | grounding, verify | yes | ok | `true` | none | - |\n")
+    _, srun, _ = council(slow, "run", "open", "council-review")
+    srun = srun.strip()
+    write_plan(srun)
+    council(slow, "gate", "suite")
+    saved = os.path.join(srun, "gates", "suite.json")
+    write(saved, re.sub(r'"seconds": [0-9]+', '"seconds": 1290', read(saved)))      # run 1's suite: 21.5 minutes
+    code, out, err = council(slow, "doctor")
+    said = line_of(out, "took 21 min")
+    check("doctor: a gate that runs at grounding and took over five minutes last time is named, with the advice to run it at verify",
+          "gate 'suite' runs at grounding" in said and "run it at verify" in out, out + err)
+
+@part("gates")
 def gates_repair_stop(tmp):
     # In a build a failed gate names the exact repair record line; three recorded failures stop the gate
     # until the user's go is on record in their words

@@ -80,18 +80,19 @@ build/compile, and any e2e or regression harness.
 - **Gate commands run under bash** (Git Bash on Windows), so dry-run each one the same way:
   `council gate probe-<name> -- '<its fast form>'`. That needs an open run, so open it first —
   `council run open council-init`, which also creates `.council/` and its `.gitignore` — and keep it
-  open through Phase D (don't open a second one). Bash drops a `\` outside quotes: write paths with
+  open through Phase D. Bash drops a `\` outside quotes: write paths with
   `/`, or quote them. Judge a gate by what `council gate` reports, not by your own shell: a `cmd /c`
   run straight from a Bash tool exits 0 without running anything.
 - **Its run plan opens ready for setup:** `run-plan.tsv` is solo, the Chair only, self-verified, each
   default saying so in its reason. Change a value only where this repo differs, with the reason,
   then `council run plan check`.
-- **Mark each one** ✓ runnable, or ✗ with the reason. A gate that can't run here is worse than no
-  gate, because it fakes a green.
+- **Mark each one** ✓ runnable, or ✗ with the reason. A gate that can't run here fakes a green —
+  worse than none.
 - **Never probe** a gate that deploys, spends money, flashes hardware or needs credentials: ask
   first. If it stays unprobed, its Checked cell reads `✗ not probed: <why>`, and `council gate --all`
   skips it.
-- **Mark which gates are mandatory.**
+- **Mark which gates are mandatory**, and run a slow suite at verify: every review waits on a
+  grounding gate.
 - **Prove each mandatory gate can fail.** One that only greps its tool's output, or ends in
   `|| true`, passes with the tool missing — green for ever. Dry-run its own command once more with
   the tool broken (name misspelt, path pointing nowhere):
@@ -100,9 +101,8 @@ build/compile, and any e2e or regression harness.
   runner kept in `$( )`, add `|| exit $?` right after it.
 - **Record more than the command** — the config's Gates columns: the **Probe** (the exact dry-run
   you ran), what it **Needs** (tools, env vars, credentials, hardware) and its **Side effects**
-  (none, writes the tree, network, cost, hardware, deploy, credentials). `council gate --all` never runs a gate
-  whose side effects involve cost, hardware, deploys or credentials; those run only by name, with
-  the user's go-ahead.
+  (none, writes the tree, network, cost, hardware, deploy, credentials). `council gate --all` never runs one with
+  cost, hardware, deploy or credential side effects; those run only by name, with the user's go-ahead.
 
 ### The checks this project is missing
 
