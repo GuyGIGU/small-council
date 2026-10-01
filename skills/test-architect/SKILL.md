@@ -29,7 +29,9 @@ that writes it.
 
 **Where output goes.** With a council home: audit reports → `<home>/reviews/<YYYY-MM-DD>-test-audit-<slug>.md`,
 scratch such as the surface map → `<home>/runs/<TS>-test-audit/`. Without one: `.test-architect/`.
-Test specifications always go to `specs/<feature>-tests.md`, next to the feature spec.
+Test specifications always go to `specs/<feature>-tests.md`, next to the feature spec. On a just-me
+council (`- sharing: just me` in the config), that is `<home>/specs/`, where spec-writer saves
+there too.
 
 ---
 

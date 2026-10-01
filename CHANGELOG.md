@@ -8,10 +8,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [0.19.0] — 2026-10-01
 
-**TL;DR:** the council fixed its own open items, as its second real run (a plan, then a build of 15
-tasks, each checked by a blind verifier). The phone alert and the build's three-failure stop no
-longer depend on the Chair remembering a step, a closed run stays closed, a run in a worktree is
-found from anywhere, and two linters check every change.
+**TL;DR:** two things. The council fixed its own open items, as its second real run (a plan, then
+a build of 15 tasks, each checked by a blind verifier): the phone alert and the build's three-failure
+stop no longer depend on the Chair remembering a step, a closed run stays closed, a run in a
+worktree is found from anywhere, and two linters check every change. And a "just me" setup keeps
+the council on your machine in a shared project, so teammates never have to see or use it.
 
 ### Added
 
@@ -21,6 +22,10 @@ found from anywhere, and two linters check every change.
 - `council seat … tools=<n>` measures each agent's tool calls against the plan's budget.
 - The run plan can name the Chair's own share of the estimate (`budget/run/chair-tokens`); agents are then compared with their share.
 - CI runs ShellCheck and ruff on the files a change touches, on every OS, proved on a planted fault.
+- Setup asks whether the council is the team's or just yours. On **just me**, git ignores `.council/` through its own exclude list (never committed or pushed), CLAUDE.md gets no Small Council note, and the config records `- sharing: just me`.
+- `council sharing` shows who sees the council and what's left to do; `council sharing just-me` and `council sharing team` switch it, and also work on a council that's already set up.
+- `council doctor` warns when a just-me council still shows up for the team: council files in git, the note in CLAUDE.md, or `.council/` not ignored.
+- On just me, sessions are told to keep council runs, finding ids and `.council/` paths out of commit messages, PR text and shared docs, and specs save to `.council/specs/`.
 
 ### Changed
 
@@ -46,6 +51,8 @@ found from anywhere, and two linters check every change.
 
 - The new Stop hook runs at the end of every turn; it is silent outside a council run.
 - A verifier's seat is done only with its file: a Workflow's verifiers write `verify-<n>-<letter>.md` in the run folder.
+- "Just me" needs nothing: a council with no `- sharing:` line stays a team council, as before.
+
 
 ## [0.18.0] — 2026-10-01
 

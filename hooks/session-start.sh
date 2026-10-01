@@ -41,6 +41,9 @@ if [ -f "$home/council.config.md" ]; then
   say "[Small Council] Council-enabled project. Council home: $home"
   say "- Substantial work? Check for a council mode first (council-review, council-plan, council-implement, council-research, council-postgame, spec-writer, test-architect). Propose it with its size and estimated cost, and wait for a go-ahead before any multi-agent run."
   say "- The \`council\` helper does the bookkeeping (\`council run status\`, \`council doctor\`). It is a bash script: run it in the Bash tool (Git Bash on Windows), never from PowerShell. Call it as a plain \`council <command>\`, never through a shell variable or a full path: permission rules match the command text. Only if \`command -v council\` fails, write out bash \"$ROOT/bin/council\" <command> each time."
+  if [ "$(configured_sharing "$home")" = "just me" ]; then
+    say "- Just me: this council is the user's alone. Git ignores .council/ and no project file mentions the council, so teammates never meet it. Keep it that way: commit messages, PR text, code comments and shared docs never cite council runs, finding ids or .council/ paths (teammates can't open them) — say the reason in plain words."
+  fi
 else
   # No config: the folder holds a post-game's results, or an unfinished council-init. One line, no nudges.
   say "[Small Council] $home holds council results, but the council isn't set up here (No council.config.md yet). council-init sets it up for reviews, plans, builds and research; a post-game needs none."

@@ -466,6 +466,20 @@ check("template config: last-verified stamp", "last-verified:" in cfg)
 check("template config: run preferences", "## Run preferences" in cfg and "approve without asking: up to squad" in cfg and "agent cap: 10" in cfg)
 check("template config: experimental routing options start off",
       "- context packs: off" in cfg and "- seat models: off" in cfg)
+check("template config: sharing starts at team, and says what just me does and how to switch",
+      "- sharing: team" in cfg and "just me" in cfg and "council sharing just-me" in cfg)
+sharing_doc = read("references", "sharing.md")
+check("just me: setup offers team or just me, and on just me writes no CLAUDE.md note but runs council sharing just-me",
+      "references/sharing.md" in skill["council-init"] and "team or just me" in skill["council-init"]
+      and "**Just me** (refreshes too): no note; run `council sharing just-me`" in skill["council-init"])
+check("just me: sharing.md says when to ask, what stays out of the shared project, and that removing tracked files is the user's commit",
+      all(k in sharing_doc for k in ["- sharing: just me", "git log --since=12.months", ".git/info/exclude",
+                                      "git rm -r --cached .council", "never run it yourself", "commit messages"]))
+check("just me: council sharing is not on the permission list (it edits git's exclude list and CLAUDE.md)",
+      '"Bash(council sharing' not in skill["council-init"])
+check("just me: the session hears it, and specs and test specs stay out of the shared tree",
+      "configured_sharing" in hook and "Just me:" in hook
+      and ".council/specs/" in skill["spec-writer"] and "<home>/specs/" in skill["test-architect"])
 check("model routing: plan, doctrine and ADR state the opt-in boundary",
       "seat/<slug>/model" in read("references", "run-plan.md") and
       "seat models: on" in read("references", "doctrine", "03-assign.md") and

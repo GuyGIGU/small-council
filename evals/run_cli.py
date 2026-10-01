@@ -3183,7 +3183,10 @@ def runs_init_plan(tmp):
     write_plan(live, selected=("hunt", "beck"))
     write(os.path.join(live, "session-state.md"), read(os.path.join(live, "session-state.md")).replace("phase: convene", "phase: work"))
     code, out, _ = council(ip, "doctor")
-    named = [os.path.basename(r) for r in (irun, done, left) if os.path.basename(r) in out]
+    # Whole names only: runs opened in the same second are <ts>-review, <ts>-review-2, …, so a closed run's
+    # name is part of the open one's (a fast CI runner did exactly that).
+    named = [os.path.basename(r) for r in (irun, done, left)
+             if re.search(re.escape(os.path.basename(r)) + r"(?![\w-])", out)]
     check("doctor: never judges a closed run's plan — setup's, an unfinished abandoned one, or one made under a higher agent cap",
           not named, out)
     check("doctor: an open run's plan past Assign is still checked against today's agent cap",
@@ -4381,6 +4384,124 @@ def runs_gitignore(tmp):
           sorted(loose_gi) == ["active-run", "asks/", "runs/"]
           and not [l for l in out.splitlines() if "runs/" in l or "asks/" in l], " ".join(loose_gi) + " · " + out)
 
+@part("runs")
+def runs_sharing(tmp):
+    # "Just me": the council stays on this machine. Git ignores .council/ through its own exclude list
+    # (never committed or pushed), council-init's note leaves CLAUDE.md and AGENTS.md, and the config says
+    # so; "team" undoes it. Lines the user wrote are left as they were, line endings included.
+    def raw(path):
+        with open(path, "rb") as f:
+            return f.read()
+    def ignored(repo, path):
+        return subprocess.run([GIT, "check-ignore", "-q", "--no-index", path], cwd=repo, env=GIT_ENV).returncode == 0
+    def sharing_warns(out):
+        return [l for l in out.splitlines() if l.startswith("WARN") and ("in git" in l or "note" in l or "ignore .council/" in l)]
+    note = "<!-- small-council:begin -->\n## Small Council\nThis repo uses the Small Council.\n<!-- small-council:end -->\n"
+    sh = new_repo(tmp, "sharing")
+    write(os.path.join(sh, "CLAUDE.md"), "# Project\n\nOur rules.\n\n" + note + "\nMore rules.\n")
+    cfg = os.path.join(sh, ".council", "council.config.md")
+    os.makedirs(os.path.dirname(cfg))
+    with open(cfg, "w", encoding="utf-8", newline="") as f:
+        f.write("# Council config\r\nlast-verified: 2026-10-01 @ x\r\n\r\n## Run preferences\r\n- agent cap: 10\r\n\r\n## Notes\r\n")
+    git(sh, "add", "-A")
+    git(sh, "commit", "-q", "-m", "a council shared with the team")
+    write(os.path.join(sh, "AGENTS.md"), note)                    # only the note, and never committed
+    excl = os.path.join(sh, ".git", "info", "exclude")
+    before = raw(excl) if os.path.exists(excl) else b""
+    code, out, _ = council(sh, "sharing")
+    check("sharing: team by default — the config has no sharing line, and how to keep the council to yourself",
+          code == 0 and "sharing: team" in out and "no sharing line" in out and "council sharing just-me" in out, out)
+
+    code, out, err = council(sh, "sharing", "just-me")
+    after = raw(excl)
+    write(os.path.join(sh, ".council", "plans", "p.md"), "# Plan\n")
+    status = git(sh, "status", "--short", "-uall")
+    check("sharing just-me: git ignores .council/ (and settings.local.json) through its own exclude list, so new council files never show",
+          code == 0 and ignored(sh, ".council/plans/p.md") and ignored(sh, ".claude/settings.local.json")
+          and after.startswith(before) and after.count(b"# small-council:begin") == 1 and b"\n/.council/\n" in after
+          and ".council/plans" not in status, out + err + status)
+    check("sharing just-me: the note leaves CLAUDE.md, every other line kept, one blank line where it was",
+          read(os.path.join(sh, "CLAUDE.md")) == "# Project\n\nOur rules.\n\nMore rules.\n", read(os.path.join(sh, "CLAUDE.md")))
+    check("sharing just-me: an AGENTS.md that held only the note goes",
+          not os.path.exists(os.path.join(sh, "AGENTS.md")) and "removed AGENTS.md" in out, out)
+    check("sharing just-me: says the CLAUDE.md change needs a commit, since the note was committed — and not for the uncommitted AGENTS.md",
+          "it was committed" in line_of(out, "CLAUDE.md") and "committed" not in line_of(out, "AGENTS.md"), out)
+    check("sharing just-me: the config says so under Run preferences, in its own CRLF line endings",
+          b"## Run preferences\r\n- sharing: just me\r\n- agent cap: 10\r\n" in raw(cfg)
+          and raw(cfg).count(b"\n") == raw(cfg).count(b"\r\n"), repr(raw(cfg)))
+    check("sharing just-me: council files already in git are named, with the one command that takes them out — not run for the user",
+          "1 council file(s) are already in git" in out and "git rm -r --cached .council" in out
+          and git(sh, "ls-files", ".council") == ".council/council.config.md", out)
+    council(sh, "sharing", "just-me")
+    check("sharing just-me twice: the exclude list is unchanged, and the config holds one sharing line",
+          raw(excl) == after and raw(cfg).count(b"- sharing:") == 1, repr(raw(excl)))
+
+    code, out, _ = council(sh, "sharing")
+    check("sharing: just me shows what is done and what is left, with its fix",
+          code == 0 and "sharing: just me" in out and "- ok: git ignores .council/" in out
+          and "NOT YET: 1 council file(s) are still in git" in out and "Fix: git rm -r --cached .council" in out
+          and "- ok: no Small Council note" in out, out)
+    _, out, _ = council(sh, "doctor")
+    check("doctor, just me: warns that council files are still in git, and nothing else about sharing",
+          len(sharing_warns(out)) == 1 and "still in git" in sharing_warns(out)[0], out)
+    append(os.path.join(sh, "CLAUDE.md"), "\n" + note)
+    _, out, _ = council(sh, "doctor")
+    check("doctor, just me: warns when the Small Council note is back in CLAUDE.md",
+          any("note is still in CLAUDE.md" in l for l in sharing_warns(out)), out)
+    council(sh, "sharing", "just-me")
+    check("sharing just-me: a note at the end of the file goes with the blank line before it",
+          read(os.path.join(sh, "CLAUDE.md")) == "# Project\n\nOur rules.\n\nMore rules.\n", read(os.path.join(sh, "CLAUDE.md")))
+    git(sh, "rm", "-r", "-q", "--cached", ".council")
+    git(sh, "commit", "-q", "-am", "the council stays on my machine")
+    code, out, _ = council(sh, "doctor")
+    check("doctor, just me: quiet about sharing once nothing of the council is in git", not sharing_warns(out), out)
+    _, out, _ = council(sh, "sharing")
+    check("sharing: every row ok once nothing of the council is in git", "NOT YET" not in out and out.count("- ok:") == 3, out)
+
+    wt = os.path.join(tmp, "sharing-wt")
+    git(sh, "worktree", "add", "-q", "-b", "older", wt, "HEAD~1")    # a branch from before: the note is in its CLAUDE.md
+    code, out, _ = council(wt, "sharing")
+    check("sharing from a linked worktree: the main checkout's council, and the note in this tree's CLAUDE.md is named",
+          code == 0 and "sharing: just me" in out and ignored(wt, ".council/council.config.md")
+          and "sharing-wt/CLAUDE.md" in line_of(out, "NOT YET"), out)
+    code, out, _ = council(wt, "sharing", "just-me")
+    check("sharing just-me from a linked worktree: takes the note out of this tree's CLAUDE.md too",
+          code == 0 and "small-council:begin" not in read(os.path.join(wt, "CLAUDE.md"))
+          and raw(excl).count(b"# small-council:begin") == 1, out)
+    code, out, _ = council(wt, "sharing", "team")
+    check("sharing team: the exclude list is back as it was, the config says team, and the next steps are named",
+          code == 0 and raw(excl) == before and not ignored(sh, ".council/council.config.md")
+          and "- sharing: team" in read(cfg) and "- sharing: just me" not in read(cfg)
+          and "git add .council" in out and "CLAUDE.md" in out, out + repr(raw(excl)))
+    append(os.path.join(sh, ".gitignore"), ".council/\n")
+    code, out, _ = council(sh, "sharing", "team")
+    check("sharing team: says so when another rule still ignores .council/, and names it",
+          code == 0 and "still ignores .council/" in out and ".gitignore" in out, out)
+    _, out, _ = council(sh, "sharing")
+    check("sharing: team, but git ignores .council/ — said, with the rule", "but git ignores .council/" in out, out)
+
+    open_note = "# Project\n<!-- small-council:begin -->\n## Small Council\n"
+    write(os.path.join(sh, "CLAUDE.md"), open_note)
+    code, out, _ = council(sh, "sharing", "just-me")
+    check("sharing just-me: a note with no end line is left alone and named, never cut to the end of the file",
+          code == 0 and read(os.path.join(sh, "CLAUDE.md")) == open_note and "no end line" in out, out)
+
+    loose = os.path.join(tmp, "sharing-no-git")
+    write(os.path.join(loose, ".council", "council.config.md"), "# Council config\n\n## Notes\nmine\n")
+    with open(os.path.join(loose, "CLAUDE.md"), "w", encoding="utf-8", newline="") as f:   # a Windows editor's file
+        f.write(("# Project\n\n" + note + "\nOur rules.\n").replace("\n", "\r\n"))
+    code, out, _ = council(loose, "sharing", "just-me")
+    check("sharing just-me outside git: nothing to ignore; a config with no Run preferences gains the section",
+          code == 0 and "not a git repository" in out
+          and read(os.path.join(loose, ".council", "council.config.md")).endswith("mine\n\n## Run preferences\n- sharing: just me\n"),
+          out + read(os.path.join(loose, ".council", "council.config.md")))
+    check("sharing just-me: a CRLF CLAUDE.md keeps its CRLF on every line it keeps",
+          raw(os.path.join(loose, "CLAUDE.md")) == b"# Project\r\n\r\nOur rules.\r\n", repr(raw(os.path.join(loose, "CLAUDE.md"))))
+    with open(os.path.join(loose, "CLAUDE.md"), "a", encoding="utf-8", newline="") as f:
+        f.write(note.replace("\n", "\r\n"))
+    _, out, _ = council(loose, "sharing")
+    check("sharing: finds the note in a CRLF CLAUDE.md", "still in CLAUDE.md" in line_of(out, "NOT YET"), out)
+
 @part("requests")
 def requests_postgame_and_redaction(tmp):
     # A post-game's index hides earlier council work from its verifier
@@ -4874,7 +4995,8 @@ def runs_usage(tmp):
                  ("run", "status", "--at=verify"), ("index", "--", "x"), ("doctor", "--all=yes"), ("run", "close", "--status="),
                  ("run", "resume", "x"), ("run", "resume", "--status", "paused"), ("status", "x"), ("status", "--all"),
                  ("correct", "a", "x"), ("cap", "x"), ("cap", "--session", "s1"), ("cap", "allow", "1", "2", "--user-said", "go"),
-                 ("cap", "check", "x"), ("cap", "check", "--run", "x"), ("cap", "check", "--user-said", "go")]:
+                 ("cap", "check", "x"), ("cap", "check", "--run", "x"), ("cap", "check", "--user-said", "go"),
+                 ("sharing", "x"), ("sharing", "team", "x"), ("sharing", "just-me", "--run", "x")]:
         code, out, err = council(repo, *args)
         if code != 2 or not err.strip():
             took.append(" ".join(args) + f" (exit {code})")
