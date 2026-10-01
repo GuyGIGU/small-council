@@ -838,7 +838,7 @@ def turn_end(tmp):
     check("turn end: the driving session stops with no seat working — the wait is recorded, and the Chair is sent "
           "back once to alert the owner with council status --line (exit 2, the reason on stderr, nothing on stdout)",
           code == 2 and not out and f"council status --line --run {name}" in err and "PushNotification" in err
-          and waiting() != "", said(code, out, err))
+          and "unless you already sent" in err and waiting() != "", said(code, out, err))
     check("turn end: the wait is an event in the run's stream",
           any(e.split("\t")[3:6] == ["run.waiting_changed", "run", "on"]
               for e in open(os.path.join(run, "events.tsv"), encoding="utf-8").read().splitlines()[1:]))

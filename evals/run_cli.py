@@ -2382,6 +2382,22 @@ def runs_reminders_last(tmp):
     code, last, whole = merged(rem, "seat", "w2", "done", "agent=a2", "tokens=20000")
     check("seat: past the agent cap, the cap note is the last line printed, after the progress line",
           code == 0 and "over its cap" in last, whole)
+    ro = new_repo(tmp, "reminders-open")
+    write(os.path.join(ro, ".council", "council.config.md"), "# Council config\n")
+    code, last, whole = merged(ro, "run", "open", "council-review")
+    check("run open: the first step to take — save the request — is the last line, after the folder and the status hint",
+          code == 0 and "ask.md before anything else" in last and "council status --run" in whole, whole)
+    tb = new_repo(tmp, "reminders-tools")
+    write(os.path.join(tb, ".council", "council.config.md"), "# Council config\n- agent cap: 1\n")
+    _, out, _ = council(tb, "run", "open", "council-review")
+    trun = out.strip().splitlines()[-1]
+    write_plan(trun, selected=("chair", "w1", "w2"))
+    write(os.path.join(trun, "run-plan.tsv"), read(os.path.join(trun, "run-plan.tsv")).replace(
+        "budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t1"))
+    merged(tb, "seat", "w1", "done", "agent=a1", "tokens=20000", "tools=5")
+    code, last, whole = merged(tb, "seat", "w2", "done", "agent=a2", "tokens=20000", "tools=57")
+    check("seat: past the cap on a plan with tool budgets, the cap note is still the last line, after the tool-call line",
+          code == 0 and "over its cap" in last and "57 tool calls" in whole, whole)
 
 @part("runs")
 def runs_records_all_or_nothing(tmp):
@@ -2590,6 +2606,10 @@ def runs_tool_calls(tmp):
     code, out, err = council(tc, "seat", "w1", "done", "agent=a1", "tokens=20000", "tools=57")
     check("seat done tools=: a seat over its plan's tool-call budget is said, with both numbers",
           code == 0 and "57 tool calls" in out + err and "15" in out + err, out + err)
+    council(tc, "seat", "w2", "done", "tokens=20000", "tools=9")
+    code, out, err = council(tc, "seat", "w2", "done", "tokens=20000", "tools=9")      # the same report again, no agent id
+    check("seat tools=: a report not counted again (no agent id, same figures) adds no tool calls either",
+          "already has this usage report" in err and len(read(os.path.join(run, "tools.tsv")).splitlines()) == 3, err)
     code, out, err = council(tc, "seat", "w1", "done", "agent=a1", "tokens=30000", "tools=70")
     check("seat done tools=: a resumed agent's later figure is its running total, counted once (70, not 127)",
           code == 0 and "70 tool calls" in out + err and "127" not in out + err, out + err)
@@ -2662,8 +2682,9 @@ def runs_helper_carries_next_steps(tmp):
 
     code, out, err = close_one()
     follow = [line for line in err.splitlines() if "from the record" in line]
-    check("run close: with a tuning proposal on record, one follow-up line names it and its command",
-          code == 0 and len(follow) == 1 and "council tune" in follow[0], err)
+    check("run close: with a tuning proposal on record, the close's last line names it and its command, with the closing card",
+          code == 0 and len(follow) == 1 and "council tune" in follow[0] and follow[0] == err.strip().splitlines()[-1]
+          and "closing card" in follow[0], err)
     dirs = [os.path.dirname(shutil.which(t)) for t in ("bash", "git") if shutil.which(t)]
     bare_path = os.pathsep.join(dict.fromkeys(dirs))
     if len(dirs) == 2 and not (shutil.which("python", path=bare_path) or shutil.which("python3", path=bare_path)):

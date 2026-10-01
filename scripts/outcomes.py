@@ -207,7 +207,7 @@ def add_count(target, disposition, outcome):
     counts[outcome] += 1
 
 
-def outcomes(home, repo):
+def outcomes(home, repo, recent=1000):
     home, repo = Path(home), Path(repo)
     head = git(repo, "rev-parse", "--verify", "HEAD")
     runs = []
@@ -216,7 +216,7 @@ def outcomes(home, repo):
     runs_root = home / "runs"
     if home.is_dir() and not cockpit.linked(home) and runs_root.is_dir() and not cockpit.linked(runs_root):
         for folder in sorted((p for p in runs_root.iterdir() if p.is_dir() and not cockpit.linked(p)),
-                             key=lambda p: p.name)[-1000:]:
+                             key=lambda p: p.name)[-recent:]:
             state = state_fields(folder / "session-state.md")
             if state.get("status") != "complete" or not state.get("closed"):
                 continue
@@ -319,8 +319,9 @@ def main():
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--brief", action="store_true", help="one plain line when there is something to say, else nothing")
+    parser.add_argument("--recent", type=int, default=1000, help="read only the newest N runs (the close reads 20)")
     args = parser.parse_args()
-    data = outcomes(args.home, args.repo)
+    data = outcomes(args.home, args.repo, max(1, args.recent))
     if args.brief:
         if brief(data):
             print(brief(data))

@@ -620,12 +620,12 @@ EOF
   memory_size_note "$home"
   [ -z "$existing" ] || printf 'council: another run is in progress on this working tree — pass --run %s to every command for this one\n' "${dir##*/}" >&2
   [ -z "$paused" ] || printf 'council: a paused run is also open here (%s) — it stays paused\n' "$paused" >&2
+  say "$dir"                                        # then the reminders, last, so they are seen
+  printf 'council: if the user asks how the run is going: council status --run %s (with a show_widget tool, call its read_me, then pass it council status --widget --run %s)\n' "${dir##*/}" "${dir##*/}" >&2
   case "$mode" in
     council-review|council-plan|council-implement|council-research|council-postgame)
       printf "council: save the user's request word for word in %s/ask.md before anything else\n" "$dir" >&2 ;;
   esac
-  printf 'council: if the user asks how the run is going: council status --run %s (with a show_widget tool, call its read_me, then pass it council status --widget --run %s)\n' "${dir##*/}" "${dir##*/}" >&2
-  say "$dir"
 }
 
 memory_size_note() {
@@ -659,6 +659,7 @@ notifications_off() {
 # never shows a step from a stage already left (method-vs-helper-9: Convene's stayed to the end).
 stage_next() {
   case "$1" in
+    convene)   printf '%s' "$COUNCIL_NEXT_AT_OPEN" ;;
     prepare)   printf 'Prepare: the change index, the checks and earlier findings (doctrine 02-prepare.md)' ;;
     assign)    printf 'Assign: fill the run plan, then council run plan check (doctrine 03-assign.md)' ;;
     brief)     printf 'Brief: write brief.md with the memory in scope (doctrine 04-brief.md)' ;;
@@ -954,15 +955,15 @@ status_nudge() {
   [ -z "$RUN_ARG" ] || at=" --run ${run##*/}"
   if [ "$when" = close ]; then at=" --run ${run##*/}"; lead="run closed — show the user its closing card now, once"; fi
   if impact_python >/dev/null 2>&1; then
-    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s`\n' \
-      "$lead" "$at" "$at" >&2
+    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s`%s\n' \
+      "$lead" "$at" "$at" "${FOLLOW:+; and tell them, from the record — $FOLLOW}" >&2
   elif [ "$when" != close ]; then
     printf 'council: %s: relay `council run status` (no Python 3.8+ here, so there is no status card)\n' "$lead" >&2
   fi
 }
 
 cmd_seat() {
-  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 tools="" tb tt closed_out="" n
+  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 tools="" tb tt closed_out="" n dup=""
   [ -n "$slug" ] && [ -n "$state" ] || die "usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [agents=N] [note=TEXT]"
   case "$state" in queued|running|done|failed|blocked|skipped) ;; *) die "seat state must be queued, running, done, failed, blocked or skipped" ;; esac
   case "$slug" in *[!A-Za-z0-9._-]*) die "bad seat slug: $slug" ;; esac
@@ -995,7 +996,7 @@ cmd_seat() {
   done
   if [ -n "$tokens$runs$tools" ]; then
     case "$state" in done|failed|blocked) ;;
-      *) die "tokens= and agents= report a finished agent run — record them with done, failed or blocked, not $state" ;;
+      *) die "tokens=, agents= and tools= report a finished agent run — record them with done, failed or blocked, not $state" ;;
     esac
   fi
   if [ "$runs" = 0 ] && [ -n "$tokens" ]; then
@@ -1042,6 +1043,7 @@ cmd_seat() {
      && SLUG="$slug" RUNS="${runs:-1}" TOK="$tokens" awk -F'\t' 'NR > 1 && $2 == ENVIRON["SLUG"] && $3 == "" && $4 == "finished" &&
           $5 == ENVIRON["RUNS"] && $6 == ENVIRON["TOK"] { f = 1; exit } END { exit !f }' "$u"; then
     printf 'council: %s already has this usage report on record, with no agent id to tell two agent runs apart — not counted again (another agent run needs its agent=<id>)\n' "$slug" >&2
+    dup=1
   elif [ -n "$tokens$runs" ]; then
     printf '%s\t%s\t%s\tfinished\t%s\t%s\n' "$(now_utc)" "$slug" "${agent:-$cur}" "${runs:-1}" "$tokens" >> "$u" \
       || { event_unlock "$f.lock"; die "cannot write $u"; }
@@ -1080,19 +1082,20 @@ cmd_seat() {
   if [ -n "$closed_out" ] && [ "$(field status "$run/session-state.md")" = complete ]; then   # the ledger copies the record
     n="$(ledger_record "$run")"; say "ledger: ${n:-0} seat row(s) of ${run##*/} refreshed"
   fi
-  if [ -n "$tools" ]; then                          # tool calls, kept apart from usage.tsv's columns
+  if [ -n "$tools" ] && [ -z "$dup" ]; then         # tool calls, kept apart from usage.tsv's columns
     { [ -s "$run/tools.tsv" ] || printf 'at\tseat\tagent\ttools\n'; printf '%s\t%s\t%s\t%s\n' "$(now_utc)" "$slug" "${agent:-$cur}" "$tools"; } \
       >> "$run/tools.tsv" 2>/dev/null || printf 'council: the tool-call count was not recorded (%s)\n' "$run/tools.tsv" >&2
   fi
   progress_line "$run"
-  cap_note "$run"                                   # reminders come after the progress line, so they are seen
-  tb="$(seat_tool_budget "$run" "$slug")"
+  tb="$(seat_tool_budget "$run" "$slug")"           # the seat's tool calls next to the progress line …
   if [ -n "$tools" ]; then
     tt="$(seat_tools "$run" "$slug")"
     [ -z "$tb" ] || [ "$tt" -le "$tb" ] || printf 'council: seat %s used %s tool calls, over its plan budget of %s — say so in the log, and budget the next run of this lens higher or its slice smaller\n' "$slug" "$tt" "$tb" >&2
-  elif [ -n "$tokens" ] && [ -n "$tb" ]; then
+  elif [ -n "$tokens" ] && [ -z "$runs" ] && [ -n "$tb" ] && [ ! -s "$run/tools.tsv" ] \
+       && [ "$(awk -F'\t' 'NR > 1 && $4 == "finished"' "$u" 2>/dev/null | grep -c .)" -le 1 ]; then   # once: the run's first report
     printf "council: add tools=<the notification's tool_uses> to measure seat %s against its tool budget of %s\n" "$slug" "$tb" >&2
   fi
+  cap_note "$run"                                   # … and the reminders last, so they are seen
   [ "$first" -eq 0 ] || status_nudge "$run" dispatch
 }
 
@@ -1485,7 +1488,7 @@ RUNS
   else
     how="send them the question in one short line"
   fi
-  say "Small Council: $label $names now waits on the user (no seat is working). If you stopped to ask them something: record the question if you haven't (council state waiting=\"<it, short>\" --run $at), then $how, once, with a PushNotification tool (it may be a deferred tool: search the tools for it first), and end your turn. If it only waits on a background task, clear it instead: council state waiting= --run $at."
+  say "Small Council: $label $names now waits on the user (no seat is working). If you stopped to ask them something: record the question if you haven't (council state waiting=\"<it, short>\" --run $at), then — unless you already sent the owner an alert for this stop — $how, once, with a PushNotification tool (it may be a deferred tool: search the tools for it first), and end your turn. If it only waits on a background task, clear it instead: council state waiting= --run $at."
   exit 2
 }
 
@@ -1695,10 +1698,9 @@ cmd_run_close() {
     esac
     if py="$(impact_python)"; then              # what the record now has to say: one line, or nothing
       follow="$({ "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" propose --home "$home" --brief
-                  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/outcomes.py" --home "$home" --repo "$(this_tree)" --brief; } 2>/dev/null \
+                  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/outcomes.py" --home "$home" --repo "$(this_tree)" --brief --recent 20; } 2>/dev/null \
                 | awk 'NF { printf "%s%s", (n++ ? " · " : ""), $0 }')"
-      [ -z "$follow" ] || printf 'council: from the record — %s\n' "$follow" >&2
-    fi
+    fi                                              # said on the closing card's line, the last
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
       # The log whose Run: line names this run — as a name or as the folder's full path, which is what
       # council run open prints; failing that, the first log that mentions it.
@@ -1717,7 +1719,7 @@ cmd_run_close() {
     # The state, the ledger and the close line are already written: a late event failure is said, not fatal.
     [ -n "$lost" ] || event_append "$run" "$event_type" run "$status" "agent_runs=$2;reported=$3;tokens=$4;basis=$1${warn:+;warnings=$warn}" \
       || printf 'council: the run is closed, but its close event could not be recorded — council run events check --run %s\n' "${run##*/}" >&2
-    status_nudge "$run" close
+    FOLLOW="$follow" status_nudge "$run" close
   fi
 }
 
