@@ -7,7 +7,9 @@ dispatches a worker, changes code, or claims that the current edit caused a fail
 ## One task, one gate, at most three failed attempts
 
 After a task's relevant configured gate fails, run `council repair record <task-id> <gate-name>`.
-Use a short stable task id such as `T2`. Inspect the saved output and the baseline before acting.
+In a build, `council gate <name>` prints that exact line after a failure, with the task id when it
+knows it (an open trail, or `next: task <n>: …` in the state). Use a short stable task id such as
+`T2`. Inspect the saved output and the baseline before acting.
 After a repair, run the **same** gate again, then record that new result with the same task and gate.
 Do not count the intentionally red `before-<n>` proof, or every gate in `gate --all`, as separate
 repair attempts. `council repair show [task-id]` displays the trail; `council repair check [task-id]`
@@ -19,6 +21,12 @@ checks that saved snapshots still match it.
 | Second | One independent, read-only diagnosis worker gets the task, both saved attempts, baseline and diff. The Chair chooses the fix. If this task already used its one diagnosis worker for verifier trouble, stop instead. |
 | Third | Stop product-code mutation and report the blocker and remaining uncertainty. No fourth automatic attempt. |
 
+Once a trail records its third failure, `council gate <that gate>` refuses to run it and says what to
+do: tell the user what failed and what is left, and ask how to go on. Only on their go, in their own
+words, `council repair allow <gate> --user-said "<their words>"` records it (`repair-allowances.tsv`,
+and a `repair.allowed` event); the gate then runs again. The stopped trail stays closed, so a new
+failure goes under the new task id the gate names (`T2-2`). `gate --all` still runs it, for the record.
+
 The third failure stops the build, not just this gate. Do not start later tasks or continue to the
 after-evidence step, a verifier's fix path, another gate-repair trail, or a success commit for the
 same task. A read-only review may describe the stopped state; it must not authorize another fix.
@@ -29,8 +37,8 @@ automatically discard task changes or unrelated work to manufacture a green tree
 regression remains, name it and leave the result unmerged for a user decision about repair or
 rollback.
 
-A successful, nonempty rerun closes the task's repair trail. A passing gate with zero files matched
-does not close it. A gate run can only be recorded once, using its `gate.finished` event sequence;
+A successful, nonempty rerun closes the task's repair trail. A passing gate with zero files matched,
+or one whose output says no test ran, does not close it. A gate run can only be recorded once, using its `gate.finished` event sequence;
 repeat the actual gate after a change rather than re-recording old output. The helper refuses to
 record a different gate under the same task or to reopen a stopped/resolved trail. If several gates
 fail, address them deliberately as distinct task/gate trails or explain the dependency in the log.

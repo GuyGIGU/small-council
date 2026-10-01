@@ -50,8 +50,8 @@ How `usage.tsv` becomes a seat's figures:
   reported 413,657, was resumed, then reported 463,078 for the same agent). A later figure at least
   as large replaces the earlier one, so a repeated report never adds twice. A smaller later figure is
   taken as a count of its own and added.
-- **A report with no agent id stands alone.** It cannot be matched, so a repeat would add. Record
-  the id at dispatch.
+- **A report with no agent id stands alone.** It cannot be matched: the same figures again for that
+  seat are taken as a repeat and recorded once, and a different figure adds. Record the id at dispatch.
 - **A dispatched id that never reported** counts as one agent run with no usage.
 - **A seat with no agent on record** (no id, no report) has an unknown agent count — its `agents` cell
   stays blank, never 0. `agents=0` on a finished report is the one way to say that no agent ran (the
@@ -109,8 +109,15 @@ unknown seat, and a missing source.
 ## The stop at the limit
 
 A hook (`hooks/agent-gate.sh`) runs `council cap check` before every Agent, Task or Workflow call.
-While an in-progress run has used its agent cap, or its known tokens passed its ceiling, the call is
-refused, and Claude is told to ask the user. Their go, in their words, is recorded with
+Each call it lets through is one agent start of the run this session drives (`agent-starts.tsv`), so
+an agent counts from its start, before the Chair records it. A Workflow is one start, however many
+agents it runs: once its `agents=N` report is recorded, its other N - 1 are added to the starts. The
+stop counts the larger of the agent runs recorded and those starts, so an agent recorded later is not
+counted twice, and agents started after a Workflow are not hidden by its count. Agents recorded
+before the run's first counted start (a run resumed from an older version) are carried into the
+starts as one `before:<n>` row. While an in-progress run has used
+its agent cap, or its known tokens passed its ceiling, the call is refused, and Claude is told to ask
+the user. Their go, in their words, is recorded with
 `council cap allow <n> --user-said "…"` (`cap-allowances.tsv`, and a `run.cap_allowed` event): n more
 agent runs may start before the stop holds again. `council cap` shows where a run stands. The status
 card, text, `--line` and JSON (`usage.limit`) read it the same way: "Stopped at the limit — waiting for
@@ -118,8 +125,11 @@ your go" while stopped, "Your go allows up to 13 agent runs" once a go covers th
 or garbage last row of `cap-allowances.tsv` is passed over: the last readable row counts. Limits:
 - A Workflow that is already running isn't stopped: the agents it starts are not checked, so one
   started below the cap can pass it.
-- Agents started together in one message are all checked before any of them is recorded, so one
-  batch can pass the cap before the stop takes hold.
+- Starts are counted only for the one run this session drives by its recorded session id. With no
+  session id, or two runs open alongside, a start is checked but not counted, and the count waits for
+  the Chair's records.
+- A run opened before plans and agent limits (no `plan-schema` in its state) is never stopped;
+  `council cap` and the seat notes say when it passes the cap.
 - A run driven by another session doesn't stop this one. A run that recorded no session stops every
   session on its working tree.
 - While a run is over its limit, the hook also refuses agents that have nothing to do with the council.
@@ -128,7 +138,8 @@ or garbage last row of `cap-allowances.tsv` is passed over: the last readable ro
 
 ## Known limits
 
-- A dispatched agent the Chair never recorded is not counted until it is added from evidence. One
+- A dispatched agent the Chair never recorded is not counted in the run's cost until it is added from
+  evidence (the stop counts its start). One
   real build run had 8 such agent runs (a first check of a task, two surveys, and a 5-agent survey
   workflow); all were added from its transcripts.
 - The resumed-agent rule assumes running totals, as observed. A smaller later figure is added, which

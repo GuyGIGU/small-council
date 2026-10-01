@@ -143,10 +143,13 @@ def local(minutes_before):
 
 
 def make_run(base, name, status_value="in-progress", phase="work", seats=(), gates=(), repairs=(), extra_state="",
-             events=None, seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported", updated_min=5):
+             events=None, seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported", updated_min=5,
+             planned=True):
+    """planned=False: a run opened before plans and agent limits (no plan-schema), never stopped at the cap."""
     run = Path(base) / ".council" / "runs" / name
-    write(run / "session-state.md", "status: {}\nmode: council-review\nphase: {}\nupdated: {}\nopened: {}\n{}"
-          "## Decisions so far\n".format(status_value, phase, local(updated_min)[:16], local(300), extra_state))
+    write(run / "session-state.md", "status: {}\nmode: council-review\nphase: {}\nupdated: {}\nopened: {}\n{}{}"
+          "## Decisions so far\n".format(status_value, phase, local(updated_min)[:16], local(300),
+                                        "plan-schema: 1\n" if planned else "", extra_state))
     write(run / "seats.tsv", seats_header + "\n" + "".join("\t".join(str(c) for c in s) + "\n" for s in seats))
     for n, (gate, code, minutes) in enumerate(gates):
         write(run / "gates" / "{}-{}.json".format(gate, n), json.dumps(
@@ -292,9 +295,10 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     card, plain = status.widget(r), status.text(r)
     final = r["closing"]
     check("closing card: request, deliverable, verdicts, checks, spend and agent limit are in every view",
-          final["verdict_counts"] == {"confirmed": 2, "refuted": 1, "unverified": 1} and
+          final["verdict_counts"] == {"confirmed": 2, "refuted": 1, "miscited": 0, "uncertain": 0, "conflict": 0,
+                                      "not_sent": 1, "other": 0, "self_checked": 0} and
           "Find the unsafe" in final["request"] and "reviews/report-<final>.md" == final["deliverable"] and
-          "2 confirmed, 1 refuted, 1 not verified" in card and "1 passing" in card and
+          "2 confirmed, 1 refuted, 1 not sent to a verifier" in card and "1 passing" in card and
           "about 49% over estimate" in card and final["agent_runs"] == "1 (limit 10)" and
           all(word in plain for word in ("Asked:", "Delivered:", "Verified:", "Checks:", "Spend:",
                                         "Agent runs:", "Left for you:")) and
@@ -307,6 +311,42 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         "ask: .council/asks/filed.md", "ask: ../../outside.md"))
     check("closing card: unfiled paths never read arbitrary files", reading(closed)["closing"]["request"] ==
           "No filed request recorded.")
+
+    original_claims = read(closed / "claims.jsonl")             # put back below: the pet reads this run later
+
+    def closing_claims(rows):
+        write(closed / "verify-1.md", "# Verification\n")      # the index is current only while its sources exist
+        write(closed / "claims.jsonl", "".join(json.dumps(dict(row, source="synthesis.md:1")) + "\n" for row in rows))
+        return reading(closed)["closing"]
+
+    def link(verdict, own=False):
+        return [dict({"ref": "verify-1.md:4", "verdict": verdict, "evidence": "x"}, **({"self": True} if own else {}))]
+
+    # Run 1's card read "4 confirmed, 0 refuted, 3 not verified" though every shipped finding was confirmed:
+    # the 3 were items the Chair cut and never sent. A wrong place or an unsure verdict is a verdict too.
+    final = closing_claims(
+        [{"id": "1", "disposition": "kept", "verdict": "CONFIRMED", "verification": link("CONFIRMED")},
+         {"id": "2", "disposition": "kept", "verdict": "MISCITED", "verification": link("MISCITED")},
+         {"id": "3", "disposition": "kept", "verdict": "UNCERTAIN", "verification": link("UNCERTAIN")},
+         {"id": "C4", "disposition": "kept", "restored": True, "verdict": "CONFIRMED", "verification": link("CONFIRMED")},
+         {"id": "C1", "disposition": "cut", "verdict": "UNVERIFIED", "verification": []},
+         {"id": "C2", "disposition": "cut", "verdict": "UNVERIFIED", "verification": []},
+         {"id": "C3", "disposition": "cut", "verdict": "REFUTED", "verification": link("REFUTED")}])
+    check("closing card: counts kept claims and the cut ones a verifier saw, each verdict by its name",
+          final["verification"] == "2 confirmed, 1 refuted, 1 cited in the wrong place, 1 unsure" and
+          final["verdict_counts"]["not_sent"] == 0, final)
+    final = closing_claims(
+        [{"id": "1", "disposition": "kept", "verdict": "CONFIRMED", "verification": link("CONFIRMED", own=True)},
+         {"id": "2", "disposition": "kept", "verdict": "REFUTED", "verification": link("REFUTED", own=True)},
+         {"id": "3", "disposition": "kept", "verdict": "UNVERIFIED", "verification": []}])
+    check("closing card: a Solo run's own check is shown as the Chair's, and a kept claim with no verdict as not sent",
+          final["verification"] == "1 confirmed, 1 refuted, 1 not sent to a verifier (2 checked by the Chair itself, "
+          "not by an independent verifier)" and final["verdict_counts"]["self_checked"] == 2, final)
+    final = closing_claims([{"id": "C1", "disposition": "cut", "verdict": "UNVERIFIED", "verification": []}])
+    check("closing card: a run whose every item was cut says so, not 'not verified'",
+          final["verification"] == "No kept claims to verify." and final["verdict_counts"] is None, final)
+    (closed / "verify-1.md").unlink()
+    write(closed / "claims.jsonl", original_claims)
 
     r = reading(make_run(base, "paused", status_value="paused", seats=[v2("beck", "done", 50000, 1, 1)]))
     check("state: a paused run reads as interrupted ('Paused') with a note on how to go on",
@@ -1086,6 +1126,24 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "tokens not reliably recorded (1 older row(s)) · at least 2 agent run(s)" in read(old / "session-state.md"),
               read(old / "session-state.md"))
 
+        # A run the helper closed with a check still failing: the closing card must say so, twice — on the
+        # Checks line and under "Left for you" (the only closing-card fixture had every check passing).
+        red = base / "red-close"
+        red.mkdir()
+        subprocess.run([GIT, "init", "-q"], cwd=red, check=True)
+        write(red / ".council" / "council.config.md", "# Council config\n")
+        code, out, err = council(red, "run", "open", "council-review")
+        red_run = Path(out.strip())
+        council(red, "gate", "tests", "--", "true")
+        council(red, "gate", "lint", "--", "false")
+        code, out, err = council(red, "run", "close")
+        red_text = status.text(reading(red_run))
+        red_checks = [line for line in red_text.splitlines() if line.startswith("Checks:")]
+        check("closing card: a run closed through the helper with a failing check says '1 failing' and names it "
+              "under Left for you", code == 0 and red_checks == ["Checks: 1 passing, 1 failing"] and
+              "- The run ended with check lint failing." in red_text.split("Left for you:", 1)[-1],
+              (code, err[-300:], red_text))
+
 
         # --- the two readers: one helper-written run per basis, read by both (review finding 1) --------------
         agree = base / "agree"
@@ -1278,15 +1336,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         council(agree, "seat", "n", "done", "tokens=5000", "--run", run_k.name)
         check("seat: a smaller later figure from the same agent is a count of its own and is added — still one agent run",
               seat_row(run_k, "s")[3:4] == ["26000"] and seat_row(run_k, "s")[6:8] == ["1", "1"], seat_row(run_k, "s"))
-        check("seat: a report with no agent id stands alone, so the same one twice counts twice — record the id at dispatch",
-              seat_row(run_k, "n")[3:4] == ["10000"] and seat_row(run_k, "n")[6:8] == ["2", "2"], seat_row(run_k, "n"))
+        check("seat: the same report twice with no agent id is a repeat, counted once — record the id at dispatch",
+              seat_row(run_k, "n")[3:4] == ["5000"] and seat_row(run_k, "n")[6:8] == ["1", "1"], seat_row(run_k, "n"))
         code, _, _ = council(agree, "seat", "s", "done", "tokens=1000", "--run", run_k.name)
         check("seat: exactly 1,000 tokens is accepted — the floor is 'under 1,000' (review finding 12)", code == 0)
         with open(run_k / "usage.tsv", "a", encoding="utf-8", newline="\n") as trail:
             trail.write("2026-09-27T12:00:00Z\tn\tn9\tfinished\t1\t12abc\n")
         council(agree, "seat", "n", "done", "--run", run_k.name)
         check("seat: a usage.tsv cell that is not a count (a hand edit) is never read as one (review finding 8)",
-              seat_row(run_k, "n")[3:4] == ["10000"] and seat_row(run_k, "n")[6:8] == ["2", "2"], seat_row(run_k, "n"))
+              seat_row(run_k, "n")[3:4] == ["5000"] and seat_row(run_k, "n")[6:8] == ["1", "1"], seat_row(run_k, "n"))
 
         # --- one reading of the waiting: key (review finding 9) ---------------------------------------------------
         run_l = fresh("waiting", ("a",))

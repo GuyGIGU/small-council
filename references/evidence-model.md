@@ -19,13 +19,17 @@ decision:
 
 The independent **verdict** is separate: `CONFIRMED`, `REFUTED`, `UNCERTAIN` or `MISCITED`.
 `UNVERIFIED` is the ledger's verdict until a verifier row exists. Multiple verifier rows for the
-same claim are `CONFLICT` until the Chair resolves them. A citation or successful syntax check is
-never promoted to `CONFIRMED` automatically.
+same claim are `CONFLICT` until the Chair resolves them — except in a plan, which sends one row per
+task assumption under its recommendation's number: there the worst verdict stands (REFUTED, then
+UNCERTAIN, then MISCITED, then CONFIRMED). A citation or successful syntax check is never promoted
+to `CONFIRMED` automatically.
 
 ## Source of truth and syntax
 
-Under `synthesis.md`'s `## Kept` and `## Cut`, retain the existing index-line shape. Add the fields
-after the title, with `from:` last so the existing seat ledger can still attribute work:
+Under `synthesis.md`'s `## Kept` and `## Cut` (a section is read by its heading's first word, so
+`## Cut (not shipped)` is Cut; any other heading naming kept or cut is reported), retain the existing
+index-line shape. Add the fields after the title, with `from:` last so the existing seat ledger can
+still attribute work:
 
 ```text
 1 · P1 · Principle 4 · src/auth.py:88 · Expired tokens stay valid · state: OBSERVED · from: hunt#3
@@ -40,10 +44,22 @@ is `REPRODUCED`, `proof:` contains one or more comma-separated `gates/<name>.jso
 proves the claim; read the corresponding `.txt` output and command before making that judgment.
 The citation field remains subject to `council check`, which checks places and origin.
 
+A cut claim a verifier finds true (CONFIRMED or MISCITED) is restored: its line moves under
+`## Kept` with its id unchanged (`C4`), and the index records it as `restored`. If it stays cut, the
+line says why with `still-cut: <why>` before `from:`. `evidence check` fails until one is done.
+
 The verifier receives only claim id, one-sentence claim and citation, plus the brief and code root.
 It does **not** receive `from:`, the source seat or the evidence state. Its `verify-<n>.md` table
-retains `| # | Item | Verdict | Evidence |`; the `#` is exactly the synthesis id. The Chair records
+retains `| # | Item | Verdict | Evidence |`; the `#` is exactly the synthesis id. The index reads the
+table forgivingly — a bold or `#1` id, a bold verdict, prose after it, an `Evidence (…)` heading, a
+`|` inside the evidence, an indented row — and names any row or table it can't read; the seat check
+runs the same reading when a verifier stops, so the verifier fixes its own file. The Chair records
 corrections in the readable deliverable rather than overwriting the verifier's words.
+
+A Solo run has no verifier: the Chair writes its own verdicts to `verify-self.md` in the same table.
+Those links are marked `self`, `evidence show` and the closing card say self-checked, and they
+satisfy `evidence check` only when the run plan's verification level is `self` (or its size `solo`).
+An independent verifier's row outranks a self-check.
 
 ## Run-local index
 
@@ -51,13 +67,15 @@ After Judge, `council evidence build` writes `<run>/claims.jsonl` as a provision
 Challenge and `council check`, rebuild it, run `council evidence check`, then inspect it with
 `council evidence show`. The check rejects stale snapshots, absent evidence-state/provenance/citation
 fields, missing seat item or reproduction artifacts, missing verdicts for kept claims or cut P1s,
-unlinked verifier evidence, duplicate verifier rows and unknown claim ids. `UNCERTAIN` is a valid
+a cut claim a verifier found true and left cut without `still-cut:`, unlinked verifier evidence,
+duplicate verifier rows and unknown claim ids. `UNCERTAIN` is a valid
 verdict but must be labelled in the deliverable. `REFUTED` stays in the audit trail and is dropped
 from shipped findings unless a later, recorded challenge reverses it.
 
 Each JSONL row records schema `1`, id, kept/cut disposition and cut reason, claim text, citation, evidence state,
 proof paths, source item ids, the synthesis line, the verifier table line(s), the verifier's
-evidence and the final recorded verdict. Rows are regenerated deterministically from Markdown;
+evidence and the final recorded verdict — plus `restored`, `still_cut` and a link's `self` only
+where they apply. Rows are regenerated deterministically from Markdown;
 never edit them by hand. Existing runs remain readable without migration; auditing one with
 `evidence check` may flag fields it predates. If Python 3.8+ is unavailable, use the
 same Markdown fields and inspect each link manually; do not present a ledger as built.

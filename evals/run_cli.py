@@ -248,6 +248,19 @@ def new_repo(base, name):
     return repo
 
 
+def small_council_repo(tmp, name, gate_rows):
+    """A committed repo whose config holds only a Gates table (with Side effects, so gate --all runs them)."""
+    repo = new_repo(tmp, name)
+    write(os.path.join(repo, "a.txt"), "a\n")
+    write(os.path.join(repo, ".council", "council.config.md"),
+          "# Council config — x\nlast-verified: 2026-09-15 @ x\n\n## Gates\n"
+          "| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs |\n"
+          "|---|---|---|---|---|---|---|---|\n" + gate_rows + "\n## Hard rules\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    return repo
+
+
 def row(out, slug):
     m = re.search(rf"^{slug}\s.*$", out, re.MULTILINE)
     return m.group(0) if m else ""
@@ -333,6 +346,22 @@ def runs_open(tmp):
     os.makedirs(plain)
     code, out, _ = council(plain, "home")
     check("home: outside git it is ./.council", code == 0 and slash(out).lower().endswith("/plain/.council"), out)
+    # The permission rule for the home's real path, in the form Claude Code matches: //<absolute path>/**,
+    # and a Windows drive as /c/… — a rule written //C:/… (what `council home` prints there) never matches.
+    _, home_out, _ = council(repo, "home")
+    code, out, _ = council(repo, "home", "rule")
+    want = slash(home_out)
+    if re.match(r"^[A-Za-z]:/", want):
+        want = "/" + want[0].lower() + want[2:]
+    check("home rule: prints the Edit rule for the council home's real path",
+          code == 0 and out.strip() == "Edit(/" + want + "/**)" and ":" not in out.strip()[5:], out)
+    code, out, err = council(repo, "home", "rule", "x")
+    check("home rule: refuses a word it doesn't take", code == 2 and "doesn't take" in err, out + err)
+    p = subprocess.run([BASH, "-c", 'H="$2"; source "$1"; council_home() { printf "%s\\n" "$H"; }; home_rule', "council",
+                        CLI.replace("\\", "/"), "C:/Users/Me/My Project/.council"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", env=GIT_ENV)
+    check("home rule: a Windows home is written with the drive lower-case and no colon, blanks kept",
+          p.stdout.strip() == "Edit(//c/Users/Me/My Project/.council/**)", p.stdout + p.stderr)
 
     # Opening a run
     code, out, err = council(repo, "run", "open", "nonsense")
@@ -396,6 +425,37 @@ def runs_open(tmp):
     check("state: rejects an invalid status", code == 2, err)
     code, _, err = council(repo, "state", "no-equals-sign")
     check("state: rejects a bare word", code == 2, err)
+    # A stage name is checked: a typo skipped the plan check, and an empty one wrote an event row that
+    # failed the stream for good.
+    for bad_phase in ("", "Brief", "working"):
+        code, _, err = council(repo, "state", "phase=" + bad_phase, "next=never written")
+        st = read(os.path.join(run, "session-state.md"))
+        check(f"state: refuses the stage name {bad_phase!r} and writes nothing, not even the other keys",
+              code == 2 and "is not a stage" in err and "phase: prepare" in st and "never written" not in st, err + st)
+    code, out, err = council(repo, "run", "events", "check")
+    check("state: refused stage names leave the event stream valid, with no row for them",
+          code == 0 and len(events(run)) == 2, out + err)
+    steps = new_repo(tmp, "init-steps")
+    write(os.path.join(steps, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- notifications: off\n")
+    council(steps, "run", "open", "council-init")
+    code, out, err = council(steps, "state", "phase=propose")
+    code2, _, err2 = council(steps, "state", "phase=Propose")
+    check("state: an init run may name its own steps in lower case, never with capitals",
+          code == 0 and "phase propose" in out and code2 == 2 and "is not a stage" in err2, out + err + err2)
+    # Waiting on the user: the helper reminds the Chair to alert them, once per question (the step was
+    # never taken in 33 real sessions), unless the project turned alerts off.
+    code, _, err = council(steps, "state", "waiting=Which export cap?")
+    check("state: with notifications off, a waiting question prints no alert reminder",
+          code == 0 and "PushNotification" not in err, err)
+    council(steps, "state", "waiting=")
+    write(os.path.join(steps, ".council", "council.config.md"), "# Council config\n")
+    code, _, err = council(steps, "state", "waiting=Which export cap?")
+    code2, _, err2 = council(steps, "state", "waiting=Which export cap?", "next=wait")
+    council(steps, "state", "waiting=")
+    check("state: a run that starts waiting on the user is told once to send the alert with a PushNotification "
+          "tool, which may be a deferred one",
+          code == 0 and "waits on the user" in err and "PushNotification" in err and "deferred tool" in err
+          and code2 == 0 and "PushNotification" not in err2, err + " | " + err2)
 
     write_plan(run, selected=("fowler", "beck", "gone"), skipped=("ghost",))
     code, out, err = council(repo, "run", "plan", "check")
@@ -1164,6 +1224,34 @@ def seat_races(tmp):
           [kinds.count(k) for k in once] == [1, 1, 1] and code == 0,
           "cap, estimate, ceiling events %s; %s%s" % ([kinds.count(k) for k in once], out, err))
 
+@part("timing")
+def state_races(tmp):
+    """State updates at the same moment: session-state.md is rewritten under a lock, so none is lost. Before,
+    six at once all said they had succeeded and one key survived."""
+    sr = new_repo(tmp, "state-race")
+    write(os.path.join(sr, ".council", "council.config.md"), "# Council config — state races\n")
+    _, srun, _ = council(sr, "run", "open", "council-review")
+    srun = srun.strip()
+    workers = []
+    for rnd in range(3):
+        workers += council_together(sr, *[("state", f"k{rnd}{i}=v", "--run", srun) for i in range(6)])
+    st = read(os.path.join(srun, "session-state.md"))
+    kept = [f"k{rnd}{i}" for rnd in range(3) for i in range(6) if f"\nk{rnd}{i}: v\n" in st]
+    check("state: eighteen updates made six at a time all succeed and all eighteen keys are kept",
+          all(code == 0 for code, _ in workers) and len(kept) == 18,
+          workers_detail(workers) + "\nkept %d: %s" % (len(kept), " ".join(kept)), full=True)
+    lost = []
+    for rnd, phase in enumerate(("prepare", "convene", "prepare", "convene")):
+        pair = council_together(sr, ("state", f"phase={phase}", "--run", srun), ("state", f"next=step {rnd}", "--run", srun))
+        st = read(os.path.join(srun, "session-state.md"))
+        if any(code != 0 for code, _ in pair) or f"\nphase: {phase}\n" not in st or f"\nnext: step {rnd}\n" not in st:
+            lost.append("round %d: %s · %s" % (rnd, workers_detail(pair), st.split("## ")[0].replace("\n", " | ")))
+    last_phase = [e[5] for e in events(srun) if e[3] == "run.phase_changed"][-1:]
+    code, out, err = council(sr, "run", "events", "check", "--run", srun)
+    check("state: a stage change made together with another update keeps both, and the last stage event matches the file",
+          not lost and last_phase == ["convene"] and code == 0, "\n".join(lost) + " · last phase event %s · %s%s" % (last_phase, out, err),
+          full=True)
+
 @part("collect")
 def agent_stop(tmp):
     # The agent stop: council cap says where a run stands, cap allow records the user's go in their words,
@@ -1215,13 +1303,60 @@ def agent_stop(tmp):
           "the user's go covers up to 5" in err and "ask before starting more" not in err, err)
     code, out, err = council(stop, "run", "events", "check")
     check("cap allow: the event stream holding run.cap_allowed stays valid", code == 0 and len(allowed) == 1, out + err)
+    # The user's go past the cap lets the plan hold the agent runs it allowed: a real build jammed here, its
+    # extra verifier refused by the plan check, and the run unable to move on.
+    grow = new_repo(tmp, "agent-stop-plan-go")
+    write(os.path.join(grow, ".council", "council.config.md"), "# Council config — plan under a go\n- agent cap: 3\n")
+    _, grow_run, _ = council(grow, "run", "open", "council-review")
+    grow_run = grow_run.strip()
+    grow_plan = os.path.join(grow_run, "run-plan.tsv")
+    write_plan(grow_run, selected=("w1", "w2"))                                  # w1, w2 and verify-plan: 3 agent runs
+    three = read(grow_plan).replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t3")
+    extra = "".join(f"{k}\tverify-2\t{f}\t{v}\tthe extra check\n" for k, f, v in
+                    (("seat", "disposition", "selected"), ("seat", "role", "verifier"), ("context", "level", "focused"),
+                     ("budget", "tool-calls", "15")))
+    write(grow_plan, three)
+    for slug in ("w1", "w2", "verify-plan"):
+        council(grow, "seat", slug, "done", f"agent=g-{slug}", "tokens=20000")
+    write(grow_plan, three + extra)
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: with no go on record, a fourth agent run past the cap of 3 is refused",
+          code == 1 and "4 planned agent runs exceed the plan cap 3 (" in out, out)
+    council(grow, "cap", "allow", "2", "--user-said", "yes, two more checks")
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: after the user's go for two more, the extra seat's plan rows pass, and the go is named",
+          code == 0 and "4 agent run(s) of cap 3 — past the cap under the user's go, up to 5" in out, out)
+    code, out, err = council(grow, "seat", "verify-2", "running", "agent=g-v2")
+    code2, out2, err2 = council(grow, "state", "phase=deliver")
+    check("seat and state: under the go, the extra seat starts and the run moves on", code == 0 and code2 == 0,
+          out + err + out2 + err2)
+    write(grow_plan, three.replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t5") + extra)
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: a plan cap raised to the user's go (5) passes", code == 0, out)
+    write(grow_plan, three.replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t6") + extra)
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: a plan cap past the go is refused, naming the configured cap and the go",
+          code == 1 and "agent-cap 6 exceeds the configured cap 3 or the user's go up to 5 agent runs" in out, out)
+    write(grow_plan, three + extra + extra.replace("verify-2", "verify-3") + extra.replace("verify-2", "verify-4"))
+    code, out, _ = council(grow, "run", "plan", "check")
+    check("run plan check: planned agent runs past the go are refused, naming the go",
+          code == 1 and "6 planned agent runs exceed the plan cap 3 or the user's go up to 5" in out, out)
     old_stop = os.path.join(stop, ".council", "runs", "2026-09-01-100000-review")   # from before event streams and run plans
     write(os.path.join(old_stop, "session-state.md"), "status: in-progress\nmode: council-review\nphase: work\n")
     write(os.path.join(old_stop, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\n"
                                                "beck\tdone\ta2\t50000\t10:07\t\n")
     code, out, err = council(stop, "cap", "check", "--session", "s1")
-    check("cap check: an older run with no session, at its cap on this tree — exit 2", code == 2 and "2026-09-01-100000-review" in out,
-          out + err)
+    check("cap check: an older run opened before plans and agent limits, past its cap on this tree, never stops an agent",
+          code == 0 and not out, out + err)
+    code, out, err = council(stop, "cap", "--run", "2026-09-01-100000-review")
+    check("cap: an older run past its cap says so, and that the stop does not hold for it",
+          "2 of 2 agent runs used" in out and "not stopped" in out and "opened before plans and agent limits" in out, out + err)
+    old_seats = os.path.join(old_stop, "seats.tsv")
+    code, out, err = council(stop, "seat", "gamma", "done", "agents=1", "--run", "2026-09-01-100000-review")
+    check("seat: past the cap, an older run's note warns — new agents are not stopped, tell the user",
+          "more than the cap of 2" in err and "not stopped" in err and "refused" not in err, err)
+    write(old_seats, "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t50000\t10:05\t\nbeck\tdone\ta2\t50000\t10:07\t\n")
+    os.remove(os.path.join(old_stop, "usage.tsv"))                                  # back to the two older rows
     code, out, err = council(stop, "cap", "allow", "1", "--run", "2026-09-01-100000-review", "--user-said", "fine, one more")
     rows = read(os.path.join(old_stop, "cap-allowances.tsv")).splitlines()
     check("cap allow: works on an older run with no events.tsv or run-plan.tsv, and adds no event file",
@@ -1229,6 +1364,23 @@ def agent_stop(tmp):
           and not os.path.exists(os.path.join(old_stop, "events.tsv")), "\n".join(rows) + out + err)
     code, out, err = council(stop, "cap", "check", "--session", "s1")
     check("cap check: with both runs covered — exit 0", code == 0 and not out, out + err)
+    # A usage report repeated with no agent id (to add a note, say) is the same agent run, not a second one:
+    # counted twice, it inflated the agent count the stop reads, the cost line and the ledger.
+    rep = new_repo(tmp, "agent-stop-repeat")
+    write(os.path.join(rep, ".council", "council.config.md"), "# Council config — repeated report\n- agent cap: 2\n")
+    _, rep_run, _ = council(rep, "run", "open", "council-review")
+    rep_run = rep_run.strip()
+    council(rep, "seat", "beck", "done", "tokens=80000")
+    code, out, err = council(rep, "seat", "beck", "done", "tokens=80000", "note=fixed the note")
+    beck = next((line.split("\t") for line in read(os.path.join(rep_run, "seats.tsv")).splitlines() if line.startswith("beck\t")), [])
+    check("seat: the same report repeated with no agent id counts once, says so, and still takes the note",
+          code == 0 and "~80k tokens so far" in out and "not counted again" in err
+          and beck[3:4] == ["80000"] and beck[5:8] == ["fixed the note", "1", "1"], out + err + str(beck))
+    code, out, err = council(rep, "cap")
+    check("cap: a repeated report does not bring the run to its cap", "1 of 2 agent runs used" in out, out + err)
+    code, out, err = council(rep, "seat", "beck", "done", "tokens=60000")
+    check("seat: a different figure with no agent id is another agent run, and adds", "~140k tokens so far" in out
+          and "not counted again" not in err, out + err)
     absurd = new_repo(tmp, "agent-stop-absurd")        # a cap bash can't compare: the gate never fails closed
     write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n")
     _, absurd_run, _ = council(absurd, "run", "open", "council-review")
@@ -1837,6 +1989,23 @@ def citation_shapes(tmp):
     check("check: lines away from the change stay 'pre-existing'",
           "synthesis#5  app/old.py:2  ok · pre-existing" in out and "synthesis#6  app/api.py:1  ok · pre-existing" in out
           and "7 items, 1 broken citation(s)" in out, out)
+    # The run's own files, cited the way the helper names them: found in the run, never "missing-file"
+    write(os.path.join(mrun.strip(), "gates", "tests.txt"), "1 passed\n2 failed: test_admin_only\n")
+    write(os.path.join(mrun.strip(), "context", "note.md"), "# Note\nthe guard moved\n")
+    write(os.path.join(mrun.strip(), "verify-1.md"), "# Verification\n\n| # | Item | Verdict | Evidence |\n")
+    write(os.path.join(mrun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P1 · Tests · gates/tests.txt:2 · the admin test fails · from: gate:tests\n"
+          "2 · P2 · Context · context/note.md:2 · the brief's note · from: hunt#1\n"
+          "3 · P2 · Verifier · verify-1.md:3 · the verifier's table · from: hunt#2\n"
+          "4 · P2 · Past the end · context/note.md:9 · a line the note hasn't · from: hunt#3\n"
+          "5 · P2 · Nowhere · gates/lint.txt:1 · a file nobody wrote · from: hunt#4\n")
+    code, out, _ = council(moved, "check")
+    check("check: citations of the run's own files (gates/…, context/…, verify-1.md) are found in the run",
+          "synthesis#1  gates/tests.txt:2  ok · run file" in out and "synthesis#2  context/note.md:2  ok · run file" in out
+          and "synthesis#3  verify-1.md:3  ok · run file" in out, out)
+    check("check: ... and a run file's lines are still checked, and a run file that isn't there is still missing",
+          "synthesis#4  context/note.md:9  bad-line" in out and "synthesis#5  gates/lint.txt:1  missing-file" in out
+          and "5 items, 2 broken citation(s)" in out, out)
     if os.path.isfile(os.path.join(moved, "APP", "OLD.PY")):         # a file system that ignores case
         write(os.path.join(mrun.strip(), "synthesis.md"), "# Synthesis\n## Kept\n"
               "1 · P3 · Naming · APP/OLD.PY:2 · the path in the wrong case · from: hunt#1\n")
@@ -2094,6 +2263,8 @@ def collect_one_bad_seat(tmp):
          "# S\nref: none\n## Index\n1 · P1 · P · a.txt:40 · x\n2 · P1 · P · nope.py:3 · y\n", "broken-cites"),
         ("an item with no citation field", "- ref: none", "# S\nref: none\n## Index\n1 · P2 · just a title\n",
          "unparsed-index(1)"),
+        ("a first line that isn't a '# ' heading (the seat-check hook's line 1)", "- ref: none",
+         "S — Lane (council-review)\nref: none\n## Index\n" + one, "no-heading"),
     ]
     for what, block, seat, flag in lone_cases:
         code, out = lone_collect(block, seat)
@@ -2118,6 +2289,22 @@ def collect_one_bad_seat(tmp):
     code, out = lone_collect(f"- ref: {design}", "# S\nquestion: q\n## Index\n" + one)
     check("collect: a seat with no ref: line never passes the proof of reading",
           code == 1 and "MISMATCH" in row(out, "s1"), out)
+
+    # A Workflow's agents are typed workflow-subagent, so the seat-check hook never sees their files:
+    # collect holds every .md in seats/ to the same shape, named in the brief or not.
+    def workflow_files(r, bad=True):
+        write(os.path.join(r, "seats", "wf-b.md"), "# S — Lane, part B (council-review)\nref: none\n## Index\n" + one)
+        if bad:
+            write(os.path.join(r, "seats", "wf-a.md"), "Verdicts for part A\n\nAll fine.\n" + "x" * 20000 + "\n")
+
+    code, out = lone_collect("- ref: none", "# S\nref: none\n## Index\n" + one, extra=workflow_files)
+    check("collect: a file in seats/ that no seat block names is checked like a seat file, and a bad one fails collect",
+          code == 1 and all(f in row(out, r"wf-a\.md") for f in ("not-in-brief", "no-heading", "no-index", "over-16KB", "no-ref"))
+          and "not-in-brief" in row(out, r"wf-b\.md") and "no-heading" not in row(out, r"wf-b\.md")
+          and "seat-check hook never checks" in out and "seats in order" not in out, out)
+    code, out = lone_collect("- ref: none", "# S\nref: none\n## Index\n" + one, extra=lambda r: workflow_files(r, bad=False))
+    check("collect: a well-formed file in seats/ outside the brief passes, and the summary counts it apart from the seats",
+          code == 0 and "all 1 seats in order · 1 other file(s) in seats/ in order too" in out, out)
 
     heb = os.path.join(lone, "HEBREW.md")
     write(heb, "# \u05de\u05d3\u05e8\u05d9\u05da \u05d0\u05d1\u05d8\u05d7\u05d4\nbody\n")
@@ -2480,6 +2667,66 @@ def runs_worktrees_close_and_find(tmp):
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
 
+@part("runs")
+def runs_init_plan(tmp):
+    """A setup run opens with a plan that fits setup; doctor judges only open runs' plans."""
+    ip = new_repo(tmp, "initplan")
+    write(os.path.join(ip, "a.py"), "x = 1\n")
+    git(ip, "add", "-A")
+    git(ip, "commit", "-q", "-m", "init")
+    _, irun, _ = council(ip, "run", "open", "council-init")
+    irun = irun.strip()
+    code, out, err = council(ip, "run", "plan", "check")
+    check("run open council-init: its plan is valid as it opens — solo, the Chair only, self-verified",
+          code == 0 and "plan: valid · solo · 1 selected, 0 skipped · 0 agent run(s)" in out, out + err)
+    plan = read(os.path.join(irun, "run-plan.tsv"))
+    rows = {tuple(x.split("\t")[:3]): x.split("\t") for x in plan.splitlines() if x and not x.startswith("#")}
+    chosen = [("run", "run", "size"), ("assessment", "run", "risk"), ("assessment", "run", "complexity"),
+              ("assessment", "run", "uncertainty"), ("budget", "run", "estimated-tokens"), ("verification", "run", "level")]
+    check("run open council-init: every value the helper chose says in its reason that it is setup's default",
+          all(len(rows.get(k, [])) == 5 and rows[k][4].startswith("setup default:") for k in chosen)
+          and rows.get(("run", "run", "id"), ["", "", "", ""])[3] == os.path.basename(irun), plan)
+    st = read(os.path.join(irun, "session-state.md"))
+    check("run open council-init: its next step is setup's, not Convene's",
+          "next: follow council-init" in st and "size the run and ask" not in st, st)
+    # A large repo's mapping squad, as council-init Phase D says: the worker rows at the plan's foot
+    mapping = [x[2:].replace("<area>", "src").replace("<the area's paths>", "src/**")
+               for x in plan.splitlines() if x.startswith("# ") and "\tmap-<area>\t" in x]
+    squad = re.sub(r"^run\trun\tsize\tsolo\t.*$", "run\trun\tsize\tsquad\ta large repo: one mapping worker per area",
+                   plan, flags=re.MULTILINE).replace("\testimated-tokens\t0\t", "\testimated-tokens\t80000\t")
+    write(os.path.join(irun, "run-plan.tsv"), squad + "\n".join(mapping) + "\n")
+    code, out, err = council(ip, "run", "plan", "check")
+    check("council-init plan: the mapping rows at its foot make a valid squad",
+          code == 0 and "squad · 2 selected" in out, out + err + "\n".join(mapping))
+    code, out, err = council(ip, "seat", "map-src", "running", "agent=a1")
+    code2, out2, err2 = council(ip, "state", "phase=work")
+    check("council-init: a mapping worker is recorded and the run moves on, with no plan error",
+          code == 0 and code2 == 0 and "ERROR" not in out + err + out2 + err2, out + err + out2 + err2)
+    council(ip, "seat", "map-src", "done", "agent=a1", "tokens=30000")
+    council(ip, "run", "close")
+
+    # Doctor judges only open runs' plans: a closed run's plan is the record of what was decided then
+    write(os.path.join(ip, ".council", "council.config.md"), "# Council config — initplan\n\n## Run preferences\n- agent cap: 10\n")
+    _, done, _ = council(ip, "run", "open", "council-review")
+    done = done.strip()
+    write_plan(done, selected=("hunt", "beck"))
+    council(ip, "state", "phase=learn")
+    council(ip, "run", "close")
+    _, left, _ = council(ip, "run", "open", "council-review")
+    left = left.strip()
+    council(ip, "run", "close", "--status", "abandoned")
+    write(os.path.join(ip, ".council", "council.config.md"), "# Council config — initplan\n\n## Run preferences\n- agent cap: 2\n")
+    _, live, _ = council(ip, "run", "open", "council-review")
+    live = live.strip()
+    write_plan(live, selected=("hunt", "beck"))
+    write(os.path.join(live, "session-state.md"), read(os.path.join(live, "session-state.md")).replace("phase: convene", "phase: work"))
+    code, out, _ = council(ip, "doctor")
+    named = [os.path.basename(r) for r in (irun, done, left) if os.path.basename(r) in out]
+    check("doctor: never judges a closed run's plan — setup's, an unfinished abandoned one, or one made under a higher agent cap",
+          not named, out)
+    check("doctor: an open run's plan past Assign is still checked against today's agent cap",
+          f"run {os.path.basename(live)} has an invalid run plan" in out, out)
+
 @part("gates")
 def resume(tmp):
     # Carrying on with a run: council run resume
@@ -2520,6 +2767,24 @@ def resume(tmp):
     check("run resume --run: resumes the named run only",
           code == 0 and "status: in-progress" in read(os.path.join(p1.strip(), "session-state.md"))
           and "status: paused" in read(os.path.join(p2.strip(), "session-state.md")), out + err)
+    # From a linked worktree, the run's usual relative path (.council/runs/<name>, written from the main
+    # checkout) names the same run: the worktree's council home is the main checkout's.
+    write(os.path.join(rs, "a.txt"), "x\n")
+    git(rs, "add", "a.txt")
+    git(rs, "commit", "-q", "-m", "init")
+    rwt = os.path.join(tmp, "resume-wt")
+    git(rs, "worktree", "add", "-q", "-b", "resume-wt", rwt)
+    council(rs, "run", "close", "--run", os.path.basename(p1.strip()), "--status", "paused")
+    p2name = os.path.basename(p2.strip())
+    code, out, err = council(rwt, "run", "resume", "--run", ".council/runs/" + p2name)
+    check("run resume --run .council/runs/<name>: works from a linked worktree too",
+          code == 0 and f"resumed {p2name}" in out and "status: in-progress" in read(os.path.join(p2.strip(), "session-state.md")),
+          out + err)
+    code, out, err = council(rwt, "state", "--run", ".council\\runs\\" + os.path.basename(p1.strip()) + "\\")
+    check("--run .council\\runs\\<name>\\ (backslashes) from a linked worktree names the same run",
+          code == 0 and "mode: council-plan" in out, out + err)
+    code, _, err = council(rwt, "state", "--run", ".council/runs/2020-01-01-000000-review")
+    check("--run: a relative path that names no run is still refused", code == 2 and "not a run folder" in err, err)
 
 @part("runs")
 def runs_fingerprint_and_ledger(tmp):
@@ -3019,6 +3284,51 @@ def requests_and_proofs(tmp):
           code == 0 and "pass \u2014 but nothing to check (0 files matched)" in out
           and "1 had nothing to check (lint \u2014 0 files matched)" in out, out)
 
+@part("requests")
+def close_unfinished(tmp):
+    # A run closed as complete that never finished is said plainly — warned, never refused
+    repo = small_council_repo(tmp, "closeearly", "| tests | `echo '1 failed'; exit 1` | grounding, verify | yes | ok | `true` | none | - |\n"
+                                                 "| lint | `exit 1` | grounding, verify | no | ok | `true` | none | - |\n")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    council(repo, "state", "phase=prepare")
+    council(repo, "gate", "--all")
+    council(repo, "gate", "before-1", "--", "exit 1")        # an ad-hoc red check is never a required one
+    code, out, err = council(repo, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("run close: a run closed complete at an early stage says it never reached Deliver",
+          code == 0 and "closed as complete at stage prepare, so it never reached Deliver" in err
+          and "--status abandoned" in err, err)
+    check("run close: names the required check whose last run failed, and only that one",
+          "a required check failing on its last run: tests —" in err and "lint" not in err and "before-1" not in err, err)
+    check("run close: says no deliverable was recorded, and a review has no verifier verdicts",
+          "no deliverable recorded" in err and "no verifier verdicts" in err, err)
+    check("run close: the close event records the warnings",
+          closed and "warnings=phase,check,deliverable,verdicts" in closed[-1][6], str(closed))
+    check("run close: the run is still closed as complete (a warning, not a refusal)",
+          "status: complete" in read(os.path.join(run, "session-state.md")), read(os.path.join(run, "session-state.md")))
+
+    done = small_council_repo(tmp, "closedone", "| tests | `if [ -f .fixed ]; then echo '3 passed'; exit 0; fi; exit 1` | grounding, verify | yes | ok | `true` | none | - |\n")
+    code, run, _ = council(done, "run", "open", "council-review")
+    run = run.strip()
+    council(done, "gate", "--all")
+    write(os.path.join(done, ".fixed"), "")
+    council(done, "gate", "tests")                              # red at first, green on its last run
+    write_plan(run)
+    write(os.path.join(run, "verify-1.md"), "| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    code, out, err = council(done, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
+    code, out, err = council(done, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("run close: a finished run with its checks green, a deliverable and verdicts closes without a warning",
+          code == 0 and "closed as complete" not in err and closed and "warnings=" not in closed[-1][6], err + str(closed))
+    early = small_council_repo(tmp, "closestop", "| tests | `exit 1` | grounding | yes | ok | `true` | none | - |\n")
+    council(early, "run", "open", "council-review")
+    council(early, "gate", "--all")
+    code, out, err = council(early, "run", "close", "--status", "abandoned")
+    check("run close --status abandoned: an unfinished run given up on raises none of these warnings",
+          code == 0 and "closed as complete" not in err, err)
+
+
 @part("gates")
 def gates_table(tmp):
     # The Gates table's small vocabularies \u2014 Run at, Mandatory, Checked \u2014 and what gate --all may run unasked
@@ -3180,6 +3490,11 @@ def gates_table(tmp):
           and "test_old" not in out, out)
     council(redbase, "gate", "--all", "--at", "verify")
     check("gate --all --at verify: never replaces the baseline", "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt")))
+    code, out, _ = council(redbase, "gate", "--all")      # a plain second run, after the change: it writes baselines too
+    check("gate --all a second time: the first snapshot stays the baseline, so the change's failure is still named new",
+          "test_old_a" in read(os.path.join(rgates, "baseline", "tests.txt"))
+          and "test_new" not in read(os.path.join(rgates, "baseline", "tests.txt"))
+          and code == 1 and "not at the baseline" in out and "test_new" in out.split("not at the baseline")[-1], out)
     # The comparison is by failing test, not by line: a runner's timed summary is never a "new" failure,
     # and a swap (one test fixed, another broken) is never "nothing new".
     gates_cfg(redbase, "| timed | `if [ -f .fixed ]; then t=0.81; else t=0.26; fi;"
@@ -3261,6 +3576,162 @@ def gates_table(tmp):
     check("run open council-postgame: works with no council yet, and creates one",
           code == 0 and os.path.isdir(pg)
           and {"runs/", "asks/"} <= set(read(os.path.join(nohome, ".council", ".gitignore")).split()), pg + err)
+
+
+@part("gates")
+def gates_nothing_behind_a_pass(tmp):
+    # A pass with nothing behind it is said: no test ran, an empty Command cell, an exit code the command
+    # hides, a record another gate overwrites, a committed change a ratchet never looked at
+    godot = 'out=$("${GODOT:-/nowhere/Godot.exe}" --headless 2>&1); printf "%s\\n" "$out"; case "$out" in *"ERROR:"*) exit 1 ;; esac'
+    repo = small_council_repo(tmp, "nothingran",
+        "| zero | `printf 'collected 0 items\\n\\nno tests ran in 0.01s\\n'` | verify | yes | ok | `true` | none | - |\n"
+        "| unit tests | `true` | verify | no | ok | `true` | none | - |\n"
+        "| types | `true` | verify | no | ok | `true` | none | - |\n"
+        "| real | `printf 'collected 3 items\\n3 passed in 0.1s\\n'` | verify | yes | ok | `true` | none | - |\n"
+        "| cleared |  | verify | yes | ok | `true` | none | - |\n"
+        "| piped | `false \\| tee log.txt` | verify | no | ok | `true` | none | - |\n"
+        "| fallback | `true \\|\\| echo fallback` | verify | no | ok | `true` | none | - |\n"
+        "| alt | `case x in a\\|x) exit 0 ;; esac` | verify | no | ok | `true` | none | - |\n"
+        "| boot | `" + godot + "` | verify | yes | ok | `true` | none | - |\n"
+        "| unit_tests | `true` | verify | no | ok | `true` | none | - |\n"
+        "| cargo | `printf 'running 5 tests\\ntest result: ok. 5 passed; 0 failed\\n   Doc-tests foo\\nrunning 0 tests\\n'` | verify | no | ok | `true` | none | - |\n"
+        "| lint | `true -- src tests` | verify | no | ok | `true` | none | - |\n"
+        "| pipefail | `set -o pipefail; true \\| tee log.txt` | verify | no | ok | `true` | none | - |\n")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    gates = os.path.join(run.strip(), "gates")
+    code, out, _ = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a runner that exits 0 after collecting no test is a pass with nothing run, never a plain pass",
+          'gate zero: pass — but nothing ran: its output says "collected 0 items"' in out
+          and "gate real: pass (exit 0" in out, out)
+    check("gate --all: a test gate that printed nothing is flagged; a quiet type check is not",
+          "gate unit tests: pass — but nothing ran that it shows: it printed nothing" in out
+          and "gate types: pass (exit 0" in out, out)
+    check("gate --all: the verdict line counts the gates that passed with nothing run",
+          "2 passed with nothing run (zero, unit tests" in out, out)
+    check("gate --all: cargo's 'running 0 tests' for its doc-tests, after tests that ran, is a plain pass",
+          "gate cargo: pass (exit 0" in out, out)
+    check("gate --all: a quiet linter is not a test gate because an argument says tests",
+          "gate lint: pass (exit 0" in out, out)
+    check("gate --all: a pipe after set -o pipefail gets no pipe note", "gate pipefail — its command pipes" not in out, out)
+    check("gate: a pass that ran no test is recorded as empty, so it can never close a repair trail",
+          any(e[3] == "gate.finished" and e[4] == "zero" and "empty=1" in e[6] for e in events(run.strip())),
+          str(events(run.strip())))
+    check("gate --all: a required gate whose Command cell is empty is named and counted, never dropped",
+          "gate cleared: skipped — its Command cell is empty" in out and "required: cleared" in out, out)
+    code2, lst, _ = council(repo, "gates")
+    check("gates: lists a gate whose Command cell is empty", "cleared · (no command" in lst, lst)
+    code2, out2, err2 = council(repo, "gate", "cleared")
+    check("gate <name>: a gate with an empty Command cell is refused with the way to run it",
+          code2 == 2 and "empty Command cell" in err2 and "council gate cleared -- '<command>'" in err2, out2 + err2)
+    check("gate --all: a piped command gets the pipe note, as it does by name",
+          "note: gate piped — its command pipes its output" in out, out)
+    check("gate --all: || and a case pattern's bar are not called a pipe; a fallback that always succeeds is named",
+          "gate fallback — its command ends with a step that always succeeds" in out
+          and "gate fallback — its command pipes" not in out and "gate alt —" not in out, out)
+    check("gate --all: a runner kept in $( ) and judged by its text is named (it passes with the engine missing)",
+          "gate boot: pass" in out and "note: gate boot — its command keeps a runner's output in $( )" in out
+          and "|| exit $?" in out, out)
+    check("gate --all: a gate whose record would overwrite another's is skipped and named, not run over it",
+          "gate unit_tests: skipped — it would overwrite the record of gate unit tests" in out
+          and json.loads(read(os.path.join(gates, "unit_tests.json")) or "{}").get("gate") == "unit tests", out)
+    code, out, _ = council(repo, "gate", "fallback")
+    check("gate <name>: || is never called a pipe", "contains a pipe" not in out and "pipes its output" not in out
+          and "always succeeds" in out, out)
+
+    # The baseline: green before means every failure is new; a log line's time is not a test
+    base = small_council_repo(tmp, "wasgreen",
+        "| green | `if [ -f .broken ]; then echo 'FAILED tests/test_c.py::test_new - boom'; exit 1; fi; echo '5 passed'` | grounding, verify | no | ok | `true` | none | - |\n"
+        "| logs | `if [ -f .broken ]; then t=10:07:44; else t=10:00:01; fi; echo \"ERROR 2026-09-30 $t could not reach cache\"; echo 'FAILED tests/test_a.py::test_old'; exit 1` | grounding, verify | no | ok | `true` | none | - |\n")
+    council(base, "run", "open", "council-implement")
+    council(base, "gate", "--all", "--at", "grounding")
+    write(os.path.join(base, ".broken"), "")
+    code, out, _ = council(base, "gate", "--all", "--at", "verify")
+    check("gate: a gate green at the baseline says every failure is new, not that nothing can be compared",
+          "this gate passed at the baseline" in out and "the baseline's output names no failing test" not in out, out)
+    check("gate: a timestamped log line is not read as a newly failing test",
+          "the same test(s) are failing as at the baseline (gates/baseline/logs.txt)" in out
+          and "10:07:44 could not reach cache" not in out.split("gate logs:")[-1].split("baseline")[-1], out)
+
+    # A ratchet gate on the default branch, the change committed: the run's recorded base reaches it
+    ratchet = small_council_repo(tmp, "runbase", "| compile | `bash '" + slash(CLI) + "' changed --glob '*.py' -- '"
+                                 + slash(sys.executable) + "' -m py_compile` | verify | yes | ok | `true` | none | - |\n")
+    write(os.path.join(ratchet, "good.py"), "x = 1\n")
+    git(ratchet, "add", "-A")
+    git(ratchet, "commit", "-q", "-m", "good")
+    write(os.path.join(ratchet, "bad.py"), "def broken(:\n    return 1\n")
+    git(ratchet, "add", "-A")
+    git(ratchet, "commit", "-q", "-m", "the change under review")
+    code, rrun, _ = council(ratchet, "run", "open", "council-review")
+    council(ratchet, "index", "--base", "HEAD~1")
+    code, out, _ = council(ratchet, "gate", "--all", "--at", "verify")
+    saved = read(os.path.join(rrun.strip(), "gates", "compile.txt"))
+    check("gate: council changed inside a gate uses the run's recorded base, so a committed change on main is checked",
+          code == 1 and "gate compile: FAIL" in out and "SyntaxError" in saved
+          and "(the run's recorded base)" in saved, out + saved)
+    code, out, err = council_quoted(ratchet, "changed", "--glob", "*.py")
+    check("changed: outside a gate, on the default branch, it says it sees only uncommitted files and how to widen it",
+          code == 0 and "no files matched" in out and "uncommitted and new files only" in err and "--base" in err, out + err)
+
+
+@part("gates")
+def gates_repair_stop(tmp):
+    # In a build a failed gate names the exact repair record line; three recorded failures stop the gate
+    # until the user's go is on record in their words
+    repo = small_council_repo(tmp, "repairstop",
+        "| unit | `if [ -f .fixed ]; then echo '3 passed'; exit 0; fi; echo 'FAILED tests/test_x.py::test_a - AssertionError'; exit 1`"
+        " | grounding, verify | yes | ok | `true` | none | - |\n")
+    code, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=build")
+    code, out, _ = council(repo, "gate", "unit")
+    check("gate <name>: a failure in a build prints the repair record line to run",
+          code == 1 and "repair: record this attempt — council repair record T<n> unit (T<n>: the task you are on)" in out, out)
+    code, out, _ = council(repo, "gate", "before-1", "--", "exit 1")
+    check("gate <name>: the intentionally red before-check is never called a repair attempt", "repair:" not in out, out)
+    council(repo, "state", "next=task 2: export the rows")
+    for _ in range(3):
+        council(repo, "gate", "unit")
+        council(repo, "repair", "record", "T2", "unit")
+    code, out, err = council(repo, "gate", "unit")
+    check("gate <name>: a gate whose repair trail stopped is refused, with the way forward",
+          code == 2 and "gate unit is stopped" in err and "council repair show T2" in err
+          and 'council repair allow unit --user-said "<their words>"' in err, out + err)
+    before = len([e for e in events(run) if e[3] == "gate.finished"])
+    council(repo, "gate", "unit")
+    check("gate <name>: a refused gate runs nothing and records nothing",
+          len([e for e in events(run) if e[3] == "gate.finished"]) == before, str(events(run)[-2:]))
+    code, out, err = council(repo, "repair", "allow", "unit")
+    check("repair allow: refused without the user's own words", code == 2 and "--user-said" in err, err)
+    code, out, err = council(repo, "repair", "allow", "unit", "--user-said", "go on, try the other approach")
+    allowed = read(os.path.join(run, "repair-allowances.tsv"))
+    check("repair allow: records the user's go in their words, with an event",
+          code == 0 and "go on, try the other approach" in allowed and "\tunit\tT2\t" in allowed
+          and any(e[3] == "repair.allowed" and e[4] == "unit" for e in events(run)), out + err + allowed)
+    code, out, err = council(repo, "gate", "unit")
+    check("gate <name>: after the go the gate runs again, and a new failure goes under a new task id",
+          code == 1 and "council repair record T2-2 unit" in out, out + err)
+    code, out, err = council(repo, "repair", "record", "T2-2", "unit")
+    check("repair record: the new task id opens a new trail", code == 0 and "attempt 1" in out, out + err)
+    write(os.path.join(repo, ".fixed"), "")
+    code, out, err = council(repo, "repair", "allow", "nosuch", "--user-said", "yes")
+    check("repair allow: a gate with no stopped trail is refused", code == 2 and "nothing to allow" in err, err)
+
+    # A second gate failing in the same task is named its own trail, one repair record takes
+    two = small_council_repo(tmp, "repairtwo",
+        "| unit | `echo 'FAILED tests/test_x.py::test_a'; exit 1` | verify | yes | ok | `true` | none | - |\n"
+        "| logs | `echo 'ERROR could not reach cache'; exit 1` | verify | yes | ok | `true` | none | - |\n")
+    code, trun, _ = council(two, "run", "open", "council-implement")
+    write_plan(trun.strip())
+    council(two, "state", "phase=build")
+    council(two, "state", "next=task 1: read the rows")
+    council(two, "gate", "unit")
+    council(two, "repair", "record", "T1", "unit")
+    code, out, _ = council(two, "gate", "logs")
+    code2, out2, err2 = council(two, "repair", "record", "T1-logs", "logs")
+    check("gate <name>: a second gate failing in the same task is named its own task id, which repair record takes",
+          code == 1 and "council repair record T1-logs logs" in out and code2 == 0, out + out2 + err2)
+
 
 @part("runs")
 def runs_gitignore(tmp):
@@ -3837,6 +4308,8 @@ parser = argparse.ArgumentParser(description="Helper evals: run bin/council agai
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
 parser.add_argument("--group", metavar="NAME[,NAME...]", help="run only these groups (default: all, in file order)")
+parser.add_argument("--allow-skip", action="store_true",
+                    help="exit 0 when bash or git is missing (default: exit 3, so a run that checked nothing never passes)")
 opts = parser.parse_args()
 GROUPS = list(dict.fromkeys(group for group, _ in PARTS))
 blocks = [block for _, block in PARTS]
@@ -3854,8 +4327,8 @@ chosen = opts.group.split(",") if opts.group else GROUPS
 if any(group not in GROUPS for group in chosen):
     parser.error("unknown group in %r (groups: %s)" % (opts.group, ", ".join(GROUPS)))
 if not BASH or not GIT:
-    print("[SKIP] bash or git not on PATH — helper evals need both")
-    sys.exit(0)
+    print("[SKIP] bash or git not on PATH — helper evals need both; nothing was checked")
+    sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     for group, block in PARTS:

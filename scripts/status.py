@@ -54,6 +54,10 @@ STATES = {  # key: (label, role, icon) — the role colours the badge, the words
     "stale": ("No recent activity", "warning", "ti-clock"),
     "unknown": ("Status unknown", "neutral", "ti-help-circle"),
 }
+VERDICT_NAMES = (("confirmed", "CONFIRMED", "confirmed"), ("refuted", "REFUTED", "refuted"),   # the closing card
+                 ("miscited", "MISCITED", "cited in the wrong place"), ("uncertain", "UNCERTAIN", "unsure"),
+                 ("conflict", "CONFLICT", "with conflicting verdicts"),
+                 ("not_sent", "UNVERIFIED", "not sent to a verifier"))
 SEAT_WORDS = {"running": "started", "done": "finished", "failed": "failed", "blocked": "reported it was blocked",
               "queued": "queued", "skipped": "skipped"}
 
@@ -338,6 +342,42 @@ def allowed_until(run_path):
     return until
 
 
+def agent_starts(run_path):
+    """The agent starts the gate let through (bin/council cap_starts): the rows of agent-starts.tsv after
+    its header, a "before:<n>" row counting n. A Workflow is one start; workflow_extra adds the rest."""
+    n = 0
+    for line in cockpit.text_of(Path(run_path) / "agent-starts.tsv", run_path).split("\n")[1:]:
+        if not line.strip():
+            continue
+        cells = line.split("\t")
+        seed = re.fullmatch(r"before:([0-9]{1,9})", cells[1]) if len(cells) > 1 else None
+        n += int(seed.group(1)) if seed else 1
+    return n
+
+
+def workflow_extra(run_path):
+    """A Workflow's agents beyond the one start the gate counted (bin/council cap_extra): for each
+    finished usage report of N > 1 agent runs (per agent id, the latest), N - 1."""
+    by_id, loose = {}, 0
+    for line in cockpit.text_of(Path(run_path) / "usage.tsv", run_path).split("\n")[1:]:
+        cells = line.split("\t")
+        if len(cells) < 5 or cells[3] != "finished" or not re.fullmatch(r"[0-9]{0,4}", cells[4]):
+            continue
+        k = int(cells[4]) if cells[4] else 1
+        if cells[2] == "":
+            loose += max(0, k - 1)
+        else:
+            by_id[cells[2]] = k
+    return loose + sum(max(0, k - 1) for k in by_id.values())
+
+
+def planned_run(run_path):
+    """Opened with plans and agent limits: session-state.md has a plan-schema: value. A run opened before
+    them is never stopped (bin/council cap_standing)."""
+    text = cockpit.text_of(Path(run_path) / "session-state.md", run_path)
+    return re.search(r"^\ufeff?plan-schema:[ \t]*[^ \t\r\n#]", text, re.MULTILINE) is not None
+
+
 def cap_standing(snap, run_path, home=None):
     """Where the run stands, as the helper's cap_standing computes it: agent runs used, the cap, known
     tokens, the ceiling, the user's go, over and stopped. Over: at the cap (the next agent would pass
@@ -345,13 +385,14 @@ def cap_standing(snap, run_path, home=None):
     bash's test can't read never stops anything."""
     agents = (snap.get("usage") or {}).get("agents") or {}
     used = agents["total"] if agents.get("total") is not None else (agents.get("at_least") or 0)
+    used = max(used, agent_starts(run_path) + workflow_extra(run_path))    # counted from its start, once
     tokens = ((snap.get("usage") or {}).get("tokens") or {}).get("known") or 0
     cap = run_agent_cap(run_path, home)
     ceiling = budget_value(run_path, "token-ceiling")
     until = allowed_until(run_path)
     over = (cap <= INTMAX and used >= cap) or (ceiling is not None and tokens <= INTMAX and tokens > ceiling)
     return {"agent_runs": used, "agent_cap": cap, "tokens": tokens, "ceiling": ceiling, "allowed_until": until,
-            "over": over, "stopped": over and (until is None or used >= until)}
+            "over": over, "stopped": over and planned_run(run_path) and (until is None or used >= until)}
 
 
 def spend_of(snap, usage, run_path):
@@ -527,12 +568,22 @@ def closing_of(snap, run_path, usage, check_text, attention):
     if claims["stale"]:
         verified = "Claim index out of date; verifier counts unknown."
         counts = None
+    elif claims.get("shipped"):
+        # Kept claims, and cut ones a verifier saw: an item the Chair set aside is no unverified finding.
+        # Each verdict by its own name — a wrong place or an unsure verdict is still a verdict.
+        shipped = dict(claims["shipped"])
+        counts = {key: shipped.pop(verdict, 0) for key, verdict, _ in VERDICT_NAMES}
+        counts["other"] = sum(shipped.values())
+        counts["self_checked"] = claims.get("self_checked", 0)
+        verified = ", ".join("{} {}".format(counts[key], words) for key, _, words in VERDICT_NAMES
+                             if counts[key] or key in ("confirmed", "refuted"))
+        if counts["other"]:
+            verified += ", {} with another verdict".format(counts["other"])
+        if counts["self_checked"]:
+            verified += " ({} checked by the Chair itself, not by an independent verifier)".format(
+                "all" if counts["self_checked"] == sum(claims["shipped"].values()) else counts["self_checked"])
     elif claims["total"]:
-        verdicts = claims["by_verdict"]
-        confirmed, refuted = verdicts.get("CONFIRMED", 0), verdicts.get("REFUTED", 0)
-        unverified = claims["total"] - confirmed - refuted
-        counts = {"confirmed": confirmed, "refuted": refuted, "unverified": unverified}
-        verified = "{} confirmed, {} refuted, {} not verified".format(confirmed, refuted, unverified)
+        verified, counts = "No kept claims to verify.", None
     else:
         verified, counts = "No claim verdicts recorded.", None
     return {"request": filed_request(run_path, run.get("ask", "")),
@@ -603,6 +654,9 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
     limit = cap_standing(snap, run_path, home)
     cap, used = limit["agent_cap"], limit["agent_runs"]
     usage["agent_cap"] = cap
+    recorded = usage["agent_runs"] if usage["agent_runs"] is not None else (usage["agent_runs_at_least"] or 0)
+    if used > recorded:              # the stop's own count, so "limit reached" never sits beside a smaller one
+        usage["agent_runs_text"] = "{} started ({} recorded)".format(used, recorded)
     if used and usage["basis"] == "complete":
         usage["text"] += " (limit {})".format(cap)
     elif used:
@@ -614,6 +668,8 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
         go = "Stopped at the limit — waiting for your go."
     elif open_run and limit["over"] and limit["allowed_until"] is not None:
         go = "Your go allows up to {}.".format(plural(limit["allowed_until"], "agent run"))
+    elif open_run and limit["over"] and not planned_run(run_path):
+        go = "It was opened before agent limits, so new agents are not stopped."
     else:
         go = ""
     limit.update({"stopped": held, "text": go})

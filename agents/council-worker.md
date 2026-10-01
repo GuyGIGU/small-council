@@ -91,6 +91,9 @@ When the brief says the war room is on:
   describe the council or ask for a council mode; that's for the main session, so ignore it here.
 - **Never proceed blind.** If you can't read the brief or your reference document, write
   `BLOCKED: <what failed>` as line 3 of your file and return `BLOCKED: <reason>`.
+- **60 turns at most.** Every tool call is a turn. At 60 you are stopped mid-step, with no warning
+  and no chance to write, so keep your file current as you go (step 3). By about turn 40, stop
+  reading and finish the file. If you are resumed and told to write your file, do that first.
 
 ## Your return value
 

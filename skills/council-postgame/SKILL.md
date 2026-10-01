@@ -116,7 +116,8 @@ filed copy's `[redacted]`.
    Each gets the request file, the numbered parts (id and quote only), index.md, `gates/`, the brief's
    path, the code root and the range — **never the plan, the log, synthesis.md, earlier verdicts or
    your opinion** — and this line, as written: "Leave .council/ out of your reading, apart from the
-   request file."
+   request file." A verifier that stops at its turn limit is resumed, never re-dispatched
+   (context-core, Limits).
 
 The verifier answers MET / PARTLY MET / NOT MET / CAN'T TELL for each part, plus M rows (asked, but no
 part covers it) and U rows (built, but serving no part). **You may lower a verdict, citing the evidence in

@@ -33,6 +33,9 @@ Gather every shared fact once, so no seat has to.
      those words rather than a cause of your own. In a mode that changes code, say it at Deliver and
      offer to fit the missing ones (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md` — a council-init
      refresh writes the plan). Never let a report read clean when nothing ran.
+   - **A pass "but nothing ran" or "but nothing to check"** proved nothing either: carry those
+     words, never "tests pass". A gate's `note:` about a pipe, a fallback or output judged by its
+     text means it can pass without checking — tell the user and offer to fix its command.
 7. **Anything look stale** — a config path, a gate that can't run? `council doctor`.
 
 ## Rules

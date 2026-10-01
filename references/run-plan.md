@@ -39,8 +39,10 @@ does not count as an agent. Skipped seats receive neither context nor budget.
 
 The cap counts agent runs, not seats: a seat run as a Workflow starts one agent per part, so it
 declares `budget/<slug>/agent-runs` (1 to 1000; 1 when absent). The selected workers' and verifiers'
-agent runs must fit both the plan's agent cap and the project's configured cap. During the run the
-helper counts the agent runs actually recorded (`references/run-accounting.md`): once they reach the
+agent runs must fit both the plan's agent cap and the project's configured cap — or, after the
+user's go past the cap (`council cap allow`), the count their go allows. During the run the helper
+counts the larger of the agent runs recorded and the agent starts the hook let through
+(`references/run-accounting.md`): once they reach the
 cap, `council seat` tells the Chair to ask the user before starting more; the first time they pass
 it, it records `run.cap_passed` and the status card says so. From the cap on, a hook refuses the next
 agent until the user's go is recorded with `council cap allow` (`references/run-accounting.md`).
@@ -68,11 +70,17 @@ resized or given a higher cap before Brief or dispatch.
 The remaining placeholders make the starter deliberately invalid. Convene fills the run-level
 decisions; Assign records all considered seats and runs `council run plan check`.
 
+A `council-init` run is the exception. Setup follows its own phases and is the Chair's own work, so it
+opens from `templates/run-plan-init.tsv`, already valid: solo, the Chair only, self-verified, each
+default saying so in its reason. A large repo's mapping squad makes it a squad, one mapping worker
+per area (council-init Phase D).
+
 The helper refuses to enter Brief, Build, or a later standard stage while the plan is invalid. It also
 refuses to queue or start a worker not marked selected. `council run plan show` renders the checked
-contract in plain language for briefing and review. `council doctor` checks plans too; an incomplete
-plan is expected during Convene, Prepare, or Assign and is a warning there, but invalid after that
-is an error.
+contract in plain language for briefing and review. `council doctor` checks the plans of open runs
+too; an incomplete plan is expected during Convene, Prepare, or Assign and is a warning there, but
+invalid after that is an error. A closed run's plan is the record of what was decided then: doctor
+never judges it by today's settings, and nobody rewrites it after the fact.
 
 When routing changes, edit the plan, state the reason, and check it again before acting on the new
 decision. The file is the current contract, not an event history; `log.md` remains the history.

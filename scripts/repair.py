@@ -317,6 +317,48 @@ def inspect_rows(run, rows, check=False):
     return lines
 
 
+def allowances(run):
+    """The user's recorded go for stopped gates (bin/council `repair allow`): (gate, stop event seq) pairs."""
+    data = artifact(run / "repair-allowances.tsv", required=False)
+    if data is None:
+        return set()
+    rows = [line.split("\t") for line in decode(data, "repair-allowances.tsv").splitlines()[1:]]
+    return {(cells[1], cells[3]) for cells in rows if len(cells) >= 5}
+
+
+def trail(run, gate):
+    """One gate's repair state for bin/council, which refuses a stopped gate and names the task to
+    record a failure under: none, open (its task), resolved, stop (its task and the stop's event seq)
+    or allowed (the user's go is on record; a fresh task id, since the stopped trail stays closed)."""
+    ledger = load_ledger(run)
+    rows = [row for row in ledger if row.get("gate") == gate]
+    if not rows or rows[-1].get("action") == "resolved":
+        return ("none" if not rows else "resolved"), "-", "-"
+    task = str(rows[-1].get("task"))
+    if rows[-1].get("action") != "stop":
+        return "open", task, "-"
+    seq = str(rows[-1].get("event_seq"))
+    if (gate, seq) not in allowances(run):
+        return "stop", task, seq
+    used = {row.get("task") for row in ledger}
+    stem = re.sub(r"-[0-9]+$", "", task)[:60]
+    fresh = next(stem + "-" + str(n) for n in range(2, 10000) if stem + "-" + str(n) not in used)
+    return "allowed", fresh, seq
+
+
+def free(run, task, gate):
+    """The task id to record a first failure of <gate> under, from the task the Chair is on: that id
+    while no trail uses it, else one of its own (T1-logs, then T1-logs-2…), so a second gate failing
+    in the same task never gets an id record() refuses."""
+    if not TASK.fullmatch(task):
+        raise RepairError("task must be a short safe id")
+    used = {row.get("task") for row in load_ledger(run)}
+    if task not in used:
+        return task
+    stem = (task + "-" + (re.sub(r"[^A-Za-z0-9._-]+", "-", gate).strip("-") or "gate"))[:60]
+    return next(c for c in [stem] + [stem + "-" + str(n) for n in range(2, 10000)] if c not in used)
+
+
 def show(run, task, check=False):
     rows = load_ledger(run)
     if task:
@@ -331,7 +373,7 @@ def show(run, task, check=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("record", "show", "check"))
+    parser.add_argument("action", choices=("record", "show", "check", "trail", "free"))
     parser.add_argument("task", nargs="?")
     parser.add_argument("gate", nargs="?")
     parser.add_argument("--run", required=True, type=Path)
@@ -346,6 +388,16 @@ def main():
         if args.task is None or args.gate is None:
             parser.error("record needs a task id and gate name")
         return record(run, args.task, args.gate)
+    if args.action == "trail":                 # bin/council's question: trail <gate>
+        if args.task is None or args.gate is not None:
+            parser.error("trail takes one gate name")
+        print("\t".join(trail(run, args.task)))
+        return 0
+    if args.action == "free":                  # bin/council's question: free <task> <gate>
+        if args.task is None or args.gate is None:
+            parser.error("free takes a task id and a gate name")
+        print(free(run, args.task, args.gate))
+        return 0
     if args.gate is not None:
         parser.error("show/check take at most a task id")
     return show(run, args.task, check=args.action == "check")

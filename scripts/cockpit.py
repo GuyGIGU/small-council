@@ -274,14 +274,23 @@ def claim_index_stale(run):
 
 
 def claims_of(run):
+    """by_verdict counts every indexed claim. shipped counts what the closing card reports: the kept claims,
+    and the cut ones a verifier was sent anyway; self_checked, those only the Chair's own check covers."""
     if claim_index_stale(run):
-        return {"total": 0, "by_verdict": {}, "stale": True}
+        return {"total": 0, "by_verdict": {}, "stale": True, "shipped": {}, "self_checked": 0}
     rows = jsonl(run, "claims.jsonl")
-    verdicts = {}
+    verdicts, shipped, own = {}, {}, 0
     for row in rows:
         verdict = clean(row.get("verdict") or "UNVERIFIED").upper()[:24] or "UNVERIFIED"
         verdicts[verdict] = verdicts.get(verdict, 0) + 1
-    return {"total": len(rows), "by_verdict": dict(sorted(verdicts.items())), "stale": False}
+        links = row.get("verification") if isinstance(row.get("verification"), list) else []
+        if row.get("disposition") == "cut" and not links:
+            continue                     # set aside by the Chair and never sent: not a verdict to report
+        shipped[verdict] = shipped.get(verdict, 0) + 1
+        if links and all(isinstance(link, dict) and link.get("self") for link in links):
+            own += 1
+    return {"total": len(rows), "by_verdict": dict(sorted(verdicts.items())), "stale": False,
+            "shipped": dict(sorted(shipped.items())), "self_checked": own}
 
 
 def events_of(run, last):

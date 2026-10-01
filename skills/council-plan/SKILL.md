@@ -183,7 +183,9 @@ The verifier checks each task's assumptions against the real code:
 
 Send claims in the form "<n> · task <t>: <assumption> — <path>", where <n> is the synthesis number of
 the recommendation the assumption comes from (`-` when none). The ledger matches verdicts to seats by
-that number.
+that number. Several claims may share a number: the claim index keeps every row, and the
+recommendation takes the worst verdict. Every kept recommendation needs at least one claim — send a
+recommendation no task assumption tests as a claim of its own, and every cut P1 as usual.
 
 After a war room, the agreements a task rests on, and the riskiest assumptions two or more seats named,
 go to the verifier too.
