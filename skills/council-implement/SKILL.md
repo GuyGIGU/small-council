@@ -140,7 +140,7 @@ the converge pass starts, `council state phase=challenge`.
      unchanged. Keep the standing clause on the receipt.
    - **It can't run** → that's config drift: log it and tell the user.
    - **It fails during this task** → use the bounded loop in `references/repair-loop.md`:
-     `council repair record T<n> <gate>` (a failed gate prints it), inspect its advisory
+     `council gate` records it (no `council repair record`), inspect its advisory
      category, saved output and baseline, then repair and rerun the **same** gate. The first failure
      stays with the builder; the second calls for one independent read-only diagnosis if this task
      has not used that worker already; otherwise stop and report. The third failed execution stops

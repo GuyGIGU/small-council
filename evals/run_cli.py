@@ -3867,6 +3867,68 @@ def gates_nothing_behind_a_pass(tmp):
 
 
 @part("gates")
+def gates_build_records_attempts(tmp):
+    # In a build a gate's own result is the repair record: three failures stop it with no `repair record`
+    # typed (promised-5: the command was typed 0 times in 97 real gate runs), and a pass closes the trail.
+    rows = ("| unit | `if [ -f .fixed ]; then echo '3 passed'; exit 0; fi; echo 'FAILED tests/test_x.py::test_a'; exit 1`"
+            " | verify | yes | ok | `true` | none | - |\n")
+    stop = small_council_repo(tmp, "auto-stop", rows)
+    _, run, _ = council(stop, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(stop, "state", "phase=build")
+    codes = [council(stop, "gate", "unit")[0] for _ in range(3)]
+    code, out, err = council(stop, "gate", "unit")
+    check("gate: in a build, three failures of one gate stop it with no repair record typed",
+          codes == [1, 1, 1] and code == 2 and "gate unit is stopped" in err, f"{codes} · {out}{err}")
+    code, out, err = council(stop, "gate", "--all", "--at", "verify")
+    check("gate --all: a stopped gate is skipped, named and counted, not run again",
+          "gate unit: skipped" in out and "stopped" in out and out.count("FAIL (exit") == 0, out + err)
+    code, out, err = council(stop, "repair", "record", "T1", "unit")
+    check("repair record: an attempt the gate already recorded says so and exits 0", code == 0 and "already recorded" in out, out + err)
+    fix = small_council_repo(tmp, "auto-resolve", rows)
+    _, frun, _ = council(fix, "run", "open", "council-implement")
+    frun = frun.strip()
+    write_plan(frun)
+    council(fix, "state", "phase=build")
+    code, out, err = council(fix, "gate", "unit")
+    check("gate: a failure in a build is recorded as an attempt, and says so last",
+          code == 1 and "repair: task T1 attempt 1" in out, out + err)
+    write(os.path.join(fix, ".fixed"), "")
+    code, out, err = council(fix, "gate", "unit")
+    code2, shown, _ = council(fix, "repair", "show", "T1")
+    check("gate: the pass that follows closes the trail as resolved", code == 0 and "resolved" in shown.lower(), out + shown)
+    os.remove(os.path.join(fix, ".fixed"))
+    council(fix, "gate", "unit")                                  # a new failure: T1's trail is resolved, so a new one
+    write(os.path.join(fix, ".fixed"), "")
+    code, out, err = council(fix, "gate", "--all", "--at", "verify")
+    check("gate --all: a pass closes the gate's open trail", code == 0 and "resolved" in out.lower(), out + err)
+    check("state phase=build: the build starts on task 1, so its first failures have a task",
+          "next: task 1" in read(os.path.join(frun, "session-state.md")), read(os.path.join(frun, "session-state.md")))
+    os.remove(os.path.join(fix, ".fixed"))
+    council(fix, "state", "next=write the receipt")
+    code, out, err = council(fix, "gate", "unit")
+    check("gate: with no task id in next:, a failure is said not counted — and how to name the task — with the gate's own exit",
+          code == 1 and "not counted — no task id" in out and 'next="task <n>' in out, out + err)
+    council(fix, "state", "next=task 3: the next one")
+    with open(os.path.join(frun, "repairs.jsonl"), "a", encoding="utf-8", newline="") as f:
+        f.write("{not json\n")
+    code, out, err = council(fix, "gate", "unit")
+    check("gate: a damaged repair trail is said once, even with a task id to count under",
+          (out + err).count("council repair check") == 1, out + err)
+    check("gate: a damaged repair trail is said, naming council repair check, and the gate still runs with its own exit code",
+          code == 1 and "council repair check" in out + err, out + err)
+
+    base = small_council_repo(tmp, "auto-baseline", rows)
+    _, brun, _ = council(base, "run", "open", "council-implement")
+    write_plan(brun.strip())
+    council(base, "gate", "--all")                                # the baseline, before any change: unit already fails
+    council(base, "state", "phase=build")
+    code, out, err = council(base, "gate", "unit")
+    check("gate: in a build, a failure naming only the baseline's failing tests is said, and not counted",
+          code == 1 and "not counted — the same tests fail as at the baseline" in out, out + err)
+
+@part("gates")
 def gates_repair_stop(tmp):
     # In a build a failed gate names the exact repair record line; three recorded failures stop the gate
     # until the user's go is on record in their words
@@ -3878,8 +3940,8 @@ def gates_repair_stop(tmp):
     write_plan(run)
     council(repo, "state", "phase=build")
     code, out, _ = council(repo, "gate", "unit")
-    check("gate <name>: a failure in a build prints the repair record line to run",
-          code == 1 and "repair: record this attempt — council repair record T<n> unit (T<n>: the task you are on)" in out, out)
+    check("gate <name>: a failure in a build records the attempt itself (task 1 when no next: names one)",
+          code == 1 and "repair: task T1 attempt 1" in out, out)
     code, out, _ = council(repo, "gate", "before-1", "--", "exit 1")
     check("gate <name>: the intentionally red before-check is never called a repair attempt", "repair:" not in out, out)
     council(repo, "state", "next=task 2: export the rows")
@@ -3903,9 +3965,9 @@ def gates_repair_stop(tmp):
           and any(e[3] == "repair.allowed" and e[4] == "unit" for e in events(run)), out + err + allowed)
     code, out, err = council(repo, "gate", "unit")
     check("gate <name>: after the go the gate runs again, and a new failure goes under a new task id",
-          code == 1 and "council repair record T2-2 unit" in out, out + err)
+          code == 1 and "repair: task T2-2 attempt 1" in out, out + err)
     code, out, err = council(repo, "repair", "record", "T2-2", "unit")
-    check("repair record: the new task id opens a new trail", code == 0 and "attempt 1" in out, out + err)
+    check("repair record: typing the record the gate already made changes nothing", code == 0 and "already recorded" in out, out + err)
     write(os.path.join(repo, ".fixed"), "")
     code, out, err = council(repo, "repair", "allow", "nosuch", "--user-said", "yes")
     check("repair allow: a gate with no stopped trail is refused", code == 2 and "nothing to allow" in err, err)
@@ -3922,8 +3984,8 @@ def gates_repair_stop(tmp):
     council(two, "repair", "record", "T1", "unit")
     code, out, _ = council(two, "gate", "logs")
     code2, out2, err2 = council(two, "repair", "record", "T1-logs", "logs")
-    check("gate <name>: a second gate failing in the same task is named its own task id, which repair record takes",
-          code == 1 and "council repair record T1-logs logs" in out and code2 == 0, out + out2 + err2)
+    check("gate <name>: a second gate failing in the same task is recorded under its own task id (typing it changes nothing)",
+          code == 1 and "repair: task T1-logs attempt 1" in out and code2 == 0 and "already recorded" in out2, out + out2 + err2)
 
 
 @part("runs")

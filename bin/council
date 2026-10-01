@@ -669,7 +669,7 @@ waiting_nudge() {
 }
 
 cmd_state() {
-  local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting mode lock=''
+  local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting mode lock='' gave_next=''
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
@@ -709,6 +709,7 @@ cmd_state() {
       esac
     done
   fi
+  for kv in ${1+"$@"}; do case "$kv" in next=*) gave_next=1 ;; esac; done
   old_phase="$(field phase "$st")"; old_status="$(field status "$st")"; old_waiting="$(state_field waiting "$st")"
   tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
   awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { print }' "$st" > "$tmp" \
@@ -723,6 +724,13 @@ cmd_state() {
       END { if (!done) print line }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp" \
       || { rm -f "$tmp" "$tmp.2"; event_unlock "$lock" || :; die "cannot update $st"; }
   done
+  # A build starts on task 1, so its first gate failures count under a task (repair_auto); the Chair
+  # names each next task as the last one's receipt is given.
+  if [ "$(field phase "$tmp")" = build ] && [ "$old_phase" != build ] && [ -z "$gave_next" ]; then
+    NX="task 1 — the first task of the plan" awk '/^## / { body = 1 } !body && !d && index($0, "next:") == 1 { print "next: " ENVIRON["NX"]; d = 1; next } { print }' \
+      "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp" \
+      || { rm -f "$tmp" "$tmp.2"; event_unlock "$lock" || :; die "cannot update $st"; }
+  fi
   # The next: a run opens with is Convene's own step, and nothing replaces it on its own. Past convene it
   # is stale, so it is emptied here; a next the Chair wrote stays. (The status readers skip it too, for
   # runs an older helper moved on: scripts/cockpit.py's next_step.)
@@ -2228,7 +2236,8 @@ repair_trail() {
   local py
   [ -f "$1/repairs.jsonl" ] || { printf 'none\t-\t-\n'; return 0; }
   py="$(impact_python)" || return 0
-  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" trail "$2" --run "$1" 2>/dev/null || :
+  "$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" trail "$2" --run "$1" 2>/dev/null \
+    || printf 'council: the repair trail could not be read, so no stop applies to gate %s — council repair check\n' "$2" >&2
 }
 
 # Definition names from diff lines (+/-) and hunk-header context. Heuristic and language-agnostic:
@@ -2762,6 +2771,7 @@ gate_lock() {
 # so a later failure can be told apart from one the untouched code already had.
 run_gate() {
   local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0 rcmd never=0 nnote="" rbase zt=""
+  GATE_SAME_AS_BASELINE=0             # 1: it failed, naming only the tests that failed at the baseline
   GATE_EMPTY=0                        # 1: 0 files matched · 2: its output says no test ran · 3: a test gate printed nothing
   base="$(gate_base "$run" "$name")"; out="$base.txt"; bl="$run/gates/baseline/${base##*/}"
   pat='error|fail|exception|traceback|assert|panic|cannot|not found|undefined'
@@ -2840,6 +2850,7 @@ run_gate() {
         say "    failing now and not at the baseline (gates/baseline/${bl##*/}.txt):"
         printf '%s\n' "$hits" | clip 220 | sed 's/^/      /'
       else
+        GATE_SAME_AS_BASELINE=1
         say "    the same test(s) are failing as at the baseline (gates/baseline/${bl##*/}.txt) — no new one is named"
       fi
     elif [ -s "$base.now" ]; then
@@ -2852,6 +2863,48 @@ run_gate() {
   event_append "$run" gate.finished "$name" failed "exit=$ec;seconds=$secs;empty=0" \
     || printf 'council: gate failed, and its event was not recorded\n' >&2
   return "$ec"
+}
+
+# The build task an attempt counts under: "task <n>" at the start of next: (phase=build sets task 1; the
+# Chair names the next after each task's receipt). T plus digits, or empty: then nothing is counted.
+current_task() {
+  state_field next "$1/session-state.md" | sed -n 's/^[Tt]ask[[:space:]]*\([0-9][0-9]*\).*/T\1/p'
+}
+
+# A build's gate result is its own repair record (references/repair-loop.md): a failure is an attempt on
+# the current task, and the pass of a gate whose trail is open closes it — recorded here, so the stop
+# after three failures holds without a separate command. The gate's exit code never depends on this.
+# Never for the intentionally red before-<n> check or its after-<n>, nor a failure the baseline had.
+repair_auto() {
+  local run="$1" name="$2" ec="$3" trail="$4" st task cur py out
+  [ "$(field mode "$run/session-state.md")" = council-implement ] || return 0
+  [ "$(field phase "$run/session-state.md")" = build ] || return 0
+  case "$name" in before-*|after-*) return 0 ;; esac
+  st="$(printf '%s' "$trail" | cut -f1)"
+  if [ "$ec" -eq 0 ]; then [ "$st" = open ] || return 0; fi
+  if [ "$ec" -ne 0 ] && [ "${GATE_SAME_AS_BASELINE:-0}" = 1 ] && [ "$st" != open ]; then
+    say "repair: not counted — the same tests fail as at the baseline, so this is no attempt on the task"; return 0
+  fi
+  py="$(impact_python)" || { say "repair: not counted — repair tracking needs optional Python 3.8+; log the attempt in the build log"; return 0; }
+  [ -n "$trail" ] || [ ! -f "$run/repairs.jsonl" ] || return 0   # unreadable: repair_trail has said so, once
+  task=""; cur="$(current_task "$run")"
+  case "$st" in open|allowed)                       # the trail's own task: a pass always closes it, and a
+    task="$(printf '%s' "$trail" | cut -f2)"         # failure counts there while the build is still on it
+    [ "$ec" -eq 0 ] || case "$task" in "$cur"|"$cur"-*) ;; *) [ -z "$cur" ] || task="" ;; esac ;;
+  esac
+  if [ -z "$task" ]; then
+    task="$cur"
+    [ -n "$task" ] || { say "repair: not counted — no task id: council state next=\"task <n>: <title>\""; return 0; }
+    if [ -f "$run/repairs.jsonl" ]; then             # its id may be another gate's trail, or a closed one
+      task="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" free "$task" "$name" --run "$run" 2>/dev/null)" \
+        || { say "repair: not counted — the repair trail can't be read: council repair check"; return 0; }
+    fi
+  fi
+  if out="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" record "$task" "$name" --run "$run" 2>&1)"; then
+    say "$out"
+  else
+    say "repair: not counted — ${out#repair: } (council repair check)"
+  fi
 }
 
 # One gate left out of `gate --all`: said, counted, and named if it was required (cmd_gate's locals).
@@ -2868,6 +2921,7 @@ cmd_gate() {
   refuse_closed "$run" "its checks are on record; run them in a new run"
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
+  mode="$(field mode "$run/session-state.md")"     # a build's gate results are its repair record (repair_auto)
   if [ "$ALL" = 1 ]; then
     if [ -n "$AT_ARG" ]; then
       case "$(printf '%s' "$AT_ARG" | tr 'A-Z' 'a-z')" in
@@ -2948,14 +3002,23 @@ cmd_gate() {
       while IFS= read -r nt; do [ -z "$nt" ] || say "note: gate $name — its command $nt"; done <<NOTES
 $(shape_notes "$cmd")
 NOTES
+      trail=""
+      if [ "$mode" = council-implement ]; then
+        trail="$(repair_trail "$run" "$name")"
+        case "$trail" in
+          stop"$TAB"*) skip_gate "stopped: it failed three repair attempts for task $(printf '%s' "$trail" | cut -f2); only on the user's go: council repair allow $(qname "$name") --user-said \"<their words>\""
+                       continue ;;
+        esac
+      fi
       ran=$((ran + 1))
       if run_gate "$run" "$name" "$cmd" "$top"; then
+        repair_auto "$run" "$name" 0 "$trail"
         passed=$((passed + 1))
         case "$GATE_EMPTY" in
           1) empty=$((empty + 1)); noth="${noth:+$noth, }$name" ;;
           2|3) nothing=$((nothing + 1)); nran="${nran:+$nran, }$name" ;;
         esac
-      else
+      else                              # the set's failures are no attempts: a build counts its own gate runs
         red="${red:+$red, }$name"       # already delimited: a gate name may contain spaces
         [ "$ismand" -eq 0 ] || failed=1
       fi
@@ -2992,7 +3055,6 @@ GATES
   [ -n "$name" ] || die "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
   # A build's three failed repair attempts stop this gate until the user's go is on record (the stop
   # was advice only, and a real build never recorded a single attempt).
-  mode="$(field mode "$run/session-state.md")"
   if [ "$mode" = council-implement ]; then
     trail="$(repair_trail "$run" "$name")"
     case "$trail" in
@@ -3026,24 +3088,8 @@ $(shape_notes "$cmd")
 NOTES
   if gate_backslash "$cmd"; then say "note: this gate command $(backslash_note)"; fi
   if gate_winswitch "$cmd"; then say "note: this gate command $(winswitch_note)"; fi
-  run_gate "$run" "$name" "$cmd" "$top" && return 0
-  ec=$?
-  # In a build a failed gate is a repair attempt; the count exists only once it is recorded, so the
-  # exact line is printed here. The intentionally red before-<n> check and its after-<n> are not.
-  if [ "$mode" = council-implement ] && [ "$(field phase "$run/session-state.md")" = build ]; then
-    case "$name" in
-      before-*|after-*) ;;
-      *) rtask="$(printf '%s' "$trail" | cut -f2)"    # an open trail's task, or the fresh id after a go
-         case "$rtask" in ''|-) rtask="$(field next "$run/session-state.md" | sed -n 's/^[Tt]ask[[:space:]]*\([0-9][0-9]*\).*/T\1/p')"
-           if [ -n "$rtask" ] && [ -f "$run/repairs.jsonl" ] && py="$(impact_python)"; then   # its id may be another gate's trail
-             rtask="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" free "$rtask" "$name" --run "$run" 2>/dev/null)" || rtask=""
-           fi ;;
-         esac
-         if [ -n "$rtask" ]; then nt="council repair record $rtask $(qname "$name")"
-         else nt="council repair record T<n> $(qname "$name") (T<n>: the task you are on)"; fi
-         say "repair: record this attempt — $nt; a third failed attempt stops the build (references/repair-loop.md)" ;;
-    esac
-  fi
+  if run_gate "$run" "$name" "$cmd" "$top"; then ec=0; else ec=$?; fi
+  repair_auto "$run" "$name" "$ec" "$trail"      # in a build, the result is the repair record — said last
   return "$ec"
 }
 

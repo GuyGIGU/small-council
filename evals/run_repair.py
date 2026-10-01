@@ -63,7 +63,9 @@ with tempfile.TemporaryDirectory() as folder:
     check("first failure is classified and sent to the builder", first.returncode == 0 and
           rows(run)[0]["category"] == "TEST_FAILURE" and rows(run)[0]["lens"] == "quality-testing.md" and
           rows(run)[0]["action"] == "builder-diagnose" and rows(run)[0]["baseline"] == "green")
-    check("gate execution cannot be counted twice", invoke(run, "record", "T1", "tests").returncode == 2)
+    again = invoke(run, "record", "T1", "tests")
+    check("gate execution cannot be counted twice: recording the same run again says so and adds no row",
+          again.returncode == 0 and "already recorded" in again.stdout and len(rows(run)) == 1)
     check("saved proof is inspectable", invoke(run, "check", "T1").returncode == 0 and
           (run / rows(run)[0]["proof_text"]).is_file())
     check("show names category and next action", "builder-diagnose" in invoke(run, "show", "T1").stdout)
