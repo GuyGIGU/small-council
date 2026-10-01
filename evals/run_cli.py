@@ -2695,6 +2695,48 @@ def runs_helper_carries_next_steps(tmp):
         print("note: python sits beside bash or git here, so the no-Python close is not checked on this system")
 
 @part("runs")
+def runs_card_says_what_is_known(tmp):
+    # The card says what the records support, from runs the helper made (run 2's setup card read "no checks
+    # run yet" after ten probes and "usage not known yet against estimated 0k" with no agent at all; its plan
+    # card counted eight skipped seats as "0 of 13" and named them by slug; the plan check said each error twice).
+    su = new_repo(tmp, "card-setup")
+    write(os.path.join(su, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(su, "run", "open", "council-init")
+    srun = out.strip().splitlines()[-1]
+    for probe in ("probe-tests", "probe-lint"):
+        council(su, "gate", probe, "--", "true")
+    council(su, "run", "close")
+    code, out, err = council(su, "status", "--run", os.path.basename(srun))
+    check("status: a setup run with probes and no agents reads 'dry runs only, no check yet' and 'no agent ran'",
+          code == 0 and "dry runs only, no check yet" in out and "no agent ran" in out
+          and "no checks run yet" not in out and "usage not known yet" not in out, out + err)
+    sk = new_repo(tmp, "card-skipped")
+    write(os.path.join(sk, ".council", "council.config.md"),
+          "# Council config\n## Roster\n| Seat | Slug | Lens | Surface | Reference | Recast note |\n|---|---|---|---|---|---|\n"
+          "| Troy Hunt | s1 | Security | `hooks/**` | references/security.md | kept |\n")
+    _, out, _ = council(sk, "run", "open", "council-plan")
+    krun = out.strip().splitlines()[-1]
+    write_plan(krun, selected=("chair", "w1", "w2", "w3", "w4", "w5"), skipped=tuple("s%d" % i for i in range(1, 9)),
+               verification="self")
+    for i in range(1, 9):
+        council(sk, "seat", "s%d" % i, "skipped", "note=no surface")
+    code, out, err = council(sk, "status")
+    check("status: eight skipped seats are not counted — five selected, none started, read '0 of 5'",
+          code == 0 and "0 of 5 done" in out and "0 of 13" not in out, out + err)
+    code, out, err = council(sk, "status", "--json")
+    try:
+        names = {s["slug"]: s["name"] for s in json.loads(out)["seats"]}
+    except (ValueError, KeyError, TypeError):
+        names = {}
+    check("status: a skipped seat no brief names is named from the roster — what it checks, then who",
+          names.get("s1") == "Security (Troy Hunt)", str(names))
+    rows = read(os.path.join(krun, "run-plan.tsv")).splitlines(True)
+    write(os.path.join(krun, "run-plan.tsv"), "".join(r for r in rows if not r.startswith("seat\ts8\trole\t")))
+    code, out, err = council(sk, "run", "plan", "check")
+    check("run plan check: one missing role row is one error, said once", code == 1 and "plan: 1 error(s)" in out
+          and out.count("seat s8 has no role row") == 1, out + err)
+
+@part("runs")
 def runs_worktrees_close_and_find(tmp):
     global fresh   # later "runs" blocks carry on with these
     # A linked worktree

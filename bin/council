@@ -1767,7 +1767,10 @@ run_plan_validate() {
   case "$(field status "$run/session-state.md")" in complete|abandoned) seat_models=closed ;; esac
   EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" GO="$go" SEAT_MODELS="$seat_models" QUIET="${QUIET:-0}" awk -F'\t' '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-    function problem(line, msg) {
+    function problem(line, msg,   k) {       # each problem once, and one per line (a placeholder is not also "must be")
+      k = line SUBSEP msg
+      if ((k in said) || (line > 0 && (line in line_said))) return
+      said[k] = 1; if (line > 0) line_said[line] = 1
       errors++
       if (line > 0) printf "ERROR line %d: %s\n", line, msg
       else printf "ERROR: %s\n", msg
