@@ -2513,6 +2513,9 @@ def runs_closed_run_stays_closed(tmp):
     check("gate, cap allow and state changes are refused on a closed run", not refused, str(refused))
     code, out, err = council(cl, "state", "deliverable=.council/reviews/x.md", "--run", name)
     check("state deliverable=: still allowed after close, as the close's own hint asks", code == 0, out + err)
+    code, out, err = council(cl, "state", "decision=keep the review as it is", "--run", name)
+    check("state decision=: a ruling the user gives after the close is still recorded, in their words",
+          code == 0 and '"keep the review as it is"' in read(st).split("## Decisions so far", 1)[-1], out + err)
     code, out, err = council(cl, "correct", "w1", "tokens=30000", "agents=1", "evidence=the notification said 30000", "--run", name)
     ledger = [line.split("\t") for line in read(os.path.join(cl, ".council", "ledger.tsv")).splitlines()]
     check("correct: a late figure on a complete run refreshes its ledger row",

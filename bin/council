@@ -444,7 +444,7 @@ event_ready() {
 }
 
 # A closed run (complete or abandoned, its close recorded) keeps the record its ledger counted: it takes
-# only what its close and audit ask for — the deliverable, the filed request, an evidence-backed correction,
+# only what its close and audit ask for — the deliverable, the filed request, the user's decisions, an evidence-backed correction,
 # the plan's Chair's own seat record, a seat left working marked failed (or skipped, if it never started),
 # and a re-close as abandoned when it stopped short of Deliver. A status set by hand is not a close.
 run_closed() {
@@ -731,9 +731,9 @@ cmd_state() {
   done
   if [ "${CLOSING:-}" != 1 ] && run_closed "$run"; then
     for kv in ${1+"$@"}; do
-      case "${kv%%=*}" in deliverable|ask|ask-saved) ;;
+      case "${kv%%=*}" in deliverable|ask|ask-saved|decision) ;;     # a ruling given after the close is still the user's
         *) event_unlock "$lock" || :
-           refuse_closed "$run" "it takes only deliverable= (and ask save) now; open a new run for more work" ;;
+           refuse_closed "$run" "it takes only deliverable=, decision= (and ask save) now; open a new run for more work" ;;
       esac
     done
   fi
