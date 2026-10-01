@@ -1316,6 +1316,8 @@ def agent_stop(tmp):
                     (("seat", "disposition", "selected"), ("seat", "role", "verifier"), ("context", "level", "focused"),
                      ("budget", "tool-calls", "15")))
     write(grow_plan, three)
+    write(os.path.join(grow_run, "verify-plan.md"), "# Verification — plan\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | a | CONFIRMED | a.py:1 |\n")                       # a verifier is done only with its file
     for slug in ("w1", "w2", "verify-plan"):
         council(grow, "seat", slug, "done", f"agent=g-{slug}", "tokens=20000")
     write(grow_plan, three + extra)
@@ -2765,7 +2767,6 @@ def runs_worktrees_close_and_find(tmp):
           + "".join(f"{i} · P2 · T1 · a.py:{i + 5} · b{i}\n" for i in range(1, 4)))
     council(led, "seat", "hunt", "done", "agent=a1", "tokens=30000")
     council(led, "seat", "beck", "done", "agent=a2", "tokens=20000")
-    council(led, "seat", "verify-1", "done", "agent=v1", "tokens=9000")
     write(os.path.join(lrun, "synthesis.md"), "# Synthesis\n## Kept\n"
           "1 · P2 · P1 · a.py:1 · h1 and h2 are one bug · from: hunt#1, #2\n"
           "2 · P2 · T1 · a.py:6 · b1 and b2 merged · from: beck#1,2\n"
@@ -2774,6 +2775,7 @@ def runs_worktrees_close_and_find(tmp):
     write(os.path.join(lrun, "verify-1.md"), "# Verification — ledger\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1. | h1 | REFUTED (latent) | guarded upstream |\n| #2 | b1 | REFUTED — test exists | covered |\n"
           "| 3 | h3 | ❌ REFUTED | guarded |\n| 4 | data | Refuted | signature checked |\n")
+    council(led, "seat", "verify-1", "done", "agent=v1", "tokens=9000")      # a verifier is done only with its file
     council(led, "run", "close")
     code, out, _ = council(led, "ledger")
     check("ledger: 'from: a#1, #2', 'b#1,2', 'a#3 and b#3', a title holding 'from:', and verdicts as written all count",
