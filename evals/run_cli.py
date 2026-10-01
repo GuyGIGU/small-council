@@ -2362,6 +2362,26 @@ def runs_found_by_session(tmp):
           code == 2 and "--run" in err and "which one" not in read(os.path.join(run, "session-state.md")), out + err)
 
 @part("runs")
+def runs_reminders_last(tmp):
+    # A reminder the Chair must act on is the last line a command prints: in run 2 the Chair cut helper
+    # output with `2>&1 | tail -1` 26 times, and a reminder printed before the status line was lost.
+    def merged(cwd, *args, env=None):
+        p = subprocess.run([BASH, CLI, *args], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                           encoding="utf-8", errors="replace", env=dict(GIT_ENV, **(env or {})), timeout=120)
+        lines = [line for line in p.stdout.splitlines() if line.strip()]
+        return p.returncode, (lines[-1] if lines else ""), p.stdout
+    rem = new_repo(tmp, "reminders-last")
+    write(os.path.join(rem, ".council", "council.config.md"), "# Council config\n- agent cap: 1\n")
+    council(rem, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "s-rem"})
+    code, last, whole = merged(rem, "state", "waiting=Which option?")
+    check("state waiting=: the alert reminder is the last line printed, so `2>&1 | tail -1` keeps it",
+          code == 0 and "PushNotification" in last, whole)
+    merged(rem, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    code, last, whole = merged(rem, "seat", "w2", "done", "agent=a2", "tokens=20000")
+    check("seat: past the agent cap, the cap note is the last line printed, after the progress line",
+          code == 0 and "over its cap" in last, whole)
+
+@part("runs")
 def runs_worktrees_close_and_find(tmp):
     global fresh   # later "runs" blocks carry on with these
     # A linked worktree

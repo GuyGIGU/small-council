@@ -662,8 +662,8 @@ cmd_state() {
       || { event_unlock "$lock" || :; die "state changed, but the waiting event could not be recorded"; }
   fi
   event_unlock "$lock" || die "state changed, but its lock could not be released: $lock"
-  [ -z "$new_waiting" ] || [ "$new_waiting" = "$old_waiting" ] || waiting_nudge "$run"
   say "state: phase $(field phase "$st") · $(field status "$st") · ${run##*/}"
+  [ -z "$new_waiting" ] || [ "$new_waiting" = "$old_waiting" ] || waiting_nudge "$run"   # last, so it is seen
 }
 
 # Carry on with an open run — a paused one, or one another session was driving: mark it in progress,
@@ -902,8 +902,8 @@ cmd_seat() {
     die "seat changed, but its event could not be recorded"
   fi
   event_unlock "$f.lock" || die "seat changed, but its lock could not be released: $f.lock"
-  cap_note "$run"
   progress_line "$run"
+  cap_note "$run"                                   # reminders come after the progress line, so they are seen
   [ "$first" -eq 0 ] || status_nudge "$run" dispatch
 }
 
@@ -940,7 +940,7 @@ cap_note() {
   cap="$(run_agent_cap "$run")"
   set -- $(run_usage "$run"); e="${2:-0}"; t="${4:-0}"
   case "$e" in ''|*[!0-9]*) return 0 ;; esac
-  s="$(cap_starts "$run")"; [ "$s" -le "$e" ] || e="$s"
+  s=$(( $(cap_starts "$run") + $(cap_extra "$run") )); [ "$s" -le "$e" ] || e="$s"   # as cap_standing counts
   if [ -z "$(field plan-schema "$run/session-state.md")" ]; then
     [ "$e" -le "$cap" ] || printf 'council: this run has used %s agent runs, more than the cap of %s — it was opened before agent limits, so new agents are not stopped; tell the user\n' "$e" "$cap" >&2
     return 0
