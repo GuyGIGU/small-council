@@ -911,7 +911,7 @@ status_nudge() {
 }
 
 cmd_seat() {
-  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 closed_out="" n
+  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 tools="" tb tt closed_out="" n
   [ -n "$slug" ] && [ -n "$state" ] || die "usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [agents=N] [note=TEXT]"
   case "$state" in queued|running|done|failed|blocked|skipped) ;; *) die "seat state must be queued, running, done, failed, blocked or skipped" ;; esac
   case "$slug" in *[!A-Za-z0-9._-]*) die "bad seat slug: $slug" ;; esac
@@ -936,10 +936,13 @@ cmd_seat() {
                 case "$runs" in ''|*[!0-9]*) die "agents= takes how many agent runs this report covers (0 = none ran), got: $runs" ;; esac
                 [ "$runs" -ge 0 ] 2>/dev/null && [ "$runs" -le 1000 ] || die "agents= takes a count from 0 to 1000, got: $runs" ;;
       note=*)   note="$(printf '%s' "${kv#note=}" | tr '\t\r\n\013\014' '     ')" ;;
-      *) die "unknown seat field: $kv (use agent=, tokens=, agents=, note=)" ;;
+      tools=*)  tools="${kv#tools=}"
+                case "$tools" in ''|*[!0-9]*) die "tools= takes the tool calls the notification reports (tool_uses), a whole number, got: $tools" ;; esac
+                [ "${#tools}" -le 6 ] || die "tools= takes a count up to 999999, got: $tools" ;;
+      *) die "unknown seat field: $kv (use agent=, tokens=, agents=, tools=, note=)" ;;
     esac
   done
-  if [ -n "$tokens$runs" ]; then
+  if [ -n "$tokens$runs$tools" ]; then
     case "$state" in done|failed|blocked) ;;
       *) die "tokens= and agents= report a finished agent run — record them with done, failed or blocked, not $state" ;;
     esac
@@ -1025,8 +1028,19 @@ cmd_seat() {
   if [ -n "$closed_out" ] && [ "$(field status "$run/session-state.md")" = complete ]; then   # the ledger copies the record
     n="$(ledger_record "$run")"; say "ledger: ${n:-0} seat row(s) of ${run##*/} refreshed"
   fi
+  if [ -n "$tools" ]; then                          # tool calls, kept apart from usage.tsv's columns
+    { [ -s "$run/tools.tsv" ] || printf 'at\tseat\tagent\ttools\n'; printf '%s\t%s\t%s\t%s\n' "$(now_utc)" "$slug" "${agent:-$cur}" "$tools"; } \
+      >> "$run/tools.tsv" 2>/dev/null || printf 'council: the tool-call count was not recorded (%s)\n' "$run/tools.tsv" >&2
+  fi
   progress_line "$run"
   cap_note "$run"                                   # reminders come after the progress line, so they are seen
+  tb="$(seat_tool_budget "$run" "$slug")"
+  if [ -n "$tools" ]; then
+    tt="$(seat_tools "$run" "$slug")"
+    [ -z "$tb" ] || [ "$tt" -le "$tb" ] || printf 'council: seat %s used %s tool calls, over its plan budget of %s — say so in the log, and budget the next run of this lens higher or its slice smaller\n' "$slug" "$tt" "$tb" >&2
+  elif [ -n "$tokens" ] && [ -n "$tb" ]; then
+    printf "council: add tools=<the notification's tool_uses> to measure seat %s against its tool budget of %s\n" "$slug" "$tb" >&2
+  fi
   [ "$first" -eq 0 ] || status_nudge "$run" dispatch
 }
 
@@ -3772,6 +3786,8 @@ ITEMS
     [ "$okc" -eq "$allc" ] || { note="$note broken-cites"; collect_flag cite; }
     [ "$nol" -eq 0 ] || note="$note no-line($nol)"
     [ "$unc" -eq 0 ] || note="$note unchecked($unc)"
+    tt="$(seat_tools "$run" "$slug")"; tb="$(seat_tool_budget "$run" "$slug")"
+    [ -z "$tt" ] || note="$note tools $tt/${tb:-?}"
     printf '%-16s %-8s %-7s %-4s %-9s %-7s %s%s\n' "$slug" ok "${items:-0}/${cap:-8}" "$size" "$refok" "$okc/$allc" "$tok" "${note:+ ·$note}"
   done <<SEATS
 $seats
@@ -5846,6 +5862,21 @@ cmd_ask() {
 # ------------------------------------------------------------------------------------------------
 # Seat ledger — one row per seat per completed run, tracked in the council home
 # ------------------------------------------------------------------------------------------------
+
+# A seat's tool calls (tools.tsv, from tools= on its reports): per agent id the latest figure — a resumed
+# agent reports a running total — and each report with no id on its own. Empty when none was reported.
+seat_tools() {
+  [ -f "$1/tools.tsv" ] || return 0
+  SLUG="$2" awk -F'\t' 'NR > 1 && $2 == ENVIRON["SLUG"] && $4 ~ /^[0-9]+$/ {
+      if ($3 == "") n += $4; else last[$3] = $4; seen = 1 }
+    END { for (a in last) n += last[a]; if (seen) print n + 0 }' "$1/tools.tsv"
+}
+
+# The plan's tool-call budget for a seat (budget <slug> tool-calls), or empty.
+seat_tool_budget() {
+  [ -f "$1/run-plan.tsv" ] || return 0
+  SLUG="$2" awk -F'\t' '$1 == "budget" && $2 == ENVIRON["SLUG"] && $3 == "tool-calls" && $4 ~ /^[0-9]+$/ { v = $4 } END { if (v != "") print v }' "$1/run-plan.tsv"
+}
 
 # A seat is done only with its file: a briefed worker's out: file, or a verifier's <run>/<slug>*.md (a
 # re-check's verify-<n>b.md, a Workflow's verify-<n>-<letter>.md). An agent stopped at its turn limit may

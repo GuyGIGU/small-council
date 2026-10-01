@@ -49,7 +49,7 @@ Write <abs run>/seats/<slug>.md, then return one line.
 
 - Wait for the completion notifications. Never poll, and never open a subagent's transcript or
   output log.
-- **On each notification:** `council seat <slug> done tokens=<the notification's figure, as given>`,
+- **On each notification:** `council seat <slug> done tokens=<the figure, as given> tools=<tool_uses>`,
   or `failed note="…"` (with its tokens if it reported any). Once per finished agent run; a resumed
   worker's later figure is its running total, so record it as given. A Workflow's notification:
   `agents=<agent_count> tokens=<subagent_tokens>`. Seat work you did yourself:

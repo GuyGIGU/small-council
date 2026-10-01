@@ -106,6 +106,9 @@ unknown seat, and a missing source.
 - Only an exact figure the source shows is a correction. 160 is never read as 160,000 because it
   looks small.
 
+Tool calls: `tools=<tool_uses>` on a report goes to `tools.tsv` (per agent id the latest figure, as for
+tokens); the seat's line and `council collect` show it against the plan's `budget/<slug>/tool-calls`.
+
 A closed run (complete or abandoned) takes no more agent reports: a late agent's figure goes through
 `council correct`, which also refreshes the run's ledger rows. It still takes the Chair's own record
 (`council seat <chair> done agents=0`, for the plan's Chair) and a seat left working marked failed — or

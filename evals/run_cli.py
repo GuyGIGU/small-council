@@ -2575,6 +2575,29 @@ def runs_seat_files(tmp):
           err)
 
 @part("runs")
+def runs_tool_calls(tmp):
+    # Tool-call budgets are measured, not only planned (sessions-seats-6: in run 2 a seat used 57 tool calls
+    # against 40 and nothing noticed). A resumed agent's later figure is its running total, counted once.
+    tc = new_repo(tmp, "tool-calls")
+    write(os.path.join(tc, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(tc, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    write_plan(run, selected=("chair", "w1"))                     # tool-calls 15 for each selected seat
+    write(os.path.join(run, "brief.md"), "# Brief\n## Seats\n### w1 — w (W)\n- ref: none\n- out: seats/w1.md\n- cap: 8\n")
+    write(os.path.join(run, "seats", "w1.md"), "# W — w (review)\nref: none\n## Index\n(none) — nothing\n")
+    code, out, err = council(tc, "seat", "w1", "done", "agent=a1", "tokens=20000", "tools=57")
+    check("seat done tools=: a seat over its plan's tool-call budget is said, with both numbers",
+          code == 0 and "57 tool calls" in out + err and "15" in out + err, out + err)
+    code, out, err = council(tc, "seat", "w1", "done", "agent=a1", "tokens=30000", "tools=70")
+    check("seat done tools=: a resumed agent's later figure is its running total, counted once (70, not 127)",
+          code == 0 and "70 tool calls" in out + err and "127" not in out + err, out + err)
+    bad = [args for args in (("seat", "w1", "done", "tokens=20000", "tools=lots"), ("seat", "w1", "running", "agent=a2", "tools=5"))
+           if council(tc, *args)[0] != 2]
+    check("seat tools=: a count that isn't digits, or tools= on a start, is refused", not bad, str(bad))
+    code, out, err = council(tc, "collect")
+    check("collect: shows a seat's tool calls against its budget", "tools 70/15" in out, out + err)
+
+@part("runs")
 def runs_worktrees_close_and_find(tmp):
     global fresh   # later "runs" blocks carry on with these
     # A linked worktree
