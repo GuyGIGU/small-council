@@ -6,6 +6,47 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-10-01
+
+**TL;DR:** the council fixed its own open items, as its second real run (a plan, then a build of 15
+tasks, each checked by a blind verifier). The phone alert and the build's three-failure stop no
+longer depend on the Chair remembering a step, a closed run stays closed, a run in a worktree is
+found from anywhere, and two linters check every change.
+
+### Added
+
+- A turn-end hook: when the Chair stops for you with no agent working, the run records that it waits on you, and the Chair is sent back once to alert your phone (`- notifications: off` turns it off).
+- `council state decision="<your words>"` records a ruling or go-ahead in your words; the status card shows the latest.
+- `council run events repair` mends an event file whose last line was cut off, keeping a byte copy.
+- `council seat … tools=<n>` measures each agent's tool calls against the plan's budget.
+- The run plan can name the Chair's own share of the estimate (`budget/run/chair-tokens`); agents are then compared with their share.
+- CI runs ShellCheck and ruff on the files a change touches, on every OS, proved on a planted fault.
+
+### Changed
+
+- In a build, `council gate` records each failed attempt itself; the three-failure stop no longer needs a typed `repair record`.
+- A seat can't be marked done without its file; the seat-check hook sends back an empty, multi-line or file-less reply once.
+- A closed run takes only what its close asks for (the deliverable, the request, a correction, the Chair's own record).
+- Every stage change records that stage's next step; a completed close says once what the record has to tell you.
+- Reminders are the last line a command prints, so a cut output keeps them.
+- The method the Chair reads is shorter than before 0.18: each rule the helper now says is one pointer.
+
+### Fixed
+
+- Commands find the run this session drives from any working tree (`run open --code-root`).
+- A state, seat or close call does all of its writes or none; a damaged event file refuses before anything changes.
+- `council run audit` judges this run's real close, not a refused one or another run's.
+- The status card says "no agent ran" and "dry runs only, no check yet", and no longer counts skipped seats.
+- Memory lines in deep headings or tables, and an id used twice, are named instead of misread.
+- The cost line compares agents' tokens with the agents' share ("about 18% over the agents' 80k share").
+- A gate whose tool is missing reads "could not run (exit 127)"; `council doctor` names a slow gate at grounding.
+- The plan check says each problem once.
+
+### Upgrade notes
+
+- The new Stop hook runs at the end of every turn; it is silent outside a council run.
+- A verifier's seat is done only with its file: a Workflow's verifiers write `verify-<n>-<letter>.md` in the run folder.
+
 ## [0.18.0] — 2026-10-01
 
 **TL;DR:** the fixes from the first real run and the 2026-09-30 bug hunt. After a compaction the council
