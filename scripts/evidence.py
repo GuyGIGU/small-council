@@ -198,11 +198,23 @@ def synthesis(run):
 
 def cells_of(line):
     """A Markdown table row's cells — indented or not, with or without its closing pipe. An escaped \\|
-    stays text; an unescaped one splits a cell, and the reader of an Evidence cell joins it back."""
+    stays text, and so does one inside `code` (when the line's backticks pair up); an unescaped one
+    elsewhere splits a cell, and the reader of an Evidence cell joins it back."""
     text = line.strip()
     if not text.startswith("|"):
         return None
-    cells = re.split(r"(?<!\\)\|", text)[1:]
+    ticks = text.count("`") % 2 == 0
+    cells, cell, code, prev = [], "", False, ""
+    for ch in text[1:]:
+        if ch == "`" and ticks:
+            code = not code
+        if ch == "|" and prev != "\\" and not code:
+            cells.append(cell)
+            cell = ""
+        else:
+            cell += ch
+        prev = ch
+    cells.append(cell)
     if cells and not cells[-1].strip():
         cells = cells[:-1]
     return [cell.strip().replace("\\|", "|") for cell in cells]
@@ -250,7 +262,8 @@ def verdict_rows(name, body):
             if table:
                 seen = True
                 continue
-            table = seen and len(cells) >= 4 and verdict_of(cells[2]) is not None   # it again, after a gap
+            table = (seen and len(cells) >= 4 and verdict_of(cells[2]) is not None   # it again, after a gap —
+                     and re.fullmatch(r"C?[0-9]+|-", claim_id_of(cells[0])) is not None)   # never a later table's heading
         if table:
             rows.append((line_no, cells))
         elif not said and len(cells) > 2 and re.fullmatch(r"C?[0-9]+", claim_id_of(cells[0])) and \

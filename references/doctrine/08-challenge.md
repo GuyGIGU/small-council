@@ -34,9 +34,9 @@ Catch what's wrong before the user sees it.
      (`council seat verify-<n> running agent=<id>`, then `done tokens=…`). One stopped at its
      60-turn limit may leave no file: resume it with SendMessage ("write your file now, then
      finish"), never re-dispatch it.
-   - **If these verifiers are the run's first dispatch** (a Solo run, a post-game), show the user
-     the run's status now, once — Work, "Right after dispatching", step 2. The helper's reminder
-     says when.
+   - **If these verifiers are the run's first dispatch** (a Chair-only Squad, a post-game), show
+     the user the run's status now, once — Work, "Right after dispatching", step 2. The helper's
+     reminder says when.
    - A Workflow of verifiers is one seat `verify-<n>` recorded with `agents=N`, and planned with
      `budget/verify-<n>/agent-runs` — each of its agents counts against the cap, and takes items the
      same way: a P1 or protected item alone, the rest in batches of up to 8. Each agent writes

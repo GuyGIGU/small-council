@@ -434,6 +434,49 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("reading writes nothing: the runs, both council homes and the transcripts are unchanged",
           fingerprint(base) == before, "")
 
+    # A setup run follows its own phases: no Deliver, no deliverable, no record of the Chair's seat is due.
+    init = base / "more" / "init-project"
+    init.mkdir(parents=True)
+    subprocess.run([GIT, "init", "-q"], cwd=str(init), check=True)
+    write(init / ".council" / "council.config.md", "# Council config\n")
+    codes = [council(init, *a)[0] for a in (("run", "open", "council-init"), ("state", "phase=detect"),
+                                            ("state", "phase=propose"), ("run", "close"))]
+    code, out, err = council(init, "run", "audit")
+    check("a council-init run closed after its own phases fails nothing (no Deliver, deliverable or Chair record due)",
+          codes == [0, 0, 0, 0] and code == 0 and all(item(out, label)[0] == "pass" for label in
+                                                      ("Closed after Deliver", "Deliverable", "Every seat on record")),
+          "%s exit %s: %s %s" % (codes, code, re.findall(r"^  (?:warn|FAIL) .*$", out, re.MULTILINE), err))
+
+    # Run 1's records with the changes the review asked about, in a copy.
+    def run1_copy(name, synthesis=None, claims=None):
+        folder = base / "more" / name / ".council" / "runs" / RUN1
+        shutil.copytree(str(run1), str(folder))
+        if synthesis is not None:
+            write(folder / "synthesis.md", synthesis)
+        if claims is not None:
+            write(folder / "claims.jsonl", "".join(json.dumps(c) + "\n" for c in claims))
+        return folder
+    judged = run1_copy("judged", synthesis=(run1 / "synthesis.md").read_text(encoding="utf-8").replace("from: chair", "from: hunt#1"))
+    code, out, err = council(base, "run", "audit", "--run", str(judged), "--transcript", str(log1))
+    check("a Squad Chair that only judged (no finding from: chair) needs no record of its own seat",
+          item(out, "Every seat on record")[0] == "pass", item(out, "Every seat on record")[1])
+    cut = run1_copy("cut-confirmed", claims=[{"id": "1", "disposition": "kept", "verdict": "CONFIRMED", "citation": "notes.md:5"},
+                                             {"id": "C1", "disposition": "cut", "verdict": "CONFIRMED", "citation": "notes.md:9"}])
+    code, out, err = council(base, "run", "audit", "--run", str(cut), "--transcript", str(log1))
+    check("a cut claim a verifier CONFIRMED fails the claim index, as council evidence check does",
+          item(out, "Claim index")[0] == "FAIL" and "cut, but a verifier CONFIRMED it: C1" in item(out, "Claim index")[1],
+          item(out, "Claim index")[1])
+    found_log = base / "more" / "config" / "projects" / "some-project" / "session-run-1.jsonl"
+    found_log.parent.mkdir(parents=True)
+    shutil.copyfile(str(log1), str(found_log))
+    os.environ["CLAUDE_CONFIG_DIR"] = str(base / "more" / "config")
+    try:
+        code, out, err = council(base, "run", "audit", "--run", str(run1))
+    finally:
+        del os.environ["CLAUDE_CONFIG_DIR"]
+    check("with no --transcript, the session's own transcript is found from the run's session id and read",
+          "(found from the run's session id)" in out and item(out, "Status card at the first dispatch")[0] == "FAIL", out + err)
+
 # The helper's advisory lines the audit does not count as refusals must still be the helper's words.
 sys.path.insert(0, str(ROOT / "scripts"))
 import audit                                                         # noqa: E402  (bytecode is off)

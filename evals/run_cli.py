@@ -3593,7 +3593,10 @@ def gates_nothing_behind_a_pass(tmp):
         "| fallback | `true \\|\\| echo fallback` | verify | no | ok | `true` | none | - |\n"
         "| alt | `case x in a\\|x) exit 0 ;; esac` | verify | no | ok | `true` | none | - |\n"
         "| boot | `" + godot + "` | verify | yes | ok | `true` | none | - |\n"
-        "| unit_tests | `true` | verify | no | ok | `true` | none | - |\n")
+        "| unit_tests | `true` | verify | no | ok | `true` | none | - |\n"
+        "| cargo | `printf 'running 5 tests\\ntest result: ok. 5 passed; 0 failed\\n   Doc-tests foo\\nrunning 0 tests\\n'` | verify | no | ok | `true` | none | - |\n"
+        "| lint | `true -- src tests` | verify | no | ok | `true` | none | - |\n"
+        "| pipefail | `set -o pipefail; true \\| tee log.txt` | verify | no | ok | `true` | none | - |\n")
     code, run, _ = council(repo, "run", "open", "council-review")
     gates = os.path.join(run.strip(), "gates")
     code, out, _ = council(repo, "gate", "--all", "--at", "verify")
@@ -3605,6 +3608,11 @@ def gates_nothing_behind_a_pass(tmp):
           and "gate types: pass (exit 0" in out, out)
     check("gate --all: the verdict line counts the gates that passed with nothing run",
           "2 passed with nothing run (zero, unit tests" in out, out)
+    check("gate --all: cargo's 'running 0 tests' for its doc-tests, after tests that ran, is a plain pass",
+          "gate cargo: pass (exit 0" in out, out)
+    check("gate --all: a quiet linter is not a test gate because an argument says tests",
+          "gate lint: pass (exit 0" in out, out)
+    check("gate --all: a pipe after set -o pipefail gets no pipe note", "gate pipefail — its command pipes" not in out, out)
     check("gate: a pass that ran no test is recorded as empty, so it can never close a repair trail",
           any(e[3] == "gate.finished" and e[4] == "zero" and "empty=1" in e[6] for e in events(run.strip())),
           str(events(run.strip())))
@@ -3708,6 +3716,21 @@ def gates_repair_stop(tmp):
     write(os.path.join(repo, ".fixed"), "")
     code, out, err = council(repo, "repair", "allow", "nosuch", "--user-said", "yes")
     check("repair allow: a gate with no stopped trail is refused", code == 2 and "nothing to allow" in err, err)
+
+    # A second gate failing in the same task is named its own trail, one repair record takes
+    two = small_council_repo(tmp, "repairtwo",
+        "| unit | `echo 'FAILED tests/test_x.py::test_a'; exit 1` | verify | yes | ok | `true` | none | - |\n"
+        "| logs | `echo 'ERROR could not reach cache'; exit 1` | verify | yes | ok | `true` | none | - |\n")
+    code, trun, _ = council(two, "run", "open", "council-implement")
+    write_plan(trun.strip())
+    council(two, "state", "phase=build")
+    council(two, "state", "next=task 1: read the rows")
+    council(two, "gate", "unit")
+    council(two, "repair", "record", "T1", "unit")
+    code, out, _ = council(two, "gate", "logs")
+    code2, out2, err2 = council(two, "repair", "record", "T1-logs", "logs")
+    check("gate <name>: a second gate failing in the same task is named its own task id, which repair record takes",
+          code == 1 and "council repair record T1-logs logs" in out and code2 == 0, out + out2 + err2)
 
 
 @part("runs")

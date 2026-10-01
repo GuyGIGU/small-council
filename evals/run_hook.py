@@ -890,6 +890,27 @@ def agent_gate_counts_starts(tmp):
     codes = [run_agent_gate(gate_cmd, pre_tool("sW", wf, tool=t), wf)[0] for t in ("Workflow", "Agent", "Agent")]
     check("agent gate: a Workflow counts as at least one agent start", codes == [0, 0, 2], str(codes))
 
+    # A Workflow recorded with its agent count: the starts after it are added to that count, not hidden by it.
+    wf3 = new_repo(tmp, "gate-counts-workflow-recorded")
+    write(os.path.join(wf3, ".council", "council.config.md"), "# Council config\n- agent cap: 5\n")
+    _, w3run, _ = council(wf3, "run", "open", "council-review", session="sV")
+    first = run_agent_gate(gate_cmd, pre_tool("sV", wf3, tool="Workflow"), wf3)[0]
+    council(wf3, "seat", "verify-1", "done", "agent=wf_1", "agents=3", "tokens=60000", "--run", os.path.basename(w3run))
+    codes = [first] + [run_agent_gate(gate_cmd, pre_tool("sV", wf3), wf3)[0] for _ in range(4)]
+    check("agent gate: after a Workflow of 3 recorded on a cap of 5, two more agents start and the third is stopped "
+          "(7 would have run when the larger count hid the starts)", codes == [0, 0, 0, 2, 2], str(codes))
+
+    # Agents recorded before the gate counted any start (a run resumed from an older version): they count too.
+    pre = new_repo(tmp, "gate-counts-recorded-first")
+    write(os.path.join(pre, ".council", "council.config.md"), "# Council config\n- agent cap: 3\n")
+    _, prun, _ = council(pre, "run", "open", "council-review", session="sP")
+    for i in (1, 2):
+        council(pre, "seat", f"w{i}", "done", f"agent=p{i}", "tokens=20000", "--run", os.path.basename(prun))
+    codes = [run_agent_gate(gate_cmd, pre_tool("sP", pre), pre)[0] for _ in range(3)]
+    code, out, err = council(pre, "cap", "--run", os.path.basename(prun))
+    check("agent gate: two agents recorded before any start was counted, on a cap of 3 — one more starts, then the stop",
+          codes == [0, 2, 2] and "3 of 3 agent runs used" in out, f"{codes} · {out.strip()}")
+
     # Agents started in one message reach the hook together: the count and the check share one lock.
     batch = new_repo(tmp, "gate-counts-batch")
     write(os.path.join(batch, ".council", "council.config.md"), "# Council config\n- agent cap: 3\n")

@@ -293,6 +293,18 @@ with tempfile.TemporaryDirectory() as folder:
     check("cut P1 needs its own verification link", final_build.returncode == 0 and
           invoke(run, "check").returncode == 1)
 
+    # A summary table after the verdict table is not read as more verdict rows; a | inside `code` is text.
+    tail = fresh(folder, "summary-after", "council-review",
+                 "# Synthesis\n## Kept\n1 · P2 · Principle 1 · src/gate.sh:3 · Gate a|b hides failures · state: OBSERVED · from: hunt#1\n",
+                 {"verify-1.md": "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+                                 "| 1 | Gate `a | b` hides failures | CONFIRMED | src/gate.sh:3 pipes into tee |\n\n"
+                                 "## Summary\n| Seat | Items | Confirmed | Refuted |\n|---|---|---|---|\n| hunt | 1 | 1 | 0 |\n"})
+    table = invoke_table(tail / "verify-1.md")
+    built = invoke(tail, "build")
+    check("verifier table: a later summary table is left alone, and a | inside backticks stays in its cell",
+          table.returncode == 0 and built.returncode == 0 and claims(tail)[0]["verdict"] == "CONFIRMED",
+          table.stdout + table.stderr + built.stdout + built.stderr)
+
 for name, okay, detail in results:
     print("[{}] {}".format("PASS" if okay else "FAIL", name))
     if not okay and detail:

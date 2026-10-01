@@ -184,7 +184,7 @@ def stages(run, say):
         need, why = list(STAGES), ""
     missing = [s for s in need if s not in entered] if run.status == "complete" else []
     back = ["%s back to %s" % (a, b) for a, b in zip(path, path[1:]) if RANK.get(b, 99) < RANK.get(a, -1)]
-    unknown = [s for s in path if s not in RANK]
+    unknown = [s for s in path if s not in RANK] if run.mode in MODES else []    # setup names its own phases
     shown = " > ".join(path) or "none"
     if missing:
         say(FAIL, label, "%s; never entered: %s%s" % (shown, ", ".join(missing), why))
@@ -197,9 +197,14 @@ def stages(run, say):
 def closing(run, say):
     label = "Closed after Deliver"
     closed = run.closed
-    if run.status == "complete":
+    if run.status == "complete" and not run.events:
+        say(WARN, label, "no event stream (a run from before events.tsv), so when it closed can't be read")
+    elif run.status == "complete":
         if not closed:
             say(FAIL, label, "the state says complete, but no close is recorded; close it with: council run close --run %s" % run.name)
+            return
+        if run.mode not in MODES:                  # council-init, test-architect: their own phases, no Deliver
+            say(PASS, label, "closed complete at %s (%s has no Deliver stage)" % (clock(closed["t"]), run.mode or "this mode"))
             return
         deliver = [e for e in run.of_type("run.phase_changed") if e.get("value") == "deliver"
                    and number(e.get("seq")) is not None and number(e.get("seq")) < number(closed.get("seq"))]
@@ -298,6 +303,9 @@ def deliverable(run, say):
         say(PASS, label, "not due: the run did not complete")
         return
     recorded = field(run.state, "deliverable")
+    if not recorded and run.mode not in MODES:
+        say(PASS, label, "not due: %s has no Deliver stage" % (run.mode or "this mode"))
+        return
     if not recorded:
         say(FAIL, label, "none recorded; at Deliver: council state deliverable=<path>")
         return
@@ -336,8 +344,13 @@ def claim_index(run, say):
             claims.append(claim)
     kept = [c for c in claims if c.get("disposition") == "kept"]
     open_claims = [str(c.get("id", "?")) for c in kept if str(c.get("verdict", "")).upper() not in VERDICTS]
+    confirmed_cut = [str(c.get("id", "?")) for c in claims if c.get("disposition") == "cut"
+                     and str(c.get("verdict", "")).upper() == "CONFIRMED"]
     if newer:
         say(FAIL, label, "out of date: %s changed after it was built; council evidence build --run %s" % (listed(newer), run.name))
+    elif confirmed_cut:
+        say(FAIL, label, "cut, but a verifier CONFIRMED it: %s — ship it, or say in synthesis.md why it stays cut; "
+            "then council evidence build and evidence check --run %s" % (listed(confirmed_cut, 8), run.name))
     elif open_claims:
         say(FAIL, label, "kept claim(s) with no verifier's verdict: %s" % listed(open_claims, 8))
     elif not kept:
@@ -356,8 +369,12 @@ def seats_on_record(run, say):
         return
     recorded = set(r.get("slug") for r in run.seats)
     chair = [s for s in run.selected if run.roles.get(s) == "chair"]
-    missing_chair = [s for s in chair if s not in recorded]
+    worked = run.mode in MODES and (run.size == "solo" or
+                                    re.search(r"from:[ \t]*chair\b", text_of(run.folder / "synthesis.md")) is not None)
+    # Judging and synthesis are not seat work: the Chair's record is due in Solo, or for a finding from: chair.
+    missing_chair = [s for s in chair if s not in recorded] if worked else []
     missing = [s for s in run.selected if s not in recorded and s not in chair]
+    chair = [s for s in chair if s in recorded]
     if missing_chair:
         say(FAIL, label, "the Chair's own seat (%s) has no record: council seat %s done agents=0%s" % (
             ", ".join(missing_chair), missing_chair[0], "; nor has %s" % listed(missing) if missing else ""))
@@ -681,10 +698,28 @@ def transcript(run, path, say):
     return span
 
 
+def find_transcript(session):
+    """The session's own .jsonl, which Claude Code keeps as projects/<project>/<session id>.jsonl under its
+    config folder (CLAUDE_CONFIG_DIR, else ~/.claude). Only one match counts; None otherwise."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{7,99}", session or ""):
+        return None
+    roots = [Path(os.environ["CLAUDE_CONFIG_DIR"])] if os.environ.get("CLAUDE_CONFIG_DIR") else []
+    roots.append(Path.home() / ".claude")
+    for root in roots:
+        try:
+            hits = sorted((root / "projects").glob("*/%s.jsonl" % session))
+        except OSError:
+            continue
+        if len(hits) == 1 and hits[0].is_file():
+            return hits[0]
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Check a finished council run against the method (read-only).")
     parser.add_argument("--run", required=True, type=Path)
     parser.add_argument("--transcript", type=Path, help="the Claude Code session .jsonl that drove the run")
+    parser.add_argument("--no-transcript", action="store_true", help="read the run's records only")
     args = parser.parse_args()
     folder = args.run
     if not folder.is_dir() or not (folder / "session-state.md").is_file():
@@ -694,6 +729,9 @@ def main():
         print("audit: no such transcript file: {}".format(args.transcript), file=sys.stderr)
         return 2
     run = Run(folder)
+    found = None
+    if args.transcript is None and not args.no_transcript:
+        args.transcript = found = find_transcript(field(run.state, "session"))
     items = []
 
     def say(verdict, label, words):
@@ -709,6 +747,8 @@ def main():
             print("audit: cannot read the transcript: {}".format(exc), file=sys.stderr)
             return 2
     print("Run audit: %s (%s, %s). Read-only: nothing was written." % (run.name, run.mode or "no mode", run.status or "no status"))
+    if found is not None:
+        print("Transcript: %s (found from the run's session id)" % found)
     print("\nFrom the run's records")
     for n, (verdict, label, words) in enumerate(items):
         if n == split:

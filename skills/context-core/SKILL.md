@@ -150,9 +150,9 @@ Plain language. Say what a seat checks before its name: "Data integrity (Leach)"
 **The run's status.** Show it twice: at the run's first dispatch (Work) and after
 `council run close` (Learn) — the helper reminds you at both. With a `show_widget` tool — it may be
 deferred: search the tools before deciding there is none — call its `read_me` once, then pass it
-`council status --widget` output verbatim; otherwise relay `council status`. Otherwise, only when
-the user asks — never a card per progress line. A card is a snapshot, not live; if one fails to
-render, give the text and carry on. `council pet` opens the desktop pet, only when the user asks.
+`council status --widget` output verbatim (after close, add `--run <folder>`); otherwise relay
+`council status`. Otherwise, only when the user asks — never a card per progress line. A card is
+a snapshot; if one fails to render, give the text and carry on. `council pet` opens the desktop pet, only when the user asks.
 
 **Alerts.** When you stop for the user's answer, `council state waiting="<the question>"` (`waiting=`
 clears it). Then, and when an agent cap or token ceiling stops the run, send what

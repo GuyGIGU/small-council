@@ -1132,17 +1132,32 @@ cap_allowed_until() {
 
 # The agent starts the gate let through (council cap check <tool>, from hooks/agent-gate.sh): the rows of
 # <run>/agent-starts.tsv (at, tool, session). The helper hears of an agent there before the Chair records
-# it. A Workflow is one start, however many agents it runs: its recorded agent count says the rest.
+# it. A Workflow is one start, however many agents it runs: its recorded agent count says the rest
+# (cap_extra). The file's first row may be "before:<n>", the agents recorded before any start was counted.
 cap_starts() {
   local n=""
-  [ ! -f "$1/agent-starts.tsv" ] || n="$(awk 'NR > 1 && NF { n++ } END { print n + 0 }' "$1/agent-starts.tsv" 2>/dev/null)"
+  [ ! -f "$1/agent-starts.tsv" ] || n="$(awk -F'\t' 'NR == 1 || !NF { next }
+    $2 ~ /^before:[0-9]+$/ && length($2) <= 16 { n += substr($2, 8); next }
+    { n++ } END { print n + 0 }' "$1/agent-starts.tsv" 2>/dev/null)"
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  printf '%s' "$n"
+}
+
+# The agents a Workflow ran beyond the one start the gate counted for it: for each usage report of more
+# than one agent run (agents=N, as seat_usage reads it — per agent id, the latest report), N - 1.
+cap_extra() {
+  local n=""
+  [ ! -f "$1/usage.tsv" ] || n="$(awk -F'\t' 'NR == 1 || $5 !~ /^[0-9]*$/ || length($5) > 4 || $4 != "finished" { next }
+    $3 == "" { if ($5 + 0 > 1) x += $5 - 1; next }
+    { k[$3] = ($5 == "" ? 1 : $5 + 0) }
+    END { for (i in k) if (k[i] > 1) x += k[i] - 1; print x + 0 }' "$1/usage.tsv" 2>/dev/null)"
   case "$n" in ''|*[!0-9]*) n=0 ;; esac
   printf '%s' "$n"
 }
 
 # Where a run stands: "<agent runs> <cap> <tokens> <ceiling|-> <until|-> <over 0|1> <stopped 0|1>".
-# Agent runs: the larger of those recorded and the starts the gate let through, so an agent in flight
-# counts before it is recorded, and counts once after. Over: at its cap (the next agent would pass it) or
+# Agent runs: the larger of those recorded and the starts the gate let through (a Workflow's further
+# agents added), so an agent in flight counts before it is recorded, and counts once after. Over: at its cap (the next agent would pass it) or
 # past its ceiling. Stopped: over, and no go of the user's covers the next agent — never for a run opened
 # before plans and agent limits (no plan-schema). The counts are the ones the card and cap_note read.
 cap_standing() {
@@ -1151,7 +1166,7 @@ cap_standing() {
   set -- $(run_usage "$run"); rec="${2:-0}"; tokens="${4:-0}"
   case "$rec" in ''|*[!0-9]*) rec=0 ;; esac
   case "$tokens" in ''|*[!0-9]*) tokens=0 ;; esac
-  starts="$(cap_starts "$run")"
+  starts=$(( $(cap_starts "$run") + $(cap_extra "$run") ))
   used="$rec"; [ "$starts" -le "$used" ] || used="$starts"
   ceiling="$(run_budget_value "$run" token-ceiling)"
   upto="$(cap_allowed_until "$run")"
@@ -1179,7 +1194,7 @@ cmd_cap_show() {
   local run status line starts rec
   run="$(resolve_run)" || exit 2
   starts="$(cap_starts "$run")"; rec=""
-  [ "$starts" -eq 0 ] || { set -- $(run_usage "$run"); rec="${2:-0}"; }
+  [ "$starts" -eq 0 ] || { starts=$((starts + $(cap_extra "$run"))); set -- $(run_usage "$run"); rec="${2:-0}"; }
   set -- $(cap_standing "$run")
   line="${run##*/}: $1 of $2 agent runs used"
   [ -z "$rec" ] || [ "$starts" -le "$rec" ] || line="$line ($starts started through the agent gate, $rec recorded)"
@@ -1246,7 +1261,7 @@ cmd_cap_allow() {
 # together cannot all take its last place. A fault of its own never stops an agent: it returns 0, or
 # dies (stderr, nothing on stdout), which the hook lets through.
 cmd_cap_check() {
-  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock
+  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed
   home="$(council_home)"
   [ -d "$home/runs" ] || return 0
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
@@ -1282,13 +1297,18 @@ RUNS
     elif event_lock "$lock" 50 2>/dev/null; then
       set -- $(cap_standing "$mine")
       if [ "${7:-0}" != 1 ]; then
+        if [ ! -s "$file" ]; then                       # agents recorded before any start was counted count too
+          seed=$(( $1 - $(cap_extra "$mine") ))
+          { printf 'at\ttool\tsession\n' > "$file"
+            [ "$seed" -le 0 ] || printf '%s\tbefore:%s\t-\n' "$(now_utc)" "$seed" >> "$file"; } 2>/dev/null || :
+        fi
         { [ -s "$file" ] || printf 'at\ttool\tsession\n' > "$file"
           [ -z "$(tail -c 1 "$file")" ] || printf '\n' >> "$file"      # never join a torn line
           printf '%s\t%s\t%s\n' "$(now_utc)" "$tool" "${session//$TAB/ }" >> "$file"; } 2>/dev/null || :
       fi
       event_unlock "$lock" 2>/dev/null || :
     else
-      set -- 0 0 0 - - 0 0                                # the lock never came: the agent starts, uncounted
+      set -- $(cap_standing "$mine")                      # the lock never came: judged without it, not counted
     fi
     if [ "${7:-0}" = 1 ]; then
       n=$((n + 1)); last="${mine##*/}"
@@ -2378,9 +2398,10 @@ winswitch_note() { printf '%s' 'has a Windows switch such as /p:… that Git Bas
 gate_shape() {
   C="$1" awk 'BEGIN {
     s = ENVIRON["C"]; sq = sprintf("%c", 39); q = ""; n = length(s); w = ""
-    cw = 0; pat = 0; cd = 0; pd = 0; pipe = 0; sep = ""; step = 1
+    cw = 0; pat = 0; cd = 0; pd = 0; pipe = 0; sep = ""; step = 1; st = ""; top = ""
     for (i = 1; i <= n + 1; i++) {
       c = (i <= n) ? substr(s, i, 1) : " "
+      if (index(st, "$") == 0) top = top c          # the text outside any $( ), for capture
       if (q == sq) { if (c == sq) q = ""; continue }
       if (q == "\"") { if (c == "\\") i++; else if (c == "\"") q = ""; continue }
       if (c ~ /[A-Za-z0-9_]/) { w = w c; continue }
@@ -2390,21 +2411,21 @@ gate_shape() {
       w = ""
       if (c == "\\") { i++; continue }
       if (c == sq || c == "\"") { q = c; continue }
-      if (c == "(") { pd++; continue }
-      if (c == ")") { if (pat && cd > 0) pat = 0; else if (pd > 0) pd--; continue }
+      if (c == "(") { pd++; st = st (substr(s, i - 1, 1) == "$" ? "$" : "("); continue }
+      if (c == ")") { if (pat && cd > 0) pat = 0; else if (pd > 0) { pd--; st = substr(st, 1, length(st) - 1) }; continue }
       d = substr(s, i + 1, 1)
       if (c == ";" && (d == ";" || d == "&")) { i++; if (cd > 0) pat = 1; continue }
       if (c == "|" && d == "|") { i++; if (!pd && !cd) { sep = "||"; step = i + 1 }; continue }
       if (c == "&" && d == "&") { i++; if (!pd && !cd) { sep = "&&"; step = i + 1 }; continue }
       if (c == ";") { if (!pd && !cd) { sep = ";"; step = i + 1 }; continue }
-      if (c == "|" && !pat) pipe = 1
+      if (c == "|" && !pat && index(st, "$") == 0) pipe = 1     # inside $( ) it is for capture to judge
     }
-    if (pipe) print "pipe"
+    if (pipe && s !~ /pipefail|PIPESTATUS/) print "pipe"
     last = substr(s, step); sub(/^[ \t]+/, "", last)
     errexit = (s ~ /set[ \t]+-[a-z]*e|errexit/)
     keeps = errexit || s ~ /(^|[^A-Za-z0-9_])exit[ \t]+([1-9]|\$)/     # it exits on a failure itself
     if ((sep == ";" || sep == "||") && !keeps && last !~ /\|/ && last ~ /^((echo|printf|true|:)([ \t;]|$)|exit[ \t]+0([ \t;]|$))/) print "masked"
-    if (s ~ /[A-Za-z_][A-Za-z0-9_]*="?\$\(/ && s ~ /(^|[^A-Za-z0-9_])(case|grep)[ \t]/ && s !~ /\$\?|\|\|[ \t]*exit/ && !errexit) print "capture"
+    if (s ~ /[A-Za-z_][A-Za-z0-9_]*="?\$\(/ && top ~ /(^|[^A-Za-z0-9_])(case|grep)[ \t]/ && s !~ /\$\?|\|\|[ \t]*exit/ && !errexit) print "capture"
   }'
 }
 # One plain note per word gate_shape found, each finishing "the command …".
@@ -2421,11 +2442,15 @@ shape_notes() {
 
 # The line of a passing gate's output that says no test ran — pytest's "collected 0 items" / "no tests
 # ran", unittest's "Ran 0 tests", jest's "No tests found", mocha's "0 passing", "0 tests", go's "[no test
-# files]" — unless some other line shows tests did run (go prints "ok <package>" for one that ran them).
+# files]" — unless some other line shows tests did run (go prints "ok <package>" for one that ran them;
+# cargo "running 5 tests" before a doc-tests "running 0 tests"; maven "Tests run: 5" beside a module's
+# "No tests to run."; "5 passed", "5 passing", "Ran 5 tests").
 zero_tests() {
   awk '
     { l = $0; gsub(/\r/, "", l); t = tolower(l) }
     t ~ /^ok[ \t]+[^ \t]+\t/ && t !~ /\[no test/ { ran = 1 }
+    t ~ /(running|ran)[ \t]+[1-9][0-9]*[ \t]+tests?([^a-z]|$)|tests run:[ \t]*[1-9]|(^|[^0-9])[1-9][0-9]*[ \t]+(passed|passing)([^a-z]|$)/ { ran = 1 }
+    t ~ /(skip|fail|error|ignor|pend)[a-z]*:?[ \t]*0 tests?/ { next }        # none skipped is not none ran
     hit == "" && (t ~ /collected 0 items|no tests ran|ran 0 tests|no tests found|no test files|no tests to run|(^|[^0-9.])0 passing/ \
                   || t ~ /(^|[^0-9.])0 tests?([ \t]+(ran|run|found|collected|executed|in)([^a-z]|$)|[ \t]*[.,;]|[ \t]*$)/) { hit = l }
     END { if (hit != "" && !ran) print hit }' "$1" 2>/dev/null | clip 120
@@ -2617,10 +2642,16 @@ run_gate() {
     elif zt="$(zero_tests "$out")" && [ -n "$zt" ]; then
       GATE_EMPTY=2; nnote=', "note": "exit 0, but its output says no test ran"'
     elif [ -z "$(tr -d '[:space:]' < "$out" 2>/dev/null)" ]; then
-      # A test runner always prints its count; a linter or type checker may say nothing when clean.
-      case "$(printf '%s %s' "$name" "$cmd" | tr 'A-Z' 'a-z')" in
-        *test*|*spec*|*jest*|*mocha*) GATE_EMPTY=3; nnote=', "note": "exit 0, but it printed nothing"' ;;
+      # A test runner always prints its count; a linter or type checker may say nothing when clean. A
+      # test gate is told by its name or by a runner in its command, never by an argument (src tests).
+      case "$(printf '%s' "$name" | tr 'A-Z' 'a-z')" in
+        *test*|*spec*) GATE_EMPTY=3 ;;
+        *) case " $(printf '%s' "$cmd" | tr 'A-Z' 'a-z') " in
+             *pytest*|*jest*|*mocha*|*vitest*|*rspec*|*phpunit*|*unittest*|*ctest\ *|*" go test"*|*"cargo test"*|\
+             *"npm test"*|*"npm run test"*|*"yarn test"*|*"pnpm test"*|*"dotnet test"*|*"mvn test"*|*"gradle test"*) GATE_EMPTY=3 ;;
+           esac ;;
       esac
+      [ "$GATE_EMPTY" != 3 ] || nnote=', "note": "exit 0, but it printed nothing"'
     fi
   fi
   printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"%s}\n' \
@@ -2681,7 +2712,7 @@ skip_gate() {
 cmd_gate() {
   local run top cfg name cmd at mand k chk side needs hk hascol stg ism ckd extra row ran=0 skipped=0 failed=0 gates \
         passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0 GATE_BASELINE=0 \
-        nothing=0 nran="" nt="" slug files="" other trail="" rtask="" mode="" ec=0
+        nothing=0 nran="" nt="" slug files="" other trail="" rtask="" mode="" ec=0 py=""
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
@@ -2851,7 +2882,11 @@ NOTES
     case "$name" in
       before-*|after-*) ;;
       *) rtask="$(printf '%s' "$trail" | cut -f2)"    # an open trail's task, or the fresh id after a go
-         case "$rtask" in ''|-) rtask="$(field next "$run/session-state.md" | sed -n 's/^[Tt]ask[[:space:]]*\([0-9][0-9]*\).*/T\1/p')" ;; esac
+         case "$rtask" in ''|-) rtask="$(field next "$run/session-state.md" | sed -n 's/^[Tt]ask[[:space:]]*\([0-9][0-9]*\).*/T\1/p')"
+           if [ -n "$rtask" ] && [ -f "$run/repairs.jsonl" ] && py="$(impact_python)"; then   # its id may be another gate's trail
+             rtask="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" free "$rtask" "$name" --run "$run" 2>/dev/null)" || rtask=""
+           fi ;;
+         esac
          if [ -n "$rtask" ]; then nt="council repair record $rtask $(qname "$name")"
          else nt="council repair record T<n> $(qname "$name") (T<n>: the task you are on)"; fi
          say "repair: record this attempt — $nt; a third failed attempt stops the build (references/repair-loop.md)" ;;

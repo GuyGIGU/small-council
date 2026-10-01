@@ -110,9 +110,12 @@ unknown seat, and a missing source.
 
 A hook (`hooks/agent-gate.sh`) runs `council cap check` before every Agent, Task or Workflow call.
 Each call it lets through is one agent start of the run this session drives (`agent-starts.tsv`), so
-an agent counts from its start, before the Chair records it. The stop counts the larger of the agent
-runs recorded and the starts, so an agent recorded later is not counted twice. A Workflow is one start,
-however many agents it runs; its recorded agent count says the rest. While an in-progress run has used
+an agent counts from its start, before the Chair records it. A Workflow is one start, however many
+agents it runs: once its `agents=N` report is recorded, its other N - 1 are added to the starts. The
+stop counts the larger of the agent runs recorded and those starts, so an agent recorded later is not
+counted twice, and agents started after a Workflow are not hidden by its count. Agents recorded
+before the run's first counted start (a run resumed from an older version) are carried into the
+starts as one `before:<n>` row. While an in-progress run has used
 its agent cap, or its known tokens passed its ceiling, the call is refused, and Claude is told to ask
 the user. Their go, in their words, is recorded with
 `council cap allow <n> --user-said "…"` (`cap-allowances.tsv`, and a `run.cap_allowed` event): n more

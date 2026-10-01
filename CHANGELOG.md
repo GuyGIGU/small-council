@@ -21,34 +21,34 @@ Four problems the first real run showed:
 
 ### Added
 
-- `council run audit` checks a finished run against the method, item by item (pass, warn or FAIL): stages in order, agents recorded while they ran, one set of checks at a time, the deliverable, the claim index, the agent limit — and, given the session transcript, both status cards, the plain `council` call and helper output not cut off. The Chair runs it after every close.
+- `council run audit` checks a finished run against the method, item by item (pass, warn or FAIL): stages in order, agents recorded while they ran, one set of checks at a time, the deliverable, the claim index, the agent limit — and, from the session transcript (found by the run's session id, or given with `--transcript`), both status cards, the plain `council` call and helper output not cut off. The Chair runs it after every close.
 - `council home rule` prints the permission rule for the council's folder in the form Claude Code matches (the one setup wrote on Windows never matched).
 
 ### Fixed — from the 2026-09-30 bug hunt
 
 Runs and the agent limit:
 - After a compaction, a run whose code is in a worktree is recognised as the session's own: Claude is told to reload the method and carry on, not to leave it alone.
-- The agent limit counts each agent the moment it starts, so agents started together or recorded late no longer slip past the stop; a Workflow counts as at least one.
+- The agent limit counts each agent the moment it starts, so agents started together or recorded late no longer slip past the stop. A Workflow counts as one start until its agent count is recorded, then as all of them; agents recorded before the first counted start (a run resumed from an older version) count too.
 - After your go past the limit, the extra agents can be added to the run plan; runs opened before limits existed only warn, never stop; a usage report recorded twice counts once.
 - Two state updates at the same moment no longer lose one; an empty or misspelled stage name is refused.
 
 Checks:
 - A "changed files" check looks at everything the run covers, including work already committed on the main branch, and says which starting point it used.
-- A check that passes without running a test, or prints nothing, reads "pass — but nothing ran".
-- Running all checks warns like running one: a pipe, a last step that always succeeds, or a check that passes when its tool is missing; a required check with an empty command is named, not dropped.
-- In a build, a failing check prints the line to record the attempt, and after three recorded failures it refuses to run until your go (`council repair allow`) — the "stops after three failures" promise now holds once attempts are recorded.
+- A check that passes without running a test, or a test check that prints nothing, reads "pass — but nothing ran" (a run that did run tests elsewhere in its output, such as cargo's doc-tests line, still passes plainly).
+- Running all checks warns like running one: a pipe (unless the command sets pipefail), a last step that always succeeds, or a check that passes when its tool is missing; a required check with an empty command is named, not dropped.
+- In a build, a failing check prints the line to record the attempt (a second check failing in the same task gets its own id), and after three recorded failures it refuses to run until your go (`council repair allow`) — the "stops after three failures" promise holds once attempts are recorded; unrecorded failures still don't count.
 - Closing a run as complete warns when it never reached Deliver, a required check is red, or there is no deliverable or no verdicts.
 
 Findings and the closing card:
 - The claim index reads ordinary verifier tables and names any row it can't read instead of dropping it; a verifier whose table it can't read is sent back to fix it.
-- A cut finding the verifier confirmed can't stay on record as cut; "## Cut (…)" headings are read.
+- A cut finding the verifier confirmed fails `council evidence check` and the run audit, instead of staying on record as cut unnoticed; "## Cut (…)" headings are read; a summary table after the verdict table is left alone.
 - Plan runs can build their claim index (several rows per recommendation, the worst verdict counts), and Solo runs can pass the evidence check with the Chair's own recorded verdicts, shown as self-checked.
 - The closing card's "Verified" line counts only what shipped and names each verdict; it no longer says "not verified" about items the Chair cut.
 
 Setup, agents and the method:
 - Setup runs open with a plan that fits setup, and setup proves each required check can fail; the health check no longer judges finished runs' plans.
-- Workers and checkers are told their 60-step limit and checkers save as they go; one that runs out is resumed, not re-dispatched. Seat files from a Workflow's agents are checked too.
-- The steps every run needs (the Chair's own record, the phone alert, the pet on request) are where every run reads them; waiting for your answer reminds Claude to send the alert.
+- Workers and checkers are told their 60-step limit and checkers save as they go; one that runs out is resumed, not re-dispatched. `council collect` checks every seat file in `seats/`, a Workflow's too.
+- The steps every run needs (a Solo Chair's own record, the phone alert, the pet on request) are where every run reads them; recording that Claude is waiting for your answer reminds it to send the alert.
 - The session-start note and README say the helper runs in the Bash tool, not PowerShell; a run resumed by its `.council/runs/<name>` path works from a worktree.
 
 Tests:

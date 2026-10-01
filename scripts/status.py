@@ -344,9 +344,31 @@ def allowed_until(run_path):
 
 def agent_starts(run_path):
     """The agent starts the gate let through (bin/council cap_starts): the rows of agent-starts.tsv after
-    its header. A Workflow is one start."""
-    lines = cockpit.text_of(Path(run_path) / "agent-starts.tsv", run_path).split("\n")
-    return sum(1 for line in lines[1:] if line.strip())
+    its header, a "before:<n>" row counting n. A Workflow is one start; workflow_extra adds the rest."""
+    n = 0
+    for line in cockpit.text_of(Path(run_path) / "agent-starts.tsv", run_path).split("\n")[1:]:
+        if not line.strip():
+            continue
+        cells = line.split("\t")
+        seed = re.fullmatch(r"before:([0-9]{1,9})", cells[1]) if len(cells) > 1 else None
+        n += int(seed.group(1)) if seed else 1
+    return n
+
+
+def workflow_extra(run_path):
+    """A Workflow's agents beyond the one start the gate counted (bin/council cap_extra): for each
+    finished usage report of N > 1 agent runs (per agent id, the latest), N - 1."""
+    by_id, loose = {}, 0
+    for line in cockpit.text_of(Path(run_path) / "usage.tsv", run_path).split("\n")[1:]:
+        cells = line.split("\t")
+        if len(cells) < 5 or cells[3] != "finished" or not re.fullmatch(r"[0-9]{0,4}", cells[4]):
+            continue
+        k = int(cells[4]) if cells[4] else 1
+        if cells[2] == "":
+            loose += max(0, k - 1)
+        else:
+            by_id[cells[2]] = k
+    return loose + sum(max(0, k - 1) for k in by_id.values())
 
 
 def planned_run(run_path):
@@ -363,7 +385,7 @@ def cap_standing(snap, run_path, home=None):
     bash's test can't read never stops anything."""
     agents = (snap.get("usage") or {}).get("agents") or {}
     used = agents["total"] if agents.get("total") is not None else (agents.get("at_least") or 0)
-    used = max(used, agent_starts(run_path))          # an agent counts from its start, once
+    used = max(used, agent_starts(run_path) + workflow_extra(run_path))    # counted from its start, once
     tokens = ((snap.get("usage") or {}).get("tokens") or {}).get("known") or 0
     cap = run_agent_cap(run_path, home)
     ceiling = budget_value(run_path, "token-ceiling")
@@ -632,6 +654,9 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
     limit = cap_standing(snap, run_path, home)
     cap, used = limit["agent_cap"], limit["agent_runs"]
     usage["agent_cap"] = cap
+    recorded = usage["agent_runs"] if usage["agent_runs"] is not None else (usage["agent_runs_at_least"] or 0)
+    if used > recorded:              # the stop's own count, so "limit reached" never sits beside a smaller one
+        usage["agent_runs_text"] = "{} started ({} recorded)".format(used, recorded)
     if used and usage["basis"] == "complete":
         usage["text"] += " (limit {})".format(cap)
     elif used:
