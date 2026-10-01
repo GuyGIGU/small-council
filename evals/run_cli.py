@@ -2449,6 +2449,86 @@ def runs_records_all_or_nothing(tmp):
           and "could not be recorded" in err, out + err)
 
 @part("runs")
+def runs_closed_run_stays_closed(tmp):
+    # A closed run keeps the record its ledger counted (helper-runs-8: a complete run could be re-closed as
+    # abandoned and its seats changed) — but the writes its own close and the audit ask for still work, and
+    # a late agent report goes through council correct, which refreshes the ledger.
+    cl = new_repo(tmp, "closed-stays")
+    write(os.path.join(cl, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(cl, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    name, st = os.path.basename(run), os.path.join(run, "session-state.md")
+    write_plan(run, selected=("chair", "w1", "w2", "w3"))
+    council(cl, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    council(cl, "seat", "w2", "running", "agent=a2")
+    council(cl, "seat", "w3", "queued")
+    council(cl, "state", "phase=deliver")
+    council(cl, "run", "close")
+    closed_at, seats_before = re.search(r"^closed: (.+)$", read(st), re.MULTILINE).group(1), read(os.path.join(run, "seats.tsv"))
+    code, out, err = council(cl, "run", "close", "--status", "abandoned", "--run", name)
+    check("run close: a complete run can't be closed again as abandoned", code == 2 and "status: complete" in read(st), err)
+    code, out, err = council(cl, "run", "close", "--run", name)
+    check("run close: closing a complete run again as complete says when it closed and changes nothing",
+          code == 0 and "already closed" in out and closed_at in out and f"closed: {closed_at}" in read(st), out + err)
+    code, out, err = council(cl, "seat", "w1", "failed", "--run", name)
+    check("seat: a closed run takes no seat change, and the refusal names council correct",
+          code == 2 and "council correct" in err and read(os.path.join(run, "seats.tsv")) == seats_before, err)
+    code, out, err = council(cl, "seat", "w2", "done", "agent=a2", "tokens=25000", "--run", name)
+    check("seat: a late agent report on a closed run is refused, naming council correct", code == 2 and "council correct" in err, err)
+    seats_now = read(os.path.join(run, "seats.tsv"))
+    refused = [args for args in (("seat", "w2", "skipped"), ("seat", "verify-plan", "done", "agents=0"), ("seat", "ghost", "done", "agents=0"))
+               if council(cl, *args, "--run", name)[0] != 2]
+    check("seat: after close, skipped for a seat with an agent on record, and agents=0 for any seat but the plan's Chair, are refused",
+          not refused and read(os.path.join(run, "seats.tsv")) == seats_now, str(refused))
+    code, out, err = council(cl, "seat", "w3", "skipped", "--run", name)
+    check("seat: a seat only queued at close, no agent started, can still be marked skipped", code == 0, out + err)
+    code, out, err = council(cl, "seat", "w2", "failed", "note=interrupted", "--run", name)
+    check("seat: a seat the close left running can still be marked failed, as the close's own warning asks",
+          code == 0 and "w2\tfailed" in read(os.path.join(run, "seats.tsv")), out + err)
+    code, out, err = council(cl, "seat", "chair", "done", "agents=0", "--run", name)
+    ledger = [line.split("\t") for line in read(os.path.join(cl, ".council", "ledger.tsv")).splitlines()]
+    check("seat chair done agents=0: the Chair's own record the audit asks for still goes in after close, and reaches the ledger",
+          code == 0 and any(row[1] == name and row[3] == "chair" for row in ledger), out + err + str(ledger))
+    refused = [args for args in (("gate", "late", "--run", name, "--", "true"), ("cap", "allow", "1", "--run", name, "--user-said", "go"),
+                                 ("state", "next=more", "--run", name))
+               if council(cl, *args)[0] != 2]
+    check("gate, cap allow and state changes are refused on a closed run", not refused, str(refused))
+    code, out, err = council(cl, "state", "deliverable=.council/reviews/x.md", "--run", name)
+    check("state deliverable=: still allowed after close, as the close's own hint asks", code == 0, out + err)
+    code, out, err = council(cl, "correct", "w1", "tokens=30000", "agents=1", "evidence=the notification said 30000", "--run", name)
+    ledger = [line.split("\t") for line in read(os.path.join(cl, ".council", "ledger.tsv")).splitlines()]
+    check("correct: a late figure on a complete run refreshes its ledger row",
+          code == 0 and any(row[1] == name and row[3] == "w1" and "30000" in row for row in ledger), out + err + str(ledger))
+    early = new_repo(tmp, "closed-early")
+    write(os.path.join(early, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(early, "run", "open", "council-review")
+    erun = out.strip().splitlines()[-1]
+    ename = os.path.basename(erun)
+    write_plan(erun, selected=("chair", "w1"))
+    council(early, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    council(early, "run", "close")
+    code, out, err = council(early, "run", "close", "--status", "abandoned", "--run", ename)
+    eledger = read(os.path.join(early, ".council", "ledger.tsv"))
+    check("run close: a run closed complete before Deliver can be closed again as abandoned, as its close says, and leaves the ledger",
+          code == 0 and "status: abandoned" in read(os.path.join(erun, "session-state.md")) and ename not in eledger
+          and [e[5] for e in events(erun) if e[3] == "run.closed"][-1:] == ["abandoned"], out + err + eledger)
+    hand = new_repo(tmp, "closed-by-hand")
+    write(os.path.join(hand, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(hand, "run", "open", "council-review")
+    hrun = out.strip().splitlines()[-1]
+    hname = os.path.basename(hrun)
+    write_plan(hrun, selected=("chair", "w1"))
+    council(hand, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    code, out, err = council(hand, "state", "closed=2020-01-01 00:00")
+    check("state closed=: the close's own stamp is refused from anywhere but the close",
+          code == 2 and "closed:" not in read(os.path.join(hrun, "session-state.md")), out + err)
+    council(hand, "state", "status=complete")
+    code, out, err = council(hand, "run", "close", "--run", hname)
+    check("run close: a run set complete by hand, never closed, still gets its real close — its time, ledger rows and close event",
+          code == 0 and re.search(r"^closed: \S", read(os.path.join(hrun, "session-state.md")), re.MULTILINE) is not None
+          and hname in read(os.path.join(hand, ".council", "ledger.tsv")) and any(e[3] == "run.closed" for e in events(hrun)), out + err)
+
+@part("runs")
 def runs_worktrees_close_and_find(tmp):
     global fresh   # later "runs" blocks carry on with these
     # A linked worktree

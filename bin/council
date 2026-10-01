@@ -443,6 +443,27 @@ event_ready() {
   printf 'its last row is not a numbered event'; return 2
 }
 
+# A closed run (complete or abandoned, its close recorded) keeps the record its ledger counted: it takes
+# only what its close and audit ask for — the deliverable, the filed request, an evidence-backed correction,
+# the plan's Chair's own seat record, a seat left working marked failed (or skipped, if it never started),
+# and a re-close as abandoned when it stopped short of Deliver. A status set by hand is not a close.
+run_closed() {
+  case "$(field status "$1/session-state.md")" in complete|abandoned) [ -n "$(field closed "$1/session-state.md")" ] ;; *) return 1 ;; esac
+}
+
+# A run closed as complete before it reached Deliver: its close says it may be closed again as abandoned
+# (close_warnings) — the one change of status a closed run takes.
+stopped_short() {
+  case "$(field mode "$1/session-state.md")" in
+    council-review|council-plan|council-implement|council-research|council-postgame) ;; *) return 1 ;; esac
+  case "$(field phase "$1/session-state.md")" in deliver|learn) return 1 ;; esac
+  return 0
+}
+refuse_closed() {
+  run_closed "$1" || return 0
+  die "run ${1##*/} is closed ($(field status "$1/session-state.md") at $(field closed "$1/session-state.md")) — $2"
+}
+
 # Refuse a write, before it changes anything, while the run's event stream can't take its events.
 events_writable() {
   local why rc=0
@@ -660,6 +681,8 @@ cmd_state() {
     case "$kv" in
       status=*)
         case "${kv#*=}" in in-progress|paused|complete|abandoned) ;; *) die "status must be in-progress, paused, complete or abandoned" ;; esac ;;
+      closed=*)
+        [ "${CLOSING:-}" = 1 ] || die "closed= is the close's own stamp — close the run with: council run close" ;;
       phase=*)
         stage_name_ok "${kv#phase=}" "$mode" \
           || die "phase=${kv#phase=} is not a stage — use one of convene, prepare, assign, brief, work, collect, judge, challenge, deliver, learn, or build in a build (lower case)" ;;
@@ -678,6 +701,14 @@ cmd_state() {
       break ;;
     esac
   done
+  if [ "${CLOSING:-}" != 1 ] && run_closed "$run"; then
+    for kv in ${1+"$@"}; do
+      case "${kv%%=*}" in deliverable|ask|ask-saved) ;;
+        *) event_unlock "$lock" || :
+           refuse_closed "$run" "it takes only deliverable= (and ask save) now; open a new run for more work" ;;
+      esac
+    done
+  fi
   old_phase="$(field phase "$st")"; old_status="$(field status "$st")"; old_waiting="$(state_field waiting "$st")"
   tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
   awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { print }' "$st" > "$tmp" \
@@ -872,7 +903,7 @@ status_nudge() {
 }
 
 cmd_seat() {
-  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0
+  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 closed_out="" n
   [ -n "$slug" ] && [ -n "$state" ] || die "usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [agents=N] [note=TEXT]"
   case "$state" in queued|running|done|failed|blocked|skipped) ;; *) die "seat state must be queued, running, done, failed, blocked or skipped" ;; esac
   case "$slug" in *[!A-Za-z0-9._-]*) die "bad seat slug: $slug" ;; esac
@@ -909,6 +940,15 @@ cmd_seat() {
     die "agents=0 says no agent ran for this seat — it takes no tokens="
   fi
   run="$(resolve_run)" || exit 2
+  if run_closed "$run"; then               # only a close-out that keeps every counted figure
+    case "$state:$runs:$tokens$agent:$(seat_field "$run" "$slug" 2):$(seat_field "$run" "$slug" 3)" in
+      done:0:::)                                                  # the plan's Chair, with no row yet
+        [ ! -f "$run/run-plan.tsv" ] || ! SLUG="$slug" awk -F'\t' '$1 == "seat" && $2 == ENVIRON["SLUG"] && $3 == "role" && $4 == "chair" { f = 1 }
+          END { exit !f }' "$run/run-plan.tsv" || closed_out=1 ;;
+      failed:::running:*|failed:::queued:*|skipped:::queued:) closed_out=1 ;;   # skipped drops a row's counts: no agent
+    esac
+    [ -n "$closed_out" ] || refuse_closed "$run" "it takes only the Chair's own record (seat <chair> done agents=0) or a seat left working marked failed; a late agent report goes through: council correct <seat> tokens=… agents=… evidence=\"…\" --run ${run##*/}"
+  fi
   events_writable "$run"
   if [ "$runs" = 0 ] && { [ -n "$agent" ] || [ -n "$(seat_field "$run" "$slug" 3)" ]; }; then
     die "agents=0 says no agent ran for $slug, but an agent id is on record for it — report that agent's usage instead"
@@ -973,6 +1013,9 @@ cmd_seat() {
     die "seat changed, but its event could not be recorded"
   fi
   event_unlock "$f.lock" || die "seat changed, but its lock could not be released: $f.lock"
+  if [ -n "$closed_out" ] && [ "$(field status "$run/session-state.md")" = complete ]; then   # the ledger copies the record
+    n="$(ledger_record "$run")"; say "ledger: ${n:-0} seat row(s) of ${run##*/} refreshed"
+  fi
   progress_line "$run"
   cap_note "$run"                                   # reminders come after the progress line, so they are seen
   [ "$first" -eq 0 ] || status_nudge "$run" dispatch
@@ -1312,6 +1355,7 @@ cmd_cap_allow() {
   [ -n "$n" ] && [ "${#n}" -le 4 ] && [ "$n" -le 1000 ] \
     || die "cap allow takes how many more agent runs the user allowed, a whole number from 1 to 1000 — got: $1"
   run="$(resolve_run)" || exit 2
+  refuse_closed "$run" "no more agents start for it; open a new run"
   tmpd="$(mktemp -d 2>/dev/null)" && tmpd="$(cd "$tmpd" && here)" || die "cannot make a temporary folder"
   { printf '%s' "$MEMORY_SAID_ARG" | tr '\t\r\n\013\014' '     '; printf '\n'; } > "$tmpd/said.raw" \
     || { rm -rf "$tmpd"; die "cannot write $tmpd"; }
@@ -1450,8 +1494,27 @@ close_warnings() {
   printf '%s' "$codes"
 }
 
+# A synthesis run's claim index at close, read only: missing, or older than a source it was built from
+# (a deleted one too), is one warning naming the rebuild.
+close_claims_note() {
+  local run="$1" py stale="" source
+  case "$(field mode "$run/session-state.md")" in council-review|council-plan|council-research) ;; *) return 0 ;; esac
+  { [ -f "$run/synthesis.md" ] || [ -f "$run/claims.jsonl" ]; } && py="$(impact_python)" || return 0
+  # check compares the index to the sources it can still read, so it also
+  # detects a verifier report that was deleted after the index was built.
+  if "$py" "$COUNCIL_PLUGIN_ROOT/scripts/evidence.py" check --run "$run" 2>&1 \
+      | grep -Fq 'claims.jsonl is missing or stale'; then stale=1; fi
+  # A missing synthesis is itself a stale source set when an index remains.
+  [ -f "$run/synthesis.md" ] || [ ! -f "$run/claims.jsonl" ] || stale=1
+  [ -f "$run/claims.jsonl" ] || stale=1
+  for source in "$run/synthesis.md" "$run"/verify-*.md; do
+    [ ! -f "$source" ] || [ ! "$source" -nt "$run/claims.jsonl" ] || stale=1
+  done
+  [ -z "$stale" ] || printf 'council: the claim index is missing or out of date — council evidence build --run %s, then evidence check\n' "${run##*/}" >&2
+}
+
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost=""
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -1459,7 +1522,17 @@ cmd_run_close() {
     [ $? -eq 2 ] || events_writable "$run"       # a torn line: refused, with the repair named
     printf 'council: the event stream is lost (%s): the run closes, but its events were not recorded\n' "$lost" >&2
   }
-  old_status="$(field status "$run/session-state.md")"
+  old_status="$(field status "$run/session-state.md")"; old_closed="$(field closed "$run/session-state.md")"
+  if run_closed "$run"; then
+    if [ "$old_status:$status" = complete:abandoned ] && stopped_short "$run"; then
+      retake=1                                   # its close said so: it never was a finished run
+    else
+      [ "$old_status" = "$status" ] || refuse_closed "$run" "it stays $old_status"
+      say "${run##*/} is already closed — $old_status at $old_closed; nothing changed"
+      close_claims_note "$run"                   # read-only: after an evidence build, says whether it is current
+      return 0
+    fi
+  fi
   usage="$(run_usage "$run")"; words="$(usage_words "$usage")"
   estimate="$(run_budget_value "$run" estimated-tokens)"
   if [ -n "$words" ] && [ -n "$estimate" ]; then
@@ -1479,6 +1552,7 @@ cmd_run_close() {
   else
     CLOSING=1 EVENTS_LOST="${lost:+1}" RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" >/dev/null
   fi
+  [ -z "$retake" ] || ledger_forget "$run"
   home="$(council_home)"; ptr="$home/active-run"
   if [ -s "$ptr" ]; then                      # the 0.1/0.2 single pointer: empty it if it names this run
     p="$(head -n 1 "$ptr" | tr -d '\r')"
@@ -1493,26 +1567,7 @@ cmd_run_close() {
   if [ -n "$busy" ] && [ "$status" != abandoned ]; then
     printf 'council: seats still marked running or queued: %s — their results will not be collected; wait for them, or record each (council seat <slug> failed or skipped) before closing\n' "$busy" >&2
   fi
-  case "$(field mode "$run/session-state.md")" in
-    council-review|council-plan|council-research)
-      if { [ -f "$run/synthesis.md" ] || [ -f "$run/claims.jsonl" ]; } \
-          && py="$(impact_python)"; then
-        stale=""
-        # check compares the index to the sources it can still read, so it also
-        # detects a verifier report that was deleted after the index was built.
-        if "$py" "$COUNCIL_PLUGIN_ROOT/scripts/evidence.py" check --run "$run" 2>&1 \
-            | grep -Fq 'claims.jsonl is missing or stale'; then stale=1; fi
-        # A missing synthesis is itself a stale source set when an index remains.
-        [ -f "$run/synthesis.md" ] || [ ! -f "$run/claims.jsonl" ] || stale=1
-        [ -f "$run/claims.jsonl" ] || stale=1
-        for source in "$run/synthesis.md" "$run"/verify-*.md; do
-          [ ! -f "$source" ] || [ ! "$source" -nt "$run/claims.jsonl" ] || stale=1
-        done
-        if [ -n "$stale" ]; then
-          printf 'council: the claim index is missing or out of date — council evidence build --run %s, then evidence check\n' "${run##*/}" >&2
-        fi
-      fi ;;
-  esac
+  close_claims_note "$run"
   if [ "$status" = complete ]; then
     warn="$(close_warnings "$run")"
     n="$(ledger_record "$run")"
@@ -1534,7 +1589,7 @@ cmd_run_close() {
       fi
     fi
   fi
-  if [ "$old_status" != "$status" ]; then
+  if [ "$old_status" != "$status" ] || [ -z "$old_closed" ]; then     # a status set by hand had no close of its own
     event_type=run.closed; [ "$status" != paused ] || event_type=run.paused
     set -- $usage
     # The state, the ledger and the close line are already written: a late event failure is said, not fatal.
@@ -1997,7 +2052,7 @@ ps_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"; }
 # recorded, the exact value, and where the evidence is. Every reader lays the latest correction over
 # the row. A figure is corrected only to an exact number its source shows, never to a guess.
 cmd_correct() {
-  local run slug="${1:-}" kv tokens="" runs="" evidence="" f field to from line added="" ad=""
+  local run slug="${1:-}" kv tokens="" runs="" evidence="" f field to from line added="" ad="" n
   [ -n "$slug" ] || die "usage: council correct <seat> tokens=<exact> agents=<exact> [unrecorded=yes] evidence=\"<where the figure comes from>\""
   case "$slug" in *[!A-Za-z0-9._-]*) die "correct: bad seat slug: $slug" ;; esac
   shift
@@ -2050,6 +2105,9 @@ cmd_correct() {
     say "corrected $slug $field: ${from:-blank} → $to (seats.tsv keeps the original; corrections.jsonl keeps the evidence)"
   done
   event_unlock "$run/seats.tsv.lock" || die "corrected, but the seat lock could not be released"
+  if [ "$(field status "$run/session-state.md")" = complete ]; then   # the ledger is a copy of the record: refresh it
+    n="$(ledger_record "$run")"; say "ledger: ${n:-0} seat row(s) of ${run##*/} refreshed"
+  fi
 }
 
 # History across the council home's runs (scripts/history.py): counts always, a median, share or
@@ -2132,6 +2190,7 @@ cmd_repair() {
   local action="$1" run py trail task seq words file lock tmpd rc=0
   shift
   run="$(resolve_run)" || exit 2
+  case "$action" in record|allow) refuse_closed "$run" "its repair trail is on record (council repair show)" ;; esac
   py="$(impact_python)" || die "repair tracking needs optional Python 3.8+; record attempts in the build log"
   if [ "$action" != allow ]; then
     "$py" "$COUNCIL_PLUGIN_ROOT/scripts/repair.py" "$action" ${1+"$@"} --run "$run"
@@ -2806,6 +2865,7 @@ cmd_gate() {
         passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0 GATE_BASELINE=0 \
         nothing=0 nran="" nt="" slug files="" other trail="" rtask="" mode="" ec=0 py=""
   run="$(resolve_run)" || exit 2
+  refuse_closed "$run" "its checks are on record; run them in a new run"
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
   if [ "$ALL" = 1 ]; then
@@ -5868,6 +5928,16 @@ SEATS
     rm -f "$ledger.tmp$$" 2>/dev/null
     printf 'council: could not write %s — the ledger was not updated\n' "$ledger" >&2; printf '0'
   fi
+}
+
+# Take a run's rows out of the ledger: a complete close taken back as abandoned.
+ledger_forget() {
+  local home ledger
+  case "$1" in */runs/*) home="${1%/runs/*}" ;; *) home="$(council_home)" ;; esac
+  ledger="$home/ledger.tsv"
+  [ -f "$ledger" ] || return 0
+  RUN="${1##*/}" awk -F'\t' '$2 != ENVIRON["RUN"]' "$ledger" > "$ledger.tmp$$" 2>/dev/null && mv "$ledger.tmp$$" "$ledger" 2>/dev/null \
+    || { rm -f "$ledger.tmp$$" 2>/dev/null; printf 'council: could not write %s — its rows for %s are still there\n' "$ledger" "${1##*/}" >&2; }
 }
 
 cmd_ledger() {

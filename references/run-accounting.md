@@ -106,6 +106,12 @@ unknown seat, and a missing source.
 - Only an exact figure the source shows is a correction. 160 is never read as 160,000 because it
   looks small.
 
+A closed run (complete or abandoned) takes no more agent reports: a late agent's figure goes through
+`council correct`, which also refreshes the run's ledger rows. It still takes the Chair's own record
+(`council seat <chair> done agents=0`, for the plan's Chair) and a seat left working marked failed — or
+skipped, if it never started. A run closed
+complete before Deliver may be closed again as abandoned, which takes its rows out of the ledger.
+
 ## The stop at the limit
 
 A hook (`hooks/agent-gate.sh`) runs `council cap check` before every Agent, Task or Workflow call.

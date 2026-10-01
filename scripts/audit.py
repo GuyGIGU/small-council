@@ -376,8 +376,8 @@ def seats_on_record(run, say):
     missing = [s for s in run.selected if s not in recorded and s not in chair]
     chair = [s for s in chair if s in recorded]
     if missing_chair:
-        say(FAIL, label, "the Chair's own seat (%s) has no record: council seat %s done agents=0%s" % (
-            ", ".join(missing_chair), missing_chair[0], "; nor has %s" % listed(missing) if missing else ""))
+        say(FAIL, label, "the Chair's own seat (%s) has no record: council seat %s done agents=0 --run %s%s" % (
+            ", ".join(missing_chair), missing_chair[0], run.name, "; nor has %s" % listed(missing) if missing else ""))
     elif missing:
         say(FAIL, label, "selected in the plan but never recorded: %s" % listed(missing))
     else:
