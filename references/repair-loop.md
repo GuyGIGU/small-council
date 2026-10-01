@@ -12,7 +12,9 @@ it says the attempt was not counted, and why. A pass closes the trail. `council 
 <task-id> <gate-name>` is for a result recorded any other way; for one the gate recorded it says so
 and changes nothing. Inspect the saved output and the baseline before acting.
 After a repair, run the **same** gate again: its result is recorded the same way.
-The intentionally red `before-<n>` proof is never an attempt, and `gate --all` records none: it skips
+The intentionally red `before-<n>` proof is never an attempt, nor is `regress-<n>` — a review fix's new
+check run on the version the verifier saw, red by design (the card treats both as proofs, never failing
+checks). `gate --all` records no attempts: it skips
 a stopped gate and closes an open trail when the gate passes. `council repair show [task-id]` displays the trail; `council repair check [task-id]`
 checks that saved snapshots still match it.
 

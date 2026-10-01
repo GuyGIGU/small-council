@@ -252,12 +252,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           and not any(a["kind"] == "failure" for a in r["attention"]), (r["state"], r["attention"]))
 
     r = reading(make_run(base, "recovered", seats=[v2("beck", "done", 50000, 1, 1)],
-                         gates=[("tests", 1, 60), ("tests", 0, 20), ("before-1", 1, 50), ("after-1", 0, 40)]))
+                         gates=[("tests", 1, 60), ("tests", 0, 20), ("before-1", 1, 50), ("after-1", 0, 40),
+                                ("regress-1", 1, 30)]))   # a review fix's red step, on the version a verifier saw
     check("state: a failure that later passed is recovered — no longer a problem, still shown as history",
           r["state"]["key"] == "running" and not r["attention"] and "1 recovered after failing" in r["progress"]["checks"],
           (r["state"], r["attention"], r["progress"]))
-    check("checks: a build's before-proof failing first is not a failure, and the latest check shown is a real one",
-          r["latest_check"]["name"] == "tests" and all(c["name"] != "before-1" for c in r["checks"]), r["latest_check"])
+    check("checks: a build's before-proof failing first, or a review fix's regress-proof, is not a failure, and the "
+          "latest check shown is a real one",
+          r["latest_check"]["name"] == "tests" and all(c["name"] not in ("before-1", "regress-1") for c in r["checks"]),
+          r["latest_check"])
 
     stop = rec + [{"task": "T2", "gate": "tests", "attempt": 2, "result": "failed", "action": "independent-diagnosis"},
                   {"task": "T2", "gate": "tests", "attempt": 3, "result": "failed", "action": "stop"}]

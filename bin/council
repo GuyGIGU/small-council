@@ -3272,7 +3272,7 @@ repair_auto() {
   local run="$1" name="$2" ec="$3" trail="$4" st task cur py out
   [ "$(field mode "$run/session-state.md")" = council-implement ] || return 0
   [ "$(field phase "$run/session-state.md")" = build ] || return 0
-  case "$name" in before-*|after-*) return 0 ;; esac
+  case "$name" in before-*|after-*|regress-*) return 0 ;; esac   # proofs, meant to fail first
   st="$(printf '%s' "$trail" | cut -f1)"
   if [ "$ec" -eq 0 ]; then [ "$st" = open ] || return 0; fi
   if [ "$ec" -ne 0 ] && [ "${GATE_SAME_AS_BASELINE:-0}" = 1 ] && [ "$st" != open ]; then
