@@ -2382,6 +2382,73 @@ def runs_reminders_last(tmp):
           code == 0 and "over its cap" in last, whole)
 
 @part("runs")
+def runs_records_all_or_nothing(tmp):
+    # A damaged event stream refuses a write before anything changes, and the repair keeps a copy and drops
+    # only the torn tail (helper-runs-6: the state was written, its event refused, and close skipped the ledger).
+    aon = new_repo(tmp, "all-or-nothing")
+    write(os.path.join(aon, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(aon, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    st, ev = os.path.join(run, "session-state.md"), os.path.join(run, "events.tsv")
+    with open(ev, "a", encoding="utf-8", newline="") as f:
+        f.write("1\t2\t2026-10-01T00:00:00Z\trun.ph")              # a writer killed in the middle of a row
+    before = read(st)
+    code, out, err = council(aon, "state", "phase=prepare", "next=never")
+    check("state: a torn event stream refuses the call before anything is written, and names the repair",
+          code == 2 and "council run events repair" in err and read(st) == before, err)
+    seats_before = read(os.path.join(run, "seats.tsv"))       # run open writes its header
+    code, out, err = council(aon, "seat", "w1", "done", "tokens=20000")
+    check("seat: the same refusal, with nothing written to seats.tsv or usage.tsv",
+          code == 2 and "council run events repair" in err and read(os.path.join(run, "seats.tsv")) == seats_before
+          and not os.path.exists(os.path.join(run, "usage.tsv")), err)
+    code, out, err = council(aon, "correct", "w1", "tokens=30000", "agents=1", "evidence=the notification said 30000")
+    check("correct: the same refusal, and no correction is written",
+          code == 2 and "council run events repair" in err and not os.path.exists(os.path.join(run, "corrections.jsonl")), err)
+    write(os.path.join(run, "ask.md"), "# Ask — x\nsource: said at the time\n## In your words\nfix it\n")
+    code, out, err = council(aon, "ask", "save")
+    check("ask save: a state write that records no event still works on a torn stream (it never said nothing was written)",
+          code == 0 and "ask-saved:" in read(st), out + err)
+    before = read(st)
+    code, out, err = council(aon, "run", "close")
+    check("run close: refused on a torn stream, and the run stays in progress",
+          code == 2 and "council run events repair" in err and read(st) == before, err)
+    raw = open(ev, "rb").read()
+    code, out, err = council(aon, "run", "events", "repair")
+    copies = [n for n in os.listdir(run) if n.startswith("events.tsv.bak")]
+    code2, out2, _ = council(aon, "run", "events", "check")
+    check("run events repair: keeps a byte copy, drops only the torn tail, records itself, and the stream checks valid",
+          code == 0 and len(copies) == 1 and open(os.path.join(run, copies[0]), "rb").read() == raw
+          and code2 == 0 and "run.events_repaired" in read(ev) and "run.opened" in read(ev), out + err + out2)
+    code, out, err = council(aon, "state", "phase=prepare")
+    check("state: after the repair, writes go through", code == 0 and "phase: prepare" in read(st), out + err)
+    code, out, err = council(aon, "state", "phase=assign", env={"EVENTS_LOST": "1", "CLOSING": "1"})
+    check("state: the close's internal flags can't be inherited from the environment",
+          code == 0 and "run.phase_changed\trun\tassign" in read(ev), out + err)
+    council(aon, "seat", "w1", "done", "tokens=20000")
+    os.remove(ev)
+    code, out, err = council(aon, "run", "events", "repair")
+    check("run events repair: a missing stream is said not repairable, never rebuilt from guesses",
+          code == 2 and "missing" in err and not os.path.exists(ev), err)
+    code, out, err = council(aon, "run", "close")
+    ledger = read(os.path.join(aon, ".council", "ledger.tsv")) if os.path.exists(os.path.join(aon, ".council", "ledger.tsv")) else ""
+    check("run close: with the stream lost, the run still closes, writes its ledger, and says its events were not recorded",
+          code == 0 and "status: complete" in read(st) and "not recorded" in err and not os.path.exists(ev)
+          and os.path.basename(run) in ledger, out + err)
+    # A close whose status event fails at the moment of writing still writes the ledger and the close line.
+    late = new_repo(tmp, "late-event")
+    write(os.path.join(late, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(late, "run", "open", "council-review")
+    lrun = out.strip().splitlines()[-1]
+    council(late, "seat", "w1", "done", "tokens=20000")
+    lst = os.path.join(lrun, "session-state.md")
+    write(lst, read(lst).replace("events-schema: 1", "events-schema: 9"))     # every event write now fails
+    code, out, err = council(late, "run", "close")
+    lledger = read(os.path.join(late, ".council", "ledger.tsv")) if os.path.exists(os.path.join(late, ".council", "ledger.tsv")) else ""
+    check("run close: a status event that fails as it is written leaves the run closed, its ledger written and a warning",
+          code == 0 and "status: complete" in read(lst) and "closed " in out and os.path.basename(lrun) in lledger
+          and "could not be recorded" in err, out + err)
+
+@part("runs")
 def runs_worktrees_close_and_find(tmp):
     global fresh   # later "runs" blocks carry on with these
     # A linked worktree

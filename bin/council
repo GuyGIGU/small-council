@@ -15,6 +15,7 @@
 # and the helper always resolve the council home the same way.
 
 set -u
+unset EVENTS_LOST CLOSING          # internal: set only by run close for its own state write, never inherited
 
 COUNCIL_VERSION="0.18.0"
 COUNCIL_MEMORY_SIZE_LIMIT=25600  # bytes: about 25 KB of project memory is the expected upper bound
@@ -427,6 +428,32 @@ event_append() {
   return "$rc"
 }
 
+# Whether a run's event stream can take one more row: always for a run from before events (no
+# events-schema); else events.tsv must exist, end in a newline, and end with the header or a numbered row.
+# Prints why not. Exit 1: a torn last line, which `council run events repair` mends; exit 2: missing or
+# damaged otherwise, which nothing rebuilds. Writers check it before changing anything (all or nothing).
+event_ready() {
+  local file="$1/events.tsv" last
+  [ -n "$(field events-schema "$1/session-state.md")" ] || return 0
+  [ -f "$file" ] || { printf 'events.tsv is missing'; return 2; }
+  [ -z "$(tail -c 1 "$file")" ] || { printf 'its last line is torn'; return 1; }
+  last="$(tail -n 1 "$file" | tr -d '\r')"
+  [ "$last" != "$(printf 'schema\tseq\tat\ttype\tsubject\tvalue\tdetail')" ] || { printf 'it holds no events'; return 2; }
+  printf '%s\n' "$last" | awk -F'\t' 'NF == 7 && $1 == "1" && $2 ~ /^[0-9]+$/ { ok = 1 } END { exit !ok }' && return 0
+  printf 'its last row is not a numbered event'; return 2
+}
+
+# Refuse a write, before it changes anything, while the run's event stream can't take its events.
+events_writable() {
+  local why rc=0
+  why="$(event_ready "$1")" || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    1) die "the run's event stream is damaged ($why), so nothing was written — repair it: council run events repair --run ${1##*/}" ;;
+    *) die "the run's event stream is lost ($why), so nothing was written — it can't be rebuilt; close the run: council run close --run ${1##*/}" ;;
+  esac
+}
+
 event_check() {
   local run="$1" file="$1/events.tsv" schema lock rc
   schema="$(field events-schema "$run/session-state.md")"
@@ -476,8 +503,37 @@ cmd_run_events() {
       lock="$run/events.tsv.lock"; event_lock "$lock" || return 1
       awk -F'\t' 'NR > 1 { printf "%s  %s  %s  %s → %s  (%s)\n", $2, $3, $4, $5, $6, $7 }' "$run/events.tsv"
       rc=$?; event_unlock "$lock" || rc=1; return "$rc" ;;
-    *) die "usage: council run events [show|check]" ;;
+    repair) event_repair "$run" ;;
+    *) die "usage: council run events [show|check|repair]" ;;
   esac
+}
+
+# council run events repair — mend a torn last line, the one damage a killed writer leaves (each row is
+# one printf): save a byte copy beside the file, drop only the bytes after the last newline, check the
+# stream, and record the repair. A missing stream or a damaged row is reported, never rebuilt from
+# guesses (references/event-stream.md).
+event_repair() {
+  local run="$1" file="$1/events.tsv" lock why rc=0 copy total part keep
+  why="$(event_ready "$run")" || rc=$?
+  case "$rc" in
+    0) [ -n "$(field events-schema "$run/session-state.md")" ] || { say "events: legacy run · no event stream to repair"; return 0; }
+       say "events: nothing to repair — $(event_check "$run" 2>&1 | tail -n 1)"; return 0 ;;
+    2) die "events: not repairable — $why; nothing was changed (readers fall back to session-state.md)" ;;
+  esac
+  lock="$file.lock"; event_lock "$lock" || die "events: the event lock is unavailable: $lock"
+  if [ -z "$(tail -c 1 "$file")" ]; then           # another repair got here first
+    event_unlock "$lock" || :; say "events: nothing to repair — the last line is whole now"; return 0
+  fi
+  copy="events.tsv.bak-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  total="$(wc -c < "$file" | tr -d ' ')"; part="$(tail -n 1 "$file" | wc -c | tr -d ' ')"
+  keep=$((total - part))
+  if ! cp "$file" "$run/$copy" || ! head -c "$keep" "$file" > "$file.tmp$$" || ! mv "$file.tmp$$" "$file"; then
+    rm -f "$file.tmp$$"; event_unlock "$lock" || :; die "events: could not repair $file (the copy, if made, is $run/$copy)"
+  fi
+  event_unlock "$lock" || :
+  event_check "$run" >/dev/null 2>&1 || die "events: dropped the torn last line ($part bytes; copy: $copy), but the stream still doesn't check — council run events check"
+  event_append "$run" run.events_repaired run torn-tail "dropped=$part;copy=$copy" || die "events: repaired, but the repair could not be recorded"
+  say "events: repaired — dropped the torn last line ($part bytes); the old file is kept as $copy"
 }
 
 cmd_run_open() {
@@ -616,6 +672,12 @@ cmd_state() {
   # Several commands rewrite this file (state, index, ask save, close, resume); two at once would each
   # write over the other's change. The lock also keeps the events below in the order of the writes.
   lock="$st.lock"; event_lock "$lock" || die "state lock unavailable: $lock"
+  for kv in ${1+"$@"}; do                            # a call that records an event needs a stream that takes it
+    case "$kv" in phase=*|status=*|waiting=*)
+      [ "${EVENTS_LOST:-}" = 1 ] || ( events_writable "$run" ) || { event_unlock "$lock" || :; exit 2; }
+      break ;;
+    esac
+  done
   old_phase="$(field phase "$st")"; old_status="$(field status "$st")"; old_waiting="$(state_field waiting "$st")"
   tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
   awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { print }' "$st" > "$tmp" \
@@ -627,7 +689,8 @@ cmd_state() {
       !done && index($0, k) == 1 { print line; done = 1; next }
       !done && /^## / { print line; done = 1 }
       { print }
-      END { if (!done) print line }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
+      END { if (!done) print line }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp" \
+      || { rm -f "$tmp" "$tmp.2"; event_unlock "$lock" || :; die "cannot update $st"; }
   done
   # The next: a run opens with is Convene's own step, and nothing replaces it on its own. Past convene it
   # is stale, so it is emptied here; a next the Chair wrote stays. (The status readers skip it too, for
@@ -636,22 +699,29 @@ cmd_state() {
     ''|convene) ;;
     *) if [ "$(state_field next "$tmp")" = "$COUNCIL_NEXT_AT_OPEN" ]; then
          awk '/^## / { body = 1 } !body && !d && index($0, "next:") == 1 { print "next:"; d = 1; next } { print }' \
-           "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
+           "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp" \
+           || { rm -f "$tmp" "$tmp.2"; event_unlock "$lock" || :; die "cannot update $st"; }
        fi ;;
   esac
   NOW="$(now_min)" awk '
     BEGIN { l = "updated: " ENVIRON["NOW"] }
     !d && index($0, "updated:") == 1 { print l; d = 1; next }
-    { print }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
+    { print }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp" \
+    || { rm -f "$tmp" "$tmp.2"; event_unlock "$lock" || :; die "cannot update $st"; }
   mv "$tmp" "$st" || { rm -f "$tmp"; event_unlock "$lock" || :; die "cannot update $st"; }
   new_phase="$(field phase "$st")"; new_status="$(field status "$st")"
-  if [ "$old_phase" != "$new_phase" ]; then
+  if [ "${EVENTS_LOST:-}" = 1 ]; then :              # close of a run whose stream is lost: no events to add
+  elif [ "$old_phase" != "$new_phase" ]; then
     event_append "$run" run.phase_changed run "$new_phase" "from=$old_phase" \
       || { event_unlock "$lock" || :; die "state changed, but the phase event could not be recorded"; }
   fi
-  if [ "$old_status" != "$new_status" ]; then
-    event_append "$run" run.status_changed run "$new_status" "from=$old_status" \
-      || { event_unlock "$lock" || :; die "state changed, but the status event could not be recorded"; }
+  if [ "${EVENTS_LOST:-}" = 1 ]; then :
+  elif [ "$old_status" != "$new_status" ]; then
+    if ! event_append "$run" run.status_changed run "$new_status" "from=$old_status"; then
+      # A close goes on to its ledger and close line: the state is the authority, the event a late note.
+      [ "${CLOSING:-}" = 1 ] || { event_unlock "$lock" || :; die "state changed, but the status event could not be recorded"; }
+      printf 'council: the status event could not be recorded; the close goes on — council run events check --run %s\n' "${run##*/}" >&2
+    fi
   fi
   new_waiting="$(state_field waiting "$st")"           # the question the run waits on the user for, if any
   if [ -z "$old_waiting" ] && [ -n "$new_waiting" ]; then
@@ -839,6 +909,7 @@ cmd_seat() {
     die "agents=0 says no agent ran for this seat — it takes no tokens="
   fi
   run="$(resolve_run)" || exit 2
+  events_writable "$run"
   if [ "$runs" = 0 ] && { [ -n "$agent" ] || [ -n "$(seat_field "$run" "$slug" 3)" ]; }; then
     die "agents=0 says no agent ran for $slug, but an agent id is on record for it — report that agent's usage instead"
   fi
@@ -1380,10 +1451,14 @@ close_warnings() {
 }
 
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn=""
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
+  lost="$(event_ready "$run")" && lost="" || {
+    [ $? -eq 2 ] || events_writable "$run"       # a torn line: refused, with the repair named
+    printf 'council: the event stream is lost (%s): the run closes, but its events were not recorded\n' "$lost" >&2
+  }
   old_status="$(field status "$run/session-state.md")"
   usage="$(run_usage "$run")"; words="$(usage_words "$usage")"
   estimate="$(run_budget_value "$run" estimated-tokens)"
@@ -1400,9 +1475,9 @@ cmd_run_close() {
     busy="$(awk -F'\t' 'NR > 1 && ($2 == "running" || $2 == "queued") { printf "%s%s", (n++ ? ", " : ""), $1 }' "$run/seats.tsv")"
   fi
   if [ -n "$words" ]; then
-    RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" actual="$words" >/dev/null
+    CLOSING=1 EVENTS_LOST="${lost:+1}" RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" actual="$words" >/dev/null
   else
-    RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" >/dev/null
+    CLOSING=1 EVENTS_LOST="${lost:+1}" RUN_ARG="$run" cmd_state status="$status" closed="$(now_sec)" >/dev/null
   fi
   home="$(council_home)"; ptr="$home/active-run"
   if [ -s "$ptr" ]; then                      # the 0.1/0.2 single pointer: empty it if it names this run
@@ -1462,7 +1537,9 @@ cmd_run_close() {
   if [ "$old_status" != "$status" ]; then
     event_type=run.closed; [ "$status" != paused ] || event_type=run.paused
     set -- $usage
-    event_append "$run" "$event_type" run "$status" "agent_runs=$2;reported=$3;tokens=$4;basis=$1${warn:+;warnings=$warn}" || die "run closed, but its event could not be recorded"
+    # The state, the ledger and the close line are already written: a late event failure is said, not fatal.
+    [ -n "$lost" ] || event_append "$run" "$event_type" run "$status" "agent_runs=$2;reported=$3;tokens=$4;basis=$1${warn:+;warnings=$warn}" \
+      || printf 'council: the run is closed, but its close event could not be recorded — council run events check --run %s\n' "${run##*/}" >&2
     status_nudge "$run" close
   fi
 }
@@ -1949,6 +2026,7 @@ cmd_correct() {
     die "correct: tokens=0 with agents=$runs — an agent run always costs something; if its figure is unknown, leave tokens= out"
   fi
   run="$(resolve_run)" || exit 2
+  events_writable "$run"
   if [ -n "$added" ]; then                     # an agent run the Chair never recorded: both figures, a new slug
     [ -n "$runs" ] && [ "$runs" -gt 0 ] || die "correct: unrecorded=yes adds an agent run the record missed — give agents= (1 or more), and tokens= if the source shows its figure"
     [ -z "$(seat_field "$run" "$slug" 1)" ] || die "correct: $slug is already a seat of ${run##*/} — correct it without unrecorded=yes"
@@ -4068,7 +4146,7 @@ RUNS
       finding ERROR "run ${dir##*/} declares plan schema $schema but run-plan.tsv is missing" "restore it from references/templates/run-plan.tsv and complete it before dispatch"
     fi
     if event_result="$(event_check "$dir" 2>&1)"; then :; else
-      finding ERROR "run ${dir##*/} has an invalid event stream ($event_result)" "inspect $dir/events.tsv and run: council run events check --run ${dir##*/}"
+      finding ERROR "run ${dir##*/} has an invalid event stream ($event_result)" "inspect $dir/events.tsv; a torn last line is mended by: council run events repair --run ${dir##*/}"
     fi
   done <<RUN_PLANS
 $(find "$home/runs" -mindepth 2 -maxdepth 2 -name session-state.md 2>/dev/null | sort)
@@ -6082,7 +6160,7 @@ council — the Small Council's helper (bash + git)
   council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
                                          in progress again, this session recorded as its driver
   council run plan [check|show]          validate the run plan · show its decisions in plain language
-  council run events [show|check]        inspect or validate the run's append-only event stream
+  council run events [show|check|repair] inspect, validate or mend (a torn last line) the run's event stream
   council run audit [--transcript <session .jsonl>]
                                          after close: check the run against the method from its
                                          records, and with the session transcript what the Chair
@@ -6278,7 +6356,7 @@ main() {
         status) takes_flags "run status" all; no_words "run status" ${1+"$@"}; cmd_run_status ;;
         resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
         plan)   takes_flags "run plan"; [ $# -le 1 ] || die "usage: council run plan [check|show]"; cmd_run_plan ${1+"$@"} ;;
-        events) takes_flags "run events"; [ $# -le 1 ] || die "usage: council run events [show|check]"; cmd_run_events ${1+"$@"} ;;
+        events) takes_flags "run events"; [ $# -le 1 ] || die "usage: council run events [show|check|repair]"; cmd_run_events ${1+"$@"} ;;
         audit)  takes_flags "run audit" transcript; no_words "run audit" ${1+"$@"}; cmd_run_audit ;;
         *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show] | run events [show|check] | run audit [--transcript <file>]" ;;
       esac ;;
