@@ -155,7 +155,6 @@ deferred: search the tools before deciding there is none — call its `read_me` 
 `council status`. Otherwise, only when the user asks — never a card per progress line. A card is
 a snapshot; if one fails, give the text. `council pet` opens the desktop pet, only when the user asks.
 
-**Alerts.** When you stop for the user's answer, `council state waiting="<the question>"` (`waiting=`
-clears it). Then, and when an agent cap or token ceiling stops the run, send what
-`council status --line` prints, once, with a PushNotification tool (it may be deferred too). No
-progress alerts.
+**Alerts.** When you stop for the user's answer, `council state waiting="<the question>"`. At the
+turn's end a hook records a wait you didn't and sends you back once to send what `council status
+--line` prints with a PushNotification tool (it may be deferred too). No progress alerts.

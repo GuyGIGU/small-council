@@ -668,8 +668,16 @@ waiting_nudge() {
   fi
 }
 
+# The run moves on — a seat or a gate: a wait it recorded is over, and so is the alert asked for it (a
+# stage or status change ends it inside cmd_state).
+wait_over() {
+  [ -n "$(state_field waiting "$1/session-state.md")" ] || return 0
+  ! run_closed "$1" || return 0
+  ( RUN_ARG="$1" cmd_state waiting= alerted= ) >/dev/null 2>&1 || :
+}
+
 cmd_state() {
-  local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting mode lock='' gave_next=''
+  local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting mode lock='' wkey='' gave_next=''
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
@@ -710,6 +718,10 @@ cmd_state() {
     done
   fi
   for kv in ${1+"$@"}; do case "$kv" in next=*) gave_next=1 ;; esac; done
+  for kv in ${1+"$@"}; do                            # a stage or status change ends a wait, unless it names one
+    case "$kv" in waiting=*) wkey=keep; break ;; phase=*|status=*) wkey=clear ;; esac
+  done
+  [ "$wkey" != clear ] || [ -z "$(state_field waiting "$st")" ] || set -- "$@" waiting= alerted=
   old_phase="$(field phase "$st")"; old_status="$(field status "$st")"; old_waiting="$(state_field waiting "$st")"
   tmp="$st.tmp$$"                                      # a leading byte-order mark would hide the first key
   awk 'NR == 1 { sub("^" ENVIRON["COUNCIL_BOM"], "") } { print }' "$st" > "$tmp" \
@@ -962,6 +974,7 @@ cmd_seat() {
   fi
   [ "$state" != done ] || [ "$runs" = 0 ] || seat_file_ready "$run" "$slug"
   events_writable "$run"
+  wait_over "$run"
   if [ "$runs" = 0 ] && { [ -n "$agent" ] || [ -n "$(seat_field "$run" "$slug" 3)" ]; }; then
     die "agents=0 says no agent ran for $slug, but an agent id is on record for it — report that agent's usage instead"
   fi
@@ -1400,6 +1413,41 @@ cmd_cap_allow() {
       || printf 'council: the go is on record, but its event could not be written\n' >&2
   fi
   say "cap: the user's go is on record — $n more agent run(s) may start, up to $upto in all for ${run##*/}"
+}
+
+# council run turn-end --session ID — the Stop hook's decision (hooks/turn-end.sh). Each in-progress run
+# that session drives, with no seat working, now waits on the user: the wait is recorded (the Chair's own
+# question kept). With notifications on, the first turn end of each wait prints what the Chair is sent
+# back for — the owner's alert — and exits 2; alerted: names that wait (the seq of its event), so it is
+# asked once. Otherwise silent, exit 0. A fault of its own dies, which the hook lets through.
+cmd_run_turn_end() {
+  local home session run st seq names="" n=0 last="" how at="<folder>" label=run
+  home="$(council_home)"
+  [ -d "$home/runs" ] || return 0
+  session="${SESSION_ARG:-}"
+  [ -n "$session" ] || return 0
+  while IFS= read -r run; do
+    [ -n "$run" ] || continue
+    st="$run/session-state.md"
+    ! awk -F'\t' 'NR > 1 && ($2 == "running" || $2 == "queued") { f = 1; exit } END { exit !f }' "$run/seats.tsv" 2>/dev/null || continue
+    [ -n "$(state_field waiting "$st")" ] || ( RUN_ARG="$run" cmd_state waiting="your answer in the chat" ) >/dev/null 2>&1 || continue
+    ! notifications_off "$home" || continue
+    seq="$(awk -F'\t' '$4 == "run.waiting_changed" && $6 == "on" { s = $2 } END { print s }' "$run/events.tsv" 2>/dev/null)"
+    [ -n "$seq" ] && [ "$(state_field alerted "$st")" != "$seq" ] || continue
+    ( RUN_ARG="$run" cmd_state alerted="$seq" ) >/dev/null 2>&1 || continue
+    names="$names${names:+, }${run##*/}"; n=$((n + 1)); last="${run##*/}"
+  done <<RUNS
+$(session_runs "$home" "$session")
+RUNS
+  [ "$n" -gt 0 ] || return 0
+  if [ "$n" -gt 1 ]; then label=runs; else at="$last"; fi
+  if impact_python >/dev/null 2>&1; then
+    how="send the line \`council status --line --run $at\` prints"
+  else
+    how="send them the question in one short line"
+  fi
+  say "Small Council: $label $names now waits on the user (no seat is working). If you stopped to ask them something: record the question if you haven't (council state waiting=\"<it, short>\" --run $at), then $how, once, with a PushNotification tool (it may be a deferred tool: search the tools for it first), and end your turn. If it only waits on a background task, clear it instead: council state waiting= --run $at."
+  exit 2
 }
 
 # council cap check [--session ID] [<tool>] — the agent gate's decision (hooks/agent-gate.sh): silent,
@@ -2940,6 +2988,7 @@ cmd_gate() {
         nothing=0 nran="" nt="" slug files="" other trail="" rtask="" mode="" ec=0 py=""
   run="$(resolve_run)" || exit 2
   refuse_closed "$run" "its checks are on record; run them in a new run"
+  wait_over "$run"
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
   mode="$(field mode "$run/session-state.md")"     # a build's gate results are its repair record (repair_auto)
@@ -6365,6 +6414,9 @@ council — the Small Council's helper (bash + git)
                                          user's go on record, and whether new agents are stopped now
   council cap allow <n> --user-said "…"  the user's go past the cap or ceiling, in their words: n more
                                          agent runs may start before the stop holds again
+  council run turn-end --session ID      the turn-end hook's decision (hooks/turn-end.sh): records that
+                                         a run this session drives waits on the user, and once per wait
+                                         exits 2 with the owner's alert to send
   council cap check [--session ID] [<tool>]
                                          the agent gate's decision (hooks/agent-gate.sh): exit 2 and the
                                          reason while a run this session may be driving is stopped; with
@@ -6546,6 +6598,9 @@ main() {
         plan)   takes_flags "run plan"; [ $# -le 1 ] || die "usage: council run plan [check|show]"; cmd_run_plan ${1+"$@"} ;;
         events) takes_flags "run events"; [ $# -le 1 ] || die "usage: council run events [show|check|repair]"; cmd_run_events ${1+"$@"} ;;
         audit)  takes_flags "run audit" transcript; no_words "run audit" ${1+"$@"}; cmd_run_audit ;;
+        turn-end) takes_flags "run turn-end" session; no_words "run turn-end" ${1+"$@"}
+                [ -z "$RUN_ARG" ] || die "run turn-end looks at every in-progress run this session drives; it does not take --run"
+                cmd_run_turn_end ;;
         *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show] | run events [show|check] | run audit [--transcript <file>]" ;;
       esac ;;
     state)   takes_flags state; cmd_state ${1+"$@"} ;;
