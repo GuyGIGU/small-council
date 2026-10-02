@@ -2816,6 +2816,39 @@ def runs_helper_carries_next_steps(tmp):
         print("note: python sits beside bash or git here, so the no-Python close is not checked on this system")
 
 @part("runs")
+def runs_close_followup_once(tmp):
+    # The close's follow-up line is said once (run 2's follow-up: it came back at every later close while the
+    # record had the same thing to say); a later close says it again only when the record's line changed.
+    fo = new_repo(tmp, "followup-once")
+    write(os.path.join(fo, ".council", "council.config.md"), "# Council config\n")
+
+    def past_runs(spend):
+        for i in range(5):
+            past = os.path.join(fo, ".council", "runs", "2026-09-{:02d}-100000-review".format(i + 1))
+            write(os.path.join(past, "session-state.md"), "status: complete\nmode: council-review\nphase: deliver\n## Decisions so far\n")
+            write(os.path.join(past, "run-plan.tsv"), "kind\tid\tfield\tvalue\treason\nrun\trun\tsize\tsquad\tr\n"
+                  "budget\trun\testimated-tokens\t260000\tr\n")
+            write(os.path.join(past, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n" + "".join(
+                "{}\tdone\ta\t{}\t-\t-\t1\t1\n".format(slug, spend) for slug in ("hunt", "beck", "verify-1")))
+
+    def close_one():
+        _, out, _ = council(fo, "run", "open", "council-review")
+        r = out.strip().splitlines()[-1]
+        write_plan(r, selected=("chair", "w1"))
+        council(fo, "state", "phase=deliver")
+        council(fo, "seat", "w1", "done", "agent=a1", "tokens=20000")
+        _, _, err = council(fo, "run", "close")
+        return [line for line in err.splitlines() if "from the record" in line]
+
+    past_runs(150000)
+    first, second = close_one(), close_one()
+    past_runs(400000)
+    third = close_one()
+    check("run close: the follow-up is said at the first close, not again while the record says the same, and again "
+          "once it changes", len(first) == 1 and second == [] and len(third) == 1 and third != first,
+          "first %s · second %s · third %s" % (first, second, third), full=True)
+
+@part("runs")
 def runs_card_says_what_is_known(tmp):
     # The card says what the records support, from runs the helper made (run 2's setup card read "no checks
     # run yet" after ten probes and "usage not known yet against estimated 0k" with no agent at all; its plan

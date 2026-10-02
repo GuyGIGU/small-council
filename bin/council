@@ -1897,7 +1897,7 @@ close_claims_note() {
 }
 
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" share whose follow="" close_lock=""
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" share whose follow="" close_lock="" said=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -1976,6 +1976,13 @@ cmd_run_close() {
       follow="$({ "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" propose --home "$home" --brief
                   "$py" "$COUNCIL_PLUGIN_ROOT/scripts/outcomes.py" --home "$home" --repo "$(this_tree)" --brief --recent 20; } 2>/dev/null \
                 | awk 'NF { printf "%s%s", (n++ ? " · " : ""), $0 }')"
+      # Said once: a later close with the same thing to say stays quiet, and says it again once the record's
+      # line changes, or after it had nothing to say. The memory lives with the runs, never in a tracked file.
+      said="$home/runs/.follow-said"
+      if [ -z "$follow" ]; then rm -f "$said" 2>/dev/null || :
+      elif [ "$(cat "$said" 2>/dev/null)" = "$follow" ]; then follow=""
+      else printf '%s\n' "$follow" > "$said" 2>/dev/null || :
+      fi
     fi                                              # said on the closing card's line, the last
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
       # The log whose Run: line names this run — as a name or as the folder's full path, which is what
