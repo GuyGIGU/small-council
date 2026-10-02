@@ -3651,7 +3651,7 @@ def requests_and_proofs(tmp):
     # Where a proof names its test: a Godot flag, a subfolder, a config file, a path outside the project
     proof = new_repo(tmp, "proof")
     for p in ["test/unit/test_player.gd", "webapp/frontend/src/utils/fmt.test.js",
-              "webapp/backend/tests/test_expiry.py", "tests/test_settings.toml"]:
+              "webapp/backend/tests/test_expiry.py", "tests/test_settings.toml", "evals/run_cli.py", "src/app.py"]:
         write(os.path.join(proof, p), "x\n")
     write(os.path.join(proof, ".council", "council.config.md"), "# Council config — proof\n")
     git(proof, "add", "-A")
@@ -3667,7 +3667,9 @@ def requests_and_proofs(tmp):
                              "pytest " + slash(outside),
                              "(cd webapp/backend && pytest tests/test_expiry.py)",
                              "cd " + slash(tmp) + " && pytest webapp/backend/tests/test_expiry.py",
-                             "cd webapp/frontend && pytest ../backend/tests/test_expiry.py"], start=1):
+                             "cd webapp/frontend && pytest ../backend/tests/test_expiry.py",
+                             "python evals/run_cli.py --group runs --block runs_found_by_session",
+                             "python tests/../src/app.py --check"], start=1):
         for name, ex in ((f"before-{n}", 1), (f"after-{n}", 0)):
             write(os.path.join(prf, "gates", name + ".json"),
                   '{"gate": "%s", "command": "%s", "exit": %d, "seconds": 1, "when": "2026-09-16 10:00:00"}\n' % (name, cmd, ex))
@@ -3689,6 +3691,11 @@ def requests_and_proofs(tmp):
           "task 7  proof  ok · couldn't confirm a saved test" in out, out)
     check("check: a test path that walks back up out of a cd folder is named as the file it is",
           "task 8  proof  ok · test saved: webapp/backend/tests/test_expiry.py" in out, out)
+    check("check: a test file kept in a test folder — a block-based runner like evals/run_cli.py --block … — is a saved "
+          "test (run 2: every task read \"couldn't confirm a saved test\")",
+          "task 9  proof  ok · test saved: evals/run_cli.py" in out, out)
+    check("check: a path that only passes through a test folder (tests/../src/app.py) is not a saved test",
+          "task 10  proof  ok · couldn't confirm a saved test" in out, out)
     check("check: in a build, a diagnosis file's old line numbers aren't checked as citations",
           code == 0 and "diagnose-2" not in out, out)
     write(os.path.join(req, ".council", "logs", "2026-09-16-build.md"),

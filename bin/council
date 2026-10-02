@@ -4222,7 +4222,8 @@ SEATS
 }
 
 # The first path in a gate command that is a real test file the project keeps: a regular file inside
-# the project whose name says test or spec, either tracked by git or present and not ignored (the test a
+# the project whose name says test or spec, or that sits in a test folder (tests/, test/, spec/, specs/,
+# __tests__/, evals/ — a block-based runner), either tracked by git or present and not ignored (the test a
 # build just wrote isn't staged yet). A source file, a directory, a config file or a file outside the
 # project is never "a saved test". A path is also tried inside the folder a `cd <dir>`, `--prefix`,
 # `--cwd`, `--dir` or `-C` names, a `--flag=<path>` word is read for its path, and Godot's res:// is
@@ -4253,13 +4254,21 @@ gate_test_path() {
       case "$base" in                 # a config, a log or a report is never the test that was saved
         *.log|*.ini|*.cfg|*.conf|*.toml|*.json|*.yaml|*.yml|*.xml|*.txt|*.md|*.lock|*.csv) continue ;;
       esac
-      case "$base" in                 # the file's own name has to say it is a test
-        test_*|test-*|*_test.*|*-test.*|*.test.*|*.spec.*|*_spec.*|*-spec.*|spec_*|tests.*|test.*) ;;
-        *) continue ;;
+      intest=""
+      case "$base" in                 # the file's own name has to say it is a test, or the folder it sits in
+        test_*|test-*|*_test.*|*-test.*|*.test.*|*.spec.*|*_spec.*|*-spec.*|spec_*|tests.*|test.*) intest=1 ;;
       esac
       [ "$away" = 0 ] || continue     # the command left the project before naming this path
       p="$tok"                        # inside the folder the command moved to, if it named one
       case "$tok" in /*|[A-Za-z]:*) ;; *) [ -z "$sub" ] || p="$sub/$tok" ;; esac
+      if [ -z "$intest" ]; then       # a test folder (a block-based runner: evals/run_cli.py --block x), by the
+        q="$p"                        # path as it lands — tests/../src/app.py is src/app.py — and only inside
+        while :; do                   # the project, never by a folder above it
+          case "$q" in */../*) r="$(printf '%s' "$q" | sed 's#[^/][^/]*/\.\./##')"; [ "$r" != "$q" ] || break; q="$r" ;; *) break ;; esac
+        done
+        case "$q" in /*|[A-Za-z]:*|../*) continue ;; esac
+        case "/${q#./}" in */tests/*|*/test/*|*/spec/*|*/specs/*|*/__tests__/*|*/evals/*) ;; *) continue ;; esac
+      fi
       if [ -f "$p" ]; then
         if git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then hit="$p"
         else
