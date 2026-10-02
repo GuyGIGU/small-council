@@ -914,12 +914,13 @@ stage_next() {
 waiting_nudge() {
   local run="$1" at="" home=""
   case "$run" in */runs/*) home="${run%/runs/*}" ;; *) home="$(council_home)" ;; esac   # the run's own home
-  ! notifications_off "$home" || return 0
   [ -z "$RUN_ARG" ] || at=" --run ${run##*/}"
-  if impact_python >/dev/null 2>&1; then
-    printf 'council: the run now waits on the user: send the line `council status --line%s` prints, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none)\n' "$at" >&2
+  if notifications_off "$home"; then
+    printf 'council: the run now waits on the user. Their answer clears the wait at the next stage change, or council state waiting=%s clears it\n' "$at" >&2
+  elif impact_python >/dev/null 2>&1; then
+    printf 'council: the run now waits on the user: send the line `council status --line%s` prints, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none). Their answer clears the wait at the next stage change, or council state waiting=%s clears it\n' "$at" "$at" >&2
   else
-    printf 'council: the run now waits on the user: send them the question in one short line, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none)\n' >&2
+    printf 'council: the run now waits on the user: send them the question in one short line, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none). Their answer clears the wait at the next stage change, or council state waiting=%s clears it\n' "$at" >&2
   fi
 }
 
@@ -1209,7 +1210,7 @@ status_nudge() {
       case "$run" in */runs/*) home="${run%/runs/*}" ;; *) home="$(council_home)" ;; esac
       notifications_off "$home" || al="; then send the owner the line \`council status --line$at\` prints, once, with a PushNotification tool"
     fi
-    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s`%s%s\n' \
+    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else — or if the card fails to render — relay `council status%s` and carry on%s%s\n' \
       "$lead" "$at" "$at" "${follow:+; and tell them, from the record — $follow}" "$al" >&2
   elif [ "$when" != close ]; then
     printf 'council: %s: relay `council run status` (no Python 3.8+ here, so there is no status card)\n' "$lead" >&2

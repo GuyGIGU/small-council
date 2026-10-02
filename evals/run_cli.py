@@ -2582,6 +2582,28 @@ def runs_closed_run_stays_closed(tmp):
           and hname in read(os.path.join(hand, ".council", "ledger.tsv")) and any(e[3] == "run.closed" for e in events(hrun)), out + err)
 
 @part("runs")
+def runs_lost_hints(tmp):
+    # Two hints the method lost when it shrank to pointers (run 2's follow-up): how a recorded wait is cleared,
+    # and what to do when the status card fails to render. The helper says them where they apply.
+    lh = new_repo(tmp, "lost-hints")
+    write(os.path.join(lh, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(lh, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    write_plan(run, selected=("chair", "w1"))
+    code, out, err = council(lh, "seat", "w1", "running", "agent=a1")
+    check("seat (first dispatch): the reminder to show the card says to give the text if the card fails to render",
+          code == 0 and "fails to render" in err and "council status" in err, err)
+    code, out, err = council(lh, "state", "waiting=which of the two plans?")
+    check("state waiting=: the alert reminder says how the wait is cleared — a stage change, or council state waiting=",
+          code == 0 and "council state waiting=" in err and "clears" in err, err)
+    council(lh, "state", "waiting=")
+    council(lh, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    council(lh, "state", "phase=deliver")
+    code, out, err = council(lh, "run", "close")
+    check("run close: the closing card's reminder says the same about a card that fails to render",
+          code == 0 and "fails to render" in err, err)
+
+@part("runs")
 def runs_closed_seat_guard_fields(tmp):
     # The closed-run seat guard joined its fields with ":", which an agent id may hold (run 2's verify-3c:
     # `seat verify-1 failed agent=:running` passed for "a seat left running, no agent" on a done verifier,
