@@ -3969,6 +3969,181 @@ def requests_and_proofs(tmp):
           and "1 had nothing to check (lint \u2014 0 files matched)" in out, out)
 
 @part("requests")
+def requests_preservation_proofs(tmp):
+    repo = new_repo(tmp, "preservation-proofs")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(repo, "values.py"), "def total(values):\n    return sum(values)\n")
+    write(os.path.join(repo, "tests", "__init__.py"), "")
+    write(os.path.join(repo, "tests", "test_values.py"),
+          "import unittest\nfrom values import total\n\nclass Totals(unittest.TestCase):\n"
+          "    def test_total(self):\n        self.assertEqual(total([2, -1, 4]), 5)\n"
+          "    def test_empty(self):\n        self.assertEqual(total([]), 0)\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "tested totals")
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    command = "'%s' -m unittest tests/test_values.py" % slash(sys.executable)
+    code, out, err = council(repo, "gate", "before-1", "--proof", "preserve", "--", command)
+    before = json.loads(read(os.path.join(run, "gates", "before-1.json")))
+    check("preservation: the real before-check runs and saves its declared mode",
+          code == 0 and before["proof"] == "preserve" and before["command"] == command, out + err)
+    write(os.path.join(repo, "values.py"),
+          "def total(values):\n    result = 0\n    for value in values:\n        result += value\n    return result\n")
+    code, out, err = council(repo, "gate", "after-1", "--proof=preserve", "--", command)
+    check("preservation: the same unchanged tests pass after a behaviour-preserving refactor", code == 0, out + err)
+    code, out, err = council(repo, "check")
+    check("preservation: a real passing pair checks cleanly, names its test, and is labelled preserved",
+          code == 0 and "task 1  proof  preserved · test saved: tests/test_values.py" in out
+          and "1 preserved behaviour" in out
+          and "| task 1 | proof | preserved |" in read(os.path.join(run, "check.md")), out + err)
+
+    def pair(n, bex=0, aex=0, bmode="preserve", amode="preserve", acmd=None, output="2 tests ran\n"):
+        for prefix, ex, proof, cmd in (("before", bex, bmode, command),
+                                      ("after", aex, amode, command if acmd is None else acmd)):
+            name = "%s-%s" % (prefix, n)
+            data = {"gate": name, "command": cmd, "exit": ex, "seconds": 1, "when": "2026-10-02 10:00:00"}
+            if proof is not None:
+                data["proof"] = proof
+            write(os.path.join(run, "gates", name + ".json"), json.dumps(data) + "\n")
+            if output is not None:
+                write(os.path.join(run, "gates", name + ".txt"), output)
+
+    pair(2, bmode=None, amode=None)
+    pair(3, bmode=None)
+    pair(4, bex=1)
+    pair(5, aex=1)
+    pair(6, acmd=command + " -q")
+    pair(7, output=None)
+    pair(8, output="changed: no files matched\n")
+    pair(9, bmode="unknown", amode="unknown")
+    pair(10, bmode="change", amode="change", bex=1)
+    pair(13, output="")
+    pair(14, output=" \t\n")
+    pair(15, output="Ran 0 tests in 0.000s\n\nOK\n")
+    pair(16)
+    write(os.path.join(run, "gates", "after-16.txt"), "")
+    pair(17)
+    write(os.path.join(run, "gates", "before-17.txt"), "Ran 0 tests in 0.000s\n\nOK\n")
+    code, out, err = council(repo, "check")
+    for n, verdict, why in ((2, "BEFORE-PASSED", "legacy passing-before checks still fail change proof"),
+                             (3, "DIFFERENT-PROOF", "an after-only mode cannot relabel earlier evidence"),
+                             (4, "BEFORE-FAILED", "a red baseline cannot prove preservation"),
+                             (5, "AFTER-FAILED", "a refactor that breaks its check fails"),
+                             (6, "DIFFERENT-COMMAND", "changing the check cannot prove preservation"),
+                             (7, "MISSING-OUTPUT", "preservation requires both saved outputs"),
+                             (8, "NOTHING-RAN", "no matching files cannot prove preservation"),
+                             (9, "INVALID-PROOF", "unknown recorded proof modes fail closed"),
+                             (10, "ok", "explicit change proof keeps failing-before/passing-after behaviour"),
+                             (13, "NOTHING-RAN", "empty saved outputs never establish preservation"),
+                             (14, "NOTHING-RAN", "whitespace-only saved outputs never establish preservation"),
+                             (15, "NOTHING-RAN", "zero-test output is refused even without warning metadata"),
+                             (16, "NOTHING-RAN", "an empty after-output cannot hide behind a valid before-output"),
+                             (17, "NOTHING-RAN", "an empty test selection before editing invalidates the pair")):
+        check("preservation: " + why, code == 1 and "task %s  proof  %s ·" % (n, verdict) in out, out + err)
+
+    for name in ("before-11", "after-11"):
+        code, out, err = council(repo, "gate", name, "--proof", "preserve", "--", "echo '0 tests ran'")
+        check("preservation: the zero-test gate's output is recorded", code == 0, out + err)
+    code, out, err = council(repo, "check")
+    check("preservation: a zero-test pass cannot prove preservation",
+          code == 1 and "task 11  proof  NOTHING-RAN" in out, out + err)
+
+    before_files = {p.relative_to(Path(run)).as_posix(): p.read_bytes()
+                    for p in Path(run).rglob("*") if p.is_file()}
+    for args in (("gate", "before-12", "--proof", "unknown", "--", command),
+                 ("gate", "regress-12", "--proof", "preserve", "--", command),
+                 ("gate", "before-no", "--proof", "preserve", "--", command),
+                 ("gate", "--all", "--proof", "preserve"),
+                 ("state", "--proof", "preserve", "next=changed")):
+        code, out, err = council(repo, *args)
+        check("preservation: refuses invalid flag use " + " ".join(args[:2]), code == 2, out + err)
+    after_files = {p.relative_to(Path(run)).as_posix(): p.read_bytes()
+                   for p in Path(run).rglob("*") if p.is_file()}
+    check("preservation: invalid flag uses write nothing", before_files == after_files)
+
+@part("requests")
+def requests_judgment_fixtures(tmp):
+    # Validate the raw fixtures, not a model's decisions: live judgment still needs a separate run.
+    def scaffold(name):
+        repo = os.path.join(tmp, name)
+        os.makedirs(repo)
+        script = os.path.join(ROOT, "evals", "suite", name, "scaffold.sh")
+        proc = subprocess.run([BASH, script], cwd=repo, env=GIT_ENV, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=120)
+        check("judgment fixture: " + name + " scaffolds successfully", proc.returncode == 0,
+              proc.stdout + proc.stderr)
+        if proc.returncode != 0:
+            raise RuntimeError("cannot check an unscaffolded judgment fixture")
+        return repo
+
+    repo = scaffold("build-judgment")
+    baseline = git(repo, "rev-parse", "HEAD")
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    command = "'%s' -m unittest tests/test_stats.py" % slash(sys.executable)
+    code, out, err = council(repo, "gate", "--all")
+    check("judgment fixture: baseline is green and deployment is skipped",
+          code == 0 and not os.path.exists(os.path.join(repo, "deployed.txt")), out + err)
+    check("judgment fixture: the plan path is stale but the public API has a unique current home",
+          not os.path.exists(os.path.join(repo, "billing", "legacy_stats.py"))
+          and "def total(values):" in read(os.path.join(repo, "billing", "stats.py")))
+    code, out, err = council(repo, "gate", "before-1", "--proof", "preserve", "--", command)
+    check("judgment fixture: existing signed, empty and iterable invariants pass before", code == 0, out + err)
+    original = read(os.path.join(repo, "billing", "stats.py"))
+    write(os.path.join(repo, "billing", "stats.py"), original.replace(
+        "    result = 0\n    for value in values:\n        result += value\n    return result", "    return sum(values)"))
+    code, out, err = council(repo, "gate", "after-1", "--proof", "preserve", "--", command)
+    check("judgment fixture: a local refactor preserves every existing invariant", code == 0, out + err)
+    append(os.path.join(repo, "tests", "test_stats.py"),
+           "\n    def test_empty_average(self):\n        self.assertIsNone(average([]))\n")
+    code, out, err = council(repo, "gate", "before-2", "--", command)
+    check("judgment fixture: new empty-average check fails for the product defect, not a tool error",
+          code == 1 and "ZeroDivisionError" in read(os.path.join(run, "gates", "before-2.txt")), out + err)
+    write(os.path.join(repo, "billing", "stats.py"), read(os.path.join(repo, "billing", "stats.py")).replace(
+        "return total(values) / len(values)", "return total(values) / len(values) if values else None"))
+    code, out, err = council(repo, "gate", "after-2", "--", command)
+    check("judgment fixture: targeted fix passes without weakening existing tests", code == 0, out + err)
+    code, out, err = council(repo, "check")
+    check("judgment fixture: one refactor and one fix keep distinct proof in a shared module",
+          code == 0 and "task 1  proof  preserved" in out and "task 2  proof  ok" in out, out + err)
+    check("judgment fixture: no commit or deployment was needed",
+          git(repo, "rev-parse", "HEAD") == baseline and not os.path.exists(os.path.join(repo, "deployed.txt")))
+
+    repo = scaffold("verifier-build-proof")
+    for n in range(1, 5):
+        root = os.path.join(repo, str(n))
+        proc = subprocess.run([sys.executable, "-B", "-m", "unittest", "test_module.py"], cwd=root,
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        check("verifier fixture: task %d really has a green final test" % n, proc.returncode == 0,
+              proc.stdout + proc.stderr)
+    proc = subprocess.run([sys.executable, "-B", "-c", "from module import average; average([])"],
+                          cwd=os.path.join(repo, "2"), capture_output=True, text=True, timeout=30)
+    check("verifier fixture: green preservation checks leave the empty-average defect reachable",
+          proc.returncode != 0 and "ZeroDivisionError" in proc.stderr, proc.stderr)
+    root = os.path.join(repo, "3")
+    write(os.path.join(root, "test_module.py"), read(os.path.join(root, "before_test.py")))
+    proc = subprocess.run([sys.executable, "-B", "-m", "unittest", "test_module.py"], cwd=root,
+                          capture_output=True, text=True, timeout=30)
+    check("verifier fixture: restoring the original assertion exposes the signed-total regression",
+          proc.returncode != 0 and "2 != -3" in proc.stderr, proc.stderr)
+    root = os.path.join(repo, "4")
+    write(os.path.join(root, "module.py"), read(os.path.join(root, "before.py")))
+    proc = subprocess.run([sys.executable, "-B", "-m", "unittest", "test_module.py"], cwd=root,
+                          capture_output=True, text=True, timeout=30)
+    check("verifier fixture: the genuine before-failure differs from the planted missing-tool output",
+          proc.returncode == 1 and "ZeroDivisionError" in proc.stderr
+          and "command not found" in read(os.path.join(root, "gates", "before-4.txt")), proc.stderr)
+
+    for name, n, verdict in (("valid-refactor", 1, "OK"), ("uncovered-fix", 2, "INCOMPLETE"),
+                             ("weakened-assertion", 3, "REGRESSION"), ("wrong-failure", 4, "CANNOT VERIFY")):
+        grader = read(os.path.join(ROOT, "evals", "suite", "verifier-build-proof", "graders", name + ".md"))
+        pattern = re.search(r"^pattern: '(.+)'$", grader, re.MULTILINE).group(1)
+        check("verifier grader: %s matches its correct verdict cell only" % name,
+              re.search(pattern, "| %d | task | %s | cited path |" % (n, verdict)) is not None
+              and re.search(pattern, "| %d | task | UNVERIFIED | not %s |" % (n, verdict)) is None
+              and re.search(pattern, "| %d | task | %s | cited path |" % (n + 1, verdict)) is None)
+
+@part("requests")
 def requests_review_fix_proofs(tmp):
     # A review fix proves itself as regress-<n> (its new check red on the version the verifier saw) then after-<n>
     # (run 2's follow-up: gate names were the check's only key, so after-2789 read as "task 2789: NO-BEFORE").

@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- Approval, current instructions and evidence-backed plan corrections have one shared contract in Convene; build-proof mode and semantic verification rules live in the build-proof reference rather than being repeated in each reader.
+- Builders may correct a plan's approach when concrete evidence supports a local change within the approved outcome, scope, contracts and budget; the log keeps the evidence and affected tasks. Changes to explicit user choices or scope still need a ruling.
+- Refactors can declare `--proof preserve` on their before/after gates: the same relevant check must pass on both versions. `council check` labels this `preserved`; fixes and new behaviour retain failing-before/passing-after proof. The verifier checks the invariants and test assertions.
+- Planning, research and implementation carry forward existing authorization and ask only about consequential gaps. A user's mid-build addition authorizes that addition within the approved budget.
+- Council skill descriptions focus on selection; simple questions no longer match broad research or completion-audit descriptions.
+
+### Fixed
+
+- Preservation proof rejects blank or whitespace-only saved output and zero-test reports even when warning metadata is missing.
+- History keeps preservation checks separate from before-checks that fail intentionally; saved gate verdicts and snapshot readers retain the declared proof mode.
+
+### Added
+
+- Judgment-only build and blind-verifier fixtures cover stale paths, superseded preferences, separate refactor/fix proof, protected choices, weak assertions and wrong before-failures. Free regressions execute the fixtures and helper; live agent judgment remains unvalidated until those cases run.
+
 ## [0.19.0] — 2026-10-02
 
 **TL;DR:** two things. The council fixed its own open items, as its second real run (a plan, then

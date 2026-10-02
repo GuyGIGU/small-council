@@ -1,6 +1,6 @@
 ---
 name: council-plan
-description: Plan a feature with the Small Council before any code is written — an interactive scoping conversation, then named domain seats advise in isolated context windows, and the Chair turns their advice into a sequenced, attributed, code-free plan built as vertical slices, each task saying what it touches and how to tell it's done. For a big or tough feature — or "debate it" — the seats first answer each other in a war room. Use when the user wants to plan a feature, is about to start a non-trivial build, asks for a council plan, or invokes /council-plan. Propose it with its size and cost first.
+description: Plan a feature, integration or migration with Small Council expert advice and verifiable tasks. Use when the user requests a feature plan or /council-plan; exploratory investigations go to council-research first. Propose its size and cost before dispatch.
 ---
 
 # Council Plan (mode)
@@ -22,8 +22,9 @@ first and plan from its answer.
 
 ## At Convene — the discovery gate (in place of the generic go-ahead)
 
-Planning needs a real conversation that pins the feature down well enough to brief every seat.
-Nothing gets mapped, briefed or dispatched until this gate closes with an explicit go.
+Establish enough scope to brief every seat. Use the request, existing spec and earlier answers;
+ask only for consequential gaps. Do the light survey below before asking. Dispatch needs approval
+under Convene's rule; carry forward approval already given for the same scope, size and budget.
 
 **Open the run and save the request first:** `council run open council-plan`, then write ask.md with
 the user's words, before your first question — a compaction can't paraphrase what's already on disk.
@@ -38,14 +39,14 @@ Record the size later, with `council state size=…`.
   so every question is about the real code.
 
 **Rules for the conversation:**
-- **One question at a time.** A conversation, not a form.
+- **Keep questions focused.** Group closely related gaps when one answer can settle them.
 - **Ground every question in what you saw.**
   - *Good:* "Your API routes are grouped by concern — auth, billing, users. Does this extend one of
     those or want its own module?" — *Bad:* "What architecture are you picturing?"
   - *Good:* "Records are keyed by `account_id` + `created_at`. Same grain, or a new table?" —
     *Bad:* "Who should have access?"
 - **Reflect back** before moving on.
-- **Don't propose solutions** — that's the council's job.
+- **Use grounded options** when they clarify a tradeoff; don't treat an unapproved option as decided.
 - **Ask what's already decided**, and never plan against it.
 
 Cover, naturally:
@@ -70,8 +71,9 @@ Then present:
 **Council:** <seats going and why, seats not going and why, estimated cost> · War room: <on — why, ~<k>k more tokens, no extra agents | off>
 ```
 
-Ask: **"Ready to dispatch the council, or do you want to adjust the scope?"** Adjust and ask again
-until they say go. Anything the user decided is a Decision they may want recorded in memory.
+If approval is still needed, ask: **"Ready to dispatch the council, or do you want to adjust the
+scope?"** Otherwise state the summary and proceed. Anything the user decided is a Decision they
+may want recorded in memory.
 
 **Keep the user's scoping answers.** Each answer that adds, drops or rules out something goes under
 ask.md's `## Later, in your words` as `- <date>: "<their words>"`, before your next question — a
@@ -100,7 +102,7 @@ feature correctly the first time?*
 Not a finding:
 - re-opening an "Already decided" choice;
 - generic best practice with no anchor in this feature;
-- anything a settled memory entry covers.
+- anything an applicable settled memory entry covers (Convene resolves current overrides).
 
 When the war room is on, the brief's top block says `War room: on — end your file with ## Approach`.
 
@@ -165,7 +167,7 @@ round 2 — at most 6 neutral points in debate.md, the seats they name resumed, 
   - Each later task adds one working slice.
   - Data design comes before the code that reads it; security informs all of it.
 - **Apply the Carmack filter** to every recommendation. Cut anything speculative or anything that
-  conflicts with memory.
+  conflicts with still-applicable memory under Convene's rule.
 - **Group into build tasks,** at most 15. Merge if you're over.
 - **Every task gets:**
   - **Done when:** an observable check.

@@ -152,11 +152,16 @@ def history(home, outcomes=True):
         if size in ("solo", "squad", "full"):
             sizes[size] = sizes.get(size, 0) + 1
     gates, proofs = {}, {"before": [0, 0], "after": [0, 0], "probe": [0, 0]}
+    preservation = [0, 0]
     for snap in runs:
         for gate in snap["gates"]:
             kind = next((p for p in proofs if gate["name"].startswith(p + "-")), None)
             if kind:                      # a build's before/after proof or a gate's dry run, not a project gate
                 proofs[kind][0] += 1
+                if kind == "before" and gate.get("proof") == "preserve":
+                    preservation[0] += 1
+                    preservation[1] += gate["exit"] == 0
+                    continue
                 proofs[kind][1] += gate["exit"] != 0
                 continue
             entry = gates.setdefault(gate["name"], {"runs": set(), "failed_runs": set()})
@@ -204,6 +209,7 @@ def history(home, outcomes=True):
         "estimates": {"actual_over_estimate": spread(ratios)},
         "gates": {name: {"runs": len(e["runs"]), "failed_runs": len(e["failed_runs"])} for name, e in sorted(gates.items())},
         "proofs": {"before_checks": proofs["before"][0], "before_failed_as_intended": proofs["before"][1],
+                   "before_preserve_checks": preservation[0], "before_preserve_passed": preservation[1],
                    "after_checks": proofs["after"][0], "after_failed": proofs["after"][1],
                    "probes": proofs["probe"][0], "probes_failed": proofs["probe"][1]},
         "repairs": {"tasks": len(tasks), "resolved": tasks.count("resolved"), "stopped": tasks.count("stop"),
@@ -272,6 +278,9 @@ def render(data):
         lines.append("  build proofs: {} before-check(s), {} failing as intended · {} after-check(s), {} failed · "
                      "{} probe(s), {} failed".format(p["before_checks"], p["before_failed_as_intended"],
                                                      p["after_checks"], p["after_failed"], p["probes"], p["probes_failed"]))
+        if p["before_preserve_checks"]:
+            lines.append("  preservation before-checks: {} ran, {} passed (paired proof is checked by council check)".format(
+                p["before_preserve_checks"], p["before_preserve_passed"]))
     r = data["repairs"]
     if r["tasks"]:
         share = r["resolved_share"]

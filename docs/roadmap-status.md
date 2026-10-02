@@ -15,6 +15,12 @@ Checks passing is never counted as validation in real use. The real runs so far:
   verifier Workflow, then one seat plus a 2-agent verifier Workflow, the second entirely on one
   version.
 
+The 0.19.0 changelog also reports a second logged run: a plan followed by a 15-task build with blind
+verification. The phase-by-phase evidence below has not yet been reconciled with that run's artifacts;
+its older "not yet seen" entries describe the evidence recorded here, not an assertion that the
+later run omitted those features. The current instruction and preservation-proof refinements have
+local automated checks, not a new live agent run.
+
 | Phase | Implemented | Automatically tested | Validated in real use | Deferred |
 |---|---|---|---|---|
 | 0 Baseline and audit | 0.8 (docs) | — | — | — |

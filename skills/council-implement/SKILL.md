@@ -1,6 +1,6 @@
 ---
 name: council-implement
-description: Build a Small Council plan task by task, fix the findings of a council review, or finish a post-game's next tasks — one builder, the governing expert's reference doc loaded per task, before-and-after evidence, the project's real gates after every change, a blind verifier on each result, a converge pass at the end, and a running log that feeds the next review. Use when the user says implement or build the plan, "fix these findings", "council implement", or invokes /council-implement.
+description: Build an approved Small Council plan, fix review findings or complete post-game tasks with one builder, task-appropriate proof and independent verification. Use for "build the plan", "fix these findings" or /council-implement.
 ---
 
 # Council Implement (mode)
@@ -14,8 +14,7 @@ One builder, one task at a time, in this window. Parallel agents read; one hand 
 The only agents you dispatch are verifiers, plus at most one diagnosis worker per stuck task across
 gate and verifier failures.
 
-**Voice of the build:** Carmack. Make the smallest change that satisfies the task; write code that
-looks like the same team wrote it; no speculative generality; verify by machine, not by feel.
+**Carmack's filter:** the smallest change satisfying the task, proved by machine.
 
 **Respect the project's hard rules** (the config, `CLAUDE.md`/`AGENTS.md`). Never take a destructive
 shortcut — dropping data, force-pushing, disabling a gate — to make a task pass.
@@ -30,7 +29,7 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
   - its Fix line is the ask;
   - "done" means the consequence can no longer happen.
 
-  Default selection: every P1 and P2 the change introduced. Confirm it, or let the user pick.
+  Default: introduced or touched P1/P2s, including unknown origin. Use the user's existing selection.
 - **A post-game:** `<home>/postgames/<date>-<slug>.md`. Each of its Next tasks is a task, in the plan's
   format; its Done-when quotes the user's request.
 
@@ -39,25 +38,22 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
 1. **Read what drives the build.**
    - The input, in full.
    - `council.config.md`: gates, hard rules, and the roster → reference map.
-   - Memory: never build against an accepted pattern, enforced convention or decision. If a task
-     conflicts with one, follow memory and log it.
+   - Memory: check accepted patterns, enforced conventions and decisions against the task using
+     Convene's changed-instructions rule; do not silently retire or rewrite settled entries.
    - `map.md`.
 2. **Order the tasks.** Dependencies first. In fix mode: P1 before P2, then group by file.
 3. **Safety net.** If it isn't a git repo, recommend `git init` plus a first commit. If the user
    declines, copy each file to `<run>/backup/<path>` before its first change. If uncommitted work
    exists, note it and never discard it.
-4. **Confirm once:**
+4. **Carry forward approval, or confirm once:**
    - the task list and order;
    - how the verifier will run, and its cost;
    - *"One commit per task on <branch>, so each task can be reverted?"* Recommended. Never commit on
      the default branch without a yes, and never push unless asked.
 
-   Approval means autonomy to the end. Stop only for:
-   - a red mandatory gate you can't fix;
-   - a destructive step;
-   - a ruling that belongs to the user;
-   - growth beyond the input;
-   - the baseline question below — once, before task 1, and never again in this run.
+   Use Convene's approval rule; state the order and proceed when this build is authorized.
+   Without commit authorization, do not commit. The baseline question below still applies once,
+   before task 1; a red mandatory gate you cannot fix stops the affected task.
 5. **Open the run.** `council run open council-implement`. Continue the input's request: its "Your
    request" line gives the path → `council state ask=<path>`, and ask.md gets `continues: <path>` plus
    this run's new words, or `(no new words)`. An input from before 0.6 has no such line: start a new
@@ -97,33 +93,14 @@ the converge pass starts, `council state phase=challenge`.
 
 ## The build loop — for each task
 
-1. **Load the governing reference doc first.**
-   - `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`.
-   - Project-local `.council/refs/…` → under the council home.
-   - It is the constraint set, not background reading.
-2. **Before-evidence — the check that outlives the run.** Write the check that shows the problem
-   (fix mode) or the missing behaviour (plan task) as **a test in the project's own suite**, saved
-   with the code. A throwaway command or query only when the project has no test runner at all — and
-   then say so in the log and on the receipt's "Not proved" line. Run it with
-   `council gate before-<n> -- '<command>'` — quote the whole command, so `&&`, pipes and quotes stay
-   inside it.
-   - **It must fail.** A before-check that passes proves nothing; `council check` reads the saved
-     verdicts at converge and calls it broken proof.
-   - **Name the test's own path in the command** — `pytest tests/test_expiry.py::test_expired_token`,
-     not a bare `pytest` — or nothing can confirm a test was saved, and the receipt has to say so.
-   - **The after-check is the same command, word for word.** A different one that passes is
-     reported as DIFFERENT-COMMAND: broken proof.
-   - A genuinely untestable path (a race, a rendering bug, a hardware route) records
-     `no permanent test possible — <why>` in the log, and that reason is reported.
-   - Label the task's support in the log with the evidence vocabulary from
-     `references/evidence-model.md`. `REPRODUCED` requires the saved before/after gate paths;
-     a passing command alone does not prove the changed path works.
-3. **Plan the change:**
-   - which files;
-   - the minimal diff;
-   - which principle constrains it;
-   - what it changes for later tasks;
-   - which watchpoints apply.
+1. **Load the governing reference doc first.** Plugin references live under `${CLAUDE_PLUGIN_ROOT}`;
+   project-local `.council/refs/…` under the council home.
+2. **Before-evidence — choose proof for the task before editing.** Read
+   `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
+   contract: change for a fix or new behaviour, preserve only for unchanged behaviour. Record the
+   chosen mode and invariants in the log, then run `council gate before-<n>` as it specifies.
+   Label support with `references/evidence-model.md`; cite saved outputs for `REPRODUCED`.
+3. **Plan the change:** files, minimal diff, governing principle, effects on later tasks and watchpoints.
 4. **Implement.**
    - Match existing patterns.
    - Build what the task says and nothing more — no "while we're here".
@@ -152,10 +129,12 @@ the converge pass starts, `council state phase=challenge`.
      a line, send it once with a `PushNotification` tool (deferred? search the tools first).
      Without Python 3.8+, log the same attempts and limit. Never count the intentionally failing
      `before-<n>` check as a repair attempt.
-6. **After-evidence — only if the task is not blocked.** Run the same check again, `council gate after-<n> -- '<same command>'`. It
-   must now pass.
+6. **After-evidence — only if the task is not blocked.** Run the same check again,
+   `council gate after-<n> -- '<same command>'`, keeping `--proof preserve` if selected before editing.
+   It must pass under the build-proof contract.
 7. **Adversarial check — only if the task is not blocked.** Dispatch `small-council:council-verifier` with:
    - the task and its Done-when;
+   - the proof mode and, for preservation, the invariants and their test paths;
    - the governing principle's own text, quoted from the reference doc, so it is checked, not cited;
    - the diff, written to `<run>/diff-<n>.patch`, passed by path;
    - the before, after and gate outputs in `gates/`.
@@ -202,7 +181,7 @@ Input: `<the plan, review or post-game, repo-relative>` · Run: <run folder> · 
 ## Task <n>: <title>
 Domain: <what it checks> (<Seat>) × Carmack — <principle> · Ref applied: <principle(s)>
 Files: `path` — <what changed and why, one line each>
-Evidence: before <check> → failed as expected · after → passes
+Evidence: change | preserve · before <check> → <expected failure | passes> · after → passes · saved outputs: <paths>
 Gates: ✅ tests ✅ lint ✅ build   (or ❌ + what happened)
 Verifier: OK   (or: fixed after INCOMPLETE — <what>)
 Notes: <judgment calls, watchpoints hit, conventions followed — omit if none>
@@ -235,13 +214,11 @@ met, with evidence — written into the log's `## Converge` table.
 - If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
   reported, never folded into a green receipt. Without Python, audit the log's attempts and
   saved gate outputs by hand.
-- Then `council check`. It reads every `before-<n>` / `after-<n>` verdict on disk and says, per task,
-  whether the before-check really failed, whether the after-check really passed, and whether the
-  command names a test the project now tracks. Its verdicts fill the `## Converge` table's **Proof**
-  column. Each cell is a verdict — `ok`, `BEFORE-PASSED`, `AFTER-FAILED`, `DIFFERENT-COMMAND` or
-  `NO-BEFORE`/`NO-AFTER` — then `· <note>` (`test saved: <path>` or `couldn't confirm a saved test`),
-  **copied whole, never one half**. Broken proof is fixed or reported — never quietly dropped, and a
-  build with no proof at all is reported as NO PROOF.
+- Then `council check`. It checks the saved before/after gates against their declared proof mode
+  (`references/build-proof.md`) and names the saved test when it can. Copy each verdict and its
+  full note into the `## Converge` table's **Proof** column: `ok` shows a change, `preserved` shows
+  the checked invariants held on both versions. Broken proof is fixed or reported; no proof is
+  reported as NO PROOF. Passing invariants alone never establish new behaviour.
 
 ## At Deliver — the receipt
 
@@ -280,7 +257,7 @@ File the request (`council ask save`). Then **offer a post-game when the log sho
 1. converge found a Done-when partly met or not met, or the log has a follow-up;
 2. the build hit trouble: a blocked task, a clean-context diagnosis, a SCOPE-CREEP revert, or a
    mandatory gate red at the end that was green at baseline;
-3. the build left the plan: plan-named code that no longer exists, "the plan's approach looks wrong",
+3. the build left the plan: a material change of approach, plan-named code that no longer exists,
    or a task merged, split or skipped;
 4. the request moved: the request file gained words after the plan, or the user ruled on scope
    mid-build;
@@ -303,9 +280,10 @@ offered; a Squad is usually right.
 - **The plan names code that no longer exists** → follow the intent, not the literal path, and log it.
 - **Blocked by something outside the input** (a key, a service, an env var) → do what you can, log the
   blocker, and carry on with the unblocked tasks.
-- **Two tasks would be cleaner merged** → keep them separate for attribution. Shared code goes in the
-  first task and is reused by the second.
-- **"Also add X" mid-build** → put the user's words under ask.md's `## Later, in your words`, and stop
-  for a go-ahead: it's growth beyond the input.
-- **The plan's approach looks wrong** → build it as written and log the concern; the review decides.
-  Exception: it would break a hard rule or lose data → stop and ask.
+- **Two tasks share one change** → implement the shared change once; retain each task's Done-when,
+  evidence and verdict so neither disappears from the receipt.
+- **"Also add X" mid-build** → record the user's words under ask.md's `## Later, in your words` and
+  update the task list. Their instruction authorizes the addition; ask only about unresolved scope,
+  dependencies or cost beyond the approved budget before doing dependent work.
+- **Evidence contradicts the plan's approach** → apply Convene's changed-instructions rule. Log the
+  contradiction, corrected approach and affected tasks, then re-verify every affected Done-when.

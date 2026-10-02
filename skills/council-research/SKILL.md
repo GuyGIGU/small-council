@@ -1,6 +1,6 @@
 ---
 name: council-research
-description: Evidence-graded investigation by the Small Council — parallel lines of inquiry work one question across the codebase, project history, docs, data, and the web; a verifier checks the load-bearing claims; the answer is saved to .council/research/ as durable project knowledge. Use for "how does X work", "why is Y slow", "what's the best approach to Z", "what would it take to…", before planning exploratory work, or to map an unfamiliar codebase. Propose it with its size and cost first.
+description: Investigate a substantial codebase question or engineering tradeoff with Small Council evidence and verified claims. Use for unfamiliar-system mapping, performance investigations or comparing approaches before planning; answer simple lookups directly. Propose its size and cost first.
 ---
 
 # Council Research (mode)
@@ -22,8 +22,8 @@ sure you are, and why.
 
 ## At Convene — the question gate (in place of the generic go-ahead)
 
-**Look for an existing answer first:** read `map.md` and past research in `<home>/research/`. Then pin
-down the following, one question at a time and grounded in what you saw:
+**Look for an existing answer first:** read `map.md` and past research in `<home>/research/`. Resolve
+the following from the request and existing context; ask focused questions only about remaining gaps:
 - **The question**, in one sentence.
 - **The decision it informs:** what will the user do with the answer?
 - **What counts as an answer:** a recommendation, a ranked list, a measured number, a yes/no with
@@ -33,7 +33,7 @@ down the following, one question at a time and grounded in what you saw:
 - **Out of scope.**
 
 Close with a **Research Scope Summary**: question · decision · answer shape · sources · out of scope ·
-the lines of inquiry and their cost. Then ask to proceed.
+the lines of inquiry and their cost. Ask to proceed only if Convene's approval is still needed.
 - Deliverable: `<home>/research/<slug>.md`, or `map.md` when the question is a mapping question.
 - Cap: 12 load-bearing claims.
 

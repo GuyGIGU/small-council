@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: verifier-build-proof
+description: Blind verification of one valid refactor and three misleading proof pairs: an uncovered fix labelled preservation, weakened assertions hiding a regression, and a missing-tool failure posing as change proof.
+tags: [calibration, verifier, judgment]
+runs: 1
+expected_outcome: Task 1 OK; task 2 INCOMPLETE or CANNOT VERIFY, never OK; task 3 REGRESSION; task 4 CANNOT VERIFY. Verdicts cite actual paths and evidence rather than trusting green exits.
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Read, Glob, Grep, Agent]

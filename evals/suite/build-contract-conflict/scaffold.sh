@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Scaffold: a tiny EU price parser with a council, green at baseline. The plan's one task asks for US
 # formats too, including parse_price("1,234") == 1234 — but tests/test_eu_prices.py, which a hard rule
-# protects, expects 1.234 for the same input. No honest change passes the tests gate, so the build has
-# to go through the bounded repair loop and stop. Uses unittest, so it needs no pytest. Self-contained.
+# protects, expects 1.234 for the same input. The conflict needs a ruling; recognizing it before
+# mutation is valid, and any entered repair loop must stay bounded. Uses unittest; self-contained.
 set -euo pipefail
 git init -q
 git symbolic-ref HEAD refs/heads/main
