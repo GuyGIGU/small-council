@@ -3875,6 +3875,33 @@ def requests_and_proofs(tmp):
           and "1 had nothing to check (lint \u2014 0 files matched)" in out, out)
 
 @part("requests")
+def requests_review_fix_proofs(tmp):
+    # A review fix proves itself as regress-<n> (its new check red on the version the verifier saw) then after-<n>
+    # (run 2's follow-up: gate names were the check's only key, so after-2789 read as "task 2789: NO-BEFORE").
+    rf = new_repo(tmp, "review-fix-proofs")
+    write(os.path.join(rf, "tests", "test_x.py"), "def test_x():\n    assert True\n")
+    write(os.path.join(rf, ".council", "council.config.md"), "# Council config — review fix proofs\n")
+    git(rf, "add", "-A")
+    git(rf, "commit", "-q", "-m", "a test")
+    _, run, _ = council(rf, "run", "open", "council-implement")
+    run = run.strip()
+    for name, cmd, ex in (("before-1", "pytest tests/test_x.py", 1), ("after-1", "pytest tests/test_x.py", 0),
+                          ("regress-2789", "pytest tests/test_x.py::test_y", 1), ("after-2789", "pytest tests/test_x.py::test_y", 0),
+                          ("regress-8", "pytest tests/test_x.py", 0), ("after-8", "pytest tests/test_x.py", 0),
+                          ("after-9", "pytest tests/test_x.py", 0)):
+        write(os.path.join(run, "gates", name + ".json"),
+              '{"gate": "%s", "command": "%s", "exit": %d, "seconds": 1, "when": "2026-10-02 10:00:00"}\n' % (name, cmd, ex))
+    code, out, _ = council(rf, "check")
+    check("check: a review fix's regress-<n> then after-<n> is that fix's proof, not a task with nothing before it",
+          "review fix 2789  proof  ok · test saved: tests/test_x.py" in out and "task 2789" not in out, out)
+    check("check: a review fix whose regress-check never failed is broken proof, as a task's before-check would be",
+          "review fix 8  proof  BEFORE-PASSED" in out, out)
+    check("check: a task's own before and after are unchanged, and an after-check with neither before it is still NO-BEFORE",
+          "task 1  proof  ok" in out and "task 9  proof  NO-BEFORE" in out
+          and "check: 2 of 4 fix(es) proved · 2 broken · 2 left a test behind in the project" in out, out)
+    check("check: the review fix's row lands in check.md", "| review fix 2789 | proof | ok |" in read(os.path.join(run, "check.md")))
+
+@part("requests")
 def close_unfinished(tmp):
     # A run closed as complete that never finished is said plainly — warned, never refused
     repo = small_council_repo(tmp, "closeearly", "| tests | `echo '1 failed'; exit 1` | grounding, verify | yes | ok | `true` | none | - |\n"

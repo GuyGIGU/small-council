@@ -4297,7 +4297,7 @@ cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what \
         mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
-        other=0 unreadt=0 empty=0 gone=0 result
+        other=0 unreadt=0 empty=0 gone=0 result who
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -4453,9 +4453,16 @@ QUOTES
   rm -f "$req"
   # council-implement: every fix's own proof, checked rather than taken on trust.
   if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
-    for bf in "$run"/gates/before-*.json; do
+    # A task proves itself as before-<n> then after-<n>; a review fix as regress-<n> (its new check, red on the
+    # version the verifier saw) then after-<n>. The name says which, so after-2789 is never a task's.
+    for bf in "$run"/gates/before-*.json "$run"/gates/regress-*.json; do
       [ -f "$bf" ] || continue
-      pn="${bf##*/}"; pn="${pn%.json}"; pn="${pn#before-}"
+      pn="${bf##*/}"; pn="${pn%.json}"
+      case "$pn" in
+        before-*) pn="${pn#before-}"; who="task $pn" ;;
+        *) pn="${pn#regress-}"; who="review fix $pn"
+           [ ! -f "$run/gates/before-$pn.json" ] || continue ;;   # a task's own re-proof: its before-<n> stands
+      esac
       af="$run/gates/after-$pn.json"
       bex="$(gate_exit "$bf")"; bcmd="$(gate_cmd "$bf")"
       proofs=$((proofs + 1)); note="-"; tp=""
@@ -4477,13 +4484,13 @@ QUOTES
       else
         bad=$((bad + 1)); broke=$((broke + 1))
       fi
-      printf '| task %s | proof | %s | %s |\n' "$pn" "$st" "$note" >> "$out"
-      say "task $pn  proof  $st · $note"
+      printf '| %s | proof | %s | %s |\n' "$who" "$st" "$note" >> "$out"
+      say "$who  proof  $st · $note"
     done
     for af in "$run"/gates/after-*.json; do        # an after-check with nothing before it proves nothing
       [ -f "$af" ] || continue
       pn="${af##*/}"; pn="${pn%.json}"; pn="${pn#after-}"
-      [ ! -f "$run/gates/before-$pn.json" ] || continue
+      [ ! -f "$run/gates/before-$pn.json" ] && [ ! -f "$run/gates/regress-$pn.json" ] || continue
       proofs=$((proofs + 1)); rows=$((rows + 1)); bad=$((bad + 1)); broke=$((broke + 1))
       printf '| task %s | proof | %s | %s |\n' "$pn" "NO-BEFORE" "-" >> "$out"
       say "task $pn  proof  NO-BEFORE · nothing showed the problem first"
