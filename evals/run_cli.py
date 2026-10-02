@@ -2657,7 +2657,7 @@ def runs_decision_quotes(tmp):
         back = None
     check("state decision=: quote marks and backslashes are escaped, so the line reads back as the exact words",
           code == 0 and back == words, body)
-    append(st, '- 2026-10-01 10:00: "keep "this" as it was"\n')
+    append(st, '- 2026-10-01 10:00: "keep "this" as it was"\n- 2026-10-01 10:01: "save to C:\\temp\\new"\n')
     code, out, err = council(dq, "status", "--json")
     try:
         said = json.loads(out).get("decisions", [])
@@ -2666,6 +2666,8 @@ def runs_decision_quotes(tmp):
     check("status: the card shows the words as said — unescaped — and an older line as it was written",
           any(d.endswith('"%s"' % words) for d in said) and any(d.endswith('"keep "this" as it was"') for d in said),
           str(said) + err)
+    check("status: an older line whose backslashes only look like escapes (C:\\temp\\new) is shown as it was written",
+          any(d.endswith('"save to C:\\temp\\new"') for d in said), str(said) + err)
 
 @part("runs")
 def runs_seat_files(tmp):

@@ -174,17 +174,13 @@ def decisions(run, limit=20):
 
 
 def said(entry):
-    """'<time>: "<words>"' with the words as the user gave them. The helper writes them as a JSON string
-    (quote marks and backslashes escaped); a line that isn't one — written before that, or by hand — is
-    shown as it is."""
-    m = re.match(r'^(.*?: )"(.*)"\s*$', entry)
+    """'<time>: "<words>"' with the words as the user gave them. The helper escapes only quote marks and
+    backslashes (\\" and \\\\); a line holding anything else after a backslash, or a bare quote mark — written
+    before that, or by hand (C:\\temp\\new) — is shown as it is."""
+    m = re.match(r'^(.*?: )"((?:[^"\\]|\\["\\])*)"\s*$', entry)
     if not m:
         return entry
-    try:
-        words = json.loads('"%s"' % m.group(2), strict=False)
-    except ValueError:
-        return entry
-    return '%s"%s"' % (m.group(1), words)
+    return '%s"%s"' % (m.group(1), re.sub(r'\\(["\\])', r"\1", m.group(2)))
 
 
 def next_step(state):
