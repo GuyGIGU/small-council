@@ -2582,6 +2582,33 @@ def runs_closed_run_stays_closed(tmp):
           and hname in read(os.path.join(hand, ".council", "ledger.tsv")) and any(e[3] == "run.closed" for e in events(hrun)), out + err)
 
 @part("runs")
+def runs_closed_seat_guard_fields(tmp):
+    # The closed-run seat guard joined its fields with ":", which an agent id may hold (run 2's verify-3c:
+    # `seat verify-1 failed agent=:running` passed for "a seat left running, no agent" on a done verifier,
+    # turned it failed, doubled its agent count and made the ledger's verifier cost unknown).
+    sg = new_repo(tmp, "seat-guard-fields")
+    write(os.path.join(sg, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(sg, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    name = os.path.basename(run)
+    write_plan(run, selected=("chair", "verify-1"))
+    write(os.path.join(run, "verify-1.md"), "# Verification — x\n\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | x | CONFIRMED | a.py:1 |\n")
+    council(sg, "seat", "verify-1", "done", "agent=a1", "tokens=94152")
+    council(sg, "state", "phase=deliver")
+    council(sg, "run", "close")
+    seats, ledger = read(os.path.join(run, "seats.tsv")), read(os.path.join(sg, ".council", "ledger.tsv"))
+    refused = []
+    for spoof in ("agent=:running", "agent=:queued", "agent=::"):
+        code, out, err = council(sg, "seat", "verify-1", "failed", spoof, "--run", name)
+        if code != 2:
+            refused.append("%s: exit %d · %s%s" % (spoof, code, out, err))
+    check("seat: on a closed run, an agent id holding ':' can't pass for 'a seat left working, no agent' — refused, "
+          "the record and the ledger unchanged",
+          not refused and read(os.path.join(run, "seats.tsv")) == seats
+          and read(os.path.join(sg, ".council", "ledger.tsv")) == ledger, "\n".join(refused))
+
+@part("runs")
 def runs_close_stamp_from_header(tmp):
     # The close stamp is a header key (run 2's latent finding: the reader took the first "closed:" line anywhere
     # in session-state.md, so a line in the notes below the header made a run set complete by hand read as

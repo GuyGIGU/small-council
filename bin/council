@@ -1258,11 +1258,13 @@ cmd_seat() {
   fi
   run="$(resolve_run)" || exit 2
   if run_closed "$run"; then               # only a close-out that keeps every counted figure
-    case "$state:$runs:$tokens$agent:$(seat_field "$run" "$slug" 2):$(seat_field "$run" "$slug" 3)" in
-      done:0:::)                                                  # the plan's Chair, with no row yet
+    # Fields joined with "/", which no agent id holds (agent= takes letters, digits and . _ : -): joined with
+    # ":", agent=:running passed for "no agent" on a seat left running.
+    case "$state/$runs/$tokens$agent/$(seat_field "$run" "$slug" 2)/$(seat_field "$run" "$slug" 3)" in
+      done/0///)                                                  # the plan's Chair, with no row yet
         [ ! -f "$run/run-plan.tsv" ] || ! SLUG="$slug" awk -F'\t' '$1 == "seat" && $2 == ENVIRON["SLUG"] && $3 == "role" && $4 == "chair" { f = 1 }
           END { exit !f }' "$run/run-plan.tsv" || closed_out=1 ;;
-      failed:::running:*|failed:::queued:*|skipped:::queued:) closed_out=1 ;;   # skipped drops a row's counts: no agent
+      failed///running/*|failed///queued/*|skipped///queued/) closed_out=1 ;;   # skipped drops a row's counts: no agent
     esac
     [ -n "$closed_out" ] || refuse_closed "$run" "it takes only the Chair's own record (seat <chair> done agents=0) or a seat left working marked failed; a late agent report goes through: council correct <seat> tokens=… agents=… evidence=\"…\" --run ${run##*/}"
   fi
