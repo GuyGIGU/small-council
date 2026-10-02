@@ -518,6 +518,16 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
         verdict, words = item(out, "Closed after Deliver")
         check("a complete run whose stream holds no close event reads the state's closed: stamp, and warns rather than fails",
               verdict == "warn" and stamped.strip() in words, words)
+        notes = base / "more" / "closed-in-notes" / ".council" / "runs" / run2.name
+        shutil.copytree(str(lost), str(notes))
+        state = (notes / "session-state.md").read_text(encoding="utf-8")
+        write(notes / "session-state.md", re.sub(r"^closed: .*\n", "", state, flags=re.MULTILINE)
+              + "## Notes\nclosed: when the owner says so\n")
+        code, out, err = council(base, "run", "audit", "--run", str(notes))
+        verdict, words = item(out, "Closed after Deliver")
+        check("a 'closed:' line in a run's notes is not its close stamp — the audit reads the state's header only "
+              "(converge of the leftovers build: it read 'closed complete at when the owner says so')",
+              verdict == "FAIL" and "no close is recorded" in words and "when the owner says so" not in words, words)
 
     # Run 1's records with the changes the review asked about, in a copy.
     def run1_copy(name, synthesis=None, claims=None):

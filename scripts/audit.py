@@ -81,8 +81,10 @@ def tsv(path):
 
 
 def field(state, key):
-    """The helper's field(): the first "key:" line, value trimmed, a trailing "  # note" dropped."""
-    match = re.search(r"^%s:[ \t]*(.*)$" % re.escape(key), state, re.MULTILINE)
+    """The helper's field() on a session-state.md: the first "key:" line of its header — above the first "## "
+    heading, never a line in the notes below it — value trimmed, a trailing "  # note" dropped."""
+    header = re.split(r"^## ", state, maxsplit=1, flags=re.MULTILINE)[0]
+    match = re.search(r"^%s:[ \t]*(.*)$" % re.escape(key), header, re.MULTILINE)
     return re.sub(r"\s{2,}#.*$", "", match.group(1)).strip() if match else ""
 
 
