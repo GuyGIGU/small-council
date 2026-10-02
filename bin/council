@@ -38,8 +38,10 @@ dash()    { if [ -n "$1" ]; then printf '%s' "$1"; else printf '%s' '-'; fi; }
 undash()  { if [ "$1" = "-" ]; then printf ''; else printf '%s' "$1"; fi; }
 
 # First "key: value" in a header-style file; a byte-order mark, carriage returns and trailing
-# "   # comments" stripped.
+# "   # comments" stripped. A run's session-state.md is read by its header only (state_field): a line
+# in its notes below the first "## " heading is never a key — "closed: …" there once read as the close.
 field() {
+  case "$2" in */session-state.md|session-state.md) state_field "$1" "$2"; return 0 ;; esac
   sed -n -e "1s/^$BOM//" -e "s/^$1:[[:space:]]*//p" "$2" 2>/dev/null | head -n 1 | tr -d '\r' | sed 's/[[:space:]]\{2,\}#.*$//'
 }
 
@@ -912,12 +914,13 @@ stage_next() {
 waiting_nudge() {
   local run="$1" at="" home=""
   case "$run" in */runs/*) home="${run%/runs/*}" ;; *) home="$(council_home)" ;; esac   # the run's own home
-  ! notifications_off "$home" || return 0
   [ -z "$RUN_ARG" ] || at=" --run ${run##*/}"
-  if impact_python >/dev/null 2>&1; then
-    printf 'council: the run now waits on the user: send the line `council status --line%s` prints, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none)\n' "$at" >&2
+  if notifications_off "$home"; then
+    printf 'council: the run now waits on the user. Their answer clears the wait at the next stage change, or council state waiting=%s clears it\n' "$at" >&2
+  elif impact_python >/dev/null 2>&1; then
+    printf 'council: the run now waits on the user: send the line `council status --line%s` prints, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none). Their answer clears the wait at the next stage change, or council state waiting=%s clears it\n' "$at" "$at" >&2
   else
-    printf 'council: the run now waits on the user: send them the question in one short line, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none)\n' >&2
+    printf 'council: the run now waits on the user: send them the question in one short line, once, with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none). Their answer clears the wait at the next stage change, or council state waiting=%s clears it\n' "$at" >&2
   fi
 }
 
@@ -983,10 +986,11 @@ cmd_state() {
     || { rm -f "$tmp"; event_unlock "$lock" || :; die "cannot update $st"; }
   for kv in ${1+"$@"}; do
     key="${kv%%=*}"
-    if [ "$key" = decision ]; then                 # the user's words, redacted, under Decisions so far
+    if [ "$key" = decision ]; then                 # the user's words, redacted, under Decisions so far, as a
+                                                   # JSON string ("…" and \ escaped), so a reader gets them back
       { printf '%s' "${kv#decision=}" | tr '\t\r\n\013\014' '     '; printf '\n'; } > "$tmp.said" \
         && redact_copy "$tmp.said" "$tmp.red" >/dev/null \
-        && D="- $(now_min): \"$(tr -d '\r\n' < "$tmp.red")\"" awk '
+        && D="- $(now_min): \"$(json_esc "$(tr -d '\r\n' < "$tmp.red")")\"" awk '
              { sub(/\r$/, "") }
              ind && /^## / { print ENVIRON["D"]; ind = 0; done = 1 }
              $0 == "## Decisions so far" { ind = 1 }
@@ -1206,7 +1210,7 @@ status_nudge() {
       case "$run" in */runs/*) home="${run%/runs/*}" ;; *) home="$(council_home)" ;; esac
       notifications_off "$home" || al="; then send the owner the line \`council status --line$at\` prints, once, with a PushNotification tool"
     fi
-    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s`%s%s\n' \
+    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s` — and if the card fails to render, give that text and carry on%s%s\n' \
       "$lead" "$at" "$at" "${follow:+; and tell them, from the record — $follow}" "$al" >&2
   elif [ "$when" != close ]; then
     printf 'council: %s: relay `council run status` (no Python 3.8+ here, so there is no status card)\n' "$lead" >&2
@@ -1255,11 +1259,13 @@ cmd_seat() {
   fi
   run="$(resolve_run)" || exit 2
   if run_closed "$run"; then               # only a close-out that keeps every counted figure
-    case "$state:$runs:$tokens$agent:$(seat_field "$run" "$slug" 2):$(seat_field "$run" "$slug" 3)" in
-      done:0:::)                                                  # the plan's Chair, with no row yet
+    # Fields joined with "/", which no agent id holds (agent= takes letters, digits and . _ : -): joined with
+    # ":", agent=:running passed for "no agent" on a seat left running.
+    case "$state/$runs/$tokens$agent/$(seat_field "$run" "$slug" 2)/$(seat_field "$run" "$slug" 3)" in
+      done/0///)                                                  # the plan's Chair, with no row yet
         [ ! -f "$run/run-plan.tsv" ] || ! SLUG="$slug" awk -F'\t' '$1 == "seat" && $2 == ENVIRON["SLUG"] && $3 == "role" && $4 == "chair" { f = 1 }
           END { exit !f }' "$run/run-plan.tsv" || closed_out=1 ;;
-      failed:::running:*|failed:::queued:*|skipped:::queued:) closed_out=1 ;;   # skipped drops a row's counts: no agent
+      failed///running/*|failed///queued/*|skipped///queued/) closed_out=1 ;;   # skipped drops a row's counts: no agent
     esac
     [ -n "$closed_out" ] || refuse_closed "$run" "it takes only the Chair's own record (seat <chair> done agents=0) or a seat left working marked failed; a late agent report goes through: council correct <seat> tokens=… agents=… evidence=\"…\" --run ${run##*/}"
   fi
@@ -1894,10 +1900,15 @@ close_claims_note() {
 }
 
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" share whose follow=""
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" share whose follow="" close_lock="" said=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
+  # Closes at once each read "not closed" before any wrote, and all went through. The close lock covers the
+  # whole close — the closed check, the state, the ledger and the close event — so a second close waits,
+  # then finds the run closed. A close that dies leaves it to the stale-lock check (its owner is gone).
+  close_lock="$run/close.lock"
+  event_lock "$close_lock" || die "close lock unavailable: $close_lock — another close of this run is still going; if none is, remove that folder and close again"
   lost="$(event_ready "$run")" && lost="" || {
     [ $? -eq 2 ] || events_writable "$run"       # a torn line: refused, with the repair named
     printf 'council: the event stream is lost (%s): the run closes, but its events were not recorded\n' "$lost" >&2
@@ -1907,7 +1918,12 @@ cmd_run_close() {
     if [ "$old_status:$status" = complete:abandoned ] && stopped_short "$run"; then
       retake=1                                   # its close said so: it never was a finished run
     else
-      [ "$old_status" = "$status" ] || refuse_closed "$run" "it stays $old_status"
+      if [ "$old_status" != "$status" ]; then      # refuse_closed dies here: the run was closed under the lock
+        event_unlock "$close_lock" || :
+        refuse_closed "$run" "it stays $old_status"
+        die "run ${run##*/} changed while it was being closed — run the close again"   # never a second release
+      fi
+      event_unlock "$close_lock" || :
       say "${run##*/} is already closed — $old_status at $old_closed; nothing changed"
       close_claims_note "$run"                   # read-only: after an evidence build, says whether it is current
       return 0
@@ -1963,6 +1979,13 @@ cmd_run_close() {
       follow="$({ "$py" "$COUNCIL_PLUGIN_ROOT/scripts/tune.py" propose --home "$home" --brief
                   "$py" "$COUNCIL_PLUGIN_ROOT/scripts/outcomes.py" --home "$home" --repo "$(this_tree)" --brief --recent 20; } 2>/dev/null \
                 | awk 'NF { printf "%s%s", (n++ ? " · " : ""), $0 }')"
+      # Said once: a later close with the same thing to say stays quiet, and says it again once the record's
+      # line changes, or after it had nothing to say. The memory lives with the runs, never in a tracked file.
+      said="$home/runs/.follow-said"
+      if [ -z "$follow" ]; then rm -f "$said" 2>/dev/null || :
+      elif [ "$(cat "$said" 2>/dev/null)" = "$follow" ]; then follow=""
+      else printf '%s\n' "$follow" > "$said" 2>/dev/null || :
+      fi
     fi                                              # said on the closing card's line, the last
     if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
       # The log whose Run: line names this run — as a name or as the folder's full path, which is what
@@ -1984,6 +2007,7 @@ cmd_run_close() {
       || printf 'council: the run is closed, but its close event could not be recorded — council run events check --run %s\n' "${run##*/}" >&2
     FOLLOW="$follow" status_nudge "$run" close
   fi
+  event_unlock "$close_lock" || :                # once: a second release could free a lock another close took since
 }
 
 cmd_run_status() {
@@ -2665,6 +2689,7 @@ cmd_index() {
   local cap="${COUNCIL_INDEX_CAP:-80}"                # files indexed in full (the evals lower it to stay quick)
   local namecap="${COUNCIL_INDEX_NAMECAP:-200}"       # past the cap: how many are named one by one
   run="$(resolve_run)" || exit 2
+  refuse_closed "$run" "its change index is on record; index the change in a new run"   # before anything is written
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cd "$top" 2>/dev/null || die "cannot enter the code root: $top"
   git rev-parse --git-dir >/dev/null 2>&1 || die "the code root is not a git repository — the change index needs git"
@@ -3161,7 +3186,7 @@ gate_lock() {
 # In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
 # so a later failure can be told apart from one the untouched code already had.
 run_gate() {
-  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0 rcmd never=0 nnote="" rbase zt=""
+  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0 rcmd never=0 nnote="" rbase zt="" nomod=""
   GATE_SAME_AS_BASELINE=0             # 1: it failed, naming only the tests that failed at the baseline
   GATE_EMPTY=0                        # 1: 0 files matched · 2: its output says no test ran · 3: a test gate printed nothing
   base="$(gate_base "$run" "$name")"; out="$base.txt"; bl="$run/gates/baseline/${base##*/}"
@@ -3227,6 +3252,8 @@ run_gate() {
     say "gate $name: FAIL — cmd opened its prompt and ran nothing (${secs}s): write its switch as //c, e.g. cmd //c \"<command>\" — full output: $out"
   elif [ "$ec" -eq 127 ]; then                   # the shell's "command not found": nothing was checked
     say "gate $name: could not run (exit 127, ${secs}s) — a command it calls was not found; install it, or fix the gate's command — full output: $out"
+  elif [ "$ec" -eq 1 ] && nomod="$(missing_module "$out")"; then   # python -m <tool> without the tool: the same
+    say "gate $name: could not run (exit 1, ${secs}s) — Python has no module $nomod; install it, or fix the gate's command — full output: $out"
   else
     say "gate $name: FAIL (exit $ec, ${secs}s) — full output: $out"
   fi
@@ -3305,6 +3332,17 @@ repair_auto() {
 skip_gate() {
   say "gate $name: skipped — $1"
   skipped=$((skipped + 1)); [ "$ismand" -eq 0 ] || { skipm=$((skipm + 1)); reds="${reds:+$reds, }$name"; }
+}
+
+# The module `python -m <module>` could not find, when that is all a gate printed besides `council changed`'s
+# own "changed: …" lines: Python's one line "<python>: No module named <module>" (exit 1). Code that fails
+# an import says "ModuleNotFoundError: No module named '<module>'", quoted, in a traceback — that check ran,
+# and it failed.
+missing_module() {
+  local said
+  said="$(grep '[^[:space:]]' "$1" 2>/dev/null | grep -v '^changed: ')" || return 1
+  [ "$(printf '%s\n' "$said" | grep -c .)" = 1 ] || return 1
+  printf '%s\n' "$said" | sed -n 's/^.*: No module named \([A-Za-z0-9_.][A-Za-z0-9_.]*\)[[:space:]]*$/\1/p' | tr -d '\r' | grep .
 }
 
 cmd_gate() {
@@ -4194,7 +4232,8 @@ SEATS
 }
 
 # The first path in a gate command that is a real test file the project keeps: a regular file inside
-# the project whose name says test or spec, either tracked by git or present and not ignored (the test a
+# the project whose name says test or spec, or that sits in a test folder (tests/, test/, spec/, specs/,
+# __tests__/, evals/ — a block-based runner), either tracked by git or present and not ignored (the test a
 # build just wrote isn't staged yet). A source file, a directory, a config file or a file outside the
 # project is never "a saved test". A path is also tried inside the folder a `cd <dir>`, `--prefix`,
 # `--cwd`, `--dir` or `-C` names, a `--flag=<path>` word is read for its path, and Godot's res:// is
@@ -4225,13 +4264,21 @@ gate_test_path() {
       case "$base" in                 # a config, a log or a report is never the test that was saved
         *.log|*.ini|*.cfg|*.conf|*.toml|*.json|*.yaml|*.yml|*.xml|*.txt|*.md|*.lock|*.csv) continue ;;
       esac
-      case "$base" in                 # the file's own name has to say it is a test
-        test_*|test-*|*_test.*|*-test.*|*.test.*|*.spec.*|*_spec.*|*-spec.*|spec_*|tests.*|test.*) ;;
-        *) continue ;;
+      intest=""
+      case "$base" in                 # the file's own name has to say it is a test, or the folder it sits in
+        test_*|test-*|*_test.*|*-test.*|*.test.*|*.spec.*|*_spec.*|*-spec.*|spec_*|tests.*|test.*) intest=1 ;;
       esac
       [ "$away" = 0 ] || continue     # the command left the project before naming this path
       p="$tok"                        # inside the folder the command moved to, if it named one
       case "$tok" in /*|[A-Za-z]:*) ;; *) [ -z "$sub" ] || p="$sub/$tok" ;; esac
+      if [ -z "$intest" ]; then       # a test folder (a block-based runner: evals/run_cli.py --block x), by the
+        q="$p"                        # path as it lands — tests/../src/app.py is src/app.py — and only inside
+        while :; do                   # the project, never by a folder above it
+          case "$q" in */../*) r="$(printf '%s' "$q" | sed 's#[^/][^/]*/\.\./##')"; [ "$r" != "$q" ] || break; q="$r" ;; *) break ;; esac
+        done
+        case "$q" in /*|[A-Za-z]:*|../*) continue ;; esac
+        case "/${q#./}" in */tests/*|*/test/*|*/spec/*|*/specs/*|*/__tests__/*|*/evals/*) ;; *) continue ;; esac
+      fi
       if [ -f "$p" ]; then
         if git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then hit="$p"
         else
@@ -4260,7 +4307,7 @@ cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what \
         mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
-        other=0 unreadt=0 empty=0 gone=0 result
+        other=0 unreadt=0 empty=0 gone=0 result who
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -4416,9 +4463,16 @@ QUOTES
   rm -f "$req"
   # council-implement: every fix's own proof, checked rather than taken on trust.
   if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
-    for bf in "$run"/gates/before-*.json; do
+    # A task proves itself as before-<n> then after-<n>; a review fix as regress-<n> (its new check, red on the
+    # version the verifier saw) then after-<n>. The name says which, so after-2789 is never a task's.
+    for bf in "$run"/gates/before-*.json "$run"/gates/regress-*.json; do
       [ -f "$bf" ] || continue
-      pn="${bf##*/}"; pn="${pn%.json}"; pn="${pn#before-}"
+      pn="${bf##*/}"; pn="${pn%.json}"
+      case "$pn" in
+        before-*) pn="${pn#before-}"; who="task $pn" ;;
+        *) pn="${pn#regress-}"; who="review fix $pn"
+           [ ! -f "$run/gates/before-$pn.json" ] || continue ;;   # a task's own re-proof: its before-<n> stands
+      esac
       af="$run/gates/after-$pn.json"
       bex="$(gate_exit "$bf")"; bcmd="$(gate_cmd "$bf")"
       proofs=$((proofs + 1)); note="-"; tp=""
@@ -4440,13 +4494,13 @@ QUOTES
       else
         bad=$((bad + 1)); broke=$((broke + 1))
       fi
-      printf '| task %s | proof | %s | %s |\n' "$pn" "$st" "$note" >> "$out"
-      say "task $pn  proof  $st · $note"
+      printf '| %s | proof | %s | %s |\n' "$who" "$st" "$note" >> "$out"
+      say "$who  proof  $st · $note"
     done
     for af in "$run"/gates/after-*.json; do        # an after-check with nothing before it proves nothing
       [ -f "$af" ] || continue
       pn="${af##*/}"; pn="${pn%.json}"; pn="${pn#after-}"
-      [ ! -f "$run/gates/before-$pn.json" ] || continue
+      [ ! -f "$run/gates/before-$pn.json" ] && [ ! -f "$run/gates/regress-$pn.json" ] || continue
       proofs=$((proofs + 1)); rows=$((rows + 1)); bad=$((bad + 1)); broke=$((broke + 1))
       printf '| task %s | proof | %s | %s |\n' "$pn" "NO-BEFORE" "-" >> "$out"
       say "task $pn  proof  NO-BEFORE · nothing showed the problem first"

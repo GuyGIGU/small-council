@@ -169,8 +169,18 @@ def decisions(run, limit=20):
             inside = line.strip() == "## Decisions so far"
             continue
         if inside and line.startswith("- "):
-            found.append(clean(line[2:])[:300])
+            found.append(clean(said(line[2:]))[:300])
     return found[-limit:]
+
+
+def said(entry):
+    """'<time>: "<words>"' with the words as the user gave them. The helper escapes only quote marks and
+    backslashes (\\" and \\\\); a line holding anything else after a backslash, or a bare quote mark — written
+    before that, or by hand (C:\\temp\\new) — is shown as it is."""
+    m = re.match(r'^(.*?: )"((?:[^"\\]|\\["\\])*)"\s*$', entry)
+    if not m:
+        return entry
+    return '%s"%s"' % (m.group(1), re.sub(r'\\(["\\])', r"\1", m.group(2)))
 
 
 def next_step(state):
