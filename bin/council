@@ -985,10 +985,11 @@ cmd_state() {
     || { rm -f "$tmp"; event_unlock "$lock" || :; die "cannot update $st"; }
   for kv in ${1+"$@"}; do
     key="${kv%%=*}"
-    if [ "$key" = decision ]; then                 # the user's words, redacted, under Decisions so far
+    if [ "$key" = decision ]; then                 # the user's words, redacted, under Decisions so far, as a
+                                                   # JSON string ("…" and \ escaped), so a reader gets them back
       { printf '%s' "${kv#decision=}" | tr '\t\r\n\013\014' '     '; printf '\n'; } > "$tmp.said" \
         && redact_copy "$tmp.said" "$tmp.red" >/dev/null \
-        && D="- $(now_min): \"$(tr -d '\r\n' < "$tmp.red")\"" awk '
+        && D="- $(now_min): \"$(json_esc "$(tr -d '\r\n' < "$tmp.red")")\"" awk '
              { sub(/\r$/, "") }
              ind && /^## / { print ENVIRON["D"]; ind = 0; done = 1 }
              $0 == "## Decisions so far" { ind = 1 }

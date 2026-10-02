@@ -2636,6 +2636,35 @@ def runs_closed_index_refused(tmp):
           not [f for f in os.listdir(run) if f.startswith(".index-")], str(os.listdir(run)))
 
 @part("runs")
+def runs_decision_quotes(tmp):
+    # The user's words keep their quote marks and backslashes, and the record still reads back exactly (run 2's
+    # follow-up: a decision holding "…" wrote - <time>: "say "go" now", which no reader can take apart).
+    dq = new_repo(tmp, "decision-quotes")
+    write(os.path.join(dq, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(dq, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    st = os.path.join(run, "session-state.md")
+    words = 'Say "go" now \\ and keep C:\\temp'
+    code, out, err = council(dq, "state", "decision=" + words)
+    body = read(st).split("## Decisions so far", 1)[-1]
+    m = re.search(r'^- \d{4}-\d\d-\d\d \d\d:\d\d: "(.*)"$', body, re.MULTILINE)
+    try:
+        back = json.loads('"%s"' % m.group(1)) if m else None
+    except ValueError:
+        back = None
+    check("state decision=: quote marks and backslashes are escaped, so the line reads back as the exact words",
+          code == 0 and back == words, body)
+    append(st, '- 2026-10-01 10:00: "keep "this" as it was"\n')
+    code, out, err = council(dq, "status", "--json")
+    try:
+        said = json.loads(out).get("decisions", [])
+    except ValueError:
+        said = []
+    check("status: the card shows the words as said — unescaped — and an older line as it was written",
+          any(d.endswith('"%s"' % words) for d in said) and any(d.endswith('"keep "this" as it was"') for d in said),
+          str(said) + err)
+
+@part("runs")
 def runs_seat_files(tmp):
     # A seat is done only with its file (sessions-seats-1: a verifier out of turns was recorded done with
     # nothing written), and every verify file in the run folder is checked, a Workflow's too (sessions-seats-4).

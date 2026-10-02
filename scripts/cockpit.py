@@ -169,8 +169,22 @@ def decisions(run, limit=20):
             inside = line.strip() == "## Decisions so far"
             continue
         if inside and line.startswith("- "):
-            found.append(clean(line[2:])[:300])
+            found.append(clean(said(line[2:]))[:300])
     return found[-limit:]
+
+
+def said(entry):
+    """'<time>: "<words>"' with the words as the user gave them. The helper writes them as a JSON string
+    (quote marks and backslashes escaped); a line that isn't one — written before that, or by hand — is
+    shown as it is."""
+    m = re.match(r'^(.*?: )"(.*)"\s*$', entry)
+    if not m:
+        return entry
+    try:
+        words = json.loads('"%s"' % m.group(2), strict=False)
+    except ValueError:
+        return entry
+    return '%s"%s"' % (m.group(1), words)
 
 
 def next_step(state):
