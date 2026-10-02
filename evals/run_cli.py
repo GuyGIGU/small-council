@@ -4329,6 +4329,25 @@ def gates_could_not_run_and_slow(tmp):
     code, out, err = council(nc, "gate", "lint")
     check("gate: a command that isn't there reads 'could not run (exit 127)', with its own exit code",
           code == 127 and "could not run (exit 127" in out and "FAIL (exit 127" not in out, out + err)
+    py = slash(sys.executable)
+    nm = small_council_repo(tmp, "no-module", "| ruff | `\"%s\" -m council_no_such_module_xyz check` | verify | yes | ok | `true` | none | - |\n"
+                            "| ruffchanged | `bash \"%s\" changed --glob '*.py' -- \"%s\" -m council_no_such_module_xyz check` | verify | yes | ok | `true` | none | - |\n"
+                            "| unit | `\"%s\" -c \"import council_no_such_module_xyz\"` | verify | yes | ok | `true` | none | - |\n"
+                            % (py, slash(CLI), py, py))
+    write(os.path.join(nm, "new.py"), "x = 1\n")
+    _, nrun, _ = council(nm, "run", "open", "council-review")
+    write_plan(nrun.strip())
+    missing = []
+    for gate in ("ruff", "ruffchanged"):
+        code, out, err = council(nm, "gate", gate)
+        if not (code == 1 and "could not run (exit 1" in out and "council_no_such_module_xyz" in out and "FAIL (exit 1" not in out):
+            missing.append("%s: exit %d · %s%s" % (gate, code, out, err))
+    check("gate: a Python tool that isn't installed (python -m <module>: No module named …) reads 'could not run', "
+          "with its own exit code — run as it is, or through council changed (run 2: ruff missing read 'FAIL (exit 1)')",
+          not missing, "\n".join(missing))
+    code, out, err = council(nm, "gate", "unit")
+    check("gate: code that fails to import a module (ModuleNotFoundError) is still a FAIL — the check ran",
+          code == 1 and "FAIL (exit 1" in out and "could not run" not in out, out + err)
     slow = small_council_repo(tmp, "slow-grounding", "| suite | `true` | grounding, verify | yes | ok | `true` | none | - |\n")
     _, srun, _ = council(slow, "run", "open", "council-review")
     srun = srun.strip()

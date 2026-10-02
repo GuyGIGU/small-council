@@ -3176,7 +3176,7 @@ gate_lock() {
 # In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
 # so a later failure can be told apart from one the untouched code already had.
 run_gate() {
-  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0 rcmd never=0 nnote="" rbase zt=""
+  local run="$1" name="$2" cmd="$3" top="$4" base out start ec secs hits bl pat fresh=0 rcmd never=0 nnote="" rbase zt="" nomod=""
   GATE_SAME_AS_BASELINE=0             # 1: it failed, naming only the tests that failed at the baseline
   GATE_EMPTY=0                        # 1: 0 files matched · 2: its output says no test ran · 3: a test gate printed nothing
   base="$(gate_base "$run" "$name")"; out="$base.txt"; bl="$run/gates/baseline/${base##*/}"
@@ -3242,6 +3242,8 @@ run_gate() {
     say "gate $name: FAIL — cmd opened its prompt and ran nothing (${secs}s): write its switch as //c, e.g. cmd //c \"<command>\" — full output: $out"
   elif [ "$ec" -eq 127 ]; then                   # the shell's "command not found": nothing was checked
     say "gate $name: could not run (exit 127, ${secs}s) — a command it calls was not found; install it, or fix the gate's command — full output: $out"
+  elif [ "$ec" -eq 1 ] && nomod="$(missing_module "$out")"; then   # python -m <tool> without the tool: the same
+    say "gate $name: could not run (exit 1, ${secs}s) — Python has no module $nomod; install it, or fix the gate's command — full output: $out"
   else
     say "gate $name: FAIL (exit $ec, ${secs}s) — full output: $out"
   fi
@@ -3320,6 +3322,17 @@ repair_auto() {
 skip_gate() {
   say "gate $name: skipped — $1"
   skipped=$((skipped + 1)); [ "$ismand" -eq 0 ] || { skipm=$((skipm + 1)); reds="${reds:+$reds, }$name"; }
+}
+
+# The module `python -m <module>` could not find, when that is all a gate printed besides `council changed`'s
+# own "changed: …" lines: Python's one line "<python>: No module named <module>" (exit 1). Code that fails
+# an import says "ModuleNotFoundError: No module named '<module>'", quoted, in a traceback — that check ran,
+# and it failed.
+missing_module() {
+  local said
+  said="$(grep '[^[:space:]]' "$1" 2>/dev/null | grep -v '^changed: ')" || return 1
+  [ "$(printf '%s\n' "$said" | grep -c .)" = 1 ] || return 1
+  printf '%s\n' "$said" | sed -n 's/^.*: No module named \([A-Za-z0-9_.][A-Za-z0-9_.]*\)[[:space:]]*$/\1/p' | tr -d '\r' | grep .
 }
 
 cmd_gate() {
