@@ -3972,7 +3972,8 @@ def requests_review_fix_proofs(tmp):
     for name, cmd, ex in (("before-1", "pytest tests/test_x.py", 1), ("after-1", "pytest tests/test_x.py", 0),
                           ("regress-2789", "pytest tests/test_x.py::test_y", 1), ("after-2789", "pytest tests/test_x.py::test_y", 0),
                           ("regress-8", "pytest tests/test_x.py", 0), ("after-8", "pytest tests/test_x.py", 0),
-                          ("after-9", "pytest tests/test_x.py", 0)):
+                          ("after-9", "pytest tests/test_x.py", 0), ("regress-1", "pytest tests/test_x.py", 0),
+                          ("regress-3", "pytest tests/test_x.py", 1)):
         write(os.path.join(run, "gates", name + ".json"),
               '{"gate": "%s", "command": "%s", "exit": %d, "seconds": 1, "when": "2026-10-02 10:00:00"}\n' % (name, cmd, ex))
     code, out, _ = council(rf, "check")
@@ -3980,9 +3981,12 @@ def requests_review_fix_proofs(tmp):
           "review fix 2789  proof  ok · test saved: tests/test_x.py" in out and "task 2789" not in out, out)
     check("check: a review fix whose regress-check never failed is broken proof, as a task's before-check would be",
           "review fix 8  proof  BEFORE-PASSED" in out, out)
-    check("check: a task's own before and after are unchanged, and an after-check with neither before it is still NO-BEFORE",
-          "task 1  proof  ok" in out and "task 9  proof  NO-BEFORE" in out
-          and "check: 2 of 4 fix(es) proved · 2 broken · 2 left a test behind in the project" in out, out)
+    check("check: a task's own before and after are unchanged (a regress-<n> beside its before-<n> is not read), and "
+          "an after-check with neither before it is still NO-BEFORE",
+          "task 1  proof  ok" in out and "review fix 1" not in out and "task 9  proof  NO-BEFORE" in out, out)
+    check("check: a review fix's red check with no after-check is broken proof",
+          "review fix 3  proof  NO-AFTER" in out
+          and "check: 2 of 5 fix(es) proved · 3 broken · 2 left a test behind in the project" in out, out)
     check("check: the review fix's row lands in check.md", "| review fix 2789 | proof | ok |" in read(os.path.join(run, "check.md")))
 
 @part("requests")

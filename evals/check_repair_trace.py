@@ -35,7 +35,7 @@ SEAT_FILE = re.compile(r"/\.council/runs/[^/]+/seats/[^/]+\.md$")
 RECORD = re.compile(r"repair record\W+([A-Za-z0-9][\w.-]*)\W+([\w.-]+)")
 RECORD_OUT = re.compile(r"repair: task (\S+) attempt (\d+) \S (\w+) / (\S+)")
 NEXT_OUT = re.compile(r"\bnext ([\w-]+)")
-GATE_OUT = re.compile(r"^gate ([^\s:]+): (pass|FAIL)\b", re.MULTILINE)
+GATE_LINE = re.compile(r"^gate ([^\s:]+): (pass|FAIL)\b")
 STOPPED_OUT = re.compile(r"\bgate (\S+) is stopped: it failed three repair attempts")
 ALREADY_OUT = "this gate run is already recorded"
 SPAN = r"(?:(?!\\n)[^\n;&|])*"          # stays on one command line, escaped newline or not
@@ -85,29 +85,41 @@ def timeline(calls):
         name, data = call["name"], call["input"]
         if name == "Bash":
             command = data.get("command", "")
-            ran = GATE_OUT.findall(call["out"])
-            for gate, verdict in ran:
-                events.append({"kind": "gate", "gate": gate, "failed": verdict == "FAIL", "call": call})
+            # Read the output line by line, so a call that runs several gates (or a gate and a typed record)
+            # keeps each record with the gate printed just before it: since 0.19 a failed gate prints its own
+            # record; a typed `repair record` printed one before that, or "already recorded" now.
             match = RECORD.search(command)
-            own = RECORD_OUT.search(call["out"]) if not match else None
-            if own and ran and ran[-1][1] == "FAIL":       # 0.19: the failed gate recorded its own attempt
-                step = NEXT_OUT.search(call["out"])
-                events.append({"kind": "record", "task": own.group(1), "gate": ran[-1][0], "call": call, "ok": True,
-                               "attempt": int(own.group(2)), "result": own.group(3),
-                               "action": step.group(1) if step else None, "refusal": ""})
-            stopped = STOPPED_OUT.search(call["out"])
-            if stopped and not match:                      # the gate refused to run again: a fourth attempt tried
-                events.append({"kind": "refused-gate", "gate": stopped.group(1), "call": call})
-            if match and ALREADY_OUT in call["out"]:       # a typed record of a run the gate recorded: changes nothing
-                events.append({"kind": "duplicate", "call": call})
-            elif match:
-                out = RECORD_OUT.search(call["out"])
-                step = NEXT_OUT.search(call["out"])
+            lines, last, said = call["out"].splitlines(), None, 0
+            for i, line in enumerate(lines):
+                gate = GATE_LINE.match(line)
+                if gate:
+                    last = gate.group(1)
+                    events.append({"kind": "gate", "gate": last, "failed": gate.group(2) == "FAIL", "call": call})
+                    continue
+                own = RECORD_OUT.search(line)
+                if own:
+                    rest = []
+                    for later in lines[i + 1:]:
+                        if GATE_LINE.match(later) or RECORD_OUT.search(later):
+                            break
+                        rest.append(later)
+                    step = NEXT_OUT.search(" ".join([line] + rest))
+                    events.append({"kind": "record", "task": own.group(1), "call": call, "ok": True,
+                                   "gate": last or (match.group(2) if match else ""),
+                                   "attempt": int(own.group(2)), "result": own.group(3),
+                                   "action": step.group(1) if step else None, "refusal": ""})
+                    said += 1
+                elif ALREADY_OUT in line:                  # a typed record of a run the gate recorded: no change
+                    events.append({"kind": "duplicate", "call": call})
+                    said += 1
+                else:
+                    stopped = STOPPED_OUT.search(line)
+                    if stopped:                            # the gate refused to run again: a fourth attempt tried
+                        events.append({"kind": "refused-gate", "gate": stopped.group(1), "call": call})
+            if match and not said:                         # a typed record the helper refused
                 events.append({"kind": "record", "task": match.group(1), "gate": match.group(2), "call": call,
-                               "ok": bool(out), "attempt": int(out.group(2)) if out else None,
-                               "result": out.group(3) if out else None,
-                               "action": step.group(1) if (out and step) else None,
-                               "refusal": "" if out else call["out"].strip()[:160]})
+                               "ok": False, "attempt": None, "result": None, "action": None,
+                               "refusal": call["out"].strip()[:160]})
             if "context build" in command:
                 events.append({"kind": "context", "call": call})
             if SHELL_WRITE.search(json.dumps(data)):
@@ -387,6 +399,10 @@ def at(steps, label_or_index, extra):
     return steps[:index + 1] + extra + steps[index + 1:]
 
 
+def swap(steps, index, step):
+    return steps[:index] + [step] + steps[index + 1:]
+
+
 def recorded(step):
     return step["name"] == "Bash" and ("repair record" in step["input"]["command"] or "repair: task" in step.get("out", ""))
 
@@ -406,6 +422,18 @@ def scenarios():
         "correct drill, typed records (0.18)": (old, set(), set()),
         "a typed record of a run the gate recorded": (at(good, first, [bash(C + " repair record T1 tests", ALREADY)]),
                                                       set(), set()),
+        "chained: the tests gate, then after-1": (swap(good, first, bash(
+            C + " gate tests; " + C + " gate after-1 -- 'python3 -m unittest tests.test_format'",
+            FAIL_TESTS + "\n" + rec(1, "builder-diagnose") + "\ngate after-1: pass (exit 0, 0s)")), set(), set()),
+        "chained: a red before-1, then the tests gate": (swap(good, first, bash(
+            C + " gate before-1 -- 'python3 -m unittest tests.test_format'; " + C + " gate tests",
+            "gate before-1: FAIL (exit 1, 0s)\n" + FAIL_TESTS + "\n" + rec(1, "builder-diagnose"))), set(), set()),
+        "chained: the tests gate, then a red before-1": (swap(good, first, bash(
+            C + " gate tests; " + C + " gate before-1 -- 'python3 -m unittest tests.test_format'",
+            FAIL_TESTS + "\n" + rec(1, "builder-diagnose") + "\ngate before-1: FAIL (exit 1, 0s)")), set(), set()),
+        "chained: the tests gate, then a typed record": (swap(good, first, bash(
+            C + " gate tests; " + C + " repair record T1 tests",
+            FAIL_TESTS + "\n" + rec(1, "builder-diagnose") + "\n" + ALREADY)), set(), set()),
         "worker before the second failure": (early, {"diagnosis worker only after the second failure"}, set()),
         "fourth attempt after the stop": (good[:third + 1] + [bash(C + " gate tests", STOPPED)] + good[third + 1:],
                                           {"a fourth attempt after the stop"}, {"three-failures-recorded"}),
