@@ -38,8 +38,10 @@ dash()    { if [ -n "$1" ]; then printf '%s' "$1"; else printf '%s' '-'; fi; }
 undash()  { if [ "$1" = "-" ]; then printf ''; else printf '%s' "$1"; fi; }
 
 # First "key: value" in a header-style file; a byte-order mark, carriage returns and trailing
-# "   # comments" stripped.
+# "   # comments" stripped. A run's session-state.md is read by its header only (state_field): a line
+# in its notes below the first "## " heading is never a key — "closed: …" there once read as the close.
 field() {
+  case "$2" in */session-state.md|session-state.md) state_field "$1" "$2"; return 0 ;; esac
   sed -n -e "1s/^$BOM//" -e "s/^$1:[[:space:]]*//p" "$2" 2>/dev/null | head -n 1 | tr -d '\r' | sed 's/[[:space:]]\{2,\}#.*$//'
 }
 

@@ -2579,6 +2579,34 @@ def runs_closed_run_stays_closed(tmp):
           and hname in read(os.path.join(hand, ".council", "ledger.tsv")) and any(e[3] == "run.closed" for e in events(hrun)), out + err)
 
 @part("runs")
+def runs_close_stamp_from_header(tmp):
+    # The close stamp is a header key (run 2's latent finding: the reader took the first "closed:" line anywhere
+    # in session-state.md, so a line in the notes below the header made a run set complete by hand read as
+    # closed, and its real close never happened).
+    nb = new_repo(tmp, "closed-in-body")
+    write(os.path.join(nb, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(nb, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    name, st = os.path.basename(run), os.path.join(run, "session-state.md")
+    write_plan(run, selected=("chair", "w1"))
+    council(nb, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    append(st, "## Notes\nclosed: when the owner says so\n")
+    council(nb, "state", "status=complete")
+    code, out, err = council(nb, "run", "close", "--run", name)
+    header = read(st).split("\n## ", 1)[0]
+    check("run close: a 'closed:' line in the notes is not the close stamp — the run still gets its real close",
+          code == 0 and "already closed" not in out and re.search(r"^closed: \d", header, re.MULTILINE) is not None
+          and name in read(os.path.join(nb, ".council", "ledger.tsv")) and any(e[3] == "run.closed" for e in events(run)),
+          out + err)
+    _, out, _ = council(nb, "run", "open", "council-review")
+    run2 = out.strip().splitlines()[-1]
+    write_plan(run2, selected=("chair", "w1"))
+    append(os.path.join(run2, "session-state.md"), "## Notes\nclosed: never\nstatus: complete\n")
+    code, out, err = council(nb, "seat", "w1", "running", "agent=a2")
+    check("seat: an open run whose notes hold 'closed:' and 'status: complete' still takes seat changes",
+          code == 0, out + err)
+
+@part("runs")
 def runs_seat_files(tmp):
     # A seat is done only with its file (sessions-seats-1: a verifier out of turns was recorded done with
     # nothing written), and every verify file in the run folder is checked, a Workflow's too (sessions-seats-4).
