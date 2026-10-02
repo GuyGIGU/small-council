@@ -4,7 +4,8 @@
 The suite's tool_used graders count calls but cannot order them or tell which agent made them. This
 reads a `claude plugin eval` trace.jsonl — main-session calls, plus subagent calls tagged with
 parent_tool_use_id — and reports in order: was the loop entered; was each failed tests-gate run
-recorded once; did the one diagnosis worker come only after the second failure and stay read-only;
+recorded once (by `council gate` itself since 0.19, which prints the record; a typed `council repair
+record` before that); did the one diagnosis worker come only after the second failure and stay read-only;
 did mutation stop after the third; was the drill rig left alone. With --repo it also reads the kept
 project copy's repairs.jsonl, runs the helper's own `repair check`, and (with --case) compares the rig
 files with a fresh scaffold. It never runs git inside the kept copy. It does not judge whether a
@@ -35,6 +36,8 @@ RECORD = re.compile(r"repair record\W+([A-Za-z0-9][\w.-]*)\W+([\w.-]+)")
 RECORD_OUT = re.compile(r"repair: task (\S+) attempt (\d+) \S (\w+) / (\S+)")
 NEXT_OUT = re.compile(r"\bnext ([\w-]+)")
 GATE_OUT = re.compile(r"^gate ([^\s:]+): (pass|FAIL)\b", re.MULTILINE)
+STOPPED_OUT = re.compile(r"\bgate (\S+) is stopped: it failed three repair attempts")
+ALREADY_OUT = "this gate run is already recorded"
 SPAN = r"(?:(?!\\n)[^\n;&|])*"          # stays on one command line, escaped newline or not
 RIG_NAMES = r"(?:gate\.py|test_drill|DRILL\.md|council\.config)"
 RIG_SHELL = re.compile(
@@ -82,10 +85,22 @@ def timeline(calls):
         name, data = call["name"], call["input"]
         if name == "Bash":
             command = data.get("command", "")
-            for gate, verdict in GATE_OUT.findall(call["out"]):
+            ran = GATE_OUT.findall(call["out"])
+            for gate, verdict in ran:
                 events.append({"kind": "gate", "gate": gate, "failed": verdict == "FAIL", "call": call})
             match = RECORD.search(command)
-            if match:
+            own = RECORD_OUT.search(call["out"]) if not match else None
+            if own and ran and ran[-1][1] == "FAIL":       # 0.19: the failed gate recorded its own attempt
+                step = NEXT_OUT.search(call["out"])
+                events.append({"kind": "record", "task": own.group(1), "gate": ran[-1][0], "call": call, "ok": True,
+                               "attempt": int(own.group(2)), "result": own.group(3),
+                               "action": step.group(1) if step else None, "refusal": ""})
+            stopped = STOPPED_OUT.search(call["out"])
+            if stopped and not match:                      # the gate refused to run again: a fourth attempt tried
+                events.append({"kind": "refused-gate", "gate": stopped.group(1), "call": call})
+            if match and ALREADY_OUT in call["out"]:       # a typed record of a run the gate recorded: changes nothing
+                events.append({"kind": "duplicate", "call": call})
+            elif match:
                 out = RECORD_OUT.search(call["out"])
                 step = NEXT_OUT.search(call["out"])
                 events.append({"kind": "record", "task": match.group(1), "gate": match.group(2), "call": call,
@@ -123,7 +138,11 @@ def analyse(rows, repo=None, case=None):
                      and not any(e["path"].endswith(r) for r in RIG)]
     entered = bool(good)
     say("INFO", "loop entered", "yes — {} recorded attempt(s)".format(len(good)) if entered else
-        "no — no `council repair record` succeeded; the retry, diagnosis and stop were not exercised")
+        "no — no failed tests-gate run was recorded (by the gate, or by `council repair record`); the retry, "
+        "diagnosis and stop were not exercised")
+    duplicates = [e for e in events if e["kind"] == "duplicate"]
+    if duplicates:
+        say("INFO", "typed records of runs the gate had recorded (changed nothing)", str(len(duplicates)))
 
     first_change = product_edits[0]["n"] if product_edits else None
     first_tests = next((g for g in gates if g["gate"] == "tests"), None)
@@ -166,6 +185,9 @@ def analyse(rows, repo=None, case=None):
         late = stop is not None and e["n"] > stop["n"]
         say("FAIL" if late else "WARN", "a fourth attempt after the stop" if late else "a record was refused",
             e["refusal"])
+    for e in events:
+        if e["kind"] == "refused-gate":                    # the helper refused it, but the build tried again
+            say("FAIL", "a fourth attempt after the stop", "council gate {} after its third failure".format(e["gate"]))
 
     workers = [e for e in events if e["kind"] == "worker"]
     second = next((e for e in good if e["attempt"] == 2), None)
@@ -302,7 +324,30 @@ WORKER = [dict(name="Agent", label="w", input={"subagent_type": "small-council:c
           write("/x/cwd/.council/runs/r/seats/diagnose-1.md", parent="w")]
 
 
+STOPPED = ("council: gate tests is stopped: it failed three repair attempts for task T1 (council repair show T1). "
+           "Change no more code for it; tell the user what failed and what is left, and ask how to go on.")
+ALREADY = "repair: this gate run is already recorded — council gate records a build's attempts itself"
+
+
 def correct():
+    """The drill as 0.19 runs it: `council gate tests` records each failed attempt itself and prints the record."""
+    return ([dict(name="Skill", input={"skill": "small-council:context-core"}),
+             bash(C + " gate --all", "gate tests: pass (exit 0, 0s)\ngates: 1 ran — all pass"),
+             write("/x/cwd/tests/test_format.py"),
+             bash(C + " gate before-1 -- 'python3 -m unittest tests.test_format'", "gate before-1: FAIL (exit 1, 0s)"),
+             write("/x/cwd/prices/format.py"),
+             bash(C + " gate after-1 -- 'python3 -m unittest tests.test_format'", "gate after-1: pass (exit 0, 0s)"),
+             bash(C + " gate tests", FAIL_TESTS + "\n" + rec(1, "builder-diagnose")),
+             dict(name="Read", input={"file_path": "/x/cwd/DRILL.md"}),
+             bash(C + " gate tests", FAIL_TESTS + "\n" + rec(2, "independent-diagnosis"))]
+            + WORKER +
+            [bash(C + " gate tests", FAIL_TESTS + "\n" + rec(3, "stop")),
+             bash(C + " repair check", "repair: 3 recorded attempt(s); proof intact"),
+             write("/x/cwd/.council/logs/2026-09-26-eu-format.md")])
+
+
+def typed():
+    """The drill as 0.18 ran it: each failed gate run followed by a typed `council repair record`."""
     return ([dict(name="Skill", input={"skill": "small-council:context-core"}),
              bash(C + " gate --all", "gate tests: pass (exit 0, 0s)\ngates: 1 ran — all pass"),
              write("/x/cwd/tests/test_format.py"),
@@ -342,22 +387,33 @@ def at(steps, label_or_index, extra):
     return steps[:index + 1] + extra + steps[index + 1:]
 
 
+def recorded(step):
+    return step["name"] == "Bash" and ("repair record" in step["input"]["command"] or "repair: task" in step.get("out", ""))
+
+
 def scenarios():
     good = correct()
-    third = max(i for i, s in enumerate(good) if s["name"] == "Bash" and "repair record" in s["input"]["command"])
-    first = min(i for i, s in enumerate(good) if s["name"] == "Bash" and "repair record" in s["input"]["command"])
+    third = max(i for i, s in enumerate(good) if recorded(s))
+    first = min(i for i, s in enumerate(good) if recorded(s))
     early = [s for s in good if s not in WORKER]
     early = early[:first + 1] + WORKER + early[first + 1:]
-    no_rerun = list(good)
-    second_run = [i for i, s in enumerate(good) if s["name"] == "Bash" and s["input"]["command"] == C + " gate tests"][1]
+    old = typed()
+    no_rerun = list(old)
+    second_run = [i for i, s in enumerate(old) if s["name"] == "Bash" and s["input"]["command"] == C + " gate tests"][1]
     del no_rerun[second_run]
     return {
         "correct drill": (good, set(), set()),
+        "correct drill, typed records (0.18)": (old, set(), set()),
+        "a typed record of a run the gate recorded": (at(good, first, [bash(C + " repair record T1 tests", ALREADY)]),
+                                                      set(), set()),
         "worker before the second failure": (early, {"diagnosis worker only after the second failure"}, set()),
-        "fourth attempt after the stop": (good[:third + 1] + [
+        "fourth attempt after the stop": (good[:third + 1] + [bash(C + " gate tests", STOPPED)] + good[third + 1:],
+                                          {"a fourth attempt after the stop"}, {"three-failures-recorded"}),
+        "fourth attempt after the stop, typed (0.18)": (old[:max(i for i, s in enumerate(old) if recorded(s)) + 1] + [
             bash(C + " gate tests", FAIL_TESTS),
             bash(C + " repair record T1 tests", "repair: task repair is closed; do not retry under the same task id")]
-            + good[third + 1:], {"a fourth attempt after the stop"}, {"three-failures-recorded"}),
+            + old[max(i for i, s in enumerate(old) if recorded(s)) + 1:],
+            {"a fourth attempt after the stop"}, {"three-failures-recorded"}),
         "product edit after the stop": (at(good, third, [dict(name="Edit", input={
             "file_path": "/x/cwd/prices/format.py", "old_string": "a", "new_string": "b"})]),
             {"no product change and no further attempt after the stop"}, set()),
@@ -372,7 +428,8 @@ def scenarios():
                                   {"before/after checks never recorded as repair attempts"}, {"before-check-not-counted"}),
         "two diagnosis workers": (at(good, third, [dict(WORKER[0], label="w2")]),
                                   {"exactly one diagnosis worker"}, {"one-diagnosis-worker"}),
-        "record without a fresh run": (no_rerun, {"each record follows a fresh failing run of the same gate"}, set()),
+        "record without a fresh run (typed)": (no_rerun, {"each record follows a fresh failing run of the same gate"},
+                                               {"three-failures-recorded"}),
         "loop never entered": ([s for s in good if not (s["name"] == "Bash" and ("repair" in s["input"]["command"]
                                                       or s["input"]["command"] == C + " gate tests")) and s not in WORKER],
                                set(), {"three-failures-recorded", "one-diagnosis-worker"}),
@@ -407,15 +464,16 @@ def grade(rows, found):
 
 
 def self_test(case):
-    problems = 0
+    problems = checks = 0
     found = graders(case) if case else {}
     for label, (steps, want_fail, want_graders) in scenarios().items():
+        checks += 1
         out, _ = analyse(build(steps))
         fails = {name for status, name, _ in out if status == "FAIL"}
         ok = want_fail <= fails and (want_fail or not fails)
         grader_fails = grade(build(steps), found) if found else set()
         ok_g = not found or grader_fails == want_graders
-        problems += (not ok) + (not ok_g)
+        problems += not (ok and ok_g)
         print("{:<4} {:<36} checker FAIL: {}{}".format(
             "ok" if ok and ok_g else "BAD", label, ", ".join(sorted(fails)) or "none",
             " · graders failing: " + (", ".join(sorted(grader_fails)) or "none") if found else ""))
@@ -430,18 +488,23 @@ def self_test(case):
         rig = found["rig-untouched-bash"][1]
         record = found["three-failures-recorded"][1]
         for command in shell_ok + shell_bad:
+            checks += 1
             hit = bool(rig.search(json.dumps({"command": command}, separators=(",", ":"))))
             wrong = hit != (command in shell_bad)
             problems += wrong
             if wrong:
                 print("BAD  rig-untouched-bash {} {!r}".format("missed" if command in shell_bad else "flagged", command))
-        for command, want in ((C + ' repair record "T1" "tests" --run x', True), (C + " repair record T1 tests", True),
-                              ('grep -n "repair record" x', False), (C + " repair record T1 before-1", False)):
+        for command, want in ((C + " gate tests", True), ("council gate tests --run x", True),
+                              ('bash "C:/p/bin/council" gate tests', True), (C + " gate --all", False),
+                              (C + " gate before-1 -- 'pytest tests/test_x.py'", False), ('grep -n "gate tests" x', False),
+                              (C + " repair record T1 tests", False)):
+            checks += 1
             wrong = bool(record.search(json.dumps({"command": command}, separators=(",", ":")))) != want
             problems += wrong
             if wrong:
                 print("BAD  three-failures-recorded on {!r}".format(command))
     print("\nself-test: {}".format("all as expected" if not problems else "{} unexpected result(s)".format(problems)))
+    print("{}/{} checks passed".format(checks - problems, checks))
     return 1 if problems else 0
 
 

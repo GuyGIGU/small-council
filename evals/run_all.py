@@ -50,6 +50,8 @@ SUITES = [
     ("Tuning evals", ["evals/run_tune.py"], "shared"),
     ("Run audit evals", ["evals/run_audit.py"], "shared"),
     ("Benchmark harness self-test (no model calls)", ["evals/bench.py", "self-test"], "shared"),
+    ("Repair drill trace checker self-test (no model calls)",
+     ["evals/check_repair_trace.py", "--self-test", "--case", "evals/suite/build-repair-drill"], "shared"),
     ("Hook evals", ["evals/run_hook.py"], "groups"),
     ("Phrase checks (advisory, never fails)", ["evals/run_phrases.py"], "shared"),
 ]
