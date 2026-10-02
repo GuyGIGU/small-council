@@ -1210,7 +1210,7 @@ status_nudge() {
       case "$run" in */runs/*) home="${run%/runs/*}" ;; *) home="$(council_home)" ;; esac
       notifications_off "$home" || al="; then send the owner the line \`council status --line$at\` prints, once, with a PushNotification tool"
     fi
-    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else — or if the card fails to render — relay `council status%s` and carry on%s%s\n' \
+    printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s` — and if the card fails to render, give that text and carry on%s%s\n' \
       "$lead" "$at" "$at" "${follow:+; and tell them, from the record — $follow}" "$al" >&2
   elif [ "$when" != close ]; then
     printf 'council: %s: relay `council run status` (no Python 3.8+ here, so there is no status card)\n' "$lead" >&2

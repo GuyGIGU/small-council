@@ -2602,6 +2602,12 @@ def runs_lost_hints(tmp):
     code, out, err = council(lh, "run", "close")
     check("run close: the closing card's reminder says the same about a card that fails to render",
           code == 0 and "fails to render" in err, err)
+    off = new_repo(tmp, "lost-hints-off")
+    write(os.path.join(off, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- notifications: off\n")
+    council(off, "run", "open", "council-review")
+    code, out, err = council(off, "state", "waiting=which of the two plans?")
+    check("state waiting=: with alerts off, the reminder still says how the wait is cleared, and asks for no alert",
+          code == 0 and "council state waiting=" in err and "clears" in err and "PushNotification" not in err, err)
 
 @part("runs")
 def runs_closed_seat_guard_fields(tmp):
@@ -2860,6 +2866,10 @@ def runs_helper_carries_next_steps(tmp):
     dirs = [os.path.dirname(shutil.which(t)) for t in ("bash", "git") if shutil.which(t)]
     bare_path = os.pathsep.join(dict.fromkeys(dirs))
     if len(dirs) == 2 and not (shutil.which("python", path=bare_path) or shutil.which("python3", path=bare_path)):
+        for i in range(5):           # a new proposal on record, so with Python this close would say it
+            past = os.path.join(tn, ".council", "runs", "2026-09-{:02d}-100000-review".format(i + 1))
+            write(os.path.join(past, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n" + "".join(
+                "{}\tdone\ta\t400000\t-\t-\t1\t1\n".format(slug) for slug in ("hunt", "beck", "verify-1")))
         code, out, err = close_one(env={"PATH": bare_path})
         check("run close: without Python, no follow-up line and no error", code == 0 and "from the record" not in err
               and "Traceback" not in err, err)
