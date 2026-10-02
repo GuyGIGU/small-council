@@ -1904,7 +1904,8 @@ cmd_run_close() {
   # Closes at once each read "not closed" before any wrote, and all went through. The close lock covers the
   # whole close — the closed check, the state, the ledger and the close event — so a second close waits,
   # then finds the run closed. A close that dies leaves it to the stale-lock check (its owner is gone).
-  close_lock="$run/close.lock"; event_lock "$close_lock" || die "close lock unavailable: $close_lock"
+  close_lock="$run/close.lock"
+  event_lock "$close_lock" || die "close lock unavailable: $close_lock — another close of this run is still going; if none is, remove that folder and close again"
   lost="$(event_ready "$run")" && lost="" || {
     [ $? -eq 2 ] || events_writable "$run"       # a torn line: refused, with the repair named
     printf 'council: the event stream is lost (%s): the run closes, but its events were not recorded\n' "$lost" >&2
@@ -1914,7 +1915,11 @@ cmd_run_close() {
     if [ "$old_status:$status" = complete:abandoned ] && stopped_short "$run"; then
       retake=1                                   # its close said so: it never was a finished run
     else
-      [ "$old_status" = "$status" ] || { event_unlock "$close_lock" || :; refuse_closed "$run" "it stays $old_status"; }
+      if [ "$old_status" != "$status" ]; then      # refuse_closed dies here: the run was closed under the lock
+        event_unlock "$close_lock" || :
+        refuse_closed "$run" "it stays $old_status"
+        die "run ${run##*/} changed while it was being closed — run the close again"   # never a second release
+      fi
       event_unlock "$close_lock" || :
       say "${run##*/} is already closed — $old_status at $old_closed; nothing changed"
       close_claims_note "$run"                   # read-only: after an evidence build, says whether it is current

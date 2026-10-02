@@ -1275,11 +1275,14 @@ def close_races(tmp):
         ledger = read(os.path.join(cr, ".council", "ledger.tsv")) if os.path.isfile(
             os.path.join(cr, ".council", "ledger.tsv")) else ""
         codes = sorted(code for code, _ in workers)
-        if closes != [status] or codes != [0, 0, 2, 2] or (name in ledger) != (status == "complete"):
-            bad.append("round %d: close events %s · status %s · in ledger %s\n%s"
-                       % (rnd, closes, status, name in ledger, workers_detail(workers)))
-    check("run close: four closes at once — one goes through; the one with its status says already closed, the "
-          "others are refused; one close event, and the state and ledger agree with it", not bad, "\n".join(bad), full=True)
+        if closes != [status] or codes != [0, 0, 2, 2] or (name in ledger) != (status == "complete") \
+                or os.path.exists(os.path.join(run, "close.lock")):
+            bad.append("round %d: close events %s · status %s · in ledger %s · lock left %s\n%s"
+                       % (rnd, closes, status, name in ledger, os.path.exists(os.path.join(run, "close.lock")),
+                          workers_detail(workers)))
+    check("run close: four closes at once — one goes through; the one with its status says already closed, the others "
+          "are refused; one close event, the state and ledger agree with it, and no lock is left", not bad, "\n".join(bad),
+          full=True)
 
 @part("collect")
 def agent_stop(tmp):
