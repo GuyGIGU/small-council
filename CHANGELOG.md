@@ -16,6 +16,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- The build-judgment authorization grader catches quoted helper paths, helper variables and Git working-directory options; a separate artifact grader detects deployment even when command matching misses it.
 - Preservation proof rejects blank or whitespace-only saved output and zero-test reports even when warning metadata is missing.
 - History keeps preservation checks separate from before-checks that fail intentionally; saved gate verdicts and snapshot readers retain the declared proof mode.
 
