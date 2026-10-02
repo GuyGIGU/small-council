@@ -2607,6 +2607,35 @@ def runs_close_stamp_from_header(tmp):
           code == 0, out + err)
 
 @part("runs")
+def runs_closed_index_refused(tmp):
+    # A closed run's change index is on its record (run 2's latent finding: council index rewrote index.md, then
+    # the state's refusal came last, so the refused call had already changed the record).
+    ci = new_repo(tmp, "closed-index")
+    write(os.path.join(ci, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(ci, "app.py"), "x = 1\n")
+    git(ci, "add", "app.py")
+    git(ci, "commit", "-q", "-m", "first")
+    _, out, _ = council(ci, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    name, st = os.path.basename(run), os.path.join(run, "session-state.md")
+    write_plan(run, selected=("chair", "w1"))
+    write(os.path.join(ci, "app.py"), "x = 2\n")
+    council(ci, "index", "--base", "HEAD")
+    index_before = read(os.path.join(run, "index.md"))
+    council(ci, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    council(ci, "state", "phase=deliver")
+    council(ci, "run", "close")
+    state_closed = read(st)
+    write(os.path.join(ci, "other.py"), "y = 1\n")
+    code, out, err = council(ci, "index", "--run", name)
+    check("index: a closed run is refused before anything is written — index.md and the state stay as they were",
+          code == 2 and "is closed" in err and read(os.path.join(run, "index.md")) == index_before
+          and read(st) == state_closed and "other.py" not in read(os.path.join(run, "index.md")),
+          "exit %d · %s%s" % (code, out, err))
+    check("index: the refused call leaves no scratch files in the run folder",
+          not [f for f in os.listdir(run) if f.startswith(".index-")], str(os.listdir(run)))
+
+@part("runs")
 def runs_seat_files(tmp):
     # A seat is done only with its file (sessions-seats-1: a verifier out of turns was recorded done with
     # nothing written), and every verify file in the run folder is checked, a Workflow's too (sessions-seats-4).

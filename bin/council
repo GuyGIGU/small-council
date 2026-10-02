@@ -2673,6 +2673,7 @@ cmd_index() {
   local cap="${COUNCIL_INDEX_CAP:-80}"                # files indexed in full (the evals lower it to stay quick)
   local namecap="${COUNCIL_INDEX_NAMECAP:-200}"       # past the cap: how many are named one by one
   run="$(resolve_run)" || exit 2
+  refuse_closed "$run" "its change index is on record; index the change in a new run"   # before anything is written
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cd "$top" 2>/dev/null || die "cannot enter the code root: $top"
   git rev-parse --git-dir >/dev/null 2>&1 || die "the code root is not a git repository — the change index needs git"
