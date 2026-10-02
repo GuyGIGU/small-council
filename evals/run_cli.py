@@ -1252,6 +1252,35 @@ def state_races(tmp):
           not lost and last_phase == ["convene"] and code == 0, "\n".join(lost) + " · last phase event %s · %s%s" % (last_phase, out, err),
           full=True)
 
+
+@part("timing")
+def close_races(tmp):
+    """Closes at the same moment (run 2's latent finding: each read "not closed yet" before any wrote, so all
+    got through): one closes the run, the others find it closed — the same status says so, another is refused —
+    and the stream, the state and the ledger all hold the one close."""
+    bad = []
+    for rnd in range(3):
+        cr = new_repo(tmp, "close-race-%d" % rnd)
+        write(os.path.join(cr, ".council", "council.config.md"), "# Council config — close races\n")
+        _, out, _ = council(cr, "run", "open", "council-review")
+        run = out.strip().splitlines()[-1]
+        name, st = os.path.basename(run), os.path.join(run, "session-state.md")
+        write_plan(run, selected=("chair", "w1"))
+        council(cr, "seat", "w1", "done", "agent=a1", "tokens=20000")
+        council(cr, "state", "phase=deliver")
+        workers = council_together(cr, *[("run", "close", "--status", s, "--run", name)
+                                         for s in ("complete", "abandoned", "complete", "abandoned")])
+        closes = [e[5] for e in events(run) if e[3] == "run.closed"]
+        status = (re.search(r"^status: (\w+)", read(st), re.MULTILINE) or [None, ""])[1]
+        ledger = read(os.path.join(cr, ".council", "ledger.tsv")) if os.path.isfile(
+            os.path.join(cr, ".council", "ledger.tsv")) else ""
+        codes = sorted(code for code, _ in workers)
+        if closes != [status] or codes != [0, 0, 2, 2] or (name in ledger) != (status == "complete"):
+            bad.append("round %d: close events %s · status %s · in ledger %s\n%s"
+                       % (rnd, closes, status, name in ledger, workers_detail(workers)))
+    check("run close: four closes at once — one goes through; the one with its status says already closed, the "
+          "others are refused; one close event, and the state and ledger agree with it", not bad, "\n".join(bad), full=True)
+
 @part("collect")
 def agent_stop(tmp):
     # The agent stop: council cap says where a run stands, cap allow records the user's go in their words,

@@ -1894,10 +1894,14 @@ close_claims_note() {
 }
 
 cmd_run_close() {
-  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" share whose follow=""
+  local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" share whose follow="" close_lock=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
+  # Closes at once each read "not closed" before any wrote, and all went through. The close lock covers the
+  # whole close — the closed check, the state, the ledger and the close event — so a second close waits,
+  # then finds the run closed. A close that dies leaves it to the stale-lock check (its owner is gone).
+  close_lock="$run/close.lock"; event_lock "$close_lock" || die "close lock unavailable: $close_lock"
   lost="$(event_ready "$run")" && lost="" || {
     [ $? -eq 2 ] || events_writable "$run"       # a torn line: refused, with the repair named
     printf 'council: the event stream is lost (%s): the run closes, but its events were not recorded\n' "$lost" >&2
@@ -1907,7 +1911,8 @@ cmd_run_close() {
     if [ "$old_status:$status" = complete:abandoned ] && stopped_short "$run"; then
       retake=1                                   # its close said so: it never was a finished run
     else
-      [ "$old_status" = "$status" ] || refuse_closed "$run" "it stays $old_status"
+      [ "$old_status" = "$status" ] || { event_unlock "$close_lock" || :; refuse_closed "$run" "it stays $old_status"; }
+      event_unlock "$close_lock" || :
       say "${run##*/} is already closed — $old_status at $old_closed; nothing changed"
       close_claims_note "$run"                   # read-only: after an evidence build, says whether it is current
       return 0
@@ -1984,6 +1989,7 @@ cmd_run_close() {
       || printf 'council: the run is closed, but its close event could not be recorded — council run events check --run %s\n' "${run##*/}" >&2
     FOLLOW="$follow" status_nudge "$run" close
   fi
+  event_unlock "$close_lock" || :                # once: a second release could free a lock another close took since
 }
 
 cmd_run_status() {
