@@ -6,13 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.19.0] — 2026-10-01
+## [0.19.0] — 2026-10-02
 
 **TL;DR:** two things. The council fixed its own open items, as its second real run (a plan, then
 a build of 15 tasks, each checked by a blind verifier): the phone alert and the build's three-failure
 stop no longer depend on the Chair remembering a step, a closed run stays closed, a run in a
 worktree is found from anywhere, and two linters check every change. And a "just me" setup keeps
-the council on your machine in a shared project, so teammates never have to see or use it.
+the council on your machine in a shared project, so teammates never have to see or use it. Ten
+smaller fixes found after run 2 are in too, from two closes at once to the paid repair drill.
 
 ### Added
 
@@ -47,6 +48,17 @@ the council on your machine in a shared project, so teammates never have to see 
 - A gate whose tool is missing reads "could not run (exit 127)"; `council doctor` names a slow gate at grounding.
 - The plan check says each problem once.
 - A review fix's red proof (`regress-<n>`) no longer reads as a failing check on the card.
+- Two closes of one run at once: one goes through; the others say it is already closed, or are refused.
+- A `closed:` line in a run's notes no longer reads as the run's close: a run's state is read by its header only.
+- `council index` refuses a closed run before it writes anything.
+- A decision keeps its quote marks and backslashes, and reads back exactly; the card shows the words as said.
+- A Python tool that isn't installed (`python -m ruff` without ruff) reads "could not run", not FAIL.
+- `council check` names a test kept in a test folder (`python evals/run_cli.py --block …`) as the saved test.
+- `council check` reads a review fix's `regress-<n>` then `after-<n>` as that fix's proof, not as a task with nothing before it.
+- The close's follow-up line is said once, not again at every later close while the record says the same.
+- On a closed run, an agent id holding ":" can no longer pass the seat guard.
+- The card reminders say to give the text if the card fails to render; the wait reminder says how a wait is cleared.
+- The paid repair drill and its trace checker expect the attempts `council gate` records itself; the checker's self-test runs in the suite.
 
 ### Upgrade notes
 
