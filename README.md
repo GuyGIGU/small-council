@@ -18,7 +18,7 @@ skipped under load.
 | `council-init` | Summons the council for a repo: detects the stack, recruits and recasts the expert roster (with the paths each seat watches), writes each seat a card that translates its doctrine to your project, dry-runs the real check commands and records their side effects, **lists the checks your project is missing** — formatter, linter, type check, test runner, dependency audit — builds the codebase map, writes `.council/`. Once per repo, and again when the stack moves. |
 | `council-review` | Multi-expert code review → verified P1/P2/P3 findings → fix hand-off. |
 | `council-plan` | Scoping conversation → expert advice → a plan built as vertical slices, each task saying what it touches and how to tell it's done. For a big or tough feature — or when you say "debate it" — a **war room** first: the experts read each other's proposals and argue them out with evidence, and you rule on the real forks. |
-| `council-implement` | Builds a plan, fixes a review's findings, or finishes a post-game's next tasks, task by task: a saved test as before-and-after evidence, gates after every change, a verifier on every result, a converge pass at the end — and the same six-line receipt every time, shortcuts included. |
+| `council-implement` | Builds a plan, fixes a review's findings, or finishes a post-game's next tasks, task by task: change proof for fixes and new behaviour, passing invariants before and after a refactor, gates after every change, a verifier on every result, a converge pass at the end — and the same six-line receipt every time, shortcuts included. |
 | `council-research` | Answers a question with graded evidence from code, history, docs and the web; saves the answer as project knowledge; keeps the map true. |
 | `council-postgame` | After the work: checks what was built against your original request, word for word — what matches, what drifted, what's missing — and hands the next move to plan or implement. Offered after a build when it's worth it; works on work done without the council too. |
 | `spec-writer` | Short, structured specs: Job Stories, Gherkin acceptance criteria, three-tier boundaries. |
@@ -110,8 +110,9 @@ the run preferences, and offers the helper's permission rule.
 - **Tests:** `test-architect` — audit a suite, specify tests from a spec, or fix weak ones.
 
 **Every multi-agent run is proposed first**, with its seats (and the seats not going), its size and
-its estimated cost. A `/command` starts runs up to your approved size (default: Squad) straight away;
-bigger runs always ask. After the go-ahead it runs to the deliverable on its own.
+its estimated cost. A `/command` or an instruction to proceed without further confirmation starts
+runs up to your approved size (default: Squad). Bigger runs need explicit size-and-cost approval;
+approval already given carries forward. After the go-ahead it runs to the deliverable on its own.
 
 ## What you see after every build
 

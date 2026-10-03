@@ -17,7 +17,7 @@
 set -u
 unset EVENTS_LOST CLOSING          # internal: set only by run close for its own state write, never inherited
 
-COUNCIL_VERSION="0.19.0"
+COUNCIL_VERSION="0.20.0"
 COUNCIL_MEMORY_SIZE_LIMIT=25600  # bytes: about 25 KB of project memory is the expected upper bound
 COUNCIL_NEXT_AT_OPEN="size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
@@ -3231,6 +3231,7 @@ run_gate() {
       [ "$GATE_EMPTY" != 3 ] || nnote=', "note": "exit 0, but it printed nothing"'
     fi
   fi
+  [ -z "${PROOF_ARG:-}" ] || nnote="$nnote, \"proof\": \"$PROOF_ARG\""
   printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"%s}\n' \
     "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" "$nnote" > "$base.json"
   if [ "${GATE_BASELINE:-0}" = 1 ] && [ ! -f "$bl.txt" ]; then
@@ -3348,13 +3349,24 @@ missing_module() {
 cmd_gate() {
   local run top cfg name cmd at mand k chk side needs hk hascol stg ism ckd extra row ran=0 skipped=0 failed=0 gates \
         passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0 GATE_BASELINE=0 \
-        nothing=0 nran="" nt="" slug files="" other trail="" rtask="" mode="" ec=0 py=""
+        nothing=0 nran="" nt="" slug files="" other trail="" rtask="" mode="" ec=0 py="" proof_id=""
   run="$(resolve_run)" || exit 2
   refuse_closed "$run" "its checks are on record; run them in a new run"
-  wait_over "$run"
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
   mode="$(field mode "$run/session-state.md")"     # a build's gate results are its repair record (repair_auto)
+  if [ -n "$PROOF_ARG" ]; then
+    [ "$ALL" = 0 ] && [ -z "$AT_ARG" ] || die "--proof takes one build before-<n> or after-<n> gate, not a gate set"
+    [ "$mode" = council-implement ] || die "--proof belongs to a council-implement run"
+    case "$PROOF_ARG" in change|preserve) ;; *) die "--proof takes change or preserve" ;; esac
+    name="${1+$*}"
+    case "$name" in
+      before-*|after-*) proof_id="${name#*-}" ;;
+      *) die "--proof takes a before-<n> or after-<n> gate; regression proofs always show a change" ;;
+    esac
+    case "$proof_id" in ''|*[!0-9]*) die "--proof needs a numeric task id in before-<n> or after-<n>" ;; esac
+  fi
+  wait_over "$run"
   if [ "$ALL" = 1 ]; then
     if [ -n "$AT_ARG" ]; then
       case "$(printf '%s' "$AT_ARG" | tr 'A-Z' 'a-z')" in
@@ -4302,10 +4314,11 @@ gate_test_path() {
 gate_exit() { sed -n 's/.*"exit": *\(-\{0,1\}[0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -n 1; }
 gate_cmd()  { sed -n 's/.*"command": "\(.*\)", "exit".*/\1/p' "$1" 2>/dev/null | head -n 1 \
                 | sed 's/\\\(.\)/\1/g'; }
+gate_proof() { sed -n 's/.*"proof": "\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -n 1; }
 
 cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
-        bf af bex aex bcmd acmd tp pn proofs=0 saved=0 broke=0 note what \
+        bf af bex aex bcmd acmd bproof aproof tp pn proofs=0 saved=0 broke=0 preserved=0 note what \
         mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
         other=0 unreadt=0 empty=0 gone=0 result who
   run="$(resolve_run)" || exit 2
@@ -4475,22 +4488,39 @@ QUOTES
       esac
       af="$run/gates/after-$pn.json"
       bex="$(gate_exit "$bf")"; bcmd="$(gate_cmd "$bf")"
+      bproof="$(gate_proof "$bf")"; bproof="${bproof:-change}"
       proofs=$((proofs + 1)); note="-"; tp=""
       if [ ! -f "$af" ]; then
         st="NO-AFTER"
       else
         aex="$(gate_exit "$af")"; acmd="$(gate_cmd "$af")"
-        if [ "${bex:-0}" -eq 0 ] 2>/dev/null; then st="BEFORE-PASSED"
+        aproof="$(gate_proof "$af")"; aproof="${aproof:-change}"
+        if { [ "$bproof" != change ] && [ "$bproof" != preserve ]; } \
+          || { [ "$aproof" != change ] && [ "$aproof" != preserve ]; }; then st="INVALID-PROOF"
+        elif [ "$bproof" != "$aproof" ]; then st="DIFFERENT-PROOF"
+        elif [ "$bproof" = preserve ] && [ "${bf##*/}" != "before-$pn.json" ]; then st="INVALID-PROOF"
+        elif [ "$bproof" = preserve ] && [ "${bex:-1}" -ne 0 ] 2>/dev/null; then st="BEFORE-FAILED"
+        elif [ "$bproof" = change ] && [ "${bex:-0}" -eq 0 ] 2>/dev/null; then st="BEFORE-PASSED"
         elif [ "${aex:-1}" -ne 0 ] 2>/dev/null; then st="AFTER-FAILED"
         elif [ -n "$acmd" ] && [ -n "$bcmd" ] && [ "$acmd" != "$bcmd" ]; then st="DIFFERENT-COMMAND"
+        elif [ "$bproof" = preserve ] && { [ -z "$bcmd" ] || [ -z "$acmd" ]; }; then st="DIFFERENT-COMMAND"
+        elif [ "$bproof" = preserve ] && { [ ! -f "${bf%.json}.txt" ] || [ ! -f "${af%.json}.txt" ]; }; then st="MISSING-OUTPUT"
+        elif [ "$bproof" = preserve ] && { grep -q '"note": "exit 0, but' "$bf" || grep -q '"note": "exit 0, but' "$af" \
+          || grep -q '^changed: no files matched' "${bf%.json}.txt" "${af%.json}.txt" \
+          || [ -z "$(tr -d '[:space:]' < "${bf%.json}.txt")" ] \
+          || [ -z "$(tr -d '[:space:]' < "${af%.json}.txt")" ] \
+          || [ -n "$(zero_tests "${bf%.json}.txt")" ] \
+          || [ -n "$(zero_tests "${af%.json}.txt")" ]; }; then st="NOTHING-RAN"
+        elif [ "$bproof" = preserve ]; then st=preserved
         else st=ok
         fi
         tp="$(gate_test_path "$top" "${acmd:-$bcmd}")" || tp=""
         if [ -n "$tp" ]; then note="test saved: $tp"; else note="couldn't confirm a saved test"; fi
       fi
       rows=$((rows + 1))
-      if [ "$st" = ok ]; then
+      if [ "$st" = ok ] || [ "$st" = preserved ]; then
         [ -z "$tp" ] || saved=$((saved + 1))       # only a proof that held counts as a test kept
+        [ "$st" != preserved ] || preserved=$((preserved + 1))
       else
         bad=$((bad + 1)); broke=$((broke + 1))
       fi
@@ -4509,7 +4539,11 @@ QUOTES
       bad=$((bad + 1))
       say "check: NO PROOF — this build recorded no before-and-after evidence (council gate before-<n> -- '<check>', then after-<n>)"
     else
-      say "check: $((proofs - broke)) of $proofs fix(es) proved · $broke broken · $saved left a test behind in the project"
+      if [ "$preserved" -gt 0 ]; then
+        say "check: $((proofs - broke)) of $proofs task(s) checked · $preserved preserved behaviour · $broke broken · $saved left a test behind in the project"
+      else
+        say "check: $((proofs - broke)) of $proofs fix(es) proved · $broke broken · $saved left a test behind in the project"
+      fi
     fi
   fi
   if [ "$files" -eq 0 ] && [ "$gone" -eq 0 ] && [ "$mode" != council-implement ]; then
@@ -6846,6 +6880,9 @@ council — the Small Council's helper (bash + git)
                                          failed repair attempts: it may run again
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
                                          inside it; output and exit code → <run>/gates/
+  council gate before-<n>|after-<n> --proof change|preserve -- '<command>'
+                                         build proof: a failing then passing check, or an invariant
+                                         passing on both versions (declare preserve before the edit)
   council gate --all [--at grounding|verify]
                                          run the configured gates · a run takes one gate call at a time:
                                          a second is refused (exit 2) and writes nothing — wait for the first
@@ -6926,7 +6963,7 @@ takes_flags() {
 no_words() { local label="$1"; shift; [ $# -eq 0 ] || die "$label doesn't take '$*' — see: council help"; }
 
 main() {
-  RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" SESSION_ARG="" ALONGSIDE=0 FLAGS=""
+  RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" PROOF_ARG="" SESSION_ARG="" ALONGSIDE=0 FLAGS=""
   ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
   ROUTE_SURFACES=()
   CONTEXT_EXPANDS=()
@@ -6938,7 +6975,7 @@ main() {
   pos=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run|--code-root|--status|--base|--at|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said|--pose|--exit-after|--transcript)
+      --run|--code-root|--status|--base|--at|--proof|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said|--pose|--exit-after|--transcript)
                    flag="${1#--}"
                    [ $# -ge 2 ] || case "$flag" in
                      run|code-root) die "--$flag needs a folder" ;;
@@ -6947,7 +6984,7 @@ main() {
                      *) die "--$flag needs a value" ;;
                    esac
                    val="$2"; shift 2 ;;
-      --run=*|--code-root=*|--status=*|--base=*|--at=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*|--transcript=*)
+      --run=*|--code-root=*|--status=*|--base=*|--at=*|--proof=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*|--transcript=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
       --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still) flag="${1#--}"; val=1; shift ;;
       --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*) die "${1%%=*} takes no value" ;;
@@ -6969,6 +7006,7 @@ main() {
     case "$flag" in
       run) RUN_ARG="$val" ;;       code-root) CODE_ROOT_ARG="$val" ;;  status) STATUS_ARG="$val" ;;
       base) BASE_ARG="$val" ;;     at) AT_ARG="$val" ;;                session) SESSION_ARG="$val" ;;
+      proof) PROOF_ARG="$val" ;;
       alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;                     json) JSON_OUT=1 ;;  watch) WATCH=1 ;;
       widget) WIDGET=1 ;;          line) LINE=1 ;;               preview) PREVIEW=1 ;;
       task) ROUTE_TASK_ARG="$val" ;; risk) ROUTE_RISK_ARG="$val" ;;
@@ -7075,7 +7113,7 @@ main() {
                       cmd_repair allow "${1+$*}" ;;     # a gate name with a space may arrive as several words
               *) die "usage: council repair record <task> <gate> | repair show|check [task] | repair allow <gate> --user-said \"…\"" ;;
             esac ;;
-    gate)    takes_flags gate all at --
+    gate)    takes_flags gate all at proof --
              if [ "$ALL" = 1 ]; then
                no_words "gate --all" ${1+"$@"}
                [ -z "$GATE_CMD" ] || die "gate --all runs the configured gates — it takes no command after --"

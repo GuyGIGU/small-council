@@ -156,6 +156,22 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
           data["gates"] == {"tests": {"runs": 5, "failed_runs": 1}}
           and data["proofs"]["before_failed_as_intended"] == 5 and data["proofs"]["probes"] == 5
           and "5 before-check(s), 5 failing as intended" in out, (data["gates"], data["proofs"]))
+    preserved_home = Path(temporary) / "preserved" / ".council"
+    preserved_run = make_run(preserved_home, "2026-10-02-100000-implement", mode="council-implement",
+                             gates=(("before-1", 0), ("before-2", 1), ("before-3", 1), ("after-1", 0)))
+    for name in ("before-1", "before-2", "after-1"):
+        path = preserved_run / "gates" / (name + ".json")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["proof"] = "preserve"
+        write(path, json.dumps(record) + "\n")
+    preserved_data = history.history(preserved_home)
+    preserved_out = history.render(preserved_data)
+    check("preservation baselines are counted separately; their failures are never intentional red proof",
+          preserved_data["proofs"]["before_checks"] == 3
+          and preserved_data["proofs"]["before_failed_as_intended"] == 1
+          and preserved_data["proofs"]["before_preserve_checks"] == 2
+          and preserved_data["proofs"]["before_preserve_passed"] == 1
+          and "preservation before-checks: 2 ran, 1 passed" in preserved_out, (preserved_data["proofs"], preserved_out))
     repairs = data["repairs"]
     check("repairs: resolved and stopped trails, with a range once five runs have finished ones; failure categories "
           "come from the failed attempts, never the RESOLVED row",

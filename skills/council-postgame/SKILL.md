@@ -1,6 +1,6 @@
 ---
 name: council-postgame
-description: Check finished work against what the user originally asked for — the request word for word, the plan, what was built and the gates — and report what matches, what drifted, what's missing, and the next move. Works on council builds and on work done without the council. Use when the user asks "did we build what I asked?", "are we done?", "what's left?", or invokes /council-postgame; the Chair also offers it after some builds. Propose it with its size and cost first.
+description: Check finished work against the user's original request and report gaps, drift and next tasks, including work built without the council. Use for "did we build what I asked?", a requested completion audit or /council-postgame. Propose its size and cost first.
 ---
 
 # Council Post-game (mode)

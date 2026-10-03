@@ -6,6 +6,37 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-10-03
+
+**TL;DR:** the council acts on the approval and instructions you already gave instead of asking
+again, and a refactor can now be proved by showing the same checks pass before and after the change
+(`--proof preserve`), while a fix still needs a check that fails first. Two new eval cases test these
+judgment calls; they have not been run live yet.
+
+### Changed
+
+- Approval, current instructions and evidence-backed plan corrections have one shared contract in Convene; build-proof mode and semantic verification rules live in the build-proof reference rather than being repeated in each reader.
+- Builders may correct a plan's approach when concrete evidence supports a local change within the approved outcome, scope, contracts and budget; the log keeps the evidence and affected tasks. Changes to explicit user choices or scope still need a ruling.
+- Refactors can declare `--proof preserve` on their before/after gates: the same relevant check must pass on both versions. `council check` labels this `preserved`; fixes and new behaviour retain failing-before/passing-after proof. The verifier checks the invariants and test assertions.
+- Planning, research and implementation carry forward existing authorization and ask only about consequential gaps. A user's mid-build addition authorizes that addition within the approved budget.
+- Council skill descriptions focus on selection; simple questions no longer match broad research or completion-audit descriptions.
+
+### Fixed
+
+- The build-judgment authorization grader catches quoted helper paths, helper variables and Git working-directory options; a separate artifact grader detects deployment even when command matching misses it.
+- Preservation proof rejects blank or whitespace-only saved output and zero-test reports even when warning metadata is missing.
+- History keeps preservation checks separate from before-checks that fail intentionally; saved gate verdicts and snapshot readers retain the declared proof mode.
+
+### Added
+
+- Judgment-only build and blind-verifier fixtures cover stale paths, superseded preferences, separate refactor/fix proof, protected choices, weak assertions and wrong before-failures. Free regressions execute the fixtures and helper; live agent judgment remains unvalidated until those cases run.
+
+### Upgrade notes
+
+- Nothing to do in your projects: no re-init, and the config template changed only in a comment.
+- `approve without asking` now also covers a plain "go ahead" or "proceed" message, not only a slash command; Full size still needs an explicit go with its size and cost.
+- `--proof` is optional: a before/after gate without it keeps the failing-before, passing-after proof, as before.
+
 ## [0.19.0] — 2026-10-02
 
 **TL;DR:** two things. The council fixed its own open items, as its second real run (a plan, then

@@ -14,7 +14,7 @@ Your judgment, written down.
    point's line records how it ended — agreed, settled by the code, to the verifier, or FORK — and
    `from:` names round-1 items only.
 4. **Rank by concrete cost in this project at this scale** — the Carmack filter: a real problem
-   here, or pattern-matching? Settled memory entries are never findings.
+   here, or pattern-matching? Still-applicable settled memory entries are never findings.
 5. **Cut to your mode's cap.** Keep the cut list, with a reason for each item.
 6. **Write `<run>/synthesis.md`** in the format below. In review, plan and research, every kept
    and cut claim carries a declared `state:` and `from:` as specified in

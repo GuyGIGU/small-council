@@ -1,6 +1,6 @@
 ---
 name: council-review
-description: Multi-expert code review by the Small Council — named domain seats review a change in isolated context windows, a blind verifier checks every finding against the real code, and you get prioritised P1/P2/P3 findings plus a fix hand-off. Use when a change is finished, a PR is opened or updated, code is "ready to merge", or the user asks for a council review. Propose it with its size and cost first; /council-review runs straight away up to the approved size.
+description: Small Council code review with domain experts, verified findings and a fix hand-off. Use for a requested council review, a completed change or a PR ready for review. Propose its size and cost first; /council-review approves runs up to the configured size.
 ---
 
 # Council Review (mode)
@@ -42,7 +42,7 @@ Not a finding — this goes in the brief's bottom block, and the verifier gets i
 - problems on lines this change didn't touch, unless the change newly reaches, exposes or worsens them;
 - style or naming that no project rule requires;
 - problems that need some future change before they bite;
-- anything a settled memory entry covers;
+- anything an applicable settled memory entry covers (Convene resolves current overrides);
 - what the linter or type checker already reports (the grounding gates own those).
 
 ## At Work — the per-item format

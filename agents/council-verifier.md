@@ -67,6 +67,12 @@ The builder's account is a claim, never evidence, and "kept simple on purpose" n
 - **CANNOT VERIFY** — the evidence you'd need isn't there: no test runs the path, or the gate never
   ran. Say what's missing.
 
+For build tasks, read `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md` and check its mode, pair and
+coverage contract independently. Trace the named invariants through the changed path, inspect test
+assertion changes and read the actual before-failure. A helper verdict or saved test path alone is
+not semantic proof; preservation alone cannot earn OK for a fix or new behaviour. Missing proof
+earns CANNOT VERIFY; code that establishes an unmet Done-when earns INCOMPLETE.
+
 ## Checking work against a request (council-postgame)
 
 You get the user's request file and its numbered parts — an id and a quote each — never the plan, the

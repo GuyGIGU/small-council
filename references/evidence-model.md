@@ -80,6 +80,7 @@ never edit them by hand. Existing runs remain readable without migration; auditi
 `evidence check` may flag fields it predates. If Python 3.8+ is unavailable, use the
 same Markdown fields and inspect each link manually; do not present a ledger as built.
 
-This first version indexes synthesis claims in review, plan and research runs. Build tasks and
-post-game request parts retain their own before/after gates and verifier tables; they use the
-same evidence-state vocabulary in prose but are not squeezed into this claim schema.
+This first version indexes synthesis claims in review, plan and research runs. Build tasks retain
+their declared change or preservation proof (`references/build-proof.md`); post-game request parts
+retain their verifier tables. They use the same evidence-state vocabulary in prose but are not
+squeezed into this claim schema.

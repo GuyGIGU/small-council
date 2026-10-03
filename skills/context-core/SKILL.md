@@ -1,6 +1,6 @@
 ---
 name: context-core
-description: The Small Council's engine — the laws, stages and helper every council mode (review, plan, implement, research, post-game) runs on — size the run, gather context once, brief isolated expert seats, collect, judge, challenge adversarially, deliver, learn, close. Invoked by a mode; also use it to chair any large multi-part task that would overflow one context window.
+description: Shared engine for Small Council review, plan, implement, research and post-game modes. Load when a council mode invokes it or when resuming an existing council run.
 user-invocable: false
 ---
 
@@ -120,8 +120,8 @@ live at a legacy path; the config's Memory section says where.
 - **Sizes:** Solo (you alone) · Squad (up to 4 seats + 1–2 verifiers) · Full (up to 7 seats +
   verifiers). Size a run as seats plus the verifiers Challenge will need; its overflow rule covers
   the rest. A post-game uses 1–3 verifiers and counts as Squad.
-- **Approval:** a `/command` approves runs up to the config's `approve without asking` size (default
-  Squad). A Full run always asks.
+- **Approval:** the config's `approve without asking` threshold and changed-instructions rules
+  live in `references/doctrine/01-convene.md`. Authorization carries forward within its boundaries.
 
 ## Resume
 

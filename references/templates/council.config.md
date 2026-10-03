@@ -19,8 +19,9 @@ deploy target, domain. Name the one thing that must never break.>
 <!-- Add `- notifications: off` here to suppress `council status --line` and council phone alerts.
      Without that line, four owner-facing moments may notify when PushNotification is available:
      a blocking question, a stopped build, a cap/ceiling stop, and run completion. -->
-<!-- "approve without asking": solo | squad | full — a /command starts runs up to this size without a
-     second question; bigger runs always ask. "agent cap": agents per run, verifiers included.
+<!-- "approve without asking": solo | squad | full — a /command or instruction to proceed without
+     further confirmation approves up to this size. Full needs explicit size-and-cost approval;
+     approval already given carries forward. "agent cap": agents per run, verifiers included.
      "context packs": off | on — on builds a seat-specific evidence pack for each dispatched worker
      (experimental: it adds material and its benefit is unmeasured). Missing means off. Yours to change.
      "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.

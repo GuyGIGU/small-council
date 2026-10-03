@@ -244,7 +244,8 @@ def gates_of(run):
         if isinstance(data, dict) and "exit" in data:
             gates.append({"name": clean(data.get("gate", path.stem)) or path.stem, "exit": integer(data.get("exit")),
                           "seconds": integer(data.get("seconds")) or 0, "when": clean(data.get("when", "")),
-                          "command": clean(data.get("command", ""))[:200], "note": clean(data.get("note", ""))})
+                          "command": clean(data.get("command", ""))[:200], "note": clean(data.get("note", "")),
+                          "proof": clean(data.get("proof", "change"))})
     return sorted(gates, key=lambda g: g["when"])
 
 
