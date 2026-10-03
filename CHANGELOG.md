@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-10-03
+
+**TL;DR:** the council acts on the approval and instructions you already gave instead of asking
+again, and a refactor can now be proved by showing the same checks pass before and after the change
+(`--proof preserve`), while a fix still needs a check that fails first. Two new eval cases test these
+judgment calls; they have not been run live yet.
+
 ### Changed
 
 - Approval, current instructions and evidence-backed plan corrections have one shared contract in Convene; build-proof mode and semantic verification rules live in the build-proof reference rather than being repeated in each reader.
@@ -23,6 +30,12 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 
 - Judgment-only build and blind-verifier fixtures cover stale paths, superseded preferences, separate refactor/fix proof, protected choices, weak assertions and wrong before-failures. Free regressions execute the fixtures and helper; live agent judgment remains unvalidated until those cases run.
+
+### Upgrade notes
+
+- Nothing to do in your projects: no re-init, and the config template changed only in a comment.
+- `approve without asking` now also covers a plain "go ahead" or "proceed" message, not only a slash command; Full size still needs an explicit go with its size and cost.
+- `--proof` is optional: a before/after gate without it keeps the failing-before, passing-after proof, as before.
 
 ## [0.19.0] — 2026-10-02
 
