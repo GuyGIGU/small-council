@@ -58,6 +58,8 @@ VERDICT_NAMES = (("confirmed", "CONFIRMED", "confirmed"), ("refuted", "REFUTED",
                  ("miscited", "MISCITED", "cited in the wrong place"), ("uncertain", "UNCERTAIN", "unsure"),
                  ("conflict", "CONFLICT", "with conflicting verdicts"),
                  ("not_sent", "UNVERIFIED", "not sent to a verifier"))
+CONVERGE_WORDS = (("partly", "partly met"), ("not_met", "not met"), ("blocked", "blocked"),   # a build's final check
+                  ("other", "with an unclear result"))
 SEAT_WORDS = {"running": "started", "done": "finished", "failed": "failed", "blocked": "reported it was blocked",
               "queued": "queued", "skipped": "skipped"}
 
@@ -596,13 +598,54 @@ def filed_request(run_path, filed):
     return title or "Filed request; no short description recorded."
 
 
+def converge_counts(converge):
+    """How a build's tasks ended at its final check, or None when the build log gave no results."""
+    if not converge or "rows" not in converge:
+        return None
+    counts = {"total": len(converge["rows"]), "met": 0, "partly": 0, "not_met": 0, "blocked": 0, "other": 0,
+              "fixed_after": 0}
+    for row in converge["rows"]:
+        counts[row["result"]] += 1
+        counts["fixed_after"] += 1 if row["fixed_after"] else 0
+    return counts
+
+
+def converge_text(converge):
+    """A build's Verified line, from its log's final check. Missing results are named, never counted as zero."""
+    counts = converge_counts(converge)
+    if counts is None:
+        return "Final check unknown: {}.".format((converge or {}).get("missing") or "no build log recorded")
+    met, total = counts["met"], counts["total"]
+    said = "all {} tasks met".format(total) if met == total and total > 1 else "{} of {} {} met".format(
+        met, total, "task" if total == 1 else "tasks")
+    if counts["fixed_after"]:
+        said += " ({} after a fix the check asked for)".format(counts["fixed_after"])
+    rest = ["{} {}".format(counts[key], words) for key, words in CONVERGE_WORDS if counts[key]]
+    return "Final check: " + said + ("; " + ", ".join(rest) if rest else "") + "."
+
+
+def converge_open(converge, limit=5):
+    """Each task the final check left short, for the closing card's "Left for you"."""
+    words = dict(CONVERGE_WORDS)
+    short = [row for row in (converge or {}).get("rows", []) if row["result"] != "met"]
+    items = ["Task {} {}: {}".format(row["task"], words[row["result"]], row["done_when"] or "see the build log")
+             for row in short[:limit]]
+    if len(short) > limit:
+        items.append("{} more not fully met: see the build log's Converge table.".format(len(short) - limit))
+    return items
+
+
 def closing_of(snap, run_path, usage, check_text, attention):
     """A compact final reading. Missing or stale evidence is named, never counted as zero."""
     run = snap["run"]
     if run.get("status", "").split(" ")[0] not in ("complete", "paused", "abandoned"):
         return None
-    claims = snap["claims"]
-    if claims["stale"]:
+    claims, converge = snap["claims"], None
+    if run.get("mode") == "council-implement" and not claims.get("expected", True):
+        # A build checks tasks, not claims: its final check is the log's Converge table.
+        converge = cockpit.converge_of(run_path, run.get("deliverable", ""))
+        verified, counts = converge_text(converge), None
+    elif claims["stale"]:
         verified = "Claim index out of date; verifier counts unknown."
         counts = None
     elif claims.get("shipped"):
@@ -625,11 +668,13 @@ def closing_of(snap, run_path, usage, check_text, attention):
         verified, counts = "No claim verdicts recorded.", None
     return {"request": filed_request(run_path, run.get("ask", "")),
             "deliverable": cockpit.clean(run.get("deliverable") or "")[:240] or "No deliverable path recorded.",
-            "verification": verified, "verdict_counts": counts, "checks": check_text,
+            "verification": verified, "verdict_counts": counts, "converge": converge_counts(converge),
+            "checks": check_text,
             "spend": usage["spend_text"] or usage["text"],
             "agent_runs": usage["agent_runs_text"] + (
                 "" if "(limit " in usage["agent_runs_text"] else " (limit {})".format(usage["agent_cap"])),
-            "left_for_you": [a["text"] for a in attention] + ["Rulings and next steps: see the summary in chat."]}
+            "left_for_you": [a["text"] for a in attention] + converge_open(converge)
+                            + ["Rulings and next steps: see the summary in chat."]}
 
 
 # --- the reading ----------------------------------------------------------------------------------------------

@@ -41,6 +41,9 @@ ASCII = {"done": "+", "running": "*", "queued": "o", "failed": "x", "blocked": "
 CONTROL = re.compile("[" + chr(0) + "-" + chr(0x1F) + chr(0x7F) + "-" + chr(0x9F) + chr(0x2028) + chr(0x2029) + "]")
 PLAIN = {"·": "|", "—": "-", "–": "-", "…": "...", "→": "->", "’": "'", "“": '"', "”": '"'}
 NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # the helper's next: at run open (COUNCIL_NEXT_AT_OPEN)
+CLAIM_MODES = ("council-review", "council-plan", "council-research")   # the modes that keep a claim index
+CONVERGE_RESULT = re.compile(r"(not met|partly met|partly|blocked|met)\b")
+CONVERGE_KEYS = {"not met": "not_met", "partly met": "partly", "partly": "partly", "blocked": "blocked", "met": "met"}
 
 
 # --- reading without getting in a live run's way ----------------------------------------------------------
@@ -296,11 +299,27 @@ def claim_index_stale(run):
         return True
 
 
-def claims_of(run):
+def claims_expected(run, mode):
+    """A review, plan or research run keeps a claim index (the helper's close warns when it is missing), and a run
+    with no recorded mode is read as one. Another mode keeps none — a build checks tasks, not claims — unless its
+    folder holds a synthesis or an index all the same."""
+    if mode in CLAIM_MODES or not mode:
+        return True
+    try:
+        return (run / "synthesis.md").exists() or (run / "claims.jsonl").exists()
+    except OSError:
+        return True
+
+
+def claims_of(run, mode=None):
     """by_verdict counts every indexed claim. shipped counts what the closing card reports: the kept claims,
-    and the cut ones a verifier was sent anyway; self_checked, those only the Chair's own check covers."""
+    and the cut ones a verifier was sent anyway; self_checked, those only the Chair's own check covers.
+    expected is False for a run that keeps no claim index (a build), which is then never out of date."""
+    run = Path(run)
+    if not claims_expected(run, header(run).get("mode", "") if mode is None else mode):
+        return {"total": 0, "by_verdict": {}, "stale": False, "shipped": {}, "self_checked": 0, "expected": False}
     if claim_index_stale(run):
-        return {"total": 0, "by_verdict": {}, "stale": True, "shipped": {}, "self_checked": 0}
+        return {"total": 0, "by_verdict": {}, "stale": True, "shipped": {}, "self_checked": 0, "expected": True}
     rows = jsonl(run, "claims.jsonl")
     verdicts, shipped, own = {}, {}, 0
     for row in rows:
@@ -313,7 +332,68 @@ def claims_of(run):
         if links and all(isinstance(link, dict) and link.get("self") for link in links):
             own += 1
     return {"total": len(rows), "by_verdict": dict(sorted(verdicts.items())), "stale": False,
-            "shipped": dict(sorted(shipped.items())), "self_checked": own}
+            "shipped": dict(sorted(shipped.items())), "self_checked": own, "expected": True}
+
+
+def converge_result(cell):
+    """A Converge Result cell's verdict, read after its last arrow ("partly met → met" is met) by its first words:
+    met, partly, not_met, blocked or other."""
+    words = re.sub(r"[`*_]", "", re.split("→|->", cell)[-1]).strip().lower()
+    found = CONVERGE_RESULT.match(words)
+    return CONVERGE_KEYS[found.group(1)] if found else "other"
+
+
+def converge_of(run, deliverable):
+    """A build's final check, from its log's '## Converge' table (council-implement writes it at Challenge): each
+    task's final result, and whether a fix came after the check found it short. {"missing": why} when no such
+    table can be read: no deliverable, one outside the council home's logs folder, unreadable, or without one."""
+    run = Path(run)
+    if not deliverable:
+        return {"missing": "no build log recorded"}
+    home = run.parent.parent
+    logs, path = home / "logs", Path(deliverable)
+    path = path if path.is_absolute() else home.parent / path
+    if run.parent.name != "runs" or linked(logs) or not contained(path, logs):
+        return {"missing": "the build log isn't in the council's logs folder"}
+    content = text_of(path, logs)
+    if not content:
+        return {"missing": "the build log can't be read"}
+    rows, inside, columns = [], False, None
+    for line in lines_of(content):
+        if line.startswith("## "):
+            if inside:
+                break
+            inside = line[3:].strip().lower() == "converge"
+            continue
+        if not inside:
+            continue
+        if not line.lstrip().startswith("|"):
+            if columns is not None:
+                break                               # the table ended
+            continue
+        cells = [clean(c) for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+        if columns is None:
+            names = [c.lower() for c in cells]
+            if "result" not in names:
+                break
+            columns = {name: names.index(name) for name in ("task", "done when", "result") if name in names}
+            continue
+        if all(re.fullmatch(r":?-{3,}:?", c) for c in cells if c):
+            continue                                # the header's rule
+        def cell(name):
+            at = columns.get(name)
+            return cells[at] if at is not None and at < len(cells) else ""
+        result = cell("result")
+        final = converge_result(result)
+        rows.append({"task": cell("task").replace("`", "")[:40] or str(len(rows) + 1),
+                     "done_when": cell("done when").replace("`", "")[:200], "result": final,
+                     "fixed_after": final == "met" and re.search("→|->", result) is not None
+                                    and converge_result(re.split("→|->", result)[0]) != "met"})
+        if len(rows) >= 500:
+            break
+    if not rows:
+        return {"missing": "the build log has no Converge table"}
+    return {"rows": rows}
 
 
 def events_of(run, last):
@@ -516,7 +596,7 @@ def snapshot(run, home=None, last_events=8):
         "corrections": sorted(fixes.values(), key=lambda f: (f["seat"], f["field"])),
         "gates": gates_of(run),
         "repairs": repairs_of(run),
-        "claims": claims_of(run),
+        "claims": claims_of(run, state.get("mode", "")),
         "events": events_of(run, last_events),
         "memory": {"proposed": proposals_in(home)},
     }
