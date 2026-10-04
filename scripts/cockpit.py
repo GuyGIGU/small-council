@@ -359,6 +359,16 @@ def converge_result(cell):
     return CONVERGE_KEYS[found.group(1)] if found else "other"
 
 
+def converge_fixed(cell):
+    """A met result that records the check finding it short first: an earlier verdict before an arrow ("partly met →
+    met"), or one named after the leading "met" ("met (after 8cbfc45; verify-5 partly met)")."""
+    parts = re.split("→|->", cell)
+    if len(parts) > 1:
+        return converge_result(parts[0]) != "met"
+    words = re.sub(r"[`*_]", "", cell).strip().lower()
+    return re.search(r"\b(not met|partly met|partly|blocked)\b", words[3:]) is not None
+
+
 def converge_of(run, deliverable):
     """A build's final check, from its log's '## Converge' table (council-implement writes it at Challenge): each
     task's final result, and whether a fix came after the check found it short. {"missing": why} when no such
@@ -403,8 +413,7 @@ def converge_of(run, deliverable):
         final = converge_result(result)
         rows.append({"task": cell("task").replace("`", "")[:40] or str(len(rows) + 1),
                      "done_when": cell("done when").replace("`", "")[:200], "result": final,
-                     "fixed_after": final == "met" and re.search("→|->", result) is not None
-                                    and converge_result(re.split("→|->", result)[0]) != "met"})
+                     "fixed_after": final == "met" and converge_fixed(result)})
         if len(rows) >= 500:
             break
     if not rows:

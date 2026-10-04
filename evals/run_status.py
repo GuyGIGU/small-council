@@ -1515,7 +1515,17 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
           unknown["no table"].get("verification") == "Final check unknown: the build log has no Converge table." and
           all(c.get("converge", "absent") is None and "0 of" not in c.get("verification", "0 of")
               for c in unknown.values()), unknown)
-    review =make_run(root, "review", status_value="complete", phase="learn",
+    write(root / ".council" / "logs" / "after-form.md", "# Log\n\n## Converge\n"
+          "| Task | Done when | Result | Evidence | Proof |\n|---|---|---|---|---|\n"
+          "| 1 | a | met (after `8cbfc45`; verify-5 partly met) | x | ok |\n"
+          "| 2 | b | met on ubuntu and macOS; windows running at the time of writing | x | ok |\n"
+          "| 3 | c | partly met -> met | x | ok |\n")
+    after_form = build_closing(".council/logs/after-form.md")["closing"] or {}
+    check("closing card, build: a met result that names the check's earlier verdict ('met (after …; verify-5 partly "
+          "met)', the real 2026-10-02 log) counts as met after a fix, like an arrow does",
+          after_form.get("verification") == "Final check: all 3 tasks met (2 after a fix the check asked for)." and
+          (after_form.get("converge") or {}).get("fixed_after") == 2, after_form)
+    review = make_run(root, "review", status_value="complete", phase="learn",
                       extra_state="closed: {}\n".format(local(20)))
     write(review / "verify-1.md", "# Verification\n")
     nomode = make_run(root, "nomode", status_value="complete", phase="learn")
