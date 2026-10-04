@@ -33,9 +33,9 @@ SCHEMA = "council.run-snapshot/2"
 MAX_FILE = 4 * 1024 * 1024
 BOM = chr(0xFEFF)
 UNICODE = {"done": "✓", "running": "●", "queued": "○", "failed": "✗", "blocked": "■", "skipped": "–",
-           "pass": "✓", "fail": "✗", "unknown": "?", "top": "┌", "bottom": "└", "rule": "─"}
+           "pass": "✓", "fail": "✗", "planned": "·", "unknown": "?", "top": "┌", "bottom": "└", "rule": "─"}
 ASCII = {"done": "+", "running": "*", "queued": "o", "failed": "x", "blocked": "!", "skipped": "-",
-         "pass": "+", "fail": "x", "unknown": "?", "top": "+", "bottom": "+", "rule": "-"}
+         "pass": "+", "fail": "x", "planned": ".", "unknown": "?", "top": "+", "bottom": "+", "rule": "-"}
 # Every C0 and C1 control (tab and newline included: a value is one cell), DEL, and the Unicode line
 # and paragraph separators: none may reach the terminal from a file.
 CONTROL = re.compile("[" + chr(0) + "-" + chr(0x1F) + chr(0x7F) + "-" + chr(0x9F) + chr(0x2028) + chr(0x2029) + "]")
@@ -250,6 +250,22 @@ def gates_of(run):
                           "command": clean(data.get("command", ""))[:200], "note": clean(data.get("note", "")),
                           "proof": clean(data.get("proof", "change"))})
     return sorted(gates, key=lambda g: g["when"])
+
+
+def gate_kind(name):
+    """A build's before-proof is meant to fail — and so is a review fix's regress-proof, the new check run on the
+    version a verifier saw — and a probe is a dry run: none is a check of the work. Every view takes this rule."""
+    if name.startswith(("before-", "regress-")):
+        return "proof"
+    if name.startswith("probe-"):
+        return "probe"
+    return "check"
+
+
+def failed_as_planned(gate):
+    """A change-proof check that failed did its job: it showed the problem before the fix. A before-check declared
+    --proof preserve must pass, so its failure is a real one."""
+    return gate_kind(gate["name"]) == "proof" and gate["exit"] not in (0, None) and gate.get("proof") != "preserve"
 
 
 def repairs_of(run):
@@ -714,10 +730,13 @@ def render(snap, ascii_only=False, width=None, reading=None):
         add()
         add(" Gates")
         for gate in snap["gates"]:
-            mark = g["unknown"] if gate["exit"] is None else (g["pass"] if gate["exit"] == 0 else g["fail"])
+            planned = failed_as_planned(gate)
+            mark = g["unknown"] if gate["exit"] is None else (
+                g["pass"] if gate["exit"] == 0 else g["planned"] if planned else g["fail"])
+            note = " · ".join(words for words in ("failed as planned" if planned else "", gate["note"]) if words)
             add("  {} {:<16} exit {:<4} {:>4}s  {}{}".format(mark, gate["name"][:16], shown(gate["exit"]),
                                                            gate["seconds"], gate["when"][-8:],
-                                                           "  " + gate["note"] if gate["note"] else ""))
+                                                           "  " + note if note else ""))
     if snap["repairs"]:
         add()
         add(" Repairs")

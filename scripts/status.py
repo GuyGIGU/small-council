@@ -143,14 +143,7 @@ def listing(names, limit=4):
 
 
 # --- reading the snapshot -------------------------------------------------------------------------------------
-def gate_kind(name):
-    """A build's before-proof is meant to fail — and so is a review fix's regress-proof, the new check run on the
-    version a verifier saw — and a probe is a dry run: none is a check of the work."""
-    if name.startswith(("before-", "regress-")):
-        return "proof"
-    if name.startswith("probe-"):
-        return "probe"
-    return "check"
+gate_kind = cockpit.gate_kind   # one rule for every view: a proof is meant to fail first, a probe is a dry run
 
 
 def checks_of(snap):
