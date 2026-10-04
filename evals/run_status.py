@@ -1526,6 +1526,31 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
           (build_reading(review)["closing"] or {}).get("verification") == "Claim index out of date; verifier counts unknown."
           and cockpit.claims_of(nomode)["stale"], build_reading(review)["closing"])
 
+# "What you asked" was cut mid-word on the real closing card of 2026-10-01 ("…if you get my intention this skill is
+# to be the ma"): a filed request past its limit ends on a whole word, then "…".
+with tempfile.TemporaryDirectory(prefix="council-request-cut-") as temporary:
+    root = Path(temporary)
+    asked_run = root / ".council" / "runs" / "asked"
+    asked_run.mkdir(parents=True)
+
+    def asked(title, said):
+        write(root / ".council" / "asks" / "a.md", "# {}\n\n## In your words\n{}\n".format(title, said))
+        return status.filed_request(asked_run, ".council/asks/a.md")
+
+    def whole(got, original, limit):
+        return (got.endswith("…") and len(got) <= limit and original.startswith(got[:-1])
+                and original[len(got) - 1] == " ")
+
+    said = " ".join(["word"] * 60)
+    got = asked("", said)
+    check("request: words past their limit end on a whole word, then '…'", whole(got, said, 220), got)
+    check("request: words within their limit are shown whole, with no '…'", asked("", "Fix the parser.") == "Fix the parser.")
+    check("request: a single word longer than the limit is cut inside it, then '…'", asked("", "a" * 300) == "a" * 219 + "…")
+    title = " ".join(["Title"] * 40)
+    got = asked(title, "Fix it.")
+    check("request: a title past its limit ends on a whole word, then '…'",
+          whole(got.split(" — ")[0], title, 160) and got.endswith(" — Fix it."), got)
+
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:
     print("[{}] {}".format("PASS" if good else "FAIL", name))

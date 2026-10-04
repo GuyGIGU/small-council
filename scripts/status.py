@@ -121,6 +121,16 @@ def tokens_text(value):
     return cockpit.format_tokens(value)
 
 
+def cut(text, limit):
+    """At most limit characters: whole when it fits, else ended on a whole word, then "…" (a single word longer
+    than the limit is cut inside it)."""
+    if len(text) <= limit:
+        return text
+    head = text[:limit - 1]
+    space = head.rfind(" ")
+    return (head[:space] if space > 0 else head).rstrip(" ,;:·—-") + "…"
+
+
 def plural(n, one, many=None):
     return "{} {}".format(n, one if n == 1 else (many or one + "s"))
 
@@ -586,14 +596,14 @@ def filed_request(run_path, filed):
     if not content:
         return "No filed request recorded."
     lines = content.splitlines()
-    title = cockpit.clean(lines[0].lstrip("# "))[:160] if lines else ""
+    title = cut(cockpit.clean(lines[0].lstrip("# ")), 160) if lines else ""
     in_words = False
     for line in lines[1:]:
         if line.startswith("## "):
             in_words = line.lower().startswith("## in your words")
             continue
         if in_words and line.strip():
-            words = cockpit.clean(line.strip())[:220]
+            words = cut(cockpit.clean(line.strip()), 220)
             return "{} — {}".format(title, words) if title and words != title else (words or title)
     return title or "Filed request; no short description recorded."
 
