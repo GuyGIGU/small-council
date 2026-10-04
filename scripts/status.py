@@ -126,9 +126,8 @@ def cut(text, limit):
     than the limit is cut inside it)."""
     if len(text) <= limit:
         return text
-    head = text[:limit - 1]
-    space = head.rfind(" ")
-    return (head[:space] if space > 0 else head).rstrip(" ,;:·—-") + "…"
+    space = text[:limit].rfind(" ")      # a word ending right before it still leaves room for "…"
+    return (text[:space] if space > 0 else text[:limit - 1]).rstrip(" ,;:·—-") + "…"
 
 
 def plural(n, one, many=None):

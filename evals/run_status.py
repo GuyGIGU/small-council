@@ -1547,15 +1547,17 @@ with tempfile.TemporaryDirectory(prefix="council-request-cut-") as temporary:
         write(root / ".council" / "asks" / "a.md", "# {}\n\n## In your words\n{}\n".format(title, said))
         return status.filed_request(asked_run, ".council/asks/a.md")
 
-    def whole(got, original, limit):
+    def whole(got, original, limit):           # the longest run of whole words that fits, then "…"
         return (got.endswith("…") and len(got) <= limit and original.startswith(got[:-1])
-                and original[len(got) - 1] == " ")
+                and original[len(got) - 1] == " " and " " not in original[len(got):limit])
 
     said = " ".join(["word"] * 60)
     got = asked("", said)
     check("request: words past their limit end on a whole word, then '…'", whole(got, said, 220), got)
     check("request: words within their limit are shown whole, with no '…'", asked("", "Fix the parser.") == "Fix the parser.")
     check("request: a single word longer than the limit is cut inside it, then '…'", asked("", "a" * 300) == "a" * 219 + "…")
+    check("request: a word that ends right where '…' still fits is kept", status.cut("ab cdefgh ijk", 10) == "ab cdefgh…",
+          status.cut("ab cdefgh ijk", 10))
     title = " ".join(["Title"] * 40)
     got = asked(title, "Fix it.")
     check("request: a title past its limit ends on a whole word, then '…'",
