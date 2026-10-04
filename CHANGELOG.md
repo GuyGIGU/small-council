@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-10-05
+
+**TL;DR:** a build's closing card now says how its final check went instead of "claim index out
+of date", the request on the card is cut at a whole word, and the terminal view no longer draws
+a build's deliberate first failures like real ones.
+
 ### Fixed
 
 - A build run's closing card no longer says "Claim index out of date; verifier counts unknown": a build checks tasks, not claims. It reads the build log's final check instead ("Final check: 13 of 15 tasks met; 2 partly met") and lists each task left short under "Left for you".
@@ -15,6 +21,10 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 - Only review, plan and research runs (or a run with no recorded mode) expect a claim index, as the helper's close already ruled; a post-game's card now says "No claim verdicts recorded." instead of "out of date".
+
+### Upgrade notes
+
+- Nothing to do in your projects. The status JSON gains two keys (`claims.expected`, `closing.converge`); its schemas are unchanged.
 
 ## [0.20.0] — 2026-10-03
 
