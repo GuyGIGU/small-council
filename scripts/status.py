@@ -33,6 +33,7 @@ import cockpit  # noqa: E402  (the read-only run snapshot)
 SCHEMA = "council.run-status/1"
 QUIET_MINUTES = 60         # an open run with no recorded activity for this long reads as quiet (stale)
 OLD_SNAPSHOT_MINUTES = 60  # a widget older than this tells the viewer to ask for a new one
+LEFT_SHOWN = 12            # the closing card's "Left for you" items; the text lists them all (lists are capped: ADR)
 MEMORY_SIZE_LIMIT = 25600   # bytes, shared with the helper's run-open warning
 ATTEMPTS = 3               # the repair loop's stop limit (scripts/repair.py)
 STAGES = (("convene", "Setting up"), ("prepare", "Gathering context"), ("assign", "Choosing the experts"),
@@ -58,6 +59,8 @@ VERDICT_NAMES = (("confirmed", "CONFIRMED", "confirmed"), ("refuted", "REFUTED",
                  ("miscited", "MISCITED", "cited in the wrong place"), ("uncertain", "UNCERTAIN", "unsure"),
                  ("conflict", "CONFLICT", "with conflicting verdicts"),
                  ("not_sent", "UNVERIFIED", "not sent to a verifier"))
+CONVERGE_WORDS = (("partly", "partly met"), ("not_met", "not met"), ("blocked", "blocked"),   # a build's final check
+                  ("other", "with an unclear result"))
 SEAT_WORDS = {"running": "started", "done": "finished", "failed": "failed", "blocked": "reported it was blocked",
               "queued": "queued", "skipped": "skipped"}
 
@@ -119,6 +122,15 @@ def tokens_text(value):
     return cockpit.format_tokens(value)
 
 
+def cut(text, limit):
+    """At most limit characters: whole when it fits, else ended on a whole word, then "…" (a single word longer
+    than the limit is cut inside it)."""
+    if len(text) <= limit:
+        return text
+    space = text[:limit].rfind(" ")      # a word ending right before it still leaves room for "…"
+    return (text[:space] if space > 0 else text[:limit - 1]).rstrip(" ,;:·—-") + "…"
+
+
 def plural(n, one, many=None):
     return "{} {}".format(n, one if n == 1 else (many or one + "s"))
 
@@ -131,14 +143,7 @@ def listing(names, limit=4):
 
 
 # --- reading the snapshot -------------------------------------------------------------------------------------
-def gate_kind(name):
-    """A build's before-proof is meant to fail — and so is a review fix's regress-proof, the new check run on the
-    version a verifier saw — and a probe is a dry run: none is a check of the work."""
-    if name.startswith(("before-", "regress-")):
-        return "proof"
-    if name.startswith("probe-"):
-        return "probe"
-    return "check"
+gate_kind = cockpit.gate_kind   # one rule for every view: a proof is meant to fail first, a probe is a dry run
 
 
 def checks_of(snap):
@@ -584,16 +589,49 @@ def filed_request(run_path, filed):
     if not content:
         return "No filed request recorded."
     lines = content.splitlines()
-    title = cockpit.clean(lines[0].lstrip("# "))[:160] if lines else ""
+    title = cut(cockpit.clean(lines[0].lstrip("# ")), 160) if lines else ""
     in_words = False
     for line in lines[1:]:
         if line.startswith("## "):
             in_words = line.lower().startswith("## in your words")
             continue
         if in_words and line.strip():
-            words = cockpit.clean(line.strip())[:220]
+            words = cut(cockpit.clean(line.strip()), 220)
             return "{} — {}".format(title, words) if title and words != title else (words or title)
     return title or "Filed request; no short description recorded."
+
+
+def converge_counts(converge):
+    """How a build's tasks ended at its final check, or None when the build log gave no results."""
+    if not converge or "rows" not in converge:
+        return None
+    counts = {"total": len(converge["rows"]), "met": 0, "partly": 0, "not_met": 0, "blocked": 0, "other": 0,
+              "fixed_after": 0}
+    for row in converge["rows"]:
+        counts[row["result"]] += 1
+        counts["fixed_after"] += 1 if row["fixed_after"] else 0
+    return counts
+
+
+def converge_text(converge):
+    """A build's Verified line, from its log's final check. Missing results are named, never counted as zero."""
+    counts = converge_counts(converge)
+    if counts is None:
+        return "Final check unknown: {}.".format((converge or {}).get("missing") or "no build log recorded")
+    met, total = counts["met"], counts["total"]
+    said = "all {} tasks met".format(total) if met == total and total > 1 else "{} of {} {} met".format(
+        met, total, "task" if total == 1 else "tasks")
+    if counts["fixed_after"]:
+        said += " ({} after a fix the check asked for)".format(counts["fixed_after"])
+    rest = ["{} {}".format(counts[key], words) for key, words in CONVERGE_WORDS if counts[key]]
+    return "Final check: " + said + ("; " + ", ".join(rest) if rest else "") + "."
+
+
+def converge_open(converge):
+    """Every task the final check left short, for "Left for you" (the card caps its list; the text shows all)."""
+    words = dict(CONVERGE_WORDS)
+    return ["Task {} {}: {}".format(row["task"], words[row["result"]], row["done_when"] or "see the build log")
+            for row in (converge or {}).get("rows", []) if row["result"] != "met"]
 
 
 def closing_of(snap, run_path, usage, check_text, attention):
@@ -601,8 +639,12 @@ def closing_of(snap, run_path, usage, check_text, attention):
     run = snap["run"]
     if run.get("status", "").split(" ")[0] not in ("complete", "paused", "abandoned"):
         return None
-    claims = snap["claims"]
-    if claims["stale"]:
+    claims, converge = snap["claims"], None
+    if run.get("mode") == "council-implement" and not claims.get("expected", True):
+        # A build checks tasks, not claims: its final check is the log's Converge table.
+        converge = cockpit.converge_of(run_path, run.get("deliverable", ""))
+        verified, counts = converge_text(converge), None
+    elif claims["stale"]:
         verified = "Claim index out of date; verifier counts unknown."
         counts = None
     elif claims.get("shipped"):
@@ -625,11 +667,13 @@ def closing_of(snap, run_path, usage, check_text, attention):
         verified, counts = "No claim verdicts recorded.", None
     return {"request": filed_request(run_path, run.get("ask", "")),
             "deliverable": cockpit.clean(run.get("deliverable") or "")[:240] or "No deliverable path recorded.",
-            "verification": verified, "verdict_counts": counts, "checks": check_text,
+            "verification": verified, "verdict_counts": counts, "converge": converge_counts(converge),
+            "checks": check_text,
             "spend": usage["spend_text"] or usage["text"],
             "agent_runs": usage["agent_runs_text"] + (
                 "" if "(limit " in usage["agent_runs_text"] else " (limit {})".format(usage["agent_cap"])),
-            "left_for_you": [a["text"] for a in attention] + ["Rulings and next steps: see the summary in chat."]}
+            "left_for_you": [a["text"] for a in attention] + converge_open(converge)
+                            + ["Rulings and next steps: see the summary in chat."]}
 
 
 # --- the reading ----------------------------------------------------------------------------------------------
@@ -978,8 +1022,12 @@ def closing_widget(status, preview=False):
     out.append('<div class="tiles"><div class="tile"><p class="muted">Spend</p><p>{}</p></div>'
                '<div class="tile"><p class="muted">Agent runs</p><p>{}</p></div></div>'.format(
                    esc(closing["spend"]), esc(closing["agent_runs"])))
+    left = closing["left_for_you"]
+    if len(left) > LEFT_SHOWN:          # keep the card small; the last item (rulings) always shows
+        left = left[:LEFT_SHOWN - 2] + ["{} more: council status lists them all.".format(len(left) - LEFT_SHOWN + 1),
+                                        left[-1]]
     out.append('<div class="box neutral"><p style="font-weight:500">Left for you</p><ul>{}</ul></div>'.format(
-        "".join("<li>{}</li>".format(esc(item)) for item in closing["left_for_you"])))
+        "".join("<li>{}</li>".format(esc(item)) for item in left)))
     out.append('<p class="muted" style="margin-top:12px">Snapshot {} (<span id="sc-age">{}</span>)</p>'.format(
         esc(clock(now, now)), "at " + esc(clock(now, now))))
     if not preview:

@@ -1446,6 +1446,133 @@ with tempfile.TemporaryDirectory(prefix="council-stale-status-") as temporary:
     (stale_run / "claims.jsonl").unlink()
     check("status: missing claim index is visible", cockpit.claims_of(stale_run)["stale"])
 
+# A build checks tasks, not claims. The real build runs of 2026-10-01 and 2026-10-02 closed with "Claim index out
+# of date; verifier counts unknown", though no build keeps a claim index: its final check is the build log's
+# Converge table, which the closing card reads.
+with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
+    root = Path(temporary)
+
+    def build_reading(run):          # the block above rebinds reading
+        return status.interpret(cockpit.snapshot(run, None, 40), NOW)
+
+    build = make_run(root, "build", status_value="complete", phase="learn",
+                     seats=[v2("verify-1", "done", 90000, 1, 1), v2("verify-2", "done", 80000, 1, 1)],
+                     gates=[("after-1", 0, 30)])
+
+    def build_state(deliverable):
+        write(build / "session-state.md", "status: complete\nmode: council-implement\nphase: learn\nupdated: {0}\n"
+              "opened: {1}\nplan-schema: 1\n{2}closed: {0}\n## Decisions so far\n".format(
+                  local(20)[:16], local(300), "deliverable: {}\n".format(deliverable) if deliverable else ""))
+
+    def build_closing(deliverable):
+        build_state(deliverable)
+        return build_reading(build)
+
+    for name in ("verify-1.md", "verify-2.md"):
+        write(build / name, "# Verification — build\n\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+                            "| 1 | x | OK | y |\n")
+    converge = ("## Converge\nFinal check: verify-2 — 2 met, 1 partly met, 1 not met.\n\n"
+                "| Task | Done when | Result | Evidence | Proof |\n|---|---|---|---|---|\n"
+                "| 1 | exports stop at 5,000 rows | met | verify-2 | ok |\n"
+                "| 2 | dates read as UTC | partly met → met | verify-2, then a fix | ok |\n"
+                "| 3 | the import keeps <quotes> | partly met | verify-2 | ok |\n"
+                "| 4 | a closed run stays `closed` | **not met** | verify-2 | ok |\n\n"
+                "| 5 | a row after the table ended | not met | x | x |\n\n## Ready for review\n- x\n")
+    write(root / ".council" / "logs" / "build-log.md", "# Council Implementation Log — x\n\n## Task 1: x\nVerifier: OK\n\n"
+          + converge)
+    write(root / "outside.md", "# Log\n\n" + converge)
+    write(root / ".council" / "logs" / "plain.md", "# Log\n\n## Converge\nNot run yet.\n\n## Ready for review\n")
+    build_state(".council/logs/build-log.md")
+    before = fingerprint(root)
+    r = build_reading(build)
+    final = r["closing"] or {}
+    card, plain = status.widget(r), status.text(r)
+    screen = cockpit.render(cockpit.snapshot(build, None, 40), width=110, reading=r)
+    check("closing card, build: reading the run and its log writes nothing", fingerprint(root) == before)
+    check("closing card, build: the Verified line reads the build log's final check, never a claim index",
+          final.get("verification") == "Final check: 2 of 4 tasks met (1 after a fix the check asked for); "
+          "1 partly met, 1 not met." and final.get("verdict_counts") is None and
+          final.get("converge") == {"total": 4, "met": 2, "partly": 1, "not_met": 1, "blocked": 0, "other": 0,
+                                    "fixed_after": 1}, final)
+    check("closing card, build: no view says the claim index is out of date or the verifier counts unknown",
+          not any(words in view for view in (card, plain, screen) for words in ("ndex out of date",
+                                                                                 "verifier counts unknown")),
+          (plain, screen[-600:]))
+    check("closing card, build: each task the final check left short is under 'Left for you', with its Done-when",
+          "Task 3 partly met: the import keeps <quotes>" in final.get("left_for_you", []) and
+          "Task 4 not met: a closed run stays closed" in final.get("left_for_you", []) and
+          not any(item.startswith(("Task 1 ", "Task 2 ", "Task 5 ")) for item in final.get("left_for_you", [])) and
+          "- Task 4 not met: a closed run stays closed" in plain, final.get("left_for_you"))
+    check("closing card, build: the log's values are escaped in the widget",
+          "the import keeps &lt;quotes&gt;" in card and "<quotes>" not in card, card[-1500:])
+    unknown = {name: (build_closing(path)["closing"] or {}) for name, path in (
+        ("none", ""), ("outside", "outside.md"), ("no table", ".council/logs/plain.md"))}
+    check("closing card, build: no build log, one outside the logs folder, or one with no Converge table reads as "
+          "unknown in words, never as 0 met",
+          unknown["none"].get("verification") == "Final check unknown: no build log recorded." and
+          unknown["outside"].get("verification") ==
+          "Final check unknown: the build log isn't in the council's logs folder." and
+          unknown["no table"].get("verification") == "Final check unknown: the build log has no Converge table." and
+          all(c.get("converge", "absent") is None and "0 of" not in c.get("verification", "0 of")
+              for c in unknown.values()), unknown)
+    write(root / ".council" / "logs" / "after-form.md", "# Log\n\n## Converge\n"
+          "| Task | Done when | Result | Evidence | Proof |\n|---|---|---|---|---|\n"
+          "| 1 | a | met (after `8cbfc45`; verify-5 partly met) | x | ok |\n"
+          "| 2 | b | met on ubuntu and macOS; windows running at the time of writing | x | ok |\n"
+          "| 3 | c | partly met -> met | x | ok |\n")
+    after_form = build_closing(".council/logs/after-form.md")["closing"] or {}
+    check("closing card, build: a met result that names the check's earlier verdict ('met (after …; verify-5 partly "
+          "met)', the real 2026-10-02 log) counts as met after a fix, like an arrow does",
+          after_form.get("verification") == "Final check: all 3 tasks met (2 after a fix the check asked for)." and
+          (after_form.get("converge") or {}).get("fixed_after") == 2, after_form)
+    write(root / ".council" / "logs" / "many.md", "# Log\n\n## Converge\n"
+          "| Task | Done when | Result | Evidence | Proof |\n|---|---|---|---|---|\n"
+          + "".join("| {0} | need {0} | not met | x | x |\n".format(n) for n in range(1, 16)))
+    many = build_closing(".council/logs/many.md")
+    many_card, many_text = status.widget(many), status.text(many)
+    check("closing card, build: every task the final check left short is listed in the text; the card keeps its "
+          "size rule and says how many more",
+          all("- Task {0} not met: need {0}\n".format(n) in many_text + "\n" for n in range(1, 16)) and
+          many_card.count("<li>Task ") < 15 and "more: council status lists them all." in many_card and
+          "Rulings and next steps" in many_card and len(many_card) < 16384, (many_text, many_card[-1200:]))
+    review = make_run(root, "review", status_value="complete", phase="learn",
+                      extra_state="closed: {}\n".format(local(20)))
+    write(review / "verify-1.md", "# Verification\n")
+    nomode = make_run(root, "nomode", status_value="complete", phase="learn")
+    write(nomode / "session-state.md", read(nomode / "session-state.md").replace("mode: council-review\n", ""))
+    write(nomode / "verify-1.md", "# Verification\n")
+    check("claims: a review, or a run with no recorded mode, with verifier reports and no index still reads as out "
+          "of date (fail closed)",
+          (build_reading(review)["closing"] or {}).get("verification") == "Claim index out of date; verifier counts unknown."
+          and cockpit.claims_of(nomode)["stale"], build_reading(review)["closing"])
+
+# "What you asked" was cut mid-word on the real closing card of 2026-10-01 ("…if you get my intention this skill is
+# to be the ma"): a filed request past its limit ends on a whole word, then "…".
+with tempfile.TemporaryDirectory(prefix="council-request-cut-") as temporary:
+    root = Path(temporary)
+    asked_run = root / ".council" / "runs" / "asked"
+    asked_run.mkdir(parents=True)
+
+    def asked(title, said):
+        write(root / ".council" / "asks" / "a.md", "# {}\n\n## In your words\n{}\n".format(title, said))
+        return status.filed_request(asked_run, ".council/asks/a.md")
+
+    def whole(got, original, limit):           # the longest run of whole words that fits, then "…"
+        return (got.endswith("…") and len(got) <= limit and original.startswith(got[:-1])
+                and original[len(got) - 1] == " " and " " not in original[len(got):limit])
+
+    said = " ".join(["word"] * 60)
+    got = asked("", said)
+    check("request: words past their limit end on a whole word, then '…'", whole(got, said, 220), got)
+    check("request: words within their limit are shown whole, with no '…'", asked("", "Fix the parser.") == "Fix the parser.")
+    check("request: a single word longer than the limit is cut inside it, then '…'", asked("", "a" * 300) == "a" * 219 + "…")
+    check("request: a word that ends right where '…' still fits is kept", status.cut("ab cdefgh ijk", 10) == "ab cdefgh…",
+          status.cut("ab cdefgh ijk", 10))
+    title = " ".join(["Title"] * 40)
+    got = asked(title, "Fix it.")
+    check("request: a title past its limit ends on a whole word, then '…'",
+          whole(got.split(" — ")[0], title, 160) and got.endswith(" — Fix it."), got)
+
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:
     print("[{}] {}".format("PASS" if good else "FAIL", name))

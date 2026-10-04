@@ -33,14 +33,17 @@ SCHEMA = "council.run-snapshot/2"
 MAX_FILE = 4 * 1024 * 1024
 BOM = chr(0xFEFF)
 UNICODE = {"done": "✓", "running": "●", "queued": "○", "failed": "✗", "blocked": "■", "skipped": "–",
-           "pass": "✓", "fail": "✗", "unknown": "?", "top": "┌", "bottom": "└", "rule": "─"}
+           "pass": "✓", "fail": "✗", "planned": "·", "unknown": "?", "top": "┌", "bottom": "└", "rule": "─"}
 ASCII = {"done": "+", "running": "*", "queued": "o", "failed": "x", "blocked": "!", "skipped": "-",
-         "pass": "+", "fail": "x", "unknown": "?", "top": "+", "bottom": "+", "rule": "-"}
+         "pass": "+", "fail": "x", "planned": ".", "unknown": "?", "top": "+", "bottom": "+", "rule": "-"}
 # Every C0 and C1 control (tab and newline included: a value is one cell), DEL, and the Unicode line
 # and paragraph separators: none may reach the terminal from a file.
 CONTROL = re.compile("[" + chr(0) + "-" + chr(0x1F) + chr(0x7F) + "-" + chr(0x9F) + chr(0x2028) + chr(0x2029) + "]")
 PLAIN = {"·": "|", "—": "-", "–": "-", "…": "...", "→": "->", "’": "'", "“": '"', "”": '"'}
 NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # the helper's next: at run open (COUNCIL_NEXT_AT_OPEN)
+CLAIM_MODES = ("council-review", "council-plan", "council-research")   # the modes that keep a claim index
+CONVERGE_RESULT = re.compile(r"(not met|partly met|partly|blocked|met)\b")
+CONVERGE_KEYS = {"not met": "not_met", "partly met": "partly", "partly": "partly", "blocked": "blocked", "met": "met"}
 
 
 # --- reading without getting in a live run's way ----------------------------------------------------------
@@ -249,6 +252,22 @@ def gates_of(run):
     return sorted(gates, key=lambda g: g["when"])
 
 
+def gate_kind(name):
+    """A build's before-proof is meant to fail — and so is a review fix's regress-proof, the new check run on the
+    version a verifier saw — and a probe is a dry run: none is a check of the work. Every view takes this rule."""
+    if name.startswith(("before-", "regress-")):
+        return "proof"
+    if name.startswith("probe-"):
+        return "probe"
+    return "check"
+
+
+def failed_as_planned(gate):
+    """A change-proof check that failed did its job: it showed the problem before the fix. A before-check declared
+    --proof preserve must pass, so its failure is a real one."""
+    return gate_kind(gate["name"]) == "proof" and gate["exit"] not in (0, None) and gate.get("proof") != "preserve"
+
+
 def repairs_of(run):
     """Each repair task's last attempt, and the category of its last failed attempt (a trail that
     resolved ends on a RESOLVED row, which is no failure category)."""
@@ -296,11 +315,27 @@ def claim_index_stale(run):
         return True
 
 
-def claims_of(run):
+def claims_expected(run, mode):
+    """A review, plan or research run keeps a claim index (the helper's close warns when it is missing), and a run
+    with no recorded mode is read as one. Another mode keeps none — a build checks tasks, not claims — unless its
+    folder holds a synthesis or an index all the same."""
+    if mode in CLAIM_MODES or not mode:
+        return True
+    try:
+        return (run / "synthesis.md").exists() or (run / "claims.jsonl").exists()
+    except OSError:
+        return True
+
+
+def claims_of(run, mode=None):
     """by_verdict counts every indexed claim. shipped counts what the closing card reports: the kept claims,
-    and the cut ones a verifier was sent anyway; self_checked, those only the Chair's own check covers."""
+    and the cut ones a verifier was sent anyway; self_checked, those only the Chair's own check covers.
+    expected is False for a run that keeps no claim index (a build), which is then never out of date."""
+    run = Path(run)
+    if not claims_expected(run, header(run).get("mode", "") if mode is None else mode):
+        return {"total": 0, "by_verdict": {}, "stale": False, "shipped": {}, "self_checked": 0, "expected": False}
     if claim_index_stale(run):
-        return {"total": 0, "by_verdict": {}, "stale": True, "shipped": {}, "self_checked": 0}
+        return {"total": 0, "by_verdict": {}, "stale": True, "shipped": {}, "self_checked": 0, "expected": True}
     rows = jsonl(run, "claims.jsonl")
     verdicts, shipped, own = {}, {}, 0
     for row in rows:
@@ -313,7 +348,77 @@ def claims_of(run):
         if links and all(isinstance(link, dict) and link.get("self") for link in links):
             own += 1
     return {"total": len(rows), "by_verdict": dict(sorted(verdicts.items())), "stale": False,
-            "shipped": dict(sorted(shipped.items())), "self_checked": own}
+            "shipped": dict(sorted(shipped.items())), "self_checked": own, "expected": True}
+
+
+def converge_result(cell):
+    """A Converge Result cell's verdict, read after its last arrow ("partly met → met" is met) by its first words:
+    met, partly, not_met, blocked or other."""
+    words = re.sub(r"[`*_]", "", re.split("→|->", cell)[-1]).strip().lower()
+    found = CONVERGE_RESULT.match(words)
+    return CONVERGE_KEYS[found.group(1)] if found else "other"
+
+
+def converge_fixed(cell):
+    """A met result that records the check finding it short first: an earlier verdict before an arrow ("partly met →
+    met"), or one named after the leading "met" ("met (after 8cbfc45; verify-5 partly met)")."""
+    parts = re.split("→|->", cell)
+    if len(parts) > 1:
+        return converge_result(parts[0]) != "met"
+    words = re.sub(r"[`*_]", "", cell).strip().lower()
+    return re.search(r"\b(not met|partly met|partly|blocked)\b", words[3:]) is not None
+
+
+def converge_of(run, deliverable):
+    """A build's final check, from its log's '## Converge' table (council-implement writes it at Challenge): each
+    task's final result, and whether a fix came after the check found it short. {"missing": why} when no such
+    table can be read: no deliverable, one outside the council home's logs folder, unreadable, or without one."""
+    run = Path(run)
+    if not deliverable:
+        return {"missing": "no build log recorded"}
+    home = run.parent.parent
+    logs, path = home / "logs", Path(deliverable)
+    path = path if path.is_absolute() else home.parent / path
+    if run.parent.name != "runs" or linked(logs) or not contained(path, logs):
+        return {"missing": "the build log isn't in the council's logs folder"}
+    content = text_of(path, logs)
+    if not content:
+        return {"missing": "the build log can't be read"}
+    rows, inside, columns = [], False, None
+    for line in lines_of(content):
+        if line.startswith("## "):
+            if inside:
+                break
+            inside = line[3:].strip().lower() == "converge"
+            continue
+        if not inside:
+            continue
+        if not line.lstrip().startswith("|"):
+            if columns is not None:
+                break                               # the table ended
+            continue
+        cells = [clean(c) for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+        if columns is None:
+            names = [c.lower() for c in cells]
+            if "result" not in names:
+                break
+            columns = {name: names.index(name) for name in ("task", "done when", "result") if name in names}
+            continue
+        if all(re.fullmatch(r":?-{3,}:?", c) for c in cells if c):
+            continue                                # the header's rule
+        def cell(name):
+            at = columns.get(name)
+            return cells[at] if at is not None and at < len(cells) else ""
+        result = cell("result")
+        final = converge_result(result)
+        rows.append({"task": cell("task").replace("`", "")[:40] or str(len(rows) + 1),
+                     "done_when": cell("done when").replace("`", "")[:200], "result": final,
+                     "fixed_after": final == "met" and converge_fixed(result)})
+        if len(rows) >= 500:
+            break
+    if not rows:
+        return {"missing": "the build log has no Converge table"}
+    return {"rows": rows}
 
 
 def events_of(run, last):
@@ -516,7 +621,7 @@ def snapshot(run, home=None, last_events=8):
         "corrections": sorted(fixes.values(), key=lambda f: (f["seat"], f["field"])),
         "gates": gates_of(run),
         "repairs": repairs_of(run),
-        "claims": claims_of(run),
+        "claims": claims_of(run, state.get("mode", "")),
         "events": events_of(run, last_events),
         "memory": {"proposed": proposals_in(home)},
     }
@@ -634,10 +739,13 @@ def render(snap, ascii_only=False, width=None, reading=None):
         add()
         add(" Gates")
         for gate in snap["gates"]:
-            mark = g["unknown"] if gate["exit"] is None else (g["pass"] if gate["exit"] == 0 else g["fail"])
+            planned = failed_as_planned(gate)
+            mark = g["unknown"] if gate["exit"] is None else (
+                g["pass"] if gate["exit"] == 0 else g["planned"] if planned else g["fail"])
+            note = " · ".join(words for words in ("failed as planned" if planned else "", gate["note"]) if words)
             add("  {} {:<16} exit {:<4} {:>4}s  {}{}".format(mark, gate["name"][:16], shown(gate["exit"]),
                                                            gate["seconds"], gate["when"][-8:],
-                                                           "  " + gate["note"] if gate["note"] else ""))
+                                                           "  " + note if note else ""))
     if snap["repairs"]:
         add()
         add(" Repairs")

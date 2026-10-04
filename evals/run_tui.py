@@ -291,6 +291,39 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
     check("cockpit: a folder that is not a run is refused", result.returncode == 2 and "not a council run" in result.stderr,
           result.stderr)
 
+# A build's before-proof and a review fix's regress-proof are meant to fail first. Real run 2's screen drew each
+# such proof with the failure mark; they are drawn as failed as planned. A preserve-proof before-check must pass.
+sys.path.insert(0, str(ROOT / "scripts"))
+import cockpit  # noqa: E402
+import status  # noqa: E402
+with tempfile.TemporaryDirectory(prefix="council-tui-planned-") as temporary:
+    build = Path(temporary) / ".council" / "runs" / "2026-10-04-000000-implement"
+    write(build / "session-state.md", "status: in-progress\nmode: council-implement\nphase: build\n## Decisions so far\n")
+    for n, (name, code, proof) in enumerate((("before-1", 1, "change"), ("after-1", 0, "change"), ("regress-2", 1, None),
+                                             ("before-3", 1, "preserve"), ("lint", 1, None), ("before-4", 0, "preserve"))):
+        record = {"gate": name, "command": "x", "exit": code, "seconds": 1, "when": "2026-10-04 12:0{}:00".format(n)}
+        if proof:
+            record["proof"] = proof
+        write(build / "gates" / (name + ".json"), json.dumps(record))
+    snap = cockpit.snapshot(build)
+    screens = (cockpit.render(snap, width=100), cockpit.render(snap, ascii_only=True, width=100))
+
+    def drawn(names):
+        return [next((line for line in screen.splitlines() if line[4:].startswith(name + " ")), "")
+                for screen in screens for name in names]
+
+    planned, failing, passing = drawn(("before-1", "regress-2")), drawn(("before-3", "lint")), drawn(("after-1", "before-4"))
+    check("tui: a change-proof before- or regress- check that failed is drawn as failed as planned, not with the failure "
+          "mark, in Unicode and ASCII", all(line and "failed as planned" in line and line[2] not in ("✗", "x")
+                                            for line in planned), planned)
+    check("tui: a failing preserve-proof before-check, and any other failing check, keep the failure mark",
+          all(line and "failed as planned" not in line and line[2] in ("✗", "x") for line in failing), failing)
+    check("tui: passing checks keep the pass mark",
+          all(line and line[2] in ("✓", "+") and "failed as planned" not in line for line in passing), passing)
+    check("tui: the card and the screen take the before/regress/probe rule from one function",
+          getattr(cockpit, "gate_kind", None) is not None and status.gate_kind is cockpit.gate_kind,
+          getattr(cockpit, "gate_kind", None))
+
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:
     print(f"[{'PASS' if good else 'FAIL'}] {name}" + ("" if good else f"\n        {str(detail)[:900]}"))
