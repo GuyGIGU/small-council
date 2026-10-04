@@ -33,6 +33,7 @@ import cockpit  # noqa: E402  (the read-only run snapshot)
 SCHEMA = "council.run-status/1"
 QUIET_MINUTES = 60         # an open run with no recorded activity for this long reads as quiet (stale)
 OLD_SNAPSHOT_MINUTES = 60  # a widget older than this tells the viewer to ask for a new one
+LEFT_SHOWN = 12            # the closing card's "Left for you" items; the text lists them all (lists are capped: ADR)
 MEMORY_SIZE_LIMIT = 25600   # bytes, shared with the helper's run-open warning
 ATTEMPTS = 3               # the repair loop's stop limit (scripts/repair.py)
 STAGES = (("convene", "Setting up"), ("prepare", "Gathering context"), ("assign", "Choosing the experts"),
@@ -626,15 +627,11 @@ def converge_text(converge):
     return "Final check: " + said + ("; " + ", ".join(rest) if rest else "") + "."
 
 
-def converge_open(converge, limit=5):
-    """Each task the final check left short, for the closing card's "Left for you"."""
+def converge_open(converge):
+    """Every task the final check left short, for "Left for you" (the card caps its list; the text shows all)."""
     words = dict(CONVERGE_WORDS)
-    short = [row for row in (converge or {}).get("rows", []) if row["result"] != "met"]
-    items = ["Task {} {}: {}".format(row["task"], words[row["result"]], row["done_when"] or "see the build log")
-             for row in short[:limit]]
-    if len(short) > limit:
-        items.append("{} more not fully met: see the build log's Converge table.".format(len(short) - limit))
-    return items
+    return ["Task {} {}: {}".format(row["task"], words[row["result"]], row["done_when"] or "see the build log")
+            for row in (converge or {}).get("rows", []) if row["result"] != "met"]
 
 
 def closing_of(snap, run_path, usage, check_text, attention):
@@ -1025,8 +1022,12 @@ def closing_widget(status, preview=False):
     out.append('<div class="tiles"><div class="tile"><p class="muted">Spend</p><p>{}</p></div>'
                '<div class="tile"><p class="muted">Agent runs</p><p>{}</p></div></div>'.format(
                    esc(closing["spend"]), esc(closing["agent_runs"])))
+    left = closing["left_for_you"]
+    if len(left) > LEFT_SHOWN:          # keep the card small; the last item (rulings) always shows
+        left = left[:LEFT_SHOWN - 2] + ["{} more: council status lists them all.".format(len(left) - LEFT_SHOWN + 1),
+                                        left[-1]]
     out.append('<div class="box neutral"><p style="font-weight:500">Left for you</p><ul>{}</ul></div>'.format(
-        "".join("<li>{}</li>".format(esc(item)) for item in closing["left_for_you"])))
+        "".join("<li>{}</li>".format(esc(item)) for item in left)))
     out.append('<p class="muted" style="margin-top:12px">Snapshot {} (<span id="sc-age">{}</span>)</p>'.format(
         esc(clock(now, now)), "at " + esc(clock(now, now))))
     if not preview:

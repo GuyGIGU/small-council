@@ -1525,6 +1525,16 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
           "met)', the real 2026-10-02 log) counts as met after a fix, like an arrow does",
           after_form.get("verification") == "Final check: all 3 tasks met (2 after a fix the check asked for)." and
           (after_form.get("converge") or {}).get("fixed_after") == 2, after_form)
+    write(root / ".council" / "logs" / "many.md", "# Log\n\n## Converge\n"
+          "| Task | Done when | Result | Evidence | Proof |\n|---|---|---|---|---|\n"
+          + "".join("| {0} | need {0} | not met | x | x |\n".format(n) for n in range(1, 16)))
+    many = build_closing(".council/logs/many.md")
+    many_card, many_text = status.widget(many), status.text(many)
+    check("closing card, build: every task the final check left short is listed in the text; the card keeps its "
+          "size rule and says how many more",
+          all("- Task {0} not met: need {0}\n".format(n) in many_text + "\n" for n in range(1, 16)) and
+          many_card.count("<li>Task ") < 15 and "more: council status lists them all." in many_card and
+          "Rulings and next steps" in many_card and len(many_card) < 16384, (many_text, many_card[-1200:]))
     review = make_run(root, "review", status_value="complete", phase="learn",
                       extra_state="closed: {}\n".format(local(20)))
     write(review / "verify-1.md", "# Verification\n")
