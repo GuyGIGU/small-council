@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- A build run's closing card no longer says "Claim index out of date; verifier counts unknown": a build checks tasks, not claims. It reads the build log's final check instead ("Final check: 13 of 15 tasks met; 2 partly met") and lists each task left short under "Left for you".
+- "What you asked" on the closing card ends on a whole word, then "…", instead of mid-word.
+- `council tui` draws a build's before-check and a review fix's regress-check that failed first as "failed as planned", not with the failure mark.
+
+### Changed
+
+- Only review, plan and research runs (or a run with no recorded mode) expect a claim index, as the helper's close already ruled; a post-game's card now says "No claim verdicts recorded." instead of "out of date".
+
 ## [0.20.0] — 2026-10-03
 
 **TL;DR:** the council acts on the approval and instructions you already gave instead of asking
