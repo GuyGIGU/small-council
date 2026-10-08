@@ -143,8 +143,8 @@ live at a legacy path; the config's Memory section says where.
   which files exist; mark the rest `council seat <slug> failed note="interrupted"` and re-dispatch
   each once. A seat noted `round 2` gets a fresh round-2 worker (war-room.md), never a round-1
   re-dispatch.
-- A run the user doesn't want resumed: `council run close --status abandoned`. One they paused:
-  `--status paused`; `council run resume` brings it back.
+- **Handing work to a new session:** the note lists each open hazard under "Ask fix-now/later before
+  any commit or PR", and says to open it in the main checkout, never an app-made worktree.
 
 ## Talking to the user
 

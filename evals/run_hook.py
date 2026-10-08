@@ -1115,7 +1115,7 @@ def turn_end(tmp):
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: a seat only queued is no agent at work — the wait is recorded", code == 2 and waiting() != "",
           said(code, out, err))
-    council(te, "state", "phase=assign", session="sA")
+    council(te, "state", "phase=prepare", session="sA")
     council(te, "seat", "w1", "done", "agent=a1", "tokens=20000", session="sA")
     code, out, err, took = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: the driving session stops with no seat working — the wait is recorded, and the Chair is sent "
@@ -1129,7 +1129,7 @@ def turn_end(tmp):
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: the next turn end of the same wait says nothing — never twice for one wait",
           code == 0 and not out and not err, said(code, out, err))
-    council(te, "state", "phase=prepare", session="sA")
+    council(te, "state", "phase=assign", session="sA")
     check("turn end: the next helper action (a stage change) ends the wait", waiting() == "", waiting())
     council(te, "state", "waiting=Ship the plan as it is, or cut task 3?", session="sA")
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)

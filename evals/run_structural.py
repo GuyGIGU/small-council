@@ -272,6 +272,13 @@ check("08-challenge: one verify-<n>.md per verifier", "verify-<n>.md" in doctrin
 check("10-learn: closes the run", "council run close" in doctrine["10-learn.md"])
 check("10-learn: the Chair audits its closed run", "council run audit --run <folder>" in doctrine["10-learn.md"])
 check("10-learn: a paused run comes back with council run resume", "council run resume" in doctrine["10-learn.md"])
+check("10-learn: 'stop for tonight' mid-run closes the run paused, never complete (Guy's ruling, 2026-10-08)",
+      '"stop for tonight"' in doctrine["10-learn.md"] and "`--status paused`" in doctrine["10-learn.md"])
+check("10-learn: the close runs the audit itself, and the Chair tells the user each FAIL",
+      "prints each FAIL of `council run audit --run <folder>`" in doctrine["10-learn.md"]
+      and "Tell the user each FAIL line" in doctrine["10-learn.md"] and "close_audit" in cli and "--at-close" in cli)
+check("kernel: a handoff to a new session lists open hazards before any commit or PR, and opens in the main checkout",
+      'under "Ask fix-now/later before\n  any commit or PR"' in core and "never an app-made worktree" in core)
 check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
 check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])
 check("06-collect: checks a war room's round-2 files", "debate.md" in doctrine["06-collect.md"])
@@ -373,6 +380,8 @@ for label, text, needles in [
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
                          "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input",
                          "NOTHING WAS CHECKED", "## Shortcuts and concessions", "Shortcuts I took:", "Not proved:",
+                         "Left open:", "No commit, push or PR question while anything is left open", "data-loss hazard defaults to fix now",
+                         "left on the user's ruling",
                          "Checked by machine:", "Works?:", "guardrails.md", "council check", "gates/baseline/",
                          "older Gates layout"]),
     ("research", research, ["scout", "Strength:"]),

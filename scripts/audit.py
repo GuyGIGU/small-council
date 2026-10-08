@@ -32,6 +32,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 PASS, WARN, FAIL = "pass", "warn", "FAIL"
+LATER = "later"                                   # at close: an item that can only happen after it
 MAX_FILE = 64 * 1024 * 1024
 STAGES = ("convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn")
 RANK = dict((stage, n) for n, stage in enumerate(STAGES))
@@ -189,10 +190,13 @@ def stages(run, say):
     back = ["%s back to %s" % (a, b) for a, b in zip(path, path[1:]) if RANK.get(b, 99) < RANK.get(a, -1)]
     unknown = [s for s in path if s not in RANK] if run.mode in MODES else []    # setup names its own phases
     shown = " > ".join(path) or "none"
+    said = [details(e.get("detail")) for e in run.of_type("run.phase_changed")]   # council state phase=... skip="<why>"
+    said = "".join("; %s skipped on purpose: %s" % (d["skipped"].replace(",", ", "), d.get("reason", "?")) for d in said if d.get("skipped"))
     if missing:
-        say(FAIL, label, "%s; never entered: %s%s" % (shown, ", ".join(missing), why))
-    elif back or unknown:
-        say(WARN, label, "%s; %s" % (shown, "; ".join(["went " + b for b in back] + ["not a stage: " + u for u in unknown])))
+        say(FAIL, label, "%s; never entered: %s%s%s" % (shown, ", ".join(missing), why, said))
+    elif back or unknown or said:
+        say(WARN, label, "%s; %s" % (shown, "; ".join(["went " + b for b in back] + ["not a stage: " + u for u in unknown]
+                                                     + ([said[2:]] if said else []))))
     else:
         say(PASS, label, shown)
 
@@ -337,6 +341,9 @@ def claim_index(run, say):
         return
     label = "Claim index"
     index = run.folder / "claims.jsonl"
+    if run.status in ("paused", "abandoned") and not index.is_file():   # built after Challenge: a pause comes before
+        say(PASS, label, "not due: the run is %s" % run.status)
+        return
     if not index.is_file():
         say(FAIL, label, "missing; build it: council evidence build --run %s, then evidence check" % run.name)
         return
@@ -850,6 +857,7 @@ def main():
     parser.add_argument("--run", required=True, type=Path)
     parser.add_argument("--transcript", type=Path, help="the Claude Code session .jsonl that drove the run")
     parser.add_argument("--no-transcript", action="store_true", help="read the run's records only")
+    parser.add_argument("--at-close", action="store_true", help="council run close's own audit: the closing card comes after")
     args = parser.parse_args()
     folder = args.run
     if not folder.is_dir() or not (folder / "session-state.md").is_file():
@@ -876,6 +884,9 @@ def main():
         except OSError as exc:
             print("audit: cannot read the transcript: {}".format(exc), file=sys.stderr)
             return 2
+    if args.at_close:                     # run by council run close: the card it asks for comes after it
+        items[:] = [(LATER, label, "not checked yet: it follows this close; council run audit --run %s checks it" % run.name)
+                    if label == "Closing card" else (verdict, label, words) for verdict, label, words in items]
     print("Run audit: %s (%s, %s). Read-only: nothing was written." % (run.name, run.mode or "no mode", run.status or "no status"))
     if found is not None:
         print("Transcript: %s (found from the run's session id)" % found)
@@ -890,7 +901,9 @@ def main():
         print("\nNo transcript given: pass --transcript <session .jsonl> to check what the Chair showed and ran%s."
               % (" (this run's session: %s)" % field(run.state, "session") if field(run.state, "session") else ""))
     counts = dict((v, sum(1 for item in items if item[0] == v)) for v in (FAIL, WARN, PASS))
-    print("\n%d failed, %d warning(s), %d passed" % (counts[FAIL], counts[WARN], counts[PASS]))
+    later = sum(1 for item in items if item[0] == LATER)
+    print("\n%d failed, %d warning(s), %d passed%s" % (counts[FAIL], counts[WARN], counts[PASS],
+                                                      ", %d not checked yet" % later if later else ""))
     return 1 if counts[FAIL] else 0
 
 

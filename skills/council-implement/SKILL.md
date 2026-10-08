@@ -194,7 +194,7 @@ Notes: <judgment calls, watchpoints hit, conventions followed — omit if none>
 
 It closes with these sections:
 - **Watchpoints addressed**
-- **Pre-existing issues** (fixed or left)
+- **Pre-existing issues** (fixed, or left on the user's ruling — never yours)
 - **Follow-ups**
 - **`## Shortcuts and concessions`** — required, never omitted. One line per shortcut:
   `- <date> — <what I did instead> — <path> — <why> — <what undoing it would take>`, or the single
@@ -227,7 +227,7 @@ met, with evidence — written into the log's `## Converge` table.
 
 ## At Deliver — the receipt
 
-The same six lines after every build, in this order, whatever happened. The shape never changes, so
+The same seven lines after every build, in this order, whatever happened. The shape never changes, so
 after three builds the user reads it at a glance and notices the moment a line does:
 
 ```
@@ -236,6 +236,7 @@ Works?: <what proved it — "ran <command> and <what happened>", or honestly "no
 Checked by machine: <the gates' verdict line, baseline → now> | <the helper's own NOTHING WAS CHECKED line, quoted> [· <the standing red-baseline clause>]
 Shortcuts I took: <one line each> | none
 Not proved: <what nobody actually checked> | nothing
+Left open: <each pre-existing hazard, follow-up, verifier note not taken, known hazard from a handoff> | nothing
 Cost: helpers ~<k>k tokens across <n> agents; Chair usage <actual total or "unavailable"> · <the proof line from council check> · log: <path>
 ```
 
@@ -245,7 +246,7 @@ is not counted as built: "5 of 6 tasks · 1 partly met: exports stop at 5,000 ro
 by the repair limit is **blocked**, not merely partly met, even if some code works. A red mandatory
 gate or known regression cannot be hidden behind a clean count. `Cost:` labels helper-only usage
 as such; never imply that it includes the Chair or the whole session when those figures are not
-available. **Never omit the last three.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
+available. **Never omit the last four.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
 these — not a vibe: a hardcoded value, a skipped case, a swallowed error, a loosened or disabled
 check, a test that asserts less than the behaviour, a TODO left behind, or a fix whose only proof was
 a throwaway command. Every one also goes in the log's `## Shortcuts and concessions`.
@@ -256,6 +257,11 @@ proves itself by the gate going red on a deliberate violation and green once it'
 doesn't belong on the shortcut line.
 
 Then the numbered rulings and memory proposals, as always.
+
+**No commit, push or PR question while anything is left open.** First offer each `Left open:` item as
+*fix now* or *later* — a data-loss hazard defaults to fix now — and wait: "later" is the user's ruling,
+never yours. Ask the commit, push or PR question last and on its own, once the last verifier (a
+post-game's too) is back — never in the same message as a fix question.
 
 File the request (`council ask save`). Then **offer a post-game when the log shows one is worthwhile**
 — at least one of:

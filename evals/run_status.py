@@ -44,6 +44,9 @@ def check(name, good, detail=""):
     checks.append((name, bool(good), detail))
 
 
+SKIP = "skip=this test is about what comes after Deliver"     # a run closes complete only once it came through Deliver
+
+
 def council(repo, *args, timeout=90):
     env = os.environ.copy()
     for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID", "COUNCIL_ASCII"):
@@ -999,6 +1002,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               and not any("show the user" in said[k] for k in ("queued", "second", "done", "again")), said)
         council(nudged, "seat", "a", "done", "tokens=6000")
         council(nudged, "seat", "b", "done", "tokens=7000")
+        council(nudged, "state", "phase=deliver", SKIP)
         code, out, err = council(nudged, "run", "close")
         close_line = [x for x in err.splitlines() if "closing card" in x]
         check("status reminder: a close that succeeds tells the Chair to show the closing card, and its commands name "
@@ -1132,6 +1136,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("correct: an exact, evidenced figure is laid over the row — seats.tsv is untouched, the trail kept",
               code == 0 and read(run / "seats.tsv") == rows_before and '"field":"tokens","from":"","to":41234' in read(run / "corrections.jsonl")
               and "seat.usage_corrected" in read(run / "events.tsv"), out + err)
+        council(repo, "state", "phase=deliver", SKIP)
         code, out, err = council(repo, "run", "close")
         state = read(run / "session-state.md")
         check("close: the cost line is a total only when every agent run's usage is known — here, with the correction, it is",
@@ -1151,6 +1156,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("older record: the header gains the new column, the old row keeps its old shape, the new row is exact",
               lines[0].endswith("\tagents\treported") and lines[1].count("\t") == 6 and lines[2].split("\t")[6:8] == ["1", "1"],
               lines)
+        plan(old, ("hunt", "beck", "verify-1"))                   # Deliver needs a valid plan: an independent one names its verifier
+        council(repo, "state", "phase=deliver", SKIP, "--run", old.name)
         code, out, err = council(repo, "run", "close", "--run", old.name)
         check("older record: its cost line says tokens aren't reliably recorded, and the agent count is a lower bound",
               "tokens not reliably recorded (1 older row(s)) · at least 2 agent run(s)" in read(old / "session-state.md"),
@@ -1166,6 +1173,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         red_run = Path(out.strip())
         council(red, "gate", "tests", "--", "true")
         council(red, "gate", "lint", "--", "false")
+        plan(red_run, ("verify-1",))
+        council(red, "state", "phase=deliver", SKIP)
         code, out, err = council(red, "run", "close")
         red_text = status.text(reading(red_run))
         red_checks = [line for line in red_text.splitlines() if line.startswith("Checks:")]

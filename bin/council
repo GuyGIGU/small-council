@@ -926,6 +926,49 @@ stage_name_ok() {
   case "$1" in ''|-*|*[!abcdefghijklmnopqrstuvwxyz-]*) return 1 ;; esac
 }
 
+# A stage's place in the order. A build stands where council-implement's build loop does (stages 3-7),
+# as scripts/audit.py ranks it; a mode's own phase names rank 0.
+stage_rank() {
+  case "$1" in
+    convene) printf 1 ;; prepare) printf 2 ;; assign) printf 3 ;; brief) printf 4 ;; work|build) printf 5 ;;
+    collect) printf 6 ;; judge) printf 7 ;; challenge) printf 8 ;; deliver) printf 9 ;; learn) printf 10 ;; *) printf 0 ;;
+  esac
+}
+
+# The stages a run must enter, in order, as scripts/audit.py reads them: the build loop stands in for 3-7;
+# a post-game, a Solo run and a run whose plan selects no worker seat skip 3-6. None for council-init and
+# test-architect (their own phases) or context-core (no fixed path).
+required_stages() {
+  case "$(field mode "$1/session-state.md")" in
+    council-implement) printf '%s' 'convene prepare build challenge deliver learn' ;;
+    council-postgame)  printf '%s' 'convene prepare judge challenge deliver learn' ;;
+    council-review|council-plan|council-research)
+      if [ -f "$1/run-plan.tsv" ] && awk -F'\t' '
+           { sub(/\r$/, ""); gsub(/^[ ]+|[ ]+$/, "", $4) }
+           $1 == "run" && $2 == "run" && $3 == "size" { size = $4 }
+           $1 == "seat" && $3 == "role" && $4 == "worker" { worker[$2] = 1 }
+           $1 == "seat" && $3 == "disposition" && $4 == "selected" { picked[$2] = 1 }
+           END { if (size != "solo") for (s in worker) if (s in picked) found = 1; exit !found }' "$1/run-plan.tsv"; then
+        printf '%s' 'convene prepare assign brief work collect judge challenge deliver learn'
+      else
+        printf '%s' 'convene prepare judge challenge deliver learn'
+      fi ;;
+  esac
+}
+
+# The stages this run must enter that a move from stage $2 to stage $3 passes over, comma-separated;
+# nothing for a step back or a mode with its own phases.
+stages_skipped() {
+  local from to s r out=""
+  from="$(stage_rank "$2")"; to="$(stage_rank "$3")"
+  [ "$from" -gt 0 ] && [ "$to" -gt "$from" ] || return 0
+  for s in $(required_stages "$1"); do
+    r="$(stage_rank "$s")"
+    if [ "$r" -gt "$from" ] && [ "$r" -lt "$to" ]; then out="${out:+$out,}$s"; fi
+  done
+  printf '%s' "$out"
+}
+
 # `- notifications: off` in the project's config silences the owner's phone alerts (as status.py reads it).
 notifications_off() {
   [ -f "$1/council.config.md" ] || return 1
@@ -974,6 +1017,7 @@ wait_over() {
 
 cmd_state() {
   local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting mode lock='' wkey='' gave_next=''
+  local to_phase='' skip='' gave_skip='' skipped=''
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
@@ -989,15 +1033,29 @@ cmd_state() {
         [ "${CLOSING:-}" = 1 ] || die "closed= is the close's own stamp — close the run with: council run close" ;;
       decision=*)
         case "${kv#decision=}" in *[![:space:]]*) ;; *) die "decision= takes the user's words — their ruling or go-ahead, as they said it" ;; esac ;;
+      skip=*)
+        case "${kv#skip=}" in *[![:space:]]*) ;; *) die "skip= takes why a stage is skipped, in words: council state phase=<stage> skip=\"<why>\"" ;; esac
+        gave_skip=1; skip="$(printf '%s' "${kv#skip=}" | tr ';\r\n' ',  ')" ;;
       phase=*)
         stage_name_ok "${kv#phase=}" "$mode" \
-          || die "phase=${kv#phase=} is not a stage — use one of convene, prepare, assign, brief, work, collect, judge, challenge, deliver, learn, or build in a build (lower case)" ;;
+          || die "phase=${kv#phase=} is not a stage — use one of convene, prepare, assign, brief, work, collect, judge, challenge, deliver, learn, or build in a build (lower case)"
+        to_phase="${kv#phase=}" ;;
     esac
     case "$kv" in
       phase=brief|phase=build|phase=work|phase=collect|phase=judge|phase=challenge|phase=deliver|phase=learn)
         require_run_plan "$run" "advance to ${kv#phase=}" ;;
     esac
   done
+  # A step forward past a stage this run must enter is refused unless skip= says why, and the reason goes
+  # on the phase event: two plan runs jumped past Assign and Brief, and a fix closed from Challenge.
+  [ -n "$to_phase" ] || [ -z "$gave_skip" ] || die "skip= goes with the phase= it explains: council state phase=<stage> skip=\"<why>\""
+  if [ -n "$to_phase" ]; then
+    skipped="$(stages_skipped "$run" "$(field phase "$st")" "$to_phase")"
+    if [ -n "$skipped" ] && [ -z "$gave_skip" ]; then
+      die "phase=$to_phase would skip $(printf '%s' "$skipped" | sed 's/,/, /g'), which a $mode run enters in turn — next: council state phase=${skipped%%,*}. To skip on purpose, say why: council state phase=$to_phase skip=\"<why>\""
+    fi
+    [ -n "$skipped" ] || [ -z "$gave_skip" ] || die "phase=$to_phase skips no stage this run must enter, so there is nothing for skip= to explain — drop it"
+  fi
   # Several commands rewrite this file (state, index, ask save, close, resume); two at once would each
   # write over the other's change. The lock also keeps the events below in the order of the writes.
   lock="$st.lock"; event_lock "$lock" || die "state lock unavailable: $lock"
@@ -1026,6 +1084,7 @@ cmd_state() {
     || { rm -f "$tmp"; event_unlock "$lock" || :; die "cannot update $st"; }
   for kv in ${1+"$@"}; do
     key="${kv%%=*}"
+    [ "$key" != skip ] || continue                 # a skip's reason goes on the phase event, not the header
     if [ "$key" = decision ]; then                 # the user's words, redacted, under Decisions so far, as a
                                                    # JSON string ("…" and \ escaped), so a reader gets them back
       { printf '%s' "${kv#decision=}" | tr '\t\r\n\013\014' '     '; printf '\n'; } > "$tmp.said" \
@@ -1082,7 +1141,7 @@ cmd_state() {
   new_phase="$(field phase "$st")"; new_status="$(field status "$st")"
   if [ "${EVENTS_LOST:-}" = 1 ]; then :              # close of a run whose stream is lost: no events to add
   elif [ "$old_phase" != "$new_phase" ]; then
-    event_append "$run" run.phase_changed run "$new_phase" "from=$old_phase" \
+    event_append "$run" run.phase_changed run "$new_phase" "from=$old_phase${skipped:+;skipped=$skipped;reason=$skip}" \
       || { event_unlock "$lock" || :; die "state changed, but the phase event could not be recorded"; }
   fi
   if [ "${EVENTS_LOST:-}" = 1 ]; then :
@@ -1967,7 +2026,9 @@ RUNS
 
 # What a run closed as complete still lacks, each said on stderr in one plain line — it warns, never
 # refuses: a real run closed "complete" with five stages never entered, and the close line was all the
-# owner saw. Prints the short codes (phase,check,deliverable,verdicts) for the close event.
+# owner saw. (Since then a run with an event stream is refused before Deliver — undelivered — so the
+# phase line is left for runs from before the stream.) Prints the short codes (phase,check,deliverable,
+# verdicts) for the close event.
 close_warnings() {
   local run="$1" mode phase red level f verdicts=0 codes=""
   mode="$(field mode "$run/session-state.md")"
@@ -2029,8 +2090,64 @@ close_claims_note() {
   [ -z "$stale" ] || printf 'council: the claim index is missing or out of date — council evidence build --run %s, then evidence check\n' "${run##*/}" >&2
 }
 
+# Why a run may not close as complete yet, or nothing (exit 1): "never <phase>" when it never entered
+# Deliver (a fix closed "complete" from Challenge, 68 s after the user paused it), "back <stage>" when
+# it went back to an earlier stage after Deliver and never came through Deliver again (a build went back
+# to build after its receipt, and a PR went out over a hazard no receipt named). Read from the event
+# stream, else the state's phase. A mode with no Deliver stage, or a run from before the event stream,
+# is never held here: its close warns instead (close_warnings).
+undelivered() {
+  local st="$1/session-state.md" phase ev=''
+  case "$(field mode "$st")" in council-review|council-plan|council-implement|council-research|council-postgame) ;; *) return 1 ;; esac
+  [ -n "$(field events-schema "$st")" ] || return 1
+  phase="$(field phase "$st")"
+  [ ! -f "$1/events.tsv" ] || ev="$(awk -F'\t' '
+    BEGIN { n = split("convene prepare assign brief work build collect judge challenge", e, " "); for (i = 1; i <= n; i++) early[e[i]] = 1 }
+    { sub(/\r$/, "") }
+    NR > 1 && $4 == "run.phase_changed" { if ($6 == "deliver") { seen = 1; back = "" } else if (seen && back == "" && ($6 in early)) back = $6 }
+    END { if (!seen) print "never"; else if (back != "") print "back " back; else print "delivered" }' "$1/events.tsv" 2>/dev/null)"
+  case "$ev" in
+    delivered) return 1 ;;
+    back\ *) printf '%s' "$ev"; return 0 ;;
+    never) printf 'never %s' "${phase:-unknown}"; return 0 ;;
+  esac
+  case "$phase" in deliver|learn) return 1 ;; esac       # no stream to read: the state's phase alone
+  printf 'never %s' "${phase:-unknown}"
+}
+
+# The phase= steps from where a run is to Deliver, for the close's refusal: "phase=challenge, then phase=deliver".
+deliver_route() {
+  local s out=""
+  for s in $(stages_skipped "$1" "$(field phase "$1/session-state.md")" deliver | tr ',' ' '); do out="${out}phase=$s, then "; done
+  printf '%sphase=deliver' "$out"
+}
+
+# The close reads the run back against the method itself (scripts/audit.py, as council run audit does):
+# five runs closed with no audit, and the one audit's four FAILs never reached the user. Every FAIL line is
+# printed whole, on stdout with the close; the closing card, which can't have been shown yet, is left to a
+# later council run audit. Without Python 3.8+ there is no audit (10-learn.md says what to do).
+close_audit() {
+  local run="$1" py out rc=0
+  py="$(impact_python)" || return 0
+  out="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/audit.py" --run "$run" --at-close 2>&1)" || rc=$?
+  if [ "$rc" -gt 1 ]; then
+    say "audit: could not read the run back ($(printf '%s\n' "$out" | awk 'NF { l = $0 } END { print l }')) — council run audit --run ${run##*/}"
+    return 0
+  fi
+  printf '%s\n' "$out" | NAME="${run##*/}" awk '
+    /^[0-9]+ failed, / { total = $0 }
+    /^  FAIL  / { fail[++n] = $0 }
+    END {
+      if (total == "") total = "no verdict line"
+      if (n) printf "audit: %s — tell the user each FAIL below, in plain words; every item: council run audit --run %s\n", total, ENVIRON["NAME"]
+      else printf "audit: %s — every item: council run audit --run %s\n", total, ENVIRON["NAME"]
+      for (i = 1; i <= n; i++) print fail[i]
+    }'
+}
+
 cmd_run_close() {
   local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" share whose follow="" close_lock="" said=""
+  local held=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -2041,8 +2158,15 @@ cmd_run_close() {
   event_lock "$close_lock" || die "close lock unavailable: $close_lock — another close of this run is still going; if none is, remove that folder and close again"
   lost="$(event_ready "$run")" && lost="" || {
     [ $? -eq 2 ] || events_writable "$run"       # a torn line: refused, with the repair named
-    printf 'council: the event stream is lost (%s): the run closes, but its events were not recorded\n' "$lost" >&2
   }
+  if [ "$status" = complete ] && ! run_closed "$run" && held="$(undelivered "$run")"; then
+    event_unlock "$close_lock" || :
+    case "$held" in
+      back\ *) die "${run##*/} can't close as complete: it went back to ${held#back } after Deliver and never came through Deliver again, so the user has no receipt for what changed since. Re-enter Deliver — council state $(deliver_route "$run") --run ${run##*/} — show the user the receipt (anything left open with it), then close. If the user paused the work, close it paused: council run close --status paused --run ${run##*/}" ;;
+      *) die "${run##*/} can't close as complete: it never reached Deliver (it is at ${held#never }). If the user paused the work — \"stop for tonight\" too — close it paused: council run close --status paused --run ${run##*/}; if it stopped for good: --status abandoned. Otherwise go on through Deliver first" ;;
+    esac
+  fi
+  [ -z "$lost" ] || printf 'council: the event stream is lost (%s): the run closes, but its events were not recorded\n' "$lost" >&2
   old_status="$(field status "$run/session-state.md")"; old_closed="$(field closed "$run/session-state.md")"
   if run_closed "$run"; then
     if [ "$old_status:$status" = complete:abandoned ] && stopped_short "$run"; then
@@ -2138,6 +2262,7 @@ cmd_run_close() {
     FOLLOW="$follow" status_nudge "$run" close
   fi
   event_unlock "$close_lock" || :                # once: a second release could free a lock another close took since
+  if [ "$old_status" != "$status" ] || [ -z "$old_closed" ]; then close_audit "$run"; fi    # a real close, read back
 }
 
 cmd_run_status() {
@@ -7324,7 +7449,9 @@ council — the Small Council's helper (bash + git)
                                          open a run for a mode, e.g. council-review; prints its folder
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
   council run close [--status complete|abandoned|paused]
-                                         close the run; then a reminder to show the user its closing card
+                                         close the run (complete only once it came through Deliver);
+                                         then its audit's FAIL lines and a reminder to show the user
+                                         its closing card
   council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
                                          in progress again, this session recorded as its driver
   council run plan [check|show]          validate the run plan (Full size only once a decision of the
@@ -7336,7 +7463,8 @@ council — the Small Council's helper (bash + git)
                                          showed and ran — pass, warn or FAIL per item, exit 1 on a
                                          FAIL; reads only (optional Python 3.8+)
   council state [key=value …]            show or update the run's session-state header; phase= takes a
-                                         stage name and records its next step; waiting="<question>" prints
+                                         stage name and records its next step (skip="<why>" to pass over
+                                         a stage the mode must enter); waiting="<question>" prints
                                          the alert reminder; decision="<the user's words>" goes under
                                          Decisions so far
   council seat <slug> <state> [agent=ID] [tokens=N] [agents=N] [note=TEXT]
