@@ -66,11 +66,11 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 ## The helper
 
-`council` does the bookkeeping; it is on PATH while the plugin is enabled. **Call it as a plain
-`council <command>`** — never through a shell variable or alias, and never as
-`bash <path>/bin/council` while `command -v council` succeeds: permission rules match the command
-text, so any other form asks the user every time. Only if it isn't on PATH, write
-`bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
+`council` does the bookkeeping. **Call it as a plain `council <command>`** — never through a shell
+variable or alias, and never as `bash <path>/bin/council` while it is on PATH: permission rules
+match the command text, so any other form asks the user every time. If `command -v council` fails,
+write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` in full each time. Have the user restart
+only when `council run open` refuses and says to.
 
 Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`; the stage doctrine
 says when to run each command. Rules for every run:
@@ -80,7 +80,8 @@ says when to run each command. Rules for every run:
   beside `brief.md`, never replacing it.
 - `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
   It needs optional Python 3.8+. `council repair record` leaves a bounded trail in `repairs.jsonl`.
-- Run checks on their own; never hide refusals through `| tail`/`| head` (Challenge, step 5).
+- Never pipe a council command through head, tail or grep (a hook
+  refuses it); redirect it to a file and read that.
   `council gate --all` exit 4 means NOTHING WAS CHECKED: never report that as a pass. A single
   gate's exit 4 is that command's own exit code.
 
@@ -141,14 +142,14 @@ live at a legacy path; the config's Memory section says where.
   which files exist; mark the rest `council seat <slug> failed note="interrupted"` and re-dispatch
   each once. A seat noted `round 2` gets a fresh round-2 worker (war-room.md), never a round-1
   re-dispatch.
-- A run the user doesn't want resumed: `council run close --status abandoned`. One they paused:
-  `--status paused`; `council run resume` brings it back.
+- **Handing work on:** the note lists open hazards under "Ask fix-now/later before
+  any commit or PR" and says: the main checkout, never an app-made worktree.
 
 ## Talking to the user
 
 Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
 
-**The run's status.** Show it twice — at the run's first dispatch and after `council run close` —
+**The run's status.** Show it twice — at the run's first dispatch (once per run) and after `council run close` —
 as the helper's reminder then says: `council status --widget` to a `show_widget` tool (deferred: search
 for it first; call its `read_me` once), else relay `council status`. Otherwise only when the user
 asks — never a card per progress line. `council pet` opens the desktop pet, only when the user asks.

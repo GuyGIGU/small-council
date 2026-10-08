@@ -11,7 +11,7 @@ The seats work in parallel, each in its own window. You dispatch, then wait.
   Agent call's per-invocation `model` parameter when `- seat models: on` is configured. Omit that
   parameter for `inherit` or when the plan has no model row. If dispatching through Workflow,
   pass the same value to its `agent()` call. Never override the Chair or verifier: the run plan
-  check refuses it, but dispatch itself isn't gated, so this rule is yours to keep.
+  check refuses it, but the `model` parameter isn't gated, so this rule is yours.
   A configured force-subagent-model environment setting may override the plan; report that if known.
 - **Never pass `name`** on a council Agent call — with agent teams switched on, a named call becomes
   a teammate instead of a worker.
@@ -32,6 +32,8 @@ Write <abs run>/seats/<slug>.md, then return one line.
   pack on disk; existence alone does not establish freshness. It does not override the brief's
   objective, slice, hard constraints or reference docs.
   With no pack, dispatch still uses the complete brief. Do not imply that omitted paths are safe.
+
+- The agent gate refuses a council agent with no open run or plan row.
 
 - **Right after dispatching, two steps, in order:**
   1. **Record each worker:** `council seat <slug> running agent=<agentId>` — the id the Agent or

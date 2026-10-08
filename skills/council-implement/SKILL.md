@@ -98,7 +98,9 @@ the converge pass starts, `council state phase=challenge`.
 2. **Before-evidence — choose proof for the task before editing.** Read
    `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
    contract: change for a fix or new behaviour, preserve only for unchanged behaviour. Record the
-   chosen mode and invariants in the log, then run `council gate before-<n>` as it specifies.
+   chosen mode and invariants in the log. Read a new check or probe back and compile it with the
+   cheapest check, then run `council gate before-<n>` as it specifies, one gate per Bash call. A red
+   from a broken check is no proof: `council gate before-<n> --invalid "<why>"`, fix it, run it again.
    Label support with `references/evidence-model.md`; cite saved outputs for `REPRODUCED`.
 3. **Plan the change:** files, minimal diff, governing principle, effects on later tasks and watchpoints.
 4. **Implement.**
@@ -122,7 +124,8 @@ the converge pass starts, `council state phase=challenge`.
      stays with the builder; the second calls for one independent read-only diagnosis if this task
      has not used that worker already; otherwise stop and report. The third failed execution stops
      product-code mutation for this task, and the gate is refused until the user's go
-     (`council repair allow <gate> --user-said "…"`). Jump to blocked-task logging and the receipt;
+     (`council repair allow <gate> --user-said "…"`). Jump to blocked-task logging and the receipt
+     (`council state phase=deliver skip="blocked: task <n>"`);
      do not attempt steps 6–7 as a fix path, start another gate trail, or commit it as complete.
      Preserve the diff and gate output; never silently revert unrelated work. Read-only review
      cannot reopen repair. When the build stops blocked, run `council status --line`; if it prints
@@ -144,14 +147,17 @@ the converge pass starts, `council state phase=challenge`.
    with `council seat verify-<n> …`; one stopped at its turn limit is resumed with SendMessage
    ("write your file now"), never re-dispatched. Then act on the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
-     `c`), so the first verdict stays on disk.
+     `c`), so the first verdict stays on disk. A fix that would add a task or a new mechanism — a
+     lock, a guard, a file, another re-check round — gets one line to the user first.
    - **A second failed verification** → a **clean-context diagnosis** if this task has not already
      used its one diagnosis worker for a gate failure; otherwise stop and report. The worker is read-only.
      Its dispatch message is its whole brief — the task and its Done-when, both verdict files, the
      diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
      candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it
      (`council run plan check`), then `council seat diagnose-<n> …`. Then one more attempt; still
-     failing → stop and report.
+     failing → stop and report. A third check is refused (by `council seat` and the agent gate) until
+     a `diagnose-…` seat is on record after the second verdict, or the user's go is
+     (`council state decision="…"`).
    - **SCOPE-CREEP** → revert the extra change.
    - **CANNOT VERIFY** → add the missing check, or record why it can't exist.
    - **A finding that turns out to be wrong** → don't "fix" it; log it as refuted, with evidence.
@@ -189,7 +195,7 @@ Notes: <judgment calls, watchpoints hit, conventions followed — omit if none>
 
 It closes with these sections:
 - **Watchpoints addressed**
-- **Pre-existing issues** (fixed or left)
+- **Pre-existing issues** (fixed, or left on the user's ruling — never yours)
 - **Follow-ups**
 - **`## Shortcuts and concessions`** — required, never omitted. One line per shortcut:
   `- <date> — <what I did instead> — <path> — <why> — <what undoing it would take>`, or the single
@@ -214,15 +220,16 @@ met, with evidence — written into the log's `## Converge` table.
 - If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
   reported, never folded into a green receipt. Without Python, audit the log's attempts and
   saved gate outputs by hand.
-- Then `council check`. It checks the saved before/after gates against their declared proof mode
-  (`references/build-proof.md`) and names the saved test when it can. Copy each verdict and its
+- Draft any PR text as `<run>/pr-body.md`, and open the PR from it. Then `council check`. It checks
+  the saved before/after gates against their declared proof mode (`references/build-proof.md`) and
+  names the saved test when it can. Copy each verdict and its
   full note into the `## Converge` table's **Proof** column: `ok` shows a change, `preserved` shows
   the checked invariants held on both versions. Broken proof is fixed or reported; no proof is
   reported as NO PROOF. Passing invariants alone never establish new behaviour.
 
 ## At Deliver — the receipt
 
-The same six lines after every build, in this order, whatever happened. The shape never changes, so
+The same seven lines after every build, in this order, whatever happened. The shape never changes, so
 after three builds the user reads it at a glance and notices the moment a line does:
 
 ```
@@ -231,6 +238,7 @@ Works?: <what proved it — "ran <command> and <what happened>", or honestly "no
 Checked by machine: <the gates' verdict line, baseline → now> | <the helper's own NOTHING WAS CHECKED line, quoted> [· <the standing red-baseline clause>]
 Shortcuts I took: <one line each> | none
 Not proved: <what nobody actually checked> | nothing
+Left open: <each pre-existing hazard, follow-up, verifier note not taken, known hazard from a handoff> | nothing
 Cost: helpers ~<k>k tokens across <n> agents; Chair usage <actual total or "unavailable"> · <the proof line from council check> · log: <path>
 ```
 
@@ -240,7 +248,7 @@ is not counted as built: "5 of 6 tasks · 1 partly met: exports stop at 5,000 ro
 by the repair limit is **blocked**, not merely partly met, even if some code works. A red mandatory
 gate or known regression cannot be hidden behind a clean count. `Cost:` labels helper-only usage
 as such; never imply that it includes the Chair or the whole session when those figures are not
-available. **Never omit the last three.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
+available. **Never omit the last four.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
 these — not a vibe: a hardcoded value, a skipped case, a swallowed error, a loosened or disabled
 check, a test that asserts less than the behaviour, a TODO left behind, or a fix whose only proof was
 a throwaway command. Every one also goes in the log's `## Shortcuts and concessions`.
@@ -251,6 +259,11 @@ proves itself by the gate going red on a deliberate violation and green once it'
 doesn't belong on the shortcut line.
 
 Then the numbered rulings and memory proposals, as always.
+
+**No commit, push or PR question while anything is left open.** First offer each `Left open:` item as
+*fix now* or *later* — a data-loss hazard defaults to fix now — and wait: "later" is the user's ruling,
+never yours. Ask the commit, push or PR question last and on its own, once the last verifier (a
+post-game's too) is back — never in the same message as a fix question.
 
 File the request (`council ask save`). Then **offer a post-game when the log shows one is worthwhile**
 — at least one of:

@@ -18,7 +18,13 @@ SessionStart (hooks/session-start.sh):
   - still finds a legacy run through the old active-run pointer (no status line, CRLF, <mode>-output),
     offers a finished one to close as complete, and never claims an old one after a compaction;
   - finds the MAIN checkout's .council/ from a linked worktree; reports a stale or rewritten map;
-    survives garbage.
+    survives garbage;
+  - warns first when the session's own cwd is a linked worktree and an in-progress run's code is
+    elsewhere — never for a paused run;
+  - marks its session id, council or not, under ~/.cache and $XDG_CACHE_HOME, and `council run open`
+    refuses a session with no mark, saying only what it knows (unless there is no session id, or
+    COUNCIL_ALLOW_NO_HOOKS=1) — never one whose hooks ran: not when the cache folder can't be written,
+    not when the hook's XDG_CACHE_HOME and the Bash tool's differ, not after the bash gate alone ran.
 SubagentStop (hooks/seat-gate.sh):
   - lets a valid worker or verifier file through, including list-style index lines and prose;
   - blocks once (exit 2, reason on stderr) on a missing, malformed, oversized or empty file, an index
@@ -34,7 +40,21 @@ PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and match
     nothing recorded (together, too) meet the stop, and the same agents recorded later count once; a
     run opened before plans and agent limits is never stopped;
   - reads session_id and cwd from the top level only (a Windows cwd with escaped backslashes too), never
-    from text inside another value.
+    from text inside another value;
+  - holds the council's own agents (tool_input's subagent_type) to the record: a council-worker with no
+    open run, an agent for a closed run, a seat the plan doesn't select, a build task's third check — read
+    from the Seat: line or the file the dispatch writes; never an ordinary agent, a Workflow, a verifier
+    outside any run, or a cut-off input; never a re-review or post-game for citing an earlier run's file,
+    nor a display name on the Seat: line.
+Stop (hooks/turn-end.sh): sends the Chair back once while the run's first status card is still due.
+PreToolUse (hooks/bash-gate.sh), fed through hooks.json's own command and matcher:
+  - refuses (exit 2, one line on stderr) a command that pipes the helper into head, tail or grep —
+    `2>&1 |`, `|&`, bash <path>/bin/council, a loop or group piped whole, a variable set to the helper;
+  - lets through a redirect to a file, `| tee`, grep or head over files or other commands, the word
+    council in quotes, a comment, a heredoc or a case pattern, a command over 100 KB, and anything it
+    can't parse;
+  - touches the session's mark before a call that names council, so `council run open` right after it
+    finds one (after /reload-plugins too).
 """
 import argparse
 import json
@@ -54,6 +74,7 @@ GIT = shutil.which("git")
 GIT_ENV = dict(os.environ, GIT_AUTHOR_NAME="eval", GIT_AUTHOR_EMAIL="eval@example.invalid",
                GIT_COMMITTER_NAME="eval", GIT_COMMITTER_EMAIL="eval@example.invalid")
 GIT_ENV.pop("CLAUDE_CODE_SESSION_ID", None)
+GIT_ENV.pop("COUNCIL_ALLOW_NO_HOOKS", None)
 if os.environ.get("COUNCIL_EVAL_BASH"):                  # nested `bash` calls use that bash too
     GIT_ENV["PATH"] = os.path.dirname(BASH) + os.pathsep + GIT_ENV.get("PATH", "")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
@@ -64,8 +85,19 @@ def check(name, ok, detail=""):
     results.append((ok, name, detail))
 
 
-def run_hook(project, source="startup", payload=None, session="eval", raw=False):
-    env = dict(GIT_ENV, CLAUDE_PROJECT_DIR=project, CLAUDE_PLUGIN_ROOT=ROOT)
+def with_env(extra):
+    """GIT_ENV with extra's values set — a None value drops that variable."""
+    env = dict(GIT_ENV)
+    for k, v in (extra or {}).items():
+        if v is None:
+            env.pop(k, None)
+        else:
+            env[k] = v
+    return env
+
+
+def run_hook(project, source="startup", payload=None, session="eval", raw=False, env=None):
+    env = dict(with_env(env), CLAUDE_PROJECT_DIR=project, CLAUDE_PLUGIN_ROOT=ROOT)
     if payload is None:
         payload = json.dumps({"session_id": session, "hook_event_name": "SessionStart", "source": source})
     try:
@@ -80,8 +112,25 @@ def run_hook(project, source="startup", payload=None, session="eval", raw=False)
     return p.returncode, p.stdout
 
 
-def council(cwd, *args, session=""):
-    env = dict(GIT_ENV, CLAUDE_CODE_SESSION_ID=session) if session else GIT_ENV
+def marks():
+    """Where the hooks mark a session whose hooks run (bin/council's session_dirs): under the eval's own
+    XDG_CACHE_HOME (and HOME), set when the blocks start, never the user's cache."""
+    return os.path.join(GIT_ENV["XDG_CACHE_HOME"], "small-council", "sessions")
+
+
+def hooks_ran(session):
+    """As if this session's SessionStart hook had run: council run open refuses a session with no mark."""
+    os.makedirs(marks(), exist_ok=True)
+    open(os.path.join(marks(), session), "w").close()
+
+
+def council(cwd, *args, session="", hooks=True, env=None):
+    """session: run as that Claude Code session, marked as one whose hooks run unless hooks=False."""
+    if session and hooks:
+        hooks_ran(session)
+    env = with_env(env)
+    if session:
+        env["CLAUDE_CODE_SESSION_ID"] = session
     p = subprocess.run([BASH, os.path.join(ROOT, "bin", "council"), *args], cwd=cwd, capture_output=True, text=True,
                        encoding="utf-8", errors="replace", env=env, timeout=120)
     return p.returncode, p.stdout.strip(), p.stderr
@@ -125,6 +174,15 @@ def pre_tool(session="sA", cwd="", tool="Agent", before=None, prompt="Review the
     return json.dumps(fields, separators=(",", ":"))
 
 
+def dispatch_input(session, cwd, subagent, prompt, tool="Agent", before=None):
+    """A PreToolUse input for an Agent call of one subagent type, as Claude Code writes it: compact JSON."""
+    fields = dict(before or {})
+    fields.update({"session_id": session, "transcript_path": "/x/t.jsonl", "cwd": cwd, "permission_mode": "default",
+                   "hook_event_name": "PreToolUse", "tool_name": tool,
+                   "tool_input": {"description": "d", "prompt": prompt, "subagent_type": subagent}})
+    return json.dumps(fields, separators=(",", ":"))
+
+
 def run_agent_gate(command, payload, cwd):
     """hooks.json's PreToolUse command, run with bash -c from cwd; returns (exit code, stdout, stderr, seconds)."""
     t0 = time.time()
@@ -140,10 +198,10 @@ def stop_input(session="sA", cwd="", active=False, message="Which of the two sho
                       separators=(",", ":"))
 
 
-def valid_plan(run, seats=("chair", "w1")):
+def valid_plan(run, seats=("chair", "w1"), mode="council-review"):
     """A complete run-plan v1, so the helper starts the seats a test names."""
     rows = [("kind", "id", "field", "value", "reason"), ("schema", "plan", "version", "1", "test"),
-            ("run", "run", "id", os.path.basename(run), "test"), ("run", "run", "mode", "council-review", "test"),
+            ("run", "run", "id", os.path.basename(run), "test"), ("run", "run", "mode", mode, "test"),
             ("run", "run", "size", "squad", "test"), ("assessment", "run", "risk", "low", "test"),
             ("assessment", "run", "complexity", "low", "test"), ("assessment", "run", "uncertainty", "low", "test"),
             ("budget", "run", "agent-cap", "10", "test"), ("budget", "run", "estimated-tokens", "100000", "test"),
@@ -795,6 +853,379 @@ def memory_file_and_seat_check(tmp):
     check("seat check: a review verifier table the index reads (bold, #2, a | in the evidence, no closing pipe) passes",
           code == 0, err)
 
+@part("main")
+def bash_gate(tmp):
+    # --- PreToolUse pipe stop: the helper's output piped into head, tail or grep is refused. The rule lived
+    # only in prose and was broken 133 times across three sessions, again after every warning ------------
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        pre_groups = json.load(f)["hooks"].get("PreToolUse", [])
+    groups = [g for g in pre_groups if any("hooks/bash-gate.sh" in h.get("command", "") for h in g.get("hooks", []))]
+    cmd = next((h["command"] for g in groups for h in g["hooks"] if "hooks/bash-gate.sh" in h["command"]),
+               "echo 'no bash gate in hooks.json' >&2; exit 1")   # with no gate, no check below can pass
+    matcher = groups[0].get("matcher") if groups else None
+    taken = [n for n in ("Bash", "BashOutput", "PowerShell", "Agent", "Task", "Read") if matcher and re.search(matcher, n)]
+    check("pipe stop: hooks.json runs bash-gate.sh before a Bash call — no other tool — with a timeout of 5 s at most",
+          len(groups) == 1 and taken == ["Bash"] and all(h.get("timeout", 99) <= 5 for h in groups[0]["hooks"]),
+          f"matcher {matcher!r} takes {taken} · {json.dumps(groups)}")
+    here = new_repo(tmp, "pipe-stop")
+
+    def bash_input(command):
+        return json.dumps({"session_id": "sA", "transcript_path": "/x/t.jsonl", "cwd": here, "permission_mode": "default",
+                           "hook_event_name": "PreToolUse", "tool_name": "Bash",
+                           "tool_input": {"command": command, "description": "Check the run"}}, separators=(",", ":"))
+
+    def said(code, out, err):
+        return f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()}"
+
+    for command in ("council run status | tail -20",
+                    "council collect 2>&1 | head -5",
+                    "council gate --all |& tail",
+                    "council doctor | grep -c FAIL",
+                    'bash "/home/u/.claude/plugins/small-council/bin/council" run status 2>&1 | tail -30',
+                    "bash ~/.claude/plugins/small-council/bin/council run status | tail",
+                    "cd app && COUNCIL_RUN=x council run status | head -3",
+                    "for s in hunt beck; do council seat $s done; done 2>&1 | tail -2",
+                    "{ council run status; council doctor; } | head",
+                    "council run status | sort | head",
+                    "x=$(council run status | head -1)",
+                    'C="bash /opt/sc/bin/council"; $C run status | tail',
+                    "council run status\ncouncil doctor | tail",
+                    "case $1 in a|b) council run status ;; esac | head",   # a branch's commands, piped whole
+                    "case $1 in\n  (x) council doctor\nesac 2>&1 | tail"):
+        code, out, err, _ = run_agent_gate(cmd, bash_input(command), here)
+        check(f"pipe stop refuses {command!r} — exit 2, one line on stderr: run it plain, or redirect it to a file",
+              code == 2 and not out and err.count("\n") == 1 and "run council plain" in err and "exit status" in err
+              and "redirect it to a file (council … > out.txt) and read that" in err, said(code, out, err))
+    for command in ("council run status",
+                    "council run status > out.txt",
+                    "council collect > out.txt 2>&1; tail -20 out.txt",
+                    "council run status | tee out.txt",
+                    "grep council notes.md | head",
+                    "git log --oneline | grep council | head",
+                    'git commit -m "Refuse council run status | tail"',
+                    "echo 'council doctor | grep FAIL'",
+                    "git commit -m \"$(cat <<'EOF'\nRefuse `council run status | head`\ncouncil doctor | tail\nEOF\n)\"",
+                    "council run status # | tail",
+                    "command -v council | head -1",
+                    "council run status | wc -l",
+                    "case $1 in a|council) echo hi ;; esac | head",      # a case pattern is no command
+                    "case $x in (council|b) echo x ;; c) echo y ;; esac | grep x",
+                    "case council in\n  council|*) ls ;;\nesac | tail",
+                    "council run status | head; echo " + "A" * 120000,  # over 100 KB: let through unread
+                    'echo "council run status | head'):           # can't be parsed: let through
+        code, out, err, _ = run_agent_gate(cmd, bash_input(command), here)
+        check(f"pipe stop lets {command[:80]!r} through, silently", code == 0 and not out and not err, said(code, out, err))
+    for label, raw in (("garbage", "\x00council | tail{{{"), ("an empty input", ""),
+                       ("a command outside tool_input", '{"tool_name":"Bash","command":"council run status | tail"}'),
+                       ("the pipe only in the description",
+                        json.dumps({"tool_name": "Bash", "tool_input": {"description": "council x | tail", "command": "ls | tail"}}))):
+        code, out, err, _ = run_agent_gate(cmd, raw, here)
+        check(f"pipe stop: {label} — the call goes ahead, nothing said", code == 0 and not out and not err, said(code, out, err))
+
+
+@part("main")
+def hooks_running(tmp):
+    # --- A session whose hooks don't run (the plugin was enabled after it started) can't open a run: a whole
+    # night ran with no agent stop and no seat check, and Claude was told to reload once, in a sub-bullet ---
+    plain = new_repo(tmp, "marks-no-council")
+    code, out = run_hook(plain, session="s-started")
+    check("session mark: the SessionStart hook marks its session even where there is no council home, saying nothing",
+          code == 0 and out.strip() == "" and os.path.isfile(os.path.join(marks(), "s-started")), out)
+
+    late = new_repo(tmp, "no-hooks")
+    write(os.path.join(late, ".council", "council.config.md"), "# Council config\n")
+    code, out, err = council(late, "run", "open", "council-review", session="s-late", hooks=False)
+    check("run open: a session its SessionStart hook never marked is refused — exit 2, restart the session, "
+          "the escape named in the refusal", code == 2 and "Restart the session, then open the run again" in err
+          and "COUNCIL_ALLOW_NO_HOOKS=1 council run open council-review" in err, f"exit {code} · {out} · {err}")
+    check("run open: ... and the refusal states only what it knows — no SessionStart mark for this session, the "
+          "plugin enabled or updated after it started — never a cause it can't know",
+          "no SessionStart mark for this session — the plugin was enabled or updated after it started" in err
+          and "it started before the plugin was enabled" not in err, err)
+    check("run open: ... and the refusal opens nothing", not os.path.exists(os.path.join(late, ".council", "runs")),
+          str(os.listdir(os.path.join(late, ".council"))))
+    run_hook(late, session="s-late")                                  # the session restarted with the plugin on
+    code, out, err = council(late, "run", "open", "council-review", session="s-late", hooks=False)
+    check("run open: once the session's SessionStart hook has run, the run opens", code == 0 and os.path.isdir(out), out + err)
+
+    for label, repo, session, env in (("with no session id (scripts, tests), nothing is checked", "no-session", "", None),
+                                      ("COUNCIL_ALLOW_NO_HOOKS=1 opens it for a user who insists", "insists", "s-insists",
+                                       {"COUNCIL_ALLOW_NO_HOOKS": "1"}),
+                                      ("a session id that can't be a file name is never refused on a guess", "odd-id",
+                                       "../x", None)):
+        r = new_repo(tmp, repo)
+        write(os.path.join(r, ".council", "council.config.md"), "# Council config\n")
+        code, out, err = council(r, "run", "open", "council-review", session=session, hooks=False, env=env)
+        check(f"run open: {label}", code == 0 and os.path.isdir(out), out + err)
+    run_hook(plain, session="../x")
+    check("session mark: a session id that can't be a file name leaves no file anywhere",
+          not os.path.exists(os.path.join(marks(), "..", "x")) and not os.path.exists(os.path.join(marks(), "x")),
+          " ".join(sorted(os.listdir(os.path.dirname(marks())))) if os.path.isdir(os.path.dirname(marks())) else "")
+
+    # --- Fail open: a session whose hooks ran is never refused. Hooks get Claude Code's environment; Bash tool
+    # commands also source the user's shell profile, so the two can disagree on XDG_CACHE_HOME (the desktop
+    # app isn't started from a shell), and a root-owned ~/.cache takes no mark at all ----------------------
+    def home_of(name):
+        h = os.path.join(tmp, "homes", name)
+        os.makedirs(h)
+        return h
+
+    def opens(label, name, session, hook_env, bash_env):
+        r = new_repo(tmp, name)
+        write(os.path.join(r, ".council", "council.config.md"), "# Council config\n")
+        hook_code, _ = run_hook(r, session=session, env=hook_env)
+        code, out, err = council(r, "run", "open", "council-review", session=session, hooks=False, env=bash_env)
+        check(f"run open: {label}", hook_code == 0 and code == 0 and os.path.isdir(out),
+              f"hook exit {hook_code} · exit {code} · {out} · {err}")
+
+    h = home_of("xdg-in-shell")
+    opens("the hook ran with no XDG_CACHE_HOME and the Bash tool's shell profile sets one — the run opens",
+          "marks-xdg-in-shell", "s-xdg-shell", {"HOME": h, "XDG_CACHE_HOME": None},
+          {"HOME": h, "XDG_CACHE_HOME": os.path.join(h, "xdg")})
+    h = home_of("xdg-in-hook")
+    opens("the hook ran with an XDG_CACHE_HOME the Bash tool's shell doesn't have — the run opens",
+          "marks-xdg-in-hook", "s-xdg-hook", {"HOME": h, "XDG_CACHE_HOME": os.path.join(h, "xdg")},
+          {"HOME": h, "XDG_CACHE_HOME": None})
+    h = home_of("read-only")
+    shut = [os.path.join(h, ".cache"), os.path.join(h, "xdg")]
+    for d in shut:
+        os.makedirs(d)
+        os.chmod(d, 0o555)
+    try:
+        opens("no cache folder can be written (a root-owned ~/.cache): the hook marks nothing, and run open fails "
+              "open — the run opens", "marks-read-only", "s-read-only", {"HOME": h, "XDG_CACHE_HOME": shut[1]},
+              {"HOME": h, "XDG_CACHE_HOME": shut[1]})
+    finally:
+        for d in shut:
+            os.chmod(d, 0o755)
+
+    # --- The bash gate runs just before the very `council run open` call, so it marks the session too: a
+    # session whose SessionStart hook never ran (plugin enabled mid-session, then /reload-plugins) opens --
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        bash_gate = next((h["command"] for g in json.load(f)["hooks"].get("PreToolUse", []) for h in g.get("hooks", [])
+                          if "hooks/bash-gate.sh" in h.get("command", "")), "exit 1")
+
+    def bash_call(session, command):
+        return json.dumps({"session_id": session, "transcript_path": "/x/t.jsonl", "cwd": late,
+                           "permission_mode": "default", "hook_event_name": "PreToolUse", "tool_name": "Bash",
+                           "tool_input": {"command": command, "description": "Open the run"}}, separators=(",", ":"))
+
+    reload = new_repo(tmp, "marks-reload")
+    write(os.path.join(reload, ".council", "council.config.md"), "# Council config\n")
+    code, out, err, _ = run_agent_gate(bash_gate, bash_call("s-reload", "council run open council-review"), reload)
+    gate_ok = code == 0 and not out and not err
+    code, out, err = council(reload, "run", "open", "council-review", session="s-reload", hooks=False)
+    check("run open: a session whose only hook to run was the bash gate, just before this very call, opens — "
+          "the gate let the call through silently and marked the session", gate_ok and code == 0 and os.path.isdir(out),
+          f"gate ok {gate_ok} · exit {code} · {out} · {err}")
+    for session, command, label in (("s-no-name", "ls -la | head", "a Bash call that doesn't name council"),
+                                    ("../y", "council run status", "a session id that can't be a file name")):
+        run_agent_gate(bash_gate, bash_call(session, command), reload)
+        check(f"bash gate: {label} leaves no mark",
+              not os.path.exists(os.path.join(marks(), session)) and not os.path.exists(os.path.join(marks(), "..", "y")),
+              " ".join(sorted(os.listdir(marks()))))
+
+
+@part("main")
+def worktree_session(tmp):
+    # --- A session in a linked worktree can't drive a run whose code is elsewhere: a handoff into an app-made
+    # worktree cost 21.6 minutes and six refused edits, and the plugin's only warning was one table cell ---
+    main = new_repo(tmp, "wt-warn")
+    mtop = git(main, "rev-parse", "--show-toplevel")
+    write(os.path.join(main, ".council", "council.config.md"), "# Council config\n")
+    tree = os.path.join(main, ".claude", "worktrees", "app-made")
+    git(main, "worktree", "add", "-q", tree, "-b", "app-made")
+    wtop = git(tree, "rev-parse", "--show-toplevel")
+
+    def start(project, cwd):
+        return run_hook(project, payload=json.dumps({"session_id": "s-wt", "transcript_path": "/x/t.jsonl", "cwd": cwd,
+                                                     "hook_event_name": "SessionStart", "source": "startup"}))
+
+    code, out = start(tree, tree)
+    check("worktree session with no open run: no worktree warning", code == 0 and "linked worktree" not in out, out)
+    _, mrun, _ = council(main, "run", "open", "council-implement", session="s-main")
+    mname = os.path.basename(mrun)
+    code, out = start(tree, tree)
+    first = out.splitlines()[0] if out.strip() else ""
+    check("worktree session while a run's code is in the main checkout: warned first — the worktree, the run, "
+          "where its code is, and where to start a session instead",
+          first.startswith(f"[Small Council] This session runs in a linked worktree ({wtop}). Claude Code may refuse "
+                           f"edits outside it, and run {mname}'s code is in {mtop}. To drive that run, start a session "
+                           f"in {mtop} with the worktree option off."), out)
+    code, out = start(main, main)
+    check("a session in the main checkout: no worktree warning", code == 0 and "linked worktree" not in out, out)
+
+    paused = new_repo(tmp, "wt-paused")
+    ptop = git(paused, "rev-parse", "--show-toplevel")
+    write(os.path.join(paused, ".council", "council.config.md"), "# Council config\n")
+    ptree = os.path.join(paused, ".claude", "worktrees", "app-made")
+    git(paused, "worktree", "add", "-q", ptree, "-b", "app-made")
+    write(os.path.join(paused, ".council", "runs", "2026-09-20-120000-implement", "session-state.md"),
+          state("paused", mode="council-implement", phase="build", code_root=ptop, session="s-old"))
+    code, out = start(ptree, ptree)
+    check("worktree session while only a paused run's code is elsewhere: no worktree warning — a paused run waits "
+          "for the user — and the run is still reported", code == 0 and "linked worktree" not in out
+          and "2026-09-20-120000-implement" in out, out)
+
+    own = new_repo(tmp, "wt-own")
+    write(os.path.join(own, ".council", "council.config.md"), "# Council config\n")
+    otree = os.path.join(own, ".claude", "worktrees", "feat")
+    git(own, "worktree", "add", "-q", otree, "-b", "feat")
+    _, orun, _ = council(otree, "run", "open", "council-implement", session="s-own")   # its code root: this worktree
+    code, out = start(otree, otree)
+    check("worktree session whose open run's code is this worktree: the run is reported, with no worktree warning",
+          code == 0 and "linked worktree" not in out and bool(orun) and os.path.basename(orun) in out, out)
+
+
+@part("main")
+def agent_gate_dispatch_record(tmp):
+    # The agent gate holds Small Council's own agents to the record, through hooks.json's own commands: a real
+    # run sent a verifier 9 s before its plan row existed, and an 11th agent after the run had closed.
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        wired = json.load(f)["hooks"]
+    gate_cmd = next(h["command"] for g in wired["PreToolUse"] for h in g["hooks"] if "hooks/agent-gate.sh" in h["command"])
+    stop_cmd = next(h["command"] for g in wired["Stop"] for h in g["hooks"] if "hooks/turn-end.sh" in h["command"])
+    worker, verifier = "small-council:council-worker", "small-council:council-verifier"
+
+    def said(code, out, err):
+        return f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()[:300]}"
+
+    def gate(cwd, subagent, prompt, session="sD", tool="Agent", before=None):
+        return run_agent_gate(gate_cmd, dispatch_input(session, cwd, subagent, prompt, tool, before), cwd)[:3]
+
+    def starts(run):
+        path = os.path.join(run, "agent-starts.tsv")
+        return open(path, encoding="utf-8").read().count("\tAgent\t") if os.path.exists(path) else 0
+
+    bare = new_repo(tmp, "dispatch-gate-bare")
+    code, out, err = gate(bare, worker, "Seat: hunt — x\nWrite seats/hunt.md, then return one line.")
+    check("dispatch: no council home — a council-worker starts, nothing said", code == 0 and not out and not err,
+          said(code, out, err))
+    dg = new_repo(tmp, "dispatch-gate")
+    write(os.path.join(dg, ".council", "council.config.md"), "# Council config\n")
+    code, out, err = gate(dg, worker, "Seat: hunt — Security · review run\nWrite /x/seats/hunt.md, then return one line.")
+    check("dispatch: a council-worker with no council run open is refused — exit 2, the reason on stderr, nothing on stdout",
+          code == 2 and not out and "no council run is open on this working tree or for this session" in err, said(code, out, err))
+    code, out, err = gate(dg, "general-purpose", "Seat: hunt — Security · review run\nWrite /x/seats/hunt.md.")
+    check("dispatch: an ordinary agent given the same message starts — only Small Council's own agents are held to it",
+          code == 0 and not err, said(code, out, err))
+    code, out, err = gate(dg, verifier, "Check the changed tests.\nWrite your verdicts to /tmp/xyz/verify-1.md, then reply.")
+    check("dispatch: a council-verifier writing outside any run (test-architect's own check) starts with no run open",
+          code == 0 and not err, said(code, out, err))
+    code, out, err = gate(dg, "general-purpose", "Seat: hunt\nWrite /x/seats/hunt.md", before={"subagent_type": worker})
+    check("dispatch: the agent type is read from the call's own tool_input — never a top-level field or other text",
+          code == 0 and not err, said(code, out, err))
+    _, grun, _ = council(dg, "run", "open", "council-review", session="sD")
+    gname = os.path.basename(grun)
+    valid_plan(grun, seats=("chair", "hunt"))
+    orders = "Seat: {0} — Security · review run\nBrief: {1}/brief.md — read the top and your block\nWrite {1}/seats/{0}.md, then return one line."
+    code, out, err = gate(dg, worker, orders.format("beck", grun))
+    check("dispatch: a council-worker for a seat the plan doesn't select is refused, before it starts, and is not counted",
+          code == 2 and "seat beck has no selected row in the run plan of " + gname in err and starts(grun) == 0,
+          said(code, out, err))
+    code, out, err = gate(dg, worker, "Look at the change.\nWrite {0}/seats/beck.md, then return one line.".format(grun))
+    check("dispatch: with no Seat: line, the seat is read from the file the worker writes", code == 2 and "seat beck" in err,
+          said(code, out, err))
+    code, out, err = gate(dg, worker, orders.format("hunt", grun))
+    check("dispatch: a council-worker for a selected seat of the open run starts, and is counted", code == 0 and not err
+          and starts(grun) == 1, said(code, out, err))
+    code, out, err = gate(dg, worker, "Seat: hunt\nWrite {0}/seats/hunt.md".format(grun), tool="Workflow")
+    check("dispatch: a Workflow names no agent type of its own — never held to it", code == 0 and not err, said(code, out, err))
+    council(dg, "seat", "hunt", "running", "agent=h1", session="sD")
+    code, out, err, _ = run_agent_gate(stop_cmd, stop_input("sD", dg), dg)
+    check("turn end: after the run's first dispatch, with no status shown, the Chair is sent back once to show it",
+          code == 2 and not out and "made its first dispatch" in err and "council status --widget --run " + gname in err,
+          said(code, out, err))
+    code, out, err, _ = run_agent_gate(stop_cmd, stop_input("sD", dg), dg)
+    check("turn end: ... and the next turn end says nothing", code == 0 and not out and not err, said(code, out, err))
+    council(dg, "run", "close", "--status", "abandoned", session="sD")
+    check_orders = "Check claim 1.\nThe brief: {0}/brief.md\nWrite your verdicts to {0}/verify-plan.md, then reply in one line."
+    code, out, err = gate(dg, verifier, check_orders.format(grun))
+    check("dispatch: a council-verifier for a run that has closed is refused", code == 2 and "which is closed (abandoned)" in err,
+          said(code, out, err))
+    code, out, err = gate(dg, verifier, check_orders.format(grun.replace("/", "\\")))
+    check("dispatch: ... found from a Windows path too (backslashes, escaped in the JSON)", code == 2 and gname in err,
+          said(code, out, err))
+    for label, raw in (("garbage", "\x00not json at all"), ("a truncated call", '{"session_id":"sD","cwd":"%s",'
+                       '"tool_name":"Agent","tool_input":{"subagent_type":"%s","prompt":"Seat: hu' % (dg, worker))):
+        code, out, err, _ = run_agent_gate(gate_cmd, raw, dg)
+        check(f"dispatch: {label} — the agent starts, nothing said", code == 0 and not out and not err, said(code, out, err))
+    # A third check of one build task, refused before it starts (council-implement, step 7).
+    tg = new_repo(tmp, "dispatch-gate-third")
+    write(os.path.join(tg, ".council", "council.config.md"), "# Council config\n")
+    _, trun, _ = council(tg, "run", "open", "council-implement", session="sE")
+    valid_plan(trun, seats=("chair", "verify-6", "verify-6b", "verify-6c"), mode="council-implement")
+    for slug, n in (("verify-6", 1), ("verify-6b", 2)):
+        write(os.path.join(trun, slug + ".md"), "# Verification — x\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+              "| 1 | a | INCOMPLETE | a.py:1 |\n")
+        council(tg, "seat", slug, "running", f"agent=v{n}", session="sE")
+        council(tg, "seat", slug, "done", "tokens=20000", session="sE")
+    recheck = ("Check task 6 again.\nDiff: {0}/diff-6.patch\nThe last verdict: {0}/verify-6b.md\n"
+               "Write your verdicts to {0}/verify-6c.md, then reply in one line.").format(trun)
+    code, out, err = gate(tg, verifier, recheck, session="sE")
+    check("dispatch: a third check of one task, after two verdicts with no diagnosis or decision since, is refused before "
+          "it starts — the file it writes names it, not the earlier verdict the message mentions",
+          code == 2 and "cannot start verify-6c" in err and "third check of task 6" in err, said(code, out, err))
+
+
+@part("main")
+def agent_gate_reads_the_dispatch(tmp):
+    # A re-review or a post-game check cites an earlier run's file before its own output path, and a Seat:
+    # line may carry a display name: the gate refused both, and told the Chair to open a new run while one
+    # was in progress, or to plan a seat named "Security" beside "security".
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        wired = json.load(f)["hooks"]
+    gate_cmd = next(h["command"] for g in wired["PreToolUse"] for h in g["hooks"] if "hooks/agent-gate.sh" in h["command"])
+    worker, verifier = "small-council:council-worker", "small-council:council-verifier"
+
+    def gate(prompt, subagent=worker):
+        code, out, err, _ = run_agent_gate(gate_cmd, dispatch_input("sF", rd, subagent, prompt), rd)
+        return code, f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()[:300]}", err
+
+    rd = new_repo(tmp, "dispatch-reads")
+    write(os.path.join(rd, ".council", "council.config.md"), "# Council config\n- agent cap: 40\n")
+    _, old, _ = council(rd, "run", "open", "council-plan", session="sF")
+    council(rd, "run", "close", "--status", "abandoned", "--run", os.path.basename(old))
+    _, paused, _ = council(rd, "run", "open", "council-implement", session="sF")
+    council(rd, "run", "close", "--status", "paused", "--run", os.path.basename(paused))
+    _, run, _ = council(rd, "run", "open", "council-review", session="sF")
+    valid_plan(run, seats=("chair", "security", "tests", "verify-1"))
+    plan = os.path.join(run, "run-plan.tsv")
+    write(plan, open(plan, encoding="utf-8").read().replace("agent-cap\t10", "agent-cap\t40"))
+    allowed = [
+        ("a re-review citing the earlier run's findings first",
+         f"Seat: security — re-review after the fixes · council-review run\nYour earlier findings: {old}/seats/security.md "
+         f"— check each is fixed.\nBrief: {run}/brief.md\nWrite {run}/seats/security.md, then return one line.", worker),
+        ("a post-game check citing the build's verdict first (a paused run)",
+         f"Post-game check of the build's task 1. Its earlier verdict: {paused}/verify-1.md.\nDiff: {run}/diff-1.patch\n"
+         f"Write {run}/verify-1.md", verifier),
+        ("a worker whose output path has no run folder, naming the closed plan it builds on",
+         f"Seat: tests\nThe plan is in {old}/plan.md\nWrite seats/tests.md in your run folder", worker),
+        ("a verifier whose output path has no run folder, naming the paused build it checks",
+         f"Check the build's claims in {paused}/claims.jsonl.\nWrite your verdicts to verify-1.md in your run folder.", verifier),
+        ("a Seat: line with a display name, writing the planned seat's file",
+         f"Seat: Security — the security lens · council-review run\nBrief: {run}/brief.md\n"
+         f"Write {run}/seats/security.md, then return one line.", worker),
+        ("a Seat: line of several words, writing the planned seat's file",
+         f"Seat: the security seat\nWrite {run}/seats/security.md", worker),
+        ("a Seat: line of two names and no file", f"Seat: Security & privacy\nBrief: {run}/brief.md\nReturn one line.", worker),
+    ]
+    for label, prompt, subagent in allowed:
+        code, said, _ = gate(prompt, subagent)
+        check(f"dispatch: {label} — starts", code == 0, said)
+    code, said, err = gate(f"Seat: perf\nThe plan is in {old}/plan.md\nWrite seats/perf.md in your run folder")
+    check("dispatch: an unplanned seat citing a closed run is judged by the open run, and refused naming it",
+          code == 2 and "seat perf has no selected row in the run plan of " + os.path.basename(run) in err
+          and "which is closed" not in err, said)
+    code, said, err = gate(f"Seat: Perf — speed · council-review run\nWrite {run}/seats/perf.md, then return one line.")
+    check("dispatch: a display name is never named as the seat to plan — the file's slug is",
+          code == 2 and "seat perf has no selected row" in err and "seat Perf" not in err, said)
+    council(rd, "run", "close", "--status", "abandoned", "--run", os.path.basename(run))
+    code, said, err = gate(allowed[0][1])
+    check("dispatch: with no run open here any more, a dispatch for a closed run is refused", code == 2
+          and "which is closed (abandoned)" in err, said)
+
+
 @part("timing")
 def turn_end(tmp):
     # --- Stop hook: the run notices when the Chair stops for the user (promised-4: across 33 real sessions
@@ -834,13 +1265,17 @@ def turn_end(tmp):
           code == 0 and not err and not waiting(), said(code, out, err))
     council(te, "seat", "w1", "running", "agent=a1", session="sA")
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: the run's first dispatch, its status not yet shown, sends the Chair back once for the card — and "
+          "records no wait, since a seat is working",
+          code == 2 and "made its first dispatch" in err and not waiting(), said(code, out, err))
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: with a seat still working the run waits on its agent, not the user — nothing said or recorded",
           code == 0 and not err and not waiting(), said(code, out, err))
     council(te, "seat", "w1", "queued", session="sA")              # planned, not started: no agent is at work
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: a seat only queued is no agent at work — the wait is recorded", code == 2 and waiting() != "",
           said(code, out, err))
-    council(te, "state", "phase=assign", session="sA")
+    council(te, "state", "phase=prepare", session="sA")
     council(te, "seat", "w1", "done", "agent=a1", "tokens=20000", session="sA")
     code, out, err, took = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: the driving session stops with no seat working — the wait is recorded, and the Chair is sent "
@@ -854,7 +1289,7 @@ def turn_end(tmp):
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: the next turn end of the same wait says nothing — never twice for one wait",
           code == 0 and not out and not err, said(code, out, err))
-    council(te, "state", "phase=prepare", session="sA")
+    council(te, "state", "phase=assign", session="sA")
     check("turn end: the next helper action (a stage change) ends the wait", waiting() == "", waiting())
     council(te, "state", "waiting=Ship the plan as it is, or cut task 3?", session="sA")
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
@@ -1071,6 +1506,23 @@ def agent_gate_counts_starts(tmp):
     check("agent gate: a run opened before plans and agent limits, past the cap — the agent starts, uncounted",
           code == 0 and not err and starts(orun) == 0, f"{said(code, err)} · {starts(orun)} starts")
 
+@part("timing")
+def bash_gate_speed(tmp):
+    # --- The pipe stop runs before every Bash call, inside a 5 s limit. Its walk grows faster than the command
+    # on macOS awk (a 1 MB quoted string took 17 s), so a command over 100 KB is let through unread ---------
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        cmd = next((h["command"] for g in json.load(f)["hooks"].get("PreToolUse", []) for h in g.get("hooks", [])
+                    if "hooks/bash-gate.sh" in h.get("command", "")), "exit 1")
+    here = new_repo(tmp, "pipe-stop-speed")
+    for label, command in (("a 1 MB quoted string", 'council x > f; echo "' + "x|" * 500000 + '" | head'),
+                           ("a 200 KB unquoted word", "council run status | head; echo " + "A" * 200000)):
+        payload = json.dumps({"session_id": "sA", "transcript_path": "/x/t.jsonl", "cwd": here, "tool_name": "Bash",
+                              "tool_input": {"command": command}}, separators=(",", ":"))
+        code, out, err, secs = run_agent_gate(cmd, payload, here)
+        check(f"pipe stop: {label} is let through, silently, in under 1 s", code == 0 and not out and not err and secs < 1,
+              f"exit {code} · {secs:.2f} s · {err.strip()[:80]}")
+
+
 parser = argparse.ArgumentParser(description="Hook evals: run the plugin's hooks against scaffolded repos.")
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
@@ -1103,6 +1555,9 @@ if not BASH or not GIT:
     sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
+    GIT_ENV["XDG_CACHE_HOME"] = os.path.join(tmp, "cache")   # session marks (bin/council's session_dirs) stay here,
+    GIT_ENV["HOME"] = os.path.join(tmp, "home")              # ~/.cache's copy too: never the user's own
+    os.makedirs(GIT_ENV["HOME"])
     for group, block in PARTS:
         if group in chosen and (only is None or block.__name__ in only):
             block(tmp)

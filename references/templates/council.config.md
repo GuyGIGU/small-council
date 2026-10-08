@@ -67,7 +67,12 @@ or pattern-matching?"). Not a seat.
      The helper names any other word in these three cells rather than guessing what it means.
      Side effects: none · writes the tree · network · cost · hardware · deploy · credentials.
      `council gate --all` skips a gate marked ✗ and any gate whose side effects or needs involve
-     cost, hardware, deploys or credentials — those run only by name, with the user's go-ahead. -->
+     cost, hardware, deploys or credentials — those run only by name, with the user's go-ahead.
+     Every gate runs under a time limit: the largest of three times its green baseline time in the
+     run, `- gate time limit: <time>` (e.g. 20m) under Run preferences, and 120 s; with neither, 9
+     minutes for a command given after --, 30 for a configured gate. A gate past it is stopped and
+     recorded as TIMED OUT; add or raise the line when a check is slower — it counts from the next
+     call on, mid-run too. -->
 
 ## Hard rules
 - <non-negotiables every worker and builder obeys, e.g. "never write to the production database",

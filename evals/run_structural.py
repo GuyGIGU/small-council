@@ -63,6 +63,7 @@ DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.json"), ("bin", "council"),
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"), ("hooks", "agent-gate.sh"),
+             ("hooks", "bash-gate.sh"),
              ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
              ("references", "helper-commands.md"),
              ("references", "precision-context.md"), ("references", "evidence-model.md"),
@@ -87,6 +88,7 @@ doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
 agent_gate = read("hooks", "agent-gate.sh")
+bash_gate = read("hooks", "bash-gate.sh")
 warroom = read("references", "war-room.md")
 guardrails = read("references", "guardrails.md")
 
@@ -246,10 +248,13 @@ check("Challenge: Workflow parts stay in the run folder and closed runs need --r
       all(phrase in doctrine["08-challenge.md"] for phrase in
           ("verify-<n>-<letter>.md", "Never merge, copy or move", "--run <name>")))
 # Wording only; the behaviour is checked by `council run audit --transcript`, which names every helper
-# call a Chair piped through tail or head (evals/run_audit.py).
-check("helper and Challenge: refusals must not be hidden in output pipelines",
-      all("`| tail`/`| head`" in text for text in (core, doctrine["08-challenge.md"])) and
-      "test their exit status" in doctrine["08-challenge.md"])
+# call a Chair piped through tail or head (evals/run_audit.py), and the pipe stop (hooks/bash-gate.sh,
+# evals/run_hook.py) refuses such a call before it runs.
+check("helper and Challenge: refusals must not be hidden in output pipelines — the kernel says a hook refuses a "
+      "council command piped through head, tail or grep, and to redirect it to a file instead",
+      "pipe a council command through head, tail or grep (a hook refuses it)" in flat(core)
+      and "redirect it to a file and read that" in flat(core)
+      and "`| tail`/`| head`/`| grep`" in doctrine["08-challenge.md"] and "test their exit status" in doctrine["08-challenge.md"])
 check("context-core: a Solo run selects the memory in scope too",
       "council memory select" in core.split("A **Solo** run", 1)[-1].split("\n\n", 1)[0])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
@@ -267,6 +272,13 @@ check("08-challenge: one verify-<n>.md per verifier", "verify-<n>.md" in doctrin
 check("10-learn: closes the run", "council run close" in doctrine["10-learn.md"])
 check("10-learn: the Chair audits its closed run", "council run audit --run <folder>" in doctrine["10-learn.md"])
 check("10-learn: a paused run comes back with council run resume", "council run resume" in doctrine["10-learn.md"])
+check("10-learn: 'stop for tonight' mid-run closes the run paused, never complete (the owner's ruling, 2026-10-08)",
+      '"stop for tonight"' in doctrine["10-learn.md"] and "`--status paused`" in doctrine["10-learn.md"])
+check("10-learn: the close runs the audit itself, and the Chair tells the user each FAIL",
+      "prints each FAIL of `council run audit --run <folder>`" in doctrine["10-learn.md"]
+      and "Tell the user each FAIL line" in doctrine["10-learn.md"] and "close_audit" in cli and "--at-close" in cli)
+check("kernel: a handoff to a new session lists open hazards before any commit or PR, and opens in the main checkout",
+      'under "Ask fix-now/later before\n  any commit or PR"' in core and "never an app-made worktree" in core)
 check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
 check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])
 check("06-collect: checks a war room's round-2 files", "debate.md" in doctrine["06-collect.md"])
@@ -308,6 +320,21 @@ lacking = [f"{label}: {p}" for label, t in (("kernel", core), ("init", skill["co
 check("helper call form: a plain `council <command>` — never a shell variable, an alias or bash <path>/bin/council "
       "while it is on PATH — with the reason, in the kernel, council-init and the command reference",
       not lacking, "; ".join(lacking))
+# The hook prints nothing without a council home, so "no SessionStart message" sent council-init (and any
+# council-less project) to a restart whenever PATH missed the helper. Any PATH miss: the full path. A restart:
+# only on `council run open`'s own refusal (no SessionStart mark for this session).
+fallback_bad = []
+for label, t in (("kernel", core), ("init", skill["council-init"]), ("helper-commands", helper_reference)):
+    para = next((flat(p) for p in t.split("\n\n") if "`command -v council`" in p), "")
+    restart = [x for x in re.split(r"(?<=[.!?])\s+", para) if "restart" in x.lower()]
+    if '`bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>`' not in para:
+        fallback_bad.append(f"{label}: no full-path fallback")
+    if not restart or any("`council run open`" not in x for x in restart):
+        fallback_bad.append(f"{label}: a restart not tied to `council run open`'s refusal")
+    if "SessionStart message" in para:
+        fallback_bad.append(f"{label}: a restart tied to a missing SessionStart message")
+check("helper fallback: any PATH miss writes the full path, and only `council run open`'s own refusal calls for a "
+      "restart — the same in the kernel, council-init and the command reference", not fallback_bad, "; ".join(fallback_bad))
 check("init: the permission offer says its rules match the command text, so only the plain form is covered",
       "**These rules match the command text.**" in skill["council-init"].split("**Offer permission rules**", 1)[-1])
 through_variable = [label for label, t in texts.items()
@@ -368,8 +395,10 @@ for label, text, needles in [
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
                          "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input",
                          "NOTHING WAS CHECKED", "## Shortcuts and concessions", "Shortcuts I took:", "Not proved:",
+                         "Left open:", "No commit, push or PR question while anything is left open", "data-loss hazard defaults to fix now",
+                         "left on the user's ruling", 'council state phase=deliver skip="blocked: task <n>"',
                          "Checked by machine:", "Works?:", "guardrails.md", "council check", "gates/baseline/",
-                         "older Gates layout"]),
+                         "older Gates layout", "Draft any PR text as `<run>/pr-body.md`, and open the PR from it. Then `council check`"]),
     ("research", research, ["scout", "Strength:"]),
     ("postgame", skill["council-postgame"], ["ask.md", "council ask save", "council run open council-postgame", "Ruled out",
                                              "council-implement", "council-plan", "never the plan", "quote:",
@@ -458,6 +487,10 @@ check("hook: PreToolUse runs agent-gate.sh for the Agent, Task and Workflow tool
       any(g.get("matcher") == "^(Agent|Task|Workflow)$" and any("hooks/agent-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in hooks_json.get("PreToolUse", [])))
 check("hook: agent-gate leaves the decision to the helper (council cap check) — run_hook tests it", "cap check" in agent_gate)
+check("hook: PreToolUse runs bash-gate.sh for the Bash tool only, with a short timeout — run_hook tests what it refuses",
+      any(g.get("matcher") == "^Bash$" and any("hooks/bash-gate.sh" in h.get("command", "") and h.get("timeout", 99) <= 5
+                                               for h in g.get("hooks", []))
+          for g in hooks_json.get("PreToolUse", [])))
 check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_ID" in cli)
 
 # 8. Templates
@@ -484,6 +517,9 @@ check("model routing: plan, doctrine and ADR state the opt-in boundary",
       "seat/<slug>/model" in read("references", "run-plan.md") and
       "seat models: on" in read("references", "doctrine", "03-assign.md") and
       os.path.isfile(os.path.join(ROOT, "docs", "design", "model-routing-adr.md")))
+# The agent gate does judge a council agent's dispatch now; what no hook checks is the model it is given.
+check("05-work: what isn't gated is the Agent call's `model` parameter, not the dispatch",
+      "the `model` parameter isn't gated" in flat(doctrine["05-work.md"]) and "dispatch itself isn't gated" not in flat(doctrine["05-work.md"]))
 check("04-brief: packs are built only when opted in, brief-only is the normal path",
       "Context packs are opt-in" in doctrine["04-brief.md"] and "context packs: on" in doctrine["04-brief.md"])
 check("template config: roster has slugs and surface markers", "| Seat | Slug | Lens | Surface | Reference | Recast note |" in cfg)
@@ -538,7 +574,7 @@ for label, t in [("worker", worker), ("verifier", verifier)]:
 
 # 11. Bash portability (macOS ships bash 3.2)
 for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks/seat-gate.sh", gate),
-                 ("hooks/agent-gate.sh", agent_gate)]:
+                 ("hooks/agent-gate.sh", agent_gate), ("hooks/bash-gate.sh", bash_gate)]:
     code_only = "\n".join(l for l in t.split("\n") if not l.lstrip().startswith("#"))   # comments may name what's avoided
     hit = re.search(r"declare -A|\bmapfile\b|\breadarray\b|,,\}|\^\^\}", code_only)
     check(f"{label}: bash 3.2 portable (no declare -A, mapfile, readarray, case-conversion expansions)",
@@ -564,7 +600,7 @@ check("bin/council: the argument dispatch never expands an empty \"$@\" or $* (u
 # 12. Rename, and no project leakage in anything that ships as behaviour
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
            "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
-           "hooks/seat-gate.sh": gate, "hooks/agent-gate.sh": agent_gate, "bin/council": cli}
+           "hooks/seat-gate.sh": gate, "hooks/agent-gate.sh": agent_gate, "hooks/bash-gate.sh": bash_gate, "bin/council": cli}
 for d in ["references", os.path.join("references", "roster"), os.path.join("references", "templates")]:
     for f in os.listdir(os.path.join(ROOT, d)):
         if f.endswith(".md"):

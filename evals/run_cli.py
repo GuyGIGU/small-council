@@ -15,7 +15,9 @@ Needs bash and git; no LLM, no network. Covers:
     and unreadable index lines, failed and re-dispatched workers;
   - citation and origin checks (single lines, ranges and comma lists); map status; the drift doctor;
   - the agent stop: council cap's standing, cap allow's refusals and record (older runs too), cap check's
-    exit codes.
+    exit codes;
+  - the record before work: Full only on the user's go, a build task's third check only after a diagnosis
+    or the user's go, cap check's dispatch record, the first status card owed once per run.
 
 Each block of checks belongs to a group (@part below); `--list` prints the groups, `--group NAME` runs
 one, and evals/run_all.py runs them side by side. With no options every group runs, in file order.
@@ -30,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(ROOT, "bin", "council")
@@ -41,6 +44,7 @@ for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID"):   # never inherit the sess
     GIT_ENV.pop(var, None)
 if os.environ.get("COUNCIL_EVAL_BASH"):                  # a gate's `bash -c` must use that bash too
     GIT_ENV["PATH"] = os.path.dirname(BASH) + os.pathsep + GIT_ENV.get("PATH", "")
+GIT_ENV.pop("COUNCIL_ALLOW_NO_HOOKS", None)
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
 results = []
 
@@ -60,6 +64,15 @@ def check(name, ok, detail="", full=False):
     # Printed as it happens: the suite runs the helper hundreds of times (about 17 minutes on Windows
     # Git Bash), and a run that prints nothing until the end is easy to mistake for a stalled one.
     print(result_line(ok, name, detail), flush=True)
+
+
+def session(sid):
+    """The env of Claude Code session sid, marked as one whose SessionStart hook ran (council run open refuses
+    a session with no mark). The marks live under the eval's own XDG_CACHE_HOME, set when the blocks start."""
+    marks = os.path.join(GIT_ENV["XDG_CACHE_HOME"], "small-council", "sessions")
+    os.makedirs(marks, exist_ok=True)
+    open(os.path.join(marks, sid), "w").close()
+    return {"CLAUDE_CODE_SESSION_ID": sid}
 
 
 def council(cwd, *args, env=None):
@@ -228,6 +241,15 @@ def write_plan(run, selected=("chair",), skipped=(), size="squad", risk="medium"
     write(os.path.join(run, "run-plan.tsv"), "\n".join("\t".join(row) for row in rows) + "\n")
 
 
+SKIP_TO_DELIVER = "skip=this test is about what comes after Deliver"
+
+
+def to_deliver(cwd, *args, env=None):
+    """Take a test run straight to Deliver, skip= saying why, for a check whose subject comes after it: a
+    run closes complete only once it has come through Deliver. Its plan must be valid (write_plan)."""
+    return council(cwd, "state", "phase=deliver", SKIP_TO_DELIVER, *args, env=env)
+
+
 def slash(p):
     return p.strip().replace("\\", "/").rstrip("/")
 
@@ -268,6 +290,15 @@ def row(out, slug):
 
 def line_of(out, text):
     return next((line for line in out.splitlines() if text in line), "")
+
+
+VERDICT_FILE = "# Verification — x\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | INCOMPLETE | a.py:1 |\n"
+
+
+def backdated_decision(run, words="go on"):
+    """A decision line under Decisions so far dated long before anything in the run (as if carried over)."""
+    st = os.path.join(run, "session-state.md")
+    write(st, read(st).replace("## Decisions so far\n", '## Decisions so far\n- 2000-01-01 00:00: "%s"\n' % words, 1))
 
 
 CONFIG = """# Council config — eval
@@ -366,7 +397,7 @@ def runs_open(tmp):
     # Opening a run
     code, out, err = council(repo, "run", "open", "nonsense")
     check("run open: rejects an unknown mode", code == 2 and "unknown mode" in err, err)
-    code, run, err = council(repo, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sess-123"})
+    code, run, err = council(repo, "run", "open", "council-review", env=session("sess-123"))
     run = run.strip()
     check("run open: prints the new run folder", code == 0 and os.path.isdir(run) and run.endswith("-review"), run + err)
     st = read(os.path.join(run, "session-state.md"))
@@ -461,6 +492,7 @@ def runs_open(tmp):
     code, out, err = council(repo, "run", "plan", "check")
     check("run plan check: accepts a complete plan and counts selected agents",
           code == 0 and "5 selected, 1 skipped" in out and "4 agent run(s) of cap 10" in out, out + err)
+    council(repo, "state", "phase=assign")
     code, out, err = council(repo, "state", "phase=brief")
     check("state: enters Brief once the run plan is valid", code == 0 and "phase brief" in out, out + err)
     code, out, err = council(repo, "run", "plan", "show")
@@ -651,6 +683,7 @@ def runs_open(tmp):
           budget_events)
     code, out, err = council(budget_repo, "run", "events", "check")
     check("spend: the stream with the two budget events remains valid", code == 0, out + err)
+    to_deliver(budget_repo)
     code, out, err = council(budget_repo, "run", "close")
     check("close: with no Chair share in the plan, exact usage is compared with the whole estimate",
           code == 0 and "estimated ~420k (about 49% over)" in out and
@@ -661,6 +694,7 @@ def runs_open(tmp):
     million_run = million_run.strip()
     write_plan(million_run, selected=("worker",), verification="self", estimated_tokens=1500000)
     council(million, "seat", "worker", "done", "agent=m1", "tokens=1,600,000")
+    to_deliver(million)
     code, out, err = council(million, "run", "close")
     check("close: an estimate past a million is written as the total is — ~1.5M, never ~1500k",
           code == 0 and "~1.6M tokens across 1 agent run(s) · estimated ~1.5M (about 7% over)" in out and
@@ -1267,7 +1301,7 @@ def close_races(tmp):
         name, st = os.path.basename(run), os.path.join(run, "session-state.md")
         write_plan(run, selected=("chair", "w1"))
         council(cr, "seat", "w1", "done", "agent=a1", "tokens=20000")
-        council(cr, "state", "phase=deliver")
+        to_deliver(cr)
         workers = council_together(cr, *[("run", "close", "--status", s, "--run", name)
                                          for s in ("complete", "abandoned", "complete", "abandoned")])
         closes = [e[5] for e in events(run) if e[3] == "run.closed"]
@@ -1292,7 +1326,7 @@ def agent_stop(tmp):
     write(os.path.join(stop, ".council", "council.config.md"), "# Council config — the agent stop\n- agent cap: 2\n")
     code, out, err = council(stop, "cap", "check", "--session", "s1")
     check("cap check: a council with no run — exit 0, nothing printed", code == 0 and not out and not err, out + err)
-    _, stop_run, _ = council(stop, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "s1"})
+    _, stop_run, _ = council(stop, "run", "open", "council-review", env=session("s1"))
     stop_run = stop_run.strip()
     council(stop, "seat", "w1", "done", "agent=a1", "tokens=30000")
     code, out, err = council(stop, "cap", "check", "--session", "s1")
@@ -1361,7 +1395,7 @@ def agent_stop(tmp):
     check("run plan check: after the user's go for two more, the extra seat's plan rows pass, and the go is named",
           code == 0 and "4 agent run(s) of cap 3 — past the cap under the user's go, up to 5" in out, out)
     code, out, err = council(grow, "seat", "verify-2", "running", "agent=g-v2")
-    code2, out2, err2 = council(grow, "state", "phase=deliver")
+    code2, out2, err2 = to_deliver(grow)
     check("seat and state: under the go, the extra seat starts and the run moves on", code == 0 and code2 == 0,
           out + err + out2 + err2)
     write(grow_plan, three.replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t5") + extra)
@@ -2381,7 +2415,7 @@ def runs_found_by_session(tmp):
     wt, wt2 = os.path.join(main, ".claude", "worktrees", "feat"), os.path.join(main, ".claude", "worktrees", "feat2")
     git(main, "worktree", "add", "-q", "-b", "feat", wt)
     git(main, "worktree", "add", "-q", "-b", "feat2", wt2)
-    me, other = {"CLAUDE_CODE_SESSION_ID": "sess-me"}, {"CLAUDE_CODE_SESSION_ID": "sess-other"}
+    me, other = session("sess-me"), session("sess-other")
     _, out, _ = council(main, "run", "open", "council-review", "--code-root", wt, env=me)
     run = out.strip().splitlines()[-1] if out.strip() else ""
     code, out, err = council(main, "state", "next=found by session", env=me)
@@ -2406,7 +2440,7 @@ def runs_reminders_last(tmp):
         return p.returncode, (lines[-1] if lines else ""), p.stdout
     rem = new_repo(tmp, "reminders-last")
     write(os.path.join(rem, ".council", "council.config.md"), "# Council config\n- agent cap: 1\n")
-    council(rem, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "s-rem"})
+    council(rem, "run", "open", "council-review", env=session("s-rem"))
     code, last, whole = merged(rem, "state", "waiting=Which option?")
     check("state waiting=: the alert reminder is the last line printed, so `2>&1 | tail -1` keeps it",
           code == 0 and "PushNotification" in last, whole)
@@ -2475,6 +2509,8 @@ def runs_records_all_or_nothing(tmp):
     check("state: the close's internal flags can't be inherited from the environment",
           code == 0 and "run.phase_changed\trun\tassign" in read(ev), out + err)
     council(aon, "seat", "w1", "done", "tokens=20000")
+    write_plan(run)
+    to_deliver(aon)
     os.remove(ev)
     code, out, err = council(aon, "run", "events", "repair")
     check("run events repair: a missing stream is said not repairable, never rebuilt from guesses",
@@ -2490,6 +2526,8 @@ def runs_records_all_or_nothing(tmp):
     _, out, _ = council(late, "run", "open", "council-review")
     lrun = out.strip().splitlines()[-1]
     council(late, "seat", "w1", "done", "tokens=20000")
+    write_plan(lrun)
+    to_deliver(late)
     lst = os.path.join(lrun, "session-state.md")
     write(lst, read(lst).replace("events-schema: 1", "events-schema: 9"))     # every event write now fails
     code, out, err = council(late, "run", "close")
@@ -2512,7 +2550,7 @@ def runs_closed_run_stays_closed(tmp):
     council(cl, "seat", "w1", "done", "agent=a1", "tokens=20000")
     council(cl, "seat", "w2", "running", "agent=a2")
     council(cl, "seat", "w3", "queued")
-    council(cl, "state", "phase=deliver")
+    to_deliver(cl)
     council(cl, "run", "close")
     closed_at, seats_before = re.search(r"^closed: (.+)$", read(st), re.MULTILINE).group(1), read(os.path.join(run, "seats.tsv"))
     code, out, err = council(cl, "run", "close", "--status", "abandoned", "--run", name)
@@ -2559,7 +2597,12 @@ def runs_closed_run_stays_closed(tmp):
     ename = os.path.basename(erun)
     write_plan(erun, selected=("chair", "w1"))
     council(early, "seat", "w1", "done", "agent=a1", "tokens=20000")
-    council(early, "run", "close")
+    code, out, err = council(early, "run", "close")
+    check("run close: a run that never reached Deliver is no longer closed as complete", code == 2 and "never reached Deliver" in err, err)
+    to_deliver(early)
+    council(early, "run", "close")                            # an older helper closed such a run complete from Prepare:
+    est = os.path.join(erun, "session-state.md")              # its phase is all that differs
+    write(est, read(est).replace("phase: deliver\n", "phase: prepare\n"))
     code, out, err = council(early, "run", "close", "--status", "abandoned", "--run", ename)
     eledger = read(os.path.join(early, ".council", "ledger.tsv"))
     check("run close: a run closed complete before Deliver can be closed again as abandoned, as its close says, and leaves the ledger",
@@ -2575,7 +2618,12 @@ def runs_closed_run_stays_closed(tmp):
     code, out, err = council(hand, "state", "closed=2020-01-01 00:00")
     check("state closed=: the close's own stamp is refused from anywhere but the close",
           code == 2 and "closed:" not in read(os.path.join(hrun, "session-state.md")), out + err)
-    council(hand, "state", "status=complete")
+    to_deliver(hand)
+    hst = os.path.join(hrun, "session-state.md")
+    code, out, err = council(hand, "state", "status=complete")
+    check("state status=complete: refused from anywhere but the close, even at Deliver — it would skip the close's checks and audit",
+          code == 2 and "council run close" in err and "status: in-progress" in read(hst), out + err)
+    write(hst, read(hst).replace("status: in-progress\n", "status: complete\n", 1))   # as an older helper or a hand edit left it
     code, out, err = council(hand, "run", "close", "--run", hname)
     check("run close: a run set complete by hand, never closed, still gets its real close — its time, ledger rows and close event",
           code == 0 and re.search(r"^closed: \S", read(os.path.join(hrun, "session-state.md")), re.MULTILINE) is not None
@@ -2598,7 +2646,7 @@ def runs_lost_hints(tmp):
           code == 0 and "council state waiting=" in err and "clears" in err, err)
     council(lh, "state", "waiting=")
     council(lh, "seat", "w1", "done", "agent=a1", "tokens=20000")
-    council(lh, "state", "phase=deliver")
+    to_deliver(lh)
     code, out, err = council(lh, "run", "close")
     check("run close: the closing card's reminder says the same about a card that fails to render",
           code == 0 and "fails to render" in err, err)
@@ -2623,7 +2671,7 @@ def runs_closed_seat_guard_fields(tmp):
     write(os.path.join(run, "verify-1.md"), "# Verification — x\n\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | x | CONFIRMED | a.py:1 |\n")
     council(sg, "seat", "verify-1", "done", "agent=a1", "tokens=94152")
-    council(sg, "state", "phase=deliver")
+    to_deliver(sg)
     council(sg, "run", "close")
     seats, ledger = read(os.path.join(run, "seats.tsv")), read(os.path.join(sg, ".council", "ledger.tsv"))
     refused = []
@@ -2649,7 +2697,8 @@ def runs_close_stamp_from_header(tmp):
     write_plan(run, selected=("chair", "w1"))
     council(nb, "seat", "w1", "done", "agent=a1", "tokens=20000")
     append(st, "## Notes\nclosed: when the owner says so\n")
-    council(nb, "state", "status=complete")
+    to_deliver(nb)
+    write(st, read(st).replace("status: in-progress\n", "status: complete\n", 1))   # as an older helper or a hand edit left it
     code, out, err = council(nb, "run", "close", "--run", name)
     header = read(st).split("\n## ", 1)[0]
     check("run close: a 'closed:' line in the notes is not the close stamp — the run still gets its real close",
@@ -2681,7 +2730,7 @@ def runs_closed_index_refused(tmp):
     council(ci, "index", "--base", "HEAD")
     index_before = read(os.path.join(run, "index.md"))
     council(ci, "seat", "w1", "done", "agent=a1", "tokens=20000")
-    council(ci, "state", "phase=deliver")
+    to_deliver(ci)
     council(ci, "run", "close")
     state_closed = read(st)
     write(os.path.join(ci, "other.py"), "y = 1\n")
@@ -2764,7 +2813,7 @@ def runs_seat_files(tmp):
     code, out, err = council(ok, "collect")
     check("collect: when only a verify file is out of shape, it says to fix it — not that seats are still working",
           code == 1 and "fix the rows above" in out and "still working" not in out and "verify-self.md" not in out, out + err)
-    council(ok, "state", "phase=deliver")
+    to_deliver(ok)
     code, out, err = council(ok, "run", "close")
     check("run close: names the out-of-shape verify file and how to mend it, never a Solo run's verify-self.md",
           code == 0 and "verify-2-a.md is out of shape" in err and "verify-self.md" not in err and "council collect" not in line_of(err, "verify-2-a.md"),
@@ -2835,7 +2884,7 @@ def runs_helper_carries_next_steps(tmp):
     check("status --widget: the card's widget shows them too", code == 0 and "Go ahead with the Squad" in out, err)
     refused = council(nx, "state", "decision=   ")[0]
     check("state decision=: blank words are refused", refused == 2, str(refused))
-    council(nx, "state", "phase=deliver")
+    to_deliver(nx)
     council(nx, "seat", "w1", "done", "agent=a1", "tokens=20000")
     code, out, err = council(nx, "run", "close")
     check("run close: with nothing in the record to report, no follow-up line", code == 0 and "from the record" not in err, err)
@@ -2854,7 +2903,7 @@ def runs_helper_carries_next_steps(tmp):
         _, out, _ = council(tn, "run", "open", "council-review", env=env)
         r = out.strip().splitlines()[-1]
         write_plan(r, selected=("chair", "w1"))
-        council(tn, "state", "phase=deliver", env=env)
+        to_deliver(tn, env=env)
         council(tn, "seat", "w1", "done", "agent=a1", "tokens=20000", env=env)
         return council(tn, "run", "close", env=env)
 
@@ -2896,7 +2945,7 @@ def runs_close_followup_once(tmp):
         _, out, _ = council(fo, "run", "open", "council-review")
         r = out.strip().splitlines()[-1]
         write_plan(r, selected=("chair", "w1"))
-        council(fo, "state", "phase=deliver")
+        to_deliver(fo)
         council(fo, "seat", "w1", "done", "agent=a1", "tokens=20000")
         _, _, err = council(fo, "run", "close")
         return [line for line in err.splitlines() if "from the record" in line]
@@ -2986,6 +3035,7 @@ def runs_cost_like_with_like(tmp):
     council(cr, "seat", "verify-1", "done", "agent=v1", "tokens=94152")
     check("seat: passing the agents' share, not the whole estimate, is the event",
           any(e[3] == "run.estimate_passed" and "estimate=80000" in e[6] for e in events(run)), str(events(run)[-3:]))
+    to_deliver(cr)
     code, out, err = council(cr, "run", "close")
     check("close: run 1's record reads " + want + " — the verifier against the agents' share, not the whole 120k",
           code == 0 and want in out, out + err)
@@ -3131,6 +3181,7 @@ def runs_worktrees_close_and_find(tmp):
     code, out, _ = council(repo, "run", "close", "--run", run2, "--status", "abandoned")
     check("run close: abandons a run", code == 0 and "abandoned" in out, out)
     check("run close: empties the old active-run pointer when it names the run", read(os.path.join(repo, ".council", "active-run")).strip() == "")
+    to_deliver(repo)
     code, out, _ = council(repo, "run", "close")
     st = read(os.path.join(run, "session-state.md"))
     check("run close: marks complete and stamps the actual cost — a re-dispatch is an agent run, a skipped seat is none, "
@@ -3186,6 +3237,8 @@ def runs_worktrees_close_and_find(tmp):
           "| 1. | h1 | REFUTED (latent) | guarded upstream |\n| #2 | b1 | REFUTED — test exists | covered |\n"
           "| 3 | h3 | ❌ REFUTED | guarded |\n| 4 | data | Refuted | signature checked |\n")
     council(led, "seat", "verify-1", "done", "agent=v1", "tokens=9000")      # a verifier is done only with its file
+    write_plan(lrun, selected=("hunt", "beck", "verify-1"))
+    to_deliver(led)
     council(led, "run", "close")
     code, out, _ = council(led, "ledger")
     check("ledger: 'from: a#1, #2', 'b#1,2', 'a#3 and b#3', a title holding 'from:', and verdicts as written all count",
@@ -3218,6 +3271,8 @@ def runs_worktrees_close_and_find(tmp):
           "4 · P2 · P1 · a.py:4 · a slash between seats · from: hunt#4/beck#4\n"
           "5 · P2 · P1 · a.py:5 · an em dash before from — from: hunt#3\n"
           "6 · P2 · P1 · a.py:6 · a bracketed from · (from: hunt#1)\n")
+    write_plan(l2run, selected=("hunt", "beck"))
+    to_deliver(led2)
     council(led2, "run", "close")
     code, out, _ = council(led2, "ledger")
     check("ledger: 'hunt #1', 'beck 1, 3', 'a#4/b#4', '(merged with hunt#2)' and '— from:' all count, each item once",
@@ -3295,10 +3350,10 @@ def runs_worktrees_close_and_find(tmp):
     check("run status: a byte-order mark at the top of session-state.md doesn't hide the run", os.path.basename(bomrun.strip()) in out, out)
     code, out, err = council(bom, "run", "open", "council-plan")
     check("run open: a byte-order mark doesn't let a second run open on this tree", code == 2 and "already in progress" in err, out + err)
-    code, out, err = council(bom, "state", "phase=judge", "status=paused")
+    code, out, err = council(bom, "state", "phase=prepare", "status=paused")
     body = read(bom_state)
     check("state: updates a state file that starts with a byte-order mark, in place",
-          code == 0 and "phase judge · paused" in out and os.path.basename(bomrun.strip()) in out
+          code == 0 and "phase prepare · paused" in out and os.path.basename(bomrun.strip()) in out
           and not body.startswith("﻿") and body.count("status:") == 1 and "status: paused" in body,
           out + err + body)
 
@@ -3337,7 +3392,7 @@ def runs_worktrees_close_and_find(tmp):
     check("run open --session: records the given id", "session: explicit" in read(os.path.join(plan_run, "session-state.md")))
     code, out, _ = council(fresh, "state")
     check("state: acts on the in-progress run, never the paused one", code == 0 and "mode: council-plan" in out, out)
-    council(fresh, "run", "close")
+    council(fresh, "run", "close", "--status", "abandoned")
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
 
@@ -3384,6 +3439,7 @@ def runs_init_plan(tmp):
     _, done, _ = council(ip, "run", "open", "council-review")
     done = done.strip()
     write_plan(done, selected=("hunt", "beck"))
+    to_deliver(ip)
     council(ip, "state", "phase=learn")
     council(ip, "run", "close")
     _, left, _ = council(ip, "run", "open", "council-review")
@@ -3409,7 +3465,7 @@ def resume(tmp):
     # Carrying on with a run: council run resume
     rs = new_repo(tmp, "resume")
     write(os.path.join(rs, ".council", "council.config.md"), "# Council config — resume\n")
-    code, rrun, _ = council(rs, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sess-old"})
+    code, rrun, _ = council(rs, "run", "open", "council-review", env=session("sess-old"))
     rrun = rrun.strip()
     write_plan(rrun, selected=("hunt", "beck"))
     rname, rstate = os.path.basename(rrun), os.path.join(rrun, "session-state.md")
@@ -3418,7 +3474,7 @@ def resume(tmp):
     code, _, err = council(rs, "state")
     check("state: with only a paused run left, the error names council run resume",
           code == 2 and f"council run resume --run {rname}" in err, err)
-    council(rs, "state", "--run", rname, "phase=collect", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
+    council(rs, "state", "--run", rname, "phase=prepare", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
     council(rs, "seat", "--run", rname, "beck", "done", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
     check("state and seat never take a run over from the session that drives it", "session: sess-old" in read(rstate), read(rstate))
     code, out, err = council(rs, "run", "resume", env={"CLAUDE_CODE_SESSION_ID": "sess-new"})
@@ -3427,8 +3483,9 @@ def resume(tmp):
           code == 0 and rname in out and "status: in-progress" in st and "session: sess-new" in st and "closed:" not in st, out + err + st)
     check("run resume: names the session that drove it and the seats still marked running",
           "sess-old" in out + err and "still working: hunt" in out, out + err)
-    code, out, err = council(rs, "state", "phase=judge")
-    check("run resume: plain commands act on the run again", code == 0 and "phase judge · in-progress" in out, out + err)
+    code, out, err = council(rs, "state", "phase=assign")
+    check("run resume: plain commands act on the run again", code == 0 and "phase assign · in-progress" in out, out + err)
+    to_deliver(rs)
     council(rs, "run", "close")
     code, _, err = council(rs, "run", "resume", "--run", rname)
     check("run resume: a completed run is refused, with the way forward", code == 2 and "complete" in err and "council run open" in err, err)
@@ -3502,6 +3559,8 @@ def runs_fingerprint_and_ledger(tmp):
     code, r4, _ = council(fresh, "run", "open", "council-review")
     r4 = r4.strip()
     council(fresh, "seat", "hunt", "done", "tokens=1000", "--run", r4)
+    write_plan(r4, selected=("hunt",))
+    to_deliver(fresh, "--run", r4)
     code, out, err = council(plain, "run", "close", "--run", r4)
     check("run close from another folder: the ledger goes to the run's own council home",
           "\thunt\t" in read(os.path.join(fresh, ".council", "ledger.tsv"))
@@ -3548,7 +3607,7 @@ def requests_and_proofs(tmp):
     check("ask save: records ask= in the state", f"ask: .council/asks/{filed[0]}" in read(os.path.join(prun, "session-state.md")))
     code, out, _ = council(req, "memory", "select")
     check("memory select: a lesson scoped to a mode applies in that mode's runs", "EC-1" in out, out)
-    council(req, "run", "close")
+    council(req, "run", "close", "--status", "abandoned")
     code, prun2, _ = council(req, "run", "open", "council-plan")
     with open(os.path.join(prun2.strip(), "ask.md"), "w", encoding="utf-8", newline="") as f:
         f.write(ask_text)
@@ -3557,7 +3616,7 @@ def requests_and_proofs(tmp):
     gi = read(os.path.join(req, ".council", ".gitignore"))
     check("ask save: the requests stay out of git — asks/ is added to .council/.gitignore, once",
           [l.strip() for l in gi.splitlines()].count("asks/") == 1 and "runs/" in gi.split(), gi)
-    council(req, "run", "close")
+    council(req, "run", "close", "--status", "abandoned")
     code, irun, _ = council(req, "run", "open", "council-implement")
     irun = irun.strip()
     write_plan(irun, selected=("leach",))
@@ -3669,9 +3728,11 @@ def requests_and_proofs(tmp):
           "synthesis#13  quote  ok" in out and "synthesis#14  quote  NOT-EXACT" in out
           and "9 of 14 quotes found in the request" in out, out)
     council(qrepo, "run", "close", "--status", "abandoned")
+    to_deliver(req)
     code, out, err = council(req, "run", "close")
     check("run close: no warning when the request was filed", code == 0 and "no request was filed" not in err, err)
-    council(req, "run", "open", "council-review")
+    write_plan(council(req, "run", "open", "council-review")[1].strip())
+    to_deliver(req)
     code, out, err = council(req, "run", "close")
     check("run close: warns when a completed review filed no request", code == 0 and "no request was filed" in err, err)
 
@@ -3795,6 +3856,8 @@ def requests_and_proofs(tmp):
     write(os.path.join(req, ".council", "logs", "2026-09-16-build.md"),
           "# Council Implementation Log \u2014 build\nInput: `x` \u00b7 Run: %s \u00b7 Start: abc123\n\n## Task 1: x\n"
           % os.path.basename(brun))
+    write_plan(brun)
+    to_deliver(req)
     code, out, err = council(req, "run", "close")
     check("run close: warns when a build log never says what it traded away",
           code == 0 and "Shortcuts and concessions" in err, err)
@@ -3806,6 +3869,8 @@ def requests_and_proofs(tmp):
     write(os.path.join(req, ".council", "logs", "2026-09-16-other.md"),
           "# Council Implementation Log \u2014 other\nInput: `x` \u00b7 Run: %s-2 \u00b7 Start: abc123\n\n"
           "## Shortcuts and concessions\nnone\n" % os.path.basename(noproof))
+    write_plan(noproof)
+    to_deliver(req, "--run", os.path.basename(noproof))
     code, out, err = council(req, "run", "close", "--run", os.path.basename(noproof))
     check("run close: a log naming a different run whose id starts the same doesn't count",
           code == 0 and "no build log names this run" in err, err)
@@ -3815,6 +3880,8 @@ def requests_and_proofs(tmp):
     write(os.path.join(req, ".council", "logs", "2026-09-16-build-2.md"),
           "# Council Implementation Log \u2014 build 2\nInput: `x` \u00b7 Run: %s \u00b7 Start: abc123\n\n"
           "## Task 1: x\n\n## Shortcuts and concessions\nnone\n" % os.path.basename(brun2))
+    write_plan(brun2)
+    to_deliver(req)
     code, out, err = council(req, "run", "close")
     check("run close: no warning when the log says what it traded away (or 'none')",
           code == 0 and "Shortcuts and concessions" not in err, err)
@@ -3830,6 +3897,7 @@ def requests_and_proofs(tmp):
     write(os.path.join(cl, ".council", "logs", "2026-09-17-aa-notes.md"), f"# Notes\nThe build (run {cln}) follows plan 3.\n")
     council(cl, "seat", "builder", "done", "agent=b1", "tokens=90000")
     council(cl, "seat", "verify-1", "running", "agent=v1")
+    to_deliver(cl)
     code, out, err = council(cl, "run", "close")
     check("run close: reads the build log whose Run: line names the run, not another file that mentions it",
           code == 0 and "Shortcuts and concessions" not in err, err)
@@ -3842,6 +3910,8 @@ def requests_and_proofs(tmp):
           "## Shortcuts and concessions\nnone\n")
     write(os.path.join(cl, ".council", "logs", "2026-09-17-aa-notes-2.md"),
           f"# Notes\nThe build (run {os.path.basename(clrun2)}) follows plan 3.\n")
+    write_plan(clrun2)
+    to_deliver(cl)
     code, out, err = council(cl, "run", "close")
     check("run close: a Run: line that gives the run's folder path names the build log too",
           code == 0 and "Shortcuts and concessions" not in err, err)
@@ -4225,7 +4295,8 @@ def requests_review_fix_proofs(tmp):
 
 @part("requests")
 def close_unfinished(tmp):
-    # A run closed as complete that never finished is said plainly — warned, never refused
+    # A run that never reached Deliver is refused as complete (it used to be only warned); one that did, but
+    # still lacks something, closes with each lack said plainly
     repo = small_council_repo(tmp, "closeearly", "| tests | `echo '1 failed'; exit 1` | grounding, verify | yes | ok | `true` | none | - |\n"
                                                  "| lint | `exit 1` | grounding, verify | no | ok | `true` | none | - |\n")
     code, run, _ = council(repo, "run", "open", "council-review")
@@ -4234,17 +4305,23 @@ def close_unfinished(tmp):
     council(repo, "gate", "--all")
     council(repo, "gate", "before-1", "--", "exit 1")        # an ad-hoc red check is never a required one
     code, out, err = council(repo, "run", "close")
+    check("run close: a run at an early stage is refused as complete, naming where it stopped and --status paused",
+          code == 2 and "never reached Deliver (it is at prepare)" in err and "--status paused" in err
+          and "status: in-progress" in read(os.path.join(run, "session-state.md"))
+          and not [e for e in events(run) if e[3] == "run.closed"], err)
+    write_plan(run)
+    council(repo, "state", "phase=judge")
+    council(repo, "state", "phase=challenge")
+    council(repo, "state", "phase=deliver")
+    code, out, err = council(repo, "run", "close")
     closed = [e for e in events(run) if e[3] == "run.closed"]
-    check("run close: a run closed complete at an early stage says it never reached Deliver",
-          code == 0 and "closed as complete at stage prepare, so it never reached Deliver" in err
-          and "--status abandoned" in err, err)
     check("run close: names the required check whose last run failed, and only that one",
-          "a required check failing on its last run: tests —" in err and "lint" not in err and "before-1" not in err, err)
+          code == 0 and "a required check failing on its last run: tests —" in err and "lint" not in err and "before-1" not in err, err)
     check("run close: says no deliverable was recorded, and a review has no verifier verdicts",
           "no deliverable recorded" in err and "no verifier verdicts" in err, err)
     check("run close: the close event records the warnings",
-          closed and "warnings=phase,check,deliverable,verdicts" in closed[-1][6], str(closed))
-    check("run close: the run is still closed as complete (a warning, not a refusal)",
+          closed and "warnings=check,deliverable,verdicts" in closed[-1][6], str(closed))
+    check("run close: the run is still closed as complete (those are warnings, not refusals)",
           "status: complete" in read(os.path.join(run, "session-state.md")), read(os.path.join(run, "session-state.md")))
 
     done = small_council_repo(tmp, "closedone", "| tests | `if [ -f .fixed ]; then echo '3 passed'; exit 0; fi; exit 1` | grounding, verify | yes | ok | `true` | none | - |\n")
@@ -4255,6 +4332,7 @@ def close_unfinished(tmp):
     council(done, "gate", "tests")                              # red at first, green on its last run
     write_plan(run)
     write(os.path.join(run, "verify-1.md"), "# Verification — finished\n| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    to_deliver(done)
     code, out, err = council(done, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
     code, out, err = council(done, "run", "close")
     closed = [e for e in events(run) if e[3] == "run.closed"]
@@ -4266,6 +4344,156 @@ def close_unfinished(tmp):
     code, out, err = council(early, "run", "close", "--status", "abandoned")
     check("run close --status abandoned: an unfinished run given up on raises none of these warnings",
           code == 0 and "closed as complete" not in err, err)
+
+
+@part("runs")
+def runs_stage_order_and_close(tmp):
+    # A step forward past a stage the mode must enter is refused unless skip="<why>" says why, and the
+    # reason is recorded (two plan runs jumped past Assign and Brief). A run closes complete only once it
+    # has come through Deliver: a fix closed "complete" from Challenge 68 s after the user paused it, and a
+    # build sent back to build after its receipt put a PR in front of a hazard no receipt named. Each
+    # mode's own path still goes through, and the close reads the run back itself, every FAIL line whole.
+    def fresh(name, mode, **plan):
+        r = new_repo(tmp, name)
+        write(os.path.join(r, ".council", "council.config.md"), "# Council config\n")
+        out = council(r, "run", "open", mode, env=plan.pop("env", None))[1]
+        rn = out.strip().splitlines()[-1]
+        write_plan(rn, **plan)
+        return r, rn
+
+    def phase_of(rn):
+        return re.search(r"^phase: (.*)$", read(os.path.join(rn, "session-state.md")), re.MULTILINE).group(1)
+
+    def steps(r, *phases):
+        return [council(r, "state", "phase=" + p)[0] for p in phases]
+
+    rv, rvr = fresh("order-review", "council-review", selected=("chair", "hunt"))
+    before = len(events(rvr))
+    code, out, err = council(rv, "state", "phase=assign")
+    check("state phase=: a step past a stage the run must enter is refused, naming it and the next step",
+          code == 2 and "would skip prepare" in err and "next: council state phase=prepare" in err
+          and 'skip="<why>"' in err and phase_of(rvr) == "convene" and len(events(rvr)) == before, err)
+    council(rv, "state", "phase=prepare")
+    code, out, err = council(rv, "state", "phase=judge")
+    check("state phase=: a run whose plan selects a worker seat can't jump from Prepare to Judge",
+          code == 2 and "would skip assign, brief, work, collect" in err and phase_of(rvr) == "prepare", err)
+    code, out, err = council(rv, "state", "phase=judge", "skip=the user ruled the seats out; Chair reads it alone")
+    moved = [e for e in events(rvr) if e[3] == "run.phase_changed"][-1:]
+    check("state phase= skip=: a skip with a reason goes through, and the phase event records what and why",
+          code == 0 and phase_of(rvr) == "judge" and moved and moved[0][5] == "judge"
+          and moved[0][6] == "from=prepare;skipped=assign,brief,work,collect;reason=the user ruled the seats out, Chair reads it alone"
+          and "skip:" not in read(os.path.join(rvr, "session-state.md")), out + err + str(moved))
+    check("state phase=: a step back is never a skip (judge back to work, then on in turn)",
+          steps(rv, "work", "collect", "judge", "challenge", "deliver", "learn") == [0] * 6 and phase_of(rvr) == "learn")
+    refused = [(args, c) for args in (("skip=why",), ("phase=learn", "skip=why"), ("phase=learn", "skip= "))
+               for c in [council(rv, "state", *args)[0]] if c != 2]
+    check("state skip=: refused without phase=, when nothing is skipped, and when it gives no reason", not refused, str(refused))
+
+    solo, solor = fresh("order-solo", "council-research", size="solo", verification="self")
+    check("state phase=: a Solo run goes from Prepare to Judge without skip=, through Challenge to Learn",
+          steps(solo, "prepare", "judge", "challenge", "deliver", "learn") == [0] * 5, read(os.path.join(solor, "events.tsv")))
+    noworker, nwr = fresh("order-noworker", "council-plan")
+    code, out, err = council(noworker, "state", "phase=prepare")
+    code, out, err = council(noworker, "state", "phase=judge")
+    check("state phase=: a run whose plan selects no worker seat skips 3-6 without skip=", code == 0, err)
+    code, out, err = council(noworker, "state", "phase=deliver")
+    check("state phase=: Challenge is never skipped unasked (Judge to Deliver refused)",
+          code == 2 and "would skip challenge" in err and phase_of(nwr) == "judge", err)
+    pg, pgr = fresh("order-postgame", "council-postgame", selected=("chair", "verify-1"))
+    code, out, err = council(pg, "state", "phase=challenge")
+    check("state phase=: a post-game can't leave out Prepare and Judge either", code == 2 and "would skip prepare, judge" in err, err)
+    check("state phase=: a post-game's own path — Prepare, Judge, Challenge, Deliver, Learn — needs no skip=",
+          steps(pg, "prepare", "judge", "challenge", "deliver", "learn") == [0] * 5, read(os.path.join(pgr, "events.tsv")))
+    init = new_repo(tmp, "order-init")
+    council(init, "run", "open", "council-init")
+    check("state phase=: council-init names its own phases, in any order, and closes complete without a Deliver stage",
+          steps(init, "detect", "map", "propose") == [0] * 3 and council(init, "run", "close")[0] == 0)
+
+    bd, bdr = fresh("order-build", "council-implement")
+    code, out, err = council(bd, "state", "phase=challenge")
+    check("state phase=: a build can't go to Challenge before its build loop", code == 2 and "would skip prepare, build" in err, err)
+    check("state phase=: a build's own path — Prepare, Build, Challenge, Deliver, Learn — needs no skip=",
+          steps(bd, "prepare", "build", "challenge", "build", "challenge", "deliver", "learn") == [0] * 7, read(os.path.join(bdr, "events.tsv")))
+    code, out, err = council(bd, "state", "phase=build")
+    check("state phase=: a build may go back from Learn to its build loop for one more task", code == 0 and phase_of(bdr) == "build", err)
+    code, out, err = council(bd, "state", "phase=deliver")
+    check("state phase=: from its build loop a build goes on through Challenge, never straight to Deliver",
+          code == 2 and "would skip challenge" in err and phase_of(bdr) == "build", err)
+    check("state phase=: ... and the refusal names a blocked build's way to its receipt (step 5), with skip=",
+          'A build stopped blocked skips it on purpose: council state phase=deliver skip="blocked: task <n>"' in err, err)
+    ledger = os.path.join(bd, ".council", "ledger.tsv")
+    code, out, err = council(bd, "run", "close")
+    st = read(os.path.join(bdr, "session-state.md"))
+    check("run close: a build that went back to build after Deliver is refused as complete — re-enter Deliver (one runnable "
+          "command a step, each with --run), show the receipt",
+          code == 2 and "went back to build after Deliver" in err and "`council state phase=challenge --run {0}`, then "
+          "`council state phase=deliver --run {0}`".format(os.path.basename(bdr)) in err
+          and "receipt" in err and "--status paused" in err and "status: in-progress" in st
+          and "closed:" not in st and not any(e[3] == "run.closed" for e in events(bdr)) and not os.path.exists(ledger), err)
+    code, out, err = council(bd, "state", "phase=learn", "skip=nothing left to converge")
+    code2, out2, err2 = council(bd, "run", "close")
+    check("run close: skipping from build to Learn doesn't count as coming through Deliver again",
+          code == 0 and code2 == 2 and "went back to build after Deliver" in err2, err + err2)
+    check("run close: once Deliver comes again the build closes complete",
+          steps(bd, "build", "challenge", "deliver", "learn") == [0] * 4 and council(bd, "run", "close")[0] == 0
+          and "status: complete" in read(os.path.join(bdr, "session-state.md")))
+
+    early, er = fresh("order-paused", "council-review")
+    steps(early, "prepare", "judge", "challenge")
+    code, out, err = council(early, "run", "close")
+    st = read(os.path.join(er, "session-state.md"))
+    check("run close: a run that never reached Deliver is refused as complete, and the refusal names --status paused",
+          code == 2 and "never reached Deliver (it is at challenge)" in err and "council run close --status paused" in err
+          and "stop for tonight" in err and "--status abandoned" in err and "status: in-progress" in st and "closed:" not in st
+          and not any(e[3] == "run.closed" for e in events(er)), err)
+    code, out, err = council(early, "run", "close", "--status", "paused")
+    check("run close --status paused: a run paused before Deliver closes paused, and its audit owes no claim index yet",
+          code == 0 and "status: paused" in read(os.path.join(er, "session-state.md")) and "audit: 0 failed" in out
+          and "Claim index" not in out, out + err)
+    council(early, "run", "resume", "--run", os.path.basename(er))
+    code, out, err = council(early, "run", "close", "--status", "abandoned")
+    check("run close --status abandoned: a run given up on before Deliver still closes", code == 0, err)
+
+    legacy, lr = fresh("order-legacy", "council-review")
+    council(legacy, "state", "phase=prepare")
+    st = read(os.path.join(lr, "session-state.md"))
+    write(os.path.join(lr, "session-state.md"), st.replace("events-schema: 1\n", ""))
+    os.remove(os.path.join(lr, "events.tsv"))
+    code, out, err = council(legacy, "run", "close")
+    check("run close: a run from before the event stream still closes complete before Deliver, with the old warning",
+          code == 0 and "so it never reached Deliver" in err, out + err)
+
+    # The close reads the run back: every FAIL line of council run audit, whole, on stdout with the close —
+    # but the closing card, which comes after the close, is left to a later audit.
+    cfg = os.path.join(tmp, "order-config")
+    close_sid = "sess-close-audit-1"
+    au, aur = fresh("order-audit", "council-review", selected=("chair", "hunt"), env=session(close_sid))
+    opened = datetime.strptime(events(aur)[0][2], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    steps(au, "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn")
+    def line(at, kind, content):
+        return json.dumps({"type": kind, "timestamp": at.strftime("%Y-%m-%dT%H:%M:%S.000Z"), "sessionId": close_sid,
+                           "isSidechain": False, "message": {"role": kind, "content": content}}) + "\n"
+    def use(n, command):
+        return [{"type": "tool_use", "id": "t%d" % n, "name": "Bash", "input": {"command": command, "description": "x"}}]
+    write(os.path.join(cfg, "projects", "eval-project", close_sid + ".jsonl"),
+          line(opened - timedelta(seconds=5), "user", "/council-review the branch")
+          + line(opened - timedelta(seconds=1), "assistant", use(1, "council run open council-review"))
+          + line(opened, "user", [{"type": "tool_result", "tool_use_id": "t1", "content": aur}])
+          + line(datetime.now(timezone.utc), "assistant", use(2, "council run close")))    # the close, still running
+    code, out, err = council(au, "run", "close", env={"CLAUDE_CONFIG_DIR": cfg})
+    alone = council(au, "run", "audit", "--run", os.path.basename(aur), env={"CLAUDE_CONFIG_DIR": cfg})[1]
+    fails = [l for l in alone.splitlines() if l.startswith("  FAIL  ")]
+    shown = [l for l in out.splitlines() if l.startswith("  FAIL  ")]
+    check("run close: the close runs the audit and prints every FAIL line of council run audit, whole",
+          code == 0 and re.search(r"^audit: \d+ failed, .* tell the user each FAIL", out, re.MULTILINE) is not None
+          and any(l.startswith("  FAIL  Every seat on record: selected in the plan but never recorded: hunt") for l in shown)
+          and [l for l in fails if "Closing card" not in l] == shown, out + err + alone)
+    check("run close: the audit inside the close never fails the closing card it hasn't asked for yet; a later run audit does",
+          "audit: " in out and "Closing card" not in out and "  FAIL  Closing card: not shown after the close" in alone, out + alone)
+    p = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "audit.py"), "--run", aur, "--at-close"],
+                       capture_output=True, text=True, encoding="utf-8", env=dict(GIT_ENV, CLAUDE_CONFIG_DIR=cfg))
+    check("audit --at-close: the closing card reads 'not checked yet', counted apart from pass, warn and FAIL",
+          "  later  Closing card: not checked yet" in p.stdout and ", 1 not checked yet" in p.stdout, p.stdout + p.stderr)
 
 
 @part("gates")
@@ -4622,6 +4850,7 @@ def gates_build_records_attempts(tmp):
     _, run, _ = council(stop, "run", "open", "council-implement")
     run = run.strip()
     write_plan(run)
+    council(stop, "state", "phase=prepare")
     council(stop, "state", "phase=build")
     codes = [council(stop, "gate", "unit")[0] for _ in range(3)]
     code, out, err = council(stop, "gate", "unit")
@@ -4636,6 +4865,7 @@ def gates_build_records_attempts(tmp):
     _, frun, _ = council(fix, "run", "open", "council-implement")
     frun = frun.strip()
     write_plan(frun)
+    council(fix, "state", "phase=prepare")
     council(fix, "state", "phase=build")
     code, out, err = council(fix, "gate", "unit")
     check("gate: a failure in a build is recorded as an attempt, and says so last",
@@ -4669,6 +4899,7 @@ def gates_build_records_attempts(tmp):
     _, brun, _ = council(base, "run", "open", "council-implement")
     write_plan(brun.strip())
     council(base, "gate", "--all")                                # the baseline, before any change: unit already fails
+    council(base, "state", "phase=prepare")
     council(base, "state", "phase=build")
     code, out, err = council(base, "gate", "unit")
     check("gate: in a build, a failure naming only the baseline's failing tests is said, and not counted",
@@ -4724,7 +4955,7 @@ def gates_alerts_from_the_helper(tmp):
     _, run, _ = council(done, "run", "open", "council-review")
     run = run.strip()
     write_plan(run)
-    council(done, "state", "phase=deliver")
+    to_deliver(done)
     code, out, err = council(done, "run", "close")
     check("run close: a completed run's close says to send the owner's alert, with the command, once",
           code == 0 and err.count("PushNotification") == 1 and "council status --line --run " + os.path.basename(run) in err, err)
@@ -4733,12 +4964,14 @@ def gates_alerts_from_the_helper(tmp):
         f.write("- notifications: off\n")
     _, qrun, _ = council(quiet, "run", "open", "council-review")
     write_plan(qrun.strip())
+    to_deliver(quiet)
     code, out, err = council(quiet, "run", "close")
     check("run close: with notifications off, no alert line", code == 0 and "PushNotification" not in err, err)
     rows = "| unit | `echo 'FAILED tests/test_x.py::test_a'; exit 1` | verify | yes | ok | `true` | none | - |\n"
     blk = small_council_repo(tmp, "alert-blocked", rows)
     _, brun, _ = council(blk, "run", "open", "council-implement")
     write_plan(brun.strip())
+    council(blk, "state", "phase=prepare")
     council(blk, "state", "phase=build")
     said = [council(blk, "gate", "unit") for _ in range(3)]
     check("gate: the third failure that stops the build says to alert the owner; the first two don't",
@@ -4755,6 +4988,7 @@ def gates_repair_stop(tmp):
     code, run, _ = council(repo, "run", "open", "council-implement")
     run = run.strip()
     write_plan(run)
+    council(repo, "state", "phase=prepare")
     council(repo, "state", "phase=build")
     code, out, _ = council(repo, "gate", "unit")
     check("gate <name>: a failure in a build records the attempt itself (task 1 when no next: names one)",
@@ -4795,6 +5029,7 @@ def gates_repair_stop(tmp):
         "| logs | `echo 'ERROR could not reach cache'; exit 1` | verify | yes | ok | `true` | none | - |\n")
     code, trun, _ = council(two, "run", "open", "council-implement")
     write_plan(trun.strip())
+    council(two, "state", "phase=prepare")
     council(two, "state", "phase=build")
     council(two, "state", "next=task 1: read the rows")
     council(two, "gate", "unit")
@@ -4803,6 +5038,318 @@ def gates_repair_stop(tmp):
     code2, out2, err2 = council(two, "repair", "record", "T1-logs", "logs")
     check("gate <name>: a second gate failing in the same task is recorded under its own task id (typing it changes nothing)",
           code == 1 and "repair: task T1-logs attempt 1" in out and code2 == 0 and "already recorded" in out2, out + out2 + err2)
+
+
+@part("gates")
+def gate_time_limits(tmp):
+    """Every gate runs under a time limit. A probe deadlocked for 672 s on a lock added minutes before, 12.6 h
+    after a 633 s hang, and the helper had no limit at all. Past its limit a gate is stopped with every process
+    it started, recorded as exit 124 and TIMED OUT, and counted as a failure, never a pass or a proof."""
+    def beating(path, wait=1.5):
+        """Does a background loop still append to this file? Its size, then again after a pause."""
+        size = os.path.getsize(path) if os.path.isfile(path) else -1
+        time.sleep(wait)
+        return (os.path.getsize(path) if os.path.isfile(path) else -1) != size
+
+    repo = small_council_repo(tmp, "timelimit",
+        "| quick | `echo quick-ok` | grounding, verify | yes | ok | `true` | none | - |\n")
+    code, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=prepare"); council(repo, "state", "phase=build", "next=task 1: stop the hang")
+    hang = 'echo started; (while :; do echo beat >> beat.txt; sleep 0.2; done) & sleep 40; echo never'
+    began = time.monotonic()
+    code, out, err = council(repo, "gate", "probe-1", "--timeout", "2", "--", hang)
+    took = time.monotonic() - began
+    verdict = json.loads(read(os.path.join(run, "gates", "probe-1.json")) or "{}")
+    saved = read(os.path.join(run, "gates", "probe-1.txt"))
+    check("gate --timeout: a gate past its limit is stopped, exit 124, and says TIMED OUT with the limit and its source",
+          code == 124 and took < 20 and "gate probe-1: TIMED OUT after" in out and "time limit, 2s (set by --timeout)" in out
+          and "--timeout <seconds>" in out, "exit %d in %.1fs · %s%s" % (code, took, out, err))
+    check("gate --timeout: its verdict and its saved output say it timed out, and keep what it printed first",
+          verdict.get("exit") == 124 and verdict.get("timed_out") is True and verdict.get("limit") == 2
+          and "TIMED OUT after" in verdict.get("note", "") and saved.startswith("started\n")
+          and "council: TIMED OUT after" in saved and "never" not in saved, str(verdict) + saved)
+    check("gate --timeout: a timeout is a failure on the event stream, marked timed_out",
+          any(e[3] == "gate.finished" and e[4] == "probe-1" and e[5] == "failed" and "exit=124" in e[6]
+              and "timed_out=1" in e[6] for e in events(run)), str(events(run)[-2:]))
+    check("gate --timeout: nothing it started is left running, and the gate lock is gone",
+          os.path.isfile(os.path.join(repo, "beat.txt")) and not beating(os.path.join(repo, "beat.txt"))
+          and not os.path.exists(os.path.join(run, "gates.lock")), read(os.path.join(repo, "beat.txt"))[-40:])
+    check("gate --timeout: in a build, a timeout counts as a failed repair attempt",
+          "repair: task T1 attempt 1" in out, out)
+    for bad in ("soon", "0", "-5", "10d"):
+        code, out, err = council(repo, "gate", "probe-x", "--timeout", bad, "--", "true")
+        check("gate --timeout: '%s' is refused, and nothing runs" % bad,
+              code == 2 and "--timeout takes a time" in err and not os.path.exists(os.path.join(run, "gates", "probe-x.json")), err)
+    code, out, err = council(repo, "gate", "probe-m", "--timeout=2m", "--", "true")
+    check("gate --timeout: minutes are read as minutes (2m is 120 s)",
+          code == 0 and json.loads(read(os.path.join(run, "gates", "probe-m.json"))).get("limit") == 120, out + err)
+
+    # The limit with no --timeout: the largest of three times the gate's own green baseline, the config's
+    # gate time limit and 120 s; with neither, 9 minutes for a check given its command, 30 for a configured
+    # gate. A real project's passing probes ran 194, 328 and 352 s; its hangs 633 and 672 s.
+    def limit(run_dir, name):
+        return json.loads(read(os.path.join(run_dir, "gates", name + ".json")) or "{}").get("limit")
+    council(repo, "gate", "--all", "--at", "grounding")
+    code, out, err = council(repo, "gate", "quick")
+    check("gate time limit: a gate with a quick green baseline gets the 120 s floor",
+          code == 0 and limit(run, "quick") == 120, out + err)
+    write(os.path.join(run, "gates", "baseline", "quick.json"),
+          '{"gate": "quick", "command": "echo quick-ok", "exit": 0, "seconds": 50, "when": "2026-10-08 10:00:00"}\n')
+    write(os.path.join(run, "gates", "baseline", "slow.json"),
+          '{"gate": "slow", "command": "x", "exit": 0, "seconds": 65, "when": "2026-10-08 10:00:00"}\n')
+    council(repo, "gate", "quick")
+    council(repo, "gate", "probe-2", "--", "true")
+    check("gate time limit: three times the gate's own green baseline (50 s → 150 s)",
+          limit(run, "quick") == 150, read(os.path.join(run, "gates", "quick.json")))
+    check("gate time limit: a check given its command borrows no other gate's baseline — 9 minutes, past a real project's "
+          "352 s probe (3× its 65 s baseline gate would have stopped it at 195 s)",
+          limit(run, "probe-2") == 540, read(os.path.join(run, "gates", "probe-2.json")))
+    cfg1 = os.path.join(repo, ".council", "council.config.md")
+    write(cfg1, read(cfg1).replace("## Gates", "## Run preferences\n- gate time limit: 20m\n\n## Gates"))
+    council(repo, "gate", "quick")
+    council(repo, "gate", "probe-2b", "--", "true")
+    check("gate time limit: the config line, added mid-run, raises a gate past 3× its baseline (20m → 1200 s)",
+          limit(run, "quick") == 1200 and limit(run, "probe-2b") == 1200, read(os.path.join(run, "gates", "quick.json")))
+    write(cfg1, read(cfg1).replace("- gate time limit: 20m", "- gate time limit: 2m"))
+    council(repo, "gate", "quick")
+    check("gate time limit: a config line below 3× the baseline lowers nothing (2m, 50 s baseline → 150 s)",
+          limit(run, "quick") == 150, read(os.path.join(run, "gates", "quick.json")))
+    write(cfg1, read(cfg1).replace("- gate time limit: 2m", "- gate time limit: 20m"))
+    council(repo, "gate", "probe-2c", "--timeout", "90", "--", "true")
+    check("gate time limit: --timeout wins over a baseline and the config", limit(run, "probe-2c") == 90,
+          read(os.path.join(run, "gates", "probe-2c.json")))
+    other = small_council_repo(tmp, "timelimit-config",
+        "| quick | `echo quick-ok` | grounding, verify | yes | ok | `true` | none | - |\n")
+    cfg = os.path.join(other, ".council", "council.config.md")
+    code, orun, _ = council(other, "run", "open", "council-review")
+    orun = orun.strip()
+    council(other, "gate", "probe-3", "--", "true")
+    council(other, "gate", "quick")
+    check("gate time limit: with no baseline and nothing configured, 9 minutes for a check given its command and "
+          "30 for a configured gate",
+          limit(orun, "probe-3") == 540 and limit(orun, "quick") == 1800,
+          read(os.path.join(orun, "gates", "probe-3.json")) + read(os.path.join(orun, "gates", "quick.json")))
+    write(os.path.join(orun, "gates", "baseline", "quick.json"),
+          '{"gate": "quick", "command": "echo quick-ok", "exit": 1, "seconds": 0, "when": "2026-10-08 10:00:00"}\n')
+    council(other, "gate", "quick")
+    check("gate time limit: a baseline that was red (it stopped at once) sets no limit — the default stands, not 120 s",
+          limit(orun, "quick") == 1800, read(os.path.join(orun, "gates", "quick.json")))
+    write(cfg, read(cfg).replace("## Gates", "## Run preferences\n- gate time limit: 7m\n\n## Gates"))
+    council(other, "gate", "probe-4", "--", "true")
+    council(other, "gate", "quick")
+    check("gate time limit: with no green baseline, the config's '- gate time limit:' (7m → 420 s)",
+          limit(orun, "probe-4") == 420 and limit(orun, "quick") == 420,
+          read(os.path.join(orun, "gates", "probe-4.json")) + read(os.path.join(orun, "gates", "quick.json")))
+    code, out, err = council(other, "gate", "probe-5", "--timeout", "1", "--", "sleep 20")
+    check("gate time limit: --timeout wins over the config",
+          code == 124 and limit(orun, "probe-5") == 1 and '"- gate time limit:"' in out, out + err)
+
+    if os.name != "nt":
+        # The helper killed outright mid-gate: its watchdog, in a group of its own, still stops the gate at
+        # its limit. Stopped by a signal it can catch: the gate goes with it at once.
+        beat = os.path.join(other, "beat2.txt")
+        proc = subprocess.Popen([BASH, CLI, "gate", "probe-6", "--timeout", "3", "--run", orun, "--",
+                                 "(while :; do echo beat >> beat2.txt; sleep 0.2; done) & sleep 40"],
+                                cwd=other, env=GIT_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 20
+        while not os.path.isfile(beat) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        proc.kill()
+        proc.wait()
+        alive = beating(beat, 0.8)
+        time.sleep(4)
+        check("gate time limit: with the helper killed outright, its watchdog still stops the gate at the limit",
+              alive and not beating(beat), read(beat)[-40:])
+        lock_owner = slash(os.path.join(orun, "gates.lock", "owner"))
+        code, out, err = council(other, "gate", "probe-7", "--run", orun, "--",
+                                 "(while :; do echo beat >> beat3.txt; sleep 0.2; done) & sleep 0.5; "
+                                 "kill -TERM \"$(head -n 1 '%s')\"; sleep 40" % lock_owner)
+        check("gate time limit: a helper stopped by TERM stops the gate and everything it started on its way out",
+              code == 143 and not beating(os.path.join(other, "beat3.txt")), "exit %d · %s%s" % (code, out, err))
+
+
+@part("gates")
+def gate_invalid_proof(tmp):
+    """A red that proves nothing — the new check didn't compile, a probe was broken, a hang, a command that was
+    never found — is no proof yet. Three before-checks that died on compile errors were once counted as reds."""
+    repo = small_council_repo(tmp, "invalidproof",
+        "| quick | `echo quick-ok` | grounding, verify | yes | ok | `true` | none | - |\n")
+    write(os.path.join(repo, "tools", "check.sh"), "test -f fixed.txt\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a check")
+    code, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=build", "next=task 1: x")
+    check1 = "bash tools/check.sh && echo 'error: value of type Notebook has no member settled' >&2"
+    council(repo, "gate", "before-1", "--", check1)
+    code, out, err = council(repo, "gate", "before-1", "--invalid", "the new check did not compile")
+    verdict = read(os.path.join(run, "gates", "before-1.json"))
+    check("gate --invalid: marks the red on its record, keeps a copy, records an event, and says what is next",
+          code == 0 and "marked invalid (the new check did not compile)" in out and "task 1 has no proof yet" in out
+          and '"invalid": "the new check did not compile"' in verdict and '"exit": 1' in verdict
+          and os.path.isfile(os.path.join(run, "gates", "invalid", "before-1-1.json"))
+          and "marked invalid" in read(os.path.join(run, "gates", "before-1.txt"))
+          and any(e[3] == "gate.invalidated" and e[4] == "before-1" and "why=the new check did not compile" in e[6]
+                  for e in events(run)), out + err + verdict)
+    write(os.path.join(repo, "fixed.txt"), "")
+    council(repo, "gate", "after-1", "--", check1)
+    code, out, err = council(repo, "check")
+    check("check: a before-check marked invalid is NO-PROOF-YET, not a red, even with a passing after-check",
+          code == 1 and "task 1  proof  NO-PROOF-YET · before-1 marked invalid (the new check did not compile)" in out, out)
+    for args, why in ((("before-1", "--invalid", "twice"), "already marked invalid"),
+                      (("after-1", "--invalid", "it passed"), "passed (exit 0)"),
+                      (("before-9", "--invalid", "never ran"), "has no record"),
+                      (("before-1", "--invalid", "  "), "needs the reason"),
+                      (("before-1", "--invalid", "x", "--", "true"), "runs nothing")):
+        code, out, err = council(repo, "gate", *args)
+        check("gate --invalid: refused — %s" % why, code == 2 and why in err, out + err)
+    os.remove(os.path.join(repo, "fixed.txt"))
+    council(repo, "gate", "before-1", "--", check1)
+    write(os.path.join(repo, "fixed.txt"), "")
+    council(repo, "gate", "after-1", "--", check1)
+    code, out, err = council(repo, "check")
+    check("check: once the before-check runs again, its fresh red is the proof",
+          code == 0 and "task 1  proof  ok" in out, out)
+
+    # A hang and a command that was never found prove nothing either; a proof run only through the run
+    # folder's own scripts is noted, since it never ran the entry point a person runs.
+    council(repo, "gate", "before-2", "--timeout", "1", "--", "sleep 20; exit 1")
+    write(os.path.join(run, "gates", "after-2.json"),
+          '{"gate": "after-2", "command": "sleep 20; exit 1", "exit": 0, "seconds": 1, "when": "2026-10-08 10:00:00"}\n')
+    council(repo, "gate", "before-3", "--", "no-such-tool-anywhere --check")
+    council(repo, "gate", "after-3", "--", "true")
+    probe = os.path.join(run, "checks", "probe.sh")
+    write(probe, "test -f fixed.txt\n")
+    rel = slash(os.path.relpath(probe, repo))
+    os.remove(os.path.join(repo, "fixed.txt"))
+    council(repo, "gate", "before-4", "--", "bash %s" % rel)
+    council(repo, "gate", "before-5", "--", "bash tools/check.sh")
+    write(os.path.join(repo, "fixed.txt"), "")
+    council(repo, "gate", "after-4", "--", "bash %s" % rel)
+    council(repo, "gate", "after-5", "--", "bash tools/check.sh")
+    code, out, err = council(repo, "check")
+    check("check: a before-check stopped at its time limit is NO-PROOF-YET",
+          "task 2  proof  NO-PROOF-YET · before-2 timed out after" in out, out)
+    check("check: a before-check whose command was never found (exit 127) is NO-PROOF-YET",
+          "task 3  proof  NO-PROOF-YET · before-3 never ran: a command it calls was not found (exit 127)" in out, out)
+    check("check: a proof that ran only a run-folder script is noted, and one through the project's own check is not",
+          "only run-folder scripts ran it" in line_of(out, "task 4  proof  ok")
+          and "only run-folder scripts" not in line_of(out, "task 5  proof  ok")
+          and "check: 1 proved only through scripts in the run folder" in out, out)
+
+
+@part("requests")
+def check_just_me_hygiene(tmp):
+    """On a just-me council nothing teammates read may cite the council (references/sharing.md). A real build
+    left "(ruling 1)" in a Swift comment. A build's council check reads what that build added — its added lines,
+    files it left untracked, commit messages not yet pushed, a PR body drafted in the run — and names each council
+    reference, counted apart from citations. Earlier work on the branch, a plan or review run, and ordinary code
+    that looks alike are left be: they once failed a plan run's check on text no run of it wrote."""
+    repo = new_repo(tmp, "sharedtext")
+    cfg = os.path.join(repo, ".council", "council.config.md")
+    write(cfg, "# Council config — hygiene\n\n## Run preferences\n- sharing: just me\n")
+    append(os.path.join(repo, ".git", "info", "exclude"), ".council/\n")
+    write(os.path.join(repo, "ios", "Notebook.swift"), "import Foundation\n\nstruct Notebook {\n    var pages: [Page] = []\n}\n")
+    write(os.path.join(repo, "web", "geo.js"), "export function inner(D) {\n  return D - 1;\n}\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    git(repo, "checkout", "-q", "-b", "feature")
+    # Work on the branch from before the build: its lines, its message and an old untracked note name the
+    # council, but no run of this branch's build wrote them.
+    write(os.path.join(repo, "ios", "Old.swift"), "// Kept from plan task 2 (ruling 4)\nlet old = 1\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "Earlier work (task 2)")
+    scratch = os.path.join(repo, "SCRATCH.md")
+    write(scratch, "# Scratch\nNotes on verify-1 and D-3\n")
+    hour_ago = time.time() - 3600
+    os.utime(scratch, (hour_ago, hour_ago))
+    for mode in ("council-plan", "council-review"):
+        code, other, _ = council(repo, "run", "open", mode)
+        other = other.strip()
+        write(os.path.join(other, "synthesis.md"), "# Synthesis\n## Index\n(none) — nothing found\n")
+        write(os.path.join(other, "pr-body.md"), "The proof is in verify-2.\n")
+        code, out, err = council(repo, "check")
+        check("check (just me): a %s run writes no shared text, so nothing is scanned and its check passes" % mode,
+              code == 0 and "hygiene" not in out and "in shared text" not in out, out + err)
+        council(repo, "run", "close", "--status", "abandoned")
+    code, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write(os.path.join(run, "gates", "before-1.json"),
+          '{"gate": "before-1", "command": "test -f ios/Notebook.swift", "exit": 1, "seconds": 0, "when": "2026-10-08 10:00:00"}\n')
+    write(os.path.join(run, "gates", "after-1.json"),
+          '{"gate": "after-1", "command": "test -f ios/Notebook.swift", "exit": 0, "seconds": 0, "when": "2026-10-08 10:01:00"}\n')
+    time.sleep(1.1)                                   # files the build writes are newer than its opened: second
+    append(os.path.join(repo, "ios", "Notebook.swift"), "\n".join([
+        "// Keep the folder when the last page goes (ruling 1)",              # 6: hit
+        "func trim(_ D: Int) -> Int { return D-1 }",                          # 7: code, not an id
+        "let F = 3; let x = F-1 // the last index",                           # 8: code, and a comment with no id
+        "// Decided in D-2: pages are saved one file each",                   # 9: hit
+        "/* see .council/runs/2026-01-02-030405-implement/verify-3.md */",    # 10: hit
+        "// Step 1: load the pages. Task { await load() }",                   # 11: no
+        'let url = "https://example.com/D-1"',                                # 12: no (a URL, not a comment)
+        'func verifyEmail() -> String { "verify-email" }',                    # 13: no
+        "// Caches each page's strokes (task 4)",                             # 14: hit
+        "// Today 2026-10-08: task 1 is overdue, verify step 1 passes",       # 15: no
+        "let ids = tasks[1] + F-2",                                           # 16: no
+        ""]))
+    git(repo, "add", "ios/Notebook.swift")             # the old note stays untracked
+    git(repo, "commit", "-q", "-m", "Trim empty pages (ruling 2)")
+    remote = os.path.join(tmp, "sharedtext-remote.git")
+    git(tmp, "init", "-q", "--bare", remote)
+    git(repo, "remote", "add", "origin", remote)
+    git(repo, "push", "-q", "-u", "origin", "feature")   # that message is out now; it can't be changed
+    append(os.path.join(repo, "web", "geo.js"), "\n".join([
+        "// Falls back to the slow path, see AP-2",                           # 4: hit
+        "const span = [D-1, F-2];",                                           # 5: no
+        "/* EC-4: an empty page has no strokes */",                           # 6: hit
+        'function verify2() { return "verify-2fa"; }',                         # 7: no
+        ""]))
+    git(repo, "add", "web/geo.js")
+    git(repo, "commit", "-q", "-m", "Skip the slow path (ruling 3)")
+    write(os.path.join(repo, "NOTES.md"), "# Notes\nThe save follows plan task 3.\nA page with no strokes is skipped.\n")
+    write(os.path.join(run, "pr-body.md"), "Saves each page on its own.\nThe proof is in verify-2.\n")
+    code, out, err = council(repo, "check")
+    lines = [l for l in out.splitlines() if l.startswith("hygiene  ")]
+    want = ["ios/Notebook.swift:6", "ios/Notebook.swift:9", "ios/Notebook.swift:10", "ios/Notebook.swift:14",
+            "web/geo.js:4", "web/geo.js:6", "NOTES.md:2", "PR body pr-body.md:2"]
+    places = [l.split("  ")[1] for l in lines]
+    check("check (just me): in a build, each council reference in the lines it added, the files it left untracked "
+          "and the drafted PR body is named with its file:line, and check fails",
+          code == 1 and all(w in places for w in want) and "a council ruling" in line_of(out, "ios/Notebook.swift:6 ")
+          and "say it in plain words" in lines[0] if lines else False, out + err)
+    check("check (just me): the build's own commit messages are read, but not one already pushed",
+          "Skip the slow path (ruling 3)" in out and "Trim empty pages (ruling 2)" not in out, out)
+    check("check (just me): work from before the build opened is not its own — an earlier commit's lines and message, "
+          "an untracked note older than the run",
+          not any(p.startswith("ios/Old.swift") or p.startswith("SCRATCH.md") for p in places)
+          and "Earlier work (task 2)" not in out, "\n".join(lines))
+    check("check (just me): code that only looks alike is left alone — D-1 as a subtraction, a URL, verifyEmail, "
+          "Task { }, a date, 'task 1' in passing, verify-2fa",
+          not any(p in places for p in ("ios/Notebook.swift:7", "ios/Notebook.swift:8", "ios/Notebook.swift:11",
+                                         "ios/Notebook.swift:12", "ios/Notebook.swift:13", "ios/Notebook.swift:15",
+                                         "ios/Notebook.swift:16", "web/geo.js:5", "web/geo.js:7", "NOTES.md:3"))
+          and len(places) == len(want) + 1, "\n".join(lines))
+    summary = line_of(out, " items, ")
+    finished = [e for e in events(run) if e[3] == "verification.finished"]
+    check("check (just me): the hits land in check.md, and are counted apart from citations — the summary says "
+          "0 broken and 9 council references, and the event carries hygiene=9",
+          "| hygiene | ios/Notebook.swift:6 |" in read(os.path.join(run, "check.md"))
+          and "1 items, 0 broken" in summary and "9 council reference(s) in shared text (just me)" in summary
+          and bool(finished) and finished[-1][5] == "failed" and "broken=0" in finished[-1][6]
+          and "hygiene=9" in finished[-1][6], out + str(finished[-1:]))
+    state = os.path.join(run, "session-state.md")
+    write(state, re.sub(r"(?m)^start-head:.*$", "start-head:", read(state)))
+    code, out, err = council(repo, "check")
+    places = [l.split("  ")[1] for l in out.splitlines() if l.startswith("hygiene  ") and "  " in l[9:]]
+    check("check (just me): a build with no recorded start reads only uncommitted work and the PR body, and says so",
+          code == 1 and "no recorded start" in out and sorted(places) == ["NOTES.md:2", "PR body pr-body.md:2"], out)
+    write(cfg, "# Council config — hygiene\n\n## Run preferences\n- sharing: team\n")
+    code, out, err = council(repo, "check")
+    check("check (team): a team council may cite its files, so nothing is scanned and the check passes",
+          code == 0 and "hygiene  " not in out and "in shared text" not in out, out + err)
 
 
 @part("runs")
@@ -5196,8 +5743,9 @@ def requests_bookkeeping(tmp):
     code, _, err = council(req, "ask", "save")
     check("ask save: never writes to a file outside .council/asks/", code == 2 and "copy the words into ask.md" in err, err)
     council(req, "run", "close", "--status", "abandoned")
-    council(req, "run", "open", "council-implement")
+    write_plan(council(req, "run", "open", "council-implement")[1].strip())
     council(req, "state", f"ask=.council/asks/{filed[0]}")
+    to_deliver(req)
     code, out, err = council(req, "run", "close")
     check("run close: warns when a continuing run never filed its words", "no request was filed" in err, err)
 
@@ -5214,7 +5762,7 @@ def filed_request_paths(tmp):
     fp_run = fp_run.strip()
     write(os.path.join(fp_run, "ask.md"), "# Ask — CSV export\n## In your words\nWe need CSV export.\n")
     council(ap, "ask", "save")
-    council(ap, "run", "close")
+    council(ap, "run", "close", "--status", "abandoned")
     ap_asks = os.path.join(ap, ".council", "asks")
     ap_file = sorted(os.listdir(ap_asks))[0] if os.path.isdir(ap_asks) else "?"
     ap_rel = ".council/asks/" + ap_file
@@ -5312,7 +5860,7 @@ def filed_request_paths(tmp):
     hp = council(hs, "run", "open", "council-plan")[1].strip()
     write(os.path.join(hp, "ask.md"), "# Ask — Release notes\n## In your words\nWrite release notes.\n")
     council(hs, "ask", "save")
-    council(hs, "run", "close")
+    council(hs, "run", "close", "--status", "abandoned")
     hs_asks = os.path.join(hs, ".council", "asks")
     hs_rel = ".council/asks/" + (sorted(os.listdir(hs_asks))[0] if os.path.isdir(hs_asks) else "?")
     ha = council(hs, "run", "open", "council-implement")[1].strip()
@@ -5360,6 +5908,7 @@ def requests_war_room(tmp):
     council(req, "seat", "leach-r2", "done", "agent=w9", "tokens=4000")
     write(os.path.join(wr, "seats", "leach-r2.md"), "# Leach — Data (council-plan, round 2)\nref: none\n## Index\n1 · hold · P1 x#1 · a.txt:1 · y\n")
     write(os.path.join(wr, "synthesis.md"), "# Synthesis\n## Kept\n1 · must · Principle 1 · a.txt:1 · x · from: leach#1\n")
+    to_deliver(req)
     council(req, "run", "close")
     code, out, _ = council(req, "ledger")
     check("ledger: a fresh round-2 worker counts as its seat and raises nothing new",
@@ -5373,7 +5922,7 @@ def requests_war_room(tmp):
     pr_file = next((f for f in os.listdir(asks) if "from-the-pr" in f), "")
     check("ask save: words that open with a pasted '## Summary' are filed whole",
           code == 0 and bool(pr_file) and "## Acceptance" in read(os.path.join(asks, pr_file)), out + err)
-    council(req, "run", "close")
+    council(req, "run", "close", "--status", "abandoned")
     code, hr2, _ = council(req, "run", "open", "council-implement")
     hr2 = hr2.strip()
     write(os.path.join(hr2, "ask.md"), f"# Ask — more\ncontinues: .council/asks/{pr_file}\n## In your words\n"
@@ -5388,7 +5937,7 @@ def requests_war_room(tmp):
     code, out, _ = council(req, "check")
     check("check: only a request part is quote-checked, and a quote inside a longer word fails",
           "synthesis#1  quote" not in out and "synthesis#2  quote  NOT-IN-THE-REQUEST" in out, out)
-    council(req, "run", "close")
+    council(req, "run", "close", "--status", "abandoned")
     code, sq, _ = council(req, "run", "open", "council-postgame")
     sq = sq.strip()
     write(os.path.join(sq, "ask.md"), f"# Ask — check\ncontinues: .council/asks/{pr_file}\n## In your words\n(no new words)\n")
@@ -5429,6 +5978,8 @@ def close_claim_index(tmp):
     stale_run = stale_run.strip()
     write(os.path.join(stale_run, "synthesis.md"), "# Synthesis\n## Kept\n(none)\n## Cut\n(none)\n")
     warning = "the claim index is missing or out of date"
+    write_plan(stale_run)
+    to_deliver(stale_repo, "--run", stale_run)
     code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
     check("close: missing claims warn with an explicit run rebuild command",
           code == 0 and warning in err and "evidence build --run " + os.path.basename(stale_run) in err
@@ -5458,6 +6009,8 @@ def close_claim_index(tmp):
     write(os.path.join(deleted_run, "verify-1.md"), "# Verification\n| # | Item | Verdict | Evidence |\n"
           "|---|---|---|---|\n| 1 | claim | CONFIRMED | checked source.py:1 |\n")
     council(deleted_repo, "evidence", "build", "--run", deleted_run)
+    write_plan(deleted_run)
+    to_deliver(deleted_repo, "--run", deleted_run)
     code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
     check("close: current verifier-backed claim index does not warn",
           code == 0 and warning not in err, err)
@@ -5471,6 +6024,279 @@ def close_claim_index(tmp):
     os.unlink(os.path.join(deleted_run, "synthesis.md"))
     code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
     check("close: a deleted synthesis source warns", code == 0 and warning in err, err)
+
+@part("runs")
+def runs_full_size_needs_go(tmp):
+    # A real run went Full (13 tasks, ~2.15M tokens) 47 s after reading that Full needs the user's explicit
+    # size-and-cost go, without asking. The plan check now refuses Full until a decision of the user's is
+    # recorded after the run opened — and so does everything that needs a valid plan.
+    fr = new_repo(tmp, "full-size")
+    write(os.path.join(fr, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(fr, "run", "open", "council-review")
+    frun = out.strip().splitlines()[-1]
+    fname = os.path.basename(frun)
+    write_plan(frun, selected=("w1", "w2", "w3", "w4"), size="full")
+    code, out, err = council(fr, "run", "plan", "check")
+    check("run plan check: Full with no decision of the user's on record is refused, saying to ask and record their words",
+          code == 1 and "Full needs the user's explicit size-and-cost go: ask them, then record their words with "
+          'council state decision="' in out, out + err)
+    code, out, err = council(fr, "seat", "w1", "running", "agent=f1")
+    code2, out2, err2 = council(fr, "state", "phase=brief")
+    check("seat and state: a Full plan with no go starts no seat and moves to no later stage",
+          code == 2 and "cannot start seat w1" in err and code2 == 2 and "Full needs the user's" in out2 + err2
+          and "\nw1\t" not in read(os.path.join(frun, "seats.tsv")), out + err + out2 + err2)
+    backdated_decision(frun, "go Full")
+    code, out, err = council(fr, "run", "plan", "check")
+    check("run plan check: a decision dated before the run opened is not this run's go", code == 1
+          and "Full needs the user's" in out, out + err)
+    council(fr, "state", "decision=yes, go Full — about 600k tokens is fine")
+    code, out, err = council(fr, "run", "plan", "check")
+    code2, out2, err2 = council(fr, "seat", "w1", "running", "agent=f1")
+    check("run plan check: after the user's words are recorded, the Full plan passes and its seats start",
+          code == 0 and "plan: valid · full" in out and code2 == 0, out + err + out2 + err2)
+    write_plan(frun, selected=("w1",), size="squad")
+    st = os.path.join(frun, "session-state.md")
+    write(st, re.sub(r"\n- [0-9-]+ [0-9:]+: [^\n]*", "", read(st)))
+    code, out, err = council(fr, "run", "plan", "check")
+    check("run plan check: a Squad needs no decision on record", code == 0, out + err)
+    write_plan(frun, selected=("w1", "w2", "w3", "w4"), size="full")
+    council(fr, "run", "close", "--status", "abandoned")
+    code, out, err = council(fr, "run", "plan", "check", "--run", fname)
+    check("run plan check: a closed run's plan is read as it was, not refused for today's rule", code == 0, out + err)
+
+
+@part("runs")
+def runs_third_check_needs_diagnosis(tmp):
+    # After a second failed verification the build loop allows one clean-context diagnosis and one more
+    # attempt, else a stop and a report. A real build gave a task a new lock and a third check instead.
+    tc = new_repo(tmp, "third-check")
+    write(os.path.join(tc, ".council", "council.config.md"), "# Council config\n- agent cap: 20\n")
+    _, out, _ = council(tc, "run", "open", "council-implement", env=session("sT"))
+    trun = out.strip().splitlines()[-1]
+    tname = os.path.basename(trun)
+    write_plan(trun, selected=("verify-6", "verify-6b", "verify-6c", "verify-6d", "diagnose-6", "verify-7", "verify-7b",
+                               "verify-7c", "diagnose-7", "verify-9c", "verify-8", "verify-5", "verify-2", "verify-2b",
+                               "verify-2c", "diagnose-3"))
+    tplan = os.path.join(trun, "run-plan.tsv")
+    write(tplan, read(tplan).replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t20"))
+    for slug in ("verify-6", "verify-6b", "verify-6c", "verify-7", "verify-7b", "verify-8", "verify-5", "verify-2", "verify-2b"):
+        write(os.path.join(trun, slug + ".md"), VERDICT_FILE)
+    write(os.path.join(trun, "seats", "diagnose-7.md"), "# Diagnosis\n## Index\n1 · likely · a lock · a.py:1 · x\n")
+    for slug, n in (("verify-6", 1), ("verify-6b", 2)):
+        council(tc, "seat", slug, "running", f"agent=v6{n}")
+        council(tc, "seat", slug, "done", "tokens=20000")
+    backdated_decision(trun, "an old go")
+    code, out, err = council(tc, "seat", "verify-6c", "running", "agent=v63")
+    check("seat: a third check of one task after its second verdict is refused — the diagnosis, or a stop and a report, "
+          "comes first; a decision from before that verdict doesn't count",
+          code == 2 and "third check of task 6" in err and "council seat diagnose-6 running" in err
+          and "stop and report" in err and 'council state decision="' in err
+          and "\nverify-6c\t" not in read(os.path.join(trun, "seats.tsv")), out + err)
+    code, out, err = council(tc, "cap", "check", "--session", "sT", "Agent", "type=small-council:council-verifier",
+                             "seat=verify-6c", "run=" + tname)
+    check("cap check: the agent gate refuses that third check before it starts, for the same reason",
+          code == 2 and out.startswith("Small Council: cannot start verify-6c") and "third check of task 6" in out, out + err)
+    council(tc, "seat", "diagnose-6", "running", "agent=d61")
+    code, out, err = council(tc, "seat", "verify-6c", "running", "agent=v63")
+    check("seat: with a diagnose-6 seat on record after the second verdict, the third check starts", code == 0, out + err)
+    council(tc, "seat", "verify-6c", "done", "tokens=20000")
+    code, out, err = council(tc, "seat", "verify-6d", "running", "agent=v64")
+    check("seat: a fourth check after the diagnosis and one more attempt is refused — stop and report",
+          code == 2 and "stop and report to the user" in err and "task 6 has 3 verdicts" in err, out + err)
+    council(tc, "state", "decision=check it once more, then stop")
+    code, out, err = council(tc, "seat", "verify-6d", "running", "agent=v64")
+    check("seat: the user's words recorded after the last verdict start one more check", code == 0, out + err)
+    council(tc, "seat", "verify-7", "running", "agent=v71")
+    council(tc, "seat", "verify-7", "done", "tokens=20000")
+    council(tc, "seat", "diagnose-7", "running", "agent=d71")             # used on a gate failure, before the second verdict
+    council(tc, "seat", "diagnose-7", "done", "tokens=20000")
+    council(tc, "seat", "verify-7b", "running", "agent=v72")
+    council(tc, "seat", "verify-7b", "done", "tokens=20000")
+    st = os.path.join(trun, "session-state.md")
+    write(st, re.sub(r"\n- [0-9-]+ [0-9:]+: [^\n]*", "", read(st)))           # no decision on record at all
+    code, out, err = council(tc, "seat", "verify-7c", "running", "agent=v73")
+    check("seat: a diagnosis the task used before its second verdict (on a gate failure) doesn't open a third check",
+          code == 2 and "third check of task 7" in err, out + err)
+    for n in ("", "b"):                       # one verifier for tasks 2-4 (step 7 batches small tasks), failed twice on task 3
+        council(tc, "seat", "verify-2" + n, "running", f"agent=v2{n}x")
+        council(tc, "seat", "verify-2" + n, "done", "tokens=20000")
+    council(tc, "seat", "diagnose-3", "running", "agent=d31")           # task 3's diagnosis, named by its task
+    code, out, err = council(tc, "cap", "check", "--session", "sT", "Agent", "type=small-council:council-verifier",
+                             "seat=verify-2c", "run=" + tname)
+    code2, out2, err2 = council(tc, "seat", "verify-2c", "running", "agent=v23")
+    check("cap check and seat: a batched verifier's third check (verify-2c) starts once a diagnosis of the task that "
+          "failed (diagnose-3) is on record after the second verdict", code == 0 and not out and code2 == 0,
+          out + err + out2 + err2)
+    code, out, err = council(tc, "seat", "verify-9c", "running", "agent=v93")
+    check("seat: verify-9c with no verify-9b on record is a first check (a task named 9c), never refused as a third",
+          code == 0, out + err)
+    for n in (1, 2):                                       # the same seat started again for each re-check
+        council(tc, "seat", "verify-8", "running", f"agent=v8{n}")
+        council(tc, "seat", "verify-8", "done", "tokens=20000")
+    code, out, err = council(tc, "seat", "verify-8", "running", "agent=v83")
+    check("seat: a re-check started on the same seat counts too — its third start after two verdicts is refused",
+          code == 2 and "third check of task 8" in err, out + err)
+    code, out, err = council(tc, "cap", "check", "--session", "sT", "Agent", "type=small-council:council-verifier",
+                             "seat=verify-8c", "run=" + tname)
+    check("cap check: a dispatch writing verify-8c.md is seat verify-8's re-check — planned, and refused as its third check",
+          code == 2 and "third check of task 8" in out, out + err)
+    council(tc, "seat", "verify-5", "running", "agent=v51")
+    council(tc, "seat", "verify-5", "failed", "note=interrupted")    # died with its session: no verdict
+    for n in (2, 3):
+        council(tc, "seat", "verify-5", "running", f"agent=v5{n}")
+        council(tc, "seat", "verify-5", "done", "tokens=20000")
+        council(tc, "seat", "verify-5", "done", "tokens=21000")      # a repeated report is the same verdict
+    code, out, err = council(tc, "seat", "verify-5", "running", "agent=v54")
+    check("seat: only verdicts count — an interrupted agent and a repeated report don't, so the check after two "
+          "verdicts is the one refused, not before", code == 2 and "third check of task 5" in err, out + err)
+    _, out, _ = council(tc, "run", "open", "council-review", "--alongside", env=session("sT"))
+    rrun = out.strip().splitlines()[-1]
+    write_plan(rrun, selected=("verify-1",))
+    write(os.path.join(rrun, "verify-1.md"), VERDICT_FILE)
+    for n in (1, 2):
+        council(tc, "seat", "verify-1", "running", f"agent=r{n}", "--run", rrun)
+        council(tc, "seat", "verify-1", "done", "tokens=20000", "--run", rrun)
+    code, out, err = council(tc, "seat", "verify-1", "running", "agent=r3", "--run", rrun)
+    check("seat: the rule is the build loop's — a review's verifier seat started a third time is not refused", code == 0, out + err)
+
+
+@part("runs")
+def runs_dispatch_record(tmp):
+    # The agent gate's dispatch record (council cap check type= seat= run=): a real run sent a verifier 9 s
+    # before its plan row existed, and an 11th agent after the run had closed.
+    worker, verifier = "type=small-council:council-worker", "type=small-council:council-verifier"
+    bare = new_repo(tmp, "dispatch-no-council")
+    code, out, err = council(bare, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt")
+    check("cap check: no council home — a council-worker starts, nothing said", code == 0 and not out, out + err)
+    dr = new_repo(tmp, "dispatch")
+    write(os.path.join(dr, ".council", "council.config.md"), "# Council config\n")
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt")
+    check("cap check: a council-worker with no council run open on this tree or for this session is refused",
+          code == 2 and out.startswith("Small Council: no council run is open") and "council run open" in out, out + err)
+    code, out, err = council(dr, "cap", "check", "Agent", worker, "seat=hunt")
+    check("cap check: ... but not when there is no session id to tell this session's runs on other trees", code == 0 and not out,
+          out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-1")
+    check("cap check: a council-verifier naming no run folder (test-architect's own check) starts with no run open",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", "type=general-purpose", "seat=hunt")
+    check("cap check: an ordinary agent is never held to the record", code == 0 and not out, out + err)
+    _, out, _ = council(dr, "run", "open", "council-review", env=session("sD"))
+    drun = out.strip().splitlines()[-1]
+    dname = os.path.basename(drun)
+    write_plan(drun, selected=("hunt",))
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=beck")
+    starts = read(os.path.join(drun, "agent-starts.tsv"))
+    check("cap check: a council-worker for a seat the plan doesn't select is refused, naming the plan rows to add — "
+          "and counts no agent start", code == 2 and "seat beck has no selected row in the run plan of " + dname in out
+          and "council run plan check --run " + dname in out and "\tAgent\t" not in starts, out + err + starts)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt", "run=" + dname)
+    check("cap check: a council-worker for a selected seat of the open run starts, and is counted",
+          code == 0 and not out and read(os.path.join(drun, "agent-starts.tsv")).count("\tAgent\t") == 1, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-9", "run=" + dname)
+    check("cap check: a council-verifier naming the run, for a seat its plan doesn't select, is refused",
+          code == 2 and "seat verify-9 has no selected row" in out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-planb", "run=" + dname)
+    check("cap check: a re-check's file (verify-planb.md) belongs to its planned seat (verify-plan) — the verifier starts",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=no such seat")
+    check("cap check: a seat it couldn't read cleanly is no reason to refuse", code == 0 and not out, out + err)
+    council(dr, "run", "close", "--status", "paused")
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-plan", "run=" + dname)
+    check("cap check: an agent for a paused run is refused, naming the resume", code == 2 and "which is paused" in out
+          and "council run resume --run " + dname in out, out + err)
+    council(dr, "run", "close", "--run", dname, "--status", "abandoned")      # complete would need Deliver first
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-plan", "run=" + dname)
+    check("cap check: an agent for a closed run is refused — its agents are done", code == 2 and "which is closed (abandoned)" in out,
+          out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt", "run=" + dname)
+    check("cap check: ... a council-worker too, even for a seat its plan selected", code == 2 and "which is closed" in out, out + err)
+    # A re-review or a post-game cites an earlier run's files, and the hook may read that run's folder: a
+    # closed or paused run named is refused only while no run is open here, else the open runs judge it.
+    _, out, _ = council(dr, "run", "open", "council-implement", env=session("sD"))
+    pname = os.path.basename(out.strip().splitlines()[-1])
+    council(dr, "run", "close", "--status", "paused", "--run", pname)
+    _, out, _ = council(dr, "run", "open", "council-review", env=session("sD"))
+    nrun = out.strip().splitlines()[-1]
+    nname = os.path.basename(nrun)
+    write_plan(nrun, selected=("hunt", "verify-1"))
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt", "run=" + dname)
+    check("cap check: a council-worker naming a closed run, while a run is open here, is judged by the open run — "
+          "a re-review citing the earlier run's file starts", code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-1", "run=" + pname)
+    check("cap check: ... a council-verifier naming a paused run too (a post-game citing the build's verdict)",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=beck", "run=" + dname)
+    check("cap check: ... and a seat the open run's plan doesn't select is still refused, naming the open run",
+          code == 2 and "seat beck has no selected row in the run plan of " + nname in out and dname not in out, out + err)
+    # The Seat: line may carry a display name: the file the agent writes (file=) names the seat then.
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=Hunt", "file=hunt", "run=" + nname)
+    check("cap check: a Seat: line that names no selected seat (Hunt) defers to the file it writes (seats/hunt.md)",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=Perf", "run=" + nname)
+    check("cap check: a display name alone is never named as a seat to plan — council seat judges after the start",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=Perf", "file=perf", "run=" + nname)
+    check("cap check: a Seat: line and file that agree on an unplanned seat are refused, by the file's slug",
+          code == 2 and "seat perf has no selected row" in out and "Perf" not in out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=perf", "file=beck", "run=" + nname)
+    check("cap check: a Seat: line and file that disagree, neither planned, are let through for council seat to judge",
+          code == 0 and not out, out + err)
+    council(dr, "run", "close", "--status", "abandoned", "--run", nname)
+    old = os.path.join(dr, ".council", "runs", "2026-09-01-100000-review")           # opened before run plans
+    write(os.path.join(old, "session-state.md"), "status: in-progress\nmode: council-review\nphase: work\n")
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=anything")
+    check("cap check: a run opened before run plans has no plan to hold a seat to — the worker starts", code == 0 and not out,
+          out + err)
+
+
+@part("runs")
+def runs_status_card_owed_once(tmp):
+    # The run's first status card is owed once per run, at its first dispatch: the helper marks it due, any
+    # council status call for the run clears it, and the turn-end hook sends the Chair back once while it is due.
+    sc = new_repo(tmp, "card-due")
+    write(os.path.join(sc, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(sc, "run", "open", "council-review", env=session("sK"))
+    srun = out.strip().splitlines()[-1]
+    sname = os.path.basename(srun)
+    write_plan(srun, selected=("w1", "w2"))
+    due = os.path.join(srun, "card-due")
+    council(sc, "seat", "w1", "queued")
+    check("card: a queued seat is no dispatch — nothing is due", not os.path.exists(due))
+    _, _, err = council(sc, "seat", "w1", "running", "agent=k1")
+    check("card: the run's first dispatch marks its card due, with the reminder", read(due) == "due\n"
+          and "first dispatch of this run" in err, err)
+    code, out, err = council(sc, "run", "turn-end", "--session", "sK")
+    check("turn end: while the card is due, the Chair is sent back once to show it — a seat still working or not",
+          code == 2 and out.startswith("Small Council: Run %s made its first dispatch" % sname)
+          and "council status --widget --run " + sname in out and "now waits" not in out and read(due) == "reminded\n",
+          out + err)
+    code, out, err = council(sc, "run", "turn-end", "--session", "sK")
+    check("turn end: ... and only once", code == 0 and not out, out + err)
+    council(sc, "status", "--json")
+    check("card: --json is data, not the card — the mark stays", os.path.exists(due))
+    code, out, err = council(sc, "status")
+    check("card: council status for the run clears the mark", code == 0 and not os.path.exists(due), out + err)
+    _, out, _ = council(sc, "run", "open", "council-review", "--alongside", env=session("sK"))
+    srun2 = out.strip().splitlines()[-1]
+    sname2 = os.path.basename(srun2)
+    write_plan(srun2, selected=("w1",))
+    council(sc, "seat", "w1", "running", "agent=k2", "--run", sname2)
+    code, out, err = council(sc, "status", "--widget", "--run", sname2)
+    check("card: the widget clears it too, so the turn ends with nothing to send back",
+          code == 0 and not os.path.exists(os.path.join(srun2, "card-due"))
+          and council(sc, "run", "turn-end", "--session", "sK")[0] == 0, out[:200] + err)
+    council(sc, "seat", "w1", "done", "agent=k1", "tokens=20000", "--run", sname)
+    council(sc, "seat", "w1", "done", "agent=k2", "tokens=20000", "--run", sname2)
+    council(sc, "run", "close", "--status", "abandoned", "--run", sname2)
+    write(due, "due\n")                                              # as if the card were owed again
+    code, out, err = council(sc, "run", "turn-end", "--session", "sK")
+    check("turn end: a card due and a run waiting on the user are said in one message",
+          code == 2 and "made its first dispatch" in out and "Run %s now waits on the user" % sname in out, out + err)
+    write(due, "due\n")
+    code, out, err = council(sc, "status", "--line", "--run", sname)
+    check("card: --line clears it as well", code == 0 and not os.path.exists(due), out + err)
+
 
 @part("runs")
 def runs_usage(tmp):
@@ -5527,6 +6353,7 @@ if not BASH or not GIT:
     sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
+    GIT_ENV["XDG_CACHE_HOME"] = os.path.join(tmp, "cache")   # session marks (see session()) stay here
     for group, block in PARTS:
         if group in chosen and (only is None or block.__name__ in only):
             block(tmp)

@@ -17,7 +17,7 @@
 set -u
 unset EVENTS_LOST CLOSING          # internal: set only by run close for its own state write, never inherited
 
-COUNCIL_VERSION="0.20.1"
+COUNCIL_VERSION="0.21.0"
 COUNCIL_MEMORY_SIZE_LIMIT=25600  # bytes: about 25 KB of project memory is the expected upper bound
 COUNCIL_NEXT_AT_OPEN="size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
@@ -127,6 +127,61 @@ home_rule() {
 
 # The working tree a run's code-root is compared with.
 this_tree() { local t; t="$(council_toplevel)"; [ -n "$t" ] || t="$(here)"; printf '%s' "$t"; }
+
+# Proof that the plugin's hooks run in a session: an empty file named after the session id under
+# small-council/sessions/ in a per-user cache folder — not under the council home, so the mark is there
+# before council-init makes one, and $HOME is set in Git Bash on Windows too. The SessionStart hook leaves
+# it, and hooks/bash-gate.sh touches it before any Bash call that names council (so it is there for the
+# very `council run open` call, after /reload-plugins too). `council run open` looks for the file named
+# after CLAUDE_CODE_SESSION_ID. Marks older than 30 days are cleared when a session starts.
+# Hooks get Claude Code's environment; Bash tool commands also source the user's shell profile, so the two
+# can disagree on XDG_CACHE_HOME. So marks go to ~/.cache and, when set, $XDG_CACHE_HOME, and the check
+# looks in both. One folder per line.
+session_dirs() {
+  if [ -n "${XDG_CACHE_HOME:-}" ]; then printf '%s/small-council/sessions\n' "$XDG_CACHE_HOME"; fi
+  if [ -n "${HOME:-}" ] && [ "${XDG_CACHE_HOME:-}" != "$HOME/.cache" ]; then
+    printf '%s/.cache/small-council/sessions\n' "$HOME"
+  fi
+}
+
+# A session id that is safe as a file name (Claude Code's are UUIDs). Letters spelled out, as bash 3.2's
+# [a-z] follows the locale. hooks/bash-gate.sh repeats this test: keep the two alike.
+session_file_ok() {
+  case "$1" in ''|.*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*) return 1 ;; esac
+}
+
+mark_hooks_ran() {
+  local dir
+  session_file_ok "$1" || return 0
+  while IFS= read -r dir; do
+    [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null && touch "$dir/$1" 2>/dev/null || continue
+    find "$dir" -type f -mtime +30 -exec rm -f {} + 2>/dev/null
+  done <<DIRS
+$(session_dirs)
+DIRS
+  return 0
+}
+
+# Fails only when the mark is surely missing. It passes when any folder holds the mark, and fails open
+# when a folder can't be created or written (no hook could have left a mark there), for an id that can't
+# be a file name, and with no folder at all.
+hooks_ran() {
+  local dir dirs
+  session_file_ok "$1" || return 0
+  dirs="$(session_dirs)"
+  [ -n "$dirs" ] || return 0
+  while IFS= read -r dir; do
+    [ ! -f "$dir/$1" ] || return 0
+  done <<DIRS
+$dirs
+DIRS
+  while IFS= read -r dir; do
+    mkdir -p "$dir" 2>/dev/null && [ -w "$dir" ] || return 0
+  done <<DIRS
+$dirs
+DIRS
+  return 1
+}
 
 # The skill that owns a run, from its mode: field (0.2 runs sometimes wrote the short name).
 mode_skill() {
@@ -802,6 +857,14 @@ cmd_run_open() {
     *) die "unknown mode '$mode' — use a skill name: council-review, council-plan, council-implement, council-research, council-postgame, council-init, test-architect, context-core" ;;
   esac
   case "$mode" in council-*) short="${mode#council-}" ;; context-core) short=core ;; *) short="$mode" ;; esac
+  # No mark for this session (see session_dirs): neither its SessionStart hook nor the bash gate just
+  # before this call ran, so the council's hooks (the agent stop, the seat check) may not run in it. With
+  # no session id (scripts, tests) nothing is checked; COUNCIL_ALLOW_NO_HOOKS=1, named only in this
+  # refusal, is for a user who insists.
+  if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && [ "${COUNCIL_ALLOW_NO_HOOKS:-}" != 1 ] \
+     && ! hooks_ran "$CLAUDE_CODE_SESSION_ID"; then
+    die "no SessionStart mark for this session — the plugin was enabled or updated after it started, so Small Council's hooks (the agent stop, the seat check) may not run in it. Restart the session, then open the run again. Only if the user insists on going on without them: COUNCIL_ALLOW_NO_HOOKS=1 council run open $mode"
+  fi
   home="$(council_home)"
   if [ ! -d "$home" ]; then
     case "$mode" in
@@ -843,6 +906,7 @@ plan-schema: 1
 events-schema: 1
 size:
 base:
+start-head: $(git -C "$top" rev-parse -q --verify HEAD 2>/dev/null)
 deliverable:
 next: $nxt
 ## Decisions so far
@@ -884,6 +948,49 @@ stage_name_ok() {
   case "$2" in council-init|test-architect) ;; *) return 1 ;; esac
   # The letters spelled out: macOS bash 3.2 reads [a-z] by the locale's order, which takes capitals too.
   case "$1" in ''|-*|*[!abcdefghijklmnopqrstuvwxyz-]*) return 1 ;; esac
+}
+
+# A stage's place in the order. A build stands where council-implement's build loop does (stages 3-7),
+# as scripts/audit.py ranks it; a mode's own phase names rank 0.
+stage_rank() {
+  case "$1" in
+    convene) printf 1 ;; prepare) printf 2 ;; assign) printf 3 ;; brief) printf 4 ;; work|build) printf 5 ;;
+    collect) printf 6 ;; judge) printf 7 ;; challenge) printf 8 ;; deliver) printf 9 ;; learn) printf 10 ;; *) printf 0 ;;
+  esac
+}
+
+# The stages a run must enter, in order, as scripts/audit.py reads them: the build loop stands in for 3-7;
+# a post-game, a Solo run and a run whose plan selects no worker seat skip 3-6. None for council-init and
+# test-architect (their own phases) or context-core (no fixed path).
+required_stages() {
+  case "$(field mode "$1/session-state.md")" in
+    council-implement) printf '%s' 'convene prepare build challenge deliver learn' ;;
+    council-postgame)  printf '%s' 'convene prepare judge challenge deliver learn' ;;
+    council-review|council-plan|council-research)
+      if [ -f "$1/run-plan.tsv" ] && awk -F'\t' '
+           { sub(/\r$/, ""); gsub(/^[ ]+|[ ]+$/, "", $4) }
+           $1 == "run" && $2 == "run" && $3 == "size" { size = $4 }
+           $1 == "seat" && $3 == "role" && $4 == "worker" { worker[$2] = 1 }
+           $1 == "seat" && $3 == "disposition" && $4 == "selected" { picked[$2] = 1 }
+           END { if (size != "solo") for (s in worker) if (s in picked) found = 1; exit !found }' "$1/run-plan.tsv"; then
+        printf '%s' 'convene prepare assign brief work collect judge challenge deliver learn'
+      else
+        printf '%s' 'convene prepare judge challenge deliver learn'
+      fi ;;
+  esac
+}
+
+# The stages this run must enter that a move from stage $2 to stage $3 passes over, comma-separated;
+# nothing for a step back or a mode with its own phases.
+stages_skipped() {
+  local from to s r out=""
+  from="$(stage_rank "$2")"; to="$(stage_rank "$3")"
+  [ "$from" -gt 0 ] && [ "$to" -gt "$from" ] || return 0
+  for s in $(required_stages "$1"); do
+    r="$(stage_rank "$s")"
+    if [ "$r" -gt "$from" ] && [ "$r" -lt "$to" ]; then out="${out:+$out,}$s"; fi
+  done
+  printf '%s' "$out"
 }
 
 # `- notifications: off` in the project's config silences the owner's phone alerts (as status.py reads it).
@@ -934,6 +1041,7 @@ wait_over() {
 
 cmd_state() {
   local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting mode lock='' wkey='' gave_next=''
+  local to_phase='' skip='' gave_skip='' skipped='' how=''
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
@@ -944,20 +1052,39 @@ cmd_state() {
     case "$key" in ''|*[!abcdefghijklmnopqrstuvwxyz0123456789-]*) die "bad key: $key (lowercase letters, digits, dashes)" ;; esac
     case "$kv" in
       status=*)
-        case "${kv#*=}" in in-progress|paused|complete|abandoned) ;; *) die "status must be in-progress, paused, complete or abandoned" ;; esac ;;
+        case "${kv#*=}" in in-progress|paused|complete|abandoned) ;; *) die "status must be in-progress, paused, complete or abandoned" ;; esac
+        [ "${kv#*=}" != complete ] || [ "${CLOSING:-}" = 1 ] || die "status=complete is the close's to set — close the run with: council run close" ;;
       closed=*)
         [ "${CLOSING:-}" = 1 ] || die "closed= is the close's own stamp — close the run with: council run close" ;;
       decision=*)
         case "${kv#decision=}" in *[![:space:]]*) ;; *) die "decision= takes the user's words — their ruling or go-ahead, as they said it" ;; esac ;;
+      skip=*)
+        case "${kv#skip=}" in *[![:space:]]*) ;; *) die "skip= takes why a stage is skipped, in words: council state phase=<stage> skip=\"<why>\"" ;; esac
+        gave_skip=1; skip="$(printf '%s' "${kv#skip=}" | tr ';\r\n' ',  ')" ;;
       phase=*)
         stage_name_ok "${kv#phase=}" "$mode" \
-          || die "phase=${kv#phase=} is not a stage — use one of convene, prepare, assign, brief, work, collect, judge, challenge, deliver, learn, or build in a build (lower case)" ;;
+          || die "phase=${kv#phase=} is not a stage — use one of convene, prepare, assign, brief, work, collect, judge, challenge, deliver, learn, or build in a build (lower case)"
+        to_phase="${kv#phase=}" ;;
     esac
     case "$kv" in
       phase=brief|phase=build|phase=work|phase=collect|phase=judge|phase=challenge|phase=deliver|phase=learn)
         require_run_plan "$run" "advance to ${kv#phase=}" ;;
     esac
   done
+  # A step forward past a stage this run must enter is refused unless skip= says why, and the reason goes
+  # on the phase event: two plan runs jumped past Assign and Brief, and a fix closed from Challenge.
+  [ -n "$to_phase" ] || [ -z "$gave_skip" ] || die "skip= goes with the phase= it explains: council state phase=<stage> skip=\"<why>\""
+  if [ -n "$to_phase" ]; then
+    skipped="$(stages_skipped "$run" "$(field phase "$st")" "$to_phase")"
+    if [ -n "$skipped" ] && [ -z "$gave_skip" ]; then
+      case "$mode:${skipped%%,*}" in      # a build stopped blocked goes to its receipt with no check (council-implement step 5)
+        council-implement:challenge) how="A build stopped blocked skips it on purpose: council state phase=deliver skip=\"blocked: task <n>\"" ;;
+        *) how="To skip on purpose, say why: council state phase=$to_phase skip=\"<why>\"" ;;
+      esac
+      die "phase=$to_phase would skip $(printf '%s' "$skipped" | sed 's/,/, /g'), which a $mode run enters in turn — next: council state phase=${skipped%%,*}. $how"
+    fi
+    [ -n "$skipped" ] || [ -z "$gave_skip" ] || die "phase=$to_phase skips no stage this run must enter, so there is nothing for skip= to explain — drop it"
+  fi
   # Several commands rewrite this file (state, index, ask save, close, resume); two at once would each
   # write over the other's change. The lock also keeps the events below in the order of the writes.
   lock="$st.lock"; event_lock "$lock" || die "state lock unavailable: $lock"
@@ -986,6 +1113,7 @@ cmd_state() {
     || { rm -f "$tmp"; event_unlock "$lock" || :; die "cannot update $st"; }
   for kv in ${1+"$@"}; do
     key="${kv%%=*}"
+    [ "$key" != skip ] || continue                 # a skip's reason goes on the phase event, not the header
     if [ "$key" = decision ]; then                 # the user's words, redacted, under Decisions so far, as a
                                                    # JSON string ("…" and \ escaped), so a reader gets them back
       { printf '%s' "${kv#decision=}" | tr '\t\r\n\013\014' '     '; printf '\n'; } > "$tmp.said" \
@@ -1042,7 +1170,7 @@ cmd_state() {
   new_phase="$(field phase "$st")"; new_status="$(field status "$st")"
   if [ "${EVENTS_LOST:-}" = 1 ]; then :              # close of a run whose stream is lost: no events to add
   elif [ "$old_phase" != "$new_phase" ]; then
-    event_append "$run" run.phase_changed run "$new_phase" "from=$old_phase" \
+    event_append "$run" run.phase_changed run "$new_phase" "from=$old_phase${skipped:+;skipped=$skipped;reason=$skip}" \
       || { event_unlock "$lock" || :; die "state changed, but the phase event could not be recorded"; }
   fi
   if [ "${EVENTS_LOST:-}" = 1 ]; then :
@@ -1212,13 +1340,16 @@ status_nudge() {
     fi
     printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s` — and if the card fails to render, give that text and carry on%s%s\n' \
       "$lead" "$at" "$at" "${follow:+; and tell them, from the record — $follow}" "$al" >&2
+    # The first card is owed once per run, until shown: <run>/card-due says "due" from here on, "reminded"
+    # once the turn-end hook has sent the Chair back for it, and goes when council status reads the run.
+    [ "$when" = close ] || { printf 'due\n' > "$run/card-due"; } 2>/dev/null || :
   elif [ "$when" != close ]; then
     printf 'council: %s: relay `council run status` (no Python 3.8+ here, so there is no status card)\n' "$lead" >&2
   fi
 }
 
 cmd_seat() {
-  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 tools="" tb tt closed_out="" n dup="" over=""
+  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 tools="" tb tt closed_out="" n dup="" over="" why
   [ -n "$slug" ] && [ -n "$state" ] || die "usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [agents=N] [note=TEXT]"
   case "$state" in queued|running|done|failed|blocked|skipped) ;; *) die "seat state must be queued, running, done, failed, blocked or skipped" ;; esac
   case "$slug" in *[!A-Za-z0-9._-]*) die "bad seat slug: $slug" ;; esac
@@ -1283,7 +1414,8 @@ cmd_seat() {
       if [ -f "$run/run-plan.tsv" ]; then
         run_plan_has_selected "$run/run-plan.tsv" "$slug" \
           || die "cannot start seat $slug — run-plan.tsv does not mark it selected; update the plan and run: council run plan check --run ${run##*/}"
-      fi ;;
+      fi
+      if why="$(check_round_refusal "$run" "$slug")"; then die "$why"; fi ;;
   esac
   wait_over "$run"                                  # the call is good: the run moves on
   f="$run/seats.tsv"; u="$run/usage.tsv"
@@ -1729,10 +1861,12 @@ cmd_cap_allow() {
 # that session drives, with no seat running, now waits on the user. A wait the Chair recorded itself
 # (state waiting=) was asked for then, so it is left alone: one alert per wait. One it didn't, the hook
 # records, and with notifications on prints what the Chair is sent back for — the owner's alert — and
-# exits 2; the next turn end of that wait finds it recorded. Otherwise silent, exit 0. A fault of its
-# own dies, which the hook lets through.
+# exits 2; the next turn end of that wait finds it recorded. A run whose first status card is still due
+# (card-due, from the first dispatch's reminder) sends the Chair back once for it too, seats working or
+# not: the card is owed once per run. Otherwise silent, exit 0. A fault of its own dies, which the hook
+# lets through.
 cmd_run_turn_end() {
-  local home session run st names="" n=0 last="" how at="<folder>" label=run
+  local home session run st names="" n=0 last="" how at="<folder>" label=run mark cards="" said=""
   home="$(council_home)"
   [ -d "$home/runs" ] || return 0
   session="${SESSION_ARG:-}"
@@ -1740,6 +1874,8 @@ cmd_run_turn_end() {
   while IFS= read -r run; do
     [ -n "$run" ] || continue
     st="$run/session-state.md"
+    mark=""; { IFS= read -r mark < "$run/card-due"; } 2>/dev/null || :
+    if [ "$mark" = due ] && { printf 'reminded\n' > "$run/card-due"; } 2>/dev/null; then cards="$cards${cards:+, }${run##*/}"; fi
     ! awk -F'\t' 'NR > 1 && $2 == "running" { f = 1; exit } END { exit !f }' "$run/seats.tsv" 2>/dev/null || continue
     [ -z "$(state_field waiting "$st")" ] || continue          # recorded already: asked for when it was
     ( RUN_ARG="$run" cmd_state waiting="your answer in the chat" ) >/dev/null 2>&1 || continue
@@ -1748,15 +1884,115 @@ cmd_run_turn_end() {
   done <<RUNS
 $(session_runs "$home" "$session")
 RUNS
-  [ "$n" -gt 0 ] || return 0
+  case "$cards" in
+    '') ;;
+    *,*) said="Runs $cards made their first dispatch, and the user has not been shown their status: for each, hand the output of \`council status --widget --run <folder>\` to a show_widget tool (it may be a deferred tool: search the tools for it first), else relay \`council status --run <folder>\` — once." ;;
+    *) said="Run $cards made its first dispatch, and the user has not been shown its status: hand the output of \`council status --widget --run $cards\` to a show_widget tool (it may be a deferred tool: search the tools for it first), else relay \`council status --run $cards\` — once." ;;
+  esac
+  [ "$n" -gt 0 ] || [ -n "$said" ] || return 0
+  if [ "$n" -eq 0 ]; then say "Small Council: $said Then end your turn."; exit 2; fi
   if [ "$n" -gt 1 ]; then label=runs; else at="$last"; fi
+  [ -z "$said" ] || label="R${label#r}"              # a second sentence
   if impact_python >/dev/null 2>&1; then
     how="send the line \`council status --line --run $at\` prints"
   else
     how="send them the question in one short line"
   fi
-  say "Small Council: $label $names now waits on the user (no seat is working). If you stopped to ask them something: record the question if you haven't (council state waiting=\"<it, short>\" --run $at), then — unless you already sent the owner an alert for this stop — $how, once, with a PushNotification tool (it may be a deferred tool: search the tools for it first), and end your turn. If it only waits on a background task, clear it instead: council state waiting= --run $at."
+  say "Small Council: ${said:+$said }$label $names now waits on the user (no seat is working). If you stopped to ask them something: record the question if you haven't (council state waiting=\"<it, short>\" --run $at), then — unless you already sent the owner an alert for this stop — $how, once, with a PushNotification tool (it may be a deferred tool: search the tools for it first), and end your turn. If it only waits on a background task, clear it instead: council state waiting= --run $at."
   exit 2
+}
+
+# The dispatch record, for the agent gate: a Small Council agent goes out only for an open run, and only
+# for a seat that run's plan selects. A real run sent a verifier 9 s before its plan row existed (the plan
+# check sat in `council seat … running`, after the agent had started), and another after the run had
+# closed. Only council-worker and council-verifier calls are judged, by the subagent type the call names
+# ($3); the seat ($4) and the run folder ($5) are what the hook read from the dispatch message, empty when
+# it couldn't — and nothing is judged on what wasn't read. The runs open for a dispatch: those in
+# progress on this tree, and those this session drives on any tree. A worker always works for a run; a
+# verifier with no run folder named may be test-architect's own check outside any run, so it is held to
+# a run only when it names one. A paused or closed run named is refused only while no run is open for
+# it: a re-review or a post-game cites an earlier run's files, and is judged by the open runs instead.
+# The seat is the Seat: line's ($4) when a run selects it, else the written file's ($6); when neither
+# is selected, a refusal names it only when the two agree and it reads as a slug, never a display name
+# ("Security") — otherwise council seat judges after the start. Prints the refusal and returns 0 when the
+# agent must not start; 1 otherwise.
+dispatch_refusal() {
+  local home="$1" session="$2" type="$3" seat="$4" named="$5" file="${6:-}" kind run status="" cands open pick="" low where why
+  case "$type" in
+    small-council:council-worker) kind=council-worker ;;
+    small-council:council-verifier) kind=council-verifier ;;
+    *) return 1 ;;
+  esac
+  [ -d "$home" ] || return 1                                    # no council here: nothing to judge
+  case "$named" in ''|.*|*[!A-Za-z0-9._-]*) named="" ;; esac
+  case "$seat" in ''|*[!A-Za-z0-9._-]*) seat="" ;; esac
+  case "$file" in ''|*[!A-Za-z0-9._-]*) file="" ;; esac
+  if [ -n "$named" ] && [ -f "$home/runs/$named/session-state.md" ]; then
+    run="$home/runs/$named"
+    status="$(field status "$run/session-state.md")"; status="${status%% *}"; status="${status:-no status}"
+  fi
+  if [ "$status" = in-progress ]; then
+    cands="$run"
+  else
+    [ -n "$status" ] || [ "$kind" = council-worker ] || return 1
+    open="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
+      $6 == "in-progress" && ($4 == ENVIRON["TOP"] || $4 == "-" || (ENVIRON["SID"] != "" && $8 == ENVIRON["SID"])) { print $1 }')"
+    cands="$open"
+    case "$status:$open" in
+      paused:) say "Small Council: this $kind is for run $named, which is paused — no agent starts for it while it is. If the user wants it carried on: council run resume --run $named, then dispatch again."
+               return 0 ;;
+      ?*:) say "Small Council: this $kind is for run $named, which is closed ($status) — its agents are done. For more work, open a new run (council run open <mode>), plan the seat there, then dispatch."
+           return 0 ;;
+      :)  [ -n "$session" ] || return 1                          # no session: its runs on other trees can't be seen
+          say "Small Council: no council run is open on this working tree or for this session, so a council-worker has no run to work for. Open the run first (council run open <mode>), or carry on with a paused one if the user wants it (council run resume --run <folder>); plan the seat, then dispatch. For work outside the council, use another agent type."
+          return 0 ;;
+    esac
+  fi
+  [ -n "$seat$file" ] || return 1
+  if [ -n "$seat" ]; then dispatch_seat_runs "$cands" "$seat" "$kind"; [ "$DS_N" -eq 0 ] || pick="$seat"; fi
+  if [ -z "$pick" ] && [ -n "$file" ] && [ "$file" != "$seat" ]; then
+    dispatch_seat_runs "$cands" "$file" "$kind"; [ "$DS_N" -eq 0 ] || pick="$file"
+  fi
+  if [ -z "$pick" ]; then
+    [ -z "$DS_LEGACY" ] || return 1                              # opened before run plans: nothing to hold it to
+    pick="${file:-$seat}"
+    if [ -n "$seat" ] && [ -n "$file" ]; then                    # "Seat: Perf" writing seats/perf.md agree; others don't
+      low="$(printf '%s' "$seat" | LC_ALL=C tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')"
+      [ "$low" = "$file" ] || return 1
+    fi
+    case "$pick" in *[!abcdefghijklmnopqrstuvwxyz0123456789._-]*) return 1 ;; esac   # a display name, not a slug
+    case "$cands" in
+      *"$NL"*) where="the open runs here ($(printf '%s\n' "$cands" | names))"; run="<folder>" ;;
+      *) where="${cands##*/}"; run="${cands##*/}" ;;
+    esac
+    say "Small Council: seat $pick has no selected row in the run plan of $where, so this $kind would work off the record. Plan it first — its disposition (selected), role, context level and tool-call budget in run-plan.tsv — then council run plan check --run $run, then dispatch, and record it at once: council seat $pick running agent=<id>."
+    return 0
+  fi
+  [ "$DS_N" -eq 1 ] || return 1                                  # which run it is for is unknown: the seat record judges
+  if why="$(check_round_refusal "$DS_RUN" "$pick")"; then say "Small Council: $why"; return 0; fi
+  return 1
+}
+
+# How many of the runs in $1 (one folder a line) select seat $2: DS_N, and DS_RUN the last of them. For a
+# verifier ($3), a re-check's verify-6b or a Workflow part's verify-1-a also counts as its base seat.
+# DS_LEGACY is set when one of them was opened before run plans (no plan to hold a seat to).
+dispatch_seat_runs() {
+  local c also=""
+  DS_N=0; DS_RUN=""; DS_LEGACY=""
+  if [ "$3" = council-verifier ]; then                          # a re-check's verify-6b.md may be seat verify-6's
+    case "$2" in
+      verify-?*-[abcdefghijklmnopqrstuvwxyz]) also="${2%-?}" ;;
+      verify-?*[bcdefghijklmnopqrstuvwxyz]) also="${2%?}" ;;
+    esac
+  fi
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    if [ -z "$(field plan-schema "$c/session-state.md")" ]; then DS_LEGACY=1; continue; fi
+    run_plan_has_selected "$c/run-plan.tsv" "$2" || { [ -n "$also" ] && run_plan_has_selected "$c/run-plan.tsv" "$also"; } || continue
+    DS_N=$((DS_N + 1)); DS_RUN="$c"
+  done <<RUNS
+$1
+RUNS
 }
 
 # council cap check [--session ID] [<tool>] — the agent gate's decision (hooks/agent-gate.sh): silent,
@@ -1768,12 +2004,19 @@ RUNS
 # start (the hook passes Agent, Task or Workflow), a pass also counts one agent start for the run this
 # session drives by its id, when it drives exactly one — under that run's lock, so agents started
 # together cannot all take its last place. A fault of its own never stops an agent: it returns 0, or
-# dies (stderr, nothing on stdout), which the hook lets through.
+# dies (stderr, nothing on stdout), which the hook lets through. With type=, seat= and run= after the
+# tool (the hook reads them from the call), and file= (the slug of the file it writes), a Small Council
+# agent is first held to the record: dispatch_refusal.
 cmd_cap_check() {
-  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed
+  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed w dtype="" dseat="" drun="" dfile=""
+  [ $# -eq 0 ] || shift
+  for w in ${1+"$@"}; do
+    case "$w" in type=*) dtype="${w#type=}" ;; seat=*) dseat="${w#seat=}" ;; run=*) drun="${w#run=}" ;; file=*) dfile="${w#file=}" ;; esac
+  done
   home="$(council_home)"
-  [ -d "$home/runs" ] || return 0
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
+  if [ -n "$dtype" ] && dispatch_refusal "$home" "$session" "$dtype" "$dseat" "$drun" "$dfile"; then exit 2; fi
+  [ -d "$home/runs" ] || return 0
   runs="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' -v OFS='\t' '
     $6 != "in-progress" { next }
     ENVIRON["SID"] != "" && $8 == ENVIRON["SID"] { print $1, 1; next }
@@ -1837,7 +2080,9 @@ RUNS
 
 # What a run closed as complete still lacks, each said on stderr in one plain line — it warns, never
 # refuses: a real run closed "complete" with five stages never entered, and the close line was all the
-# owner saw. Prints the short codes (phase,check,deliverable,verdicts) for the close event.
+# owner saw. (Since then a run with an event stream is refused before Deliver — undelivered — so the
+# phase line is left for runs from before the stream.) Prints the short codes (phase,check,deliverable,
+# verdicts) for the close event.
 close_warnings() {
   local run="$1" mode phase red level f verdicts=0 codes=""
   mode="$(field mode "$run/session-state.md")"
@@ -1899,8 +2144,67 @@ close_claims_note() {
   [ -z "$stale" ] || printf 'council: the claim index is missing or out of date — council evidence build --run %s, then evidence check\n' "${run##*/}" >&2
 }
 
+# Why a run may not close as complete yet, or nothing (exit 1): "never <phase>" when it never entered
+# Deliver (a fix closed "complete" from Challenge, 68 s after the user paused it), "back <stage>" when
+# it went back to an earlier stage after Deliver and never came through Deliver again (a build went back
+# to build after its receipt, and a PR went out over a hazard no receipt named). Read from the event
+# stream, else the state's phase. A mode with no Deliver stage, or a run from before the event stream,
+# is never held here: its close warns instead (close_warnings).
+undelivered() {
+  local st="$1/session-state.md" phase ev=''
+  case "$(field mode "$st")" in council-review|council-plan|council-implement|council-research|council-postgame) ;; *) return 1 ;; esac
+  [ -n "$(field events-schema "$st")" ] || return 1
+  phase="$(field phase "$st")"
+  [ ! -f "$1/events.tsv" ] || ev="$(awk -F'\t' '
+    BEGIN { n = split("convene prepare assign brief work build collect judge challenge", e, " "); for (i = 1; i <= n; i++) early[e[i]] = 1 }
+    { sub(/\r$/, "") }
+    NR > 1 && $4 == "run.phase_changed" { if ($6 == "deliver") { seen = 1; back = "" } else if (seen && back == "" && ($6 in early)) back = $6 }
+    END { if (!seen) print "never"; else if (back != "") print "back " back; else print "delivered" }' "$1/events.tsv" 2>/dev/null)"
+  case "$ev" in
+    delivered) return 1 ;;
+    back\ *) printf '%s' "$ev"; return 0 ;;
+    never) printf 'never %s' "${phase:-unknown}"; return 0 ;;
+  esac
+  case "$phase" in deliver|learn) return 1 ;; esac       # no stream to read: the state's phase alone
+  printf 'never %s' "${phase:-unknown}"
+}
+
+# The commands from where a run is to Deliver, one a step, for the close's refusal:
+# "`council state phase=challenge --run <x>`, then `council state phase=deliver --run <x>`".
+deliver_route() {
+  local s out=""
+  for s in $(stages_skipped "$1" "$(field phase "$1/session-state.md")" deliver | tr ',' ' '); do
+    out="$out\`council state phase=$s --run ${1##*/}\`, then "
+  done
+  printf '%s`council state phase=deliver --run %s`' "$out" "${1##*/}"
+}
+
+# The close reads the run back against the method itself (scripts/audit.py, as council run audit does):
+# five runs closed with no audit, and the one audit's four FAILs never reached the user. Every FAIL line is
+# printed whole, on stdout with the close; the closing card, which can't have been shown yet, is left to a
+# later council run audit. Without Python 3.8+ there is no audit (10-learn.md says what to do).
+close_audit() {
+  local run="$1" py out rc=0
+  py="$(impact_python)" || return 0
+  out="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/audit.py" --run "$run" --at-close 2>&1)" || rc=$?
+  if [ "$rc" -gt 1 ]; then
+    say "audit: could not read the run back ($(printf '%s\n' "$out" | awk 'NF { l = $0 } END { print l }')) — council run audit --run ${run##*/}"
+    return 0
+  fi
+  printf '%s\n' "$out" | NAME="${run##*/}" awk '
+    /^[0-9]+ failed, / { total = $0 }
+    /^  FAIL  / { fail[++n] = $0 }
+    END {
+      if (total == "") total = "no verdict line"
+      if (n) printf "audit: %s — tell the user each FAIL below, in plain words; every item: council run audit --run %s\n", total, ENVIRON["NAME"]
+      else printf "audit: %s — every item: council run audit --run %s\n", total, ENVIRON["NAME"]
+      for (i = 1; i <= n; i++) print fail[i]
+    }'
+}
+
 cmd_run_close() {
   local run status home ptr p usage words n lg busy="" old_status event_type py source stale estimate total basis over warn="" lost="" old_closed retake="" share whose follow="" close_lock="" said=""
+  local held=""
   status="${STATUS_ARG:-complete}"
   case "$status" in complete|abandoned|paused) ;; *) die "--status must be complete, abandoned or paused" ;; esac
   run="$(resolve_run)" || exit 2
@@ -1911,8 +2215,15 @@ cmd_run_close() {
   event_lock "$close_lock" || die "close lock unavailable: $close_lock — another close of this run is still going; if none is, remove that folder and close again"
   lost="$(event_ready "$run")" && lost="" || {
     [ $? -eq 2 ] || events_writable "$run"       # a torn line: refused, with the repair named
-    printf 'council: the event stream is lost (%s): the run closes, but its events were not recorded\n' "$lost" >&2
   }
+  if [ "$status" = complete ] && ! run_closed "$run" && held="$(undelivered "$run")"; then
+    event_unlock "$close_lock" || :
+    case "$held" in
+      back\ *) die "${run##*/} can't close as complete: it went back to ${held#back } after Deliver and never came through Deliver again, so the user has no receipt for what changed since. Re-enter Deliver — $(deliver_route "$run") — show the user the receipt (anything left open with it), then close. If the user paused the work, close it paused: council run close --status paused --run ${run##*/}" ;;
+      *) die "${run##*/} can't close as complete: it never reached Deliver (it is at ${held#never }). If the user paused the work — \"stop for tonight\" too — close it paused: council run close --status paused --run ${run##*/}; if it stopped for good: --status abandoned. Otherwise go on through Deliver first" ;;
+    esac
+  fi
+  [ -z "$lost" ] || printf 'council: the event stream is lost (%s): the run closes, but its events were not recorded\n' "$lost" >&2
   old_status="$(field status "$run/session-state.md")"; old_closed="$(field closed "$run/session-state.md")"
   if run_closed "$run"; then
     if [ "$old_status:$status" = complete:abandoned ] && stopped_short "$run"; then
@@ -2008,6 +2319,7 @@ cmd_run_close() {
     FOLLOW="$follow" status_nudge "$run" close
   fi
   event_unlock "$close_lock" || :                # once: a second release could free a lock another close took since
+  if [ "$old_status" != "$status" ] || [ -z "$old_closed" ]; then close_audit "$run"; fi    # a real close, read back
 }
 
 cmd_run_status() {
@@ -2045,14 +2357,20 @@ cmd_run_status() {
 # until of cap-allowances.tsv) lets the plan hold agent runs up to it: the extra seat their go allowed
 # gets its plan rows, and the run moves on.
 run_plan_validate() {
-  local run="$1" plan="$2" expected_mode max_cap seat_models go
+  local run="$1" plan="$2" expected_mode max_cap seat_models go full_go=1 opened
   expected_mode="$(field mode "$run/session-state.md")"
   max_cap="$(configured_agent_cap)"
   go="$(cap_allowed_until "$run")"
   seat_models="$(configured_seat_models)"
-  # A closed run already dispatched under the setting of its day; today's on/off doesn't judge it.
-  case "$(field status "$run/session-state.md")" in complete|abandoned) seat_models=closed ;; esac
-  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" GO="$go" SEAT_MODELS="$seat_models" QUIET="${QUIET:-0}" awk -F'\t' '
+  # A closed run already dispatched under the setting of its day; today's on/off doesn't judge it. An open
+  # one at Full size needs the user's own go on record: a decision since the run opened (Convene's rule —
+  # a real run went Full, 13 tasks and ~2.15M tokens, 47 s after reading it, without asking).
+  case "$(field status "$run/session-state.md")" in
+    complete|abandoned) seat_models=closed ;;
+    *) opened="$(field opened "$run/session-state.md")"
+       [ "$(decisions_since "$run" "${opened%:[0-9][0-9]}")" -gt 0 ] 2>/dev/null || full_go=0 ;;
+  esac
+  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" GO="$go" SEAT_MODELS="$seat_models" FULL_GO="$full_go" QUIET="${QUIET:-0}" awk -F'\t' '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function problem(line, msg,   k) {       # each problem once: two passes can find the same one
       k = line SUBSEP msg
@@ -2206,6 +2524,8 @@ run_plan_validate() {
       if (size == "solo" && agents != 0) problem(0, "Solo must not select delegated agents")
       if (size == "squad" && agents < 1) problem(0, "Squad needs at least one selected agent")
       if (size == "full" && agents < 4) problem(0, "Full needs at least four selected agents")
+      if (size == "full" && ENVIRON["FULL_GO"] != "1")
+        problem(0, "Full needs the user\047s explicit size-and-cost go: ask them, then record their words with council state decision=\"…\"")
       if ((verification == "independent" || verification == "adversarial") && verifiers < 1)
         problem(0, verification " verification needs a selected verifier")
       if (verification == "self" && verifiers > 0)
@@ -2236,6 +2556,70 @@ require_run_plan() {
     die "cannot $action — run-plan.tsv is missing; restore it from references/templates/run-plan.tsv"
   fi
   QUIET=1 run_plan_validate "$run" "$plan" || die "cannot $action — fix run-plan.tsv, then run: council run plan check --run ${run##*/}"
+}
+
+# The user's decisions on record from a local minute on ("" counts them all): the lines council state
+# decision= writes under "## Decisions so far", each "- <YYYY-MM-DD HH:MM>: "<their words>"".
+decisions_since() {
+  SINCE="${2:-}" awk '
+    { sub(/\r$/, "") }
+    /^## / { inside = ($0 == "## Decisions so far"); next }
+    inside && /^- [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]: / { if (substr($0, 3, 16) >= ENVIRON["SINCE"]) n++ }
+    END { print n + 0 }' "$1/session-state.md" 2>/dev/null || printf '0'
+}
+
+# An event's UTC time (2026-10-08T12:05:09Z) as this machine's local minute, the form a decision carries
+# (2026-10-08 15:05): GNU date, else BSD date; empty when neither reads it.
+utc_local_min() {
+  local s
+  s="$(date -d "$1" '+%Y-%m-%d %H:%M' 2>/dev/null)" || s=""
+  if [ -z "$s" ]; then
+    s="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" '+%s' 2>/dev/null)" && [ -n "$s" ] \
+      && s="$(date -r "$s" '+%Y-%m-%d %H:%M' 2>/dev/null)" || s=""
+  fi
+  printf '%s' "$s"
+}
+
+# Another check of a build task's work (council-implement, step 7). After a second failed verification
+# the build loop allows one clean-context diagnosis and one more attempt, else a stop and a report — a
+# real build gave a task a new lock and a third check instead. A task's checks are its verifier seat
+# verify-<n> and the re-checks verify-<n>b, c … (or the same seat started again, writing verify-<n>b.md);
+# a verdict is one of them recorded done (a repeated done is the same verdict). Starting a check after two
+# verdicts needs a diagnose-… seat recorded after the second — any task's number, as a batched verifier's
+# verify-2 checks tasks 2-4 and task 3's diagnosis is diagnose-3 — or a decision of the user's recorded after
+# it (council state decision=); after three or more, such a decision after the last. The event stream
+# orders the seats; a decision is compared by its minute, in local time. Prints why, and returns 0, when
+# the check must wait; 1 otherwise — another mode, another seat, or a run with no stream.
+check_round_refusal() {
+  local run="$1" slug="$2" base task verdicts n vseq since
+  case "$slug" in verify-?*) ;; *) return 1 ;; esac
+  [ "$(field mode "$run/session-state.md")" = council-implement ] && [ -f "$run/events.tsv" ] || return 1
+  base="$slug"
+  case "$slug" in       # verify-6b is task 6's re-check while verify-6 is on record, else task 6b's own first check
+    verify-?*[bcdefghijklmnopqrstuvwxyz]) [ -z "$(seat_field "$run" "${slug%?}" 2)" ] || base="${slug%?}" ;;
+  esac
+  task="${base#verify-}"
+  verdicts="$(B="$base" awk -F'\t' '
+    function mine(s,   b) { b = ENVIRON["B"]
+      return s == b || (length(s) == length(b) + 1 && index(s, b) == 1 && index("bcdefghijklmnopqrstuvwxyz", substr(s, length(s))) > 0) }
+    NR > 1 && $4 == "seat.updated" && mine($5) { if ($6 == "done" && st[$5] != "done") { n++; seq = $2; at = $3 }; st[$5] = $6 }
+    END { if (n) print n "\t" seq "\t" at }' "$run/events.tsv" 2>/dev/null)"
+  n="${verdicts%%"$TAB"*}"
+  [ "${n:-0}" -ge 2 ] 2>/dev/null || return 1
+  vseq="${verdicts#*"$TAB"}"; since="$(utc_local_min "${vseq#*"$TAB"}")"; vseq="${vseq%%"$TAB"*}"
+  if [ "$n" -eq 2 ] && S="$vseq" awk -F'\t' 'NR > 1 && $4 == "seat.updated" && index($5, "diagnose-") == 1 &&
+       $2 + 0 > ENVIRON["S"] + 0 && $6 != "queued" && $6 != "skipped" { f = 1; exit } END { exit !f }' "$run/events.tsv" 2>/dev/null; then
+    return 1
+  fi
+  [ "$(decisions_since "$run" "$since")" -eq 0 ] 2>/dev/null || return 1
+  if [ "$n" -eq 2 ]; then
+    printf 'cannot start %s — it would be the third check of task %s, after two verdicts. After a second failed verification the build loop allows one clean-context diagnosis, then one more attempt: plan diagnose-%s (for a verifier of several tasks, the number of the task that failed) and record it (council seat diagnose-%s running agent=<id>) before this check — or, if the task already used its diagnosis, stop and report to the user. Without that, only the user'"'"'s go starts it: ask them, then record their words with council state decision="…"\n' \
+      "$slug" "$task" "$task" "$task"
+  else
+    printf 'cannot start %s — task %s has %s verdicts, and after the second the build loop allows one diagnosis and one more attempt: stop and report to the user. Another check needs their go: ask them, then record their words with council state decision="…"\n' \
+      "$slug" "$task" "$n"
+  fi
+  return 0
 }
 
 cmd_run_plan() {
@@ -2416,8 +2800,10 @@ cmd_tui() {
 
 # The run's status in plain words (scripts/status.py): the one reading the chat widget (--widget),
 # the short summary (the default) and the cockpit's headline share. Read-only — nothing is written, so
-# it is safe beside a live run, and a widget is a snapshot that says when it was taken. It hands the
-# summary the exact command for the terminal view, for hosts that cannot show a widget.
+# it is safe beside a live run, and a widget is a snapshot that says when it was taken — but for the
+# run's card-due mark (status_nudge), which the summary, the widget and the line clear once they print:
+# the status has been read out for the user. It hands the summary the exact command for the terminal
+# view, for hosts that cannot show a widget.
 cmd_status() {
   local run py root where bash_exe
   run="$(resolve_run)" || exit 2
@@ -2438,7 +2824,8 @@ cmd_status() {
   [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
   [ "$LINE" -eq 0 ] || set -- "$@" --line
   [ "$PREVIEW" -eq 0 ] || set -- "$@" --preview
-  "$@"
+  "$@" || return
+  [ "$JSON_OUT" -eq 1 ] || [ ! -f "$run/card-due" ] || rm -f "$run/card-due" 2>/dev/null || :
 }
 
 # The desktop pet (scripts/pet.py), only on the user's request: a small window that shows how this
@@ -3135,6 +3522,7 @@ GATE_LOCK="" GATE_LOCK_PID=""
 
 gate_unlock() {
   local lock="$GATE_LOCK" pid=''
+  gate_stop_running                              # a gate still running when this call ends goes with it
   [ -n "$lock" ] || return 0
   GATE_LOCK=""
   { IFS= read -r pid < "$lock/owner"; } 2>/dev/null || :
@@ -3182,6 +3570,120 @@ gate_lock() {
   done
 }
 
+# Every gate runs under a time limit. A probe once deadlocked for 672 s on a lock added minutes before,
+# 12.6 h after a 633 s hang, and nothing stopped either; probes that passed that night ran 194, 328 and
+# 352 s. The limit: --timeout when given; else the largest of three times the gate's own green baseline
+# in this run (a red baseline's time says nothing of a passing run), the config's `- gate time limit:`
+# (read at every call, so it can raise a limit at any time) and 120 s. With neither a green baseline nor
+# that line: 9 minutes for a check given its command after --, which borrows no other gate's time (above
+# the slowest passing probe, under the 10 minutes one Bash call may take, so the helper records the stop
+# itself); 30 minutes for a configured gate. A gate past it is stopped with every process it started,
+# and recorded as exit 124, "TIMED OUT": a failure, never a pass, and no proof.
+GATE_PG="" GATE_WATCH="" GATE_TIMEOUT="" GATE_LIMIT="" GATE_LIMIT_WHY="" GATE_TIMED_OUT=0
+
+# A time as seconds: 600, 600s, 10m, 10 min, 1h. Anything else fails.
+limit_seconds() {
+  local v n u
+  v="$(printf '%s' "$1" | tr -d ' \t\r' | tr 'A-Z' 'a-z')"
+  n="${v%%[!0-9]*}"; u="${v#"$n"}"
+  n="$(printf '%s' "$n" | sed 's/^0*//')"          # 010 is ten, never octal eight
+  case "$n" in ''|????????*) return 1 ;; esac      # none, or past seven digits
+  case "$u" in
+    ''|s|sec|secs|second|seconds) ;;
+    m|min|mins|minute|minutes) n=$((n * 60)) ;;
+    h|hr|hrs|hour|hours) n=$((n * 3600)) ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$n"
+}
+
+gate_seconds() { sed -n 's/.*"seconds": *\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -n 1; }
+
+# This gate's limit and where it came from: GATE_LIMIT (seconds) and GATE_LIMIT_WHY (words).
+gate_limit() {
+  local run="$1" name="$2" secs="" f cfg="" raw bad=""
+  if [ -n "$GATE_TIMEOUT" ]; then GATE_LIMIT="$GATE_TIMEOUT"; GATE_LIMIT_WHY="set by --timeout"; return 0; fi
+  f="$(gate_base "$run" "$name")"; f="$run/gates/baseline/${f##*/}.json"
+  [ "$(gate_exit "$f")" != 0 ] || secs="$(gate_seconds "$f")"      # a red baseline may have stopped at once
+  raw="$(sed -n 's/^[[:space:]]*-[[:space:]]*gate time limit:[[:space:]]*//p' "$(council_home)/council.config.md" 2>/dev/null | head -n 1 | tr -d '\r')"
+  if [ -n "$raw" ]; then cfg="$(limit_seconds "$raw")" || { cfg=""; bad=" (the config's gate time limit '$raw' is not a time)"; }; fi
+  if [ -z "$secs" ] && [ -z "$cfg" ]; then
+    if [ -n "$GATE_CMD" ]; then GATE_LIMIT=540; GATE_LIMIT_WHY="the default for a check given its command, with no green baseline of its own$bad"
+    else GATE_LIMIT=1800; GATE_LIMIT_WHY="the default, with no green baseline to go by$bad"; fi
+    return 0
+  fi
+  GATE_LIMIT=120; GATE_LIMIT_WHY="the 120s floor"
+  if [ -n "$secs" ]; then
+    GATE_LIMIT_WHY="3× its ${secs}s green baseline"
+    if [ $((secs * 3)) -ge 120 ]; then GATE_LIMIT=$((secs * 3)); else GATE_LIMIT_WHY="$GATE_LIMIT_WHY, raised to the 120s floor"; fi
+  fi
+  if [ -n "$cfg" ] && [ "$cfg" -gt "$GATE_LIMIT" ]; then GATE_LIMIT="$cfg"; GATE_LIMIT_WHY="the config's gate time limit"; fi
+  GATE_LIMIT_WHY="$GATE_LIMIT_WHY$bad"
+}
+
+# Stop process group $1 — the gate and every process it started: TERM, then KILL what is left after up
+# to 3 s. Where job control gave it no group of its own, the leader alone; on Windows also its process
+# tree, which reaches the native programs a group signal may miss.
+gate_stop() {
+  local g="$1" n=0 wp=""
+  kill -TERM -- -"$g" 2>/dev/null || kill -TERM "$g" 2>/dev/null
+  kill -CONT -- -"$g" 2>/dev/null                # a stopped process takes TERM only once it runs again
+  while [ "$n" -lt 30 ] && kill -0 -- -"$g" 2>/dev/null; do sleep 0.1; n=$((n + 1)); done
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      { IFS= read -r wp < "/proc/$g/winpid"; } 2>/dev/null || wp=""
+      [ -z "$wp" ] || taskkill //F //T //PID "$wp" >/dev/null 2>&1 ;;
+  esac
+  kill -KILL -- -"$g" 2>/dev/null; kill -KILL "$g" 2>/dev/null
+  return 0
+}
+
+# The watchdog, in a process group of its own: it outlives a helper killed outright, so even then the gate
+# is stopped at its limit and nothing is left running. It ends by itself once the gate has.
+gate_watch() {
+  local g="$1" limit="$2" flag="$3"
+  SECONDS=0
+  while [ "$SECONDS" -lt "$limit" ]; do
+    sleep 1
+    kill -0 "$g" 2>/dev/null || exit 0
+  done
+  : > "$flag"
+  gate_stop "$g"
+}
+
+# The gate still running and its watchdog, stopped: every way out of the helper (gate_unlock, on EXIT).
+gate_stop_running() {
+  local g="$GATE_PG" w="$GATE_WATCH"
+  GATE_PG="" GATE_WATCH=""
+  [ -z "$g" ] || gate_stop "$g"
+  [ -z "$w" ] || { kill -TERM -- -"$w" 2>/dev/null || kill -TERM "$w" 2>/dev/null; }
+  return 0
+}
+
+# Run "$3" in code root $1 (COUNCIL_BASE=$2), all output to file $4, under limit $5 seconds. Returns its
+# exit code, or 124 with GATE_TIMED_OUT=1 when the watchdog stopped it.
+gate_exec() {
+  local top="$1" rbase="$2" rcmd="$3" out="$4" limit="$5" flag="$4.timed-out" ec
+  GATE_TIMED_OUT=0
+  rm -f "$flag"
+  set -m 2>/dev/null                             # each job its own process group, so one signal reaches all of it
+  ( cd "$top" 2>/dev/null || exit 97; COUNCIL_BASE="$rbase" bash -c "$rcmd" < /dev/null ) > "$out" 2>&1 &
+  GATE_PG=$!
+  ( gate_watch "$GATE_PG" "$limit" "$flag" ) < /dev/null > /dev/null 2>&1 &
+  GATE_WATCH=$!
+  set +m 2>/dev/null
+  { wait "$GATE_PG"; ec=$?; } 2>/dev/null
+  if [ -f "$flag" ]; then
+    { wait "$GATE_WATCH"; } 2>/dev/null           # let it finish stopping what is left
+    rm -f "$flag"; GATE_TIMED_OUT=1; ec=124
+  else
+    kill -TERM -- -"$GATE_WATCH" 2>/dev/null || kill -TERM "$GATE_WATCH" 2>/dev/null
+    { wait "$GATE_WATCH"; } 2>/dev/null
+  fi
+  GATE_PG="" GATE_WATCH=""
+  return "$ec"
+}
+
 # Run one gate; full output to <run>/gates/<name>.txt, the verdict to <name>.json. Returns its exit code.
 # In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
 # so a later failure can be told apart from one the untouched code already had.
@@ -3206,10 +3708,16 @@ run_gate() {
   # inside it looks at what this run reviews or builds — on the default branch, with the work committed,
   # the merge-base is HEAD itself and the committed change would be skipped. Empty clears an inherited one.
   rbase="$(field base "$run/session-state.md")"
+  gate_limit "$run" "$name"
   start="$(date +%s)"
-  ( cd "$top" 2>/dev/null || exit 97; COUNCIL_BASE="$rbase" bash -c "$rcmd" < /dev/null ) > "$out" 2>&1
+  gate_exec "$top" "$rbase" "$rcmd" "$out" "$GATE_LIMIT"
   ec=$?
   secs=$(( $(date +%s) - start ))
+  if [ "$GATE_TIMED_OUT" = 1 ]; then               # said in its own output and verdict, so no reader takes it for a check
+    printf '\ncouncil: TIMED OUT after %ss — stopped at its time limit, %ss (%s), with every process it started\n' \
+      "$secs" "$GATE_LIMIT" "$GATE_LIMIT_WHY" >> "$out"
+    nnote=", \"note\": \"TIMED OUT after ${secs}s (time limit ${GATE_LIMIT}s: $(json_esc "$GATE_LIMIT_WHY"))\", \"timed_out\": true"
+  fi
   if [ "$ec" -eq 0 ] && cmd_never_ran "$out"; then   # a prompt and a banner: the command never ran
     ec=1; never=1; nnote=', "note": "cmd opened its prompt and ran nothing"'
   fi
@@ -3232,8 +3740,8 @@ run_gate() {
     fi
   fi
   [ -z "${PROOF_ARG:-}" ] || nnote="$nnote, \"proof\": \"$PROOF_ARG\""
-  printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"%s}\n' \
-    "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" "$nnote" > "$base.json"
+  printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s", "limit": %d%s}\n' \
+    "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" "$GATE_LIMIT" "$nnote" > "$base.json"
   if [ "${GATE_BASELINE:-0}" = 1 ] && [ ! -f "$bl.txt" ]; then
     mkdir -p "$run/gates/baseline" && cp "$out" "$bl.txt" && cp "$base.json" "$bl.json" && fresh=1
   fi
@@ -3249,7 +3757,13 @@ run_gate() {
     return 0
   fi
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
-  if [ "$never" = 1 ]; then
+  if [ "$GATE_TIMED_OUT" = 1 ]; then              # a hang: what it was doing last, and no baseline to compare
+    say "gate $name: TIMED OUT after ${secs}s — stopped at its time limit, ${GATE_LIMIT}s ($GATE_LIMIT_WHY), with every process it started. A hang is no pass and no proof; if it truly needs longer: council gate $(qname "$name") --timeout <seconds>, or a longer \"- gate time limit:\" under Run preferences in the config — full output: $out"
+    grep -v -e '^council: TIMED OUT' -e '^[[:space:]]*$' "$out" 2>/dev/null | tail -n 8 | clip 220 | sed 's/^/    /'
+    event_append "$run" gate.finished "$name" failed "exit=$ec;seconds=$secs;empty=0;timed_out=1" \
+      || printf 'council: gate failed, and its event was not recorded\n' >&2
+    return "$ec"
+  elif [ "$never" = 1 ]; then
     say "gate $name: FAIL — cmd opened its prompt and ran nothing (${secs}s): write its switch as //c, e.g. cmd //c \"<command>\" — full output: $out"
   elif [ "$ec" -eq 127 ]; then                   # the shell's "command not found": nothing was checked
     say "gate $name: could not run (exit 127, ${secs}s) — a command it calls was not found; install it, or fix the gate's command — full output: $out"
@@ -3346,12 +3860,51 @@ missing_module() {
   printf '%s\n' "$said" | sed -n 's/^.*: No module named \([A-Za-z0-9_.][A-Za-z0-9_.]*\)[[:space:]]*$/\1/p' | tr -d '\r' | grep .
 }
 
+# council gate <name> --invalid "<why>": a red that proves nothing — the new check didn't compile, the probe
+# was broken — said so on its record rather than left to count as a red. Nothing runs. The verdict json gains
+# "invalid", the output a closing line, a copy goes to gates/invalid/, and an event records it. `council check`
+# then reads a before-<n> or regress-<n> so marked as NO-PROOF-YET; running the gate again replaces it.
+# A gate's repair attempts stay counted: a broken check is still a try that failed.
+gate_invalid() {
+  local run="$1" name="$2" why base json ec k=1 slug
+  [ "$ALL" = 0 ] || die "--invalid marks one gate's record, not a set"
+  [ -z "$GATE_CMD" ] && [ -z "$PROOF_ARG" ] && [ -z "$GATE_TIMEOUT" ] \
+    || die "--invalid runs nothing: council gate <name> --invalid \"<why>\" takes no command, --proof or --timeout"
+  [ -n "$name" ] || die "usage: council gate <name> --invalid \"<why the red proves nothing>\""
+  why="$(printf '%s' "$INVALID_ARG" | tr '\t\r\n' '   ' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  [ -n "$why" ] || die "--invalid needs the reason, in words: --invalid \"the new test didn't compile\""
+  base="$(gate_base "$run" "$name")"; json="$base.json"; slug="${base##*/}"
+  [ -f "$json" ] || die "gate $name has no record in this run (gates/$slug.json) — nothing to mark"
+  ec="$(gate_exit "$json")"
+  case "$ec" in ''|*[!0-9-]*) die "gate $name's record can't be read (gates/$slug.json) — nothing was marked" ;; esac
+  [ "$ec" -ne 0 ] || die "gate $name passed (exit 0) — --invalid marks a red that proves nothing; a check that passed for the wrong reason needs a better check, run again"
+  ! grep -q '"invalid": "' "$json" || die "gate $name's record is already marked invalid — run it again once the check is fixed"
+  gate_lock "$run"
+  mkdir -p "$run/gates/invalid" || die "cannot write $run/gates/invalid"
+  while [ -f "$run/gates/invalid/$slug-$k.json" ]; do k=$((k + 1)); done
+  W="$(json_esc "$why")" awk '{ sub(/[}][ \t\r]*$/, ""); print $0 ", \"invalid\": \"" ENVIRON["W"] "\"}" }' "$json" > "$json.tmp" \
+    && mv "$json.tmp" "$json" || { rm -f "$json.tmp"; die "cannot update $json"; }
+  printf '\ncouncil: marked invalid %s — %s. This red proves nothing; run the check again once it is fixed.\n' "$(now_sec)" "$why" >> "$base.txt"
+  cp "$json" "$run/gates/invalid/$slug-$k.json"; [ ! -f "$base.txt" ] || cp "$base.txt" "$run/gates/invalid/$slug-$k.txt"
+  event_append "$run" gate.invalidated "$name" invalid "exit=$ec;why=$(printf '%s' "$why" | tr ';' ',')" \
+    || printf 'council: the gate is marked invalid, but its event was not recorded\n' >&2
+  case "$name" in
+    before-*|regress-*) say "gate $name: marked invalid ($why) — its red proves nothing, so task ${name#*-} has no proof yet. Fix the check, read it back, compile it with the cheapest check, then: council gate $(qname "$name") -- '<the check>'" ;;
+    *) say "gate $name: marked invalid ($why) — its red proves nothing; fix it and run it again" ;;
+  esac
+  say "    kept as gates/invalid/$slug-$k.json"
+}
+
 cmd_gate() {
   local run top cfg name cmd at mand k chk side needs hk hascol stg ism ckd extra row ran=0 skipped=0 failed=0 gates \
         passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0 GATE_BASELINE=0 \
         nothing=0 nran="" nt="" slug files="" other trail="" rtask="" mode="" ec=0 py="" proof_id=""
   run="$(resolve_run)" || exit 2
   refuse_closed "$run" "its checks are on record; run them in a new run"
+  if [ -n "$TIMEOUT_ARG" ]; then
+    GATE_TIMEOUT="$(limit_seconds "$TIMEOUT_ARG")" || die "--timeout takes a time, in seconds or with m or h: 900, 15m (got '$TIMEOUT_ARG')"
+  fi
+  if [ -n "$INVALID_ARG" ]; then gate_invalid "$run" "${1+$*}"; return; fi
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
   mode="$(field mode "$run/session-state.md")"     # a build's gate results are its repair record (repair_auto)
@@ -4316,11 +4869,138 @@ gate_cmd()  { sed -n 's/.*"command": "\(.*\)", "exit".*/\1/p' "$1" 2>/dev/null |
                 | sed 's/\\\(.\)/\1/g'; }
 gate_proof() { sed -n 's/.*"proof": "\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -n 1; }
 
+# Why a before-check's record proves nothing, in words; nothing when its result may count. A red is proof
+# only of what it checked: not a red marked invalid (council gate <name> --invalid), a hang stopped at its
+# time limit, or a command that never ran (exit 127, or Python's one-line missing module).
+proof_void() {
+  local f="$1" why ec
+  why="$(sed -n 's/.*"invalid": "\([^"]*\)".*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  if [ -n "$why" ]; then printf 'marked invalid (%s)' "$why"; return 0; fi
+  if grep -q '"timed_out": true' "$f" 2>/dev/null; then printf 'timed out after %ss' "$(gate_seconds "$f")"; return 0; fi
+  ec="$(gate_exit "$f")"
+  if [ "$ec" = 127 ]; then printf 'never ran: a command it calls was not found (exit 127)'; return 0; fi
+  if [ "$ec" = 1 ] && why="$(missing_module "${f%.json}.txt")"; then printf 'never ran: Python has no module %s' "$why"; fi
+  return 0
+}
+
+# Whether a gate command runs nothing but scripts kept in a run folder (.council/runs/…): each program it
+# starts is one — directly, through an interpreter, or after a cd into one — or a plain shell tool. Such a
+# proof never ran the entry point a person runs (the time bound a real run proved only through its own
+# helper script, never through the project's check). Unknown words count as the project's: it under-claims.
+run_folder_only() {
+  C="$1" awk 'BEGIN {
+    s = ENVIRON["C"]; gsub(/["\047`]/, " ", s)
+    gsub(/[0-9]*>&[0-9]*|&>|[0-9]*>>?|[0-9]*</, " > ", s)          # redirections: never a command
+    gsub(/&&|\|\||[;|&()]/, "\n", s)
+    n = split(s, part, "\n"); rf = 0; other = 0; incwd = 0
+    for (i = 1; i <= n; i++) {
+      k = split(part[i], w, /[ \t]+/); j = 1
+      while (j <= k && (w[j] == "" || w[j] ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || w[j] ~ /^(env|time|exec|command|nohup|then|do|else|!)$/)) j++
+      if (j > k) continue
+      exe = w[j]
+      if (exe == ">") continue
+      if (exe == "cd" || exe == "pushd") { incwd = (w[j + 1] ~ /\.council\/runs\//); continue }
+      if (exe !~ /^[A-Za-z0-9_.\/~$]/) continue                           # the rest of a test: = ok ]
+      if (exe ~ /^(echo|printf|test|true|false|grep|egrep|cat|diff|cmp|head|tail|wc|sort|uniq|tee|sed|awk|rm|mkdir|cp|mv|ls|touch|sleep|export|set|exit|return|wait|if|fi|for|while|until|done|case|esac|in)$/) continue
+      prog = exe
+      if (exe ~ /(^|\/)(ba|z|da|k)?sh$/ || exe ~ /(^|\/)(python[0-9.]*|node|ruby|perl|php|swift|deno|bun|pwsh|powershell|osascript|lua|tclsh)$/) {
+        prog = ""
+        for (m = j + 1; m <= k; m++) if (w[m] != "" && w[m] !~ /^-/) { prog = w[m]; break }
+      }
+      if (prog ~ /\.council\/runs\// || (incwd && prog != "" && prog !~ /^[\/$~]/)) rf++
+      else other++
+    }
+    exit !(rf > 0 && other == 0)
+  }'
+}
+
+# The commit a build's own work starts from, for the just-me scan: --base when given; else the run's
+# council index base, unless that reaches back past the commit HEAD was at when the run opened (the index
+# base is the merge-base, so a branch's earlier work would be read as this run's) — then that commit.
+# Empty when neither is on record (a run opened before start-head was kept, never indexed).
+hygiene_base() {
+  local run="$1" top="$2" ib sh
+  if [ -n "$BASE_ARG" ]; then printf '%s' "$BASE_ARG"; return 0; fi
+  ib="$(field base "$run/session-state.md")"; sh="$(field start-head "$run/session-state.md")"
+  ( cd "$top" 2>/dev/null || exit 0
+    [ -n "$ib" ] && git rev-parse -q --verify "$ib^{commit}" >/dev/null 2>&1 || ib=""
+    [ -n "$sh" ] && git rev-parse -q --verify "$sh^{commit}" >/dev/null 2>&1 || sh=""
+    if [ -n "$ib" ] && [ -n "$sh" ] && git merge-base --is-ancestor "$ib" "$sh" 2>/dev/null; then ib=""; fi
+    printf '%s' "${ib:-$sh}" )
+}
+
+# Just-me hygiene (references/sharing.md): the council's ids in what teammates read. On a just-me council
+# a real build left "(ruling 1)" in a code comment. Read only what the build itself added: the lines added
+# since base $3 (with none, only uncommitted edits), files git doesn't track that changed after the run
+# opened ($4, its opened: time), whole, the commit messages since $3 that no remote branch has yet (one
+# already pushed can't be changed), and a PR body drafted in the run (<run>/pr-body*). Anywhere:
+# a .council/ path, a run folder's name, "ruling <n>", verify-<n>. In comments and prose only, where code
+# can't mean them (D-1 is a subtraction): a decision, failure, anti-pattern or edge-case id (D-3, F-2, AP-1,
+# EC-4) and a task named as the council names it — "(task 4)", "plan task 4". Prints place TAB what TAB line.
+hygiene_hits() {
+  local run="$1" top="$2" hb="$3" since="$4" ref="" f br pushed
+  if [ -n "$since" ] && [ -d "$run" ]; then        # touch -t [[CC]YY]MMDDhhmm[.SS]: BSD, GNU and Git Bash alike
+    ref="$run/.hygiene-since"
+    touch -t "$(printf '%s' "$since" | tr -d ' :-' | sed 's/\(..\)$/.\1/')" "$ref" 2>/dev/null || ref=""
+  fi
+  { ( cd "$top" 2>/dev/null || exit 0
+      git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+      [ -z "$hb" ] || git rev-parse -q --verify "$hb^{commit}" >/dev/null 2>&1 || hb=""
+      if git rev-parse -q --verify "${hb:-HEAD}^{commit}" >/dev/null 2>&1; then
+        git -c core.quotePath=false diff -M -U0 --no-color --no-ext-diff "${hb:-HEAD}" -- . ':(exclude).council' 2>/dev/null | awk '
+          /^diff --git / { h = 1; p = ""; next }          # a file header, up to its first hunk
+          h && /^\+\+\+ / { p = substr($0, 5); gsub(/^"|"$/, "", p); sub(/^b\//, "", p); if (p == "/dev/null") p = ""; next }
+          /^@@/ { h = 0; if (match($0, /\+[0-9]+/)) n = substr($0, RSTART + 1, RLENGTH - 1) + 0; next }
+          h { next }
+          /^\+/ { if (p != "") print p "\t" n "\t" substr($0, 2); n++ }'
+      fi
+      git -c core.quotePath=false ls-files -o --exclude-standard 2>/dev/null | while IFS= read -r f; do
+        case "$f" in .council/*|*/) continue ;; esac
+        [ -z "$ref" ] || [ "$f" -nt "$ref" ] || continue             # there before the run: not its work
+        [ -s "$f" ] && [ "$(wc -c < "$f" | tr -d ' ')" -le 1048576 ] && LC_ALL=C grep -qI -e '' "$f" 2>/dev/null || continue
+        F="$f" awk '{ print ENVIRON["F"] "\t" FNR "\t" $0 }' "$f"
+      done
+      if [ -n "$hb" ]; then
+        br="$(git symbolic-ref -q --short HEAD 2>/dev/null)"
+        pushed="$(git rev-parse -q --verify '@{upstream}' 2>/dev/null; [ -z "$br" ] || git rev-parse -q --verify "refs/remotes/origin/$br" 2>/dev/null)"
+        # shellcheck disable=SC2086 # $pushed: commit ids, one word each
+        git log --no-merges --format='@@commit %h%n%B' "$hb..HEAD" ${pushed:+--not $pushed} 2>/dev/null \
+          | awk '/^@@commit / { c = $2; n = 0; next } { n++; print "commit " c "\t" n "\t" $0 }'
+      fi )
+    [ -z "$ref" ] || rm -f "$ref"
+    for f in "$run"/pr-body*; do
+      [ -f "$f" ] || continue
+      F="PR body ${f##*/}" awk '{ print ENVIRON["F"] "\t" FNR "\t" $0 }' "$f"
+    done
+  } | LC_ALL=C awk -F'\t' '
+    function prose(p) { return p ~ /^(commit|PR body) / || tolower(p) ~ /\.(md|markdown|mdx|txt|rst|adoc|org)$/ }
+    function said(t,    i, l) {                     # the part of a code line that a comment holds
+      if (match(t, /(^|[^:])\/\//)) return substr(t, RSTART)
+      if ((i = index(t, "/*")) > 0) return substr(t, i)
+      if ((i = index(t, "<!--")) > 0) return substr(t, i)
+      l = t; sub(/^[ \t]+/, "", l)
+      if (l ~ /^(\*|#|--|;|%)/) return l
+      if (match(t, /[ \t]#[ \t]/)) return substr(t, RSTART)
+      return ""
+    }
+    function hit(what) { printf "%s:%s\t%s\t%s\n", $1, $2, what, substr(line, 1, 120); n++ }
+    {
+      line = $0; sub(/^[^\t]*\t[^\t]*\t/, "", line); gsub(/\r/, "", line); low = tolower(line)
+      c = prose($1) ? line : said(line); lc = tolower(c)
+      if (line ~ /(^|[^A-Za-z0-9_.])\.council\//) hit("a .council/ path")
+      else if (line ~ /(^|[^0-9])20[0-9][0-9]-[01][0-9]-[0-3][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-[a-z]/) hit("a council run folder")
+      else if (low ~ /(^|[^a-z])rulings? [0-9]/) hit("a council ruling")
+      else if (line ~ /(^|[^A-Za-z0-9_-])verify-[0-9]+[a-z]?([^A-Za-z0-9_]|$)/) hit("a council verifier file")
+      else if (c ~ /(^|[^A-Za-z0-9_-])(AP|EC|D|F)-[0-9]+([^A-Za-z0-9_]|$)/) hit("a council id (D-, F-, AP-, EC-)")
+      else if (lc ~ /\((see |per |from |in )?tasks? [0-9]+[a-z]?[),;& ]/ || lc ~ /(council|plan|build)(\047s)? tasks? [0-9]/) hit("a council task")
+    }'
+}
+
 cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd bproof aproof tp pn proofs=0 saved=0 broke=0 preserved=0 note what \
         mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
-        other=0 unreadt=0 empty=0 gone=0 result who
+        other=0 unreadt=0 empty=0 gone=0 result who bvoid gn rfonly=0 hy=0 hyl hyb
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -4490,7 +5170,10 @@ QUOTES
       bex="$(gate_exit "$bf")"; bcmd="$(gate_cmd "$bf")"
       bproof="$(gate_proof "$bf")"; bproof="${bproof:-change}"
       proofs=$((proofs + 1)); note="-"; tp=""
-      if [ ! -f "$af" ]; then
+      bvoid="$(proof_void "$bf")"; gn="${bf##*/}"; gn="${gn%.json}"
+      if [ -n "$bvoid" ]; then                    # a red that proves nothing is no proof yet, whatever came after
+        st="NO-PROOF-YET"; note="$gn $bvoid — fix the check, run $gn again"
+      elif [ ! -f "$af" ]; then
         st="NO-AFTER"
       else
         aex="$(gate_exit "$af")"; acmd="$(gate_cmd "$af")"
@@ -4521,6 +5204,9 @@ QUOTES
       if [ "$st" = ok ] || [ "$st" = preserved ]; then
         [ -z "$tp" ] || saved=$((saved + 1))       # only a proof that held counts as a test kept
         [ "$st" != preserved ] || preserved=$((preserved + 1))
+        if run_folder_only "$bcmd" && run_folder_only "${acmd:-$bcmd}"; then
+          rfonly=$((rfonly + 1)); note="$note · only run-folder scripts ran it, never the entry point a person runs"
+        fi
       else
         bad=$((bad + 1)); broke=$((broke + 1))
       fi
@@ -4544,7 +5230,24 @@ QUOTES
       else
         say "check: $((proofs - broke)) of $proofs fix(es) proved · $broke broken · $saved left a test behind in the project"
       fi
+      [ "$rfonly" -eq 0 ] || say "check: $rfonly proved only through scripts in the run folder — one proof of each task runs the command a person would run, named in the log (references/build-proof.md)"
     fi
+  fi
+  # Just me: nothing teammates read may cite the council (references/sharing.md). Only a build writes
+  # shared text, and only what it added is read; hits are counted on their own, never as citations.
+  if [ "$mode" = council-implement ] && [ "$(configured_sharing)" = "just me" ]; then
+    hyb="$(hygiene_base "$run" "$top")"
+    [ -n "$hyb" ] || say "hygiene  this run has no recorded start, so only uncommitted work and the PR body were read"
+    while IFS="$TAB" read -r cite what hyl; do
+      [ -n "$cite" ] || continue
+      hy=$((hy + 1))
+      printf '| hygiene | %s | %s | - |\n' "$cite" "$what" >> "$out"
+      [ "$hy" -gt 20 ] || say "hygiene  $cite  $what — teammates can't open the council; say it in plain words: $(printf '%s' "$hyl" | sed 's/^[[:space:]]*//' | clip 90)"
+    done <<HYGIENE
+$(hygiene_hits "$run" "$top" "$hyb" "$(field opened "$run/session-state.md")")
+HYGIENE
+    [ "$hy" -le 20 ] || say "hygiene  … and $((hy - 20)) more in check.md"
+    [ "$hy" -eq 0 ] || extra="$extra · $hy council reference(s) in shared text (just me)"
   fi
   if [ "$files" -eq 0 ] && [ "$gone" -eq 0 ] && [ "$mode" != council-implement ]; then
     other=$((other + 1)); say "check: nothing to check — no synthesis.md and no seat files"
@@ -4554,7 +5257,7 @@ QUOTES
   fi
   if [ "$qn" -gt 0 ] && [ "$proofs" -gt 0 ]; then what="(citations, quotes and proof)"
   elif [ "$qn" -gt 0 ]; then what="(citations and quotes)"
-  elif [ "$proofs" -gt 0 ]; then what="(citations and proof)"
+  elif [ "$proofs" -gt 0 ] || [ "$mode" = council-implement ]; then what="(citations and proof)"   # NO PROOF is a broken proof
   else what="citation(s)"
   fi
   [ "$noline" -eq 0 ] || extra="$extra · $noline name a path but no line"
@@ -4566,10 +5269,10 @@ QUOTES
   else
     say "check: $rows items, $bad broken $what$extra → $out"
   fi
-  result=passed; [ "$((bad + other))" -eq 0 ] || result=failed
-  event_append "$run" verification.finished run "$result" "items=$rows;broken=$bad;other=$other" \
+  result=passed; [ "$((bad + other + hy))" -eq 0 ] || result=failed
+  event_append "$run" verification.finished run "$result" "items=$rows;broken=$bad;other=$other$([ "$hy" -eq 0 ] || printf ';hygiene=%s' "$hy")" \
     || printf 'council: verification finished, but its event was not recorded\n' >&2
-  [ "$((bad + other))" -eq 0 ]
+  [ "$((bad + other + hy))" -eq 0 ]
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -6832,10 +7535,13 @@ council — the Small Council's helper (bash + git)
                                          open a run for a mode, e.g. council-review; prints its folder
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
   council run close [--status complete|abandoned|paused]
-                                         close the run; then a reminder to show the user its closing card
+                                         close the run (complete only once it came through Deliver);
+                                         then its audit's FAIL lines and a reminder to show the user
+                                         its closing card
   council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
                                          in progress again, this session recorded as its driver
-  council run plan [check|show]          validate the run plan · show its decisions in plain language
+  council run plan [check|show]          validate the run plan (Full size only once a decision of the
+                                         user's is on record) · show its decisions in plain language
   council run events [show|check|repair] inspect, validate or mend (a torn last line) the run's event stream
   council run audit [--transcript <session .jsonl>]
                                          after close: check the run against the method from its
@@ -6843,14 +7549,17 @@ council — the Small Council's helper (bash + git)
                                          showed and ran — pass, warn or FAIL per item, exit 1 on a
                                          FAIL; reads only (optional Python 3.8+)
   council state [key=value …]            show or update the run's session-state header; phase= takes a
-                                         stage name and records its next step; waiting="<question>" prints
+                                         stage name and records its next step (skip="<why>" to pass over
+                                         a stage the mode must enter); waiting="<question>" prints
                                          the alert reminder; decision="<the user's words>" goes under
                                          Decisions so far
   council seat <slug> <state> [agent=ID] [tokens=N] [agents=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped;
                                          tokens= and agents= (a Workflow's agent count) come with the
                                          finished run's usage report, once per agent run; the run's first
-                                         dispatch also prints a reminder to show the user the run's status
+                                         dispatch also prints a reminder to show the user the run's status;
+                                         in a build, a task's third check (verify-<n>c, or verify-<n>
+                                         again) starts only after a diagnose-<n> seat or the user's go
   council cap                            agent runs used against the cap, tokens against the ceiling, the
                                          user's go on record, and whether new agents are stopped now
   council cap allow <n> --user-said "…"  the user's go past the cap or ceiling, in their words: n more
@@ -6858,10 +7567,13 @@ council — the Small Council's helper (bash + git)
   council run turn-end --session ID      the turn-end hook's decision (hooks/turn-end.sh): records that
                                          a run this session drives waits on the user, and once per wait
                                          exits 2 with the owner's alert to send
-  council cap check [--session ID] [<tool>]
+  council cap check [--session ID] [<tool> [type=<agent type>] [seat=<slug>] [run=<folder>] [file=<slug>]]
                                          the agent gate's decision (hooks/agent-gate.sh): exit 2 and the
                                          reason while a run this session may be driving is stopped; with
-                                         the tool about to start, a pass counts it as an agent start
+                                         the tool about to start, a pass counts it as an agent start; a
+                                         council-worker or council-verifier (type=) is refused with no open
+                                         run for it, or for a seat (seat=, else the file= it writes) its
+                                         plan doesn't select
   council correct <seat> tokens=N agents=N [unrecorded=yes] evidence="<source>"
                                          lay an exact, evidence-backed figure over a seat's record
                                          (or add an agent run the record missed); seats.tsv keeps
@@ -6886,6 +7598,13 @@ council — the Small Council's helper (bash + git)
   council gate --all [--at grounding|verify]
                                          run the configured gates · a run takes one gate call at a time:
                                          a second is refused (exit 2) and writes nothing — wait for the first
+  council gate … --timeout <time>        this call's time limit per gate (900, 15m). Without it: the
+                                         largest of 3× the gate's green baseline, the config's
+                                         "- gate time limit:" and 120 s; with neither, 9 min for a
+                                         command after --, 30 min for a configured gate. Past it the gate
+                                         and all it started are stopped: exit 124, TIMED OUT — no proof
+  council gate <name> --invalid "<why>"  mark a red that proves nothing (the new check didn't compile, the
+                                         probe was broken); council check reads that proof as no proof yet
   council gates                          list the configured gates
   council changed [--glob '<pat>'] [--each] -- <cmd>
                                          run <cmd> over just the files this change touches (0 when none);
@@ -6969,6 +7688,7 @@ main() {
   CONTEXT_EXPANDS=()
   MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0 WATCH=0 WIDGET=0 LINE=0 PREVIEW=0
   PET_STOP=0 PET_DEMO=0 PET_STILL=0 PET_POSE_ARG="" PET_EXIT_ARG="" TRANSCRIPT_ARG=""
+  TIMEOUT_ARG="" INVALID_ARG=""
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
@@ -6986,6 +7706,9 @@ main() {
                    val="$2"; shift 2 ;;
       --run=*|--code-root=*|--status=*|--base=*|--at=*|--proof=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*|--transcript=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
+      --timeout|--invalid)                                              # council gate's own
+                   flag="${1#--}"; [ $# -ge 2 ] || die "--$flag needs a value"; val="$2"; shift 2 ;;
+      --timeout=*|--invalid=*) flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
       --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still) flag="${1#--}"; val=1; shift ;;
       --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
@@ -7018,6 +7741,7 @@ main() {
       stop) PET_STOP=1 ;;          demo) PET_DEMO=1 ;;           still) PET_STILL=1 ;;
       pose) PET_POSE_ARG="$val" ;; exit-after) PET_EXIT_ARG="$val" ;;
       transcript) TRANSCRIPT_ARG="$val" ;;
+      timeout) TIMEOUT_ARG="$val" ;;   invalid) INVALID_ARG="$val" ;;
     esac
     FLAGS="$FLAGS $flag"
   done
@@ -7068,11 +7792,13 @@ main() {
                check) takes_flags "cap check" session
                       [ -z "$RUN_ARG" ] || die "cap check looks at every in-progress run this session may be driving; it does not take --run"
                       case "${1:-}" in
-                        Agent|Task|Workflow) [ $# -eq 1 ] || no_words "cap check" "${@:2}" ;;
+                        Agent|Task|Workflow) [ $# -eq 1 ] || for w in "${@:2}"; do
+                                               case "$w" in type=*|seat=*|run=*|file=*) ;; *) no_words "cap check" "$w" ;; esac
+                                             done ;;
                         *) no_words "cap check" ${1+"$@"} ;;
                       esac
                       cmd_cap_check ${1+"$@"} ;;
-               *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool>]" ;;
+               *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool> [type=… seat=… run=… file=…]]" ;;
              esac ;;
     route)   sub="${1:-}"; [ $# -eq 0 ] || shift
              case "$sub" in
@@ -7113,7 +7839,7 @@ main() {
                       cmd_repair allow "${1+$*}" ;;     # a gate name with a space may arrive as several words
               *) die "usage: council repair record <task> <gate> | repair show|check [task] | repair allow <gate> --user-said \"…\"" ;;
             esac ;;
-    gate)    takes_flags gate all at proof --
+    gate)    takes_flags gate all at proof timeout invalid --
              if [ "$ALL" = 1 ]; then
                no_words "gate --all" ${1+"$@"}
                [ -z "$GATE_CMD" ] || die "gate --all runs the configured gates — it takes no command after --"

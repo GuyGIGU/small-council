@@ -63,7 +63,7 @@ Catch what's wrong before the user sees it.
 5. **Refresh the claim index.** After verifier files exist, `council evidence build`, then
    `council evidence check`. Run `evidence build`/`check`, `collect` and `check` on their own
    (or test their exit status);
-   never chain them through `| tail`/`| head`, which can swallow a refusal.
+   never chain them through `| tail`/`| head`/`| grep`, which can swallow a refusal.
    Fix missing provenance, evidence-state declarations, proof artifacts, verifier rows or conflicting
    rows (a plan's several rows for one recommendation are expected: the worst verdict stands).
    `UNCERTAIN` remains a disclosed verdict, not a hidden pass.

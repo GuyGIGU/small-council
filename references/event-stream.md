@@ -29,7 +29,7 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | Type | Subject | Value | Detail |
 |---|---|---|---|
 | `run.opened` | `run` | mode | `phase=convene` |
-| `run.phase_changed` | `run` | new phase | `from=<old phase>` |
+| `run.phase_changed` | `run` | new phase | `from=<old phase>`, and `;skipped=<stages>;reason=<why>` when `skip=` passed over a stage the mode must enter (after 0.20) |
 | `run.status_changed` | `run` | new status | `from=<old status>` |
 | `run.resumed` | `run` | `in-progress` | `from=<old status>` |
 | `run.paused` | `run` | `paused` | `agent_runs=<n>;reported=<n>;tokens=<n>;basis=<basis>` (0.14; before: `agents=<n>;tokens=<n>`) |
@@ -42,9 +42,10 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `seat.updated` | seat slug | new state | `tokens=<seat total>;agent_runs=<n>;reported=<n>` (0.14; before: `tokens=<cumulative tokens>`) — totals so far, never to be summed across events |
 | `seat.usage_corrected` | seat slug | `tokens` or `agents` | `from=<recorded>;to=<exact>` — an evidence-backed correction, whose evidence is in `corrections.jsonl` (0.14) |
 | `context.built` | seat slug | context level | `expands=<n>;metrics=<run-local path>` (see `precision-context.md`) |
-| `gate.finished` | gate name | `passed` or `failed` | `exit=<code>;seconds=<n>;empty=<0 or 1>` |
+| `gate.finished` | gate name | `passed` or `failed` | `exit=<code>;seconds=<n>;empty=<0 or 1>`, and `;timed_out=1` when the helper stopped it at its time limit (exit 124) |
+| `gate.invalidated` | gate name | `invalid` | `exit=<the record's code>;why=<the reason given>` — `council gate <name> --invalid "<why>"`: a red that proves nothing, marked on its record (`;` in the reason becomes `,`) |
 | `collect.finished` | `run` | `passed` or `failed` | `seats=<n>` |
-| `verification.finished` | `run` | `passed` or `failed` | `items=<n>;broken=<n>;other=<n>` |
+| `verification.finished` | `run` | `passed` or `failed` | `items=<n>;broken=<n>;other=<n>`, and `;hygiene=<n>` when a just-me build's check found council references in what it added |
 | `memory.proposed` | the drafted entry's id (`F-<n>`) | `claim` or `repair` | `source=<claim id or task id>` |
 | `run.events_repaired` | `run` | `torn-tail` | `dropped=<bytes>;copy=<events.tsv.bak-… file>` — `council run events repair` dropped a torn last line, keeping a byte copy (0.19) |
 

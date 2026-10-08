@@ -14,10 +14,11 @@ if os.name == "nt" and not BASH:
     BASH = str(candidate) if candidate.is_file() else None
 GIT = shutil.which("git")
 CLI = str(ROOT / "bin" / "council")
+ENV = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"}   # never the session the eval runs in
 
 
 def call(cwd, *args):
-    result = subprocess.run([BASH, CLI, *args], cwd=str(cwd), capture_output=True,
+    result = subprocess.run([BASH, CLI, *args], cwd=str(cwd), capture_output=True, env=ENV,
                             text=True, encoding="utf-8", errors="replace", timeout=30)
     return result.returncode, result.stdout, result.stderr
 
@@ -114,14 +115,14 @@ def main():
         routed = "seat\tmapper\tpurpose\tmapping\tcodebase map\nseat\tmapper\tmodel\thaiku\tcodebase map\n"
         config.write_text("# Test council config\n- seat models: on\n", encoding="utf-8", newline="\n")
         write_plan(run, routed)
-        code, out, err = call(repo, "state", "phase=deliver")
+        code, out, err = call(repo, "state", "phase=deliver", "skip=this test is about what comes after Deliver")
         closed_ok = code == 0
         code, out, err = call(repo, "run", "close", "--status", "complete")
         check("a routed run reaches Deliver and closes", closed_ok and code == 0, out + err)
         code, out, err = call(repo, "run", "open", "council-review")
         second = Path(out.strip())
         write_plan(second, routed)
-        code, out, err = call(repo, "state", "phase=deliver")
+        code, out, err = call(repo, "state", "phase=deliver", "skip=this test is about what comes after Deliver")
         check("a second routed run is open at Deliver", code == 0, out + err)
         config.write_text("# Test council config\n- seat models: off\n", encoding="utf-8", newline="\n")
         code, out, err = call(repo, "doctor")
