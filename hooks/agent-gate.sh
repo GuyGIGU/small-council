@@ -22,10 +22,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
 # a value (a prompt that says "cwd": …) stays inside that value, and only the outer object's keys count.
 # Only the short stretches between strings are walked character by character.
 # Then, for a Small Council agent only (tool_input's own subagent_type), what its dispatch message names:
-# the seat — a "Seat: <slug>" line, else the file it writes (seats/<slug>.md for a worker, verify-<n>.md
-# for a verifier) when one name stands out, preferring those on a line that says write — and the run
-# folder (runs/<date-time>-<mode>) that file is in, else the one run folder the message names. What it
-# can't pick out stays empty, and the helper judges nothing on it.
+# the seat on a "Seat: <slug>" line, when the slug stands alone there ("Seat: the security seat" names
+# none); the file it writes (seats/<slug>.md for a worker, verify-<n>.md for a verifier) when one name
+# stands out, preferring those on a line that says write; and the run folder (runs/<date-time>-<mode>)
+# that file is in — as the line that says write gives it, else its last mention, as a re-review cites
+# the earlier run's file first — else the one run folder the message names. What it can't pick out
+# stays empty, and the helper judges nothing on it.
 fields="$(LC_ALL=C awk '
   function undo(v, c, r,   q, m, j, out) { m = split(v, q, c); out = q[1]; for (j = 2; j <= m; j++) out = out r q[j]; return out }
   { s = s $0 "\n" }
@@ -62,9 +64,11 @@ fields="$(LC_ALL=C awk '
       fre = (ty ~ /worker$/) ? "seats/[A-Za-z0-9_-]+[.]md" : "verify-[A-Za-z0-9_-]+[.]md"
       P = got["prompt"]; gsub(/\\/, "/", P)                     # a Windows path reads as one with /
       nl = split(P, L, "\n")
-      for (j = 1; j <= nl && seat == ""; j++)
+      for (j = 1; j <= nl && !sl; j++)
         if (match(L[j], /^[ \t>*_#-]*[Ss]eat[*_]*:[*_ \t]*[A-Za-z0-9._-]+/)) {
-          seat = substr(L[j], RSTART, RLENGTH); sub(/^[ \t>*_#-]*[Ss]eat[*_]*:[*_ \t]*/, "", seat); sub(/[.]+$/, "", seat)
+          sl = 1; seat = substr(L[j], RSTART, RLENGTH); sub(/^[ \t>*_#-]*[Ss]eat[*_]*:[*_ \t]*/, "", seat); sub(/[.]+$/, "", seat)
+          after = substr(L[j], RSTART + RLENGTH); sub(/^[*_`]+/, "", after)
+          if (after ~ /^[ \t]*[A-Za-z0-9&+\/\047"]/) seat = ""             # another word follows: a display name
         }
       for (j = 1; j <= nl; j++) {
         line = L[j]; rest = line; off = 0
@@ -76,14 +80,15 @@ fields="$(LC_ALL=C awk '
           sub(/\/$/, "", tok); r = ""
           if (match(tok, runre "$")) r = substr(tok, RSTART + 5)
           if (!(slug in cand)) { cand[slug] = 1; nc++; last = slug }
-          if (r != "" && crun[slug] == "") crun[slug] = r
-          if (line ~ /[Ww]rit/ && !(slug in wrote)) { wrote[slug] = 1; nw++; wlast = slug }
+          if (r != "") lrun[slug] = r
+          if (line ~ /[Ww]rit/) { if (!(slug in wrote)) { wrote[slug] = 1; nw++; wlast = slug }; wrun[slug] = r }
         }
       }
-      if (seat == "" && nc == 1) seat = last
-      else if (seat == "" && nw == 1) seat = wlast
-      if (seat != "" && crun[seat] != "") run = crun[seat]
-      else {
+      if (nc == 1) file = last
+      else if (nw == 1) file = wlast
+      key = (seat != "" && (seat in cand)) ? seat : file
+      if (key != "") run = (key in wrote) ? wrun[key] : lrun[key]
+      if (run == "") {
         rest = P
         while (match(rest, runre)) {
           r = substr(rest, RSTART + 5, RLENGTH - 5); rest = substr(rest, RSTART + RLENGTH)
@@ -92,9 +97,9 @@ fields="$(LC_ALL=C awk '
         if (nr != 1) run = ""
       }
     }
-    print ty; print seat; print run
+    print ty; print seat; print run; print file
   }' 2>/dev/null)"
-{ IFS= read -r sid; IFS= read -r cwd; IFS= read -r tool; IFS= read -r atype; IFS= read -r aseat; IFS= read -r arun; } <<FIELDS
+{ IFS= read -r sid; IFS= read -r cwd; IFS= read -r tool; IFS= read -r atype; IFS= read -r aseat; IFS= read -r arun; IFS= read -r afile; } <<FIELDS
 $fields
 FIELDS
 
@@ -111,6 +116,7 @@ case "$tool" in
       set -- "$@" "type=$atype"
       [ -z "$aseat" ] || set -- "$@" "seat=$aseat"
       [ -z "$arun" ] || set -- "$@" "run=$arun"
+      [ -z "$afile" ] || set -- "$@" "file=$afile"
     fi ;;
 esac
 out="$("${BASH:-bash}" "$ROOT/bin/council" "$@" 2>/dev/null)"; rc=$?

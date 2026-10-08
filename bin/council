@@ -1017,7 +1017,7 @@ wait_over() {
 
 cmd_state() {
   local run st kv key tmp old_phase old_status new_phase new_status old_waiting new_waiting mode lock='' wkey='' gave_next=''
-  local to_phase='' skip='' gave_skip='' skipped=''
+  local to_phase='' skip='' gave_skip='' skipped='' how=''
   run="$(resolve_run)" || exit 2
   st="$run/session-state.md"
   if [ $# -eq 0 ]; then awk '/^## /{ exit } { print }' "$st"; return 0; fi
@@ -1052,7 +1052,11 @@ cmd_state() {
   if [ -n "$to_phase" ]; then
     skipped="$(stages_skipped "$run" "$(field phase "$st")" "$to_phase")"
     if [ -n "$skipped" ] && [ -z "$gave_skip" ]; then
-      die "phase=$to_phase would skip $(printf '%s' "$skipped" | sed 's/,/, /g'), which a $mode run enters in turn — next: council state phase=${skipped%%,*}. To skip on purpose, say why: council state phase=$to_phase skip=\"<why>\""
+      case "$mode:${skipped%%,*}" in      # a build stopped blocked goes to its receipt with no check (council-implement step 5)
+        council-implement:challenge) how="A build stopped blocked skips it on purpose: council state phase=deliver skip=\"blocked: task <n>\"" ;;
+        *) how="To skip on purpose, say why: council state phase=$to_phase skip=\"<why>\"" ;;
+      esac
+      die "phase=$to_phase would skip $(printf '%s' "$skipped" | sed 's/,/, /g'), which a $mode run enters in turn — next: council state phase=${skipped%%,*}. $how"
     fi
     [ -n "$skipped" ] || [ -z "$gave_skip" ] || die "phase=$to_phase skips no stage this run must enter, so there is nothing for skip= to explain — drop it"
   fi
@@ -1881,9 +1885,14 @@ RUNS
 # it couldn't — and nothing is judged on what wasn't read. The runs open for a dispatch: those in
 # progress on this tree, and those this session drives on any tree. A worker always works for a run; a
 # verifier with no run folder named may be test-architect's own check outside any run, so it is held to
-# a run only when it names one. Prints the refusal and returns 0 when the agent must not start; 1 otherwise.
+# a run only when it names one. A paused or closed run named is refused only while no run is open for
+# it: a re-review or a post-game cites an earlier run's files, and is judged by the open runs instead.
+# The seat is the Seat: line's ($4) when a run selects it, else the written file's ($6); when neither
+# is selected, a refusal names it only when the two agree and it reads as a slug, never a display name
+# ("Security") — otherwise council seat judges after the start. Prints the refusal and returns 0 when the
+# agent must not start; 1 otherwise.
 dispatch_refusal() {
-  local home="$1" session="$2" type="$3" seat="$4" named="$5" kind run status cands c n=0 legacy="" found="" why also=""
+  local home="$1" session="$2" type="$3" seat="$4" named="$5" file="${6:-}" kind run status="" cands open pick="" low where why
   case "$type" in
     small-council:council-worker) kind=council-worker ;;
     small-council:council-verifier) kind=council-verifier ;;
@@ -1892,53 +1901,73 @@ dispatch_refusal() {
   [ -d "$home" ] || return 1                                    # no council here: nothing to judge
   case "$named" in ''|.*|*[!A-Za-z0-9._-]*) named="" ;; esac
   case "$seat" in ''|*[!A-Za-z0-9._-]*) seat="" ;; esac
+  case "$file" in ''|*[!A-Za-z0-9._-]*) file="" ;; esac
   if [ -n "$named" ] && [ -f "$home/runs/$named/session-state.md" ]; then
     run="$home/runs/$named"
-    status="$(field status "$run/session-state.md")"; status="${status%% *}"
-    case "$status" in
-      in-progress) cands="$run" ;;
-      paused) say "Small Council: this $kind is for run $named, which is paused — no agent starts for it while it is. If the user wants it carried on: council run resume --run $named, then dispatch again."
-              return 0 ;;
-      *) say "Small Council: this $kind is for run $named, which is closed (${status:-no status}) — its agents are done. For more work, open a new run (council run open <mode>), plan the seat there, then dispatch."
-         return 0 ;;
-    esac
-  else
-    [ "$kind" = council-worker ] || return 1
-    cands="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
-      $6 == "in-progress" && ($4 == ENVIRON["TOP"] || $4 == "-" || (ENVIRON["SID"] != "" && $8 == ENVIRON["SID"])) { print $1 }')"
-    if [ -z "$cands" ]; then
-      [ -n "$session" ] || return 1                              # no session: its runs on other trees can't be seen
-      say "Small Council: no council run is open on this working tree or for this session, so a council-worker has no run to work for. Open the run first (council run open <mode>), or carry on with a paused one if the user wants it (council run resume --run <folder>); plan the seat, then dispatch. For work outside the council, use another agent type."
-      return 0
-    fi
+    status="$(field status "$run/session-state.md")"; status="${status%% *}"; status="${status:-no status}"
   fi
-  [ -n "$seat" ] || return 1
-  if [ "$kind" = council-verifier ]; then                       # a re-check's verify-6b.md may be seat verify-6's
-    case "$seat" in
-      verify-?*-[abcdefghijklmnopqrstuvwxyz]) also="${seat%-?}" ;;
-      verify-?*[bcdefghijklmnopqrstuvwxyz]) also="${seat%?}" ;;
+  if [ "$status" = in-progress ]; then
+    cands="$run"
+  else
+    [ -n "$status" ] || [ "$kind" = council-worker ] || return 1
+    open="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
+      $6 == "in-progress" && ($4 == ENVIRON["TOP"] || $4 == "-" || (ENVIRON["SID"] != "" && $8 == ENVIRON["SID"])) { print $1 }')"
+    cands="$open"
+    case "$status:$open" in
+      paused:) say "Small Council: this $kind is for run $named, which is paused — no agent starts for it while it is. If the user wants it carried on: council run resume --run $named, then dispatch again."
+               return 0 ;;
+      ?*:) say "Small Council: this $kind is for run $named, which is closed ($status) — its agents are done. For more work, open a new run (council run open <mode>), plan the seat there, then dispatch."
+           return 0 ;;
+      :)  [ -n "$session" ] || return 1                          # no session: its runs on other trees can't be seen
+          say "Small Council: no council run is open on this working tree or for this session, so a council-worker has no run to work for. Open the run first (council run open <mode>), or carry on with a paused one if the user wants it (council run resume --run <folder>); plan the seat, then dispatch. For work outside the council, use another agent type."
+          return 0 ;;
+    esac
+  fi
+  [ -n "$seat$file" ] || return 1
+  if [ -n "$seat" ]; then dispatch_seat_runs "$cands" "$seat" "$kind"; [ "$DS_N" -eq 0 ] || pick="$seat"; fi
+  if [ -z "$pick" ] && [ -n "$file" ] && [ "$file" != "$seat" ]; then
+    dispatch_seat_runs "$cands" "$file" "$kind"; [ "$DS_N" -eq 0 ] || pick="$file"
+  fi
+  if [ -z "$pick" ]; then
+    [ -z "$DS_LEGACY" ] || return 1                              # opened before run plans: nothing to hold it to
+    pick="${file:-$seat}"
+    if [ -n "$seat" ] && [ -n "$file" ]; then                    # "Seat: Perf" writing seats/perf.md agree; others don't
+      low="$(printf '%s' "$seat" | LC_ALL=C tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')"
+      [ "$low" = "$file" ] || return 1
+    fi
+    case "$pick" in *[!abcdefghijklmnopqrstuvwxyz0123456789._-]*) return 1 ;; esac   # a display name, not a slug
+    case "$cands" in
+      *"$NL"*) where="the open runs here ($(printf '%s\n' "$cands" | names))"; run="<folder>" ;;
+      *) where="${cands##*/}"; run="${cands##*/}" ;;
+    esac
+    say "Small Council: seat $pick has no selected row in the run plan of $where, so this $kind would work off the record. Plan it first — its disposition (selected), role, context level and tool-call budget in run-plan.tsv — then council run plan check --run $run, then dispatch, and record it at once: council seat $pick running agent=<id>."
+    return 0
+  fi
+  [ "$DS_N" -eq 1 ] || return 1                                  # which run it is for is unknown: the seat record judges
+  if why="$(check_round_refusal "$DS_RUN" "$pick")"; then say "Small Council: $why"; return 0; fi
+  return 1
+}
+
+# How many of the runs in $1 (one folder a line) select seat $2: DS_N, and DS_RUN the last of them. For a
+# verifier ($3), a re-check's verify-6b or a Workflow part's verify-1-a also counts as its base seat.
+# DS_LEGACY is set when one of them was opened before run plans (no plan to hold a seat to).
+dispatch_seat_runs() {
+  local c also=""
+  DS_N=0; DS_RUN=""; DS_LEGACY=""
+  if [ "$3" = council-verifier ]; then                          # a re-check's verify-6b.md may be seat verify-6's
+    case "$2" in
+      verify-?*-[abcdefghijklmnopqrstuvwxyz]) also="${2%-?}" ;;
+      verify-?*[bcdefghijklmnopqrstuvwxyz]) also="${2%?}" ;;
     esac
   fi
   while IFS= read -r c; do
     [ -n "$c" ] || continue
-    if [ -z "$(field plan-schema "$c/session-state.md")" ]; then legacy=1; continue; fi   # opened before run plans
-    run_plan_has_selected "$c/run-plan.tsv" "$seat" || { [ -n "$also" ] && run_plan_has_selected "$c/run-plan.tsv" "$also"; } || continue
-    n=$((n + 1)); found="$c"
+    if [ -z "$(field plan-schema "$c/session-state.md")" ]; then DS_LEGACY=1; continue; fi
+    run_plan_has_selected "$c/run-plan.tsv" "$2" || { [ -n "$also" ] && run_plan_has_selected "$c/run-plan.tsv" "$also"; } || continue
+    DS_N=$((DS_N + 1)); DS_RUN="$c"
   done <<RUNS
-$cands
+$1
 RUNS
-  if [ "$n" -eq 0 ]; then
-    [ -z "$legacy" ] || return 1
-    case "$cands" in
-      *"$NL"*) c="the open runs here ($(printf '%s\n' "$cands" | names))"; run="<folder>" ;;
-      *) c="${cands##*/}"; run="${cands##*/}" ;;
-    esac
-    say "Small Council: seat $seat has no selected row in the run plan of $c, so this $kind would work off the record. Plan it first — its disposition (selected), role, context level and tool-call budget in run-plan.tsv — then council run plan check --run $run, then dispatch, and record it at once: council seat $seat running agent=<id>."
-    return 0
-  fi
-  [ "$n" -eq 1 ] || return 1                                     # which run it is for is unknown: the seat record judges
-  if why="$(check_round_refusal "$found" "$seat")"; then say "Small Council: $why"; return 0; fi
-  return 1
 }
 
 # council cap check [--session ID] [<tool>] — the agent gate's decision (hooks/agent-gate.sh): silent,
@@ -1951,17 +1980,17 @@ RUNS
 # session drives by its id, when it drives exactly one — under that run's lock, so agents started
 # together cannot all take its last place. A fault of its own never stops an agent: it returns 0, or
 # dies (stderr, nothing on stdout), which the hook lets through. With type=, seat= and run= after the
-# tool (the hook reads them from the call), a Small Council agent is first held to the record:
-# dispatch_refusal.
+# tool (the hook reads them from the call), and file= (the slug of the file it writes), a Small Council
+# agent is first held to the record: dispatch_refusal.
 cmd_cap_check() {
-  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed w dtype="" dseat="" drun=""
+  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed w dtype="" dseat="" drun="" dfile=""
   [ $# -eq 0 ] || shift
   for w in ${1+"$@"}; do
-    case "$w" in type=*) dtype="${w#type=}" ;; seat=*) dseat="${w#seat=}" ;; run=*) drun="${w#run=}" ;; esac
+    case "$w" in type=*) dtype="${w#type=}" ;; seat=*) dseat="${w#seat=}" ;; run=*) drun="${w#run=}" ;; file=*) dfile="${w#file=}" ;; esac
   done
   home="$(council_home)"
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
-  if [ -n "$dtype" ] && dispatch_refusal "$home" "$session" "$dtype" "$dseat" "$drun"; then exit 2; fi
+  if [ -n "$dtype" ] && dispatch_refusal "$home" "$session" "$dtype" "$dseat" "$drun" "$dfile"; then exit 2; fi
   [ -d "$home/runs" ] || return 0
   runs="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' -v OFS='\t' '
     $6 != "in-progress" { next }
@@ -2115,11 +2144,14 @@ undelivered() {
   printf 'never %s' "${phase:-unknown}"
 }
 
-# The phase= steps from where a run is to Deliver, for the close's refusal: "phase=challenge, then phase=deliver".
+# The commands from where a run is to Deliver, one a step, for the close's refusal:
+# "`council state phase=challenge --run <x>`, then `council state phase=deliver --run <x>`".
 deliver_route() {
   local s out=""
-  for s in $(stages_skipped "$1" "$(field phase "$1/session-state.md")" deliver | tr ',' ' '); do out="${out}phase=$s, then "; done
-  printf '%sphase=deliver' "$out"
+  for s in $(stages_skipped "$1" "$(field phase "$1/session-state.md")" deliver | tr ',' ' '); do
+    out="$out\`council state phase=$s --run ${1##*/}\`, then "
+  done
+  printf '%s`council state phase=deliver --run %s`' "$out" "${1##*/}"
 }
 
 # The close reads the run back against the method itself (scripts/audit.py, as council run audit does):
@@ -2162,7 +2194,7 @@ cmd_run_close() {
   if [ "$status" = complete ] && ! run_closed "$run" && held="$(undelivered "$run")"; then
     event_unlock "$close_lock" || :
     case "$held" in
-      back\ *) die "${run##*/} can't close as complete: it went back to ${held#back } after Deliver and never came through Deliver again, so the user has no receipt for what changed since. Re-enter Deliver — council state $(deliver_route "$run") --run ${run##*/} — show the user the receipt (anything left open with it), then close. If the user paused the work, close it paused: council run close --status paused --run ${run##*/}" ;;
+      back\ *) die "${run##*/} can't close as complete: it went back to ${held#back } after Deliver and never came through Deliver again, so the user has no receipt for what changed since. Re-enter Deliver — $(deliver_route "$run") — show the user the receipt (anything left open with it), then close. If the user paused the work, close it paused: council run close --status paused --run ${run##*/}" ;;
       *) die "${run##*/} can't close as complete: it never reached Deliver (it is at ${held#never }). If the user paused the work — \"stop for tonight\" too — close it paused: council run close --status paused --run ${run##*/}; if it stopped for good: --status abandoned. Otherwise go on through Deliver first" ;;
     esac
   fi
@@ -2528,7 +2560,8 @@ utc_local_min() {
 # real build gave a task a new lock and a third check instead. A task's checks are its verifier seat
 # verify-<n> and the re-checks verify-<n>b, c … (or the same seat started again, writing verify-<n>b.md);
 # a verdict is one of them recorded done (a repeated done is the same verdict). Starting a check after two
-# verdicts needs a diagnose-<n> seat recorded after the second, or a decision of the user's recorded after
+# verdicts needs a diagnose-… seat recorded after the second — any task's number, as a batched verifier's
+# verify-2 checks tasks 2-4 and task 3's diagnosis is diagnose-3 — or a decision of the user's recorded after
 # it (council state decision=); after three or more, such a decision after the last. The event stream
 # orders the seats; a decision is compared by its minute, in local time. Prints why, and returns 0, when
 # the check must wait; 1 otherwise — another mode, another seat, or a run with no stream.
@@ -2549,13 +2582,13 @@ check_round_refusal() {
   n="${verdicts%%"$TAB"*}"
   [ "${n:-0}" -ge 2 ] 2>/dev/null || return 1
   vseq="${verdicts#*"$TAB"}"; since="$(utc_local_min "${vseq#*"$TAB"}")"; vseq="${vseq%%"$TAB"*}"
-  if [ "$n" -eq 2 ] && D="diagnose-$task" S="$vseq" awk -F'\t' 'NR > 1 && $4 == "seat.updated" && $5 == ENVIRON["D"] &&
+  if [ "$n" -eq 2 ] && S="$vseq" awk -F'\t' 'NR > 1 && $4 == "seat.updated" && index($5, "diagnose-") == 1 &&
        $2 + 0 > ENVIRON["S"] + 0 && $6 != "queued" && $6 != "skipped" { f = 1; exit } END { exit !f }' "$run/events.tsv" 2>/dev/null; then
     return 1
   fi
   [ "$(decisions_since "$run" "$since")" -eq 0 ] 2>/dev/null || return 1
   if [ "$n" -eq 2 ]; then
-    printf 'cannot start %s — it would be the third check of task %s, after two verdicts. After a second failed verification the build loop allows one clean-context diagnosis, then one more attempt: plan diagnose-%s and record it (council seat diagnose-%s running agent=<id>) before this check — or, if the task already used its diagnosis, stop and report to the user. Without that, only the user'"'"'s go starts it: ask them, then record their words with council state decision="…"\n' \
+    printf 'cannot start %s — it would be the third check of task %s, after two verdicts. After a second failed verification the build loop allows one clean-context diagnosis, then one more attempt: plan diagnose-%s (for a verifier of several tasks, the number of the task that failed) and record it (council seat diagnose-%s running agent=<id>) before this check — or, if the task already used its diagnosis, stop and report to the user. Without that, only the user'"'"'s go starts it: ask them, then record their words with council state decision="…"\n' \
       "$slug" "$task" "$task" "$task"
   else
     printf 'cannot start %s — task %s has %s verdicts, and after the second the build loop allows one diagnosis and one more attempt: stop and report to the user. Another check needs their go: ask them, then record their words with council state decision="…"\n' \
@@ -7481,12 +7514,13 @@ council — the Small Council's helper (bash + git)
   council run turn-end --session ID      the turn-end hook's decision (hooks/turn-end.sh): records that
                                          a run this session drives waits on the user, and once per wait
                                          exits 2 with the owner's alert to send
-  council cap check [--session ID] [<tool> [type=<agent type>] [seat=<slug>] [run=<folder>]]
+  council cap check [--session ID] [<tool> [type=<agent type>] [seat=<slug>] [run=<folder>] [file=<slug>]]
                                          the agent gate's decision (hooks/agent-gate.sh): exit 2 and the
                                          reason while a run this session may be driving is stopped; with
                                          the tool about to start, a pass counts it as an agent start; a
                                          council-worker or council-verifier (type=) is refused with no open
-                                         run for it, or for a seat (seat=) its plan doesn't select
+                                         run for it, or for a seat (seat=, else the file= it writes) its
+                                         plan doesn't select
   council correct <seat> tokens=N agents=N [unrecorded=yes] evidence="<source>"
                                          lay an exact, evidence-backed figure over a seat's record
                                          (or add an agent run the record missed); seats.tsv keeps
@@ -7705,12 +7739,12 @@ main() {
                       [ -z "$RUN_ARG" ] || die "cap check looks at every in-progress run this session may be driving; it does not take --run"
                       case "${1:-}" in
                         Agent|Task|Workflow) [ $# -eq 1 ] || for w in "${@:2}"; do
-                                               case "$w" in type=*|seat=*|run=*) ;; *) no_words "cap check" "$w" ;; esac
+                                               case "$w" in type=*|seat=*|run=*|file=*) ;; *) no_words "cap check" "$w" ;; esac
                                              done ;;
                         *) no_words "cap check" ${1+"$@"} ;;
                       esac
                       cmd_cap_check ${1+"$@"} ;;
-               *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool> [type=… seat=… run=…]]" ;;
+               *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool> [type=… seat=… run=… file=…]]" ;;
              esac ;;
     route)   sub="${1:-}"; [ $# -eq 0 ] || shift
              case "$sub" in

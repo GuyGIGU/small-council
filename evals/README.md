@@ -124,7 +124,9 @@ python evals/run_hook.py       # needs bash + git
 - never stops a session for a run another session drives;
 - holds the council's own agents to the record: a council-worker with no open run, an agent for a
   closed or paused run, a seat the plan doesn't select, a build task's third check — never an
-  ordinary agent, a Workflow, a verifier outside any run, or input it can't read.
+  ordinary agent, a Workflow, a verifier outside any run, or input it can't read; a re-review or
+  post-game citing an earlier run's file is judged by the run it writes for, and a display name on
+  the `Seat:` line by the file it writes.
 
 **Stop (turn end):** sends the Chair back once while the run's first status card is still due.
 
