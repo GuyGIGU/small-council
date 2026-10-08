@@ -74,6 +74,11 @@ Runs the helper against scaffolded git repos:
   both versions with the same mode and command, missing or empty outputs refused; whether a
   test was left behind in the project, and the warning when a build log never says what it traded
   away;
+- a gate's time limit: past it the gate and everything it started are stopped (even with the helper
+  killed outright), exit 124 and TIMED OUT, a failure and never a proof; where the limit comes from;
+  a red marked `--invalid`, a hang or a command never found read as no proof yet; a proof run only
+  through run-folder scripts noted; on a just-me council, council references in the change's added
+  lines, commit messages and PR body named, and ordinary code that looks alike left alone;
 - the judgment fixtures scaffold and execute: an existing-suite refactor and targeted empty-input
   fix keep separate proof, a side-effectful gate stays skipped, and the verifier's misleading
   green checks really hide the planted coverage or assertion gaps. These validate fixtures and

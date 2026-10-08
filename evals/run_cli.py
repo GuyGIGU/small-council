@@ -4815,6 +4815,250 @@ def gates_repair_stop(tmp):
           code == 1 and "repair: task T1-logs attempt 1" in out and code2 == 0 and "already recorded" in out2, out + out2 + err2)
 
 
+@part("gates")
+def gate_time_limits(tmp):
+    """Every gate runs under a time limit. A probe deadlocked for 672 s on a lock added minutes before, 12.6 h
+    after a 633 s hang, and the helper had no limit at all. Past its limit a gate is stopped with every process
+    it started, recorded as exit 124 and TIMED OUT, and counted as a failure, never a pass or a proof."""
+    def beating(path, wait=1.5):
+        """Does a background loop still append to this file? Its size, then again after a pause."""
+        size = os.path.getsize(path) if os.path.isfile(path) else -1
+        time.sleep(wait)
+        return (os.path.getsize(path) if os.path.isfile(path) else -1) != size
+
+    repo = small_council_repo(tmp, "timelimit",
+        "| quick | `echo quick-ok` | grounding, verify | yes | ok | `true` | none | - |\n")
+    code, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=build", "next=task 1: stop the hang")
+    hang = 'echo started; (while :; do echo beat >> beat.txt; sleep 0.2; done) & sleep 40; echo never'
+    began = time.monotonic()
+    code, out, err = council(repo, "gate", "probe-1", "--timeout", "2", "--", hang)
+    took = time.monotonic() - began
+    verdict = json.loads(read(os.path.join(run, "gates", "probe-1.json")) or "{}")
+    saved = read(os.path.join(run, "gates", "probe-1.txt"))
+    check("gate --timeout: a gate past its limit is stopped, exit 124, and says TIMED OUT with the limit and its source",
+          code == 124 and took < 20 and "gate probe-1: TIMED OUT after" in out and "time limit, 2s (set by --timeout)" in out
+          and "--timeout <seconds>" in out, "exit %d in %.1fs · %s%s" % (code, took, out, err))
+    check("gate --timeout: its verdict and its saved output say it timed out, and keep what it printed first",
+          verdict.get("exit") == 124 and verdict.get("timed_out") is True and verdict.get("limit") == 2
+          and "TIMED OUT after" in verdict.get("note", "") and saved.startswith("started\n")
+          and "council: TIMED OUT after" in saved and "never" not in saved, str(verdict) + saved)
+    check("gate --timeout: a timeout is a failure on the event stream, marked timed_out",
+          any(e[3] == "gate.finished" and e[4] == "probe-1" and e[5] == "failed" and "exit=124" in e[6]
+              and "timed_out=1" in e[6] for e in events(run)), str(events(run)[-2:]))
+    check("gate --timeout: nothing it started is left running, and the gate lock is gone",
+          os.path.isfile(os.path.join(repo, "beat.txt")) and not beating(os.path.join(repo, "beat.txt"))
+          and not os.path.exists(os.path.join(run, "gates.lock")), read(os.path.join(repo, "beat.txt"))[-40:])
+    check("gate --timeout: in a build, a timeout counts as a failed repair attempt",
+          "repair: task T1 attempt 1" in out, out)
+    for bad in ("soon", "0", "-5", "10d"):
+        code, out, err = council(repo, "gate", "probe-x", "--timeout", bad, "--", "true")
+        check("gate --timeout: '%s' is refused, and nothing runs" % bad,
+              code == 2 and "--timeout takes a time" in err and not os.path.exists(os.path.join(run, "gates", "probe-x.json")), err)
+    code, out, err = council(repo, "gate", "probe-m", "--timeout=2m", "--", "true")
+    check("gate --timeout: minutes are read as minutes (2m is 120 s)",
+          code == 0 and json.loads(read(os.path.join(run, "gates", "probe-m.json"))).get("limit") == 120, out + err)
+
+    # The limit with no --timeout: three times the gate's own baseline, at least 120 s; for a check given its
+    # command, which has no baseline of its own, three times the run's slowest baseline gate; else the config's
+    # gate time limit; else 30 minutes.
+    council(repo, "gate", "--all", "--at", "grounding")
+    code, out, err = council(repo, "gate", "quick")
+    check("gate time limit: a gate with a quick baseline gets the 120 s floor",
+          code == 0 and json.loads(read(os.path.join(run, "gates", "quick.json"))).get("limit") == 120, out + err)
+    write(os.path.join(run, "gates", "baseline", "quick.json"),
+          '{"gate": "quick", "command": "echo quick-ok", "exit": 0, "seconds": 50, "when": "2026-10-08 10:00:00"}\n')
+    write(os.path.join(run, "gates", "baseline", "slow.json"),
+          '{"gate": "slow", "command": "x", "exit": 0, "seconds": 70, "when": "2026-10-08 10:00:00"}\n')
+    council(repo, "gate", "quick")
+    council(repo, "gate", "probe-2", "--", "true")
+    check("gate time limit: three times the gate's own baseline (50 s → 150 s)",
+          json.loads(read(os.path.join(run, "gates", "quick.json"))).get("limit") == 150,
+          read(os.path.join(run, "gates", "quick.json")))
+    check("gate time limit: a check given its command gets three times the run's slowest baseline gate (70 s → 210 s)",
+          json.loads(read(os.path.join(run, "gates", "probe-2.json"))).get("limit") == 210,
+          read(os.path.join(run, "gates", "probe-2.json")))
+    other = small_council_repo(tmp, "timelimit-config",
+        "| quick | `echo quick-ok` | grounding, verify | yes | ok | `true` | none | - |\n")
+    cfg = os.path.join(other, ".council", "council.config.md")
+    code, orun, _ = council(other, "run", "open", "council-review")
+    orun = orun.strip()
+    council(other, "gate", "probe-3", "--", "true")
+    check("gate time limit: with no baseline and nothing configured, 30 minutes",
+          json.loads(read(os.path.join(orun, "gates", "probe-3.json"))).get("limit") == 1800,
+          read(os.path.join(orun, "gates", "probe-3.json")))
+    write(cfg, read(cfg).replace("## Gates", "## Run preferences\n- gate time limit: 7m\n\n## Gates"))
+    council(other, "gate", "probe-4", "--", "true")
+    check("gate time limit: with no baseline, the config's '- gate time limit:' (7m → 420 s)",
+          json.loads(read(os.path.join(orun, "gates", "probe-4.json"))).get("limit") == 420,
+          read(os.path.join(orun, "gates", "probe-4.json")))
+    code, out, err = council(other, "gate", "probe-5", "--timeout", "1", "--", "sleep 20")
+    check("gate time limit: --timeout wins over the config",
+          code == 124 and json.loads(read(os.path.join(orun, "gates", "probe-5.json"))).get("limit") == 1, out + err)
+
+    if os.name != "nt":
+        # The helper killed outright mid-gate: its watchdog, in a group of its own, still stops the gate at
+        # its limit. Stopped by a signal it can catch: the gate goes with it at once.
+        beat = os.path.join(other, "beat2.txt")
+        proc = subprocess.Popen([BASH, CLI, "gate", "probe-6", "--timeout", "3", "--run", orun, "--",
+                                 "(while :; do echo beat >> beat2.txt; sleep 0.2; done) & sleep 40"],
+                                cwd=other, env=GIT_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 20
+        while not os.path.isfile(beat) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        proc.kill()
+        proc.wait()
+        alive = beating(beat, 0.8)
+        time.sleep(4)
+        check("gate time limit: with the helper killed outright, its watchdog still stops the gate at the limit",
+              alive and not beating(beat), read(beat)[-40:])
+        lock_owner = slash(os.path.join(orun, "gates.lock", "owner"))
+        code, out, err = council(other, "gate", "probe-7", "--run", orun, "--",
+                                 "(while :; do echo beat >> beat3.txt; sleep 0.2; done) & sleep 0.5; "
+                                 "kill -TERM \"$(head -n 1 '%s')\"; sleep 40" % lock_owner)
+        check("gate time limit: a helper stopped by TERM stops the gate and everything it started on its way out",
+              code == 143 and not beating(os.path.join(other, "beat3.txt")), "exit %d · %s%s" % (code, out, err))
+
+
+@part("gates")
+def gate_invalid_proof(tmp):
+    """A red that proves nothing — the new check didn't compile, a probe was broken, a hang, a command that was
+    never found — is no proof yet. Three before-checks that died on compile errors were once counted as reds."""
+    repo = small_council_repo(tmp, "invalidproof",
+        "| quick | `echo quick-ok` | grounding, verify | yes | ok | `true` | none | - |\n")
+    write(os.path.join(repo, "tools", "check.sh"), "test -f fixed.txt\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a check")
+    code, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=build", "next=task 1: x")
+    check1 = "bash tools/check.sh && echo 'error: value of type Notebook has no member settled' >&2"
+    council(repo, "gate", "before-1", "--", check1)
+    code, out, err = council(repo, "gate", "before-1", "--invalid", "the new check did not compile")
+    verdict = read(os.path.join(run, "gates", "before-1.json"))
+    check("gate --invalid: marks the red on its record, keeps a copy, records an event, and says what is next",
+          code == 0 and "marked invalid (the new check did not compile)" in out and "task 1 has no proof yet" in out
+          and '"invalid": "the new check did not compile"' in verdict and '"exit": 1' in verdict
+          and os.path.isfile(os.path.join(run, "gates", "invalid", "before-1-1.json"))
+          and "marked invalid" in read(os.path.join(run, "gates", "before-1.txt"))
+          and any(e[3] == "gate.invalidated" and e[4] == "before-1" and "why=the new check did not compile" in e[6]
+                  for e in events(run)), out + err + verdict)
+    write(os.path.join(repo, "fixed.txt"), "")
+    council(repo, "gate", "after-1", "--", check1)
+    code, out, err = council(repo, "check")
+    check("check: a before-check marked invalid is NO-PROOF-YET, not a red, even with a passing after-check",
+          code == 1 and "task 1  proof  NO-PROOF-YET · before-1 marked invalid (the new check did not compile)" in out, out)
+    for args, why in ((("before-1", "--invalid", "twice"), "already marked invalid"),
+                      (("after-1", "--invalid", "it passed"), "passed (exit 0)"),
+                      (("before-9", "--invalid", "never ran"), "has no record"),
+                      (("before-1", "--invalid", "  "), "needs the reason"),
+                      (("before-1", "--invalid", "x", "--", "true"), "runs nothing")):
+        code, out, err = council(repo, "gate", *args)
+        check("gate --invalid: refused — %s" % why, code == 2 and why in err, out + err)
+    os.remove(os.path.join(repo, "fixed.txt"))
+    council(repo, "gate", "before-1", "--", check1)
+    write(os.path.join(repo, "fixed.txt"), "")
+    council(repo, "gate", "after-1", "--", check1)
+    code, out, err = council(repo, "check")
+    check("check: once the before-check runs again, its fresh red is the proof",
+          code == 0 and "task 1  proof  ok" in out, out)
+
+    # A hang and a command that was never found prove nothing either; a proof run only through the run
+    # folder's own scripts is noted, since it never ran the entry point a person runs.
+    council(repo, "gate", "before-2", "--timeout", "1", "--", "sleep 20; exit 1")
+    write(os.path.join(run, "gates", "after-2.json"),
+          '{"gate": "after-2", "command": "sleep 20; exit 1", "exit": 0, "seconds": 1, "when": "2026-10-08 10:00:00"}\n')
+    council(repo, "gate", "before-3", "--", "no-such-tool-anywhere --check")
+    council(repo, "gate", "after-3", "--", "true")
+    probe = os.path.join(run, "checks", "probe.sh")
+    write(probe, "test -f fixed.txt\n")
+    rel = slash(os.path.relpath(probe, repo))
+    os.remove(os.path.join(repo, "fixed.txt"))
+    council(repo, "gate", "before-4", "--", "bash %s" % rel)
+    council(repo, "gate", "before-5", "--", "bash tools/check.sh")
+    write(os.path.join(repo, "fixed.txt"), "")
+    council(repo, "gate", "after-4", "--", "bash %s" % rel)
+    council(repo, "gate", "after-5", "--", "bash tools/check.sh")
+    code, out, err = council(repo, "check")
+    check("check: a before-check stopped at its time limit is NO-PROOF-YET",
+          "task 2  proof  NO-PROOF-YET · before-2 timed out after" in out, out)
+    check("check: a before-check whose command was never found (exit 127) is NO-PROOF-YET",
+          "task 3  proof  NO-PROOF-YET · before-3 never ran: a command it calls was not found (exit 127)" in out, out)
+    check("check: a proof that ran only a run-folder script is noted, and one through the project's own check is not",
+          "only run-folder scripts ran it" in line_of(out, "task 4  proof  ok")
+          and "only run-folder scripts" not in line_of(out, "task 5  proof  ok")
+          and "check: 1 proved only through scripts in the run folder" in out, out)
+
+
+@part("requests")
+def check_just_me_hygiene(tmp):
+    """On a just-me council nothing teammates read may cite the council (references/sharing.md). A real build
+    left "(ruling 1)" in a Swift comment. council check reads the change's added lines, its commit messages and
+    a PR body drafted in the run, and names each council reference; ordinary code that looks alike is left be."""
+    repo = new_repo(tmp, "sharedtext")
+    cfg = os.path.join(repo, ".council", "council.config.md")
+    write(cfg, "# Council config — hygiene\n\n## Run preferences\n- sharing: just me\n")
+    append(os.path.join(repo, ".git", "info", "exclude"), ".council/\n")
+    write(os.path.join(repo, "ios", "Notebook.swift"), "import Foundation\n\nstruct Notebook {\n    var pages: [Page] = []\n}\n")
+    write(os.path.join(repo, "web", "geo.js"), "export function inner(D) {\n  return D - 1;\n}\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    git(repo, "checkout", "-q", "-b", "feature")
+    append(os.path.join(repo, "ios", "Notebook.swift"), "\n".join([
+        "// Keep the folder when the last page goes (ruling 1)",              # 6: hit
+        "func trim(_ D: Int) -> Int { return D-1 }",                          # 7: code, not an id
+        "let F = 3; let x = F-1 // the last index",                           # 8: code, and a comment with no id
+        "// Decided in D-2: pages are saved one file each",                   # 9: hit
+        "/* see .council/runs/2026-10-08-132605-implement/verify-3.md */",    # 10: hit
+        "// Step 1: load the pages. Task { await load() }",                   # 11: no
+        'let url = "https://example.com/D-1"',                                # 12: no (a URL, not a comment)
+        'func verifyEmail() -> String { "verify-email" }',                    # 13: no
+        "// Caches each page's strokes (task 4)",                             # 14: hit
+        "// Today 2026-10-08: task 1 is overdue, verify step 1 passes",       # 15: no
+        "let ids = tasks[1] + F-2",                                           # 16: no
+        ""]))
+    append(os.path.join(repo, "web", "geo.js"), "\n".join([
+        "// Falls back to the slow path, see AP-2",                           # 4: hit
+        "const span = [D-1, F-2];",                                           # 5: no
+        "/* EC-4: an empty page has no strokes */",                           # 6: hit
+        'function verify2() { return "verify-2fa"; }',                         # 7: no
+        ""]))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "Trim empty pages (ruling 2)")
+    write(os.path.join(repo, "NOTES.md"), "# Notes\nThe save follows plan task 3.\nA page with no strokes is skipped.\n")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write(os.path.join(run, "synthesis.md"), "# Synthesis\n## Index\n(none) — nothing found\n")
+    write(os.path.join(run, "pr-body.md"), "Saves each page on its own.\nThe proof is in verify-2.\n")
+    code, out, err = council(repo, "check")
+    lines = [l for l in out.splitlines() if l.startswith("hygiene  ")]
+    want = ["ios/Notebook.swift:6", "ios/Notebook.swift:9", "ios/Notebook.swift:10", "ios/Notebook.swift:14",
+            "web/geo.js:4", "web/geo.js:6", "NOTES.md:2", "PR body pr-body.md:2"]
+    places = [l.split("  ")[1] for l in lines]
+    check("check (just me): each council reference in the change's added lines, untracked files and the drafted PR "
+          "body is named with its file:line, and check fails",
+          code == 1 and all(w in places for w in want) and "a council ruling" in line_of(out, "ios/Notebook.swift:6 ")
+          and "say it in plain words" in lines[0] if lines else False, out + err)
+    check("check (just me): commit messages since the base are read too",
+          any(p.startswith("commit ") for p in places) and "Trim empty pages (ruling 2)" in out, out)
+    check("check (just me): code that only looks alike is left alone — D-1 as a subtraction, a URL, verifyEmail, "
+          "Task { }, a date, 'task 1' in passing, verify-2fa",
+          not any(p in places for p in ("ios/Notebook.swift:7", "ios/Notebook.swift:8", "ios/Notebook.swift:11",
+                                         "ios/Notebook.swift:12", "ios/Notebook.swift:13", "ios/Notebook.swift:15",
+                                         "ios/Notebook.swift:16", "web/geo.js:5", "web/geo.js:7", "NOTES.md:3"))
+          and len(places) == len(want) + 1, "\n".join(lines))
+    check("check (just me): the hits land in check.md and in the summary line",
+          "| hygiene | ios/Notebook.swift:6 |" in read(os.path.join(run, "check.md"))
+          and "9 council reference(s) in shared text (just me)" in out, out)
+    write(cfg, "# Council config — hygiene\n\n## Run preferences\n- sharing: team\n")
+    code, out, err = council(repo, "check")
+    check("check (team): a team council may cite its files, so nothing is scanned and the check passes",
+          code == 0 and "hygiene  " not in out and "in shared text" not in out, out + err)
+
+
 @part("runs")
 def runs_gitignore(tmp):
     # Every run open keeps run scratch and the user's words out of git — in a home with no .gitignore, in a

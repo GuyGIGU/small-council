@@ -3175,6 +3175,7 @@ GATE_LOCK="" GATE_LOCK_PID=""
 
 gate_unlock() {
   local lock="$GATE_LOCK" pid=''
+  gate_stop_running                              # a gate still running when this call ends goes with it
   [ -n "$lock" ] || return 0
   GATE_LOCK=""
   { IFS= read -r pid < "$lock/owner"; } 2>/dev/null || :
@@ -3222,6 +3223,123 @@ gate_lock() {
   done
 }
 
+# Every gate runs under a time limit. A probe once deadlocked for 672 s on a lock added minutes before,
+# 12.6 h after a 633 s hang, and nothing stopped either. The limit: --timeout when given; else three times
+# the gate's own baseline time in this run, at least 120 s — for a check given its command after --, which
+# has no baseline of its own, three times the run's slowest baseline gate; else the config's
+# `- gate time limit:`; else 30 minutes. A gate past it is stopped with every process it started, and
+# recorded as exit 124, "TIMED OUT": a failure, never a pass, and no proof.
+GATE_PG="" GATE_WATCH="" GATE_TIMEOUT="" GATE_LIMIT="" GATE_LIMIT_WHY="" GATE_TIMED_OUT=0
+
+# A time as seconds: 600, 600s, 10m, 10 min, 1h. Anything else fails.
+limit_seconds() {
+  local v n u
+  v="$(printf '%s' "$1" | tr -d ' \t\r' | tr 'A-Z' 'a-z')"
+  n="${v%%[!0-9]*}"; u="${v#"$n"}"
+  n="$(printf '%s' "$n" | sed 's/^0*//')"          # 010 is ten, never octal eight
+  case "$n" in ''|????????*) return 1 ;; esac      # none, or past seven digits
+  case "$u" in
+    ''|s|sec|secs|second|seconds) ;;
+    m|min|mins|minute|minutes) n=$((n * 60)) ;;
+    h|hr|hrs|hour|hours) n=$((n * 3600)) ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$n"
+}
+
+gate_seconds() { sed -n 's/.*"seconds": *\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -n 1; }
+
+# This gate's limit and where it came from: GATE_LIMIT (seconds) and GATE_LIMIT_WHY (words).
+gate_limit() {
+  local run="$1" name="$2" secs="" f s raw
+  if [ -n "$GATE_TIMEOUT" ]; then GATE_LIMIT="$GATE_TIMEOUT"; GATE_LIMIT_WHY="set by --timeout"; return 0; fi
+  f="$(gate_base "$run" "$name")"; secs="$(gate_seconds "$run/gates/baseline/${f##*/}.json")"
+  if [ -n "$secs" ]; then
+    GATE_LIMIT_WHY="3× its ${secs}s baseline"
+  elif [ -n "$GATE_CMD" ]; then                   # a probe or proof runs part of what the configured gates run
+    for f in "$run"/gates/baseline/*.json; do
+      s="$(gate_seconds "$f")"; [ -n "$s" ] || continue
+      if [ -z "$secs" ] || [ "$s" -gt "$secs" ]; then secs="$s"; fi
+    done
+    [ -z "$secs" ] || GATE_LIMIT_WHY="3× the run's slowest baseline gate, ${secs}s"
+  fi
+  if [ -n "$secs" ]; then
+    GATE_LIMIT=$((secs * 3))
+    if [ "$GATE_LIMIT" -lt 120 ]; then GATE_LIMIT=120; GATE_LIMIT_WHY="$GATE_LIMIT_WHY, raised to the 120s floor"; fi
+    return 0
+  fi
+  raw="$(sed -n 's/^[[:space:]]*-[[:space:]]*gate time limit:[[:space:]]*//p' "$(council_home)/council.config.md" 2>/dev/null | head -n 1)"
+  if [ -n "$raw" ] && s="$(limit_seconds "$raw")"; then
+    GATE_LIMIT="$s"; GATE_LIMIT_WHY="the config's gate time limit"
+  else
+    GATE_LIMIT=1800; GATE_LIMIT_WHY="the default, with no baseline to go by"
+    [ -z "$raw" ] || GATE_LIMIT_WHY="the default: the config's gate time limit '$raw' is not a time"
+  fi
+}
+
+# Stop process group $1 — the gate and every process it started: TERM, then KILL what is left after up
+# to 3 s. Where job control gave it no group of its own, the leader alone; on Windows also its process
+# tree, which reaches the native programs a group signal may miss.
+gate_stop() {
+  local g="$1" n=0 wp=""
+  kill -TERM -- -"$g" 2>/dev/null || kill -TERM "$g" 2>/dev/null
+  kill -CONT -- -"$g" 2>/dev/null                # a stopped process takes TERM only once it runs again
+  while [ "$n" -lt 30 ] && kill -0 -- -"$g" 2>/dev/null; do sleep 0.1; n=$((n + 1)); done
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      { IFS= read -r wp < "/proc/$g/winpid"; } 2>/dev/null || wp=""
+      [ -z "$wp" ] || taskkill //F //T //PID "$wp" >/dev/null 2>&1 ;;
+  esac
+  kill -KILL -- -"$g" 2>/dev/null; kill -KILL "$g" 2>/dev/null
+  return 0
+}
+
+# The watchdog, in a process group of its own: it outlives a helper killed outright, so even then the gate
+# is stopped at its limit and nothing is left running. It ends by itself once the gate has.
+gate_watch() {
+  local g="$1" limit="$2" flag="$3"
+  SECONDS=0
+  while [ "$SECONDS" -lt "$limit" ]; do
+    sleep 1
+    kill -0 "$g" 2>/dev/null || exit 0
+  done
+  : > "$flag"
+  gate_stop "$g"
+}
+
+# The gate still running and its watchdog, stopped: every way out of the helper (gate_unlock, on EXIT).
+gate_stop_running() {
+  local g="$GATE_PG" w="$GATE_WATCH"
+  GATE_PG="" GATE_WATCH=""
+  [ -z "$g" ] || gate_stop "$g"
+  [ -z "$w" ] || { kill -TERM -- -"$w" 2>/dev/null || kill -TERM "$w" 2>/dev/null; }
+  return 0
+}
+
+# Run "$3" in code root $1 (COUNCIL_BASE=$2), all output to file $4, under limit $5 seconds. Returns its
+# exit code, or 124 with GATE_TIMED_OUT=1 when the watchdog stopped it.
+gate_exec() {
+  local top="$1" rbase="$2" rcmd="$3" out="$4" limit="$5" flag="$4.timed-out" ec
+  GATE_TIMED_OUT=0
+  rm -f "$flag"
+  set -m 2>/dev/null                             # each job its own process group, so one signal reaches all of it
+  ( cd "$top" 2>/dev/null || exit 97; COUNCIL_BASE="$rbase" bash -c "$rcmd" < /dev/null ) > "$out" 2>&1 &
+  GATE_PG=$!
+  ( gate_watch "$GATE_PG" "$limit" "$flag" ) < /dev/null > /dev/null 2>&1 &
+  GATE_WATCH=$!
+  set +m 2>/dev/null
+  { wait "$GATE_PG"; ec=$?; } 2>/dev/null
+  if [ -f "$flag" ]; then
+    { wait "$GATE_WATCH"; } 2>/dev/null           # let it finish stopping what is left
+    rm -f "$flag"; GATE_TIMED_OUT=1; ec=124
+  else
+    kill -TERM -- -"$GATE_WATCH" 2>/dev/null || kill -TERM "$GATE_WATCH" 2>/dev/null
+    { wait "$GATE_WATCH"; } 2>/dev/null
+  fi
+  GATE_PG="" GATE_WATCH=""
+  return "$ec"
+}
+
 # Run one gate; full output to <run>/gates/<name>.txt, the verdict to <name>.json. Returns its exit code.
 # In a baseline set (GATE_BASELINE=1) a gate's first output is also kept as gates/baseline/<name>.txt,
 # so a later failure can be told apart from one the untouched code already had.
@@ -3246,10 +3364,16 @@ run_gate() {
   # inside it looks at what this run reviews or builds — on the default branch, with the work committed,
   # the merge-base is HEAD itself and the committed change would be skipped. Empty clears an inherited one.
   rbase="$(field base "$run/session-state.md")"
+  gate_limit "$run" "$name"
   start="$(date +%s)"
-  ( cd "$top" 2>/dev/null || exit 97; COUNCIL_BASE="$rbase" bash -c "$rcmd" < /dev/null ) > "$out" 2>&1
+  gate_exec "$top" "$rbase" "$rcmd" "$out" "$GATE_LIMIT"
   ec=$?
   secs=$(( $(date +%s) - start ))
+  if [ "$GATE_TIMED_OUT" = 1 ]; then               # said in its own output and verdict, so no reader takes it for a check
+    printf '\ncouncil: TIMED OUT after %ss — stopped at its time limit, %ss (%s), with every process it started\n' \
+      "$secs" "$GATE_LIMIT" "$GATE_LIMIT_WHY" >> "$out"
+    nnote=", \"note\": \"TIMED OUT after ${secs}s (time limit ${GATE_LIMIT}s: $(json_esc "$GATE_LIMIT_WHY"))\", \"timed_out\": true"
+  fi
   if [ "$ec" -eq 0 ] && cmd_never_ran "$out"; then   # a prompt and a banner: the command never ran
     ec=1; never=1; nnote=', "note": "cmd opened its prompt and ran nothing"'
   fi
@@ -3272,8 +3396,8 @@ run_gate() {
     fi
   fi
   [ -z "${PROOF_ARG:-}" ] || nnote="$nnote, \"proof\": \"$PROOF_ARG\""
-  printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s"%s}\n' \
-    "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" "$nnote" > "$base.json"
+  printf '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s", "limit": %d%s}\n' \
+    "$(json_esc "$name")" "$(json_esc "$cmd")" "$ec" "$secs" "$(now_sec)" "$GATE_LIMIT" "$nnote" > "$base.json"
   if [ "${GATE_BASELINE:-0}" = 1 ] && [ ! -f "$bl.txt" ]; then
     mkdir -p "$run/gates/baseline" && cp "$out" "$bl.txt" && cp "$base.json" "$bl.json" && fresh=1
   fi
@@ -3289,7 +3413,13 @@ run_gate() {
     return 0
   fi
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
-  if [ "$never" = 1 ]; then
+  if [ "$GATE_TIMED_OUT" = 1 ]; then              # a hang: what it was doing last, and no baseline to compare
+    say "gate $name: TIMED OUT after ${secs}s — stopped at its time limit, ${GATE_LIMIT}s ($GATE_LIMIT_WHY), with every process it started. A hang is no pass and no proof; if it truly needs longer: council gate $(qname "$name") --timeout <seconds> — full output: $out"
+    grep -v -e '^council: TIMED OUT' -e '^[[:space:]]*$' "$out" 2>/dev/null | tail -n 8 | clip 220 | sed 's/^/    /'
+    event_append "$run" gate.finished "$name" failed "exit=$ec;seconds=$secs;empty=0;timed_out=1" \
+      || printf 'council: gate failed, and its event was not recorded\n' >&2
+    return "$ec"
+  elif [ "$never" = 1 ]; then
     say "gate $name: FAIL — cmd opened its prompt and ran nothing (${secs}s): write its switch as //c, e.g. cmd //c \"<command>\" — full output: $out"
   elif [ "$ec" -eq 127 ]; then                   # the shell's "command not found": nothing was checked
     say "gate $name: could not run (exit 127, ${secs}s) — a command it calls was not found; install it, or fix the gate's command — full output: $out"
@@ -3386,12 +3516,51 @@ missing_module() {
   printf '%s\n' "$said" | sed -n 's/^.*: No module named \([A-Za-z0-9_.][A-Za-z0-9_.]*\)[[:space:]]*$/\1/p' | tr -d '\r' | grep .
 }
 
+# council gate <name> --invalid "<why>": a red that proves nothing — the new check didn't compile, the probe
+# was broken — said so on its record rather than left to count as a red. Nothing runs. The verdict json gains
+# "invalid", the output a closing line, a copy goes to gates/invalid/, and an event records it. `council check`
+# then reads a before-<n> or regress-<n> so marked as NO-PROOF-YET; running the gate again replaces it.
+# A gate's repair attempts stay counted: a broken check is still a try that failed.
+gate_invalid() {
+  local run="$1" name="$2" why base json ec k=1 slug
+  [ "$ALL" = 0 ] || die "--invalid marks one gate's record, not a set"
+  [ -z "$GATE_CMD" ] && [ -z "$PROOF_ARG" ] && [ -z "$GATE_TIMEOUT" ] \
+    || die "--invalid runs nothing: council gate <name> --invalid \"<why>\" takes no command, --proof or --timeout"
+  [ -n "$name" ] || die "usage: council gate <name> --invalid \"<why the red proves nothing>\""
+  why="$(printf '%s' "$INVALID_ARG" | tr '\t\r\n' '   ' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  [ -n "$why" ] || die "--invalid needs the reason, in words: --invalid \"the new test didn't compile\""
+  base="$(gate_base "$run" "$name")"; json="$base.json"; slug="${base##*/}"
+  [ -f "$json" ] || die "gate $name has no record in this run (gates/$slug.json) — nothing to mark"
+  ec="$(gate_exit "$json")"
+  case "$ec" in ''|*[!0-9-]*) die "gate $name's record can't be read (gates/$slug.json) — nothing was marked" ;; esac
+  [ "$ec" -ne 0 ] || die "gate $name passed (exit 0) — --invalid marks a red that proves nothing; a check that passed for the wrong reason needs a better check, run again"
+  ! grep -q '"invalid": "' "$json" || die "gate $name's record is already marked invalid — run it again once the check is fixed"
+  gate_lock "$run"
+  mkdir -p "$run/gates/invalid" || die "cannot write $run/gates/invalid"
+  while [ -f "$run/gates/invalid/$slug-$k.json" ]; do k=$((k + 1)); done
+  W="$(json_esc "$why")" awk '{ sub(/[}][ \t\r]*$/, ""); print $0 ", \"invalid\": \"" ENVIRON["W"] "\"}" }' "$json" > "$json.tmp" \
+    && mv "$json.tmp" "$json" || { rm -f "$json.tmp"; die "cannot update $json"; }
+  printf '\ncouncil: marked invalid %s — %s. This red proves nothing; run the check again once it is fixed.\n' "$(now_sec)" "$why" >> "$base.txt"
+  cp "$json" "$run/gates/invalid/$slug-$k.json"; [ ! -f "$base.txt" ] || cp "$base.txt" "$run/gates/invalid/$slug-$k.txt"
+  event_append "$run" gate.invalidated "$name" invalid "exit=$ec;why=$(printf '%s' "$why" | tr ';' ',')" \
+    || printf 'council: the gate is marked invalid, but its event was not recorded\n' >&2
+  case "$name" in
+    before-*|regress-*) say "gate $name: marked invalid ($why) — its red proves nothing, so task ${name#*-} has no proof yet. Fix the check, read it back, compile it with the cheapest check, then: council gate $(qname "$name") -- '<the check>'" ;;
+    *) say "gate $name: marked invalid ($why) — its red proves nothing; fix it and run it again" ;;
+  esac
+  say "    kept as gates/invalid/$slug-$k.json"
+}
+
 cmd_gate() {
   local run top cfg name cmd at mand k chk side needs hk hascol stg ism ckd extra row ran=0 skipped=0 failed=0 gates \
         passed=0 nfail=0 red="" tail="" ismand=0 skipm=0 reds="" empty=0 noth="" atl="" old=0 GATE_BASELINE=0 \
         nothing=0 nran="" nt="" slug files="" other trail="" rtask="" mode="" ec=0 py="" proof_id=""
   run="$(resolve_run)" || exit 2
   refuse_closed "$run" "its checks are on record; run them in a new run"
+  if [ -n "$TIMEOUT_ARG" ]; then
+    GATE_TIMEOUT="$(limit_seconds "$TIMEOUT_ARG")" || die "--timeout takes a time, in seconds or with m or h: 900, 15m (got '$TIMEOUT_ARG')"
+  fi
+  if [ -n "$INVALID_ARG" ]; then gate_invalid "$run" "${1+$*}"; return; fi
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   cfg="$(council_home)/council.config.md"
   mode="$(field mode "$run/session-state.md")"     # a build's gate results are its repair record (repair_auto)
@@ -4356,11 +4525,110 @@ gate_cmd()  { sed -n 's/.*"command": "\(.*\)", "exit".*/\1/p' "$1" 2>/dev/null |
                 | sed 's/\\\(.\)/\1/g'; }
 gate_proof() { sed -n 's/.*"proof": "\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -n 1; }
 
+# Why a before-check's record proves nothing, in words; nothing when its result may count. A red is proof
+# only of what it checked: not a red marked invalid (council gate <name> --invalid), a hang stopped at its
+# time limit, or a command that never ran (exit 127, or Python's one-line missing module).
+proof_void() {
+  local f="$1" why ec
+  why="$(sed -n 's/.*"invalid": "\([^"]*\)".*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  if [ -n "$why" ]; then printf 'marked invalid (%s)' "$why"; return 0; fi
+  if grep -q '"timed_out": true' "$f" 2>/dev/null; then printf 'timed out after %ss' "$(gate_seconds "$f")"; return 0; fi
+  ec="$(gate_exit "$f")"
+  if [ "$ec" = 127 ]; then printf 'never ran: a command it calls was not found (exit 127)'; return 0; fi
+  if [ "$ec" = 1 ] && why="$(missing_module "${f%.json}.txt")"; then printf 'never ran: Python has no module %s' "$why"; fi
+  return 0
+}
+
+# Whether a gate command runs nothing but scripts kept in a run folder (.council/runs/…): each program it
+# starts is one — directly, through an interpreter, or after a cd into one — or a plain shell tool. Such a
+# proof never ran the entry point a person runs (the time bound a real run proved only through its own
+# helper script, never through the project's check). Unknown words count as the project's: it under-claims.
+run_folder_only() {
+  C="$1" awk 'BEGIN {
+    s = ENVIRON["C"]; gsub(/["\047`]/, " ", s)
+    gsub(/[0-9]*>&[0-9]*|&>|[0-9]*>>?|[0-9]*</, " > ", s)          # redirections: never a command
+    gsub(/&&|\|\||[;|&()]/, "\n", s)
+    n = split(s, part, "\n"); rf = 0; other = 0; incwd = 0
+    for (i = 1; i <= n; i++) {
+      k = split(part[i], w, /[ \t]+/); j = 1
+      while (j <= k && (w[j] == "" || w[j] ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || w[j] ~ /^(env|time|exec|command|nohup|then|do|else|!)$/)) j++
+      if (j > k) continue
+      exe = w[j]
+      if (exe == ">") continue
+      if (exe == "cd" || exe == "pushd") { incwd = (w[j + 1] ~ /\.council\/runs\//); continue }
+      if (exe !~ /^[A-Za-z0-9_.\/~$]/) continue                           # the rest of a test: = ok ]
+      if (exe ~ /^(echo|printf|test|true|false|grep|egrep|cat|diff|cmp|head|tail|wc|sort|uniq|tee|sed|awk|rm|mkdir|cp|mv|ls|touch|sleep|export|set|exit|return|wait|if|fi|for|while|until|done|case|esac|in)$/) continue
+      prog = exe
+      if (exe ~ /(^|\/)(ba|z|da|k)?sh$/ || exe ~ /(^|\/)(python[0-9.]*|node|ruby|perl|php|swift|deno|bun|pwsh|powershell|osascript|lua|tclsh)$/) {
+        prog = ""
+        for (m = j + 1; m <= k; m++) if (w[m] != "" && w[m] !~ /^-/) { prog = w[m]; break }
+      }
+      if (prog ~ /\.council\/runs\// || (incwd && prog != "" && prog !~ /^[\/$~]/)) rf++
+      else other++
+    }
+    exit !(rf > 0 && other == 0)
+  }'
+}
+
+# Just-me hygiene (references/sharing.md): the council's ids in what teammates read. On a just-me council
+# a real build left "(ruling 1)" in a code comment. Read: the lines the change adds since the run's base
+# (untracked files whole), its commit messages, and a PR body drafted in the run (<run>/pr-body*). Anywhere:
+# a .council/ path, a run folder's name, "ruling <n>", verify-<n>. In comments and prose only, where code
+# can't mean them (D-1 is a subtraction): a decision, failure, anti-pattern or edge-case id (D-3, F-2, AP-1,
+# EC-4) and a task named as the council names it — "(task 4)", "plan task 4". Prints place TAB what TAB line.
+hygiene_hits() {
+  local run="$1" top="$2" hb="$3" ref f
+  { ( cd "$top" 2>/dev/null || exit 0
+      git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+      if [ -z "$hb" ]; then ref="$(default_branch)" || ref="HEAD"; hb="$(git merge-base HEAD "$ref" 2>/dev/null)" || hb=""; fi
+      if git rev-parse -q --verify "${hb:-HEAD}^{commit}" >/dev/null 2>&1; then
+        git -c core.quotePath=false diff -M -U0 --no-color --no-ext-diff "${hb:-HEAD}" -- . ':(exclude).council' 2>/dev/null | awk '
+          /^diff --git / { h = 1; p = ""; next }          # a file header, up to its first hunk
+          h && /^\+\+\+ / { p = substr($0, 5); gsub(/^"|"$/, "", p); sub(/^b\//, "", p); if (p == "/dev/null") p = ""; next }
+          /^@@/ { h = 0; if (match($0, /\+[0-9]+/)) n = substr($0, RSTART + 1, RLENGTH - 1) + 0; next }
+          h { next }
+          /^\+/ { if (p != "") print p "\t" n "\t" substr($0, 2); n++ }'
+      fi
+      git -c core.quotePath=false ls-files -o --exclude-standard 2>/dev/null | while IFS= read -r f; do
+        case "$f" in .council/*|*/) continue ;; esac
+        [ -s "$f" ] && [ "$(wc -c < "$f" | tr -d ' ')" -le 1048576 ] && LC_ALL=C grep -qI -e '' "$f" 2>/dev/null || continue
+        F="$f" awk '{ print ENVIRON["F"] "\t" FNR "\t" $0 }' "$f"
+      done
+      [ -z "$hb" ] || git log --no-merges --format='@@commit %h%n%B' "$hb..HEAD" 2>/dev/null \
+        | awk '/^@@commit / { c = $2; n = 0; next } { n++; print "commit " c "\t" n "\t" $0 }' )
+    for f in "$run"/pr-body*; do
+      [ -f "$f" ] || continue
+      F="PR body ${f##*/}" awk '{ print ENVIRON["F"] "\t" FNR "\t" $0 }' "$f"
+    done
+  } | LC_ALL=C awk -F'\t' '
+    function prose(p) { return p ~ /^(commit|PR body) / || tolower(p) ~ /\.(md|markdown|mdx|txt|rst|adoc|org)$/ }
+    function said(t,    i, l) {                     # the part of a code line that a comment holds
+      if (match(t, /(^|[^:])\/\//)) return substr(t, RSTART)
+      if ((i = index(t, "/*")) > 0) return substr(t, i)
+      if ((i = index(t, "<!--")) > 0) return substr(t, i)
+      l = t; sub(/^[ \t]+/, "", l)
+      if (l ~ /^(\*|#|--|;|%)/) return l
+      if (match(t, /[ \t]#[ \t]/)) return substr(t, RSTART)
+      return ""
+    }
+    function hit(what) { printf "%s:%s\t%s\t%s\n", $1, $2, what, substr(line, 1, 120); n++ }
+    {
+      line = $0; sub(/^[^\t]*\t[^\t]*\t/, "", line); gsub(/\r/, "", line); low = tolower(line)
+      c = prose($1) ? line : said(line); lc = tolower(c)
+      if (line ~ /(^|[^A-Za-z0-9_.])\.council\//) hit("a .council/ path")
+      else if (line ~ /(^|[^0-9])20[0-9][0-9]-[01][0-9]-[0-3][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-[a-z]/) hit("a council run folder")
+      else if (low ~ /(^|[^a-z])rulings? [0-9]/) hit("a council ruling")
+      else if (line ~ /(^|[^A-Za-z0-9_-])verify-[0-9]+[a-z]?([^A-Za-z0-9_]|$)/) hit("a council verifier file")
+      else if (c ~ /(^|[^A-Za-z0-9_-])(AP|EC|D|F)-[0-9]+([^A-Za-z0-9_]|$)/) hit("a council id (D-, F-, AP-, EC-)")
+      else if (lc ~ /\((see |per |from |in )?tasks? [0-9]+[a-z]?[),;& ]/ || lc ~ /(council|plan|build)(\047s)? tasks? [0-9]/) hit("a council task")
+    }'
+}
+
 cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd bproof aproof tp pn proofs=0 saved=0 broke=0 preserved=0 note what \
         mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
-        other=0 unreadt=0 empty=0 gone=0 result who
+        other=0 unreadt=0 empty=0 gone=0 result who bvoid gn rfonly=0 hy=0 hyl
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -4530,7 +4798,10 @@ QUOTES
       bex="$(gate_exit "$bf")"; bcmd="$(gate_cmd "$bf")"
       bproof="$(gate_proof "$bf")"; bproof="${bproof:-change}"
       proofs=$((proofs + 1)); note="-"; tp=""
-      if [ ! -f "$af" ]; then
+      bvoid="$(proof_void "$bf")"; gn="${bf##*/}"; gn="${gn%.json}"
+      if [ -n "$bvoid" ]; then                    # a red that proves nothing is no proof yet, whatever came after
+        st="NO-PROOF-YET"; note="$gn $bvoid — fix the check, run $gn again"
+      elif [ ! -f "$af" ]; then
         st="NO-AFTER"
       else
         aex="$(gate_exit "$af")"; acmd="$(gate_cmd "$af")"
@@ -4561,6 +4832,9 @@ QUOTES
       if [ "$st" = ok ] || [ "$st" = preserved ]; then
         [ -z "$tp" ] || saved=$((saved + 1))       # only a proof that held counts as a test kept
         [ "$st" != preserved ] || preserved=$((preserved + 1))
+        if run_folder_only "$bcmd" && run_folder_only "${acmd:-$bcmd}"; then
+          rfonly=$((rfonly + 1)); note="$note · only run-folder scripts ran it, never the entry point a person runs"
+        fi
       else
         bad=$((bad + 1)); broke=$((broke + 1))
       fi
@@ -4584,7 +4858,21 @@ QUOTES
       else
         say "check: $((proofs - broke)) of $proofs fix(es) proved · $broke broken · $saved left a test behind in the project"
       fi
+      [ "$rfonly" -eq 0 ] || say "check: $rfonly proved only through scripts in the run folder — one proof of each task runs the command a person would run, named in the log (references/build-proof.md)"
     fi
+  fi
+  # Just me: nothing teammates read may cite the council (references/sharing.md).
+  if [ "$(configured_sharing)" = "just me" ]; then
+    while IFS="$TAB" read -r cite what hyl; do
+      [ -n "$cite" ] || continue
+      hy=$((hy + 1)); rows=$((rows + 1)); bad=$((bad + 1))
+      printf '| hygiene | %s | %s | - |\n' "$cite" "$what" >> "$out"
+      [ "$hy" -gt 20 ] || say "hygiene  $cite  $what — teammates can't open the council; say it in plain words: $(printf '%s' "$hyl" | sed 's/^[[:space:]]*//' | clip 90)"
+    done <<HYGIENE
+$(hygiene_hits "$run" "$top" "$base")
+HYGIENE
+    [ "$hy" -le 20 ] || say "hygiene  … and $((hy - 20)) more in check.md"
+    [ "$hy" -eq 0 ] || extra="$extra · $hy council reference(s) in shared text (just me)"
   fi
   if [ "$files" -eq 0 ] && [ "$gone" -eq 0 ] && [ "$mode" != council-implement ]; then
     other=$((other + 1)); say "check: nothing to check — no synthesis.md and no seat files"
@@ -6926,6 +7214,12 @@ council — the Small Council's helper (bash + git)
   council gate --all [--at grounding|verify]
                                          run the configured gates · a run takes one gate call at a time:
                                          a second is refused (exit 2) and writes nothing — wait for the first
+  council gate … --timeout <time>        this call's time limit per gate (900, 15m). Without it: 3× the
+                                         gate's baseline time (at least 120 s), else the config's
+                                         "- gate time limit:", else 30 min. Past it the gate and all it
+                                         started are stopped: exit 124, TIMED OUT — a failure, no proof
+  council gate <name> --invalid "<why>"  mark a red that proves nothing (the new check didn't compile, the
+                                         probe was broken); council check reads that proof as no proof yet
   council gates                          list the configured gates
   council changed [--glob '<pat>'] [--each] -- <cmd>
                                          run <cmd> over just the files this change touches (0 when none);
@@ -7009,6 +7303,7 @@ main() {
   CONTEXT_EXPANDS=()
   MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0 WATCH=0 WIDGET=0 LINE=0 PREVIEW=0
   PET_STOP=0 PET_DEMO=0 PET_STILL=0 PET_POSE_ARG="" PET_EXIT_ARG="" TRANSCRIPT_ARG=""
+  TIMEOUT_ARG="" INVALID_ARG=""
   AFTER_DD=()
   local -a pos
   local cmd sub flag val w
@@ -7026,6 +7321,9 @@ main() {
                    val="$2"; shift 2 ;;
       --run=*|--code-root=*|--status=*|--base=*|--at=*|--proof=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*|--transcript=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
+      --timeout|--invalid)                                              # council gate's own
+                   flag="${1#--}"; [ $# -ge 2 ] || die "--$flag needs a value"; val="$2"; shift 2 ;;
+      --timeout=*|--invalid=*) flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
       --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still) flag="${1#--}"; val=1; shift ;;
       --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
@@ -7058,6 +7356,7 @@ main() {
       stop) PET_STOP=1 ;;          demo) PET_DEMO=1 ;;           still) PET_STILL=1 ;;
       pose) PET_POSE_ARG="$val" ;; exit-after) PET_EXIT_ARG="$val" ;;
       transcript) TRANSCRIPT_ARG="$val" ;;
+      timeout) TIMEOUT_ARG="$val" ;;   invalid) INVALID_ARG="$val" ;;
     esac
     FLAGS="$FLAGS $flag"
   done
@@ -7153,7 +7452,7 @@ main() {
                       cmd_repair allow "${1+$*}" ;;     # a gate name with a space may arrive as several words
               *) die "usage: council repair record <task> <gate> | repair show|check [task] | repair allow <gate> --user-said \"…\"" ;;
             esac ;;
-    gate)    takes_flags gate all at proof --
+    gate)    takes_flags gate all at proof timeout invalid --
              if [ "$ALL" = 1 ]; then
                no_words "gate --all" ${1+"$@"}
                [ -z "$GATE_CMD" ] || die "gate --all runs the configured gates — it takes no command after --"

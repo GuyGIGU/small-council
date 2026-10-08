@@ -42,7 +42,8 @@ CLAIM_MODES = ("council-review", "council-plan", "council-research")
 VERDICTS = ("CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED")
 HELPER_WORDS = {"home", "run", "state", "seat", "cap", "correct", "index", "impact", "context", "evidence", "repair",
                 "gate", "gates", "changed", "collect", "check", "map", "fingerprint", "memory", "prior", "ask",
-                "ledger", "route", "tune", "history", "outcomes", "tui", "status", "pet", "doctor", "help"}
+                "ledger", "route", "tune", "history", "outcomes", "tui", "status", "pet", "doctor", "help",
+                "sharing", "version"}
 TWO_WORD = {"run", "cap", "memory", "evidence", "context", "repair", "tune", "route"}
 # The helper's advisory lines on stderr ("council: ..." without a refusal): everything else on a
 # "council:" line is a refusal (die, exit 2) or a record that failed to write. A lock refusal is
@@ -426,9 +427,16 @@ def heredoc_free(command):
 
 
 def pipelines(command):
-    """Each simple command of a shell line as its list of pipe stages. Splits on ; && || & newline $( ( )
-    and backquotes outside quotes, then on single |; enough to see how the helper was called."""
+    """Each simple command of a shell line as its list of pipe stages. Splits on ; && || & newline and
+    backquotes outside quotes, then on single | (and |&); enough to see how the helper was called. A ( or $(
+    opens a group and its ) closes it, each as a line of its own; a pipe right after the ) stays on the ) line,
+    so `(...) | tail` is seen as the group's output cut."""
     lines, stages, cur, quote, n = [], [], [], None, 0
+
+    def end():
+        stages.append("".join(cur))
+        lines.append(list(stages))
+        del stages[:], cur[:]
     while n < len(command):
         ch, two = command[n], command[n:n + 2]
         if quote:
@@ -446,18 +454,30 @@ def pipelines(command):
             n += 1
         elif ch == "&" and (command[n - 1:n] in "<>" and n > 0 or command[n + 1:n + 2] == ">"):
             cur.append(ch)                                       # 2>&1, &>file: a redirection, not a separator
-        elif two in ("&&", "||", "$("):
-            stages.append("".join(cur)); lines.append(stages); stages, cur = [], []
+        elif two == "|&":
+            stages.append("".join(cur)); del cur[:]
             n += 1
-        elif ch in ";\n&`()":
-            stages.append("".join(cur)); lines.append(stages); stages, cur = [], []
+        elif two in ("&&", "||"):
+            end()
+            n += 1
+        elif two == "$(" or ch == "(":
+            end()
+            lines.append(["("])
+            n += 1 if two == "$(" else 0
+        elif ch == ")":
+            end()
+            if re.match(r"(?:\s*(?:[0-9]*>&[0-9-]+|&>\s*\S+|[0-9]*>>?\s*[^\s|;&]+))*\s*\|(?!\|)", command[n + 1:]):
+                cur.append(")")                                  # the group's own pipe stages follow
+            else:
+                lines.append([")"])
+        elif ch in ";\n&`":
+            end()
         elif ch == "|":
-            stages.append("".join(cur)); cur = []
+            stages.append("".join(cur)); del cur[:]
         else:
             cur.append(ch)
         n += 1
-    stages.append("".join(cur))
-    lines.append(stages)
+    end()
     return [[s.strip() for s in line] for line in lines if line and line[0].strip()]
 
 
@@ -468,16 +488,42 @@ def words_of(stage):
         return stage.split()
 
 
+# Shell groups whose output one pipe after their end cuts as a whole: `for ...; do council ...; done | tail`.
+OPENERS = {"(": ")", "{": "}", "for": "done", "select": "done", "while": "done", "until": "done", "if": "fi", "case": "esac"}
+LEADS = ("!", "&", "time", "command", "exec", "nohup", "env", "do", "then", "else", "elif")
+
+
+def cut_of(stages):
+    return next((s for s in stages[1:] if words_of(s)[:1] and words_of(s)[0] in ("tail", "head")), None)
+
+
 def invocations(command):
     """The helper calls in a Bash or PowerShell command: how each was called (plain, path or variable),
-    its subcommand, and the tail/head stage that cut its output, if any."""
+    its subcommand, and the tail/head stage that cut its output, if any — its own, or one on a loop, if,
+    { } or ( ) group around it. Calls inside a loop body count, and so does `bash "$C" …` once C was set to
+    the helper earlier in the same command."""
     command = heredoc_free(command or "")
     variables = {"C", "COUNCIL"} | set(name for name, value in re.findall(
         r"(?:^|[\s;&(|])([A-Za-z_]\w*)=(\"[^\"]*\"|'[^']*'|\S*)", command) if re.search(r"[/\\]council\b", value))
-    found = []
+    variables |= set(re.findall(r"(?:^|[\s;&(|])([A-Za-z_]\w*)=[\"']?\$\((?:command -v|which) council\)", command))
+    found, groups = [], []                       # groups: (the word that closes it, where its calls start)
     for stages in pipelines(command):
         words = words_of(stages[0])
-        while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in ("!", "&", "time", "command", "exec", "nohup")):
+        if words and words[0] in (")", "}", "done", "fi", "esac"):
+            if groups and groups[-1][0] == words[0]:
+                begin = groups.pop()[1]
+                cut = cut_of(stages)
+                for call in found[begin:] if cut else []:
+                    call["cut"] = call["cut"] or cut
+            continue
+        while words:
+            if words[0] in OPENERS:
+                groups.append((OPENERS[words[0]], len(found)))
+                if words[0] in ("for", "select", "case"):
+                    words = []                     # its word list or subject, not a command
+                    break
+            elif not (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in LEADS):
+                break
             words = words[1:]
         if not words:
             continue
@@ -485,8 +531,13 @@ def invocations(command):
         form, rest = None, []
         if first == "council":
             form, rest = "plain", words[1:]
-        elif re.search(r"(^|/)(ba)?sh(\.exe)?$", first) and len(words) > 1 and words[1].replace("\\", "/").endswith("/council"):
-            form, rest = "path", words[2:]
+        elif re.search(r"(^|/)(ba)?sh(\.exe)?$", first) and len(words) > 1:
+            second = words[1].replace("\\", "/")
+            match = re.match(r"^\$\{?([A-Za-z_]\w*)\}?$", second)
+            if second.endswith("/council"):
+                form, rest = "path", words[2:]
+            elif match and match.group(1) in variables:
+                form, rest = "variable", words[2:]
         elif first.endswith("/council"):
             form, rest = "path", words[1:]
         else:
@@ -498,8 +549,7 @@ def invocations(command):
         sub = rest[0]
         if sub in TWO_WORD and len(rest) > 1 and re.match(r"^[a-z]+$", rest[1]):
             sub += " " + rest[1]
-        cut = next((s for s in stages[1:] if words_of(s)[:1] and words_of(s)[0] in ("tail", "head")), None)
-        found.append({"form": form, "sub": sub, "flags": [w for w in rest if w.startswith("--")], "cut": cut,
+        found.append({"form": form, "sub": sub, "flags": [w for w in rest if w.startswith("--")], "cut": cut_of(stages),
                       "text": stages[0][:120]})
     return found
 
@@ -554,33 +604,79 @@ def read_transcript(path):
     return entries, sessions
 
 
-def window(entries, opened, closed):
-    """From the prompt of the turn that opened the run to the prompt after the turn that closed it."""
-    if not any(t for t, _, _ in entries) or not opened:
+def spans(run):
+    """When the run was open, from its own events: each open or resume to the pause or close after it (None
+    while it is still open). One session can drive several runs; each run's items read only its own spans."""
+    found, start = [], None
+    for event in run.events:
+        kind, when = event["type"], event["t"]
+        if not when:
+            continue
+        if start is None and (kind in ("run.opened", "run.resumed") or
+                              kind == "run.status_changed" and event.get("value") == "in-progress"):
+            start = when
+        elif start is not None and kind in ("run.paused", "run.closed"):
+            found.append((start, when))
+            start = None
+    if start is not None:
+        found.append((start, None))
+    return found
+
+
+def lifecycle(entry, subs=("run open", "run resume", "run close")):
+    """Is this transcript entry a helper call that opens, resumes or closes a run (any run)?"""
+    t, kind, block = entry
+    if kind != "use" or block.get("name") not in ("Bash", "PowerShell"):
+        return False
+    return any(i["sub"] in subs for i in invocations(str((block.get("input") or {}).get("command", ""))))
+
+
+def window(entries, opened_spans):
+    """The run's own part of the session: for each span, from the prompt of the turn that opened (or resumed)
+    it — or from that call itself when another run opened or closed earlier in the turn — to the prompt after
+    the turn that paused or closed it, stopping at another run's open. So a session that drives several runs
+    gives each its own calls, and a pipe or a card is counted under one run only."""
+    if not any(t for t, _, _ in entries) or not opened_spans:
         return entries
-    start = None
-    for n, (t, kind, _) in enumerate(entries):
-        if t and t > opened:
-            break
-        if kind == "prompt" and t and t >= opened - timedelta(minutes=30):
-            start = n
-    if start is None:
-        start = next((n for n, (t, _, _) in enumerate(entries) if t and t >= opened - timedelta(minutes=2)), len(entries))
-    end = len(entries)
-    if closed:
-        for n in range(start, len(entries)):
+    keep, first = set(), next(t for t, _, _ in entries if t)
+    for start, end in opened_spans:
+        if end is not None and end + timedelta(minutes=30) < first:
+            continue                               # a span from before this session: none of it is here
+        near = [n for n, (t, kind, _) in enumerate(entries)
+                if kind == "use" and t and start - timedelta(minutes=2) <= t <= start + timedelta(seconds=1)]
+        opening = next((n for n in reversed(near) if lifecycle(entries[n], ("run open", "run resume"))), near[-1] if near else None)
+        if opening is None:
+            opening = next((n for n, (t, _, _) in enumerate(entries) if t and t >= start - timedelta(seconds=2)), len(entries))
+        lo = opening
+        for n in range(opening - 1, -1, -1):
             t, kind, _ = entries[n]
-            if t and (t > closed + timedelta(minutes=30) or (kind == "prompt" and t > closed)):
-                end = n
+            if lifecycle(entries[n]) or (t and t < start - timedelta(minutes=30)):
                 break
-    return entries[start:end]
+            if kind == "prompt":
+                lo = n
+                break
+        hi = len(entries)
+        if end is not None:
+            near = [n for n, (t, kind, _) in enumerate(entries) if n >= opening and kind == "use" and t
+                    and end - timedelta(minutes=2) <= t <= end + timedelta(seconds=1)]
+            closing = next((n for n in reversed(near) if lifecycle(entries[n], ("run close",))), near[-1] if near else None)
+            if closing is None:
+                closing = next((n for n in range(opening, len(entries)) if entries[n][0] and entries[n][0] > end), len(entries))
+            for n in range(closing + 1, len(entries)):
+                t, kind, _ = entries[n]
+                if (t and t > end + timedelta(minutes=30)) or (kind == "prompt" and t and t > end) \
+                        or lifecycle(entries[n], ("run open", "run resume")):
+                    hi = n
+                    break
+        keep.update(range(lo, hi))
+    return [entries[n] for n in sorted(keep)]
 
 
 def transcript(run, path, say):
     """The transcript's items; returns the span it read, in words."""
     entries, sessions = read_transcript(path)
     closed = run.closed["t"] if run.closed else None
-    part = window(entries, run.opened, closed)
+    part = window(entries, spans(run))
     session = field(run.state, "session")
     if session and sessions and session not in sessions:
         say(WARN, "Transcript", "this file is session %s; the run was driven by %s" % (listed(sorted(sessions), 2), session))

@@ -98,7 +98,9 @@ the converge pass starts, `council state phase=challenge`.
 2. **Before-evidence — choose proof for the task before editing.** Read
    `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
    contract: change for a fix or new behaviour, preserve only for unchanged behaviour. Record the
-   chosen mode and invariants in the log, then run `council gate before-<n>` as it specifies.
+   chosen mode and invariants in the log. Read a new check or probe back and compile it with the
+   cheapest check, then run `council gate before-<n>` as it specifies, one gate per Bash call. A red
+   from a broken check is no proof: `council gate before-<n> --invalid "<why>"`, fix it, run it again.
    Label support with `references/evidence-model.md`; cite saved outputs for `REPRODUCED`.
 3. **Plan the change:** files, minimal diff, governing principle, effects on later tasks and watchpoints.
 4. **Implement.**
