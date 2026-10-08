@@ -23,6 +23,8 @@ MAX_FILE = 4 * 1024 * 1024
 TASK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 EVENT_HEADER = "schema\tseq\tat\ttype\tsubject\tvalue\tdetail"
 PATTERNS = (
+    # bin/council's own last line for a gate it stopped at its time limit: a hang, whatever it printed before.
+    ("TIMEOUT_FAILURE", r"^council: timed out after [0-9]+s", "quality-concurrency.md"),
     ("ENVIRONMENT_FAILURE", r"command not found|no such file or directory|modulenotfounderror|permission denied|connection refused|credential|authentication failed", "quality-operability.md"),
     ("SCHEMA_FAILURE", r"migration (?:failed|error)|schema (?:mismatch|error)|unknown column|relation .* does not exist", "quality-postgres.md"),
     ("DATA_FAILURE", r"constraint failed|duplicate key|foreign key|data corruption|integrityerror", "quality-postgres.md"),

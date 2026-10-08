@@ -22,6 +22,22 @@ existing coverage cannot exercise the relevant path. With no test runner, use a 
 or query and disclose that no permanent test was kept. When no permanent test is possible, record
 `no permanent test possible - <why>` and what was inspected or run; disclose the remaining gap.
 
+**Prove it through the entry point that ships.** A proof that runs only scripts kept in the run
+folder (`.council/runs/…`) never ran what a person runs: a real build proved a time bound through its
+own helper script and never through the project's check, and a review found what it missed. At least
+one proof of each task runs the command a person would run — the project's own test, check or
+script — and the log names that command. A run-folder harness may add evidence beside it, never
+replace it. `council check` notes a task whose proofs ran only run-folder scripts.
+
+## Before you spend a gate run
+
+Read a new check, probe or harness edit back, then compile it with the cheapest check that parses it
+(`bash -n`, `python -m py_compile`, the compiler's type check) before a full gate run. A real build
+lost three before-runs to compile errors in its own new check, and one probe comment cut a line short
+and deleted a folder. Run one gate per Bash call: each has a time limit, and a gate past it is
+stopped and recorded as `TIMED OUT` (`council gate <name> --timeout <time>` when it truly needs
+longer).
+
 ## Record the pair
 
 Change proof keeps the existing commands and default behaviour:
@@ -49,6 +65,13 @@ For preservation both outputs must contain an observation, not just whitespace; 
 assertion or query should print its checked result after succeeding. No tests selected is not proof.
 Before/after checks are proof records, excluded from automatic gate-repair attempts.
 
+**A red that proves nothing is no proof yet.** When a before-check failed for the wrong reason — the
+new test didn't compile, the probe was broken — mark it rather than let it count:
+`council gate before-1 --invalid "the new test didn't compile"`. Nothing runs; its record says why.
+Fix the check, compile it, and run `before-1` again; the fresh record replaces the marked one. A
+before-check stopped at its time limit, or whose command was never found (exit 127), is read the
+same way without marking.
+
 ## Read the result
 
 `council check` writes each task's verdict and note to `check.md`. Copy both into the log's Converge
@@ -67,6 +90,7 @@ Proof cell; a saved test note establishes its file exists, not that its assertio
 | `MISSING-OUTPUT` | Preservation has no saved output for one side of the pair. |
 | `NOTHING-RAN` | Preservation output is blank or says no tests ran or no files matched. |
 | `NO-BEFORE` / `NO-AFTER` | One side of the pair is missing. |
+| `NO-PROOF-YET` | The before-check's red proves nothing: marked invalid, stopped at its time limit, or never ran (exit 127). Run it again. |
 
 For preservation the verifier also traces the affected path, checks that the tests cover the named
 invariants and inspects assertion changes. A passing pair establishes only those checked invariants;
