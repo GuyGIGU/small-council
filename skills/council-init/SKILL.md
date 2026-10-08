@@ -10,10 +10,10 @@ One installed plugin gives each repo a bespoke council, built to fit it.
 - First read `${CLAUDE_PLUGIN_ROOT}/references/roster/expert-catalog.md`: the seats, their "applies
   when" rules, and the recast rules.
 - The council home is the main checkout's `.council/`; `council home` prints it. Call the helper as a
-  plain `council <command>` — never through a shell variable or alias, and never as
-  `bash <path>/bin/council` while `command -v council` succeeds: permission rules match the command
-  text. Only if it isn't on PATH, write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in
-  full each time.
+  plain `council <command>` — never through a shell variable or alias, or as `bash <path>/bin/council`
+  while it is on PATH: permission rules match the command text. If `command -v council` fails and no
+  Small Council SessionStart message appeared, the plugin was enabled mid-session: have the user
+  restart before any run. Otherwise write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` in full.
 
 ## Phase A — Detect the stack and surfaces (classify, don't review)
 
@@ -55,7 +55,7 @@ For each catalog seat, decide **include / recast / drop** by its "applies when" 
   - a named practitioner who fits the stack;
   - its **Surface markers**: 2–6 globs or words in this repo's own idioms (`migrations/**`,
     `APIRouter`, `*.tscn`, `save_game`) that say where the seat's lens lives. They make assignment
-    mechanical and every skip evidenced. No `|` inside a marker, because the roster is a table — list
+    mechanical and every skip evidenced. No `|` inside a marker (the roster is a table): list
     alternatives separately.
   - For a recast seat: it keeps its reference doc, and you record why it was recast.
   - A **card** (Phase E) that translates its doc to this project.
@@ -144,8 +144,7 @@ Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`
   - the conventions new code must match.
 - **A small repo** → do it yourself, then `council run close`.
 - **A large repo** → a mapping squad of at most 4 workers, run like any council run:
-  1. The run you opened for Phase C's dry-runs (`council run open council-init` if none is open yet —
-     it creates `.council/` and its `.gitignore`). One run, not two.
+  1. Phase C's run (`council run open council-init` if none is open yet). One run, not two.
   2. Make its plan a squad: `size` squad, and one mapping worker per area from the rows at the foot
      of `run-plan.tsv`, their estimate added to `estimated-tokens`; then `council run plan check`.
      The helper starts no worker the plan doesn't select.
@@ -251,8 +250,8 @@ Adjust on request. On confirmation, write:
    it holds an earlier, shorter version of this list, offer to add the rules it lacks: name them, use
    the form the file already uses, leave every other rule in the file as it is, and write only on a
    yes.
-3. **Nothing else to install.** The plugin's hooks already orient council-enabled sessions, flag open
-   runs, restore the method after a compaction, and check every seat file before a worker can finish.
+3. **Nothing else to install.** The plugin's hooks orient council sessions, flag open runs, restore
+   the method after a compaction and check every seat file before a worker finishes.
 
 ## Refresh (re-runs)
 

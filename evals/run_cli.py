@@ -41,6 +41,7 @@ for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID"):   # never inherit the sess
     GIT_ENV.pop(var, None)
 if os.environ.get("COUNCIL_EVAL_BASH"):                  # a gate's `bash -c` must use that bash too
     GIT_ENV["PATH"] = os.path.dirname(BASH) + os.pathsep + GIT_ENV.get("PATH", "")
+GIT_ENV.pop("COUNCIL_ALLOW_NO_HOOKS", None)
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
 results = []
 
@@ -60,6 +61,15 @@ def check(name, ok, detail="", full=False):
     # Printed as it happens: the suite runs the helper hundreds of times (about 17 minutes on Windows
     # Git Bash), and a run that prints nothing until the end is easy to mistake for a stalled one.
     print(result_line(ok, name, detail), flush=True)
+
+
+def session(sid):
+    """The env of Claude Code session sid, marked as one whose SessionStart hook ran (council run open refuses
+    a session with no mark). The marks live under the eval's own XDG_CACHE_HOME, set when the blocks start."""
+    marks = os.path.join(GIT_ENV["XDG_CACHE_HOME"], "small-council", "sessions")
+    os.makedirs(marks, exist_ok=True)
+    open(os.path.join(marks, sid), "w").close()
+    return {"CLAUDE_CODE_SESSION_ID": sid}
 
 
 def council(cwd, *args, env=None):
@@ -366,7 +376,7 @@ def runs_open(tmp):
     # Opening a run
     code, out, err = council(repo, "run", "open", "nonsense")
     check("run open: rejects an unknown mode", code == 2 and "unknown mode" in err, err)
-    code, run, err = council(repo, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sess-123"})
+    code, run, err = council(repo, "run", "open", "council-review", env=session("sess-123"))
     run = run.strip()
     check("run open: prints the new run folder", code == 0 and os.path.isdir(run) and run.endswith("-review"), run + err)
     st = read(os.path.join(run, "session-state.md"))
@@ -1292,7 +1302,7 @@ def agent_stop(tmp):
     write(os.path.join(stop, ".council", "council.config.md"), "# Council config — the agent stop\n- agent cap: 2\n")
     code, out, err = council(stop, "cap", "check", "--session", "s1")
     check("cap check: a council with no run — exit 0, nothing printed", code == 0 and not out and not err, out + err)
-    _, stop_run, _ = council(stop, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "s1"})
+    _, stop_run, _ = council(stop, "run", "open", "council-review", env=session("s1"))
     stop_run = stop_run.strip()
     council(stop, "seat", "w1", "done", "agent=a1", "tokens=30000")
     code, out, err = council(stop, "cap", "check", "--session", "s1")
@@ -2381,7 +2391,7 @@ def runs_found_by_session(tmp):
     wt, wt2 = os.path.join(main, ".claude", "worktrees", "feat"), os.path.join(main, ".claude", "worktrees", "feat2")
     git(main, "worktree", "add", "-q", "-b", "feat", wt)
     git(main, "worktree", "add", "-q", "-b", "feat2", wt2)
-    me, other = {"CLAUDE_CODE_SESSION_ID": "sess-me"}, {"CLAUDE_CODE_SESSION_ID": "sess-other"}
+    me, other = session("sess-me"), session("sess-other")
     _, out, _ = council(main, "run", "open", "council-review", "--code-root", wt, env=me)
     run = out.strip().splitlines()[-1] if out.strip() else ""
     code, out, err = council(main, "state", "next=found by session", env=me)
@@ -2406,7 +2416,7 @@ def runs_reminders_last(tmp):
         return p.returncode, (lines[-1] if lines else ""), p.stdout
     rem = new_repo(tmp, "reminders-last")
     write(os.path.join(rem, ".council", "council.config.md"), "# Council config\n- agent cap: 1\n")
-    council(rem, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "s-rem"})
+    council(rem, "run", "open", "council-review", env=session("s-rem"))
     code, last, whole = merged(rem, "state", "waiting=Which option?")
     check("state waiting=: the alert reminder is the last line printed, so `2>&1 | tail -1` keeps it",
           code == 0 and "PushNotification" in last, whole)
@@ -3409,7 +3419,7 @@ def resume(tmp):
     # Carrying on with a run: council run resume
     rs = new_repo(tmp, "resume")
     write(os.path.join(rs, ".council", "council.config.md"), "# Council config — resume\n")
-    code, rrun, _ = council(rs, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sess-old"})
+    code, rrun, _ = council(rs, "run", "open", "council-review", env=session("sess-old"))
     rrun = rrun.strip()
     write_plan(rrun, selected=("hunt", "beck"))
     rname, rstate = os.path.basename(rrun), os.path.join(rrun, "session-state.md")
@@ -5527,6 +5537,7 @@ if not BASH or not GIT:
     sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
+    GIT_ENV["XDG_CACHE_HOME"] = os.path.join(tmp, "cache")   # session marks (see session()) stay here
     for group, block in PARTS:
         if group in chosen and (only is None or block.__name__ in only):
             block(tmp)

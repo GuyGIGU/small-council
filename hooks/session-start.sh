@@ -7,7 +7,9 @@
 # compaction it tells the agent to resume the run THIS session was driving (matched by session id)
 # from disk instead of restarting it; every other open run is only reported. A run another session
 # updated recently may still be live there, so it is never offered for re-dispatch or closing. For
-# every other project it prints nothing, so it costs nothing there.
+# every other project it prints nothing, so it costs nothing there. In every project it leaves an empty
+# per-user mark for the session id (see sessions_dir in bin/council): proof for `council run open` that
+# the plugin's hooks run in this session.
 #
 # It sources bin/council, so the hook and the helper find the council home the same way. It must never
 # break a session: every failure path is silent and the script always exits 0. It must also stay well
@@ -28,6 +30,13 @@ case "$input" in
   *) event=start ;;
 esac
 sid="$(printf '%s' "$input" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+# The session's own folder, with JSON's \\ and \/ undone (C:\Users\… as Git Bash takes it: C:/Users/…).
+scwd="$(printf '%s' "$input" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 \
+  | sed -e 's#\\/#/#g' -e 's#\\\\#\\#g')"
+case "$scwd" in [A-Za-z]:\\*) scwd="$(printf '%s' "$scwd" | tr '\\' '/')" ;; esac
+# This session's hooks run: `council run open` refuses in a session with no such mark (bin/council's
+# sessions_dir says where it lives). Left in every project, council or not: the home may come later.
+mark_hooks_ran "$sid"
 
 if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then cd "$CLAUDE_PROJECT_DIR" 2>/dev/null || exit 0; fi
 home="$(council_home)"
@@ -36,11 +45,36 @@ root="$(dirname "$home")"
 top="$(this_tree)"
 NL='
 '
+runs="$(list_runs "$home" 100000 open)"
+
+# A session in a linked worktree (an app-made one, say) while a run's code is elsewhere: Claude Code
+# may refuse its edits outside the worktree, so it can't drive that run. Said first, before anything.
+if [ -n "$runs" ] && [ -n "$scwd" ] && [ -d "$scwd" ]; then
+  gd="$(cd "$scwd" 2>/dev/null && git rev-parse --git-dir 2>/dev/null)"
+  gc="$(cd "$scwd" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)"
+  if [ -n "$gd" ] && [ -n "$gc" ]; then
+    gd="$(cd "$scwd" && cd "$gd" 2>/dev/null && pwd -P)"; gc="$(cd "$scwd" && cd "$gc" 2>/dev/null && pwd -P)"
+  fi
+  if [ -n "$gd" ] && [ -n "$gc" ] && [ "$gd" != "$gc" ]; then
+    wt="$(cd "$scwd" && council_toplevel)"
+    away=""
+    while IFS="$TAB" read -r dir mode phase croot updated status actual rsid; do
+      [ -n "$dir" ] && [ "$croot" != - ] && [ "$croot" != "$wt" ] && [ -d "$croot" ] || continue
+      if [ -z "$away" ] || [ "$status" = in-progress ]; then away="${dir##*/}$TAB$croot"; fi
+      [ "$status" != in-progress ] || break
+    done <<RUNS
+$runs
+RUNS
+    if [ -n "$away" ]; then
+      say "[Small Council] This session runs in a linked worktree ($wt). Claude Code may refuse edits outside it, and run ${away%%"$TAB"*}'s code is in ${away#*"$TAB"}. To drive that run, start a session in $root with the worktree option off."
+    fi
+  fi
+fi
 
 if [ -f "$home/council.config.md" ]; then
   say "[Small Council] Council-enabled project. Council home: $home"
   say "- Substantial work? Check for a council mode first (council-review, council-plan, council-implement, council-research, council-postgame, spec-writer, test-architect). Propose it with its size and estimated cost, and wait for a go-ahead before any multi-agent run."
-  say "- The \`council\` helper does the bookkeeping (\`council run status\`, \`council doctor\`). It is a bash script: run it in the Bash tool (Git Bash on Windows), never from PowerShell. Call it as a plain \`council <command>\`, never through a shell variable or a full path: permission rules match the command text. Only if \`command -v council\` fails, write out bash \"$ROOT/bin/council\" <command> each time."
+  say "- The \`council\` helper does the bookkeeping (\`council run status\`, \`council doctor\`). It is a bash script: run it in the Bash tool (Git Bash on Windows), never from PowerShell. Call it as a plain \`council <command>\`, never piped (a hook refuses \`| head\`, \`| tail\` and \`| grep\`: redirect it to a file and read that) and never through a shell variable or a full path: permission rules match the command text. Only if \`command -v council\` fails, write out bash \"$ROOT/bin/council\" <command> each time."
   if [ "$(configured_sharing "$home")" = "just me" ]; then
     say "- Just me: this council is the user's alone. Git ignores .council/ and no project file mentions the council, so teammates never meet it. Keep it that way: commit messages, PR text, code comments and shared docs never cite council runs, finding ids or .council/ paths (teammates can't open them) — say the reason in plain words."
   fi
@@ -84,7 +118,6 @@ fi
 
 # Open runs (0.3+: every run folder under runs/ carries its own status, so several can be open at once).
 driving=""
-runs="$(list_runs "$home" 100000 open)"
 if [ -n "$runs" ]; then
   # Split them: this tree's runs (a run with no code-root counts as this tree's) and the runs this session
   # drives (its id in session:) on any working tree, other trees' runs, and runs whose working tree no

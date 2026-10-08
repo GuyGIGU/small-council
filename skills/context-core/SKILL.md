@@ -66,11 +66,12 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 ## The helper
 
-`council` does the bookkeeping; it is on PATH while the plugin is enabled. **Call it as a plain
-`council <command>`** — never through a shell variable or alias, and never as
-`bash <path>/bin/council` while `command -v council` succeeds: permission rules match the command
-text, so any other form asks the user every time. Only if it isn't on PATH, write
-`bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
+`council` does the bookkeeping. **Call it as a plain `council <command>`** — never through a shell
+variable or alias, and never as `bash <path>/bin/council` while it is on PATH: permission rules
+match the command text, so any other form asks the user every time. If `command -v council` fails
+and no Small Council SessionStart message appeared, the plugin was enabled mid-session: have the
+user restart before any run. Otherwise write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>`
+in full each time.
 
 Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`; the stage doctrine
 says when to run each command. Rules for every run:
@@ -80,7 +81,8 @@ says when to run each command. Rules for every run:
   beside `brief.md`, never replacing it.
 - `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
   It needs optional Python 3.8+. `council repair record` leaves a bounded trail in `repairs.jsonl`.
-- Run checks on their own; never hide refusals through `| tail`/`| head` (Challenge, step 5).
+- Run checks on their own. Never pipe a council command through head, tail or grep (a hook
+  refuses it); redirect it to a file and read that (Challenge, step 5).
   `council gate --all` exit 4 means NOTHING WAS CHECKED: never report that as a pass. A single
   gate's exit 4 is that command's own exit code.
 
@@ -133,9 +135,9 @@ live at a legacy path; the config's Memory section says where.
   `build` phase: its build loop), and continue. No hook message? Run `council run status`.
 - **Carrying a run on in a new session, after `/clear`, or when the user says to go on with a paused
   one:** first `council run resume --run <folder>`. It records this session as the run's driver, so
-  a compaction resumes it here. A run the hook says another session updated recently may still be
-  live there: leave it, and don't re-dispatch its seats or close it, until the user says that
-  session has ended.
+  a compaction resumes it here. Open it in the main checkout, never an app-made worktree (the hook
+  warns). A run the hook says another session updated recently may still be live there: leave it,
+  and don't re-dispatch its seats or close it, until the user says that session has ended.
 - **Seats marked running:** after a compaction they are still working — wait for their
   notifications; never re-dispatch them. In a new session they are gone: `council collect` shows
   which files exist; mark the rest `council seat <slug> failed note="interrupted"` and re-dispatch

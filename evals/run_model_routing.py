@@ -14,10 +14,11 @@ if os.name == "nt" and not BASH:
     BASH = str(candidate) if candidate.is_file() else None
 GIT = shutil.which("git")
 CLI = str(ROOT / "bin" / "council")
+ENV = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"}   # never the session the eval runs in
 
 
 def call(cwd, *args):
-    result = subprocess.run([BASH, CLI, *args], cwd=str(cwd), capture_output=True,
+    result = subprocess.run([BASH, CLI, *args], cwd=str(cwd), capture_output=True, env=ENV,
                             text=True, encoding="utf-8", errors="replace", timeout=30)
     return result.returncode, result.stdout, result.stderr
 

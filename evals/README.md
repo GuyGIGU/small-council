@@ -102,12 +102,20 @@ python evals/run_hook.py       # needs bash + git
 - orients council projects;
 - finds several open runs by scanning;
 - after a compaction, says "resume, don't restart" for this session's run only;
-- handles paused runs, runs in other worktrees, legacy runs, stale maps and garbage input.
+- handles paused runs, runs in other worktrees, legacy runs, stale maps and garbage input;
+- warns first when the session sits in a linked worktree and an open run's code is elsewhere;
+- marks its session, so `council run open` refuses a session whose hooks never ran.
 
 **PreToolUse agent gate:**
 - silent without a council, an in-progress run, or a run within its limits;
 - refuses a new agent at the cap or past the ceiling, until the user's go is recorded;
 - never stops a session for a run another session drives.
+
+**PreToolUse pipe stop:**
+- refuses a council command piped into head, tail or grep (`2>&1 |`, `|&`, `bash <path>/bin/council`,
+  a loop or group piped whole);
+- lets through redirects to a file, `| tee`, grep or head over files or other commands, the word
+  council in quotes, comments or heredocs, and anything it can't parse.
 
 **SubagentStop seat check:**
 - valid files pass;

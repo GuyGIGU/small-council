@@ -15,6 +15,7 @@ CLI = ROOT / "bin" / "council"
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 ENV = dict(os.environ, GIT_AUTHOR_NAME="eval", GIT_AUTHOR_EMAIL="eval@example.invalid",
            GIT_COMMITTER_NAME="eval", GIT_COMMITTER_EMAIL="eval@example.invalid")
+ENV.pop("CLAUDE_CODE_SESSION_ID", None)   # never inherit the session the eval runs in (run open would check its hooks)
 results = []
 
 

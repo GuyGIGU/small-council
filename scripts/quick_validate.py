@@ -221,7 +221,7 @@ for doc in SEAT_DOCS:
         errors.append(f"references/{doc}: first line must be a single '# Title' (the ref: canary)")
 
 # 7. The helper and hook scripts: bash with a shebang, LF line endings (bash chokes on CR)
-EXECUTABLES = ["bin/council", "hooks/session-start.sh", "hooks/seat-gate.sh", "hooks/agent-gate.sh"]
+EXECUTABLES = ["bin/council", "hooks/session-start.sh", "hooks/seat-gate.sh", "hooks/agent-gate.sh", "hooks/bash-gate.sh"]
 for rel in EXECUTABLES:
     path = os.path.join(ROOT, *rel.split("/"))
     if not os.path.isfile(path):

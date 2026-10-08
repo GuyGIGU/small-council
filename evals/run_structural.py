@@ -63,6 +63,7 @@ DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.json"), ("bin", "council"),
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"), ("hooks", "agent-gate.sh"),
+             ("hooks", "bash-gate.sh"),
              ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
              ("references", "helper-commands.md"),
              ("references", "precision-context.md"), ("references", "evidence-model.md"),
@@ -87,6 +88,7 @@ doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
 agent_gate = read("hooks", "agent-gate.sh")
+bash_gate = read("hooks", "bash-gate.sh")
 warroom = read("references", "war-room.md")
 guardrails = read("references", "guardrails.md")
 
@@ -246,10 +248,13 @@ check("Challenge: Workflow parts stay in the run folder and closed runs need --r
       all(phrase in doctrine["08-challenge.md"] for phrase in
           ("verify-<n>-<letter>.md", "Never merge, copy or move", "--run <name>")))
 # Wording only; the behaviour is checked by `council run audit --transcript`, which names every helper
-# call a Chair piped through tail or head (evals/run_audit.py).
-check("helper and Challenge: refusals must not be hidden in output pipelines",
-      all("`| tail`/`| head`" in text for text in (core, doctrine["08-challenge.md"])) and
-      "test their exit status" in doctrine["08-challenge.md"])
+# call a Chair piped through tail or head (evals/run_audit.py), and the pipe stop (hooks/bash-gate.sh,
+# evals/run_hook.py) refuses such a call before it runs.
+check("helper and Challenge: refusals must not be hidden in output pipelines — the kernel says a hook refuses a "
+      "council command piped through head, tail or grep, and to redirect it to a file instead",
+      "pipe a council command through head, tail or grep (a hook refuses it)" in flat(core)
+      and "redirect it to a file and read that" in flat(core)
+      and "`| tail`/`| head`" in doctrine["08-challenge.md"] and "test their exit status" in doctrine["08-challenge.md"])
 check("context-core: a Solo run selects the memory in scope too",
       "council memory select" in core.split("A **Solo** run", 1)[-1].split("\n\n", 1)[0])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
@@ -458,6 +463,10 @@ check("hook: PreToolUse runs agent-gate.sh for the Agent, Task and Workflow tool
       any(g.get("matcher") == "^(Agent|Task|Workflow)$" and any("hooks/agent-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in hooks_json.get("PreToolUse", [])))
 check("hook: agent-gate leaves the decision to the helper (council cap check) — run_hook tests it", "cap check" in agent_gate)
+check("hook: PreToolUse runs bash-gate.sh for the Bash tool only, with a short timeout — run_hook tests what it refuses",
+      any(g.get("matcher") == "^Bash$" and any("hooks/bash-gate.sh" in h.get("command", "") and h.get("timeout", 99) <= 5
+                                               for h in g.get("hooks", []))
+          for g in hooks_json.get("PreToolUse", [])))
 check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_ID" in cli)
 
 # 8. Templates
@@ -538,7 +547,7 @@ for label, t in [("worker", worker), ("verifier", verifier)]:
 
 # 11. Bash portability (macOS ships bash 3.2)
 for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks/seat-gate.sh", gate),
-                 ("hooks/agent-gate.sh", agent_gate)]:
+                 ("hooks/agent-gate.sh", agent_gate), ("hooks/bash-gate.sh", bash_gate)]:
     code_only = "\n".join(l for l in t.split("\n") if not l.lstrip().startswith("#"))   # comments may name what's avoided
     hit = re.search(r"declare -A|\bmapfile\b|\breadarray\b|,,\}|\^\^\}", code_only)
     check(f"{label}: bash 3.2 portable (no declare -A, mapfile, readarray, case-conversion expansions)",
@@ -564,7 +573,7 @@ check("bin/council: the argument dispatch never expands an empty \"$@\" or $* (u
 # 12. Rename, and no project leakage in anything that ships as behaviour
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
            "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
-           "hooks/seat-gate.sh": gate, "hooks/agent-gate.sh": agent_gate, "bin/council": cli}
+           "hooks/seat-gate.sh": gate, "hooks/agent-gate.sh": agent_gate, "hooks/bash-gate.sh": bash_gate, "bin/council": cli}
 for d in ["references", os.path.join("references", "roster"), os.path.join("references", "templates")]:
     for f in os.listdir(os.path.join(ROOT, d)):
         if f.endswith(".md"):
