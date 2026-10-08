@@ -4415,11 +4415,15 @@ def runs_stage_order_and_close(tmp):
     code, out, err = council(bd, "state", "phase=deliver")
     check("state phase=: from its build loop a build goes on through Challenge, never straight to Deliver",
           code == 2 and "would skip challenge" in err and phase_of(bdr) == "build", err)
+    check("state phase=: ... and the refusal names a blocked build's way to its receipt (step 5), with skip=",
+          'A build stopped blocked skips it on purpose: council state phase=deliver skip="blocked: task <n>"' in err, err)
     ledger = os.path.join(bd, ".council", "ledger.tsv")
     code, out, err = council(bd, "run", "close")
     st = read(os.path.join(bdr, "session-state.md"))
-    check("run close: a build that went back to build after Deliver is refused as complete — re-enter Deliver, show the receipt",
-          code == 2 and "went back to build after Deliver" in err and "phase=challenge, then phase=deliver" in err
+    check("run close: a build that went back to build after Deliver is refused as complete — re-enter Deliver (one runnable "
+          "command a step, each with --run), show the receipt",
+          code == 2 and "went back to build after Deliver" in err and "`council state phase=challenge --run {0}`, then "
+          "`council state phase=deliver --run {0}`".format(os.path.basename(bdr)) in err
           and "receipt" in err and "--status paused" in err and "status: in-progress" in st
           and "closed:" not in st and not any(e[3] == "run.closed" for e in events(bdr)) and not os.path.exists(ledger), err)
     code, out, err = council(bd, "state", "phase=learn", "skip=nothing left to converge")
@@ -5999,10 +6003,11 @@ def runs_third_check_needs_diagnosis(tmp):
     trun = out.strip().splitlines()[-1]
     tname = os.path.basename(trun)
     write_plan(trun, selected=("verify-6", "verify-6b", "verify-6c", "verify-6d", "diagnose-6", "verify-7", "verify-7b",
-                               "verify-7c", "diagnose-7", "verify-9c", "verify-8", "verify-5"))
+                               "verify-7c", "diagnose-7", "verify-9c", "verify-8", "verify-5", "verify-2", "verify-2b",
+                               "verify-2c", "diagnose-3"))
     tplan = os.path.join(trun, "run-plan.tsv")
     write(tplan, read(tplan).replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t20"))
-    for slug in ("verify-6", "verify-6b", "verify-6c", "verify-7", "verify-7b", "verify-8", "verify-5"):
+    for slug in ("verify-6", "verify-6b", "verify-6c", "verify-7", "verify-7b", "verify-8", "verify-5", "verify-2", "verify-2b"):
         write(os.path.join(trun, slug + ".md"), VERDICT_FILE)
     write(os.path.join(trun, "seats", "diagnose-7.md"), "# Diagnosis\n## Index\n1 · likely · a lock · a.py:1 · x\n")
     for slug, n in (("verify-6", 1), ("verify-6b", 2)):
@@ -6040,6 +6045,16 @@ def runs_third_check_needs_diagnosis(tmp):
     code, out, err = council(tc, "seat", "verify-7c", "running", "agent=v73")
     check("seat: a diagnosis the task used before its second verdict (on a gate failure) doesn't open a third check",
           code == 2 and "third check of task 7" in err, out + err)
+    for n in ("", "b"):                       # one verifier for tasks 2-4 (step 7 batches small tasks), failed twice on task 3
+        council(tc, "seat", "verify-2" + n, "running", f"agent=v2{n}x")
+        council(tc, "seat", "verify-2" + n, "done", "tokens=20000")
+    council(tc, "seat", "diagnose-3", "running", "agent=d31")           # task 3's diagnosis, named by its task
+    code, out, err = council(tc, "cap", "check", "--session", "sT", "Agent", "type=small-council:council-verifier",
+                             "seat=verify-2c", "run=" + tname)
+    code2, out2, err2 = council(tc, "seat", "verify-2c", "running", "agent=v23")
+    check("cap check and seat: a batched verifier's third check (verify-2c) starts once a diagnosis of the task that "
+          "failed (diagnose-3) is on record after the second verdict", code == 0 and not out and code2 == 0,
+          out + err + out2 + err2)
     code, out, err = council(tc, "seat", "verify-9c", "running", "agent=v93")
     check("seat: verify-9c with no verify-9b on record is a first check (a task named 9c), never refused as a third",
           code == 0, out + err)
@@ -6124,6 +6139,38 @@ def runs_dispatch_record(tmp):
           out + err)
     code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt", "run=" + dname)
     check("cap check: ... a council-worker too, even for a seat its plan selected", code == 2 and "which is closed" in out, out + err)
+    # A re-review or a post-game cites an earlier run's files, and the hook may read that run's folder: a
+    # closed or paused run named is refused only while no run is open here, else the open runs judge it.
+    _, out, _ = council(dr, "run", "open", "council-implement", env=session("sD"))
+    pname = os.path.basename(out.strip().splitlines()[-1])
+    council(dr, "run", "close", "--status", "paused", "--run", pname)
+    _, out, _ = council(dr, "run", "open", "council-review", env=session("sD"))
+    nrun = out.strip().splitlines()[-1]
+    nname = os.path.basename(nrun)
+    write_plan(nrun, selected=("hunt", "verify-1"))
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt", "run=" + dname)
+    check("cap check: a council-worker naming a closed run, while a run is open here, is judged by the open run — "
+          "a re-review citing the earlier run's file starts", code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-1", "run=" + pname)
+    check("cap check: ... a council-verifier naming a paused run too (a post-game citing the build's verdict)",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=beck", "run=" + dname)
+    check("cap check: ... and a seat the open run's plan doesn't select is still refused, naming the open run",
+          code == 2 and "seat beck has no selected row in the run plan of " + nname in out and dname not in out, out + err)
+    # The Seat: line may carry a display name: the file the agent writes (file=) names the seat then.
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=Hunt", "file=hunt", "run=" + nname)
+    check("cap check: a Seat: line that names no selected seat (Hunt) defers to the file it writes (seats/hunt.md)",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=Perf", "run=" + nname)
+    check("cap check: a display name alone is never named as a seat to plan — council seat judges after the start",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=Perf", "file=perf", "run=" + nname)
+    check("cap check: a Seat: line and file that agree on an unplanned seat are refused, by the file's slug",
+          code == 2 and "seat perf has no selected row" in out and "Perf" not in out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=perf", "file=beck", "run=" + nname)
+    check("cap check: a Seat: line and file that disagree, neither planned, are let through for council seat to judge",
+          code == 0 and not out, out + err)
+    council(dr, "run", "close", "--status", "abandoned", "--run", nname)
     old = os.path.join(dr, ".council", "runs", "2026-09-01-100000-review")           # opened before run plans
     write(os.path.join(old, "session-state.md"), "status: in-progress\nmode: council-review\nphase: work\n")
     code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=anything")

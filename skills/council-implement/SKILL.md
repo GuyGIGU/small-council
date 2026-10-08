@@ -124,7 +124,8 @@ the converge pass starts, `council state phase=challenge`.
      stays with the builder; the second calls for one independent read-only diagnosis if this task
      has not used that worker already; otherwise stop and report. The third failed execution stops
      product-code mutation for this task, and the gate is refused until the user's go
-     (`council repair allow <gate> --user-said "…"`). Jump to blocked-task logging and the receipt;
+     (`council repair allow <gate> --user-said "…"`). Jump to blocked-task logging and the receipt
+     (`council state phase=deliver skip="blocked: task <n>"`);
      do not attempt steps 6–7 as a fix path, start another gate trail, or commit it as complete.
      Preserve the diff and gate output; never silently revert unrelated work. Read-only review
      cannot reopen repair. When the build stops blocked, run `council status --line`; if it prints
@@ -154,8 +155,8 @@ the converge pass starts, `council state phase=challenge`.
      diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
      candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it
      (`council run plan check`), then `council seat diagnose-<n> …`. Then one more attempt; still
-     failing → stop and report. A third check is refused (by `council seat`, and by the agent gate
-     before it) until `diagnose-<n>` is on record after the second verdict, or the user's go is
+     failing → stop and report. A third check is refused (by `council seat` and the agent gate) until
+     a `diagnose-…` seat is on record after the second verdict, or the user's go is
      (`council state decision="…"`).
    - **SCOPE-CREEP** → revert the extra change.
    - **CANNOT VERIFY** → add the missing check, or record why it can't exist.

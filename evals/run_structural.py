@@ -396,7 +396,7 @@ for label, text, needles in [
                          "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input",
                          "NOTHING WAS CHECKED", "## Shortcuts and concessions", "Shortcuts I took:", "Not proved:",
                          "Left open:", "No commit, push or PR question while anything is left open", "data-loss hazard defaults to fix now",
-                         "left on the user's ruling",
+                         "left on the user's ruling", 'council state phase=deliver skip="blocked: task <n>"',
                          "Checked by machine:", "Works?:", "guardrails.md", "council check", "gates/baseline/",
                          "older Gates layout"]),
     ("research", research, ["scout", "Strength:"]),
@@ -517,6 +517,9 @@ check("model routing: plan, doctrine and ADR state the opt-in boundary",
       "seat/<slug>/model" in read("references", "run-plan.md") and
       "seat models: on" in read("references", "doctrine", "03-assign.md") and
       os.path.isfile(os.path.join(ROOT, "docs", "design", "model-routing-adr.md")))
+# The agent gate does judge a council agent's dispatch now; what no hook checks is the model it is given.
+check("05-work: what isn't gated is the Agent call's `model` parameter, not the dispatch",
+      "the `model` parameter isn't gated" in flat(doctrine["05-work.md"]) and "dispatch itself isn't gated" not in flat(doctrine["05-work.md"]))
 check("04-brief: packs are built only when opted in, brief-only is the normal path",
       "Context packs are opt-in" in doctrine["04-brief.md"] and "context packs: on" in doctrine["04-brief.md"])
 check("template config: roster has slugs and surface markers", "| Seat | Slug | Lens | Surface | Reference | Recast note |" in cfg)

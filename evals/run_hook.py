@@ -44,7 +44,8 @@ PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and match
   - holds the council's own agents (tool_input's subagent_type) to the record: a council-worker with no
     open run, an agent for a closed run, a seat the plan doesn't select, a build task's third check — read
     from the Seat: line or the file the dispatch writes; never an ordinary agent, a Workflow, a verifier
-    outside any run, or a cut-off input.
+    outside any run, or a cut-off input; never a re-review or post-game for citing an earlier run's file,
+    nor a display name on the Seat: line.
 Stop (hooks/turn-end.sh): sends the Chair back once while the run's first status card is still due.
 PreToolUse (hooks/bash-gate.sh), fed through hooks.json's own command and matcher:
   - refuses (exit 2, one line on stderr) a command that pipes the helper into head, tail or grep —
@@ -1165,6 +1166,64 @@ def agent_gate_dispatch_record(tmp):
     check("dispatch: a third check of one task, after two verdicts with no diagnosis or decision since, is refused before "
           "it starts — the file it writes names it, not the earlier verdict the message mentions",
           code == 2 and "cannot start verify-6c" in err and "third check of task 6" in err, said(code, out, err))
+
+
+@part("main")
+def agent_gate_reads_the_dispatch(tmp):
+    # A re-review or a post-game check cites an earlier run's file before its own output path, and a Seat:
+    # line may carry a display name: the gate refused both, and told the Chair to open a new run while one
+    # was in progress, or to plan a seat named "Security" beside "security".
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        wired = json.load(f)["hooks"]
+    gate_cmd = next(h["command"] for g in wired["PreToolUse"] for h in g["hooks"] if "hooks/agent-gate.sh" in h["command"])
+    worker, verifier = "small-council:council-worker", "small-council:council-verifier"
+
+    def gate(prompt, subagent=worker):
+        code, out, err, _ = run_agent_gate(gate_cmd, dispatch_input("sF", rd, subagent, prompt), rd)
+        return code, f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()[:300]}", err
+
+    rd = new_repo(tmp, "dispatch-reads")
+    write(os.path.join(rd, ".council", "council.config.md"), "# Council config\n- agent cap: 40\n")
+    _, old, _ = council(rd, "run", "open", "council-plan", session="sF")
+    council(rd, "run", "close", "--status", "abandoned", "--run", os.path.basename(old))
+    _, paused, _ = council(rd, "run", "open", "council-implement", session="sF")
+    council(rd, "run", "close", "--status", "paused", "--run", os.path.basename(paused))
+    _, run, _ = council(rd, "run", "open", "council-review", session="sF")
+    valid_plan(run, seats=("chair", "security", "tests", "verify-1"))
+    plan = os.path.join(run, "run-plan.tsv")
+    write(plan, open(plan, encoding="utf-8").read().replace("agent-cap\t10", "agent-cap\t40"))
+    allowed = [
+        ("a re-review citing the earlier run's findings first",
+         f"Seat: security — re-review after the fixes · council-review run\nYour earlier findings: {old}/seats/security.md "
+         f"— check each is fixed.\nBrief: {run}/brief.md\nWrite {run}/seats/security.md, then return one line.", worker),
+        ("a post-game check citing the build's verdict first (a paused run)",
+         f"Post-game check of the build's task 1. Its earlier verdict: {paused}/verify-1.md.\nDiff: {run}/diff-1.patch\n"
+         f"Write {run}/verify-1.md", verifier),
+        ("a worker whose output path has no run folder, naming the closed plan it builds on",
+         f"Seat: tests\nThe plan is in {old}/plan.md\nWrite seats/tests.md in your run folder", worker),
+        ("a verifier whose output path has no run folder, naming the paused build it checks",
+         f"Check the build's claims in {paused}/claims.jsonl.\nWrite your verdicts to verify-1.md in your run folder.", verifier),
+        ("a Seat: line with a display name, writing the planned seat's file",
+         f"Seat: Security — the security lens · council-review run\nBrief: {run}/brief.md\n"
+         f"Write {run}/seats/security.md, then return one line.", worker),
+        ("a Seat: line of several words, writing the planned seat's file",
+         f"Seat: the security seat\nWrite {run}/seats/security.md", worker),
+        ("a Seat: line of two names and no file", f"Seat: Security & privacy\nBrief: {run}/brief.md\nReturn one line.", worker),
+    ]
+    for label, prompt, subagent in allowed:
+        code, said, _ = gate(prompt, subagent)
+        check(f"dispatch: {label} — starts", code == 0, said)
+    code, said, err = gate(f"Seat: perf\nThe plan is in {old}/plan.md\nWrite seats/perf.md in your run folder")
+    check("dispatch: an unplanned seat citing a closed run is judged by the open run, and refused naming it",
+          code == 2 and "seat perf has no selected row in the run plan of " + os.path.basename(run) in err
+          and "which is closed" not in err, said)
+    code, said, err = gate(f"Seat: Perf — speed · council-review run\nWrite {run}/seats/perf.md, then return one line.")
+    check("dispatch: a display name is never named as the seat to plan — the file's slug is",
+          code == 2 and "seat perf has no selected row" in err and "seat Perf" not in err, said)
+    council(rd, "run", "close", "--status", "abandoned", "--run", os.path.basename(run))
+    code, said, err = gate(allowed[0][1])
+    check("dispatch: with no run open here any more, a dispatch for a closed run is refused", code == 2
+          and "which is closed (abandoned)" in err, said)
 
 
 @part("timing")

@@ -11,7 +11,7 @@ The seats work in parallel, each in its own window. You dispatch, then wait.
   Agent call's per-invocation `model` parameter when `- seat models: on` is configured. Omit that
   parameter for `inherit` or when the plan has no model row. If dispatching through Workflow,
   pass the same value to its `agent()` call. Never override the Chair or verifier: the run plan
-  check refuses it, but dispatch itself isn't gated, so this rule is yours to keep.
+  check refuses it, but the `model` parameter isn't gated, so this rule is yours.
   A configured force-subagent-model environment setting may override the plan; report that if known.
 - **Never pass `name`** on a council Agent call — with agent teams switched on, a named call becomes
   a teammate instead of a worker.
