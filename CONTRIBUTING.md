@@ -20,7 +20,8 @@ you change anything.
   a contract.
 - **The hooks enforce what prose can't.** SessionStart handles orientation and resume, and marks the
   session so `council run open` can tell its hooks run; PreToolUse stops new agents at a run's limit
-  and refuses a council command piped into head, tail or grep; SubagentStop checks the seat file.
+  and refuses a council command piped into head, tail or grep (that Bash hook marks the session too);
+  SubagentStop checks the seat file.
 
 If you find yourself writing map, dispatch or aggregate logic inside a mode, stop: it belongs in the
 doctrine or the helper.

@@ -9,19 +9,40 @@
 # piped whole) is refused: exit 2, one line on stderr, which Claude Code hands to Claude.
 #
 # Everything else passes, silently: a redirect to a file, `| tee`, grep or head over files or over other
-# commands, the word council in a quoted string, a comment or a heredoc (commit messages, echo), and
-# anything it can't parse. Nothing goes to stdout. It never reads a council home, so it costs the same
-# in every project.
+# commands, the word council in a quoted string, a comment, a heredoc (commit messages, echo) or a case
+# pattern, a command over 100 KB, and anything it can't parse. Nothing goes to stdout. It never reads a
+# council home, so it costs the same in every project.
+#
+# Before any call that names council it also touches this session's mark (bin/council's session_dirs):
+# it runs just before the very `council run open` call, so that call finds proof the hooks run here,
+# after /reload-plugins too.
 #
 # Fast, as it runs before every Bash call: one cat, then shell patterns let through every command that
-# can't match (no "council", or no pipe); only the rest reach one awk pass, linear in the command's size,
-# which reads tool_input.command from the JSON and walks it once as the shell would: quotes, escapes,
-# $( ), backticks, heredocs, comments, redirects, groups and loops.
+# can't match (no "council", or no pipe); only the rest reach one awk pass, which reads
+# tool_input.command from the JSON and walks it once as the shell would: quotes, escapes, $( ),
+# backticks, heredocs, comments, redirects, groups, loops and case patterns. macOS awk re-measures the
+# string at each character, so the walk grows faster than the command: past 100 KB it isn't made.
 #
 # Portability: bash 3.2 (macOS), Git Bash on Windows, Linux — no jq, no Python.
 
 input="$(cat 2>/dev/null)" || exit 0
 case "$input" in *council*) ;; *) exit 0 ;; esac   # one pattern each: several stars in one can backtrack
+
+# The session's mark, from the id near the start of the input (Claude Code writes it first; a pattern
+# over the whole input could take seconds). The id test is bin/council's session_file_ok. Builtins
+# only, so no process starts once the folder is there; a failure is silent and changes nothing.
+sid="${input:0:1000}"
+case "$sid" in *'"session_id"'*) sid="${sid#*\"session_id\"}" ;; *) sid="" ;; esac
+case "$sid" in :\"*) sid="${sid#:\"}" ;; ': "'*) sid="${sid#: \"}" ;; *) sid="" ;; esac
+sid="${sid%%\"*}"
+case "$sid" in ''|.*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*) sid="" ;; esac
+mark() { { [ -d "$1" ] || mkdir -p "$1"; } 2>/dev/null && { : > "$1/$sid"; } 2>/dev/null; }
+if [ -n "$sid" ]; then
+  [ -z "${XDG_CACHE_HOME:-}" ] || mark "$XDG_CACHE_HOME/small-council/sessions"
+  [ -z "${HOME:-}" ] || [ "${XDG_CACHE_HOME:-}" = "$HOME/.cache" ] || mark "$HOME/.cache/small-council/sessions"
+fi
+
+[ "${#input}" -le 100000 ] || exit 0
 case "$input" in *'|'*) ;; *) exit 0 ;; esac
 
 verdict="$(printf '%s' "$input" | LC_ALL=C awk '
@@ -48,6 +69,8 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
   # before its duration · 4 = export and friends (assignments). stc: this stage runs the helper. sout:
   # its stdout goes to a file. taint: an earlier stage of this pipeline runs it. rp: a redirect waits for
   # its target. Frames: ( { if loop case, and $ for a substitution, which keeps the outer stage apart.
+  # cpat, for a case frame: 0 = its word, before "in" · 1 = a pattern, before its ")" · 2 = a branch,
+  # its commands. In 0 and 1, words and | are pattern text, never stages or pipes.
   function reset() { pos = 0; stc = 0; rp = 0; sout = 0; pre = "" }
   function endstage() { if (stc && !sout && fd > 0) fcn[fd] = 1 }
   function sep() { endstage(); taint = 0; reset() }
@@ -56,7 +79,9 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
     fd++; fk[fd] = k; fcn[fd] = 0
     sp[fd] = pos; ss[fd] = stc; st[fd] = taint; sr[fd] = rp; so[fd] = sout; spr[fd] = pre
     reset(); if (k == "$") taint = 0            # a pipe into a group reaches its first command
+    if (k == "case") cpat[fd] = 0
   }
+  function inpat() { return fd > 0 && fk[fd] == "case" && cpat[fd] < 2 }
   function pop(k,   c) {
     if (fd < 1 || fk[fd] != k) { bad = 1; return }
     endstage(); c = fcn[fd]
@@ -74,6 +99,10 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
     if (base(v) == "council") cvar[nm] = 1; else if (nm in cvar) delete cvar[nm]
   }
   function onword(x,   b) {
+    if (inpat()) {
+      if (cpat[fd] == 0) { if (x == "in") cpat[fd] = 1 } else if (x == "esac") pop("case")
+      return
+    }
     if (rp) { rp = 0; return }
     if (pos == 0) {
       if (x ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=/) { assign(x); return }
@@ -158,9 +187,14 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
       if (c == "#" && !inw) { while (i <= L && substr(s, i, 1) != "\n") i++; continue }
       if (c == " " || c == "\t" || c == "\r") { endword(); i++; continue }
       if (c == "\n") { endword(); sep(); i++; if (nhd) i = heredocs(s, i); continue }
-      if (c == ";") { endword(); sep(); i++; c2 = substr(s, i, 1); if (c2 == ";" || c2 == "&") i++; continue }
+      if (c == ";") {
+        endword(); sep(); i++; c2 = substr(s, i, 1)
+        if (c2 == ";" || c2 == "&") { i++; if (fd > 0 && fk[fd] == "case") cpat[fd] = 1 }   # ;; ;& — the next pattern
+        continue
+      }
       if (c == "|") {
-        endword(); c2 = substr(s, i + 1, 1)
+        endword(); if (inpat()) { i++; continue }                         # a|b) — one pattern or another
+        c2 = substr(s, i + 1, 1)
         if (c2 == "|") { sep(); i += 2 } else if (c2 == "&") { pipe(1); i += 2 } else { pipe(0); i++ }
         continue
       }
@@ -200,10 +234,10 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
         if (c2 == ">" || c2 == "|" || (c == "<" && c2 == ">")) i++
         redir(fdn, c == ">", 1); i++; continue
       }
-      if (c == "(") { endword(); cp[cd]++; push("("); i++; continue }
+      if (c == "(") { endword(); if (!inpat()) { cp[cd]++; push("(") } i++; continue }   # (a|b): pattern text
       if (c == ")") {
         endword()
-        if (fd > 0 && fk[fd] == "case") sep()                              # a case pattern ends
+        if (inpat()) { sep(); cpat[fd] = 2 }                               # a case pattern ends
         else if (cp[cd] > 0) { cp[cd]--; pop("(") }
         else if (k == "C") closesub()
         else bad = 1

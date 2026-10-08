@@ -68,9 +68,9 @@ dispatched, at Challenge. council-plan's war room runs inside Collect.
 
 `council` does the bookkeeping. **Call it as a plain `council <command>`** — never through a shell
 variable or alias, and never as `bash <path>/bin/council` while it is on PATH: permission rules
-match the command text, so any other form asks the user every time. If `command -v council` fails and no
-Small Council SessionStart message appeared, the plugin was enabled mid-session: have the user restart.
-Otherwise write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` in full each time.
+match the command text, so any other form asks the user every time. If `command -v council` fails,
+write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` in full each time. Have the user restart
+only when `council run open` refuses and says to.
 
 Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`; the stage doctrine
 says when to run each command. Rules for every run:

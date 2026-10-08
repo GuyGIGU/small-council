@@ -5,8 +5,10 @@ the stage doctrine says when each command belongs in a run.
 
 Call it as a plain `council <command>` — never through a shell variable or alias, and never as
 `bash <path>/bin/council` while `command -v council` succeeds. Permission rules match the command
-text, so any other form asks the user every time. Only if it isn't on PATH, write
+text, so any other form asks the user every time. If `command -v council` fails, write
 `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
+Have the user restart only when `council run open` refuses and says to (no SessionStart mark for
+this session).
 
 Build proof uses `council gate before-<n>` and `after-<n>` with the same command. The default is a
 failing-before/passing-after change check. `--proof preserve` on both gates records a refactor's

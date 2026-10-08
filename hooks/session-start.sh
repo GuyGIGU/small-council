@@ -8,7 +8,7 @@
 # from disk instead of restarting it; every other open run is only reported. A run another session
 # updated recently may still be live there, so it is never offered for re-dispatch or closing. For
 # every other project it prints nothing, so it costs nothing there. In every project it leaves an empty
-# per-user mark for the session id (see sessions_dir in bin/council): proof for `council run open` that
+# per-user mark for the session id (see session_dirs in bin/council): proof for `council run open` that
 # the plugin's hooks run in this session.
 #
 # It sources bin/council, so the hook and the helper find the council home the same way. It must never
@@ -35,7 +35,7 @@ scwd="$(printf '%s' "$input" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]
   | sed -e 's#\\/#/#g' -e 's#\\\\#\\#g')"
 case "$scwd" in [A-Za-z]:\\*) scwd="$(printf '%s' "$scwd" | tr '\\' '/')" ;; esac
 # This session's hooks run: `council run open` refuses in a session with no such mark (bin/council's
-# sessions_dir says where it lives). Left in every project, council or not: the home may come later.
+# session_dirs says where it lives). Left in every project, council or not: the home may come later.
 mark_hooks_ran "$sid"
 
 if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then cd "$CLAUDE_PROJECT_DIR" 2>/dev/null || exit 0; fi
@@ -47,8 +47,10 @@ NL='
 '
 runs="$(list_runs "$home" 100000 open)"
 
-# A session in a linked worktree (an app-made one, say) while a run's code is elsewhere: Claude Code
-# may refuse its edits outside the worktree, so it can't drive that run. Said first, before anything.
+# A session in a linked worktree (an app-made one, say) while an in-progress run's code is elsewhere:
+# Claude Code may refuse its edits outside the worktree, so it can't drive that run. Said first, before
+# anything, at startup too (a fresh session started to carry a run on is the case it exists for). A
+# paused run waits for the user and says nothing here.
 if [ -n "$runs" ] && [ -n "$scwd" ] && [ -d "$scwd" ]; then
   gd="$(cd "$scwd" 2>/dev/null && git rev-parse --git-dir 2>/dev/null)"
   gc="$(cd "$scwd" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)"
@@ -59,9 +61,9 @@ if [ -n "$runs" ] && [ -n "$scwd" ] && [ -d "$scwd" ]; then
     wt="$(cd "$scwd" && council_toplevel)"
     away=""
     while IFS="$TAB" read -r dir mode phase croot updated status actual rsid; do
-      [ -n "$dir" ] && [ "$croot" != - ] && [ "$croot" != "$wt" ] && [ -d "$croot" ] || continue
-      if [ -z "$away" ] || [ "$status" = in-progress ]; then away="${dir##*/}$TAB$croot"; fi
-      [ "$status" != in-progress ] || break
+      [ -n "$dir" ] && [ "$status" = in-progress ] && [ "$croot" != - ] && [ "$croot" != "$wt" ] \
+        && [ -d "$croot" ] || continue
+      away="${dir##*/}$TAB$croot"; break
     done <<RUNS
 $runs
 RUNS

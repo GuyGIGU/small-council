@@ -115,8 +115,9 @@ python evals/run_hook.py       # needs bash + git
 - finds several open runs by scanning;
 - after a compaction, says "resume, don't restart" for this session's run only;
 - handles paused runs, runs in other worktrees, legacy runs, stale maps and garbage input;
-- warns first when the session sits in a linked worktree and an open run's code is elsewhere;
-- marks its session, so `council run open` refuses a session whose hooks never ran.
+- warns first when the session sits in a linked worktree and an in-progress run's code is elsewhere;
+- marks its session, so `council run open` refuses a session whose hooks never ran — and never one
+  whose hooks ran (an unwritable cache, a shell profile's own `XDG_CACHE_HOME`, the bash gate's mark).
 
 **PreToolUse agent gate:**
 - silent without a council, an in-progress run, or a run within its limits;
@@ -132,7 +133,8 @@ python evals/run_hook.py       # needs bash + git
 - refuses a council command piped into head, tail or grep (`2>&1 |`, `|&`, `bash <path>/bin/council`,
   a loop or group piped whole);
 - lets through redirects to a file, `| tee`, grep or head over files or other commands, the word
-  council in quotes, comments or heredocs, and anything it can't parse.
+  council in quotes, comments, heredocs or case patterns, a command over 100 KB, and anything it
+  can't parse.
 
 **SubagentStop seat check:**
 - valid files pass;

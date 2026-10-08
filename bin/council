@@ -128,37 +128,59 @@ home_rule() {
 # The working tree a run's code-root is compared with.
 this_tree() { local t; t="$(council_toplevel)"; [ -n "$t" ] || t="$(here)"; printf '%s' "$t"; }
 
-# Proof that the plugin's hooks run in a session. The SessionStart hook leaves an empty file named after
-# the session id in a per-user cache folder, $XDG_CACHE_HOME (else ~/.cache)/small-council/sessions/:
-# not under the council home, so the mark is there before council-init makes one, and $HOME is set in
-# Git Bash on Windows too. `council run open` looks for the file named after CLAUDE_CODE_SESSION_ID. A
-# session that started before the plugin was enabled has none, because none of its hooks ever run.
-# Marks older than 30 days are cleared when a session starts.
-sessions_dir() {
-  if [ -n "${XDG_CACHE_HOME:-}" ]; then printf '%s/small-council/sessions' "$XDG_CACHE_HOME"
-  elif [ -n "${HOME:-}" ]; then printf '%s/.cache/small-council/sessions' "$HOME"
-  else return 1; fi
+# Proof that the plugin's hooks run in a session: an empty file named after the session id under
+# small-council/sessions/ in a per-user cache folder — not under the council home, so the mark is there
+# before council-init makes one, and $HOME is set in Git Bash on Windows too. The SessionStart hook leaves
+# it, and hooks/bash-gate.sh touches it before any Bash call that names council (so it is there for the
+# very `council run open` call, after /reload-plugins too). `council run open` looks for the file named
+# after CLAUDE_CODE_SESSION_ID. Marks older than 30 days are cleared when a session starts.
+# Hooks get Claude Code's environment; Bash tool commands also source the user's shell profile, so the two
+# can disagree on XDG_CACHE_HOME. So marks go to ~/.cache and, when set, $XDG_CACHE_HOME, and the check
+# looks in both. One folder per line.
+session_dirs() {
+  if [ -n "${XDG_CACHE_HOME:-}" ]; then printf '%s/small-council/sessions\n' "$XDG_CACHE_HOME"; fi
+  if [ -n "${HOME:-}" ] && [ "${XDG_CACHE_HOME:-}" != "$HOME/.cache" ]; then
+    printf '%s/.cache/small-council/sessions\n' "$HOME"
+  fi
 }
 
 # A session id that is safe as a file name (Claude Code's are UUIDs). Letters spelled out, as bash 3.2's
-# [a-z] follows the locale.
+# [a-z] follows the locale. hooks/bash-gate.sh repeats this test: keep the two alike.
 session_file_ok() {
   case "$1" in ''|.*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*) return 1 ;; esac
 }
 
 mark_hooks_ran() {
   local dir
-  session_file_ok "$1" && dir="$(sessions_dir)" || return 0
-  mkdir -p "$dir" 2>/dev/null && touch "$dir/$1" 2>/dev/null || return 0
-  find "$dir" -type f -mtime +30 -exec rm -f {} + 2>/dev/null
+  session_file_ok "$1" || return 0
+  while IFS= read -r dir; do
+    [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null && touch "$dir/$1" 2>/dev/null || continue
+    find "$dir" -type f -mtime +30 -exec rm -f {} + 2>/dev/null
+  done <<DIRS
+$(session_dirs)
+DIRS
   return 0
 }
 
-# Fails only when the mark is surely missing: an id that can't be a file name, or no cache folder, passes.
+# Fails only when the mark is surely missing. It passes when any folder holds the mark, and fails open
+# when a folder can't be created or written (no hook could have left a mark there), for an id that can't
+# be a file name, and with no folder at all.
 hooks_ran() {
-  local dir
-  session_file_ok "$1" && dir="$(sessions_dir)" || return 0
-  [ -f "$dir/$1" ]
+  local dir dirs
+  session_file_ok "$1" || return 0
+  dirs="$(session_dirs)"
+  [ -n "$dirs" ] || return 0
+  while IFS= read -r dir; do
+    [ ! -f "$dir/$1" ] || return 0
+  done <<DIRS
+$dirs
+DIRS
+  while IFS= read -r dir; do
+    mkdir -p "$dir" 2>/dev/null && [ -w "$dir" ] || return 0
+  done <<DIRS
+$dirs
+DIRS
+  return 1
 }
 
 # The skill that owns a run, from its mode: field (0.2 runs sometimes wrote the short name).
@@ -835,12 +857,13 @@ cmd_run_open() {
     *) die "unknown mode '$mode' — use a skill name: council-review, council-plan, council-implement, council-research, council-postgame, council-init, test-architect, context-core" ;;
   esac
   case "$mode" in council-*) short="${mode#council-}" ;; context-core) short=core ;; *) short="$mode" ;; esac
-  # No SessionStart mark for this session: it started before the plugin was enabled, so none of the
-  # council's hooks run in it (no agent stop, no seat check). With no session id (scripts, tests) nothing
-  # is checked; COUNCIL_ALLOW_NO_HOOKS=1, named only in this refusal, is for a user who insists.
+  # No mark for this session (see session_dirs): neither its SessionStart hook nor the bash gate just
+  # before this call ran, so the council's hooks (the agent stop, the seat check) may not run in it. With
+  # no session id (scripts, tests) nothing is checked; COUNCIL_ALLOW_NO_HOOKS=1, named only in this
+  # refusal, is for a user who insists.
   if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && [ "${COUNCIL_ALLOW_NO_HOOKS:-}" != 1 ] \
      && ! hooks_ran "$CLAUDE_CODE_SESSION_ID"; then
-    die "Small Council's hooks aren't running in this session — it started before the plugin was enabled. Restart the session (or run /reload-plugins and start a new one), then open the run again. Only if the user insists on going on without them: COUNCIL_ALLOW_NO_HOOKS=1 council run open $mode"
+    die "no SessionStart mark for this session — the plugin was enabled or updated after it started, so Small Council's hooks (the agent stop, the seat check) may not run in it. Restart the session, then open the run again. Only if the user insists on going on without them: COUNCIL_ALLOW_NO_HOOKS=1 council run open $mode"
   fi
   home="$(council_home)"
   if [ ! -d "$home" ]; then

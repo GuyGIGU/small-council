@@ -19,9 +19,12 @@ SessionStart (hooks/session-start.sh):
     offers a finished one to close as complete, and never claims an old one after a compaction;
   - finds the MAIN checkout's .council/ from a linked worktree; reports a stale or rewritten map;
     survives garbage;
-  - warns first when the session's own cwd is a linked worktree and an open run's code is elsewhere;
-  - marks its session id, council or not, and `council run open` refuses a session with no mark (unless
-    there is no session id, or COUNCIL_ALLOW_NO_HOOKS=1).
+  - warns first when the session's own cwd is a linked worktree and an in-progress run's code is
+    elsewhere — never for a paused run;
+  - marks its session id, council or not, under ~/.cache and $XDG_CACHE_HOME, and `council run open`
+    refuses a session with no mark, saying only what it knows (unless there is no session id, or
+    COUNCIL_ALLOW_NO_HOOKS=1) — never one whose hooks ran: not when the cache folder can't be written,
+    not when the hook's XDG_CACHE_HOME and the Bash tool's differ, not after the bash gate alone ran.
 SubagentStop (hooks/seat-gate.sh):
   - lets a valid worker or verifier file through, including list-style index lines and prose;
   - blocks once (exit 2, reason on stderr) on a missing, malformed, oversized or empty file, an index
@@ -47,7 +50,10 @@ PreToolUse (hooks/bash-gate.sh), fed through hooks.json's own command and matche
   - refuses (exit 2, one line on stderr) a command that pipes the helper into head, tail or grep —
     `2>&1 |`, `|&`, bash <path>/bin/council, a loop or group piped whole, a variable set to the helper;
   - lets through a redirect to a file, `| tee`, grep or head over files or other commands, the word
-    council in quotes, a comment or a heredoc, and anything it can't parse.
+    council in quotes, a comment, a heredoc or a case pattern, a command over 100 KB, and anything it
+    can't parse;
+  - touches the session's mark before a call that names council, so `council run open` right after it
+    finds one (after /reload-plugins too).
 """
 import argparse
 import json
@@ -78,8 +84,19 @@ def check(name, ok, detail=""):
     results.append((ok, name, detail))
 
 
-def run_hook(project, source="startup", payload=None, session="eval", raw=False):
-    env = dict(GIT_ENV, CLAUDE_PROJECT_DIR=project, CLAUDE_PLUGIN_ROOT=ROOT)
+def with_env(extra):
+    """GIT_ENV with extra's values set — a None value drops that variable."""
+    env = dict(GIT_ENV)
+    for k, v in (extra or {}).items():
+        if v is None:
+            env.pop(k, None)
+        else:
+            env[k] = v
+    return env
+
+
+def run_hook(project, source="startup", payload=None, session="eval", raw=False, env=None):
+    env = dict(with_env(env), CLAUDE_PROJECT_DIR=project, CLAUDE_PLUGIN_ROOT=ROOT)
     if payload is None:
         payload = json.dumps({"session_id": session, "hook_event_name": "SessionStart", "source": source})
     try:
@@ -95,8 +112,8 @@ def run_hook(project, source="startup", payload=None, session="eval", raw=False)
 
 
 def marks():
-    """Where the SessionStart hook marks a session whose hooks run (bin/council's sessions_dir): under the
-    eval's own XDG_CACHE_HOME, set when the blocks start, never the user's cache."""
+    """Where the hooks mark a session whose hooks run (bin/council's session_dirs): under the eval's own
+    XDG_CACHE_HOME (and HOME), set when the blocks start, never the user's cache."""
     return os.path.join(GIT_ENV["XDG_CACHE_HOME"], "small-council", "sessions")
 
 
@@ -110,7 +127,7 @@ def council(cwd, *args, session="", hooks=True, env=None):
     """session: run as that Claude Code session, marked as one whose hooks run unless hooks=False."""
     if session and hooks:
         hooks_ran(session)
-    env = dict(GIT_ENV, **(env or {}))
+    env = with_env(env)
     if session:
         env["CLAUDE_CODE_SESSION_ID"] = session
     p = subprocess.run([BASH, os.path.join(ROOT, "bin", "council"), *args], cwd=cwd, capture_output=True, text=True,
@@ -871,7 +888,9 @@ def bash_gate(tmp):
                     "council run status | sort | head",
                     "x=$(council run status | head -1)",
                     'C="bash /opt/sc/bin/council"; $C run status | tail',
-                    "council run status\ncouncil doctor | tail"):
+                    "council run status\ncouncil doctor | tail",
+                    "case $1 in a|b) council run status ;; esac | head",   # a branch's commands, piped whole
+                    "case $1 in\n  (x) council doctor\nesac 2>&1 | tail"):
         code, out, err, _ = run_agent_gate(cmd, bash_input(command), here)
         check(f"pipe stop refuses {command!r} — exit 2, one line on stderr: run it plain, or redirect it to a file",
               code == 2 and not out and err.count("\n") == 1 and "run council plain" in err and "exit status" in err
@@ -888,9 +907,13 @@ def bash_gate(tmp):
                     "council run status # | tail",
                     "command -v council | head -1",
                     "council run status | wc -l",
+                    "case $1 in a|council) echo hi ;; esac | head",      # a case pattern is no command
+                    "case $x in (council|b) echo x ;; c) echo y ;; esac | grep x",
+                    "case council in\n  council|*) ls ;;\nesac | tail",
+                    "council run status | head; echo " + "A" * 120000,  # over 100 KB: let through unread
                     'echo "council run status | head'):           # can't be parsed: let through
         code, out, err, _ = run_agent_gate(cmd, bash_input(command), here)
-        check(f"pipe stop lets {command!r} through, silently", code == 0 and not out and not err, said(code, out, err))
+        check(f"pipe stop lets {command[:80]!r} through, silently", code == 0 and not out and not err, said(code, out, err))
     for label, raw in (("garbage", "\x00council | tail{{{"), ("an empty input", ""),
                        ("a command outside tool_input", '{"tool_name":"Bash","command":"council run status | tail"}'),
                        ("the pipe only in the description",
@@ -912,9 +935,12 @@ def hooks_running(tmp):
     write(os.path.join(late, ".council", "council.config.md"), "# Council config\n")
     code, out, err = council(late, "run", "open", "council-review", session="s-late", hooks=False)
     check("run open: a session its SessionStart hook never marked is refused — exit 2, restart the session, "
-          "the escape named in the refusal", code == 2 and "hooks aren't running in this session" in err
-          and "Restart the session (or run /reload-plugins and start a new one)" in err
+          "the escape named in the refusal", code == 2 and "Restart the session, then open the run again" in err
           and "COUNCIL_ALLOW_NO_HOOKS=1 council run open council-review" in err, f"exit {code} · {out} · {err}")
+    check("run open: ... and the refusal states only what it knows — no SessionStart mark for this session, the "
+          "plugin enabled or updated after it started — never a cause it can't know",
+          "no SessionStart mark for this session — the plugin was enabled or updated after it started" in err
+          and "it started before the plugin was enabled" not in err, err)
     check("run open: ... and the refusal opens nothing", not os.path.exists(os.path.join(late, ".council", "runs")),
           str(os.listdir(os.path.join(late, ".council"))))
     run_hook(late, session="s-late")                                  # the session restarted with the plugin on
@@ -934,6 +960,69 @@ def hooks_running(tmp):
     check("session mark: a session id that can't be a file name leaves no file anywhere",
           not os.path.exists(os.path.join(marks(), "..", "x")) and not os.path.exists(os.path.join(marks(), "x")),
           " ".join(sorted(os.listdir(os.path.dirname(marks())))) if os.path.isdir(os.path.dirname(marks())) else "")
+
+    # --- Fail open: a session whose hooks ran is never refused. Hooks get Claude Code's environment; Bash tool
+    # commands also source the user's shell profile, so the two can disagree on XDG_CACHE_HOME (the desktop
+    # app isn't started from a shell), and a root-owned ~/.cache takes no mark at all ----------------------
+    def home_of(name):
+        h = os.path.join(tmp, "homes", name)
+        os.makedirs(h)
+        return h
+
+    def opens(label, name, session, hook_env, bash_env):
+        r = new_repo(tmp, name)
+        write(os.path.join(r, ".council", "council.config.md"), "# Council config\n")
+        hook_code, _ = run_hook(r, session=session, env=hook_env)
+        code, out, err = council(r, "run", "open", "council-review", session=session, hooks=False, env=bash_env)
+        check(f"run open: {label}", hook_code == 0 and code == 0 and os.path.isdir(out),
+              f"hook exit {hook_code} · exit {code} · {out} · {err}")
+
+    h = home_of("xdg-in-shell")
+    opens("the hook ran with no XDG_CACHE_HOME and the Bash tool's shell profile sets one — the run opens",
+          "marks-xdg-in-shell", "s-xdg-shell", {"HOME": h, "XDG_CACHE_HOME": None},
+          {"HOME": h, "XDG_CACHE_HOME": os.path.join(h, "xdg")})
+    h = home_of("xdg-in-hook")
+    opens("the hook ran with an XDG_CACHE_HOME the Bash tool's shell doesn't have — the run opens",
+          "marks-xdg-in-hook", "s-xdg-hook", {"HOME": h, "XDG_CACHE_HOME": os.path.join(h, "xdg")},
+          {"HOME": h, "XDG_CACHE_HOME": None})
+    h = home_of("read-only")
+    shut = [os.path.join(h, ".cache"), os.path.join(h, "xdg")]
+    for d in shut:
+        os.makedirs(d)
+        os.chmod(d, 0o555)
+    try:
+        opens("no cache folder can be written (a root-owned ~/.cache): the hook marks nothing, and run open fails "
+              "open — the run opens", "marks-read-only", "s-read-only", {"HOME": h, "XDG_CACHE_HOME": shut[1]},
+              {"HOME": h, "XDG_CACHE_HOME": shut[1]})
+    finally:
+        for d in shut:
+            os.chmod(d, 0o755)
+
+    # --- The bash gate runs just before the very `council run open` call, so it marks the session too: a
+    # session whose SessionStart hook never ran (plugin enabled mid-session, then /reload-plugins) opens --
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        bash_gate = next((h["command"] for g in json.load(f)["hooks"].get("PreToolUse", []) for h in g.get("hooks", [])
+                          if "hooks/bash-gate.sh" in h.get("command", "")), "exit 1")
+
+    def bash_call(session, command):
+        return json.dumps({"session_id": session, "transcript_path": "/x/t.jsonl", "cwd": late,
+                           "permission_mode": "default", "hook_event_name": "PreToolUse", "tool_name": "Bash",
+                           "tool_input": {"command": command, "description": "Open the run"}}, separators=(",", ":"))
+
+    reload = new_repo(tmp, "marks-reload")
+    write(os.path.join(reload, ".council", "council.config.md"), "# Council config\n")
+    code, out, err, _ = run_agent_gate(bash_gate, bash_call("s-reload", "council run open council-review"), reload)
+    gate_ok = code == 0 and not out and not err
+    code, out, err = council(reload, "run", "open", "council-review", session="s-reload", hooks=False)
+    check("run open: a session whose only hook to run was the bash gate, just before this very call, opens — "
+          "the gate let the call through silently and marked the session", gate_ok and code == 0 and os.path.isdir(out),
+          f"gate ok {gate_ok} · exit {code} · {out} · {err}")
+    for session, command, label in (("s-no-name", "ls -la | head", "a Bash call that doesn't name council"),
+                                    ("../y", "council run status", "a session id that can't be a file name")):
+        run_agent_gate(bash_gate, bash_call(session, command), reload)
+        check(f"bash gate: {label} leaves no mark",
+              not os.path.exists(os.path.join(marks(), session)) and not os.path.exists(os.path.join(marks(), "..", "y")),
+              " ".join(sorted(os.listdir(marks()))))
 
 
 @part("main")
@@ -964,6 +1053,18 @@ def worktree_session(tmp):
                            f"in {mtop} with the worktree option off."), out)
     code, out = start(main, main)
     check("a session in the main checkout: no worktree warning", code == 0 and "linked worktree" not in out, out)
+
+    paused = new_repo(tmp, "wt-paused")
+    ptop = git(paused, "rev-parse", "--show-toplevel")
+    write(os.path.join(paused, ".council", "council.config.md"), "# Council config\n")
+    ptree = os.path.join(paused, ".claude", "worktrees", "app-made")
+    git(paused, "worktree", "add", "-q", ptree, "-b", "app-made")
+    write(os.path.join(paused, ".council", "runs", "2026-09-20-120000-implement", "session-state.md"),
+          state("paused", mode="council-implement", phase="build", code_root=ptop, session="s-old"))
+    code, out = start(ptree, ptree)
+    check("worktree session while only a paused run's code is elsewhere: no worktree warning — a paused run waits "
+          "for the user — and the run is still reported", code == 0 and "linked worktree" not in out
+          and "2026-09-20-120000-implement" in out, out)
 
     own = new_repo(tmp, "wt-own")
     write(os.path.join(own, ".council", "council.config.md"), "# Council config\n")
@@ -1346,6 +1447,23 @@ def agent_gate_counts_starts(tmp):
     check("agent gate: a run opened before plans and agent limits, past the cap — the agent starts, uncounted",
           code == 0 and not err and starts(orun) == 0, f"{said(code, err)} · {starts(orun)} starts")
 
+@part("timing")
+def bash_gate_speed(tmp):
+    # --- The pipe stop runs before every Bash call, inside a 5 s limit. Its walk grows faster than the command
+    # on macOS awk (a 1 MB quoted string took 17 s), so a command over 100 KB is let through unread ---------
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        cmd = next((h["command"] for g in json.load(f)["hooks"].get("PreToolUse", []) for h in g.get("hooks", [])
+                    if "hooks/bash-gate.sh" in h.get("command", "")), "exit 1")
+    here = new_repo(tmp, "pipe-stop-speed")
+    for label, command in (("a 1 MB quoted string", 'council x > f; echo "' + "x|" * 500000 + '" | head'),
+                           ("a 200 KB unquoted word", "council run status | head; echo " + "A" * 200000)):
+        payload = json.dumps({"session_id": "sA", "transcript_path": "/x/t.jsonl", "cwd": here, "tool_name": "Bash",
+                              "tool_input": {"command": command}}, separators=(",", ":"))
+        code, out, err, secs = run_agent_gate(cmd, payload, here)
+        check(f"pipe stop: {label} is let through, silently, in under 1 s", code == 0 and not out and not err and secs < 1,
+              f"exit {code} · {secs:.2f} s · {err.strip()[:80]}")
+
+
 parser = argparse.ArgumentParser(description="Hook evals: run the plugin's hooks against scaffolded repos.")
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
@@ -1378,7 +1496,9 @@ if not BASH or not GIT:
     sys.exit(0 if opts.allow_skip else 3)
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
-    GIT_ENV["XDG_CACHE_HOME"] = os.path.join(tmp, "cache")   # session marks (bin/council's sessions_dir) stay here
+    GIT_ENV["XDG_CACHE_HOME"] = os.path.join(tmp, "cache")   # session marks (bin/council's session_dirs) stay here,
+    GIT_ENV["HOME"] = os.path.join(tmp, "home")              # ~/.cache's copy too: never the user's own
+    os.makedirs(GIT_ENV["HOME"])
     for group, block in PARTS:
         if group in chosen and (only is None or block.__name__ in only):
             block(tmp)

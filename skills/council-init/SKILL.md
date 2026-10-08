@@ -11,9 +11,9 @@ One installed plugin gives each repo a bespoke council, built to fit it.
   when" rules, and the recast rules.
 - The council home is the main checkout's `.council/`; `council home` prints it. Call the helper as a
   plain `council <command>` — never through a shell variable or alias, or as `bash <path>/bin/council`
-  while it is on PATH: permission rules match the command text. If `command -v council` fails and no
-  Small Council SessionStart message appeared, the plugin was enabled mid-session: have the user
-  restart before any run. Otherwise write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` in full.
+  while it is on PATH: permission rules match the command text. If `command -v council` fails, write
+  `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` in full. Have the user restart only when
+  `council run open` refuses and says to.
 
 ## Phase A — Detect the stack and surfaces (classify, don't review)
 
