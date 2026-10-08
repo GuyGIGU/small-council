@@ -34,7 +34,12 @@ PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and match
     nothing recorded (together, too) meet the stop, and the same agents recorded later count once; a
     run opened before plans and agent limits is never stopped;
   - reads session_id and cwd from the top level only (a Windows cwd with escaped backslashes too), never
-    from text inside another value.
+    from text inside another value;
+  - holds the council's own agents (tool_input's subagent_type) to the record: a council-worker with no
+    open run, an agent for a closed run, a seat the plan doesn't select, a build task's third check — read
+    from the Seat: line or the file the dispatch writes; never an ordinary agent, a Workflow, a verifier
+    outside any run, or a cut-off input.
+Stop (hooks/turn-end.sh): sends the Chair back once while the run's first status card is still due.
 """
 import argparse
 import json
@@ -125,6 +130,15 @@ def pre_tool(session="sA", cwd="", tool="Agent", before=None, prompt="Review the
     return json.dumps(fields, separators=(",", ":"))
 
 
+def dispatch_input(session, cwd, subagent, prompt, tool="Agent", before=None):
+    """A PreToolUse input for an Agent call of one subagent type, as Claude Code writes it: compact JSON."""
+    fields = dict(before or {})
+    fields.update({"session_id": session, "transcript_path": "/x/t.jsonl", "cwd": cwd, "permission_mode": "default",
+                   "hook_event_name": "PreToolUse", "tool_name": tool,
+                   "tool_input": {"description": "d", "prompt": prompt, "subagent_type": subagent}})
+    return json.dumps(fields, separators=(",", ":"))
+
+
 def run_agent_gate(command, payload, cwd):
     """hooks.json's PreToolUse command, run with bash -c from cwd; returns (exit code, stdout, stderr, seconds)."""
     t0 = time.time()
@@ -140,10 +154,10 @@ def stop_input(session="sA", cwd="", active=False, message="Which of the two sho
                       separators=(",", ":"))
 
 
-def valid_plan(run, seats=("chair", "w1")):
+def valid_plan(run, seats=("chair", "w1"), mode="council-review"):
     """A complete run-plan v1, so the helper starts the seats a test names."""
     rows = [("kind", "id", "field", "value", "reason"), ("schema", "plan", "version", "1", "test"),
-            ("run", "run", "id", os.path.basename(run), "test"), ("run", "run", "mode", "council-review", "test"),
+            ("run", "run", "id", os.path.basename(run), "test"), ("run", "run", "mode", mode, "test"),
             ("run", "run", "size", "squad", "test"), ("assessment", "run", "risk", "low", "test"),
             ("assessment", "run", "complexity", "low", "test"), ("assessment", "run", "uncertainty", "low", "test"),
             ("budget", "run", "agent-cap", "10", "test"), ("budget", "run", "estimated-tokens", "100000", "test"),
@@ -795,6 +809,97 @@ def memory_file_and_seat_check(tmp):
     check("seat check: a review verifier table the index reads (bold, #2, a | in the evidence, no closing pipe) passes",
           code == 0, err)
 
+@part("main")
+def agent_gate_dispatch_record(tmp):
+    # The agent gate holds Small Council's own agents to the record, through hooks.json's own commands: a real
+    # run sent a verifier 9 s before its plan row existed, and an 11th agent after the run had closed.
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        wired = json.load(f)["hooks"]
+    gate_cmd = next(h["command"] for g in wired["PreToolUse"] for h in g["hooks"] if "hooks/agent-gate.sh" in h["command"])
+    stop_cmd = next(h["command"] for g in wired["Stop"] for h in g["hooks"] if "hooks/turn-end.sh" in h["command"])
+    worker, verifier = "small-council:council-worker", "small-council:council-verifier"
+
+    def said(code, out, err):
+        return f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()[:300]}"
+
+    def gate(cwd, subagent, prompt, session="sD", tool="Agent", before=None):
+        return run_agent_gate(gate_cmd, dispatch_input(session, cwd, subagent, prompt, tool, before), cwd)[:3]
+
+    def starts(run):
+        path = os.path.join(run, "agent-starts.tsv")
+        return open(path, encoding="utf-8").read().count("\tAgent\t") if os.path.exists(path) else 0
+
+    bare = new_repo(tmp, "dispatch-gate-bare")
+    code, out, err = gate(bare, worker, "Seat: hunt — x\nWrite seats/hunt.md, then return one line.")
+    check("dispatch: no council home — a council-worker starts, nothing said", code == 0 and not out and not err,
+          said(code, out, err))
+    dg = new_repo(tmp, "dispatch-gate")
+    write(os.path.join(dg, ".council", "council.config.md"), "# Council config\n")
+    code, out, err = gate(dg, worker, "Seat: hunt — Security · review run\nWrite /x/seats/hunt.md, then return one line.")
+    check("dispatch: a council-worker with no council run open is refused — exit 2, the reason on stderr, nothing on stdout",
+          code == 2 and not out and "no council run is open on this working tree or for this session" in err, said(code, out, err))
+    code, out, err = gate(dg, "general-purpose", "Seat: hunt — Security · review run\nWrite /x/seats/hunt.md.")
+    check("dispatch: an ordinary agent given the same message starts — only Small Council's own agents are held to it",
+          code == 0 and not err, said(code, out, err))
+    code, out, err = gate(dg, verifier, "Check the changed tests.\nWrite your verdicts to /tmp/xyz/verify-1.md, then reply.")
+    check("dispatch: a council-verifier writing outside any run (test-architect's own check) starts with no run open",
+          code == 0 and not err, said(code, out, err))
+    code, out, err = gate(dg, "general-purpose", "Seat: hunt\nWrite /x/seats/hunt.md", before={"subagent_type": worker})
+    check("dispatch: the agent type is read from the call's own tool_input — never a top-level field or other text",
+          code == 0 and not err, said(code, out, err))
+    _, grun, _ = council(dg, "run", "open", "council-review", session="sD")
+    gname = os.path.basename(grun)
+    valid_plan(grun, seats=("chair", "hunt"))
+    orders = "Seat: {0} — Security · review run\nBrief: {1}/brief.md — read the top and your block\nWrite {1}/seats/{0}.md, then return one line."
+    code, out, err = gate(dg, worker, orders.format("beck", grun))
+    check("dispatch: a council-worker for a seat the plan doesn't select is refused, before it starts, and is not counted",
+          code == 2 and "seat beck has no selected row in the run plan of " + gname in err and starts(grun) == 0,
+          said(code, out, err))
+    code, out, err = gate(dg, worker, "Look at the change.\nWrite {0}/seats/beck.md, then return one line.".format(grun))
+    check("dispatch: with no Seat: line, the seat is read from the file the worker writes", code == 2 and "seat beck" in err,
+          said(code, out, err))
+    code, out, err = gate(dg, worker, orders.format("hunt", grun))
+    check("dispatch: a council-worker for a selected seat of the open run starts, and is counted", code == 0 and not err
+          and starts(grun) == 1, said(code, out, err))
+    code, out, err = gate(dg, worker, "Seat: hunt\nWrite {0}/seats/hunt.md".format(grun), tool="Workflow")
+    check("dispatch: a Workflow names no agent type of its own — never held to it", code == 0 and not err, said(code, out, err))
+    council(dg, "seat", "hunt", "running", "agent=h1", session="sD")
+    code, out, err, _ = run_agent_gate(stop_cmd, stop_input("sD", dg), dg)
+    check("turn end: after the run's first dispatch, with no status shown, the Chair is sent back once to show it",
+          code == 2 and not out and "made its first dispatch" in err and "council status --widget --run " + gname in err,
+          said(code, out, err))
+    code, out, err, _ = run_agent_gate(stop_cmd, stop_input("sD", dg), dg)
+    check("turn end: ... and the next turn end says nothing", code == 0 and not out and not err, said(code, out, err))
+    council(dg, "run", "close", "--status", "abandoned", session="sD")
+    check_orders = "Check claim 1.\nThe brief: {0}/brief.md\nWrite your verdicts to {0}/verify-plan.md, then reply in one line."
+    code, out, err = gate(dg, verifier, check_orders.format(grun))
+    check("dispatch: a council-verifier for a run that has closed is refused", code == 2 and "which is closed (abandoned)" in err,
+          said(code, out, err))
+    code, out, err = gate(dg, verifier, check_orders.format(grun.replace("/", "\\")))
+    check("dispatch: ... found from a Windows path too (backslashes, escaped in the JSON)", code == 2 and gname in err,
+          said(code, out, err))
+    for label, raw in (("garbage", "\x00not json at all"), ("a truncated call", '{"session_id":"sD","cwd":"%s",'
+                       '"tool_name":"Agent","tool_input":{"subagent_type":"%s","prompt":"Seat: hu' % (dg, worker))):
+        code, out, err, _ = run_agent_gate(gate_cmd, raw, dg)
+        check(f"dispatch: {label} — the agent starts, nothing said", code == 0 and not out and not err, said(code, out, err))
+    # A third check of one build task, refused before it starts (council-implement, step 7).
+    tg = new_repo(tmp, "dispatch-gate-third")
+    write(os.path.join(tg, ".council", "council.config.md"), "# Council config\n")
+    _, trun, _ = council(tg, "run", "open", "council-implement", session="sE")
+    valid_plan(trun, seats=("chair", "verify-6", "verify-6b", "verify-6c"), mode="council-implement")
+    for slug, n in (("verify-6", 1), ("verify-6b", 2)):
+        write(os.path.join(trun, slug + ".md"), "# Verification — x\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+              "| 1 | a | INCOMPLETE | a.py:1 |\n")
+        council(tg, "seat", slug, "running", f"agent=v{n}", session="sE")
+        council(tg, "seat", slug, "done", "tokens=20000", session="sE")
+    recheck = ("Check task 6 again.\nDiff: {0}/diff-6.patch\nThe last verdict: {0}/verify-6b.md\n"
+               "Write your verdicts to {0}/verify-6c.md, then reply in one line.").format(trun)
+    code, out, err = gate(tg, verifier, recheck, session="sE")
+    check("dispatch: a third check of one task, after two verdicts with no diagnosis or decision since, is refused before "
+          "it starts — the file it writes names it, not the earlier verdict the message mentions",
+          code == 2 and "cannot start verify-6c" in err and "third check of task 6" in err, said(code, out, err))
+
+
 @part("timing")
 def turn_end(tmp):
     # --- Stop hook: the run notices when the Chair stops for the user (promised-4: across 33 real sessions
@@ -833,6 +938,10 @@ def turn_end(tmp):
     check("turn end: a stop the hook already sent back ends there — nothing said, nothing recorded",
           code == 0 and not err and not waiting(), said(code, out, err))
     council(te, "seat", "w1", "running", "agent=a1", session="sA")
+    code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
+    check("turn end: the run's first dispatch, its status not yet shown, sends the Chair back once for the card — and "
+          "records no wait, since a seat is working",
+          code == 2 and "made its first dispatch" in err and not waiting(), said(code, out, err))
     code, out, err, _ = run_agent_gate(cmd, stop_input("sA", te), te)
     check("turn end: with a seat still working the run waits on its agent, not the user — nothing said or recorded",
           code == 0 and not err and not waiting(), said(code, out, err))

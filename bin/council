@@ -1212,13 +1212,16 @@ status_nudge() {
     fi
     printf 'council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s` — and if the card fails to render, give that text and carry on%s%s\n' \
       "$lead" "$at" "$at" "${follow:+; and tell them, from the record — $follow}" "$al" >&2
+    # The first card is owed once per run, until shown: <run>/card-due says "due" from here on, "reminded"
+    # once the turn-end hook has sent the Chair back for it, and goes when council status reads the run.
+    [ "$when" = close ] || { printf 'due\n' > "$run/card-due"; } 2>/dev/null || :
   elif [ "$when" != close ]; then
     printf 'council: %s: relay `council run status` (no Python 3.8+ here, so there is no status card)\n' "$lead" >&2
   fi
 }
 
 cmd_seat() {
-  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 tools="" tb tt closed_out="" n dup="" over=""
+  local run slug="${1:-}" state="${2:-}" agent="" tokens="" runs="" note="" kv f u cur usage e r t d ecell first=0 tools="" tb tt closed_out="" n dup="" over="" why
   [ -n "$slug" ] && [ -n "$state" ] || die "usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [agents=N] [note=TEXT]"
   case "$state" in queued|running|done|failed|blocked|skipped) ;; *) die "seat state must be queued, running, done, failed, blocked or skipped" ;; esac
   case "$slug" in *[!A-Za-z0-9._-]*) die "bad seat slug: $slug" ;; esac
@@ -1283,7 +1286,8 @@ cmd_seat() {
       if [ -f "$run/run-plan.tsv" ]; then
         run_plan_has_selected "$run/run-plan.tsv" "$slug" \
           || die "cannot start seat $slug — run-plan.tsv does not mark it selected; update the plan and run: council run plan check --run ${run##*/}"
-      fi ;;
+      fi
+      if why="$(check_round_refusal "$run" "$slug")"; then die "$why"; fi ;;
   esac
   wait_over "$run"                                  # the call is good: the run moves on
   f="$run/seats.tsv"; u="$run/usage.tsv"
@@ -1729,10 +1733,12 @@ cmd_cap_allow() {
 # that session drives, with no seat running, now waits on the user. A wait the Chair recorded itself
 # (state waiting=) was asked for then, so it is left alone: one alert per wait. One it didn't, the hook
 # records, and with notifications on prints what the Chair is sent back for — the owner's alert — and
-# exits 2; the next turn end of that wait finds it recorded. Otherwise silent, exit 0. A fault of its
-# own dies, which the hook lets through.
+# exits 2; the next turn end of that wait finds it recorded. A run whose first status card is still due
+# (card-due, from the first dispatch's reminder) sends the Chair back once for it too, seats working or
+# not: the card is owed once per run. Otherwise silent, exit 0. A fault of its own dies, which the hook
+# lets through.
 cmd_run_turn_end() {
-  local home session run st names="" n=0 last="" how at="<folder>" label=run
+  local home session run st names="" n=0 last="" how at="<folder>" label=run mark cards="" said=""
   home="$(council_home)"
   [ -d "$home/runs" ] || return 0
   session="${SESSION_ARG:-}"
@@ -1740,6 +1746,8 @@ cmd_run_turn_end() {
   while IFS= read -r run; do
     [ -n "$run" ] || continue
     st="$run/session-state.md"
+    mark=""; { IFS= read -r mark < "$run/card-due"; } 2>/dev/null || :
+    if [ "$mark" = due ] && { printf 'reminded\n' > "$run/card-due"; } 2>/dev/null; then cards="$cards${cards:+, }${run##*/}"; fi
     ! awk -F'\t' 'NR > 1 && $2 == "running" { f = 1; exit } END { exit !f }' "$run/seats.tsv" 2>/dev/null || continue
     [ -z "$(state_field waiting "$st")" ] || continue          # recorded already: asked for when it was
     ( RUN_ARG="$run" cmd_state waiting="your answer in the chat" ) >/dev/null 2>&1 || continue
@@ -1748,15 +1756,90 @@ cmd_run_turn_end() {
   done <<RUNS
 $(session_runs "$home" "$session")
 RUNS
-  [ "$n" -gt 0 ] || return 0
+  case "$cards" in
+    '') ;;
+    *,*) said="Runs $cards made their first dispatch, and the user has not been shown their status: for each, hand the output of \`council status --widget --run <folder>\` to a show_widget tool (it may be a deferred tool: search the tools for it first), else relay \`council status --run <folder>\` — once." ;;
+    *) said="Run $cards made its first dispatch, and the user has not been shown its status: hand the output of \`council status --widget --run $cards\` to a show_widget tool (it may be a deferred tool: search the tools for it first), else relay \`council status --run $cards\` — once." ;;
+  esac
+  [ "$n" -gt 0 ] || [ -n "$said" ] || return 0
+  if [ "$n" -eq 0 ]; then say "Small Council: $said Then end your turn."; exit 2; fi
   if [ "$n" -gt 1 ]; then label=runs; else at="$last"; fi
+  [ -z "$said" ] || label="R${label#r}"              # a second sentence
   if impact_python >/dev/null 2>&1; then
     how="send the line \`council status --line --run $at\` prints"
   else
     how="send them the question in one short line"
   fi
-  say "Small Council: $label $names now waits on the user (no seat is working). If you stopped to ask them something: record the question if you haven't (council state waiting=\"<it, short>\" --run $at), then — unless you already sent the owner an alert for this stop — $how, once, with a PushNotification tool (it may be a deferred tool: search the tools for it first), and end your turn. If it only waits on a background task, clear it instead: council state waiting= --run $at."
+  say "Small Council: ${said:+$said }$label $names now waits on the user (no seat is working). If you stopped to ask them something: record the question if you haven't (council state waiting=\"<it, short>\" --run $at), then — unless you already sent the owner an alert for this stop — $how, once, with a PushNotification tool (it may be a deferred tool: search the tools for it first), and end your turn. If it only waits on a background task, clear it instead: council state waiting= --run $at."
   exit 2
+}
+
+# The dispatch record, for the agent gate: a Small Council agent goes out only for an open run, and only
+# for a seat that run's plan selects. A real run sent a verifier 9 s before its plan row existed (the plan
+# check sat in `council seat … running`, after the agent had started), and another after the run had
+# closed. Only council-worker and council-verifier calls are judged, by the subagent type the call names
+# ($3); the seat ($4) and the run folder ($5) are what the hook read from the dispatch message, empty when
+# it couldn't — and nothing is judged on what wasn't read. The runs open for a dispatch: those in
+# progress on this tree, and those this session drives on any tree. A worker always works for a run; a
+# verifier with no run folder named may be test-architect's own check outside any run, so it is held to
+# a run only when it names one. Prints the refusal and returns 0 when the agent must not start; 1 otherwise.
+dispatch_refusal() {
+  local home="$1" session="$2" type="$3" seat="$4" named="$5" kind run status cands c n=0 legacy="" found="" why also=""
+  case "$type" in
+    small-council:council-worker) kind=council-worker ;;
+    small-council:council-verifier) kind=council-verifier ;;
+    *) return 1 ;;
+  esac
+  [ -d "$home" ] || return 1                                    # no council here: nothing to judge
+  case "$named" in ''|.*|*[!A-Za-z0-9._-]*) named="" ;; esac
+  case "$seat" in ''|*[!A-Za-z0-9._-]*) seat="" ;; esac
+  if [ -n "$named" ] && [ -f "$home/runs/$named/session-state.md" ]; then
+    run="$home/runs/$named"
+    status="$(field status "$run/session-state.md")"; status="${status%% *}"
+    case "$status" in
+      in-progress) cands="$run" ;;
+      paused) say "Small Council: this $kind is for run $named, which is paused — no agent starts for it while it is. If the user wants it carried on: council run resume --run $named, then dispatch again."
+              return 0 ;;
+      *) say "Small Council: this $kind is for run $named, which is closed (${status:-no status}) — its agents are done. For more work, open a new run (council run open <mode>), plan the seat there, then dispatch."
+         return 0 ;;
+    esac
+  else
+    [ "$kind" = council-worker ] || return 1
+    cands="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
+      $6 == "in-progress" && ($4 == ENVIRON["TOP"] || $4 == "-" || (ENVIRON["SID"] != "" && $8 == ENVIRON["SID"])) { print $1 }')"
+    if [ -z "$cands" ]; then
+      [ -n "$session" ] || return 1                              # no session: its runs on other trees can't be seen
+      say "Small Council: no council run is open on this working tree or for this session, so a council-worker has no run to work for. Open the run first (council run open <mode>), or carry on with a paused one if the user wants it (council run resume --run <folder>); plan the seat, then dispatch. For work outside the council, use another agent type."
+      return 0
+    fi
+  fi
+  [ -n "$seat" ] || return 1
+  if [ "$kind" = council-verifier ]; then                       # a re-check's verify-6b.md may be seat verify-6's
+    case "$seat" in
+      verify-?*-[abcdefghijklmnopqrstuvwxyz]) also="${seat%-?}" ;;
+      verify-?*[bcdefghijklmnopqrstuvwxyz]) also="${seat%?}" ;;
+    esac
+  fi
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    if [ -z "$(field plan-schema "$c/session-state.md")" ]; then legacy=1; continue; fi   # opened before run plans
+    run_plan_has_selected "$c/run-plan.tsv" "$seat" || { [ -n "$also" ] && run_plan_has_selected "$c/run-plan.tsv" "$also"; } || continue
+    n=$((n + 1)); found="$c"
+  done <<RUNS
+$cands
+RUNS
+  if [ "$n" -eq 0 ]; then
+    [ -z "$legacy" ] || return 1
+    case "$cands" in
+      *"$NL"*) c="the open runs here ($(printf '%s\n' "$cands" | names))"; run="<folder>" ;;
+      *) c="${cands##*/}"; run="${cands##*/}" ;;
+    esac
+    say "Small Council: seat $seat has no selected row in the run plan of $c, so this $kind would work off the record. Plan it first — its disposition (selected), role, context level and tool-call budget in run-plan.tsv — then council run plan check --run $run, then dispatch, and record it at once: council seat $seat running agent=<id>."
+    return 0
+  fi
+  [ "$n" -eq 1 ] || return 1                                     # which run it is for is unknown: the seat record judges
+  if why="$(check_round_refusal "$found" "$seat")"; then say "Small Council: $why"; return 0; fi
+  return 1
 }
 
 # council cap check [--session ID] [<tool>] — the agent gate's decision (hooks/agent-gate.sh): silent,
@@ -1768,12 +1851,19 @@ RUNS
 # start (the hook passes Agent, Task or Workflow), a pass also counts one agent start for the run this
 # session drives by its id, when it drives exactly one — under that run's lock, so agents started
 # together cannot all take its last place. A fault of its own never stops an agent: it returns 0, or
-# dies (stderr, nothing on stdout), which the hook lets through.
+# dies (stderr, nothing on stdout), which the hook lets through. With type=, seat= and run= after the
+# tool (the hook reads them from the call), a Small Council agent is first held to the record:
+# dispatch_refusal.
 cmd_cap_check() {
-  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed
+  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed w dtype="" dseat="" drun=""
+  [ $# -eq 0 ] || shift
+  for w in ${1+"$@"}; do
+    case "$w" in type=*) dtype="${w#type=}" ;; seat=*) dseat="${w#seat=}" ;; run=*) drun="${w#run=}" ;; esac
+  done
   home="$(council_home)"
-  [ -d "$home/runs" ] || return 0
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
+  if [ -n "$dtype" ] && dispatch_refusal "$home" "$session" "$dtype" "$dseat" "$drun"; then exit 2; fi
+  [ -d "$home/runs" ] || return 0
   runs="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' -v OFS='\t' '
     $6 != "in-progress" { next }
     ENVIRON["SID"] != "" && $8 == ENVIRON["SID"] { print $1, 1; next }
@@ -2045,14 +2135,20 @@ cmd_run_status() {
 # until of cap-allowances.tsv) lets the plan hold agent runs up to it: the extra seat their go allowed
 # gets its plan rows, and the run moves on.
 run_plan_validate() {
-  local run="$1" plan="$2" expected_mode max_cap seat_models go
+  local run="$1" plan="$2" expected_mode max_cap seat_models go full_go=1 opened
   expected_mode="$(field mode "$run/session-state.md")"
   max_cap="$(configured_agent_cap)"
   go="$(cap_allowed_until "$run")"
   seat_models="$(configured_seat_models)"
-  # A closed run already dispatched under the setting of its day; today's on/off doesn't judge it.
-  case "$(field status "$run/session-state.md")" in complete|abandoned) seat_models=closed ;; esac
-  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" GO="$go" SEAT_MODELS="$seat_models" QUIET="${QUIET:-0}" awk -F'\t' '
+  # A closed run already dispatched under the setting of its day; today's on/off doesn't judge it. An open
+  # one at Full size needs the user's own go on record: a decision since the run opened (Convene's rule —
+  # a real run went Full, 13 tasks and ~2.15M tokens, 47 s after reading it, without asking).
+  case "$(field status "$run/session-state.md")" in
+    complete|abandoned) seat_models=closed ;;
+    *) opened="$(field opened "$run/session-state.md")"
+       [ "$(decisions_since "$run" "${opened%:[0-9][0-9]}")" -gt 0 ] 2>/dev/null || full_go=0 ;;
+  esac
+  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" GO="$go" SEAT_MODELS="$seat_models" FULL_GO="$full_go" QUIET="${QUIET:-0}" awk -F'\t' '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function problem(line, msg,   k) {       # each problem once: two passes can find the same one
       k = line SUBSEP msg
@@ -2206,6 +2302,8 @@ run_plan_validate() {
       if (size == "solo" && agents != 0) problem(0, "Solo must not select delegated agents")
       if (size == "squad" && agents < 1) problem(0, "Squad needs at least one selected agent")
       if (size == "full" && agents < 4) problem(0, "Full needs at least four selected agents")
+      if (size == "full" && ENVIRON["FULL_GO"] != "1")
+        problem(0, "Full needs the user\047s explicit size-and-cost go: ask them, then record their words with council state decision=\"…\"")
       if ((verification == "independent" || verification == "adversarial") && verifiers < 1)
         problem(0, verification " verification needs a selected verifier")
       if (verification == "self" && verifiers > 0)
@@ -2236,6 +2334,69 @@ require_run_plan() {
     die "cannot $action — run-plan.tsv is missing; restore it from references/templates/run-plan.tsv"
   fi
   QUIET=1 run_plan_validate "$run" "$plan" || die "cannot $action — fix run-plan.tsv, then run: council run plan check --run ${run##*/}"
+}
+
+# The user's decisions on record from a local minute on ("" counts them all): the lines council state
+# decision= writes under "## Decisions so far", each "- <YYYY-MM-DD HH:MM>: "<their words>"".
+decisions_since() {
+  SINCE="${2:-}" awk '
+    { sub(/\r$/, "") }
+    /^## / { inside = ($0 == "## Decisions so far"); next }
+    inside && /^- [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]: / { if (substr($0, 3, 16) >= ENVIRON["SINCE"]) n++ }
+    END { print n + 0 }' "$1/session-state.md" 2>/dev/null || printf '0'
+}
+
+# An event's UTC time (2026-10-08T12:05:09Z) as this machine's local minute, the form a decision carries
+# (2026-10-08 15:05): GNU date, else BSD date; empty when neither reads it.
+utc_local_min() {
+  local s
+  s="$(date -d "$1" '+%Y-%m-%d %H:%M' 2>/dev/null)" || s=""
+  if [ -z "$s" ]; then
+    s="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" '+%s' 2>/dev/null)" && [ -n "$s" ] \
+      && s="$(date -r "$s" '+%Y-%m-%d %H:%M' 2>/dev/null)" || s=""
+  fi
+  printf '%s' "$s"
+}
+
+# Another check of a build task's work (council-implement, step 7). After a second failed verification
+# the build loop allows one clean-context diagnosis and one more attempt, else a stop and a report — a
+# real build gave a task a new lock and a third check instead. A task's checks are its verifier seat
+# verify-<n> and the re-checks verify-<n>b, c … (or the same seat started again, writing verify-<n>b.md);
+# a verdict is one of them recorded done (a repeated done is the same verdict). Starting a check after two
+# verdicts needs a diagnose-<n> seat recorded after the second, or a decision of the user's recorded after
+# it (council state decision=); after three or more, such a decision after the last. The event stream
+# orders the seats; a decision is compared by its minute, in local time. Prints why, and returns 0, when
+# the check must wait; 1 otherwise — another mode, another seat, or a run with no stream.
+check_round_refusal() {
+  local run="$1" slug="$2" base task verdicts n vseq since
+  case "$slug" in verify-?*) ;; *) return 1 ;; esac
+  [ "$(field mode "$run/session-state.md")" = council-implement ] && [ -f "$run/events.tsv" ] || return 1
+  base="$slug"
+  case "$slug" in       # verify-6b is task 6's re-check while verify-6 is on record, else task 6b's own first check
+    verify-?*[bcdefghijklmnopqrstuvwxyz]) [ -z "$(seat_field "$run" "${slug%?}" 2)" ] || base="${slug%?}" ;;
+  esac
+  task="${base#verify-}"
+  verdicts="$(B="$base" awk -F'\t' '
+    function mine(s,   b) { b = ENVIRON["B"]
+      return s == b || (length(s) == length(b) + 1 && index(s, b) == 1 && index("bcdefghijklmnopqrstuvwxyz", substr(s, length(s))) > 0) }
+    NR > 1 && $4 == "seat.updated" && mine($5) { if ($6 == "done" && st[$5] != "done") { n++; seq = $2; at = $3 }; st[$5] = $6 }
+    END { if (n) print n "\t" seq "\t" at }' "$run/events.tsv" 2>/dev/null)"
+  n="${verdicts%%"$TAB"*}"
+  [ "${n:-0}" -ge 2 ] 2>/dev/null || return 1
+  vseq="${verdicts#*"$TAB"}"; since="$(utc_local_min "${vseq#*"$TAB"}")"; vseq="${vseq%%"$TAB"*}"
+  if [ "$n" -eq 2 ] && D="diagnose-$task" S="$vseq" awk -F'\t' 'NR > 1 && $4 == "seat.updated" && $5 == ENVIRON["D"] &&
+       $2 + 0 > ENVIRON["S"] + 0 && $6 != "queued" && $6 != "skipped" { f = 1; exit } END { exit !f }' "$run/events.tsv" 2>/dev/null; then
+    return 1
+  fi
+  [ "$(decisions_since "$run" "$since")" -eq 0 ] 2>/dev/null || return 1
+  if [ "$n" -eq 2 ]; then
+    printf 'cannot start %s — it would be the third check of task %s, after two verdicts. After a second failed verification the build loop allows one clean-context diagnosis, then one more attempt: plan diagnose-%s and record it (council seat diagnose-%s running agent=<id>) before this check — or, if the task already used its diagnosis, stop and report to the user. Without that, only the user'"'"'s go starts it: ask them, then record their words with council state decision="…"\n' \
+      "$slug" "$task" "$task" "$task"
+  else
+    printf 'cannot start %s — task %s has %s verdicts, and after the second the build loop allows one diagnosis and one more attempt: stop and report to the user. Another check needs their go: ask them, then record their words with council state decision="…"\n' \
+      "$slug" "$task" "$n"
+  fi
+  return 0
 }
 
 cmd_run_plan() {
@@ -2416,8 +2577,10 @@ cmd_tui() {
 
 # The run's status in plain words (scripts/status.py): the one reading the chat widget (--widget),
 # the short summary (the default) and the cockpit's headline share. Read-only — nothing is written, so
-# it is safe beside a live run, and a widget is a snapshot that says when it was taken. It hands the
-# summary the exact command for the terminal view, for hosts that cannot show a widget.
+# it is safe beside a live run, and a widget is a snapshot that says when it was taken — but for the
+# run's card-due mark (status_nudge), which the summary, the widget and the line clear once they print:
+# the status has been read out for the user. It hands the summary the exact command for the terminal
+# view, for hosts that cannot show a widget.
 cmd_status() {
   local run py root where bash_exe
   run="$(resolve_run)" || exit 2
@@ -2438,7 +2601,8 @@ cmd_status() {
   [ "$JSON_OUT" -eq 0 ] || set -- "$@" --json
   [ "$LINE" -eq 0 ] || set -- "$@" --line
   [ "$PREVIEW" -eq 0 ] || set -- "$@" --preview
-  "$@"
+  "$@" || return
+  [ "$JSON_OUT" -eq 1 ] || [ ! -f "$run/card-due" ] || rm -f "$run/card-due" 2>/dev/null || :
 }
 
 # The desktop pet (scripts/pet.py), only on the user's request: a small window that shows how this
@@ -6835,7 +6999,8 @@ council — the Small Council's helper (bash + git)
                                          close the run; then a reminder to show the user its closing card
   council run resume [--run <folder>]    carry on with an open run (a paused one too) in this session:
                                          in progress again, this session recorded as its driver
-  council run plan [check|show]          validate the run plan · show its decisions in plain language
+  council run plan [check|show]          validate the run plan (Full size only once a decision of the
+                                         user's is on record) · show its decisions in plain language
   council run events [show|check|repair] inspect, validate or mend (a torn last line) the run's event stream
   council run audit [--transcript <session .jsonl>]
                                          after close: check the run against the method from its
@@ -6850,7 +7015,9 @@ council — the Small Council's helper (bash + git)
                                          record a worker: queued|running|done|failed|blocked|skipped;
                                          tokens= and agents= (a Workflow's agent count) come with the
                                          finished run's usage report, once per agent run; the run's first
-                                         dispatch also prints a reminder to show the user the run's status
+                                         dispatch also prints a reminder to show the user the run's status;
+                                         in a build, a task's third check (verify-<n>c, or verify-<n>
+                                         again) starts only after a diagnose-<n> seat or the user's go
   council cap                            agent runs used against the cap, tokens against the ceiling, the
                                          user's go on record, and whether new agents are stopped now
   council cap allow <n> --user-said "…"  the user's go past the cap or ceiling, in their words: n more
@@ -6858,10 +7025,12 @@ council — the Small Council's helper (bash + git)
   council run turn-end --session ID      the turn-end hook's decision (hooks/turn-end.sh): records that
                                          a run this session drives waits on the user, and once per wait
                                          exits 2 with the owner's alert to send
-  council cap check [--session ID] [<tool>]
+  council cap check [--session ID] [<tool> [type=<agent type>] [seat=<slug>] [run=<folder>]]
                                          the agent gate's decision (hooks/agent-gate.sh): exit 2 and the
                                          reason while a run this session may be driving is stopped; with
-                                         the tool about to start, a pass counts it as an agent start
+                                         the tool about to start, a pass counts it as an agent start; a
+                                         council-worker or council-verifier (type=) is refused with no open
+                                         run for it, or for a seat (seat=) its plan doesn't select
   council correct <seat> tokens=N agents=N [unrecorded=yes] evidence="<source>"
                                          lay an exact, evidence-backed figure over a seat's record
                                          (or add an agent run the record missed); seats.tsv keeps
@@ -7068,11 +7237,13 @@ main() {
                check) takes_flags "cap check" session
                       [ -z "$RUN_ARG" ] || die "cap check looks at every in-progress run this session may be driving; it does not take --run"
                       case "${1:-}" in
-                        Agent|Task|Workflow) [ $# -eq 1 ] || no_words "cap check" "${@:2}" ;;
+                        Agent|Task|Workflow) [ $# -eq 1 ] || for w in "${@:2}"; do
+                                               case "$w" in type=*|seat=*|run=*) ;; *) no_words "cap check" "$w" ;; esac
+                                             done ;;
                         *) no_words "cap check" ${1+"$@"} ;;
                       esac
                       cmd_cap_check ${1+"$@"} ;;
-               *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool>]" ;;
+               *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool> [type=… seat=… run=…]]" ;;
              esac ;;
     route)   sub="${1:-}"; [ $# -eq 0 ] || shift
              case "$sub" in

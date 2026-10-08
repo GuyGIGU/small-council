@@ -903,7 +903,9 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               len(cap_items) == 1 and cap_items[0]["severity"] == 2 and "41 agent runs, over its limit of 10" in cap_items[0]["text"]
               and "(limit 10)" in passing["usage"]["agent_runs_text"] + passing["usage"]["text"],
               (passing["attention"], passing["usage"]))
+        due = (run / "card-due").is_file()               # the first dispatch's card, still owed
         before = fingerprint(run)
+        before.pop("card-due", None)
         code, text_out, err = council(repo, "status")
         code_w, widget_out, err_w = council(repo, "status", "--widget")
         code_j, json_out, err_j = council(repo, "status", "--json")
@@ -924,7 +926,9 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("status: project off switch makes --line print nothing", code_l == 0 and line_out == "",
               (code_l, line_out, err_l))
         write(config_path, original_config)
-        check("status: reading a run — summary, widget or data — writes nothing", fingerprint(run) == before, "changed")
+        check("status: reading a run — summary, widget or data — writes nothing but clearing the card-due mark its first "
+              "dispatch left (the status has now been read out)",
+              fingerprint(run) == before and due and not (run / "card-due").exists(), "changed")
         refusals = [(council(repo, "status", *w), want) for w, want in (
             (("--widget", "--json"), "not together"), (("--line", "--json"), "not together"),
             (("--preview",), "use it with --widget"), (("now",), "doesn't take"),

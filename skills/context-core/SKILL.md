@@ -148,7 +148,7 @@ live at a legacy path; the config's Memory section says where.
 
 Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
 
-**The run's status.** Show it twice — at the run's first dispatch and after `council run close` —
+**The run's status.** Show it twice — at the run's first dispatch (once per run) and after `council run close` —
 as the helper's reminder then says: `council status --widget` to a `show_widget` tool (deferred: search
 for it first; call its `read_me` once), else relay `council status`. Otherwise only when the user
 asks — never a card per progress line. `council pet` opens the desktop pet, only when the user asks.

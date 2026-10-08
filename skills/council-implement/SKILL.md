@@ -144,14 +144,17 @@ the converge pass starts, `council state phase=challenge`.
    with `council seat verify-<n> …`; one stopped at its turn limit is resumed with SendMessage
    ("write your file now"), never re-dispatched. Then act on the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
-     `c`), so the first verdict stays on disk.
+     `c`), so the first verdict stays on disk. A fix that would add a task or a new mechanism — a
+     lock, a guard, a file, another re-check round — gets one line to the user first.
    - **A second failed verification** → a **clean-context diagnosis** if this task has not already
      used its one diagnosis worker for a gate failure; otherwise stop and report. The worker is read-only.
      Its dispatch message is its whole brief — the task and its Done-when, both verdict files, the
      diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
      candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it
      (`council run plan check`), then `council seat diagnose-<n> …`. Then one more attempt; still
-     failing → stop and report.
+     failing → stop and report. A third check is refused (by `council seat`, and by the agent gate
+     before it) until `diagnose-<n>` is on record after the second verdict, or the user's go is
+     (`council state decision="…"`).
    - **SCOPE-CREEP** → revert the extra change.
    - **CANNOT VERIFY** → add the missing check, or record why it can't exist.
    - **A finding that turns out to be wrong** → don't "fix" it; log it as refuted, with evidence.

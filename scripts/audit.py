@@ -624,11 +624,27 @@ def transcript(run, path, say):
         return False
 
     # The status card at the first dispatch: between the first agent sent (or recorded) and its first result.
+    # It is owed once per run, at the run's first dispatch (context-core, "Talking to the user"): a run carried
+    # on in a later session made that dispatch in an earlier one, so a transcript that didn't make it owes none.
     label = "Status card at the first dispatch"
     opened_at = next((n for n, t, block, found, _ in calls if any(i["sub"] == "run open" for i in found)), 0)
     sent = [n for n, t, block, found, _ in calls if n >= opened_at and (block.get("name") in ("Agent", "Task", "Workflow")
             or any(i["sub"] == "seat" and re.search(r"\bseat\s+\S+\s+(running|queued)\b", i["text"]) for i in found))]
-    if not sent:
+    starts = [(stamp(r.get("at")), r.get("session", "")) for r in tsv(run.folder / "agent-starts.tsv")
+              if not r.get("tool", "").startswith("before:")]          # the gate's starts name their session
+    starts += [(stamp(r.get("at")), "") for r in run.usage if r.get("kind") == "dispatched"]
+    first_at, first_by = min([s for s in starts if s[0]], key=lambda s: (s[0], s[1] in ("", "-")), default=(None, ""))
+    began = next((t for t, _, _ in part if t), None)
+    if first_by not in ("", "-") and sessions and first_by not in sessions:
+        elsewhere = "session " + first_by
+    elif first_at and began and first_at < began:
+        elsewhere = "an earlier session"
+    else:
+        elsewhere = ""
+    if elsewhere:
+        say(PASS, label, "not this transcript's to show: the run's first dispatch, at %s, was made in %s — the card "
+            "is owed once per run" % (clock(first_at), elsewhere))
+    elif not sent:
         say(PASS, label, "no agent was dispatched, so none was due")
     else:
         done = [n for n, t, block, found, _ in calls if n > sent[0]
