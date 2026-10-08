@@ -33,8 +33,7 @@ Write <abs run>/seats/<slug>.md, then return one line.
   objective, slice, hard constraints or reference docs.
   With no pack, dispatch still uses the complete brief. Do not imply that omitted paths are safe.
 
-- **Plan before you dispatch:** the agent gate refuses a council agent with no open run for it, or for
-  a seat the plan doesn't select.
+- The agent gate refuses a council agent with no open run or plan row.
 
 - **Right after dispatching, two steps, in order:**
   1. **Record each worker:** `council seat <slug> running agent=<agentId>` — the id the Agent or
