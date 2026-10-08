@@ -17,7 +17,7 @@
 # it runs just before the very `council run open` call, so that call finds proof the hooks run here,
 # after /reload-plugins too.
 #
-# Fast, as it runs before every Bash call: one cat, then shell patterns let through every command that
+# Fast, as it runs before every Bash call: one tr, then shell patterns let through every command that
 # can't match (no "council", or no pipe); only the rest reach one awk pass, which reads
 # tool_input.command from the JSON and walks it once as the shell would: quotes, escapes, $( ),
 # backticks, heredocs, comments, redirects, groups, loops and case patterns. macOS awk re-measures the
@@ -25,7 +25,8 @@
 #
 # Portability: bash 3.2 (macOS), Git Bash on Windows, Linux — no jq, no Python.
 
-input="$(cat 2>/dev/null)" || exit 0
+# tr drops NUL bytes, which JSON can't hold: bash 4.4+ would warn about them on stderr.
+input="$(tr -d '\000' 2>/dev/null)" || exit 0
 case "$input" in *council*) ;; *) exit 0 ;; esac   # one pattern each: several stars in one can backtrack
 
 # The session's mark, from the id near the start of the input (Claude Code writes it first; a pattern
