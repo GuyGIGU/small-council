@@ -4458,16 +4458,16 @@ def runs_stage_order_and_close(tmp):
     # The close reads the run back: every FAIL line of council run audit, whole, on stdout with the close —
     # but the closing card, which comes after the close, is left to a later audit.
     cfg = os.path.join(tmp, "order-config")
-    session = "sess-close-audit-1"
-    au, aur = fresh("order-audit", "council-review", selected=("chair", "hunt"), env={"CLAUDE_CODE_SESSION_ID": session})
+    close_sid = "sess-close-audit-1"
+    au, aur = fresh("order-audit", "council-review", selected=("chair", "hunt"), env=session(close_sid))
     opened = datetime.strptime(events(aur)[0][2], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     steps(au, "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn")
     def line(at, kind, content):
-        return json.dumps({"type": kind, "timestamp": at.strftime("%Y-%m-%dT%H:%M:%S.000Z"), "sessionId": session,
+        return json.dumps({"type": kind, "timestamp": at.strftime("%Y-%m-%dT%H:%M:%S.000Z"), "sessionId": close_sid,
                            "isSidechain": False, "message": {"role": kind, "content": content}}) + "\n"
     def use(n, command):
         return [{"type": "tool_use", "id": "t%d" % n, "name": "Bash", "input": {"command": command, "description": "x"}}]
-    write(os.path.join(cfg, "projects", "eval-project", session + ".jsonl"),
+    write(os.path.join(cfg, "projects", "eval-project", close_sid + ".jsonl"),
           line(opened - timedelta(seconds=5), "user", "/council-review the branch")
           + line(opened - timedelta(seconds=1), "assistant", use(1, "council run open council-review"))
           + line(opened, "user", [{"type": "tool_result", "tool_use_id": "t1", "content": aur}])
@@ -5048,7 +5048,7 @@ def gate_time_limits(tmp):
     code, run, _ = council(repo, "run", "open", "council-implement")
     run = run.strip()
     write_plan(run)
-    council(repo, "state", "phase=build", "next=task 1: stop the hang")
+    council(repo, "state", "phase=prepare"); council(repo, "state", "phase=build", "next=task 1: stop the hang")
     hang = 'echo started; (while :; do echo beat >> beat.txt; sleep 0.2; done) & sleep 40; echo never'
     began = time.monotonic()
     code, out, err = council(repo, "gate", "probe-1", "--timeout", "2", "--", hang)
@@ -5995,7 +5995,7 @@ def runs_third_check_needs_diagnosis(tmp):
     # attempt, else a stop and a report. A real build gave a task a new lock and a third check instead.
     tc = new_repo(tmp, "third-check")
     write(os.path.join(tc, ".council", "council.config.md"), "# Council config\n- agent cap: 20\n")
-    _, out, _ = council(tc, "run", "open", "council-implement", env={"CLAUDE_CODE_SESSION_ID": "sT"})
+    _, out, _ = council(tc, "run", "open", "council-implement", env=session("sT"))
     trun = out.strip().splitlines()[-1]
     tname = os.path.basename(trun)
     write_plan(trun, selected=("verify-6", "verify-6b", "verify-6c", "verify-6d", "diagnose-6", "verify-7", "verify-7b",
@@ -6062,7 +6062,7 @@ def runs_third_check_needs_diagnosis(tmp):
     code, out, err = council(tc, "seat", "verify-5", "running", "agent=v54")
     check("seat: only verdicts count — an interrupted agent and a repeated report don't, so the check after two "
           "verdicts is the one refused, not before", code == 2 and "third check of task 5" in err, out + err)
-    _, out, _ = council(tc, "run", "open", "council-review", "--alongside", env={"CLAUDE_CODE_SESSION_ID": "sT"})
+    _, out, _ = council(tc, "run", "open", "council-review", "--alongside", env=session("sT"))
     rrun = out.strip().splitlines()[-1]
     write_plan(rrun, selected=("verify-1",))
     write(os.path.join(rrun, "verify-1.md"), VERDICT_FILE)
@@ -6094,7 +6094,7 @@ def runs_dispatch_record(tmp):
           code == 0 and not out, out + err)
     code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", "type=general-purpose", "seat=hunt")
     check("cap check: an ordinary agent is never held to the record", code == 0 and not out, out + err)
-    _, out, _ = council(dr, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sD"})
+    _, out, _ = council(dr, "run", "open", "council-review", env=session("sD"))
     drun = out.strip().splitlines()[-1]
     dname = os.path.basename(drun)
     write_plan(drun, selected=("hunt",))
@@ -6118,9 +6118,9 @@ def runs_dispatch_record(tmp):
     code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-plan", "run=" + dname)
     check("cap check: an agent for a paused run is refused, naming the resume", code == 2 and "which is paused" in out
           and "council run resume --run " + dname in out, out + err)
-    council(dr, "run", "close", "--run", dname)
+    council(dr, "run", "close", "--run", dname, "--status", "abandoned")      # complete would need Deliver first
     code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-plan", "run=" + dname)
-    check("cap check: an agent for a closed run is refused — its agents are done", code == 2 and "which is closed (complete)" in out,
+    check("cap check: an agent for a closed run is refused — its agents are done", code == 2 and "which is closed (abandoned)" in out,
           out + err)
     code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt", "run=" + dname)
     check("cap check: ... a council-worker too, even for a seat its plan selected", code == 2 and "which is closed" in out, out + err)
@@ -6137,7 +6137,7 @@ def runs_status_card_owed_once(tmp):
     # council status call for the run clears it, and the turn-end hook sends the Chair back once while it is due.
     sc = new_repo(tmp, "card-due")
     write(os.path.join(sc, ".council", "council.config.md"), "# Council config\n")
-    _, out, _ = council(sc, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sK"})
+    _, out, _ = council(sc, "run", "open", "council-review", env=session("sK"))
     srun = out.strip().splitlines()[-1]
     sname = os.path.basename(srun)
     write_plan(srun, selected=("w1", "w2"))
@@ -6158,7 +6158,7 @@ def runs_status_card_owed_once(tmp):
     check("card: --json is data, not the card — the mark stays", os.path.exists(due))
     code, out, err = council(sc, "status")
     check("card: council status for the run clears the mark", code == 0 and not os.path.exists(due), out + err)
-    _, out, _ = council(sc, "run", "open", "council-review", "--alongside", env={"CLAUDE_CODE_SESSION_ID": "sK"})
+    _, out, _ = council(sc, "run", "open", "council-review", "--alongside", env=session("sK"))
     srun2 = out.strip().splitlines()[-1]
     sname2 = os.path.basename(srun2)
     write_plan(srun2, selected=("w1",))
