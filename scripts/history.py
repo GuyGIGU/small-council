@@ -162,7 +162,7 @@ def history(home, outcomes=True):
                     preservation[0] += 1
                     preservation[1] += gate["exit"] == 0
                     continue
-                proofs[kind][1] += gate["exit"] != 0
+                proofs[kind][1] += gate["exit"] != 0 and not (kind == "before" and gate.get("void"))
                 continue
             entry = gates.setdefault(gate["name"], {"runs": set(), "failed_runs": set()})
             entry["runs"].add(snap["run"]["id"])

@@ -254,7 +254,7 @@ check("helper and Challenge: refusals must not be hidden in output pipelines —
       "council command piped through head, tail or grep, and to redirect it to a file instead",
       "pipe a council command through head, tail or grep (a hook refuses it)" in flat(core)
       and "redirect it to a file and read that" in flat(core)
-      and "`| tail`/`| head`" in doctrine["08-challenge.md"] and "test their exit status" in doctrine["08-challenge.md"])
+      and "`| tail`/`| head`/`| grep`" in doctrine["08-challenge.md"] and "test their exit status" in doctrine["08-challenge.md"])
 check("context-core: a Solo run selects the memory in scope too",
       "council memory select" in core.split("A **Solo** run", 1)[-1].split("\n\n", 1)[0])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
@@ -272,7 +272,7 @@ check("08-challenge: one verify-<n>.md per verifier", "verify-<n>.md" in doctrin
 check("10-learn: closes the run", "council run close" in doctrine["10-learn.md"])
 check("10-learn: the Chair audits its closed run", "council run audit --run <folder>" in doctrine["10-learn.md"])
 check("10-learn: a paused run comes back with council run resume", "council run resume" in doctrine["10-learn.md"])
-check("10-learn: 'stop for tonight' mid-run closes the run paused, never complete (Guy's ruling, 2026-10-08)",
+check("10-learn: 'stop for tonight' mid-run closes the run paused, never complete (the owner's ruling, 2026-10-08)",
       '"stop for tonight"' in doctrine["10-learn.md"] and "`--status paused`" in doctrine["10-learn.md"])
 check("10-learn: the close runs the audit itself, and the Chair tells the user each FAIL",
       "prints each FAIL of `council run audit --run <folder>`" in doctrine["10-learn.md"]
@@ -398,7 +398,7 @@ for label, text, needles in [
                          "Left open:", "No commit, push or PR question while anything is left open", "data-loss hazard defaults to fix now",
                          "left on the user's ruling", 'council state phase=deliver skip="blocked: task <n>"',
                          "Checked by machine:", "Works?:", "guardrails.md", "council check", "gates/baseline/",
-                         "older Gates layout"]),
+                         "older Gates layout", "Draft any PR text as `<run>/pr-body.md`, and open the PR from it. Then `council check`"]),
     ("research", research, ["scout", "Strength:"]),
     ("postgame", skill["council-postgame"], ["ask.md", "council ask save", "council run open council-postgame", "Ruled out",
                                              "council-implement", "council-plan", "never the plan", "quote:",

@@ -17,7 +17,7 @@
 set -u
 unset EVENTS_LOST CLOSING          # internal: set only by run close for its own state write, never inherited
 
-COUNCIL_VERSION="0.20.1"
+COUNCIL_VERSION="0.21.0"
 COUNCIL_MEMORY_SIZE_LIMIT=25600  # bytes: about 25 KB of project memory is the expected upper bound
 COUNCIL_NEXT_AT_OPEN="size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
 COUNCIL_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
@@ -1052,7 +1052,8 @@ cmd_state() {
     case "$key" in ''|*[!abcdefghijklmnopqrstuvwxyz0123456789-]*) die "bad key: $key (lowercase letters, digits, dashes)" ;; esac
     case "$kv" in
       status=*)
-        case "${kv#*=}" in in-progress|paused|complete|abandoned) ;; *) die "status must be in-progress, paused, complete or abandoned" ;; esac ;;
+        case "${kv#*=}" in in-progress|paused|complete|abandoned) ;; *) die "status must be in-progress, paused, complete or abandoned" ;; esac
+        [ "${kv#*=}" != complete ] || [ "${CLOSING:-}" = 1 ] || die "status=complete is the close's to set — close the run with: council run close" ;;
       closed=*)
         [ "${CLOSING:-}" = 1 ] || die "closed= is the close's own stamp — close the run with: council run close" ;;
       decision=*)

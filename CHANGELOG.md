@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.21.0] — 2026-10-08
 
 **TL;DR:** the rules a real run broke while they sat in prose are now enforced. A hook refuses
 `council … | head/tail/grep`; a run can't open in a session whose hooks never ran; gates get a time
@@ -19,17 +19,23 @@ no commit or PR question comes while anything is.
 - SessionStart warns a session that sits in a linked worktree while an in-progress run's code is elsewhere.
 - `council gate` has a time limit. It is the largest of 3× the gate's green baseline, the config's `- gate time limit:` and 120 s; a check given after `--` defaults to 9 minutes; `--timeout` overrides. A hang stops with exit 124, "TIMED OUT". `--invalid "<why>"` marks a red that proves nothing, and `council check` reads it as NO-PROOF-YET.
 - The agent gate holds council-worker and council-verifier dispatches to the record. It refuses when no run is open, when the run is closed or paused, when the seat isn't planned, and on a build task's third check without a diagnosis or the user's go. Ordinary agents and Workflows are never judged.
-- On a just-me council, `council check` in a build flags council ids in what the build added and in its PR body: `.council/`, run folders, `ruling n`, `verify-n`, AP/EC/D/F ids. It also notes a task proved only by run-folder scripts.
+- On a just-me council, `council check` in a build flags council ids in what the build added and in its PR body: `.council/`, run folders, `ruling n`, `verify-n`, AP/EC/D/F ids. It also notes a task proved only by run-folder scripts. council-implement drafts the PR body as `<run>/pr-body.md` before that check, and opens the PR from it.
 - `council run close` prints every FAIL line of the run's audit.
 
 ### Changed
 
-- `council run close --status complete` is refused before Deliver, and after a step back from Deliver until Deliver comes again. A run the user stops for the night closes `--status paused`.
+- `council run close --status complete` is refused before Deliver, and after a step back from Deliver until Deliver comes again. A run the user stops for the night closes `--status paused`. `council state status=complete` is refused: only the close sets it, so its checks and audit can't be stepped round.
 - `council state phase=` refuses to pass over a stage the mode must enter unless `skip="<why>"` is given; the phase event records the reason.
 - `council run plan check` refuses a Full plan until a decision of the user's since the run opened is on record.
 - The first status card is owed once per run. The Stop hook sends the Chair back while it is due, and the audit judges the run's first dispatch.
 - council-implement's receipt adds `Left open:`. No commit, push or PR question while anything is left open, and that question comes last, on its own.
 - The run audit counts helper calls in loops, groups and `bash "$C" …`, and reads only each run's own part of a session that drove several.
+
+### Fixed
+
+- The marketplace manifest has a description, so `claude plugin validate . --strict` passes again; `scripts/quick_validate.py` checks for it.
+- `council tui` and `council history` read a before-check that timed out, was marked invalid or never ran as no proof yet, as `council check` does, never as failed as planned.
+- Stage 8 names `| grep` beside `| tail` and `| head` as a pipe that can swallow a refusal.
 
 ### Upgrade notes
 

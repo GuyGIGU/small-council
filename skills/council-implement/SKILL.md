@@ -220,8 +220,9 @@ met, with evidence — written into the log's `## Converge` table.
 - If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
   reported, never folded into a green receipt. Without Python, audit the log's attempts and
   saved gate outputs by hand.
-- Then `council check`. It checks the saved before/after gates against their declared proof mode
-  (`references/build-proof.md`) and names the saved test when it can. Copy each verdict and its
+- Draft any PR text as `<run>/pr-body.md`, and open the PR from it. Then `council check`. It checks
+  the saved before/after gates against their declared proof mode (`references/build-proof.md`) and
+  names the saved test when it can. Copy each verdict and its
   full note into the `## Converge` table's **Proof** column: `ok` shows a change, `preserved` shows
   the checked invariants held on both versions. Broken proof is fixed or reported; no proof is
   reported as NO PROOF. Passing invariants alone never establish new behaviour.

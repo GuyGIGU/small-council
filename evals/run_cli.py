@@ -2619,7 +2619,11 @@ def runs_closed_run_stays_closed(tmp):
     check("state closed=: the close's own stamp is refused from anywhere but the close",
           code == 2 and "closed:" not in read(os.path.join(hrun, "session-state.md")), out + err)
     to_deliver(hand)
-    council(hand, "state", "status=complete")
+    hst = os.path.join(hrun, "session-state.md")
+    code, out, err = council(hand, "state", "status=complete")
+    check("state status=complete: refused from anywhere but the close, even at Deliver — it would skip the close's checks and audit",
+          code == 2 and "council run close" in err and "status: in-progress" in read(hst), out + err)
+    write(hst, read(hst).replace("status: in-progress\n", "status: complete\n", 1))   # as an older helper or a hand edit left it
     code, out, err = council(hand, "run", "close", "--run", hname)
     check("run close: a run set complete by hand, never closed, still gets its real close — its time, ledger rows and close event",
           code == 0 and re.search(r"^closed: \S", read(os.path.join(hrun, "session-state.md")), re.MULTILINE) is not None
@@ -2694,7 +2698,7 @@ def runs_close_stamp_from_header(tmp):
     council(nb, "seat", "w1", "done", "agent=a1", "tokens=20000")
     append(st, "## Notes\nclosed: when the owner says so\n")
     to_deliver(nb)
-    council(nb, "state", "status=complete")
+    write(st, read(st).replace("status: in-progress\n", "status: complete\n", 1))   # as an older helper or a hand edit left it
     code, out, err = council(nb, "run", "close", "--run", name)
     header = read(st).split("\n## ", 1)[0]
     check("run close: a 'closed:' line in the notes is not the close stamp — the run still gets its real close",
@@ -5084,7 +5088,7 @@ def gate_time_limits(tmp):
 
     # The limit with no --timeout: the largest of three times the gate's own green baseline, the config's
     # gate time limit and 120 s; with neither, 9 minutes for a check given its command, 30 for a configured
-    # gate. HandMath's passing probes ran 194, 328 and 352 s; its hangs 633 and 672 s.
+    # gate. A real project's passing probes ran 194, 328 and 352 s; its hangs 633 and 672 s.
     def limit(run_dir, name):
         return json.loads(read(os.path.join(run_dir, "gates", name + ".json")) or "{}").get("limit")
     council(repo, "gate", "--all", "--at", "grounding")
@@ -5099,7 +5103,7 @@ def gate_time_limits(tmp):
     council(repo, "gate", "probe-2", "--", "true")
     check("gate time limit: three times the gate's own green baseline (50 s → 150 s)",
           limit(run, "quick") == 150, read(os.path.join(run, "gates", "quick.json")))
-    check("gate time limit: a check given its command borrows no other gate's baseline — 9 minutes, past HandMath's "
+    check("gate time limit: a check given its command borrows no other gate's baseline — 9 minutes, past a real project's "
           "352 s probe (3× its 65 s baseline gate would have stopped it at 195 s)",
           limit(run, "probe-2") == 540, read(os.path.join(run, "gates", "probe-2.json")))
     cfg1 = os.path.join(repo, ".council", "council.config.md")
@@ -5283,7 +5287,7 @@ def check_just_me_hygiene(tmp):
         "func trim(_ D: Int) -> Int { return D-1 }",                          # 7: code, not an id
         "let F = 3; let x = F-1 // the last index",                           # 8: code, and a comment with no id
         "// Decided in D-2: pages are saved one file each",                   # 9: hit
-        "/* see .council/runs/2026-10-08-132605-implement/verify-3.md */",    # 10: hit
+        "/* see .council/runs/2026-01-02-030405-implement/verify-3.md */",    # 10: hit
         "// Step 1: load the pages. Task { await load() }",                   # 11: no
         'let url = "https://example.com/D-1"',                                # 12: no (a URL, not a comment)
         'func verifyEmail() -> String { "verify-email" }',                    # 13: no
