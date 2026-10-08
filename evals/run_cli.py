@@ -5082,42 +5082,65 @@ def gate_time_limits(tmp):
     check("gate --timeout: minutes are read as minutes (2m is 120 s)",
           code == 0 and json.loads(read(os.path.join(run, "gates", "probe-m.json"))).get("limit") == 120, out + err)
 
-    # The limit with no --timeout: three times the gate's own baseline, at least 120 s; for a check given its
-    # command, which has no baseline of its own, three times the run's slowest baseline gate; else the config's
-    # gate time limit; else 30 minutes.
+    # The limit with no --timeout: the largest of three times the gate's own green baseline, the config's
+    # gate time limit and 120 s; with neither, 9 minutes for a check given its command, 30 for a configured
+    # gate. HandMath's passing probes ran 194, 328 and 352 s; its hangs 633 and 672 s.
+    def limit(run_dir, name):
+        return json.loads(read(os.path.join(run_dir, "gates", name + ".json")) or "{}").get("limit")
     council(repo, "gate", "--all", "--at", "grounding")
     code, out, err = council(repo, "gate", "quick")
-    check("gate time limit: a gate with a quick baseline gets the 120 s floor",
-          code == 0 and json.loads(read(os.path.join(run, "gates", "quick.json"))).get("limit") == 120, out + err)
+    check("gate time limit: a gate with a quick green baseline gets the 120 s floor",
+          code == 0 and limit(run, "quick") == 120, out + err)
     write(os.path.join(run, "gates", "baseline", "quick.json"),
           '{"gate": "quick", "command": "echo quick-ok", "exit": 0, "seconds": 50, "when": "2026-10-08 10:00:00"}\n')
     write(os.path.join(run, "gates", "baseline", "slow.json"),
-          '{"gate": "slow", "command": "x", "exit": 0, "seconds": 70, "when": "2026-10-08 10:00:00"}\n')
+          '{"gate": "slow", "command": "x", "exit": 0, "seconds": 65, "when": "2026-10-08 10:00:00"}\n')
     council(repo, "gate", "quick")
     council(repo, "gate", "probe-2", "--", "true")
-    check("gate time limit: three times the gate's own baseline (50 s → 150 s)",
-          json.loads(read(os.path.join(run, "gates", "quick.json"))).get("limit") == 150,
-          read(os.path.join(run, "gates", "quick.json")))
-    check("gate time limit: a check given its command gets three times the run's slowest baseline gate (70 s → 210 s)",
-          json.loads(read(os.path.join(run, "gates", "probe-2.json"))).get("limit") == 210,
-          read(os.path.join(run, "gates", "probe-2.json")))
+    check("gate time limit: three times the gate's own green baseline (50 s → 150 s)",
+          limit(run, "quick") == 150, read(os.path.join(run, "gates", "quick.json")))
+    check("gate time limit: a check given its command borrows no other gate's baseline — 9 minutes, past HandMath's "
+          "352 s probe (3× its 65 s baseline gate would have stopped it at 195 s)",
+          limit(run, "probe-2") == 540, read(os.path.join(run, "gates", "probe-2.json")))
+    cfg1 = os.path.join(repo, ".council", "council.config.md")
+    write(cfg1, read(cfg1).replace("## Gates", "## Run preferences\n- gate time limit: 20m\n\n## Gates"))
+    council(repo, "gate", "quick")
+    council(repo, "gate", "probe-2b", "--", "true")
+    check("gate time limit: the config line, added mid-run, raises a gate past 3× its baseline (20m → 1200 s)",
+          limit(run, "quick") == 1200 and limit(run, "probe-2b") == 1200, read(os.path.join(run, "gates", "quick.json")))
+    write(cfg1, read(cfg1).replace("- gate time limit: 20m", "- gate time limit: 2m"))
+    council(repo, "gate", "quick")
+    check("gate time limit: a config line below 3× the baseline lowers nothing (2m, 50 s baseline → 150 s)",
+          limit(run, "quick") == 150, read(os.path.join(run, "gates", "quick.json")))
+    write(cfg1, read(cfg1).replace("- gate time limit: 2m", "- gate time limit: 20m"))
+    council(repo, "gate", "probe-2c", "--timeout", "90", "--", "true")
+    check("gate time limit: --timeout wins over a baseline and the config", limit(run, "probe-2c") == 90,
+          read(os.path.join(run, "gates", "probe-2c.json")))
     other = small_council_repo(tmp, "timelimit-config",
         "| quick | `echo quick-ok` | grounding, verify | yes | ok | `true` | none | - |\n")
     cfg = os.path.join(other, ".council", "council.config.md")
     code, orun, _ = council(other, "run", "open", "council-review")
     orun = orun.strip()
     council(other, "gate", "probe-3", "--", "true")
-    check("gate time limit: with no baseline and nothing configured, 30 minutes",
-          json.loads(read(os.path.join(orun, "gates", "probe-3.json"))).get("limit") == 1800,
-          read(os.path.join(orun, "gates", "probe-3.json")))
+    council(other, "gate", "quick")
+    check("gate time limit: with no baseline and nothing configured, 9 minutes for a check given its command and "
+          "30 for a configured gate",
+          limit(orun, "probe-3") == 540 and limit(orun, "quick") == 1800,
+          read(os.path.join(orun, "gates", "probe-3.json")) + read(os.path.join(orun, "gates", "quick.json")))
+    write(os.path.join(orun, "gates", "baseline", "quick.json"),
+          '{"gate": "quick", "command": "echo quick-ok", "exit": 1, "seconds": 0, "when": "2026-10-08 10:00:00"}\n')
+    council(other, "gate", "quick")
+    check("gate time limit: a baseline that was red (it stopped at once) sets no limit — the default stands, not 120 s",
+          limit(orun, "quick") == 1800, read(os.path.join(orun, "gates", "quick.json")))
     write(cfg, read(cfg).replace("## Gates", "## Run preferences\n- gate time limit: 7m\n\n## Gates"))
     council(other, "gate", "probe-4", "--", "true")
-    check("gate time limit: with no baseline, the config's '- gate time limit:' (7m → 420 s)",
-          json.loads(read(os.path.join(orun, "gates", "probe-4.json"))).get("limit") == 420,
-          read(os.path.join(orun, "gates", "probe-4.json")))
+    council(other, "gate", "quick")
+    check("gate time limit: with no green baseline, the config's '- gate time limit:' (7m → 420 s)",
+          limit(orun, "probe-4") == 420 and limit(orun, "quick") == 420,
+          read(os.path.join(orun, "gates", "probe-4.json")) + read(os.path.join(orun, "gates", "quick.json")))
     code, out, err = council(other, "gate", "probe-5", "--timeout", "1", "--", "sleep 20")
     check("gate time limit: --timeout wins over the config",
-          code == 124 and json.loads(read(os.path.join(orun, "gates", "probe-5.json"))).get("limit") == 1, out + err)
+          code == 124 and limit(orun, "probe-5") == 1 and '"- gate time limit:"' in out, out + err)
 
     if os.name != "nt":
         # The helper killed outright mid-gate: its watchdog, in a group of its own, still stops the gate at
@@ -5217,8 +5240,10 @@ def gate_invalid_proof(tmp):
 @part("requests")
 def check_just_me_hygiene(tmp):
     """On a just-me council nothing teammates read may cite the council (references/sharing.md). A real build
-    left "(ruling 1)" in a Swift comment. council check reads the change's added lines, its commit messages and
-    a PR body drafted in the run, and names each council reference; ordinary code that looks alike is left be."""
+    left "(ruling 1)" in a Swift comment. A build's council check reads what that build added — its added lines,
+    files it left untracked, commit messages not yet pushed, a PR body drafted in the run — and names each council
+    reference, counted apart from citations. Earlier work on the branch, a plan or review run, and ordinary code
+    that looks alike are left be: they once failed a plan run's check on text no run of it wrote."""
     repo = new_repo(tmp, "sharedtext")
     cfg = os.path.join(repo, ".council", "council.config.md")
     write(cfg, "# Council config — hygiene\n\n## Run preferences\n- sharing: just me\n")
@@ -5228,6 +5253,31 @@ def check_just_me_hygiene(tmp):
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "init")
     git(repo, "checkout", "-q", "-b", "feature")
+    # Work on the branch from before the build: its lines, its message and an old untracked note name the
+    # council, but no run of this branch's build wrote them.
+    write(os.path.join(repo, "ios", "Old.swift"), "// Kept from plan task 2 (ruling 4)\nlet old = 1\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "Earlier work (task 2)")
+    scratch = os.path.join(repo, "SCRATCH.md")
+    write(scratch, "# Scratch\nNotes on verify-1 and D-3\n")
+    hour_ago = time.time() - 3600
+    os.utime(scratch, (hour_ago, hour_ago))
+    for mode in ("council-plan", "council-review"):
+        code, other, _ = council(repo, "run", "open", mode)
+        other = other.strip()
+        write(os.path.join(other, "synthesis.md"), "# Synthesis\n## Index\n(none) — nothing found\n")
+        write(os.path.join(other, "pr-body.md"), "The proof is in verify-2.\n")
+        code, out, err = council(repo, "check")
+        check("check (just me): a %s run writes no shared text, so nothing is scanned and its check passes" % mode,
+              code == 0 and "hygiene" not in out and "in shared text" not in out, out + err)
+        council(repo, "run", "close", "--status", "abandoned")
+    code, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write(os.path.join(run, "gates", "before-1.json"),
+          '{"gate": "before-1", "command": "test -f ios/Notebook.swift", "exit": 1, "seconds": 0, "when": "2026-10-08 10:00:00"}\n')
+    write(os.path.join(run, "gates", "after-1.json"),
+          '{"gate": "after-1", "command": "test -f ios/Notebook.swift", "exit": 0, "seconds": 0, "when": "2026-10-08 10:01:00"}\n')
+    time.sleep(1.1)                                   # files the build writes are newer than its opened: second
     append(os.path.join(repo, "ios", "Notebook.swift"), "\n".join([
         "// Keep the folder when the last page goes (ruling 1)",              # 6: hit
         "func trim(_ D: Int) -> Int { return D-1 }",                          # 7: code, not an id
@@ -5241,39 +5291,57 @@ def check_just_me_hygiene(tmp):
         "// Today 2026-10-08: task 1 is overdue, verify step 1 passes",       # 15: no
         "let ids = tasks[1] + F-2",                                           # 16: no
         ""]))
+    git(repo, "add", "ios/Notebook.swift")             # the old note stays untracked
+    git(repo, "commit", "-q", "-m", "Trim empty pages (ruling 2)")
+    remote = os.path.join(tmp, "sharedtext-remote.git")
+    git(tmp, "init", "-q", "--bare", remote)
+    git(repo, "remote", "add", "origin", remote)
+    git(repo, "push", "-q", "-u", "origin", "feature")   # that message is out now; it can't be changed
     append(os.path.join(repo, "web", "geo.js"), "\n".join([
         "// Falls back to the slow path, see AP-2",                           # 4: hit
         "const span = [D-1, F-2];",                                           # 5: no
         "/* EC-4: an empty page has no strokes */",                           # 6: hit
         'function verify2() { return "verify-2fa"; }',                         # 7: no
         ""]))
-    git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", "Trim empty pages (ruling 2)")
+    git(repo, "add", "web/geo.js")
+    git(repo, "commit", "-q", "-m", "Skip the slow path (ruling 3)")
     write(os.path.join(repo, "NOTES.md"), "# Notes\nThe save follows plan task 3.\nA page with no strokes is skipped.\n")
-    code, run, _ = council(repo, "run", "open", "council-review")
-    run = run.strip()
-    write(os.path.join(run, "synthesis.md"), "# Synthesis\n## Index\n(none) — nothing found\n")
     write(os.path.join(run, "pr-body.md"), "Saves each page on its own.\nThe proof is in verify-2.\n")
     code, out, err = council(repo, "check")
     lines = [l for l in out.splitlines() if l.startswith("hygiene  ")]
     want = ["ios/Notebook.swift:6", "ios/Notebook.swift:9", "ios/Notebook.swift:10", "ios/Notebook.swift:14",
             "web/geo.js:4", "web/geo.js:6", "NOTES.md:2", "PR body pr-body.md:2"]
     places = [l.split("  ")[1] for l in lines]
-    check("check (just me): each council reference in the change's added lines, untracked files and the drafted PR "
-          "body is named with its file:line, and check fails",
+    check("check (just me): in a build, each council reference in the lines it added, the files it left untracked "
+          "and the drafted PR body is named with its file:line, and check fails",
           code == 1 and all(w in places for w in want) and "a council ruling" in line_of(out, "ios/Notebook.swift:6 ")
           and "say it in plain words" in lines[0] if lines else False, out + err)
-    check("check (just me): commit messages since the base are read too",
-          any(p.startswith("commit ") for p in places) and "Trim empty pages (ruling 2)" in out, out)
+    check("check (just me): the build's own commit messages are read, but not one already pushed",
+          "Skip the slow path (ruling 3)" in out and "Trim empty pages (ruling 2)" not in out, out)
+    check("check (just me): work from before the build opened is not its own — an earlier commit's lines and message, "
+          "an untracked note older than the run",
+          not any(p.startswith("ios/Old.swift") or p.startswith("SCRATCH.md") for p in places)
+          and "Earlier work (task 2)" not in out, "\n".join(lines))
     check("check (just me): code that only looks alike is left alone — D-1 as a subtraction, a URL, verifyEmail, "
           "Task { }, a date, 'task 1' in passing, verify-2fa",
           not any(p in places for p in ("ios/Notebook.swift:7", "ios/Notebook.swift:8", "ios/Notebook.swift:11",
                                          "ios/Notebook.swift:12", "ios/Notebook.swift:13", "ios/Notebook.swift:15",
                                          "ios/Notebook.swift:16", "web/geo.js:5", "web/geo.js:7", "NOTES.md:3"))
           and len(places) == len(want) + 1, "\n".join(lines))
-    check("check (just me): the hits land in check.md and in the summary line",
+    summary = line_of(out, " items, ")
+    finished = [e for e in events(run) if e[3] == "verification.finished"]
+    check("check (just me): the hits land in check.md, and are counted apart from citations — the summary says "
+          "0 broken and 9 council references, and the event carries hygiene=9",
           "| hygiene | ios/Notebook.swift:6 |" in read(os.path.join(run, "check.md"))
-          and "9 council reference(s) in shared text (just me)" in out, out)
+          and "1 items, 0 broken" in summary and "9 council reference(s) in shared text (just me)" in summary
+          and bool(finished) and finished[-1][5] == "failed" and "broken=0" in finished[-1][6]
+          and "hygiene=9" in finished[-1][6], out + str(finished[-1:]))
+    state = os.path.join(run, "session-state.md")
+    write(state, re.sub(r"(?m)^start-head:.*$", "start-head:", read(state)))
+    code, out, err = council(repo, "check")
+    places = [l.split("  ")[1] for l in out.splitlines() if l.startswith("hygiene  ") and "  " in l[9:]]
+    check("check (just me): a build with no recorded start reads only uncommitted work and the PR body, and says so",
+          code == 1 and "no recorded start" in out and sorted(places) == ["NOTES.md:2", "PR body pr-body.md:2"], out)
     write(cfg, "# Council config — hygiene\n\n## Run preferences\n- sharing: team\n")
     code, out, err = council(repo, "check")
     check("check (team): a team council may cite its files, so nothing is scanned and the check passes",

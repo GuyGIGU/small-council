@@ -48,9 +48,13 @@ The same goes for a note that was committed: removing it is a change the user co
 The session-start hook orients the user's own sessions on either setting. On just me it also prints
 the rule about commit messages and shared docs, so the missing CLAUDE.md note costs nothing.
 
-**`council check` holds the rule on just me.** It reads the lines the change adds since the run's base
-(new untracked files whole), the commit messages since that base, and a PR body drafted for the run as
-`<run>/pr-body.md`. Each council reference it finds is a failure line with its place: a `.council/`
+**`council check` holds the rule on just me, in a build.** Only a council-implement run writes what
+teammates read, so only a build's check scans, and only what the build itself added: the lines added
+since the commit it started from (the run's `council index` base when that is later), files git doesn't
+track that changed after the run opened (whole), the commit messages since then that no remote branch
+has yet, and a PR body drafted for the run as `<run>/pr-body.md`. Earlier work on the branch is not
+read. Each council reference it finds is a failure line with its place, counted apart from broken
+citations: a `.council/`
 path, a run folder's name, `ruling <n>`, `verify-<n>`, and — in comments and prose only, where code
 can't mean them — a D-, F-, AP- or EC- id and a task named as the council names it, "(task 4)". A
 real build left "(ruling 1)" in a code comment. Say the reason in plain words instead. Draft a PR

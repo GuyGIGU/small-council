@@ -906,6 +906,7 @@ plan-schema: 1
 events-schema: 1
 size:
 base:
+start-head: $(git -C "$top" rev-parse -q --verify HEAD 2>/dev/null)
 deliverable:
 next: $nxt
 ## Decisions so far
@@ -3569,11 +3570,14 @@ gate_lock() {
 }
 
 # Every gate runs under a time limit. A probe once deadlocked for 672 s on a lock added minutes before,
-# 12.6 h after a 633 s hang, and nothing stopped either. The limit: --timeout when given; else three times
-# the gate's own baseline time in this run, at least 120 s — for a check given its command after --, which
-# has no baseline of its own, three times the run's slowest baseline gate; else the config's
-# `- gate time limit:`; else 30 minutes. A gate past it is stopped with every process it started, and
-# recorded as exit 124, "TIMED OUT": a failure, never a pass, and no proof.
+# 12.6 h after a 633 s hang, and nothing stopped either; probes that passed that night ran 194, 328 and
+# 352 s. The limit: --timeout when given; else the largest of three times the gate's own green baseline
+# in this run (a red baseline's time says nothing of a passing run), the config's `- gate time limit:`
+# (read at every call, so it can raise a limit at any time) and 120 s. With neither a green baseline nor
+# that line: 9 minutes for a check given its command after --, which borrows no other gate's time (above
+# the slowest passing probe, under the 10 minutes one Bash call may take, so the helper records the stop
+# itself); 30 minutes for a configured gate. A gate past it is stopped with every process it started,
+# and recorded as exit 124, "TIMED OUT": a failure, never a pass, and no proof.
 GATE_PG="" GATE_WATCH="" GATE_TIMEOUT="" GATE_LIMIT="" GATE_LIMIT_WHY="" GATE_TIMED_OUT=0
 
 # A time as seconds: 600, 600s, 10m, 10 min, 1h. Anything else fails.
@@ -3596,30 +3600,24 @@ gate_seconds() { sed -n 's/.*"seconds": *\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/nul
 
 # This gate's limit and where it came from: GATE_LIMIT (seconds) and GATE_LIMIT_WHY (words).
 gate_limit() {
-  local run="$1" name="$2" secs="" f s raw
+  local run="$1" name="$2" secs="" f cfg="" raw bad=""
   if [ -n "$GATE_TIMEOUT" ]; then GATE_LIMIT="$GATE_TIMEOUT"; GATE_LIMIT_WHY="set by --timeout"; return 0; fi
-  f="$(gate_base "$run" "$name")"; secs="$(gate_seconds "$run/gates/baseline/${f##*/}.json")"
-  if [ -n "$secs" ]; then
-    GATE_LIMIT_WHY="3× its ${secs}s baseline"
-  elif [ -n "$GATE_CMD" ]; then                   # a probe or proof runs part of what the configured gates run
-    for f in "$run"/gates/baseline/*.json; do
-      s="$(gate_seconds "$f")"; [ -n "$s" ] || continue
-      if [ -z "$secs" ] || [ "$s" -gt "$secs" ]; then secs="$s"; fi
-    done
-    [ -z "$secs" ] || GATE_LIMIT_WHY="3× the run's slowest baseline gate, ${secs}s"
-  fi
-  if [ -n "$secs" ]; then
-    GATE_LIMIT=$((secs * 3))
-    if [ "$GATE_LIMIT" -lt 120 ]; then GATE_LIMIT=120; GATE_LIMIT_WHY="$GATE_LIMIT_WHY, raised to the 120s floor"; fi
+  f="$(gate_base "$run" "$name")"; f="$run/gates/baseline/${f##*/}.json"
+  [ "$(gate_exit "$f")" != 0 ] || secs="$(gate_seconds "$f")"      # a red baseline may have stopped at once
+  raw="$(sed -n 's/^[[:space:]]*-[[:space:]]*gate time limit:[[:space:]]*//p' "$(council_home)/council.config.md" 2>/dev/null | head -n 1 | tr -d '\r')"
+  if [ -n "$raw" ]; then cfg="$(limit_seconds "$raw")" || { cfg=""; bad=" (the config's gate time limit '$raw' is not a time)"; }; fi
+  if [ -z "$secs" ] && [ -z "$cfg" ]; then
+    if [ -n "$GATE_CMD" ]; then GATE_LIMIT=540; GATE_LIMIT_WHY="the default for a check given its command, with no green baseline of its own$bad"
+    else GATE_LIMIT=1800; GATE_LIMIT_WHY="the default, with no green baseline to go by$bad"; fi
     return 0
   fi
-  raw="$(sed -n 's/^[[:space:]]*-[[:space:]]*gate time limit:[[:space:]]*//p' "$(council_home)/council.config.md" 2>/dev/null | head -n 1)"
-  if [ -n "$raw" ] && s="$(limit_seconds "$raw")"; then
-    GATE_LIMIT="$s"; GATE_LIMIT_WHY="the config's gate time limit"
-  else
-    GATE_LIMIT=1800; GATE_LIMIT_WHY="the default, with no baseline to go by"
-    [ -z "$raw" ] || GATE_LIMIT_WHY="the default: the config's gate time limit '$raw' is not a time"
+  GATE_LIMIT=120; GATE_LIMIT_WHY="the 120s floor"
+  if [ -n "$secs" ]; then
+    GATE_LIMIT_WHY="3× its ${secs}s green baseline"
+    if [ $((secs * 3)) -ge 120 ]; then GATE_LIMIT=$((secs * 3)); else GATE_LIMIT_WHY="$GATE_LIMIT_WHY, raised to the 120s floor"; fi
   fi
+  if [ -n "$cfg" ] && [ "$cfg" -gt "$GATE_LIMIT" ]; then GATE_LIMIT="$cfg"; GATE_LIMIT_WHY="the config's gate time limit"; fi
+  GATE_LIMIT_WHY="$GATE_LIMIT_WHY$bad"
 }
 
 # Stop process group $1 — the gate and every process it started: TERM, then KILL what is left after up
@@ -3759,7 +3757,7 @@ run_gate() {
   fi
   [ "$ec" -ne 97 ] || say "gate $name: could not enter the code root: $top"
   if [ "$GATE_TIMED_OUT" = 1 ]; then              # a hang: what it was doing last, and no baseline to compare
-    say "gate $name: TIMED OUT after ${secs}s — stopped at its time limit, ${GATE_LIMIT}s ($GATE_LIMIT_WHY), with every process it started. A hang is no pass and no proof; if it truly needs longer: council gate $(qname "$name") --timeout <seconds> — full output: $out"
+    say "gate $name: TIMED OUT after ${secs}s — stopped at its time limit, ${GATE_LIMIT}s ($GATE_LIMIT_WHY), with every process it started. A hang is no pass and no proof; if it truly needs longer: council gate $(qname "$name") --timeout <seconds>, or a longer \"- gate time limit:\" under Run preferences in the config — full output: $out"
     grep -v -e '^council: TIMED OUT' -e '^[[:space:]]*$' "$out" 2>/dev/null | tail -n 8 | clip 220 | sed 's/^/    /'
     event_append "$run" gate.finished "$name" failed "exit=$ec;seconds=$secs;empty=0;timed_out=1" \
       || printf 'council: gate failed, and its event was not recorded\n' >&2
@@ -4915,17 +4913,38 @@ run_folder_only() {
   }'
 }
 
+# The commit a build's own work starts from, for the just-me scan: --base when given; else the run's
+# council index base, unless that reaches back past the commit HEAD was at when the run opened (the index
+# base is the merge-base, so a branch's earlier work would be read as this run's) — then that commit.
+# Empty when neither is on record (a run opened before start-head was kept, never indexed).
+hygiene_base() {
+  local run="$1" top="$2" ib sh
+  if [ -n "$BASE_ARG" ]; then printf '%s' "$BASE_ARG"; return 0; fi
+  ib="$(field base "$run/session-state.md")"; sh="$(field start-head "$run/session-state.md")"
+  ( cd "$top" 2>/dev/null || exit 0
+    [ -n "$ib" ] && git rev-parse -q --verify "$ib^{commit}" >/dev/null 2>&1 || ib=""
+    [ -n "$sh" ] && git rev-parse -q --verify "$sh^{commit}" >/dev/null 2>&1 || sh=""
+    if [ -n "$ib" ] && [ -n "$sh" ] && git merge-base --is-ancestor "$ib" "$sh" 2>/dev/null; then ib=""; fi
+    printf '%s' "${ib:-$sh}" )
+}
+
 # Just-me hygiene (references/sharing.md): the council's ids in what teammates read. On a just-me council
-# a real build left "(ruling 1)" in a code comment. Read: the lines the change adds since the run's base
-# (untracked files whole), its commit messages, and a PR body drafted in the run (<run>/pr-body*). Anywhere:
+# a real build left "(ruling 1)" in a code comment. Read only what the build itself added: the lines added
+# since base $3 (with none, only uncommitted edits), files git doesn't track that changed after the run
+# opened ($4, its opened: time), whole, the commit messages since $3 that no remote branch has yet (one
+# already pushed can't be changed), and a PR body drafted in the run (<run>/pr-body*). Anywhere:
 # a .council/ path, a run folder's name, "ruling <n>", verify-<n>. In comments and prose only, where code
 # can't mean them (D-1 is a subtraction): a decision, failure, anti-pattern or edge-case id (D-3, F-2, AP-1,
 # EC-4) and a task named as the council names it — "(task 4)", "plan task 4". Prints place TAB what TAB line.
 hygiene_hits() {
-  local run="$1" top="$2" hb="$3" ref f
+  local run="$1" top="$2" hb="$3" since="$4" ref="" f br pushed
+  if [ -n "$since" ] && [ -d "$run" ]; then        # touch -t [[CC]YY]MMDDhhmm[.SS]: BSD, GNU and Git Bash alike
+    ref="$run/.hygiene-since"
+    touch -t "$(printf '%s' "$since" | tr -d ' :-' | sed 's/\(..\)$/.\1/')" "$ref" 2>/dev/null || ref=""
+  fi
   { ( cd "$top" 2>/dev/null || exit 0
       git rev-parse --git-dir >/dev/null 2>&1 || exit 0
-      if [ -z "$hb" ]; then ref="$(default_branch)" || ref="HEAD"; hb="$(git merge-base HEAD "$ref" 2>/dev/null)" || hb=""; fi
+      [ -z "$hb" ] || git rev-parse -q --verify "$hb^{commit}" >/dev/null 2>&1 || hb=""
       if git rev-parse -q --verify "${hb:-HEAD}^{commit}" >/dev/null 2>&1; then
         git -c core.quotePath=false diff -M -U0 --no-color --no-ext-diff "${hb:-HEAD}" -- . ':(exclude).council' 2>/dev/null | awk '
           /^diff --git / { h = 1; p = ""; next }          # a file header, up to its first hunk
@@ -4936,11 +4955,18 @@ hygiene_hits() {
       fi
       git -c core.quotePath=false ls-files -o --exclude-standard 2>/dev/null | while IFS= read -r f; do
         case "$f" in .council/*|*/) continue ;; esac
+        [ -z "$ref" ] || [ "$f" -nt "$ref" ] || continue             # there before the run: not its work
         [ -s "$f" ] && [ "$(wc -c < "$f" | tr -d ' ')" -le 1048576 ] && LC_ALL=C grep -qI -e '' "$f" 2>/dev/null || continue
         F="$f" awk '{ print ENVIRON["F"] "\t" FNR "\t" $0 }' "$f"
       done
-      [ -z "$hb" ] || git log --no-merges --format='@@commit %h%n%B' "$hb..HEAD" 2>/dev/null \
-        | awk '/^@@commit / { c = $2; n = 0; next } { n++; print "commit " c "\t" n "\t" $0 }' )
+      if [ -n "$hb" ]; then
+        br="$(git symbolic-ref -q --short HEAD 2>/dev/null)"
+        pushed="$(git rev-parse -q --verify '@{upstream}' 2>/dev/null; [ -z "$br" ] || git rev-parse -q --verify "refs/remotes/origin/$br" 2>/dev/null)"
+        # shellcheck disable=SC2086 # $pushed: commit ids, one word each
+        git log --no-merges --format='@@commit %h%n%B' "$hb..HEAD" ${pushed:+--not $pushed} 2>/dev/null \
+          | awk '/^@@commit / { c = $2; n = 0; next } { n++; print "commit " c "\t" n "\t" $0 }'
+      fi )
+    [ -z "$ref" ] || rm -f "$ref"
     for f in "$run"/pr-body*; do
       [ -f "$f" ] || continue
       F="PR body ${f##*/}" awk '{ print ENVIRON["F"] "\t" FNR "\t" $0 }' "$f"
@@ -4973,7 +4999,7 @@ cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd bproof aproof tp pn proofs=0 saved=0 broke=0 preserved=0 note what \
         mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
-        other=0 unreadt=0 empty=0 gone=0 result who bvoid gn rfonly=0 hy=0 hyl
+        other=0 unreadt=0 empty=0 gone=0 result who bvoid gn rfonly=0 hy=0 hyl hyb
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -5206,15 +5232,18 @@ QUOTES
       [ "$rfonly" -eq 0 ] || say "check: $rfonly proved only through scripts in the run folder — one proof of each task runs the command a person would run, named in the log (references/build-proof.md)"
     fi
   fi
-  # Just me: nothing teammates read may cite the council (references/sharing.md).
-  if [ "$(configured_sharing)" = "just me" ]; then
+  # Just me: nothing teammates read may cite the council (references/sharing.md). Only a build writes
+  # shared text, and only what it added is read; hits are counted on their own, never as citations.
+  if [ "$mode" = council-implement ] && [ "$(configured_sharing)" = "just me" ]; then
+    hyb="$(hygiene_base "$run" "$top")"
+    [ -n "$hyb" ] || say "hygiene  this run has no recorded start, so only uncommitted work and the PR body were read"
     while IFS="$TAB" read -r cite what hyl; do
       [ -n "$cite" ] || continue
-      hy=$((hy + 1)); rows=$((rows + 1)); bad=$((bad + 1))
+      hy=$((hy + 1))
       printf '| hygiene | %s | %s | - |\n' "$cite" "$what" >> "$out"
       [ "$hy" -gt 20 ] || say "hygiene  $cite  $what — teammates can't open the council; say it in plain words: $(printf '%s' "$hyl" | sed 's/^[[:space:]]*//' | clip 90)"
     done <<HYGIENE
-$(hygiene_hits "$run" "$top" "$base")
+$(hygiene_hits "$run" "$top" "$hyb" "$(field opened "$run/session-state.md")")
 HYGIENE
     [ "$hy" -le 20 ] || say "hygiene  … and $((hy - 20)) more in check.md"
     [ "$hy" -eq 0 ] || extra="$extra · $hy council reference(s) in shared text (just me)"
@@ -5227,7 +5256,7 @@ HYGIENE
   fi
   if [ "$qn" -gt 0 ] && [ "$proofs" -gt 0 ]; then what="(citations, quotes and proof)"
   elif [ "$qn" -gt 0 ]; then what="(citations and quotes)"
-  elif [ "$proofs" -gt 0 ]; then what="(citations and proof)"
+  elif [ "$proofs" -gt 0 ] || [ "$mode" = council-implement ]; then what="(citations and proof)"   # NO PROOF is a broken proof
   else what="citation(s)"
   fi
   [ "$noline" -eq 0 ] || extra="$extra · $noline name a path but no line"
@@ -5239,10 +5268,10 @@ HYGIENE
   else
     say "check: $rows items, $bad broken $what$extra → $out"
   fi
-  result=passed; [ "$((bad + other))" -eq 0 ] || result=failed
-  event_append "$run" verification.finished run "$result" "items=$rows;broken=$bad;other=$other" \
+  result=passed; [ "$((bad + other + hy))" -eq 0 ] || result=failed
+  event_append "$run" verification.finished run "$result" "items=$rows;broken=$bad;other=$other$([ "$hy" -eq 0 ] || printf ';hygiene=%s' "$hy")" \
     || printf 'council: verification finished, but its event was not recorded\n' >&2
-  [ "$((bad + other))" -eq 0 ]
+  [ "$((bad + other + hy))" -eq 0 ]
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -7568,10 +7597,11 @@ council — the Small Council's helper (bash + git)
   council gate --all [--at grounding|verify]
                                          run the configured gates · a run takes one gate call at a time:
                                          a second is refused (exit 2) and writes nothing — wait for the first
-  council gate … --timeout <time>        this call's time limit per gate (900, 15m). Without it: 3× the
-                                         gate's baseline time (at least 120 s), else the config's
-                                         "- gate time limit:", else 30 min. Past it the gate and all it
-                                         started are stopped: exit 124, TIMED OUT — a failure, no proof
+  council gate … --timeout <time>        this call's time limit per gate (900, 15m). Without it: the
+                                         largest of 3× the gate's green baseline, the config's
+                                         "- gate time limit:" and 120 s; with neither, 9 min for a
+                                         command after --, 30 min for a configured gate. Past it the gate
+                                         and all it started are stopped: exit 124, TIMED OUT — no proof
   council gate <name> --invalid "<why>"  mark a red that proves nothing (the new check didn't compile, the
                                          probe was broken); council check reads that proof as no proof yet
   council gates                          list the configured gates
