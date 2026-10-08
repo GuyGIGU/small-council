@@ -548,6 +548,28 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("a cut claim a verifier CONFIRMED fails the claim index, as council evidence check does",
           item(out, "Claim index")[0] == "FAIL" and "cut, but a verifier CONFIRMED it: C1" in item(out, "Claim index")[1],
           item(out, "Claim index")[1])
+    # council run close runs this audit as it closes: the closing card comes after, so it is not judged yet —
+    # every other FAIL still is (the night's one audit printed four FAILs the user never heard).
+    at_close = subprocess.run([sys.executable, str(AUDIT), "--run", str(run1), "--transcript", str(log1), "--at-close"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+    check("--at-close: the closing card reads 'not checked yet', counted apart; the other FAILs stand and exit 1",
+          at_close.returncode == 1 and re.search(r"^  later  Closing card: not checked yet", at_close.stdout, re.MULTILINE)
+          and item(at_close.stdout, "Closing card")[0] is None and item(at_close.stdout, "Stages")[0] == "FAIL"
+          and re.search(r"^\d+ failed, \d+ warning\(s\), \d+ passed, 1 not checked yet$", at_close.stdout, re.MULTILINE),
+          at_close.stdout + at_close.stderr)
+    skipped = run1_copy("skipped")
+    rows = (skipped / "events.tsv").read_text(encoding="utf-8").replace(
+        "\tchallenge\tfrom=prepare\n", "\tchallenge\tfrom=prepare;skipped=judge;reason=the user ruled it\n")
+    write(skipped / "events.tsv", rows)
+    verdict, words = item(council(base, "run", "audit", "--run", str(skipped))[1], "Stages")
+    check("a stage skipped through council state skip= still fails Stages, and names the reason given",
+          verdict == "FAIL" and "never entered: judge" in words and "judge skipped on purpose: the user ruled it" in words, words)
+    paused = run1_copy("paused")
+    state = (paused / "session-state.md").read_text(encoding="utf-8")
+    write(paused / "session-state.md", state.replace("status: complete", "status: paused"))
+    (paused / "claims.jsonl").unlink()
+    verdict, words = item(council(base, "run", "audit", "--run", str(paused))[1], "Claim index")
+    check("a paused run owes no claim index yet (the close now audits a pause too)", verdict == "pass" and "not due" in words, words)
     found_log = base / "more" / "config" / "projects" / "some-project" / "session-run-1.jsonl"
     found_log.parent.mkdir(parents=True)
     shutil.copyfile(str(log1), str(found_log))

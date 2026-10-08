@@ -29,7 +29,7 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | Type | Subject | Value | Detail |
 |---|---|---|---|
 | `run.opened` | `run` | mode | `phase=convene` |
-| `run.phase_changed` | `run` | new phase | `from=<old phase>` |
+| `run.phase_changed` | `run` | new phase | `from=<old phase>`, and `;skipped=<stages>;reason=<why>` when `skip=` passed over a stage the mode must enter (after 0.20) |
 | `run.status_changed` | `run` | new status | `from=<old status>` |
 | `run.resumed` | `run` | `in-progress` | `from=<old status>` |
 | `run.paused` | `run` | `paused` | `agent_runs=<n>;reported=<n>;tokens=<n>;basis=<basis>` (0.14; before: `agents=<n>;tokens=<n>`) |
