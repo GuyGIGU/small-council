@@ -15,7 +15,9 @@ Needs bash and git; no LLM, no network. Covers:
     and unreadable index lines, failed and re-dispatched workers;
   - citation and origin checks (single lines, ranges and comma lists); map status; the drift doctor;
   - the agent stop: council cap's standing, cap allow's refusals and record (older runs too), cap check's
-    exit codes.
+    exit codes;
+  - the record before work: Full only on the user's go, a build task's third check only after a diagnosis
+    or the user's go, cap check's dispatch record, the first status card owed once per run.
 
 Each block of checks belongs to a group (@part below); `--list` prints the groups, `--group NAME` runs
 one, and evals/run_all.py runs them side by side. With no options every group runs, in file order.
@@ -278,6 +280,15 @@ def row(out, slug):
 
 def line_of(out, text):
     return next((line for line in out.splitlines() if text in line), "")
+
+
+VERDICT_FILE = "# Verification — x\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | INCOMPLETE | a.py:1 |\n"
+
+
+def backdated_decision(run, words="go on"):
+    """A decision line under Decisions so far dated long before anything in the run (as if carried over)."""
+    st = os.path.join(run, "session-state.md")
+    write(st, read(st).replace("## Decisions so far\n", '## Decisions so far\n- 2000-01-01 00:00: "%s"\n' % words, 1))
 
 
 CONFIG = """# Council config — eval
@@ -5725,6 +5736,236 @@ def close_claim_index(tmp):
     os.unlink(os.path.join(deleted_run, "synthesis.md"))
     code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
     check("close: a deleted synthesis source warns", code == 0 and warning in err, err)
+
+@part("runs")
+def runs_full_size_needs_go(tmp):
+    # A real run went Full (13 tasks, ~2.15M tokens) 47 s after reading that Full needs the user's explicit
+    # size-and-cost go, without asking. The plan check now refuses Full until a decision of the user's is
+    # recorded after the run opened — and so does everything that needs a valid plan.
+    fr = new_repo(tmp, "full-size")
+    write(os.path.join(fr, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(fr, "run", "open", "council-review")
+    frun = out.strip().splitlines()[-1]
+    fname = os.path.basename(frun)
+    write_plan(frun, selected=("w1", "w2", "w3", "w4"), size="full")
+    code, out, err = council(fr, "run", "plan", "check")
+    check("run plan check: Full with no decision of the user's on record is refused, saying to ask and record their words",
+          code == 1 and "Full needs the user's explicit size-and-cost go: ask them, then record their words with "
+          'council state decision="' in out, out + err)
+    code, out, err = council(fr, "seat", "w1", "running", "agent=f1")
+    code2, out2, err2 = council(fr, "state", "phase=brief")
+    check("seat and state: a Full plan with no go starts no seat and moves to no later stage",
+          code == 2 and "cannot start seat w1" in err and code2 == 2 and "Full needs the user's" in out2 + err2
+          and "\nw1\t" not in read(os.path.join(frun, "seats.tsv")), out + err + out2 + err2)
+    backdated_decision(frun, "go Full")
+    code, out, err = council(fr, "run", "plan", "check")
+    check("run plan check: a decision dated before the run opened is not this run's go", code == 1
+          and "Full needs the user's" in out, out + err)
+    council(fr, "state", "decision=yes, go Full — about 600k tokens is fine")
+    code, out, err = council(fr, "run", "plan", "check")
+    code2, out2, err2 = council(fr, "seat", "w1", "running", "agent=f1")
+    check("run plan check: after the user's words are recorded, the Full plan passes and its seats start",
+          code == 0 and "plan: valid · full" in out and code2 == 0, out + err + out2 + err2)
+    write_plan(frun, selected=("w1",), size="squad")
+    st = os.path.join(frun, "session-state.md")
+    write(st, re.sub(r"\n- [0-9-]+ [0-9:]+: [^\n]*", "", read(st)))
+    code, out, err = council(fr, "run", "plan", "check")
+    check("run plan check: a Squad needs no decision on record", code == 0, out + err)
+    write_plan(frun, selected=("w1", "w2", "w3", "w4"), size="full")
+    council(fr, "run", "close", "--status", "abandoned")
+    code, out, err = council(fr, "run", "plan", "check", "--run", fname)
+    check("run plan check: a closed run's plan is read as it was, not refused for today's rule", code == 0, out + err)
+
+
+@part("runs")
+def runs_third_check_needs_diagnosis(tmp):
+    # After a second failed verification the build loop allows one clean-context diagnosis and one more
+    # attempt, else a stop and a report. A real build gave a task a new lock and a third check instead.
+    tc = new_repo(tmp, "third-check")
+    write(os.path.join(tc, ".council", "council.config.md"), "# Council config\n- agent cap: 20\n")
+    _, out, _ = council(tc, "run", "open", "council-implement", env={"CLAUDE_CODE_SESSION_ID": "sT"})
+    trun = out.strip().splitlines()[-1]
+    tname = os.path.basename(trun)
+    write_plan(trun, selected=("verify-6", "verify-6b", "verify-6c", "verify-6d", "diagnose-6", "verify-7", "verify-7b",
+                               "verify-7c", "diagnose-7", "verify-9c", "verify-8", "verify-5"))
+    tplan = os.path.join(trun, "run-plan.tsv")
+    write(tplan, read(tplan).replace("budget\trun\tagent-cap\t10", "budget\trun\tagent-cap\t20"))
+    for slug in ("verify-6", "verify-6b", "verify-6c", "verify-7", "verify-7b", "verify-8", "verify-5"):
+        write(os.path.join(trun, slug + ".md"), VERDICT_FILE)
+    write(os.path.join(trun, "seats", "diagnose-7.md"), "# Diagnosis\n## Index\n1 · likely · a lock · a.py:1 · x\n")
+    for slug, n in (("verify-6", 1), ("verify-6b", 2)):
+        council(tc, "seat", slug, "running", f"agent=v6{n}")
+        council(tc, "seat", slug, "done", "tokens=20000")
+    backdated_decision(trun, "an old go")
+    code, out, err = council(tc, "seat", "verify-6c", "running", "agent=v63")
+    check("seat: a third check of one task after its second verdict is refused — the diagnosis, or a stop and a report, "
+          "comes first; a decision from before that verdict doesn't count",
+          code == 2 and "third check of task 6" in err and "council seat diagnose-6 running" in err
+          and "stop and report" in err and 'council state decision="' in err
+          and "\nverify-6c\t" not in read(os.path.join(trun, "seats.tsv")), out + err)
+    code, out, err = council(tc, "cap", "check", "--session", "sT", "Agent", "type=small-council:council-verifier",
+                             "seat=verify-6c", "run=" + tname)
+    check("cap check: the agent gate refuses that third check before it starts, for the same reason",
+          code == 2 and out.startswith("Small Council: cannot start verify-6c") and "third check of task 6" in out, out + err)
+    council(tc, "seat", "diagnose-6", "running", "agent=d61")
+    code, out, err = council(tc, "seat", "verify-6c", "running", "agent=v63")
+    check("seat: with a diagnose-6 seat on record after the second verdict, the third check starts", code == 0, out + err)
+    council(tc, "seat", "verify-6c", "done", "tokens=20000")
+    code, out, err = council(tc, "seat", "verify-6d", "running", "agent=v64")
+    check("seat: a fourth check after the diagnosis and one more attempt is refused — stop and report",
+          code == 2 and "stop and report to the user" in err and "task 6 has 3 verdicts" in err, out + err)
+    council(tc, "state", "decision=check it once more, then stop")
+    code, out, err = council(tc, "seat", "verify-6d", "running", "agent=v64")
+    check("seat: the user's words recorded after the last verdict start one more check", code == 0, out + err)
+    council(tc, "seat", "verify-7", "running", "agent=v71")
+    council(tc, "seat", "verify-7", "done", "tokens=20000")
+    council(tc, "seat", "diagnose-7", "running", "agent=d71")             # used on a gate failure, before the second verdict
+    council(tc, "seat", "diagnose-7", "done", "tokens=20000")
+    council(tc, "seat", "verify-7b", "running", "agent=v72")
+    council(tc, "seat", "verify-7b", "done", "tokens=20000")
+    st = os.path.join(trun, "session-state.md")
+    write(st, re.sub(r"\n- [0-9-]+ [0-9:]+: [^\n]*", "", read(st)))           # no decision on record at all
+    code, out, err = council(tc, "seat", "verify-7c", "running", "agent=v73")
+    check("seat: a diagnosis the task used before its second verdict (on a gate failure) doesn't open a third check",
+          code == 2 and "third check of task 7" in err, out + err)
+    code, out, err = council(tc, "seat", "verify-9c", "running", "agent=v93")
+    check("seat: verify-9c with no verify-9b on record is a first check (a task named 9c), never refused as a third",
+          code == 0, out + err)
+    for n in (1, 2):                                       # the same seat started again for each re-check
+        council(tc, "seat", "verify-8", "running", f"agent=v8{n}")
+        council(tc, "seat", "verify-8", "done", "tokens=20000")
+    code, out, err = council(tc, "seat", "verify-8", "running", "agent=v83")
+    check("seat: a re-check started on the same seat counts too — its third start after two verdicts is refused",
+          code == 2 and "third check of task 8" in err, out + err)
+    code, out, err = council(tc, "cap", "check", "--session", "sT", "Agent", "type=small-council:council-verifier",
+                             "seat=verify-8c", "run=" + tname)
+    check("cap check: a dispatch writing verify-8c.md is seat verify-8's re-check — planned, and refused as its third check",
+          code == 2 and "third check of task 8" in out, out + err)
+    council(tc, "seat", "verify-5", "running", "agent=v51")
+    council(tc, "seat", "verify-5", "failed", "note=interrupted")    # died with its session: no verdict
+    for n in (2, 3):
+        council(tc, "seat", "verify-5", "running", f"agent=v5{n}")
+        council(tc, "seat", "verify-5", "done", "tokens=20000")
+        council(tc, "seat", "verify-5", "done", "tokens=21000")      # a repeated report is the same verdict
+    code, out, err = council(tc, "seat", "verify-5", "running", "agent=v54")
+    check("seat: only verdicts count — an interrupted agent and a repeated report don't, so the check after two "
+          "verdicts is the one refused, not before", code == 2 and "third check of task 5" in err, out + err)
+    _, out, _ = council(tc, "run", "open", "council-review", "--alongside", env={"CLAUDE_CODE_SESSION_ID": "sT"})
+    rrun = out.strip().splitlines()[-1]
+    write_plan(rrun, selected=("verify-1",))
+    write(os.path.join(rrun, "verify-1.md"), VERDICT_FILE)
+    for n in (1, 2):
+        council(tc, "seat", "verify-1", "running", f"agent=r{n}", "--run", rrun)
+        council(tc, "seat", "verify-1", "done", "tokens=20000", "--run", rrun)
+    code, out, err = council(tc, "seat", "verify-1", "running", "agent=r3", "--run", rrun)
+    check("seat: the rule is the build loop's — a review's verifier seat started a third time is not refused", code == 0, out + err)
+
+
+@part("runs")
+def runs_dispatch_record(tmp):
+    # The agent gate's dispatch record (council cap check type= seat= run=): a real run sent a verifier 9 s
+    # before its plan row existed, and an 11th agent after the run had closed.
+    worker, verifier = "type=small-council:council-worker", "type=small-council:council-verifier"
+    bare = new_repo(tmp, "dispatch-no-council")
+    code, out, err = council(bare, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt")
+    check("cap check: no council home — a council-worker starts, nothing said", code == 0 and not out, out + err)
+    dr = new_repo(tmp, "dispatch")
+    write(os.path.join(dr, ".council", "council.config.md"), "# Council config\n")
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt")
+    check("cap check: a council-worker with no council run open on this tree or for this session is refused",
+          code == 2 and out.startswith("Small Council: no council run is open") and "council run open" in out, out + err)
+    code, out, err = council(dr, "cap", "check", "Agent", worker, "seat=hunt")
+    check("cap check: ... but not when there is no session id to tell this session's runs on other trees", code == 0 and not out,
+          out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-1")
+    check("cap check: a council-verifier naming no run folder (test-architect's own check) starts with no run open",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", "type=general-purpose", "seat=hunt")
+    check("cap check: an ordinary agent is never held to the record", code == 0 and not out, out + err)
+    _, out, _ = council(dr, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sD"})
+    drun = out.strip().splitlines()[-1]
+    dname = os.path.basename(drun)
+    write_plan(drun, selected=("hunt",))
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=beck")
+    starts = read(os.path.join(drun, "agent-starts.tsv"))
+    check("cap check: a council-worker for a seat the plan doesn't select is refused, naming the plan rows to add — "
+          "and counts no agent start", code == 2 and "seat beck has no selected row in the run plan of " + dname in out
+          and "council run plan check --run " + dname in out and "\tAgent\t" not in starts, out + err + starts)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt", "run=" + dname)
+    check("cap check: a council-worker for a selected seat of the open run starts, and is counted",
+          code == 0 and not out and read(os.path.join(drun, "agent-starts.tsv")).count("\tAgent\t") == 1, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-9", "run=" + dname)
+    check("cap check: a council-verifier naming the run, for a seat its plan doesn't select, is refused",
+          code == 2 and "seat verify-9 has no selected row" in out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-planb", "run=" + dname)
+    check("cap check: a re-check's file (verify-planb.md) belongs to its planned seat (verify-plan) — the verifier starts",
+          code == 0 and not out, out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=no such seat")
+    check("cap check: a seat it couldn't read cleanly is no reason to refuse", code == 0 and not out, out + err)
+    council(dr, "run", "close", "--status", "paused")
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-plan", "run=" + dname)
+    check("cap check: an agent for a paused run is refused, naming the resume", code == 2 and "which is paused" in out
+          and "council run resume --run " + dname in out, out + err)
+    council(dr, "run", "close", "--run", dname)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", verifier, "seat=verify-plan", "run=" + dname)
+    check("cap check: an agent for a closed run is refused — its agents are done", code == 2 and "which is closed (complete)" in out,
+          out + err)
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=hunt", "run=" + dname)
+    check("cap check: ... a council-worker too, even for a seat its plan selected", code == 2 and "which is closed" in out, out + err)
+    old = os.path.join(dr, ".council", "runs", "2026-09-01-100000-review")           # opened before run plans
+    write(os.path.join(old, "session-state.md"), "status: in-progress\nmode: council-review\nphase: work\n")
+    code, out, err = council(dr, "cap", "check", "--session", "sD", "Agent", worker, "seat=anything")
+    check("cap check: a run opened before run plans has no plan to hold a seat to — the worker starts", code == 0 and not out,
+          out + err)
+
+
+@part("runs")
+def runs_status_card_owed_once(tmp):
+    # The run's first status card is owed once per run, at its first dispatch: the helper marks it due, any
+    # council status call for the run clears it, and the turn-end hook sends the Chair back once while it is due.
+    sc = new_repo(tmp, "card-due")
+    write(os.path.join(sc, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(sc, "run", "open", "council-review", env={"CLAUDE_CODE_SESSION_ID": "sK"})
+    srun = out.strip().splitlines()[-1]
+    sname = os.path.basename(srun)
+    write_plan(srun, selected=("w1", "w2"))
+    due = os.path.join(srun, "card-due")
+    council(sc, "seat", "w1", "queued")
+    check("card: a queued seat is no dispatch — nothing is due", not os.path.exists(due))
+    _, _, err = council(sc, "seat", "w1", "running", "agent=k1")
+    check("card: the run's first dispatch marks its card due, with the reminder", read(due) == "due\n"
+          and "first dispatch of this run" in err, err)
+    code, out, err = council(sc, "run", "turn-end", "--session", "sK")
+    check("turn end: while the card is due, the Chair is sent back once to show it — a seat still working or not",
+          code == 2 and out.startswith("Small Council: Run %s made its first dispatch" % sname)
+          and "council status --widget --run " + sname in out and "now waits" not in out and read(due) == "reminded\n",
+          out + err)
+    code, out, err = council(sc, "run", "turn-end", "--session", "sK")
+    check("turn end: ... and only once", code == 0 and not out, out + err)
+    council(sc, "status", "--json")
+    check("card: --json is data, not the card — the mark stays", os.path.exists(due))
+    code, out, err = council(sc, "status")
+    check("card: council status for the run clears the mark", code == 0 and not os.path.exists(due), out + err)
+    _, out, _ = council(sc, "run", "open", "council-review", "--alongside", env={"CLAUDE_CODE_SESSION_ID": "sK"})
+    srun2 = out.strip().splitlines()[-1]
+    sname2 = os.path.basename(srun2)
+    write_plan(srun2, selected=("w1",))
+    council(sc, "seat", "w1", "running", "agent=k2", "--run", sname2)
+    code, out, err = council(sc, "status", "--widget", "--run", sname2)
+    check("card: the widget clears it too, so the turn ends with nothing to send back",
+          code == 0 and not os.path.exists(os.path.join(srun2, "card-due"))
+          and council(sc, "run", "turn-end", "--session", "sK")[0] == 0, out[:200] + err)
+    council(sc, "seat", "w1", "done", "agent=k1", "tokens=20000", "--run", sname)
+    council(sc, "seat", "w1", "done", "agent=k2", "tokens=20000", "--run", sname2)
+    council(sc, "run", "close", "--status", "abandoned", "--run", sname2)
+    write(due, "due\n")                                              # as if the card were owed again
+    code, out, err = council(sc, "run", "turn-end", "--session", "sK")
+    check("turn end: a card due and a run waiting on the user are said in one message",
+          code == 2 and "made its first dispatch" in out and "Run %s now waits on the user" % sname in out, out + err)
+    write(due, "due\n")
+    code, out, err = council(sc, "status", "--line", "--run", sname)
+    check("card: --line clears it as well", code == 0 and not os.path.exists(due), out + err)
+
 
 @part("runs")
 def runs_usage(tmp):

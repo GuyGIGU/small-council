@@ -61,7 +61,9 @@ nothing stops an Agent call that passes `model` for the Chair or a verifier; the
 plan. A closed run (complete or abandoned) is not rechecked against today's `seat models` setting.
 
 Exactly one Chair must be selected. Solo selects no delegated agents; Squad selects at least one,
-and Full selects at least four. Independent or adversarial verification requires a selected
+and Full selects at least four. An open run's Full plan also needs the user's explicit size-and-cost
+go on record: a decision since the run opened (`council state decision="…"`); a closed run's plan is
+read as it was. Independent or adversarial verification requires a selected
 `verifier`; a plan marked `self` cannot also select one. The Chair receives a context level but
 does not count as an agent. A plan that cannot fit its required verifier or run size must be
 resized or given a higher cap before Brief or dispatch.

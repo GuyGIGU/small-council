@@ -6,7 +6,9 @@
 # Chair back once per wait to alert the owner — exit 2, the reason on stderr, which Claude Code hands to
 # Claude. Anything else ends the turn silently: no council, no such run, a seat still working, a stop this
 # hook already sent back (stop_hook_active), input it can't read, or any fault of the helper's. Nothing goes
-# to stdout. In 33 real sessions the doctrine's own alert step was never taken: a hook keeps it instead.
+# to stdout. In 33 real sessions the doctrine's own alert step was never taken: a hook keeps it instead. The
+# same way, while a run's first status card is still due (its first dispatch, not yet shown), the helper
+# sends the Chair back once to show it.
 #
 # Portability: bash 3.2 (macOS), Git Bash on Windows, Linux — no jq, no Python.
 

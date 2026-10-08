@@ -146,6 +146,15 @@ or garbage last row of `cap-allowances.tsv` is passed over: the last readable ro
 - The card shows its own run's stop. The hook checks every in-progress run the session may be
   driving, so another open run's stop can refuse an agent while this card reads not stopped.
 
+The same hook holds the council's own agents to the record. A call whose `subagent_type` is
+`small-council:council-worker` or `small-council:council-verifier` is refused when no run is open for
+it (in progress on this tree, or driven by this session), when the run folder its message names is
+closed or paused, when the seat it names — a `Seat: <slug>` line, else the `seats/<slug>.md` or
+`verify-<n>.md` it writes — has no selected row in that run's plan, or when it would be a build task's
+third check (see council-implement). A verifier that names no run folder (test-architect's own check)
+is not held to a run. Ordinary agents, Workflows and input the hook can't read are never refused for
+this.
+
 ## Known limits
 
 - A dispatched agent the Chair never recorded is not counted in the run's cost until it is added from

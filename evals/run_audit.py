@@ -230,6 +230,17 @@ def transcript_run1(path, project, run):
     log.save(path)
 
 
+def transcript_resumed(path, start):
+    """A second session that carries run 1 on: it sends one more verifier and shows no card."""
+    log = Transcript("session-two", start)
+    log.prompt("carry on with the review")
+    log.bash("council run resume --run %s" % RUN1, "resumed %s — in progress · phase challenge" % RUN1)
+    log.call("Agent", {"subagent_type": "small-council:council-verifier", "description": "Verify", "prompt": "claims"},
+             "Async agent launched. agentId: v2")
+    log.bash("council seat verify-2 running agent=v2", "seats: 1 of 2 done · still working: verify-2", step=60)
+    log.save(path)
+
+
 # --- a clean run, through the real helper ------------------------------------------------------------------------
 PLAN2 = [("schema", "plan", "version", "1"), ("run", "run", "size", "squad"), ("run", "run", "mode", "council-review"),
          ("assessment", "run", "risk", "medium"), ("assessment", "run", "complexity", "medium"),
@@ -650,6 +661,27 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
           and item(out_a2, "Helper output shown whole")[0] == "FAIL"
           and item(out_a2, "Helper output shown whole")[1].startswith("1 call(s)")
           and "gate | tail -2" in item(out_a2, "Helper output shown whole")[1], out_c + "\n" + out_a2)
+
+    # The first card is owed once per run, at the run's first dispatch: a later session that carries the run on and
+    # sends another agent owes none — and its transcript passes, saying why.
+    resumed = run1_copy("resumed")
+    later = base / "more" / "session-two.jsonl"
+    transcript_resumed(later, utc("2026-09-30T10:30:00Z"))
+    code, out, err = council(base, "run", "audit", "--run", str(resumed), "--transcript", str(later))
+    verdict, words = item(out, "Status card at the first dispatch")
+    check("status card: a later session's transcript, the run's first dispatch (10:23) made before it began, passes and says why",
+          verdict == "pass" and "first dispatch" in words and "an earlier session" in words and "once per run" in words, words)
+    write(resumed / "agent-starts.tsv", "at\ttool\tsession\n2026-09-30T10:31:00Z\tbefore:1\t-\n"
+                                        "2026-09-30T10:16:05Z\tAgent\tsession-run-1\n")
+    transcript_resumed(later, utc("2026-09-30T10:15:00Z"))       # alongside the first session, from before its dispatch
+    code, out, err = council(base, "run", "audit", "--run", str(resumed), "--transcript", str(later))
+    verdict, words = item(out, "Status card at the first dispatch")
+    check("status card: the agent gate's record names the session that made the first dispatch — another session's "
+          "transcript passes", verdict == "pass" and "session session-run-1" in words, words)
+    write(resumed / "agent-starts.tsv", "at\ttool\tsession\n2026-09-30T10:16:05Z\tAgent\tsession-two\n")
+    code, out, err = council(base, "run", "audit", "--run", str(resumed), "--transcript", str(later))
+    check("status card: the session that did make the first dispatch, with no card after it, still fails",
+          item(out, "Status card at the first dispatch")[0] == "FAIL", item(out, "Status card at the first dispatch")[1])
 
 # The helper's advisory lines the audit does not count as refusals must still be the helper's words.
 sys.path.insert(0, str(ROOT / "scripts"))
