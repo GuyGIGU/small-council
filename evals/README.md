@@ -57,6 +57,10 @@ Runs the helper against scaffolded git repos:
 - the council home, from the main checkout, a worktree, and outside git;
 - opening, updating and closing runs: a second in-progress run refused without `--alongside`,
   commands that never guess between runs, paused runs, session ids, init creating the home;
+- stage order: a step past a stage the mode must enter refused unless `skip=` gives a reason, which
+  the phase event keeps, and each mode's own path (Solo, post-game, build, setup) let through; a close
+  as complete refused before Deliver, and after a step back from it until Deliver comes again; the
+  close's own audit, every FAIL line whole and the closing card left for later;
 - the change index: files, symbols (code only), callers, tests;
 - gates judged by exit code (optional vs mandatory), with commands passed intact; a project with
   nothing configured, or nothing that can run at a stage, reported as NOTHING WAS CHECKED and never
@@ -314,6 +318,8 @@ transcript, must fail on each known problem: a stage skipped, the verifier recor
 finished, two copies of the checks at once, no record of the Chair's own seat, no status card at the
 first dispatch or after close, the helper called through a shell variable, its output cut by
 `| tail`, a refusal never tried again. A clean run driven through the real helper must pass every item.
+Run as the close's own audit (`--at-close`), the closing card reads "not checked yet" and every other
+FAIL stands; a stage skipped through `skip=` still fails, naming the reason; a paused run owes no claim index.
 Reading writes nothing. It also checks the dispatch case's graders for the status card and the close.
 
 The helper, hook, memory, cockpit, tuning and audit suites need bash and git. Without them they print
