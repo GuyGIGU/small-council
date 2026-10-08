@@ -155,7 +155,7 @@ with tempfile.TemporaryDirectory() as folder:
         ("T14", "speed", "benchmark regression on hot path\n", "PERFORMANCE_FAILURE"),
         ("T15", "service", "Traceback (most recent call last):\n", "RUNTIME_FAILURE"),
         ("T17", "hang", "FAILED tests/test_lock.py::test_wait\n\ncouncil: TIMED OUT after 207s — stopped at its time limit, "
-         "207s (3× the run's slowest baseline gate, 69s), with every process it started\n", "TIMEOUT_FAILURE"),
+         "207s (3× its 69s green baseline), with every process it started\n", "TIMEOUT_FAILURE"),
     )
     for task, name, output, expected in examples:
         gate(name, 1, output)

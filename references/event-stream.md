@@ -45,7 +45,7 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `gate.finished` | gate name | `passed` or `failed` | `exit=<code>;seconds=<n>;empty=<0 or 1>`, and `;timed_out=1` when the helper stopped it at its time limit (exit 124) |
 | `gate.invalidated` | gate name | `invalid` | `exit=<the record's code>;why=<the reason given>` — `council gate <name> --invalid "<why>"`: a red that proves nothing, marked on its record (`;` in the reason becomes `,`) |
 | `collect.finished` | `run` | `passed` or `failed` | `seats=<n>` |
-| `verification.finished` | `run` | `passed` or `failed` | `items=<n>;broken=<n>;other=<n>` |
+| `verification.finished` | `run` | `passed` or `failed` | `items=<n>;broken=<n>;other=<n>`, and `;hygiene=<n>` when a just-me build's check found council references in what it added |
 | `memory.proposed` | the drafted entry's id (`F-<n>`) | `claim` or `repair` | `source=<claim id or task id>` |
 | `run.events_repaired` | `run` | `torn-tail` | `dropped=<bytes>;copy=<events.tsv.bak-… file>` — `council run events repair` dropped a torn last line, keeping a byte copy (0.19) |
 
