@@ -4093,7 +4093,8 @@ def requests_preservation_proofs(tmp):
     check("check: a `- build tier: full` line in the config is read, said on the summary line and written into check.md",
           "build tier: full (config)" in out4 and "build tier: full (config)" in read(os.path.join(run, "check.md")),
           out4 + err4)
-    append(os.path.join(repo, ".council", "council.config.md"), "- build tier: medium\n")
+    cfg_path = os.path.join(repo, ".council", "council.config.md")
+    write(cfg_path, read(cfg_path).replace("- build tier: full", "- build tier: medium"))   # the first such line is the one read
     code5, out5, _ = council(repo, "check")
     check("check: an unknown tier word is named and read as light, never silently",
           "'medium' is not a tier" in out5 and "light (default" in out5, out5)
