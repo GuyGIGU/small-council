@@ -53,14 +53,16 @@ Write <abs run>/seats/<slug>.md, then return one line.
   line: "3 of 5 seats in — Security, Structure, Tests · ~210k tokens so far".
 - **A worker stopped at its turn limit** (60 turns) may have left no file: `council seat … done`
   refuses without it and names the resume (SendMessage); never re-dispatch it.
+- **A refused write:** the worker replies with its file under `UNWRITTEN <path>`; save it verbatim,
+  `note="saved by the Chair"` on its seat.
 - **The agent cap and the token ceiling.** When `council seat` says the run reached either, start no
-  more agents — no re-dispatch, diagnosis worker or extra verifier — until the user says go; the
-  hook refuses the next one until `council cap allow <n> --user-said "<their words>"` records it.
+  more agents until the user says go; the hook refuses the next one until
+  `council cap allow <n> --user-said "<their words>"` records it.
 - **Alerts:** context-core, Alerts — the helper and the turn-end hook say when. Never for progress.
-- **No notification comes from a worker that died with its session.** After a compaction, keep
-  waiting. In a new session, follow Resume in context-core.
-- **Whatever dispatches the workers** — the Agent tool, a Workflow script, background agents — the
-  file contract holds: one file per seat in `seats/`. The seat-check hook covers only
+- **A worker that died with its session sends nothing.** After a compaction, keep waiting; in a new
+  session, follow Resume in context-core.
+- **Whatever dispatches the workers** (Agent tool, Workflow, background agents), the file contract
+  holds: one file per seat in `seats/`. The seat-check hook covers only
   `council-worker` and `council-verifier` agents, never a Workflow's (their type is
   `workflow-subagent`), so give a Workflow's agents the worker's file rules in their prompt;
   `council collect` then checks every file in `seats/`, named in the brief or not.

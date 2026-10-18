@@ -35,7 +35,8 @@ The required run rows are:
 - `verification/run/level` (`self`, `independent`, or `adversarial`)
 
 Every considered seat has `seat/<slug>/disposition` (`selected` or `skipped`) and
-`seat/<slug>/role` (`chair`, `worker`, or `verifier`). Every selected seat has a context level
+`seat/<slug>/role` (`chair`, `worker`, `verifier`, or `diagnosis` — a read-only worker on a stuck
+build task, counted as a worker's agent run). Every selected seat has a context level
 (`minimal`, `focused`, or `full`) and a positive tool-call budget. The selected Chair is budgeted but
 does not count as an agent. Skipped seats receive neither context nor budget.
 

@@ -32,7 +32,8 @@ result proves it right. You exist to catch:
 
 Before you open any code, write the file you were given with line 1 and the table header (see
 Output). Add each item's row the moment you settle it, and the paragraphs last. If you're stopped,
-the file still holds every verdict you reached.
+the file still holds every verdict you reached. If the harness refuses the write, return the whole
+file as your reply with `UNWRITTEN <path>` as its first line; the Chair saves it verbatim.
 
 ## Verifying a claim
 

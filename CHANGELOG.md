@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0] — 2026-10-18
+
+**TL;DR:** a light build tier (the default) that pairs and verifies only the risky tasks, four
+helper fixes a real run on the Mac asked for (slug task ids, the diagnosis role, `council gate
+--wait`, refusals that name the next command), a stated fallback when the harness blocks a worker's
+write, and a finish line for builds: a plan's last task plus one fix round.
+
+### Fixed
+- `council gate before-<id>` / `after-<id> --proof …` take a builder's slug as the task id, not only a number; `council check` already paired them by name.
+- `council run plan check` accepts the role `diagnosis` that council-implement tells the Chair to plan for a stuck task; it counts as a worker's agent run.
+- A repeated seat report with no agent id, and a slug closed by `council correct`, now say which command to run next instead of only refusing.
+
+### Added
+- `council gate --wait <name>` queues behind a running gate call (20 minutes, or `--wait=<seconds>`) instead of refusing; the refusal names the flag.
+- A build tier: `- build tier: light` (the default) or `full` in the config. build-proof.md's Tiers section says what each requires — light pairs and verifies risky tasks one by one and batches the rest — council-implement reads it, and `council check` names the tier it read in its summary and in check.md. The implement loop also gains "rulings, not stalls" with a stop list, a `Ruling:` log line, and a finish line: a build ends at its plan's last task plus one fix round.
+- Workers and verifiers the harness will not let write hand their file back under `UNWRITTEN <path>`, and the Chair saves it with `note="saved by the Chair"`.
+
 ## [0.21.0] — 2026-10-08
 
 **TL;DR:** the rules a real run broke while they sat in prose are now enforced. A hook refuses
@@ -152,7 +169,6 @@ smaller fixes found after run 2 are in too, from two closes at once to the paid 
 - The new Stop hook runs at the end of every turn; it is silent outside a council run.
 - A verifier's seat is done only with its file: a Workflow's verifiers write `verify-<n>-<letter>.md` in the run folder.
 - "Just me" needs nothing: a council with no `- sharing:` line stays a team council, as before.
-
 
 ## [0.18.0] — 2026-10-01
 
