@@ -159,10 +159,10 @@ the converge pass starts, `council state phase=challenge`.
      until a `diagnose-…` seat is on record after the second verdict, or the user's go is
      (`council state decision="…"`).
    - **SCOPE-CREEP** → revert the extra change.
-   - **CANNOT VERIFY** → add the missing check, or record why it can't exist.
+   - **CANNOT VERIFY** → add the missing check, or say why none can exist.
    - **A wrong finding** → don't "fix" it; log it as refuted, with evidence.
 8. **Log and state — now, not at the end.**
-   - Append the task's entry to the log.
+   - Append the task's log entry.
    - Include each failed gate attempt's category, suggested lens, actual cause (or uncertainty),
      snapshot paths and next action. `council repair check T<n>` checks saved snapshots when used.
    - Update the state: `council state next="task <n+1>: <title>" attempts="T<n> 1/3"`. Keep a short
@@ -293,7 +293,7 @@ offered; a Squad is usually right.
 
 ## Edge cases
 
-- **The plan names code that no longer exists** → follow the intent, not the path; log it.
+- **Plan names code that no longer exists** → follow the intent, not the path; log it.
 - **Blocked by something outside the input** → log it; carry on with the other tasks.
 - **Two tasks share one change** → change once; keep each Done-when, evidence and verdict.
 - **"Also add X" mid-build** → record their words under ask.md's `## Later, in your words`; it is
