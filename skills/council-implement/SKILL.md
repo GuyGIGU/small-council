@@ -55,7 +55,7 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
    this run's new words, or `(no new words)`. Then write the log header at
    `<home>/logs/<YYYY-MM-DD>-<slug>.md`.
 6. **Rulings, not stalls.** Inside the approved scope, decide ambiguities and plan defects yourself
-   and log each as a Ruling (below); stop only for a destructive action, a push or shared branch, a
+   and log each as a Ruling; stop only for a destructive action, a push or shared branch, a
    public contract, or scope or budget beyond approval.
 
 ## At Prepare — the baseline
@@ -95,9 +95,8 @@ the converge pass starts, `council state phase=challenge`.
 2. **Before-evidence — choose proof for the task before editing.** Read
    `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
    contract: change for a fix or new behaviour, preserve only for unchanged behaviour. Under the
-   light tier (its Tiers section; the default) only a risky task records a pair; an ordinary task's
-   proof is its gates after the change plus the converge check. Record the chosen mode and
-   invariants in the log. Read a new check or probe back and compile it with the cheapest check,
+   light tier (the default) only a risky task records a pair; an ordinary task's proof is its gates
+   after the change plus the converge check. Record the chosen mode and invariants in the log. Read a new check or probe back and compile it with the cheapest check,
    then run `council gate before-<n>` as it specifies, one gate per Bash call. A red from a broken
    check is no proof: `council gate before-<n> --invalid "<why>"`, fix it, run it again.
    Label support with `references/evidence-model.md`; cite saved outputs for `REPRODUCED`.
@@ -139,7 +138,8 @@ the converge pass starts, `council state phase=challenge`.
    - the proof mode and, for preservation, the invariants and their test paths;
    - the governing principle's own text, quoted from the reference doc, so it is checked, not cited;
    - the diff, written to `<run>/diff-<n>.patch`, passed by path;
-   - the before, after and gate outputs in `gates/`.
+   - the before, after and gate outputs in `gates/`;
+   - the task's risk class as the plan marks it, so a pair-less risky task is refused.
 
    Verify every P1 fix and every risky task (data writes, security, core logic) on its own; batch
    ordinary tasks up to five per verifier (light tier), two or three (full), or up to five of one kind
@@ -160,7 +160,7 @@ the converge pass starts, `council state phase=challenge`.
      (`council state decision="…"`).
    - **SCOPE-CREEP** → revert the extra change.
    - **CANNOT VERIFY** → add the missing check, or record why it can't exist.
-   - **A finding that turns out to be wrong** → don't "fix" it; log it as refuted, with evidence.
+   - **A wrong finding** → don't "fix" it; log it as refuted, with evidence.
 8. **Log and state — now, not at the end.**
    - Append the task's entry to the log.
    - Include each failed gate attempt's category, suggested lens, actual cause (or uncertainty),
@@ -295,7 +295,7 @@ offered; a Squad is usually right.
 
 - **The plan names code that no longer exists** → follow the intent, not the path; log it.
 - **Blocked by something outside the input** → log it; carry on with the other tasks.
-- **Two tasks share one change** → change once; keep each task's Done-when, evidence and verdict.
+- **Two tasks share one change** → change once; keep each Done-when, evidence and verdict.
 - **"Also add X" mid-build** → record their words under ask.md's `## Later, in your words`; it is
   authorized. Ask only about scope or cost beyond the approved budget.
 - **Evidence contradicts the plan** → Convene's changed-instructions rule: log it, correct the

@@ -468,6 +468,7 @@ check("build tier: build-proof.md states both tiers with light as the default, t
       "## Tiers" in build_proof and "build tier: light" in build_proof and "A missing line reads as light" in build_proof and
       "light: gates only" in build_proof and
       "light tier" in skill["council-implement"] and "Ruling:" in skill["council-implement"] and
+      "risk class" in skill["council-implement"].split("Dispatch `small-council:council-verifier` with:", 1)[-1] and
       "finish line" in skill["council-implement"] and "never a hunt inside the build" in skill["council-implement"] and
       "- build tier: light" in read("references", "templates", "council.config.md"))
 check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"]))
