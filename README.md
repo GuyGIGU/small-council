@@ -3,7 +3,7 @@
 **A council of expert reviewers for Claude Code, where every finding is proved before you see it.**
 
 [![CI](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml/badge.svg)](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.20.1-black.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.22.0-black.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![Any stack](https://img.shields.io/badge/stack-any-black.svg)](references/roster/expert-catalog.md)
 
