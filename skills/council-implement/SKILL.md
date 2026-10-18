@@ -21,10 +21,8 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
 
 ## Three kinds of input
 
-- **A plan:** `<home>/plans/<slug>.md` (legacy: `PLAN-<slug>.md` at the project root). Each task has
-  Domain, Ref, Depends on, Touches and Done when.
-- **A review (fix mode):** `<home>/reviews/<date>-<slug>.md` (legacy: a `FINAL-REVIEW.md` in an old
-  run folder). Each selected finding becomes a task:
+- **A plan:** `<home>/plans/<slug>.md`. Each task has Domain, Ref, Depends on, Touches and Done when.
+- **A review (fix mode):** `<home>/reviews/<date>-<slug>.md`. Each selected finding becomes a task:
   - its seat's reference doc governs it;
   - its Fix line is the ask;
   - "done" means the consequence can no longer happen.
@@ -56,10 +54,11 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
    before task 1; a red mandatory gate you cannot fix stops the affected task.
 5. **Open the run.** `council run open council-implement`. Continue the input's request: its "Your
    request" line gives the path → `council state ask=<path>`, and ask.md gets `continues: <path>` plus
-   this run's new words, or `(no new words)`. An input from before 0.6 has no such line: start a new
-   request from the user's words now, or restate the plan's Scope line, confirmed by the user
-   (`source: restated from <plan>`). Then write the log header at
+   this run's new words, or `(no new words)`. Then write the log header at
    `<home>/logs/<YYYY-MM-DD>-<slug>.md`.
+6. **Rulings, not stalls.** Inside the approved scope, decide an ambiguity, a plan defect or a
+   conflict yourself and log it as a Ruling (below). Stop only for a destructive action, a push or a
+   shared branch, a public contract, or scope or budget beyond approval.
 
 ## At Prepare — the baseline
 
@@ -97,8 +96,10 @@ the converge pass starts, `council state phase=challenge`.
    project-local `.council/refs/…` under the council home.
 2. **Before-evidence — choose proof for the task before editing.** Read
    `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
-   contract: change for a fix or new behaviour, preserve only for unchanged behaviour. Record the
-   chosen mode and invariants in the log, then run `council gate before-<n>` as it specifies.
+   contract: change for a fix or new behaviour, preserve only for unchanged behaviour. Under the
+   light build tier (its Tiers section; the default) only a risky task records a pair — an ordinary
+   task's proof is its gates after the change plus the converge check. Record the chosen mode and
+   invariants in the log, then run `council gate before-<n>` as it specifies.
    Label support with `references/evidence-model.md`; cite saved outputs for `REPRODUCED`.
 3. **Plan the change:** files, minimal diff, governing principle, effects on later tasks and watchpoints.
 4. **Implement.**
@@ -140,7 +141,8 @@ the converge pass starts, `council state phase=challenge`.
    - the before, after and gate outputs in `gates/`.
 
    Verify every P1 fix and every risky task (data writes, security, core logic) on its own; batch
-   small tasks two or three per verifier, or up to five of one kind (renames, copy edits). Track each
+   ordinary tasks up to five per verifier under the light tier, two or three under full, or
+   up to five of one kind (renames, copy edits) under either. Track each
    with `council seat verify-<n> …`; one stopped at its turn limit is resumed with SendMessage
    ("write your file now"), never re-dispatched. Then act on the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
@@ -149,8 +151,8 @@ the converge pass starts, `council state phase=challenge`.
      used its one diagnosis worker for a gate failure; otherwise stop and report. The worker is read-only.
      Its dispatch message is its whole brief — the task and its Done-when, both verdict files, the
      diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
-     candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it
-     (`council run plan check`), then `council seat diagnose-<n> …`. Then one more attempt; still
+     candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it as role
+     `diagnosis` (`council run plan check`), then `council seat diagnose-<n> …`. Then one more attempt; still
      failing → stop and report.
    - **SCOPE-CREEP** → revert the extra change.
    - **CANNOT VERIFY** → add the missing check, or record why it can't exist.
@@ -184,6 +186,7 @@ Files: `path` — <what changed and why, one line each>
 Evidence: change | preserve · before <check> → <expected failure | passes> · after → passes · saved outputs: <paths>
 Gates: ✅ tests ✅ lint ✅ build   (or ❌ + what happened)
 Verifier: OK   (or: fixed after INCOMPLETE — <what>)
+Ruling: <what you decided instead of stopping> — <why> — <what it costs if wrong>   (omit if none)
 Notes: <judgment calls, watchpoints hit, conventions followed — omit if none>
 ```
 
@@ -208,7 +211,9 @@ Plain English: what changed and why, never pasted code.
 After the last task, one council-verifier checks every task's Done-when against the final tree. In
 fix mode, it checks every selected finding's consequence instead. Each gets met, partly met or not
 met, with evidence — written into the log's `## Converge` table.
-- Anything not met → one more task, or a logged follow-up.
+- Anything not met → one more task, or a logged follow-up. That round is the **finish line**: a
+  build ends at its plan's last task plus one fix round after converge. Anything found beyond it is a
+  follow-up or a new review run, never a hunt inside the build.
 - Then run the final gates: `council gate --all --at verify`. Exit 4 means nothing was checked — say
   so; never report it as a pass.
 - If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
@@ -277,13 +282,11 @@ offered; a Squad is usually right.
 
 ## Edge cases
 
-- **The plan names code that no longer exists** → follow the intent, not the literal path, and log it.
-- **Blocked by something outside the input** (a key, a service, an env var) → do what you can, log the
-  blocker, and carry on with the unblocked tasks.
-- **Two tasks share one change** → implement the shared change once; retain each task's Done-when,
-  evidence and verdict so neither disappears from the receipt.
-- **"Also add X" mid-build** → record the user's words under ask.md's `## Later, in your words` and
-  update the task list. Their instruction authorizes the addition; ask only about unresolved scope,
-  dependencies or cost beyond the approved budget before doing dependent work.
-- **Evidence contradicts the plan's approach** → apply Convene's changed-instructions rule. Log the
-  contradiction, corrected approach and affected tasks, then re-verify every affected Done-when.
+- **The plan names code that no longer exists** → follow the intent, not the path; log it.
+- **Blocked by something outside the input** (a key, a service) → log the blocker; carry on with the
+  unblocked tasks.
+- **Two tasks share one change** → change once; keep each task's Done-when, evidence and verdict.
+- **"Also add X" mid-build** → record their words under ask.md's `## Later, in your words`; their
+  instruction authorizes it. Ask only about scope, dependencies or cost beyond the approved budget.
+- **Evidence contradicts the plan's approach** → Convene's changed-instructions rule: log it, correct
+  the approach, re-verify every affected Done-when.

@@ -147,6 +147,14 @@ configured_agent_cap() {
   printf '%s' "$cap"
 }
 
+# The project's build tier — `- build tier: light|full` under Run preferences (references/build-proof.md,
+# Tiers). A missing or unknown line reads as light; the word says where the reading came from.
+configured_build_tier() {
+  local cfg="$(council_home)/council.config.md" tier
+  tier="$(sed -n 's/^[[:space:]]*-[[:space:]]*build tier:[[:space:]]*\([[:alpha:]]*\).*/\1/p' "$cfg" 2>/dev/null | head -n 1 | tr 'A-Z' 'a-z')"
+  case "$tier" in light|full) printf '%s (config)' "$tier" ;; *) printf 'light (default)' ;; esac
+}
+
 # The project's measured estimate of tokens per worker — `- estimate per worker: 150k` under Run
 # preferences, set by `council tune apply budget` on the user's words. Empty when unset or implausible,
 # so the route keeps its no-history default.
@@ -1275,7 +1283,7 @@ cmd_seat() {
     die "agents=0 says no agent ran for $slug, but an agent id is on record for it — report that agent's usage instead"
   fi
   if [ -n "$(corrections_tsv "$run" | SLUG="$slug" awk -F'\t' '$1 == ENVIRON["SLUG"] && $4 == 1 { print; exit }')" ]; then
-    die "$slug was added from evidence as an agent run the record missed — record new work under a new slug"
+    die "$slug was added from evidence as an agent run the record missed — record new work under a new slug: council seat <new slug> running agent=<id> (with its own run-plan rows); $slug's row stays as corrected"
   fi
   case "$state" in
     queued|running)
@@ -1299,7 +1307,7 @@ cmd_seat() {
   if [ -n "$tokens$runs" ] && [ -z "${agent:-$cur}" ] \
      && SLUG="$slug" RUNS="${runs:-1}" TOK="$tokens" awk -F'\t' 'NR > 1 && $2 == ENVIRON["SLUG"] && $3 == "" && $4 == "finished" &&
           $5 == ENVIRON["RUNS"] && $6 == ENVIRON["TOK"] { f = 1; exit } END { exit !f }' "$u"; then
-    printf 'council: %s already has this usage report on record, with no agent id to tell two agent runs apart — not counted again (another agent run needs its agent=<id>)\n' "$slug" >&2
+    printf 'council: %s already has this usage report on record, with no agent id to tell two agent runs apart — not counted again (another agent run needs its agent=<id>: a re-dispatched agent reports as council seat %s done agent=<new id> tokens=… agents=1; a resumed agent reports its running total under the same agent id)\n' "$slug" "$slug" >&2
     dup=1
   elif [ -n "$tokens$runs" ]; then
     printf '%s\t%s\t%s\tfinished\t%s\t%s\n' "$(now_utc)" "$slug" "${agent:-$cur}" "${runs:-1}" "$tokens" >> "$u" \
@@ -2107,7 +2115,7 @@ run_plan_validate() {
           if (v != "selected" && v != "skipped") problem(NR, "seat disposition must be selected or skipped")
           disp[id] = v
         } else if (fld == "role") {
-          if (v != "chair" && v != "worker" && v != "verifier") problem(NR, "seat role must be chair, worker or verifier")
+          if (v != "chair" && v != "worker" && v != "verifier" && v != "diagnosis") problem(NR, "seat role must be chair, worker or verifier (or diagnosis: a read-only worker on a stuck task)")
           role[id] = v
         } else if (fld == "model") {
           if (v != "inherit" && v != "sonnet" && v != "haiku") problem(NR, "seat model must be inherit, sonnet or haiku")
@@ -3143,7 +3151,7 @@ gate_unlock() {
 }
 
 gate_lock() {
-  local run="$1" lock="$1/gates.lock" recovery="$1/gates.lock.recover" me="${BASHPID:-$$}" pid='' since='' tries=0
+  local run="$1" lock="$1/gates.lock" recovery="$1/gates.lock.recover" me="${BASHPID:-$$}" pid='' since='' tries=0 waited=0
   while :; do
     if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
       if [ -d "$recovery" ]; then rmdir "$lock" 2>/dev/null; continue; fi   # a reclaimer got in first: yield
@@ -3173,7 +3181,12 @@ gate_lock() {
     case "$pid" in
       ''|*[!0-9]*) ;;                                # no owner to read yet: look again
       *) if kill -0 "$pid" 2>/dev/null; then
-           die "checks are already running for this run (${run##*/}, started ${since:-a moment ago}, process $pid) — wait for them to finish; nothing was started"
+           if [ "${WAIT:-0}" = 1 ]; then                 # --wait: queue behind the running set, up to 20 minutes
+             waited=$((waited + 1))
+             [ "$waited" -le 1200 ] || die "checks are still running for this run (${run##*/}, started ${since:-a moment ago}, process $pid) after 20 minutes of --wait — nothing was started"
+             sleep 1; continue
+           fi
+           die "checks are already running for this run (${run##*/}, started ${since:-a moment ago}, process $pid) — wait for them to finish; nothing was started (to queue behind them instead: council gate --wait …)"
          fi ;;
     esac
     tries=$((tries + 1))
@@ -3364,7 +3377,7 @@ cmd_gate() {
       before-*|after-*) proof_id="${name#*-}" ;;
       *) die "--proof takes a before-<n> or after-<n> gate; regression proofs always show a change" ;;
     esac
-    case "$proof_id" in ''|*[!0-9]*) die "--proof needs a numeric task id in before-<n> or after-<n>" ;; esac
+    case "$proof_id" in ''|*[!0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-]*) die "--proof needs a task id in before-<id> or after-<id>: a number, or a slug of letters, digits, dashes and underscores (got '$proof_id')" ;; esac
   fi
   wait_over "$run"
   if [ "$ALL" = 1 ]; then
@@ -4537,12 +4550,12 @@ QUOTES
     done
     if [ "$proofs" -eq 0 ]; then
       bad=$((bad + 1))
-      say "check: NO PROOF — this build recorded no before-and-after evidence (council gate before-<n> -- '<check>', then after-<n>)"
+      say "check: NO PROOF — this build recorded no before-and-after evidence (council gate before-<n> -- '<check>', then after-<n>) · build tier: $(configured_build_tier)"
     else
       if [ "$preserved" -gt 0 ]; then
-        say "check: $((proofs - broke)) of $proofs task(s) checked · $preserved preserved behaviour · $broke broken · $saved left a test behind in the project"
+        say "check: $((proofs - broke)) of $proofs task(s) checked · $preserved preserved behaviour · $broke broken · $saved left a test behind in the project · build tier: $(configured_build_tier)"
       else
-        say "check: $((proofs - broke)) of $proofs fix(es) proved · $broke broken · $saved left a test behind in the project"
+        say "check: $((proofs - broke)) of $proofs fix(es) proved · $broke broken · $saved left a test behind in the project · build tier: $(configured_build_tier)"
       fi
     fi
   fi
@@ -6880,7 +6893,8 @@ council — the Small Council's helper (bash + git)
                                          failed repair attempts: it may run again
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
                                          inside it; output and exit code → <run>/gates/
-  council gate before-<n>|after-<n> --proof change|preserve -- '<command>'
+  council gate before-<id>|after-<id> --proof change|preserve -- '<command>'   (id: a task number or a slug)
+  council gate --wait <name>             queue behind a running gate call (up to 20 minutes), then run
                                          build proof: a failing then passing check, or an invariant
                                          passing on both versions (declare preserve before the edit)
   council gate --all [--at grounding|verify]
@@ -6963,7 +6977,7 @@ takes_flags() {
 no_words() { local label="$1"; shift; [ $# -eq 0 ] || die "$label doesn't take '$*' — see: council help"; }
 
 main() {
-  RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" PROOF_ARG="" SESSION_ARG="" ALONGSIDE=0 FLAGS=""
+  RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" PROOF_ARG="" SESSION_ARG="" ALONGSIDE=0 FLAGS="" WAIT=0
   ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
   ROUTE_SURFACES=()
   CONTEXT_EXPANDS=()
@@ -6986,8 +7000,8 @@ main() {
                    val="$2"; shift 2 ;;
       --run=*|--code-root=*|--status=*|--base=*|--at=*|--proof=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*|--transcript=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still) flag="${1#--}"; val=1; shift ;;
-      --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*) die "${1%%=*} takes no value" ;;
+      --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still|--wait) flag="${1#--}"; val=1; shift ;;
+      --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*|--wait=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
                    [ $# -eq 0 ] || { pos+=("$1"); shift; }
                    continue ;;
@@ -7007,7 +7021,7 @@ main() {
       run) RUN_ARG="$val" ;;       code-root) CODE_ROOT_ARG="$val" ;;  status) STATUS_ARG="$val" ;;
       base) BASE_ARG="$val" ;;     at) AT_ARG="$val" ;;                session) SESSION_ARG="$val" ;;
       proof) PROOF_ARG="$val" ;;
-      alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;                     json) JSON_OUT=1 ;;  watch) WATCH=1 ;;
+      alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;                     json) JSON_OUT=1 ;;  watch) WATCH=1 ;;  wait) WAIT=1 ;;
       widget) WIDGET=1 ;;          line) LINE=1 ;;               preview) PREVIEW=1 ;;
       task) ROUTE_TASK_ARG="$val" ;; risk) ROUTE_RISK_ARG="$val" ;;
       complexity) ROUTE_COMPLEXITY_ARG="$val" ;; uncertainty) ROUTE_UNCERTAINTY_ARG="$val" ;;
@@ -7113,7 +7127,7 @@ main() {
                       cmd_repair allow "${1+$*}" ;;     # a gate name with a space may arrive as several words
               *) die "usage: council repair record <task> <gate> | repair show|check [task] | repair allow <gate> --user-said \"…\"" ;;
             esac ;;
-    gate)    takes_flags gate all at proof --
+    gate)    takes_flags gate all at proof wait --
              if [ "$ALL" = 1 ]; then
                no_words "gate --all" ${1+"$@"}
                [ -z "$GATE_CMD" ] || die "gate --all runs the configured gates — it takes no command after --"

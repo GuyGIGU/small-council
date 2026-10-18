@@ -428,6 +428,19 @@ check("verifier: scratch files stay out of the run folder, nothing runs in the b
                                         "never rewrite your file", "nothing before or after it")))
 check("05-work: says the seat-check hook does not cover a Workflow's agents, and that collect checks their files",
       "workflow-subagent" in doctrine["05-work.md"] and "every file in `seats/`" in flat(doctrine["05-work.md"]))
+check("05-work and the agents: a worker the harness would not let write hands its file back under UNWRITTEN, and the "
+      "Chair saves it and says so (a real run on the Mac had the Chair save replies by hand with no rule for it)",
+      "UNWRITTEN" in doctrine["05-work.md"] and "saved by the Chair" in doctrine["05-work.md"] and
+      "UNWRITTEN" in worker and "UNWRITTEN" in verifier and
+      "never by stdin" in read("references", "helper-commands.md"))
+build_proof = read("references", "build-proof.md")
+check("build tier: build-proof.md states both tiers with light as the default, the implement loop reads it for the pair "
+      "and the verifier batches, the config template carries the line, and a build ends at a stated finish line",
+      "## Tiers" in build_proof and "build tier: light" in build_proof and "A missing line reads as light" in build_proof and
+      "light: gates only" in build_proof and
+      "build tier" in skill["council-implement"] and "Ruling:" in skill["council-implement"] and
+      "finish line" in skill["council-implement"] and "never a hunt inside the build" in skill["council-implement"] and
+      "- build tier: light" in read("references", "templates", "council.config.md"))
 check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"]))
 check("verifier: change verdicts", all(v in verifier for v in ["OK", "INCOMPLETE", "REGRESSION", "SCOPE-CREEP", "CANNOT VERIFY"]))
 check("verifier: can open a research claim's URL", re.search(r"^tools:.*\bWebFetch\b", verifier, re.MULTILINE) is not None)

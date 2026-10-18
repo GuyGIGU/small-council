@@ -51,6 +51,8 @@ Write <abs run>/seats/<slug>.md, then return one line.
   line: "3 of 5 seats in — Security, Structure, Tests · ~210k tokens so far".
 - **A worker stopped at its turn limit** (60 turns) may have left no file: `council seat … done`
   refuses without it and names the resume (SendMessage); never re-dispatch it.
+- **A write the harness refused:** the worker returns its file as its reply under a first line
+  `UNWRITTEN <path>`; save it there verbatim and record `note="saved by the Chair"` on its seat.
 - **The agent cap and the token ceiling.** When `council seat` says the run reached either, start no
   more agents — no re-dispatch, diagnosis worker or extra verifier — until the user says go; the
   hook refuses the next one until `council cap allow <n> --user-said "<their words>"` records it.

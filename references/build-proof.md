@@ -40,14 +40,34 @@ council gate before-2 --proof preserve -- 'pytest tests/test_export.py'
 council gate after-2 --proof preserve -- 'pytest tests/test_export.py'
 ```
 
-`--proof change` makes the default explicit. The flag takes a numeric `before-<n>` or `after-<n>`
-gate in a council-implement run; it does not apply to configured gate sets or `regress-<n>` fixes.
+`--proof change` makes the default explicit. The flag takes a `before-<id>` or `after-<id>` gate in
+a council-implement run, where the id is the task's number or a slug of letters, digits, dashes and
+underscores (a builder's name, such as `before-b7-flip`); it does not apply to configured gate sets
+or `regress-<n>` fixes.
 The helper writes the mode in each gate's JSON verdict. Old verdicts without it remain change proof.
 Always quote the whole command after `--`, so pipes, `&&` and nested quotes reach the gate intact.
 The command must be identical in both records. Keep both output files and cite them in the task log.
 For preservation both outputs must contain an observation, not just whitespace; a normally silent
 assertion or query should print its checked result after succeeding. No tests selected is not proof.
 Before/after checks are proof records, excluded from automatic gate-repair attempts.
+
+## Tiers
+
+The config's run preferences say how much proof a build records: `- build tier: light` or
+`- build tier: full`. A missing line reads as light.
+
+- **Light** (the default): a before/after pair is required for a **risky** task — a P1 fix, a data
+  write, security, core logic, a public contract, or a task the plan marks risky — and for any task
+  that adds a test anyway. An ordinary task proves itself by its gates passing after the change and
+  by the converge check; its Converge Proof reads `light: gates only`. Verifiers run one per batch
+  of up to five ordinary tasks, plus the converge check; a risky task gets its own.
+- **Full**: every task records a pair and every task gets a verifier, batched as the implement
+  skill says.
+
+`council check` prints the tier it read at the end of its proof summary line, so the receipt carries it.
+The tier changes how much is proved, never what counts as proof: under light, a risky task without
+its pair is still NO PROOF, and the verifier's brief names the task's risk class, read from the plan,
+so a builder cannot call a risky task ordinary.
 
 ## Read the result
 

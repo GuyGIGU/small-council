@@ -43,3 +43,5 @@ local automated checks, not a new live agent run.
 | Desktop pet | 0.16: `council pet` | `run_status` (no window: shapes, poses, bubbles, arguments, refusals, one pet per project, closing) | No: not used in a real run yet. By hand on Windows only: a window opened, followed a scratch run through working, needs you and stopped, outlived the command that launched it, and closed on `--stop` and on its timer; macOS and Linux not tried | — |
 
 Whether the council beats plain Claude Code is unmeasured.
+
+- 2026-10-18: the light build tier (references/build-proof.md, Tiers; `- build tier:` in the config) — implemented and pinned by evals/run_structural.py; not yet validated in a real run.

@@ -600,6 +600,15 @@ def runs_open(tmp):
     code_s, shown, _ = council(repo, "run", "plan", "show")
     check("run plan check: agent runs that fit the cap pass, and the plan shows the Workflow's count",
           code == 0 and "10 agent run(s) of cap 10" in out and code_s == 0 and "7 agent runs" in shown, out + shown)
+    write(plan_path, good_plan + "seat\tdiagnose-1\tdisposition\tselected\tstuck task\nseat\tdiagnose-1\trole\tdiagnosis\treads the stuck task\n"
+                                 "context\tdiagnose-1\tlevel\tfocused\tno\nbudget\tdiagnose-1\ttool-calls\t20\tno\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: a diagnosis seat (the implement loop's read-only worker on a stuck task) is accepted and counts as one agent run",
+          code == 0 and "5 agent run(s) of cap 10" in out, out)
+    write(plan_path, good_plan + "seat\tcritic\tdisposition\tselected\tno\nseat\tcritic\trole\tcritic\tno\n"
+                                 "context\tcritic\tlevel\tfocused\tno\nbudget\tcritic\ttool-calls\t20\tno\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: an unknown role is still refused", code == 1 and "seat role must be chair, worker or verifier" in out, out)
     for bad, want in (("budget\tchair\tagent-runs\t2\tno\n", "the Chair is not an agent run"),
                       ("budget\tverify-plan\tagent-runs\t0\tno\n", "agent-runs must be an integer from 1 to 1000"),
                       ("budget\tghost\tagent-runs\t2\tno\n", "a seat budget belongs only to a selected seat: ghost")):
@@ -818,7 +827,21 @@ def gate_lock(tmp):
           after == before and sorted(n for n in after if n.startswith("gates/")) == ["gates/tests.txt"]
           and after.get("gates/tests.txt") == b"started\n" and len(events(lrun)) == 1,
           "changed: %s" % sorted(n for n in set(before) | set(after) if before.get(n) != after.get(n)), full=True)
+    check("gate lock: the refusal names --wait as the way to queue behind the running call",
+          all("council gate --wait" in err for _, _, err in second), "\n".join(err for _, _, err in second))
+    waiter = subprocess.Popen([BASH, CLI, "gate", "--wait", "lint", "--run", lrun], cwd=lk, env=GIT_ENV,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+    time.sleep(2)
+    still_waiting = waiter.poll() is None and folder() == before
     write(os.path.join(lk, "go.flag"), "")
+    try:
+        outw, errw = waiter.communicate(timeout=120)
+    except subprocess.TimeoutExpired:
+        waiter.kill()
+        outw, errw = waiter.communicate()
+        errw += " (still running after 120 s)"
+    check("gate lock: `gate --wait` queues behind the running set — writes nothing while it waits, then runs its gate once the lock is free",
+          still_waiting and waiter.returncode == 0 and "gate lint: pass" in outw and errw.strip() == "", "waiting=%s exit %s · %r · %r" % (still_waiting, waiter.returncode, outw, errw))
     try:
         out1, err1 = first.communicate(timeout=120)
     except subprocess.TimeoutExpired:
@@ -827,17 +850,17 @@ def gate_lock(tmp):
         err1 += " (still running after 120 s)"
     done = [e[4:6] for e in events(lrun) if e[3] == "gate.finished"]
     check("gate lock: the first call finishes as if nobody had tried — each gate ran once, its own output is the saved "
-          "one and the baseline, one event per gate — and its lock is gone",
+          "one and the baseline, one event per gate (plus the queued --wait lint) — and its lock is gone",
           first.returncode == 0 and "gates: 2 ran — all pass" in out1 and err1.strip() == ""
           and read(os.path.join(lk, "ran.log")) == "x\n" and read(saved) == "started\nfinished\n"
           and read(os.path.join(lrun, "gates", "baseline", "tests.txt")) == "started\nfinished\n"
-          and done == [["tests", "passed"], ["lint", "passed"]] and not os.path.exists(lock),
+          and done == [["tests", "passed"], ["lint", "passed"], ["lint", "passed"]] and not os.path.exists(lock),
           "exit %s · stdout %r · stderr %r · events %s" % (first.returncode, out1, err1, done), full=True)
     code, out, err = council(lk, "gate", "lint", "--run", lrun)
     code2, out2, err2 = council(lk, "gate", "--all", "--at", "grounding", "--run", lrun)
     check("gate lock: gate calls one after another still run, and each leaves no lock behind",
           code == 0 and "gate lint: pass" in out and err.strip() == "" and code2 == 0 and "gates: 2 ran — all pass" in out2
-          and err2.strip() == "" and len([e for e in events(lrun) if e[3] == "gate.finished"]) == 5
+          and err2.strip() == "" and len([e for e in events(lrun) if e[3] == "gate.finished"]) == 6
           and not os.path.exists(lock), out + err + out2 + err2)
 
     # A lock whose process is gone is cleared by the next call, which says so in one line.
@@ -2788,6 +2811,11 @@ def runs_tool_calls(tmp):
     code, out, err = council(tc, "seat", "w2", "done", "tokens=20000", "tools=9")      # the same report again, no agent id
     check("seat tools=: a report not counted again (no agent id, same figures) adds no tool calls either",
           "already has this usage report" in err and len(read(os.path.join(run, "tools.tsv")).splitlines()) == 3, err)
+    check("seat done: the duplicate line names the way through — a re-dispatch reports under its new agent id",
+          "council seat w2 done agent=" in err, err)
+    code, out, err = council(tc, "seat", "w2", "done", "agent=a9", "tokens=5000", "tools=4")
+    check("seat done: a third report of one slug with a new agent id is counted, not dropped",
+          code == 0 and "not counted again" not in err, out + err)
     code, out, err = council(tc, "seat", "w1", "done", "agent=a1", "tokens=30000", "tools=70")
     check("seat done tools=: a resumed agent's later figure is its running total, counted once (70, not 127)",
           code == 0 and "70 tool calls" in out + err and "127" not in out + err, out + err)
@@ -4048,11 +4076,19 @@ def requests_preservation_proofs(tmp):
     check("preservation: a zero-test pass cannot prove preservation",
           code == 1 and "task 11  proof  NOTHING-RAN" in out, out + err)
 
+    # A builder named by slug (parallel builders in their own worktrees) records its pair under that name.
+    code, out, err = council(repo, "gate", "before-b7-flip", "--proof", "preserve", "--", command)
+    code2, out2, err2 = council(repo, "gate", "after-b7-flip", "--proof", "preserve", "--", command)
+    code3, out3, err3 = council(repo, "check")
+    check("preservation: a slug task id (before-b7-flip) is accepted and check pairs it like a number",
+          code == 0 and code2 == 0 and "task b7-flip  proof  preserved" in out3, out + err + out2 + err2 + out3 + err3)
+    check("check: the proof summary names the build tier it read — light by default when the config has no line",
+          "build tier: light (default)" in out3, out3)
     before_files = {p.relative_to(Path(run)).as_posix(): p.read_bytes()
                     for p in Path(run).rglob("*") if p.is_file()}
     for args in (("gate", "before-12", "--proof", "unknown", "--", command),
                  ("gate", "regress-12", "--proof", "preserve", "--", command),
-                 ("gate", "before-no", "--proof", "preserve", "--", command),
+                 ("gate", "before-no.go", "--proof", "preserve", "--", command),
                  ("gate", "--all", "--proof", "preserve"),
                  ("state", "--proof", "preserve", "next=changed")):
         code, out, err = council(repo, *args)

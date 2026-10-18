@@ -8,7 +8,12 @@ Call it as a plain `council <command>` — never through a shell variable or ali
 text, so any other form asks the user every time. Only if it isn't on PATH, write
 `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
 
-Build proof uses `council gate before-<n>` and `after-<n>` with the same command. The default is a
+Every command takes its input by argument or file path, never by stdin: nothing is piped into
+`council`, and a permission rule that refuses pipes costs nothing. While one gate call runs, a second
+one for the same run is refused; `council gate --wait <name>` queues behind it (up to 20 minutes).
+
+Build proof uses `council gate before-<id>` and `after-<id>` with the same command, where the id is a
+task number or a builder's slug. The default is a
 failing-before/passing-after change check. `--proof preserve` on both gates records a refactor's
 invariants passing on both versions; declare that choice before editing. See
 `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md` for limits and verdicts.

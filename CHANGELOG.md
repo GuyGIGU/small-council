@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- `council gate before-<id>` / `after-<id> --proof …` take a builder's slug as the task id, not only a number; `council check` already paired them by name.
+- `council run plan check` accepts the role `diagnosis` that council-implement tells the Chair to plan for a stuck task; it counts as a worker's agent run.
+- A repeated seat report with no agent id, and a slug closed by `council correct`, now say which command to run next instead of only refusing.
+
+### Added
+- `council gate --wait <name>` queues behind a running gate call (up to 20 minutes) instead of refusing; the refusal names the flag.
+
 ## [0.20.1] — 2026-10-05
 
 **TL;DR:** a build's closing card now says how its final check went instead of "claim index out

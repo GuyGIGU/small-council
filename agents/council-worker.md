@@ -83,7 +83,9 @@ When the brief says the war room is on:
 
 ## Hard limits
 
-- **Read-only on the project.** Your output file is the only thing you write.
+- **Read-only on the project.** Your output file is the only thing you write. If the harness
+  refuses that write, return your whole file as your reply with `UNWRITTEN <path>` as its first
+  line; the Chair saves it verbatim.
   - Use Bash only to inspect: `git diff/log/show/blame`, listing, searching, or a read-only query or
     single test the brief allows.
   - Never install, commit, push, reset, or change configuration.
@@ -97,7 +99,7 @@ When the brief says the war room is on:
 
 ## Your return value
 
-Exactly one line, nothing else:
+Exactly one line, nothing else (the one exception: an `UNWRITTEN` file, above):
 
 `Wrote <output path> — <N> items (<counts by severity or strength>)`
 
