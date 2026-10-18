@@ -3,6 +3,9 @@
   "owner": {
     "name": "GuyGIGU"
   },
+  "metadata": {
+    "description": "Small Council for Claude Code: a council of expert seats that review, plan, build and research in isolated context windows, check each other's work, and report in plain language."
+  },
   "plugins": [
     {
       "name": "small-council",

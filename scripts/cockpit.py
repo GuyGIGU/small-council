@@ -248,8 +248,20 @@ def gates_of(run):
             gates.append({"name": clean(data.get("gate", path.stem)) or path.stem, "exit": integer(data.get("exit")),
                           "seconds": integer(data.get("seconds")) or 0, "when": clean(data.get("when", "")),
                           "command": clean(data.get("command", ""))[:200], "note": clean(data.get("note", "")),
-                          "proof": clean(data.get("proof", "change"))})
+                          "proof": clean(data.get("proof", "change")), "void": void_of(data)})
     return sorted(gates, key=lambda g: g["when"])
+
+
+def void_of(data):
+    """Why a red proves nothing, as council check reads it: marked invalid, stopped at its time limit, or a
+    command that never ran (exit 127). Empty when the result may count."""
+    if clean(data.get("invalid", "")):
+        return "marked invalid ({})".format(clean(data.get("invalid", "")))
+    if data.get("timed_out") is True:
+        return "timed out"
+    if integer(data.get("exit")) == 127:
+        return "never ran (exit 127)"
+    return ""
 
 
 def gate_kind(name):
@@ -264,8 +276,9 @@ def gate_kind(name):
 
 def failed_as_planned(gate):
     """A change-proof check that failed did its job: it showed the problem before the fix. A before-check declared
-    --proof preserve must pass, so its failure is a real one."""
-    return gate_kind(gate["name"]) == "proof" and gate["exit"] not in (0, None) and gate.get("proof") != "preserve"
+    --proof preserve must pass, so its failure is a real one, and a void red (void_of) showed nothing."""
+    return (gate_kind(gate["name"]) == "proof" and gate["exit"] not in (0, None) and gate.get("proof") != "preserve"
+            and not gate.get("void"))
 
 
 def repairs_of(run):
@@ -742,7 +755,9 @@ def render(snap, ascii_only=False, width=None, reading=None):
             planned = failed_as_planned(gate)
             mark = g["unknown"] if gate["exit"] is None else (
                 g["pass"] if gate["exit"] == 0 else g["planned"] if planned else g["fail"])
-            note = " · ".join(words for words in ("failed as planned" if planned else "", gate["note"]) if words)
+            void = gate_kind(gate["name"]) == "proof" and gate["exit"] not in (0, None) and gate.get("void")
+            label = "failed as planned" if planned else "no proof yet: " + gate["void"] if void else ""
+            note = " · ".join(words for words in (label, gate["note"]) if words)
             add("  {} {:<16} exit {:<4} {:>4}s  {}{}".format(mark, gate["name"][:16], shown(gate["exit"]),
                                                            gate["seconds"], gate["when"][-8:],
                                                            "  " + note if note else ""))

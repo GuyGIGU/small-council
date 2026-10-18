@@ -324,6 +324,29 @@ with tempfile.TemporaryDirectory(prefix="council-tui-planned-") as temporary:
           getattr(cockpit, "gate_kind", None) is not None and status.gate_kind is cockpit.gate_kind,
           getattr(cockpit, "gate_kind", None))
 
+# A red that proves nothing — marked invalid, stopped at its time limit, or never run — is no proof yet, as
+# council check reads it: never drawn as failed as planned.
+with tempfile.TemporaryDirectory(prefix="council-tui-void-") as temporary:
+    build = Path(temporary) / ".council" / "runs" / "2026-10-04-000000-implement"
+    write(build / "session-state.md", "status: in-progress\nmode: council-implement\nphase: build\n## Decisions so far\n")
+    for n, (name, code, extra) in enumerate((("before-1", 124, {"timed_out": True, "note": "TIMED OUT after 540s"}),
+                                             ("before-2", 1, {"invalid": "the new test did not compile"}),
+                                             ("regress-3", 127, {}), ("before-4", 1, {}))):
+        record = {"gate": name, "command": "x", "exit": code, "seconds": 1, "when": "2026-10-04 12:0{}:00".format(n)}
+        record.update(extra)
+        write(build / "gates" / (name + ".json"), json.dumps(record))
+    snap = cockpit.snapshot(build)
+    screens = (cockpit.render(snap, width=100), cockpit.render(snap, ascii_only=True, width=100))
+    void = [next((line for line in screen.splitlines() if line[4:].startswith(name + " ")), "")
+            for screen in screens for name in ("before-1", "before-2", "regress-3")]
+    real = [next((line for line in screen.splitlines() if line[4:].startswith("before-4 ")), "") for screen in screens]
+    check("tui: a before- or regress- red that timed out, was marked invalid or never ran is drawn as no proof yet, "
+          "with the failure mark, never as failed as planned",
+          all(line and "no proof yet" in line and "failed as planned" not in line and line[2] in ("✗", "x")
+              for line in void), void)
+    check("tui: an ordinary change-proof red is still drawn as failed as planned",
+          all(line and "failed as planned" in line for line in real), real)
+
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:
     print(f"[{'PASS' if good else 'FAIL'}] {name}" + ("" if good else f"\n        {str(detail)[:900]}"))

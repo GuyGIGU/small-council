@@ -11,7 +11,7 @@ The seats work in parallel, each in its own window. You dispatch, then wait.
   Agent call's per-invocation `model` parameter when `- seat models: on` is configured. Omit that
   parameter for `inherit` or when the plan has no model row. If dispatching through Workflow,
   pass the same value to its `agent()` call. Never override the Chair or verifier: the run plan
-  check refuses it, but dispatch itself isn't gated, so this rule is yours to keep.
+  check refuses it, but the `model` parameter isn't gated, so this rule is yours.
   A configured force-subagent-model environment setting may override the plan; report that if known.
 - **Never pass `name`** on a council Agent call — with agent teams switched on, a named call becomes
   a teammate instead of a worker.
@@ -33,6 +33,8 @@ Write <abs run>/seats/<slug>.md, then return one line.
   objective, slice, hard constraints or reference docs.
   With no pack, dispatch still uses the complete brief. Do not imply that omitted paths are safe.
 
+- The agent gate refuses a council agent with no open run or plan row.
+
 - **Right after dispatching, two steps, in order:**
   1. **Record each worker:** `council seat <slug> running agent=<agentId>` — the id the Agent or
      Workflow tool returned, never a role name.
@@ -51,16 +53,16 @@ Write <abs run>/seats/<slug>.md, then return one line.
   line: "3 of 5 seats in — Security, Structure, Tests · ~210k tokens so far".
 - **A worker stopped at its turn limit** (60 turns) may have left no file: `council seat … done`
   refuses without it and names the resume (SendMessage); never re-dispatch it.
-- **A write the harness refused:** the worker returns its file as its reply under a first line
-  `UNWRITTEN <path>`; save it there verbatim and record `note="saved by the Chair"` on its seat.
+- **A refused write:** the worker replies with its file under `UNWRITTEN <path>`; save it verbatim,
+  `note="saved by the Chair"` on its seat.
 - **The agent cap and the token ceiling.** When `council seat` says the run reached either, start no
-  more agents — no re-dispatch, diagnosis worker or extra verifier — until the user says go; the
-  hook refuses the next one until `council cap allow <n> --user-said "<their words>"` records it.
+  more agents until the user says go; the hook refuses the next one until
+  `council cap allow <n> --user-said "<their words>"` records it.
 - **Alerts:** context-core, Alerts — the helper and the turn-end hook say when. Never for progress.
-- **No notification comes from a worker that died with its session.** After a compaction, keep
-  waiting. In a new session, follow Resume in context-core.
-- **Whatever dispatches the workers** — the Agent tool, a Workflow script, background agents — the
-  file contract holds: one file per seat in `seats/`. The seat-check hook covers only
+- **A worker that died with its session sends nothing.** After a compaction, keep waiting; in a new
+  session, follow Resume in context-core.
+- **Whatever dispatches the workers** (Agent tool, Workflow, background agents), the file contract
+  holds: one file per seat in `seats/`. The seat-check hook covers only
   `council-worker` and `council-verifier` agents, never a Workflow's (their type is
   `workflow-subagent`), so give a Workflow's agents the worker's file rules in their prompt;
   `council collect` then checks every file in `seats/`, named in the brief or not.

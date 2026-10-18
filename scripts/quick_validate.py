@@ -109,6 +109,8 @@ if market is not None:
         errors.append(f"marketplace.json: '{name}' is a reserved marketplace name")
     if not (market.get("owner") or {}).get("name"):
         errors.append("marketplace.json: owner.name is required")
+    if not ((market.get("metadata") or {}).get("description") or market.get("description")):
+        errors.append("marketplace.json: no metadata.description (`claude plugin validate --strict` fails without one)")
     entries = market.get("plugins") or []
     if not entries:
         errors.append("marketplace.json: plugins[] is empty")
@@ -221,7 +223,7 @@ for doc in SEAT_DOCS:
         errors.append(f"references/{doc}: first line must be a single '# Title' (the ref: canary)")
 
 # 7. The helper and hook scripts: bash with a shebang, LF line endings (bash chokes on CR)
-EXECUTABLES = ["bin/council", "hooks/session-start.sh", "hooks/seat-gate.sh", "hooks/agent-gate.sh"]
+EXECUTABLES = ["bin/council", "hooks/session-start.sh", "hooks/seat-gate.sh", "hooks/agent-gate.sh", "hooks/bash-gate.sh"]
 for rel in EXECUTABLES:
     path = os.path.join(ROOT, *rel.split("/"))
     if not os.path.isfile(path):

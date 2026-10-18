@@ -11,8 +11,7 @@ One builder, one task at a time, in this window. Parallel agents read; one hand 
 2. **the build loop below**, in place of stages 3–7;
 3. then stages 8–10.
 
-The only agents you dispatch are verifiers, plus at most one diagnosis worker per stuck task across
-gate and verifier failures.
+The only agents you dispatch are verifiers, plus at most one diagnosis worker per stuck task.
 
 **Carmack's filter:** the smallest change satisfying the task, proved by machine.
 
@@ -28,37 +27,36 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
   - "done" means the consequence can no longer happen.
 
   Default: introduced or touched P1/P2s, including unknown origin. Use the user's existing selection.
-- **A post-game:** `<home>/postgames/<date>-<slug>.md`. Each of its Next tasks is a task, in the plan's
+- **A post-game:** `<home>/postgames/<date>-<slug>.md`. Each Next task is a task in the plan's
   format; its Done-when quotes the user's request.
 
 ## At Convene
 
 1. **Read what drives the build.**
    - The input, in full.
-   - `council.config.md`: gates, hard rules, and the roster → reference map.
-   - Memory: check accepted patterns, enforced conventions and decisions against the task using
-     Convene's changed-instructions rule; do not silently retire or rewrite settled entries.
+   - `council.config.md`: gates, hard rules, the roster → reference map.
+   - Memory: check accepted patterns, conventions and decisions against the task under Convene's
+     changed-instructions rule; never silently retire or rewrite settled entries.
    - `map.md`.
 2. **Order the tasks.** Dependencies first. In fix mode: P1 before P2, then group by file.
-3. **Safety net.** If it isn't a git repo, recommend `git init` plus a first commit. If the user
-   declines, copy each file to `<run>/backup/<path>` before its first change. If uncommitted work
-   exists, note it and never discard it.
+3. **Safety net.** If it isn't a git repo, recommend `git init`. If the user declines, copy each
+   file to `<run>/backup/<path>` before its first change. Uncommitted work: note it, never discard it.
 4. **Carry forward approval, or confirm once:**
    - the task list and order;
    - how the verifier will run, and its cost;
    - *"One commit per task on <branch>, so each task can be reverted?"* Recommended. Never commit on
      the default branch without a yes, and never push unless asked.
 
-   Use Convene's approval rule; state the order and proceed when this build is authorized.
-   Without commit authorization, do not commit. The baseline question below still applies once,
-   before task 1; a red mandatory gate you cannot fix stops the affected task.
+   Use Convene's approval rule; state the order and proceed when authorized. Without commit
+   authorization, do not commit. The baseline question below still applies once, before task 1; a
+   red mandatory gate you cannot fix stops the affected task.
 5. **Open the run.** `council run open council-implement`. Continue the input's request: its "Your
    request" line gives the path → `council state ask=<path>`, and ask.md gets `continues: <path>` plus
    this run's new words, or `(no new words)`. Then write the log header at
    `<home>/logs/<YYYY-MM-DD>-<slug>.md`.
-6. **Rulings, not stalls.** Inside the approved scope, decide an ambiguity, a plan defect or a
-   conflict yourself and log it as a Ruling (below). Stop only for a destructive action, a push or a
-   shared branch, a public contract, or scope or budget beyond approval.
+6. **Rulings, not stalls.** Inside the approved scope, decide ambiguities and plan defects yourself
+   and log each as a Ruling (below); stop only for a destructive action, a push or shared branch, a
+   public contract, or scope or budget beyond approval.
 
 ## At Prepare — the baseline
 
@@ -97,14 +95,16 @@ the converge pass starts, `council state phase=challenge`.
 2. **Before-evidence — choose proof for the task before editing.** Read
    `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
    contract: change for a fix or new behaviour, preserve only for unchanged behaviour. Under the
-   light build tier (its Tiers section; the default) only a risky task records a pair — an ordinary
-   task's proof is its gates after the change plus the converge check. Record the chosen mode and
-   invariants in the log, then run `council gate before-<n>` as it specifies.
+   light tier (its Tiers section; the default) only a risky task records a pair; an ordinary task's
+   proof is its gates after the change plus the converge check. Record the chosen mode and
+   invariants in the log. Read a new check or probe back and compile it with the cheapest check,
+   then run `council gate before-<n>` as it specifies, one gate per Bash call. A red from a broken
+   check is no proof: `council gate before-<n> --invalid "<why>"`, fix it, run it again.
    Label support with `references/evidence-model.md`; cite saved outputs for `REPRODUCED`.
-3. **Plan the change:** files, minimal diff, governing principle, effects on later tasks and watchpoints.
+3. **Plan the change:** files, minimal diff, governing principle, effects on later tasks, watchpoints.
 4. **Implement.**
    - Match existing patterns.
-   - Build what the task says and nothing more — no "while we're here".
+   - Build what the task says, nothing more — no "while we're here".
    - Honour memory.
    - *The function least likely to cause a problem is the one that doesn't exist.*
 5. **Gates for what you touched:** `council gate <name>`, judged by exit code.
@@ -114,16 +114,17 @@ the converge pass starts, `council state phase=challenge`.
    - **A mandatory gate is red that was green at baseline** → hard stop until you understand why.
    - **Red at baseline and waved through** → carry on: check only that your change added no new
      failure — `council gate <name>` names the tests failing now that `gates/baseline/<name>.txt`
-     didn't name. When it can't compare, read both outputs side by side before calling it
-     unchanged. Keep the standing clause on the receipt.
-   - **It can't run** → that's config drift: log it and tell the user.
+     didn't name. When it can't compare, read both outputs side by side. Keep the standing clause
+     on the receipt.
+   - **It can't run** → config drift: log it and tell the user.
    - **It fails during this task** → use the bounded loop in `references/repair-loop.md`:
      `council gate` records it (no `council repair record`), inspect its advisory
      category, saved output and baseline, then repair and rerun the **same** gate. The first failure
      stays with the builder; the second calls for one independent read-only diagnosis if this task
      has not used that worker already; otherwise stop and report. The third failed execution stops
      product-code mutation for this task, and the gate is refused until the user's go
-     (`council repair allow <gate> --user-said "…"`). Jump to blocked-task logging and the receipt;
+     (`council repair allow <gate> --user-said "…"`). Jump to blocked-task logging and the receipt
+     (`council state phase=deliver skip="blocked: task <n>"`);
      do not attempt steps 6–7 as a fix path, start another gate trail, or commit it as complete.
      Preserve the diff and gate output; never silently revert unrelated work. Read-only review
      cannot reopen repair. When the build stops blocked, run `council status --line`; if it prints
@@ -141,19 +142,22 @@ the converge pass starts, `council state phase=challenge`.
    - the before, after and gate outputs in `gates/`.
 
    Verify every P1 fix and every risky task (data writes, security, core logic) on its own; batch
-   ordinary tasks up to five per verifier under the light tier, two or three under full, or
-   up to five of one kind (renames, copy edits) under either. Track each
+   ordinary tasks up to five per verifier (light tier), two or three (full), or up to five of one kind
+   (renames, copy edits). Track each
    with `council seat verify-<n> …`; one stopped at its turn limit is resumed with SendMessage
    ("write your file now"), never re-dispatched. Then act on the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
-     `c`), so the first verdict stays on disk.
+     `c`), so the first verdict stays on disk. A fix that would add a task or a new mechanism — a
+     lock, a guard, a file, another re-check round — gets one line to the user first.
    - **A second failed verification** → a **clean-context diagnosis** if this task has not already
      used its one diagnosis worker for a gate failure; otherwise stop and report. The worker is read-only.
      Its dispatch message is its whole brief — the task and its Done-when, both verdict files, the
      diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
      candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it as role
-     `diagnosis` (`council run plan check`), then `council seat diagnose-<n> …`. Then one more attempt; still
-     failing → stop and report.
+     `diagnosis` (`council run plan check`), then `council seat diagnose-<n> …`. Then one more attempt;
+     still failing → stop and report. A third check is refused (by `council seat` and the agent gate)
+     until a `diagnose-…` seat is on record after the second verdict, or the user's go is
+     (`council state decision="…"`).
    - **SCOPE-CREEP** → revert the extra change.
    - **CANNOT VERIFY** → add the missing check, or record why it can't exist.
    - **A finding that turns out to be wrong** → don't "fix" it; log it as refuted, with evidence.
@@ -186,13 +190,13 @@ Files: `path` — <what changed and why, one line each>
 Evidence: change | preserve · before <check> → <expected failure | passes> · after → passes · saved outputs: <paths>
 Gates: ✅ tests ✅ lint ✅ build   (or ❌ + what happened)
 Verifier: OK   (or: fixed after INCOMPLETE — <what>)
-Ruling: <what you decided instead of stopping> — <why> — <what it costs if wrong>   (omit if none)
+Ruling: <what you decided instead of stopping> — <why> — <cost if wrong>   (omit if none)
 Notes: <judgment calls, watchpoints hit, conventions followed — omit if none>
 ```
 
 It closes with these sections:
 - **Watchpoints addressed**
-- **Pre-existing issues** (fixed or left)
+- **Pre-existing issues** (fixed, or left on the user's ruling — never yours)
 - **Follow-ups**
 - **`## Shortcuts and concessions`** — required, never omitted. One line per shortcut:
   `- <date> — <what I did instead> — <path> — <why> — <what undoing it would take>`, or the single
@@ -212,23 +216,24 @@ After the last task, one council-verifier checks every task's Done-when against 
 fix mode, it checks every selected finding's consequence instead. Each gets met, partly met or not
 met, with evidence — written into the log's `## Converge` table.
 - Anything not met → one more task, or a logged follow-up. That round is the **finish line**: a
-  build ends at its plan's last task plus one fix round after converge. Anything found beyond it is a
+  build ends at its plan's last task plus one fix round after converge; anything beyond is a
   follow-up or a new review run, never a hunt inside the build.
 - Then run the final gates: `council gate --all --at verify`. Exit 4 means nothing was checked — say
   so; never report it as a pass.
 - If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
   reported, never folded into a green receipt. Without Python, audit the log's attempts and
   saved gate outputs by hand.
-- Then `council check`. It checks the saved before/after gates against their declared proof mode
-  (`references/build-proof.md`) and names the saved test when it can. Copy each verdict and its
+- Draft any PR text as `<run>/pr-body.md`, and open the PR from it. Then `council check`. It checks
+  the saved before/after gates against their declared proof mode (`references/build-proof.md`) and
+  names the saved test when it can. Copy each verdict and its
   full note into the `## Converge` table's **Proof** column: `ok` shows a change, `preserved` shows
   the checked invariants held on both versions. Broken proof is fixed or reported; no proof is
   reported as NO PROOF. Passing invariants alone never establish new behaviour.
 
 ## At Deliver — the receipt
 
-The same six lines after every build, in this order, whatever happened. The shape never changes, so
-after three builds the user reads it at a glance and notices the moment a line does:
+The same seven lines after every build, in this order, whatever happened, so after three builds the
+user reads it at a glance and notices the moment a line changes:
 
 ```
 Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>]
@@ -236,6 +241,7 @@ Works?: <what proved it — "ran <command> and <what happened>", or honestly "no
 Checked by machine: <the gates' verdict line, baseline → now> | <the helper's own NOTHING WAS CHECKED line, quoted> [· <the standing red-baseline clause>]
 Shortcuts I took: <one line each> | none
 Not proved: <what nobody actually checked> | nothing
+Left open: <each pre-existing hazard, follow-up, verifier note not taken, known hazard from a handoff> | nothing
 Cost: helpers ~<k>k tokens across <n> agents; Chair usage <actual total or "unavailable"> · <the proof line from council check> · log: <path>
 ```
 
@@ -245,17 +251,22 @@ is not counted as built: "5 of 6 tasks · 1 partly met: exports stop at 5,000 ro
 by the repair limit is **blocked**, not merely partly met, even if some code works. A red mandatory
 gate or known regression cannot be hidden behind a clean count. `Cost:` labels helper-only usage
 as such; never imply that it includes the Chair or the whole session when those figures are not
-available. **Never omit the last three.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
+available. **Never omit the last four.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
 these — not a vibe: a hardcoded value, a skipped case, a swallowed error, a loosened or disabled
 check, a test that asserts less than the behaviour, a TODO left behind, or a fix whose only proof was
 a throwaway command. Every one also goes in the log's `## Shortcuts and concessions`.
 
 One carve-out: a **guardrails task** — fitting a formatter, linter, type check, audit or test runner —
-proves itself by the gate going red on a deliberate violation and green once it's removed, exactly as
-`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md` requires. That is evidence, not a shortcut, and it
-doesn't belong on the shortcut line.
+proves itself by the gate going red on a deliberate violation and green once it's removed
+(`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`). That is evidence, not a shortcut, and it doesn't
+belong on the shortcut line.
 
 Then the numbered rulings and memory proposals, as always.
+
+**No commit, push or PR question while anything is left open.** First offer each `Left open:` item as
+*fix now* or *later* — a data-loss hazard defaults to fix now — and wait: "later" is the user's ruling,
+never yours. Ask the commit, push or PR question last and on its own, once the last verifier (a
+post-game's too) is back — never in the same message as a fix question.
 
 File the request (`council ask save`). Then **offer a post-game when the log shows one is worthwhile**
 — at least one of:
@@ -283,10 +294,9 @@ offered; a Squad is usually right.
 ## Edge cases
 
 - **The plan names code that no longer exists** → follow the intent, not the path; log it.
-- **Blocked by something outside the input** (a key, a service) → log the blocker; carry on with the
-  unblocked tasks.
+- **Blocked by something outside the input** → log it; carry on with the other tasks.
 - **Two tasks share one change** → change once; keep each task's Done-when, evidence and verdict.
-- **"Also add X" mid-build** → record their words under ask.md's `## Later, in your words`; their
-  instruction authorizes it. Ask only about scope, dependencies or cost beyond the approved budget.
-- **Evidence contradicts the plan's approach** → Convene's changed-instructions rule: log it, correct
-  the approach, re-verify every affected Done-when.
+- **"Also add X" mid-build** → record their words under ask.md's `## Later, in your words`; it is
+  authorized. Ask only about scope or cost beyond the approved budget.
+- **Evidence contradicts the plan** → Convene's changed-instructions rule: log it, correct the
+  approach, re-verify the affected Done-whens.

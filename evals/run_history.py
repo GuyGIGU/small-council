@@ -172,6 +172,18 @@ with tempfile.TemporaryDirectory(prefix="council-history-") as temporary:
           and preserved_data["proofs"]["before_preserve_checks"] == 2
           and preserved_data["proofs"]["before_preserve_passed"] == 1
           and "preservation before-checks: 2 ran, 1 passed" in preserved_out, (preserved_data["proofs"], preserved_out))
+    void_home = Path(temporary) / "void" / ".council"
+    void_run = make_run(void_home, "2026-10-02-110000-implement", mode="council-implement",
+                        gates=(("before-1", 124), ("before-2", 1), ("before-3", 127), ("before-4", 1), ("after-1", 0)))
+    for name, extra in (("before-1", {"timed_out": True}), ("before-2", {"invalid": "the new test did not compile"})):
+        path = void_run / "gates" / (name + ".json")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record.update(extra)
+        write(path, json.dumps(record) + "\n")
+    void_data = history.history(void_home)
+    check("a before-check red that timed out, was marked invalid or never ran is no proof, never failing as intended",
+          void_data["proofs"]["before_checks"] == 4 and void_data["proofs"]["before_failed_as_intended"] == 1,
+          void_data["proofs"])
     repairs = data["repairs"]
     check("repairs: resolved and stopped trails, with a range once five runs have finished ones; failure categories "
           "come from the failed attempts, never the RESOLVED row",

@@ -230,6 +230,17 @@ def transcript_run1(path, project, run):
     log.save(path)
 
 
+def transcript_resumed(path, start):
+    """A second session that carries run 1 on: it sends one more verifier and shows no card."""
+    log = Transcript("session-two", start)
+    log.prompt("carry on with the review")
+    log.bash("council run resume --run %s" % RUN1, "resumed %s — in progress · phase challenge" % RUN1)
+    log.call("Agent", {"subagent_type": "small-council:council-verifier", "description": "Verify", "prompt": "claims"},
+             "Async agent launched. agentId: v2")
+    log.bash("council seat verify-2 running agent=v2", "seats: 1 of 2 done · still working: verify-2", step=60)
+    log.save(path)
+
+
 # --- a clean run, through the real helper ------------------------------------------------------------------------
 PLAN2 = [("schema", "plan", "version", "1"), ("run", "run", "size", "squad"), ("run", "run", "mode", "council-review"),
          ("assessment", "run", "risk", "medium"), ("assessment", "run", "complexity", "medium"),
@@ -361,6 +372,43 @@ def transcript_pause_then_close(path, run):
                                                "Exit code 2\nclosed %s — complete\ncouncil: unknown command: nosuch" % run.name,
                                                error=True)
     log.at(closed + timedelta(minutes=5)).prompt("thanks")
+    log.save(path)
+
+
+# --- one session, several runs: each run's window is its own (the night audit counted a pipe under several runs)
+def minimal_run(base, name, events, session="session-multi"):
+    """A closed review run with only what the transcript items read: its state and its open/close events."""
+    run = base / "multi" / ".council" / "runs" / name
+    write(run / "session-state.md", "\n".join([
+        "status: complete", "mode: council-review", "phase: learn", "session: %s" % session, "events-schema: 1",
+        "## Decisions so far", ""]))
+    write(run / "events.tsv", "schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n" + "".join(
+        "1\t%d\t%s\n" % (n, "\t".join(row)) for n, row in enumerate(events, 1)))
+    return run
+
+
+def transcript_two_runs(path, first, second, t0):
+    """One turn drives two runs: the first is opened, dispatched with a card, piped and closed with a card;
+    then the second is opened, dispatched with no card, piped and closed."""
+    log = Transcript("session-multi", t0)
+    log.prompt("review both changes")
+    log.at(t0 + timedelta(seconds=10)).bash("council run open council-review", str(first))
+    log.call("Agent", {"subagent_type": "small-council:council-worker", "description": "A", "prompt": "x"}, "done")
+    log.bash("council seat hunt running agent=a1", "seats: 0 of 1 done")
+    log.bash("council status --widget", "<div>card</div>")
+    log.call("mcp__visualize__show_widget", {"widget_code": "<div>card</div>"}, "shown")
+    log.bash("council gate tests 2>&1 | tail -3", "gate tests: pass")
+    log.bash("council seat hunt done tokens=1000", "seats: 1 of 1 done")
+    log.at(t0 + timedelta(seconds=99)).bash("council run close", "closed %s — complete" % first.name)
+    log.call("mcp__visualize__show_widget", {"widget_code": "<div>done</div>"}, "shown")
+    log.at(t0 + timedelta(seconds=200)).bash("council run open council-review", str(second))
+    log.call("Agent", {"subagent_type": "small-council:council-worker", "description": "B", "prompt": "y"}, "done")
+    log.bash("council seat fowler running agent=b2", "seats: 0 of 1 done")
+    log.bash("council run status | head -5", "runs")
+    log.bash("council seat fowler done tokens=1000", "seats: 1 of 1 done")
+    log.at(t0 + timedelta(seconds=299)).bash("council run close", "closed %s — complete" % second.name)
+    log.call("mcp__visualize__show_widget", {"widget_code": "<div>done</div>"}, "shown")
+    log.at(t0 + timedelta(minutes=20)).prompt("thanks")
     log.save(path)
 
 
@@ -548,6 +596,28 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("a cut claim a verifier CONFIRMED fails the claim index, as council evidence check does",
           item(out, "Claim index")[0] == "FAIL" and "cut, but a verifier CONFIRMED it: C1" in item(out, "Claim index")[1],
           item(out, "Claim index")[1])
+    # council run close runs this audit as it closes: the closing card comes after, so it is not judged yet —
+    # every other FAIL still is (the night's one audit printed four FAILs the user never heard).
+    at_close = subprocess.run([sys.executable, str(AUDIT), "--run", str(run1), "--transcript", str(log1), "--at-close"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+    check("--at-close: the closing card reads 'not checked yet', counted apart; the other FAILs stand and exit 1",
+          at_close.returncode == 1 and re.search(r"^  later  Closing card: not checked yet", at_close.stdout, re.MULTILINE)
+          and item(at_close.stdout, "Closing card")[0] is None and item(at_close.stdout, "Stages")[0] == "FAIL"
+          and re.search(r"^\d+ failed, \d+ warning\(s\), \d+ passed, 1 not checked yet$", at_close.stdout, re.MULTILINE),
+          at_close.stdout + at_close.stderr)
+    skipped = run1_copy("skipped")
+    rows = (skipped / "events.tsv").read_text(encoding="utf-8").replace(
+        "\tchallenge\tfrom=prepare\n", "\tchallenge\tfrom=prepare;skipped=judge;reason=the user ruled it\n")
+    write(skipped / "events.tsv", rows)
+    verdict, words = item(council(base, "run", "audit", "--run", str(skipped))[1], "Stages")
+    check("a stage skipped through council state skip= still fails Stages, and names the reason given",
+          verdict == "FAIL" and "never entered: judge" in words and "judge skipped on purpose: the user ruled it" in words, words)
+    paused = run1_copy("paused")
+    state = (paused / "session-state.md").read_text(encoding="utf-8")
+    write(paused / "session-state.md", state.replace("status: complete", "status: paused"))
+    (paused / "claims.jsonl").unlink()
+    verdict, words = item(council(base, "run", "audit", "--run", str(paused))[1], "Claim index")
+    check("a paused run owes no claim index yet (the close now audits a pause too)", verdict == "pass" and "not due" in words, words)
     found_log = base / "more" / "config" / "projects" / "some-project" / "session-run-1.jsonl"
     found_log.parent.mkdir(parents=True)
     shutil.copyfile(str(log1), str(found_log))
@@ -559,12 +629,121 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("with no --transcript, the session's own transcript is found from the run's session id and read",
           "(found from the run's session id)" in out and item(out, "Status card at the first dispatch")[0] == "FAIL", out + err)
 
+    # One session drove several runs. Each run reads only its own open-to-close part of the session: a pipe
+    # is counted under the run it belongs to, and one run's status card is never another run's.
+    t0 = utc("2026-10-08T10:00:00Z")
+
+    def at(seconds):
+        return (t0 + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    run_a = minimal_run(base, "2026-10-08-130000-review", [(at(11), "run.opened", "run", "council-review", "phase=convene"),
+                                                          (at(100), "run.closed", "run", "complete", "agent_runs=1")])
+    run_b = minimal_run(base, "2026-10-08-130320-review", [(at(201), "run.opened", "run", "council-review", "phase=convene"),
+                                                          (at(300), "run.closed", "run", "complete", "agent_runs=1")])
+    multi_log = base / "multi" / "two-runs.jsonl"
+    transcript_two_runs(multi_log, run_a, run_b, t0)
+    code, out_a, err = council(base, "run", "audit", "--run", str(run_a), "--transcript", str(multi_log))
+    code, out_b, err_b = council(base, "run", "audit", "--run", str(run_b), "--transcript", str(multi_log))
+    verdict_a, words_a = item(out_a, "Helper output shown whole")
+    verdict_b, words_b = item(out_b, "Helper output shown whole")
+    check("one session, two runs: each run's piped calls are its own — the first run's audit names only its gate | tail, "
+          "the second's only its run status | head (the night audit counted one pipe under several runs)",
+          verdict_a == "FAIL" and words_a.startswith("1 call(s)") and "gate | tail -3" in words_a and "| head" not in words_a
+          and verdict_b == "FAIL" and words_b.startswith("1 call(s)") and "run status | head -5" in words_b
+          and "| tail" not in words_b, "A: %s\nB: %s" % (words_a, words_b))
+    check("one session, two runs: the first run's status card is not credited to the second run's first dispatch",
+          item(out_a, "Status card at the first dispatch")[0] == "pass"
+          and item(out_b, "Status card at the first dispatch")[0] == "FAIL", out_a + "\n" + out_b)
+    check("one session, two runs: each run's closing card is judged after its own close",
+          item(out_a, "Closing card")[0] == "pass" and item(out_b, "Closing card")[0] == "pass", out_a + "\n" + out_b)
+
+    # A run opened in another session, paused, and resumed in this one reads only the part after its resume:
+    # an earlier run's pipe in the same file is not its.
+    run_c = minimal_run(base, "2026-10-08-090000-review", [
+        ("2026-10-08T06:00:00Z", "run.opened", "run", "council-review", "phase=convene"),
+        ("2026-10-08T06:30:00Z", "run.paused", "run", "paused", "agent_runs=0"),
+        (at(201), "run.resumed", "run", "in-progress", "from=paused"),
+        (at(300), "run.closed", "run", "complete", "agent_runs=1")])
+    resumed_log = base / "multi" / "resumed.jsonl"
+    log = Transcript("session-multi", t0)
+    log.prompt("one more check first")
+    log.at(t0 + timedelta(seconds=10)).bash("council run open council-review", str(run_a))
+    log.bash('for g in tests lint; do council gate "$g" | tail -2; done', "gate tests: pass\ngate lint: pass")
+    log.at(t0 + timedelta(seconds=99)).bash("council run close", "closed %s — complete" % run_a.name)
+    log.at(t0 + timedelta(seconds=150)).prompt("now carry on with the paused review")
+    log.at(t0 + timedelta(seconds=200)).bash("council run resume --run %s" % run_c.name, "resumed %s" % run_c.name)
+    log.bash("council gate tests", "gate tests: pass")
+    log.at(t0 + timedelta(seconds=299)).bash("council run close", "closed %s — complete" % run_c.name)
+    log.at(t0 + timedelta(minutes=20)).prompt("thanks")
+    log.save(resumed_log)
+    code, out_c, err = council(base, "run", "audit", "--run", str(run_c), "--transcript", str(resumed_log))
+    code, out_a2, err = council(base, "run", "audit", "--run", str(run_a), "--transcript", str(resumed_log))
+    check("a resumed run reads only its own part of the session: another run's loop of piped gates before its "
+          "resume is not counted under it, and is counted under that run",
+          item(out_c, "Helper output shown whole")[0] == "pass"
+          and item(out_a2, "Helper output shown whole")[0] == "FAIL"
+          and item(out_a2, "Helper output shown whole")[1].startswith("1 call(s)")
+          and "gate | tail -2" in item(out_a2, "Helper output shown whole")[1], out_c + "\n" + out_a2)
+
+    # The first card is owed once per run, at the run's first dispatch: a later session that carries the run on and
+    # sends another agent owes none — and its transcript passes, saying why.
+    resumed = run1_copy("resumed")
+    later = base / "more" / "session-two.jsonl"
+    transcript_resumed(later, utc("2026-09-30T10:30:00Z"))
+    code, out, err = council(base, "run", "audit", "--run", str(resumed), "--transcript", str(later))
+    verdict, words = item(out, "Status card at the first dispatch")
+    check("status card: a later session's transcript, the run's first dispatch (10:23) made before it began, passes and says why",
+          verdict == "pass" and "first dispatch" in words and "an earlier session" in words and "once per run" in words, words)
+    write(resumed / "agent-starts.tsv", "at\ttool\tsession\n2026-09-30T10:31:00Z\tbefore:1\t-\n"
+                                        "2026-09-30T10:16:05Z\tAgent\tsession-run-1\n")
+    transcript_resumed(later, utc("2026-09-30T10:15:00Z"))       # alongside the first session, from before its dispatch
+    code, out, err = council(base, "run", "audit", "--run", str(resumed), "--transcript", str(later))
+    verdict, words = item(out, "Status card at the first dispatch")
+    check("status card: the agent gate's record names the session that made the first dispatch — another session's "
+          "transcript passes", verdict == "pass" and "session session-run-1" in words, words)
+    write(resumed / "agent-starts.tsv", "at\ttool\tsession\n2026-09-30T10:16:05Z\tAgent\tsession-two\n")
+    code, out, err = council(base, "run", "audit", "--run", str(resumed), "--transcript", str(later))
+    check("status card: the session that did make the first dispatch, with no card after it, still fails",
+          item(out, "Status card at the first dispatch")[0] == "FAIL", item(out, "Status card at the first dispatch")[1])
+
 # The helper's advisory lines the audit does not count as refusals must still be the helper's words.
 sys.path.insert(0, str(ROOT / "scripts"))
 import audit                                                         # noqa: E402  (bytecode is off)
 helper = (ROOT / "bin" / "council").read_text(encoding="utf-8")
 stale = [lead for lead in audit.NOTE_LEADS if lead not in helper]
 check("every advisory line the audit lets pass is still one the helper prints", not stale, stale)
+
+# How the helper was called, in the forms a real night used: 29 of 124 piped calls were seen before.
+FORMS = [
+    ('C="/home/u/.claude/plugins/small-council/bin/council"; bash "$C" gate --all 2>&1 | tail -4',
+     [("variable", "gate", "tail -4")], "bash \"$C\" … once C is the helper, piped"),
+    ('C=/x/bin/council; for s in a b; do n="${s%%|*}"; bash "$C" gate "probe-$n" -- "true" 2>&1 | tail -4; done',
+     [("variable", "gate", "tail -4")], "a call inside a loop body"),
+    ('for g in tests lint; do council gate "$g"; done | tail -2',
+     [("plain", "gate", "tail -2")], "a loop whose whole output is piped"),
+    ('( council run status; council cap ) 2>&1 | tail -1',
+     [("plain", "run status", "tail -1"), ("plain", "cap", "tail -1")], "a ( ) group piped"),
+    ('{ council run status; council cap; } | head -3',
+     [("plain", "run status", "head -3"), ("plain", "cap", "head -3")], "a { } group piped"),
+    ('if council gate tests; then echo ok; fi | head -1',
+     [("plain", "gate", "head -1")], "an if around a call, piped"),
+    ('while council gate tests | tail -1; do sleep 1; done',
+     [("plain", "gate", "tail -1")], "a while condition piped"),
+    ('C=/x/bin/council; RUN=$(bash "$C" run open council-plan 2>&1 | head -1); echo "$RUN"',
+     [("variable", "run open", "head -1")], "a call captured in $( ), piped inside"),
+    ('R=/x/plugins/small-council/0.20.1; bash "$R/bin/council" version 2>&1 | head -3',
+     [("path", "version", "head -3")], "council version (a helper word too), by its path"),
+    ('C="$(command -v council)"; $C gate tests |& tail -2',
+     [("variable", "gate", "tail -2")], "a variable set from command -v, piped with |&"),
+    ('council gate tests > gate.out 2>&1; tail -5 gate.out',
+     [("plain", "gate", None)], "near miss: output to a file, then read — no cut"),
+    ('case "$x" in a) council gate a;; b) council gate b | tail -1;; esac',
+     [("plain", "gate", None), ("plain", "gate", "tail -1")], "near miss: a case pattern's ) is not a group"),
+    ('for f in *.md; do grep -c x "$f" | head -1; done; council run status',
+     [("plain", "run status", None)], "near miss: a loop that pipes something else"),
+]
+for command, want, what in FORMS:
+    got = [(i["form"], i["sub"], i["cut"]) for i in audit.invocations(command)]
+    check("audit parser: %s" % what, got == want, "%r → %r" % (command, got))
 
 # The paid dispatch case's graders for the status card and the close.
 found, failed = graded(trace_rows(["council run open council-review", "council seat hunt running agent=a1",

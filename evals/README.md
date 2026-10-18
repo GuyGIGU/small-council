@@ -57,6 +57,13 @@ Runs the helper against scaffolded git repos:
 - the council home, from the main checkout, a worktree, and outside git;
 - opening, updating and closing runs: a second in-progress run refused without `--alongside`,
   commands that never guess between runs, paused runs, session ids, init creating the home;
+- the record before work: a Full plan refused until the user's go is recorded, a build task's third
+  check refused until a diagnosis or the user's go, the agent gate's dispatch record (no open run, a
+  closed or paused run, an unplanned seat), and the first status card owed once per run;
+- stage order: a step past a stage the mode must enter refused unless `skip=` gives a reason, which
+  the phase event keeps, and each mode's own path (Solo, post-game, build, setup) let through; a close
+  as complete refused before Deliver, and after a step back from it until Deliver comes again; the
+  close's own audit, every FAIL line whole and the closing card left for later;
 - the change index: files, symbols (code only), callers, tests;
 - gates judged by exit code (optional vs mandatory), with commands passed intact; a project with
   nothing configured, or nothing that can run at a stage, reported as NOTHING WAS CHECKED and never
@@ -74,6 +81,14 @@ Runs the helper against scaffolded git repos:
   both versions with the same mode and command, missing or empty outputs refused; whether a
   test was left behind in the project, and the warning when a build log never says what it traded
   away;
+- a gate's time limit: past it the gate and everything it started are stopped (even with the helper
+  killed outright), exit 124 and TIMED OUT, a failure and never a proof; where the limit comes from
+  (only a green baseline counts, the config line raises it mid-run, a check given its command borrows
+  no other gate's time); a red marked `--invalid`, a hang or a command never found read as no proof
+  yet; a proof run only through run-folder scripts noted; on a just-me council, council references
+  in what a build added since it opened (lines, untracked files, commit messages not yet pushed, PR
+  body) named and counted apart from citations, earlier work on the branch and plan or review runs
+  left alone, and ordinary code that looks alike left alone;
 - the judgment fixtures scaffold and execute: an existing-suite refactor and targeted empty-input
   fix keep separate proof, a side-effectful gate stays skipped, and the verifier's misleading
   green checks really hide the planted coverage or assertion gaps. These validate fixtures and
@@ -102,12 +117,29 @@ python evals/run_hook.py       # needs bash + git
 - orients council projects;
 - finds several open runs by scanning;
 - after a compaction, says "resume, don't restart" for this session's run only;
-- handles paused runs, runs in other worktrees, legacy runs, stale maps and garbage input.
+- handles paused runs, runs in other worktrees, legacy runs, stale maps and garbage input;
+- warns first when the session sits in a linked worktree and an in-progress run's code is elsewhere;
+- marks its session, so `council run open` refuses a session whose hooks never ran — and never one
+  whose hooks ran (an unwritable cache, a shell profile's own `XDG_CACHE_HOME`, the bash gate's mark).
 
 **PreToolUse agent gate:**
 - silent without a council, an in-progress run, or a run within its limits;
 - refuses a new agent at the cap or past the ceiling, until the user's go is recorded;
-- never stops a session for a run another session drives.
+- never stops a session for a run another session drives;
+- holds the council's own agents to the record: a council-worker with no open run, an agent for a
+  closed or paused run, a seat the plan doesn't select, a build task's third check — never an
+  ordinary agent, a Workflow, a verifier outside any run, or input it can't read; a re-review or
+  post-game citing an earlier run's file is judged by the run it writes for, and a display name on
+  the `Seat:` line by the file it writes.
+
+**Stop (turn end):** sends the Chair back once while the run's first status card is still due.
+
+**PreToolUse pipe stop:**
+- refuses a council command piped into head, tail or grep (`2>&1 |`, `|&`, `bash <path>/bin/council`,
+  a loop or group piped whole);
+- lets through redirects to a file, `| tee`, grep or head over files or other commands, the word
+  council in quotes, comments, heredocs or case patterns, a command over 100 KB, and anything it
+  can't parse.
 
 **SubagentStop seat check:**
 - valid files pass;
@@ -313,7 +345,10 @@ a Chair actually did in a finished run. A run built with the first real run's pa
 transcript, must fail on each known problem: a stage skipped, the verifier recorded only when it
 finished, two copies of the checks at once, no record of the Chair's own seat, no status card at the
 first dispatch or after close, the helper called through a shell variable, its output cut by
-`| tail`, a refusal never tried again. A clean run driven through the real helper must pass every item.
+`| tail`, a refusal never tried again. A clean run driven through the real helper must pass every item,
+and a later session's transcript that didn't make the run's first dispatch owes no card.
+Run as the close's own audit (`--at-close`), the closing card reads "not checked yet" and every other
+FAIL stands; a stage skipped through `skip=` still fails, naming the reason; a paused run owes no claim index.
 Reading writes nothing. It also checks the dispatch case's graders for the status card and the close.
 
 The helper, hook, memory, cockpit, tuning and audit suites need bash and git. Without them they print

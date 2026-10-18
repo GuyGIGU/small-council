@@ -60,11 +60,11 @@ seat's row to the ledger — counted from the seat files, synthesis.md's `from:`
 tables, so keep those exact. Its warnings are for the user: tell them. `council ledger` shows the record: Convene estimates from it. `council ledger advice` says how much it supports,
 seat by seat; a council-init refresh proposes roster changes only where the advice clears its bar.
 - A run stopped for good → `--status abandoned`.
-- A run the user paused → `--status paused`. When they want it back, `council run resume --run <folder>`.
+- A run the user paused, "stop for tonight" too → `--status paused`.
+  When they want it back, `council run resume --run <folder>`.
 
 **Close every run you open** — in order:
-1. `council run close`.
+1. `council run close`. With Python it prints each FAIL of `council run audit --run <folder>`.
 2. **Show the closing card, once,** then send the owner's alert — each as the close's own lines say
    (a closed run needs `--run <folder>`).
-3. `council run audit --run <folder>` reads the run back against the method; tell the user each FAIL
-   line, in plain words.
+3. Tell the user each FAIL line, in plain words.

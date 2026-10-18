@@ -59,11 +59,13 @@ the failure and retry limit manually in the log instead of claiming the helper c
 
 The helper uses explicit text patterns, then a gate-name hint, to suggest a category and governing
 reference lens. Possible categories include test, type, lint, build, runtime, data, schema,
-concurrency, configuration, environment, performance and `UNKNOWN`. The signal line is saved with
+concurrency, configuration, environment, performance, timeout (a gate the helper stopped at its time
+limit) and `UNKNOWN`. The signal line is saved with
 the suggestion. It is **advisory**: output may mention a symptom rather than the cause. The Chair
 checks the code and baseline, chooses an existing project seat or the task's governing expert, and
 may override the suggestion in the log. A missing roster seat does not license a new dispatch.
-Test/lint suggest the testing lens; data/schema the data-integrity lens; concurrency its own lens;
+Test/lint suggest the testing lens; data/schema the data-integrity lens; concurrency and timeout
+(a hang is most often a wait that never ends) the concurrency lens;
 environment/configuration/build the operability lens; type/runtime the backend lens; performance
 its own lens. `UNKNOWN` falls back to the task's governing reference. These are starting points,
 not automatic seat selection—for example, a frontend type error may belong with the frontend seat.
