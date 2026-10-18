@@ -64,7 +64,8 @@ The config's run preferences say how much proof a build records: `- build tier: 
 - **Full**: every task records a pair and every task gets a verifier, batched as the implement
   skill says.
 
-`council check` prints the tier it read at the end of its proof summary line, so the receipt carries it.
+`council check` prints the tier it read at the end of its proof summary line and writes it into
+`check.md`, so the receipt carries it.
 The tier changes how much is proved, never what counts as proof: under light, a risky task without
 its pair is still NO PROOF, and the verifier's brief names the task's risk class, read from the plan,
 so a builder cannot call a risky task ordinary.

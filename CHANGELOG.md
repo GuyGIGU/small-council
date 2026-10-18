@@ -12,7 +12,9 @@ All notable changes to this project are documented here. The format is based on
 - A repeated seat report with no agent id, and a slug closed by `council correct`, now say which command to run next instead of only refusing.
 
 ### Added
-- `council gate --wait <name>` queues behind a running gate call (up to 20 minutes) instead of refusing; the refusal names the flag.
+- `council gate --wait <name>` queues behind a running gate call (20 minutes, or `--wait=<seconds>`) instead of refusing; the refusal names the flag.
+- A build tier: `- build tier: light` (the default) or `full` in the config. build-proof.md's Tiers section says what each requires — light pairs and verifies risky tasks one by one and batches the rest — council-implement reads it, and `council check` names the tier it read in its summary and in check.md. The implement loop also gains "rulings, not stalls" with a stop list, a `Ruling:` log line, and a finish line: a build ends at its plan's last task plus one fix round.
+- Workers and verifiers the harness will not let write hand their file back under `UNWRITTEN <path>`, and the Chair saves it with `note="saved by the Chair"`.
 
 ## [0.20.1] — 2026-10-05
 

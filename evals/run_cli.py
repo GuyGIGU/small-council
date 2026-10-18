@@ -863,6 +863,10 @@ def gate_lock(tmp):
           and err2.strip() == "" and len([e for e in events(lrun) if e[3] == "gate.finished"]) == 6
           and not os.path.exists(lock), out + err + out2 + err2)
 
+    code, out, err = council(lk, "gate", "--wait=abc", "lint", "--run", lrun)
+    code2, out2, err2 = council(lk, "gate", "--wait=5", "lint", "--run", lrun)
+    check("gate --wait=<seconds>: a non-number is refused before anything runs; a number sets the queue's limit and the gate runs",
+          code == 2 and "whole number of seconds" in err and code2 == 0 and "gate lint: pass" in out2, out + err + out2 + err2)
     # A lock whose process is gone is cleared by the next call, which says so in one line.
     os.mkdir(lock)
     write(os.path.join(lock, "owner"), "99999999\n2026-01-01 00:00:00\n")
@@ -4084,6 +4088,15 @@ def requests_preservation_proofs(tmp):
           code == 0 and code2 == 0 and "task b7-flip  proof  preserved" in out3, out + err + out2 + err2 + out3 + err3)
     check("check: the proof summary names the build tier it read — light by default when the config has no line",
           "build tier: light (default)" in out3, out3)
+    append(os.path.join(repo, ".council", "council.config.md"), "\n## Run preferences\n- build tier: full\n")
+    code4, out4, err4 = council(repo, "check")
+    check("check: a `- build tier: full` line in the config is read, said on the summary line and written into check.md",
+          code4 == 0 and "build tier: full (config)" in out4 and "build tier: full (config)" in read(os.path.join(run, "check.md")),
+          out4 + err4)
+    append(os.path.join(repo, ".council", "council.config.md"), "- build tier: medium\n")
+    code5, out5, _ = council(repo, "check")
+    check("check: an unknown tier word is named and read as light, never silently",
+          code5 == 0 and "'medium' is not a tier" in out5 and "light (default" in out5, out5)
     before_files = {p.relative_to(Path(run)).as_posix(): p.read_bytes()
                     for p in Path(run).rglob("*") if p.is_file()}
     for args in (("gate", "before-12", "--proof", "unknown", "--", command),

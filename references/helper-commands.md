@@ -10,7 +10,8 @@ text, so any other form asks the user every time. Only if it isn't on PATH, writ
 
 Every command takes its input by argument or file path, never by stdin: nothing is piped into
 `council`, and a permission rule that refuses pipes costs nothing. While one gate call runs, a second
-one for the same run is refused; `council gate --wait <name>` queues behind it (up to 20 minutes).
+one for the same run is refused; `council gate --wait <name>` queues behind it (20 minutes, or
+`--wait=<seconds>`).
 
 Build proof uses `council gate before-<id>` and `after-<id>` with the same command, where the id is a
 task number or a builder's slug. The default is a
