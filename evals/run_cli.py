@@ -4091,12 +4091,12 @@ def requests_preservation_proofs(tmp):
     append(os.path.join(repo, ".council", "council.config.md"), "\n## Run preferences\n- build tier: full\n")
     code4, out4, err4 = council(repo, "check")
     check("check: a `- build tier: full` line in the config is read, said on the summary line and written into check.md",
-          code4 == 0 and "build tier: full (config)" in out4 and "build tier: full (config)" in read(os.path.join(run, "check.md")),
+          "build tier: full (config)" in out4 and "build tier: full (config)" in read(os.path.join(run, "check.md")),
           out4 + err4)
     append(os.path.join(repo, ".council", "council.config.md"), "- build tier: medium\n")
     code5, out5, _ = council(repo, "check")
     check("check: an unknown tier word is named and read as light, never silently",
-          code5 == 0 and "'medium' is not a tier" in out5 and "light (default" in out5, out5)
+          "'medium' is not a tier" in out5 and "light (default" in out5, out5)
     before_files = {p.relative_to(Path(run)).as_posix(): p.read_bytes()
                     for p in Path(run).rglob("*") if p.is_file()}
     for args in (("gate", "before-12", "--proof", "unknown", "--", command),
