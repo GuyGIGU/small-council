@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `council run open --code-root <relative>` stores the root as an absolute path, so a gate run once the Chair's cwd is a worktree still enters it (every gate used to exit 97); a folder that does not exist is refused.
+- `council run audit` no longer fails the claim index for a cut claim a verifier CONFIRMED when synthesis.md says why it stays cut (`still-cut:`), the way `council evidence check` already reads it.
+
+### Changed
+- council-implement's verifier brief lists the task's risk class as the plan marks it, so a risky task without its proof pair is refused under the light tier.
+
 ## [0.22.0] — 2026-10-18
 
 **TL;DR:** a light build tier (the default) that pairs and verifies only the risky tasks, four

@@ -728,6 +728,25 @@ def runs_open(tmp):
     check("legacy run: a pre-contract run without a plan still works", code == 0 and "old-worker" in out, out + err)
     council(legacy, "run", "close", "--status", "abandoned")
 
+    # A relative --code-root is stored absolute: in a real build every gate exited 97 ("cd" failed) once
+    # the Chair's cwd was a worktree, because session-state.md kept the path as typed.
+    rel = new_repo(tmp, "relative-root")
+    write(os.path.join(rel, ".council", "council.config.md"), "# Council config\n")
+    os.makedirs(os.path.join(rel, "sub"))
+    code, out, err = council(rel, "run", "open", "council-review", "--code-root", "sub")
+    rrun = out.strip().splitlines()[-1] if code == 0 else ""
+    stored = ""
+    if rrun:
+        found = re.search(r"^code-root:\s*(.+)$", read(os.path.join(rrun, "session-state.md")), re.MULTILINE)
+        stored = found.group(1).strip() if found else ""
+    code2, out2, err2 = council(os.path.dirname(rel), "gate", "probe", "--run", rrun, "--", "true") if rrun else (9, "", "no run")
+    same = stored and os.path.normcase(os.path.realpath(stored)) == os.path.normcase(os.path.realpath(os.path.join(rel, "sub")))
+    check("run open --code-root: a relative root is stored absolute, so a gate run from another directory still enters it",
+          code == 0 and os.path.isabs(stored) and bool(same) and code2 == 0 and "gate probe: pass" in out2,
+          "stored=%r · %s%s%s" % (stored, err, out2, err2))
+    code, out, err = council(rel, "run", "open", "council-review", "--alongside", "--code-root", "no-such-folder")
+    check("run open --code-root: a folder that does not exist is refused", code == 2 and "no such folder" in err, out + err)
+
 @part("timing")
 def event_races(tmp):
     event_repo = new_repo(tmp, "event-contract")
