@@ -603,6 +603,12 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("a cut claim a verifier CONFIRMED passes the claim index once synthesis.md says why it stays cut (still_cut on record), "
           "as council evidence check already does (a real plan run was failed by one reader and passed by the other)",
           item(out, "Claim index")[0] == "pass", item(out, "Claim index")[1])
+    # MISCITED is a true verdict too (the claim holds, somewhere else): evidence check's TRUE_VERDICTS. The audit must read it the same way.
+    miscited = run1_copy("cut-miscited", claims=[{"id": "1", "disposition": "kept", "verdict": "CONFIRMED", "citation": "notes.md:5"},
+                                                 {"id": "C1", "disposition": "cut", "verdict": "MISCITED", "citation": "notes.md:9"}])
+    code, out, err = council(base, "run", "audit", "--run", str(miscited), "--transcript", str(log1))
+    check("a cut claim a verifier found MISCITED (true, elsewhere) fails the claim index like a CONFIRMED one, as council evidence check reads it",
+          item(out, "Claim index")[0] == "FAIL" and "C1" in item(out, "Claim index")[1], item(out, "Claim index")[1])
     # council run close runs this audit as it closes: the closing card comes after, so it is not judged yet —
     # every other FAIL still is (the night's one audit printed four FAILs the user never heard).
     at_close = subprocess.run([sys.executable, str(AUDIT), "--run", str(run1), "--transcript", str(log1), "--at-close"],
