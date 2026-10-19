@@ -596,6 +596,13 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("a cut claim a verifier CONFIRMED fails the claim index, as council evidence check does",
           item(out, "Claim index")[0] == "FAIL" and "cut, but a verifier CONFIRMED it: C1" in item(out, "Claim index")[1],
           item(out, "Claim index")[1])
+    still = run1_copy("cut-still", claims=[{"id": "1", "disposition": "kept", "verdict": "CONFIRMED", "citation": "notes.md:5"},
+                                           {"id": "C1", "disposition": "cut", "verdict": "CONFIRMED", "citation": "notes.md:9",
+                                            "still_cut": "it ships inside task 6 (the template line)"}])
+    code, out, err = council(base, "run", "audit", "--run", str(still), "--transcript", str(log1))
+    check("a cut claim a verifier CONFIRMED passes the claim index once synthesis.md says why it stays cut (still_cut on record), "
+          "as council evidence check already does (a real plan run was failed by one reader and passed by the other)",
+          item(out, "Claim index")[0] == "pass", item(out, "Claim index")[1])
     # council run close runs this audit as it closes: the closing card comes after, so it is not judged yet —
     # every other FAIL still is (the night's one audit printed four FAILs the user never heard).
     at_close = subprocess.run([sys.executable, str(AUDIT), "--run", str(run1), "--transcript", str(log1), "--at-close"],

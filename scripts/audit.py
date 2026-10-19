@@ -359,8 +359,10 @@ def claim_index(run, say):
             claims.append(claim)
     kept = [c for c in claims if c.get("disposition") == "kept"]
     open_claims = [str(c.get("id", "?")) for c in kept if str(c.get("verdict", "")).upper() not in VERDICTS]
+    # A cut claim a verifier CONFIRMED is a lone dissenter that was right — unless synthesis.md says why it
+    # stays cut (`still-cut: <why>`, recorded as still_cut), which council evidence check accepts too.
     confirmed_cut = [str(c.get("id", "?")) for c in claims if c.get("disposition") == "cut"
-                     and str(c.get("verdict", "")).upper() == "CONFIRMED"]
+                     and str(c.get("verdict", "")).upper() == "CONFIRMED" and not str(c.get("still_cut", "")).strip()]
     if newer:
         say(FAIL, label, "out of date: %s changed after it was built; council evidence build --run %s" % (listed(newer), run.name))
     elif confirmed_cut:

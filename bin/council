@@ -887,6 +887,11 @@ cmd_run_open() {
   fi
   ensure_ignored "$home"                          # before any words land in runs/ — older homes too
   top="${CODE_ROOT_ARG:-$(this_tree)}"
+  if [ -n "$CODE_ROOT_ARG" ]; then                # stored absolute: a root kept as typed broke every gate (cd failed,
+    [ -d "$top" ] || die "--code-root: no such folder: $top"   # exit 97) once the Chair's cwd was a worktree
+    top="$(cd "$top" 2>/dev/null && pwd -P)" || die "cannot enter the code root: $CODE_ROOT_ARG"
+    if command -v cygpath >/dev/null 2>&1; then top="$(cygpath -m "$top" 2>/dev/null || printf '%s' "$top")"; fi
+  fi
   existing="$(runs_here "$home" "$top" in-progress | names)"
   paused="$(runs_here "$home" "$top" paused | names)"
   if [ -n "$existing" ] && [ "$ALONGSIDE" != 1 ]; then
