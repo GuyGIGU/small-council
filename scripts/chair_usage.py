@@ -12,7 +12,7 @@ span, its context less the call before it, when that is more. That is the measur
 writes and adds nothing; a compaction shrinks the context and adds nothing until it grows again.
 
 Each call is counted once (the transcript repeats a call's usage on every block it wrote). Agents' calls
-(sidechains) are left out: their seats record them. The sessions read are the one the run's state names
+(sidechains) and Claude Code's <synthetic> entries (all-zero usage, no model call) are left out. The sessions read are the one the run's state names
 and each one a resume came from (its run.resumed event's was=); with --transcript, that file alone.
 
 Prints one line, tokens=<n>;calls=<n>;basis=<complete|partial>, and exits 0; partial means a session the
@@ -56,8 +56,11 @@ def calls_of(path):
             if usage is None or not isinstance(key, str) or when is None or key in seen:
                 continue
             seen.add(key)
-            calls.append((when, sum(number(usage, n) for n in
-                                    ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))))
+            size = sum(number(usage, n) for n in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+            # Claude Code's <synthetic> entries (an interrupted or failed turn) carry all-zero usage: no model
+            # call ran, and as a baseline it would count the next call's whole context as growth.
+            if size and message.get("model") != "<synthetic>":
+                calls.append((when, size))
     calls.sort(key=lambda c: c[0])
     return calls
 
@@ -96,8 +99,8 @@ def main():
         sessions = [audit.field(run.state, "session")]
         for event in run.of_type("run.resumed"):
             was = re.search(r"(?:^|;)was=([^;]*)", event.get("detail") or "")
-            if was is None:
-                partial = True                     # resumed before was= was recorded: that session is unknown
+            if was is None or not was.group(1):
+                partial = True                     # resumed before was= was recorded, or from no session: unknown
             elif was.group(1) and was.group(1) not in sessions:
                 sessions.append(was.group(1))
         paths = []

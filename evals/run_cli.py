@@ -4600,6 +4600,7 @@ def runs_stage_order_and_close(tmp):
     steps(cu, "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn")
     write(os.path.join(ccfg, "projects", "eval-project", sid_b + ".jsonl"),
           call(sid_b, stamp_of("run.resumed"), "b1", 6000, 0, 0)                      # a new session: +6k
+          + call(sid_b, stamp_of("run.resumed"), "s1", 0, 0, 0)                       # a <synthetic> entry: no call, no reset
           + call(sid_b, datetime.now(timezone.utc), "b2", 1000, 6000, 2000))          # 9k: +3k
     code, out, err = council(cu, "run", "close", env={"CLAUDE_CONFIG_DIR": ccfg})
     kinds = [e[3] for e in events(cur)]
