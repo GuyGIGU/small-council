@@ -1237,7 +1237,8 @@ cmd_run_resume() {
   awk '/^## / { body = 1 } !body && (index($0, "closed:") == 1 || index($0, "actual:") == 1) { next } { print }' "$st" > "$st.tmp$$" \
     && mv "$st.tmp$$" "$st" || { rm -f "$st.tmp$$"; event_unlock "$st.lock" || :; die "cannot update $st"; }
   event_unlock "$st.lock" || :
-  event_append "$run" run.resumed run in-progress "from=$status" || die "run resumed, but its event could not be recorded"
+  # was=: the session the run was driven from until now (chair_usage.py reads each one's transcript).
+  event_append "$run" run.resumed run in-progress "from=$status;was=$old" || die "run resumed, but its event could not be recorded"
   if [ -n "$session" ]; then drv="driven by this session"; else drv="no session id to record"; fi
   say "resumed $name — in progress · phase $(field phase "$st") · $drv"
   if [ -n "$old" ] && [ "$old" != "$session" ]; then
@@ -2224,14 +2225,17 @@ close_audit() {
 # an event (the latest one covers every span so far) and said with the close; nothing at all without
 # Python, without a transcript, or when it can't be read.
 chair_record() {
-  local run="$1" py out tokens calls
+  local run="$1" py out tokens calls basis least="" many=s
   py="$(impact_python)" || return 0
   out="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/chair_usage.py" --run "$run" 2>/dev/null)" || return 0
-  tokens="${out#tokens=}"; tokens="${tokens%%;*}"; calls="${out##*;calls=}"
-  case "$out" in tokens=*) ;; *) return 0 ;; esac
+  case "$out" in tokens=*\;calls=*\;basis=*) ;; *) return 0 ;; esac
+  tokens="${out#tokens=}"; tokens="${tokens%%;*}"
+  calls="${out#*;calls=}"; calls="${calls%%;*}"; basis="${out##*;basis=}"
   case "$tokens:$calls" in :*|*:|*[!0123456789:]*) return 0 ;; esac
-  event_append "$run" run.chair_usage chair "$tokens" "calls=$calls;basis=transcript" || return 0
-  say "the Chair's own work: $(usage_token_text "$tokens") tokens over $calls model calls (from the session transcript, not in the agents' figures)"
+  case "$basis" in complete) ;; partial) least="at least " ;; *) return 0 ;; esac
+  [ "$calls" != 1 ] || many=""
+  event_append "$run" run.chair_usage chair "$tokens" "calls=$calls;basis=$basis" || return 0
+  say "the Chair's own work: $least$(usage_token_text "$tokens") tokens over $calls model call$many (its context's growth, from the session transcript; not in the agents' figures)"
 }
 
 cmd_run_close() {

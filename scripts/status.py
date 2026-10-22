@@ -738,8 +738,8 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
     chair = (snap.get("events") or {}).get("chair")       # the Chair's own tokens, once a close has read them
     usage["chair_text"] = None
     if chair:
-        usage["chair_text"] = "{} tokens{} (from the session transcript)".format(
-            tokens_text(chair["tokens"]),
+        usage["chair_text"] = "{}{} tokens{} (its context's growth, from the session transcript)".format(
+            "at least " if chair.get("partial") else "", tokens_text(chair["tokens"]),
             " over " + plural(chair["calls"], "model call") if chair.get("calls") is not None else "")
     limit = cap_standing(snap, run_path, home)
     cap, used = limit["agent_cap"], limit["agent_runs"]
