@@ -204,6 +204,8 @@ def event_text(event, snap):
         return "A lesson was drafted for your yes or no"
     if kind == "run.cap_passed":
         return "Went past the agent limit ({} agent runs, limit {})".format(value, (event.get("detail") or "").replace("cap=", ""))
+    if kind == "run.chair_usage":
+        return "The Chair's own work recorded: {} tokens".format(tokens_text(int(value))) if value.isdigit() else None
     if kind == "run.estimate_passed":
         return "Went past the run's token estimate"
     if kind == "run.ceiling_passed":
@@ -672,6 +674,7 @@ def closing_of(snap, run_path, usage, check_text, attention):
             "spend": usage["spend_text"] or usage["text"],
             "agent_runs": usage["agent_runs_text"] + (
                 "" if "(limit " in usage["agent_runs_text"] else " (limit {})".format(usage["agent_cap"])),
+            "chair": usage.get("chair_text"),
             "left_for_you": [a["text"] for a in attention] + converge_open(converge)
                             + ["Rulings and next steps: see the summary in chat."]}
 
@@ -732,6 +735,12 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
         attention.append({"kind": "paused", "severity": 1, "text": "The run is paused. Ask to resume it when you're ready."})
     usage = usage_of(snap)
     usage.update(spend_of(snap, usage, run_path))
+    chair = (snap.get("events") or {}).get("chair")       # the Chair's own tokens, once a close has read them
+    usage["chair_text"] = None
+    if chair:
+        usage["chair_text"] = "{}{} tokens{} (its context's growth, from the session transcript)".format(
+            "at least " if chair.get("partial") else "", tokens_text(chair["tokens"]),
+            " over " + plural(chair["calls"], "model call") if chair.get("calls") is not None else "")
     limit = cap_standing(snap, run_path, home)
     cap, used = limit["agent_cap"], limit["agent_runs"]
     usage["agent_cap"] = cap
@@ -900,8 +909,10 @@ def text(status, tui_commands=()):
                  "Status: " + headline(state),
                  "Asked: " + closing["request"], "Delivered: " + closing["deliverable"],
                  "Verified: " + closing["verification"], "Checks: " + closing["checks"],
-                 "Spend: " + closing["spend"], "Agent runs: " + closing["agent_runs"],
-                 "Left for you:"]
+                 "Spend: " + closing["spend"], "Agent runs: " + closing["agent_runs"]]
+        if closing.get("chair"):
+            lines.append("The Chair's own work: " + closing["chair"])
+        lines.append("Left for you:")
         lines.extend("- " + item for item in closing["left_for_you"])
         lines.extend("Live view in a terminal — " + command for command in tui_commands or ())
         return "\n".join(lines)
@@ -932,6 +943,8 @@ def text(status, tui_commands=()):
     usage = status["usage"]
     lines.append("Token use: " + usage["text"] + ("" if usage["basis"] == "complete" else
                                                   " · Agent runs: " + usage["agent_runs_text"]))
+    if usage.get("chair_text"):
+        lines.append("The Chair's own work: " + usage["chair_text"])
     if usage["spend_text"]:
         lines.append("Spend: " + usage["spend_text"])
     lines.append("As of {} (last activity {}).".format(clock(now, now), fresh["last_activity_clock"] or "unknown"))
@@ -1019,9 +1032,11 @@ def closing_widget(status, preview=False):
     for label, value in (("What you asked", closing["request"]), ("Delivered", closing["deliverable"]),
                          ("Verified", closing["verification"]), ("Machine checks", closing["checks"])):
         out.append('<p style="margin-top:10px"><span class="muted">{}:</span> {}</p>'.format(esc(label), esc(value)))
+    chair_tile = ('<div class="tile"><p class="muted">The Chair&#39;s own work</p><p>{}</p></div>'.format(
+        esc(closing["chair"])) if closing.get("chair") else "")
     out.append('<div class="tiles"><div class="tile"><p class="muted">Spend</p><p>{}</p></div>'
-               '<div class="tile"><p class="muted">Agent runs</p><p>{}</p></div></div>'.format(
-                   esc(closing["spend"]), esc(closing["agent_runs"])))
+               '<div class="tile"><p class="muted">Agent runs</p><p>{}</p></div>{}</div>'.format(
+                   esc(closing["spend"]), esc(closing["agent_runs"]), chair_tile))
     left = closing["left_for_you"]
     if len(left) > LEFT_SHOWN:          # keep the card small; the last item (rulings) always shows
         left = left[:LEFT_SHOWN - 2] + ["{} more: council status lists them all.".format(len(left) - LEFT_SHOWN + 1),
@@ -1113,6 +1128,8 @@ def details(status, limit=12):
     if usage["basis"] in ("complete", "running", "partial"):
         rows.append('<p class="muted">Token figures measure how large each agent\'s work grew, not what it '
                     'cost.</p>')
+    if usage.get("chair_text"):
+        rows.append('<p><span class="muted">The Chair&#39;s own work:</span> {}</p>'.format(esc(usage["chair_text"])))
     if usage["basis"] != "complete":
         rows.append('<p><span class="muted">Agent runs:</span> {}</p>'.format(esc(usage["agent_runs_text"])))
     if usage["corrected_seats"]:

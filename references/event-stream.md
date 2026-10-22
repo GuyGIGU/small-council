@@ -31,12 +31,13 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `run.opened` | `run` | mode | `phase=convene` |
 | `run.phase_changed` | `run` | new phase | `from=<old phase>`, and `;skipped=<stages>;reason=<why>` when `skip=` passed over a stage the mode must enter (after 0.20) |
 | `run.status_changed` | `run` | new status | `from=<old status>` |
-| `run.resumed` | `run` | `in-progress` | `from=<old status>` |
+| `run.resumed` | `run` | `in-progress` | `from=<old status>;was=<session id>` — `was=`: the session that drove the run until then (after 0.22) |
 | `run.paused` | `run` | `paused` | `agent_runs=<n>;reported=<n>;tokens=<n>;basis=<basis>` (0.14; before: `agents=<n>;tokens=<n>`) |
 | `run.closed` | `run` | `complete` or `abandoned` | as `run.paused` |
 | `run.waiting_changed` | `run` | `on` or `off` | `from=<off or on>` — the run started or stopped waiting on the user (0.14) |
 | `run.cap_passed` | `run` | agent runs recorded | `cap=<n>` — the first seat record that took the run past its agent cap (after 0.14) |
 | `run.estimate_passed` | `run` | known exact tokens | `estimate=<n>` — first seat record above the run's whole estimate |
+| `run.chair_usage` | `chair` | the Chair's own tokens: its context's growth | `calls=<n>;basis=<complete or partial>` — read by `council run close` (and a pause) from the transcripts of the sessions that drove the run (`scripts/chair_usage.py`), just before `run.closed` or `run.paused`; the latest covers every span so far; `partial`: a session had no transcript to read, so the figure is a floor (after 0.22) |
 | `run.ceiling_passed` | `run` | known exact tokens | `ceiling=<n>` — first seat record above the owner's token ceiling |
 | `run.cap_allowed` | `run` | more agent runs allowed | `used=<n>;until=<n>` — the user's go past the cap or ceiling (`council cap allow`); their words are in `cap-allowances.tsv` (after 0.14) |
 | `seat.updated` | seat slug | new state | `tokens=<seat total>;agent_runs=<n>;reported=<n>` (0.14; before: `tokens=<cumulative tokens>`) — totals so far, never to be summed across events |

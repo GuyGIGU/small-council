@@ -4564,6 +4564,65 @@ def runs_stage_order_and_close(tmp):
     check("audit --at-close: the closing card reads 'not checked yet', counted apart from pass, warn and FAIL",
           "  later  Closing card: not checked yet" in p.stdout and ", 1 not checked yet" in p.stdout, p.stdout + p.stderr)
 
+    # The Chair's own tokens: the close (and a pause) reads the transcripts of the sessions that drove the run —
+    # the one its state names and each one a resume came from — and adds up how much the Chair's context grew
+    # in its model calls while the run was open: each call once; a cache rebuilt after a gap, an agent's
+    # calls and calls from before the open add nothing. It says the figure, records it before the close
+    # event, and the card shows it. With no transcript to read, the close says nothing of the Chair.
+    sid_a, sid_b = "sess-chair-usage-a", "sess-chair-usage-b"
+    cu, cur = fresh("chair-usage", "council-review", env=session(sid_a))
+    cname = os.path.basename(cur)
+    def stamp_of(kind):
+        return datetime.strptime([e for e in events(cur) if e[3] == kind][-1][2],
+                                 "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    def call(sid, at, mid, fresh_in, cache_read, cache_write, side=False):
+        return json.dumps({"type": "assistant", "timestamp": at.strftime("%Y-%m-%dT%H:%M:%S.000Z"), "sessionId": sid,
+                           "isSidechain": side, "message": {"id": mid, "role": "assistant", "content": [
+                               {"type": "text", "text": "x"}], "usage": {
+                               "input_tokens": fresh_in, "cache_read_input_tokens": cache_read,
+                               "cache_creation_input_tokens": cache_write, "output_tokens": 700}}}) + "\n"
+    ccfg = os.path.join(tmp, "chair-config")
+    opened = stamp_of("run.opened")
+    write(os.path.join(ccfg, "projects", "eval-project", sid_a + ".jsonl"),
+          call(sid_a, opened - timedelta(minutes=10), "m0", 10, 0, 9990)              # before the open: 10k, not its
+          + call(sid_a, opened, "m1", 3, 9997, 20000)                                 # 30k: +20k
+          + call(sid_a, opened, "m1", 3, 9997, 20000)                                 # the same call's next block
+          + call(sid_a, datetime.now(timezone.utc), "m2", 2, 0, 33998)                # a rebuilt cache, 34k: +4k
+          + call(sid_a, datetime.now(timezone.utc), "a1", 1, 0, 99000, side=True))    # an agent's: its seat records it
+    code, out, err = council(cu, "run", "close", "--status", "paused", env={"CLAUDE_CONFIG_DIR": ccfg})
+    check("run close --status paused: the Chair's own context growth so far is said and recorded",
+          code == 0 and "the Chair's own work: 24k tokens over 2 model calls (its context's growth, from the session transcript" in out,
+          out + err)
+    council(cu, "run", "resume", "--run", cname, env=session(sid_b))
+    resumed = [e for e in events(cur) if e[3] == "run.resumed"]
+    check("run resume: the event names the session the run was driven from until then (was=)",
+          len(resumed) == 1 and resumed[0][6] == "from=paused;was=" + sid_a, repr(resumed))
+    steps(cu, "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn")
+    write(os.path.join(ccfg, "projects", "eval-project", sid_b + ".jsonl"),
+          call(sid_b, stamp_of("run.resumed"), "b1", 6000, 0, 0)                      # a new session: +6k
+          + call(sid_b, stamp_of("run.resumed"), "s1", 0, 0, 0)                       # a <synthetic> entry: no call, no reset
+          + call(sid_b, datetime.now(timezone.utc), "b2", 1000, 6000, 2000))          # 9k: +3k
+    code, out, err = council(cu, "run", "close", env={"CLAUDE_CONFIG_DIR": ccfg})
+    kinds = [e[3] for e in events(cur)]
+    chair_rows = [e for e in events(cur) if e[3] == "run.chair_usage"]
+    check("run close: both sessions' growth is added up, said, and recorded before the close event",
+          code == 0 and "the Chair's own work: 33k tokens over 4 model calls (its context's growth" in out
+          and len(chair_rows) == 2 and chair_rows[-1][5] == "33000" and chair_rows[-1][6] == "calls=4;basis=complete"
+          and len(kinds) - 1 - kinds[::-1].index("run.chair_usage") < kinds.index("run.closed"), out + err + repr(chair_rows))
+    code, out, err = council(cu, "status", "--run", cname)
+    check("status: the closing card shows the Chair's own work, the latest reading",
+          code == 0 and "The Chair's own work: 33k tokens over 4 model calls (its context's growth, from the session transcript)" in out,
+          out + err)
+    os.remove(os.path.join(ccfg, "projects", "eval-project", sid_a + ".jsonl"))
+    p = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "chair_usage.py"), "--run", cur], capture_output=True,
+                       text=True, encoding="utf-8", env=dict(GIT_ENV, CLAUDE_CONFIG_DIR=ccfg))
+    check("chair usage: a session with no transcript to read makes the figure a floor (basis=partial), never a guess",
+          p.returncode == 0 and p.stdout.strip() == "tokens=9000;calls=2;basis=partial", p.stdout + p.stderr)
+    nu, nur = fresh("chair-none", "council-review", env=session("sess-chair-none-1"))
+    code, out, err = council(nu, "run", "close", "--status", "abandoned", env={"CLAUDE_CONFIG_DIR": os.path.join(tmp, "chair-none-config")})
+    check("run close: with no session transcript to read, the close says nothing of the Chair and records nothing",
+          code == 0 and "Chair's own work" not in out + err and not any(e[3] == "run.chair_usage" for e in events(nur)), out + err)
+
 
 @part("gates")
 def gates_table(tmp):

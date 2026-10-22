@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- The Chair's own tokens are recorded: `council run close` reads the session transcripts for how much the Chair's context grew while the run was open (the measure an agent's figure uses), says the figure, records it as an event, and the card shows it beside the agents' figures. A resume now records the session it came from.
+
 ### Fixed
 - `council run open --code-root <relative>` stores the root as an absolute path, so a gate run once the Chair's cwd is a worktree still enters it (every gate used to exit 97); a folder that does not exist is refused.
 - `council run audit` no longer fails the claim index for a cut claim a verifier CONFIRMED when synthesis.md says why it stays cut (`still-cut:`), the way `council evidence check` already reads it; and it counts a MISCITED verdict as true, as evidence check does.
