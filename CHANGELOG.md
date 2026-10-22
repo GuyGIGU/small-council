@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-10-22
+
+**TL;DR:** the Chair's own tokens are recorded at close, plus three fixes from real runs.
+
 ### Added
 - The Chair's own tokens are recorded: `council run close` reads the session transcripts for how much the Chair's context grew while the run was open (the measure an agent's figure uses), says the figure, records it as an event, and the card shows it beside the agents' figures. A resume now records the session it came from.
 
