@@ -38,6 +38,14 @@ unknown usage never becomes zero. An optional `budget/run/token-ceiling` is the 
 Passing either number emits one event, and passing the ceiling on an open run asks the Chair to stop
 starting work until the owner says go. These token figures are context size, not a bill.
 
+**The Chair's own work.** No seat records it. At `council run close` (and a pause) the helper reads the
+session transcript that drove the run (`scripts/chair_usage.py`, the session the state names) and sums the
+Chair's own model calls made while the run was open: new input, cache writes and output, each call once.
+Cache reads are left out, as an agent's figure leaves them out, so the two are comparable; agents' calls
+are left out too (their seats hold them). The figure is said with the close, recorded as a
+`run.chair_usage` event and shown on the card. It is never added to the agents' total or compared with
+their share of the estimate. No Python or no transcript: nothing is said, and nothing is guessed.
+
 ## Where it is written
 
 | File | What it holds |
