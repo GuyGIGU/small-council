@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- The council pane: while a run is open, a pane beside the chat shows each seat as a pixel-art critter at its desk (role gear, a mood per state, a squad list under it), and a line above the prompt shows the stage, who is working and the spend; `/council-view` reopens the pane. A Claude Code mod in the plugin (`hooks/council-view.tsx`), tested with `claude plugin test .`.
+
 ## [0.23.0] — 2026-10-22
 
 **TL;DR:** the Chair's own tokens are recorded at close, plus three fixes from real runs.

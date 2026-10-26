@@ -80,6 +80,11 @@ After every review: findings with a file and line, an evidence grade (observed, 
 the verifier's verdict, and a fix line the implement mode can take as its task. Ask "council status"
 at any time for a status card in chat, or open the live terminal view.
 
+While a run is open, a pane beside the chat shows the council hall: each seat a small pixel-art
+critter at its desk, wearing its role's gear (the builder's hard hat, the verifier's glasses),
+working under a lit lamp, done with a hop, or asleep in the queue. A line above the prompt says the
+stage, who is working and the spend. `/council-view` opens the pane again if you close it.
+
 ## How the proof works
 
 1. **Parallel readers, one writer.** Experts read side by side in isolated contexts. One builder
@@ -155,7 +160,10 @@ On **just me**, all of `.council/` stays local.
 
 - `council doctor` finds drift (a moved file, a check that can't run) and says how to fix each item.
 - Your requests are saved in `.council/asks/`, which git ignores.
-- The status card, live terminal view and desktop pet need Python 3.8+. Everything else is bash 3.2.
+- The status card, live terminal view, council pane and desktop pet need Python 3.8+. Everything else
+  is bash 3.2. The pane and the line above the prompt are a Claude Code mod (Claude Code 2.1.287 or
+  later; the desktop app from 2.1.286): they show in the terminal, the desktop app and VS Code, and
+  never in `claude -p`.
 - Update the plugin from `/plugin` → Installed → small-council → Update now, then `/reload-plugins`.
   Your projects need nothing re-run; `council doctor` tells you when a refresh is due.
 
@@ -173,6 +181,7 @@ More: [helper commands](references/helper-commands.md) · [reference docs](refer
 
 ```bash
 python evals/run_all.py   # every suite CI runs (Ubuntu, Windows and macOS)
+claude plugin test .      # the council pane's tests (hooks/council-view.tsx)
 ```
 
 To load a local checkout: `claude --plugin-dir <repo>`, or put the repo (or a junction to it) at
@@ -182,4 +191,6 @@ To load a local checkout: `claude --plugin-dir <repo>`, or put the repo (or a ju
 ## Credit and license
 
 Derived from **[Carmack-Council](https://github.com/SamJHudson01/Carmack-Council)** by Sam Hudson
-(MIT). See [NOTICE](NOTICE). MIT — see [LICENSE](LICENSE).
+(MIT). The council hall's pixel style and its robot, cat and dragon follow
+**[agent-avatars](https://github.com/vanyastaff/agent-avatars)** by vanyastaff (MIT). See
+[NOTICE](NOTICE). MIT — see [LICENSE](LICENSE).

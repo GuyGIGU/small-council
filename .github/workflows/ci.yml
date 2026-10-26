@@ -73,3 +73,26 @@ jobs:
       - name: Evals (every suite, several at a time; see evals/run_all.py)
         if: ${{ !cancelled() }}
         run: python evals/run_all.py
+
+  # The council pane is a Claude Code mod (hooks/council-view.tsx): Claude Code's own test kit runs its
+  # tests against the engine, with every file, process and clock call answered by the test. No model
+  # is called, so no sign-in or token is needed. The version is pinned to one that knows the API used.
+  council-view:
+    name: council view (mod tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.308
+
+      - name: Validate the plugin, then run the council view's tests
+        run: |
+          claude plugin validate .
+          claude plugin test .

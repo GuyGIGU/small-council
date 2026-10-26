@@ -9,6 +9,7 @@
   "repository": "https://github.com/GuyGIGU/small-council",
   "license": "MIT",
   "keywords": ["council", "code-review", "planning", "context-engineering", "subagents", "memory"],
+  "types": "./types/index.d.ts",
   "experimental": {
     "evals": "evals/suite"
   }
