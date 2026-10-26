@@ -36,10 +36,14 @@ type World = {
   reading?: Record<string, unknown>
   calls?: string[][]
   opens?: unknown[]
+  others?: Record<string, string> // more run folders: name → their session-state.md
+  noHome?: boolean // no .council/runs yet (flip it to make one appear)
+  noPython?: boolean
 }
 
 function world(on: any, opts: World = {}) {
-  const state =
+  // Read at each fs.read, so a test can change the run (close it) after the session starts.
+  const state = () =>
     [
       `status: ${opts.status ?? 'in-progress'}`,
       'mode: council-implement',
@@ -64,21 +68,24 @@ function world(on: any, opts: World = {}) {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  on('fs.exists', async (_$: any, e: any) => value(path(e).endsWith('/.council/runs')))
+  on('fs.exists', async (_$: any, e: any) => value(!opts.noHome && path(e).endsWith('/.council/runs')))
   on('fs.list', async () =>
-    value([
-      { name: OLD, kind: 'dir', size: 0 },
-      { name: OPEN, kind: 'dir', size: 0 },
-    ]),
+    value(
+      [OLD, OPEN, ...Object.keys(opts.others ?? {})].map(name => ({ name, kind: 'dir', size: 0 })),
+    ),
   )
-  on('fs.read', async (_$: any, e: any) =>
-    value(path(e).includes(OPEN) ? state : 'status: complete\nsession: other\n'),
-  )
+  on('fs.read', async (_$: any, e: any) => {
+    const p = path(e)
+    const other = Object.keys(opts.others ?? {}).find(name => p.includes(name))
+    return value(other ? opts.others![other] : p.includes(OPEN) ? state() : 'status: complete\nsession: other\n')
+  })
   on('process.run', async (_$: any, e: any) => {
     const argv = [...e.argv] as string[]
     opts.calls?.push(argv)
     if (argv[0] === 'git') return ran(0, 'C:/proj/.git\nC:/proj\n')
-    if (argv.some(a => a.endsWith('/scripts/status.py'))) return ran(0, JSON.stringify(STATUS(opts.reading)))
+    if (argv.some(a => a.endsWith('/scripts/status.py'))) {
+      return opts.noPython ? ran(9009, '') : ran(0, JSON.stringify(STATUS(opts.reading)))
+    }
     return ran(127, '')
   })
 }
@@ -235,4 +242,65 @@ test("the bar's Pane button opens the pane, and its close button hides the bar f
   expect(opens.length).toBe(2)
   await ui.press({ key: 'council-bar-dismiss' })
   expect(await ui.find({ type: 'Text', text: 'Council' })).toBeUndefined()
+})
+
+// The fix round after the review: the first four below failed on the first version; the last two
+// cover what the review found untested.
+
+test('a council folder made after the session started is found once a council command runs', async ($, on) => {
+  const opts: World = { noHome: true }
+  world(on, opts)
+  on('tool.call', async () => ({ result: { text: 'opened' } }))
+  const clock = await start($, on)
+  expect(await (await band($, 'terminal')).find({ type: 'Text', text: 'Council' })).toBeUndefined()
+  opts.noHome = false
+  await $.tool.call({ tool: 'Bash', command: 'council run open council-review' })
+  await clock.advance(2000)
+  expect(await (await band($, 'terminal')).find({ type: 'Text', text: 'Council' })).toBeDefined()
+})
+
+test("the helper's order: the open run on this tree before this session's run on another tree", async ($, on) => {
+  const calls: string[][] = []
+  const mine = '2026-10-05-100000-review'
+  world(on, {
+    calls,
+    session: 'someone-else',
+    codeRoot: 'C:/proj',
+    others: { [mine]: `status: in-progress${CRLF}session: sess-1${CRLF}code-root: D:/other${CRLF}` },
+  })
+  await start($, on)
+  const status = calls.filter(a => a.some(x => x.endsWith('/scripts/status.py'))).pop() ?? []
+  expect(status).toContain(`C:/proj/.council/runs/${OPEN}`)
+})
+
+test("a run with no code-root line counts as this tree's, as the helper counts it", async ($, on) => {
+  world(on, { session: 'someone-else', omit: 'code-root' })
+  await start($, on)
+  expect(await (await band($, 'terminal')).find({ type: 'Text', text: /stage 8 of 10/ })).toBeDefined()
+})
+
+test('a run that closes leaves the bar, and the pane keeps its last reading', async ($, on) => {
+  const opts: World = {}
+  world(on, opts)
+  const clock = await start($, on)
+  opts.status = 'complete'
+  opts.reading = { state: { key: 'completed', label: 'Completed', role: 'success' } }
+  await clock.advance(12000)
+  expect(await (await band($, 'terminal')).find({ type: 'Text', text: 'Council' })).toBeUndefined()
+  expect(await (await pane($, 'terminal')).find({ type: 'Text', text: /Completed/ })).toBeDefined()
+})
+
+test('/council-view says why when the status reader cannot run', async ($, on) => {
+  world(on, { noPython: true })
+  await start($, on)
+  const said = await $.command.run({ command: 'council-view', args: '' } as any)
+  expect(String(said?.text ?? '')).toContain('the status reader could not run')
+})
+
+test("the tool-call hooks hand every tool's result back unchanged", async ($, on) => {
+  world(on)
+  on('tool.call', async () => ({ result: { text: 'the real output' } }))
+  await start($, on)
+  const ran: any = await $.tool.call({ tool: 'Bash', command: 'council run status' })
+  expect(ran?.result?.text ?? ran?.text).toBe('the real output')
 })

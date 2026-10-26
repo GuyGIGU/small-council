@@ -76,13 +76,18 @@ async function findHome($: any): Promise<string | null> {
   } catch {
     // no git: fall back to the folder itself
   }
-  return (await $.fs.exists(`${cwd}/.council/runs`)) ? `${cwd}/.council` : null
+  try {
+    return (await $.fs.exists(`${cwd}/.council/runs`)) ? `${cwd}/.council` : null
+  } catch {
+    return null
+  }
 }
 
 type Found = { path: string; name: string; isOpen: boolean }
 
-// The helper's own order: this session's open run, else the open run on this tree. A run the view was
-// showing stays (as finished) after it closes, so its last state can still be read.
+// The helper's own order (resolve_run in bin/council): the open run on this tree (a run with no
+// code-root counts as this tree's), else this session's open run on another tree. A run the view was
+// showing stays (as finished) after it closes, so its last state can still be read in the pane.
 async function findRun($: any, at: string): Promise<Found | null> {
   let entries: { name: string; kind: string }[]
   try {
@@ -96,8 +101,9 @@ async function findRun($: any, at: string): Promise<Found | null> {
   } catch {
     // no id: the open run on this tree still shows
   }
-  const names = entries.filter(x => x.kind === 'dir').map(x => x.name).sort().reverse().slice(0, 15)
-  let onTree: Found | null = null
+  // The newest 60 folders: an open run is nearly always among them, and each refresh stays cheap.
+  const names = entries.filter(x => x.kind === 'dir').map(x => x.name).sort().reverse().slice(0, 60)
+  let mine: Found | null = null
   let shown: Found | null = null
   for (const name of names) {
     const path = `${at}/runs/${name}`
@@ -108,11 +114,12 @@ async function findRun($: any, at: string): Promise<Found | null> {
       continue
     }
     const isOpen = field(text, 'status').split(' ')[0] === 'in-progress'
-    if (isOpen && session && field(text, 'session') === session) return { path, name, isOpen }
-    if (isOpen && !onTree && same(field(text, 'code-root'), tree)) onTree = { path, name, isOpen }
+    const root = field(text, 'code-root')
+    if (isOpen && (!root || same(root, tree))) return { path, name, isOpen }
+    if (isOpen && !mine && session && field(text, 'session') === session) mine = { path, name, isOpen }
     if (name === lastShown) shown = { path, name, isOpen }
   }
-  return onTree ?? shown
+  return mine ?? shown
 }
 
 async function readStatus($: any, at: string, run: string): Promise<any | null> {
@@ -187,7 +194,8 @@ async function openUnasked($: any, r: CouncilReading): Promise<void> {
 }
 
 async function refreshOnce($: any): Promise<void> {
-  if (home === undefined) home = await findHome($)
+  // A home once found is kept; none found is looked for again, as a run may open the council later.
+  if (!home) home = await findHome($)
   const found = home ? await findRun($, home) : null
   problem = home ? (found ? '' : `no open run for this session or for ${tree}`) : `no .council folder found from ${tree}`
   if (!found) {
@@ -210,6 +218,9 @@ async function refresh($: any): Promise<void> {
   isBusy = true
   try {
     await refreshOnce($)
+  } catch (err) {
+    // The timer calls this every few seconds: a fault keeps the last reading and says why on asking.
+    problem = `the view could not refresh: ${cut(String((err as any)?.message ?? err), 120)}`
   } finally {
     isBusy = false
   }
@@ -453,7 +464,8 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const r = await read($, reading)
     const gone = await read($, dismissed)
-    if (r === null || r.runId === gone || e.props.hasSurvey) return next(e)
+    // A finished run leaves the bar; the pane keeps its last reading for whoever looks.
+    if (r === null || r.isClosed || r.runId === gone || e.props.hasSurvey) return next(e)
 
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
