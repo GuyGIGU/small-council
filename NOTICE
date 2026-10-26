@@ -31,3 +31,16 @@ Carmack-Council and remain under its MIT license. Their copyright notice is
 preserved in LICENSE as the MIT terms require.
 
 Grateful acknowledgment to Sam Hudson for the original Carmack-Council.
+
+The council pane (hooks/council-scene.ts)
+-----------------------------------------
+The council hall's pixel-art style, its way of drawing (pixel maps of letters
+turned into runs of SVG rects, animated with SMIL), the robot, cat and dragon
+body shapes and the robot's mood lamp come from **agent-avatars**:
+
+    Original project : agent-avatars
+    Author           : vanyastaff (github.com/vanyastaff)
+    Source           : https://github.com/vanyastaff/agent-avatars
+    License          : MIT (see LICENSE)
+
+The owl, ghost and frog, the role gear, the hall and the squad list are new.

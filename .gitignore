@@ -14,3 +14,6 @@ dist/
 # Python cache
 __pycache__/
 *.pyc
+
+# Types Claude Code writes beside a loaded mod (hooks/council-view.tsx)
+.claude-plugin/types/

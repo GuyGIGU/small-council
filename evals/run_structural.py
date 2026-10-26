@@ -507,6 +507,23 @@ check("hook: PreToolUse runs bash-gate.sh for the Bash tool only, with a short t
           for g in hooks_json.get("PreToolUse", [])))
 check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_ID" in cli)
 
+# The council pane is a mod in the same hooks file: its module loads beside the settings hooks above
+# (claude plugin test . runs its tests; CI's mod job runs them on Linux).
+hooks_file = json.loads(read("hooks", "hooks.json") or "{}")
+view = read("hooks", "council-view.tsx")
+scene = read("hooks", "council-scene.ts")
+check("mod: hooks.json names the council view module beside the settings hooks",
+      hooks_file.get("modules") == ["./council-view.tsx"] and bool(hooks_json))
+check("mod: the view finds runs and reads them through status.py --json, never writing council files",
+      "scripts/status.py" in view and "'--json'" in view and "$.fs.write" not in view)
+check("mod: the view draws the pane, the line above the prompt and the /council-view command",
+      all(s in view for s in ("component: 'Pane'", "component: 'AbovePrompt'", "name: COMMAND", "'council-view'")))
+check("mod: the hall credits agent-avatars, as do NOTICE and LICENSE (MIT)",
+      "agent-avatars" in scene and "agent-avatars" in read("NOTICE") and "vanyastaff" in read("LICENSE"))
+check("mod: the plugin declares the view's state contract", '"types": "./types/index.d.ts"' in read(".claude-plugin", "plugin.json")
+      and "'small-council'" in read("types", "index.d.ts"))
+check("mod: the view has its tests", "claude-code/testing" in read("tests", "council-view.test.tsx"))
+
 # 8. Templates
 cfg, conv, mp = read("references", "templates", "council.config.md"), read("references", "templates", "conventions.md"), read("references", "templates", "map.md")
 check("template config: last-verified stamp", "last-verified:" in cfg)
