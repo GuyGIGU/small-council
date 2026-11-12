@@ -40,6 +40,11 @@ jobs:
           git --version
           awk --version 2>/dev/null | head -n 1 || awk -W version 2>/dev/null | head -n 1 || echo "awk: $(command -v awk) (BSD)"
 
+      # Pinned: evals/ratchet.json's ShellCheck counts and ruff.toml's rule lists were fitted to these
+      # versions. Raise a pin in its own change, with run_ratchet.py --update and ruff.toml refitted.
+      - name: Install the linters
+        run: python -m pip install --quiet shellcheck-py==0.11.0.1 ruff==0.17.4
+
       # The linters judge only the files this change touched (council changed), so a rule fitted today
       # never fails on the code it found; on every OS each is proved to fail on a planted fault and to
       # pass once it is gone — a linter that can only pass is worse than none.
@@ -48,7 +53,6 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          python -m pip install --quiet shellcheck-py ruff
           base="$BASE"
           git cat-file -e "${base}^{commit}" 2>/dev/null || base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
           sc() { "${COUNCIL_EVAL_BASH:-bash}" bin/council changed --base "$base" --glob 'bin/council' --glob '*.sh' -- shellcheck -S error; }
@@ -64,6 +68,34 @@ jobs:
           printf '%s\n' "$out" | grep -q 'F821' || { printf '%s\n' "$out"; echo "::error::ruff did not run on the planted fault"; exit 1; }
           rm planted_lint.py
           sc && rf
+
+      # ruff.toml's rule set on every Python file. Proved live on a planted fault in each of its two
+      # sets: an undefined name anywhere, and a missing annotation where the library's stricter set holds.
+      - name: ruff on the whole tree (ruff.toml)
+        if: ${{ !cancelled() }}
+        run: |
+          python -m ruff check .
+          mkdir -p src/council
+          printf 'print(name_that_is_nowhere)\n' > planted_lint.py
+          printf 'def planted(a):\n    return a\n' > src/council/planted_lint.py
+          if out="$(python -m ruff check . 2>&1)"; then echo "::error::ruff passed the planted faults"; exit 1; fi
+          for code in F821 ANN001 ANN201; do
+            printf '%s\n' "$out" | grep -q "$code" || { printf '%s\n' "$out"; echo "::error::ruff did not report $code on a planted fault"; exit 1; }
+          done
+          rm planted_lint.py src/council/planted_lint.py
+          rmdir src/council src 2>/dev/null || true
+          python -m ruff check .
+
+      # Sizes and structure that may only go down (evals/ratchet.json): one line per regression. Its
+      # self-test, which plants each kind of regression and catches it, runs in the fast tier below.
+      - name: Ratchet (evals/run_ratchet.py)
+        if: ${{ !cancelled() }}
+        run: python evals/run_ratchet.py
+
+      # A first look in about a minute, so a broken change fails before the half-hour run starts.
+      - name: Fast tier (python evals/run_all.py --fast)
+        if: ${{ !cancelled() }}
+        run: python evals/run_all.py --fast
 
       # One step runs every suite: several at a time (the helper and hook suites split into their
       # groups), with the ones that time the helper or a hook, or race its locks, run alone first.

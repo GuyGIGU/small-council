@@ -79,15 +79,37 @@ Seats live in `references/roster/expert-catalog.md`, not in skills.
 ```bash
 python scripts/quick_validate.py   # will it load?
 python evals/run_structural.py     # is the design intact?
+python evals/run_ratchet.py        # did a size or structure number go up?
 python evals/run_cli.py            # does the helper work?   (bash + git)
 python evals/run_hook.py           # do the hooks behave?    (bash + git)
 python evals/run_phrases.py        # advisory wording checks — never fails
+python evals/run_all.py --fast     # the fast tier, about a minute: a first look while you work
 python evals/run_all.py            # every suite CI runs, several at a time, then a summary
 ```
 
-These are selected local checks. [CI](.github/workflows/ci.yml) runs every suite with
-`evals/run_all.py` on Ubuntu, Windows and macOS; [evals/README.md](evals/README.md) lists them.
-A new `evals/run_*.py` goes into `run_all.py`'s list. Automatic checks do not replace real-use validation.
+These are selected local checks. [CI](.github/workflows/ci.yml) runs, on Ubuntu, Windows and macOS,
+ruff with [`ruff.toml`](ruff.toml) on the whole tree, the ratchet, the fast tier, and then every suite
+with `evals/run_all.py`; [evals/README.md](evals/README.md) lists them. A new `evals/run_*.py` goes
+into `run_all.py`'s list. Automatic checks do not replace real-use validation.
+
+**The fast tier** (`--fast`; `--list` marks its jobs) is validation, the structural evals, the
+ratchet and its self-test, the unit tests in `tests/py/` and the quickest scenario suites. It is a
+first look: the full run is still the gate before a commit.
+
+**The ratchet** (`evals/run_ratchet.py`, baseline `evals/ratchet.json`) measures `bin/council`,
+`hooks/*.sh`, `scripts/*.py` and `src/**/*.py`: each file's lines and longest function, its ShellCheck
+warnings (only where `shellcheck` is on PATH; otherwise reported as skipped), the files outside
+`src/council/records/` that parse a council file, the `council.config.md` readers outside one
+`configured_*` reader, and the scripts that run `bin/council` back. A number may only go down; a
+regression is one line naming the file, the measure, the baseline and the new value. A Python file
+the baseline doesn't list is held to 60-line functions and 500-line modules, and any import outside
+the standard library in `scripts/` or `src/` fails (D32). Run `python evals/run_ratchet.py --update`
+in the branch that lowers a number, so every later branch inherits the gain; it refuses to raise
+one, so a limit is never loosened by hand. `--show` prints the files each count names.
+
+**ruff** is pinned in CI with ShellCheck, since the baseline and the rule set are fitted to those
+versions. `ruff.toml` turns on the widest set today's Python passes, and a stricter one for
+`src/council/` and `tests/py/`. To widen it, fix a rule's last failures and delete it from its list.
 
 **Releasing:**
 1. Bump `version` in `.claude-plugin/plugin.json` — installed users only get an update when it
