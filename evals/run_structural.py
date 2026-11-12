@@ -592,6 +592,34 @@ check("catalog: no external/unshipped seat docs", "external (" not in catalog)
 check("template config: example slugs match the catalog",
       all(s in slugs for s in re.findall(r"^\| [A-Z][^|]+ \| ([a-z-]+) \|", cfg, re.MULTILINE)))
 
+# 9b. The architecture record stays true to the code: an agent trusts docs/architecture.md and
+# docs/decisions.md, so a command, schema, environment variable or decision id they miss or invent is a bug.
+arch, decisions_doc, helper_src = read("docs", "architecture.md"), read("docs", "decisions.md"), read("bin", "council")
+check("architecture: the record exists, and the root CLAUDE.md points at it and at the decisions",
+      bool(arch) and bool(decisions_doc) and "docs/architecture.md" in read("CLAUDE.md")
+      and "docs/decisions.md" in read("CLAUDE.md"))
+dispatch = helper_src[helper_src.find("\nmain() {"):]
+top_commands = sorted(set(re.findall(r"\n    ([a-z][a-z-]*)\)", dispatch)) - {"help", "version"})
+entry = arch[arch.find("## 5. Entry points"):arch.find("## 6.")]
+missing = [c for c in top_commands if f"`{c}" not in entry and f"{c}`" not in entry and f" {c}," not in entry]
+check("architecture §5: names every top-level helper command", not missing, str(missing))
+code_text = helper_src + "".join(read("scripts", f) for f in sorted(os.listdir(os.path.join(ROOT, "scripts"))) if f.endswith(".py"))
+schemas = sorted(set(re.findall(r"council\.[a-z-]+/[0-9]+", code_text)))
+contracts = arch[arch.find("## 6."):arch.find("## 7.")]
+check("architecture §6: lists every JSON schema the code emits", schemas and all(s in contracts for s in schemas),
+      str([s for s in schemas if s not in contracts]))
+env_vars = sorted(set(re.findall(r"\bCOUNCIL_[A-Z_]+\b", code_text + "".join(
+    read("hooks", f) for f in sorted(os.listdir(os.path.join(ROOT, "hooks"))) if f.endswith(".sh")))))
+check("architecture §6: lists every COUNCIL_ environment variable", env_vars and all(v in contracts for v in env_vars),
+      str([v for v in env_vars if v not in contracts]))
+defined = set(re.findall(r"^\| (D[0-9]+) \|", decisions_doc, re.MULTILINE))
+cited = set(re.findall(r"\b(D[0-9]+)\b", arch + read("CLAUDE.md") + read("CONTRIBUTING.md")))
+check("decisions: every id the architecture, CLAUDE.md and CONTRIBUTING cite is defined", cited <= defined,
+      str(sorted(cited - defined)))
+ids = re.findall(r"^\| (D[0-9]+) \|", decisions_doc, re.MULTILINE)
+check("decisions: ids are unique and run D1..Dn with no gaps (never reused or renumbered)",
+      ids == [f"D{i}" for i in range(1, len(ids) + 1)], str(ids))
+
 # 10. Size budgets — Claude Code re-attaches only the first ~5k tokens of each skill after compaction
 for s in SKILLS:
     n = len(skill[s])
