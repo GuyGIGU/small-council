@@ -29,7 +29,10 @@ import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import audit  # noqa: E402  (the run reader, its spans and the transcript finder)
+from council.clock import iso_moment  # noqa: E402
+from council.records import paths  # noqa: E402
 
 
 def number(usage, name):
@@ -52,7 +55,7 @@ def calls_of(path):
             usage = message.get("usage") if isinstance(message.get("usage"), dict) else None
             key = message.get("id") or line.get("requestId")
             stamp = line.get("timestamp")
-            when = audit.stamp(stamp) if isinstance(stamp, str) else None
+            when = iso_moment(stamp) if isinstance(stamp, str) else None
             if usage is None or not isinstance(key, str) or when is None or key in seen:
                 continue
             seen.add(key)
@@ -84,7 +87,7 @@ def main():
     parser.add_argument("--run", required=True, type=Path)
     parser.add_argument("--transcript", type=Path, help="the Claude Code session .jsonl that drove the run")
     args = parser.parse_args()
-    if not (args.run / "session-state.md").is_file():
+    if not paths.is_run(args.run, refuse_links=False):
         print("chair usage: not a run folder: {}".format(args.run), file=sys.stderr)
         return 2
     run = audit.Run(args.run)
@@ -94,24 +97,24 @@ def main():
         return 3
     partial = False
     if args.transcript is not None:
-        paths = [args.transcript] if args.transcript.is_file() else []
+        files = [args.transcript] if args.transcript.is_file() else []
     else:
-        sessions = [audit.field(run.state, "session")]
+        sessions = [run.field("session")]
         for event in run.of_type("run.resumed"):
             was = re.search(r"(?:^|;)was=([^;]*)", event.get("detail") or "")
             if was is None or not was.group(1):
                 partial = True                     # resumed before was= was recorded, or from no session: unknown
             elif was.group(1) and was.group(1) not in sessions:
                 sessions.append(was.group(1))
-        paths = []
+        files = []
         for session in [s for s in sessions if s]:
             found = audit.find_transcript(session)
             if found is None:
                 partial = True
             else:
-                paths.append(found)
+                files.append(found)
     total = count = 0
-    for path in paths:
+    for path in files:
         try:
             tokens, calls = growth(calls_of(path), opened)
         except (OSError, ValueError, TypeError, AttributeError) as exc:

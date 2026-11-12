@@ -29,7 +29,11 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import cockpit  # noqa: E402  (the read-only run snapshot)
+from council.records import paths  # noqa: E402
+from council.records import ledger as ledger_file  # noqa: E402
+from council.records.cells import number  # noqa: E402
 import ledger   # noqa: E402  (seat evidence and advice)
 import outcomes as finding_outcomes  # noqa: E402  (read-only finding follow-up)
 
@@ -40,15 +44,6 @@ SEAT_WINDOW = 20      # the runs of the ledger read for seat evidence, as counci
 CHAIR_ESTIMATE = 20000  # the Chair's share of a route estimate; seats.tsv never records the Chair
 CATCHES = ("REFUTED", "MISCITED")
 CHECKED = ("CONFIRMED", "REFUTED", "MISCITED")
-
-
-def run_folders(home):
-    runs = Path(home) / "runs"
-    if not runs.is_dir() or cockpit.linked(runs):
-        return []
-    found = [p for p in runs.iterdir()
-             if p.is_dir() and not cockpit.linked(p) and (p / "session-state.md").is_file()]
-    return sorted(found, key=lambda p: p.name)[-MAX_RUNS:]
 
 
 def spread(values):
@@ -109,7 +104,7 @@ def history(home, outcomes=True):
     """The run history report. outcomes=False skips the finding-outcome comparison (a few Git processes
     per cited file in every closed run) for a caller that never reads it; its section is then None."""
     home = Path(home)
-    runs = [cockpit.snapshot(folder, None, last_events=0) for folder in run_folders(home)]  # memory is not read
+    runs = [cockpit.snapshot(folder, None, last_events=0) for folder in paths.run_folders(home, MAX_RUNS)]  # memory is not read
     by_status, by_mode, by_month = {}, {}, {}
     for snap in runs:
         info = snap["run"]
@@ -142,7 +137,7 @@ def history(home, outcomes=True):
     ratios = []
     for snap in costed:                  # agents' tokens against the plan's estimate less the Chair's share
         chair = snap["plan"].get("chair-tokens")      # the plan's own Chair share, when it names one
-        estimate = cockpit.number(snap["plan"].get("estimated-tokens")) - (cockpit.number(chair) if chair else CHAIR_ESTIMATE)
+        estimate = number(snap["plan"].get("estimated-tokens")) - (number(chair) if chair else CHAIR_ESTIMATE)
         if estimate > 0:
             ratios.append(total_of(snap) / estimate)
     agents = [total_of(s) / runs_of(s) for s in costed]
@@ -186,7 +181,7 @@ def history(home, outcomes=True):
                 verdicts[verdict] = verdicts.get(verdict, 0) + n
             by = snap["claims"]["by_verdict"]
             checked_runs.append((sum(by.get(v, 0) for v in CATCHES), sum(by.get(v, 0) for v in CHECKED)))
-    seats = ledger.report(home / "ledger.tsv", SEAT_WINDOW)
+    seats = ledger.report(ledger_file.path(home), SEAT_WINDOW)
     advice = {}
     for seat in seats["seats"]:
         advice[seat["advice"]] = advice.get(seat["advice"], 0) + 1

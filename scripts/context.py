@@ -11,7 +11,9 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import sys
-import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from council.records import paths  # noqa: E402
 
 
 LEVELS = {
@@ -276,18 +278,6 @@ def expanded_file(root, raw_path, byte_cap):
     return relative, excerpt, omitted
 
 
-def atomic_write(path, content):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=".context-", dir=str(path.parent))
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
-            stream.write(content)
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
 def build(root, run, seat, level, output, expansions):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", seat):
         raise ContextError("seat must be a safe plan slug")
@@ -423,8 +413,9 @@ def build(root, run, seat, level, output, expansions):
         raise ContextError("output would overwrite a source run file")
     if any(output == safe_path(root, Path(request), regular=True) for request in expansions):
         raise ContextError("output would overwrite a requested source file")
-    atomic_write(output, output_text)
-    atomic_write(sidecar, metrics_text)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    paths.atomic_write(output, output_text.encode("utf-8"), prefix=".context-")
+    paths.atomic_write(sidecar, metrics_text.encode("utf-8"), prefix=".context-")
     print(str(output))
     print(str(sidecar))
 

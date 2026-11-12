@@ -9,6 +9,7 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 - The council pane: while a run is open, a pane beside the chat shows each seat as a pixel-art critter at its desk (role gear, a mood per state, a squad list under it), and a line above the prompt shows the stage, who is working and the spend; `/council-view` reopens the pane. A Claude Code mod in the plugin (`hooks/council-view.tsx`), tested with `claude plugin test .`.
 - The architecture record, for anyone (or any agent) changing the plugin: `docs/architecture.md` (the parts, dependency direction, folder ownership, the run folder's files and who writes and reads each, where new code belongs, the one way each recurring job is done, naming, and the contract names a cleanup never renames), `docs/decisions.md` (31 settled decisions by id, with where each was decided and what holds it), and a root `CLAUDE.md`. Structural checks keep the record true to the code: every helper command, JSON schema and `COUNCIL_` variable must be listed, and every cited decision id must exist.
+- The records library, `src/council/records` (with `council.git` and `council.clock`): one module per run file. The scripts now read session-state, run-plan, events, seats, usage, gates, the ledger and the config through it instead of each keeping its own parser, with unit tests in `tests/py/`. Nothing a user sees changes.
 
 ## [0.23.0] — 2026-10-22
 

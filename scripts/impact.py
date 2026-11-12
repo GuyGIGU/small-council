@@ -13,9 +13,11 @@ import difflib
 import os
 from pathlib import Path, PurePosixPath
 import re
-import subprocess
 import sys
-import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from council.git import output as git  # noqa: E402  (a failure raises, and stops the build)
+from council.records.paths import atomic_write  # noqa: E402
 
 
 HEADER = "kind\tsource\ttarget\trelation\tevidence\tconfidence"
@@ -32,13 +34,6 @@ JS_SYMBOL = re.compile(
     r"\b(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)\b|"
     r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*="
 )
-
-
-def git(root, *args, allow_error=False):
-    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True)
-    if result.returncode and not allow_error:
-        raise RuntimeError(result.stderr.decode("utf-8", "replace").strip() or "git failed")
-    return result.stdout
 
 
 def paths(blob):
@@ -432,13 +427,8 @@ def main():
     root = args.root.resolve()
     rows, changes, impacted, tests, unread = build(root, args.base)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=args.output.parent,
-                                     prefix=".impact-", delete=False) as stream:
-        temp = Path(stream.name)
-        stream.write(HEADER + "\n")
-        for row in sorted(rows, key=lambda row: (row[0] != "schema", row)):
-            stream.write("\t".join(row) + "\n")
-    os.replace(temp, args.output)
+    table = HEADER + "\n" + "".join("\t".join(row) + "\n" for row in sorted(rows, key=lambda row: (row[0] != "schema", row)))
+    atomic_write(args.output, table.encode("utf-8"), prefix=".impact-")
     print(f"impact: {changes} changed, {impacted} direct importer(s), {tests} linked test(s), "
           f"{unread} not inspected -> impact.tsv")
 
