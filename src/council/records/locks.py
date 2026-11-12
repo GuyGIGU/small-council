@@ -11,15 +11,16 @@ A made directory is not yet a held lock: the owner file decides (bin/council's l
 holds. Both languages therefore hold a lock, or a `.recover`, only once they created its owner file
 exclusively (O_EXCL).
 """
+from __future__ import annotations
 
-from contextlib import contextmanager
 import os
-from pathlib import Path
 import re
 import time
-from typing import Iterator, Optional, Union
+from contextlib import contextmanager, suppress
+from pathlib import Path
+from typing import Iterator
 
-from council.records.paths import RecordError
+from council.records.paths import RecordError, open_shared
 
 TRIES = 200          # the helper's default: 200 tries, 0.1 s apart
 PAUSE = 0.1
@@ -60,16 +61,18 @@ def _alive_windows(pid: int) -> bool:
         kernel.CloseHandle(handle)
 
 
-def _first_line(path: Path) -> Optional[str]:
-    """The file's first line without its newline (bash's `IFS= read -r`), or None when it can't be read."""
+def _first_line(path: Path) -> str | None:
+    """The file's first line without its newline (bash's `IFS= read -r`), or None when it can't be read.
+    On Windows it is read with delete sharing: a plain open would stop the holder removing it on release."""
     try:
-        with open(str(path), "rb") as handle:
+        shared = open_shared(path)
+        with shared if shared is not None else open(str(path), "rb") as handle:
             return handle.readline().decode("utf-8", "replace").rstrip("\n")
     except OSError:
         return None
 
 
-def stale(lock: Union[str, Path]) -> bool:
+def stale(lock: str | Path) -> bool:
     """event_lock_stale: the lock exists and its holder is gone."""
     lock = Path(lock)
     if not lock.is_dir():
@@ -106,7 +109,7 @@ def _make(folder: Path) -> bool:
 HELD, TAKEN, FAILED = 0, 1, 2   # lock_claim's exits
 
 
-def _claim(folder: Path, owner: str) -> int:
+def claim(folder: Path, owner: str) -> int:
     """lock_claim: create folder/owner exclusively and write the owner line. HELD; TAKEN when another
     caller's owner file is there or the folder went (leave it alone); FAILED when it couldn't be made or
     written (nothing of it is left)."""
@@ -121,22 +124,18 @@ def _claim(folder: Path, owner: str) -> int:
         with os.fdopen(handle, "wb") as stream:
             stream.write((owner + "\n").encode("ascii"))
     except OSError:
-        try:
+        with suppress(OSError):
             owner_file.unlink()
-        except OSError:
-            pass
         return FAILED
     return HELD
 
 
 def _remove_folder(folder: Path) -> None:
-    try:
+    with suppress(OSError):
         os.rmdir(str(folder))
-    except OSError:
-        pass
 
 
-def release(lock: Union[str, Path]) -> bool:
+def release(lock: str | Path) -> bool:
     """event_unlock: remove the owner file, then the lock directory. False when either is refused."""
     lock = Path(lock)
     try:
@@ -152,7 +151,7 @@ def release(lock: Union[str, Path]) -> bool:
     return True
 
 
-def acquire(lock: Union[str, Path], tries: int = TRIES) -> bool:
+def acquire(lock: str | Path, tries: int = TRIES) -> bool:
     """event_lock: take the lock, reclaiming a stale one, trying `tries` times 0.1 s apart."""
     lock = Path(lock)
     recovery = Path(str(lock) + ".recover")
@@ -160,7 +159,7 @@ def acquire(lock: Union[str, Path], tries: int = TRIES) -> bool:
     count = 0
     while True:
         if not recovery.is_dir() and _make(lock):
-            claimed = _claim(lock, owner)             # the owner file decides who holds it, not mkdir
+            claimed = claim(lock, owner)              # the owner file decides who holds it, not mkdir
             if claimed == HELD:
                 if recovery.is_dir():                 # a reclaim began just before: yield this lock to it
                     release(lock)
@@ -173,7 +172,7 @@ def acquire(lock: Union[str, Path], tries: int = TRIES) -> bool:
         if stale(recovery):
             release(recovery)
         if stale(lock) and _make(recovery):
-            claimed = _claim(recovery, owner)
+            claimed = claim(recovery, owner)
             if claimed == HELD and stale(lock):
                 release(lock)
             if claimed != TAKEN:                      # another reclaimer's: leave it to that one
@@ -185,7 +184,7 @@ def acquire(lock: Union[str, Path], tries: int = TRIES) -> bool:
 
 
 @contextmanager
-def held(lock: Union[str, Path], tries: int = TRIES) -> Iterator[Path]:
+def held(lock: str | Path, tries: int = TRIES) -> Iterator[Path]:
     """The lock for the length of a with block; LockError when it can't be taken."""
     lock = Path(lock)
     if not acquire(lock, tries):

@@ -3,10 +3,11 @@ used, the agent stop's count and the user's go past it, and figures corrected fr
 
 seats.tsv and usage.tsv are written by `council seat` under `seats.tsv.lock` (locks.py).
 """
+from __future__ import annotations
 
-from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any
 
 from council.records import cells, paths
 
@@ -22,32 +23,32 @@ def path(run: Path, name: str = SEATS) -> Path:
     return Path(run) / name
 
 
-def _rows(run: Path, name: str, limit: int) -> List[Dict[str, str]]:
+def _rows(run: Path, name: str, limit: int) -> list[dict[str, str]]:
     run = Path(run)
     return cells.tsv_rows(paths.text_of(path(run, name), run, limit))
 
 
-def rows(run: Path, limit: int = paths.MAX_FILE) -> List[Dict[str, str]]:
+def rows(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
     """seats.tsv's rows, keyed by its header (slug, state, agent, tokens, updated, note, agents, reported)."""
     return _rows(run, SEATS, limit)
 
 
-def usage_rows(run: Path, limit: int = paths.MAX_FILE) -> List[Dict[str, str]]:
+def usage_rows(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
     """usage.tsv's rows (at, seat, agent, kind, runs, tokens): one per dispatch and per finished report."""
     return _rows(run, USAGE, limit)
 
 
-def start_rows(run: Path, limit: int = paths.MAX_FILE) -> List[Dict[str, str]]:
+def start_rows(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
     """agent-starts.tsv's rows, as the agent gate wrote them."""
     return _rows(run, STARTS, limit)
 
 
-def allowance_rows(run: Path, limit: int = paths.MAX_FILE) -> List[Dict[str, str]]:
+def allowance_rows(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
     """cap-allowances.tsv's rows (at, used, n, until, said): the user's go past the agent limit."""
     return _rows(run, ALLOWANCES, limit)
 
 
-def _raw_lines(run: Path, name: str) -> List[str]:
+def _raw_lines(run: Path, name: str) -> list[str]:
     """The file's lines split on newline only, carriage returns kept (the agent stop's own reading)."""
     run = Path(run)
     return paths.text_of(path(run, name), run).split("\n")
@@ -82,7 +83,7 @@ def workflow_extra(run: Path) -> int:
     return loose + sum(max(0, runs - 1) for runs in by_id.values())
 
 
-def allowed_until(run: Path) -> Optional[int]:
+def allowed_until(run: Path) -> int | None:
     """The user's latest go (council cap allow): the until of the last readable row; None when no go is
     on record. A torn or garbage row is passed over."""
     until = None
@@ -98,14 +99,15 @@ def evidenced(text: Any) -> bool:
     return bool(re.search(r"[A-Za-z0-9]", cells.clean(text or "")))
 
 
-def corrections(run: Path) -> Dict[Tuple[str, str], Dict[str, Any]]:
+def corrections(run: Path) -> dict[tuple[str, str], dict[str, Any]]:
     """The latest evidence-backed correction per (seat, field), from the append-only corrections.jsonl,
     read as the helper's corrections_tsv reads it: a whole number of at most 12 digits, and evidence
     that names something."""
     run = Path(run)
     latest = {}
     for row in cells.jsonl_rows(paths.text_of(path(run, CORRECTIONS), run)):
-        seat, field, to = cells.clean(row.get("seat", "")), cells.clean(row.get("field", "")), cells.integer(row.get("to"))
+        seat, field = cells.clean(row.get("seat", "")), cells.clean(row.get("field", ""))
+        to = cells.integer(row.get("to"))
         if seat and field in ("tokens", "agents") and to is not None and to >= 0 and evidenced(row.get("evidence")):
             latest[(seat, field)] = {"seat": seat, "field": field, "to": to, "from": cells.clean(row.get("from", "")),
                                      "evidence": cells.clean(row.get("evidence", ""))[:300],

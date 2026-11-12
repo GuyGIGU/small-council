@@ -3,11 +3,12 @@
 Seven tab-separated cells a row: schema, seq, at, type, subject, value, detail. `append` is the helper's
 event_append, under the same lock, so a Python writer and a bash writer never share a sequence number.
 """
+from __future__ import annotations
 
-from pathlib import Path
 import re
 import time
-from typing import Callable, Dict, List, NamedTuple, Optional
+from pathlib import Path
+from typing import Callable, NamedTuple, Optional
 
 from council.records import cells, locks, paths, state
 
@@ -24,8 +25,8 @@ class EventError(paths.RecordError):
 class Table(NamedTuple):
     """The stream as the cockpit reads it: every row after the header, split into cells."""
     present: bool
-    header_ok: Optional[bool]
-    rows: List[List[str]]
+    header_ok: bool | None
+    rows: list[list[str]]
     too_large: bool
 
 
@@ -44,13 +45,13 @@ def table(run: Path, limit: int = paths.MAX_FILE) -> Table:
     return Table(bool(lines), bool(lines) and lines[0] == HEADER, [line.split("\t") for line in lines[1:]], False)
 
 
-def records(run: Path, limit: int = paths.MAX_FILE) -> List[Dict[str, str]]:
+def records(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
     """The stream's rows as dicts keyed by its own header line ("#" and blank lines skipped)."""
     run = Path(run)
     return cells.tsv_rows(paths.text_of(path(run), run, limit))
 
 
-def strict_rows(run: Path, read: Reader) -> List[Dict[str, object]]:
+def strict_rows(run: Path, read: Reader) -> list[dict[str, object]]:
     """Every row, refusing a stream without the v1 header or with any row out of sequence (the repair
     loop trusts a gate's record only from a whole stream). `read` returns the file's text."""
     lines = (read(path(run)) or "").splitlines()
@@ -65,7 +66,7 @@ def strict_rows(run: Path, read: Reader) -> List[Dict[str, object]]:
     return rows
 
 
-def details(cell: str) -> Dict[str, str]:
+def details(cell: str) -> dict[str, str]:
     """A detail cell's key=value pairs ("exit=1;seconds=57")."""
     return dict(part.split("=", 1) for part in (cell or "").split(";") if "=" in part)
 
@@ -78,7 +79,7 @@ def cell(value: str) -> str:
     return bytes(byte for byte in data if byte >= 0x20 and byte != 0x7F).decode("utf-8", "surrogateescape")
 
 
-def _next_seq(data: bytes) -> Optional[int]:
+def _next_seq(data: bytes) -> int | None:
     """The next sequence number after the stream's last line, or None when the last line is torn,
     missing or not a numbered row."""
     if data and not data.endswith(b"\n"):
@@ -105,7 +106,7 @@ def _recorded(data: bytes, kind: str) -> bool:
                for parts in (line.split("\t") for line in data.decode("utf-8", "replace").split("\n")[1:]))
 
 
-def _write(file: Path, kind: str, subject: str, value: str, detail: str, once: bool) -> Optional[bool]:
+def _write(file: Path, kind: str, subject: str, value: str, detail: str, once: bool) -> bool | None:
     """Under the lock: True when written, False when `once` found the type on record, None on a failure."""
     data = file.read_bytes() if file.is_file() else None
     if once and data is not None and _recorded(data, kind):

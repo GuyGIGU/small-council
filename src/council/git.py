@@ -1,16 +1,16 @@
 """Running git: `output` for a caller that must stop on a failure, `text` for one that reads a failure as unknown."""
+from __future__ import annotations
 
 import os
 import subprocess
 from pathlib import Path
-from typing import Optional, Union
 
 
 class GitError(RuntimeError):
     """A git command that failed; the message is git's own stderr."""
 
 
-def output(repo: Union[str, Path], *args: str, allow_error: bool = False) -> bytes:
+def output(repo: str | Path, *args: str, allow_error: bool = False) -> bytes:
     """git -C repo <args>'s stdout as bytes; a failure raises GitError unless allow_error."""
     result = subprocess.run(["git", "-C", str(repo)] + list(args), capture_output=True)
     if result.returncode and not allow_error:
@@ -18,7 +18,7 @@ def output(repo: Union[str, Path], *args: str, allow_error: bool = False) -> byt
     return result.stdout
 
 
-def text(repo: Union[str, Path], *args: str) -> Optional[str]:
+def text(repo: str | Path, *args: str) -> str | None:
     """git -C repo <args>'s stdout as stripped text, or None when git fails, is missing or takes over 20 s.
     It takes no optional lock, so a reader never blocks the user's own git."""
     try:

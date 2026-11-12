@@ -1,6 +1,7 @@
 import unittest
 
 import support
+
 from council.records import state
 
 STATE = ("\ufeffstatus: in-progress\n"
@@ -18,7 +19,7 @@ STATE = ("\ufeffstatus: in-progress\n"
 
 
 class StateTest(support.Scratch):
-    def test_header_reads_above_the_first_heading_only(self):
+    def test_header_reads_above_the_first_heading_only(self) -> None:
         fields = state.header(STATE.lstrip("\ufeff"))
         self.assertEqual(fields["status"], "in-progress")
         self.assertEqual(fields["mode"], "council-review")           # space around the key allowed
@@ -26,12 +27,12 @@ class StateTest(support.Scratch):
         self.assertEqual(fields["next"], "")
         self.assertNotIn("closed", fields)
 
-    def test_exact_keys_and_comments(self):
+    def test_exact_keys_and_comments(self) -> None:
         content = STATE.lstrip("\ufeff")
         self.assertNotIn("mode", state.header(content, exact_keys=True))
         self.assertEqual(state.header(content, comments=False)["phase"], "work    # in the middle")
 
-    def test_values_anywhere(self):
+    def test_values_anywhere(self) -> None:
         content = STATE.lstrip("\ufeff")
         self.assertEqual(state.values(content, "closed"), ["2026-01-03 09:00"])
         self.assertEqual(state.first_value(content, "phase"), "work")
@@ -41,20 +42,23 @@ class StateTest(support.Scratch):
         self.assertTrue(state.planned(content))
         self.assertFalse(state.planned("plan-schema:\n"))
 
-    def test_decisions_are_unquoted(self):
-        self.assertEqual(state.decisions(STATE), ['2026-01-02 10:00: "go "full" C:\\temp"', "2026-01-02 11:00: raw words"])
+    def test_decisions_are_unquoted(self) -> None:
+        self.assertEqual(state.decisions(STATE),
+                         ['2026-01-02 10:00: "go "full" C:\\temp"', "2026-01-02 11:00: raw words"])
         self.assertEqual(state.unquote('t: "a\\nb"'), 't: "a\\nb"')            # only \" and \\ are the helper's
 
-    def test_text_and_in_progress(self):
+    def test_text_and_in_progress(self) -> None:
         home = self.tmp / ".council"
         for name, status in (("2026-01-01-000000-a", "in-progress"), ("2026-01-02-000000-b", "complete"),
                              ("2026-01-03-000000-c", "in-progress (resumed)")):
             self.write(".council/runs/{}/session-state.md".format(name),
                        "status: {}\ncode-root: /p\nsession: s-{}\n".format(status, name[-1]))
         (home / "runs" / "empty").mkdir()
-        self.assertEqual(state.text(home / "runs" / "2026-01-02-000000-b"), "status: complete\ncode-root: /p\nsession: s-b\n")
+        self.assertEqual(state.text(home / "runs" / "2026-01-02-000000-b"),
+                         "status: complete\ncode-root: /p\nsession: s-b\n")
         self.assertEqual(state.text(home / "runs" / "empty"), "")
-        self.assertEqual(state.text(home / "runs" / "empty", read=lambda path: "x: " + path.name), "x: session-state.md")
+        self.assertEqual(state.text(home / "runs" / "empty", read=lambda path: "x: " + path.name),
+                         "x: session-state.md")
         self.assertEqual(state.in_progress(home), [(home / "runs" / "2026-01-03-000000-c", "/p", "s-c"),
                                                    (home / "runs" / "2026-01-01-000000-a", "/p", "s-a")])
         self.assertEqual(state.in_progress(self.tmp / "nowhere"), [])

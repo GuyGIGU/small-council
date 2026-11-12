@@ -1,8 +1,9 @@
 """Values read from a council file: lines, TSV rows, JSON lines and the numbers in their cells."""
+from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Every C0 and C1 control (tab and newline included: a value is one cell), DEL, and the Unicode line
 # and paragraph separators: none may reach a terminal or a page from a file.
@@ -14,13 +15,13 @@ def clean(value: Any) -> str:
     return re.sub(r" {2,}", " ", CONTROL.sub(" ", str(value))).strip()
 
 
-def lines_of(text: str) -> List[str]:
+def lines_of(text: str) -> list[str]:
     """Lines as the helper's awk splits them: on newline only, each line's carriage return dropped.
     str.splitlines() would also split on form feeds and Unicode breaks inside a cell, and invent rows."""
     return [line.rstrip("\r") for line in text.split("\n")]
 
 
-def integer(value: Any) -> Optional[int]:
+def integer(value: Any) -> int | None:
     """An int from an int or a string of up to 12 digits, else None: never a list, a bool or a null."""
     if isinstance(value, bool):
         return None
@@ -37,13 +38,13 @@ def number(value: Any) -> int:
     return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else 0
 
 
-def optional_number(value: Any) -> Optional[int]:
+def optional_number(value: Any) -> int | None:
     """A recorded count, or None when the cell is blank or not a plain number (never guessed as 0)."""
     value = str(value if value is not None else "").strip()
     return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else None
 
 
-def token_count(text: str) -> Optional[int]:
+def token_count(text: str) -> int | None:
     """A token figure as the helper's seat_tokens reads one: 74300, 74,300, 74 300, 74.3k, 1.2M, with an
     optional trailing 'tokens'. Anything else (two numbers, a sign, '74,3k') is None, never a guess."""
     s = text.strip(" \t")
@@ -68,7 +69,7 @@ def parse_json(text: str) -> Any:
         return None
 
 
-def tsv_rows(text: str) -> List[Dict[str, str]]:
+def tsv_rows(text: str) -> list[dict[str, str]]:
     """A TSV file's rows as dicts keyed by its first row. Blank and "#" lines are skipped, and a short
     row's missing cells read as empty."""
     rows = [line.split("\t") for line in lines_of(text) if line.strip() and not line.startswith("#")]
@@ -78,7 +79,7 @@ def tsv_rows(text: str) -> List[Dict[str, str]]:
     return [dict(zip(head, row + [""] * (len(head) - len(row)))) for row in rows[1:]]
 
 
-def jsonl_rows(text: str) -> List[Dict[str, Any]]:
+def jsonl_rows(text: str) -> list[dict[str, Any]]:
     """The JSON objects of a JSON-lines file, one per line; a line that is not an object is skipped."""
     rows = []
     for line in lines_of(text):

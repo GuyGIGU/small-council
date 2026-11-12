@@ -2,11 +2,12 @@ import json
 import unittest
 
 import support
+
 from council.records import seats
 
 
 class SeatsTest(support.Scratch):
-    def test_rows_and_usage_rows(self):
+    def test_rows_and_usage_rows(self) -> None:
         run = self.run_folder()
         (run / "seats.tsv").write_bytes(b"slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
                                         b"hunt\tdone\ta1\t52000\t2026-01-01 10:00\tok\t1\t1\n")
@@ -15,14 +16,14 @@ class SeatsTest(support.Scratch):
         self.assertEqual(seats.usage_rows(run)[0]["kind"], "dispatched")
         self.assertEqual(seats.rows(self.tmp), [])
 
-    def test_agent_starts_count_a_seed_row_as_its_number(self):
+    def test_agent_starts_count_a_seed_row_as_its_number(self) -> None:
         run = self.run_folder()
         (run / "agent-starts.tsv").write_bytes(b"at\ttool\tsession\nT\tbefore:3\nT\tAgent\ts\n\nT\tbefore:x\n")
         self.assertEqual(seats.agent_starts(run), 5)
         self.assertEqual(len(seats.start_rows(run)), 3)
         self.assertEqual(seats.agent_starts(self.tmp), 0)
 
-    def test_workflow_extra_counts_runs_past_the_first(self):
+    def test_workflow_extra_counts_runs_past_the_first(self) -> None:
         run = self.run_folder()
         (run / "usage.tsv").write_bytes(b"at\tseat\tagent\tkind\truns\ttokens\n"
                                         b"T\tw\tid1\tfinished\t3\t9000\n"
@@ -31,14 +32,14 @@ class SeatsTest(support.Scratch):
                                         b"T\tw\tid2\tdispatched\t9\t\n")
         self.assertEqual(seats.workflow_extra(run), 3 + 1)
 
-    def test_allowed_until_takes_the_last_readable_go(self):
+    def test_allowed_until_takes_the_last_readable_go(self) -> None:
         run = self.run_folder()
         (run / "cap-allowances.tsv").write_bytes(b"at\tused\tn\tuntil\tsaid\nT\t10\t2\t12\tyes\nT\t12\t2\tbad\tno\n")
         self.assertEqual(seats.allowed_until(run), 12)
         self.assertEqual(seats.allowance_rows(run)[0]["until"], "12")
         self.assertIsNone(seats.allowed_until(self.tmp))
 
-    def test_corrections_keep_the_latest_with_evidence(self):
+    def test_corrections_keep_the_latest_with_evidence(self) -> None:
         run = self.run_folder()
         rows = [{"seat": "hunt", "field": "tokens", "to": 50000, "evidence": "transcript line 4", "from": "5"},
                 {"seat": "hunt", "field": "tokens", "to": 61000, "evidence": "agent footer"},

@@ -1,8 +1,8 @@
 """The times council files carry: the helper's UTC event stamps and its local minute and second stamps."""
+from __future__ import annotations
 
-from datetime import datetime, timezone
 import re
-from typing import Optional
+from datetime import datetime, timezone
 
 
 def event_clock(stamp: str) -> str:
@@ -15,7 +15,7 @@ def event_clock(stamp: str) -> str:
         return stamp[11:19]
 
 
-def utc_moment(text: Optional[str]) -> Optional[datetime]:
+def utc_moment(text: str | None) -> datetime | None:
     """The helper's UTC stamp ('2026-09-30T10:14:16Z') as an aware time, or None."""
     try:
         return datetime.strptime((text or "").strip(), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -23,7 +23,7 @@ def utc_moment(text: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def iso_moment(value: Optional[str]) -> Optional[datetime]:
+def iso_moment(value: str | None) -> datetime | None:
     """A UTC ISO time, with or without fractions and a Z or +00:00 (a transcript's ...16.894Z), or None."""
     match = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?(?:Z|\+00:00)?$", (value or "").strip())
     if not match:
@@ -31,7 +31,7 @@ def iso_moment(value: Optional[str]) -> Optional[datetime]:
     return datetime.strptime(match.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
 
 
-def local_moment(text: Optional[str]) -> Optional[datetime]:
+def local_moment(text: str | None) -> datetime | None:
     """A helper's local 'YYYY-MM-DD HH:MM[:SS]' stamp as an aware time, or None."""
     text = (text or "").strip()[:19]
     for form in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):

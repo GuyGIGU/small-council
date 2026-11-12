@@ -4,8 +4,10 @@ import sys
 import threading
 import time
 import unittest
+from pathlib import Path
 
 import support
+
 from council.records import locks
 
 
@@ -16,17 +18,17 @@ def dead_pid() -> int:
     return child.pid
 
 
-def put_owner(folder, value) -> None:
+def put_owner(folder: Path, value: object) -> None:
     """An owner file as bash writes one: the value and a newline, never a carriage return."""
     (folder / "owner").write_bytes("{}\n".format(value).encode())
 
 
-def owner_of(folder) -> bytes:
+def owner_of(folder: Path) -> bytes:
     return (folder / "owner").read_bytes()
 
 
 class LockTest(support.Scratch):
-    def test_acquire_writes_the_owner_and_release_removes_the_lock(self):
+    def test_acquire_writes_the_owner_and_release_removes_the_lock(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         self.assertTrue(locks.acquire(lock))
         self.assertEqual(owner_of(lock), "{}\n".format(os.getpid()).encode())
@@ -34,18 +36,17 @@ class LockTest(support.Scratch):
         self.assertFalse(lock.exists())
         self.assertFalse(locks.release(lock))
 
-    def test_a_live_holder_is_waited_for_then_refused(self):
+    def test_a_live_holder_is_waited_for_then_refused(self) -> None:
         lock = self.tmp / "seats.tsv.lock"
         self.assertTrue(locks.acquire(lock))
         started = time.time()
         self.assertFalse(locks.acquire(lock, tries=3))
         self.assertGreaterEqual(time.time() - started, 0.15)
-        with self.assertRaisesRegex(locks.LockError, "event lock unavailable"):
-            with locks.held(lock, tries=1):
-                pass
+        with self.assertRaisesRegex(locks.LockError, "event lock unavailable"), locks.held(lock, tries=1):
+            pass
         self.assertTrue(lock.is_dir())                     # the holder's lock is untouched
 
-    def test_two_threads_never_hold_it_together(self):
+    def test_two_threads_never_hold_it_together(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         counter = self.write("counter.txt", "0")
         inside, overlaps = [0], []
@@ -70,7 +71,7 @@ class LockTest(support.Scratch):
         self.assertEqual(counter.read_text(), "50")
         self.assertFalse(lock.exists())
 
-    def test_a_lock_left_by_a_dead_writer_is_reclaimed(self):
+    def test_a_lock_left_by_a_dead_writer_is_reclaimed(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         lock.mkdir()
         put_owner(lock, dead_pid())
@@ -80,7 +81,7 @@ class LockTest(support.Scratch):
         self.assertFalse((self.tmp / "events.tsv.lock.recover").exists())
         locks.release(lock)
 
-    def test_a_lock_without_an_owner_is_stale_only_once_old(self):
+    def test_a_lock_without_an_owner_is_stale_only_once_old(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         lock.mkdir()
         self.assertFalse(locks.stale(lock))               # a writer may be between mkdir and owner
@@ -91,7 +92,7 @@ class LockTest(support.Scratch):
         os.utime(str(lock), (old, old))
         self.assertTrue(locks.stale(lock))
 
-    def test_an_owner_ending_in_a_carriage_return_is_no_number(self):
+    def test_an_owner_ending_in_a_carriage_return_is_no_number(self) -> None:
         lock = self.tmp / "x.lock"
         lock.mkdir()
         (lock / "owner").write_bytes("{}\r\n".format(os.getpid()).encode())
@@ -100,7 +101,7 @@ class LockTest(support.Scratch):
         os.utime(str(lock), (old, old))
         self.assertTrue(locks.stale(lock))
 
-    def test_a_live_owner_is_never_stale(self):
+    def test_a_live_owner_is_never_stale(self) -> None:
         lock = self.tmp / "x.lock"
         lock.mkdir()
         put_owner(lock, os.getpid())
@@ -109,7 +110,7 @@ class LockTest(support.Scratch):
         self.assertFalse(locks.stale(lock))
         self.assertFalse(locks.stale(self.tmp / "absent.lock"))
 
-    def test_a_writer_yields_while_a_reclaim_is_under_way(self):
+    def test_a_writer_yields_while_a_reclaim_is_under_way(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         recovery = self.tmp / "events.tsv.lock.recover"
         recovery.mkdir()
@@ -117,7 +118,7 @@ class LockTest(support.Scratch):
         self.assertFalse(locks.acquire(lock, tries=2))
         self.assertFalse(lock.exists())
 
-    def test_a_stale_recovery_folder_is_cleared(self):
+    def test_a_stale_recovery_folder_is_cleared(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         recovery = self.tmp / "events.tsv.lock.recover"
         recovery.mkdir()
@@ -127,17 +128,28 @@ class LockTest(support.Scratch):
         locks.release(lock)
 
 
+class SharedReadTest(support.Scratch):
+    @unittest.skipUnless(os.name == "nt", "delete sharing is a Windows matter")
+    def test_a_waiter_reading_the_owner_does_not_stop_the_release(self) -> None:
+        lock = self.tmp / "events.tsv.lock"
+        self.assertTrue(locks.acquire(lock))
+        with locks.open_shared(lock / "owner") as reading:   # how stale() reads it, held open
+            self.assertTrue(locks.release(lock))
+            self.assertEqual(reading.readline(), "{}\n".format(os.getpid()).encode())
+        self.assertFalse(lock.exists())
+
+
 class ClaimTest(support.Scratch):
     """The owner file, not mkdir, decides who holds a lock (bin/council's lock_claim). Each test fakes
     uutils mkdir 0.10.0, which reports success when the directory is already there."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         super().setUp()
         self.other = os.getppid()                         # a live process that is not this one
         self.real_make = locks._make
         self.racer = None                                 # writes another's owner file inside the fake mkdir
 
-        def lenient_make(folder):
+        def lenient_make(folder: Path) -> bool:
             try:
                 os.mkdir(str(folder))
             except FileExistsError:
@@ -150,20 +162,20 @@ class ClaimTest(support.Scratch):
 
         locks._make = lenient_make
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         locks._make = self.real_make
         super().tearDown()
 
-    def test_an_existing_lock_with_another_owner_is_not_taken(self):
+    def test_an_existing_lock_with_another_owner_is_not_taken(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         lock.mkdir()
         put_owner(lock, self.other)
         self.assertFalse(locks.acquire(lock, tries=2))
         self.assertEqual(owner_of(lock), "{}\n".format(self.other).encode())   # touched nothing
-        self.assertEqual(locks._claim(lock, "1"), locks.TAKEN)
-        self.assertEqual(locks._claim(self.tmp / "gone.lock", "1"), locks.TAKEN)
+        self.assertEqual(locks.claim(lock, "1"), locks.TAKEN)
+        self.assertEqual(locks.claim(self.tmp / "gone.lock", "1"), locks.TAKEN)
 
-    def test_an_ownerless_directory_is_held_only_through_the_exclusive_create(self):
+    def test_an_ownerless_directory_is_held_only_through_the_exclusive_create(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         lock.mkdir()                                       # made, owner not written yet
         self.racer = lambda folder: put_owner(folder, self.other) if folder == lock else None
@@ -175,7 +187,7 @@ class ClaimTest(support.Scratch):
         self.assertEqual(owner_of(lock), "{}\n".format(os.getpid()).encode())
         self.assertTrue(locks.release(lock))
 
-    def test_losing_the_recover_claim_leaves_it_in_place(self):
+    def test_losing_the_recover_claim_leaves_it_in_place(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         recovery = self.tmp / "events.tsv.lock.recover"
         lock.mkdir()

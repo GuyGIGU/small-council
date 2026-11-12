@@ -1,10 +1,11 @@
 """The council home, run folders, and the guarded reads and atomic writes every council file goes through."""
+from __future__ import annotations
 
 import os
-from pathlib import Path
 import stat
 import tempfile
-from typing import BinaryIO, Callable, List, Optional, Union
+from pathlib import Path
+from typing import BinaryIO, Callable
 
 from council import git
 
@@ -18,7 +19,7 @@ class RecordError(Exception):
 
 
 # --- where the council lives -----------------------------------------------------------------------------
-def worktrees(porcelain: str) -> List[str]:
+def worktrees(porcelain: str) -> list[str]:
     """Every non-bare worktree of `git worktree list --porcelain`, the main one first, with "(bare)"
     first when the repository itself is bare (the helper's council_home reads it so)."""
     found, current, bare, count = [], "", False, 0
@@ -53,7 +54,7 @@ def home_from(top: str, superproject: str, porcelain: str, exists: Callable[[str
     return main + "/.council"
 
 
-def council_home(cwd: Union[str, Path]) -> Path:
+def council_home(cwd: str | Path) -> Path:
     """The .council/ of the main checkout, shared by every linked worktree; ./.council outside git."""
     top = git.text(cwd, "rev-parse", "--show-toplevel")
     if not top:
@@ -63,7 +64,7 @@ def council_home(cwd: Union[str, Path]) -> Path:
     return Path(home_from(top, superproject, porcelain, os.path.exists))
 
 
-def home_of(run: Path) -> Optional[Path]:
+def home_of(run: Path) -> Path | None:
     """The council home a run folder sits in (<home>/runs/<run>), or None for a run kept elsewhere."""
     run = Path(run)
     return run.parent.parent if run.parent.name == "runs" else None
@@ -77,7 +78,7 @@ def is_run(folder: Path, refuse_links: bool = True) -> bool:
     return folder.is_dir() and (folder / STATE).is_file()
 
 
-def run_folders(home: Path, newest: Optional[int] = None, require_state: bool = True) -> List[Path]:
+def run_folders(home: Path, newest: int | None = None, require_state: bool = True) -> list[Path]:
     """The run folders under <home>/runs, oldest first by name, links left out; the newest N when given.
     With require_state, a folder without session-state.md is no run and is not counted."""
     runs = Path(home) / "runs"
@@ -90,16 +91,18 @@ def run_folders(home: Path, newest: Optional[int] = None, require_state: bool = 
 
 
 # --- reading without getting in a live run's way ----------------------------------------------------------
-def linked(path: Union[str, Path]) -> bool:
+def linked(path: str | Path) -> bool:
     """True when path itself is a symlink or a Windows junction (its parent may be linked; that is fine)."""
     path = Path(path)
     try:
-        return path.is_symlink() or os.path.realpath(str(path)) != os.path.join(os.path.realpath(str(path.parent)), path.name)
+        if path.is_symlink():
+            return True
+        return os.path.realpath(str(path)) != os.path.join(os.path.realpath(str(path.parent)), path.name)
     except (OSError, ValueError):
         return True
 
 
-def contained(path: Union[str, Path], root: Union[str, Path]) -> bool:
+def contained(path: str | Path, root: str | Path) -> bool:
     """True when path, links and junctions resolved, stays inside root, also resolved."""
     try:
         real, base = os.path.realpath(str(path)), os.path.realpath(str(root))
@@ -108,7 +111,7 @@ def contained(path: Union[str, Path], root: Union[str, Path]) -> bool:
     return real == base or real.startswith(base.rstrip("\\/") + os.sep)
 
 
-def open_shared(path: Union[str, Path]) -> Optional[BinaryIO]:
+def open_shared(path: str | Path) -> BinaryIO | None:
     """On Windows, the file opened with read, write and delete sharing, so the helper's rename of a file
     being read still succeeds. None where that is not available."""
     if os.name != "nt":
@@ -136,14 +139,14 @@ def open_shared(path: Union[str, Path]) -> Optional[BinaryIO]:
     return os.fdopen(descriptor, "rb")
 
 
-def read_bytes(path: Union[str, Path], limit: int) -> bytes:
+def read_bytes(path: str | Path, limit: int) -> bytes:
     """Up to limit + 1 bytes of the file (one more than allowed, so a caller can tell it is too large)."""
-    handle = open_shared(path) or open(str(path), "rb")
-    with handle:
+    shared = open_shared(path)
+    with shared if shared is not None else open(str(path), "rb") as handle:
         return handle.read(limit + 1)
 
 
-def text_of(path: Union[str, Path], root: Optional[Union[str, Path]] = None, limit: int = MAX_FILE,
+def text_of(path: str | Path, root: str | Path | None = None, limit: int = MAX_FILE,
             errors: str = "replace") -> str:
     """A small regular file's text, BOM dropped, or '' when it is missing, a link, outside root, too
     large or unreadable (or, with errors='strict', not UTF-8)."""
@@ -162,7 +165,7 @@ def text_of(path: Union[str, Path], root: Optional[Union[str, Path]] = None, lim
         return ""
 
 
-def too_large(path: Union[str, Path], limit: int = MAX_FILE) -> bool:
+def too_large(path: str | Path, limit: int = MAX_FILE) -> bool:
     """True when path is a file over limit bytes."""
     try:
         return Path(path).is_file() and Path(path).stat().st_size > limit
@@ -175,7 +178,7 @@ def megabytes(limit: int) -> str:
     return "{} MB".format(limit // (1024 * 1024))
 
 
-def artifact(path: Path, limit: int, required: bool = True) -> Optional[bytes]:
+def artifact(path: Path, limit: int, required: bool = True) -> bytes | None:
     """A run artifact's bytes, refusing a link (the file or its folder), a non-regular file and one over
     limit; None when it is missing and not required."""
     path = Path(path)

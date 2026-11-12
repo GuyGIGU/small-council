@@ -3,10 +3,11 @@
 The header is every `key: value` line above the first `## ` heading. The helper's state_field reads a
 key only there, so a note below the heading never reads as a field.
 """
+from __future__ import annotations
 
-from pathlib import Path
 import re
-from typing import Callable, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Callable, Optional
 
 from council.records import cells, paths
 
@@ -20,7 +21,7 @@ def path(run: Path) -> Path:
     return Path(run) / NAME
 
 
-def text(run: Path, read: Optional[Reader] = None) -> str:
+def text(run: Path, read: Reader | None = None) -> str:
     """The state file's text: by default the guarded read (a link, a file outside the run, one over
     4 MB or a missing one reads as ''); `read` gives a caller's own policy, such as one that refuses."""
     run = Path(run)
@@ -29,7 +30,7 @@ def text(run: Path, read: Optional[Reader] = None) -> str:
     return read(path(run)) or ""
 
 
-def header(content: str, exact_keys: bool = False, comments: bool = True) -> Dict[str, str]:
+def header(content: str, exact_keys: bool = False, comments: bool = True) -> dict[str, str]:
     """The header's fields, the first of a repeated key winning, with the value's leading space dropped
     and, with comments, a trailing '  # comment'. exact_keys takes only a key at the start of its line,
     as the helper's state_field does; otherwise space around the key is allowed (the cockpit's rule)."""
@@ -45,7 +46,7 @@ def header(content: str, exact_keys: bool = False, comments: bool = True) -> Dic
     return fields
 
 
-def values(content: str, key: str) -> List[str]:
+def values(content: str, key: str) -> list[str]:
     """Every `key:` line's value anywhere in the file, below the header too, its leading space dropped
     (the reading memory.py and evidence.py have used; the helper's state_field reads the header only)."""
     return [found.group(1) for found in re.finditer(r"^" + re.escape(key) + r":[ \t]*(.*)$", content, re.MULTILINE)]
@@ -86,7 +87,7 @@ def unquote(entry: str) -> str:
     return '%s"%s"' % (found.group(1), re.sub(r'\\(["\\])', r"\1", found.group(2)))
 
 
-def decisions(content: str) -> List[str]:
+def decisions(content: str) -> list[str]:
     """The entries under '## Decisions so far' (council state decision=), oldest first, unquoted."""
     found, inside = [], False
     for line in cells.lines_of(content):
@@ -98,7 +99,7 @@ def decisions(content: str) -> List[str]:
     return found
 
 
-def in_progress(home: Path) -> List[Tuple[Path, str, str]]:
+def in_progress(home: Path) -> list[tuple[Path, str, str]]:
     """The in-progress runs under a council home, newest first: (folder, code-root, session), each read
     from its header with the cockpit's rule. Every entry of runs/ is tried; one with no state is skipped."""
     runs, rows = Path(home) / "runs", []

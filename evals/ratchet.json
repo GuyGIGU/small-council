@@ -169,7 +169,7 @@
    "longest_name": ""
   },
   "src/council/records/cells.py": {
-   "lines": 88,
+   "lines": 89,
    "longest": 15,
    "longest_name": "token_count"
   },
@@ -179,42 +179,42 @@
    "longest_name": "preferences_insertion"
   },
   "src/council/records/events.py": {
-   "lines": 152,
+   "lines": 153,
    "longest": 25,
    "longest_name": "append"
   },
   "src/council/records/gates.py": {
-   "lines": 68,
-   "longest": 17,
+   "lines": 70,
+   "longest": 18,
    "longest_name": "results"
   },
   "src/council/records/ledger.py": {
-   "lines": 83,
+   "lines": 84,
    "longest": 22,
    "longest_name": "read"
   },
   "src/council/records/locks.py": {
-   "lines": 196,
+   "lines": 195,
    "longest": 30,
    "longest_name": "acquire"
   },
   "src/council/records/paths.py": {
-   "lines": 226,
+   "lines": 229,
    "longest": 26,
    "longest_name": "open_shared"
   },
   "src/council/records/plan.py": {
-   "lines": 70,
+   "lines": 71,
    "longest": 19,
    "longest_name": "summary"
   },
   "src/council/records/seats.py": {
-   "lines": 113,
+   "lines": 115,
    "longest": 14,
    "longest_name": "workflow_extra"
   },
   "src/council/records/state.py": {
-   "lines": 113,
+   "lines": 114,
    "longest": 14,
    "longest_name": "header"
   }

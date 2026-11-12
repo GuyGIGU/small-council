@@ -1,4 +1,5 @@
 """Shared setup for the records unit tests: src/ on the path, and a scratch folder per test."""
+from __future__ import annotations
 
 import shutil
 import sys
@@ -18,7 +19,7 @@ class Scratch(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="council-test-"))
         self.addCleanup(shutil.rmtree, str(self.tmp), True)
 
-    def write(self, relative: str, content, binary: bool = False) -> Path:
+    def write(self, relative: str, content: str | bytes, binary: bool = False) -> Path:
         """Write a file under the scratch folder (str as UTF-8 with no newline translation)."""
         path = self.tmp / relative
         path.parent.mkdir(parents=True, exist_ok=True)

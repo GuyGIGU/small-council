@@ -3,10 +3,11 @@
 Columns: date, run, mode, seat, raised, kept, cut, refuted, tokens, and (from accounting 2) a tenth that
 marks a row whose tokens were checked. A `(verifiers)` row carries the run's verifier tokens only.
 """
+from __future__ import annotations
 
-from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from pathlib import Path
+from typing import Any, Sequence
 
 from council.records import paths
 
@@ -22,7 +23,7 @@ class LedgerError(paths.RecordError):
     """The ledger cannot be read."""
 
 
-def path(home: Union[str, Path]) -> Path:
+def path(home: str | Path) -> Path:
     """The ledger of a council home."""
     return Path(home) / NAME
 
@@ -35,7 +36,7 @@ def count(cell: str) -> int:
     return int(cell)
 
 
-def tokens_of(cells: Sequence[str]) -> Optional[int]:
+def tokens_of(cells: Sequence[str]) -> int | None:
     """A row's trusted token figure: a number on a checked row, else None (unknown or unchecked).
     ValueError for a cell that is no figure at all."""
     checked = len(cells) > 9 and cells[9].strip() == CHECKED
@@ -48,7 +49,7 @@ def tokens_of(cells: Sequence[str]) -> Optional[int]:
     return value if checked else None
 
 
-def _row(cells: List[str]) -> Dict[str, Any]:
+def _row(cells: list[str]) -> dict[str, Any]:
     row = {"date": cells[0].strip(), "run": cells[1].strip(), "mode": cells[2].strip() or "-",
            "seat": CONTROL.sub("", cells[3].strip())}            # type: Dict[str, Any]
     if row["seat"] == VERIFIERS:
@@ -59,7 +60,7 @@ def _row(cells: List[str]) -> Dict[str, Any]:
     return row
 
 
-def read(where: Union[str, Path]) -> Tuple[Optional[List[Dict[str, Any]]], int]:
+def read(where: str | Path) -> tuple[list[dict[str, Any]] | None, int]:
     """The ledger's rows and how many lines could not be read; (None, 0) when there is no ledger."""
     where = Path(where)
     if not where.exists():

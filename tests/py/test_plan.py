@@ -1,6 +1,7 @@
 import unittest
 
 import support
+
 from council.records import plan
 
 PLAN = ("# Small Council run plan v1.\n"
@@ -17,29 +18,29 @@ PLAN = ("# Small Council run plan v1.\n"
 
 
 class PlanTest(support.Scratch):
-    def setUp(self):
+    def setUp(self) -> None:
         super().setUp()
         self.run = self.run_folder()
         (self.run / "run-plan.tsv").write_bytes(PLAN.encode())
 
-    def test_rows_skip_comments(self):
+    def test_rows_skip_comments(self) -> None:
         rows = plan.rows(self.run)
         self.assertEqual(rows[0], {"kind": "run", "id": "run", "field": "size", "value": "squad",
                                    "reason": "the change is small"})
         self.assertEqual(rows[-1]["kind"], "short")
 
-    def test_summary(self):
+    def test_summary(self) -> None:
         summary = plan.summary(self.run)
         self.assertEqual((summary["size"], summary["risk"]), ("squad", "low"))
         self.assertEqual(summary["seats"]["hunt"], {"role": "worker", "disposition": "selected",
                                                     "reason": "it owns the change", "context": "focused"})
 
-    def test_budget_takes_the_last_row_without_spaces(self):
+    def test_budget_takes_the_last_row_without_spaces(self) -> None:
         self.assertEqual(plan.budget(self.run, "agent-cap"), "6")
         self.assertEqual(plan.budget(self.run, "token-ceiling"), "")
         self.assertEqual(plan.budget(self.tmp, "agent-cap"), "")
 
-    def test_keyed(self):
+    def test_keyed(self) -> None:
         keyed = plan.keyed(plan.text(self.run))
         self.assertEqual(keyed[("verification", "run", "level")], "self")
         self.assertEqual(keyed[("budget", "run", "agent-cap")], "6")

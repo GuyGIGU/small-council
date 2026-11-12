@@ -1,8 +1,9 @@
 """run-plan.tsv: the run's plan, five tab-separated columns a row (kind, id, field, value, reason)."""
+from __future__ import annotations
 
-from pathlib import Path
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Callable, Optional
 
 from council.records import cells, paths
 
@@ -15,7 +16,7 @@ def path(run: Path) -> Path:
     return Path(run) / NAME
 
 
-def text(run: Path, read: Optional[Reader] = None) -> str:
+def text(run: Path, read: Reader | None = None) -> str:
     """The plan's text, by the guarded read unless `read` gives a caller's own policy."""
     run = Path(run)
     if read is None:
@@ -23,13 +24,13 @@ def text(run: Path, read: Optional[Reader] = None) -> str:
     return read(path(run)) or ""
 
 
-def rows(run: Path, limit: int = paths.MAX_FILE) -> List[Dict[str, str]]:
+def rows(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
     """The plan's rows as dicts keyed by its header line ("#" comments skipped)."""
     run = Path(run)
     return cells.tsv_rows(paths.text_of(path(run), run, limit))
 
 
-def summary(run: Path) -> Dict[str, Any]:
+def summary(run: Path) -> dict[str, Any]:
     """The run-wide fields (rows for run and plan) by field, and each seat's fields under "seats" (a
     disposition's reason as "reason", a context row's value as "context"); every cell cleaned."""
     plan, seats = {}, {}                          # type: Dict[str, Any], Dict[str, Dict[str, str]]
@@ -60,7 +61,7 @@ def budget(run: Path, field: str) -> str:
     return re.sub(r"[ \t\r]", "", value)
 
 
-def keyed(content: str) -> Dict[Tuple[str, str, str], str]:
+def keyed(content: str) -> dict[tuple[str, str, str], str]:
     """Each (kind, id, field) row's value, trimmed and lower-cased; a later row wins."""
     found = {}
     for line in content.splitlines():

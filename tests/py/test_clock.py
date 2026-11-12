@@ -1,17 +1,18 @@
-from datetime import datetime, timezone
 import unittest
+from datetime import datetime, timezone
 
 import support  # noqa: F401  (puts src/ on the path)
+
 from council import clock
 
 
 class ClockTest(unittest.TestCase):
-    def test_event_clock(self):
+    def test_event_clock(self) -> None:
         moment = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
         self.assertEqual(clock.event_clock("2026-01-02T03:04:05Z"), moment.astimezone().strftime("%H:%M:%S"))
         self.assertEqual(clock.event_clock("2026-01-02 03:04:05 local"), "03:04:05")
 
-    def test_utc_and_iso_moments(self):
+    def test_utc_and_iso_moments(self) -> None:
         want = datetime(2026, 9, 30, 10, 14, 16, tzinfo=timezone.utc)
         self.assertEqual(clock.utc_moment("2026-09-30T10:14:16Z"), want)
         self.assertIsNone(clock.utc_moment("2026-09-30T10:14:16.5Z"))
@@ -19,8 +20,8 @@ class ClockTest(unittest.TestCase):
         self.assertEqual(clock.iso_moment("2026-09-30T10:14:16+00:00"), want)
         self.assertIsNone(clock.iso_moment("yesterday"))
 
-    def test_local_moment(self):
-        self.assertEqual(clock.local_moment("2026-01-02 03:04").replace(tzinfo=None), datetime(2026, 1, 2, 3, 4))
+    def test_local_moment(self) -> None:
+        self.assertEqual(clock.local_moment("2026-01-02 03:04").timetuple()[:6], (2026, 1, 2, 3, 4, 0))
         self.assertEqual(clock.local_moment("2026-01-02 03:04:05 extra").second, 5)
         self.assertIsNone(clock.local_moment(""))
 
