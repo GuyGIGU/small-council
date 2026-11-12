@@ -242,13 +242,14 @@ and no unresolved verifier regression. A partly met or blocked task is named aft
 is not counted as built: "5 of 6 tasks · 1 partly met: exports stop at 5,000 rows". A task stopped
 by the repair limit is **blocked**, not merely partly met, even if some code works. A red mandatory
 gate or known regression cannot be hidden behind a clean count. `Cost:` labels helper-only usage
-as such. **Never omit the last four.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
+as such; never imply it includes the Chair or the whole session when those figures are unavailable.
+**Never omit the last four.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
 these — not a vibe: a hardcoded value, a skipped case, a swallowed error, a loosened or disabled
 check, a test that asserts less than the behaviour, a TODO left behind, or a fix whose only proof was
 a throwaway command. Every one also goes in the log's `## Shortcuts and concessions`.
 
-One carve-out: a **guardrails task** proves itself both ways, red on a deliberate violation and green
-without it (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`). That is evidence, not a shortcut.
+A **guardrails task**'s both-ways proof (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`) is
+evidence, not a shortcut.
 
 Then the rulings as one question (Deliver, step 6), and the memory proposals.
 
