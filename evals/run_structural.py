@@ -232,7 +232,8 @@ check("01-convene: asks whether a run is needed before its steps — never for a
 check("03-assign and 08-challenge: a Workflow's agents each take a group of small parts, not one each",
       "never one small part each" in doctrine["03-assign.md"] and
       "batches of up to 8" in doctrine["08-challenge.md"].split("A Workflow of verifiers", 1)[-1])
-check("implement: small tasks of one kind share a verifier", "up to five of one kind" in skill["council-implement"])
+check("implement: small tasks of one kind share a verifier (build-proof.md, Checking, per task)",
+      "up to five of one kind" in read("references", "build-proof.md").split("## Checking", 1)[-1])
 check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
 check("02-prepare: distinguishes optional graph from the fallback index",
@@ -471,6 +472,21 @@ check("build tier: build-proof.md states both tiers with light as the default, t
       "risk class" in skill["council-implement"].split("Dispatch `small-council:council-verifier` with:", 1)[-1] and
       "finish line" in skill["council-implement"] and "never a hunt inside the build" in skill["council-implement"] and
       "- build tier: light" in read("references", "templates", "council.config.md"))
+check("checking: build-proof.md states one per batch as the default and per task, the implement skill points at it and "
+      "runs step 7 per task only, and the config template carries the line",
+      "## Checking" in build_proof and "A missing line reads as one per batch" in build_proof and
+      "**Per task**" in build_proof and "Checking" in skill["council-implement"] and
+      "per task only" in skill["council-implement"] and
+      "- checking: one per batch" in read("references", "templates", "council.config.md"))
+check("verifier: judges the Done-when, never hunts past it, and notes the rest under ## Noticed — never as a verdict "
+      "(a real batch's checks ran ten hours finding a narrower gap each round)",
+      "Judge the Done-when, nothing wider" in verifier and "## Noticed" in verifier and "however narrow" in verifier
+      and "## Noticed" in skill["council-implement"])
+check("post-game: a next task closes a gap against the request, quoting its part; everything else is Noticed, not "
+      "tasked, and council check reads the next tasks once the deliverable is recorded",
+      "## Noticed, not tasked" in skill["council-postgame"] and "part <#>:" in skill["council-postgame"]
+      and "council state deliverable=<path>" in skill["council-postgame"]
+      and "quotes no part of the request" in skill["council-postgame"])
 check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"]))
 check("verifier: change verdicts", all(v in verifier for v in ["OK", "INCOMPLETE", "REGRESSION", "SCOPE-CREEP", "CANNOT VERIFY"]))
 check("verifier: can open a research claim's URL", re.search(r"^tools:.*\bWebFetch\b", verifier, re.MULTILINE) is not None)

@@ -170,12 +170,22 @@ File the request first — `council ask save` — then write:
 | **Depends on** | — |
 | **Touches** | <files or areas> |
 | **Constraints** | "<the rule or ruling, quoted>" — <config hard rule, memory id, Already decided, or your dated words>; or — |
-| **Done when** | "<the request's words>" — <observable check> |
+| **Done when** | part <#>: "<that part's quote, word for word>" — <observable check> |
 
+## Noticed, not tasked
+- <what> — <path or area> — reach today: current | latent      ← or `none`
 ## Ideas you didn't ask for   (at most 3; never handed off unless you name them)
 ## Lessons
 - <gap> — fix this one: <…> · prevent the next: <proposed memory entry, or none>
 ```
+
+**A next task closes a gap against the request, nothing else.** Only a part (or M row) that is
+partly met or not met becomes a next task, and its Done-when quotes that part. A checker's note, a
+latent gap in a helper or test scaffold, a nice-to-have: one line under "Noticed, not tasked" with its
+reach today, never a task. A real post-game tasked check helpers instead of the request, and chained
+post-games ate the day without touching the core files. After writing the file,
+`council state deliverable=<path>`, then `council check` again: it refuses a next task whose Done-when
+quotes no part of the request.
 
 **Where the results come from:** Met, Partly met, Not met and Can't tell come from the verifiers. Ruled
 out comes from you, and only with the user's dated words. M rows become parts; U rows go under "Built

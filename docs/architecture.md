@@ -50,8 +50,8 @@ Rules:
   or in the helper lets the call through: a hook must never block work because of its own bug (D20).
 - **Agents write only their own file.** A seat writes `seats/<slug>.md`, a verifier writes
   `verify-<n>.md`, and neither edits project code (D4).
-- **Known cycle (debt).** `bin/council` runs the scripts, and seven scripts (audit, cockpit, memory,
-  pet, quick_validate, repair, status) call `bin/council` back. *Target:* both sides call one library,
+- **Known cycle (debt).** `bin/council` runs the scripts, and one script (`pet.py`) runs `bin/council`
+  back; others print `council …` commands for the reader to run. *Target:* both sides call one library,
   and nothing calls the CLI from inside the CLI's own code (§10, WS1).
 
 ## 3. Directory ownership
@@ -212,9 +212,9 @@ folds them, and new code uses the named way.
 ## 10. Known debt and the cleanup
 
 Measured on 2026-11-12:
-- `bin/council` is one 8,092-line bash file with 245 functions, about 166 lines that call awk, and
+- `bin/council` is one 8,156-line bash file with about 250 functions, about 166 lines that call awk, and
   functions of up to 296 lines (`cmd_check`; `cmd_memory` and `memory_entries` are about 250).
-- `session-state.md` is parsed in 86 places in `bin/council` and in 9 scripts. `run-plan.tsv` is
+- `session-state.md` is parsed in 88 places in `bin/council` and in 9 scripts. `run-plan.tsv` is
   parsed in 36 places and 5 scripts. No shared Python library reads run files.
 - Skills and agents sit at their size caps (council-implement is at 19,992 of 20,000 characters).
 - Many structural evals check that a phrase is present, not that behaviour holds. The full suite
