@@ -52,13 +52,13 @@
  },
  "files": {
   "bin/council": {
-   "lines": 7971,
-   "longest": 280,
+   "lines": 8156,
+   "longest": 297,
    "longest_name": "cmd_check",
    "shellcheck": 44
   },
   "hooks/agent-gate.sh": {
-   "lines": 126,
+   "lines": 152,
    "longest": 0,
    "longest_name": "",
    "shellcheck": 0
