@@ -65,7 +65,8 @@ Rules:
 | `references/roster/` | The seat catalogue | Seat principles (those are in the seat's doc) |
 | `agents/` | The worker and verifier contracts | Mode logic |
 | `bin/council` | Every command, its arguments, output and exit codes | Long-running work; anything a hook must not wait on |
-| `scripts/` | Python readers, renderers and analyses | Their own copy of a run-file parser (debt: §8) |
+| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
+| `scripts/` | Python readers, renderers and analyses, over `src/council/records` | Their own copy of a run-file parser |
 | `hooks/` | Enforcement at Claude Code events, the mod | Decisions: the helper makes them |
 | `evals/` | Machine proof that the contracts hold | Production logic |
 | `docs/` | Architecture, decisions, ADRs, validation | Rules the model must follow at run time (those are in skills, doctrine or references) |
@@ -79,18 +80,20 @@ home (`council_home`). Committed or ignored follows the project's sharing settin
 
 | File | Written by | Read by |
 |---|---|---|
-| `council.config.md` | `council init` (template: `references/templates/`); the user's hand edits are theirs | the helper (`configured_*`), `status.py`, `tune.py`, `session-start.sh` |
+| `council.config.md` | `council init` (template: `references/templates/`); the user's hand edits are theirs | the helper (`configured_*`), `status.py` and `tune.py` through `council.records.config`, `session-start.sh` |
 | `conventions.md` (memory) | `council memory` on the user's words | the helper, `cockpit.py`, `status.py` |
 | `map.md` | council-init's mapping seats | `session-start.sh`, briefs |
 | `ledger.tsv` | `council run close` | `ledger.py`, `history.py`, `tune.py` |
 | `asks/`, `plans/`, `reviews/`, `logs/`, `postgames/`, `research/`, `cards/` | each mode's Deliver | later runs (`council prior`) |
 | `runs/<date-time>-<mode>/` | one run's working folder, below | |
 
+Scripts read the files in these tables through `src/council/records`, never with a parser of their own.
+
 Inside a run folder:
 
 | File | Written by | Read by |
 |---|---|---|
-| `session-state.md` | `council run open`, `council state` | the helper (`field`), 9 scripts, the mod, `session-start.sh` |
+| `session-state.md` | `council run open`, `council state` | the helper (`field`), the scripts through `council.records.state`, the mod, `session-start.sh` |
 | `run-plan.tsv` | the Chair, checked by `council run plan check` | the helper, `audit.py`, `cockpit.py`, `evidence.py`, `status.py`, `quick_validate.py` |
 | `events.tsv` | the helper only, through `event_append` (contract: `references/event-stream.md`) | the helper, `audit.py`, `cockpit.py`, `history.py`, `repair.py` |
 | `seats.tsv`, `usage.tsv` | `council seat` | the helper, `audit.py`, `cockpit.py`, `history.py`, `status.py` |
@@ -164,7 +167,7 @@ job (§8)? Will the next agent find it next to the code it relates to?
 | A seat's principle | The seat's reference doc, as `Principle N` | The catalogue row in `references/roster/expert-catalog.md` |
 | A run contract (a file's shape, a verdict, an event) | Its `references/<contract>.md` | The reader and the writer change in the same branch |
 | A new command or a check | Today: a `cmd_<name>` in `bin/council` and its dispatch line. *Target:* a Python module behind the same command (D24) | Help text, `references/helper-commands.md`, a scenario in `evals/run_cli.py` |
-| A new analysis or view over run files | `scripts/<name>.py`, run through the helper | Its own `evals/run_<name>.py` suite |
+| A new analysis or view over run files | `scripts/<name>.py`, run through the helper, reading run files through `council.records` | Its own `evals/run_<name>.py` suite |
 | A config setting | A `configured_<key>` reader in the helper, the template line and its comment in `references/templates/council.config.md` | A missing line has a stated default; an unknown word reads as the default and says so |
 | An enforcement at a Claude Code event | A thin `hooks/<event>.sh` that asks the helper | `evals/run_hook.py`, including the fault path that must let the call through |
 | A design decision | `docs/decisions.md` (an ADR in `docs/design/` when it weighs options) | A CHANGELOG line in the same branch |
@@ -180,9 +183,9 @@ folds them, and new code uses the named way.
 |---|---|---|
 | Find the council home | `council_home` (bash) | A worktree resolves to the main checkout's home |
 | Find the run a command is for | `resolve_run`: `--run`, then `COUNCIL_RUN`, then this tree's one in-progress run, then the one this session drives on another tree. Two candidates at any step are a refusal naming `--run`; it never guesses (D6) | |
-| Read a config setting | One `configured_<key>` function per key, with a stated default | **(debt)** 44 references to `council.config.md` in `bin/council`, 6 readers; scripts parse it again |
-| Read a run's state field | `field <key> <file>` | **(debt)** 9 scripts parse `session-state.md` themselves |
-| Record an event | `event_append` under the run's event lock; nothing else writes `events.tsv` | |
+| Read a config setting | One `configured_<key>` function per key, with a stated default | **(debt)** 44 references to `council.config.md` in `bin/council`, 6 readers. Scripts read it through `council.records.config`, one function per key |
+| Read a run's state field | `field <key> <file>`; in Python, `council.records.state` | Scripts no longer parse `session-state.md` themselves |
+| Record an event | `event_append` under the run's event lock; nothing else writes `events.tsv` | `council.records.events.append` follows it step for step but has no caller yet: on Windows the two languages can't check each other's lock owner pids |
 | Write a shared TSV row | Under `event_lock`; never join a torn line | |
 | Refuse something | `die "<why — and the next command>"` (exit 2, stderr). From a hook: the helper prints `Small Council: …` on stdout with exit 2, and the hook moves it to stderr | Every refusal names what to do next (D19) |
 | Take the user's go | `council state decision="<their words>"`, read back with `decisions_since` after the event it unlocks | Never inferred, never the Chair's words (D7) |
@@ -212,11 +215,11 @@ folds them, and new code uses the named way.
 
 ## 10. Known debt and the cleanup
 
-Measured on 2026-11-12:
-- `bin/council` is one 8,156-line bash file with about 250 functions, about 166 lines that call awk, and
-  functions of up to 296 lines (`cmd_check`; `cmd_memory` and `memory_entries` are about 250).
-- `session-state.md` is parsed in 88 places in `bin/council` and in 9 scripts. `run-plan.tsv` is
-  parsed in 36 places and 5 scripts. No shared Python library reads run files.
+Measured on 2026-11-13:
+- `bin/council` is one 8,156-line bash file with 252 functions, 167 lines that call awk, and
+  functions of up to 297 lines (`cmd_check`; `cmd_memory` and `memory_entries` are about 250).
+- `session-state.md` is named on 89 code lines of `bin/council` and `run-plan.tsv` on 40. No script
+  parses either any more: the scripts read run files through `src/council/records` (S1).
 - Skills and agents sit near their size caps (council-implement is at 19,331 of 20,000 characters after WS6's
   first pass; it was 19,992).
 - Many structural evals check that a phrase is present, not that behaviour holds. The full suite

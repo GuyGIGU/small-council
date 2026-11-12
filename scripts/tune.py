@@ -22,29 +22,28 @@ the config are written as a pair: if the config cannot be written, the log is pu
 import argparse
 import datetime
 import json
-import os
 from pathlib import Path
 import re
-import stat
 import sys
-import tempfile
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import history  # noqa: E402
 import ledger   # noqa: E402
+from council.records import config, paths  # noqa: E402
+from council.records import ledger as ledger_file  # noqa: E402
+from council.records.config import ESTIMATE_LINES as LINES, ESTIMATE_PARTS as PARTS  # noqa: E402
+from council.records.config import estimate_line as configured, estimate_tokens as tokens  # noqa: E402
 
 SCHEMA = "council.tune/2"
 DEFAULT_PER_WORKER = 80000      # the route's no-history estimate
-MAX_PER_WORKER = 1000000        # the most either reader accepts; the route treats more as unset
+MAX_PER_WORKER = config.MAX_PER_WORKER   # the most either reader accepts; the route treats more as unset
 OFF_BY = 0.25                   # a measured median this far from the estimate is worth a proposal
 KNOB = "estimate per worker"
-BOM = chr(0xFEFF)
-LINES = re.compile(r"^[ \t]*-[ \t]*estimate per worker:[^\r\n]*", re.MULTILINE)
-PARTS = re.compile(r"([ \t]*-[ \t]*estimate per worker:[ \t]*)([0-9][0-9.,]*[ \t]*[kKmM]?)?(.*)$")
 ENTRY = re.compile(r"^## T-(\d+) · (\S+) · (applied|reverted T-\d+) · estimate per worker: (\S+) → (\S+)[ \t]*\r?$",
                    re.MULTILINE)
 EXACT = re.compile(r"^- exact: (\{.*\})[ \t]*\r?$", re.MULTILINE)
@@ -63,42 +62,8 @@ class TuneError(Exception):
     """A tuning step that must not happen."""
 
 
-def tokens(text):
-    """'150k', '150000', '1.2M' → an int; None when unreadable or outside 1k–1M, as the route reads it."""
-    match = re.fullmatch(r"([0-9][0-9.,]*)[ \t]*([kKmM]?)", str(text).strip())
-    if not match:
-        return None
-    try:
-        value = float(match.group(1).replace(",", ""))
-    except ValueError:
-        return None
-    value = int(round(value * {"k": 1000, "m": 1000000}.get(match.group(2).lower(), 1)))
-    return value if 1000 <= value <= MAX_PER_WORKER else None
-
-
 def k(value):
     return "{}k".format(round(value / 1000)) if value else "none"
-
-
-def read_config(home):
-    path = Path(home) / "council.config.md"
-    if path.is_symlink():
-        raise TuneError("council.config.md is a link — change the file it points to by hand")
-    if not path.is_file():
-        raise TuneError("no council.config.md in {} — run council-init".format(home))
-    raw = path.read_bytes()
-    if len(raw) > 1024 * 1024:
-        raise TuneError("council.config.md is over 1 MB; refusing to edit it")
-    return path, raw.decode("utf-8")
-
-
-def configured(text):
-    """(value, the exact line) of the first estimate line; value None when the line is unreadable."""
-    found = LINES.search(text)
-    if not found:
-        return None, None
-    value = PARTS.match(found.group(0)).group(2)
-    return (tokens(value) if value else None), found.group(0)
 
 
 def shown_before(value, line):
@@ -107,7 +72,7 @@ def shown_before(value, line):
 
 def proposals(home):
     home = Path(home)
-    _, text = read_config(home)
+    _, text = config.editable(home)
     data = history.history(home, outcomes=False)   # tune never reads finding outcomes: skip their Git work
     current, line = configured(text)
     estimate = current or DEFAULT_PER_WORKER
@@ -139,7 +104,7 @@ def proposals(home):
             budget.update(status="proposed", value=proposed, evidence=evidence,
                           why="the route budgets {} per agent; this project's agents measure {}".format(
                               k(estimate), k(median)))
-    seats = ledger.report(home / "ledger.tsv", 20)
+    seats = ledger.report(ledger_file.path(home), 20)
     roster = [{"id": "roster:" + s["seat"], "kind": "roster", "seat": s["seat"], "status": "refresh",
                "advice": s["advice"], "why": s["reason"]}
               for s in seats["seats"] if s.get("weighed") and s["advice"] in ("lower", "narrow", "pair", "drop?")]
@@ -230,47 +195,9 @@ def said_words(path):
     return words[:400]
 
 
-def insertion(text, line):
-    """(offset, exact text) to add line as the last item of ## Run preferences, outside HTML comments."""
-    newline = "\r\n" if text.count("\r\n") * 2 > text.count("\n") else "\n"
-    section = re.search("^(?:" + BOM + r")?## Run preferences[ \t]*\r?$", text, re.MULTILINE)
-    if not section:
-        raise TuneError("council.config.md has no ## Run preferences section — a council-init refresh adds one")
-    rest = text[section.end():]
-    end = re.search(r"^## ", rest, re.MULTILINE)
-    body = rest[:end.start()] if end else rest
-    comments = [(m.start(), m.end()) for m in re.finditer(r"<!--.*?(?:-->|\Z)", body, re.DOTALL)]
-    items = [m for m in re.finditer(r"^[ \t]*-[^\r\n]*(?:\r?\n|\Z)", body, re.MULTILINE)
-             if not any(a <= m.start() < b for a, b in comments)]
-    if items:
-        at = section.end() + items[-1].end()
-    else:
-        heading_end = re.match(r"\r?\n", rest)
-        at = section.end() + (heading_end.end() if heading_end else 0)
-    if at >= len(text) and not text.endswith("\n"):
-        return at, newline + line
-    return at, line + newline
-
-
-def current_umask():
-    mask = os.umask(0)
-    os.umask(mask)
-    return mask
-
-
-def atomic_write(path, text):
+def write(path, text):
     """Replace path with text, keeping the file's permissions (a new file gets the usual ones)."""
-    mode = stat.S_IMODE(os.stat(str(path)).st_mode) if path.exists() else 0o666 & ~current_umask()
-    fd, temp = tempfile.mkstemp(prefix=".council-tune-", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-            handle.write(text)
-        os.chmod(temp, mode)
-        os.replace(temp, str(path))
-    except BaseException:
-        if os.path.exists(temp):
-            os.unlink(temp)
-        raise
+    paths.atomic_write(path, text.encode("utf-8"), prefix=".council-tune-", keep_mode=True)
 
 
 def write_pair(home, entry_lines, config_path, config_text):
@@ -285,9 +212,9 @@ def write_pair(home, entry_lines, config_path, config_text):
     number = max([e["n"] for e in log_entries(home)] + [0]) + 1
     entry = ["", entry_lines[0].replace("T-?", "T-{}".format(number), 1)] + entry_lines[1:]
     text = base.rstrip("\r\n") + newline + newline.join(entry) + newline
-    atomic_write(log_path, text)
+    write(log_path, text)
     try:
-        atomic_write(config_path, config_text)
+        write(config_path, config_text)
     except BaseException:
         if old is None:
             try:
@@ -295,7 +222,7 @@ def write_pair(home, entry_lines, config_path, config_text):
             except OSError:
                 pass
         else:
-            atomic_write(log_path, old)
+            write(log_path, old)
         raise
     return number
 
@@ -311,7 +238,7 @@ def apply(home, words, value_text):
     if found["value"] != want:
         raise TuneError("the record now proposes {}, not the {} the user was shown — run council tune and ask "
                         "again".format(k(found["value"]), k(want)))
-    path, text = read_config(home)
+    path, text = config.editable(home)
     matches = list(LINES.finditer(text))
     if len(matches) > 1:
         raise TuneError("council.config.md has {} estimate-per-worker lines — keep one by hand first".format(len(matches)))
@@ -323,7 +250,7 @@ def apply(home, words, value_text):
         record = {"before": before_line, "after": after_line, "inserted": None}
     else:
         after_line = "- {}: {}".format(KNOB, k(want))
-        at, inserted = insertion(text, after_line)
+        at, inserted = config.preferences_insertion(text, after_line)
         changed = text[:at] + inserted + text[at:]
         record = {"before": None, "after": after_line, "inserted": inserted}
     if configured(changed)[0] != want or len(LINES.findall(changed)) != 1:
@@ -351,7 +278,7 @@ def revert(home, words):
             (record.get("inserted") is not None and not (isinstance(record["inserted"], str) and
                                                          record["inserted"].strip("\r\n") == record["after"])):
         raise TuneError("T-{}'s exact record in tuning.md is missing or was edited — change the config by hand".format(entry["n"]))
-    path, text = read_config(home)
+    path, text = config.editable(home)
     matches = list(LINES.finditer(text))
     if len(matches) != 1 or matches[0].group(0) != record["after"]:
         raise TuneError("the config's estimate line is not the one T-{} wrote ({!r}) — it was edited since; change it "
@@ -410,6 +337,6 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (TuneError, ledger.LedgerError, OSError, UnicodeError, ValueError) as exc:
+    except (TuneError, paths.RecordError, OSError, UnicodeError, ValueError) as exc:
         print("tune: " + str(exc), file=sys.stderr)
         sys.exit(2)

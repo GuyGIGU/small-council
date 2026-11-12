@@ -23,31 +23,17 @@
     "bin/council: notifications_off",
     "bin/council: sharing_rows",
     "hooks/session-start.sh: <top level>",
-    "scripts/status.py: configured_cap",
-    "scripts/status.py: notifications_off",
-    "scripts/status.py: oversized_memory",
-    "scripts/status.py: roster_names",
-    "scripts/tune.py: read_config"
+    "src/council/records/paths.py: home_from"
    ],
-   "value": 19
+   "value": 15
   },
   "parsers": {
    "items": [
     "bin/council",
     "hooks/session-start.sh",
-    "scripts/audit.py",
-    "scripts/chair_usage.py",
-    "scripts/cockpit.py",
-    "scripts/evidence.py",
-    "scripts/history.py",
-    "scripts/memory.py",
-    "scripts/outcomes.py",
-    "scripts/quick_validate.py",
-    "scripts/repair.py",
-    "scripts/status.py",
-    "scripts/tune.py"
+    "scripts/quick_validate.py"
    ],
-   "value": 13
+   "value": 3
   }
  },
  "files": {
@@ -88,7 +74,7 @@
    "shellcheck": 0
   },
   "scripts/audit.py": {
-   "lines": 914,
+   "lines": 889,
    "longest": 154,
    "longest_name": "transcript"
   },
@@ -98,32 +84,32 @@
    "longest_name": "main"
   },
   "scripts/cockpit.py": {
-   "lines": 896,
+   "lines": 658,
    "longest": 103,
    "longest_name": "render"
   },
   "scripts/context.py": {
-   "lines": 462,
+   "lines": 457,
    "longest": 139,
    "longest_name": "build"
   },
   "scripts/evidence.py": {
-   "lines": 480,
+   "lines": 467,
    "longest": 87,
    "longest_name": "synthesis"
   },
   "scripts/history.py": {
-   "lines": 344,
+   "lines": 339,
    "longest": 119,
    "longest_name": "history"
   },
   "scripts/impact.py": {
-   "lines": 451,
+   "lines": 441,
    "longest": 116,
    "longest_name": "build"
   },
   "scripts/ledger.py": {
-   "lines": 334,
+   "lines": 277,
    "longest": 44,
    "longest_name": "report"
   },
@@ -133,12 +119,12 @@
    "longest_name": "draft_claim"
   },
   "scripts/outcomes.py": {
-   "lines": 334,
-   "longest": 59,
+   "lines": 312,
+   "longest": 57,
    "longest_name": "outcomes"
   },
   "scripts/pet.py": {
-   "lines": 939,
+   "lines": 927,
    "longest": 216,
    "longest_name": "show"
   },
@@ -148,19 +134,89 @@
    "longest_name": "frontmatter"
   },
   "scripts/repair.py": {
-   "lines": 414,
+   "lines": 395,
    "longest": 75,
    "longest_name": "inspect_rows"
   },
   "scripts/status.py": {
-   "lines": 1193,
+   "lines": 1078,
    "longest": 213,
    "longest_name": "interpret"
   },
   "scripts/tune.py": {
-   "lines": 415,
+   "lines": 342,
    "longest": 42,
    "longest_name": "proposals"
+  },
+  "src/council/__init__.py": {
+   "lines": 1,
+   "longest": 0,
+   "longest_name": ""
+  },
+  "src/council/clock.py": {
+   "lines": 42,
+   "longest": 9,
+   "longest_name": "local_moment"
+  },
+  "src/council/git.py": {
+   "lines": 33,
+   "longest": 13,
+   "longest_name": "text"
+  },
+  "src/council/records/__init__.py": {
+   "lines": 1,
+   "longest": 0,
+   "longest_name": ""
+  },
+  "src/council/records/cells.py": {
+   "lines": 89,
+   "longest": 15,
+   "longest_name": "token_count"
+  },
+  "src/council/records/config.py": {
+   "lines": 245,
+   "longest": 20,
+   "longest_name": "preferences_insertion"
+  },
+  "src/council/records/events.py": {
+   "lines": 153,
+   "longest": 25,
+   "longest_name": "append"
+  },
+  "src/council/records/gates.py": {
+   "lines": 70,
+   "longest": 18,
+   "longest_name": "results"
+  },
+  "src/council/records/ledger.py": {
+   "lines": 84,
+   "longest": 22,
+   "longest_name": "read"
+  },
+  "src/council/records/locks.py": {
+   "lines": 195,
+   "longest": 30,
+   "longest_name": "acquire"
+  },
+  "src/council/records/paths.py": {
+   "lines": 229,
+   "longest": 26,
+   "longest_name": "open_shared"
+  },
+  "src/council/records/plan.py": {
+   "lines": 71,
+   "longest": 19,
+   "longest_name": "summary"
+  },
+  "src/council/records/seats.py": {
+   "lines": 115,
+   "longest": 14,
+   "longest_name": "workflow_extra"
+  },
+  "src/council/records/state.py": {
+   "lines": 114,
+   "longest": 14,
+   "longest_name": "header"
   }
  }
 }
