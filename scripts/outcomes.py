@@ -7,54 +7,34 @@ the change. Claims without a trustworthy closed-run snapshot are left as can't t
 
 import argparse
 import json
-import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import cockpit  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from council.git import text as git  # noqa: E402  (a failure reads as unknown)
+from council.records import paths  # noqa: E402
+from council.records import state as run_state  # noqa: E402
+from council.records.cells import clean  # noqa: E402
 
 SCHEMA = "council.outcomes/1"
 OUTCOMES = ("changed at cited lines", "file changed elsewhere", "unchanged", "file gone or renamed", "can't tell")
 MAX_CLAIMS = 2000
 MAX_ARTIFACT = 2 * 1024 * 1024
+STATE_LIMIT = 128 * 1024
 SAFE_PATH = re.compile(r"^[A-Za-z0-9_./@+-]+$")
 CITATION = re.compile(r"^(.+):([1-9][0-9]*)(?:-([1-9][0-9]*))?$")
 
 
-def git(repo, *args):
-    try:
-        env = os.environ.copy()
-        env["GIT_OPTIONAL_LOCKS"] = "0"
-        # A diff carries the project's own bytes, which the locale's code page may not decode; only
-        # Git's ASCII headers are parsed, so an undecodable byte is replaced rather than fatal.
-        result = subprocess.run(["git", "-C", str(repo)] + list(args), stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=20, env=env)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return result.stdout.strip() if result.returncode == 0 else None
-
-
-def state_fields(path):
-    fields = {}
-    try:
-        if path.is_symlink() or path.stat().st_size > 128 * 1024:
-            return fields
-        for line in path.read_text(encoding="utf-8-sig").splitlines():
-            if line.startswith("## "):
-                break
-            key, sep, value = line.partition(":")
-            if sep and key not in fields:
-                fields[key.strip()] = value.strip()
-    except (OSError, UnicodeError):
-        pass
-    return fields
+def state_fields(folder):
+    """The run's header fields, trimmed, with no comment taken off; empty when the file is a link, over
+    128 KB or not UTF-8."""
+    content = run_state.text(folder, read=lambda path: paths.text_of(path, limit=STATE_LIMIT, errors="strict"))
+    return {key: value.strip() for key, value in run_state.header(content, comments=False).items()}
 
 
 def run_code_root(state, default):
@@ -213,11 +193,9 @@ def outcomes(home, repo, recent=1000):
     runs = []
     modes, seats = {}, {}
     totals = {"kept": {name: 0 for name in OUTCOMES}, "cut": {name: 0 for name in OUTCOMES}}
-    runs_root = home / "runs"
-    if home.is_dir() and not cockpit.linked(home) and runs_root.is_dir() and not cockpit.linked(runs_root):
-        for folder in sorted((p for p in runs_root.iterdir() if p.is_dir() and not cockpit.linked(p)),
-                             key=lambda p: p.name)[-recent:]:
-            state = state_fields(folder / "session-state.md")
+    if home.is_dir() and not paths.linked(home):
+        for folder in paths.run_folders(home, recent, require_state=False):
+            state = state_fields(folder)
             if state.get("status") != "complete" or not state.get("closed"):
                 continue
             claims = read_claims(folder / "claims.jsonl")
@@ -233,8 +211,8 @@ def outcomes(home, repo, recent=1000):
             # dirty marker is the available evidence that the run reviewed uncommitted files.
             if close_commit is None or reviewed_uncommitted(folder / "index.md"):
                 close_commit = None
-            mode = cockpit.clean(state.get("mode") or "unknown") or "unknown"
-            run_data = {"run": cockpit.clean(folder.name), "mode": mode, "claims": []}
+            mode = clean(state.get("mode") or "unknown") or "unknown"
+            run_data = {"run": clean(folder.name), "mode": mode, "claims": []}
             cache = {}  # this run's claims share each cited file's tracked checks and diff
             for claim in claims:
                 disposition = str(claim.get("disposition", "")).lower()
@@ -248,9 +226,9 @@ def outcomes(home, repo, recent=1000):
                     sources = []
                 claim_data = {"id": str(claim.get("id", "?")), "disposition": disposition,
                               "citation": claim.get("citation", "-"), "outcome": outcome,
-                              "seats": sorted(set(cockpit.clean(source.split("#", 1)[0]) for source in sources
+                              "seats": sorted(set(clean(source.split("#", 1)[0]) for source in sources
                                                   if isinstance(source, str) and source and
-                                                  not source.startswith("gate:") and cockpit.clean(source.split("#", 1)[0])))}
+                                                  not source.startswith("gate:") and clean(source.split("#", 1)[0])))}
                 run_data["claims"].append(claim_data)
                 add_count(totals, disposition, outcome)
                 add_count(modes.setdefault(mode, {}), disposition, outcome)

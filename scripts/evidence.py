@@ -8,15 +8,18 @@ reads one verifier file the same way, for the seat check that runs when a verifi
 
 import argparse
 import json
-import os
 from pathlib import Path
 import re
 import sys
-import tempfile
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from council.records import paths  # noqa: E402
+from council.records import plan as run_plan  # noqa: E402
+from council.records import state as run_state  # noqa: E402
 
 
 SCHEMA = 1
@@ -40,15 +43,13 @@ class EvidenceError(Exception):
 
 
 def read_file(path, required=True):
-    if path.is_symlink() or path.parent.is_symlink():
-        raise EvidenceError("symlink artifact is not allowed: " + str(path))
-    if not path.exists():
-        if required:
-            raise EvidenceError("missing artifact: " + str(path))
-        return None
-    if not path.is_file() or path.stat().st_size > MAX_INPUT:
-        raise EvidenceError("artifact is not a regular file under 1 MB: " + str(path))
-    return path.read_text(encoding="utf-8-sig")
+    """A run artifact's text (BOM dropped, line endings made newlines), refusing a link, a non-regular
+    file and one over 1 MB; None when it is missing and not required."""
+    try:
+        data = paths.artifact(path, MAX_INPUT, required)
+    except paths.RecordError as exc:
+        raise EvidenceError(str(exc)) from exc
+    return None if data is None else paths.universal(data.decode("utf-8-sig"))
 
 
 def within(parent, candidate):
@@ -78,14 +79,10 @@ def proof_link(run, value):
 
 def run_fields(run):
     """The run's mode (session-state.md) and its planned size and verification level (run-plan.tsv)."""
-    state = read_file(run / "session-state.md", required=False) or ""
-    mode = re.search(r"^mode:[ \t]*(\S+)", state, re.MULTILINE)
-    plan = {}
-    for line in (read_file(run / "run-plan.tsv", required=False) or "").splitlines():
-        cells = line.split("\t")
-        if len(cells) >= 4:
-            plan[(cells[0], cells[1], cells[2])] = cells[3].strip().lower()
-    return {"mode": mode.group(1) if mode else "",
+    optional = lambda path: read_file(path, required=False)  # noqa: E731
+    mode = run_state.first_word(run_state.text(run, read=optional), "mode")
+    plan = run_plan.keyed(run_plan.text(run, read=optional))
+    return {"mode": mode,
             "self_check": (plan.get(("verification", "run", "level")) == "self" or
                            plan.get(("run", "run", "size")) == "solo")}
 
@@ -446,17 +443,7 @@ def main():
     if args.action == "build":
         if issues:
             raise EvidenceError("; ".join(issues))
-        data = render(claims)
-        if output.is_symlink():
-            raise EvidenceError("symlink output is not allowed: " + str(output))
-        fd, temporary = tempfile.mkstemp(prefix=".claims-", suffix=".tmp", dir=str(run))
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-                stream.write(data)
-            os.replace(temporary, output)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        paths.atomic_write(output, render(claims).encode("utf-8"), prefix=".claims-", suffix=".tmp", refuse_link=True)
         print("evidence: {} claim(s) indexed -> {}".format(len(claims), output))
         return 0
     recorded = read_file(output, required=False)
@@ -475,6 +462,6 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (EvidenceError, UnicodeError, OSError, ValueError) as exc:
+    except (EvidenceError, paths.RecordError, UnicodeError, OSError, ValueError) as exc:
         print("evidence: " + str(exc), file=sys.stderr)
         sys.exit(2)

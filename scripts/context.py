@@ -11,7 +11,9 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import sys
-import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from council.records import paths  # noqa: E402
 
 
 LEVELS = {
@@ -276,16 +278,9 @@ def expanded_file(root, raw_path, byte_cap):
     return relative, excerpt, omitted
 
 
-def atomic_write(path, content):
+def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=".context-", dir=str(path.parent))
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
-            stream.write(content)
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    paths.atomic_write(path, text.encode("utf-8"), prefix=".context-")
 
 
 def build(root, run, seat, level, output, expansions):
@@ -423,8 +418,8 @@ def build(root, run, seat, level, output, expansions):
         raise ContextError("output would overwrite a source run file")
     if any(output == safe_path(root, Path(request), regular=True) for request in expansions):
         raise ContextError("output would overwrite a requested source file")
-    atomic_write(output, output_text)
-    atomic_write(sidecar, metrics_text)
+    write(output, output_text)
+    write(sidecar, metrics_text)
     print(str(output))
     print(str(sidecar))
 

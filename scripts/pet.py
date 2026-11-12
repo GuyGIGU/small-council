@@ -34,7 +34,10 @@ import time
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import cockpit  # noqa: E402  (the run files' safe readers, and the token display rule)
+sys.path.insert(0, str(HERE.parent / "src"))
+import cockpit  # noqa: E402  (the token display rule)
+from council.records import state as run_state  # noqa: E402  (the runs open in a council home)
+from council.records.cells import clean  # noqa: E402
 
 POSES = ("asleep", "working", "needs-you", "stopped", "done")
 POLL_SECONDS = 5          # how often the run is read
@@ -244,7 +247,7 @@ def shapes(pose):
 # --- what the pet shows for a reading of `council status --json` ------------------------------------------
 def short(text, limit=48):
     """One plain line: control marks and markup dropped, at most `limit` characters."""
-    text = re.sub(r"\s+", " ", re.sub(r"[`*#<>\[\]]", "", cockpit.clean(text or ""))).strip()
+    text = re.sub(r"\s+", " ", re.sub(r"[`*#<>\[\]]", "", clean(text or ""))).strip()
     return text if len(text) <= limit else text[:limit - 1].rstrip(" ,;:·—-") + "…"
 
 
@@ -333,21 +336,6 @@ def same_path(a, b):
         return False
 
 
-def open_runs(home):
-    """In-progress runs under the council home, newest first: (folder, code-root, session), read from
-    each run's session-state header the way the helper reads it."""
-    runs, rows = Path(home) / "runs", []
-    try:
-        names = sorted(os.listdir(str(runs)), reverse=True)
-    except OSError:
-        return rows
-    for name in names:
-        fields = cockpit.header(runs / name)
-        if fields.get("status", "").split(" ")[0] == "in-progress":
-            rows.append((runs / name, fields.get("code-root", ""), fields.get("session", "")))
-    return rows
-
-
 def pick(rows, tree, session):
     """The run to show: this session's, else one on this working tree that recorded no session, else any
     on this working tree — the newest of each. None when there is none."""
@@ -389,7 +377,7 @@ class Follower:
 
     def read(self, now=None):
         now = time.time() if now is None else now
-        folder = pick(open_runs(self.home), self.tree, self.session)
+        folder = pick(run_state.in_progress(self.home), self.tree, self.session)
         if folder is not None:
             self.last, self.ended = folder, None
         elif self.last is None:

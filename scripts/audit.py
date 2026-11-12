@@ -18,7 +18,7 @@ the run or the transcript.
 """
 
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 import json
 import os
 from pathlib import Path
@@ -30,6 +30,14 @@ sys.dont_write_bytecode = True
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from council.clock import iso_moment  # noqa: E402
+from council.records import paths  # noqa: E402
+from council.records import events as event_stream  # noqa: E402
+from council.records import plan as run_plan  # noqa: E402
+from council.records import seats as seat_files  # noqa: E402
+from council.records import state as run_state  # noqa: E402
 
 PASS, WARN, FAIL = "pass", "warn", "FAIL"
 LATER = "later"                                   # at close: an item that can only happen after it
@@ -63,48 +71,11 @@ NOTES = re.compile(r"council: (?:%s|\S+ now ignores asks/|\S+ is \d+ KB, over)"
 # --- reading ------------------------------------------------------------------------------------------------
 def text_of(path):
     """A file's text (BOM dropped), or "" for a missing, linked, oversized or unreadable one."""
-    try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_FILE:
-            return ""
-        with open(str(path), "rb") as handle:
-            return handle.read().decode("utf-8", "replace").lstrip("\ufeff")
-    except OSError:
-        return ""
-
-
-def tsv(path):
-    """Rows of a TSV file as dicts keyed by its header; "#" comment lines are skipped."""
-    rows = [line.rstrip("\r").split("\t") for line in text_of(path).split("\n")
-            if line.strip() and not line.startswith("#")]
-    if not rows:
-        return []
-    head = rows[0]
-    return [dict(zip(head, row + [""] * (len(head) - len(row)))) for row in rows[1:]]
-
-
-def field(state, key):
-    """The helper's field() on a session-state.md: the first "key:" line of its header — above the first "## "
-    heading, never a line in the notes below it — value trimmed, a trailing "  # note" dropped."""
-    header = re.split(r"^## ", state, maxsplit=1, flags=re.MULTILINE)[0]
-    match = re.search(r"^%s:[ \t]*(.*)$" % re.escape(key), header, re.MULTILINE)
-    return re.sub(r"\s{2,}#.*$", "", match.group(1)).strip() if match else ""
-
-
-def stamp(value):
-    """An ISO time (the helper's 2026-09-30T10:14:16Z, a transcript's ...16.894Z) as UTC, or None."""
-    match = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?(?:Z|\+00:00)?$", (value or "").strip())
-    if not match:
-        return None
-    return datetime.strptime(match.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    return paths.text_of(path, limit=MAX_FILE)
 
 
 def clock(when):
     return when.astimezone().strftime("%H:%M:%S") if when else "?"
-
-
-def details(cell):
-    """"exit=1;seconds=57" as a dict."""
-    return dict(part.split("=", 1) for part in (cell or "").split(";") if "=" in part)
 
 
 def number(value):
@@ -123,15 +94,15 @@ class Run:
     def __init__(self, folder):
         self.folder = folder
         self.name = folder.name
-        self.state = text_of(folder / "session-state.md")
-        self.mode = field(self.state, "mode")
-        self.status = field(self.state, "status").split(" ")[0]
-        self.events = [e for e in tsv(folder / "events.tsv") if e.get("type")]
+        self.fields = run_state.header(run_state.text(folder, read=text_of), exact_keys=True)
+        self.mode = self.field("mode")
+        self.status = self.field("status").split(" ")[0]
+        self.events = [e for e in event_stream.records(folder, MAX_FILE) if e.get("type")]
         for event in self.events:
-            event["t"] = stamp(event.get("at"))
-        self.plan = tsv(folder / "run-plan.tsv")
-        self.seats = tsv(folder / "seats.tsv")
-        self.usage = tsv(folder / "usage.tsv")
+            event["t"] = iso_moment(event.get("at"))
+        self.plan = run_plan.rows(folder, MAX_FILE)
+        self.seats = seat_files.rows(folder, MAX_FILE)
+        self.usage = seat_files.usage_rows(folder, MAX_FILE)
         self.roles, self.selected = {}, []
         for row in self.plan:
             if row.get("kind") == "seat" and row.get("field") == "role":
@@ -140,6 +111,10 @@ class Run:
                 self.selected.append(row.get("id", ""))
         self.size = next((r.get("value", "").strip() for r in self.plan
                           if r.get("kind") == "run" and r.get("field") == "size"), "")
+
+    def field(self, key):
+        """A session-state header field as the helper's state_field reads it, trimmed."""
+        return self.fields.get(key, "").strip()
 
     def of_type(self, *types):
         return [e for e in self.events if e["type"] in types]
@@ -190,7 +165,7 @@ def stages(run, say):
     back = ["%s back to %s" % (a, b) for a, b in zip(path, path[1:]) if RANK.get(b, 99) < RANK.get(a, -1)]
     unknown = [s for s in path if s not in RANK] if run.mode in MODES else []    # setup names its own phases
     shown = " > ".join(path) or "none"
-    said = [details(e.get("detail")) for e in run.of_type("run.phase_changed")]   # council state phase=... skip="<why>"
+    said = [event_stream.details(e.get("detail")) for e in run.of_type("run.phase_changed")]   # council state phase=... skip="<why>"
     said = "".join("; %s skipped on purpose: %s" % (d["skipped"].replace(",", ", "), d.get("reason", "?")) for d in said if d.get("skipped"))
     if missing:
         say(FAIL, label, "%s; never entered: %s%s%s" % (shown, ", ".join(missing), why, said))
@@ -208,7 +183,7 @@ def closing(run, say):
         say(WARN, label, "no event stream (a run from before events.tsv), so when it closed can't be read")
     elif run.status == "complete":
         if not closed:
-            stamped = field(run.state, "closed")
+            stamped = run.field("closed")
             if stamped:                            # the close's own stamp, with its event lost or never written
                 say(WARN, label, "closed complete at %s by the state's own stamp, but the event stream holds no close "
                     "event, so whether Deliver came first can't be read" % stamped)
@@ -276,7 +251,7 @@ def agents_on_record(run, say):
 def gates(run, say):
     runs = []
     for event in run.of_type("gate.finished"):
-        seconds = number(details(event.get("detail")).get("seconds")) or 0
+        seconds = number(event_stream.details(event.get("detail")).get("seconds")) or 0
         if event["t"]:
             runs.append({"name": event.get("subject", "?"), "end": event["t"], "start": event["t"] - timedelta(seconds=seconds)})
     if not runs:
@@ -314,7 +289,7 @@ def deliverable(run, say):
     if run.status != "complete":
         say(PASS, label, "not due: the run did not complete")
         return
-    recorded = field(run.state, "deliverable")
+    recorded = run.field("deliverable")
     if not recorded and run.mode not in MODES:
         say(PASS, label, "not due: %s has no Deliver stage" % (run.mode or "this mode"))
         return
@@ -329,7 +304,7 @@ def deliverable(run, say):
     elif recorded.replace("\\", "/").startswith(".council/"):
         where = home.parent / recorded
     else:
-        where = Path(field(run.state, "code-root") or str(home.parent)) / recorded
+        where = Path(run.field("code-root") or str(home.parent)) / recorded
     if where is not None and not where.exists():
         say(WARN, label, "recorded as %s, but there is no such file now" % recorded)
     else:
@@ -407,13 +382,13 @@ def agent_limit(run, say):
     cap = next((number(r.get("value")) for r in run.plan
                 if r.get("kind") == "budget" and r.get("id") == "run" and r.get("field") == "agent-cap"), None)
     closed = run.of_type("run.closed")
-    used = number(details(closed[-1].get("detail")).get("agent_runs")) if closed else None
+    used = number(event_stream.details(closed[-1].get("detail")).get("agent_runs")) if closed else None
     if used is None:
         used = sum(number(r.get("agents")) or 0 for r in run.seats)
     if not cap:
         say(WARN, label, "%d agent run(s); the plan names no cap to hold them to" % used)
         return
-    allowed = [number(r.get("until")) for r in tsv(run.folder / "cap-allowances.tsv") if number(r.get("until"))]
+    allowed = [number(r.get("until")) for r in seat_files.allowance_rows(run.folder, MAX_FILE) if number(r.get("until"))]
     if used <= cap:
         say(PASS, label, "%d of %d agent runs" % (used, cap))
     elif allowed and allowed[-1] >= used:
@@ -593,7 +568,7 @@ def read_transcript(path):
                 continue
             if not isinstance(line, dict) or line.get("isSidechain") or line.get("parent_tool_use_id"):
                 continue
-            last = stamp(line.get("timestamp")) or last
+            last = iso_moment(line.get("timestamp")) or last
             if line.get("sessionId"):
                 sessions.add(line["sessionId"])
             message = line.get("message") if isinstance(line.get("message"), dict) else {}
@@ -687,7 +662,7 @@ def transcript(run, path, say):
     entries, sessions = read_transcript(path)
     closed = run.closed["t"] if run.closed else None
     part = window(entries, spans(run))
-    session = field(run.state, "session")
+    session = run.field("session")
     if session and sessions and session not in sessions:
         say(WARN, "Transcript", "this file is session %s; the run was driven by %s" % (listed(sorted(sessions), 2), session))
     if not part:
@@ -736,9 +711,9 @@ def transcript(run, path, say):
     opened_at = next((n for n, t, block, found, _ in calls if any(i["sub"] == "run open" for i in found)), 0)
     sent = [n for n, t, block, found, _ in calls if n >= opened_at and (block.get("name") in ("Agent", "Task", "Workflow")
             or any(i["sub"] == "seat" and re.search(r"\bseat\s+\S+\s+(running|queued)\b", i["text"]) for i in found))]
-    starts = [(stamp(r.get("at")), r.get("session", "")) for r in tsv(run.folder / "agent-starts.tsv")
+    starts = [(iso_moment(r.get("at")), r.get("session", "")) for r in seat_files.start_rows(run.folder, MAX_FILE)
               if not r.get("tool", "").startswith("before:")]          # the gate's starts name their session
-    starts += [(stamp(r.get("at")), "") for r in run.usage if r.get("kind") == "dispatched"]
+    starts += [(iso_moment(r.get("at")), "") for r in run.usage if r.get("kind") == "dispatched"]
     first_at, first_by = min([s for s in starts if s[0]], key=lambda s: (s[0], s[1] in ("", "-")), default=(None, ""))
     began = next((t for t, _, _ in part if t), None)
     if first_by not in ("", "-") and sessions and first_by not in sessions:
@@ -863,7 +838,7 @@ def main():
     parser.add_argument("--at-close", action="store_true", help="council run close's own audit: the closing card comes after")
     args = parser.parse_args()
     folder = args.run
-    if not folder.is_dir() or not (folder / "session-state.md").is_file():
+    if not paths.is_run(folder, refuse_links=False):
         print("audit: not a council run folder: {}".format(folder), file=sys.stderr)
         return 2
     if args.transcript is not None and not args.transcript.is_file():
@@ -872,7 +847,7 @@ def main():
     run = Run(folder)
     found = None
     if args.transcript is None and not args.no_transcript:
-        args.transcript = found = find_transcript(field(run.state, "session"))
+        args.transcript = found = find_transcript(run.field("session"))
     items = []
 
     def say(verdict, label, words):
@@ -902,7 +877,7 @@ def main():
         print("\nFrom the session transcript (%s): nothing to check" % span)
     if args.transcript is None:
         print("\nNo transcript given: pass --transcript <session .jsonl> to check what the Chair showed and ran%s."
-              % (" (this run's session: %s)" % field(run.state, "session") if field(run.state, "session") else ""))
+              % (" (this run's session: %s)" % run.field("session") if run.field("session") else ""))
     counts = dict((v, sum(1 for item in items if item[0] == v)) for v in (FAIL, WARN, PASS))
     later = sum(1 for item in items if item[0] == LATER)
     print("\n%d failed, %d warning(s), %d passed%s" % (counts[FAIL], counts[WARN], counts[PASS],

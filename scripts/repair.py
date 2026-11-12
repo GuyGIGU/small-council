@@ -8,20 +8,23 @@ agent, edits project code, or claims that a failure was caused by the current ch
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import sys
-import tempfile
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from council.records import events as event_stream  # noqa: E402
+from council.records import gates as gate_files  # noqa: E402
+from council.records import paths  # noqa: E402
+from council.records import state as run_state  # noqa: E402
+
 SCHEMA = 1
 MAX_FILE = 4 * 1024 * 1024
 TASK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-EVENT_HEADER = "schema\tseq\tat\ttype\tsubject\tvalue\tdetail"
 PATTERNS = (
     # bin/council's own last line for a gate it stopped at its time limit: a hang, whatever it printed before.
     ("TIMEOUT_FAILURE", r"^council: timed out after [0-9]+s", "quality-concurrency.md"),
@@ -50,15 +53,12 @@ class RepairError(Exception):
 
 
 def artifact(path, required=True):
-    if path.is_symlink() or path.parent.is_symlink():
-        raise RepairError("symlink artifact is not allowed: " + str(path))
-    if not path.exists():
-        if required:
-            raise RepairError("missing artifact: " + str(path))
-        return None
-    if not path.is_file() or path.stat().st_size > MAX_FILE:
-        raise RepairError("artifact is not a regular file under 4 MB: " + str(path))
-    return path.read_bytes()
+    """A run artifact's bytes, refusing a link, a non-regular file and one over 4 MB; None when it is
+    missing and not required."""
+    try:
+        return paths.artifact(path, MAX_FILE, required)
+    except paths.RecordError as exc:
+        raise RepairError(str(exc)) from exc
 
 
 def decode(data, label):
@@ -69,18 +69,11 @@ def decode(data, label):
 
 
 def event_rows(run):
-    text = decode(artifact(run / "events.tsv"), "events.tsv")
-    lines = text.splitlines()
-    if not lines or lines[0] != EVENT_HEADER:
-        raise RepairError("events.tsv has no v1 header")
-    rows = []
-    for expected, line in enumerate(lines[1:], 1):
-        cells = line.split("\t")
-        if len(cells) != 7 or cells[0] != "1" or cells[1] != str(expected):
-            raise RepairError("events.tsv is malformed; run council run events check")
-        rows.append({"seq": expected, "type": cells[3], "subject": cells[4],
-                     "value": cells[5], "detail": cells[6]})
-    return rows
+    """The whole event stream, refused unless every row is in sequence after the v1 header."""
+    try:
+        return event_stream.strict_rows(run, lambda path: decode(artifact(path), path.name))
+    except event_stream.EventError as exc:
+        raise RepairError(str(exc)) from exc
 
 
 def event_for(run, gate):
@@ -92,14 +85,10 @@ def event_for(run, gate):
 
 
 def gate_result(run, gate):
-    # Match bin/council's byte-wise `tr -c 'A-Za-z0-9._-' '_'` exactly, including UTF-8 names.
-    slug = "".join(chr(byte) if (65 <= byte <= 90 or 97 <= byte <= 122 or
-                                 48 <= byte <= 57 or byte in (46, 95, 45)) else "_"
-                   for byte in gate.encode("utf-8"))
+    slug = gate_files.slug(gate)
     if not slug or slug in (".", ".."):
         raise RepairError("invalid gate name")
-    verdict_path = run / "gates" / (slug + ".json")
-    output_path = run / "gates" / (slug + ".txt")
+    verdict_path, output_path = gate_files.files(run, slug)
     verdict_bytes = artifact(verdict_path)
     output_bytes = artifact(output_path)
     try:
@@ -113,7 +102,7 @@ def gate_result(run, gate):
     event = event_for(run, gate)
     if event["value"] != ("passed" if verdict["exit"] == 0 else "failed"):
         raise RepairError("latest gate event and verdict disagree")
-    detail = dict(part.split("=", 1) for part in event["detail"].split(";") if "=" in part)
+    detail = event_stream.details(event["detail"])
     if detail.get("exit") != str(verdict["exit"]):
         raise RepairError("latest gate event and exit code disagree")
     return slug, verdict_bytes, output_bytes, verdict, event, detail
@@ -149,20 +138,12 @@ def load_ledger(run):
 
 
 def atomic_bytes(path, data):
-    if path.is_symlink():
-        raise RepairError("symlink output is not allowed: " + str(path))
-    fd, temporary = tempfile.mkstemp(prefix=".repair-", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(data)
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    paths.atomic_write(path, data, prefix=".repair-", refuse_link=True)
 
 
 def baseline(run, slug, gate):
-    data = artifact(run / "gates" / "baseline" / (slug + ".json"), required=False)
+    verdict_path, output_path = gate_files.files(run, slug, baseline=True)
+    data = artifact(verdict_path, required=False)
     if data is None:
         return "unknown"
     try:
@@ -176,7 +157,7 @@ def baseline(run, slug, gate):
         raise RepairError("malformed baseline gate exit")
     if code != 0:
         return "red"
-    output = artifact(run / "gates" / "baseline" / (slug + ".txt"), required=False)
+    output = artifact(output_path, required=False)
     if output is None:
         return "unknown"
     return "empty" if b"changed: no files matched" in output else "green"
@@ -286,7 +267,7 @@ def inspect_rows(run, rows, check=False):
                     event["subject"] != row.get("gate") or
                     event["value"] != ("passed" if row["result"] == "passed" else "failed")):
                 raise RepairError("repair row has no matching gate execution event")
-            detail = dict(part.split("=", 1) for part in event["detail"].split(";") if "=" in part)
+            detail = event_stream.details(event["detail"])
             if detail.get("exit") != str(row.get("exit")):
                 raise RepairError("repair row and gate event exit disagree")
             proof_json = row.get("proof_json", "")
@@ -384,8 +365,8 @@ def main():
     run = args.run.absolute()
     if run.is_symlink() or not run.is_dir():
         raise RepairError("run must be a real directory")
-    state = artifact(run / "session-state.md")
-    if not re.search(r"^mode: council-implement\s*$", decode(state, "session-state.md"), re.MULTILINE):
+    content = run_state.text(run, read=lambda path: decode(artifact(path), path.name))
+    if not run_state.is_build_run(content):
         raise RepairError("repair tracking is for council-implement runs only")
     if args.action == "record":
         if args.task is None or args.gate is None:
@@ -409,6 +390,6 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (RepairError, OSError, UnicodeError, ValueError, TypeError) as exc:
+    except (RepairError, paths.RecordError, OSError, UnicodeError, ValueError, TypeError) as exc:
         print("repair: " + str(exc), file=sys.stderr)
         sys.exit(2)
