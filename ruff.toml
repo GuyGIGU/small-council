@@ -1,0 +1,52 @@
+# ruff, a development tool only (D32): CI runs it on the whole tree with this file.
+#
+# The root set is the widest one today's Python passes: every family below is on, and a rule that
+# fails on today's code is switched off (the lists below), never fixed by reformatting a file. The
+# library and its unit tests (src/council/, tests/py/) are new code and are held to more: pyflakes,
+# pycodestyle, bugbear, simplify in full, and annotations on every argument and public return.
+#
+# To widen the set: fix a rule's last failures in the branch that owns the files, then delete the
+# rule from its list here. Never add a rule to a list to make new code pass.
+target-version = "py38"     # D24: also reports syntax newer than 3.8 (match, X | Y at run time)
+line-length = 120
+
+[lint]
+select = [
+    "F",      # pyflakes
+    "E", "W", # pycodestyle
+    "B",      # bugbear
+    "SIM",    # simplify
+    "ANN",    # annotations (held only on src/council/ and tests/py/, below)
+    "A", "ARG", "ASYNC", "BLE", "C4", "DTZ", "ERA", "EXE", "FA", "FLY", "FURB", "G", "ICN", "INT",
+    "ISC", "LOG", "N", "PERF", "PGH", "PIE", "PLC", "PLE", "PLW", "PYI", "RET", "RSE", "RUF", "S",
+    "SLF", "SLOT", "T10", "TID", "TRY", "UP", "YTT",
+]
+# Off everywhere, the library too. Each fails on today's code or is noise for a CLI that runs git.
+ignore = [
+    "ANN202", "ANN204", "ANN401",              # annotations: private returns, dunders, Any are allowed
+    "S603", "S607",                            # subprocess with a list and a PATH lookup is how we run git
+    "S103", "S110",
+    "TRY003", "TRY300", "TRY301",
+    "UP012", "UP021", "UP022", "UP030", "UP031", "UP032",   # %-formatting and .format() are kept
+    "C401", "C402", "C408", "C420",
+    "PERF102", "PERF203", "PERF401",
+    "RUF001", "RUF002", "RUF003", "RUF005", "RUF021", "RUF046", "RUF059", "RUF100",
+    "PLC0415", "PLW0603", "PLW1510", "PLW2901",
+    "ISC001", "ISC003", "ISC004",
+    "ARG001", "ARG002", "ARG005",
+    "N801", "N806", "N818",
+    "DTZ011", "ERA001", "FLY002", "FURB167", "FURB192", "ICN001", "PIE810", "PLE2510", "PLE2515", "RET504",
+]
+
+[lint.per-file-ignores]
+# Everything outside the library and its unit tests: today's code fails these, and ANN is for new code.
+"!{src/council,tests/py}/**" = [
+    "ANN",
+    "E501", "E702", "E731", "E741",
+    "B007", "B023",
+    "SIM105", "SIM108", "SIM112", "SIM115", "SIM300",
+]
+"evals/run_cli.py" = ["F841"]   # one unused name; pyflakes stays whole everywhere else
+
+[lint.flake8-annotations]
+suppress-dummy-args = true

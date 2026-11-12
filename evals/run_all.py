@@ -3,7 +3,8 @@
 
     python evals/run_all.py            # as many at a time as the machine has CPUs
     python evals/run_all.py --jobs 1   # one after another
-    python evals/run_all.py --list     # the jobs, without running them
+    python evals/run_all.py --fast     # the fast tier only (FAST below): under two minutes, while you work
+    python evals/run_all.py --list     # the jobs, and which are in the fast tier, without running them
 
 Each suite runs as its own process with the same command CI used to run it on its own, so each keeps
 its own temporary folders. The helper evals (run_cli.py, the long pole) and the hook evals run as
@@ -12,6 +13,10 @@ helper's locks, run alone, before the rest start, so a busy machine can't make t
 runs even when another fails; each one's output is printed whole once it finishes, then a summary.
 Exits 1 if any suite failed, or reported no "N/N checks passed" line or zero checks (a suite that
 skipped everything), or if an evals/run_*.py file is missing from the list below.
+
+The fast tier is validation, the structural evals, the ratchet and its self-test, the unit tests in
+tests/py/ (skipped, and said so, while that folder doesn't exist) and the quickest scenario suites. It
+is a first look, not the gate: the full run is the default, and it is what CI and a commit wait on.
 
 Python 3.8+, standard library only.
 """
@@ -34,6 +39,9 @@ PY = sys.executable
 SUITES = [
     ("Validate plugin", ["scripts/quick_validate.py"], "shared"),
     ("Structural evals", ["evals/run_structural.py"], "shared"),
+    ("Ratchet (sizes and structure only go down)", ["evals/run_ratchet.py"], "shared"),
+    ("Ratchet self-test", ["evals/run_ratchet.py", "--self-test"], "shared"),
+    ("Unit tests (tests/py)", ["-m", "unittest", "discover", "-s", "tests/py"], "unit"),   # skipped while absent
     ("Helper evals", ["evals/run_cli.py"], "groups"),
     ("Model routing evals", ["evals/run_model_routing.py"], "shared"),
     ("Impact evals", ["evals/run_impact.py"], "shared"),
@@ -61,6 +69,15 @@ SUITES = [
 # "N/N checks passed" line; every other job must print one, with at least one check.
 NO_COUNT = {"scripts/quick_validate.py", "evals/run_context_pilot.py", "evals/run_phrases.py"}
 
+# The fast tier, by job name: each takes seconds on a Windows laptop with the others running beside it.
+# Every group of the helper and hook evals takes minutes, so none is here.
+FAST = {"Validate plugin", "Structural evals", "Ratchet (sizes and structure only go down)",
+        "Ratchet self-test", "Unit tests (tests/py)", "Context delivery pilot (byte accounting, no model calls)",
+        "Repair drill trace checker self-test (no model calls)", "Run history evals", "Seat learning evals",
+        "Finding outcomes evals", "Repair loop evals", "Evidence model evals", "Context evals", "Impact evals",
+        "Benchmark harness self-test (no model calls)", "Model routing evals"}
+UNIT_TESTS = ROOT / "tests" / "py"
+
 
 class Job:
     def __init__(self, name, args, alone):
@@ -73,7 +90,14 @@ class Job:
 
     def checks(self):
         found = re.findall(rb"^(\d+)/(\d+) checks passed", self.output, re.MULTILINE)
-        return (int(found[-1][0]), int(found[-1][1])) if found else None
+        if found:
+            return int(found[-1][0]), int(found[-1][1])
+        ran = re.findall(rb"^Ran (\d+) tests? in ", self.output, re.MULTILINE)   # unittest's own count
+        if not ran:
+            return None
+        failed = re.search(rb"^FAILED \((.*)\)", self.output, re.MULTILINE)
+        lost = sum(int(n) for n in re.findall(rb"(?:failures|errors)=(\d+)", failed.group(1))) if failed else 0
+        return int(ran[-1]) - lost, int(ran[-1])
 
     @property
     def ok(self):
@@ -120,12 +144,17 @@ def main():
     parser = argparse.ArgumentParser(description="Run every free suite CI runs, several at a time.")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 2,
                         help="how many suites run at the same time (default: the number of CPUs)")
+    parser.add_argument("--fast", action="store_true", help="run only the fast tier (marked fast in --list)")
     parser.add_argument("--list", action="store_true", help="print the jobs and their commands; run nothing")
     opts = parser.parse_args()
 
-    jobs, problems = [], []
+    jobs, problems, skipped = [], [], []
     for name, args, how in SUITES:
-        if how == "groups":
+        if opts.fast and name not in FAST:
+            continue
+        if how == "unit" and not UNIT_TESTS.is_dir():
+            skipped.append("%s: skipped, tests/py/ does not exist yet" % name)
+        elif how == "groups":
             more, problem = group_jobs(name, args)
             jobs += more
             if problem:
@@ -135,7 +164,10 @@ def main():
     problems += ["%s is not in evals/run_all.py's list, so it would never run" % f for f in unlisted()]
     if opts.list:
         for job in jobs:
-            print("%-6s %-60s %s" % ("alone" if job.alone else "shared", job.name, job.command))
+            print("%-6s %-4s %-60s %s" % ("alone" if job.alone else "shared", "fast" if job.name in FAST else "",
+                                          job.name, job.command))
+        for line in skipped:
+            print("SKIPPED: " + line)
         for problem in problems:
             print("PROBLEM: " + problem)
         return 1 if problems else 0
@@ -156,8 +188,11 @@ def main():
 
     started = time.monotonic()
     width = max(1, opts.jobs)
-    print("%d jobs: %d run alone first, then the rest %d at a time" % (
-        len(jobs), sum(j.alone for j in jobs), width), flush=True)
+    print("%s%d jobs: %d run alone first, then the rest %d at a time" % (
+        "The fast tier, a first look and not the gate: " if opts.fast else "", len(jobs),
+        sum(j.alone for j in jobs), width), flush=True)
+    for line in skipped:
+        print("[skip] " + line, flush=True)
     for job in [j for j in jobs if j.alone]:
         run(job, say)
     rest = sorted((j for j in jobs if not j.alone), key=lambda j: -weight(j))   # longest first
@@ -177,9 +212,11 @@ def main():
         if how == "groups" and len(counts) > 1 and all(counts):
             print("%-62s %-7s %6s  %d/%d" % (name + ", all groups", "", "", sum(c[0] for c in counts),
                                               sum(c[1] for c in counts)))
+    for line in skipped:
+        print(line)
     failed = [j for j in jobs if not j.ok]
-    print("\n%d jobs, %d failed, %.0f s in all (%.0f s of suite time)" % (
-        len(jobs), len(failed), wall, sum(j.seconds for j in jobs)))
+    print("\n%d jobs%s, %d failed, %.0f s in all (%.0f s of suite time)" % (
+        len(jobs), " in the fast tier" if opts.fast else "", len(failed), wall, sum(j.seconds for j in jobs)))
     if os.environ.get("GITHUB_STEP_SUMMARY"):   # the same table on the run's summary page
         rows = ["| %s | %s | %.0f s | %s |" % (j.name, "pass" if j.ok else "**FAIL**", j.seconds,
                                                "%d/%d" % j.checks() if j.checks() else "-") for j in jobs]
