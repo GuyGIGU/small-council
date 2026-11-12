@@ -27,7 +27,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
 # stands out, preferring those on a line that says write; and the run folder (runs/<date-time>-<mode>)
 # that file is in — as the line that says write gives it, else its last mention, as a re-review cites
 # the earlier run's file first — else the one run folder the message names. What it can't pick out
-# stays empty, and the helper judges nothing on it.
+# stays empty, and the helper judges nothing on it. For a verifier, also the first words that send it
+# hunting past its Done-when ("however narrow", "any route", "find anything else"), which the helper refuses.
+# For a Workflow, whether its script (inline, or the file at scriptPath) starts council verifiers, and the same
+# hunting words in it: the helper holds it to one checker per build.
 fields="$(LC_ALL=C awk '
   function undo(v, c, r,   q, m, j, out) { m = split(v, q, c); out = q[1]; for (j = 2; j <= m; j++) out = out r q[j]; return out }
   { s = s $0 "\n" }
@@ -47,9 +50,9 @@ fields="$(LC_ALL=C awk '
       if (depth == 1 && k == "tool_input" && p[i + 2] ~ /^[ \t\r\n]*:[ \t\r\n]*\{/) inner = 1
       if ((k in got) || p[i + 2] !~ /^[ \t\r\n]*:[ \t\r\n]*$/) continue
       if (!(depth == 1 && (k == "session_id" || k == "cwd" || k == "tool_name")) &&
-          !(depth == 2 && inner && (k == "subagent_type" || k == "prompt"))) continue
+          !(depth == 2 && inner && (k == "subagent_type" || k == "prompt" || k == "script" || k == "scriptPath"))) continue
       v = p[i + 3]
-      if (k == "prompt") { gsub(/\\n/, "\003", v); gsub(/\\[rt]/, " ", v) }   # a line break: kept apart, as split() breaks at one
+      if (k == "prompt" || k == "script") { gsub(/\\n/, "\003", v); gsub(/\\[rt]/, " ", v) }   # a line break: kept apart, as split() breaks at one
       gsub(/\\\//, "/", v)
       got[k] = undo(undo(v, "\002", "\""), "\001", "\\")
     }
@@ -97,15 +100,34 @@ fields="$(LC_ALL=C awk '
         if (nr != 1) run = ""
       }
     }
-    print ty; print seat; print run; print file
+    hunt = ""; wfv = ""                                            # a verifier sent past its Done-when
+    if (got["tool_name"] == "Workflow" && (n % 2 == 1 && bal == 0) && index(got["script"], "council-verifier")) wfv = 1
+    if (ty ~ /verifier$/ || wfv) {
+      lp = tolower(ty ~ /verifier$/ ? got["prompt"] : got["script"]); gsub(/[ \t\n\003]+/, " ", lp)
+      if (index(lp, "however narrow")) hunt = "however narrow"
+      else if (match(lp, /any (other )?route/)) hunt = substr(lp, RSTART, RLENGTH)
+      else if (match(lp, /(find|name|report|flag|list|look for|hunt for|search for) anything else/)) hunt = substr(lp, RSTART, RLENGTH)
+    }
+    sp = got["scriptPath"]; gsub(/\n/, " ", sp)
+    print ty; print seat; print run; print file; print hunt; print wfv; print sp
   }' 2>/dev/null)"
-{ IFS= read -r sid; IFS= read -r cwd; IFS= read -r tool; IFS= read -r atype; IFS= read -r aseat; IFS= read -r arun; IFS= read -r afile; } <<FIELDS
+{ IFS= read -r sid; IFS= read -r cwd; IFS= read -r tool; IFS= read -r atype; IFS= read -r aseat; IFS= read -r arun; IFS= read -r afile; IFS= read -r ahunt; IFS= read -r awfv; IFS= read -r aspath; } <<FIELDS
 $fields
 FIELDS
 
 if [ -n "$cwd" ]; then
   case "$cwd" in [A-Za-z]:\\*) cwd="$(printf '%s' "$cwd" | tr '\\' '/')" ;; esac   # C:\Users\… as Git Bash takes it
   if [ -d "$cwd" ]; then cd "$cwd" >/dev/null 2>&1 || :; fi
+fi
+
+# A Workflow run from a script file: the same reading as an inline script. A saved workflow called by name
+# can't be read here, and starts unjudged.
+if [ "$tool" = Workflow ] && [ -z "$awfv" ] && [ -n "$aspath" ] && [ -f "$aspath" ] && grep -q council-verifier "$aspath" 2>/dev/null; then
+  awfv=1
+  ahunt="$(LC_ALL=C awk '{ s = s " " tolower($0) } END { gsub(/[ \t\r]+/, " ", s)
+    if (index(s, "however narrow")) print "however narrow"
+    else if (match(s, /any (other )?route/)) print substr(s, RSTART, RLENGTH)
+    else if (match(s, /(find|name|report|flag|list|look for|hunt for|search for) anything else/)) print substr(s, RSTART, RLENGTH) }' "$aspath" 2>/dev/null)"
 fi
 
 if [ -n "$sid" ]; then set -- cap check --session "$sid"; else set -- cap check; fi
@@ -117,6 +139,10 @@ case "$tool" in
       [ -z "$aseat" ] || set -- "$@" "seat=$aseat"
       [ -z "$arun" ] || set -- "$@" "run=$arun"
       [ -z "$afile" ] || set -- "$@" "file=$afile"
+      [ -z "$ahunt" ] || set -- "$@" "hunt=$ahunt"
+    elif [ "$tool" = Workflow ] && [ -n "$awfv" ]; then              # a Workflow that starts council verifiers
+      set -- "$@" "workflow=verifier"
+      [ -z "$ahunt" ] || set -- "$@" "hunt=$ahunt"
     fi ;;
 esac
 out="$("${BASH:-bash}" "$ROOT/bin/council" "$@" 2>/dev/null)"; rc=$?

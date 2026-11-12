@@ -1152,7 +1152,7 @@ def agent_gate_dispatch_record(tmp):
         check(f"dispatch: {label} — the agent starts, nothing said", code == 0 and not out and not err, said(code, out, err))
     # A third check of one build task, refused before it starts (council-implement, step 7).
     tg = new_repo(tmp, "dispatch-gate-third")
-    write(os.path.join(tg, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(tg, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
     _, trun, _ = council(tg, "run", "open", "council-implement", session="sE")
     valid_plan(trun, seats=("chair", "verify-6", "verify-6b", "verify-6c"), mode="council-implement")
     for slug, n in (("verify-6", 1), ("verify-6b", 2)):
@@ -1166,6 +1166,58 @@ def agent_gate_dispatch_record(tmp):
     check("dispatch: a third check of one task, after two verdicts with no diagnosis or decision since, is refused before "
           "it starts — the file it writes names it, not the earlier verdict the message mentions",
           code == 2 and "cannot start verify-6c" in err and "third check of task 6" in err, said(code, out, err))
+    # One checker per build (references/build-proof.md, Checking): the default, with no checking line.
+    bg = new_repo(tmp, "dispatch-gate-batch")
+    write(os.path.join(bg, ".council", "council.config.md"), "# Council config\n")
+    _, brun, _ = council(bg, "run", "open", "council-implement", session="sB")
+    valid_plan(brun, seats=("chair", "verify-1", "verify-2"), mode="council-implement")
+    first = "Check tasks 1-3 against their Done-whens.\nWrite your verdicts to {0}/verify-{1}.md, then reply in one line."
+    code, out, err = gate(bg, verifier, first.format(brun, 1), session="sB")
+    check("dispatch: one per batch (the default) — a build's first verifier starts", code == 0 and not err, said(code, out, err))
+    council(bg, "seat", "verify-1", "running", "agent=b1", session="sB")
+    code, out, err = gate(bg, verifier, first.format(brun, 2), session="sB")
+    check("dispatch: one per batch — a second verifier in the same build is refused before it starts, naming the first, "
+          "the user's go and the per-task setting",
+          code == 2 and "cannot start verify-2" in err and "one per batch" in err and "verify-1" in err
+          and 'council state decision="' in err and "checking: per task" in err, said(code, out, err))
+    for phrase in ("Name any route that still gets through, however narrow.", "List any other route past the guard.",
+                   "Then find anything else wrong with the change."):
+        code, out, err = gate(bg, verifier, phrase + "\n" + first.format(brun, 1), session="sB")
+        check(f"dispatch: a verifier brief that sends it hunting is refused — {phrase!r}",
+              code == 2 and "hunting past the Done-when" in err and "## Noticed" in err, said(code, out, err))
+    code, out, err = gate(bg, verifier, "Do not change anything else.\nRead nothing else.\n" + first.format(brun, 1),
+                          session="sB")
+    check("dispatch: 'anything else' that sends no hunt (\"do not change anything else\") is no hunt",
+          "hunting" not in err, said(code, out, err))
+    code, out, err = gate(bg, "general-purpose", "Name any route, however narrow.", session="sB")
+    check("dispatch: an ordinary agent's prompt is never read for hunting words", code == 0 and not err, said(code, out, err))
+
+    # A Workflow of verifiers names no seat, but is one more checker all the same.
+    def workflow(cwd, tool_input, session="sB"):
+        payload = json.dumps({"session_id": session, "transcript_path": "/x/t.jsonl", "cwd": cwd,
+                              "permission_mode": "default", "hook_event_name": "PreToolUse", "tool_name": "Workflow",
+                              "tool_input": tool_input}, separators=(",", ":"))
+        return run_agent_gate(gate_cmd, payload, cwd)[:3]
+
+    wf_verify = ("export const meta = {name: 'v', description: 'd'}\n"
+                 "await agent('Check task 2', {agentType: 'small-council:council-verifier'})\n")
+    code, out, err = workflow(bg, {"script": wf_verify})
+    check("dispatch: one per batch — a Workflow that starts council verifiers, after the build's verifier, is refused",
+          code == 2 and "this Workflow starts council verifiers" in err and "one per batch" in err, said(code, out, err))
+    script_file = os.path.join(bg, "wf.js")
+    write(script_file, wf_verify)
+    code, out, err = workflow(bg, {"scriptPath": script_file})
+    check("dispatch: ... read from its scriptPath too", code == 2 and "this Workflow starts council verifiers" in err,
+          said(code, out, err))
+    code, out, err = workflow(bg, {"script": "await agent('Map the code', {agentType: 'general-purpose'})\n"})
+    check("dispatch: a Workflow of ordinary agents is never held to it", code == 0 and not err, said(code, out, err))
+    council(bg, "state", "decision=one more check of task 2 is fine", session="sB")
+    code, out, err = workflow(bg, {"script": wf_verify})
+    check("dispatch: with the user's go recorded, the Workflow of verifiers starts", code == 0 and not err,
+          said(code, out, err))
+    code, out, err = workflow(bg, {"script": wf_verify.replace("Check task 2", "Name any route, however narrow")})
+    check("dispatch: a Workflow of verifiers whose prompts send them hunting is refused",
+          code == 2 and "hunting past the Done-when" in err, said(code, out, err))
 
 
 @part("main")
