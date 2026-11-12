@@ -28,8 +28,9 @@ trust.
 7. **Evidence or it didn't happen.** Claims carry `path:line`; "done" carries a gate's output file
    and exit code; a builder's explanation is a claim, not evidence.
 8. **Aggregate, then judge; judge, then challenge.** The challenger never sees the author's reasoning.
-9. **The user rules; the council proposes.** Questions come last, numbered, in the chat. The user's
-   request and every ruling are recorded in the user's own words.
+9. **The user rules; the council proposes.** Questions come last: the rulings as one question
+   (Deliver, step 6), others numbered, in the chat. The user's request and every ruling are
+   recorded in the user's own words.
 10. **Every run is sized, budgeted, reported and closed.** A validated `run-plan.tsv` records why
     each seat is selected or skipped, its context and budget, and the required verification before
     Brief or dispatch. Estimate before, actual after, closed always.
