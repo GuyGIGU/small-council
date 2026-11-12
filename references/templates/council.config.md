@@ -17,6 +17,8 @@ deploy target, domain. Name the one thing that must never break.>
 - seat models: off
 - build tier: light
 - checking: one per batch
+- open items: ask
+- pushes: on
 - sharing: team
 <!-- Add `- notifications: off` here to suppress `council status --line` and council phone alerts.
      Without that line, four owner-facing moments may notify when PushNotification is available:
@@ -33,6 +35,11 @@ deploy target, domain. Name the one thing that must never break.>
      (references/build-proof.md, Checking). One per batch: builders and machine gates for every task,
      then a single verifier at the end of the build; the agent gate refuses a second without your go.
      Per task: a verifier per risky task and per batch of ordinary ones. Missing means one per batch.
+     "open items": ask | fix now — what a build does with what it leaves open (council-implement,
+     At Deliver). Ask: a fix-now-or-later question. Fix now: one line each in the receipt (what, rough
+     time, rough tokens), fixed without asking. Commit, push and PR stay questions. Missing means ask.
+     "pushes": on | off | off until <YYYY-MM-DD> — off holds push and PR (a team freeze): a build
+     commits and stops. From the date on it reads as on. Missing means on.
      "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.
      "sharing": team | just me — team commits .council/ with the project; just me keeps it on this
      machine (git's own exclude list ignores it, and CLAUDE.md gets no note), so teammates never meet

@@ -201,13 +201,13 @@ Next move: <one line> — <a yes/no question>
 Full post-game: <path> · Cost: ~<k>k tokens across <n> checker(s)
 ```
 
-Then the numbered rulings and memory proposals.
+Then the rulings as one question (Deliver, step 6), and the memory proposals.
 
 **The next move — the first row that fits, handed off only on a yes:**
 
 | Next move | When | Hand-off |
 |---|---|---|
-| Decide first | a gap needs a ruling before anyone can build it | the numbered rulings |
+| Decide first | a gap needs a ruling before anyone can build it | the rulings question |
 | Re-plan | a structural gap, more than 8 tasks, or a new fork | "Plan the rest with council-plan?" — it reads the post-game as its spec: what was built goes under Already decided |
 | Finish | 1–8 next tasks, no design choice | "Build these <n> with council-implement?" — it takes the post-game as input, each next task a task, its Done-when the request's words |
 | Review first | review P1/P2 findings still unfixed | offer council-review on the range |
