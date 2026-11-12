@@ -27,11 +27,11 @@ Gather every shared fact once, so no seat has to.
    `<run>/gates/<name>.txt`; never read the whole file.
    - **Start it once.** A run takes one gate call at a time: while one runs, the helper refuses a
      second `council gate` ("checks are already running") and writes nothing. Wait, or queue: `council gate --wait <name>`.
-   - **Exit 4 is NOTHING WAS CHECKED**, not a pass. The helper's line names which of the three it is
-     — no check configured at all, none that runs at this stage, or every one skipped — so carry
-     those words rather than a cause of your own. In a mode that changes code, say it at Deliver and
-     offer to fit the missing ones (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md` — a council-init
-     refresh writes the plan). Never let a report read clean when nothing ran.
+   - **Exit 4 is NOTHING WAS CHECKED** (context-core, The helper). The helper's line names which of
+     the three it is — no check configured at all, none that runs at this stage, or every one skipped
+     — so carry those words rather than a cause of your own. In a mode that changes code, say it at
+     Deliver (step 4) and offer to fit the missing ones (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`
+     — a council-init refresh writes the plan).
    - **A pass "but nothing ran" or "but nothing to check"** proved nothing either: carry those
      words, never "tests pass". A gate's `note:` about a pipe, a fallback or output judged by its
      text means it can pass without checking — tell the user and offer to fix its command.

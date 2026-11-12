@@ -5,8 +5,8 @@ description: Investigate a substantial codebase question or engineering tradeoff
 
 # Council Research (mode)
 
-A mode on the council's engine. **Invoke `context-core` and run its stages.** At each stage, read the
-stage's doctrine, then this file's `## At <Stage>` section. Research is how the council *gathers*
+A mode on the council's engine. **Invoke `context-core` and run its stages** (context-core, The
+stages). Research is how the council *gathers*
 context: it answers a question with evidence and leaves the answer on disk, so the next session
 starts from it instead of re-discovering it.
 
@@ -41,7 +41,7 @@ the lines of inquiry and their cost. Ask to proceed only if Convene's approval i
 
 If the answer is **one fact, one root cause, or a yes/no**, propose a scout: one worker (or Solo)
 with a small budget. Escalate to several lines of inquiry only if the scout can't settle it. A Solo
-scout is your own seat: record it with `council seat chair done agents=0`.
+scout is your own seat (context-core, The stages: Solo).
 
 ## At Assign — lines of inquiry, not the roster
 
@@ -55,12 +55,11 @@ Each line of inquiry is one clean partition of the evidence:
 For a **"why" question**, use 3–5 rival hypotheses instead. Each line owns one hypothesis, plus the
 evidence that would confirm or kill it. Name them in the scope summary so the user can confirm them.
 
-When the question is domain-shaped, give a line the matching seat's reference doc — for example, a
-"why is it slow?" line gets the Performance doc.
-
 ## At Brief
 
-The question for every line: its own slice of the research question.
+The question for every line: its own slice of the research question. When the question is
+domain-shaped, give a line the matching seat's reference doc as its `- ref:` — for example, a "why
+is it slow?" line gets the Performance doc.
 
 Not a finding:
 - a claim without evidence;
@@ -129,5 +128,4 @@ In chat, give:
   the same run.
 - **Mapping questions:** each line of inquiry covers one top-level area and fills the map template's
   sections for it. Merge into one map of at most ~250 lines, and set `map-commit` to HEAD.
-- **Memory:** propose candidates as usual. A decision the user makes on the answer is recorded in
-  their words only.
+- **Memory:** propose candidates as usual (Learn).

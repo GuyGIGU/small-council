@@ -107,7 +107,9 @@ check("kernel: moved command table remains available from its pointer",
       "| Command | Use it to |" in helper_reference and "council help" in helper_reference)
 check("kernel: the sentence naming NOTHING WAS CHECKED calls it never a pass (wording; drill D24 is the behaviour)",
       never_a_pass(core, "NOTHING WAS CHECKED"))
-check("02-prepare: the sentence naming Exit 4 calls it not a pass (wording)", never_a_pass(doctrine["02-prepare.md"], "Exit 4"))
+# Exit 4's meaning has one home, the kernel's helper rules; 02-prepare points at it (one rule, one place).
+check("kernel: the sentence naming exit 4 calls it never a pass (wording; moved from 02-prepare)",
+      never_a_pass(core, "exit 4"))
 check("09-deliver: names the 'Checked by machine:' line", "Checked by machine:" in doctrine["09-deliver.md"])
 check("09-deliver: a run that proved nothing by machine never reads as a pass (wording)",
       never_a_pass(doctrine["09-deliver.md"], "proved nothing by machine"))
@@ -390,8 +392,8 @@ check("init: a refresh offers an earlier, shorter permission list the rules it l
 review, plan, impl, research, init = (skill[k] for k in ["council-review", "council-plan", "council-implement", "council-research", "council-init"])
 for label, text, needles in [
     ("review", review, ["merge-base", "council index --base", "Origin:", "Basis:", "Refuted if:", "Not a finding", "council-implement"]),
-    ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research", "war-room.md", "debate.md",
-                    "## How the council decided", "ask.md", "council ask save"]),
+    ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research", "war-room.md",
+                    "## How the council decided", "ask.md", "council ask save"]),   # debate.md: war-room.md's list
     ("implement", impl, ["fix mode", "Before-evidence", "After-evidence", "clean-context diagnosis", "converge", "council gate --all",
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
                          "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input",
@@ -668,6 +670,29 @@ check("decisions: every id the architecture, CLAUDE.md and CONTRIBUTING cite is 
 ids = re.findall(r"^\| (D[0-9]+) \|", decisions_doc, re.MULTILINE)
 check("decisions: ids are unique and cover D1..Dn with no gaps, in any section (never reused or renumbered)",
       sorted(ids, key=lambda d: int(d[1:])) == [f"D{i}" for i in range(1, len(ids) + 1)], str(ids))
+
+# 9c. One rule, one place (D3): a rule folded into its owner leaves a pointer behind, so its wording
+# appears in exactly one shipped prose file. A second copy is a duplicate to fold, not to keep.
+prose = {**{f"skills/{s}": flat(skill[s]) for s in SKILLS}, **{f"doctrine/{d}": flat(doctrine[d]) for d in DOCTRINE},
+         "agents/worker": flat(worker), "agents/verifier": flat(verifier),
+         **{f"references/{f}": flat(read("references", f)) for f in sorted(os.listdir(os.path.join(ROOT, "references")))
+            if f.endswith(".md")}}
+ONE_HOME = [  # (the wording, its one home)
+    ("concurrency or ordering, public contracts", "skills/context-core"),          # protected subjects
+    ("isn't a new agent", "skills/context-core"),                                 # resumed vs re-dispatched
+    ("write your file now", "skills/context-core"),                               # the turn-limit resume
+    ("never report that as a pass", "skills/context-core"),                       # exit 4
+    ("no bare principle numbers", "skills/context-core"),                         # no internal labels
+    ("never a round-1 re-dispatch", "references/war-room.md"),                    # a lost round-2 seat
+    ("every point ends one of four ways", "references/war-room.md"),              # war-room endings
+    ("the worst verdict stands", "references/evidence-model.md"),                 # a plan's several rows
+]
+homes_bad = [f"{p!r} in {[k for k, t in prose.items() if p in t]} (owner {home})" for p, home in ONE_HOME
+             if [k for k, t in prose.items() if p in t] != [home]]
+check("one rule, one place: each folded rule's wording is in its owner only", not homes_bad, "; ".join(homes_bad))
+check("modes: none restates the kernel's stage-entry rule (context-core, The stages, says it once)",
+      not [m for m in MODES if "then this file's `## At <Stage>`" in flat(skill[m])]
+      and "Entering a stage: read its doctrine file" in flat(core))
 
 # 10. Size budgets — Claude Code re-attaches only the first ~5k tokens of each skill after compaction
 for s in SKILLS:

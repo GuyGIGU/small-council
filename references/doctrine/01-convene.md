@@ -4,8 +4,7 @@ Decide whether to convene, whom, and at what cost — then get the user's go-ahe
 
 **Whether, first.** A fully specified one-turn typo, rename, one-line fix or lookup needs no council:
 handle it directly, say why, and open none; the user can still request one. This never applies
-to a protected subject (authorization, data loss, injection, secrets, concurrency or ordering,
-public contracts), or to a review or post-game, which add a second look.
+to a protected subject (context-core, Limits), or to a review or post-game, which add a second look.
 
 ## Steps
 
@@ -26,8 +25,7 @@ public contracts), or to a review or post-game, which add a second look.
    `needs-rescope`, resolve the budget or verification shortfall with the user before opening or
    dispatching a run; a lower-cost Solo label does not waive required independent challenge.
    Use context-core's size limits. Count Challenge's verifiers — one per expected P1 or protected
-   item, one for the rest — within the config's agent cap (default 10). A Workflow counts every
-   agent it starts.
+   item, one for the rest — within the agent cap, counting agents as Assign, step 6 does.
 6. **Estimate from this project's history.** `council ledger` shows each seat's average tokens per
    run; `council run status --all` shows whole runs. With no history, assume ~60–100k tokens per
    worker. The route budgets with the config's `estimate per worker` (set by `council tune`), else 80k.
@@ -61,9 +59,8 @@ public contracts), or to a review or post-game, which add a second look.
 ## The approval message
 
 - What you'll deliver, and where it will be saved.
-- Seats going: what each checks, in plain words with the name second, and its slice size.
+- Seats going: what each checks (context-core), and its slice size.
 - Seats not going, each with its reason: "Frontend (Dodds) — no UI files in this change".
-- The war room, when it's on (council-plan): why, and what it adds to the cost.
 - The estimated cost.
 - End-of-run rulings and memory proposals.
 

@@ -7,8 +7,7 @@ description: Check finished work against the user's original request and report 
 
 A mode on the council's engine. **Invoke `context-core` and run its stages**: Convene and Prepare, then
 Judge, Challenge, Deliver and Learn. Stages 3–6 are skipped — you do the desk work, and only verifiers
-are dispatched, at Challenge. At each stage, read the stage's doctrine, then this file's
-`## At <Stage>` section.
+are dispatched, at Challenge.
 
 **What it's for:** did we build what the user asked for — all of it, and nothing they didn't ask for?
 It lines up the request, the plan and what was built, says where they drifted apart, and ends with one
@@ -38,7 +37,7 @@ yes. It works on any work, council or not.
 - 2–3 verifiers, split by area, when the request has more than 12 parts or the range more than 40
   changed files.
 - At most 3 agents, so it's within Squad: /council-postgame starts without asking, and a yes to the
-  offer is the go-ahead. About 100–180k tokens with 1 verifier.
+  offer is the go-ahead.
 
 ## At Convene
 
@@ -47,9 +46,8 @@ yes. It works on any work, council or not.
    `.council/` folder will hold the result and can be deleted afterwards. No `council.config.md` is
    fine: a post-game needs no roster.
 2. **Find the request.**
-   - **Council work:** the plan's, log's or review's "Your request" line gives the path.
-     `council state ask=<path>`, then write ask.md with `continues: <path>` and `(no new words)` under
-     "In your words" — unless the user adds words now.
+   - **Council work:** continue the request the plan's, log's or review's "Your request" line names
+     (Convene, step 8).
    - **Work done without the council:** at most 3 questions, one at a time, each skipped when you
      already have the answer:
      1. "What did you ask for? Paste your original words if you have them, or point me at the issue,
@@ -115,9 +113,8 @@ filed copy's `[redacted]`.
 3. Dispatch `small-council:council-verifier`, tracked with `council seat verify-<n> running agent=<id>`.
    Each gets the request file, the numbered parts (id and quote only), index.md, `gates/`, the brief's
    path, the code root and the range — **never the plan, the log, synthesis.md, earlier verdicts or
-   your opinion** — and this line, as written: "Leave .council/ out of your reading, apart from the
-   request file." A verifier that stops at its turn limit is resumed, never re-dispatched
-   (context-core, Limits).
+   your opinion** (its contract keeps it out of the rest of `.council/`). A verifier at its turn
+   limit: context-core, Limits.
 
 The verifier answers MET / PARTLY MET / NOT MET / CAN'T TELL for each part, plus M rows (asked, but no
 part covers it) and U rows (built, but serving no part). **You may lower a verdict, citing the evidence in
@@ -222,10 +219,10 @@ same request file.
 
 - At most 3 lessons, as ordinary memory proposals under the admission rule. With no memory file, list
   them in the post-game only — don't create one.
-- A lesson about the council's own process is scoped to a mode — `Scope: council-plan`, for example
-  "plans that touch migrations include a rollback task" — so only that mode's runs read it.
+- A lesson about the council's own process is scoped to its mode (Learn) — for example
+  "plans that touch migrations include a rollback task".
 - A part the user ruled out is proposed as a Decision, in their words.
-- Then close the run: `council run close`, and show its closing card (Learn's Close, step 2).
+- Then close the run (Learn, Close).
 
 ## Notes
 

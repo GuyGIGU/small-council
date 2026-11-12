@@ -44,21 +44,20 @@ is `REPRODUCED`, `proof:` contains one or more comma-separated `gates/<name>.jso
 proves the claim; read the corresponding `.txt` output and command before making that judgment.
 The citation field remains subject to `council check`, which checks places and origin.
 
-A cut claim a verifier finds true (CONFIRMED or MISCITED) is restored: its line moves under
-`## Kept` with its id unchanged (`C4`), and the index records it as `restored`. If it stays cut, the
-line says why with `still-cut: <why>` before `from:`. `evidence check` fails until one is done.
+A cut claim a verifier finds true (CONFIRMED or MISCITED) is restored or marked `still-cut: <why>`
+before `from:` (Challenge, step 3); the index records a restored one as `restored`, and
+`evidence check` fails until one is done.
 
-The verifier receives only claim id, one-sentence claim and citation, plus the brief and code root.
-It does **not** receive `from:`, the source seat or the evidence state. Its `verify-<n>.md` table
+The verifier receives only what Challenge, step 2 sends: it does **not** receive `from:`, the source
+seat or the evidence state. Its `verify-<n>.md` table
 retains `| # | Item | Verdict | Evidence |`; the `#` is exactly the synthesis id. The index reads the
 table forgivingly — a bold or `#1` id, a bold verdict, prose after it, an `Evidence (…)` heading, a
 `|` inside the evidence, an indented row — and names any row or table it can't read; the seat check
 runs the same reading when a verifier stops, so the verifier fixes its own file. The Chair records
 corrections in the readable deliverable rather than overwriting the verifier's words.
 
-A Solo run has no verifier: the Chair writes its own verdicts to `verify-self.md` in the same table.
-Those links are marked `self`, `evidence show` and the closing card say self-checked, and they
-satisfy `evidence check` only when the run plan's verification level is `self` (or its size `solo`).
+A Solo run's own verdicts (`verify-self.md`, Challenge, Solo runs) are links marked `self`;
+`evidence show` and the closing card say self-checked, and they satisfy `evidence check` only when the run plan's verification level is `self` (or its size `solo`).
 An independent verifier's row outranks a self-check.
 
 ## Run-local index
