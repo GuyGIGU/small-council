@@ -5,6 +5,11 @@ A lock is a directory (`<file>.lock`) holding an `owner` file with the holder's 
 whose owner is no live process, or one with no readable owner that is ten seconds old, is stale. A stale
 lock is reclaimed only through a second directory, `<lock>.recover`, so two waiters never both remove it,
 and a writer never takes the lock while a reclaim is under way.
+
+A made directory is not yet a held lock: the owner file decides (bin/council's lock_claim). uutils mkdir
+0.10.0 exits 0 when the directory is already there, so a bash caller can be told it made a lock another
+holds. Both languages therefore hold a lock, or a `.recover`, only once they created its owner file
+exclusively (O_EXCL).
 """
 
 from contextlib import contextmanager
@@ -98,13 +103,37 @@ def _make(folder: Path) -> bool:
     return True
 
 
-def _write_owner(folder: Path, owner: str) -> bool:
+HELD, TAKEN, FAILED = 0, 1, 2   # lock_claim's exits
+
+
+def _claim(folder: Path, owner: str) -> int:
+    """lock_claim: create folder/owner exclusively and write the owner line. HELD; TAKEN when another
+    caller's owner file is there or the folder went (leave it alone); FAILED when it couldn't be made or
+    written (nothing of it is left)."""
+    owner_file = folder / "owner"
     try:
-        with open(str(folder / "owner"), "w", encoding="ascii", newline="\n") as handle:
-            handle.write(owner + "\n")
+        handle = os.open(str(owner_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0), 0o666)
     except OSError:
-        return False
-    return True
+        if owner_file.exists() or not folder.is_dir():
+            return TAKEN
+        return FAILED
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write((owner + "\n").encode("ascii"))
+    except OSError:
+        try:
+            owner_file.unlink()
+        except OSError:
+            pass
+        return FAILED
+    return HELD
+
+
+def _remove_folder(folder: Path) -> None:
+    try:
+        os.rmdir(str(folder))
+    except OSError:
+        pass
 
 
 def release(lock: Union[str, Path]) -> bool:
@@ -131,19 +160,24 @@ def acquire(lock: Union[str, Path], tries: int = TRIES) -> bool:
     count = 0
     while True:
         if not recovery.is_dir() and _make(lock):
-            if recovery.is_dir():                     # a reclaim began just before: yield this lock to it
-                release(lock)
-                continue
-            if _write_owner(lock, owner):
+            claimed = _claim(lock, owner)             # the owner file decides who holds it, not mkdir
+            if claimed == HELD:
+                if recovery.is_dir():                 # a reclaim began just before: yield this lock to it
+                    release(lock)
+                    continue
                 return True
-            release(lock)
-            return False
+            if claimed == FAILED:
+                _remove_folder(lock)
+                return False
+            # TAKEN: another caller holds it — wait like any other
         if stale(recovery):
             release(recovery)
         if stale(lock) and _make(recovery):
-            if _write_owner(recovery, owner) and stale(lock):
+            claimed = _claim(recovery, owner)
+            if claimed == HELD and stale(lock):
                 release(lock)
-            release(recovery)
+            if claimed != TAKEN:                      # another reclaimer's: leave it to that one
+                release(recovery)
         count += 1
         if count >= tries:
             return False

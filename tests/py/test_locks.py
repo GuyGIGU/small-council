@@ -127,5 +127,65 @@ class LockTest(support.Scratch):
         locks.release(lock)
 
 
+class ClaimTest(support.Scratch):
+    """The owner file, not mkdir, decides who holds a lock (bin/council's lock_claim). Each test fakes
+    uutils mkdir 0.10.0, which reports success when the directory is already there."""
+
+    def setUp(self):
+        super().setUp()
+        self.other = os.getppid()                         # a live process that is not this one
+        self.real_make = locks._make
+        self.racer = None                                 # writes another's owner file inside the fake mkdir
+
+        def lenient_make(folder):
+            try:
+                os.mkdir(str(folder))
+            except FileExistsError:
+                pass
+            except OSError:
+                return False
+            if self.racer is not None:
+                self.racer(folder)
+            return True
+
+        locks._make = lenient_make
+
+    def tearDown(self):
+        locks._make = self.real_make
+        super().tearDown()
+
+    def test_an_existing_lock_with_another_owner_is_not_taken(self):
+        lock = self.tmp / "events.tsv.lock"
+        lock.mkdir()
+        put_owner(lock, self.other)
+        self.assertFalse(locks.acquire(lock, tries=2))
+        self.assertEqual(owner_of(lock), "{}\n".format(self.other).encode())   # touched nothing
+        self.assertEqual(locks._claim(lock, "1"), locks.TAKEN)
+        self.assertEqual(locks._claim(self.tmp / "gone.lock", "1"), locks.TAKEN)
+
+    def test_an_ownerless_directory_is_held_only_through_the_exclusive_create(self):
+        lock = self.tmp / "events.tsv.lock"
+        lock.mkdir()                                       # made, owner not written yet
+        self.racer = lambda folder: put_owner(folder, self.other) if folder == lock else None
+        self.assertFalse(locks.acquire(lock, tries=2))     # the racer's create won
+        self.assertEqual(owner_of(lock), "{}\n".format(self.other).encode())
+        (lock / "owner").unlink()
+        self.racer = None
+        self.assertTrue(locks.acquire(lock, tries=2))      # no racer: this call's create wins
+        self.assertEqual(owner_of(lock), "{}\n".format(os.getpid()).encode())
+        self.assertTrue(locks.release(lock))
+
+    def test_losing_the_recover_claim_leaves_it_in_place(self):
+        lock = self.tmp / "events.tsv.lock"
+        recovery = self.tmp / "events.tsv.lock.recover"
+        lock.mkdir()
+        put_owner(lock, dead_pid())                        # stale, so this call tries to reclaim it
+        recovery.mkdir()
+        put_owner(recovery, self.other)                    # another reclaimer got there first
+        self.assertFalse(locks.acquire(lock, tries=2))
+        self.assertEqual(owner_of(recovery), "{}\n".format(self.other).encode())
+        self.assertTrue(lock.is_dir())                     # the reclaim is the other one's to finish
+
+
 if __name__ == "__main__":
     unittest.main()
