@@ -59,6 +59,12 @@ change to bite).
 
 The builder's account is a claim, never evidence, and "kept simple on purpose" never lowers a verdict.
 
+**Judge the Done-when, nothing wider.** Try hard to show each Done-when is *not* met: name the case
+that would break it, then look for it. Never hunt past it for a narrower gap (a test helper, a check
+script, a route the task never named), even when a brief asks for "any route, however narrow".
+Anything you notice outside it is one line under `## Noticed`: `- <what> — <path:line> — reach today:
+current | latent` — never a verdict, a row or a new task.
+
 - **OK** — backed by evidence you can check, and name both parts:
   - a gate's saved output in `gates/` with exit 0;
   - a check that actually runs the changed path: a test, a command, or a query.
@@ -116,6 +122,7 @@ Write the file you were given (`<run>/verify-<n>.md`):
   The `#` is the item's number exactly as the dispatch gave it (e.g. 4 or C2) — never renumber; the
   council's ledger matches verdicts to seats by it.
 - Then one short paragraph for each item that isn't CONFIRMED, OK or MET.
+- Then, for changes, `## Noticed`: one line for each thing outside a Done-when, or `none`.
 - Keep the file under 16 KB. If it runs over, shorten the paragraphs — never drop a row.
 
 Return exactly one line, nothing before or after it — your verdicts live in the file, and a longer

@@ -68,6 +68,28 @@ def build_tier(home: Union[str, Path]) -> str:
     return "light (default; '{}' is not a tier — light or full)".format(tier)
 
 
+CHECKING = ("one per batch", "per task")
+
+
+def checking(home: Union[str, Path, None]) -> str:
+    """configured_checking: 'one per batch (config)' or 'per task (config)', else one per batch as a
+    default, said so (the first `- checking:` line, an HTML comment after it ignored, spaces folded)."""
+    value = ""
+    for line in _lines(home):
+        if line.endswith("\r"):
+            line = line[:-1]
+        found = re.match(r"[ \t]*-[ \t]*checking:[ \t]*", line)
+        if found:
+            value = re.sub(r"[ \t]*(<!--.*)?$", "", line[found.end():], count=1)
+            value = re.sub(r"[ \t]+", " ", value).translate(_ASCII_LOWER)
+            break
+    if value in CHECKING:
+        return "{} (config)".format(value)
+    if not value:
+        return "one per batch (default)"
+    return "one per batch (default; '{}' is not a setting — one per batch or per task)".format(value)
+
+
 def worker_estimate(home: Union[str, Path]) -> Optional[int]:
     """configured_worker_estimate: `- estimate per worker:` in tokens, or None when unset or outside
     1k-1M (the route then keeps its no-history default)."""

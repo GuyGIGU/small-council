@@ -214,6 +214,19 @@ configured_build_tier() {
   esac
 }
 
+# How many checker agents a build dispatches — `- checking: one per batch|per task` under Run preferences
+# (references/build-proof.md, Checking). A missing or unknown line reads as one per batch; the words say
+# where the reading came from.
+configured_checking() {
+  local cfg="$(council_home)/council.config.md" v
+  v="$(awk '{ sub(/\r$/, "") } /^[ \t]*-[ \t]*checking:/ { sub(/^[ \t]*-[ \t]*checking:[ \t]*/, ""); sub(/[ \t]*(<!--.*)?$/, ""); gsub(/[ \t]+/, " "); print; exit }' "$cfg" 2>/dev/null | tr 'A-Z' 'a-z')"
+  case "$v" in
+    'one per batch'|'per task') printf '%s (config)' "$v" ;;
+    '')                         printf 'one per batch (default)' ;;
+    *)                          printf "one per batch (default; '%s' is not a setting — one per batch or per task)" "$v" ;;
+  esac
+}
+
 # The project's measured estimate of tokens per worker — `- estimate per worker: 150k` under Run
 # preferences, set by `council tune apply budget` on the user's words. Empty when unset or implausible,
 # so the route keeps its no-history default.
@@ -658,26 +671,44 @@ event_unlock() {
   rm -f "$1/owner" && rmdir "$1" 2>/dev/null
 }
 
+# Claim a lock directory this call's mkdir just reported made: create its owner file exclusively (noclobber
+# opens with O_EXCL), then write the lines given. A mkdir that exits 0 does not prove this call made the
+# directory: uutils mkdir 0.10.0 (Ubuntu 26.04's mkdir) looks for the path, then makes it, and exits 0 when
+# it finds a directory there after all, so two calls racing for one lock were both told they had it.
+# Exit 0: held; 1: another call's owner file is there, or the directory went — not this call's, leave it
+# alone; 2: the owner file could not be made or written (nothing of it is left).
+lock_claim() {
+  local dir="$1" rc=0
+  shift
+  set -C; { : > "$dir/owner"; } 2>/dev/null || rc=1; set +C
+  if [ "$rc" -ne 0 ]; then
+    if [ -e "$dir/owner" ] || [ ! -d "$dir" ]; then return 1; fi
+    return 2
+  fi
+  printf '%s\n' "$@" > "$dir/owner" || { rm -f "$dir/owner"; return 2; }
+}
+
 event_lock() {                                   # $2: how many 0.1 s tries before giving up (default 200)
-  local lock="$1" recovery="$1.recover" tries=0 most="${2:-200}" owner="${BASHPID:-$$}"
+  local lock="$1" recovery="$1.recover" tries=0 most="${2:-200}" owner="${BASHPID:-$$}" rc=0
   while :; do
     if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
-      # A reclaimer may have started just before mkdir succeeded. Yield this new lock to it.
-      if [ -d "$recovery" ]; then rmdir "$lock" 2>/dev/null; continue; fi
-      printf '%s\n' "$owner" > "$lock/owner" \
-        || { rm -f "$lock/owner"; rmdir "$lock" 2>/dev/null; return 1; }
-      return 0
+      lock_claim "$lock" "$owner"; rc=$?
+      case "$rc" in
+        0) # A reclaimer may have started just before the claim. Yield this new lock to it.
+           if [ -d "$recovery" ]; then event_unlock "$lock" || :; continue; fi
+           return 0 ;;
+        2) rmdir "$lock" 2>/dev/null; return 1 ;;
+      esac                                       # 1: another call holds it — wait like any other
     fi
     if event_lock_stale "$recovery"; then
       rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
     fi
     if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
-      if printf '%s\n' "$owner" > "$recovery/owner"; then
-        if event_lock_stale "$lock"; then
-          rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null || :
-        fi
+      lock_claim "$recovery" "$owner"; rc=$?
+      if [ "$rc" -eq 0 ] && event_lock_stale "$lock"; then
+        rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null || :
       fi
-      event_unlock "$recovery" || :
+      [ "$rc" -eq 1 ] || event_unlock "$recovery" || :   # another reclaimer's: leave it to that one
     fi
     tries=$((tries + 1))
     [ "$tries" -lt "$most" ] || { printf 'council: event lock unavailable: %s\n' "$lock" >&2; return 1; }
@@ -1433,6 +1464,7 @@ cmd_seat() {
         run_plan_has_selected "$run/run-plan.tsv" "$slug" \
           || die "cannot start seat $slug — run-plan.tsv does not mark it selected; update the plan and run: council run plan check --run ${run##*/}"
       fi
+      if why="$(batch_check_refusal "$run" "$slug")"; then die "$why"; fi
       if why="$(check_round_refusal "$run" "$slug")"; then die "$why"; fi ;;
   esac
   wait_over "$run"                                  # the call is good: the run moves on
@@ -1987,6 +2019,7 @@ dispatch_refusal() {
     return 0
   fi
   [ "$DS_N" -eq 1 ] || return 1                                  # which run it is for is unknown: the seat record judges
+  if why="$(batch_check_refusal "$DS_RUN" "$pick")"; then say "Small Council: $why"; return 0; fi
   if why="$(check_round_refusal "$DS_RUN" "$pick")"; then say "Small Council: $why"; return 0; fi
   return 1
 }
@@ -2024,16 +2057,49 @@ RUNS
 # together cannot all take its last place. A fault of its own never stops an agent: it returns 0, or
 # dies (stderr, nothing on stdout), which the hook lets through. With type=, seat= and run= after the
 # tool (the hook reads them from the call), and file= (the slug of the file it writes), a Small Council
-# agent is first held to the record: dispatch_refusal.
+# agent is first held to the record: dispatch_refusal. With hunt= (words in a verifier's brief that send it
+# past its Done-when), a build's council-verifier is refused before anything else. With workflow=verifier (a
+# Workflow whose script starts council verifiers), the Workflow is held to the hunt words and, as one more
+# verifier, to batch_check_refusal for every in-progress build this session may drive.
 cmd_cap_check() {
-  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed w dtype="" dseat="" drun="" dfile=""
+  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed w dtype="" dseat="" drun="" dfile="" dhunt="" dwf="" open=""
   [ $# -eq 0 ] || shift
   for w in ${1+"$@"}; do
-    case "$w" in type=*) dtype="${w#type=}" ;; seat=*) dseat="${w#seat=}" ;; run=*) drun="${w#run=}" ;; file=*) dfile="${w#file=}" ;; esac
+    case "$w" in type=*) dtype="${w#type=}" ;; seat=*) dseat="${w#seat=}" ;; run=*) drun="${w#run=}" ;; file=*) dfile="${w#file=}" ;;
+                 hunt=*) dhunt="${w#hunt=}" ;; workflow=verifier) dwf=1 ;; esac
   done
   home="$(council_home)"
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
+  if { [ -n "$dhunt" ] || [ -n "$dwf" ]; } && [ -d "$home/runs" ]; then   # the in-progress runs this session may drive
+    open="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
+      $6 == "in-progress" && ($4 == ENVIRON["TOP"] || $4 == "-" || (ENVIRON["SID"] != "" && $8 == ENVIRON["SID"])) { print $1 }')"
+  fi
+  # Only a build's verifier has a Done-when to hunt past: a review's or a post-game's claim may say "any
+  # route" itself. The run the brief names, else the in-progress runs this session may drive.
+  if { [ "$dtype" = small-council:council-verifier ] || [ -n "$dwf" ]; } && [ -n "$dhunt" ] && [ -d "$home/runs" ]; then
+    runs="$open"
+    case "$drun" in ''|.*|*[!A-Za-z0-9._-]*) ;; *) [ ! -f "$home/runs/$drun/session-state.md" ] || runs="$home/runs/$drun" ;; esac
+    while IFS= read -r run; do
+      [ -n "$run" ] && [ "$(field mode "$run/session-state.md")" = council-implement ] || continue
+      say "Small Council: this council-verifier's brief sends it hunting past the Done-when (\"$dhunt\"). A verifier tries hard to show each Done-when is not met, and anything it notices beyond one is a line under ## Noticed, never a verdict or a task (references/build-proof.md, Checking): a verifier told to name any route, however narrow, found a narrower gap every round. Take those words out of the brief and dispatch again."
+      exit 2
+    done <<RUNS
+$runs
+RUNS
+  fi
   if [ -n "$dtype" ] && dispatch_refusal "$home" "$session" "$dtype" "$dseat" "$drun" "$dfile"; then exit 2; fi
+  # A Workflow that starts council verifiers names no seat the hook can read: under one per batch, it is
+  # held to every in-progress build this session may be driving, as one more verifier.
+  if [ -n "$dwf" ]; then
+    while IFS= read -r run; do
+      [ -n "$run" ] || continue
+      if w="$(batch_check_refusal "$run" "verify-workflow")"; then
+        say "Small Council: this Workflow starts council verifiers, and ${w#cannot start verify-workflow — }"; exit 2
+      fi
+    done <<RUNS
+$open
+RUNS
+  fi
   [ -d "$home/runs" ] || return 0
   runs="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' -v OFS='\t' '
     $6 != "in-progress" { next }
@@ -2656,6 +2722,43 @@ check_round_refusal() {
     printf 'cannot start %s — task %s has %s verdicts, and after the second the build loop allows one diagnosis and one more attempt: stop and report to the user. Another check needs their go: ask them, then record their words with council state decision="…"\n' \
       "$slug" "$task" "$n"
   fi
+  return 0
+}
+
+# A second checker in one build (council-implement) under `- checking: one per batch`: a build gets one
+# verifier, at converge, and another only on the user's go — a real job spent about 9-10M tokens on
+# checking agents against 3.5M on builders. A start is a verifier seat (verify-…) recorded running, or done
+# without running first; seat $2 recorded running again while it still runs is the same start, not a new
+# one. Needs a decision of the user's (council state decision=) from the last such start's minute on, and
+# one for each start after the first: a decision carries only its minute, so a go recorded in the minute
+# the second verifier started is not also the go for a third.
+# Prints why, and returns 0, when the start must wait; 1 otherwise — another mode or setting, another kind
+# of seat, the build's first verifier, or a run with no stream.
+batch_check_refusal() {
+  local run="$1" slug="$2" got n at first since
+  case "$slug" in verify-?*) ;; *) return 1 ;; esac
+  [ "$(field mode "$run/session-state.md")" = council-implement ] && [ -f "$run/events.tsv" ] || return 1
+  case "$(configured_checking)" in "one per batch"*) ;; *) return 1 ;; esac
+  got="$(S="$slug" awk -F'\t' '
+    NR > 1 && $4 == "seat.updated" && index($5, "verify-") == 1 {
+      p = st[$5]
+      if (($6 == "running" && p != "running") || ($6 == "done" && p != "running" && p != "done")) { k++; who[k] = $5; when[k] = $3 }
+      st[$5] = $6
+    }
+    END {
+      for (i = 1; i <= k; i++) if (!(who[i] == ENVIRON["S"] && st[who[i]] == "running")) {
+        n++; at = when[i]; if (n == 1) first = at; names = names (n > 1 ? ", " : "") who[i]
+      }
+      if (n) print n "\t" first "\t" at "\t" names
+    }' "$run/events.tsv" 2>/dev/null)"
+  [ -n "$got" ] || return 1
+  n="${got%%"$TAB"*}"; got="${got#*"$TAB"}"; first="${got%%"$TAB"*}"; got="${got#*"$TAB"}"; at="${got%%"$TAB"*}"
+  since="$(utc_local_min "$at")"
+  first="$(utc_local_min "$first")"
+  if [ "$(decisions_since "$run" "$since")" -gt 0 ] 2>/dev/null \
+     && [ "$(decisions_since "$run" "$first")" -ge "$n" ] 2>/dev/null; then return 1; fi
+  printf 'cannot start %s — this build already started %s verifier(s) (%s), and under checking: one per batch a build gets one checker, at converge (references/build-proof.md, Checking). Another needs the user'"'"'s go: ask them once, with its cost, then record their words with council state decision="…" and dispatch. A verifier stopped at its turn limit is resumed with SendMessage, never started again. To check task by task, the config says - checking: per task.\n' \
+    "$slug" "$n" "${got#*"$TAB"}"
   return 0
 }
 
@@ -3568,16 +3671,18 @@ gate_unlock() {
 }
 
 gate_lock() {
-  local run="$1" lock="$1/gates.lock" recovery="$1/gates.lock.recover" me="${BASHPID:-$$}" pid='' since='' tries=0 waited=0 limit="${WAIT_SECONDS:-1200}"
+  local run="$1" lock="$1/gates.lock" recovery="$1/gates.lock.recover" me="${BASHPID:-$$}" pid='' since='' tries=0 waited=0 limit="${WAIT_SECONDS:-1200}" rc=0
   while :; do
     if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
-      if [ -d "$recovery" ]; then rmdir "$lock" 2>/dev/null; continue; fi   # a reclaimer got in first: yield
-      printf '%s\n%s\n' "$me" "$(now_sec)" > "$lock/owner" \
-        || { rm -f "$lock/owner"; rmdir "$lock" 2>/dev/null; die "cannot write the gate lock $lock — nothing was started"; }
-      GATE_LOCK="$lock"; GATE_LOCK_PID="$me"
-      trap gate_unlock EXIT                          # every way out: a finished set, a die, a caught signal
-      trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
-      return 0
+      lock_claim "$lock" "$me" "$(now_sec)"; rc=$?   # the owner file decides who holds it, not mkdir
+      case "$rc" in
+        0) if [ -d "$recovery" ]; then event_unlock "$lock" || :; continue; fi   # a reclaimer got in first: yield
+           GATE_LOCK="$lock"; GATE_LOCK_PID="$me"
+           trap gate_unlock EXIT                     # every way out: a finished set, a die, a caught signal
+           trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
+           return 0 ;;
+        2) rmdir "$lock" 2>/dev/null; die "cannot write the gate lock $lock — nothing was started" ;;
+      esac                                           # 1: another call holds it — look at who, below
     fi
     # Who holds it. The holder writes its owner file just after mkdir and removes it just before rmdir,
     # so a file that is missing or vanishes under this read is a lock being taken or released — never
@@ -3588,12 +3693,13 @@ gate_lock() {
       rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
     fi
     if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
-      if printf '%s\n' "$me" > "$recovery/owner" && event_lock_stale "$lock"; then
+      lock_claim "$recovery" "$me"; rc=$?
+      if [ "$rc" -eq 0 ] && event_lock_stale "$lock"; then
         rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null \
           && printf 'council: cleared a gate lock left by a call that is no longer running%s\n' \
                "${pid:+ (process $pid, started ${since:-unknown})}" >&2
       fi
-      event_unlock "$recovery" || :
+      [ "$rc" -eq 1 ] || event_unlock "$recovery" || :   # another reclaimer's: leave it to that one
     fi
     case "$pid" in
       ''|*[!0-9]*) ;;                                # no owner to read yet: look again
@@ -5041,11 +5147,73 @@ hygiene_hits() {
     }'
 }
 
+# A post-game's next tasks ($1, the deliverable) against the request ($2, its words with whitespace
+# collapsed): a next task closes a gap against the request, so its Done-when row quotes a part of it word
+# for word. A real post-game tasked check helpers and test scaffolding instead, and chained post-games ate
+# the day. One row per "#### <n>. <title>" under "### Next tasks": n · status · title, the status one of
+# ok, NO-DONE-WHEN, NO-QUOTE, TOO-SHORT or NOT-IN-THE-REQUEST. Nothing when there are no next tasks.
+postgame_next_tasks() {
+  REQF="$2" LC_ALL=C awk '
+    function alnum(c) { return c ~ /[A-Za-z0-9]/ }
+    function repl(s, a, b,   i, o) { o = ""; while ((i = index(s, a)) > 0) { o = o substr(s, 1, i - 1) b; s = substr(s, i + length(a)) } return o s }
+    function fold(s) {                             # as for a part quote: curly quotes, odd and invisible spaces
+      s = repl(s, "\342\200\230", "\047"); s = repl(s, "\342\200\231", "\047")
+      s = repl(s, "\342\200\234", "\""); s = repl(s, "\342\200\235", "\"")
+      s = repl(s, "\302\240", " "); s = repl(s, "\342\200\257", " "); s = repl(s, "\342\200\211", " ")
+      s = repl(s, "\342\200\213", ""); s = repl(s, "\342\200\214", ""); s = repl(s, "\342\200\215", "")
+      s = repl(s, "\342\201\240", ""); s = repl(s, "\357\273\277", "")
+      s = repl(s, "\342\200\246", "...")
+      gsub(/[ \t]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s)
+      return s
+    }
+    function trimq(q) { sub(/^ /, "", q); sub(/ $/, "", q); gsub(/(\.\.\.|…)$/, "", q); sub(/ $/, "", q); return q }
+    function short(q,   w) { return split(q, w, " ") < 3 && q != R }   # a request under three words is quoted whole
+    function found(r, q,   s, p, off) {
+      s = r; off = 0
+      while ((p = index(s, q)) > 0) {
+        if ((off + p == 1 || !alnum(substr(r, off + p - 1, 1))) && !alnum(substr(r, off + p + length(q), 1))) return 1
+        off += p; s = substr(r, off + 1)
+      }
+      return 0
+    }
+    function verdict(cell,   q, e, k, rest, one) {
+      cell = fold(cell)
+      if ((e = index(cell, "\"")) == 0) return "NO-QUOTE"
+      rest = substr(cell, e + 1)
+      if ((e = index(rest, "\"")) == 0) return "NO-QUOTE"
+      one = trimq(substr(rest, 1, e - 1))          # the words up to the first closing mark
+      # A part may hold quotes itself: the quote runs to whichever closing mark makes it the request words.
+      k = e
+      while (k > 0) {
+        q = trimq(substr(rest, 1, k - 1))
+        if (q != "" && !short(q) && found(R, q)) return "ok"
+        e = index(substr(rest, k + 1), "\""); k = e ? k + e : 0
+      }
+      if (one == "") return "NO-QUOTE"
+      return short(one) ? "TOO-SHORT" : "NOT-IN-THE-REQUEST"
+    }
+    function flush() { if (n != "") printf "%s\t%s\t%s\n", n, (st == "" ? "NO-DONE-WHEN" : st), title; n = ""; st = "" }
+    FILENAME == ENVIRON["REQF"] { r = r $0; next }
+    { if (!folded) { R = fold(r); folded = 1 } line = $0; sub(/\r$/, "", line) }
+    line ~ /^###[ \t]+Next tasks/ { on = 1; next }
+    on && line ~ /^##?[ \t]/ { flush(); on = 0; next }
+    on && line ~ /^####[ \t]/ {
+      flush(); t = line; sub(/^####[ \t]+/, "", t)
+      if (match(t, /^[0-9]+[.)]?[ \t]*/)) { n = substr(t, 1, RLENGTH); sub(/[.)]?[ \t]*$/, "", n); title = substr(t, RLENGTH + 1) }
+      else { n = "?"; title = t }
+      next
+    }
+    on && n != "" && st == "" && tolower(line) ~ /^\|[ \t]*\**done when\**[ \t]*\|/ {
+      c = line; sub(/^\|[^|]*\|/, "", c); sub(/\|[ \t]*$/, "", c); st = verdict(c)
+    }
+    END { flush() }' "$2" "$1" 2>/dev/null
+}
+
 cmd_check() {
   local run top base out f lab n sev pr cite title st origin rows=0 bad=0 a req qn=0 qok=0 \
         bf af bex aex bcmd acmd bproof aproof tp pn proofs=0 saved=0 broke=0 preserved=0 note what \
         mode where shape items unread none secs files=0 sec noline=0 unchecked=0 shown q extra="" \
-        other=0 unreadt=0 empty=0 gone=0 result who bvoid gn rfonly=0 hy=0 hyl hyb
+        other=0 unreadt=0 empty=0 gone=0 result who bvoid gn rfonly=0 hy=0 hyl hyb pgd pgn=0 pgbad=0
   run="$(resolve_run)" || exit 2
   top="$(field code-root "$run/session-state.md")"; [ -n "$top" ] || top="$(this_tree)"
   base="${BASE_ARG:-$(field base "$run/session-state.md")}"
@@ -5198,6 +5366,23 @@ $(REQF="$req" MODE="$mode" LC_ALL=C awk '
   }' "$req" "$f" 2>/dev/null)
 QUOTES
   done
+  # A post-game's next tasks, once its deliverable is recorded: each closes a gap against the request.
+  if [ "$mode" = council-postgame ]; then
+    pgd="$(field deliverable "$run/session-state.md")"
+    if [ -n "$pgd" ]; then case "$pgd" in /*|[A-Za-z]:*) ;; *) pgd="$(dirname "$(council_home)")/$pgd" ;; esac; fi
+    if [ -n "$pgd" ] && [ -f "$pgd" ]; then
+      while IFS="$TAB" read -r n st title; do
+        [ -n "$n" ] || continue
+        rows=$((rows + 1)); pgn=$((pgn + 1))
+        [ "$st" = ok ] || { bad=$((bad + 1)); pgbad=$((pgbad + 1)); }
+        printf '| next task %s | done-when | %s | - |\n' "$n" "$st" >> "$out"
+        say "next task $n  done-when  $st · $(printf '%s' "$title" | clip 70)"
+      done <<NEXT
+$(postgame_next_tasks "$pgd" "$req")
+NEXT
+      [ "$pgbad" -eq 0 ] || say "check: $pgbad next task(s) quote no part of the request — a next task closes a gap against the request's own words (its Done-when: part <#>: \"<that part's quote>\"); a checker's note or a latent gap in a helper goes under Noticed, not tasked, with its reach today"
+    fi
+  fi
   rm -f "$req"
   # council-implement: every fix's own proof, checked rather than taken on trust.
   if [ "$(field mode "$run/session-state.md")" = council-implement ]; then
@@ -7842,7 +8027,7 @@ main() {
                       [ -z "$RUN_ARG" ] || die "cap check looks at every in-progress run this session may be driving; it does not take --run"
                       case "${1:-}" in
                         Agent|Task|Workflow) [ $# -eq 1 ] || for w in "${@:2}"; do
-                                               case "$w" in type=*|seat=*|run=*|file=*) ;; *) no_words "cap check" "$w" ;; esac
+                                               case "$w" in type=*|seat=*|run=*|file=*|hunt=*|workflow=verifier) ;; *) no_words "cap check" "$w" ;; esac
                                              done ;;
                         *) no_words "cap check" ${1+"$@"} ;;
                       esac

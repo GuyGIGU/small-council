@@ -16,6 +16,7 @@ deploy target, domain. Name the one thing that must never break.>
 - context packs: off
 - seat models: off
 - build tier: light
+- checking: one per batch
 - sharing: team
 <!-- Add `- notifications: off` here to suppress `council status --line` and council phone alerts.
      Without that line, four owner-facing moments may notify when PushNotification is available:
@@ -26,8 +27,12 @@ deploy target, domain. Name the one thing that must never break.>
      "context packs": off | on — on builds a seat-specific evidence pack for each dispatched worker
      (experimental: it adds material and its benefit is unmeasured). Missing means off.
      "build tier": light | full — how much proof a build records (references/build-proof.md, Tiers):
-     light pairs and verifies risky tasks one by one and batches the rest; full does every task.
+     light records a before/after pair for risky tasks only; full records one for every task.
      Missing means light. Yours to change.
+     "checking": one per batch | per task — how many checker agents a build dispatches
+     (references/build-proof.md, Checking). One per batch: builders and machine gates for every task,
+     then a single verifier at the end of the build; the agent gate refuses a second without your go.
+     Per task: a verifier per risky task and per batch of ordinary ones. Missing means one per batch.
      "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.
      "sharing": team | just me — team commits .council/ with the project; just me keeps it on this
      machine (git's own exclude list ignores it, and CLAUDE.md gets no note), so teammates never meet

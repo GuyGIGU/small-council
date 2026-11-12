@@ -16,6 +16,7 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.agent_cap(home), 10)
         self.assertEqual(config.agent_cap(None), 10)
         self.assertEqual(config.build_tier(home), "light (default)")
+        self.assertEqual(config.checking(home), "one per batch (default)")
         self.assertIsNone(config.worker_estimate(home))
         self.assertEqual(config.seat_models(home), "off")
         self.assertEqual(config.sharing(home), "team")
@@ -35,6 +36,15 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.build_tier(self.home("- build tier: heavy\n")),
                          "light (default; 'heavy' is not a tier — light or full)")
         self.assertEqual(config.build_tier(self.home("- build tier:\n")), "light (default)")
+
+    def test_checking(self):
+        self.assertEqual(config.checking(self.home("- checking: Per  Task <!-- or one per batch -->\r\n")),
+                         "per task (config)")
+        self.assertEqual(config.checking(self.home("  - checking: one per batch\n- checking: per task\n")),
+                         "one per batch (config)")
+        self.assertEqual(config.checking(self.home("- checking: twice\n")),
+                         "one per batch (default; 'twice' is not a setting — one per batch or per task)")
+        self.assertEqual(config.checking(self.home("- checking:\n- checking: per task\n")), "one per batch (default)")
 
     def test_worker_estimate(self):
         self.assertEqual(config.worker_estimate(self.home("- estimate per worker: 150k\n")), 150000)
