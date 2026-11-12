@@ -51,6 +51,11 @@ PROCESS_CALLS = {"run", "Popen", "call", "check_call", "check_output", "getoutpu
                  "system", "popen"}
 
 
+def write(path: Path, text: str) -> None:
+    with open(path, "w", encoding="utf-8", newline="\n") as out:     # LF on Windows too, as the repo has it
+        out.write(text)
+
+
 def measured(root: Path) -> list[str]:
     """The files the ratchet measures, as posix paths relative to root."""
     found = [root / "bin" / "council"] + sorted((root / "hooks").glob("*.sh")) + \
@@ -277,7 +282,7 @@ def run(root: Path, update: bool = False, show: bool = False, shellcheck: str | 
         if bad:
             return 2, out + ["REGRESSION " + line for line in bad] + [
                 "ratchet: --update refused: it never raises a number. Bring the %d above back down first" % len(bad)]
-        target.write_text(json.dumps(baseline_of(now, base), indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        write(target, json.dumps(baseline_of(now, base), indent=1, sort_keys=True) + "\n")
         return 0, out + ["ratchet: wrote %s (%d files; %d numbers went down); %s" % (BASELINE, len(now["files"]),
                                                                                      len(good), sc)]
     total = sum(len([k for k, _ in SIZES if k in e]) for e in now["files"].values()) + len(COUNTS) + 1
@@ -342,11 +347,6 @@ def scratch_tree(top: Path) -> Path:
         write(top / rel, text)
     (top / "evals").mkdir(exist_ok=True)
     return top
-
-
-def write(path: Path, text: str) -> None:
-    with open(path, "w", encoding="utf-8", newline="\n") as out:     # LF on Windows too, as the repo has it
-        out.write(text)
 
 
 def edit(path: Path, old: str, new: str) -> None:
