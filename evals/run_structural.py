@@ -617,8 +617,8 @@ cited = set(re.findall(r"\b(D[0-9]+)\b", arch + read("CLAUDE.md") + read("CONTRI
 check("decisions: every id the architecture, CLAUDE.md and CONTRIBUTING cite is defined", cited <= defined,
       str(sorted(cited - defined)))
 ids = re.findall(r"^\| (D[0-9]+) \|", decisions_doc, re.MULTILINE)
-check("decisions: ids are unique and run D1..Dn with no gaps (never reused or renumbered)",
-      ids == [f"D{i}" for i in range(1, len(ids) + 1)], str(ids))
+check("decisions: ids are unique and cover D1..Dn with no gaps, in any section (never reused or renumbered)",
+      sorted(ids, key=lambda d: int(d[1:])) == [f"D{i}" for i in range(1, len(ids) + 1)], str(ids))
 
 # 10. Size budgets — Claude Code re-attaches only the first ~5k tokens of each skill after compaction
 for s in SKILLS:

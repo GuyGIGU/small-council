@@ -54,6 +54,7 @@ refusal, or `prose` when only the text holds it. A `prose` row is a candidate fo
 | D23 | Contract names are frozen: skill, agent and command names, arguments and exit codes, run-folder files and TSV columns, event types, config keys, JSON schemas, parsed formats, env vars ([architecture §6](architecture.md#6-contracts-names-a-cleanup-never-renames)). Renaming one is its own decision with a migration, never part of a cleanup. | the user, 2026-11-12 | prose; the eval suite pins the names | |
 | D24 | Python 3.8+ is a hard dependency. New logic is written in Python; the bash helper moves to Python modules one area at a time, with commands, output and exit codes unchanged. Hooks stay thin bash. | the user, 2026-11-12 | not yet (WS1–WS2) | |
 | D25 | Behaviour is proved by running it: a scenario that runs the helper or a hook beats a pin that a phrase is present. Structural pins are for document contracts only. | the user, 2026-11-12 (the cleanup plan) | not yet (WS7) | |
+| D32 | Standard library only at run time: the plugin installs nothing on the user's machine. Linters and type checkers are development tools, used in CI only. The Python package lives in `src/council/`, with `records/` the only code that parses a council file. | the cleanup plan (`docs/design/cleanup-plan.md`), 2026-11-12 | not yet (the ratchet in S2) | |
 
 ## Records
 

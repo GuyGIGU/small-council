@@ -220,7 +220,8 @@ Measured on 2026-11-12:
 - Many structural evals check that a phrase is present, not that behaviour holds. The full suite
   takes about 30 minutes on Windows and has no fast tier.
 
-The cleanup's workstreams, one branch each (or a series of branches):
+The cleanup's workstreams. [`design/cleanup-plan.md`](design/cleanup-plan.md) has the target layout
+(`src/council/`, D32), the rules every session follows, and the sessions in order:
 
 | WS | What |
 |---|---|
