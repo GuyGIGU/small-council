@@ -37,12 +37,20 @@ file is the short version. The rest is in:
 ```bash
 python scripts/quick_validate.py          # will it load?
 python evals/run_structural.py            # document contracts and size budgets (seconds)
+python evals/run_ratchet.py               # sizes and structure that may only go down (seconds)
+python evals/run_all.py --fast            # the fast tier: validation, structure, ratchet, unit tests (~1 min)
 python evals/run_cli.py --list            # the helper's groups; run one with --group NAME
 python evals/run_hook.py --group main     # the hooks
 python evals/run_all.py                   # everything, in parallel (about 30 minutes on Windows)
 ```
 
-- Run the groups your change touches while you work. Run `run_all.py` before you ask for a commit.
+- Run `--fast` and the groups your change touches while you work. Run `run_all.py` before you ask
+  for a commit: the fast tier is a first look, not the gate.
+- The ratchet (`evals/ratchet.json`) holds each file's lines and longest function, the ShellCheck
+  warnings, and the counts of files that parse a council file, `council.config.md` readers and
+  scripts that run `bin/council`. A number may only go down. When your change lowers one, run
+  `python evals/run_ratchet.py --update` in the same branch so the gain is kept; it refuses to raise
+  one. A new Python file is held to 60-line functions and 500-line modules.
 - Don't edit or stash tracked files while a suite is running: it reads the tree as it goes.
 - On Windows, `python3` can be the Microsoft Store stub (exit 49). The judgment fixture's gate fails
   for that reason alone, and it fails the same way on main.

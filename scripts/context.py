@@ -278,6 +278,11 @@ def expanded_file(root, raw_path, byte_cap):
     return relative, excerpt, omitted
 
 
+def write(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    paths.atomic_write(path, text.encode("utf-8"), prefix=".context-")
+
+
 def build(root, run, seat, level, output, expansions):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", seat):
         raise ContextError("seat must be a safe plan slug")
@@ -413,9 +418,8 @@ def build(root, run, seat, level, output, expansions):
         raise ContextError("output would overwrite a source run file")
     if any(output == safe_path(root, Path(request), regular=True) for request in expansions):
         raise ContextError("output would overwrite a requested source file")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    paths.atomic_write(output, output_text.encode("utf-8"), prefix=".context-")
-    paths.atomic_write(sidecar, metrics_text.encode("utf-8"), prefix=".context-")
+    write(output, output_text)
+    write(sidecar, metrics_text)
     print(str(output))
     print(str(sidecar))
 

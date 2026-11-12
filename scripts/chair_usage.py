@@ -29,10 +29,7 @@ import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import audit  # noqa: E402  (the run reader, its spans and the transcript finder)
-from council.clock import iso_moment  # noqa: E402
-from council.records import paths  # noqa: E402
 
 
 def number(usage, name):
@@ -55,7 +52,7 @@ def calls_of(path):
             usage = message.get("usage") if isinstance(message.get("usage"), dict) else None
             key = message.get("id") or line.get("requestId")
             stamp = line.get("timestamp")
-            when = iso_moment(stamp) if isinstance(stamp, str) else None
+            when = audit.iso_moment(stamp) if isinstance(stamp, str) else None
             if usage is None or not isinstance(key, str) or when is None or key in seen:
                 continue
             seen.add(key)
@@ -87,7 +84,7 @@ def main():
     parser.add_argument("--run", required=True, type=Path)
     parser.add_argument("--transcript", type=Path, help="the Claude Code session .jsonl that drove the run")
     args = parser.parse_args()
-    if not paths.is_run(args.run, refuse_links=False):
+    if not audit.paths.is_run(args.run, refuse_links=False):
         print("chair usage: not a run folder: {}".format(args.run), file=sys.stderr)
         return 2
     run = audit.Run(args.run)

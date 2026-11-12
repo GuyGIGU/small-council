@@ -196,6 +196,7 @@ folds them, and new code uses the named way.
 | Count an agent | `council seat` records it; the agent gate counts starts; the ledger is written at close | One record per agent run, by id (`references/run-accounting.md`) |
 | Prove a build task | `council gate before-<id>` / `after-<id>`, checked by `council check` (`references/build-proof.md`) | |
 | Check a document's contract | A structural pin in `evals/run_structural.py` | Only for documents; behaviour is proved by running it (D25) |
+| Hold a limit (a size, a count, a lint warning) | A number in `evals/ratchet.json`, measured by `evals/run_ratchet.py`; it may only go down, and `--update` keeps a gain | Never a hand-kept list of files or exceptions |
 
 ## 9. Naming
 
@@ -232,7 +233,7 @@ The cleanup's workstreams. [`design/cleanup-plan.md`](design/cleanup-plan.md) ha
 | 1 | One Python library for config and run files; every script moves onto it; the copies go |
 | 2 | `bin/council` split into Python modules, one area per branch, with commands, output and exit codes unchanged (the eval suite is the proof) |
 | 3 | File layout: `references/` by audience, evals into fast unit and scenario tiers |
-| 4 | Quality gates as ratchets (ShellCheck, ruff, a type check on the library, size and complexity limits frozen at today's worst), and this page's rules as tests |
+| 4 | Quality gates as ratchets (ShellCheck, ruff, a type check on the library, size and complexity limits frozen at today's worst), and this page's rules as tests. *Started (S2):* `evals/run_ratchet.py` holds sizes, ShellCheck warnings, parsers, config readers and call-backs; `ruff.toml` runs on the whole tree. The type check is still to come |
 | 5 | Slop pass: story comments out, a naming pass, dead code deleted, duplicates folded |
 | 6 | One rule, one place: rules cited by id, doctrine loaded per surface (#67) |
 | 7 | Tests: a fast tier, behaviour over phrase pins, the Chair drill eval (#70) |
