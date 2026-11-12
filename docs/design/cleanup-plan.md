@@ -64,6 +64,10 @@ lines that put `src/` on `sys.path` and call into the package.
 
 Sizes are rough tokens for one builder session with machine checks and no checker agents.
 
+Which model builds: Opus for the ports (S1, S3–S9), for rule-writing at the size caps (P1, P2), for
+S10, #65 and #50; Sonnet for mechanical work (S2, P3) and the other single-issue sessions. The
+planning session decides and checks; it does not build.
+
 ### Wave 1 — start now, in parallel (different files)
 
 **S1 · The records library (WS1)** · branch `claude/records-library` · ~1–1.5M
@@ -124,8 +128,26 @@ bash is polished and then thrown away. Each starts from main after the one befor
 The open issues land on the Python, right after their area is ported, each as its own small session:
 - after S4: #53 (save the audit in the run folder), #54 (flag seats with no tokens), #44 (estimates
   per role), #69 (doctor reports live hooks), #51 (unwritable `.council/`);
+- after S5: #65 (a model per role), specified below;
 - after S6: #68 then #47 (don't rerun green gates);
-- after S7: #58, #64, #59, #60, #50 (the builder round loop).
+- after S7: #58, #64, #59, #60, #50 (the builder round loop);
+- after S8: #55 (memory size budget and a tidy command), #62 (map refresh at close).
+
+Held until the user says otherwise: #63 (a lead-builder seat).
+
+**#65 · A model per role** · after S5, which ports the run plan check that enforces it · ~400–600k.
+The user agreed on 2026-11-12 to replace D30. The session adds the new decision to `decisions.md`
+and marks D30 superseded in the same branch as the code, so the index never claims a rule the helper
+doesn't enforce yet.
+- Config: `- models: builder=<name>, review=<name>, verifier=<name>`, beside today's mapping and
+  survey routing. A name is `inherit`, `fable`, `opus`, `sonnet` or `haiku`: what the Agent tool
+  takes, and nothing that goes stale with a model version. `- seat models:` keeps working as it does.
+- Every role defaults to `inherit`, so no run changes until its project opts in. `council-init`
+  proposes a split from the session's model and the user confirms it.
+- The plan check refuses a verifier on a weaker model than the builder it checks. This replaces
+  "the verifier always inherits". The Chair stays on the session's model.
+- The ledger records the model per seat.
+- `lead=` is left out while #63 is held.
 
 ### The prose track — parallel with wave 2 (skills, doctrine, references only)
 
@@ -148,7 +170,7 @@ The open issues land on the Python, right after their area is ported, each as it
 ```
 now      S1 ─┐
          S2 ─┴─► main ─► S3 ► S4 ► S5 ► S6 ► S7 ► S8 ► S9 ─► S10
-                          └ issue sessions after S4, S6, S7
+                          └ issue sessions after S4, S5, S6, S7, S8
 prose    P1 ───────────► P2 ─► P3            (alongside wave 2)
 ```
 

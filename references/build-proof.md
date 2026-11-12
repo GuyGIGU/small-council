@@ -82,16 +82,39 @@ The config's run preferences say how much proof a build records: `- build tier: 
 - **Light** (the default): a before/after pair is required for a **risky** task — a P1 fix, a data
   write, security, core logic, a public contract, or a task the plan marks risky — and for any task
   that adds a test anyway. An ordinary task proves itself by its gates passing after the change and
-  by the converge check; its Converge Proof reads `light: gates only`. Verifiers run one per batch
-  of up to five ordinary tasks, plus the converge check; a risky task gets its own.
-- **Full**: every task records a pair and every task gets a verifier, batched as the implement
-  skill says.
+  by the converge check; its Converge Proof reads `light: gates only`.
+- **Full**: every task records a pair.
+
+How many verifiers check those proofs is the next section's setting, not the tier's.
 
 `council check` prints the tier it read at the end of its proof summary line and writes it into
 `check.md`, so the receipt carries it.
 The tier changes how much is proved, never what counts as proof: under light, a risky task without
 its pair is still NO PROOF, and the verifier's brief names the task's risk class, read from the plan,
 so a builder cannot call a risky task ordinary.
+
+## Checking
+
+The config's run preferences say how many checker agents a build dispatches:
+`- checking: one per batch` or `- checking: per task`. A missing line reads as one per batch. A batch
+is one council-implement run.
+
+- **One per batch** (the default): builders build every task, and the machine gates (and, for a
+  risky task, its before/after pair) prove each one as it lands. A single verifier runs once, at the
+  end: the converge check of every Done-when against the final tree. No verifier per task. The agent
+  gate refuses a second verifier in the same run until the user's go is on record
+  (`council state decision="…"`) after the last one; resuming a verifier stopped at its turn limit
+  (SendMessage) is not a second one. A Workflow whose script starts council verifiers counts as one
+  more; a saved workflow called by name can't be read, so the Chair holds it to the rule by hand.
+- **Per task**: a verifier for every P1 fix and every risky task on its own, and one per batch of
+  ordinary tasks — up to five under light, two or three under full, up to five of one kind (renames,
+  copy edits) — plus the converge check.
+
+Either way the checker judges the Done-when and nothing wider: it tries hard to show each Done-when
+is not met, and anything it notices beyond one is a line with its reach today, never a verdict or a
+new task. A brief that sends it hunting ("however narrow", "any route", "find anything else") is
+refused at dispatch. Real runs show why: a verifier told to name any route that still gets through
+found a narrower gap every round, and one batch's checks ran about ten hours and 1.7M tokens.
 
 ## Read the result
 
