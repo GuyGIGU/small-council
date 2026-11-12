@@ -184,12 +184,11 @@ that number. Several claims may share a number: the claim index keeps every row,
 recommendation takes the worst verdict. Every kept recommendation needs at least one claim — send a
 recommendation no task assumption tests as a claim of its own, and every cut P1 as usual.
 
-After a war room, the agreements a task rests on, and the riskiest assumptions two or more seats named,
-go to the verifier too.
+After a war room: war-room.md, Challenge.
 
 ## At Deliver — `<home>/plans/<slug>.md`
 
-File the request first — `council ask save` — then write:
+File the request first (Deliver, step 1), then write:
 
 ```
 ---
@@ -232,10 +231,8 @@ where to start, and which seat is worth having on hand during the build.>
 **Attribution is non-negotiable.** Every task has a Domain row and a Ref row. A combined task names
 its primary domain and cross-references the rest.
 
-In chat: the Summary table, the Verdict and the plan's path. Then, numbered:
-- the rulings needed;
-- memory proposals;
-- the hand-off: *"Build it with council-implement?"*
+In chat: the Summary table, the Verdict and the plan's path. Then the rulings as one question (Deliver, step 6),
+the memory proposals, and the hand-off: *"Build it with council-implement?"*
 
 ## Notes
 

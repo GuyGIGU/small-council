@@ -209,7 +209,8 @@ Follow-ups, never into a task.
 - If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
   reported, never folded into a green receipt. Without Python, audit the log's attempts and
   saved gate outputs by hand.
-- Draft any PR text as `<run>/pr-body.md`, and open the PR from it. Then `council check`. It checks
+- Draft any PR text as `<run>/pr-body.md`; the PR is opened from it at Deliver, after the user's OK.
+  Then `council check`. It checks
   the saved before/after gates against their declared proof mode (`references/build-proof.md`) and
   names the saved test when it can. Copy each verdict and its
   full note into the `## Converge` table's **Proof** column: `ok` shows a change, `preserved` shows
@@ -267,7 +268,7 @@ verifier (a post-game's too) is back, never beside a fix question, and in this o
 3. **The PR text:** print `<run>/pr-body.md` for the user's edit or OK. The PR question comes only
    after that OK.
 
-File the request (`council ask save`). Then **offer a post-game when the log shows one is worthwhile**
+Then **offer a post-game when the log shows one is worthwhile**
 — at least one of:
 1. converge found a Done-when partly met or not met, or the log has a follow-up;
 2. the build hit trouble: a blocked task, a clean-context diagnosis, a SCOPE-CREEP revert, or a
@@ -297,5 +298,4 @@ offered; a Squad is usually right.
 - **Two tasks share one change** → change once; keep each Done-when, evidence and verdict.
 - **"Also add X" mid-build** → record their words under ask.md's `## Later, in your words`; it is
   authorized. Ask only about scope or cost beyond the approved budget.
-- **Evidence contradicts the plan** → Convene's changed-instructions rule: log it, correct the
-  approach, re-verify the affected Done-whens.
+- **Evidence contradicts the plan** → Convene's Rules, *Evidence changes the approach*.

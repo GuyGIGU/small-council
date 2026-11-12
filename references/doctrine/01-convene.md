@@ -25,7 +25,7 @@ to a protected subject (context-core, Limits), or to a review or post-game, whic
    `needs-rescope`, resolve the budget or verification shortfall with the user before opening or
    dispatching a run; a lower-cost Solo label does not waive required independent challenge.
    Use context-core's size limits. Count Challenge's verifiers — one per expected P1 or protected
-   item, one for the rest — within the agent cap, counting agents as Assign, step 6 does.
+   item, one per 8 of the rest (Challenge, step 2) — within the agent cap, counting agents as Assign, step 6 does.
 6. **Estimate from this project's history.** `council ledger` shows each seat's average tokens per
    run; `council run status --all` shows whole runs. With no history, assume ~60–100k tokens per
    worker. The route budgets with the config's `estimate per worker` (set by `council tune`), else 80k.

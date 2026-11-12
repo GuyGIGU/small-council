@@ -59,8 +59,7 @@ Catch what's wrong before the user sees it.
 4. **Every shipped item has a verdict** — check before you move on.
 5. **Refresh the claim index.** After verifier files exist, `council evidence build`, then
    `council evidence check`. Run `evidence build`/`check`, `collect` and `check` on their own
-   (or test their exit status);
-   never chain them through `| tail`/`| head`/`| grep`, which can swallow a refusal.
+   (or test their exit status), never through a pipe (context-core, The helper).
    Fix missing provenance, evidence-state declarations, proof artifacts, verifier rows or conflicting
    rows.
    `UNCERTAIN` remains a disclosed verdict, not a hidden pass.

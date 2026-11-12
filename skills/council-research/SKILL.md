@@ -120,7 +120,7 @@ In chat, give:
 - the answer and its confidence;
 - the three strongest pieces of evidence;
 - the path and the next step;
-- any questions, numbered.
+- then the rulings as one question (Deliver, step 6).
 
 ## At Learn — the map and memory
 

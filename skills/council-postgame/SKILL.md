@@ -125,7 +125,7 @@ In the result, distinguish direct observation from inference or assumption using
 
 ## At Deliver — `<home>/postgames/<YYYY-MM-DD>-<slug>.md`
 
-File the request first — `council ask save` — then write:
+File the request first (Deliver, step 1), then write:
 
 ```
 ---

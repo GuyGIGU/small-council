@@ -57,9 +57,8 @@ also declare `seat/<slug>/purpose = mapping` or `survey`. `other` cannot receive
 A `mapping` seat charts an area of the code for `map.md` (what is where, how it connects); a `survey`
 seat gathers facts, files or candidates for others to judge; `other` is anything that judges,
 advises or builds. The checker verifies this declared purpose; the Chair must ensure the dispatched
-task actually fits it. These rules are checked in the run plan only: dispatch itself isn't gated, so
-nothing stops an Agent call that passes `model` for the Chair or a verifier; the Chair keeps to the
-plan. A closed run (complete or abandoned) is not rechecked against today's `seat models` setting.
+task actually fits it. These rules are checked in the run plan only: the Agent call's `model`
+parameter isn't gated, so the Chair keeps to the plan. A closed run (complete or abandoned) is not rechecked against today's `seat models` setting.
 
 Exactly one Chair must be selected. Solo selects no delegated agents; Squad selects at least one,
 and Full selects at least four. An open run's Full plan also needs the user's explicit size-and-cost

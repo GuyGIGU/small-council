@@ -44,8 +44,8 @@ Gather every shared fact once, so no seat has to.
 - **A gate that can't run** (missing tool, deleted file) is config drift: tell the user and offer to
   fix the config. It is not a code finding.
 - **Nothing checked is said out loud.** A mode that changed code carries the gates' verdict line — or
-  the helper's NOTHING WAS CHECKED line — to Deliver, as stage 9 says. A mode that changed nothing
-  mentions the missing checks once, in its offer, and doesn't repeat the alarm every run.
+  the helper's NOTHING WAS CHECKED line — to Deliver, as stage 9 says. A mode that changed nothing:
+  Deliver, step 4.
 
 ## Done when
 
