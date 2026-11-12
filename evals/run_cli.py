@@ -832,6 +832,23 @@ def event_lock_stress(tmp):
 
 
 @part("timing")
+def lock_false_mkdir(tmp):
+    """uutils mkdir 0.10.0 (Ubuntu 26.04's mkdir) looks for the path, then makes it, and exits 0 when it
+    finds a directory there after all: of two calls racing for one lock, both were told they had it, and
+    events got the same sequence number. Here mkdir always says so; a held lock must still make a call wait."""
+    lock = os.path.join(tmp, "false-mkdir", "events.tsv.lock").replace("\\", "/")
+    os.makedirs(os.path.dirname(lock))
+    script = ('source "$1"; mkdir() { command mkdir "$1" 2>/dev/null || [ -d "$1" ]; }\n'
+              'command mkdir "$2"; sleep 30 & holder=$!; printf "%s\\n" "$holder" > "$2/owner"\n'
+              'if event_lock "$2" 3 2>/dev/null; then echo taken; else echo waited; fi\n'
+              'IFS= read -r now < "$2/owner"; [ "$now" = "$holder" ] && echo kept; kill "$holder"\n')
+    p = subprocess.run([BASH, "-c", script, "council", CLI.replace("\\", "/"), lock], env=GIT_ENV,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    check("event lock: a mkdir that exits 0 on a directory already there (uutils mkdir 0.10.0) does not take a held lock",
+          p.stdout.split() == ["waited", "kept"], p.stdout + p.stderr)
+
+
+@part("timing")
 def gate_lock(tmp):
     """One `council gate` per run at a time. A real run started `gate --all` twice: the second copy
     overwrote the first's saved output and was stopped, and its results became the run's events and

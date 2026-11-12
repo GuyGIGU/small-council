@@ -658,26 +658,44 @@ event_unlock() {
   rm -f "$1/owner" && rmdir "$1" 2>/dev/null
 }
 
+# Claim a lock directory this call's mkdir just reported made: create its owner file exclusively (noclobber
+# opens with O_EXCL), then write the lines given. A mkdir that exits 0 does not prove this call made the
+# directory: uutils mkdir 0.10.0 (Ubuntu 26.04's mkdir) looks for the path, then makes it, and exits 0 when
+# it finds a directory there after all, so two calls racing for one lock were both told they had it.
+# Exit 0: held; 1: another call's owner file is there, or the directory went — not this call's, leave it
+# alone; 2: the owner file could not be made or written (nothing of it is left).
+lock_claim() {
+  local dir="$1" rc=0
+  shift
+  set -C; { : > "$dir/owner"; } 2>/dev/null || rc=1; set +C
+  if [ "$rc" -ne 0 ]; then
+    if [ -e "$dir/owner" ] || [ ! -d "$dir" ]; then return 1; fi
+    return 2
+  fi
+  printf '%s\n' "$@" > "$dir/owner" || { rm -f "$dir/owner"; return 2; }
+}
+
 event_lock() {                                   # $2: how many 0.1 s tries before giving up (default 200)
-  local lock="$1" recovery="$1.recover" tries=0 most="${2:-200}" owner="${BASHPID:-$$}"
+  local lock="$1" recovery="$1.recover" tries=0 most="${2:-200}" owner="${BASHPID:-$$}" rc=0
   while :; do
     if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
-      # A reclaimer may have started just before mkdir succeeded. Yield this new lock to it.
-      if [ -d "$recovery" ]; then rmdir "$lock" 2>/dev/null; continue; fi
-      printf '%s\n' "$owner" > "$lock/owner" \
-        || { rm -f "$lock/owner"; rmdir "$lock" 2>/dev/null; return 1; }
-      return 0
+      lock_claim "$lock" "$owner"; rc=$?
+      case "$rc" in
+        0) # A reclaimer may have started just before the claim. Yield this new lock to it.
+           if [ -d "$recovery" ]; then event_unlock "$lock" || :; continue; fi
+           return 0 ;;
+        2) rmdir "$lock" 2>/dev/null; return 1 ;;
+      esac                                       # 1: another call holds it — wait like any other
     fi
     if event_lock_stale "$recovery"; then
       rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
     fi
     if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
-      if printf '%s\n' "$owner" > "$recovery/owner"; then
-        if event_lock_stale "$lock"; then
-          rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null || :
-        fi
+      lock_claim "$recovery" "$owner"; rc=$?
+      if [ "$rc" -eq 0 ] && event_lock_stale "$lock"; then
+        rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null || :
       fi
-      event_unlock "$recovery" || :
+      [ "$rc" -eq 1 ] || event_unlock "$recovery" || :   # another reclaimer's: leave it to that one
     fi
     tries=$((tries + 1))
     [ "$tries" -lt "$most" ] || { printf 'council: event lock unavailable: %s\n' "$lock" >&2; return 1; }
@@ -3568,16 +3586,18 @@ gate_unlock() {
 }
 
 gate_lock() {
-  local run="$1" lock="$1/gates.lock" recovery="$1/gates.lock.recover" me="${BASHPID:-$$}" pid='' since='' tries=0 waited=0 limit="${WAIT_SECONDS:-1200}"
+  local run="$1" lock="$1/gates.lock" recovery="$1/gates.lock.recover" me="${BASHPID:-$$}" pid='' since='' tries=0 waited=0 limit="${WAIT_SECONDS:-1200}" rc=0
   while :; do
     if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
-      if [ -d "$recovery" ]; then rmdir "$lock" 2>/dev/null; continue; fi   # a reclaimer got in first: yield
-      printf '%s\n%s\n' "$me" "$(now_sec)" > "$lock/owner" \
-        || { rm -f "$lock/owner"; rmdir "$lock" 2>/dev/null; die "cannot write the gate lock $lock — nothing was started"; }
-      GATE_LOCK="$lock"; GATE_LOCK_PID="$me"
-      trap gate_unlock EXIT                          # every way out: a finished set, a die, a caught signal
-      trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
-      return 0
+      lock_claim "$lock" "$me" "$(now_sec)"; rc=$?   # the owner file decides who holds it, not mkdir
+      case "$rc" in
+        0) if [ -d "$recovery" ]; then event_unlock "$lock" || :; continue; fi   # a reclaimer got in first: yield
+           GATE_LOCK="$lock"; GATE_LOCK_PID="$me"
+           trap gate_unlock EXIT                     # every way out: a finished set, a die, a caught signal
+           trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
+           return 0 ;;
+        2) rmdir "$lock" 2>/dev/null; die "cannot write the gate lock $lock — nothing was started" ;;
+      esac                                           # 1: another call holds it — look at who, below
     fi
     # Who holds it. The holder writes its owner file just after mkdir and removes it just before rmdir,
     # so a file that is missing or vanishes under this read is a lock being taken or released — never
@@ -3588,12 +3608,13 @@ gate_lock() {
       rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
     fi
     if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
-      if printf '%s\n' "$me" > "$recovery/owner" && event_lock_stale "$lock"; then
+      lock_claim "$recovery" "$me"; rc=$?
+      if [ "$rc" -eq 0 ] && event_lock_stale "$lock"; then
         rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null \
           && printf 'council: cleared a gate lock left by a call that is no longer running%s\n' \
                "${pid:+ (process $pid, started ${since:-unknown})}" >&2
       fi
-      event_unlock "$recovery" || :
+      [ "$rc" -eq 1 ] || event_unlock "$recovery" || :   # another reclaimer's: leave it to that one
     fi
     case "$pid" in
       ''|*[!0-9]*) ;;                                # no owner to read yet: look again
