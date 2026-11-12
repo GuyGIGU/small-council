@@ -9,6 +9,9 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 - The council pane: while a run is open, a pane beside the chat shows each seat as a pixel-art critter at its desk (role gear, a mood per state, a squad list under it), and a line above the prompt shows the stage, who is working and the spend; `/council-view` reopens the pane. A Claude Code mod in the plugin (`hooks/council-view.tsx`), tested with `claude plugin test .`.
 
+### Fixed
+- On Ubuntu 26.04 two calls could hold one lock at once (the events, state, seat, close and gate locks), so events got the same sequence number and a seat change ended with "its lock could not be released". Its `mkdir` (uutils 0.10.0) can exit 0 for a directory another process made at the same moment. A call now holds a lock only once it has made the lock's owner file itself (noclobber, so the create is exclusive), and a call that finds another's owner file there waits, as before.
+
 ## [0.23.0] — 2026-10-22
 
 **TL;DR:** the Chair's own tokens are recorded at close, plus three fixes from real runs.
