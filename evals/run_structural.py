@@ -232,7 +232,8 @@ check("01-convene: asks whether a run is needed before its steps — never for a
 check("03-assign and 08-challenge: a Workflow's agents each take a group of small parts, not one each",
       "never one small part each" in doctrine["03-assign.md"] and
       "batches of up to 8" in doctrine["08-challenge.md"].split("A Workflow of verifiers", 1)[-1])
-check("implement: small tasks of one kind share a verifier", "up to five of one kind" in skill["council-implement"])
+check("implement: small tasks of one kind share a verifier (build-proof.md, Checking, per task)",
+      "up to five of one kind" in read("references", "build-proof.md").split("## Checking", 1)[-1])
 check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
 check("02-prepare: distinguishes optional graph from the fallback index",
@@ -471,6 +472,21 @@ check("build tier: build-proof.md states both tiers with light as the default, t
       "risk class" in skill["council-implement"].split("Dispatch `small-council:council-verifier` with:", 1)[-1] and
       "finish line" in skill["council-implement"] and "never a hunt inside the build" in skill["council-implement"] and
       "- build tier: light" in read("references", "templates", "council.config.md"))
+check("checking: build-proof.md states one per batch as the default and per task, the implement skill points at it and "
+      "runs step 7 per task only, and the config template carries the line",
+      "## Checking" in build_proof and "A missing line reads as one per batch" in build_proof and
+      "**Per task**" in build_proof and "Checking" in skill["council-implement"] and
+      "per task only" in skill["council-implement"] and
+      "- checking: one per batch" in read("references", "templates", "council.config.md"))
+check("verifier: judges the Done-when, never hunts past it, and notes the rest under ## Noticed — never as a verdict "
+      "(a real batch's checks ran ten hours finding a narrower gap each round)",
+      "Judge the Done-when, nothing wider" in verifier and "## Noticed" in verifier and "however narrow" in verifier
+      and "## Noticed" in skill["council-implement"])
+check("post-game: a next task closes a gap against the request, quoting its part; everything else is Noticed, not "
+      "tasked, and council check reads the next tasks once the deliverable is recorded",
+      "## Noticed, not tasked" in skill["council-postgame"] and "part <#>:" in skill["council-postgame"]
+      and "council state deliverable=<path>" in skill["council-postgame"]
+      and "quotes no part of the request" in skill["council-postgame"])
 check("verifier: claim verdicts", all(v in verifier for v in ["CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"]))
 check("verifier: change verdicts", all(v in verifier for v in ["OK", "INCOMPLETE", "REGRESSION", "SCOPE-CREEP", "CANNOT VERIFY"]))
 check("verifier: can open a research claim's URL", re.search(r"^tools:.*\bWebFetch\b", verifier, re.MULTILINE) is not None)
@@ -591,6 +607,34 @@ for doc in seat_docs:
 check("catalog: no external/unshipped seat docs", "external (" not in catalog)
 check("template config: example slugs match the catalog",
       all(s in slugs for s in re.findall(r"^\| [A-Z][^|]+ \| ([a-z-]+) \|", cfg, re.MULTILINE)))
+
+# 9b. The architecture record stays true to the code: an agent trusts docs/architecture.md and
+# docs/decisions.md, so a command, schema, environment variable or decision id they miss or invent is a bug.
+arch, decisions_doc, helper_src = read("docs", "architecture.md"), read("docs", "decisions.md"), read("bin", "council")
+check("architecture: the record exists, and the root CLAUDE.md points at it and at the decisions",
+      bool(arch) and bool(decisions_doc) and "docs/architecture.md" in read("CLAUDE.md")
+      and "docs/decisions.md" in read("CLAUDE.md"))
+dispatch = helper_src[helper_src.find("\nmain() {"):]
+top_commands = sorted(set(re.findall(r"\n    ([a-z][a-z-]*)\)", dispatch)) - {"help", "version"})
+entry = arch[arch.find("## 5. Entry points"):arch.find("## 6.")]
+missing = [c for c in top_commands if f"`{c}" not in entry and f"{c}`" not in entry and f" {c}," not in entry]
+check("architecture §5: names every top-level helper command", not missing, str(missing))
+code_text = helper_src + "".join(read("scripts", f) for f in sorted(os.listdir(os.path.join(ROOT, "scripts"))) if f.endswith(".py"))
+schemas = sorted(set(re.findall(r"council\.[a-z-]+/[0-9]+", code_text)))
+contracts = arch[arch.find("## 6."):arch.find("## 7.")]
+check("architecture §6: lists every JSON schema the code emits", schemas and all(s in contracts for s in schemas),
+      str([s for s in schemas if s not in contracts]))
+env_vars = sorted(set(re.findall(r"\bCOUNCIL_[A-Z_]+\b", code_text + "".join(
+    read("hooks", f) for f in sorted(os.listdir(os.path.join(ROOT, "hooks"))) if f.endswith(".sh")))))
+check("architecture §6: lists every COUNCIL_ environment variable", env_vars and all(v in contracts for v in env_vars),
+      str([v for v in env_vars if v not in contracts]))
+defined = set(re.findall(r"^\| (D[0-9]+) \|", decisions_doc, re.MULTILINE))
+cited = set(re.findall(r"\b(D[0-9]+)\b", arch + read("CLAUDE.md") + read("CONTRIBUTING.md")))
+check("decisions: every id the architecture, CLAUDE.md and CONTRIBUTING cite is defined", cited <= defined,
+      str(sorted(cited - defined)))
+ids = re.findall(r"^\| (D[0-9]+) \|", decisions_doc, re.MULTILINE)
+check("decisions: ids are unique and cover D1..Dn with no gaps, in any section (never reused or renumbered)",
+      sorted(ids, key=lambda d: int(d[1:])) == [f"D{i}" for i in range(1, len(ids) + 1)], str(ids))
 
 # 10. Size budgets — Claude Code re-attaches only the first ~5k tokens of each skill after compaction
 for s in SKILLS:

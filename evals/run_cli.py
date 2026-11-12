@@ -3795,6 +3795,53 @@ def requests_and_proofs(tmp):
     check("check: an invisible character in the request is not a paraphrase; dropped backticks are named",
           "synthesis#13  quote  ok" in out and "synthesis#14  quote  NOT-EXACT" in out
           and "9 of 14 quotes found in the request" in out, out)
+    # A post-game's next tasks close gaps against the request's own words, nothing else: a real one tasked
+    # check helpers and test scaffolding, and chained post-games ate the day.
+    write(os.path.join(qrepo, ".council", "postgames", "2026-11-12-panel.md"), "# Post-game: panel\n"
+          "## Next move\nFinish — two parts are not met\n### Next tasks\n"
+          "#### 1. Keep the panel live\n| | |\n|---|---|\n| **Touches** | panel |\n"
+          '| **Done when** | part 1: "The quote panel shouldn’t freeze when the feed drops." — drop the feed, the panel updates |\n'
+          "#### 2. Harden the check helper\n| | |\n|---|---|\n"
+          '| **Done when** | "the check helper rejects an empty file" — run it on an empty file |\n'
+          "#### 3. Tidy the scaffolding\n| | |\n|---|---|\n| **Touches** | tests/ |\n"
+          "#### 4. Never trade\n| | |\n|---|---|\n| **Done when** | part 4: \"must never place orders\" — no order call |\n"
+          "#### 5. Faster tests\n| | |\n|---|---|\n| **Done when** | the suite runs in under a minute |\n"
+          "#### 6. Keep the chart\n| | |\n|---|---|\n| **Done when** | part 5: \"the 5 minute chart visible\" — open the panel |\n"
+          "## Noticed, not tasked\n- the check helper takes no empty file — tools/check.sh — reach today: latent\n"
+          "## Ideas you didn't ask for\n#### 9. Not a next task\n| **Done when** | nothing |\n")
+    council(qrepo, "state", "deliverable=.council/postgames/2026-11-12-panel.md")
+    code, out, _ = council(qrepo, "check")
+    check("check: a post-game's next task whose Done-when quotes a part of the request passes",
+          "next task 1  done-when  ok" in out and "next task 4  done-when  ok" in out, out)
+    check("check: a next task that quotes words the request never said, quotes nothing or has no Done-when is refused",
+          code == 1 and "next task 2  done-when  NOT-IN-THE-REQUEST" in out and "next task 3  done-when  NO-DONE-WHEN" in out
+          and "next task 5  done-when  NO-QUOTE" in out and "3 next task(s) quote no part of the request" in out
+          and "Noticed, not tasked" in out, out)
+    check("check: a heading under another section is no next task", "next task 9" not in out, out)
+    check("check: a next task's quote over an invisible character in the request is no paraphrase, as a part's is",
+          "next task 6  done-when  ok" in out, out)
+    srepo = new_repo(tmp, "short-request")
+    write(os.path.join(srepo, "x.txt"), "x\n")
+    git(srepo, "add", "-A")
+    git(srepo, "commit", "-q", "-m", "x")
+    _, srun, _ = council(srepo, "run", "open", "council-postgame")
+    srun = srun.strip()
+    write(os.path.join(srun, "ask.md"), "# Ask — typos\n## In your words\nFix typos\n")
+    write(os.path.join(srepo, ".council", "postgames", "typos.md"), "# Post-game: typos\n### Next tasks\n"
+          "#### 1. The rest\n| | |\n|---|---|\n| **Done when** | part 1: \"Fix typos\" — no typo left |\n"
+          "## Noticed, not tasked\n- none\n")
+    council(srepo, "state", "deliverable=.council/postgames/typos.md")
+    code, out, _ = council(srepo, "check")
+    check("check: a next task may quote a request shorter than three words whole, as a part may",
+          "next task 1  done-when  ok" in out, out)
+    write(os.path.join(srun, "ask.md"), '# Ask — label\n## In your words\nThe button should say "Save" not "OK" here.\n')
+    write(os.path.join(srepo, ".council", "postgames", "typos.md"), "# Post-game: label\n### Next tasks\n"
+          '#### 1. Label\n| | |\n|---|---|\n| **Done when** | part 1: "say "Save" not "OK" here." — the button reads "Save" |\n'
+          '#### 2. Made up\n| | |\n|---|---|\n| **Done when** | part 1: "say "Save" or "Store"" — it reads "Save" |\n'
+          "## Noticed, not tasked\n- none\n")
+    code, out, _ = council(srepo, "check")
+    check("check: a next task's quote of words that hold quotes runs to its own closing quote",
+          "next task 1  done-when  ok" in out and "next task 2  done-when  ok" not in out, out)
     council(qrepo, "run", "close", "--status", "abandoned")
     to_deliver(req)
     code, out, err = council(req, "run", "close")
@@ -6211,11 +6258,68 @@ def runs_full_size_needs_go(tmp):
 
 
 @part("runs")
+def runs_one_checker_per_batch(tmp):
+    # One checker per build, at converge (references/build-proof.md, Checking): a real job spent about 9-10M
+    # tokens on checking agents against 3.5M on builders, while the rule lived only in a user's own notes.
+    ob = new_repo(tmp, "one-per-batch")
+    cfg = os.path.join(ob, ".council", "council.config.md")
+    write(cfg, "# Council config\n")
+    _, out, _ = council(ob, "run", "open", "council-implement", env=session("sO"))
+    orun = out.strip().splitlines()[-1]
+    oname = os.path.basename(orun)
+    write_plan(orun, selected=("verify-1", "verify-2", "verify-3", "diagnose-1"))
+    for slug in ("verify-1", "verify-2", "verify-3"):
+        write(os.path.join(orun, slug + ".md"), VERDICT_FILE)
+    code, out, err = council(ob, "seat", "verify-1", "running", "agent=o1")
+    check("seat: one per batch (no checking line) — the build's first verifier starts", code == 0, out + err)
+    code, out, err = council(ob, "seat", "verify-1", "running", "agent=o1")
+    check("seat: the same verifier recorded running again is the same start, not a second checker", code == 0, out + err)
+    code, out, err = council(ob, "seat", "diagnose-1", "running", "agent=d1")
+    check("seat: one per batch holds verifiers only — a diagnosis worker starts", code == 0, out + err)
+    council(ob, "seat", "verify-1", "done", "tokens=20000")
+    code, out, err = council(ob, "seat", "verify-2", "running", "agent=o2")
+    check("seat: one per batch — a second verifier is refused, naming the first, the user's go and the per-task setting",
+          code == 2 and "cannot start verify-2" in err and "already started 1 verifier(s) (verify-1)" in err
+          and 'council state decision="' in err and "checking: per task" in err
+          and "\nverify-2\t" not in read(os.path.join(orun, "seats.tsv")), out + err)
+    code, out, err = council(ob, "seat", "verify-1", "running", "agent=o3")
+    check("seat: one per batch — the first verifier started again after its verdict is a second checker too",
+          code == 2 and "cannot start verify-1" in err, out + err)
+    code, out, err = council(ob, "cap", "check", "--session", "sO", "Agent", "type=small-council:council-verifier",
+                             "seat=verify-2", "run=" + oname)
+    check("cap check: the agent gate refuses that second verifier before it starts", code == 2
+          and out.startswith("Small Council: cannot start verify-2") and "one per batch" in out, out + err)
+    backdated_decision(orun, "an old go")
+    code, out, err = council(ob, "seat", "verify-2", "running", "agent=o2")
+    check("seat: a decision from before the first verifier started is not the user's go for a second", code == 2, out + err)
+    council(ob, "state", "decision=check the fix round once more")
+    code, out, err = council(ob, "seat", "verify-2", "running", "agent=o2")
+    check("seat: the user's words recorded after the last verifier start the second one", code == 0, out + err)
+    council(ob, "seat", "verify-2", "done", "tokens=20000")
+    code, out, err = council(ob, "seat", "verify-3", "running", "agent=o6")
+    check("seat: one go starts one more verifier — the go recorded in the same minute as the second's start is not "
+          "also the go for a third", code == 2 and "cannot start verify-3" in err and "verify-1, verify-2" in err, out + err)
+    council(ob, "state", "decision=and one more after that")
+    code, out, err = council(ob, "seat", "verify-3", "running", "agent=o6")
+    check("seat: a second go recorded starts the third verifier", code == 0, out + err)
+    write(cfg, "# Council config\n- checking: Per  Task\n")
+    st = os.path.join(orun, "session-state.md")
+    write(st, re.sub(r"\n- [0-9-]+ [0-9:]+: [^\n]*", "", read(st)))
+    council(ob, "seat", "verify-2", "done", "tokens=20000")
+    code, out, err = council(ob, "seat", "verify-1", "running", "agent=o4")
+    check("seat: under checking: per task (any capitals or spacing) more verifiers start", code == 0, out + err)
+    write(cfg, "# Council config\n- checking: whenever\n")
+    council(ob, "seat", "verify-1", "done", "tokens=20000")
+    code, out, err = council(ob, "seat", "verify-2", "running", "agent=o5")
+    check("seat: an unknown checking word reads as one per batch", code == 2 and "one per batch" in err, out + err)
+
+
+@part("runs")
 def runs_third_check_needs_diagnosis(tmp):
     # After a second failed verification the build loop allows one clean-context diagnosis and one more
     # attempt, else a stop and a report. A real build gave a task a new lock and a third check instead.
     tc = new_repo(tmp, "third-check")
-    write(os.path.join(tc, ".council", "council.config.md"), "# Council config\n- agent cap: 20\n")
+    write(os.path.join(tc, ".council", "council.config.md"), "# Council config\n- agent cap: 20\n- checking: per task\n")
     _, out, _ = council(tc, "run", "open", "council-implement", env=session("sT"))
     trun = out.strip().splitlines()[-1]
     tname = os.path.basename(trun)

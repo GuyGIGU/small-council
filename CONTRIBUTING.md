@@ -52,6 +52,10 @@ doctrine or the helper.
 
 ## Changing the helper (`bin/council`)
 
+- **New logic is Python** ([decision D24](docs/decisions.md)). The bash helper is moving to Python
+  modules one area at a time, with commands, output and exit codes unchanged. Until an area moves,
+  its bash follows the rules below. [`docs/architecture.md`](docs/architecture.md) says where new code
+  goes and the one way each recurring job is done.
 - **Bash 3.2 compatible** — macOS ships it. No associative arrays, no `mapfile`, no `${var,,}`.
 - **Paths go to awk through `ENVIRON`**, never `-v`, which eats the backslashes in Windows paths.
 - **Short, plain output**, meant for the Chair to read. Errors go to stderr with exit code 2. A gate

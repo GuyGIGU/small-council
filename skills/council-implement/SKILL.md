@@ -11,7 +11,8 @@ One builder, one task at a time, in this window. Parallel agents read; one hand 
 2. **the build loop below**, in place of stages 3–7;
 3. then stages 8–10.
 
-The only agents you dispatch are verifiers, plus at most one diagnosis worker per stuck task.
+You dispatch only verifiers (how many: build-proof.md, Checking — one, at converge, by
+default) and at most one diagnosis worker per stuck task.
 
 **Carmack's filter:** the smallest change satisfying the task, proved by machine.
 
@@ -35,8 +36,8 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
 1. **Read what drives the build.**
    - The input, in full.
    - `council.config.md`: gates, hard rules, the roster → reference map.
-   - Memory: check accepted patterns, conventions and decisions against the task under Convene's
-     changed-instructions rule; never silently retire or rewrite settled entries.
+   - Memory: check its patterns, conventions and decisions against the task (Convene's
+     changed-instructions rule); never silently retire or rewrite settled entries.
    - `map.md`.
 2. **Order the tasks.** Dependencies first. In fix mode: P1 before P2, then group by file.
 3. **Safety net.** If it isn't a git repo, recommend `git init`. If the user declines, copy each
@@ -96,8 +97,8 @@ the converge pass starts, `council state phase=challenge`.
    `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
    contract: change for a fix or new behaviour, preserve only for unchanged behaviour. Under the
    light tier (the default) only a risky task records a pair; an ordinary task's proof is its gates
-   after the change plus the converge check. Record the chosen mode and invariants in the log. Read a new check or probe back and compile it with the cheapest check,
-   then run `council gate before-<n>` as it specifies, one gate per Bash call. A red from a broken
+   after the change plus the converge check. Log the mode and invariants. Compile a new check or
+   probe with the cheapest check, then run `council gate before-<n>` as it specifies, one gate per Bash call. A red from a broken
    check is no proof: `council gate before-<n> --invalid "<why>"`, fix it, run it again.
    Label support with `references/evidence-model.md`; cite saved outputs for `REPRODUCED`.
 3. **Plan the change:** files, minimal diff, governing principle, effects on later tasks, watchpoints.
@@ -133,18 +134,18 @@ the converge pass starts, `council state phase=challenge`.
 6. **After-evidence — only if the task is not blocked.** Run the same check again,
    `council gate after-<n> -- '<same command>'`, keeping `--proof preserve` if selected before editing.
    It must pass under the build-proof contract.
-7. **Adversarial check — only if the task is not blocked.** Dispatch `small-council:council-verifier` with:
+7. **Adversarial check — per task only, if not blocked.**
+   Dispatch `small-council:council-verifier` with:
    - the task and its Done-when;
    - the proof mode and, for preservation, the invariants and their test paths;
-   - the governing principle's own text, quoted from the reference doc, so it is checked, not cited;
+   - the governing principle's text, quoted, so it is checked, not cited;
    - the diff, written to `<run>/diff-<n>.patch`, passed by path;
    - the before, after and gate outputs in `gates/`;
    - the task's risk class as the plan marks it, so a pair-less risky task is refused.
 
-   Verify every P1 fix and every risky task (data writes, security, core logic) on its own; batch
-   ordinary tasks up to five per verifier (light tier), two or three (full), or up to five of one kind
-   (renames, copy edits). Track each
-   with `council seat verify-<n> …`; one stopped at its turn limit is resumed with SendMessage
+   It judges the Done-when only; the gate refuses a brief sending it hunting.
+
+   Batch as Checking says; track each with `council seat verify-<n> …`; one stopped at its turn limit is resumed with SendMessage
    ("write your file now"), never re-dispatched. Then act on the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
      `c`), so the first verdict stays on disk. A fix that would add a task or a new mechanism — a
@@ -214,10 +215,12 @@ Plain English: what changed and why, never pasted code.
 
 After the last task, one council-verifier checks every task's Done-when against the final tree. In
 fix mode, it checks every selected finding's consequence instead. Each gets met, partly met or not
-met, with evidence — written into the log's `## Converge` table.
+met, with evidence — written into the log's `## Converge` table; its `## Noticed` lines go under
+Follow-ups, never into a task.
 - Anything not met → one more task, or a logged follow-up. That round is the **finish line**: a
   build ends at its plan's last task plus one fix round after converge; anything beyond is a
-  follow-up or a new review run, never a hunt inside the build.
+  follow-up or a new review run, never a hunt inside the build. One per batch: gates prove the fix round;
+  a re-check needs the user's recorded go.
 - Then run the final gates: `council gate --all --at verify`. Exit 4 means nothing was checked — say
   so; never report it as a pass.
 - If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
