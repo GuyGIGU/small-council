@@ -35,6 +35,9 @@ ignore = [
     "ISC001", "ISC003", "ISC004",
     "ARG001", "ARG002", "ARG005",
     "N801", "N806", "N818",
+    # 37 scripts carry a shebang but are 100644 in git; they are always run as `python <file>`, and ruff
+    # cannot check file modes on Windows. Turn it back on when the scripts/ entry points go (plan S9).
+    "EXE001",
     "DTZ011", "ERA001", "FLY002", "FURB167", "FURB192", "ICN001", "PIE810", "PLE2510", "PLE2515", "RET504",
 ]
 
