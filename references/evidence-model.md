@@ -80,6 +80,13 @@ never edit them by hand. Existing runs remain readable without migration; auditi
 `evidence check` may flag fields it predates. If Python 3.8+ is unavailable, use the
 same Markdown fields and inspect each link manually; do not present a ledger as built.
 
+## In the deliverable
+
+For review and research, each shipped claim retains its synthesis id, evidence state, citation and
+verifier verdict. In a plan, link a task to the synthesis claims it uses, and state which
+assumptions remain open. Link to the run's `claims.jsonl` when built; readable explanations remain
+necessary. Never call `INFERRED` or `ASSUMED` verified merely because a citation resolves.
+
 This first version indexes synthesis claims in review, plan and research runs. Build tasks retain
 their declared change or preservation proof (`references/build-proof.md`); post-game request parts
 retain their verifier tables. They use the same evidence-state vocabulary in prose but are not

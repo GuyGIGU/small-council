@@ -139,8 +139,8 @@ never part of a cleanup or refactor branch (D23).
   (`runs/<YYYY-MM-DD-HHMMSS>-<mode>`), and every TSV's columns and their order.
 - **Event types, subjects and detail keys**, as `references/event-stream.md` lists them.
 - **Config keys** in `council.config.md` (`approve without asking`, `agent cap`, `context packs`,
-  `seat models`, `build tier`, `checking`, `sharing`, `notifications`, `estimate per worker`,
-  `gate time limit`, the Gates table's columns).
+  `seat models`, `build tier`, `checking`, `open items`, `pushes`, `sharing`, `notifications`,
+  `estimate per worker`, `gate time limit`, the Gates table's columns).
 - **JSON schemas**: `council.run-status/1`, `council.run-snapshot/2`, `council.history/4`,
   `council.tune/2`, `council.seat-advice/1`, `council.outcomes/1`.
 - **Formats agents and checks parse**: the index line
