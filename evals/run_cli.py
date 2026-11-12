@@ -3789,6 +3789,7 @@ def requests_and_proofs(tmp):
           "#### 3. Tidy the scaffolding\n| | |\n|---|---|\n| **Touches** | tests/ |\n"
           "#### 4. Never trade\n| | |\n|---|---|\n| **Done when** | part 4: \"must never place orders\" — no order call |\n"
           "#### 5. Faster tests\n| | |\n|---|---|\n| **Done when** | the suite runs in under a minute |\n"
+          "#### 6. Keep the chart\n| | |\n|---|---|\n| **Done when** | part 5: \"the 5 minute chart visible\" — open the panel |\n"
           "## Noticed, not tasked\n- the check helper takes no empty file — tools/check.sh — reach today: latent\n"
           "## Ideas you didn't ask for\n#### 9. Not a next task\n| **Done when** | nothing |\n")
     council(qrepo, "state", "deliverable=.council/postgames/2026-11-12-panel.md")
@@ -3800,6 +3801,30 @@ def requests_and_proofs(tmp):
           and "next task 5  done-when  NO-QUOTE" in out and "3 next task(s) quote no part of the request" in out
           and "Noticed, not tasked" in out, out)
     check("check: a heading under another section is no next task", "next task 9" not in out, out)
+    check("check: a next task's quote over an invisible character in the request is no paraphrase, as a part's is",
+          "next task 6  done-when  ok" in out, out)
+    srepo = new_repo(tmp, "short-request")
+    write(os.path.join(srepo, "x.txt"), "x\n")
+    git(srepo, "add", "-A")
+    git(srepo, "commit", "-q", "-m", "x")
+    _, srun, _ = council(srepo, "run", "open", "council-postgame")
+    srun = srun.strip()
+    write(os.path.join(srun, "ask.md"), "# Ask — typos\n## In your words\nFix typos\n")
+    write(os.path.join(srepo, ".council", "postgames", "typos.md"), "# Post-game: typos\n### Next tasks\n"
+          "#### 1. The rest\n| | |\n|---|---|\n| **Done when** | part 1: \"Fix typos\" — no typo left |\n"
+          "## Noticed, not tasked\n- none\n")
+    council(srepo, "state", "deliverable=.council/postgames/typos.md")
+    code, out, _ = council(srepo, "check")
+    check("check: a next task may quote a request shorter than three words whole, as a part may",
+          "next task 1  done-when  ok" in out, out)
+    write(os.path.join(srun, "ask.md"), '# Ask — label\n## In your words\nThe button should say "Save" not "OK" here.\n')
+    write(os.path.join(srepo, ".council", "postgames", "typos.md"), "# Post-game: label\n### Next tasks\n"
+          '#### 1. Label\n| | |\n|---|---|\n| **Done when** | part 1: "say "Save" not "OK" here." — the button reads "Save" |\n'
+          '#### 2. Made up\n| | |\n|---|---|\n| **Done when** | part 1: "say "Save" or "Store"" — it reads "Save" |\n'
+          "## Noticed, not tasked\n- none\n")
+    code, out, _ = council(srepo, "check")
+    check("check: a next task's quote of words that hold quotes runs to its own closing quote",
+          "next task 1  done-when  ok" in out and "next task 2  done-when  ok" not in out, out)
     council(qrepo, "run", "close", "--status", "abandoned")
     to_deliver(req)
     code, out, err = council(req, "run", "close")
@@ -6225,8 +6250,8 @@ def runs_one_checker_per_batch(tmp):
     _, out, _ = council(ob, "run", "open", "council-implement", env=session("sO"))
     orun = out.strip().splitlines()[-1]
     oname = os.path.basename(orun)
-    write_plan(orun, selected=("verify-1", "verify-2", "diagnose-1"))
-    for slug in ("verify-1", "verify-2"):
+    write_plan(orun, selected=("verify-1", "verify-2", "verify-3", "diagnose-1"))
+    for slug in ("verify-1", "verify-2", "verify-3"):
         write(os.path.join(orun, slug + ".md"), VERDICT_FILE)
     code, out, err = council(ob, "seat", "verify-1", "running", "agent=o1")
     check("seat: one per batch (no checking line) — the build's first verifier starts", code == 0, out + err)
@@ -6253,6 +6278,13 @@ def runs_one_checker_per_batch(tmp):
     council(ob, "state", "decision=check the fix round once more")
     code, out, err = council(ob, "seat", "verify-2", "running", "agent=o2")
     check("seat: the user's words recorded after the last verifier start the second one", code == 0, out + err)
+    council(ob, "seat", "verify-2", "done", "tokens=20000")
+    code, out, err = council(ob, "seat", "verify-3", "running", "agent=o6")
+    check("seat: one go starts one more verifier — the go recorded in the same minute as the second's start is not "
+          "also the go for a third", code == 2 and "cannot start verify-3" in err and "verify-1, verify-2" in err, out + err)
+    council(ob, "state", "decision=and one more after that")
+    code, out, err = council(ob, "seat", "verify-3", "running", "agent=o6")
+    check("seat: a second go recorded starts the third verifier", code == 0, out + err)
     write(cfg, "# Council config\n- checking: Per  Task\n")
     st = os.path.join(orun, "session-state.md")
     write(st, re.sub(r"\n- [0-9-]+ [0-9:]+: [^\n]*", "", read(st)))

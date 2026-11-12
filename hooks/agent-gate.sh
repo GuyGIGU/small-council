@@ -103,10 +103,10 @@ fields="$(LC_ALL=C awk '
     hunt = ""; wfv = ""                                            # a verifier sent past its Done-when
     if (got["tool_name"] == "Workflow" && (n % 2 == 1 && bal == 0) && index(got["script"], "council-verifier")) wfv = 1
     if (ty ~ /verifier$/ || wfv) {
-      lp = tolower(ty ~ /verifier$/ ? got["prompt"] : got["script"]); gsub(/[ \t\n\003]+/, " ", lp)
-      if (index(lp, "however narrow")) hunt = "however narrow"
-      else if (match(lp, /any (other )?route/)) hunt = substr(lp, RSTART, RLENGTH)
-      else if (match(lp, /(find|name|report|flag|list|look for|hunt for|search for) anything else/)) hunt = substr(lp, RSTART, RLENGTH)
+      lp = " " tolower(ty ~ /verifier$/ ? got["prompt"] : got["script"]) " "; gsub(/[ \t\n\003]+/, " ", lp)
+      if (index(lp, "however narrow")) hunt = "however narrow"           # whole words: "many routes" is no hunt
+      else if (match(lp, /[^a-z0-9]any (other )?routes?[^a-z0-9]/)) hunt = substr(lp, RSTART + 1, RLENGTH - 2)
+      else if (match(lp, /[^a-z0-9](find|name|report|flag|list|look for|hunt for|search for) anything else[^a-z0-9]/)) hunt = substr(lp, RSTART + 1, RLENGTH - 2)
     }
     sp = got["scriptPath"]; gsub(/\n/, " ", sp)
     print ty; print seat; print run; print file; print hunt; print wfv; print sp
@@ -124,10 +124,10 @@ fi
 # can't be read here, and starts unjudged.
 if [ "$tool" = Workflow ] && [ -z "$awfv" ] && [ -n "$aspath" ] && [ -f "$aspath" ] && grep -q council-verifier "$aspath" 2>/dev/null; then
   awfv=1
-  ahunt="$(LC_ALL=C awk '{ s = s " " tolower($0) } END { gsub(/[ \t\r]+/, " ", s)
+  ahunt="$(LC_ALL=C awk '{ s = s " " tolower($0) } END { s = s " "; gsub(/[ \t\r]+/, " ", s)
     if (index(s, "however narrow")) print "however narrow"
-    else if (match(s, /any (other )?route/)) print substr(s, RSTART, RLENGTH)
-    else if (match(s, /(find|name|report|flag|list|look for|hunt for|search for) anything else/)) print substr(s, RSTART, RLENGTH) }' "$aspath" 2>/dev/null)"
+    else if (match(s, /[^a-z0-9]any (other )?routes?[^a-z0-9]/)) print substr(s, RSTART + 1, RLENGTH - 2)
+    else if (match(s, /[^a-z0-9](find|name|report|flag|list|look for|hunt for|search for) anything else[^a-z0-9]/)) print substr(s, RSTART + 1, RLENGTH - 2) }' "$aspath" 2>/dev/null)"
 fi
 
 if [ -n "$sid" ]; then set -- cap check --session "$sid"; else set -- cap check; fi

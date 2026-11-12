@@ -2040,11 +2040,11 @@ RUNS
 # dies (stderr, nothing on stdout), which the hook lets through. With type=, seat= and run= after the
 # tool (the hook reads them from the call), and file= (the slug of the file it writes), a Small Council
 # agent is first held to the record: dispatch_refusal. With hunt= (words in a verifier's brief that send it
-# past its Done-when), a council-verifier is refused before anything else. With workflow=verifier (a
+# past its Done-when), a build's council-verifier is refused before anything else. With workflow=verifier (a
 # Workflow whose script starts council verifiers), the Workflow is held to the hunt words and, as one more
 # verifier, to batch_check_refusal for every in-progress build this session may drive.
 cmd_cap_check() {
-  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed w dtype="" dseat="" drun="" dfile="" dhunt="" dwf=""
+  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed w dtype="" dseat="" drun="" dfile="" dhunt="" dwf="" open=""
   [ $# -eq 0 ] || shift
   for w in ${1+"$@"}; do
     case "$w" in type=*) dtype="${w#type=}" ;; seat=*) dseat="${w#seat=}" ;; run=*) drun="${w#run=}" ;; file=*) dfile="${w#file=}" ;;
@@ -2052,22 +2052,34 @@ cmd_cap_check() {
   done
   home="$(council_home)"
   session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
-  if { [ "$dtype" = small-council:council-verifier ] || [ -n "$dwf" ]; } && [ -n "$dhunt" ] && [ -d "$home" ]; then
-    say "Small Council: this council-verifier's brief sends it hunting past the Done-when (\"$dhunt\"). A verifier tries hard to show each Done-when is not met, and anything it notices beyond one is a line under ## Noticed, never a verdict or a task (references/build-proof.md, Checking): a verifier told to name any route, however narrow, found a narrower gap every round. Take those words out of the brief and dispatch again."
-    exit 2
+  if { [ -n "$dhunt" ] || [ -n "$dwf" ]; } && [ -d "$home/runs" ]; then   # the in-progress runs this session may drive
+    open="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
+      $6 == "in-progress" && ($4 == ENVIRON["TOP"] || $4 == "-" || (ENVIRON["SID"] != "" && $8 == ENVIRON["SID"])) { print $1 }')"
+  fi
+  # Only a build's verifier has a Done-when to hunt past: a review's or a post-game's claim may say "any
+  # route" itself. The run the brief names, else the in-progress runs this session may drive.
+  if { [ "$dtype" = small-council:council-verifier ] || [ -n "$dwf" ]; } && [ -n "$dhunt" ] && [ -d "$home/runs" ]; then
+    runs="$open"
+    case "$drun" in ''|.*|*[!A-Za-z0-9._-]*) ;; *) [ ! -f "$home/runs/$drun/session-state.md" ] || runs="$home/runs/$drun" ;; esac
+    while IFS= read -r run; do
+      [ -n "$run" ] && [ "$(field mode "$run/session-state.md")" = council-implement ] || continue
+      say "Small Council: this council-verifier's brief sends it hunting past the Done-when (\"$dhunt\"). A verifier tries hard to show each Done-when is not met, and anything it notices beyond one is a line under ## Noticed, never a verdict or a task (references/build-proof.md, Checking): a verifier told to name any route, however narrow, found a narrower gap every round. Take those words out of the brief and dispatch again."
+      exit 2
+    done <<RUNS
+$runs
+RUNS
   fi
   if [ -n "$dtype" ] && dispatch_refusal "$home" "$session" "$dtype" "$dseat" "$drun" "$dfile"; then exit 2; fi
   # A Workflow that starts council verifiers names no seat the hook can read: under one per batch, it is
   # held to every in-progress build this session may be driving, as one more verifier.
-  if [ -n "$dwf" ] && [ -d "$home/runs" ]; then
+  if [ -n "$dwf" ]; then
     while IFS= read -r run; do
       [ -n "$run" ] || continue
       if w="$(batch_check_refusal "$run" "verify-workflow")"; then
         say "Small Council: this Workflow starts council verifiers, and ${w#cannot start verify-workflow — }"; exit 2
       fi
     done <<RUNS
-$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
-    $6 == "in-progress" && ($4 == ENVIRON["TOP"] || $4 == "-" || (ENVIRON["SID"] != "" && $8 == ENVIRON["SID"])) { print $1 }')
+$open
 RUNS
   fi
   [ -d "$home/runs" ] || return 0
@@ -2699,11 +2711,13 @@ check_round_refusal() {
 # verifier, at converge, and another only on the user's go — a real job spent about 9-10M tokens on
 # checking agents against 3.5M on builders. A start is a verifier seat (verify-…) recorded running, or done
 # without running first; seat $2 recorded running again while it still runs is the same start, not a new
-# one. Needs a decision of the user's (council state decision=) from the last such start's minute on.
+# one. Needs a decision of the user's (council state decision=) from the last such start's minute on, and
+# one for each start after the first: a decision carries only its minute, so a go recorded in the minute
+# the second verifier started is not also the go for a third.
 # Prints why, and returns 0, when the start must wait; 1 otherwise — another mode or setting, another kind
 # of seat, the build's first verifier, or a run with no stream.
 batch_check_refusal() {
-  local run="$1" slug="$2" got n at since
+  local run="$1" slug="$2" got n at first since
   case "$slug" in verify-?*) ;; *) return 1 ;; esac
   [ "$(field mode "$run/session-state.md")" = council-implement ] && [ -f "$run/events.tsv" ] || return 1
   case "$(configured_checking)" in "one per batch"*) ;; *) return 1 ;; esac
@@ -2714,13 +2728,17 @@ batch_check_refusal() {
       st[$5] = $6
     }
     END {
-      for (i = 1; i <= k; i++) if (!(who[i] == ENVIRON["S"] && st[who[i]] == "running")) { n++; at = when[i]; names = names (n > 1 ? ", " : "") who[i] }
-      if (n) print n "\t" at "\t" names
+      for (i = 1; i <= k; i++) if (!(who[i] == ENVIRON["S"] && st[who[i]] == "running")) {
+        n++; at = when[i]; if (n == 1) first = at; names = names (n > 1 ? ", " : "") who[i]
+      }
+      if (n) print n "\t" first "\t" at "\t" names
     }' "$run/events.tsv" 2>/dev/null)"
   [ -n "$got" ] || return 1
-  n="${got%%"$TAB"*}"; got="${got#*"$TAB"}"; at="${got%%"$TAB"*}"
+  n="${got%%"$TAB"*}"; got="${got#*"$TAB"}"; first="${got%%"$TAB"*}"; got="${got#*"$TAB"}"; at="${got%%"$TAB"*}"
   since="$(utc_local_min "$at")"
-  [ "$(decisions_since "$run" "$since")" -eq 0 ] 2>/dev/null || return 1
+  first="$(utc_local_min "$first")"
+  if [ "$(decisions_since "$run" "$since")" -gt 0 ] 2>/dev/null \
+     && [ "$(decisions_since "$run" "$first")" -ge "$n" ] 2>/dev/null; then return 1; fi
   printf 'cannot start %s — this build already started %s verifier(s) (%s), and under checking: one per batch a build gets one checker, at converge (references/build-proof.md, Checking). Another needs the user'"'"'s go: ask them once, with its cost, then record their words with council state decision="…" and dispatch. A verifier stopped at its turn limit is resumed with SendMessage, never started again. To check task by task, the config says - checking: per task.\n' \
     "$slug" "$n" "${got#*"$TAB"}"
   return 0
@@ -5117,13 +5135,18 @@ postgame_next_tasks() {
   REQF="$2" LC_ALL=C awk '
     function alnum(c) { return c ~ /[A-Za-z0-9]/ }
     function repl(s, a, b,   i, o) { o = ""; while ((i = index(s, a)) > 0) { o = o substr(s, 1, i - 1) b; s = substr(s, i + length(a)) } return o s }
-    function fold(s) {
+    function fold(s) {                             # as for a part quote: curly quotes, odd and invisible spaces
       s = repl(s, "\342\200\230", "\047"); s = repl(s, "\342\200\231", "\047")
       s = repl(s, "\342\200\234", "\""); s = repl(s, "\342\200\235", "\"")
-      s = repl(s, "\302\240", " "); s = repl(s, "\342\200\246", "...")
+      s = repl(s, "\302\240", " "); s = repl(s, "\342\200\257", " "); s = repl(s, "\342\200\211", " ")
+      s = repl(s, "\342\200\213", ""); s = repl(s, "\342\200\214", ""); s = repl(s, "\342\200\215", "")
+      s = repl(s, "\342\201\240", ""); s = repl(s, "\357\273\277", "")
+      s = repl(s, "\342\200\246", "...")
       gsub(/[ \t]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s)
       return s
     }
+    function trimq(q) { sub(/^ /, "", q); sub(/ $/, "", q); gsub(/(\.\.\.|…)$/, "", q); sub(/ $/, "", q); return q }
+    function short(q,   w) { return split(q, w, " ") < 3 && q != R }   # a request under three words is quoted whole
     function found(r, q,   s, p, off) {
       s = r; off = 0
       while ((p = index(s, q)) > 0) {
@@ -5132,16 +5155,21 @@ postgame_next_tasks() {
       }
       return 0
     }
-    function verdict(cell,   q, e) {
+    function verdict(cell,   q, e, k, rest, one) {
       cell = fold(cell)
       if ((e = index(cell, "\"")) == 0) return "NO-QUOTE"
-      q = substr(cell, e + 1); e = index(q, "\"")
-      if (e == 0) return "NO-QUOTE"
-      q = substr(q, 1, e - 1); sub(/^ /, "", q); sub(/ $/, "", q)
-      gsub(/(\.\.\.|…)$/, "", q); sub(/ $/, "", q)
-      if (q == "") return "NO-QUOTE"
-      if (split(q, w, " ") < 3) return "TOO-SHORT"
-      return found(R, q) ? "ok" : "NOT-IN-THE-REQUEST"
+      rest = substr(cell, e + 1)
+      if ((e = index(rest, "\"")) == 0) return "NO-QUOTE"
+      one = trimq(substr(rest, 1, e - 1))          # the words up to the first closing mark
+      # A part may hold quotes itself: the quote runs to whichever closing mark makes it the request words.
+      k = e
+      while (k > 0) {
+        q = trimq(substr(rest, 1, k - 1))
+        if (q != "" && !short(q) && found(R, q)) return "ok"
+        e = index(substr(rest, k + 1), "\""); k = e ? k + e : 0
+      }
+      if (one == "") return "NO-QUOTE"
+      return short(one) ? "TOO-SHORT" : "NOT-IN-THE-REQUEST"
     }
     function flush() { if (n != "") printf "%s\t%s\t%s\n", n, (st == "" ? "NO-DONE-WHEN" : st), title; n = ""; st = "" }
     FILENAME == ENVIRON["REQF"] { r = r $0; next }

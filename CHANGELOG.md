@@ -8,11 +8,11 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 - The council pane: while a run is open, a pane beside the chat shows each seat as a pixel-art critter at its desk (role gear, a mood per state, a squad list under it), and a line above the prompt shows the stage, who is working and the spend; `/council-view` reopens the pane. A Claude Code mod in the plugin (`hooks/council-view.tsx`), tested with `claude plugin test .`.
-- A checking setting: `- checking: one per batch` (the default) or `per task` in the config. Under one per batch a build checks each task with its gates (and a risky task's pair) and dispatches a single verifier, at converge; `council seat` and the agent gate refuse a second verifier in the same build until the user's go is recorded after the last one, including a Workflow whose script (inline or from its file) starts council verifiers. build-proof.md's new Checking section says what each requires. (#56)
+- A checking setting: `- checking: one per batch` (the default) or `per task` in the config. Under one per batch a build checks each task with its gates (and a risky task's pair) and dispatches a single verifier, at converge; `council seat` and the agent gate refuse a second verifier in the same build until the user's go is recorded after the last one (one go for each extra verifier), including a Workflow whose script (inline or from its file) starts council verifiers. build-proof.md's new Checking section says what each requires. (#56)
 - `council check` in a post-game reads the deliverable's next tasks once it is recorded: each one's Done-when must quote a part of the request word for word, or it is refused (NOT-IN-THE-REQUEST, NO-QUOTE, NO-DONE-WHEN). Everything else goes under a new "Noticed, not tasked" section with its reach today. (#66)
 
 ### Changed
-- The verifier judges each Done-when and nothing wider: it tries hard to show a Done-when is not met, and anything it notices beyond one is a line under `## Noticed`, never a verdict or a task. The agent gate refuses a verifier brief that sends it hunting ("however narrow", "any route", "find anything else"). (#46)
+- The verifier judges each Done-when and nothing wider: it tries hard to show a Done-when is not met, and anything it notices beyond one is a line under `## Noticed`, never a verdict or a task. The agent gate refuses a build verifier's brief that sends it hunting ("however narrow", "any route", "find anything else"). (#46)
 - The build tier now says only how much proof a build records; how many verifiers check it is the checking setting.
 
 ## [0.23.0] — 2026-10-22

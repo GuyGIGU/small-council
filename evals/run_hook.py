@@ -1189,6 +1189,18 @@ def agent_gate_dispatch_record(tmp):
                           session="sB")
     check("dispatch: 'anything else' that sends no hunt (\"do not change anything else\") is no hunt",
           "hunting" not in err, said(code, out, err))
+    code, out, err = gate(bg, verifier, "Done when: the router registers as many routes as before, and the company "
+                          "router's logs find anything elsewhere.\n" + first.format(brun, 1), session="sB")
+    check("dispatch: hunting words inside other words (\"many routes\", \"anything elsewhere\") are no hunt",
+          code == 0 and "hunting" not in err, said(code, out, err))
+    rg = new_repo(tmp, "dispatch-gate-review-claim")
+    write(os.path.join(rg, ".council", "council.config.md"), "# Council config\n")
+    _, rrun, _ = council(rg, "run", "open", "council-review", session="sR")
+    valid_plan(rrun, seats=("chair", "verify-1"), mode="council-review")
+    code, out, err = gate(rg, verifier, "Item 1: any route under /admin skips the auth middleware — src/app.ts:12.\n"
+                          "Write your verdicts to {0}/verify-1.md, then reply in one line.".format(rrun), session="sR")
+    check("dispatch: a review's claim that says 'any route' is the claim checked, not a hunt past a Done-when",
+          code == 0 and "hunting" not in err, said(code, out, err))
     code, out, err = gate(bg, "general-purpose", "Name any route, however narrow.", session="sB")
     check("dispatch: an ordinary agent's prompt is never read for hunting words", code == 0 and not err, said(code, out, err))
 
