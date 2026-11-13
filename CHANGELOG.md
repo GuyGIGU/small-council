@@ -25,6 +25,10 @@ All notable changes to this project are documented here. The format is based on
 - Before the PR question a build fetches (`git fetch`, `gh pr list --state all`), says whether the base moved or a related PR merged, and prints `<run>/pr-body.md` for the user's edit or OK; the PR question comes only after that OK. To make room, the diagnosis worker's brief moved into `references/repair-loop.md` and the deliverable's evidence-trail rules into `references/evidence-model.md`. (#48)
 
 ### Fixed
+- `council tune` no longer stops with a traceback when the config's estimate per worker is hundreds of digits long: the library now reads an over-long token figure as unreadable, as the helper does, and an over-long `- agent cap:` as the default.
+- The repair trail no longer refuses a sound event stream as malformed when a free-text cell (a skip reason, say) holds U+2028 or U+0085: the stream, like the run plan's keyed rows, is now split on newlines only, as the helper reads it.
+- The status widget no longer shows a seat figure from a hand-written correction whose `to` is a string (`"to": "2"`), which the helper's ledger never counts; only a bare number is a correction, in both.
+- On Windows, `council status` and `council tui` no longer refuse a run folder as "a link to one" when its path is typed in a different case from the folder's name.
 - The outcomes eval's "close commit comparison writes nothing" check failed once on macOS and passed minutes later on the same commit. Its scratch repo no longer lets a commit start git's background maintenance, and a failure now names the files that differ.
 - On Ubuntu 26.04 two calls could hold one lock at once (the events, state, seat, close and gate locks), so events got the same sequence number and a seat change ended with "its lock could not be released". Its `mkdir` (uutils 0.10.0) can exit 0 for a directory another process made at the same moment. A call now holds a lock only once it has made the lock's owner file itself (noclobber, so the create is exclusive), and a call that finds another's owner file there waits, as before.
 

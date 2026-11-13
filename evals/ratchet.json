@@ -199,7 +199,7 @@
    "longest_name": "acquire"
   },
   "src/council/records/paths.py": {
-   "lines": 229,
+   "lines": 228,
    "longest": 26,
    "longest_name": "open_shared"
   },

@@ -33,6 +33,7 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.agent_cap(self.home("- agent cap: 0\n")), 10)
         self.assertEqual(config.agent_cap(self.home("- agent cap: 99999999999999999999\n")), 10)
         self.assertEqual(config.agent_cap(self.home("- agent cap: many\n- agent cap: 4\n")), 4)
+        self.assertEqual(config.agent_cap(self.home("- agent cap: " + "9" * 5000 + "\n")), 10)   # past int()'s limit
 
     def test_build_tier(self) -> None:
         self.assertEqual(config.build_tier(self.home("- build tier: FULL\n")), "full (config)")
@@ -114,6 +115,9 @@ class TuneEditTest(support.Scratch):
         self.assertEqual(config.estimate_line("nothing\n"), (None, None))
         self.assertEqual(config.estimate_tokens("1,50k"), 150000)       # tune's reading; the route's is None
         self.assertIsNone(config.estimate_tokens("999"))
+        self.assertIsNone(config.estimate_tokens("9" * 400 + "k"))       # tune read it as a crash
+        self.assertEqual(config.estimate_line("- estimate per worker: " + "9" * 400 + "k\n"),
+                         (None, "- estimate per worker: " + "9" * 400 + "k"))
 
     def test_preferences_insertion(self) -> None:
         text = "## Run preferences\n- agent cap: 10\n<!-- - hidden: x -->\n## Gates\n"
