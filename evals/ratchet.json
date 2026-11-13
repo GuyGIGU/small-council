@@ -81,9 +81,14 @@
    "shellcheck": 0
   },
   "scripts/audit.py": {
-   "lines": 889,
+   "lines": 879,
    "longest": 154,
    "longest_name": "transcript"
+  },
+  "scripts/audit_figures.py": {
+   "lines": 27,
+   "longest": 12,
+   "longest_name": "token_figures"
   },
   "scripts/chair_usage.py": {
    "lines": 130,
@@ -227,7 +232,7 @@
   },
   "src/council/commands/runs.py": {
    "lines": 57,
-   "longest": 31,
+   "longest": 30,
    "longest_name": "status"
   },
   "src/council/commands/sharing.py": {
@@ -244,6 +249,11 @@
    "lines": 1,
    "longest": 0,
    "longest_name": ""
+  },
+  "src/council/records/audit_file.py": {
+   "lines": 83,
+   "longest": 27,
+   "longest_name": "render"
   },
   "src/council/records/cells.py": {
    "lines": 89,
@@ -319,6 +329,11 @@
    "lines": 203,
    "longest": 30,
    "longest_name": "usage_totals"
+  },
+  "src/council/records/usage_gaps.py": {
+   "lines": 73,
+   "longest": 11,
+   "longest_name": "left_out"
   }
  }
 }

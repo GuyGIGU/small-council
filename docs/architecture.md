@@ -67,7 +67,7 @@ Rules:
 | `references/spec-writer/`, `references/test-architect/` | The two standalone skills' own templates, guides and formats | Anything a council mode reads |
 | `agents/` | The worker and verifier contracts | Mode logic |
 | `bin/council` | Every command, its arguments, output and exit codes | Long-running work; anything a hook must not wait on |
-| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing), `sharing` (the sharing line), `owners` (who holds a lock), `writable` (whether a folder takes a new file) and `usage` (the per-seat usage rule and the agent stop's standing); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
+| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing), `sharing` (the sharing line), `owners` (who holds a lock), `writable` (whether a folder takes a new file) and `usage` (the per-seat usage rule and the agent stop's standing), `usage_gaps` (the seats that were agent runs with no token figure, read from it) and `audit_file` (audit.md and the audit's report text); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
 | `src/council/commands/` | The helper's commands ported from bash (D24), one module per area, behind `src/council/__main__.py`; `cli.py` reads the command line as `bin/council` does and holds the refusal | A run file's parser (that is `records/`) |
 | `scripts/` | Python readers, renderers and analyses, over `src/council/records` | Their own copy of a run-file parser |
 | `hooks/` | Enforcement at Claude Code events, the mod | Decisions: the helper makes them |
@@ -105,6 +105,7 @@ Inside a run folder:
 | `brief.md`, `seats/`, `verify-<n>.md`, `synthesis.md` | the Chair and its agents | `council collect`, `council check`, `audit.py`, `evidence.py` |
 | `gates/` | `council gate` | `council check`, `cockpit.py`, `evidence.py` |
 | `check.md` | `council check` | the Chair (the receipt), the audit |
+| `audit.md` | `council run close` (`audit.py --at-close --save`, through `records/audit_file`); a close again rewrites it | `council status` (the closing card), `council run status`, a later session |
 | `repairs.jsonl` | `council gate` / `repair.py` | `repair.py`, `memory.py`, `cockpit.py`, `status.py` |
 | `index.md`, `impact.tsv`, `contexts/` | `council index`, `impact.py`, `context.py` | seats, `context.py` |
 

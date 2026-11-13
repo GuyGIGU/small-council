@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import history  # noqa: E402
 import ledger   # noqa: E402
 from council.records import config, paths  # noqa: E402
-from council.records import ledger as ledger_file  # noqa: E402
+from council.records import ledger as ledger_file, usage_gaps  # noqa: E402
 from council.records.config import ESTIMATE_LINES as LINES, ESTIMATE_PARTS as PARTS  # noqa: E402
 from council.records.config import estimate_line as configured, estimate_tokens as tokens  # noqa: E402
 
@@ -78,7 +78,7 @@ def proposals(home):
     estimate = current or DEFAULT_PER_WORKER
     worker = data["cost"]["tokens_per_agent"]
     budget = {"id": "budget", "kind": "budget", "knob": KNOB, "current": current, "default": DEFAULT_PER_WORKER,
-              "line": line, "lines": len(LINES.findall(text))}
+              "line": line, "lines": len(LINES.findall(text)), "unfigured": data["cost"]["unfigured"]}
     if not worker["enough"]:
         left = sum((data["cost"].get("left_out") or {}).values())
         budget.update(status="waiting", why="too few completed runs with agents to measure it ({} of {} needed{})".format(
@@ -144,6 +144,7 @@ def render(data):
         lines.append("  no change: " + b["why"] + " · " + b["evidence"])
     else:
         lines.append("  waiting: " + b["why"])
+    lines.extend("  note: " + note for note in usage_gaps.note(b["unfigured"]))
     lines.append("")
     if data["roster"]:
         lines.append("roster — changed only through a council-init refresh, with the numbers shown:")
@@ -156,9 +157,8 @@ def render(data):
     for h in data["held"]:
         lines.append("  {}: {}".format(h["knob"], h["why"]))
     if data["log"]:
-        lines.append("")
-        lines.append("changes so far (.council/tuning.md): " + " · ".join(
-            "T-{} {} {} → {}".format(e["n"], e["action"], e["before"], e["after"]) for e in data["log"]))
+        lines.extend(("", "changes so far (.council/tuning.md): " + " · ".join(
+            "T-{} {} {} → {}".format(e["n"], e["action"], e["before"], e["after"]) for e in data["log"])))
     return "\n".join(lines)
 
 

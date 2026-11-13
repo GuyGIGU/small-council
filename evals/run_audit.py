@@ -609,6 +609,67 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     code, out, err = council(base, "run", "audit", "--run", str(miscited), "--transcript", str(log1))
     check("a cut claim a verifier found MISCITED (true, elsewhere) fails the claim index like a CONFIRMED one, as council evidence check reads it",
           item(out, "Claim index")[0] == "FAIL" and "C1" in item(out, "Claim index")[1], item(out, "Claim index")[1])
+    # An agent seat with no token figure (issue 54): the run total, the ledger and council tune all leave it out.
+    # The one per-seat rule (records/usage.py) decides; the audit only says which seats and why.
+    head = "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
+
+    def figures(name, row):
+        folder = run1_copy(name)
+        write(folder / "seats.tsv", head + row)
+        return item(council(base, "run", "audit", "--run", str(folder))[1], "Token figures")
+    check("Token figures: every agent seat with a reported figure passes",
+          item(council(base, "run", "audit", "--run", str(run1))[1], "Token figures")[0] == "pass", "")
+    verdict, words = figures("fig-no-report", "verify-1\tdone\ta4c08e8e07813e7ee\t\t2026-09-30 13:23\t\t1\t0\n")
+    check("Token figures: an agent run that finished with no usage report FAILs, naming the seat, its agent and the fix",
+          verdict == "FAIL" and "verify-1 (agent a4c08e8e07 finished with no usage report)" in words
+          and "council correct <seat> tokens=<exact>" in words and "leave them out" in words, words)
+    verdict, words = figures("fig-no-id", "verify-1\tdone\t\t\t2026-09-30 13:23\t\t\t0\n")
+    check("Token figures: a seat with no agent on record FAILs and says no agent id was recorded",
+          verdict == "FAIL" and "verify-1 (no agent id recorded" in words, words)
+    verdict, words = figures("fig-partial", "verify-1\tdone\ta4c08e8e07813e7ee\t94152\t2026-09-30 13:23\t\t2\t1\n")
+    check("Token figures: one of two agent runs without usage FAILs as partial, counting them",
+          verdict == "FAIL" and "1 of 2 agent runs have no usage report" in words, words)
+    verdict, words = figures("fig-chair", "verify-1\tdone\ta4c08e8e07813e7ee\t94152\t2026-09-30 13:23\t\t1\t1\n"
+                             "chair\tdone\t\t\t2026-09-30 13:30\t\t\t0\n")
+    check("Token figures: the Chair's own seat is not an agent run, so no figure is owed", verdict == "pass", words)
+    verdict, words = figures("fig-declared", "verify-1\tdone\t\t\t2026-09-30 13:23\t\t0\t0\n")
+    check("Token figures: a seat declared agents=0 (the Chair did the work) is no gap", verdict == "pass", words)
+    # Corrected from evidence, a figure is a figure (council correct), as the ledger and the cockpit read it.
+    fixed = run1_copy("fig-corrected")
+    write(fixed / "seats.tsv", head + "verify-1\tdone\ta4c08e8e07813e7ee\t\t2026-09-30 13:23\t\t1\t0\n")
+    write(fixed / "corrections.jsonl", json.dumps({"seat": "verify-1", "field": "tokens", "to": 94152, "from": "",
+                                                  "evidence": "agent transcript line 40", "at": "2026-09-30T10:40:00Z"})
+          + "\n")
+    check("Token figures: a seat corrected with evidence passes",
+          item(council(base, "run", "audit", "--run", str(fixed))[1], "Token figures")[0] == "pass", "")
+
+    # --save keeps the whole report as <run>/audit.md (issue 53): every item, the transcript window, written
+    # atomically and whole; without it the audit writes nothing.
+    kept = run1_copy("kept")
+    before = fingerprint(kept)
+    plain = subprocess.run([sys.executable, str(AUDIT), "--run", str(kept), "--transcript", str(log1)],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+    check("without --save the audit writes nothing and says so", fingerprint(kept) == before
+          and "Read-only: nothing was written." in plain.stdout, plain.stdout + plain.stderr)
+    saved = subprocess.run([sys.executable, str(AUDIT), "--run", str(kept), "--transcript", str(log1), "--at-close",
+                            "--save"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    where = kept / "audit.md"
+    body = where.read_text(encoding="utf-8") if where.is_file() else ""
+    check("--save writes audit.md with every line (FAIL, warn and pass) and the transcript window it read, and says where",
+          saved.returncode == 1 and re.search(r"^Saved: .*audit\.md$", saved.stdout, re.MULTILINE) is not None
+          and "  FAIL  Stages:" in body and "  pass  Closed after Deliver:" in body and "  warn  " in body
+          and re.search(r"^From the session transcript \(\d\d:\d\d:\d\d to \d\d:\d\d:\d\d\)$", body, re.MULTILINE)
+          and "Transcript: " in body and "  later  Closing card: not checked yet" in body
+          and "Read-only: nothing was written." not in body and "Taken at: " in body, body + saved.stdout + saved.stderr)
+    check("--save leaves no temporary file behind in the run folder",
+          sorted(set(fingerprint(kept)) - set(before)) == ["audit.md"], str(sorted(set(fingerprint(kept)) - set(before))))
+    write(kept / "seats.tsv", head + "verify-1\tdone\ta4c08e8e07813e7ee\t\t2026-09-30 13:23\t\t1\t0\n")
+    subprocess.run([sys.executable, str(AUDIT), "--run", str(kept), "--at-close", "--save"], capture_output=True, text=True,
+                   encoding="utf-8", errors="replace")
+    again = where.read_text(encoding="utf-8")
+    check("a second --save rewrites audit.md whole: the new record shows and the old transcript window is gone",
+          "  FAIL  Token figures: 1 seat(s)" in again and "From the session transcript" not in again
+          and "No transcript given" in again, again)
     # council run close runs this audit as it closes: the closing card comes after, so it is not judged yet —
     # every other FAIL still is (the night's one audit printed four FAILs the user never heard).
     at_close = subprocess.run([sys.executable, str(AUDIT), "--run", str(run1), "--transcript", str(log1), "--at-close"],
