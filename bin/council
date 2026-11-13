@@ -216,25 +216,6 @@ configured_checking() {
   esac
 }
 
-# The project's measured estimate of tokens per worker — `- estimate per worker: 150k` under Run
-# preferences, set by `council tune apply budget` on the user's words. Empty when unset or implausible,
-# so the route keeps its no-history default.
-configured_worker_estimate() {
-  local cfg="$(council_home)/council.config.md" v
-  v="$(sed -n 's/^[[:space:]]*-[[:space:]]*estimate per worker:[[:space:]]*\([0-9][0-9.,]*[[:space:]]*[kKmM]\{0,1\}\).*/\1/p' "$cfg" 2>/dev/null | head -n 1)"
-  [ -n "$v" ] || return 0
-  v="$(seat_tokens "$v")" || return 0
-  [ "${v:-0}" -ge 1000 ] 2>/dev/null && [ "$v" -le 1000000 ] 2>/dev/null && printf '%s' "$v"
-  return 0
-}
-
-# Model overrides are opt-in. Missing or invalid settings leave routing off.
-configured_seat_models() {
-  local cfg="$(council_home)/council.config.md" setting
-  setting="$(sed -n 's/^[[:space:]]*-[[:space:]]*seat models:[[:space:]]*\([[:alpha:]]*\)[[:space:]]*$/\1/p' "$cfg" 2>/dev/null | head -n 1)"
-  [ "$setting" = on ] && printf 'on' || printf 'off'
-}
-
 # Runs, newest first, tab-separated, "-" for an empty value:
 #   dir mode phase code-root updated status actual session
 # $2 caps how many are listed; $3 = open (in-progress or paused, however old) | all (the newest).
@@ -2052,197 +2033,9 @@ cmd_run_close() {
 # Run plan contract
 # ------------------------------------------------------------------------------------------------
 
-# Validate the versioned five-column plan. The file is deliberately plain TSV so a Chair can write
-# it directly and old shells can check it without jq or another runtime. QUIET=1 suppresses only the
-# success line; errors always remain visible. The user's latest go past the cap (council cap allow, the
-# until of cap-allowances.tsv) lets the plan hold agent runs up to it: the extra seat their go allowed
-# gets its plan rows, and the run moves on.
-run_plan_validate() {
-  local run="$1" plan="$2" expected_mode max_cap seat_models go full_go=1 opened
-  expected_mode="$(field mode "$run/session-state.md")"
-  max_cap="$(configured_agent_cap)"
-  go="$(cap_allowed_until "$run")"
-  seat_models="$(configured_seat_models)"
-  # A closed run already dispatched under the setting of its day; today's on/off doesn't judge it. An open
-  # one at Full size needs the user's own go on record: a decision since the run opened (Convene's rule —
-  # a real run went Full, 13 tasks and ~2.15M tokens, 47 s after reading it, without asking).
-  case "$(field status "$run/session-state.md")" in
-    complete|abandoned) seat_models=closed ;;
-    *) opened="$(field opened "$run/session-state.md")"
-       [ "$(decisions_since "$run" "${opened%:[0-9][0-9]}")" -gt 0 ] 2>/dev/null || full_go=0 ;;
-  esac
-  EXPECT_RUN="${run##*/}" EXPECT_MODE="$expected_mode" MAX_CAP="$max_cap" GO="$go" SEAT_MODELS="$seat_models" FULL_GO="$full_go" QUIET="${QUIET:-0}" awk -F'\t' '
-    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-    function problem(line, msg,   k) {       # each problem once: two passes can find the same one
-      k = line SUBSEP msg
-      if (k in said) return
-      said[k] = 1
-      errors++
-      if (line > 0) printf "ERROR line %d: %s\n", line, msg
-      else printf "ERROR: %s\n", msg
-    }
-    function need(kind, id, field, label, key) {
-      key = kind SUBSEP id SUBSEP field
-      if (!(key in val)) problem(0, "missing " label " row (" kind "/" id "/" field ")")
-    }
-    function integer(s) { return s ~ /^[0-9]+$/ }
-    function under_go(n) { return ENVIRON["GO"] != "" && n <= ENVIRON["GO"] + 0 }
-    function go_words() { return ENVIRON["GO"] == "" ? "" : " or the user\047s go up to " ENVIRON["GO"] " agent runs (council cap allow)" }
-    BEGIN { header = "kind\tid\tfield\tvalue\treason" }
-    {
-      sub(/\r$/, "")
-      if ($0 ~ /^[ \t]*$/ || $0 ~ /^#/) next
-      if (!got_header) {
-        got_header = 1
-        if ($0 != header) problem(NR, "header must be exactly: " header)
-        next
-      }
-      if (NF != 5) { problem(NR, "expected exactly 5 tab-separated columns, got " NF); next }
-      kind = trim($1); id = trim($2); fld = trim($3); v = trim($4); why = trim($5)
-      if (kind == "" || id == "" || fld == "" || v == "" || why == "") {
-        problem(NR, "kind, id, field, value and reason must all be present"); next
-      }
-      if (id !~ /^[A-Za-z0-9._-]+$/) problem(NR, "id must use letters, digits, dot, underscore or dash: " id)
-      if (v ~ /^<.*>$/ || v == "pending") problem(NR, "replace the placeholder value for " kind "/" id "/" fld)
-      if (why ~ /^<.*>$/) problem(NR, "replace the placeholder reason for " kind "/" id "/" fld)
-      key = kind SUBSEP id SUBSEP fld
-      if (key in val) { problem(NR, "duplicate row for " kind "/" id "/" fld); next }
-      val[key] = v; reason[key] = why; at[key] = NR
-
-      if (kind == "schema") {
-        if (id != "plan" || fld != "version") problem(NR, "unknown schema row")
-        else if (v != "1") problem(NR, "unsupported run-plan schema version: " v)
-      } else if (kind == "run") {
-        if (id != "run" || (fld != "id" && fld != "mode" && fld != "size")) problem(NR, "unknown run row")
-        else if (fld == "id" && v != ENVIRON["EXPECT_RUN"]) problem(NR, "run id must match its folder: " ENVIRON["EXPECT_RUN"])
-        else if (fld == "mode" && v != ENVIRON["EXPECT_MODE"]) problem(NR, "run mode must match session-state.md: " ENVIRON["EXPECT_MODE"])
-        else if (fld == "size" && v != "solo" && v != "squad" && v != "full") problem(NR, "run size must be solo, squad or full")
-      } else if (kind == "assessment") {
-        if (id != "run" || (fld != "risk" && fld != "complexity" && fld != "uncertainty")) problem(NR, "unknown assessment row")
-        else if (v != "low" && v != "medium" && v != "high") problem(NR, fld " must be low, medium or high")
-      } else if (kind == "seat") {
-        seats[id] = 1
-        if (fld == "disposition") {
-          if (v != "selected" && v != "skipped") problem(NR, "seat disposition must be selected or skipped")
-          disp[id] = v
-        } else if (fld == "role") {
-          if (v != "chair" && v != "worker" && v != "verifier" && v != "diagnosis") problem(NR, "seat role must be chair, worker or verifier (or diagnosis: a read-only worker on a stuck task)")
-          role[id] = v
-        } else if (fld == "model") {
-          if (v != "inherit" && v != "sonnet" && v != "haiku") problem(NR, "seat model must be inherit, sonnet or haiku")
-          model[id] = v; model_line[id] = NR
-        } else if (fld == "purpose") {
-          if (v != "mapping" && v != "survey" && v != "other") problem(NR, "seat purpose must be mapping, survey or other")
-          purpose[id] = v; purpose_line[id] = NR
-        } else problem(NR, "unknown seat field: " fld)
-      } else if (kind == "context") {
-        if (fld != "level") problem(NR, "unknown context field: " fld)
-        else if (v != "minimal" && v != "focused" && v != "full") problem(NR, "context level must be minimal, focused or full")
-        ctx[id] = v
-      } else if (kind == "budget") {
-        if (id == "run") {
-          if (fld == "agent-cap") {
-            if (!integer(v) || v < 1) problem(NR, "agent-cap must be a positive integer")
-            else if (v > ENVIRON["MAX_CAP"] + 0 && !under_go(v + 0)) problem(NR, "agent-cap " v " exceeds the configured cap " ENVIRON["MAX_CAP"] go_words())
-            plan_cap = v + 0
-          } else if (fld == "estimated-tokens") {
-            if (!integer(v)) problem(NR, "estimated-tokens must be a non-negative integer")
-          } else if (fld == "token-ceiling") {
-            if (!integer(v) || v < 1) problem(NR, "token-ceiling must be a positive integer")
-          } else if (fld == "chair-tokens") {             # the share the Chair keeps for itself: agents are compared with the rest
-            if (!integer(v)) problem(NR, "chair-tokens must be a non-negative integer — the Chair\047s own share of estimated-tokens")
-            else { chairtok = v + 0; chairline = NR }
-          } else problem(NR, "unknown run budget field: " fld)
-        } else if (fld == "agent-runs") {                # a Workflow seat starts several agents
-          if (!integer(v) || v < 1 || v > 1000) problem(NR, "agent-runs must be an integer from 1 to 1000")
-          aruns[id] = v + 0
-        } else {
-          if (fld != "tool-calls") problem(NR, "unknown seat budget field: " fld)
-          else if (!integer(v) || v < 1 || v > 200) problem(NR, "tool-calls must be an integer from 1 to 200")
-          calls[id] = v
-        }
-      } else if (kind == "verification") {
-        if (id != "run" || fld != "level") problem(NR, "unknown verification row")
-        else if (v != "self" && v != "independent" && v != "adversarial") problem(NR, "verification level must be self, independent or adversarial")
-      } else problem(NR, "unknown kind: " kind)
-    }
-    END {
-      if (!got_header) problem(0, "missing header")
-      need("schema", "plan", "version", "schema version")
-      need("run", "run", "id", "run id")
-      need("run", "run", "mode", "run mode")
-      need("run", "run", "size", "run size")
-      need("assessment", "run", "risk", "risk assessment")
-      need("assessment", "run", "complexity", "complexity assessment")
-      need("assessment", "run", "uncertainty", "uncertainty assessment")
-      need("budget", "run", "agent-cap", "agent cap")
-      need("budget", "run", "estimated-tokens", "token estimate")
-      need("verification", "run", "level", "verification level")
-
-      for (id in seats) {
-        if (!(id in disp)) problem(0, "seat " id " has no disposition row")
-        if (!(id in role)) problem(0, "seat " id " has no role row")
-      }
-      for (id in disp) {
-        if (!(id in role)) problem(0, "seat " id " has no role row")
-        if (disp[id] == "selected") {
-          selected++
-          if (!(id in ctx)) problem(0, "selected seat " id " has no context/level row")
-          if (!(id in calls)) problem(0, "selected " role[id] " " id " has no budget/tool-calls row")
-          if (role[id] == "chair") {
-            chairs++
-            if (id in aruns) problem(at["budget" SUBSEP id SUBSEP "agent-runs"], "the Chair is not an agent run — remove budget/" id "/agent-runs")
-          } else {
-            agents++; runs += (id in aruns) ? aruns[id] : 1
-            if (role[id] == "verifier") verifiers++
-          }
-        } else {
-          skipped++
-          if (id in ctx) problem(at["context" SUBSEP id SUBSEP "level"], "skipped seat " id " must not receive context")
-          if (id in calls) problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "skipped seat " id " must not receive a tool-call budget")
-        }
-      }
-      ek = "budget" SUBSEP "run" SUBSEP "estimated-tokens"
-      if (chairline && (ek in val) && integer(val[ek]) && chairtok > val[ek] + 0)
-        problem(chairline, "chair-tokens " chairtok " is more than the whole estimate (" val[ek] ")")
-      if (selected + skipped == 0) problem(0, "add at least one considered seat with a selected or skipped disposition")
-      for (id in ctx) if (!(id in disp) || disp[id] != "selected") problem(at["context" SUBSEP id SUBSEP "level"], "context belongs only to a selected seat: " id)
-      for (id in calls) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "tool-calls"], "a seat budget belongs only to a selected seat: " id)
-      for (id in aruns) if (!(id in disp) || disp[id] != "selected") problem(at["budget" SUBSEP id SUBSEP "agent-runs"], "a seat budget belongs only to a selected seat: " id)
-      for (id in purpose) if (!(id in disp) || disp[id] != "selected" || role[id] != "worker")
-        problem(purpose_line[id], "a purpose belongs only to a selected worker seat: " id)
-      for (id in model) {
-        if (!(id in disp) || disp[id] != "selected") problem(model_line[id], "a model choice belongs only to a selected seat: " id)
-        else if (model[id] != "inherit") {
-          if (role[id] != "worker") problem(model_line[id], "only worker seats can use sonnet or haiku; " id " has role " role[id])
-          if (ENVIRON["SEAT_MODELS"] == "off") problem(model_line[id], "seat model overrides are off; enable seat models: on in council.config.md")
-          if (purpose[id] != "mapping" && purpose[id] != "survey") problem(model_line[id], "sonnet or haiku needs seat/" id "/purpose = mapping or survey")
-        }
-      }
-      if (chairs != 1) problem(0, "select exactly one Chair; found " chairs + 0)
-      size = val["run" SUBSEP "run" SUBSEP "size"]
-      verification = val["verification" SUBSEP "run" SUBSEP "level"]
-      if (size == "solo" && agents != 0) problem(0, "Solo must not select delegated agents")
-      if (size == "squad" && agents < 1) problem(0, "Squad needs at least one selected agent")
-      if (size == "full" && agents < 4) problem(0, "Full needs at least four selected agents")
-      if (size == "full" && ENVIRON["FULL_GO"] != "1")
-        problem(0, "Full needs the user\047s explicit size-and-cost go: ask them, then record their words with council state decision=\"…\"")
-      if ((verification == "independent" || verification == "adversarial") && verifiers < 1)
-        problem(0, verification " verification needs a selected verifier")
-      if (verification == "self" && verifiers > 0)
-        problem(0, "self verification conflicts with a selected verifier")
-      if (plan_cap > 0 && runs > plan_cap && !under_go(runs))
-        problem(0, runs " planned agent runs exceed the plan cap " plan_cap go_words() " (a Workflow seat counts every agent it starts: budget/<seat>/agent-runs)")
-      went = (plan_cap > 0 && (runs > plan_cap || plan_cap > ENVIRON["MAX_CAP"] + 0)) ? " — past the cap under the user\047s go, up to " ENVIRON["GO"] " (council cap allow)" : ""
-
-      if (errors) {
-        printf "plan: %d error(s) · run-plan.tsv\n", errors
-        exit 1
-      }
-      if (ENVIRON["QUIET"] != "1") printf "plan: valid · %s · %d selected, %d skipped · %d agent run(s) of cap %d%s\n", val["run" SUBSEP "run" SUBSEP "size"], selected, skipped, runs, plan_cap, went
-    }
-  ' "$plan"
-}
+# The run plan check, in Python (src/council/commands/plan.py), for the bash that stays: its problems on
+# stdout, then its valid line unless QUIET=1; exit 1 for a plan with errors.
+plan_check() { QUIET="${QUIET:-0}" python_run "council run plan check" run plan check --run "$1"; }
 
 run_plan_has_selected() {
   [ -f "$1" ] || return 1
@@ -2256,7 +2049,7 @@ require_run_plan() {
     [ -z "$schema" ] && return 0                         # pre-v1 run: intentionally compatible
     die "cannot $action — run-plan.tsv is missing; restore it from references/templates/run-plan.tsv"
   fi
-  QUIET=1 run_plan_validate "$run" "$plan" || die "cannot $action — fix run-plan.tsv, then run: council run plan check --run ${run##*/}"
+  QUIET=1 plan_check "$run" || die "cannot $action — fix run-plan.tsv, then run: council run plan check --run ${run##*/}"
 }
 
 # The user's decisions on record from a local minute on ("" counts them all): the lines council state
@@ -2362,50 +2155,6 @@ batch_check_refusal() {
   return 0
 }
 
-cmd_run_plan() {
-  local sub="${1:-check}" run plan schema
-  run="$(resolve_run)" || exit 2
-  plan="$run/run-plan.tsv"; schema="$(field plan-schema "$run/session-state.md")"
-  if [ ! -f "$plan" ]; then
-    if [ -z "$schema" ]; then say "plan: legacy run · no run-plan.tsv required · ${run##*/}"; return 0; fi
-    die "run-plan.tsv is missing from ${run##*/} — restore it from references/templates/run-plan.tsv"
-  fi
-  case "$sub" in
-    check) run_plan_validate "$run" "$plan" ;;
-    show)
-      run_plan_validate "$run" "$plan" || return 1
-      PLAN="$plan" awk -F'\t' '
-        $0 !~ /^#/ && NF == 5 { v[$1 SUBSEP $2 SUBSEP $3] = $4; why[$1 SUBSEP $2 SUBSEP $3] = $5; if ($1 == "seat" && $3 == "disposition") order[++n] = $2
-                                if ($1 == "seat" && $3 == "model" && $4 != "inherit") routed = 1 }
-        END {
-          print "Run plan — " v["run" SUBSEP "run" SUBSEP "id"]
-          print "  mode: " v["run" SUBSEP "run" SUBSEP "mode"] " · size: " v["run" SUBSEP "run" SUBSEP "size"]
-          print "  risk: " v["assessment" SUBSEP "run" SUBSEP "risk"] " · complexity: " v["assessment" SUBSEP "run" SUBSEP "complexity"] " · uncertainty: " v["assessment" SUBSEP "run" SUBSEP "uncertainty"]
-          print "  budget: " v["budget" SUBSEP "run" SUBSEP "estimated-tokens"] " tokens · " v["budget" SUBSEP "run" SUBSEP "agent-cap"] " agents · verification: " v["verification" SUBSEP "run" SUBSEP "level"]
-          ceiling = v["budget" SUBSEP "run" SUBSEP "token-ceiling"]
-          if (ceiling != "") print "  owner ceiling: " ceiling " tokens"
-          chair = v["budget" SUBSEP "run" SUBSEP "chair-tokens"]
-          if (chair != "") print "  the Chair\047s own share: " chair " tokens (agents are compared with the rest)"
-          print "  seats:"
-          for (i = 1; i <= n; i++) {
-            id = order[i]; d = v["seat" SUBSEP id SUBSEP "disposition"]; r = v["seat" SUBSEP id SUBSEP "role"]
-            line = "    " d " — " id " (" r ")"
-            if (d == "selected") {
-              line = line " · context " v["context" SUBSEP id SUBSEP "level"]
-              calls = v["budget" SUBSEP id SUBSEP "tool-calls"]; if (calls != "") line = line " · " calls " tool calls"
-              ar = v["budget" SUBSEP id SUBSEP "agent-runs"]; if (ar != "") line = line " · " ar " agent runs"
-              purpose = v["seat" SUBSEP id SUBSEP "purpose"]; if (purpose != "") line = line " · purpose " purpose
-              model = v["seat" SUBSEP id SUBSEP "model"]; if (model == "") model = "inherit"
-              if (routed) line = line " · model " model    # only once some seat asks for another model
-            }
-            print line " — " why["seat" SUBSEP id SUBSEP "disposition"]
-          }
-        }
-      ' "$plan" ;;
-    *) die "usage: council run plan [check|show]" ;;
-  esac
-}
-
 # ------------------------------------------------------------------------------------------------
 # Change index
 # ------------------------------------------------------------------------------------------------
@@ -2465,7 +2214,10 @@ impact_python() {
 # entry's own refusal of a Python older than 3.8), 126, 127 or 49 (the Store's stand-in, its 9009 through MSYS)
 # tries the next candidate. -E -s, not -I, which Python 2.7 and 3.0-3.3 stop on. Git Bash rewrites a word that
 # looks like a path (decision=/x reached Python as decision=C:/Program Files/Git/x): Python reads paths itself.
-python_command() {
+python_command() { local rc=0; python_run "$@" || rc=$?; exit "$rc"; }
+
+# The same, for bash that stays and calls a ported check: the command's exit code comes back.
+python_run() {
   local label="$1" entry="$COUNCIL_PLUGIN_ROOT/src/council" candidate rc
   shift
   case "$WINDOWS_BASH:$entry" in
@@ -2476,7 +2228,7 @@ python_command() {
     command -v "$candidate" >/dev/null 2>&1 || continue
     rc=0
     MSYS2_ARG_CONV_EXCL='*' "$candidate" -E -s "$entry/__main__.py" ${1+"$@"} || rc=$?
-    case "$rc" in 85|126|127|49) ;; *) exit "$rc" ;; esac
+    case "$rc" in 85|126|127|49) ;; *) return "$rc" ;; esac
   done
   die "$label needs Python 3.8 or newer, and none is on PATH — install it (python.org), check that python3 --version or python --version says 3.8 or later, then run this again"
 }
@@ -2510,7 +2262,7 @@ cmd_context() {
   case "$sub" in
     build)
       [ -f "$run/run-plan.tsv" ] || die "context build needs a run-plan.tsv with a selected seat; legacy runs cannot infer a context level"
-      QUIET=1 run_plan_validate "$run" "$run/run-plan.tsv" || die "context build needs a valid run plan — run: council run plan check --run ${run##*/}"
+      QUIET=1 plan_check "$run" || die "context build needs a valid run plan — run: council run plan check --run ${run##*/}"
       run_plan_has_selected "$run/run-plan.tsv" "$seat" || die "context build needs a selected seat in run-plan.tsv: $seat"
       [ -f "$run/brief.md" ] || die "context build needs the authoritative brief first: $run/brief.md"
       level="$(SEAT="$seat" awk -F'\t' '$1 == "context" && $2 == ENVIRON["SEAT"] && $3 == "level" { print $4; exit }' "$run/run-plan.tsv" | tr -d '\r')"
@@ -5301,7 +5053,7 @@ RUNS
     rclosed=""; case "$(field status "$stfile")" in complete*|abandoned*) rclosed=1 ;; esac
     if [ -n "$rclosed" ]; then :
     elif [ -f "$dir/run-plan.tsv" ]; then
-      if plan_result="$(QUIET=1 run_plan_validate "$dir" "$dir/run-plan.tsv" 2>&1)"; then :; else
+      if plan_result="$(QUIET=1 plan_check "$dir" 2>&1)"; then :; else
         plan_result="$(printf '%s\n' "$plan_result" | tail -n 1)"
         case "$phase" in
           convene|prepare|assign)
@@ -7157,229 +6909,6 @@ cmd_ledger_advice() {
   "$@"
 }
 
-# ------------------------------------------------------------------------------------------------
-# Advisory routing. The TSV is a proposal, never a run plan or a dispatch instruction.
-# Keep the policy small and deterministic until actual outcome measurements can support learning.
-# ------------------------------------------------------------------------------------------------
-
-route_row() { printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5"; }
-route_cell() { printf '%s' "$1" | tr '\t\r\n' '   '; }
-
-route_positive() {
-  case "$2" in ''|*[!0-9]*) die "--$1 needs a positive integer" ;; esac
-  [ "${#2}" -le 7 ] && [ "$2" -gt 0 ] 2>/dev/null || die "--$1 must be between 1 and 9999999"
-}
-
-cmd_route_recommend() {
-  local task="$ROUTE_TASK_ARG" risk="$ROUTE_RISK_ARG" complexity="$ROUTE_COMPLEXITY_ARG" uncertainty="$ROUTE_UNCERTAINTY_ARG"
-  local project_cap cap budget max_budget size level policy band text surfaces="" surface s per per_reason
-  local security=0 data=0 frontend=0 architecture=0 performance=0 candidates="" selected="" count=0 limit=0
-  local slug why size_reason cap_reason budget_reason risk_reason complexity_reason uncertainty_reason
-  local required_level route_status verification_status chair_tokens worker_tokens verification_tokens selected_agents=0
-  [ -n "$(route_cell "$task" | tr -d '[:space:]')" ] || die "route recommend needs --task TEXT"
-  task="$(route_cell "$task")"
-  project_cap="$(configured_agent_cap)"
-  route_positive agent-cap "$project_cap"
-  cap="$project_cap"; cap_reason="project's configured agent cap"
-  if [ -n "$ROUTE_CAP_ARG" ]; then
-    route_positive agent-cap "$ROUTE_CAP_ARG"
-    [ "$ROUTE_CAP_ARG" -le "$project_cap" ] || die "--agent-cap cannot exceed the configured cap ($project_cap)"
-    cap="$ROUTE_CAP_ARG"; cap_reason="explicit cap within project's configured cap"
-  fi
-  if [ -n "$ROUTE_BUDGET_ARG" ]; then route_positive budget-tokens "$ROUTE_BUDGET_ARG"; fi
-  case "$risk" in ''|low|medium|high) ;; *) die "--risk must be low, medium or high" ;; esac
-  case "$uncertainty" in ''|low|medium|high) ;; *) die "--uncertainty must be low, medium or high" ;; esac
-  if [ -n "$complexity" ]; then
-    route_positive complexity "$complexity"
-    [ "$complexity" -le 10 ] || die "--complexity must be 1..10"
-  fi
-  for surface in "${ROUTE_SURFACES[@]+"${ROUTE_SURFACES[@]}"}"; do
-    [ -n "$(route_cell "$surface" | tr -d '[:space:]')" ] || die "--surface needs a non-empty name"
-    s="$(route_cell "$surface")"
-    case "$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]')" in data|database|db) data=1 ;; esac
-    [ -z "$surfaces" ] || surfaces="$surfaces, "
-    surfaces="$surfaces$s"
-  done
-  # Normalize punctuation (including path separators) into token boundaries. Substring matching
-  # misroutes ordinary words such as "author" as auth and "rapid" as API.
-  text=" $(printf '%s %s' "$task" "$surfaces" | tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c 'a-z0-9' ' ') "
-  case "$text" in *" auth "*|*" authentication "*|*" authorization "*|*" authorize "*|*" security "*|*" secure "*|*" crypto "*|*" cryptography "*|*" secret "*|*" secrets "*|*" permission "*|*" permissions "*|*" credential "*|*" credentials "*|*" access token "*|*" access tokens "*|*" refresh token "*|*" refresh tokens "*|*" bearer token "*|*" bearer tokens "*|*" session token "*|*" session tokens "*|*" api key "*|*" api keys "*) security=1 ;; esac
-  case "$text" in *" database "*|*" schema "*|*" migration "*|*" migrate "*|*" persistence "*|*" persistent "*|*" storage "*|*" sql "*|*" db "*) data=1 ;; esac
-  case "$text" in *" frontend "*|*" browser "*|*" accessibility "*|*" accessible "*|*" ui "*|*" ux "*|*" css "*|*" webpage "*|*" web "*) frontend=1 ;; esac
-  case "$text" in *" architecture "*|*" architectural "*|*" refactor "*|*" refactoring "*|*" api "*|*" interface "*|*" module "*|*" modules "*|*" design "*) architecture=1 ;; esac
-  case "$text" in *" performance "*|*" latency "*|*" throughput "*|*" hot path "*|*" optimize "*|*" optimization "*) performance=1 ;; esac
-  risk_reason="inferred from task and named surfaces"
-  if [ -z "$risk" ]; then
-    risk=low
-    if [ "$security" -eq 1 ] || [ "$data" -eq 1 ]; then risk=high
-    elif [ "$architecture" -eq 1 ] || [ "$frontend" -eq 1 ] || [ "$performance" -eq 1 ]; then risk=medium; fi
-    case "$text" in *" destructive "*|*" delete "*|*" deletion "*|*" production "*|*" deploy "*|*" deployment "*|*" breaking "*|*" public api "*) risk=high ;; esac
-  else risk_reason="explicit --risk override"; fi
-  complexity_reason="estimated from named surfaces and task wording"
-  if [ -z "$complexity" ]; then
-    complexity=2
-    [ "${#ROUTE_SURFACES[@]}" -eq 0 ] || complexity=$((complexity + ${#ROUTE_SURFACES[@]}))
-    [ "$architecture" -eq 0 ] || complexity=$((complexity + 2))
-    [ "$data" -eq 0 ] || complexity=$((complexity + 1))
-    [ "$security" -eq 0 ] || complexity=$((complexity + 1))
-    case "$text" in *" cross module "*|*" multiple "*|*" several "*|*" end to end "*) complexity=$((complexity + 2)) ;; esac
-    [ "$complexity" -le 10 ] || complexity=10
-  else complexity_reason="explicit --complexity override"; fi
-  if [ "$complexity" -le 3 ]; then band=low
-  elif [ "$complexity" -le 6 ]; then band=medium
-  else band=high; fi
-  uncertainty_reason="conservative default; limited evidence from task wording"
-  if [ -z "$uncertainty" ]; then uncertainty=medium
-  else uncertainty_reason="explicit --uncertainty override"; fi
-
-  required_level=self
-  if [ "$risk" = high ]; then required_level=adversarial
-  elif [ "$risk" = medium ] || [ "$complexity" -ge 4 ] || [ "$uncertainty" = high ]; then required_level=independent; fi
-  policy=adaptive; [ "$ROUTE_CLASSIC" -eq 0 ] || policy=classic
-  route_status=ready; verification_status=available
-  size=solo; size_reason="one bounded chain can stay with the Chair"
-  if [ "$ROUTE_CLASSIC" -eq 1 ]; then
-    size=squad; size_reason="classic fixed squad baseline, independent of inferred task signals"
-  elif [ "$risk" = high ] || [ "$complexity" -ge 7 ] || [ "$uncertainty" = high ]; then
-    size=full; size_reason="high risk, complexity or uncertainty warrants broader review"
-  elif [ "$risk" = medium ] || [ "$complexity" -ge 4 ] || [ "$security" -eq 1 ] || [ "$data" -eq 1 ]; then
-    size=squad; size_reason="multiple useful lenses and independent verification"
-  fi
-  max_budget="${ROUTE_BUDGET_ARG:-9999999}"
-  per="$(configured_worker_estimate)"; per_reason="configured estimate per worker (council.config.md)"
-  [ -n "$per" ] || { per=80000; per_reason="no-history estimate"; }
-  # Only a ceiling the user gave (--budget-tokens) can shrink a run; the estimate alone never does.
-  if [ "$size" = full ] && { [ "$cap" -lt 4 ] || { [ -n "$ROUTE_BUDGET_ARG" ] && [ "$max_budget" -lt $((20000 + 4 * per)) ]; }; }; then
-    size=squad; size_reason="full recommendation reduced by agent or token cap"
-    route_status=constrained
-  fi
-  if [ "$size" = squad ] && { [ "$cap" -lt 3 ] || { [ -n "$ROUTE_BUDGET_ARG" ] && [ "$max_budget" -lt $((20000 + 3 * per)) ]; }; }; then
-    size=solo; size_reason="squad recommendation reduced by agent or token cap; independent verification unavailable"
-    route_status=constrained
-  fi
-  case "$size" in
-    solo) limit=0 ;;
-    squad) limit=4 ;;
-    full) limit=7 ;;
-  esac
-  level="$required_level"
-  if [ "$size" != solo ] && [ "$level" = self ]; then level=independent; fi
-  if [ "$size" = solo ] && [ "$required_level" != self ]; then
-    route_status=needs-rescope
-    verification_status=unavailable
-  elif [ "$route_status" = constrained ]; then
-    verification_status=constrained
-  fi
-  route_row kind id field value reason
-  route_row schema route version 1 "versioned advisory recommendation"
-  route_row input route task "$task" "explicit task description"
-  route_row input route surfaces "${surfaces:--}" "explicit surfaces only; '-' means none"
-  route_row run route policy "$policy" "classic keeps a fixed baseline; adaptive uses task signals"
-  route_row run route size "$size" "$size_reason"
-  route_row assessment route risk "$risk" "$risk_reason"
-  route_row assessment route complexity "$complexity" "$complexity_reason"
-  route_row assessment route complexity-band "$band" "maps score 1-3 low, 4-6 medium, 7-10 high for run-plan v1"
-  route_row assessment route uncertainty "$uncertainty" "$uncertainty_reason"
-  route_row budget route agent-cap "$cap" "$cap_reason"
-  route_row budget route ceiling-tokens "${ROUTE_BUDGET_ARG:--}" "explicit advisory planning ceiling; '-' means no user ceiling; not runtime enforcement"
-  route_row verification route level "$level" "minimum depth from risk, uncertainty and run size; never reduced to fit a cap"
-  if [ "$size" = solo ]; then
-    route_row seat chair disposition selected "Solo stays with the Chair; the Chair does not count against agent cap"
-  else
-    route_row seat chair disposition selected "Chair coordinates and synthesizes; does not count against agent cap"
-  fi
-  # Priority is explicit, so capped recommendations are reproducible and explain omitted lenses.
-  candidates="implementation testing security data frontend architecture performance verification"
-  if [ "$size" != solo ]; then
-    selected="implementation testing"
-    count=2
-    if [ "$size" = full ]; then limit=7; else limit=4; fi
-    # Reserve one agent slot for the verifier and add specialists by relevance.
-    [ "$cap" -gt "$limit" ] || limit=$((cap - 1))
-    for slug in security data frontend architecture performance; do
-      [ "$ROUTE_CLASSIC" -eq 0 ] || break
-      [ "$count" -lt "$limit" ] || break
-      case "$slug" in
-        security) [ "$security" -eq 1 ] || continue ;;
-        data) [ "$data" -eq 1 ] || continue ;;
-        frontend) [ "$frontend" -eq 1 ] || continue ;;
-        architecture) [ "$architecture" -eq 1 ] || [ "$complexity" -ge 7 ] || continue ;;
-        performance) [ "$performance" -eq 1 ] || continue ;;
-      esac
-      selected="$selected $slug"; count=$((count + 1))
-    done
-    # Generic Full fallbacks come only after lenses actually indicated by the task/surfaces.
-    if [ "$ROUTE_CLASSIC" -eq 0 ] && [ "$size" = full ] && [ "$count" -lt "$limit" ] && [ "$risk" = high ]; then
-      case " $selected " in *" security "*) ;; *) selected="$selected security"; count=$((count + 1)) ;; esac
-    fi
-    if [ "$ROUTE_CLASSIC" -eq 0 ] && [ "$size" = full ] && [ "$count" -lt "$limit" ]; then
-      case " $selected " in *" architecture "*) ;; *) selected="$selected architecture"; count=$((count + 1)) ;; esac
-    fi
-    selected="$selected verification"
-    selected_agents=$((count + 1))
-  fi
-  if [ "$ROUTE_CLASSIC" -eq 0 ] && [ "$size" != solo ] && [ "$route_status" = ready ]; then
-    for slug in security data frontend architecture performance; do
-      case "$slug" in
-        security) [ "$security" -eq 1 ] || continue ;;
-        data) [ "$data" -eq 1 ] || continue ;;
-        frontend) [ "$frontend" -eq 1 ] || continue ;;
-        architecture) [ "$architecture" -eq 1 ] || [ "$complexity" -ge 7 ] || continue ;;
-        performance) [ "$performance" -eq 1 ] || continue ;;
-      esac
-      case " $selected " in *" $slug "*) ;; *) route_status=constrained; break ;; esac
-    done
-  fi
-  route_row budget route selected-agents "$selected_agents" "Chair is excluded; never exceeds agent cap"
-  chair_tokens=20000
-  if [ "$size" = solo ]; then worker_tokens=0; verification_tokens=0
-  else worker_tokens=$((count * per)); verification_tokens=$per; fi
-  budget=$((chair_tokens + worker_tokens + verification_tokens))
-  budget_reason="$per_reason: $(( (per + 500) / 1000 ))k per selected agent plus 20k Chair; not measured or enforced"
-  if [ -n "$ROUTE_BUDGET_ARG" ] && [ "$budget" -gt "$ROUTE_BUDGET_ARG" ]; then
-    route_status=needs-rescope
-    verification_status=unavailable
-  fi
-  route_row run route status "$route_status" "constrained means reduced size or omitted relevant lens; needs-rescope means estimated need exceeds ceiling or required verification cannot fit"
-  route_row verification route status "$verification_status" "unavailable requires more budget or agents before proceeding"
-  route_row budget route estimated-tokens "$budget" "$budget_reason"
-  if [ -n "$ROUTE_BUDGET_ARG" ]; then
-    route_row budget run token-ceiling "$ROUTE_BUDGET_ARG" "explicit ceiling from --budget-tokens; copy to run-plan.tsv"
-  fi
-  route_row budget run chair-tokens "$chair_tokens" "the Chair's own share of the estimate; copy to run-plan.tsv — agents are compared with the rest"
-  route_row budget workers estimated-tokens "$worker_tokens" "shared across selected worker archetypes; not measured or enforced"
-  route_row budget verification estimated-tokens "$verification_tokens" "advisory allocation; not measured or enforced"
-  for slug in $candidates; do
-    case " $selected " in
-      *" $slug "*)
-        case "$slug" in
-          implementation) why="bounded implementation or primary investigation lens" ;;
-          testing) why="regression and test-design lens" ;;
-          verification) why="independent challenge of worker claims" ;;
-          security) [ "$security" -eq 0 ] && why="high-risk work merits a security challenge" || why="task or surface indicates a security lens" ;;
-          architecture) [ "$architecture" -eq 0 ] && why="full council needs a structural lens" || why="task or surface indicates an architecture lens" ;;
-          *) why="task or surface indicates a $slug lens" ;;
-        esac
-        route_row seat "$slug" disposition selected "$why" ;;
-      *)
-        if [ "$size" = solo ]; then why="Solo uses no delegated agents"
-        elif [ "$ROUTE_CLASSIC" -eq 1 ]; then why="classic policy keeps a fixed implementation, testing and verification roster"
-        elif [ "$slug" = verification ]; then why="no agent slot available for independent verification"
-        else
-          case "$slug" in
-            implementation|testing) why="not selected by routing policy" ;;
-            security) [ "$security" -eq 0 ] && why="no security signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
-            data) [ "$data" -eq 0 ] && why="no persistent-data signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
-            frontend) [ "$frontend" -eq 0 ] && why="no frontend signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
-            architecture) [ "$architecture" -eq 0 ] && [ "$complexity" -lt 7 ] && why="no architecture or high-complexity signal" || why="agent cap reserved for higher-priority lenses" ;;
-            performance) [ "$performance" -eq 0 ] && why="no performance signal in task or surfaces" || why="agent cap reserved for higher-priority lenses" ;;
-          esac
-        fi
-        route_row seat "$slug" disposition skipped "$why" ;;
-    esac
-  done
-}
-
 usage() {
   cat <<'EOF'
 council — the Small Council's helper (bash + git)
@@ -7544,8 +7073,6 @@ no_words() { local label="$1"; shift; [ $# -eq 0 ] || die "$label doesn't take '
 
 main() {
   RUN_ARG="" CODE_ROOT_ARG="" STATUS_ARG="" BASE_ARG="" AT_ARG="" ALL=0 GATE_CMD="" PROOF_ARG="" SESSION_ARG="" ALONGSIDE=0 FLAGS="" WAIT=0 WAIT_SECONDS=""
-  ROUTE_TASK_ARG="" ROUTE_RISK_ARG="" ROUTE_COMPLEXITY_ARG="" ROUTE_UNCERTAINTY_ARG="" ROUTE_CAP_ARG="" ROUTE_BUDGET_ARG="" ROUTE_CLASSIC=0
-  ROUTE_SURFACES=()
   CONTEXT_EXPANDS=()
   MEMORY_SCOPE_ARG="" MEMORY_SAID_ARG="" JSON_OUT=0 WATCH=0 WIDGET=0 LINE=0 PREVIEW=0
   PET_STOP=0 PET_DEMO=0 PET_STILL=0 PET_POSE_ARG="" PET_EXIT_ARG="" TRANSCRIPT_ARG=""
@@ -7594,10 +7121,6 @@ main() {
       proof) PROOF_ARG="$val" ;;
       alongside) ALONGSIDE=1 ;;    all) ALL=1 ;;                     json) JSON_OUT=1 ;;  watch) WATCH=1 ;;  wait) WAIT=1 ;;
       widget) WIDGET=1 ;;          line) LINE=1 ;;               preview) PREVIEW=1 ;;
-      task) ROUTE_TASK_ARG="$val" ;; risk) ROUTE_RISK_ARG="$val" ;;
-      complexity) ROUTE_COMPLEXITY_ARG="$val" ;; uncertainty) ROUTE_UNCERTAINTY_ARG="$val" ;;
-      surface) ROUTE_SURFACES+=("$val") ;; agent-cap) ROUTE_CAP_ARG="$val" ;;
-      budget-tokens) ROUTE_BUDGET_ARG="$val" ;; classic) ROUTE_CLASSIC=1 ;;
       expand) CONTEXT_EXPANDS+=("$val") ;;
       scope) MEMORY_SCOPE_ARG="$val" ;; user-said) MEMORY_SAID_ARG="$val" ;;
       stop) PET_STOP=1 ;;          demo) PET_DEMO=1 ;;           still) PET_STILL=1 ;;
@@ -7623,7 +7146,7 @@ main() {
         close)  takes_flags "run close" status; no_words "run close" ${1+"$@"}; cmd_run_close ;;
         status) python_command "council run status" ${given[@]+"${given[@]}"} ;;
         resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
-        plan)   takes_flags "run plan"; [ $# -le 1 ] || die "usage: council run plan [check|show]"; cmd_run_plan ${1+"$@"} ;;
+        plan)   python_command "council run plan" ${given[@]+"${given[@]}"} ;;
         events) takes_flags "run events"; [ $# -le 1 ] || die "usage: council run events [show|check|repair]"; cmd_run_events ${1+"$@"} ;;
         audit)  takes_flags "run audit" transcript; no_words "run audit" ${1+"$@"}; cmd_run_audit ;;
         turn-end) takes_flags "run turn-end" session; no_words "run turn-end" ${1+"$@"}
@@ -7643,13 +7166,7 @@ main() {
                       cmd_cap_allow "$1" ;;
                *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool> [type=… seat=… run=… file=…]]" ;;
              esac ;;
-    route)   sub="${1:-}"; [ $# -eq 0 ] || shift
-             case "$sub" in
-               recommend) takes_flags "route recommend" task risk complexity uncertainty surface agent-cap budget-tokens classic
-                          [ -z "$RUN_ARG" ] || die "route recommend does not take --run; it uses this project's config"
-                          no_words "route recommend" ${1+"$@"}; cmd_route_recommend ;;
-               *) die "usage: council route recommend --task TEXT [routing flags]" ;;
-             esac ;;
+    route)   python_command "council route" ${given[@]+"${given[@]}"} ;;
     index)   takes_flags index base; no_words index ${1+"$@"}; cmd_index ;;
     impact)  takes_flags impact; no_words impact ${1+"$@"}; cmd_impact ;;
     context) sub="${1:-}"; [ $# -eq 0 ] || shift

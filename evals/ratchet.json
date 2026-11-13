@@ -45,7 +45,7 @@
  },
  "files": {
   "bin/council": {
-   "lines": 7765,
+   "lines": 7282,
    "longest": 297,
    "longest_name": "cmd_check",
    "shellcheck": 44
@@ -205,6 +205,16 @@
    "longest": 12,
    "longest_name": "main"
   },
+  "src/council/commands/plan.py": {
+   "lines": 129,
+   "longest": 33,
+   "longest_name": "shown"
+  },
+  "src/council/commands/plan_check.py": {
+   "lines": 375,
+   "longest": 36,
+   "longest_name": "seat_rules"
+  },
   "src/council/commands/pushes.py": {
    "lines": 44,
    "longest": 14,
@@ -219,6 +229,11 @@
    "lines": 132,
    "longest": 34,
    "longest_name": "check_round"
+  },
+  "src/council/commands/route.py": {
+   "lines": 327,
+   "longest": 30,
+   "longest_name": "disposition"
   },
   "src/council/commands/runs.py": {
    "lines": 57,
