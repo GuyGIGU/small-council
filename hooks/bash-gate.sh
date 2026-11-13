@@ -272,6 +272,6 @@ fi
 case "$pushed" in 'git push'|'gh pr create') ;; *) exit 0 ;; esac
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
 case "$cwd" in [A-Za-z]:\\*) cwd="$(printf '%s' "$cwd" | tr '\\' '/')" ;; esac   # C:\Users\… as Git Bash takes it
-out="$(cd "$cwd" 2>/dev/null; "${BASH:-bash}" "$ROOT/bin/council" pushes check "$pushed" 2>/dev/null)"
+out="$(cd "$cwd" 2>/dev/null || true; "${BASH:-bash}" "$ROOT/bin/council" pushes check "$pushed" 2>/dev/null)"
 [ $? -eq 2 ] && case "$out" in "Small Council:"*) printf '%s\n' "$out" >&2; exit 2 ;; esac
 exit 0

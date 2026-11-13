@@ -48,7 +48,7 @@
    "lines": 7282,
    "longest": 297,
    "longest_name": "cmd_check",
-   "shellcheck": 44
+   "shellcheck": 34
   },
   "hooks/agent-gate.sh": {
    "lines": 152,
