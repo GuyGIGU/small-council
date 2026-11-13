@@ -63,7 +63,7 @@ seat by seat; a council-init refresh proposes roster changes only where the advi
   When they want it back, `council run resume --run <folder>`.
 
 **Close every run you open** — in order:
-1. `council run close`. With Python it prints each FAIL of `council run audit --run <folder>`.
+1. `council run close`. With Python it prints each FAIL of `council run audit --run <folder>` and keeps the whole report as `<run>/audit.md`.
 2. **Show the closing card, once,** then send the owner's alert — each as the close's own lines say
    (a closed run needs `--run <folder>`).
 3. Tell the user each FAIL line, in plain words.

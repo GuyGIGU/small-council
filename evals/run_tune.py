@@ -134,6 +134,36 @@ with tempfile.TemporaryDirectory(prefix="council-tune-") as temporary:
     check("tune --json: the same proposals as data",
           code == 0 and data.get("schema") == "council.tune/2" and data["budget"]["status"] == "proposed"
           and data["budget"]["value"] == 150000 and len(data["held"]) == 3, out[:400] + err)
+    check("tune: with every agent's tokens on record, no seat is said to be left out",
+          data["budget"]["unfigured"]["seats"] == 0 and "left out of the measurement" not in council(repo, "tune")[1], out)
+
+    # Issue 54: a completed run with agent seats that have no token figure is left out of the measurement, and
+    # the proposal says how many seats and why, in one line, instead of undercounting without a word.
+    gap_repo = new_repo(base, "unfigured")
+    gap_home = gap_repo / ".council"
+    make_runs(gap_home, 5, 150000)
+    short = gap_home / "runs" / "2026-09-20-100000-review"
+    write(short / "session-state.md", "status: complete\nmode: council-review\nphase: deliver\n## Decisions so far\n")
+    write(short / "run-plan.tsv", "kind\tid\tfield\tvalue\treason\nrun\trun\tsize\tsquad\tr\n"
+          "seat\tchair\trole\tchair\tr\nbudget\trun\testimated-tokens\t260000\tr\n")
+    write(short / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
+          "hunt\tdone\ta\t150000\t-\t-\t1\t1\nbeck\tdone\tab12cd34\t\t-\t-\t1\t0\nverify-1\tdone\t\t\t-\t-\t\t0\n"
+          "chair\tdone\t\t\t-\t-\t0\t0\nplanner\tdone\t\t\t-\t-\t0\t0\n")
+    gap_code, gap_out, gap_err = council(gap_repo, "tune")
+    notes = [line for line in gap_out.splitlines() if "left out of the measurement" in line]
+    check("tune: seats that ran as agents with no token figure are named in one line — how many, in how many runs, "
+          "why — and the Chair's own seat and a declared agents=0 seat are not counted",
+          gap_code == 0 and len(notes) == 1 and "2 seat(s) in 1 completed run(s)" in notes[0]
+          and "1 no agent id recorded, 1 no usage report" in notes[0] and "council run audit" in notes[0], gap_out + gap_err)
+    check("tune: the measurement itself still reads only the five runs that have every figure",
+          "median 150k tokens per agent over 5 completed runs" in gap_out and "1 completed run(s) left out" in gap_out, gap_out)
+    gap_code, gap_out, gap_err = council(gap_repo, "tune", "--json")
+    try:
+        gone = json.loads(gap_out)["budget"]["unfigured"]
+    except (ValueError, KeyError):
+        gone = {}
+    check("tune --json: the same count as data", gone == {"seats": 2, "runs": 1, "kinds": {
+        "no agent id recorded": 1, "no usage report": 1}}, gap_out[:600] + gap_err)
     before_other = others(home)
     before_config = (home / "council.config.md").read_bytes()
     refusals = [(council(repo, *w), want) for w, want in (

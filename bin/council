@@ -1888,23 +1888,23 @@ deliver_route() {
 
 # The close reads the run back against the method itself (scripts/audit.py, as council run audit does):
 # five runs closed with no audit, and the one audit's four FAILs never reached the user. Every FAIL line is
-# printed whole, on stdout with the close; the closing card, which can't have been shown yet, is left to a
-# later council run audit. Without Python 3.8+ there is no audit (10-learn.md says what to do).
+# printed whole, on stdout with the close, and the report is kept as <run>/audit.md (--save; a close again
+# rewrites it); the closing card is left to a later council run audit. No Python 3.8+, no audit (10-learn.md).
 close_audit() {
   local run="$1" py out rc=0
   py="$(impact_python)" || return 0
-  out="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/audit.py" --run "$run" --at-close 2>&1)" || rc=$?
+  out="$("$py" "$COUNCIL_PLUGIN_ROOT/scripts/audit.py" --run "$run" --at-close --save 2>&1)" || rc=$?
   if [ "$rc" -gt 1 ]; then
     say "audit: could not read the run back ($(printf '%s\n' "$out" | awk 'NF { l = $0 } END { print l }')) — council run audit --run ${run##*/}"
     return 0
   fi
-  printf '%s\n' "$out" | NAME="${run##*/}" awk '
-    /^[0-9]+ failed, / { total = $0 }
-    /^  FAIL  / { fail[++n] = $0 }
+  printf '%s\n' "$out" | NAME="${run##*/}" RUN="$run" awk '
+    /^[0-9]+ failed, / { total = $0 }; /^  FAIL  / { fail[++n] = $0 }
+    /^Saved: / { kept = ENVIRON["RUN"] "/audit.md" }; /^Not saved: / { lost = " (" $0 ")" }
     END {
       if (total == "") total = "no verdict line"
-      if (n) printf "audit: %s — tell the user each FAIL below, in plain words; every item: council run audit --run %s\n", total, ENVIRON["NAME"]
-      else printf "audit: %s — every item: council run audit --run %s\n", total, ENVIRON["NAME"]
+      where = kept ? "every item, kept: " kept : "every item: council run audit --run " ENVIRON["NAME"] lost
+      printf "audit: %s — %s%s\n", total, n ? "tell the user each FAIL below, in plain words; " : "", where
       for (i = 1; i <= n; i++) print fail[i]
     }'
 }

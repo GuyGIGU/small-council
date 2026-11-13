@@ -101,7 +101,16 @@ The `seat.updated` event carries a seat's totals so far, so summing events count
 - **`council history` costs only completed runs whose basis is complete, with an exact agent-run
   count.** It counts every other run under "left out", with the reason.
 - **`council tune` reads that history.** Five measured runs make a proposal eligible; they do not
-  make it reliable. Read its spread.
+  make it reliable. Read its spread. A run with a seat that has no figure is already left out of
+  the measurement; `council tune` now says in one line how many seats in how many completed runs it
+  left out, by kind (no agent id recorded, no usage report, an unusable figure).
+- **The close's audit names each seat that was an agent run with no token figure** (the `Token
+  figures` item, a FAIL, from `records/usage_gaps.py` over the per-seat rule above: a basis of
+  partial, missing, unrecorded or suspect; the Chair's own seat, a seat declared `agents=0` and a seat
+  still working are not). It says why when the record shows it: no agent id recorded, a finished agent
+  with no usage report, one of several without, a figure under 1,000. `council correct` with the
+  source puts it right; the saved `<run>/audit.md` is the close's own reading, and `council run audit`
+  reads the run as it stands.
 
 ## Correcting a record (`council correct`)
 
