@@ -149,13 +149,15 @@ hand-written brief, and post-game findings per run before and after.
 | T3 | The generated task pack (#57, #61, #67), `council tree` | T1 and S8 | ~600–800k |
 | T4 | The planted drill cases | S10 (#70) | part of S10 |
 
-## Open questions for the user
+## Decided by the user (2026-11-13)
 
-1. **`Serves:` on every task.** Recommended: yes, refused when missing. It costs one line a task.
-2. **A workaround with no better fix.** Recommended: the user rules, and the ruling is recorded
-   like any other.
-3. **A builder's `NEEDS:`.** Recommended: the Chair may run one probe or research seat inside the
-   run's budget without asking, and asks before a second.
+1. **`Serves:` on every task.** Yes. The plan check refuses a task without it. A support task (a
+   test, a changelog line) quotes the part of the request its parent task serves.
+2. **A workaround with no better fix.** The user rules each time. The Chair brings it with the cause
+   and what was tried, in the one question at Deliver, and the answer is recorded as a decision so
+   the same workaround is not asked about twice. The Chair never ships one on its own call.
+3. **A builder's `NEEDS:`.** The Chair may run one probe or research seat a run inside the approved
+   budget without asking, and asks before a second.
 
 ## Until it is built: the cleanup's own sessions
 
