@@ -45,7 +45,10 @@ PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and match
     open run, an agent for a closed run, a seat the plan doesn't select, a build task's third check — read
     from the Seat: line or the file the dispatch writes; never an ordinary agent, a Workflow, a verifier
     outside any run, or a cut-off input; never a re-review or post-game for citing an earlier run's file,
-    nor a display name on the Seat: line.
+    nor a display name on the Seat: line;
+  - refuses a council-worker or council-verifier while the council home, or the run folder the dispatch
+    names, is not writable from the session (found by trying to make a file, issue 51) — from a linked
+    worktree too, where the home is the main checkout's — and lets an ordinary agent through.
 Stop (hooks/turn-end.sh): sends the Chair back once while the run's first status card is still due.
 PreToolUse (hooks/bash-gate.sh), fed through hooks.json's own command and matcher:
   - refuses (exit 2, one line on stderr) a command that pipes the helper into head, tail or grep —
@@ -251,6 +254,35 @@ def compacted(out):
 
 PARTS = []                   # (group, block), in file order
 ALONE = {"timing"}           # groups that must run with nothing else running (see evals/run_all.py)
+
+
+class unwritable:
+    """with unwritable(folder) as blocked: make the folder refuse new files to this user, then put it back.
+    blocked is False when this system lets the user write there anyway (root). Windows takes a deny entry for
+    the user (icacls), as a read-only flag doesn't stop a file being made in a folder there; elsewhere the mode does."""
+
+    def __init__(self, folder):
+        self.folder, self.user = folder, os.environ.get("USERNAME", "")
+
+    def __enter__(self):
+        if os.name == "nt":
+            subprocess.run(["icacls", self.folder, "/deny", self.user + ":(WD,AD)"], capture_output=True, check=True)
+        else:
+            os.chmod(self.folder, 0o555)
+        probe = os.path.join(self.folder, ".eval-probe")
+        try:
+            with open(probe, "w"):
+                pass
+            os.unlink(probe)
+            return False
+        except OSError:
+            return True
+
+    def __exit__(self, *exc):
+        if os.name == "nt":
+            subprocess.run(["icacls", self.folder, "/remove:d", self.user], capture_output=True)
+        else:
+            os.chmod(self.folder, 0o755)
 
 
 def part(group):
@@ -1288,6 +1320,70 @@ def agent_gate_reads_the_dispatch(tmp):
     code, said, err = gate(allowed[0][1])
     check("dispatch: with no run open here any more, a dispatch for a closed run is refused", code == 2
           and "which is closed (abandoned)" in err, said)
+
+
+@part("main")
+def agent_gate_unwritable(tmp):
+    # Issue 51: a session opened in an app worktree could not write .council/, and a seat went out with no
+    # brief. The gate tries to make a file in the council home and the run folder, and refuses a Small Council
+    # agent while it can't; the refusal names the folder and the next step, and an ordinary agent is untouched.
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        wired = json.load(f)["hooks"]
+    gate_cmd = next(h["command"] for g in wired["PreToolUse"] for h in g["hooks"] if "hooks/agent-gate.sh" in h["command"])
+    worker, verifier = "small-council:council-worker", "small-council:council-verifier"
+
+    def said(code, out, err):
+        return f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()[:300]}"
+
+    def gate(cwd, subagent, prompt):
+        return run_agent_gate(gate_cmd, dispatch_input("sU", cwd, subagent, prompt), cwd)[:3]
+
+    def starts(run):
+        path = os.path.join(run, "agent-starts.tsv")
+        return open(path, encoding="utf-8").read().count("\tAgent\t") if os.path.exists(path) else 0
+
+    repo = new_repo(tmp, "unwritable")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    _, run, _ = council(repo, "run", "open", "council-review", session="sU")
+    valid_plan(run, seats=("chair", "hunt"))
+    home, orders = os.path.join(repo, ".council"), f"Seat: hunt — Security\nWrite {run}/seats/hunt.md, then return one line."
+    code, out, err = gate(repo, worker, orders)
+    check("unwritable: with the council home writable, a planned council-worker starts", code == 0 and not err, said(code, out, err))
+    wt = os.path.join(tmp, "unwritable-wt")
+    git(repo, "worktree", "add", "-q", "-b", "wt", wt)
+    code, out, err = gate(wt, worker, orders)
+    check("unwritable: from a linked worktree the dispatch is judged by the main checkout's council (home found, issue 51 part 2)",
+          code == 0 and not err and starts(run) == 2, said(code, out, err) + f" · {starts(run)} starts")
+
+    refused = ("exit 2", "Small Council:", "is not writable from this session", "Open the session in the main checkout",
+               "fix the folder's permissions")
+    with unwritable(home) as blocked:
+        if not blocked:
+            print("[SKIP] unwritable: this system lets the user write into a folder made read-only (root?); the refusals were not tried")
+            return
+        for label, cwd in (("", repo), (" from a linked worktree", wt)):
+            code, out, err = gate(cwd, worker, orders)
+            check(f"unwritable: a council-worker is refused while the council home can't be written{label} — exit 2, "
+                  "the reason on stderr naming the folder and the next step, nothing on stdout",
+                  code == 2 and not out and all(w in said(code, out, err) or w in err for w in refused)
+                  and home.replace("\\", "/") in err.replace("\\", "/"), said(code, out, err))
+        check("unwritable: the refused worker is not counted as a start", starts(run) == 2, str(starts(run)))
+        code, out, err = gate(repo, verifier, f"Check the claims.\nWrite your verdicts to {run}/verify-1.md, then reply.")
+        check("unwritable: a council-verifier is refused too", code == 2 and "is not writable from this session" in err,
+              said(code, out, err))
+        code, out, err = gate(repo, "general-purpose", orders)
+        check("unwritable: an ordinary agent is never refused for it", code == 0 and not err, said(code, out, err))
+    code, out, err = gate(repo, worker, orders)
+    check("unwritable: once the folder is writable again the worker starts", code == 0 and not err, said(code, out, err))
+
+    with unwritable(run) as blocked:
+        if blocked:
+            code, out, err = gate(repo, worker, orders)
+            check("unwritable: a run folder the dispatch names that can't be written refuses the worker, naming the run folder",
+                  code == 2 and not out and "the run folder" in err and os.path.basename(run) in err
+                  and "Open the session in the main checkout" in err, said(code, out, err))
+    code, out, err = gate(repo, worker, orders)
+    check("unwritable: with the run folder writable again, the worker starts", code == 0 and not err, said(code, out, err))
 
 
 @part("timing")

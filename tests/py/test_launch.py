@@ -37,7 +37,7 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(started("cap"), sorted(base + ["council.commands.cap", "council.commands.resolve"]))
         self.assertEqual(started("cap", "check", "Agent"),           # the build loop's rules wait for a verifier
                          sorted(base + ["council.commands.agent_gate", "council.commands.cap",
-                                        "council.commands.resolve"]))
+                                        "council.commands.gate_writable", "council.commands.resolve"]))
         self.assertEqual(started("run", "plan", "check"),     # rounds (datetime) waits for an open run's decisions
                          sorted(base + ["council.commands.plan", "council.commands.plan_check",
                                         "council.commands.resolve"]))

@@ -1,10 +1,11 @@
 """The run plan check's rules (references/run/run-plan.md): each row's own, then the plan's. The plan is
-read as the helper's awk read it: every byte, one carriage return dropped from a line's end, and a numeric
-value with spaces around it compared as text (awk's rule, kept as it was)."""
+read as the helper's awk read it: every byte, its lines as `cells.lines_of` splits them, and a numeric value
+with spaces around it compared as text (awk's rule, kept as it was)."""
 from __future__ import annotations
 
 import re
 from typing import NamedTuple
+from council.records import cells
 
 HEADER = "kind\tid\tfield\tvalue\treason"
 NUMBER = re.compile(r"[ \t\n\r\f\v]*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][-+]?[0-9]+)?")
@@ -61,8 +62,8 @@ class Verdict(NamedTuple):
 def judge(content: str, given: Settings) -> Verdict:
     """Every row's own rules, then the plan's: the rows it must have, its seats and its size."""
     judged = Check(given)
-    for n, line in enumerate(content.split("\n"), 1):
-        judged.line(n, line[:-1] if line.endswith("\r") else line)
+    for n, line in enumerate(cells.lines_of(content), 1):
+        judged.line(n, line)
     return judged.finish()
 
 
@@ -111,12 +112,12 @@ class Check:
             if line != HEADER:
                 self.problem(n, "header must be exactly: " + HEADER)
             return
-        cells = line.split("\t")
-        if len(cells) != 5:
-            self.problem(n, "expected exactly 5 tab-separated columns, got %d" % len(cells))
+        parts = line.split("\t")
+        if len(parts) != 5:
+            self.problem(n, "expected exactly 5 tab-separated columns, got %d" % len(parts))
             return
-        kind, ident, field, raw, why = (re.sub(r"^[ \t]+|[ \t]+$", "", cell) for cell in cells)
-        value = Value(raw, raw != cells[3])
+        kind, ident, field, raw, why = (re.sub(r"^[ \t]+|[ \t]+$", "", part) for part in parts)
+        value = Value(raw, raw != parts[3])
         if not (kind and ident and field and raw and why):
             self.problem(n, "kind, id, field, value and reason must all be present")
             return
@@ -368,8 +369,7 @@ class Tally:
 
 REQUIRED = ((("schema", "plan", "version"), "schema version"), (("run", "run", "id"), "run id"),
             (("run", "run", "mode"), "run mode"), (("run", "run", "size"), "run size"),
-            (("assessment", "run", "risk"), "risk assessment"),
-            (("assessment", "run", "complexity"), "complexity assessment"),
-            (("assessment", "run", "uncertainty"), "uncertainty assessment"),
+            (("assessment", "run", "risk"), "risk assessment"), (("assessment", "run", "complexity"),
+            "complexity assessment"), (("assessment", "run", "uncertainty"), "uncertainty assessment"),
             (("budget", "run", "agent-cap"), "agent cap"), (("budget", "run", "estimated-tokens"), "token estimate"),
             (("verification", "run", "level"), "verification level"))

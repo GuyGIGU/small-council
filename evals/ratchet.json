@@ -29,9 +29,18 @@
    "items": [
     "bin/council",
     "hooks/session-start.sh",
-    "scripts/quick_validate.py"
+    "scripts/audit.py",
+    "scripts/cockpit.py",
+    "scripts/context.py",
+    "scripts/evidence.py",
+    "scripts/memory.py",
+    "scripts/outcomes.py",
+    "scripts/quick_validate.py",
+    "scripts/repair.py",
+    "scripts/status.py",
+    "scripts/tune.py"
    ],
-   "value": 3
+   "value": 12
   }
  },
  "files": {
@@ -242,7 +251,7 @@
    "longest_name": "token_count"
   },
   "src/council/records/config.py": {
-   "lines": 236,
+   "lines": 230,
    "longest": 20,
    "longest_name": "preferences_insertion"
   },
@@ -263,7 +272,7 @@
   },
   "src/council/records/ledger.py": {
    "lines": 84,
-   "longest": 22,
+   "longest": 21,
    "longest_name": "read"
   },
   "src/council/records/locks.py": {
@@ -302,7 +311,7 @@
    "longest_name": "with_sharing"
   },
   "src/council/records/state.py": {
-   "lines": 114,
+   "lines": 99,
    "longest": 14,
    "longest_name": "header"
   },

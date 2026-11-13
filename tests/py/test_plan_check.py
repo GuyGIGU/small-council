@@ -52,10 +52,9 @@ class JudgeTest(unittest.TestCase):
         text = "# a\n\n" + PLAN.replace("tool-calls\t30", "tool-calls\t0")
         self.assertEqual(judged(text).problems, ["ERROR line 21: tool-calls must be an integer from 1 to 200"])
 
-    def test_one_carriage_return_is_dropped_from_a_line(self) -> None:
+    def test_a_lines_carriage_returns_are_dropped(self) -> None:          # cells.lines_of, as awk on Windows
         self.assertEqual(judged(PLAN.replace("\n", "\r\n")).problems, [])
-        self.assertIn("ERROR line 1: header must be exactly: kind\tid\tfield\tvalue\treason",
-                      judged(PLAN.replace("\n", "\r\r\n")).problems)
+        self.assertEqual(judged(PLAN.replace("\n", "\r\r\n")).problems, [])
 
     def test_a_byte_order_mark_is_not_part_of_the_header(self) -> None:
         self.assertEqual(judged("﻿" + PLAN).problems[0], "ERROR line 1: header must be exactly: "
@@ -131,8 +130,9 @@ class ShownTest(unittest.TestCase):
                       "— build", lines)
         self.assertIn("    selected — chair (chair) · context full · 50 tool calls · model inherit — lead", lines)
 
-    def test_cells_are_shown_as_written(self) -> None:
-        self.assertEqual(plan.shown(PLAN.replace("\n", "\r\n"))[-1], "    skipped — security (worker) — no signal\r")
+    def test_cells_are_shown_as_written_without_a_carriage_return(self) -> None:
+        padded = PLAN.replace("\tno signal", "\tno signal ").replace("\n", "\r\n")
+        self.assertEqual(plan.shown(padded)[-1], "    skipped — security (worker) — no signal ")
 
 
 class SettingsTest(support.Scratch):

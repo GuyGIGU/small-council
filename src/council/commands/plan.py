@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from council.commands import cli, plan_check, resolve
-from council.records import config, plan, seats
+from council.records import cells, config, plan, seats
 from council.records import home as where
 
 USAGE = "usage: council run plan [check|show]"
@@ -84,15 +84,15 @@ def shown(content: str) -> list[str]:
     why: dict[Key, str] = {}
     order: list[str] = []
     routed = False
-    for line in content.split("\n"):
-        cells = line.split("\t")
-        if line.startswith("#") or len(cells) != 5:
+    for line in cells.lines_of(content):
+        parts = line.split("\t")
+        if line.startswith("#") or len(parts) != 5:
             continue
-        key = (cells[0], cells[1], cells[2])
-        v[key], why[key] = cells[3], cells[4]
-        if cells[0] == "seat" and cells[2] == "disposition":
-            order.append(cells[1])
-        routed = routed or (cells[0] == "seat" and cells[2] == "model" and cells[3] != "inherit")
+        key = (parts[0], parts[1], parts[2])
+        v[key], why[key] = parts[3], parts[4]
+        if parts[0] == "seat" and parts[2] == "disposition":
+            order.append(parts[1])
+        routed = routed or (parts[0] == "seat" and parts[2] == "model" and parts[3] != "inherit")
 
     def run(kind: str, field: str) -> str:
         return v.get((kind, "run", field), "")
