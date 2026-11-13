@@ -3,7 +3,7 @@ from pathlib import Path
 
 import support
 
-from council.records import config
+from council.records import config, sharing
 
 
 class ConfiguredTest(support.Scratch):
@@ -21,7 +21,7 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.checking(home), "one per batch (default)")
         self.assertIsNone(config.worker_estimate(home))
         self.assertEqual(config.seat_models(home), "off")
-        self.assertEqual(config.sharing(home), "team")
+        self.assertEqual(sharing.sharing(home), "team")
         self.assertEqual(config.gate_time_limit(home), (None, ""))
         self.assertFalse(config.notifications_off(home))
         self.assertEqual(config.memory_path(home), "")
@@ -63,7 +63,7 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.seat_models(self.home("- seat models: On\n")), "off")
         for line, want in (("Just Me", "just me"), ("just-me (this laptop)", "just me"), ("private", "just me"),
                            ("team", "team"), ("just meh", "team"), ("", "team")):
-            self.assertEqual(config.sharing(self.home("- sharing: {}\r\n".format(line))), want, line)
+            self.assertEqual(sharing.sharing(self.home("- sharing: {}\r\n".format(line))), want, line)
 
     def test_gate_time_limit(self) -> None:
         self.assertEqual(config.gate_time_limit(self.home("- gate time limit: 15 min\n")), (900, "15 min"))
