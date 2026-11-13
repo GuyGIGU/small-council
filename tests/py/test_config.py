@@ -92,7 +92,8 @@ class StatusReadingTest(support.Scratch):
     def test_notifications_off(self) -> None:
         self.assertTrue(config.notifications_off(self.home("- Notifications: OFF  # quiet\n")))
         self.assertFalse(config.notifications_off(self.home("- notifications: on\n")))
-        self.assertTrue(config.notifications_off(self.home("- notifications: off\r\n")))    # the helper strips the CR first
+        # the helper strips the carriage return first
+        self.assertTrue(config.notifications_off(self.home("- notifications: off\r\n")))
         self.assertTrue(config.notifications_off(self.home("- notifications: off  # quiet\r\n")))
         self.assertFalse(config.notifications_off(self.home("- notifications: of\r\n")))
 
