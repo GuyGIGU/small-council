@@ -22,24 +22,20 @@ Give each seat exactly its slice, and each worker a budget.
    data — rather than getting its own agent.
 4. **Big slices split.** Over ~25 files → two workers (`hunt-a`, `hunt-b`), each with half.
 5. **Budgets from slice size:** ~15 tool calls for up to 5 files, ~30 for up to 15, ~45 for up to 25.
-6. **Count agents.** Workers + the verifiers Challenge will need must fit the agent cap (default
-   10). Count agent runs, not seats: a seat you will run as a Workflow counts every agent it starts —
-   give it `budget/<slug>/agent-runs` in the plan. Give each of its agents a group of small,
+6. **Count agents.** Workers + the verifiers Challenge will need must fit the agent cap
+   (context-core, Limits). Count agent runs, not seats: a seat you will run as a Workflow counts
+   every agent it starts — give it `budget/<slug>/agent-runs` in the plan. Give each of its agents a group of small,
    same-kind parts (files, tasks, items), never one small part each. Over → pair more seats, or ask
-   the user. A re-dispatch or a diagnosis worker counts too; a resumed worker (SendMessage to its
-   agent id) doesn't.
-7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat a `disposition`
-   (`selected` or `skipped`) and `role`, with the reason. Every selected seat gets a context level;
-   every selected seat gets a tool-call budget. Always include the Chair as a selected
-   `chair` (the plan check needs one). Copy the recommendation's compatible risk, complexity band, uncertainty,
-   cap, and verification level only after checking them against what Prepare uncovered. If a
-   recommendation changed, record the evidence and reason in the plan. Run
+   the user. A diagnosis worker counts too; a re-dispatch or a resumed worker: context-core, Limits.
+7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat, the Chair too, its
+   rows (`references/run-plan.md`, Shape), with the reason. Copy the recommendation's compatible
+   risk, complexity band, uncertainty, cap, and verification level only after checking them against
+   what Prepare uncovered. If a recommendation changed, record the evidence and reason in the plan. Run
    `council run plan check`; fix every error before going on.
    If `- seat models: on` is set in `council.config.md`, a selected mapping or survey worker may get
    `seat/<slug>/purpose = mapping` or `survey` and `seat/<slug>/model = sonnet` or `haiku`;
-   otherwise omit the model row (`inherit`). Mapping charts code for `map.md`; survey gathers facts
-   for others to judge. Keep the Chair and verifier at `inherit` — the plan check enforces this, but
-   dispatch itself isn't gated. A model choice is a request for dispatch, not proof of which model ran.
+   otherwise omit the model row (`inherit`); run-plan.md says what each purpose covers. Keep the
+   Chair and verifier at `inherit` (the plan check enforces it; at dispatch: Work). A model choice is a request for dispatch, not proof of which model ran.
 8. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
    note="<reason>"` for every seat not called. The helper refuses to queue or start a seat the valid
    plan does not mark selected.

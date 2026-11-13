@@ -5,8 +5,8 @@ description: Plan a feature, integration or migration with Small Council expert 
 
 # Council Plan (mode)
 
-A mode on the council's engine. **Invoke `context-core` and run its stages.** At each stage, read the
-stage's doctrine, then this file's `## At <Stage>` section.
+A mode on the council's engine. **Invoke `context-core` and run its stages** (context-core, The
+stages).
 
 **This is planning, not review.** No seat hunts for bugs. Each seat says:
 - where the risk will live;
@@ -24,7 +24,7 @@ first and plan from its answer.
 
 Establish enough scope to brief every seat. Use the request, existing spec and earlier answers;
 ask only for consequential gaps. Do the light survey below before asking. Dispatch needs approval
-under Convene's rule; carry forward approval already given for the same scope, size and budget.
+under Convene's rule (step 9).
 
 **Open the run and save the request first:** `council run open council-plan`, then write ask.md with
 the user's words, before your first question — a compaction can't paraphrase what's already on disk.
@@ -79,9 +79,9 @@ may want recorded in memory.
 ask.md's `## Later, in your words` as `- <date>: "<their words>"`, before your next question — a
 post-game reads them.
 
-**The war room.** For a big or tough feature — or when the user says "debate it" — the seats answer
-each other before you judge. `${CLAUDE_PLUGIN_ROOT}/references/war-room.md` says when it's on and how
-it runs; name it on the Council line with its cost.
+**The war room:** the seats answer each other before you judge.
+`${CLAUDE_PLUGIN_ROOT}/references/war-room.md` says when it's on and how it runs; name it on the
+Council line with its cost.
 
 - Deliverable: `<home>/plans/<slug>.md`.
 - Cap: 15 tasks.
@@ -101,8 +101,7 @@ feature correctly the first time?*
 
 Not a finding:
 - re-opening an "Already decided" choice;
-- generic best practice with no anchor in this feature;
-- anything an applicable settled memory entry covers (Convene resolves current overrides).
+- generic best practice with no anchor in this feature.
 
 When the war room is on, the brief's top block says `War room: on — end your file with ## Approach`.
 
@@ -124,8 +123,7 @@ Index line: `<n> · <must|should|could> · <principle> · <path or area> · <tit
 ## At Collect — the war room
 
 **On:** after a clean `council collect`, read `${CLAUDE_PLUGIN_ROOT}/references/war-room.md` and run
-round 2 — at most 6 neutral points in debate.md, the seats they name resumed, then one more
-`council collect`. **Off:** nothing extra.
+round 2. **Off:** nothing extra.
 
 ## At Judge
 
@@ -148,15 +146,12 @@ round 2 — at most 6 neutral points in debate.md, the seats they name resumed, 
   | Speed | Performance |
   | Testability | Tests |
 
-- **Conflict pass.** Items whose *Assumes* lines contradict each other either get settled by the code
-  or become rulings for the user.
 - **A real structural choice? Two stances.** When the conflict pass or the scope leaves two
   defensible shapes the code doesn't settle — one table or two, extend a module or add a new one —
   write both stances side by side: what each builds, what it costs, what it risks, which items each
   serves. Put it to the user as a ruling before grouping tasks. Only for a real fork; never as a
   default, and no extra agents.
-- **After a war room,** every point ends one of four ways — agreed, settled by the code, moved without
-  new evidence (treated as not moved), or a fork that becomes Two stances (war-room.md).
+- **After a war room:** war-room.md, Judge.
 - **The request, covered.** Before grouping, every part of the request — ask.md, and the filed request
   it continues — maps to a task, to Already decided (built, per a post-game), or to Out of scope with
   the user's dated words that ruled it out. A part with none of these gets a task, or a question to
@@ -189,12 +184,11 @@ that number. Several claims may share a number: the claim index keeps every row,
 recommendation takes the worst verdict. Every kept recommendation needs at least one claim — send a
 recommendation no task assumption tests as a claim of its own, and every cut P1 as usual.
 
-After a war room, the agreements a task rests on, and the riskiest assumptions two or more seats named,
-go to the verifier too.
+After a war room: war-room.md, Challenge.
 
 ## At Deliver — `<home>/plans/<slug>.md`
 
-File the request first — `council ask save` — then write:
+File the request first (Deliver, step 1), then write:
 
 ```
 ---
@@ -237,10 +231,8 @@ where to start, and which seat is worth having on hand during the build.>
 **Attribution is non-negotiable.** Every task has a Domain row and a Ref row. A combined task names
 its primary domain and cross-references the rest.
 
-In chat: the Summary table, the Verdict and the plan's path. Then, numbered:
-- the rulings needed;
-- memory proposals;
-- the hand-off: *"Build it with council-implement?"*
+In chat: the Summary table, the Verdict and the plan's path. Then the rulings as one question (Deliver, step 6),
+the memory proposals, and the hand-off: *"Build it with council-implement?"*
 
 ## Notes
 

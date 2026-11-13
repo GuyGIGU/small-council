@@ -69,11 +69,11 @@ Test/lint suggest the testing lens; data/schema the data-integrity lens; concurr
 environment/configuration/build the operability lens; type/runtime the backend lens; performance
 its own lens. `UNKNOWN` falls back to the task's governing reference. These are starting points,
 not automatic seat selection—for example, a frontend type error may belong with the frontend seat.
-An environment or credential failure does not justify changing product code. A side-effectful gate
-still requires the project's existing approval before it is run by name.
+An environment or credential failure does not justify changing product code. A side-effectful gate:
+council-implement, step 5.
 
-Verifier `INCOMPLETE` and `REGRESSION` verdicts keep the build mode's existing separate three-try
-protocol: two failed verifications trigger independent diagnosis; one more failure stops. Do not
+Verifier `INCOMPLETE` and `REGRESSION` verdicts keep the build loop's own protocol (council-implement,
+step 7). Do not
 count verifier rows as gate executions or make a machine category from their prose. Both trails
 belong in the implementation log and final receipt.
 

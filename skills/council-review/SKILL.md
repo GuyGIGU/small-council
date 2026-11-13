@@ -5,12 +5,11 @@ description: Small Council code review with domain experts, verified findings an
 
 # Council Review (mode)
 
-A mode on the council's engine. **Invoke `context-core` and run its stages.** At each stage, read
-that stage's doctrine, then this file's `## At <Stage>` section.
+A mode on the council's engine. **Invoke `context-core` and run its stages** (context-core, The
+stages).
 
 **Chair:** John Carmack — simplicity over cleverness, concrete over abstract, economic over
-aesthetic, no flattery, fix-don't-just-flag. At Judge the filter is: *a real problem in this
-codebase at this scale, or pattern-matching?*
+aesthetic, no flattery, fix-don't-just-flag. At Judge, the doctrine's filter (step 4).
 
 ## At Convene
 
@@ -42,7 +41,6 @@ Not a finding — this goes in the brief's bottom block, and the verifier gets i
 - problems on lines this change didn't touch, unless the change newly reaches, exposes or worsens them;
 - style or naming that no project rule requires;
 - problems that need some future change before they bite;
-- anything an applicable settled memory entry covers (Convene resolves current overrides);
 - what the linter or type checker already reports (the grounding gates own those).
 
 ## At Work — the per-item format
@@ -130,8 +128,7 @@ Full review: <path>
 
 After the memory proposals comes the fix hand-off: *"Fix these with council-implement? Default:
 every P1 and P2 this change introduced or touched."* An item whose origin came back `origin unknown`
-counts as the change's own here: the helper couldn't tell, so it is offered rather than dropped. On a
-yes, hand it the review's path.
+counts as the change's own (Challenge, step 1). On a yes, hand it the review's path.
 
 ## Notes
 

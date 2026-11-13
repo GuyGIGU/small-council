@@ -25,7 +25,7 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 ## Seats
 ### <slug> — <what it checks> (<Seat name>)
 - ref: <absolute path to the seat's card, else its reference doc, else none; a paired seat has one - ref: line each>
-- doc: <absolute path of the full doc behind each card — the worker opens it for the principles it cites>
+- doc: <absolute path of the full doc behind each card>
 - out: seats/<slug>.md
 - slice: <paths and globs — this seat's only>
 - cap: <item cap, default 8> · budget: <~tool calls>
@@ -42,7 +42,6 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 - Current overrides: <the user's exact words and affected memory ids, or none; Convene's rule>
 - Observed failures, not rules: <the scoped F entries it printed, including verdict and evidence>
 - Not a finding: <your mode's list, from its `## At Brief`>
-- Cite path:line or drop the item. Plain English, no code. Stay in your lane. Read-only.
 ```
 
 ## Rules
@@ -52,12 +51,12 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   doc, the worker doesn't have it.
 - **Keep the seat blocks exact.** `council collect` reads the `### <slug>` headings and their `ref:`,
   `out:` and `cap:` lines. A paired worker gets one block that names both lenses, with one `- ref:`
-  line per reference doc; its file must carry one `ref:` line for each.
+  line per reference doc.
 - **Cards first.** A seat with a card (`<home>/cards/<slug>.md`) gets the card as its `ref:`: its
   principles translated to this project. Its `- doc:` line gives the full doc's absolute path (the
-  card's `source:` line names it relative to the plugin or repo), and the worker opens it for the
-  principles it cites. A worker that covers several roster seats — a pair, or a split `hunt-a` —
-  gets each seat's card and doc.
+  card's `source:` line names it relative to the plugin or repo). A worker that covers several roster
+  seats — a pair, or a split `hunt-a` — gets each seat's card and doc. A block links only its own
+  seats' cards and docs: never another seat's, and never the whole set.
 - **Memory in scope, never the whole file.** Before writing, `council memory select`: it reads the
   run's index, the seats Assign recorded and the mode; a run without a diff also passes its target
   paths, which add to those. Apply Convene's changed-instructions rule before quoting entries in
@@ -68,15 +67,13 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   the orders they must not miss.
 - **Context packs are opt-in.** Build them only when the config's run preferences say
   `context packs: on`, or the user asks for them in this run. Otherwise skip this step and
-  dispatch from the complete brief — that is the normal path, not a fallback. Packs add material
-  to every worker and their benefit to findings has not been measured yet
-  (`docs/validation/phase-5.5-context-pilot.md`).
+  dispatch from the complete brief — that is the normal path, not a fallback.
 - **When opted in, prepare each dispatched seat's context pack.** Run `council context build <slug>` after
   `brief.md` exists. It takes the `minimal`, `focused` or `full` level from the validated run plan
   and writes `contexts/<slug>.md` plus selection metrics. Inspect `council context show <slug>`;
   if a needed path was omitted, rebuild with `--expand <path>` (repeatable) and record why in the
-  brief or run log. The pack is selected evidence, not a replacement for this brief, the seat's
-  full reference doc, or the project's hard constraints. See `references/precision-context.md`.
+  brief or run log. The pack is selected evidence, never a replacement for this brief
+  (`references/precision-context.md`).
 - **Keep the fallback honest.** Python 3.8+ is optional. If context building is unavailable or
   fails, dispatch from the complete brief and reference docs; do not claim a pack was built.
   Never rewrite a project `CLAUDE.md` as part of context preparation.

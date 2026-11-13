@@ -29,7 +29,7 @@ trust.
    and exit code; a builder's explanation is a claim, not evidence.
 8. **Aggregate, then judge; judge, then challenge.** The challenger never sees the author's reasoning.
 9. **The user rules; the council proposes.** Questions come last: the rulings as one question
-   (Deliver, step 6), others numbered, in the chat. The user's request and every ruling are
+   (Deliver, step 6), others numbered, in the chat. The user's request and every decision are
    recorded in the user's own words.
 10. **Every run is sized, budgeted, reported and closed.** A validated `run-plan.tsv` records why
     each seat is selected or skipped, its context and budget, and the required verification before
@@ -62,8 +62,8 @@ Stage 0, Summon, is the council-init skill. council-implement replaces stages 3�
 loop. A **Solo** run skips stages 3–6: run `council memory select` (plus the target paths when there
 is no diff), then do the seat work yourself with the needed reference doc and the entries it printed,
 record it (`council seat chair done agents=0` — without it the ledger has no row for your items),
-then continue at Judge. council-postgame skips them too: you do the desk work, and only verifiers are
-dispatched, at Challenge. council-plan's war room runs inside Collect.
+then continue at Judge. council-postgame skips them too (its skill says how). council-plan's war room
+runs inside Collect.
 
 ## The helper
 
@@ -104,9 +104,8 @@ linked worktree. **Code root** = the working tree you are reviewing or building.
 | `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `events.tsv` `ask.md` `log.md` `seats.tsv` `usage.tsv` `gates/` `debate.md`, and what each stage leaves (table above) | ignored |
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
-`.council/refs/<file>.md` → under the council home. Workers always get absolute paths, and a seat
-with a card gets the card (`cards/<slug>.md`), which names its doc. Memory may
-live at a legacy path; the config's Memory section says where.
+`.council/refs/<file>.md` → under the council home. Workers always get absolute paths (a seat's card:
+Brief, Cards first). Memory may live at a legacy path; the config's Memory section says where.
 
 ## Limits
 
@@ -116,14 +115,15 @@ live at a legacy path; the config's Memory section says where.
   `council cap allow <n> --user-said "…"`, and never work around the stop.
 - **Turns:** a worker or verifier stops at 60 turns, maybe with its file unwritten. Resume it
   (SendMessage: "write your file now with what you have, then finish"); never re-dispatch it.
-- **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts. Runs
-  created by an older plugin have no plan stamp and remain valid legacy runs. The exact v1 fields
-  and compatibility rule live in `references/run-plan.md`.
+- **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts. The
+  exact v1 fields and the rule for older runs live in `references/run-plan.md`.
 - **Sizes:** Solo (you alone) · Squad (up to 4 seats + 1–2 verifiers) · Full (up to 7 seats +
   verifiers). Size a run as seats plus the verifiers Challenge will need; its overflow rule covers
-  the rest. A post-game uses 1–3 verifiers and counts as Squad.
-- **Approval:** the config's `approve without asking` threshold and changed-instructions rules
-  live in `references/doctrine/01-convene.md`. Authorization carries forward within its boundaries.
+  the rest. A post-game: council-postgame, Size.
+- **Approval:** the config's `approve without asking` threshold, approval carried forward and the
+  changed-instructions rules live in `references/doctrine/01-convene.md` (step 9, Rules).
+- **Protected subjects:** authorization, data loss, injection, secrets, concurrency or ordering,
+  public contracts.
 
 ## Resume
 
@@ -141,14 +141,14 @@ live at a legacy path; the config's Memory section says where.
 - **Seats marked running:** after a compaction they are still working — wait for their
   notifications; never re-dispatch them. In a new session they are gone: `council collect` shows
   which files exist; mark the rest `council seat <slug> failed note="interrupted"` and re-dispatch
-  each once. A seat noted `round 2` gets a fresh round-2 worker (war-room.md), never a round-1
-  re-dispatch.
+  each once. A seat noted `round 2`: war-room.md, Limits.
 - **Handing work on:** the note lists open hazards under "Ask fix-now/later before
   any commit or PR" and says: the main checkout, never an app-made worktree.
 
 ## Talking to the user
 
-Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels.
+Plain language. Say what a seat checks before its name: "Data integrity (Leach)". No internal labels:
+no bare principle numbers, no "lanes", no "AP/EC".
 
 **The run's status.** Show it twice — at the run's first dispatch (once per run) and after `council run close` —
 as the helper's reminder then says: `council status --widget` to a `show_widget` tool (deferred: search

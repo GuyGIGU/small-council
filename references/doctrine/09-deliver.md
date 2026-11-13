@@ -23,8 +23,7 @@
    body, which `council prior` reads, so later runs find the chain.
 3. `council state deliverable=<path>`. Each shipped claim keeps its evidence trail
    (`references/evidence-model.md`, In the deliverable).
-4. **In chat, your mode's summary**, in plain words (context-core). No internal labels: no bare
-   principle numbers, no "lanes", no "AP/EC".
+4. **In chat, your mode's summary**, in plain words (context-core, Talking to the user).
    **A mode that changed code carries one line, as written:** `Checked by machine:` followed by the
    gates' verdict line (`gates: 3 ran — 2 pass, 1 FAIL (lint, not mandatory)`) — or, when the helper
    exited 4, its own NOTHING WAS CHECKED line quoted, because it names the real cause. A run that

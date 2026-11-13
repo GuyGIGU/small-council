@@ -107,7 +107,9 @@ check("kernel: moved command table remains available from its pointer",
       "| Command | Use it to |" in helper_reference and "council help" in helper_reference)
 check("kernel: the sentence naming NOTHING WAS CHECKED calls it never a pass (wording; drill D24 is the behaviour)",
       never_a_pass(core, "NOTHING WAS CHECKED"))
-check("02-prepare: the sentence naming Exit 4 calls it not a pass (wording)", never_a_pass(doctrine["02-prepare.md"], "Exit 4"))
+# Exit 4's meaning has one home, the kernel's helper rules; 02-prepare points at it (one rule, one place).
+check("kernel: the sentence naming exit 4 calls it never a pass (wording; moved from 02-prepare)",
+      never_a_pass(core, "exit 4"))
 check("09-deliver: names the 'Checked by machine:' line", "Checked by machine:" in doctrine["09-deliver.md"])
 check("09-deliver: a run that proved nothing by machine never reads as a pass (wording)",
       never_a_pass(doctrine["09-deliver.md"], "proved nothing by machine"))
@@ -255,7 +257,8 @@ check("helper and Challenge: refusals must not be hidden in output pipelines —
       "council command piped through head, tail or grep, and to redirect it to a file instead",
       "pipe a council command through head, tail or grep (a hook refuses it)" in flat(core)
       and "redirect it to a file and read that" in flat(core)
-      and "`| tail`/`| head`/`| grep`" in doctrine["08-challenge.md"] and "test their exit status" in doctrine["08-challenge.md"])
+      and "on their own (or test their exit status), never through a pipe (context-core, The helper)" in flat(doctrine["08-challenge.md"])
+      and "`| tail`/`| head`/`| grep`" not in doctrine["08-challenge.md"])   # the kernel owns the pipe rule
 check("context-core: a Solo run selects the memory in scope too",
       "council memory select" in core.split("A **Solo** run", 1)[-1].split("\n\n", 1)[0])
 check("10-learn: close records the ledger", "ledger" in doctrine["10-learn.md"])
@@ -283,8 +286,10 @@ check("kernel: a handoff to a new session lists open hazards before any commit o
 check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
 check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])
 check("06-collect: checks a war room's round-2 files", "debate.md" in doctrine["06-collect.md"])
-check("09-deliver: files the request and knows the postgame kind",
-      "council ask save" in doctrine["09-deliver.md"] and "postgame" in doctrine["09-deliver.md"])
+check("09-deliver: files the request and knows the postgame kind; plan and post-game file first by pointing at it",
+      "council ask save" in doctrine["09-deliver.md"] and "postgame" in doctrine["09-deliver.md"]
+      and all("File the request first (Deliver, step 1), then write:" in skill[m] for m in ["council-plan", "council-postgame"])
+      and not [m for m in MODES if "council ask save" in skill[m]])
 
 # 4. Every `council …` command the texts mention exists in the helper
 usage = cli[cli.find("usage() {"):cli.find("main() {")]
@@ -390,8 +395,8 @@ check("init: a refresh offers an earlier, shorter permission list the rules it l
 review, plan, impl, research, init = (skill[k] for k in ["council-review", "council-plan", "council-implement", "council-research", "council-init"])
 for label, text, needles in [
     ("review", review, ["merge-base", "council index --base", "Origin:", "Basis:", "Refuted if:", "Not a finding", "council-implement"]),
-    ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research", "war-room.md", "debate.md",
-                    "## How the council decided", "ask.md", "council ask save"]),
+    ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research", "war-room.md",
+                    "## How the council decided", "ask.md"]),   # debate.md: war-room.md's list; ask save: 09-deliver's check
     ("implement", impl, ["fix mode", "Before-evidence", "After-evidence", "clean-context diagnosis", "converge", "council gate --all",
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
                          "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input",
@@ -399,9 +404,10 @@ for label, text, needles in [
                          "Left open:", "No commit, push or PR question while anything is left open", "data-loss hazard defaults to fix now",
                          "left on the user's ruling", 'council state phase=deliver skip="blocked: task <n>"',
                          "Checked by machine:", "Works?:", "guardrails.md", "council check", "gates/baseline/",
-                         "older Gates layout", "Draft any PR text as `<run>/pr-body.md`, and open the PR from it. Then `council check`"]),
+                         "older Gates layout",
+                         "Draft any PR text as `<run>/pr-body.md`; the PR is opened from it at Deliver, after the user's OK."]),
     ("research", research, ["scout", "Strength:"]),
-    ("postgame", skill["council-postgame"], ["ask.md", "council ask save", "council run open council-postgame", "Ruled out",
+    ("postgame", skill["council-postgame"], ["ask.md", "council run open council-postgame", "Ruled out",   # ask save: 09-deliver's check
                                              "council-implement", "council-plan", "never the plan", "quote:",
                                              "small-council:council-verifier"]),
     ("war-room", warroom, ["debate.md", "-r2.md", "## How the council decided", "never a third", "Evidence counts, not heads",
@@ -668,6 +674,41 @@ check("decisions: every id the architecture, CLAUDE.md and CONTRIBUTING cite is 
 ids = re.findall(r"^\| (D[0-9]+) \|", decisions_doc, re.MULTILINE)
 check("decisions: ids are unique and cover D1..Dn with no gaps, in any section (never reused or renumbered)",
       sorted(ids, key=lambda d: int(d[1:])) == [f"D{i}" for i in range(1, len(ids) + 1)], str(ids))
+
+# 9c. One rule, one place (D3): a rule folded into its owner leaves a pointer behind, so its wording
+# appears in exactly one shipped prose file. A second copy is a duplicate to fold, not to keep.
+prose = {**{f"skills/{s}": flat(skill[s]) for s in SKILLS}, **{f"doctrine/{d}": flat(doctrine[d]) for d in DOCTRINE},
+         "agents/worker": flat(worker), "agents/verifier": flat(verifier),
+         **{f"references/{f}": flat(read("references", f)) for f in sorted(os.listdir(os.path.join(ROOT, "references")))
+            if f.endswith(".md")}}
+ONE_HOME = [  # (the wording, its one home)
+    ("concurrency or ordering, public contracts", "skills/context-core"),          # protected subjects
+    ("isn't a new agent", "skills/context-core"),                                 # resumed vs re-dispatched
+    ("write your file now", "skills/context-core"),                               # the turn-limit resume
+    ("never report that as a pass", "skills/context-core"),                       # exit 4
+    ("no bare principle numbers", "skills/context-core"),                         # no internal labels
+    ("never a round-1 re-dispatch", "references/war-room.md"),                    # a lost round-2 seat
+    ("every point ends one of four ways", "references/war-room.md"),              # war-room endings
+    ("the worst verdict stands", "references/evidence-model.md"),                 # a plan's several rows
+    ("batches of up to 8", "doctrine/08-challenge.md"),                           # how verifiers are counted
+    ("riskiest assumption named by 2 or more seats", "references/war-room.md"),   # war-room claims to verify
+    ("A local correction can proceed within the", "doctrine/01-convene.md"),     # evidence changes the approach
+]
+GONE = [  # stale or contradicting wording that must not come back anywhere
+    "dispatch itself isn't gated",          # the agent gate judges dispatch; only the `model` parameter isn't gated
+    "open the PR from it",                  # the PR is opened at Deliver, after the user's OK on pr-body.md (#48)
+    "questions, numbered",                  # rulings are one question (Deliver, step 6)
+    "doesn't repeat the alarm every run",   # missing checks: once, in that run's offer (Deliver, step 4)
+]
+gone_bad = [f"{p!r} in {[k for k, t in prose.items() if p in t]}" for p in GONE if any(p in t for t in prose.values())]
+check("one rule, one place: contradicting copies are gone from every skill, doctrine, agent and reference",
+      not gone_bad, "; ".join(gone_bad))
+homes_bad = [f"{p!r} in {[k for k, t in prose.items() if p in t]} (owner {home})" for p, home in ONE_HOME
+             if [k for k, t in prose.items() if p in t] != [home]]
+check("one rule, one place: each folded rule's wording is in its owner only", not homes_bad, "; ".join(homes_bad))
+check("modes: none restates the kernel's stage-entry rule (context-core, The stages, says it once)",
+      not [m for m in MODES if "then this file's `## At <Stage>`" in flat(skill[m])]
+      and "Entering a stage: read its doctrine file" in flat(core))
 
 # 10. Size budgets — Claude Code re-attaches only the first ~5k tokens of each skill after compaction
 for s in SKILLS:

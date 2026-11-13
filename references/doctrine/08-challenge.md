@@ -22,18 +22,15 @@ Catch what's wrong before the user sees it.
    - Item lines it can't read, or a Kept section with no items and no `(none)` line: rewrite them in
      the index-line format and run the check again.
 2. **Blind verification.** Dispatch `small-council:council-verifier`:
-   - Each **P1**, and each item on a **protected subject** — authorization, data loss, injection,
-     secrets, concurrency or ordering, public contracts — gets its own verifier. The rest go in
-     batches of up to 8.
+   - Each **P1**, and each item on a **protected subject** (context-core, Limits), gets its own
+     verifier. The rest go in batches of up to 8.
    - A verifier gets only the item's synthesis number (1, 2 … or C1 for a cut item), a one-sentence
      claim and its `path:line` — never the seat, principle, reasoning or fix — plus the brief's path
-     and the code root. It must trace a live path through the code, and it copies the number into
-     its table's `#` column: the ledger matches verdicts to seats by it.
+     and the code root. How it traces and numbers is its contract.
    - Include every cut P1: a lone dissenter may be right.
    - Each verifier writes its own file, `<run>/verify-<n>.md` (n counts verifiers, not items). Track them like workers
-     (`council seat verify-<n> running agent=<id>`, then `done tokens=…`). One stopped at its
-     60-turn limit may leave no file: resume it with SendMessage ("write your file now, then
-     finish"), never re-dispatch it.
+     (`council seat verify-<n> running agent=<id>`, then `done tokens=…`). One stopped at its turn
+     limit: context-core, Limits.
    - **If these verifiers are the run's first dispatch** (a Chair-only Squad, a post-game), show
      the user the run's status now, once — Work, "Right after dispatching", step 2. The helper's
      reminder says when.
@@ -48,7 +45,7 @@ Catch what's wrong before the user sees it.
      batch of everything else. If even that doesn't fit, pair P1s two to a verifier. Tell the user
      what shared a verifier.
    - A claim whose evidence is a URL (research) goes to a verifier too; it fetches the page.
-   - A war room's agreements are claims too. A post-game's verifiers check its parts against the
+   - A war room's claims: war-room.md, Challenge. A post-game's verifiers check its parts against the
      user's request instead — council-postgame says how.
 3. **Apply the verdicts** — in the deliverable. Never renumber or delete synthesis.md's lines; the
    ledger counts them at close.
@@ -62,10 +59,9 @@ Catch what's wrong before the user sees it.
 4. **Every shipped item has a verdict** — check before you move on.
 5. **Refresh the claim index.** After verifier files exist, `council evidence build`, then
    `council evidence check`. Run `evidence build`/`check`, `collect` and `check` on their own
-   (or test their exit status);
-   never chain them through `| tail`/`| head`/`| grep`, which can swallow a refusal.
+   (or test their exit status), never through a pipe (context-core, The helper).
    Fix missing provenance, evidence-state declarations, proof artifacts, verifier rows or conflicting
-   rows (a plan's several rows for one recommendation are expected: the worst verdict stands).
+   rows.
    `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
    If optional Python is unavailable, check the same links by hand. This applies to synthesis
    claims in review, plan and research; build and post-game keep their own proof contracts.
