@@ -1,7 +1,18 @@
 # references/
 
 Shared reference documents for the Small Council plugin. Skills and agents read them at run time from
-`${CLAUDE_PLUGIN_ROOT}/references/` — one copy, shared by every skill.
+`${CLAUDE_PLUGIN_ROOT}/references/` — one copy, shared by every skill. Each folder holds what one
+reader needs.
+
+| Where | Who reads it |
+|---|---|
+| `*.md` at this level | Seat workers, and the Chair and builders at two points: the 14 seat docs, `guardrails.md` and `build-proof.md`. These paths are frozen: project files carry them (a roster's doc column, a card's `source:`, a plan's `Ref:`, comments in the config), so a move would break every installed project |
+| `doctrine/` | The Chair, one file per stage, when it enters that stage |
+| `run/` | The Chair, the helper and the scripts: the run's contracts, records and procedures |
+| `roster/` | `council-init`: the seat catalogue |
+| `templates/` | `council init`, which copies them into a project's `.council/` |
+| `spec-writer/` | The `spec-writer` skill: its tier templates and guides |
+| `test-architect/` | The `test-architect` skill: its report and specification formats |
 
 ## Stage doctrine — `doctrine/`
 
@@ -12,10 +23,10 @@ read at the start of a long run fades by its end; a rule read at the moment of a
 `07-judge.md` · `08-challenge.md` · `09-deliver.md` · `10-learn.md`
 
 The laws, stage index and essential helper rules live in `skills/context-core/SKILL.md`.
-The full command-purpose table lives in `helper-commands.md`; `council help` gives exact syntax.
+The full command-purpose table lives in `run/helper-commands.md`; `council help` gives exact syntax.
 Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is council-init.
 
-## Run contracts
+## Run contracts — `run/`
 
 `helper-commands.md` lists the helper commands by purpose without loading that table on every run.
 `adaptive-routing.md` documents the optional pre-run recommendation and its limits.
@@ -25,7 +36,11 @@ graph of changed paths, direct dependencies and test hints.
 `precision-context.md` defines the optional, seat-specific context pack and its measurement limits.
 `run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.
 `evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
-`war-room.md` defines the second round; `guardrails.md` defines protected subjects and constraints.
+`finding-outcomes.md` defines what `council outcomes` compares. `war-room.md` defines the second
+round; `sharing.md` defines the team-or-just-me choice.
+
+At this level, with the seat docs: `build-proof.md` defines the proof a build records, and
+`guardrails.md` defines the checks a project needs before a green report means anything.
 
 ## Seat reference docs — one per council seat
 
@@ -55,9 +70,11 @@ per-project **seat card** (`.council/cards/<slug>.md`) that workers read first (
 
 ## Spec and test docs
 
-- `small-change.md` · `feature-spec.md` · `product-spec.md` — spec-writer's tier templates.
-- `acceptance-criteria-guide.md` · `boundary-examples.md` · `anti-patterns.md` — spec-writer's guides.
-- `test-architect-formats.md` — test-architect's report and specification formats.
+- `spec-writer/small-change.md` · `spec-writer/feature-spec.md` · `spec-writer/product-spec.md` —
+  spec-writer's tier templates.
+- `spec-writer/acceptance-criteria-guide.md` · `spec-writer/boundary-examples.md` ·
+  `spec-writer/anti-patterns.md` — spec-writer's guides.
+- `test-architect/test-architect-formats.md` — test-architect's report and specification formats.
 
 ## Project-local docs
 

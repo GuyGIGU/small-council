@@ -18,7 +18,7 @@ records everything in a **run folder** inside the project's **council home** (`.
 | Modes | `skills/council-*/SKILL.md` | One per job: init, review, plan, implement, research, postgame. Thin: `## At <Stage>` sections only where the mode differs. |
 | Standalone skills | `skills/spec-writer/`, `skills/test-architect/` | Skills that use the council's agents and formats without being council modes. |
 | Stage doctrine | `references/doctrine/NN-<stage>.md` | One file per stage, read by the Chair when it enters that stage. |
-| References | `references/*.md` | Seat reference docs (`quality-*`, `security`, `refactoring`, …), run contracts (`run-plan`, `event-stream`, `run-accounting`, `build-proof`, …), `templates/`, the seat catalogue in `roster/`. |
+| References | `references/` | By who reads it: the seat docs, `guardrails.md` and `build-proof.md` at the root, `doctrine/`, `run/` (the run's contracts), `roster/`, `templates/`, `spec-writer/`, `test-architect/`. `references/README.md` is the map. |
 | Agents | `agents/council-worker.md`, `agents/council-verifier.md` | The seat worker's and the blind verifier's contracts. |
 | Helper | `bin/council` | The CLI for the mechanical steps: runs, state, seats, gates, the change index, checks, memory, the agent stop. Bash today (§10). |
 | Scripts | `scripts/*.py` | Python for what bash does badly: status and the card, audit, history, tuning, impact, context packs, evidence, repair, memory, the pet, the Chair's tokens. Run through the helper. |
@@ -60,9 +60,11 @@ Rules:
 |---|---|---|
 | `skills/` | How the Chair works, per mode | Logic a script could do; a project's own stack, seats or commands |
 | `references/doctrine/` | What happens at each stage | Mode specifics (they go under the mode's `## At <Stage>`) |
-| `references/*.md` | Seat principles and run contracts | Run-time state |
+| `references/*.md` (the root) | The 14 seat docs (principles), `guardrails.md`, `build-proof.md`. Their paths are frozen (§6) | Run-time state; a new contract (it goes in `run/`) |
+| `references/run/` | The run's contracts, records and procedures, read by the Chair, the helper and the scripts | Seat principles; run-time state |
 | `references/templates/` | The files `council init` writes into a project | Project-specific values |
 | `references/roster/` | The seat catalogue | Seat principles (those are in the seat's doc) |
+| `references/spec-writer/`, `references/test-architect/` | The two standalone skills' own templates, guides and formats | Anything a council mode reads |
 | `agents/` | The worker and verifier contracts | Mode logic |
 | `bin/council` | Every command, its arguments, output and exit codes | Long-running work; anything a hook must not wait on |
 | `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
@@ -95,7 +97,7 @@ Inside a run folder:
 |---|---|---|
 | `session-state.md` | `council run open`, `council state` | the helper (`field`), the scripts through `council.records.state`, the mod, `session-start.sh` |
 | `run-plan.tsv` | the Chair, checked by `council run plan check` | the helper, `audit.py`, `cockpit.py`, `evidence.py`, `status.py`, `quick_validate.py` |
-| `events.tsv` | the helper only, through `event_append` (contract: `references/event-stream.md`) | the helper, `audit.py`, `cockpit.py`, `history.py`, `repair.py` |
+| `events.tsv` | the helper only, through `event_append` (contract: `references/run/event-stream.md`) | the helper, `audit.py`, `cockpit.py`, `history.py`, `repair.py` |
 | `seats.tsv`, `usage.tsv` | `council seat` | the helper, `audit.py`, `cockpit.py`, `history.py`, `status.py` |
 | `agent-starts.tsv` | the agent gate (`council cap check`) | the helper, `audit.py`, `status.py` |
 | `ask.md` | the Chair (the user's words) | `council check`, `council ask save`, `status.py` |
@@ -111,7 +113,7 @@ Inside a run folder:
   `council-implement`, `council-research`, `council-postgame`, `spec-writer`, `test-architect`, and
   `context-core`, which only modes invoke.
 - **Agents**: `small-council:council-worker`, `small-council:council-verifier`.
-- **Helper commands** (`council help` gives exact syntax; `references/helper-commands.md` gives the
+- **Helper commands** (`council help` gives exact syntax; `references/run/helper-commands.md` gives the
   purpose of each): `home`, `sharing`, `run open|close|status|resume|plan|events|audit|turn-end`,
   `state`, `seat`, `cap show|allow|check`, `route recommend`, `index`, `impact`, `context`,
   `evidence`, `repair`, `gate`, `gates`, `changed`, `collect`, `check`, `map`, `fingerprint`,
@@ -137,7 +139,10 @@ never part of a cleanup or refactor branch (D23).
   `check:`, `audit:`, `NOTHING WAS CHECKED`, `TIMED OUT`, `UNWRITTEN <path>`, `Wrote <path> — …`.
 - **The council home's file and folder names** (§4), the run folder's naming
   (`runs/<YYYY-MM-DD-HHMMSS>-<mode>`), and every TSV's columns and their order.
-- **Event types, subjects and detail keys**, as `references/event-stream.md` lists them.
+- **Event types, subjects and detail keys**, as `references/run/event-stream.md` lists them.
+- **Seat doc paths**: the 14 seat docs, `guardrails.md` and `build-proof.md` stay at the root of
+  `references/`, because project files carry their paths (a roster's doc column, a card's `source:`, a
+  plan's `Ref:`, comments in the config). Moving one breaks every installed project.
 - **Config keys** in `council.config.md` (`approve without asking`, `agent cap`, `context packs`,
   `seat models`, `build tier`, `checking`, `open items`, `pushes`, `sharing`, `notifications`,
   `estimate per worker`, `gate time limit`, the Gates table's columns).
@@ -164,9 +169,9 @@ job (§8)? Will the next agent find it next to the code it relates to?
 | A rule for how the Chair works at a stage | The stage's doctrine file, once | Each mode inherits it; never copy it into a mode |
 | A rule only one mode needs | That mode's `## At <Stage>` section | Keep the skill under its size caps (D13) |
 | A rule the model keeps breaking | The helper or a hook that enforces it | The prose keeps one pointer to the enforcement, not the whole rule |
-| A seat's principle | The seat's reference doc, as `Principle N` | The catalogue row in `references/roster/expert-catalog.md` |
-| A run contract (a file's shape, a verdict, an event) | Its `references/<contract>.md` | The reader and the writer change in the same branch |
-| A new command or a check | Today: a `cmd_<name>` in `bin/council` and its dispatch line. *Target:* a Python module behind the same command (D24) | Help text, `references/helper-commands.md`, a scenario in `evals/run_cli.py` |
+| A seat's principle | The seat's reference doc at the root of `references/`, as `Principle N` | The catalogue row in `references/roster/expert-catalog.md` |
+| A run contract (a file's shape, a verdict, an event) | Its `references/run/<contract>.md` | The reader and the writer change in the same branch |
+| A new command or a check | Today: a `cmd_<name>` in `bin/council` and its dispatch line. *Target:* a Python module behind the same command (D24) | Help text, `references/run/helper-commands.md`, a scenario in `evals/run_cli.py` |
 | A new analysis or view over run files | `scripts/<name>.py`, run through the helper, reading run files through `council.records` | Its own `evals/run_<name>.py` suite |
 | A config setting | A `configured_<key>` reader in the helper, the template line and its comment in `references/templates/council.config.md` | A missing line has a stated default; an unknown word reads as the default and says so |
 | An enforcement at a Claude Code event | A thin `hooks/<event>.sh` that asks the helper | `evals/run_hook.py`, including the fault path that must let the call through |
@@ -193,7 +198,7 @@ folds them, and new code uses the named way.
 | Run Python from the helper | `impact_python` finds a 3.8+ interpreter | A missing Python degrades with a stated message (until D24 lands) |
 | Match the user's words | `fold` and `found` inside the quote check | **(debt)** two copies in `bin/council` (`cmd_check`, `postgame_next_tasks`) |
 | Read a gate verdict | `gate_exit`, `gate_cmd`, `gate_proof` over `gates/<name>.json` | |
-| Count an agent | `council seat` records it; the agent gate counts starts; the ledger is written at close | One record per agent run, by id (`references/run-accounting.md`) |
+| Count an agent | `council seat` records it; the agent gate counts starts; the ledger is written at close | One record per agent run, by id (`references/run/run-accounting.md`) |
 | Prove a build task | `council gate before-<id>` / `after-<id>`, checked by `council check` (`references/build-proof.md`) | |
 | Check a document's contract | A structural pin in `evals/run_structural.py` | Only for documents; behaviour is proved by running it (D25) |
 | Hold a limit (a size, a count, a lint warning) | A number in `evals/ratchet.json`, measured by `evals/run_ratchet.py`; it may only go down, and `--update` keeps a gain | Never a hand-kept list of files or exceptions |

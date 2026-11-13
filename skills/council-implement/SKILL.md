@@ -95,7 +95,7 @@ the converge pass starts, `council state phase=challenge`.
    `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
    contract — which tasks need a pair under the light tier (the default), compiling a new check
    first, `council gate before-<n>` and `--invalid` — and follow it. Log the mode and invariants.
-   Label support with `references/evidence-model.md`; cite saved outputs for `REPRODUCED`.
+   Label support with `references/run/evidence-model.md`; cite saved outputs for `REPRODUCED`.
 3. **Plan the change:** files, minimal diff, governing principle, effects on later tasks, watchpoints.
 4. **Implement.**
    - Match existing patterns.
@@ -112,7 +112,7 @@ the converge pass starts, `council state phase=challenge`.
      didn't name. When it can't compare, read both outputs side by side. Keep the standing clause
      on the receipt.
    - **It can't run** → config drift (Prepare, Rules); log it too.
-   - **It fails during this task** → the bounded loop in `references/repair-loop.md`: `council gate`
+   - **It fails during this task** → the bounded loop in `references/run/repair-loop.md`: `council gate`
      records it (no `council repair record`); inspect its saved output and baseline, repair, and rerun
      the **same** gate. The third failed execution blocks the task: jump to blocked-task logging and
      the receipt (`council state phase=deliver skip="blocked: task <n>"`);

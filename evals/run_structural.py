@@ -64,10 +64,10 @@ for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"), ("hooks", "agent-gate.sh"),
              ("hooks", "bash-gate.sh"),
-             ("references", "templates", "run-plan.tsv"), ("references", "impact-graph.md"),
-             ("references", "helper-commands.md"),
-             ("references", "precision-context.md"), ("references", "evidence-model.md"),
-             ("references", "repair-loop.md"),
+             ("references", "templates", "run-plan.tsv"), ("references", "run", "impact-graph.md"),
+             ("references", "run", "helper-commands.md"),
+             ("references", "run", "precision-context.md"), ("references", "run", "evidence-model.md"),
+             ("references", "run", "repair-loop.md"),
              ("scripts", "impact.py"), ("scripts", "context.py"), ("scripts", "evidence.py"),
              ("scripts", "repair.py"),
              ("docs", "design", "precision-context-adr.md")]:
@@ -76,20 +76,43 @@ for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
 for d in DOCTRINE:
     check(f"layout: references/doctrine/{d} exists", bool(read("references", "doctrine", d)))
-check("layout: references/war-room.md exists", bool(read("references", "war-room.md")))
+check("layout: references/run/war-room.md exists", bool(read("references", "run", "war-room.md")))
 check("layout: references/guardrails.md exists", bool(read("references", "guardrails.md")))
 check("layout: no using-council skill (the hook replaced it)", not os.path.isdir(os.path.join(ROOT, "skills", "using-council")))
 check("layout: no per-skill manifest.json", not any(os.path.isfile(os.path.join(ROOT, "skills", s, "manifest.json")) for s in SKILLS))
 
+# 1b. references/ is laid out by who reads each file (references/README.md names the folders), and a path
+# that a project's own files carry never moves (a roster's doc column, a card's source:, a plan's Ref:).
+refs_readme = read("references", "README.md")
+named_folders = set(re.findall(r"^\| `([a-z-]+)/` \|", refs_readme, re.MULTILINE))
+FROZEN_DOCS = set(re.findall(r"^\| \*\*[^|]+\*\* \| [a-z-]+ \| [^|]+ \| `([a-z-]+\.md)` \|",
+                             read("references", "roster", "expert-catalog.md"), re.MULTILINE)) | {"guardrails.md", "build-proof.md"}
+loose = []
+for folder, subfolders, names in os.walk(os.path.join(ROOT, "references")):
+    rel = os.path.relpath(folder, os.path.join(ROOT, "references")).replace(os.sep, "/")
+    if rel == ".":
+        loose += [n for n in names if n != "README.md" and n not in FROZEN_DOCS]
+    elif rel.split("/")[0] not in named_folders:
+        loose += [f"{rel}/{n}" for n in names]
+check("layout: every file under references/ is a frozen seat or project-carried doc at the root, or sits in a folder references/README.md names",
+      bool(named_folders) and not loose, ", ".join(loose))
+carried = set()
+for carrier in [("references", "templates", "council.config.md"), ("references", "templates", "seat-card.md")]:
+    carried |= set(re.findall(r"references/([a-z][a-z0-9-]*\.md)", read(*carrier)))
+carried |= set(re.findall(r"`Ref: references/([a-z][a-z0-9-]*\.md)`", read("skills", "council-init", "SKILL.md")))
+moved = sorted(d for d in FROZEN_DOCS | carried if not os.path.isfile(os.path.join(ROOT, "references", d)))
+check("layout: every seat doc, and every doc path a template or council-init writes into a project, stays at references/<file>.md",
+      len(FROZEN_DOCS) == 16 and carried <= FROZEN_DOCS and not moved, f"moved or unfrozen: {moved} {sorted(carried - FROZEN_DOCS)}")
+
 skill = {s: read("skills", s, "SKILL.md") for s in SKILLS}
 core = skill["context-core"]
-helper_reference = read("references", "helper-commands.md")
+helper_reference = read("references", "run", "helper-commands.md")
 doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
 agent_gate = read("hooks", "agent-gate.sh")
 bash_gate = read("hooks", "bash-gate.sh")
-warroom = read("references", "war-room.md")
+warroom = read("references", "run", "war-room.md")
 guardrails = read("references", "guardrails.md")
 
 # 2. Kernel
@@ -103,7 +126,7 @@ pos = [core.find(f"`{d}`") for d in DOCTRINE]
 check("kernel: the stage table lists all ten doctrine files, in order", -1 not in pos and pos == sorted(pos), str(pos))
 check("kernel: points at the doctrine folder", "${CLAUDE_PLUGIN_ROOT}/references/doctrine/" in core)
 check("kernel: moved command table remains available from its pointer",
-      "${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md" in core and
+      "${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.md" in core and
       "| Command | Use it to |" in helper_reference and "council help" in helper_reference)
 check("kernel: the sentence naming NOTHING WAS CHECKED calls it never a pass (wording; drill D24 is the behaviour)",
       never_a_pass(core, "NOTHING WAS CHECKED"))
@@ -143,7 +166,7 @@ check("kernel: evidence ledger is optional and does not replace synthesis", "cou
       "optional Python 3.8+" in core and "synthesis.md" in core)
 check("challenge: refreshed evidence links are checked", "council evidence build" in doctrine["08-challenge.md"] and
       "council evidence check" in doctrine["08-challenge.md"])
-evidence_contract = read("references", "evidence-model.md")
+evidence_contract = read("references", "run", "evidence-model.md")
 check("evidence: support states stay distinct from verifier verdicts",
       all(state in evidence_contract for state in ("OBSERVED", "REPRODUCED", "INFERRED", "ASSUMED", "UNVERIFIED")) and
       all(verdict in evidence_contract for verdict in ("CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED")) and
@@ -152,7 +175,7 @@ check("worker and verifier: declared support is blind to independent verificatio
       "Evidence state:" in worker and "which you do not receive" in verifier and "refute the claim" in verifier)
 check("modes: evidence states reach review, research, plan, build and post-game",
       all("evidence-model.md" in skill[mode] for mode in MODES))
-repair_contract = read("references", "repair-loop.md")
+repair_contract = read("references", "run", "repair-loop.md")
 check("repair: build mode records bounded same-gate failures",
       "council repair record" in skill["council-implement"] and "repair-loop.md" in skill["council-implement"] and
       "same" in repair_contract and "Third" in repair_contract and "stop product-code mutation" in repair_contract.lower())
@@ -206,7 +229,7 @@ check("status: showing it is a step where it happens — Work's dispatch, Challe
       'status_nudge "$run" dispatch' in cli and 'status_nudge "$run" close' in cli)
 check("accounting: seats record exact usage per agent run, a Workflow's agent count, and the two readers "
       "share one per-seat rule",
-      os.path.isfile(os.path.join(ROOT, "references", "run-accounting.md")) and
+      os.path.isfile(os.path.join(ROOT, "references", "run", "run-accounting.md")) and
       "agents=<agent_count>" in doctrine["05-work.md"] and "never a role name" in doctrine["05-work.md"] and
       "seat_rows()" in cli and "def seat_usage" in read("scripts", "cockpit.py") and "cmd_correct" in cli and
       "usage.tsv" in cli)
@@ -299,8 +322,8 @@ for c in sorted(known):
     check(f"helper: '{c}' is dispatched in main", re.search(rf"^\s+{c}\)", cli, re.MULTILINE) is not None)
 texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
          "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
-         "references/war-room.md": warroom, "references/guardrails.md": guardrails,
-         "references/helper-commands.md": helper_reference}
+         "references/run/war-room.md": warroom, "references/guardrails.md": guardrails,
+         "references/run/helper-commands.md": helper_reference}
 flag_src = cli[cli.find("main() {"):] + cli[cli.find("cmd_changed() {"):cli.find("cmd_changed() {") + 2000]
 flags = {alt.split("=")[0]                  # case patterns may list several: --run|--base=*)
          for alts in re.findall(r"^\s+((?:--[a-z][a-z-]*(?:=\*)?\|)*--[a-z][a-z-]*(?:=\*)?)\)", flag_src, re.MULTILINE)
@@ -468,7 +491,7 @@ check("05-work and the agents: a worker the harness would not let write hands it
       "Chair saves it and says so (a real run on the Mac had the Chair save replies by hand with no rule for it)",
       "UNWRITTEN" in doctrine["05-work.md"] and "saved by the Chair" in doctrine["05-work.md"] and
       "UNWRITTEN" in worker and "UNWRITTEN" in verifier and
-      "never by stdin" in read("references", "helper-commands.md"))
+      "never by stdin" in read("references", "run", "helper-commands.md"))
 build_proof = read("references", "build-proof.md")
 check("build tier: build-proof.md states both tiers with light as the default, the implement loop reads it for the pair "
       "and the verifier batches, the config template carries the line, and a build ends at a stated finish line",
@@ -587,9 +610,9 @@ check("template config: experimental routing options start off",
       "- context packs: off" in cfg and "- seat models: off" in cfg)
 check("template config: sharing starts at team, and says what just me does and how to switch",
       "- sharing: team" in cfg and "just me" in cfg and "council sharing just-me" in cfg)
-sharing_doc = read("references", "sharing.md")
+sharing_doc = read("references", "run", "sharing.md")
 check("just me: setup offers team or just me, and on just me writes no CLAUDE.md note but runs council sharing just-me",
-      "references/sharing.md" in skill["council-init"] and "team or just me" in skill["council-init"]
+      "references/run/sharing.md" in skill["council-init"] and "team or just me" in skill["council-init"]
       and "**Just me** (refreshes too): no note; run `council sharing just-me`" in skill["council-init"])
 check("just me: sharing.md says when to ask, what stays out of the shared project, and that removing tracked files is the user's commit",
       all(k in sharing_doc for k in ["- sharing: just me", "git log --since=12.months", ".git/info/exclude",
@@ -600,7 +623,7 @@ check("just me: the session hears it, and specs and test specs stay out of the s
       "configured_sharing" in hook and "Just me:" in hook
       and ".council/specs/" in skill["spec-writer"] and "<home>/specs/" in skill["test-architect"])
 check("model routing: plan, doctrine and ADR state the opt-in boundary",
-      "seat/<slug>/model" in read("references", "run-plan.md") and
+      "seat/<slug>/model" in read("references", "run", "run-plan.md") and
       "seat models: on" in read("references", "doctrine", "03-assign.md") and
       os.path.isfile(os.path.join(ROOT, "docs", "design", "model-routing-adr.md")))
 # The agent gate does judge a council agent's dispatch now; what no hook checks is the model it is given.
@@ -677,21 +700,29 @@ check("decisions: ids are unique and cover D1..Dn with no gaps, in any section (
 
 # 9c. One rule, one place (D3): a rule folded into its owner leaves a pointer behind, so its wording
 # appears in exactly one shipped prose file. A second copy is a duplicate to fold, not to keep.
+def reference_docs():
+    """Every .md under references/, as a path from the repo root, except doctrine/ (read above as its own stages)."""
+    found = []
+    for folder, subfolders, names in os.walk(os.path.join(ROOT, "references")):
+        subfolders[:] = sorted(s for s in subfolders if s != "doctrine")
+        found += [os.path.relpath(os.path.join(folder, n), ROOT).replace(os.sep, "/") for n in sorted(names) if n.endswith(".md")]
+    return sorted(found)
+
+
 prose = {**{f"skills/{s}": flat(skill[s]) for s in SKILLS}, **{f"doctrine/{d}": flat(doctrine[d]) for d in DOCTRINE},
          "agents/worker": flat(worker), "agents/verifier": flat(verifier),
-         **{f"references/{f}": flat(read("references", f)) for f in sorted(os.listdir(os.path.join(ROOT, "references")))
-            if f.endswith(".md")}}
+         **{path: flat(read(*path.split("/"))) for path in reference_docs()}}
 ONE_HOME = [  # (the wording, its one home)
     ("concurrency or ordering, public contracts", "skills/context-core"),          # protected subjects
     ("isn't a new agent", "skills/context-core"),                                 # resumed vs re-dispatched
     ("write your file now", "skills/context-core"),                               # the turn-limit resume
     ("never report that as a pass", "skills/context-core"),                       # exit 4
     ("no bare principle numbers", "skills/context-core"),                         # no internal labels
-    ("never a round-1 re-dispatch", "references/war-room.md"),                    # a lost round-2 seat
-    ("every point ends one of four ways", "references/war-room.md"),              # war-room endings
-    ("the worst verdict stands", "references/evidence-model.md"),                 # a plan's several rows
+    ("never a round-1 re-dispatch", "references/run/war-room.md"),                    # a lost round-2 seat
+    ("every point ends one of four ways", "references/run/war-room.md"),              # war-room endings
+    ("the worst verdict stands", "references/run/evidence-model.md"),                 # a plan's several rows
     ("batches of up to 8", "doctrine/08-challenge.md"),                           # how verifiers are counted
-    ("riskiest assumption named by 2 or more seats", "references/war-room.md"),   # war-room claims to verify
+    ("riskiest assumption named by 2 or more seats", "references/run/war-room.md"),   # war-room claims to verify
     ("A local correction can proceed within the", "doctrine/01-convene.md"),     # evidence changes the approach
 ]
 GONE = [  # stale or contradicting wording that must not come back anywhere
@@ -750,10 +781,8 @@ check("bin/council: the argument dispatch never expands an empty \"$@\" or $* (u
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
            "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
            "hooks/seat-gate.sh": gate, "hooks/agent-gate.sh": agent_gate, "hooks/bash-gate.sh": bash_gate, "bin/council": cli}
-for d in ["references", os.path.join("references", "roster"), os.path.join("references", "templates")]:
-    for f in os.listdir(os.path.join(ROOT, d)):
-        if f.endswith(".md"):
-            shipped[f"{d}/{f}"] = read(d, f)
+for path in reference_docs():
+    shipped[path] = read(*path.split("/"))
 for label, text in shipped.items():
     stale = re.sub(r"ultra-council:(begin|end)", "", text)
     check(f"{label}: no 'Ultra Council' branding", bool(text) and re.search(r"ultra[ -]?council", stale, re.IGNORECASE) is None)

@@ -173,8 +173,8 @@ Two agents (an expert worker and a blind verifier), a bash helper called `counci
 bookkeeping, four hooks that enforce limits and pick runs back up after a compaction, and fourteen
 expert seats tailored to each project.
 
-More: [helper commands](references/helper-commands.md) · [reference docs](references/README.md) ·
-[sharing](references/sharing.md) · [checks](references/guardrails.md) ·
+More: [helper commands](references/run/helper-commands.md) · [reference docs](references/README.md) ·
+[sharing](references/run/sharing.md) · [checks](references/guardrails.md) ·
 [what's built and tested](docs/roadmap-status.md) · [CHANGELOG](CHANGELOG.md)
 
 ## Development

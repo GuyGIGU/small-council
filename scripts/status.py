@@ -284,7 +284,7 @@ def usage_of(snap):
 
 # --- the stop at the limit, read as the helper reads it (bin/council: run_agent_cap, run_budget_value,
 # cap_allowed_until and cap_standing) — the hook refuses agents on the helper's reading, so the card
-# must say the same thing. references/run-accounting.md, "The stop at the limit".
+# must say the same thing. references/run/run-accounting.md, "The stop at the limit".
 INTMAX = 2 ** 63 - 1    # the largest whole number bash's test reads; a comparison with more fails, and stops nothing
 
 

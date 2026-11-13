@@ -5,7 +5,7 @@ past a stated bar.
 It reads .council/ledger.tsv (a row per seat per completed run) and writes nothing. A run counts
 toward a seat's usefulness only when its synthesis credited some items (kept or cut); a run that
 credited none (council-init, a build) adds tokens only. Tokens are priced only from rows the helper
-marked as checked (accounting 2, see references/run-accounting.md); an older row's token figure was
+marked as checked (accounting 2, see references/run/run-accounting.md); an older row's token figure was
 never checked for units, and "-" is an unknown cost, never a zero. Ranges are Wilson intervals that count at
 most a few items per run, because one run's items share a brief, a model and a day. The advice is
 for the Chair to put to the user at a refresh; it never changes a roster, a route or a run.

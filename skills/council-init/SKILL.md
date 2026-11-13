@@ -162,7 +162,7 @@ Present:
 - for each seat, two lines on what its card will say is P1 here and where it will look;
 - the gates (✓/✗) and their side effects;
 - the run preferences, sharing included: team or just me (when to ask:
-  `${CLAUDE_PLUGIN_ROOT}/references/sharing.md`);
+  `${CLAUDE_PLUGIN_ROOT}/references/run/sharing.md`);
 - a three-line summary of the map.
 
 Adjust on request. On confirmation, write:

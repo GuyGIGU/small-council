@@ -1,4 +1,4 @@
-"""events.tsv: the run's append-only event stream (references/event-stream.md).
+"""events.tsv: the run's append-only event stream (references/run/event-stream.md).
 
 Seven tab-separated cells a row: schema, seq, at, type, subject, value, detail. `append` is the helper's
 event_append, under the same lock, so a Python writer and a bash writer never share a sequence number.

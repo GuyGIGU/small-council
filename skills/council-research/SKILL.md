@@ -74,7 +74,7 @@ Index line: `<n> · <strong|moderate|weak> · <line of inquiry> · <path:line or
 ### <n>. <claim — one sentence>
 - Evidence: path:line | URL | `command` → the output line that matters
 - Strength: strong (direct evidence) | moderate (several consistent signals) | weak (a single hint or an analogy)
-- Evidence state: OBSERVED | REPRODUCED | INFERRED | ASSUMED | UNVERIFIED (see `references/evidence-model.md`)
+- Evidence state: OBSERVED | REPRODUCED | INFERRED | ASSUMED | UNVERIFIED (see `references/run/evidence-model.md`)
 - Proof: <saved run artifact, only if REPRODUCED>
 - Bears on: <which part of the question>
 - Against / open: <what cuts against it, or what would settle it>
