@@ -959,6 +959,44 @@ def lock_across_languages(tmp):
 
 
 @part("timing")
+def lock_unnamed_owner(tmp):
+    """An owner line no process could have written (0, past the system's largest id) is no owner in either
+    language (D33): a young lock is waited for and the refusal says no holder is named; one 10 s old is
+    taken. Before, bash read 0 as alive (kill -0 0 is its own group) and a huge id as dead, and Python read 0
+    as dead on Windows and raised a ctypes traceback for an id of 2^32 or more."""
+    folder = os.path.join(tmp, "unnamed-lock")
+    os.makedirs(folder)
+    src = os.path.join(ROOT, "src")
+    py_wait = ("import sys\nsys.path.insert(0, sys.argv[1])\nfrom pathlib import Path\n"
+               "from council.records import locks, owners\nlock = Path(sys.argv[2])\n"
+               "if locks.acquire(lock, int(sys.argv[3])):\n    print('taken')\n    locks.release(lock)\n"
+               "else:\n    print(owners.unavailable(lock))\n")
+    sh_wait = 'source "$1"; if event_lock "$2" "$3"; then echo taken; event_unlock "$2"; fi\n'
+    seen = []
+    for waits in ("bash", "python"):
+        for line in ("0", str(2 ** 32), "1" + "0" * 30):
+            for age in ("young", "old"):
+                lock = slash(os.path.join(folder, "%s-%d-%s.lock" % (waits, len(line), age)))
+                os.mkdir(lock)
+                write(os.path.join(lock, "owner"), line + "\n")
+                if age == "old":
+                    old = time.time() - 30
+                    os.utime(lock, (old, old))
+                argv = ([sys.executable, "-I", "-c", py_wait, src, lock, "5"] if waits == "python"
+                        else [BASH, "-c", sh_wait, "council", CLI.replace("\\", "/"), lock, "5"])
+                p = subprocess.run(argv, env=GIT_ENV, capture_output=True, text=True, encoding="utf-8",
+                                   errors="replace", timeout=120)
+                said = (p.stdout + p.stderr).strip()
+                ok = (said == "taken" and not os.path.exists(lock) if age == "old"
+                      else "(no holder named in it, age " in said and "taken" not in said and os.path.isdir(lock))
+                seen.append("%s waiter · owner %s… · %s: %s%s" % (waits, line[:12], age, "ok" if ok else "WRONG ",
+                                                                   "" if ok else repr(said)))
+        check("lock with an owner no process could have (0, 2^32, 10^30): a %s waiter waits for a young one, "
+              "saying no holder is named, and takes one 10 s old" % waits,
+              all(" ok" in s for s in seen if s.startswith(waits)), "\n".join(seen), full=True)
+
+
+@part("timing")
 def gate_lock(tmp):
     """One `council gate` per run at a time. A real run started `gate --all` twice: the second copy
     overwrote the first's saved output and was stopped, and its results became the run's events and

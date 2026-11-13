@@ -58,6 +58,34 @@ class ReuseTest(support.Scratch):
         self.assertTrue(owners.holder_alive(os.getpid(), owner))
 
 
+class UnnamedOwnerTest(support.Scratch):
+    """An owner line no process could have written is no owner (D33): never a traceback, never a wrapped id.
+    Before: 2^32 and up raised ctypes.ArgumentError on Windows, and 0 read dead there but alive on POSIX."""
+
+    NONE = ("", "0", "00", "-5", "x", "12a", "99999999999", str(owners.PID_LIMIT + 1), str(2 ** 32 + 3), str(10 ** 30))
+
+    def test_named_takes_only_an_id_a_process_could_have(self) -> None:
+        self.assertEqual([line for line in self.NONE if owners.named(line) is not None], [])
+        self.assertEqual(owners.named("007"), 7)
+        self.assertEqual(owners.named(str(owners.PID_LIMIT)), owners.PID_LIMIT)
+
+    def test_alive_answers_for_any_number(self) -> None:
+        for pid in (0, -1, 2 ** 31 + 5, 2 ** 32 + 3, 10 ** 30):
+            self.assertFalse(owners.alive(pid), pid)
+            self.assertFalse(owners.holder_alive(pid, self.tmp / "owner"), pid)
+
+    def test_a_lock_naming_no_process_goes_stale_like_an_ownerless_one(self) -> None:
+        for line in ("0", str(2 ** 32 + 3), str(10 ** 30)):
+            lock = self.tmp / ("x%d.lock" % len(line))
+            lock.mkdir()
+            self.write("%s/owner" % lock.name, line + "\n")
+            self.assertFalse(locks.stale(lock), line)                   # young: may be a writer mid-take
+            self.assertIn("(no holder named in it, age ", owners.unavailable(lock))
+            old = time.time() - 30
+            os.utime(str(lock), (old, old))
+            self.assertTrue(locks.stale(lock), line)
+
+
 class RefusalTest(support.Scratch):
     def test_names_the_lock_the_holder_its_age_and_the_next_step(self) -> None:
         lock = self.tmp / "events.tsv.lock"

@@ -15,13 +15,12 @@ exclusively (O_EXCL).
 from __future__ import annotations
 
 import os
-import re
 import time
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Iterator
 
-from council.records.owners import first_line, holder_alive, unavailable
+from council.records.owners import first_line, holder_alive, named, unavailable
 from council.records.paths import RecordError
 
 TRIES = 200          # the helper's default: 200 tries, 0.1 s apart
@@ -45,8 +44,9 @@ def stale(lock: str | Path) -> bool:
             if not owner_file.is_file():
                 return False          # the holder released between the test and the read
             owner = ""
-        if re.fullmatch(r"[0-9]+", owner):
-            if holder_alive(int(owner), owner_file):
+        pid = named(owner)
+        if pid is not None:
+            if holder_alive(pid, owner_file):
                 return False
             # Stale only while the file still names that writer: one that released has removed it,
             # and one that took the lock since has written its own number.

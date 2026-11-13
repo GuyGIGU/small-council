@@ -237,8 +237,8 @@
    "longest_name": "acquire"
   },
   "src/council/records/owners.py": {
-   "lines": 106,
-   "longest": 21,
+   "lines": 105,
+   "longest": 20,
    "longest_name": "_windows"
   },
   "src/council/records/paths.py": {
