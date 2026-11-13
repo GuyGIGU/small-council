@@ -37,8 +37,8 @@ class RunPathTest(support.Scratch):
         here = os.getcwd()
         os.chdir(str(self.tmp))
         self.addCleanup(os.chdir, here)
-        self.assertEqual(resolve.run_path(".council/runs/" + run.name, "/elsewhere"),
-                         str(run.resolve()).replace("\\", "/") if os.name == "nt" else str(run.resolve()))
+        found = resolve.run_path(".council/runs/" + run.name, "/elsewhere")   # RUNNER~1 is the same folder
+        self.assertTrue(os.path.isabs(found) and "\\" not in found and os.path.samefile(found, run), found)
 
 
 class WordsTest(unittest.TestCase):
