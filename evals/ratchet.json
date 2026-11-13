@@ -15,17 +15,15 @@
     "bin/council: cmd_gate",
     "bin/council: cmd_gates",
     "bin/council: cmd_memory",
-    "bin/council: cmd_sharing_set",
-    "bin/council: cmd_sharing_show",
     "bin/council: council_home",
     "bin/council: gate_limit",
     "bin/council: memory_file",
     "bin/council: notifications_off",
     "bin/council: sharing_rows",
     "hooks/session-start.sh: <top level>",
-    "src/council/records/paths.py: home_from"
+    "src/council/records/home.py: home_from"
    ],
-   "value": 15
+   "value": 13
   },
   "parsers": {
    "items": [
@@ -38,7 +36,7 @@
  },
  "files": {
   "bin/council": {
-   "lines": 8156,
+   "lines": 8021,
    "longest": 297,
    "longest_name": "cmd_check",
    "shellcheck": 44
@@ -153,10 +151,45 @@
    "longest": 0,
    "longest_name": ""
   },
+  "src/council/__main__.py": {
+   "lines": 21,
+   "longest": 0,
+   "longest_name": ""
+  },
   "src/council/clock.py": {
    "lines": 42,
    "longest": 9,
    "longest_name": "local_moment"
+  },
+  "src/council/commands/__init__.py": {
+   "lines": 1,
+   "longest": 0,
+   "longest_name": ""
+  },
+  "src/council/commands/cli.py": {
+   "lines": 121,
+   "longest": 28,
+   "longest_name": "_flag"
+  },
+  "src/council/commands/dispatch.py": {
+   "lines": 43,
+   "longest": 13,
+   "longest_name": "main"
+  },
+  "src/council/commands/home.py": {
+   "lines": 29,
+   "longest": 12,
+   "longest_name": "main"
+  },
+  "src/council/commands/runs.py": {
+   "lines": 57,
+   "longest": 31,
+   "longest_name": "status"
+  },
+  "src/council/commands/sharing.py": {
+   "lines": 292,
+   "longest": 33,
+   "longest_name": "without_block"
   },
   "src/council/git.py": {
    "lines": 33,
@@ -174,7 +207,7 @@
    "longest_name": "token_count"
   },
   "src/council/records/config.py": {
-   "lines": 245,
+   "lines": 236,
    "longest": 20,
    "longest_name": "preferences_insertion"
   },
@@ -188,18 +221,28 @@
    "longest": 18,
    "longest_name": "results"
   },
+  "src/council/records/home.py": {
+   "lines": 93,
+   "longest": 16,
+   "longest_name": "worktrees"
+  },
   "src/council/records/ledger.py": {
    "lines": 84,
    "longest": 22,
    "longest_name": "read"
   },
   "src/council/records/locks.py": {
-   "lines": 195,
+   "lines": 156,
    "longest": 30,
    "longest_name": "acquire"
   },
+  "src/council/records/owners.py": {
+   "lines": 106,
+   "longest": 21,
+   "longest_name": "_windows"
+  },
   "src/council/records/paths.py": {
-   "lines": 229,
+   "lines": 182,
    "longest": 26,
    "longest_name": "open_shared"
   },
@@ -208,10 +251,20 @@
    "longest": 19,
    "longest_name": "summary"
   },
+  "src/council/records/runs.py": {
+   "lines": 118,
+   "longest": 16,
+   "longest_name": "listed_fields"
+  },
   "src/council/records/seats.py": {
    "lines": 115,
    "longest": 14,
    "longest_name": "workflow_extra"
+  },
+  "src/council/records/sharing.py": {
+   "lines": 44,
+   "longest": 19,
+   "longest_name": "with_sharing"
   },
   "src/council/records/state.py": {
    "lines": 114,

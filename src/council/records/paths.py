@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import stat
-import tempfile
 from pathlib import Path
 from typing import BinaryIO
 
@@ -170,6 +169,7 @@ def atomic_write(path: Path, data: bytes, prefix: str, suffix: str = "", keep_mo
     mode = None
     if keep_mode:
         mode = stat.S_IMODE(os.stat(str(path)).st_mode) if path.exists() else 0o666 & ~current_umask()
+    import tempfile   # here, not at the top: only a command that writes pays for it
     fd, temporary = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=str(path.parent))
     try:
         with os.fdopen(fd, "wb") as stream:

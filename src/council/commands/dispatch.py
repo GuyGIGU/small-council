@@ -1,9 +1,13 @@
-"""The ported commands' dispatcher: bin/council hands each of them here with the words it was given."""
+"""The ported commands' dispatcher: bin/council hands each of them here with the words it was given. It
+imports only the module of the command it runs, so a command starts at the cost of its own imports."""
 from __future__ import annotations
 
+import importlib
 import sys
 
-from council.commands import cli, home, runs, sharing
+from council.commands import cli
+
+COMMANDS = {"home": "home", "sharing": "sharing", "run status": "runs"}   # command words -> module
 
 
 def main(argv: list[str]) -> int:
@@ -22,13 +26,14 @@ def main(argv: list[str]) -> int:
 
 
 def _route(args: cli.Args, command: str, words: list[str]) -> int:
-    if command == "home":
-        return home.main(args, words)
-    if command == "sharing":
-        return sharing.main(args, words)
-    if command == "run" and words[:1] == ["status"]:
-        return runs.main(args, words[0], words[1:])
-    raise cli.Refusal("'%s' is not ported to Python yet — run it through bin/council" % " ".join(args.words))
+    key = command + " " + words[0] if command == "run" and words else command
+    name = COMMANDS.get(key)
+    if name is None:
+        raise cli.Refusal("'%s' is not ported to Python yet — run it through bin/council" % " ".join(args.words))
+    module = importlib.import_module("council.commands." + name)
+    if command == "run":
+        return int(module.main(args, words[0], words[1:]))
+    return int(module.main(args, words))
 
 
 def _plain_streams() -> None:

@@ -460,6 +460,48 @@ DIRS
 # events-schema stamp and continue without a stream.
 event_cell() { printf '%s' "$1" | tr '\t\r\n' '   ' | LC_ALL=C tr -cd '\40-\176\200-\377'; }
 
+# Who holds a lock (D33). Its owner file names the holder by the operating system's process id, whichever
+# language wrote it, so a Python writer (src/council/records/owners.py) and a bash one can each tell whether
+# the other still runs. Under Git Bash, MSYS2 and Cygwin (WINDOWS_BASH=1) that is the Windows id, not
+# bash's own number.
+WINDOWS_BASH=0
+[ ! -r "/proc/$$/winpid" ] || WINDOWS_BASH=1
+
+# Sets LOCK_OWNER to this shell's id as a lock's owner file writes it. Call it in the shell that holds the
+# lock, never inside $(…): there BASHPID is a subshell's, whose Windows id is gone a moment later.
+lock_owner() {
+  local win=''
+  LOCK_OWNER="${BASHPID:-$$}"
+  [ "$WINDOWS_BASH" = 1 ] || return 0
+  { IFS= read -r win < "/proc/$LOCK_OWNER/winpid"; } 2>/dev/null || :
+  case "$win" in ''|*[!0-9]*) ;; *) LOCK_OWNER="$win" ;; esac
+}
+
+# Whether the process an owner file names still runs. bash's kill knows its own numbers (a gate lock's, and
+# an older helper's). A Windows id is looked up in ps -W's WINPID column (~50 ms), only when kill says no;
+# /usr/bin/kill -0 -W is no use: it finds only processes MSYS started, and a live Python started by another
+# Windows program read as gone. A list that can't be had says alive: a lock is taken only from a holder that
+# is dead, never from one that reads alive, however old.
+owner_alive() {
+  local listed=''
+  kill -0 "$1" 2>/dev/null && return 0
+  [ "$WINDOWS_BASH" = 1 ] || return 1
+  listed="$(ps -W 2>/dev/null)" || return 0
+  printf '%s\n' "$listed" | awk -v p="$1" '{ w = ($1 ~ /^[0-9]+$/) ? $4 : $5 } w == p { f = 1 } END { exit !f }'
+}
+
+# A waiter's refusal (D19): the lock, who holds it and for how long, and what to do next.
+lock_unavailable() {
+  local lock="$1" pid='' modified='' age='unknown'
+  { IFS= read -r pid < "$lock/owner"; } 2>/dev/null || :
+  modified="$(stat -c %Y "$lock" 2>/dev/null || stat -f %m "$lock" 2>/dev/null)" || :
+  case "$modified" in ''|*[!0-9]*) ;; *) age=$(( $(date +%s) - modified )); [ "$age" -ge 0 ] || age=0; age="$age s" ;; esac
+  case "$pid" in
+    ''|*[!0-9]*) printf 'council: event lock unavailable: %s (no holder named in it, age %s) — run this again\n' "$lock" "$age" >&2 ;;
+    *) printf 'council: event lock unavailable: %s (held by process %s, age %s) — run this again once that call ends; if process %s is not a council call, remove that folder first\n' "$lock" "$pid" "$age" "$pid" >&2 ;;
+  esac
+}
+
 event_lock_stale() {
   local lock="$1" owner='' again='' modified='' now=''
   [ -d "$lock" ] || return 1
@@ -471,7 +513,7 @@ event_lock_stale() {
     case "$owner" in
       ''|*[!0-9]*) ;;
       *)
-        kill -0 "$owner" 2>/dev/null && return 1
+        owner_alive "$owner" && return 1
         # Stale only while the file still names that writer: one that released and exited after the
         # read has removed it, and a writer that took the lock since has written its own number.
         { IFS= read -r again < "$lock/owner"; } 2>/dev/null || :
@@ -507,8 +549,14 @@ lock_claim() {
   printf '%s\n' "$@" > "$dir/owner" || { rm -f "$dir/owner"; return 2; }
 }
 
+# A waiter gives up after its tries or their time (a tenth of a second each, plus at most one), whichever
+# comes first: on Windows `sleep 0.1` takes about 0.12 s, and 200 tries took 28.5 s where Python's take 20.
+# There it also looks for a stale lock only on its first try and every tenth: a look can cost a process
+# start (owner_alive).
 event_lock() {                                   # $2: how many 0.1 s tries before giving up (default 200)
-  local lock="$1" recovery="$1.recover" tries=0 most="${2:-200}" owner="${BASHPID:-$$}" rc=0
+  local lock="$1" recovery="$1.recover" tries=0 most="${2:-200}" owner rc=0 give_up
+  lock_owner; owner="$LOCK_OWNER"
+  give_up=$((SECONDS + (most + 9) / 10 + 1))   # whole seconds: more than the tries' time, at most one more
   while :; do
     if [ ! -d "$recovery" ] && mkdir "$lock" 2>/dev/null; then
       lock_claim "$lock" "$owner"; rc=$?
@@ -519,18 +567,20 @@ event_lock() {                                   # $2: how many 0.1 s tries befo
         2) rmdir "$lock" 2>/dev/null; return 1 ;;
       esac                                       # 1: another call holds it — wait like any other
     fi
-    if event_lock_stale "$recovery"; then
-      rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
-    fi
-    if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
-      lock_claim "$recovery" "$owner"; rc=$?
-      if [ "$rc" -eq 0 ] && event_lock_stale "$lock"; then
-        rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null || :
+    if [ "$WINDOWS_BASH" = 0 ] || [ $((tries % 10)) -eq 0 ]; then
+      if event_lock_stale "$recovery"; then
+        rm -f "$recovery/owner" && rmdir "$recovery" 2>/dev/null || :
       fi
-      [ "$rc" -eq 1 ] || event_unlock "$recovery" || :   # another reclaimer's: leave it to that one
+      if event_lock_stale "$lock" && mkdir "$recovery" 2>/dev/null; then
+        lock_claim "$recovery" "$owner"; rc=$?
+        if [ "$rc" -eq 0 ] && event_lock_stale "$lock"; then
+          rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null || :
+        fi
+        [ "$rc" -eq 1 ] || event_unlock "$recovery" || :   # another reclaimer's: leave it to that one
+      fi
     fi
     tries=$((tries + 1))
-    [ "$tries" -lt "$most" ] || { printf 'council: event lock unavailable: %s\n' "$lock" >&2; return 1; }
+    [ "$tries" -lt "$most" ] && [ "$SECONDS" -lt "$give_up" ] || { lock_unavailable "$lock"; return 1; }
     sleep 0.1
   done
 }
@@ -2637,9 +2687,16 @@ is_test_path() {
   return 1
 }
 
+# The Pythons to try, in order, chosen without running anything (D24). Under Git Bash, MSYS2 and Cygwin,
+# python first: python3 there is often the Microsoft Store's stand-in, which takes 200 ms to run nothing.
+PYTHON_CANDIDATES="python3 python"
+[ "$WINDOWS_BASH" = 0 ] || PYTHON_CANDIDATES="python python3"
+
+# The Python a scripts/ entry point runs on: the first candidate that says it is 3.8 or newer. The scripts
+# don't refuse an older Python themselves, so this asks first (one process) until they are ported (S9).
 impact_python() {
   local candidate
-  for candidate in python3 python; do
+  for candidate in $PYTHON_CANDIDATES; do
     if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import ast, sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
       printf '%s' "$candidate"
       return 0
@@ -2648,15 +2705,27 @@ impact_python() {
   return 1
 }
 
-# A command ported to Python (src/council/commands, D24) runs there with the words it was given. Git Bash
-# rewrites an argument that looks like a path for a Windows program (decision=/x reached Python as
-# decision=C:/Program Files/Git/x), so the words go over as typed and Python reads a path argument itself.
+# A command ported to Python (src/council/commands, D24) runs there with the words it was given: one process,
+# no probe. The entry checks its own version first and exits 85 on a Python older than 3.8; that, a start
+# that failed (126, 127) or the Store's stand-in (its 9009, which MSYS reports as 49) sends the call to the
+# next candidate, so a ported command never exits with one of those codes itself. Python 2.7 and 3.0-3.3
+# don't know -I, so -E -s, and the entry takes its own folder off the path. Git Bash rewrites an argument
+# that looks like a path for a Windows program (decision=/x reached Python as decision=C:/Program
+# Files/Git/x), so the words go over as typed and Python reads a path argument itself.
 python_command() {
-  local label="$1" py entry
+  local label="$1" entry="$COUNCIL_PLUGIN_ROOT/src/council" candidate rc
   shift
-  py="$(impact_python)" || die "$label needs Python 3.8 or newer, and none is on PATH — install it (python.org), check that python3 --version or python --version says 3.8 or later, then run this again"
-  entry="$(cd "$COUNCIL_PLUGIN_ROOT/src/council" 2>/dev/null && here)/__main__.py"
-  MSYS2_ARG_CONV_EXCL='*' exec "$py" -I "$entry" ${1+"$@"}
+  case "$WINDOWS_BASH:$entry" in
+    1:/[a-zA-Z]/*) entry="${entry:1:1}:${entry:2}" ;;          # /c/x is C:/x; no subshell (16 ms here)
+    1:*) entry="$(cd "$entry" 2>/dev/null && here)" ;;
+  esac
+  for candidate in $PYTHON_CANDIDATES; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    rc=0
+    MSYS2_ARG_CONV_EXCL='*' "$candidate" -E -s "$entry/__main__.py" ${1+"$@"} || rc=$?
+    case "$rc" in 85|126|127|49) ;; *) exit "$rc" ;; esac
+  done
+  die "$label needs Python 3.8 or newer, and none is on PATH — install it (python.org), check that python3 --version or python --version says 3.8 or later, then run this again"
 }
 
 cmd_impact() {
@@ -3460,9 +3529,11 @@ cmd_never_ran() {
 # started `gate --all` twice, the second copy overwrote the first's output and was stopped, and its
 # results became the run's events and its baseline — a test failure that never happened. The lock is
 # <run>/gates.lock, a directory whose owner file holds the holder's process id, then when it started.
-# A second call never waits: it refuses before it writes anything. The holder releases on exit, a
-# stopped one too where the shell still runs its exit trap; a lock whose process is gone is cleared by
-# the next call, which says so (event_lock_stale, and the same recovery step as the event lock).
+# That id is bash's own number even on Windows, unlike the other locks' (D33): only bash takes this lock
+# until gate is ported, and a gate's own commands stop the holder by it with bash's kill. A second call
+# never waits: it refuses before it writes anything. The holder releases on exit, a stopped one too where
+# the shell still runs its exit trap; a lock whose process is gone is cleared by the next call, which says
+# so (event_lock_stale, and the same recovery step as the event lock).
 GATE_LOCK="" GATE_LOCK_PID=""
 
 gate_unlock() {
@@ -3508,7 +3579,7 @@ gate_lock() {
     fi
     case "$pid" in
       ''|*[!0-9]*) ;;                                # no owner to read yet: look again
-      *) if kill -0 "$pid" 2>/dev/null; then
+      *) if owner_alive "$pid"; then
            if [ "${WAIT:-0}" = 1 ]; then                 # --wait: queue behind the running set, up to 20 minutes
              waited=$((waited + 1))
              [ "$waited" -le "$limit" ] || die "checks are still running for this run (${run##*/}, started ${since:-a moment ago}, process $pid) after $limit seconds of --wait — nothing was started"
