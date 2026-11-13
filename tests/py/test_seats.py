@@ -43,7 +43,8 @@ class SeatsTest(support.Scratch):
         """The helper's awk drops each line's CR, so the last cell of a hand-edited CRLF file is a plain figure."""
         run = self.run_folder()
         (run / "agent-starts.tsv").write_bytes(b"at\tseed\r\nT\tbefore:3\r\nT\tAgent\r\n")
-        (run / "usage.tsv").write_bytes(b"at\tseat\tagent\tkind\truns\r\nT\tw\tid1\tfinished\t4\r\nT\tw\t\tfinished\t3\r\n")
+        (run / "usage.tsv").write_bytes(b"at\tseat\tagent\tkind\truns\r\n"
+                                        + b"T\tw\tid1\tfinished\t4\r\nT\tw\t\tfinished\t3\r\n")
         (run / "cap-allowances.tsv").write_bytes(b"at\tused\tn\tuntil\r\nT\t5\t1\t12\r\n")
         self.assertEqual(seats.agent_starts(run), 4)
         self.assertEqual(seats.workflow_extra(run), 3 + 2)

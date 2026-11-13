@@ -452,8 +452,8 @@ def self_test() -> int:
         check("every council file architecture §4 names is guarded, and no folder or pattern is",
               set(architecture_files((ROOT / ARCHITECTURE).read_text(encoding="utf-8"))) <= set(COUNCIL_FILES)
               and not any("/" in n or "<" in n for n in COUNCIL_FILES), COUNCIL_FILES)
-        sample = "## 4. x\n| File | W |\n|---|---|\n| `a.md` (memory) | x |\n| `b.tsv`, `c.jsonl` | `d.md` |\n" \
-                 "| `runs/<t>/`, `e-<n>.md`, `f/` | y |\n## 5. y\n| `g.md` | z |\n"
+        sample = ("## 4. x\n| File | W |\n|---|---|\n| `a.md` (memory) | x |\n| `b.tsv`, `c.jsonl` | `d.md` |\n"
+                  + "| `runs/<t>/`, `e-<n>.md`, `f/` | y |\n## 5. y\n| `g.md` | z |\n")
         check("§4's first column gives the names; other columns, folders, patterns and later sections do not",
               architecture_files(sample) == ["a.md", "b.tsv", "c.jsonl"], architecture_files(sample))
         sc = shutil.which("shellcheck")

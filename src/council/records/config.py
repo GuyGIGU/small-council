@@ -1,8 +1,8 @@
 """council.config.md: one reader per setting, each with its stated default.
 
-The `configured_*` readers follow bin/council's functions of the same name line for line (sed reads
-every line, its carriage return dropped as cells.lines_of drops it, and the first match wins). The others follow the Python reader
-that already used them, and say where the helper reads the line differently.
+The `configured_*` readers follow bin/council's functions of the same name line for line (sed reads every line,
+its carriage return dropped as cells.lines_of drops it, and the first match wins). The others follow the Python
+reader that already used them, and say where the helper reads the line differently.
 """
 from __future__ import annotations
 
