@@ -278,7 +278,8 @@ runs_here() {
 }
 
 # In-progress runs this session drives (the session: line), on any working tree — the rule the agent stop
-# counts starts by (cmd_cap_check), so a run whose code root is a worktree is found from the main checkout.
+# counts starts by (council cap check, src/council/commands/agent_gate.py), so a run whose code root is a
+# worktree is found from the main checkout.
 session_runs() {
   [ -n "$2" ] || return 0
   list_runs "$1" 1000000 open | SID="$2" awk -F'\t' '$6 == "in-progress" && $8 == ENVIRON["SID"] { print $1 }'
@@ -1704,46 +1705,6 @@ cap_standing() {
   printf '%s %s %s %s %s %s %s\n' "$used" "$cap" "$tokens" "$(dash "$ceiling")" "$(dash "$upto")" "$over" "$stopped"
 }
 
-# "run <name> has used 12 of its 10 agent runs and 1.5M tokens, over its 1.2M ceiling" — from a standing.
-cap_words() {
-  local tok cel words="run $1 has used $2 of its $3 agent runs"
-  if [ "$5" != - ] && [ "$4" -gt "$5" ]; then
-    tok="$(usage_token_text "$4")"; cel="$(usage_token_text "$5")"
-    [ "$tok" != "$cel" ] || { tok="$4"; cel="$5"; }       # 600,400 over 600,000 reads as a number, not "600k over 600k"
-    words="$words and $tok tokens, over its $cel ceiling"
-  fi
-  [ "$6" = - ] || words="$words; the user's last go allowed up to $6"
-  printf '%s' "$words"
-}
-
-# council cap [--run <folder>] — where the run stands, in one or two plain lines.
-cmd_cap_show() {
-  local run status line starts rec
-  run="$(resolve_run)" || exit 2
-  starts="$(cap_starts "$run")"; rec=""
-  [ "$starts" -eq 0 ] || { starts=$((starts + $(cap_extra "$run"))); set -- $(run_usage "$run"); rec="${2:-0}"; }
-  set -- $(cap_standing "$run")
-  line="${run##*/}: $1 of $2 agent runs used"
-  [ -z "$rec" ] || [ "$starts" -le "$rec" ] || line="$line ($starts started through the agent gate, $rec recorded)"
-  [ "$4" = - ] || line="$line · $(usage_token_text "$3") tokens of a $(usage_token_text "$4") ceiling"
-  [ "$5" = - ] || line="$line · the user's go allows up to $5"
-  say "$line"
-  status="$(field status "$run/session-state.md")"; status="${status%% *}"
-  if [ "$status" != in-progress ]; then
-    say "new agents: not stopped — the stop holds only while a run is in progress (this one is ${status:-without a status})"
-  elif [ -z "$(field plan-schema "$run/session-state.md")" ]; then
-    say "new agents: not stopped — this run was opened before plans and agent limits, so the stop does not hold for it; tell the user when it passes the cap"
-  elif [ "$7" = 1 ]; then
-    say "new agents: stopped until the user says go — then: council cap allow <n> --user-said \"<their words>\""
-  elif [ "$6" = 1 ]; then
-    say "new agents: may start — $(($5 - $1)) more under the user's go"
-  elif [ "$4" = - ]; then
-    say "new agents: may start — $(($2 - $1)) more before the cap"
-  else
-    say "new agents: may start — at most $(($2 - $1)) more before the cap, fewer if tokens pass the ceiling"
-  fi
-}
-
 # council cap allow <n> --user-said "…" — the user's go past the cap or ceiling, in their words: n more
 # agent runs may start. The row goes to <run>/cap-allowances.tsv under the run's event lock (the words
 # on one line, secret-looking strings redacted), then a run.cap_allowed event if the run keeps a stream.
@@ -1821,216 +1782,6 @@ RUNS
     how="send them the question in one short line"
   fi
   say "Small Council: ${said:+$said }$label $names now waits on the user (no seat is working). If you stopped to ask them something: record the question if you haven't (council state waiting=\"<it, short>\" --run $at), then — unless you already sent the owner an alert for this stop — $how, once, with a PushNotification tool (it may be a deferred tool: search the tools for it first), and end your turn. If it only waits on a background task, clear it instead: council state waiting= --run $at."
-  exit 2
-}
-
-# The dispatch record, for the agent gate: a Small Council agent goes out only for an open run, and only
-# for a seat that run's plan selects. A real run sent a verifier 9 s before its plan row existed (the plan
-# check sat in `council seat … running`, after the agent had started), and another after the run had
-# closed. Only council-worker and council-verifier calls are judged, by the subagent type the call names
-# ($3); the seat ($4) and the run folder ($5) are what the hook read from the dispatch message, empty when
-# it couldn't — and nothing is judged on what wasn't read. The runs open for a dispatch: those in
-# progress on this tree, and those this session drives on any tree. A worker always works for a run; a
-# verifier with no run folder named may be test-architect's own check outside any run, so it is held to
-# a run only when it names one. A paused or closed run named is refused only while no run is open for
-# it: a re-review or a post-game cites an earlier run's files, and is judged by the open runs instead.
-# The seat is the Seat: line's ($4) when a run selects it, else the written file's ($6); when neither
-# is selected, a refusal names it only when the two agree and it reads as a slug, never a display name
-# ("Security") — otherwise council seat judges after the start. Prints the refusal and returns 0 when the
-# agent must not start; 1 otherwise.
-dispatch_refusal() {
-  local home="$1" session="$2" type="$3" seat="$4" named="$5" file="${6:-}" kind run status="" cands open pick="" low where why
-  case "$type" in
-    small-council:council-worker) kind=council-worker ;;
-    small-council:council-verifier) kind=council-verifier ;;
-    *) return 1 ;;
-  esac
-  [ -d "$home" ] || return 1                                    # no council here: nothing to judge
-  case "$named" in ''|.*|*[!A-Za-z0-9._-]*) named="" ;; esac
-  case "$seat" in ''|*[!A-Za-z0-9._-]*) seat="" ;; esac
-  case "$file" in ''|*[!A-Za-z0-9._-]*) file="" ;; esac
-  if [ -n "$named" ] && [ -f "$home/runs/$named/session-state.md" ]; then
-    run="$home/runs/$named"
-    status="$(field status "$run/session-state.md")"; status="${status%% *}"; status="${status:-no status}"
-  fi
-  if [ "$status" = in-progress ]; then
-    cands="$run"
-  else
-    [ -n "$status" ] || [ "$kind" = council-worker ] || return 1
-    open="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
-      $6 == "in-progress" && ($4 == ENVIRON["TOP"] || $4 == "-" || (ENVIRON["SID"] != "" && $8 == ENVIRON["SID"])) { print $1 }')"
-    cands="$open"
-    case "$status:$open" in
-      paused:) say "Small Council: this $kind is for run $named, which is paused — no agent starts for it while it is. If the user wants it carried on: council run resume --run $named, then dispatch again."
-               return 0 ;;
-      ?*:) say "Small Council: this $kind is for run $named, which is closed ($status) — its agents are done. For more work, open a new run (council run open <mode>), plan the seat there, then dispatch."
-           return 0 ;;
-      :)  [ -n "$session" ] || return 1                          # no session: its runs on other trees can't be seen
-          say "Small Council: no council run is open on this working tree or for this session, so a council-worker has no run to work for. Open the run first (council run open <mode>), or carry on with a paused one if the user wants it (council run resume --run <folder>); plan the seat, then dispatch. For work outside the council, use another agent type."
-          return 0 ;;
-    esac
-  fi
-  [ -n "$seat$file" ] || return 1
-  if [ -n "$seat" ]; then dispatch_seat_runs "$cands" "$seat" "$kind"; [ "$DS_N" -eq 0 ] || pick="$seat"; fi
-  if [ -z "$pick" ] && [ -n "$file" ] && [ "$file" != "$seat" ]; then
-    dispatch_seat_runs "$cands" "$file" "$kind"; [ "$DS_N" -eq 0 ] || pick="$file"
-  fi
-  if [ -z "$pick" ]; then
-    [ -z "$DS_LEGACY" ] || return 1                              # opened before run plans: nothing to hold it to
-    pick="${file:-$seat}"
-    if [ -n "$seat" ] && [ -n "$file" ]; then                    # "Seat: Perf" writing seats/perf.md agree; others don't
-      low="$(printf '%s' "$seat" | LC_ALL=C tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')"
-      [ "$low" = "$file" ] || return 1
-    fi
-    case "$pick" in *[!abcdefghijklmnopqrstuvwxyz0123456789._-]*) return 1 ;; esac   # a display name, not a slug
-    case "$cands" in
-      *"$NL"*) where="the open runs here ($(printf '%s\n' "$cands" | names))"; run="<folder>" ;;
-      *) where="${cands##*/}"; run="${cands##*/}" ;;
-    esac
-    say "Small Council: seat $pick has no selected row in the run plan of $where, so this $kind would work off the record. Plan it first — its disposition (selected), role, context level and tool-call budget in run-plan.tsv — then council run plan check --run $run, then dispatch, and record it at once: council seat $pick running agent=<id>."
-    return 0
-  fi
-  [ "$DS_N" -eq 1 ] || return 1                                  # which run it is for is unknown: the seat record judges
-  if why="$(batch_check_refusal "$DS_RUN" "$pick")"; then say "Small Council: $why"; return 0; fi
-  if why="$(check_round_refusal "$DS_RUN" "$pick")"; then say "Small Council: $why"; return 0; fi
-  return 1
-}
-
-# How many of the runs in $1 (one folder a line) select seat $2: DS_N, and DS_RUN the last of them. For a
-# verifier ($3), a re-check's verify-6b or a Workflow part's verify-1-a also counts as its base seat.
-# DS_LEGACY is set when one of them was opened before run plans (no plan to hold a seat to).
-dispatch_seat_runs() {
-  local c also=""
-  DS_N=0; DS_RUN=""; DS_LEGACY=""
-  if [ "$3" = council-verifier ]; then                          # a re-check's verify-6b.md may be seat verify-6's
-    case "$2" in
-      verify-?*-[abcdefghijklmnopqrstuvwxyz]) also="${2%-?}" ;;
-      verify-?*[bcdefghijklmnopqrstuvwxyz]) also="${2%?}" ;;
-    esac
-  fi
-  while IFS= read -r c; do
-    [ -n "$c" ] || continue
-    if [ -z "$(field plan-schema "$c/session-state.md")" ]; then DS_LEGACY=1; continue; fi
-    run_plan_has_selected "$c/run-plan.tsv" "$2" || { [ -n "$also" ] && run_plan_has_selected "$c/run-plan.tsv" "$also"; } || continue
-    DS_N=$((DS_N + 1)); DS_RUN="$c"
-  done <<RUNS
-$1
-RUNS
-}
-
-# council cap check [--session ID] [<tool>] — the agent gate's decision (hooks/agent-gate.sh): silent,
-# exit 0, while agents may start; the reason on stdout and exit 2 while a run this session may be driving
-# is stopped. Only in-progress runs count: with a session id (--session, else CLAUDE_CODE_SESSION_ID),
-# the runs that session drives, on any working tree, and this tree's runs that recorded none; without
-# one, every in-progress run on this tree. A run opened before plans and agent limits (no plan-schema)
-# is never stopped; council cap and the seat notes say when it passes the cap. Given the tool about to
-# start (the hook passes Agent, Task or Workflow), a pass also counts one agent start for the run this
-# session drives by its id, when it drives exactly one — under that run's lock, so agents started
-# together cannot all take its last place. A fault of its own never stops an agent: it returns 0, or
-# dies (stderr, nothing on stdout), which the hook lets through. With type=, seat= and run= after the
-# tool (the hook reads them from the call), and file= (the slug of the file it writes), a Small Council
-# agent is first held to the record: dispatch_refusal. With hunt= (words in a verifier's brief that send it
-# past its Done-when), a build's council-verifier is refused before anything else. With workflow=verifier (a
-# Workflow whose script starts council verifiers), the Workflow is held to the hunt words and, as one more
-# verifier, to batch_check_refusal for every in-progress build this session may drive.
-cmd_cap_check() {
-  local tool="${1:-}" home session runs run own kept="" mine="" n_mine=0 n=0 said="" last="" first file lock seed w dtype="" dseat="" drun="" dfile="" dhunt="" dwf="" open=""
-  [ $# -eq 0 ] || shift
-  for w in ${1+"$@"}; do
-    case "$w" in type=*) dtype="${w#type=}" ;; seat=*) dseat="${w#seat=}" ;; run=*) drun="${w#run=}" ;; file=*) dfile="${w#file=}" ;;
-                 hunt=*) dhunt="${w#hunt=}" ;; workflow=verifier) dwf=1 ;; esac
-  done
-  home="$(council_home)"
-  session="${SESSION_ARG:-${CLAUDE_CODE_SESSION_ID:-}}"
-  if { [ -n "$dhunt" ] || [ -n "$dwf" ]; } && [ -d "$home/runs" ]; then   # the in-progress runs this session may drive
-    open="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' '
-      $6 == "in-progress" && ($4 == ENVIRON["TOP"] || $4 == "-" || (ENVIRON["SID"] != "" && $8 == ENVIRON["SID"])) { print $1 }')"
-  fi
-  # Only a build's verifier has a Done-when to hunt past: a review's or a post-game's claim may say "any
-  # route" itself. The run the brief names, else the in-progress runs this session may drive.
-  if { [ "$dtype" = small-council:council-verifier ] || [ -n "$dwf" ]; } && [ -n "$dhunt" ] && [ -d "$home/runs" ]; then
-    runs="$open"
-    case "$drun" in ''|.*|*[!A-Za-z0-9._-]*) ;; *) [ ! -f "$home/runs/$drun/session-state.md" ] || runs="$home/runs/$drun" ;; esac
-    while IFS= read -r run; do
-      [ -n "$run" ] && [ "$(field mode "$run/session-state.md")" = council-implement ] || continue
-      say "Small Council: this council-verifier's brief sends it hunting past the Done-when (\"$dhunt\"). A verifier tries hard to show each Done-when is not met, and anything it notices beyond one is a line under ## Noticed, never a verdict or a task (references/build-proof.md, Checking): a verifier told to name any route, however narrow, found a narrower gap every round. Take those words out of the brief and dispatch again."
-      exit 2
-    done <<RUNS
-$runs
-RUNS
-  fi
-  if [ -n "$dtype" ] && dispatch_refusal "$home" "$session" "$dtype" "$dseat" "$drun" "$dfile"; then exit 2; fi
-  # A Workflow that starts council verifiers names no seat the hook can read: under one per batch, it is
-  # held to every in-progress build this session may be driving, as one more verifier.
-  if [ -n "$dwf" ]; then
-    while IFS= read -r run; do
-      [ -n "$run" ] || continue
-      if w="$(batch_check_refusal "$run" "verify-workflow")"; then
-        say "Small Council: this Workflow starts council verifiers, and ${w#cannot start verify-workflow — }"; exit 2
-      fi
-    done <<RUNS
-$open
-RUNS
-  fi
-  [ -d "$home/runs" ] || return 0
-  runs="$(list_runs "$home" 1000000 open | TOP="$(this_tree)" SID="$session" awk -F'\t' -v OFS='\t' '
-    $6 != "in-progress" { next }
-    ENVIRON["SID"] != "" && $8 == ENVIRON["SID"] { print $1, 1; next }
-    (ENVIRON["SID"] == "" || $8 == "-") && ($4 == ENVIRON["TOP"] || $4 == "-") { print $1, 0 }')"
-  [ -n "$runs" ] || return 0
-  while IFS="$TAB" read -r run own; do
-    [ -n "$run" ] || continue
-    [ -n "$(field plan-schema "$run/session-state.md")" ] || continue     # opened before agent limits
-    kept="$kept$run$NL"
-    [ "$own" != 1 ] || { n_mine=$((n_mine + 1)); mine="$run"; }
-  done <<RUNS
-$runs
-RUNS
-  [ -n "$tool" ] && [ "$n_mine" -eq 1 ] || mine=""        # which of several this start is for is unknown
-  while IFS= read -r run; do
-    [ -n "$run" ] && [ "$run" != "$mine" ] || continue    # the run a start counts for is judged under its lock
-    set -- $(cap_standing "$run")
-    [ "${7:-0}" = 1 ] || continue
-    n=$((n + 1)); last="${run##*/}"
-    first="$(cap_words "$last" "$1" "$2" "$3" "$4" "$5")"
-    [ "$n" -eq 1 ] || first="R${first#r}"
-    said="${said:+$said. }$first"
-  done <<RUNS
-$kept
-RUNS
-  if [ -n "$mine" ]; then
-    file="$mine/agent-starts.tsv"; lock="$file.lock"
-    if [ "$n" -gt 0 ]; then
-      set -- $(cap_standing "$mine")                      # refused anyway: named too if stopped, not counted
-    elif event_lock "$lock" 50 2>/dev/null; then
-      set -- $(cap_standing "$mine")
-      if [ "${7:-0}" != 1 ]; then
-        if [ ! -s "$file" ]; then                       # agents recorded before any start was counted count too
-          seed=$(( $1 - $(cap_extra "$mine") ))
-          { printf 'at\ttool\tsession\n' > "$file"
-            [ "$seed" -le 0 ] || printf '%s\tbefore:%s\t-\n' "$(now_utc)" "$seed" >> "$file"; } 2>/dev/null || :
-        fi
-        { [ -s "$file" ] || printf 'at\ttool\tsession\n' > "$file"
-          [ -z "$(tail -c 1 "$file")" ] || printf '\n' >> "$file"      # never join a torn line
-          printf '%s\t%s\t%s\n' "$(now_utc)" "$tool" "${session//$TAB/ }" >> "$file"; } 2>/dev/null || :
-      fi
-      event_unlock "$lock" 2>/dev/null || :
-    else
-      set -- $(cap_standing "$mine")                      # the lock never came: judged without it, not counted
-    fi
-    if [ "${7:-0}" = 1 ]; then
-      n=$((n + 1)); last="${mine##*/}"
-      first="$(cap_words "$last" "$1" "$2" "$3" "$4" "$5")"
-      [ "$n" -eq 1 ] || first="R${first#r}"
-      said="${said:+$said. }$first"
-    fi
-  fi
-  [ "$n" -gt 0 ] || return 0
-  if [ "$n" -eq 1 ]; then
-    say "Small Council: $said. No new agents until the user says go. Tell them what it has used, and ask whether to continue and for how many more agent runs; every agent a Workflow starts counts. On their go: \`council cap allow <n> --run $last --user-said \"<their words>\"\`. If the run is finished: \`council run close --run $last\`. Alert the owner once: send what \`council status --line --run $last\` prints with a PushNotification tool (it may be a deferred tool: search the tools for it first)."
-  else
-    say "Small Council: $said. No new agents until the user says go. Tell them what each run has used, and ask whether to continue and for how many more agent runs; every agent a Workflow starts counts. On their go: \`council cap allow <n> --run <folder> --user-said \"<their words>\"\` for each run. If a run is finished: \`council run close --run <folder>\`. Alert the owner once: send what \`council status --line --run <folder>\` prints with a PushNotification tool (it may be a deferred tool: search the tools for it first)."
-  fi
   exit 2
 }
 
@@ -2540,6 +2291,7 @@ utc_local_min() {
 # it (council state decision=); after three or more, such a decision after the last. The event stream
 # orders the seats; a decision is compared by its minute, in local time. Prints why, and returns 0, when
 # the check must wait; 1 otherwise — another mode, another seat, or a run with no stream.
+# Two copies until seat is ported: src/council/commands/rounds.py check_round serves the agent gate.
 check_round_refusal() {
   local run="$1" slug="$2" base task verdicts n vseq since
   case "$slug" in verify-?*) ;; *) return 1 ;; esac
@@ -2581,6 +2333,7 @@ check_round_refusal() {
 # the second verifier started is not also the go for a third.
 # Prints why, and returns 0, when the start must wait; 1 otherwise — another mode or setting, another kind
 # of seat, the build's first verifier, or a run with no stream.
+# Two copies until seat is ported: src/council/commands/rounds.py batch_check serves the agent gate.
 batch_check_refusal() {
   local run="$1" slug="$2" got n at first since
   case "$slug" in verify-?*) ;; *) return 1 ;; esac
@@ -7882,21 +7635,12 @@ main() {
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;
     cap)     sub="${1:-}"; [ $# -eq 0 ] || shift
              case "$sub" in
-               '')    takes_flags cap; cmd_cap_show ;;
+               ''|check) python_command "council cap${sub:+ $sub}" ${given[@]+"${given[@]}"} ;;
                allow) takes_flags "cap allow" user-said
                       [ $# -eq 1 ] || die "usage: council cap allow <n> --user-said \"<the user's words>\" [--run <folder>]"
                       [ -n "$(printf '%s' "$MEMORY_SAID_ARG" | tr -d '[:space:]')" ] \
                         || die "cap allow needs --user-said \"<the user's own words>\" — their answer, not a summary of it"
                       cmd_cap_allow "$1" ;;
-               check) takes_flags "cap check" session
-                      [ -z "$RUN_ARG" ] || die "cap check looks at every in-progress run this session may be driving; it does not take --run"
-                      case "${1:-}" in
-                        Agent|Task|Workflow) [ $# -eq 1 ] || for w in "${@:2}"; do
-                                               case "$w" in type=*|seat=*|run=*|file=*|hunt=*|workflow=verifier) ;; *) no_words "cap check" "$w" ;; esac
-                                             done ;;
-                        *) no_words "cap check" ${1+"$@"} ;;
-                      esac
-                      cmd_cap_check ${1+"$@"} ;;
                *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool> [type=… seat=… run=… file=…]]" ;;
              esac ;;
     route)   sub="${1:-}"; [ $# -eq 0 ] || shift

@@ -36,7 +36,7 @@
  },
  "files": {
   "bin/council": {
-   "lines": 8021,
+   "lines": 7765,
    "longest": 297,
    "longest_name": "cmd_check",
    "shellcheck": 44
@@ -82,7 +82,7 @@
    "longest_name": "main"
   },
   "scripts/cockpit.py": {
-   "lines": 658,
+   "lines": 534,
    "longest": 103,
    "longest_name": "render"
   },
@@ -166,6 +166,16 @@
    "longest": 0,
    "longest_name": ""
   },
+  "src/council/commands/agent_gate.py": {
+   "lines": 326,
+   "longest": 38,
+   "longest_name": "dispatch_refusal"
+  },
+  "src/council/commands/cap.py": {
+   "lines": 100,
+   "longest": 31,
+   "longest_name": "show"
+  },
   "src/council/commands/cli.py": {
    "lines": 121,
    "longest": 28,
@@ -180,6 +190,16 @@
    "lines": 29,
    "longest": 12,
    "longest_name": "main"
+  },
+  "src/council/commands/resolve.py": {
+   "lines": 103,
+   "longest": 32,
+   "longest_name": "run_folder"
+  },
+  "src/council/commands/rounds.py": {
+   "lines": 132,
+   "longest": 34,
+   "longest_name": "check_round"
   },
   "src/council/commands/runs.py": {
    "lines": 57,
@@ -270,6 +290,11 @@
    "lines": 114,
    "longest": 14,
    "longest_name": "header"
+  },
+  "src/council/records/usage.py": {
+   "lines": 203,
+   "longest": 30,
+   "longest_name": "usage_totals"
   }
  }
 }

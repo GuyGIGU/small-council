@@ -37,6 +37,7 @@ from council.records import paths  # noqa: E402
 from council.records import plan as run_plan  # noqa: E402
 from council.records import seats as seat_files  # noqa: E402
 from council.records import state as run_state  # noqa: E402
+from council.records import usage  # noqa: E402
 from council.records.cells import CONTROL, clean, integer, lines_of, number, optional_number  # noqa: E402,F401
 from council.records.paths import contained, linked, text_of  # noqa: E402,F401  (the views read through these)
 
@@ -54,6 +55,7 @@ CONVERGE_KEYS = {"not met": "not_met", "partly met": "partly", "partly": "partly
 gate_kind = gate_files.kind                       # one rule for every view (status, history, the pet)
 failed_as_planned = gate_files.failed_as_planned
 corrections_of = seat_files.corrections
+format_tokens = usage.token_text                  # the views' one rounding (records/usage.py)
 
 
 # --- the run's files, through the records library -------------------------------------------------------------
@@ -276,129 +278,13 @@ def proposals_in(home):
     return count
 
 
-def seat_usage(row, fixes):
-    """One seat's agent runs and tokens, each with how far the record supports it — the rule in
-    references/run/run-accounting.md, kept identical to the helper's seat_rows (bin/council), which states
-    the close line and the ledger. Bases: reported, corrected, pending (still working), partial or
-    missing (a finished run's usage is unknown), unrecorded (no agent on record: unknown, never
-    zero), no-agent (declared with agents=0, or corrected so), suspect (a count no agent run can
-    have), legacy (a row from before the accounting columns: units never checked)."""
-    slug, state = row["slug"], row["state"]
-    executed = state not in ("", "queued", "skipped")      # as the helper's seat_rows selects rows
-    finished = executed and state != "running"
-    cell = str(row["raw_tokens"] if row["raw_tokens"] is not None else "").strip()
-    recorded = optional_number(cell)
-    runs, reported = optional_number(row["raw_agents"]), row["raw_reported"]
-    legacy = reported is None
-    fix_t, fix_a = fixes.get((slug, "tokens")), fixes.get((slug, "agents"))
-    if fix_a:
-        agents, basis_a, at_least = fix_a["to"], "corrected", fix_a["to"]
-    elif legacy:
-        agents, basis_a, at_least = None, "at-least", max(runs if runs is not None else 1, 1) if executed else 0
-    elif runs is None:
-        agents, basis_a, at_least = None, "unknown", 0          # no agent on record: not a zero
-    else:
-        agents, basis_a, at_least = runs, "counted", runs
-    gap = missing = pending = 0
-    if fix_t:
-        tokens = fix_t["to"]
-        basis_t = "suspect" if 0 < tokens < 1000 else "corrected"
-    elif legacy:
-        tokens, basis_t = None, "legacy"
-    elif not executed:
-        tokens, basis_t = None, "none"
-    elif agents is None:
-        tokens, basis_t = None, "unrecorded"
-    elif agents == 0 and reported == 0:
-        tokens, basis_t = None, "no-agent"
-    elif reported > 0 and (recorded is None or recorded < 1000):
-        tokens, basis_t = None, "suspect"   # a count no agent run can have (a unit slip or a broken cell)
-    elif reported >= agents and reported > 0:
-        tokens, basis_t = recorded, "reported"
-    else:
-        tokens = recorded if reported > 0 else None
-        gap = max(0, agents - reported)
-        if state == "running":
-            basis_t, pending = "pending", gap
-        else:
-            basis_t, missing = ("partial" if reported > 0 else "missing"), gap
-    if basis_t == "suspect":
-        tokens = None
-    return {"tokens": tokens, "tokens_basis": basis_t, "tokens_recorded": recorded, "agents": agents,
-            "agents_basis": basis_a, "agents_at_least": at_least, "missing_runs": missing, "pending_runs": pending,
-            "executed": executed, "finished": finished}
-
-
-def usage_totals(seats):
-    """Run totals that are only as complete as their least complete seat — the helper's run_usage rule.
-    A total over rows that cannot be trusted is not a total, so it is None and the basis says why:
-    legacy, then suspect, then partial (a finished run's usage is unknown, or a seat has no agent on
-    record), then none (no agent ran), then running (a seat is still at work), else complete."""
-    ran = [s for s in seats if s["executed"]]
-    counted = [s for s in ran if s["tokens"] is not None]
-    known = sum(s["tokens"] for s in counted)
-    bases = {s["tokens_basis"] for s in ran}
-    agent_runs = sum((s["agents"] if s["agents"] is not None else s["agents_at_least"]) for s in ran)
-    if "legacy" in bases:
-        basis = "legacy"
-    elif "suspect" in bases:
-        basis = "suspect"
-    elif bases & {"missing", "partial", "unrecorded"}:
-        basis = "partial"
-    elif not ran or (agent_runs == 0 and not counted):
-        basis = "none"
-    elif bases & {"pending"} or any(s["state"] == "running" for s in ran):
-        basis = "running"
-    else:
-        basis = "complete"
-    verifier = [s for s in counted if s["slug"].startswith(("verify-", "diagnose-"))]
-    complete = basis == "complete"
-    exact = bool(ran) and all(s["agents"] is not None for s in ran)
-    return {
-        "tokens": {"basis": basis, "known": known, "total": known if complete else None,
-                   "workers": sum(s["tokens"] for s in counted if s not in verifier) if complete else None,
-                   "verifiers": sum(s["tokens"] for s in verifier) if complete else None,
-                   "missing_runs": sum(s["missing_runs"] for s in ran),
-                   "pending_runs": sum(s["pending_runs"] for s in ran),
-                   "legacy_seats": [s["slug"] for s in ran if s["tokens_basis"] == "legacy"],
-                   "suspect_seats": [s["slug"] for s in ran if s["tokens_basis"] == "suspect"],
-                   "unrecorded_seats": [s["slug"] for s in ran if s["tokens_basis"] == "unrecorded"],
-                   "added_seats": [s["slug"] for s in seats if s.get("added")],
-                   "corrected_seats": [s["slug"] for s in seats if "corrected" in (s["tokens_basis"], s["agents_basis"])]},
-        "agents": {"total": sum(s["agents"] for s in ran) if exact else None,
-                   "at_least": sum(s["agents_at_least"] for s in ran),
-                   "basis": "exact" if exact else ("at-least" if ran else "none")},
-    }
-
-
 def snapshot(run, home=None, last_events=8):
     run = Path(run)
     state = header(run)
     if "next" in state:
         state["next"] = next_step(state)     # every reader — the screen, the card, the summary — shares this
     fixes = corrections_of(run)
-    seats = []
-    for row in seat_files.rows(run):
-        slug = clean(row.get("slug", ""))
-        if not slug:
-            continue
-        seat = {"slug": slug, "state": clean(row.get("state", "")), "agent": clean(row.get("agent", "")),
-                "updated": clean(row.get("updated", "")), "note": clean(row.get("note", ""))[:120],
-                "raw_tokens": row.get("tokens"), "raw_agents": row.get("agents"),
-                "raw_reported": optional_number(row.get("reported"))}
-        seat.update(seat_usage(seat, fixes))
-        for key in ("raw_tokens", "raw_agents", "raw_reported"):
-            seat.pop(key)
-        seats.append(seat)
-    recorded = {s["slug"] for s in seats} | {clean(r.get("slug", "")) for r in seat_files.rows(run)}
-    for slug in sorted({f["seat"] for f in fixes.values() if f["added"]} - recorded):
-        if (slug, "agents") in fixes:        # an agent run never recorded, added from evidence (its figure may be unknown)
-            seat = {"slug": slug, "state": "done", "agent": "", "updated": "", "added": True,
-                    "note": "never recorded; added from evidence", "raw_tokens": None, "raw_agents": None, "raw_reported": 0}
-            seat.update(seat_usage(seat, fixes))
-            for key in ("raw_tokens", "raw_agents", "raw_reported"):
-                seat.pop(key)
-            seats.append(seat)
+    seats = usage.seat_list(run, fixes)
     return {
         "schema": SCHEMA,
         "run": {"id": clean(run.name), "path": str(run), **{k: state.get(k, "") for k in (
@@ -407,7 +293,7 @@ def snapshot(run, home=None, last_events=8):
         "plan": run_plan.summary(run),
         "decisions": decisions(run),
         "seats": seats,
-        "usage": usage_totals(seats),
+        "usage": usage.usage_totals(seats),
         "corrections": sorted(fixes.values(), key=lambda f: (f["seat"], f["field"])),
         "gates": gate_files.results(run),
         "repairs": repairs_of(run),
@@ -418,16 +304,6 @@ def snapshot(run, home=None, last_events=8):
 
 
 # --- drawing --------------------------------------------------------------------------------------------------
-def format_tokens(tokens):
-    """Round token displays half up in both the helper and Python readers."""
-    if tokens >= 995000:
-        tenths = int(tokens + 50000) // 100000
-        if tenths % 10 == 0:
-            return "{}M".format(tenths // 10)
-        return "{}.{}M".format(tenths // 10, tenths % 10)
-    return "{}k".format(int(tokens + 500) // 1000)
-
-
 def k(tokens):
     return format_tokens(tokens) if tokens is not None else "—"
 

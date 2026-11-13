@@ -67,7 +67,7 @@ Rules:
 | `references/spec-writer/`, `references/test-architect/` | The two standalone skills' own templates, guides and formats | Anything a council mode reads |
 | `agents/` | The worker and verifier contracts | Mode logic |
 | `bin/council` | Every command, its arguments, output and exit codes | Long-running work; anything a hook must not wait on |
-| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing), `sharing` (the sharing line) and `owners` (who holds a lock); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
+| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing), `sharing` (the sharing line), `owners` (who holds a lock) and `usage` (the per-seat usage rule and the agent stop's standing); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
 | `src/council/commands/` | The helper's commands ported from bash (D24), one module per area, behind `src/council/__main__.py`; `cli.py` reads the command line as `bin/council` does and holds the refusal | A run file's parser (that is `records/`) |
 | `scripts/` | Python readers, renderers and analyses, over `src/council/records` | Their own copy of a run-file parser |
 | `hooks/` | Enforcement at Claude Code events, the mod | Decisions: the helper makes them |
@@ -188,7 +188,7 @@ folds them, and new code uses the named way.
 | Job | The one way | Notes |
 |---|---|---|
 | Find the council home | `council_home` (bash); in Python `council.records.home.council_home` | A worktree resolves to the main checkout's home. **(debt)** two copies until the bash is retired (S9): the hooks and the bash commands use the bash one |
-| Find the run a command is for | `resolve_run`: `--run`, then `COUNCIL_RUN`, then this tree's one in-progress run, then the one this session drives on another tree. Two candidates at any step are a refusal naming `--run`; it never guesses (D6) | |
+| Find the run a command is for | `resolve_run`: `--run`, then `COUNCIL_RUN`, then this tree's one in-progress run, then the one this session drives on another tree. Two candidates at any step are a refusal naming `--run`; it never guesses (D6). In Python, `council.commands.resolve.run_folder` | **(debt)** two copies until S9: the bash commands use the bash one |
 | Read a config setting | One `configured_<key>` function per key, with a stated default | **(debt)** 44 references to `council.config.md` in `bin/council`, 6 readers. Scripts read it through `council.records.config`, one function per key |
 | Read a run's state field | `field <key> <file>`; in Python, `council.records.state` | Scripts no longer parse `session-state.md` themselves |
 | Record an event | `event_append` under the run's event lock; nothing else writes `events.tsv` | `council.records.events.append` follows it step for step but has no caller yet |
@@ -202,7 +202,9 @@ folds them, and new code uses the named way.
 | Read the command line | `main()` in `bin/council` for the bash commands; `council.commands.cli` for the ported ones, the same flags and refusals | **(debt)** two readers until S9 |
 | Match the user's words | `fold` and `found` inside the quote check | **(debt)** two copies in `bin/council` (`cmd_check`, `postgame_next_tasks`) |
 | Read a gate verdict | `gate_exit`, `gate_cmd`, `gate_proof` over `gates/<name>.json` | |
-| Count an agent | `council seat` records it; the agent gate counts starts; the ledger is written at close | One record per agent run, by id (`references/run/run-accounting.md`) |
+| Count an agent | `council seat` records it; the agent gate (`council cap check`, `src/council/commands/agent_gate.py`) counts starts; the ledger is written at close | One record per agent run, by id (`references/run/run-accounting.md`) |
+| Read what a run's agents used | The per-seat rule: `council.records.usage` (`seat_list`, `usage_totals`, `standing`), read by `council cap`, the agent gate, the cockpit and the status card | **(debt)** bash keeps `seat_rows`, `run_usage`, `usage_words`, `usage_token_text`, `run_budget_value`, `agents_share`, `cap_standing`, `cap_starts`, `cap_extra`, `cap_allowed_until` and `run_agent_cap` for `run close`, `council seat`'s notes, `cap allow`, the ledger and the plan check: two copies until S8b. `scripts/status.py` keeps its own `cap_standing`, `budget_value` and `run_agent_cap` until it moves onto `records.usage.standing` |
+| Hold a build to its verifier rounds | `batch_check_refusal` (one checker per batch, D18) and `check_round_refusal` (no third check without a diagnosis or the user's go) | **(debt)** two copies until seat is ported: `council.commands.rounds` for the agent gate, the bash pair for `council seat … running` |
 | Prove a build task | `council gate before-<id>` / `after-<id>`, checked by `council check` (`references/build-proof.md`) | |
 | Check a document's contract | A structural pin in `evals/run_structural.py` | Only for documents; behaviour is proved by running it (D25) |
 | Hold a limit (a size, a count, a lint warning) | A number in `evals/ratchet.json`, measured by `evals/run_ratchet.py`; it may only go down, and `--update` keeps a gain | Never a hand-kept list of files or exceptions |
@@ -241,7 +243,7 @@ The cleanup's workstreams. [`design/cleanup-plan.md`](design/cleanup-plan.md) ha
 |---|---|
 | 0 | This page, `decisions.md`, the root `CLAUDE.md` |
 | 1 | One Python library for config and run files; every script moves onto it; the copies go |
-| 2 | `bin/council` split into Python modules, one area per branch, with commands, output and exit codes unchanged (the eval suite is the proof). *Started (S3):* `bin/council` hands ported commands to `src/council/__main__.py`; `home`, `sharing` and `run status` live in `src/council/commands/`, and bash and Python writers share run-file locks (D33). `state`, `run open`, `run close` and `run resume` stay bash until the areas they call are ported (the plan check, usage, the gates table, the ledger, the memory file, redaction: S4–S8) |
+| 2 | `bin/council` split into Python modules, one area per branch, with commands, output and exit codes unchanged (the eval suite is the proof). *Started (S3):* `bin/council` hands ported commands to `src/council/__main__.py`; `home`, `sharing` and `run status` live in `src/council/commands/`, and bash and Python writers share run-file locks (D33). *S4:* `cap` and `cap check` (the agent gate) followed; `seat`, `correct` and `cap allow` wait on the plan check (S5), the ledger and redaction (S8) and the state writer (S8b). `state`, `run open`, `run close` and `run resume` stay bash until the areas they call are ported (the plan check, usage, the gates table, the ledger, the memory file, redaction: S4–S8) |
 | 3 | File layout: `references/` by audience, evals into fast unit and scenario tiers |
 | 4 | Quality gates as ratchets (ShellCheck, ruff, a type check on the library, size and complexity limits frozen at today's worst), and this page's rules as tests. *Started (S2):* `evals/run_ratchet.py` holds sizes, ShellCheck warnings, parsers, config readers and call-backs; `ruff.toml` runs on the whole tree. The type check is still to come |
 | 5 | Slop pass: story comments out, a naming pass, dead code deleted, duplicates folded |

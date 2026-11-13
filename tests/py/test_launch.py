@@ -34,6 +34,10 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(started("home", "rule"), sorted(base + ["council.commands.home"]))
         self.assertEqual(started("run", "status"), sorted(base + ["council.commands.runs"]))
         self.assertEqual(started("sharing"), sorted(base + ["council.commands.sharing"]))
+        self.assertEqual(started("cap"), sorted(base + ["council.commands.cap", "council.commands.resolve"]))
+        self.assertEqual(started("cap", "check", "Agent"),           # the build loop's rules wait for a verifier
+                         sorted(base + ["council.commands.agent_gate", "council.commands.cap",
+                                        "council.commands.resolve"]))
 
     def test_an_unported_command_loads_none(self) -> None:
         self.assertEqual(started("run", "open"),

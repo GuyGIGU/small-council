@@ -231,7 +231,7 @@ check("accounting: seats record exact usage per agent run, a Workflow's agent co
       "share one per-seat rule",
       os.path.isfile(os.path.join(ROOT, "references", "run", "run-accounting.md")) and
       "agents=<agent_count>" in doctrine["05-work.md"] and "never a role name" in doctrine["05-work.md"] and
-      "seat_rows()" in cli and "def seat_usage" in read("scripts", "cockpit.py") and "cmd_correct" in cli and
+      "seat_rows()" in cli and "def seat_usage" in read("src", "council", "records", "usage.py") and "cmd_correct" in cli and
       "usage.tsv" in cli)
 check("seat learning: roster advice weighs only judged runs, past a stated bar",
       "cmd_ledger_advice" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
