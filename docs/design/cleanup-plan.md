@@ -29,9 +29,9 @@ decisions before it writes anything.
 7. **Tests.** New library code gets unit tests in `tests/py/` (`python -m unittest discover -s
    tests/py`), which need no bash and no git and run in seconds. Scenario evals stay where they are.
 8. **Deliver:** a CHANGELOG line under Unreleased; `architecture.md` updated where the session made a
-   debt row true; `python evals/run_all.py` green apart from the known `python3`-stub failure on
-   Windows. Commit on the session's own branch when that holds. Never push, never open a PR, never
-   touch main: report, and the user decides.
+   debt row true; the fast tier and the groups the change touches green (CI's full suite on three
+   systems is the gate before merge, since 2026-11-13). Commit and push the session's own branch.
+   Never open a PR, never touch main: report, and the planning session checks the diff and opens it.
 9. **Account for what you removed, and name the cause of a fix.** The report lists every rule,
    behaviour, test or assertion the session took out and where each stands now, or says none. A fix
    states what was wrong in one sentence and how that was observed. The planning session checks
