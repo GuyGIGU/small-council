@@ -107,7 +107,7 @@ def corrections(run: Path) -> dict[tuple[str, str], dict[str, Any]]:
     latest = {}
     for row in cells.jsonl_rows(paths.text_of(path(run, CORRECTIONS), run)):
         seat, field = cells.clean(row.get("seat", "")), cells.clean(row.get("field", ""))
-        to = cells.integer(row.get("to"))
+        to = cells.integer(row.get("to")) if isinstance(row.get("to"), int) else None   # a bare number, like the helper
         if seat and field in ("tokens", "agents") and to is not None and to >= 0 and evidenced(row.get("evidence")):
             latest[(seat, field)] = {"seat": seat, "field": field, "to": to, "from": cells.clean(row.get("from", "")),
                                      "evidence": cells.clean(row.get("evidence", ""))[:300],

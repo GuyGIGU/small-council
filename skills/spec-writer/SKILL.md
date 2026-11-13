@@ -64,7 +64,7 @@ tier 80% of the time.
 - If something described as "small" has multiple edge cases, flag it: "This sounds feature-tier. Want
   me to expand?"
 - If something described as a "product" is really one feature, compress.
-- Load only the template for the chosen tier from `references/`. **Do not load all three.**
+- Load only the template for the chosen tier from `references/spec-writer/`. **Do not load all three.**
 
 ---
 
@@ -129,8 +129,8 @@ under an "Assumptions (unconfirmed)" section so the reader knows what wasn't val
 
 ## Phase 3: Generate Spec
 
-Load the tier's template from `references/` (Phase 0). Follow it section by section. Read
-`references/acceptance-criteria-guide.md` before writing any acceptance criteria.
+Load the tier's template from `references/spec-writer/` (Phase 0). Follow it section by section. Read
+`references/spec-writer/acceptance-criteria-guide.md` before writing any acceptance criteria.
 
 ### Writing rules (all tiers):
 
@@ -140,13 +140,13 @@ a system administrator, I want the database to store relationships."
 
 **Gherkin acceptance criteria are mandatory.** Every story gets 3–7 criteria in Given/When/Then. The
 When clause holds exactly ONE trigger. Each criterion is independently testable. See
-`references/acceptance-criteria-guide.md`.
+`references/spec-writer/acceptance-criteria-guide.md`.
 
 **At least one negative AC per story** — an error condition, invalid input, empty/null state, or
 permission boundary. If you can't think of one, you don't understand the feature well enough.
 
 **Three-tier boundaries are mandatory for Feature and Product tiers.** See
-`references/boundary-examples.md`.
+`references/spec-writer/boundary-examples.md`.
 - ✅ **Always** — actions the implementing agent takes without asking
 - ⚠️ **Ask first** — actions requiring human approval
 - 🚫 **Never** — hard stops, no exceptions
@@ -157,7 +157,7 @@ variant='success'." If the spec would change when the implementation changes, it
 
 **Quantify where possible.** "Fast" is not a requirement; "under 200ms p95" is. "Secure" is not a
 requirement; "all mutations require an authenticated session with an org-level role check" is. Vague
-quality attributes are the #1 spec anti-pattern — see `references/anti-patterns.md`.
+quality attributes are the #1 spec anti-pattern — see `references/spec-writer/anti-patterns.md`.
 
 **Self-verification footer.** Every spec ends with: "After implementing, compare results against each
 acceptance criterion above and list any unmet requirements."
@@ -253,7 +253,7 @@ means nothing until it's made concrete.
 
 ## Reference Loading Rules
 
-Load references **conditionally, by tier and need** (all under `${CLAUDE_PLUGIN_ROOT}/references/`):
+Load references **conditionally, by tier and need** (all under `${CLAUDE_PLUGIN_ROOT}/references/spec-writer/`):
 
 | Reference | When to load |
 |-----------|-------------|

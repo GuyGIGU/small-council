@@ -16,7 +16,7 @@ Your judgment, written down.
 5. **Cut to your mode's cap.** Keep the cut list, with a reason for each item.
 6. **Write `<run>/synthesis.md`** in the format below. In review, plan and research, every kept
    and cut claim carries a declared `state:` and `from:` as specified in
-   `references/evidence-model.md`; a `REPRODUCED` claim also names saved `proof:`. Do not upgrade
+   `references/run/evidence-model.md`; a `REPRODUCED` claim also names saved `proof:`. Do not upgrade
    an inference to observation because several seats agreed. Post-game keeps its request-quote
    format instead. Everything after this stage reads the file, not your memory of it.
 7. **For review, plan and research, build the provisional claim index** with

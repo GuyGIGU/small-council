@@ -73,7 +73,7 @@ match the command text, so any other form asks the user every time. If `command 
 write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` in full each time. Have the user restart
 only when `council run open` refuses and says to.
 
-Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/helper-commands.md`; the stage doctrine
+Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.md`; the stage doctrine
 says when to run each command. Rules for every run:
 
 - `council route recommend` is advisory before a run opens; record final choices in the plan.
@@ -116,7 +116,7 @@ Brief, Cards first). Memory may live at a legacy path; the config's Memory secti
 - **Turns:** a worker or verifier stops at 60 turns, maybe with its file unwritten. Resume it
   (SendMessage: "write your file now with what you have, then finish"); never re-dispatch it.
 - **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts. The
-  exact v1 fields and the rule for older runs live in `references/run-plan.md`.
+  exact v1 fields and the rule for older runs live in `references/run/run-plan.md`.
 - **Sizes:** Solo (you alone) · Squad (up to 4 seats + 1–2 verifiers) · Full (up to 7 seats +
   verifiers). Size a run as seats plus the verifiers Challenge will need; its overflow rule covers
   the rest. A post-game: council-postgame, Size.

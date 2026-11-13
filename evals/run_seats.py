@@ -130,7 +130,7 @@ data, seats = advise(row("2026-09-20-013508-plan", "nygard-perf", 8, 5, 4, 1) + 
 check("kept and cut beyond raised is noted, and a run's useful items never exceed its raised items",
       any("credited loosely" in note for note in data["notes"]) and seats["z"]["useful"] == 2
       and seats["z"]["useful_share"]["share"] == 1.0, (data["notes"], seats["z"]["useful_share"]))
-# --- which token figures may be priced (references/run-accounting.md) -------------------------------------
+# --- which token figures may be priced (references/run/run-accounting.md) -------------------------------------
 data, seats = advise("".join(row("2026-09-{:02d}-0000{:02d}-review".format(1 + i, 1 + i), "old", 6, 6, 0, 0, 160, checked=False)
                              for i in range(3)) + runs_of("new", 3, 6, 6, tokens=150000, start=10))
 check("an older ledger row's token figure is never priced: its units were never checked",

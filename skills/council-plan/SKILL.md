@@ -80,7 +80,7 @@ ask.md's `## Later, in your words` as `- <date>: "<their words>"`, before your n
 post-game reads them.
 
 **The war room:** the seats answer each other before you judge.
-`${CLAUDE_PLUGIN_ROOT}/references/war-room.md` says when it's on and how it runs; name it on the
+`${CLAUDE_PLUGIN_ROOT}/references/run/war-room.md` says when it's on and how it runs; name it on the
 Council line with its cost.
 
 - Deliverable: `<home>/plans/<slug>.md`.
@@ -116,13 +116,13 @@ Index line: `<n> · <must|should|could> · <principle> · <path or area> · <tit
 - Risk if skipped: 1 sentence, concrete
 - Touches: <the areas or files it would change, from the map>
 - Assumes: <the design choices it takes as given>
-- Evidence state: OBSERVED | REPRODUCED | INFERRED | ASSUMED | UNVERIFIED (see `references/evidence-model.md`)
+- Evidence state: OBSERVED | REPRODUCED | INFERRED | ASSUMED | UNVERIFIED (see `references/run/evidence-model.md`)
 - Depends on: <other recommendations it must follow, or —>
 ```
 
 ## At Collect — the war room
 
-**On:** after a clean `council collect`, read `${CLAUDE_PLUGIN_ROOT}/references/war-room.md` and run
+**On:** after a clean `council collect`, read `${CLAUDE_PLUGIN_ROOT}/references/run/war-room.md` and run
 round 2. **Off:** nothing extra.
 
 ## At Judge

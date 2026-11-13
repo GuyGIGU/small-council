@@ -55,7 +55,7 @@ Index line: `<n> · <P1|P2|P3> · <principle> · <path:line[-line]> · <title>`
   landmine, compounding debt) | P3 (clarity, naming, style)
 - Origin: introduced | touched (the change edited or removed lines in or next to it) | pre-existing
 - Basis: seen (you traced it) | inferred (from signals)
-- Evidence state: OBSERVED | REPRODUCED | INFERRED | ASSUMED | UNVERIFIED (see `references/evidence-model.md`)
+- Evidence state: OBSERVED | REPRODUCED | INFERRED | ASSUMED | UNVERIFIED (see `references/run/evidence-model.md`)
 - Proof: <saved run artifact, only if REPRODUCED>
 - Refuted if: <the one observation that would prove this wrong, and where to look>
 - Assumes: <anything outside your slice this depends on> (optional)

@@ -22,7 +22,7 @@
    ~12 words>…"``, quoted from that filed copy, where secrets are already redacted. It goes in the
    body, which `council prior` reads, so later runs find the chain.
 3. `council state deliverable=<path>`. Each shipped claim keeps its evidence trail
-   (`references/evidence-model.md`, In the deliverable).
+   (`references/run/evidence-model.md`, In the deliverable).
 4. **In chat, your mode's summary**, in plain words (context-core, Talking to the user).
    **A mode that changed code carries one line, as written:** `Checked by machine:` followed by the
    gates' verdict line (`gates: 3 ran — 2 pass, 1 FAIL (lint, not mandatory)`) — or, when the helper

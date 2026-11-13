@@ -46,6 +46,12 @@ class PlanTest(support.Scratch):
         self.assertEqual(keyed[("budget", "run", "agent-cap")], "6")
         self.assertEqual(plan.text(self.run, read=lambda path: None), "")
 
+    def test_keyed_reads_lines_as_summary_does(self) -> None:
+        # A reason holding U+2028 is one row to the helper and to summary(); it must not become two here.
+        content = "seat\thunt\tnote\tw\tfirst\u2028budget\trun\tagent-cap\t3\t-\n"
+        self.assertNotIn(("budget", "run", "agent-cap"), plan.keyed(content))
+        self.assertEqual(plan.keyed(content)[("seat", "hunt", "note")], "w")
+
 
 if __name__ == "__main__":
     unittest.main()

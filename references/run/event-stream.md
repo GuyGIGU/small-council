@@ -51,7 +51,7 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `run.events_repaired` | `run` | `torn-tail` | `dropped=<bytes>;copy=<events.tsv.bak-… file>` — `council run events repair` dropped a torn last line, keeping a byte copy (0.19) |
 
 The stable columns, version and sequence let later readers follow runs without parsing prose.
-`references/run-accounting.md` says what the token and agent-run figures mean, and which basis a
+`references/run/run-accounting.md` says what the token and agent-run figures mean, and which basis a
 total may be stated on.
 Detail keys above are part of v1 for their event type; new optional types can be added without
 changing the seven-column layout. A gate with no matching files has `empty=1` even if its exit is

@@ -45,10 +45,10 @@ declares `budget/<slug>/agent-runs` (1 to 1000; 1 when absent). The selected wor
 agent runs must fit both the plan's agent cap and the project's configured cap — or, after the
 user's go past the cap (`council cap allow`), the count their go allows. During the run the helper
 counts the larger of the agent runs recorded and the agent starts the hook let through
-(`references/run-accounting.md`): once they reach the
+(`references/run/run-accounting.md`): once they reach the
 cap, `council seat` tells the Chair to ask the user before starting more; the first time they pass
 it, it records `run.cap_passed` and the status card says so. From the cap on, a hook refuses the next
-agent until the user's go is recorded with `council cap allow` (`references/run-accounting.md`).
+agent until the user's go is recorded with `council cap allow` (`references/run/run-accounting.md`).
 
 An optional `seat/<slug>/model` row is `inherit`, `sonnet`, or `haiku`. Missing means `inherit`.
 Overrides require `- seat models: on` in `council.config.md`, and only selected worker seats may use
@@ -75,7 +75,7 @@ The remaining placeholders make the starter deliberately invalid. Convene fills 
 decisions; Assign records all considered seats and runs `council run plan check`.
 
 A `council-init` run is the exception. Setup follows its own phases and is the Chair's own work, so it
-opens from `templates/run-plan-init.tsv`, already valid: solo, the Chair only, self-verified, each
+opens from `references/templates/run-plan-init.tsv`, already valid: solo, the Chair only, self-verified, each
 default saying so in its reason. A large repo's mapping squad makes it a squad, one mapping worker
 per area (council-init Phase D).
 

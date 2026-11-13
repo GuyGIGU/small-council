@@ -270,6 +270,11 @@ with tempfile.TemporaryDirectory(prefix="council-tune-") as temporary:
     check("route: an estimate over 1M is ignored, as tune.py ignores it",
           rows.get(("budget", "verification", "estimated-tokens")) == "80000" and tune.tokens("3000k") is None, rows)
 
+    repo = new_repo(base, "absurd", CONFIG.replace("- agent cap: 10\n", "- agent cap: 10\n- estimate per worker: " + "9" * 400 + "k\n"))
+    code, out, err = council(repo, "tune")
+    check("an estimate of 400 digits is unreadable, as 3000k is: tune proposes and does not crash",
+          code == 0 and "Traceback" not in err and "cannot read" in out, (code, out[-300:], err[-300:]))
+
     repo = new_repo(base, "nosection", "# Council config\n\n## Roster\n")
     make_runs(repo / ".council", 5, 150000)
     code, out, err = council(repo, "tune", "apply", "budget", "150k", "--user-said", "yes")

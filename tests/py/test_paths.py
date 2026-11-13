@@ -30,6 +30,15 @@ class ReadTest(support.Scratch):
         self.assertTrue(paths.linked(self.tmp / "link.md"))
         self.assertEqual(paths.text_of(self.tmp / "link.md"), "")
 
+    @unittest.skipUnless(os.name == "nt", "a case-insensitive file system, where one name can be typed two ways")
+    def test_a_path_typed_in_another_case_is_no_link(self) -> None:
+        run = self.run_folder("2026-01-02-030405-council-review")
+        (run / "session-state.md").write_bytes(b"status: done\n")
+        shouted = run.parent / run.name.upper()
+        self.assertFalse(paths.linked(shouted))
+        self.assertTrue(paths.is_run(shouted))
+        self.assertEqual(paths.text_of(shouted / "session-state.md"), "status: done\n")
+
     def test_contained(self) -> None:
         inside = self.write("run/x.md", "")
         self.assertTrue(paths.contained(inside, self.tmp / "run"))
