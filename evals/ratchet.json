@@ -146,7 +146,7 @@
    "longest_name": "inspect_rows"
   },
   "scripts/status.py": {
-   "lines": 1078,
+   "lines": 1077,
    "longest": 213,
    "longest_name": "interpret"
   },
@@ -195,9 +195,19 @@
    "longest": 13,
    "longest_name": "main"
   },
+  "src/council/commands/gate_writable.py": {
+   "lines": 25,
+   "longest": 16,
+   "longest_name": "refusal"
+  },
   "src/council/commands/home.py": {
    "lines": 29,
    "longest": 12,
+   "longest_name": "main"
+  },
+  "src/council/commands/pushes.py": {
+   "lines": 44,
+   "longest": 14,
    "longest_name": "main"
   },
   "src/council/commands/resolve.py": {
@@ -280,6 +290,11 @@
    "longest": 19,
    "longest_name": "summary"
   },
+  "src/council/records/pushes.py": {
+   "lines": 41,
+   "longest": 17,
+   "longest_name": "pushes"
+  },
   "src/council/records/runs.py": {
    "lines": 118,
    "longest": 16,
@@ -304,6 +319,11 @@
    "lines": 203,
    "longest": 30,
    "longest_name": "usage_totals"
+  },
+  "src/council/records/writable.py": {
+   "lines": 23,
+   "longest": 12,
+   "longest_name": "blocked"
   }
  }
 }

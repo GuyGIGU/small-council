@@ -22,7 +22,7 @@ records everything in a **run folder** inside the project's **council home** (`.
 | Agents | `agents/council-worker.md`, `agents/council-verifier.md` | The seat worker's and the blind verifier's contracts. |
 | Helper | `bin/council` | The CLI for the mechanical steps: runs, state, seats, gates, the change index, checks, memory, the agent stop. Bash today (§10). |
 | Scripts | `scripts/*.py` | Python for what bash does badly: status and the card, audit, history, tuning, impact, context packs, evidence, repair, memory, the pet, the Chair's tokens. Run through the helper. |
-| Hooks | `hooks/*.sh`, `hooks/hooks.json` | Enforce what prose can't: SessionStart orientation and the session mark, the agent stop (PreToolUse on Agent, Task and Workflow), the Bash pipe guard, the seat-file check (SubagentStop), the turn-end nudges (Stop). |
+| Hooks | `hooks/*.sh`, `hooks/hooks.json` | Enforce what prose can't: SessionStart orientation and the session mark, the agent stop (PreToolUse on Agent, Task and Workflow), the Bash pipe guard and push freeze, the seat-file check (SubagentStop), the turn-end nudges (Stop). |
 | Mod | `hooks/council-view.tsx`, `hooks/council-scene.ts` | The council pane and the line above the prompt. It reads `scripts/status.py --json` and never writes a council file. |
 | Evals | `evals/` | Machine checks: structural pins, helper and hook scenarios, per-script suites, judgment fixtures (`evals/suite/`), the benchmark harness. `evals/run_all.py` runs them all. |
 | Docs | `docs/` | This page, the decisions index, ADRs and design notes (`design/`), validation records (`validation/`), roadmap status. |
@@ -67,7 +67,7 @@ Rules:
 | `references/spec-writer/`, `references/test-architect/` | The two standalone skills' own templates, guides and formats | Anything a council mode reads |
 | `agents/` | The worker and verifier contracts | Mode logic |
 | `bin/council` | Every command, its arguments, output and exit codes | Long-running work; anything a hook must not wait on |
-| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing), `sharing` (the sharing line), `owners` (who holds a lock), `writable` (whether a folder takes a new file) and `usage` (the per-seat usage rule and the agent stop's standing); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
+| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing), `sharing` (the sharing line), `pushes` (the push freeze line), `owners` (who holds a lock), `writable` (whether a folder takes a new file) and `usage` (the per-seat usage rule and the agent stop's standing); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
 | `src/council/commands/` | The helper's commands ported from bash (D24), one module per area, behind `src/council/__main__.py`; `cli.py` reads the command line as `bin/council` does and holds the refusal | A run file's parser (that is `records/`) |
 | `scripts/` | Python readers, renderers and analyses, over `src/council/records` | Their own copy of a run-file parser |
 | `hooks/` | Enforcement at Claude Code events, the mod | Decisions: the helper makes them |
@@ -115,8 +115,9 @@ Inside a run folder:
   `context-core`, which only modes invoke.
 - **Agents**: `small-council:council-worker`, `small-council:council-verifier`.
 - **Helper commands** (`council help` gives exact syntax; `references/run/helper-commands.md` gives the
-  purpose of each): `home`, `sharing`, `run open|close|status|resume|plan|events|audit|turn-end`,
-  `state`, `seat`, `cap show|allow|check`, `route recommend`, `index`, `impact`, `context`,
+  purpose of each): `home`, `sharing`, `pushes`,
+  `run open|close|status|resume|plan|events|audit|turn-end`, `state`, `seat`, `cap show|allow|check`,
+  `route recommend`, `index`, `impact`, `context`,
   `evidence`, `repair`, `gate`, `gates`, `changed`, `collect`, `check`, `map`, `fingerprint`,
   `memory`, `prior`, `ask`, `ledger`, `tune`, `history`, `outcomes`, `tui`, `status`, `pet`,
   `correct`, `doctor`, `version`, `help`.
@@ -154,8 +155,8 @@ never part of a cleanup or refactor branch (D23).
   verdict words (CONFIRMED / REFUTED / UNCERTAIN / MISCITED; OK / INCOMPLETE / REGRESSION /
   SCOPE-CREEP / CANNOT VERIFY; MET / PARTLY MET / NOT MET / CAN'T TELL), memory entry ids (AP, EC,
   D, F), `Principle N` numbering in seat docs.
-- **Environment variables**: `COUNCIL_ALLOW_NO_HOOKS`, `COUNCIL_ASCII`, `COUNCIL_BASE`,
-  `COUNCIL_BOM`, `COUNCIL_INDEX_CAP`, `COUNCIL_INDEX_NAMECAP`, `COUNCIL_MEMORY_SIZE_LIMIT`,
+- **Environment variables**: `COUNCIL_ALLOW_NO_HOOKS`, `COUNCIL_ALLOW_PUSH`, `COUNCIL_ASCII`,
+  `COUNCIL_BASE`, `COUNCIL_BOM`, `COUNCIL_INDEX_CAP`, `COUNCIL_INDEX_NAMECAP`, `COUNCIL_MEMORY_SIZE_LIMIT`,
   `COUNCIL_NEXT_AT_OPEN`, `COUNCIL_PET_LOG`, `COUNCIL_PLUGIN_ROOT`, `COUNCIL_RUN`, `COUNCIL_VERSION`.
 
 When an internal name disagrees with a contract word, the internal name takes the contract word.
@@ -189,7 +190,7 @@ folds them, and new code uses the named way.
 |---|---|---|
 | Find the council home | `council_home` (bash); in Python `council.records.home.council_home` | A worktree resolves to the main checkout's home. **(debt)** two copies until the bash is retired (S9): the hooks and the bash commands use the bash one |
 | Find the run a command is for | `resolve_run`: `--run`, then `COUNCIL_RUN`, then this tree's one in-progress run, then the one this session drives on another tree. Two candidates at any step are a refusal naming `--run`; it never guesses (D6). In Python, `council.commands.resolve.run_folder` | **(debt)** two copies until S9: the bash commands use the bash one |
-| Read a config setting | One `configured_<key>` function per key, with a stated default | **(debt)** 44 references to `council.config.md` in `bin/council`, 6 readers. Scripts read it through `council.records.config`, one function per key |
+| Read a config setting | One `configured_<key>` function per key, with a stated default | **(debt)** 44 references to `council.config.md` in `bin/council`, 6 readers. Scripts read it through `council.records.config`, one function per key; `records/sharing.py` and `records/pushes.py` read their line through `config.first` |
 | Read a run's state field | `field <key> <file>`; in Python, `council.records.state` | Scripts no longer parse `session-state.md` themselves |
 | Record an event | `event_append` under the run's event lock; nothing else writes `events.tsv` | `council.records.events.append` follows it step for step but has no caller yet |
 | Write a shared TSV row | Under `event_lock`; never join a torn line | |

@@ -153,6 +153,13 @@ python evals/run_hook.py       # needs bash + git
   council in quotes, comments, heredocs or case patterns, a command over 100 KB, and anything it
   can't parse.
 
+**PreToolUse push freeze:**
+- while `- pushes: off` (or `off until` a later date) holds, refuses `git push` and `gh pr create`,
+  alone, in a compound command, a group or a substitution, naming the freeze, its date and
+  `COUNCIL_ALLOW_PUSH=1`;
+- lets through the escape (on the command or in the session's environment), git push in quoted
+  text or a heredoc, a date that has passed, pushes on, no council, and any fault of the helper's.
+
 **SubagentStop seat check:**
 - valid files pass;
 - a missing, malformed, empty or oversized file is blocked, but only once;

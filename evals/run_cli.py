@@ -45,6 +45,7 @@ for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID"):   # never inherit the sess
 if os.environ.get("COUNCIL_EVAL_BASH"):                  # a gate's `bash -c` must use that bash too
     GIT_ENV["PATH"] = os.path.dirname(BASH) + os.pathsep + GIT_ENV.get("PATH", "")
 GIT_ENV.pop("COUNCIL_ALLOW_NO_HOOKS", None)
+GIT_ENV.pop("COUNCIL_ALLOW_PUSH", None)       # the push freeze's escape: the evals set it themselves
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
 results = []
 
@@ -3061,6 +3062,59 @@ def runs_tool_calls(tmp):
     check("seat tools=: a count that isn't digits, or tools= on a start, is refused", not bad, str(bad))
     code, out, err = council(tc, "collect")
     check("collect: shows a seat's tool calls against its budget", "tools 70/15" in out, out + err)
+
+@part("runs")
+def runs_push_freeze(tmp):
+    # The push freeze (issue 49): `- pushes: on | off | off until <date>`. council pushes shows how it reads
+    # today and says where an unreadable value came from; council pushes check is the bash gate's decision;
+    # a build's closing card says its push and PR are held, with the date.
+    def config(name, line):
+        repo = new_repo(tmp, name)
+        write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n" + line)
+        return repo
+
+    frozen = config("push-freeze", "- pushes: off until 2999-12-31  <!-- the team's release freeze -->\n")
+    for repo, want in ((new_repo(tmp, "push-freeze-none"), "pushes: on (default)"),
+                       (config("push-freeze-on", "- pushes: on\n"), "pushes: on (config)"),
+                       (config("push-freeze-off", "- pushes: Off\n"), "pushes: off (config) — push and PR held by the freeze"),
+                       (frozen, "pushes: off until 2999-12-31 (config) — push and PR held by the freeze until 2999-12-31"),
+                       (config("push-freeze-ended", "- pushes: off until 2000-01-01\n"),
+                        "pushes: on (config: the freeze ended 2000-01-01)"),
+                       (config("push-freeze-unread", "- pushes: off until Friday\n"),
+                        "pushes: on (default; 'off until friday' is not a setting — on, off or off until <YYYY-MM-DD>)")):
+        code, out, err = council(repo, "pushes")
+        check(f"pushes: shows {want!r}", code == 0 and out == want + "\n" and not err, out + err)
+    code, out, err = council(frozen, "pushes", "check", "git push")
+    check("pushes check: while the freeze holds, exit 2 and the refusal on stdout, naming the freeze, its date and "
+          "the escape", code == 2 and out.startswith("Small Council: Push and PR held by the freeze until 2999-12-31")
+          and "COUNCIL_ALLOW_PUSH=1 git push" in out and not err, out + err)
+    code, out, err = council(frozen, "pushes", "check", "gh", "pr", "create", env={"COUNCIL_ALLOW_PUSH": "1"})
+    check("pushes check: COUNCIL_ALLOW_PUSH=1 lets it through, silently", code == 0 and not out and not err, out + err)
+    code, out, err = council(config("push-freeze-check-on", "- pushes: on\n"), "pushes", "check", "gh pr create")
+    check("pushes check: with pushes on, silent, exit 0", code == 0 and not out and not err, out + err)
+    for args, want in ((("pushes", "check", "rm", "notes.md"), "pushes check takes the command the bash gate found"),
+                       (("pushes", "lift"), "usage: council pushes")):
+        code, out, err = council(frozen, *args)
+        check(f"pushes: {' '.join(args)!r} is refused with what it takes", code == 2 and want in err and not out, out + err)
+
+    # The closing card: a build's push and PR held, with the date; a review's card never says so.
+    _, out, _ = council(frozen, "run", "open", "council-implement")
+    build = os.path.basename(out.strip().splitlines()[-1])
+    write_plan(out.strip().splitlines()[-1], selected=("chair",))
+    council(frozen, "run", "close", "--status", "paused")
+    held = "Push and PR held by the freeze until 2999-12-31 (`- pushes:` in the config)."
+    code, out, err = council(frozen, "status", "--run", build)
+    check("status: a build's closing card says its push and PR are held by the freeze, with the date",
+          code == 0 and "- " + held in out, out + err)
+    code, out, err = council(frozen, "status", "--widget", "--run", build)
+    check("status --widget: the closing card shows the same line", code == 0 and "<li>" + held + "</li>" in out,
+          out[-600:] + err)
+    _, out, _ = council(frozen, "run", "open", "council-review")
+    review = os.path.basename(out.strip().splitlines()[-1])
+    write_plan(out.strip().splitlines()[-1], selected=("chair",))
+    council(frozen, "run", "close", "--status", "paused")
+    code, out, err = council(frozen, "status", "--run", review)
+    check("status: a review's closing card says nothing about the freeze", code == 0 and "held by the freeze" not in out, out + err)
 
 @part("runs")
 def runs_helper_carries_next_steps(tmp):
