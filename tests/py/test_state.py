@@ -55,6 +55,13 @@ class StateTest(support.Scratch):
         self.assertFalse(state.planned("plan-schema:\n"))
         self.assertFalse(state.planned("status: in-progress\n## Notes\nplan-schema: 1\n"))   # a note, not the header
 
+    def test_a_byte_order_mark_on_line_one_is_not_part_of_its_key(self) -> None:
+        """The helper's state_field drops the BOM from line 1, so a key there reads (repair.py's own read keeps it)."""
+        self.assertTrue(state.planned("﻿plan-schema: 1\nstatus: in-progress\n"))
+        self.assertTrue(state.is_build_run("﻿mode: council-implement\nstatus: in-progress\n"))
+        self.assertEqual(state.field("﻿mode: council-review\r\n", "mode"), "council-review")
+        self.assertEqual(state.header("﻿status: in-progress\nmode: x\n", exact_keys=True)["status"], "in-progress")
+
     def test_a_crlf_file_carries_no_carriage_return(self) -> None:
         content = "mode: council-review\r\nstatus: in-progress\r\n## Notes\r\nclosed: never\r\n"
         self.assertEqual(state.field(content, "status"), "in-progress")

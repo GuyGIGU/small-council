@@ -35,7 +35,7 @@ def header(content: str, exact_keys: bool = False, comments: bool = True) -> dic
     and, with comments, a trailing '  # comment'. exact_keys takes only a key at the start of its line,
     as the helper's state_field does; otherwise space around the key is allowed (the cockpit's rule)."""
     fields = {}
-    for line in cells.lines_of(content):
+    for line in cells.lines_of(content.lstrip(paths.BOM)):    # the helper drops the BOM from line 1
         if line.startswith("## "):
             break
         key, sep, value = line.partition(":")
