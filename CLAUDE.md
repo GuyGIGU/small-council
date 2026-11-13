@@ -44,8 +44,8 @@ python evals/run_hook.py --group main     # the hooks
 python evals/run_all.py                   # everything, in parallel (about 30 minutes on Windows)
 ```
 
-- Run `--fast` and the groups your change touches while you work. Run `run_all.py` before you ask
-  for a commit: the fast tier is a first look, not the gate.
+- Run `--fast` and the groups your change touches before you push. CI's full suite (Ubuntu, Windows,
+  macOS) is the gate before merge; a local `run_all.py` is optional, and never two at once on one machine.
 - The ratchet (`evals/ratchet.json`) holds each file's lines and longest function, the ShellCheck
   warnings, and the counts of files that parse a council file, `council.config.md` readers and
   scripts that run `bin/council`. A number may only go down. When your change lowers one, run
