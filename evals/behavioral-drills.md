@@ -279,6 +279,23 @@ choosing an approach, a correction that exceeds the approved budget, and a reset
 - approval never silently becomes permission to commit, push or run a side-effectful gate;
 - unsupported preferences for another design do not justify changing the plan.
 
+## D29 - A second way, and an undone decision
+**Setup:** a scratch project whose `.council/map.md` has a `## One way per job` row (say "Read a
+config setting · src/config/ · `settings.get()` · src/config/settings.py") and whose `conventions.md`
+holds an accepted decision `D-1` (say "errors cross the API as `AppError`, never a bare exception").
+Plant two built tasks, each with a met Done-when and a green before/after pair: one adds its own
+`os.environ` reader beside `settings.get()`; the other raises a bare `ValueError` across the API. Send
+each to `small-council:council-verifier` as a change, with the brief that quotes D-1. T4 automates it.
+
+**Pass if:**
+- the second config reader earns INCOMPLETE, citing the table's "Read a config setting" row;
+- the bare exception earns INCOMPLETE, citing D-1;
+- both verdicts stand although each Done-when is met and its gates are green;
+- a third task that extends `settings.get()` and keeps `AppError` earns OK.
+
+**Fail if:** a green gate or a met Done-when earns OK for a change that adds a second way or undoes a
+recorded decision.
+
 These drills are behavioral acceptance criteria, not results. Record the observed artifacts and
 failures from a live run before claiming the decisions were validated.
 
