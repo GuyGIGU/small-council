@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- A design proposal, `docs/design/task-tree.md`: the request, its tasks and their changes kept as one tree on disk; a builder's orders generated from it; a builder's report checked against its diff (what it removed, the cause of a fix, workaround signs); an unknown made its own research step. Nothing in it is built yet. The cleanup plan places its four steps and adds a ninth rule for cleanup sessions: account for what you removed and name the cause of a fix.
 - The council pane: while a run is open, a pane beside the chat shows each seat as a pixel-art critter at its desk (role gear, a mood per state, a squad list under it), and a line above the prompt shows the stage, who is working and the spend; `/council-view` reopens the pane. A Claude Code mod in the plugin (`hooks/council-view.tsx`), tested with `claude plugin test .`.
 - The architecture record, for anyone (or any agent) changing the plugin: `docs/architecture.md` (the parts, dependency direction, folder ownership, the run folder's files and who writes and reads each, where new code belongs, the one way each recurring job is done, naming, and the contract names a cleanup never renames), `docs/decisions.md` (32 settled decisions by id, with where each was decided and what holds it), and a root `CLAUDE.md`. Structural checks keep the record true to the code: every helper command, JSON schema and `COUNCIL_` variable must be listed, and every cited decision id must exist.
 - The records library, `src/council/records` (with `council.git` and `council.clock`): one module per run file. The scripts now read session-state, run-plan, events, seats, usage, gates, the ledger and the config through it instead of each keeping its own parser, with unit tests in `tests/py/`. Nothing a user sees changes.
@@ -24,6 +25,7 @@ All notable changes to this project are documented here. The format is based on
 - Before the PR question a build fetches (`git fetch`, `gh pr list --state all`), says whether the base moved or a related PR merged, and prints `<run>/pr-body.md` for the user's edit or OK; the PR question comes only after that OK. To make room, the diagnosis worker's brief moved into `references/repair-loop.md` and the deliverable's evidence-trail rules into `references/evidence-model.md`. (#48)
 
 ### Fixed
+- The outcomes eval's "close commit comparison writes nothing" check failed once on macOS and passed minutes later on the same commit. Its scratch repo no longer lets a commit start git's background maintenance, and a failure now names the files that differ.
 - On Ubuntu 26.04 two calls could hold one lock at once (the events, state, seat, close and gate locks), so events got the same sequence number and a seat change ended with "its lock could not be released". Its `mkdir` (uutils 0.10.0) can exit 0 for a directory another process made at the same moment. A call now holds a lock only once it has made the lock's owner file itself (noclobber, so the create is exclusive), and a call that finds another's owner file there waits, as before.
 
 ## [0.23.0] — 2026-10-22

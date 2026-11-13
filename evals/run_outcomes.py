@@ -65,6 +65,9 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
         run_git(repo, "init", "-q")
         run_git(repo, "config", "user.name", "Council eval")
         run_git(repo, "config", "user.email", "eval@example.invalid")
+        # A commit starts a detached `git maintenance run --auto` (seen with git 2.56). A second process in
+        # the repo has no place in a check that nothing is written between two fingerprints.
+        run_git(repo, "config", "maintenance.auto", "false")
         files = {
             "src/changed.py": "first\ntarget\nthird\n",
             "src/elsewhere.py": "target\nsecond\nthird\n",
@@ -130,7 +133,8 @@ with tempfile.TemporaryDirectory(prefix="council-outcomes-") as temporary:
               data["runs"][0]["summary"]["kept"]["changed at cited lines"] == 1
               and data["runs"][0]["summary"]["cut"]["changed at cited lines"] == 1,
               data["runs"][0]["summary"])
-        check("close commit comparison writes nothing", before == after)
+        check("close commit comparison writes nothing", before == after,
+              "differs: {}".format(sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))))
         check("wording warns that time order does not establish cause", "does not show" in outcomes.render(data))
         mismatched_base_run = home / "runs" / "2020-01-02-123000-review"
         write(mismatched_base_run / "session-state.md", "status: complete\nmode: council-review\n"
