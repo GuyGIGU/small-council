@@ -67,7 +67,7 @@ Rules:
 | `references/spec-writer/`, `references/test-architect/` | The two standalone skills' own templates, guides and formats | Anything a council mode reads |
 | `agents/` | The worker and verifier contracts | Mode logic |
 | `bin/council` | Every command, its arguments, output and exit codes | Long-running work; anything a hook must not wait on |
-| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing), `sharing` (the sharing line), `owners` (who holds a lock) and `usage` (the per-seat usage rule and the agent stop's standing); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
+| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing), `sharing` (the sharing line), `owners` (who holds a lock), `writable` (whether a folder takes a new file) and `usage` (the per-seat usage rule and the agent stop's standing); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
 | `src/council/commands/` | The helper's commands ported from bash (D24), one module per area, behind `src/council/__main__.py`; `cli.py` reads the command line as `bin/council` does and holds the refusal | A run file's parser (that is `records/`) |
 | `scripts/` | Python readers, renderers and analyses, over `src/council/records` | Their own copy of a run-file parser |
 | `hooks/` | Enforcement at Claude Code events, the mod | Decisions: the helper makes them |

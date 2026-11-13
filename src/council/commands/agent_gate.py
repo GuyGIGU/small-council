@@ -7,9 +7,10 @@ this tree's runs that recorded none; without one, every in-progress run on this 
 plans and agent limits (no plan-schema) is never stopped. Given the tool about to start, a pass also
 counts one agent start for the run this session drives, when it drives exactly one — under that run's
 lock, so agents started together cannot all take its last place. With type=, seat=, run= and file=, a
-Small Council agent is first held to the record (dispatch_refusal); with hunt=, a build's verifier sent
-past its Done-when is refused before anything else; with workflow=verifier, a Workflow that starts
-council verifiers is held to the hunt words and, as one more verifier, to the one-checker rule.
+Small Council agent is first refused while the council home or the run is not writable from this session
+(gate_writable), then held to the record (dispatch_refusal); with hunt=, a build's verifier sent past its
+Done-when is refused; with workflow=verifier, a Workflow that starts council verifiers is held to the
+hunt words and, as one more verifier, to the one-checker rule.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.commands import cap, cli, resolve
+from council.commands import cap, cli, gate_writable, resolve
 from council.records import home as where
 from council.records import plan, runs, seats, usage
 
@@ -66,15 +67,14 @@ def check(session: str, words: list[str]) -> int:
     has_runs = os.path.isdir(home + "/runs")
     here = Where(home, where.this_tree() if has_runs or call.agent_type else "", session)
     open_runs = cap.open_here(home, here.tree, session) if (call.hunt or call.workflow) and has_runs else []
-    refusal = (hunting(call, here, open_runs) if has_runs else None) \
+    refusal = gate_writable.refusal(KINDS.get(call.agent_type), home, call.run) \
+        or (hunting(call, here, open_runs) if has_runs else None) \
         or (dispatch_refusal(call, here) if call.agent_type else None) \
         or (workflow_refusal(open_runs, home) if call.workflow else None)
     if refusal:
         cli.say(refusal)
         return 2
-    if not has_runs:
-        return 0
-    stopped = stops(call.tool, here)
+    stopped = stops(call.tool, here) if has_runs else []
     if not stopped:
         return 0
     if len(stopped) == 1:
