@@ -54,13 +54,13 @@ def field(content: str, key: str) -> str:
 
 
 def is_build_run(content: str) -> bool:
-    """A `mode: council-implement` line anywhere in the file (the repair loop's own test)."""
-    return re.search(r"^mode: council-implement\s*$", content, re.MULTILINE) is not None
+    """The header's `mode:` is council-implement, as the helper tests it (`field mode` = council-implement)."""
+    return field(content, "mode") == "council-implement"
 
 
 def planned(content: str) -> bool:
-    """Opened with plans and agent limits: a plan-schema: line with a value (bin/council cap_standing)."""
-    return re.search(r"^\ufeff?plan-schema:[ \t]*[^ \t\r\n#]", content, re.MULTILINE) is not None
+    """Opened with plans and agent limits: the header's `plan-schema:` has a value (bin/council cap_standing)."""
+    return field(content, "plan-schema") != ""
 
 
 def unquote(entry: str) -> str:

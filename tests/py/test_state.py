@@ -46,9 +46,14 @@ class StateTest(support.Scratch):
 
     def test_build_and_plan_marks(self) -> None:
         content = STATE.lstrip("\ufeff")
-        self.assertTrue(state.is_build_run(content))
+        self.assertFalse(state.is_build_run(content))                    # its `mode: council-implement` is below a heading
+        self.assertTrue(state.is_build_run("mode: council-implement\nstatus: in-progress\n"))
+        self.assertTrue(state.is_build_run("mode: council-implement  # build\r\n## Notes\r\n"))
+        self.assertFalse(state.is_build_run("status: in-progress\n## Notes\nmode: council-implement\n"))
+        self.assertFalse(state.is_build_run("mode: council-implementation\n"))
         self.assertTrue(state.planned(content))
         self.assertFalse(state.planned("plan-schema:\n"))
+        self.assertFalse(state.planned("status: in-progress\n## Notes\nplan-schema: 1\n"))   # a note, not the header
 
     def test_a_crlf_file_carries_no_carriage_return(self) -> None:
         content = "mode: council-review\r\nstatus: in-progress\r\n## Notes\r\nclosed: never\r\n"

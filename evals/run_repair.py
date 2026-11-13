@@ -175,6 +175,14 @@ with tempfile.TemporaryDirectory() as folder:
     write(other / "session-state.md", "mode: council-review\n")
     check("review runs cannot use build repair tracking", invoke(other, "show").returncode == 2)
 
+    # A `mode:` line below a heading is a note: the helper reads the header only (issue 73).
+    noted = Path(folder) / "runs" / "noted"
+    noted.mkdir()
+    write(noted / "session-state.md", "status: in-progress\n## Notes\nmode: council-implement\n")
+    refused = invoke(noted, "show")
+    check("a `mode: council-implement` note below a heading, none in the header, is not a build run",
+          refused.returncode == 2 and "council-implement runs only" in refused.stderr)
+
 for name, okay in results:
     print("[{}] {}".format("PASS" if okay else "FAIL", name))
 passed = sum(okay for _, okay in results)
