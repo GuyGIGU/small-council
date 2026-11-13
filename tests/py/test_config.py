@@ -57,6 +57,14 @@ class ConfiguredTest(support.Scratch):
         self.assertIsNone(config.worker_estimate(self.home("- estimate per worker: 2M\n")))
         self.assertIsNone(config.worker_estimate(self.home("- estimate per worker: 1,50k\n")))
 
+    def test_worker_estimate_in_a_crlf_file_has_no_carriage_return_in_its_figure(self) -> None:
+        """A line's CR is not part of its last cell: 150000 and 150,000 read as the helper reads them."""
+        for figure in ("150000", "150,000", "150k", "0.9M"):
+            lf = config.worker_estimate(self.home("- estimate per worker: {}\n".format(figure)))
+            crlf = config.worker_estimate(self.home("- estimate per worker: {}\r\n".format(figure)))
+            self.assertIsNotNone(crlf, figure)
+            self.assertEqual(crlf, lf, figure)
+
     def test_seat_models_and_sharing(self) -> None:
         self.assertEqual(config.seat_models(self.home("- seat models: on\r\n")), "on")
         self.assertEqual(config.seat_models(self.home("- seat models: on # yes\n")), "off")
@@ -84,7 +92,17 @@ class StatusReadingTest(support.Scratch):
     def test_notifications_off(self) -> None:
         self.assertTrue(config.notifications_off(self.home("- Notifications: OFF  # quiet\n")))
         self.assertFalse(config.notifications_off(self.home("- notifications: on\n")))
-        self.assertFalse(config.notifications_off(self.home("- notifications: off\r\n")))   # status.py's own reading
+        # the helper strips the carriage return first
+        self.assertTrue(config.notifications_off(self.home("- notifications: off\r\n")))
+        self.assertTrue(config.notifications_off(self.home("- notifications: off  # quiet\r\n")))
+        self.assertFalse(config.notifications_off(self.home("- notifications: of\r\n")))
+
+    def test_notifications_off_past_64_kb(self) -> None:
+        """The helper reads the whole file: a switch past 64 KB is still off."""
+        filler = "- note: " + "x" * 70000 + "\n"
+        self.assertTrue(config.notifications_off(self.home(filler + "- notifications: off\n")))
+        self.assertTrue(config.notifications_off(self.home(filler.replace("\n", "\r\n") + "- notifications: off\r\n")))
+        self.assertFalse(config.notifications_off(self.home(filler + "- notifications: on\n")))
 
     def test_memory_path(self) -> None:
         self.assertEqual(config.memory_path(self.home("## Memory\n- conventions: docs/conv.md (the team's)\n")),
@@ -113,7 +131,10 @@ class TuneEditTest(support.Scratch):
                          (150000, "  - estimate per worker: 150k (measured)"))
         self.assertEqual(config.estimate_line("- estimate per worker: lots\n"), (None, "- estimate per worker: lots"))
         self.assertEqual(config.estimate_line("nothing\n"), (None, None))
-        self.assertEqual(config.estimate_tokens("1,50k"), 150000)       # tune's reading; the route's is None
+        self.assertIsNone(config.estimate_tokens("1,50k"))              # the route's reading: unset, so tune's too
+        self.assertEqual(config.estimate_tokens("150,000"), 150000)
+        self.assertEqual(config.estimate_tokens("1.5k"), 1500)
+        self.assertIsNone(config.estimate_tokens("150 000"))
         self.assertIsNone(config.estimate_tokens("999"))
         self.assertIsNone(config.estimate_tokens("9" * 400 + "k"))       # tune read it as a crash
         self.assertEqual(config.estimate_line("- estimate per worker: " + "9" * 400 + "k\n"),

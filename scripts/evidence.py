@@ -80,7 +80,7 @@ def proof_link(run, value):
 def run_fields(run):
     """The run's mode (session-state.md) and its planned size and verification level (run-plan.tsv)."""
     optional = lambda path: read_file(path, required=False)  # noqa: E731
-    mode = run_state.first_word(run_state.text(run, read=optional), "mode")
+    mode = (run_state.field(run_state.text(run, read=optional), "mode").split() or [""])[0]
     plan = run_plan.keyed(run_plan.text(run, read=optional))
     return {"mode": mode,
             "self_check": (plan.get(("verification", "run", "level")) == "self" or
