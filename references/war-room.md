@@ -18,19 +18,14 @@ the user.
   user says "no debate".
 
 Show it on the Scope Summary's Council line: `War room: on — <why> · adds about <k>k tokens, no extra
-agents`, where k is about 40% of the seats' round-1 estimate. The discovery gate's go approves it. Put
-`War room: on — end your file with ## Approach` in the brief's top block, and keep round-1 budgets at
-about 40 tool calls, so a resumed worker still has turns left.
+agents`, where k is about 40% of the seats' round-1 estimate. The discovery gate's go approves it. The
+brief says so (council-plan, At Brief); keep round-1 budgets at about 40 tool calls, so a resumed
+worker still has turns left.
 
 ## Round 1 — blind, plus an Approach
 
-Each seat's file ends with:
-
-```
-## Approach
-<at most 3 sentences: the overall shape I'd build, and the choice it rests on>
-I'd change my mind if: <an observation, and where to look>
-```
+Each seat's file ends with `## Approach` and `I'd change my mind if:` (its contract,
+`agents/council-worker.md`, War room).
 
 ## Points — debate.md
 
@@ -106,9 +101,9 @@ Record the ending on the point's line under `## Conflicts` in synthesis.md:
    to the verifier at Challenge.
 3. **Moved without new evidence** — treat it as not moved (that's conformity, not persuasion). It then
    ends as 2 or 4.
-4. **Fork** — both hold, with evidence, and weigh the costs differently. Write it as Two stances in the
-   seats' own words, your pick last and labelled, and put it to the user before tasks are grouped. At
-   most 3 forks; past 3, pick yourself and say so in the plan.
+4. **Fork** — both hold, with evidence, and weigh the costs differently. Write it as Two stances
+   (council-plan, At Judge) in the seats' own words, your pick last and labelled. At most 3 forks;
+   past 3, pick yourself and say so in the plan.
 
 - **Evidence counts, not heads.** A lone objection with evidence stands until evidence answers it.
 - A held objection on a protected subject that loses the ruling becomes a Watchpoint.
@@ -141,7 +136,6 @@ Still disagreeing, on record: <seat — the objection — what would change the 
 - **Two rounds, never a third.** Facts go to the verifier; values go to the user.
 - **No extra agents** — a resumed worker isn't a new one.
 - **Cost:** about 40% more seat tokens than a plain plan run — an estimate until the ledger has numbers.
-- **Resume after a compaction:** seats marked running are still answering — wait for their
-  notifications, and collect once `war-room=done`. The `war-room:` state line, seats.tsv and debate.md
+- **Resume after a compaction** (context-core, Resume): collect once `war-room=done`. The `war-room:` state line, seats.tsv and debate.md
   say where you were. **In a new session** they're gone: a lost round-2 seat gets a fresh round-2
   worker (above), never a round-1 re-dispatch.

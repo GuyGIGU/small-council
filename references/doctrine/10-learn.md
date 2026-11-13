@@ -6,8 +6,7 @@
   deliberate design is the best candidate.
 - **Enforced conventions:** always/never rules the user adopted along with the fixes.
 - **Observed failures:** evidence-backed history that would prevent a repeat; it is not a new rule.
-  Propose the observation and its verdict, not a guessed cause; a future run treats it as a lead to
-  check, never as proof.
+  Propose the observation and its verdict, not a guessed cause; a future run reads it as law 11 says.
 - **Write each one in plain words, with evidence and effect:**
   `- PROPOSED accepted pattern: stop flagging <X> in <paths> — <why it's deliberate> (evidence: <path:line>; scope: <paths or seat slugs>; from <deliverable path>, <date>)`
 - For a failure proposal, name the observed failure, scope, origin, evidence path, verdict and the

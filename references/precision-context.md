@@ -6,8 +6,7 @@ slice, without copying the whole repository into the worker's window. It never b
 source of orders: the brief, project hard constraints and each seat's full reference doc remain
 authoritative. The Chair still owns scope and decides what the worker must inspect.
 
-**Packs are opt-in.** The Chair builds them only when the project config's run preferences say
-`context packs: on` (a missing line means off), or when the user asks for them in a run. Their
+**Packs are opt-in** (the Brief stage, Context packs; a missing `context packs:` line means off). Their
 effect on findings and cost has not been measured with a live model; see
 `docs/validation/phase-5.5-context-pilot.md`. The commands below work either way.
 
@@ -21,11 +20,9 @@ effect on findings and cost has not been measured with a live model; see
    `<run>/contexts/<seat>.md.metrics.tsv`. `council context show <seat>` prints those paths and
    the metrics; it does not rebuild the pack. A successful build adds `context.built` to a run's
    event stream when one exists, including the level and expansion count.
-4. Inspect the pack and omissions. When a needed repository path was left out, rebuild with one
-   or more `--expand PATH` options and record the reason in the brief or run log. The expansion
-   is explicit, not a silent change to routing or ownership. It must remain within the code root.
-5. Give a worker the pack path only when it exists. The dispatch still points at the complete
-   brief and reference docs. A missing pack is never a reason to weaken the brief.
+4. Inspect the pack and expand it as the Brief stage says (`--expand PATH`, repeatable). The
+   expansion is explicit, not a silent change to routing or ownership. It must remain within the code root.
+5. Dispatch as the Work stage says: a pack path only when one was built.
 
 The CLI calls the provider with `--root`, `--run`, `--seat`, `--level`, `--output`, and repeated
 `--expand` values. It does not edit `CLAUDE.md`, choose a model, dispatch agents or change the
@@ -67,6 +64,5 @@ The local Phase 5.5 comparison and live-run protocol are in
   aliases and runtime behavior may be invisible; an omitted path is not a clean bill of health.
 - The provider must bound reads and reject paths that escape the code root, including symlinks.
   It reads evidence; it never executes project code or installs dependencies.
-- If Python 3.8+ is unavailable or a build fails, the Chair uses the complete brief and reference
-  docs as before, explicitly noting that no fresh pack was built. Other council commands and
-  older runs remain valid.
+- If Python 3.8+ is unavailable or a build fails: the Brief stage's fallback. Other council
+  commands and older runs remain valid.

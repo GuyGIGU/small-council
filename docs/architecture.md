@@ -220,7 +220,8 @@ Measured on 2026-11-13:
   functions of up to 297 lines (`cmd_check`; `cmd_memory` and `memory_entries` are about 250).
 - `session-state.md` is named on 89 code lines of `bin/council` and `run-plan.tsv` on 40. No script
   parses either any more: the scripts read run files through `src/council/records` (S1).
-- Skills and agents sit at their size caps (council-implement is at 19,992 of 20,000 characters).
+- Skills and agents sit near their size caps (council-implement is at 19,331 of 20,000 characters after WS6's
+  first pass; it was 19,992).
 - Many structural evals check that a phrase is present, not that behaviour holds. The full suite
   takes about 30 minutes on Windows and has no fast tier.
 
@@ -235,5 +236,5 @@ The cleanup's workstreams. [`design/cleanup-plan.md`](design/cleanup-plan.md) ha
 | 3 | File layout: `references/` by audience, evals into fast unit and scenario tiers |
 | 4 | Quality gates as ratchets (ShellCheck, ruff, a type check on the library, size and complexity limits frozen at today's worst), and this page's rules as tests. *Started (S2):* `evals/run_ratchet.py` holds sizes, ShellCheck warnings, parsers, config readers and call-backs; `ruff.toml` runs on the whole tree. The type check is still to come |
 | 5 | Slop pass: story comments out, a naming pass, dead code deleted, duplicates folded |
-| 6 | One rule, one place: rules cited by id, doctrine loaded per surface (#67) |
+| 6 | One rule, one place: rules cited by id, doctrine loaded per surface (#67). *Started (P2):* 62 restated rules now live in their owner (§7) with a pointer left behind, a brief links only its own seats' cards and docs, and `evals/run_structural.py` checks that each folded rule's wording is in its owner only. Ten copies that disagreed were settled one way on the user's rulings, and a check keeps the stale wording out. A review run's method load fell from 59,387 to 56,970 bytes |
 | 7 | Tests: a fast tier, behaviour over phrase pins, the Chair drill eval (#70) |
