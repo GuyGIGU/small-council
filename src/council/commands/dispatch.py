@@ -7,7 +7,7 @@ import sys
 
 from council.commands import cli
 
-COMMANDS = {"home": "home", "sharing": "sharing", "run status": "runs"}   # command words -> module
+COMMANDS = {"home": "home", "sharing": "sharing", "run status": "runs", "cap": "cap"}   # command words -> module
 
 
 def main(argv: list[str]) -> int:
