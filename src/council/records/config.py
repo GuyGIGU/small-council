@@ -40,7 +40,8 @@ def _lines(home: str | Path | None) -> list[str]:
     return cells.lines_of(data.decode("utf-8", errors="replace"))
 
 
-def _first(home: str | Path | None, pattern: str) -> re.Match | None:
+def first(home: str | Path | None, pattern: str) -> re.Match | None:
+    """The first config line the pattern matches from its start, as sed -n 's/…/p' | head -n 1 finds it."""
     rule = re.compile(pattern)
     for line in _lines(home):
         found = rule.match(line)
@@ -51,7 +52,7 @@ def _first(home: str | Path | None, pattern: str) -> re.Match | None:
 
 def agent_cap(home: str | Path | None) -> int:
     """configured_agent_cap: the first `- agent cap: N`, else 10 (also for 0 or a number bash can't read)."""
-    found = _first(home, SPACE + "*-" + SPACE + "*agent cap:" + SPACE + "*([0-9]+)")
+    found = first(home, SPACE + "*-" + SPACE + "*agent cap:" + SPACE + "*([0-9]+)")
     if not found:
         return AGENT_CAP
     value = int(found.group(1).lstrip("0")[:20] or "0")      # int() refuses 4,300 digits; 20 are past INTMAX anyway
@@ -60,7 +61,7 @@ def agent_cap(home: str | Path | None) -> int:
 
 def build_tier(home: str | Path) -> str:
     """configured_build_tier: 'light (config)' or 'full (config)', else light as a default, said so."""
-    found = _first(home, SPACE + "*-" + SPACE + "*build tier:" + SPACE + "*([A-Za-z]*)")
+    found = first(home, SPACE + "*-" + SPACE + "*build tier:" + SPACE + "*([A-Za-z]*)")
     tier = found.group(1).lower() if found else ""
     if tier in ("light", "full"):
         return "{} (config)".format(tier)
@@ -80,7 +81,7 @@ def checking(home: str | Path | None) -> str:
         found = re.match(r"[ \t]*-[ \t]*checking:[ \t]*", line)
         if found:
             value = re.sub(r"[ \t]*(<!--.*)?$", "", line[found.end():], count=1)
-            value = re.sub(r"[ \t]+", " ", value).translate(_ASCII_LOWER)
+            value = re.sub(r"[ \t]+", " ", value).translate(ASCII_LOWER)
             break
     if value in CHECKING:
         return "{} (config)".format(value)
@@ -92,7 +93,7 @@ def checking(home: str | Path | None) -> str:
 def worker_estimate(home: str | Path) -> int | None:
     """configured_worker_estimate: `- estimate per worker:` in tokens, or None when unset or outside
     1k-1M (the route then keeps its no-history default)."""
-    found = _first(home, SPACE + "*-" + SPACE + "*estimate per worker:" + SPACE
+    found = first(home, SPACE + "*-" + SPACE + "*estimate per worker:" + SPACE
                    + "*([0-9][0-9.,]*" + SPACE + "*[kKmM]?)")
     if not found:
         return None
@@ -102,26 +103,16 @@ def worker_estimate(home: str | Path) -> int | None:
 
 def seat_models(home: str | Path) -> str:
     """configured_seat_models: 'on' only for exactly `- seat models: on`; anything else is 'off'."""
-    found = _first(home, SPACE + "*-" + SPACE + "*seat models:" + SPACE + "*([A-Za-z]*)" + SPACE + r"*\Z")
+    found = first(home, SPACE + "*-" + SPACE + "*seat models:" + SPACE + "*([A-Za-z]*)" + SPACE + r"*\Z")
     return "on" if found and found.group(1) == "on" else "off"
 
 
-def sharing(home: str | Path) -> str:
-    """configured_sharing: 'just me' for just me, just-me or private; 'team' for anything else or none."""
-    found = _first(home, SPACE + "*-" + SPACE + "*sharing:" + SPACE + "*(.*)")
-    value = found.group(1).replace("\r", "").translate(_ASCII_LOWER) if found else ""
-    words = ("just me", "just-me", "private")
-    if any(value == word or value.startswith(word + " ") for word in words):
-        return "just me"
-    return "team"
-
-
-_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 
 
 def limit_seconds(raw: str) -> int | None:
     """The helper's limit_seconds: '90', '15m', '2 hours' in seconds; None for anything else (or 0)."""
-    value = re.sub(r"[ \t\r]", "", raw).translate(_ASCII_LOWER)
+    value = re.sub(r"[ \t\r]", "", raw).translate(ASCII_LOWER)
     digits = re.match(r"[0-9]*", value).group(0)
     unit = value[len(digits):]
     digits = digits.lstrip("0")
@@ -135,7 +126,7 @@ def limit_seconds(raw: str) -> int | None:
 
 def gate_time_limit(home: str | Path) -> tuple[int | None, str]:
     """`- gate time limit:` as (seconds, the words written); seconds is None when unset or not a time."""
-    found = _first(home, SPACE + "*-" + SPACE + "*gate time limit:" + SPACE + "*(.*)")
+    found = first(home, SPACE + "*-" + SPACE + "*gate time limit:" + SPACE + "*(.*)")
     raw = found.group(1).replace("\r", "") if found else ""
     return (limit_seconds(raw) if raw else None), raw
 

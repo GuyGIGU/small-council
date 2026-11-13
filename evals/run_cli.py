@@ -388,8 +388,10 @@ def runs_open(tmp):
           code == 0 and out.strip() == "Edit(/" + want + "/**)" and ":" not in out.strip()[5:], out)
     code, out, err = council(repo, "home", "rule", "x")
     check("home rule: refuses a word it doesn't take", code == 2 and "doesn't take" in err, out + err)
-    p = subprocess.run([BASH, "-c", 'H="$2"; source "$1"; council_home() { printf "%s\\n" "$H"; }; home_rule', "council",
-                        CLI.replace("\\", "/"), "C:/Users/Me/My Project/.council"],
+    # council home rule is Python (src/council/commands/home.py): the rule for a home given here, not found.
+    p = subprocess.run([sys.executable, "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1]); "
+                        "from council.commands import home; print(home.rule(sys.argv[2]))",
+                        os.path.join(ROOT, "src"), "C:/Users/Me/My Project/.council"],
                        capture_output=True, text=True, encoding="utf-8", errors="replace", env=GIT_ENV)
     check("home rule: a Windows home is written with the drive lower-case and no colon, blanks kept",
           p.stdout.strip() == "Edit(//c/Users/Me/My Project/.council/**)", p.stdout + p.stderr)
@@ -846,6 +848,152 @@ def lock_false_mkdir(tmp):
                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     check("event lock: a mkdir that exits 0 on a directory already there (uutils mkdir 0.10.0) does not take a held lock",
           p.stdout.split() == ["waited", "kept"], p.stdout + p.stderr)
+
+
+@part("runs")
+def python_launcher(tmp):
+    """A ported command starts one Python and no probe: the entry refuses a Python older than 3.8 itself
+    (exit 85), and bin/council then tries its next candidate, as it does when the Microsoft Store's stand-in
+    answers (its 9009, which MSYS reports as 49). With none left it refuses as before (D24). The version
+    probe once cost a Python start, and the stand-in 200 ms more, before every ported command."""
+    repo = new_repo(tmp, "launcher")
+    first, second = ("python", "python3") if os.name == "nt" else ("python3", "python")   # bin/council's order
+    log = slash(os.path.join(tmp, "launcher-starts.log"))
+    stubs = {
+        "old": 'echo "%s old" >> "$LOG"; exit 85\n',
+        "stand-in": 'echo "%s stand-in" >> "$LOG"; echo "Python was not found" >&2; exit 49\n',
+        "real": 'echo "%%s real" >> "$LOG"; exec "%s" "$@"\n' % slash(sys.executable),
+    }
+    _, want, _ = council(repo, "home")
+
+    def run(kinds):
+        folder = os.path.join(tmp, "launcher-" + "-".join(kinds))
+        os.makedirs(folder)
+        for name, kind in zip((first, second), kinds):
+            path = os.path.join(folder, name)
+            write(path, "#!/bin/sh\n" + stubs[kind] % name)
+            os.chmod(path, 0o755)
+        if os.path.exists(log):
+            os.remove(log)
+        code, out, err = council(repo, "home", env={"PATH": folder + os.pathsep + GIT_ENV["PATH"], "LOG": log})
+        return code, out, err, read(log).splitlines()
+
+    for kind in ("old", "stand-in"):
+        code, out, err, starts = run((kind, "real"))
+        check("python launcher: a first Python that is %s hands the call to the next one; one start each, no probe"
+              % ("older than 3.8" if kind == "old" else "the Microsoft Store's stand-in"),
+              code == 0 and out == want and starts == ["%s %s" % (first, kind), "%s real" % second],
+              "exit %d · %r · %r · starts %s" % (code, out, err, starts))
+    code, out, err, starts = run(("old", "old"))
+    check("python launcher: with no Python 3.8 or newer, a ported command refuses as before, naming what to install",
+          code == 2 and out == "" and "council home needs Python 3.8 or newer, and none is on PATH" in err
+          and starts == ["%s old" % first, "%s old" % second], "exit %d · %r · %r · starts %s" % (code, out, err, starts))
+
+
+@part("timing")
+def lock_across_languages(tmp):
+    """A bash writer and a Python writer of one record must exclude each other (D33). On Windows bash once
+    named itself by its MSYS process id, which Python reads as some other process (or none), and bash's kill
+    read a Python holder's Windows id as no process: each would have taken a lock the other held."""
+    folder = os.path.join(tmp, "cross-lock")
+    os.makedirs(folder)
+    src = os.path.join(ROOT, "src")
+    py_hold = ("import os, sys, time\nsys.path.insert(0, sys.argv[1])\nfrom council.records import locks\n"
+               "assert locks.acquire(sys.argv[2])\nprint('held', os.getpid(), flush=True)\ntime.sleep(float(sys.argv[3]))\n"
+               "locks.release(sys.argv[2])\n")
+    py_wait = ("import sys\nsys.path.insert(0, sys.argv[1])\nfrom pathlib import Path\n"
+               "from council.records import locks, owners\nlock = Path(sys.argv[2])\n"
+               "if locks.acquire(lock, int(sys.argv[3])):\n    print('taken')\n    locks.release(lock)\n"
+               "else:\n    print(owners.unavailable(lock))\n")
+    sh_hold = 'source "$1"; event_lock "$2" || exit 1; echo held; sleep "$3" >/dev/null 2>&1; event_unlock "$2"\n'
+    sh_wait = 'source "$1"; if event_lock "$2" "$3"; then echo taken; event_unlock "$2"; fi\n'
+    cli = CLI.replace("\\", "/")
+
+    def holder(kind, lock, seconds):
+        argv = ([sys.executable, "-I", "-c", py_hold, src, lock, str(seconds)] if kind == "python"
+                else [BASH, "-c", sh_hold, "council", cli, lock, str(seconds)])
+        proc = subprocess.Popen(argv, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True, encoding="utf-8", errors="replace")
+        # A venv's python.exe is a launcher that runs the interpreter as its child: the holder says its own id.
+        said = proc.stdout.readline().split()
+        pid = int(said[1]) if len(said) > 1 else proc.pid
+        return proc, said[:1] == ["held"], read(os.path.join(lock, "owner")).strip(), pid
+
+    def waiter(kind, lock, tries):
+        argv = ([sys.executable, "-I", "-c", py_wait, src, lock, str(tries)] if kind == "python"
+                else [BASH, "-c", sh_wait, "council", cli, lock, str(tries)])
+        started = time.monotonic()
+        p = subprocess.run(argv, env=GIT_ENV, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=120)
+        return p.stdout.strip(), p.stderr.strip(), time.monotonic() - started
+
+    for held_by, waits in (("bash", "python"), ("python", "bash")):
+        lock = slash(os.path.join(folder, "%s-held.lock" % held_by))
+        proc, ready, owner, pid = holder(held_by, lock, 4)
+        out, err, _ = waiter(waits, lock, 5)
+        refusal = out if waits == "python" else err
+        proc.communicate(timeout=60)
+        after, _, _ = waiter(waits, lock, 5)
+        check("lock across languages: a %s holder names itself by its operating system's process id, and a %s "
+              "waiter waits for it, then gives up naming the lock, that process and what to do" % (held_by, waits),
+              ready and owner == str(pid) and refusal.startswith(
+                  ("council: " if waits == "bash" else "") + "event lock unavailable: %s (held by process %s, age "
+                  % (lock if waits == "bash" else os.path.normpath(lock), owner))
+              and "run this again once that call ends" in refusal and "taken" not in out,
+              "owner %r · holder pid %d · stdout %r · stderr %r" % (owner, pid, out, err))
+        check("lock across languages: once the %s holder releases, the %s waiter takes the lock" % (held_by, waits),
+              after == "taken" and not os.path.exists(lock), after)
+    for held_by, waits in (("bash", "python"), ("python", "bash")):
+        lock = slash(os.path.join(folder, "%s-dead.lock" % held_by))
+        proc, ready, owner, pid = holder(held_by, lock, 20)
+        if pid != proc.pid:
+            os.kill(pid, 9)          # the interpreter itself, not only its launcher (TerminateProcess on Windows)
+        proc.kill()
+        proc.stdout.close()          # a killed bash's sleep may keep the pipe open: don't read to its end
+        proc.wait(timeout=60)
+        out, err, took = waiter(waits, lock, 5)
+        check("lock across languages: a %s holder killed outright leaves its lock, and a %s waiter reclaims it at once"
+              % (held_by, waits),
+              ready and owner == str(pid) and out == "taken" and not os.path.exists(lock) and took < 5,
+              "owner %r · stdout %r · stderr %r · %.1f s" % (owner, out, err, took))
+
+
+@part("timing")
+def lock_unnamed_owner(tmp):
+    """An owner line no process could have written (0, past the system's largest id) is no owner in either
+    language (D33): a young lock is waited for and the refusal says no holder is named; one 10 s old is
+    taken. Before, bash read 0 as alive (kill -0 0 is its own group) and a huge id as dead, and Python read 0
+    as dead on Windows and raised a ctypes traceback for an id of 2^32 or more."""
+    folder = os.path.join(tmp, "unnamed-lock")
+    os.makedirs(folder)
+    src = os.path.join(ROOT, "src")
+    py_wait = ("import sys\nsys.path.insert(0, sys.argv[1])\nfrom pathlib import Path\n"
+               "from council.records import locks, owners\nlock = Path(sys.argv[2])\n"
+               "if locks.acquire(lock, int(sys.argv[3])):\n    print('taken')\n    locks.release(lock)\n"
+               "else:\n    print(owners.unavailable(lock))\n")
+    sh_wait = 'source "$1"; if event_lock "$2" "$3"; then echo taken; event_unlock "$2"; fi\n'
+    seen = []
+    for waits in ("bash", "python"):
+        for line in ("0", str(2 ** 32), "1" + "0" * 30):
+            for age in ("young", "old"):
+                lock = slash(os.path.join(folder, "%s-%d-%s.lock" % (waits, len(line), age)))
+                os.mkdir(lock)
+                write(os.path.join(lock, "owner"), line + "\n")
+                if age == "old":
+                    old = time.time() - 30
+                    os.utime(lock, (old, old))
+                argv = ([sys.executable, "-I", "-c", py_wait, src, lock, "5"] if waits == "python"
+                        else [BASH, "-c", sh_wait, "council", CLI.replace("\\", "/"), lock, "5"])
+                p = subprocess.run(argv, env=GIT_ENV, capture_output=True, text=True, encoding="utf-8",
+                                   errors="replace", timeout=120)
+                said = (p.stdout + p.stderr).strip()
+                ok = (said == "taken" and not os.path.exists(lock) if age == "old"
+                      else "(no holder named in it, age " in said and "taken" not in said and os.path.isdir(lock))
+                seen.append("%s waiter · owner %s… · %s: %s%s" % (waits, line[:12], age, "ok" if ok else "WRONG ",
+                                                                   "" if ok else repr(said)))
+        check("lock with an owner no process could have (0, 2^32, 10^30): a %s waiter waits for a young one, "
+              "saying no holder is named, and takes one 10 s old" % waits,
+              all(" ok" in s for s in seen if s.startswith(waits)), "\n".join(seen), full=True)
 
 
 @part("timing")

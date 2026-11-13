@@ -8,7 +8,7 @@ from pathlib import Path
 
 import support
 
-from council.records import locks
+from council.records import locks, paths
 
 
 def dead_pid() -> int:
@@ -133,7 +133,7 @@ class SharedReadTest(support.Scratch):
     def test_a_waiter_reading_the_owner_does_not_stop_the_release(self) -> None:
         lock = self.tmp / "events.tsv.lock"
         self.assertTrue(locks.acquire(lock))
-        with locks.open_shared(lock / "owner") as reading:   # how stale() reads it, held open
+        with paths.open_shared(lock / "owner") as reading:   # how stale() reads it, held open
             self.assertTrue(locks.release(lock))
             self.assertEqual(reading.readline(), "{}\n".format(os.getpid()).encode())
         self.assertFalse(lock.exists())
