@@ -10,7 +10,7 @@ count, never a number that could be mistaken for a trend. Five runs make a figur
 shown; they do not make it reliable. Nothing here tunes anything: `council tune` reads this report and
 proposes, and the user decides.
 
-Cost figures use only completed runs whose records support them (references/run-accounting.md):
+Cost figures use only completed runs whose records support them (references/run/run-accounting.md):
 every agent run's tokens reported or corrected from evidence, and an exact agent-run count. A run
 from before that accounting, with a missing usage report or an implausible count, is left out and
 counted under "Data", never folded in as a zero or a guess.

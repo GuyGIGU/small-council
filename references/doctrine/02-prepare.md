@@ -13,7 +13,7 @@ Gather every shared fact once, so no seat has to.
    `<run>/index.md`: per changed file its hunks, changed symbols, callers and covering tests. Seats
    read it instead of each re-tracing the blast radius. If optional Python 3.8+ is available, the
    same command also writes `<run>/impact.tsv`: changed paths, direct static importers, likely
-   tests and surface hints. Read `references/impact-graph.md` before using its confidence labels.
+   tests and surface hints. Read `references/run/impact-graph.md` before using its confidence labels.
    A missing graph is not a clean impact result; `index.md` remains the fallback.
 4. **Earlier council work.** The index ends with the earlier council work on the changed files; for
    a run without a diff, `council prior <path> …`. Keep ids and one line each:

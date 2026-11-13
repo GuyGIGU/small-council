@@ -867,7 +867,7 @@ cmd_run_events() {
 # council run events repair — mend a torn last line, the one damage a killed writer leaves (each row is
 # one printf): save a byte copy beside the file, drop only the bytes after the last newline, check the
 # stream, and record the repair. A missing stream or a damaged row is reported, never rebuilt from
-# guesses (references/event-stream.md).
+# guesses (references/run/event-stream.md).
 event_repair() {
   local run="$1" file="$1/events.tsv" lock why rc=0 copy total part keep
   why="$(event_ready "$run")" || rc=$?
@@ -1290,7 +1290,7 @@ cmd_run_resume() {
 
 # The line the Chair relays after each seat call: seats (not agents) done, who is working, who waits,
 # and the tokens reported so far. Rows from before usage.tsv never add to the tokens: their units
-# were never checked (references/run-accounting.md).
+# were never checked (references/run/run-accounting.md).
 progress_line() {                                   # $2: a note for the same line (a seat over its tool budget)
   NOTE="${2:-}" awk -F'\t' '
     NR > 1 && $2 != "skipped" {
@@ -1322,7 +1322,7 @@ seat_field() {
   S="$2" awk -F'\t' -v c="$3" 'NR > 1 && $1 == ENVIRON["S"] { print $c; exit }' "$1/seats.tsv"
 }
 
-# Accounting (references/run-accounting.md). A seat is a named slot of the run; an agent run is one
+# Accounting (references/run/run-accounting.md). A seat is a named slot of the run; an agent run is one
 # agent the Chair started for it (an Agent call, or each agent a Workflow started, errored ones too) —
 # a resume of the same agent id is not a new run. Every dispatch and every usage report is one row of
 # the run's usage.tsv; a seat's agents, reported and tokens columns in seats.tsv are derived from it:
@@ -1669,7 +1669,7 @@ corrections_tsv() {
     END { for (i = 1; i <= n; i++) print order[i] "\t" last[order[i]] "\t" added[order[i]] }' "$1/corrections.jsonl"
 }
 
-# Each executed seat's figures under the one per-seat rule of references/run-accounting.md — the same
+# Each executed seat's figures under the one per-seat rule of references/run/run-accounting.md — the same
 # rule scripts/cockpit.py's seat_usage states, so the close line, the ledger and the status widget
 # agree on exact totals and bases; display rounding is half up in both readers (run-accounting.md).
 # Corrections are laid over the rows. One line per seat:
@@ -1774,7 +1774,7 @@ usage_words() {
 
 # ------------------------------------------------------------------------------------------------
 # The agent stop (hooks/agent-gate.sh): a run at its agent cap or past its token ceiling refuses new
-# agents until the user's go is on record (council cap allow). references/run-accounting.md
+# agents until the user's go is on record (council cap allow). references/run/run-accounting.md
 # ------------------------------------------------------------------------------------------------
 
 # The agent-run count below which the user's latest go lets agents start: the until of the last readable
@@ -2996,7 +2996,7 @@ cmd_pet() {
 sh_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 ps_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"; }
 
-# An evidence-backed correction to a seat's recorded tokens or agent runs (references/run-accounting.md).
+# An evidence-backed correction to a seat's recorded tokens or agent runs (references/run/run-accounting.md).
 # It never edits seats.tsv. It appends one line per field to the run's corrections.jsonl: the value as
 # recorded, the exact value, and where the evidence is. Every reader lays the latest correction over
 # the row. A figure is corrected only to an exact number its source shows, never to a guess.
@@ -3954,7 +3954,7 @@ current_task() {
   state_field next "$1/session-state.md" | sed -n 's/^[Tt]ask[[:space:]]*\([0-9][0-9]*\).*/T\1/p'
 }
 
-# A build's gate result is its own repair record (references/repair-loop.md): a failure is an attempt on
+# A build's gate result is its own repair record (references/run/repair-loop.md): a failure is an attempt on
 # the current task, and the pass of a gate whose trail is open closes it — recorded here, so the stop
 # after three failures holds without a separate command. The gate's exit code never depends on this.
 # Never for the intentionally red before-<n> check or its after-<n>, nor a failure the baseline had.
@@ -5080,7 +5080,7 @@ hygiene_base() {
     printf '%s' "${ib:-$sh}" )
 }
 
-# Just-me hygiene (references/sharing.md): the council's ids in what teammates read. On a just-me council
+# Just-me hygiene (references/run/sharing.md): the council's ids in what teammates read. On a just-me council
 # a real build left "(ruling 1)" in a code comment. Read only what the build itself added: the lines added
 # since base $3 (with none, only uncommitted edits), files git doesn't track that changed after the run
 # opened ($4, its opened: time), whole, the commit messages since $3 that no remote branch has yet (one
@@ -5465,7 +5465,7 @@ NEXT
       printf '\nbuild tier: %s\n' "$(configured_build_tier)" >> "$out"
     fi
   fi
-  # Just me: nothing teammates read may cite the council (references/sharing.md). Only a build writes
+  # Just me: nothing teammates read may cite the council (references/run/sharing.md). Only a build writes
   # shared text, and only what it added is read; hits are counted on their own, never as citations.
   if [ "$mode" = council-implement ] && [ "$(configured_sharing)" = "just me" ]; then
     hyb="$(hygiene_base "$run" "$top")"

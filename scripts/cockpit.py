@@ -278,7 +278,7 @@ def proposals_in(home):
 
 def seat_usage(row, fixes):
     """One seat's agent runs and tokens, each with how far the record supports it — the rule in
-    references/run-accounting.md, kept identical to the helper's seat_rows (bin/council), which states
+    references/run/run-accounting.md, kept identical to the helper's seat_rows (bin/council), which states
     the close line and the ledger. Bases: reported, corrected, pending (still working), partial or
     missing (a finished run's usage is unknown), unrecorded (no agent on record: unknown, never
     zero), no-agent (declared with agents=0, or corrected so), suspect (a count no agent run can

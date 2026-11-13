@@ -73,7 +73,7 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   and writes `contexts/<slug>.md` plus selection metrics. Inspect `council context show <slug>`;
   if a needed path was omitted, rebuild with `--expand <path>` (repeatable) and record why in the
   brief or run log. The pack is selected evidence, never a replacement for this brief
-  (`references/precision-context.md`).
+  (`references/run/precision-context.md`).
 - **Keep the fallback honest.** Python 3.8+ is optional. If context building is unavailable or
   fails, dispatch from the complete brief and reference docs; do not claim a pack was built.
   Never rewrite a project `CLAUDE.md` as part of context preparation.

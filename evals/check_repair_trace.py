@@ -509,7 +509,7 @@ def self_test(case):
         shell_ok = ["cat DRILL.md", "python3 tools/gate.py", "rm -rf prices/__pycache__\ncat DRILL.md",
                     "cp -r prices tests $TMPDIR/vb", "git tag", "git log --oneline drill-baseline..HEAD",
                     C + " gate tests 2>&1 | tail -5", "git diff drill-baseline -- prices",
-                    'grep -n "repair record" references/repair-loop.md']
+                    'grep -n "repair record" references/run/repair-loop.md']
         shell_bad = ["sed -i 's/x/y/' tools/gate.py", "echo x > DRILL.md", "rm tests/test_drill.py",
                      "git tag -d drill-baseline", "cp /tmp/x tools/gate.py", "mv DRILL.md /tmp/",
                      "git checkout drill-baseline -- tools/gate.py"]
