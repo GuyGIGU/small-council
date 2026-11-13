@@ -8,7 +8,8 @@
 # Portability: bash 3.2+ (macOS), Git Bash on Windows, Linux — git and POSIX tools only (awk, sed,
 # grep, find, date). No associative arrays, no mapfile, no ${var,,}. Values that may hold Windows
 # paths reach awk through ENVIRON, never -v (awk -v would eat the backslashes). Internal rows are
-# tab-separated and never carry an empty field ("-" stands in), because `read` with IFS=tab merges consecutive tabs.
+# tab-separated and never carry an empty field ("-" stands in), because `read` with IFS=tab merges
+# consecutive tabs.
 #
 # The SessionStart hook sources this file for council_home / list_runs / seat_summary, so the hook
 # and the helper always resolve the council home the same way.
@@ -1600,7 +1601,8 @@ seat_rows() {
 # <tokens> <older rows> <agent count exact 1|0> <still working> <seats with no agent on record>".
 # The basis is older (a row predates usage.tsv and was not corrected: its units were never checked),
 # suspect, partial (a finished run's usage is unknown, or a seat has no agent on record), none (no
-# agent ran), running (a seat is still at work), or complete — the order scripts/cockpit.py's usage_totals uses.
+# agent ran), running (a seat is still at work), or complete — the order scripts/cockpit.py's
+# usage_totals uses.
 run_usage() {
   seat_rows "$1" | awk -F'\t' '
     { e += $4; r += $5; if ($6 != "-") t += $6; m += $8; p += $9
@@ -1744,7 +1746,8 @@ cmd_cap_allow() {
 # records, and with notifications on prints what the Chair is sent back for — the owner's alert — and
 # exits 2; the next turn end of that wait finds it recorded. A run whose first status card is still due
 # (card-due, from the first dispatch's reminder) sends the Chair back once for it too, seats working or
-# not: the card is owed once per run. Otherwise silent, exit 0. A fault of its own dies, which the hook lets through.
+# not: the card is owed once per run. Otherwise silent, exit 0. A fault of its own dies, which the hook
+# lets through.
 cmd_run_turn_end() {
   local home session run st names="" n=0 last="" how at="<folder>" label=run mark cards="" said=""
   home="$(council_home)"
@@ -5973,7 +5976,8 @@ EOF
 }
 
 # The memory rows ($1) with each observed failure that failure_audit ($2) found unsupported turned
-# "unknown", the reason in its section column — so the index and select serve only what check would stand behind.
+# "unknown", the reason in its section column — so the index and select serve only what check would
+# stand behind.
 memory_served() {
   [ -n "$2" ] || { printf '%s\n' "$1"; return 0; }
   printf '%s\n\f\n%s\n' "$2" "$1" | LC_ALL=C awk -F'\t' -v OFS='\t' '
@@ -7386,11 +7390,7 @@ council — the Small Council's helper (bash + git)
   council sharing [just-me|team]         who sees the council: team (the default — .council/ is committed and
                                          CLAUDE.md points at it) or just me (git ignores it through its own
                                          exclude list, and the CLAUDE.md note goes); no word shows what's left
-  council pushes                         the push freeze (`- pushes:` in the config) as it reads today, and
-                                         whether push and PR are held by it
-  council pushes check git push|gh pr create
-                                         the bash gate's decision (hooks/bash-gate.sh): exit 2 and the
-                                         reason while the freeze holds, unless COUNCIL_ALLOW_PUSH=1
+  council pushes [check git push|gh pr create]  the push freeze · check: the bash gate's decision (exit 2 while held)
   council run open <mode> [--alongside] [--session=ID]
                                          open a run for a mode, e.g. council-review; prints its folder
   council run status [--all]             open runs, this tree's first (the last 20 with --all)

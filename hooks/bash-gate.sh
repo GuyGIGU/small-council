@@ -64,12 +64,12 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
   }
   # --- what the commands do: stages, pipes, groups ------------------------------------------------
   # pos: 0 = before the command word · 1 = its arguments · 2 = bash/sh before its script · 3 = timeout before its
-  # duration · 4 = export and friends (assignments) · 5 = git before its subcommand · 6 = gh before pr · 7 = gh pr before
-  # create. opt: an option of git or gh waits for its value. pal: this stage carries COUNCIL_ALLOW_PUSH=1; gal: the
-  # command exported it. pk: the first push or PR run without them. stc: this stage runs the helper. sout: its stdout
-  # goes to a file. taint: an earlier stage of this pipeline runs it. rp: a redirect waits for its target. Frames: ( {
-  # if loop case, and $ for a substitution, which keeps the outer stage apart. cpat, for a case frame: 0 = its word,
-  # before "in" · 1 = a pattern, before its ")" · 2 = a branch, its commands. In 0 and 1, words and | are pattern text.
+  # duration · 4 = export and the like · 5 = git before its subcommand · 6 = gh before pr · 7 = gh pr before create.
+  # opt: a git or gh option waits for its value. pal: this stage carries COUNCIL_ALLOW_PUSH=1; gal: the command exported
+  # it. pk: the first push or PR without them. stc: this stage runs the helper. sout: its stdout goes to a file. taint:
+  # an earlier stage of this pipeline runs it. rp: a redirect waits for its target. Frames: ( { if loop case, and $ for
+  # a substitution, which keeps the outer stage apart. cpat, for a case frame: 0 = its word, before "in" · 1 = a
+  # pattern, before its ")" · 2 = a branch, its commands. In 0 and 1, words and | are pattern text.
   function reset() { pos = 0; stc = 0; rp = 0; sout = 0; pre = ""; opt = 0; pal = 0 }
   function endstage() { if (stc && !sout && fd > 0) fcn[fd] = 1 }
   function sep() { endstage(); taint = 0; reset() }
@@ -122,7 +122,8 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
     }
     if (pos >= 5) {                                   # git -C dir push · gh -R o/r pr create
       if (opt || x ~ /^-/) { opt = !opt && x ~ /^(-C|-c|-R|--git-dir|--work-tree|--namespace|--repo)$/; return }
-      if (pk == "" && !pal && !gal && (pos == 5 && x == "push" || pos == 7 && x == "create")) pk = x == "push" ? "git push" : "gh pr create"
+      if (pk == "" && !pal && !gal && (pos == 5 && x == "push" || pos == 7 && x == "create"))
+        pk = (pos == 5) ? "git push" : "gh pr create"
       pos = (pos == 6 && x == "pr") ? 7 : 1; return
     }
     if (pos == 2) {
@@ -253,11 +254,10 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
     gsub(/\\\\/, "\001", s); gsub(/\\"/, "\002", s)
     n = split(s, p, /"/)
     for (i = 1; i + 3 <= n; i += 2) {
-      t = p[i]                                       # the brackets between strings: how deep the next key is
-      for (c = 1; c <= length(t); c++) { ch = substr(t, c, 1); if (ch == "{" || ch == "[") depth++; else if (ch == "}" || ch == "]") depth-- }
+      t = p[i]; depth += gsub(/[[{]/, "", t) - gsub(/[\]}]/, "", t)   # how deep the next key is
       k = p[i + 1]
       if (depth == 1 && p[i + 2] ~ /^[ \t\r\n]*:/) top = k
-      if (depth == 1 && k == "cwd" && p[i + 2] ~ /^[ \t\r\n]*:[ \t\r\n]*$/) cwd = unjson(p[i + 3])   # Claude Code writes it first
+      if (depth == 1 && k == "cwd" && p[i + 2] ~ /^[ \t\r\n]*:[ \t\r\n]*$/) cwd = unjson(p[i + 3])   # before tool_input
       if (depth == 2 && top == "tool_input" && k == "command" && p[i + 2] ~ /^[ \t\r\n]*:[ \t\r\n]*$/) { cmd = unjson(p[i + 3]); found = 1; break }
     }
     if (!found) exit
@@ -272,6 +272,6 @@ fi
 case "$pushed" in 'git push'|'gh pr create') ;; *) exit 0 ;; esac
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
 case "$cwd" in [A-Za-z]:\\*) cwd="$(printf '%s' "$cwd" | tr '\\' '/')" ;; esac   # C:\Users\… as Git Bash takes it
-out="$({ [ ! -d "$cwd" ] || cd "$cwd"; } 2>/dev/null; "${BASH:-bash}" "$ROOT/bin/council" pushes check "$pushed" 2>/dev/null)"
+out="$(cd "$cwd" 2>/dev/null; "${BASH:-bash}" "$ROOT/bin/council" pushes check "$pushed" 2>/dev/null)"
 [ $? -eq 2 ] && case "$out" in "Small Council:"*) printf '%s\n' "$out" >&2; exit 2 ;; esac
 exit 0
