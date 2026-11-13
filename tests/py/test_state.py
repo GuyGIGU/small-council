@@ -42,6 +42,11 @@ class StateTest(support.Scratch):
         self.assertTrue(state.planned(content))
         self.assertFalse(state.planned("plan-schema:\n"))
 
+    def test_values_of_a_crlf_file_carry_no_carriage_return(self) -> None:
+        content = "mode: council-review\r\nstatus: in-progress\r\n## Notes\r\nclosed: never\r\n"
+        self.assertEqual(state.values(content, "status"), ["in-progress"])
+        self.assertEqual(state.values(content, "closed"), ["never"])
+
     def test_decisions_are_unquoted(self) -> None:
         self.assertEqual(state.decisions(STATE),
                          ['2026-01-02 10:00: "go "full" C:\\temp"', "2026-01-02 11:00: raw words"])

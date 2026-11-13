@@ -49,7 +49,7 @@ def header(content: str, exact_keys: bool = False, comments: bool = True) -> dic
 def values(content: str, key: str) -> list[str]:
     """Every `key:` line's value anywhere in the file, below the header too, its leading space dropped
     (the reading memory.py and evidence.py have used; the helper's state_field reads the header only)."""
-    return [found.group(1) for found in re.finditer(r"^" + re.escape(key) + r":[ \t]*(.*)$", content, re.MULTILINE)]
+    return [m.group(1) for m in map(re.compile(re.escape(key) + r":[ \t]*(.*)").match, cells.lines_of(content)) if m]
 
 
 def first_value(content: str, key: str) -> str:

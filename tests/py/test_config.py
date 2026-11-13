@@ -56,6 +56,14 @@ class ConfiguredTest(support.Scratch):
         self.assertIsNone(config.worker_estimate(self.home("- estimate per worker: 2M\n")))
         self.assertIsNone(config.worker_estimate(self.home("- estimate per worker: 1,50k\n")))
 
+    def test_worker_estimate_in_a_crlf_file_has_no_carriage_return_in_its_figure(self) -> None:
+        """A line's CR is not part of its last cell: 150000 and 150,000 read as the helper reads them."""
+        for figure in ("150000", "150,000", "150k", "0.9M"):
+            lf = config.worker_estimate(self.home("- estimate per worker: {}\n".format(figure)))
+            crlf = config.worker_estimate(self.home("- estimate per worker: {}\r\n".format(figure)))
+            self.assertIsNotNone(crlf, figure)
+            self.assertEqual(crlf, lf, figure)
+
     def test_seat_models_and_sharing(self) -> None:
         self.assertEqual(config.seat_models(self.home("- seat models: on\r\n")), "on")
         self.assertEqual(config.seat_models(self.home("- seat models: on # yes\n")), "off")
@@ -83,7 +91,9 @@ class StatusReadingTest(support.Scratch):
     def test_notifications_off(self) -> None:
         self.assertTrue(config.notifications_off(self.home("- Notifications: OFF  # quiet\n")))
         self.assertFalse(config.notifications_off(self.home("- notifications: on\n")))
-        self.assertFalse(config.notifications_off(self.home("- notifications: off\r\n")))   # status.py's own reading
+        self.assertTrue(config.notifications_off(self.home("- notifications: off\r\n")))    # the helper strips the CR first
+        self.assertTrue(config.notifications_off(self.home("- notifications: off  # quiet\r\n")))
+        self.assertFalse(config.notifications_off(self.home("- notifications: of\r\n")))
 
     def test_memory_path(self) -> None:
         self.assertEqual(config.memory_path(self.home("## Memory\n- conventions: docs/conv.md (the team's)\n")),

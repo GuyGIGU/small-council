@@ -1,7 +1,7 @@
 """council.config.md: one reader per setting, each with its stated default.
 
 The `configured_*` readers follow bin/council's functions of the same name line for line (sed reads
-every line, carriage return included, and the first match wins). The others follow the Python reader
+every line, its carriage return dropped as cells.lines_of drops it, and the first match wins). The others follow the Python reader
 that already used them, and say where the helper reads the line differently.
 """
 from __future__ import annotations
@@ -31,12 +31,13 @@ def path(home: str | Path) -> Path:
 
 
 def _lines(home: str | Path | None) -> list[str]:
-    """The config's lines as sed reads them (links followed, no size limit, carriage returns kept)."""
+    """The config's lines as the helper's sed and awk read them (links followed, no size limit, each
+    line's carriage return dropped: cells.lines_of)."""
     try:
         data = path(home).read_bytes()        # type: ignore[arg-type]
     except (OSError, TypeError):
         return []
-    return data.decode("utf-8", errors="replace").split("\n")
+    return cells.lines_of(data.decode("utf-8", errors="replace"))
 
 
 def _first(home: str | Path | None, pattern: str) -> re.Match | None:
@@ -76,8 +77,6 @@ def checking(home: str | Path | None) -> str:
     default, said so (the first `- checking:` line, an HTML comment after it ignored, spaces folded)."""
     value = ""
     for line in _lines(home):
-        if line.endswith("\r"):
-            line = line[:-1]
         found = re.match(r"[ \t]*-[ \t]*checking:[ \t]*", line)
         if found:
             value = re.sub(r"[ \t]*(<!--.*)?$", "", line[found.end():], count=1)
@@ -142,12 +141,12 @@ def gate_time_limit(home: str | Path) -> tuple[int | None, str]:
 
 
 def notifications_off(home: str | Path | None) -> bool:
-    """`- notifications: off` (status.py's reading: a config over 64 KB, or a link, reads as on, and so
-    does a line ending in a carriage return, which the helper's notifications_off strips first)."""
+    """`- notifications: off`, a CRLF line included, as the helper's notifications_off reads it (status.py's
+    guard: a config over 64 KB, or a link, reads as on)."""
     if home is None:
         return False
-    content = paths.text_of(path(home), home, limit=65536)
-    return bool(re.search(r"(?im)^[ \t]*-[ \t]*notifications:[ \t]*off[ \t]*(?:#.*)?$", content))
+    rule = re.compile(r"[ \t]*-[ \t]*notifications:[ \t]*off[ \t]*(?:#.*)?", re.IGNORECASE)
+    return any(rule.fullmatch(line) for line in cells.lines_of(paths.text_of(path(home), home, limit=65536)))
 
 
 def memory_path(home: str | Path) -> str:
