@@ -45,13 +45,23 @@ class SeatsTest(support.Scratch):
                 {"seat": "hunt", "field": "tokens", "to": 61000, "evidence": "agent footer"},
                 {"seat": "map", "field": "agents", "to": 1, "evidence": "  ", "added": True},
                 {"seat": "map", "field": "colour", "to": 1, "evidence": "x"},
-                {"seat": "lint", "field": "agents", "to": "2", "evidence": "log", "added": True}]
+                {"seat": "lint", "field": "agents", "to": 2, "evidence": "log", "added": True}]
         (run / "corrections.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
         found = seats.corrections(run)
         self.assertEqual(sorted(found), [("hunt", "tokens"), ("lint", "agents")])
         self.assertEqual(found[("hunt", "tokens")]["to"], 61000)
         self.assertTrue(found[("lint", "agents")]["added"])
         self.assertFalse(seats.evidenced("  -  "))
+
+    def test_a_count_written_as_a_string_is_no_correction(self) -> None:
+        # The helper's corrections_tsv takes only a bare JSON whole number after "to":, so a figure
+        # written as "2" is ignored there; reading it here would show a total the ledger never counts.
+        run = self.run_folder()
+        (run / "corrections.jsonl").write_text(
+            '{"seat": "lint", "field": "agents", "to": "2", "evidence": "log"}\n'
+            '{"seat": "map", "field": "tokens", "to": 7.0, "evidence": "log"}\n'
+            '{"seat": "hunt", "field": "tokens", "to": 9, "evidence": "log"}\n')
+        self.assertEqual(sorted(seats.corrections(run)), [("hunt", "tokens")])
 
 
 if __name__ == "__main__":

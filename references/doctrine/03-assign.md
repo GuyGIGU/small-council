@@ -28,7 +28,7 @@ Give each seat exactly its slice, and each worker a budget.
    same-kind parts (files, tasks, items), never one small part each. Over → pair more seats, or ask
    the user. A diagnosis worker counts too; a re-dispatch or a resumed worker: context-core, Limits.
 7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat, the Chair too, its
-   rows (`references/run-plan.md`, Shape), with the reason. Copy the recommendation's compatible
+   rows (`references/run/run-plan.md`, Shape), with the reason. Copy the recommendation's compatible
    risk, complexity band, uncertainty, cap, and verification level only after checking them against
    what Prepare uncovered. If a recommendation changed, record the evidence and reason in the plan. Run
    `council run plan check`; fix every error before going on.

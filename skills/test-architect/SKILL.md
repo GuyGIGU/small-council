@@ -24,7 +24,7 @@ Three modes:
 
 **Read your reference document first:** `${CLAUDE_PLUGIN_ROOT}/references/quality-testing.md` — the 11
 Carmack × Beck principles every finding and specification cites. Output formats live in
-`${CLAUDE_PLUGIN_ROOT}/references/test-architect-formats.md`; load the section you need at the step
+`${CLAUDE_PLUGIN_ROOT}/references/test-architect/test-architect-formats.md`; load the section you need at the step
 that writes it.
 
 **Where output goes.** With a council home: audit reports → `<home>/reviews/<YYYY-MM-DD>-test-audit-<slug>.md`,

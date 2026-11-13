@@ -35,6 +35,10 @@ class CellsTest(unittest.TestCase):
         for text in ("74,3k", "1,50k", "-5", "12 tool uses, 45000", "1e5", "", "1234567890123"):
             self.assertIsNone(cells.token_count(text), text)
 
+    def test_token_count_of_a_number_past_a_float_is_none_not_a_crash(self) -> None:
+        self.assertIsNone(cells.token_count("9" * 400 + "k"))      # the helper's seat_tokens exits 1 for it
+        self.assertIsNone(cells.token_count("1" + "0" * 400 + " M"))
+
     def test_tsv_rows_skip_comments_and_pad_short_rows(self) -> None:
         rows = cells.tsv_rows("# note\nslug\tstate\tagent\n\nhunt\trunning\nmap\tdone\tabc\textra\n")
         self.assertEqual(rows, [{"slug": "hunt", "state": "running", "agent": ""},

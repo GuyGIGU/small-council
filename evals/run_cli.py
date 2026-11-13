@@ -5583,7 +5583,7 @@ def gate_invalid_proof(tmp):
 
 @part("requests")
 def check_just_me_hygiene(tmp):
-    """On a just-me council nothing teammates read may cite the council (references/sharing.md). A real build
+    """On a just-me council nothing teammates read may cite the council (references/run/sharing.md). A real build
     left "(ruling 1)" in a Swift comment. A build's council check reads what that build added — its added lines,
     files it left untracked, commit messages not yet pushed, a PR body drafted in the run — and names each council
     reference, counted apart from citations. Earlier work on the branch, a plan or review run, and ordinary code

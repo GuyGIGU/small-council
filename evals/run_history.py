@@ -47,7 +47,7 @@ def make_run(home, name, status="complete", mode="council-review", size="squad",
     if older:     # a record from before usage.tsv: its token figures were never checked for units
         write(run / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\n"
               + "".join("{}\t{}\ta\t{}\t-\t-\t1\n".format(s, st, t) for s, st, t in seats))
-    else:         # every agent run reported its usage (references/run-accounting.md)
+    else:         # every agent run reported its usage (references/run/run-accounting.md)
         write(run / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
               + "".join("{}\t{}\ta\t{}\t-\t-\t1\t{}\n".format(s, st, t, 1 if st != "running" else 0)
                         for s, st, t in seats))

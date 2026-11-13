@@ -121,7 +121,7 @@ part covers it) and U rows (built, but serving no part). **You may lower a verdi
 the Result cell, but never raise one.** When you think a verdict is too low, ship it as given, with "the
 Chair disagrees: <evidence>".
 In the result, distinguish direct observation from inference or assumption using
-`references/evidence-model.md`; a plan saying a part was built is not evidence that it was.
+`references/run/evidence-model.md`; a plan saying a part was built is not evidence that it was.
 
 ## At Deliver — `<home>/postgames/<YYYY-MM-DD>-<slug>.md`
 

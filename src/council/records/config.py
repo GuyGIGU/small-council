@@ -54,7 +54,7 @@ def agent_cap(home: str | Path | None) -> int:
     found = first(home, SPACE + "*-" + SPACE + "*agent cap:" + SPACE + "*([0-9]+)")
     if not found:
         return AGENT_CAP
-    value = int(found.group(1))
+    value = int(found.group(1).lstrip("0")[:20] or "0")      # int() refuses 4,300 digits; 20 are past INTMAX anyway
     return value if 0 < value <= INTMAX else AGENT_CAP
 
 
@@ -197,7 +197,7 @@ def estimate_tokens(text: str) -> int | None:
     if not match:
         return None
     try:
-        value = float(match.group(1).replace(",", ""))
+        value = min(float(match.group(1).replace(",", "")), 1e7)  # past 308 digits: inf, no int
     except ValueError:
         return None
     value = int(round(value * {"k": 1000, "m": 1000000}.get(match.group(2).lower(), 1)))

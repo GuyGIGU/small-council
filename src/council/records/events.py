@@ -1,4 +1,4 @@
-"""events.tsv: the run's append-only event stream (references/event-stream.md).
+"""events.tsv: the run's append-only event stream (references/run/event-stream.md).
 
 Seven tab-separated cells a row: schema, seq, at, type, subject, value, detail. `append` is the helper's
 event_append, under the same lock, so a Python writer and a bash writer never share a sequence number.
@@ -54,7 +54,7 @@ def records(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
 def strict_rows(run: Path, read: Reader) -> list[dict[str, object]]:
     """Every row, refusing a stream without the v1 header or with any row out of sequence (the repair
     loop trusts a gate's record only from a whole stream). `read` returns the file's text."""
-    lines = (read(path(run)) or "").splitlines()
+    lines = cells.lines_of(re.sub(r"\n\Z", "", read(path(run)) or ""))   # on newline only: a cell may hold U+2028
     if not lines or lines[0] != HEADER:
         raise EventError("events.tsv has no v1 header")
     rows = []

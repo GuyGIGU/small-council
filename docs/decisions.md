@@ -62,7 +62,7 @@ refusal, or `prose` when only the text holds it. A `prose` row is a candidate fo
 | Id | Decision | Source | Held by | Supersedes |
 |---|---|---|---|---|
 | D26 | Usage figures are exact or marked: blank means unknown, never zero, and every figure carries a basis (complete, running, partial, suspect, older, none). | 0.14 (`docs/design/status-widget-adr.md`) | `status.py`; `evals/run_status.py` | |
-| D27 | The event stream is append-only and written only by the helper. | 0.9 (`references/event-stream.md`) | `council run events check` | |
+| D27 | The event stream is append-only and written only by the helper. | 0.9 (`references/run/event-stream.md`) | `council run events check` | |
 | D28 | Memory is filed only on the user's words; an observed-failure entry needs a verdict that establishes it and is labelled "observed failure, not a rule". | 0.13 (`docs/design/memory-provenance-adr.md`) | `council memory`; `evals/run_memory.py` | |
 | D29 | Rates across runs are shown only past five runs that carry their data; self-tuning changes one knob (the estimate per worker), only on the user's words, logged and reversible. | 0.13 (`history-adr.md`, `self-tuning-adr.md`) | `history.py`, `tune.py` suites | |
 | D30 | Model routing is opt-in (`- seat models: on`) and only for mapping and survey worker seats; the Chair and the verifier stay on `inherit`. | 0.17 (`docs/design/model-routing-adr.md`) | `council run plan check` | |
