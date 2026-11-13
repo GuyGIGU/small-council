@@ -128,12 +128,12 @@ that meets such a dependency stops and reports it; it does neither.
 | Session | Area (today's sections of `bin/council`) | Rough size |
 |---|---|---|
 | S3 | The dispatcher, the launcher, home and sharing, `run status`, and one lock rule for bash and Python writers | ~600k |
-| S4 | `seat`, usage, corrections, the agent stop (`cap show/allow/check`) | ~1M |
+| S4 | Usage and the agent stop (`cap`, `cap check`). `seat`, `correct` and `cap allow` moved to S8b: they call the plan check, the ledger, redaction and the state writer, so porting them first meant a Python copy of those or Python calling the bash back (S4 found this on 2026-11-13) | ~1M |
 | S5 | The run plan check and `route recommend` | ~600k |
 | S6 | `gate`, `gates`, `changed`, the repair glue | ~1M |
 | S7 | `index`, `collect`, `check` (citations, quotes, proofs, hygiene) | ~1–1.5M |
 | S8 | `map`, `doctor`, `fingerprint`, `memory`, `prior`, `ask`, `ledger` | ~1M |
-| S8b | `state`, `run open`, `run close`, `run resume` | ~600k |
+| S8b | `state`, `run open`, `run close`, `run resume`, and from S4 `seat`, `correct` and `cap allow` | ~600k |
 | S9 | Retire the bash: `bin/council` is the launcher only; hooks call the package and `session-start.sh` stops sourcing the helper; `scripts/` entry points go; views move to `src/council/views/` | ~600k |
 
 The open issues land on the Python, right after their area is ported, each as its own small session:

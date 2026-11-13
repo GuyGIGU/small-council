@@ -1,5 +1,4 @@
-"""The ported commands' dispatcher: bin/council hands each of them here with the words it was given. It
-imports only the module of the command it runs, so a command starts at the cost of its own imports."""
+"""The ported commands' dispatcher: COMMANDS maps a command's words to one module, imported only on use (D34)."""
 from __future__ import annotations
 
 import importlib
@@ -7,7 +6,8 @@ import sys
 
 from council.commands import cli
 
-COMMANDS = {"home": "home", "sharing": "sharing", "run status": "runs", "cap": "cap"}   # command words -> module
+COMMANDS = {"home": "home", "sharing": "sharing", "run status": "runs", "cap": "cap", "run plan": "plan",
+            "route": "route"}
 
 
 def main(argv: list[str]) -> int:
