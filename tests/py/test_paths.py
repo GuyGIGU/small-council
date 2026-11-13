@@ -4,7 +4,7 @@ import unittest
 
 import support
 
-from council.records import paths
+from council.records import home, paths
 
 
 class ReadTest(support.Scratch):
@@ -102,16 +102,16 @@ class HomeTest(support.Scratch):
 
     def test_worktrees_and_home_from(self) -> None:
         porcelain = "worktree /main\nHEAD a\nbranch x\n\nworktree /wt\nHEAD b\n"
-        self.assertEqual(paths.worktrees(porcelain), ["/main", "/wt"])
-        self.assertEqual(paths.worktrees("worktree /repo\nbare\n\nworktree /a\nHEAD c\n"), ["(bare)", "/a"])
+        self.assertEqual(home.worktrees(porcelain), ["/main", "/wt"])
+        self.assertEqual(home.worktrees("worktree /repo\nbare\n\nworktree /a\nHEAD c\n"), ["(bare)", "/a"])
         there = {"/main/.council"}
-        self.assertEqual(paths.home_from("/wt", "", porcelain, there.__contains__), "/main/.council")
-        self.assertEqual(paths.home_from("/sub", "/super", porcelain, there.__contains__), "/sub/.council")
+        self.assertEqual(home.home_from("/wt", "", porcelain, there.__contains__), "/main/.council")
+        self.assertEqual(home.home_from("/sub", "/super", porcelain, there.__contains__), "/sub/.council")
         older = {"/wt/.council"}                       # a 0.1 council inside a worktree, none in the main one
-        self.assertEqual(paths.home_from("/wt", "", porcelain, older.__contains__), "/wt/.council")
+        self.assertEqual(home.home_from("/wt", "", porcelain, older.__contains__), "/wt/.council")
         bare = "worktree /repo\nbare\n\nworktree /a\nHEAD c\n\nworktree /b\nHEAD d\n"
         configured = {"/b/.council/council.config.md", "/b/.council", "/a/.council"}
-        self.assertEqual(paths.home_from("/a", "", bare, configured.__contains__), "/b/.council")
+        self.assertEqual(home.home_from("/a", "", bare, configured.__contains__), "/b/.council")
 
 
 if __name__ == "__main__":

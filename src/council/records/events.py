@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Callable, NamedTuple, Optional
 
-from council.records import cells, locks, paths, state
+from council.records import cells, locks, owners, paths, state
 
 NAME = "events.tsv"
 COLUMNS = ("schema", "seq", "at", "type", "subject", "value", "detail")
@@ -142,7 +142,7 @@ def append(run: Path, kind: str, subject: str, value: str, detail: str, once: bo
         raise EventError("unsupported events schema: {}".format(schema))
     lock = Path(str(file) + ".lock")
     if not locks.acquire(lock, tries):
-        raise EventError("event lock unavailable: {}".format(lock))
+        raise EventError(owners.unavailable(lock))
     try:
         written = _write(file, kind, subject, value, detail, once)
     except OSError:
