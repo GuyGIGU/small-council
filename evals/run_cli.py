@@ -5747,6 +5747,91 @@ def check_just_me_hygiene(tmp):
 
 
 @part("runs")
+def runs_close_keeps_audit(tmp):
+    # Issue 53: the close printed the audit's FAILs and kept nothing, so a later session could not see how a run
+    # closed. It now keeps the whole report as <run>/audit.md, names it on the close line, the closing card and
+    # council run status, and a close again rewrites it. Issue 54: an agent seat with no token figure is a FAIL
+    # in that audit, said at the close.
+    r = new_repo(tmp, "keep-audit")
+    write(os.path.join(r, ".council", "council.config.md"), "# Council config\n")
+    rn = council(r, "run", "open", "council-review")[1].strip().splitlines()[-1]
+    name = os.path.basename(rn)
+    write_plan(rn, selected=("chair", "w1", "w2", "w3"))
+    to_deliver(r)
+    council(r, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    council(r, "seat", "w2", "done", "agent=agent-two-id")
+    council(r, "seat", "w3", "done", "agents=0")
+    code, out, err = council(r, "run", "close")
+    kept = os.path.join(rn, "audit.md")
+    body = read(kept) if os.path.isfile(kept) else ""
+    lines = out.splitlines()
+    fail = [line for line in lines if line.startswith("  FAIL  Token figures:")]
+    check("run close: the audit is kept as <run>/audit.md, and the close line names the path",
+          code == 0 and os.path.isfile(kept) and any(line.startswith("audit: ") and "every item, kept: " + rn + "/audit.md" in line
+                                                     for line in lines), out + err)
+    check("run close: audit.md holds every line the audit gave — FAIL, warn and pass — the closing card as not checked yet, "
+          "and says it was saved by the close",
+          "  FAIL  Every seat on record:" in body and "  pass  Closed after Deliver:" in body
+          and "Saved as audit.md by council run close" in body
+          and "Read-only: nothing was written." not in body, body)
+    check("run close: every FAIL of audit.md is the one the close printed, whole",
+          [l for l in body.splitlines() if l.startswith("  FAIL  ")] == [l for l in lines if l.startswith("  FAIL  ")], body)
+    check("run close: a seat that ran as an agent with no usage report is a FAIL, named with its agent and the fix; a "
+          "seat with tokens and one declared agents=0 are not",
+          len(fail) == 1 and "w2 (agent agent-two-" in fail[0] and "finished with no usage report" in fail[0]
+          and "w1" not in fail[0] and "w3" not in fail[0] and "council correct <seat> tokens=<exact>" in fail[0]
+          and fail[0] in body, out)
+    check("run close: no temporary file is left in the run folder",
+          not [f for f in os.listdir(rn) if f.startswith(".council-audit-")], str(os.listdir(rn)))
+    code, out, err = council(r, "status", "--run", name)
+    check("status: the closing card's audit line names the saved audit",
+          code == 0 and "Audit: runs/%s/audit.md" % name in out, out + err)
+    code, out, err = council(r, "status", "--run", name, "--widget")
+    check("status --widget: the closing card shows the audit line too", code == 0 and "runs/%s/audit.md" % name in out, out + err)
+    code, out, err = council(r, "run", "status", "--all")
+    check("run status: a run with a saved audit names its path on its line",
+          code == 0 and any(name in line and line.endswith("audit: runs/%s/audit.md" % name) for line in out.splitlines()),
+          out + err)
+    # A close again rewrites the file whole: a run paused, resumed, its missing figure found, closed complete.
+    rp = council(r, "run", "open", "council-review")[1].strip().splitlines()[-1]
+    write_plan(rp, selected=("chair", "w1"))
+    to_deliver(r)
+    council(r, "seat", "w1", "done", "agent=a9")
+    council(r, "run", "close", "--status", "paused")
+    paused = read(os.path.join(rp, "audit.md"))
+    council(r, "run", "resume", "--run", os.path.basename(rp))
+    council(r, "seat", "w1", "done", "agent=a9", "tokens=18000")
+    code, out, err = council(r, "run", "close")
+    again = read(os.path.join(rp, "audit.md"))
+    check("run close: closing again rewrites audit.md whole — the pause's file read paused, the new one reads complete "
+          "with its figure on record",
+          code == 0 and "(council-review, paused)" in paused and "(council-review, complete)" in again
+          and "  pass  Token figures: every agent run's tokens are on record" in again
+          and "every item, kept: " + rp + "/audit.md" in out, out + err + again[:300])
+    # Without a saved audit the card says how to read the run, as the card of a run closed before this did.
+    os.remove(kept)
+    code, out, err = council(r, "status", "--run", name)
+    check("status: with no audit saved, the card says so and names the command that reads the run",
+          code == 0 and "Audit: none saved: council run audit --run %s" % name in out, out + err)
+    # Without Python there is no audit and the close says nothing of it.
+    dirs = [os.path.dirname(shutil.which(t)) for t in ("bash", "git") if shutil.which(t)]
+    bare_path = os.pathsep.join(dict.fromkeys(dirs))
+    if len(dirs) == 2 and not (shutil.which("python", path=bare_path) or shutil.which("python3", path=bare_path)):
+        b = new_repo(tmp, "keep-audit-nopython")
+        write(os.path.join(b, ".council", "council.config.md"), "# Council config\n")
+        env = {"PATH": bare_path}
+        bn = council(b, "run", "open", "council-review", env=env)[1].strip().splitlines()[-1]
+        write_plan(bn, selected=("chair", "w1"))
+        to_deliver(b, env=env)
+        code, out, err = council(b, "run", "close", env=env)
+        check("run close: without Python there is no audit, no audit.md and no error",
+              code == 0 and "audit:" not in out + err and not os.path.exists(os.path.join(bn, "audit.md"))
+              and "Traceback" not in err, out + err)
+    else:
+        print("note: python sits beside bash or git here, so the no-Python close is not checked on this system")
+
+
+@part("runs")
 def runs_gitignore(tmp):
     # Every run open keeps run scratch and the user's words out of git — in a home with no .gitignore, in a
     # 0.6.0 home whose .gitignore predates asks/, in its own line endings — unless the user shares requests

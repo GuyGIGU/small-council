@@ -31,7 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import cockpit  # noqa: E402  (the read-only run snapshot)
 from council.clock import local_moment, utc_moment as utc_time  # noqa: E402
-from council.records import config, paths, plan as run_plan, pushes, seats as seat_files, state as run_state  # noqa: E402
+from council.records import audit_file, config, paths, plan as run_plan, pushes  # noqa: E402
+from council.records import seats as seat_files, state as run_state  # noqa: E402
 
 SCHEMA = "council.run-status/1"
 QUIET_MINUTES = 60         # an open run with no recorded activity for this long reads as quiet (stale)
@@ -566,7 +567,7 @@ def closing_of(snap, run_path, usage, check_text, attention):
             "spend": usage["spend_text"] or usage["text"],
             "agent_runs": usage["agent_runs_text"] + (
                 "" if "(limit " in usage["agent_runs_text"] else " (limit {})".format(usage["agent_cap"])),
-            "chair": usage.get("chair_text"),
+            "chair": usage.get("chair_text"), "audit": audit_file.card_line(run_path),
             "left_for_you": [a["text"] for a in attention] + converge_open(converge)
                             + ([held[:1].upper() + held[1:] + " (`- pushes:` in the config)."] if held else [])
                             + ["Rulings and next steps: see the summary in chat."]}
@@ -802,7 +803,7 @@ def text(status, tui_commands=()):
                  "Status: " + headline(state),
                  "Asked: " + closing["request"], "Delivered: " + closing["deliverable"],
                  "Verified: " + closing["verification"], "Checks: " + closing["checks"],
-                 "Spend: " + closing["spend"], "Agent runs: " + closing["agent_runs"]]
+                 "Spend: " + closing["spend"], "Agent runs: " + closing["agent_runs"], "Audit: " + closing["audit"]]
         if closing.get("chair"):
             lines.append("The Chair's own work: " + closing["chair"])
         lines.append("Left for you:")
@@ -914,7 +915,7 @@ def closing_widget(status, preview=False):
     if state["summary"]:
         out.append('<p style="margin-top:6px">{}</p>'.format(esc(state["summary"])))
     for label, value in (("What you asked", closing["request"]), ("Delivered", closing["deliverable"]),
-                         ("Verified", closing["verification"]), ("Machine checks", closing["checks"])):
+                         ("Verified", closing["verification"]), ("Machine checks", closing["checks"]), ("Audit", closing["audit"])):
         out.append('<p style="margin-top:10px"><span class="muted">{}:</span> {}</p>'.format(esc(label), esc(value)))
     chair_tile = ('<div class="tile"><p class="muted">The Chair&#39;s own work</p><p>{}</p></div>'.format(
         esc(closing["chair"])) if closing.get("chair") else "")

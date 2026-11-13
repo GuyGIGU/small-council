@@ -94,7 +94,8 @@ into `run_all.py`'s list. Automatic checks do not replace real-use validation.
 
 **The fast tier** (`--fast`; `--list` marks its jobs) is validation, the structural evals, the
 ratchet and its self-test, the unit tests in `tests/py/` and the quickest scenario suites. It is a
-first look: the full run is still the gate before a commit.
+first look. Run it and the groups your change touches before you push; CI's full run on all three
+systems is the gate before merge.
 
 **The ratchet** (`evals/run_ratchet.py`, baseline `evals/ratchet.json`) measures `bin/council`,
 `hooks/*.sh`, `scripts/*.py` and `src/**/*.py`: each file's lines and longest function, its ShellCheck

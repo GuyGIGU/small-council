@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """Check a finished council run against what the method promises. Read-only: no model, no network.
 
-    python3 scripts/audit.py --run <run folder> [--transcript <session .jsonl>]
+    python3 scripts/audit.py --run <run folder> [--transcript <session .jsonl>] [--save]
 
 The suites test the helper; this reads what a Chair actually did. From the run's own records
 (session-state.md, events.tsv, run-plan.tsv, seats.tsv, usage.tsv, cap-allowances.tsv, claims.jsonl):
 every stage entered in order; closed complete only after Deliver; every agent on record as running
 before it finished; one check (gate) at a time, each once per stage; a deliverable; for a review,
 plan or research run the claim index, with a verifier's verdict on every kept claim; every seat the
-plan selected on record, the Chair's own included; the agent limit. With a Claude Code session
-transcript it reads the main thread from the turn that opened the run to the end of the turn that
-closed it: the status card at the first dispatch and after close; the helper called as a plain
+plan selected on record, the Chair's own included; every agent seat with a token figure; the agent
+limit. With a Claude Code session transcript it reads the main thread from the turn that opened the
+run to the end of the turn that closed it: the status card at the first dispatch and after close; the
+helper called as a plain
 `council`; no helper output cut short by `| tail` or `| head`; every refusal of the helper tried
 again. Each item says pass, warn or FAIL in plain words. It only opens files to read them and writes
-nothing, bytecode included. Exit 0 when nothing failed, 1 when something did, 2 when it cannot read
-the run or the transcript.
+nothing, bytecode included, except with --save (council run close): then it keeps the report as the run's
+audit.md. Exit 0 when nothing failed, 1 when something did, 2 when it cannot read the run or the transcript.
 """
 
 import argparse
@@ -33,14 +34,14 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from council.clock import iso_moment  # noqa: E402
-from council.records import paths  # noqa: E402
+from council.records import audit_file, paths  # noqa: E402
 from council.records import events as event_stream  # noqa: E402
 from council.records import plan as run_plan  # noqa: E402
 from council.records import seats as seat_files  # noqa: E402
 from council.records import state as run_state  # noqa: E402
+from council.records.audit_file import FAIL, LATER, PASS, WARN  # noqa: E402
+from audit_figures import token_figures  # noqa: E402
 
-PASS, WARN, FAIL = "pass", "warn", "FAIL"
-LATER = "later"                                   # at close: an item that can only happen after it
 MAX_FILE = 64 * 1024 * 1024
 STAGES = ("convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn")
 RANK = dict((stage, n) for n, stage in enumerate(STAGES))
@@ -836,6 +837,7 @@ def main():
     parser.add_argument("--transcript", type=Path, help="the Claude Code session .jsonl that drove the run")
     parser.add_argument("--no-transcript", action="store_true", help="read the run's records only")
     parser.add_argument("--at-close", action="store_true", help="council run close's own audit: the closing card comes after")
+    parser.add_argument("--save", action="store_true", help="keep the report as <run>/audit.md (council run close does)")
     args = parser.parse_args()
     folder = args.run
     if not paths.is_run(folder, refuse_links=False):
@@ -853,7 +855,8 @@ def main():
     def say(verdict, label, words):
         items.append((verdict, label, words))
 
-    for check in (stages, closing, agents_on_record, gates, deliverable, claim_index, seats_on_record, agent_limit):
+    for check in (stages, closing, agents_on_record, gates, deliverable, claim_index, seats_on_record, token_figures,
+                  agent_limit):
         check(run, say)
     split, span = len(items), ""
     if args.transcript is not None:
@@ -865,24 +868,11 @@ def main():
     if args.at_close:                     # run by council run close: the card it asks for comes after it
         items[:] = [(LATER, label, "not checked yet: it follows this close; council run audit --run %s checks it" % run.name)
                     if label == "Closing card" else (verdict, label, words) for verdict, label, words in items]
-    print("Run audit: %s (%s, %s). Read-only: nothing was written." % (run.name, run.mode or "no mode", run.status or "no status"))
-    if found is not None:
-        print("Transcript: %s (found from the run's session id)" % found)
-    print("\nFrom the run's records")
-    for n, (verdict, label, words) in enumerate(items):
-        if n == split:
-            print("\nFrom the session transcript (%s)" % span)
-        print("  %-4s  %s: %s" % (verdict, label, words))
-    if span and split == len(items):
-        print("\nFrom the session transcript (%s): nothing to check" % span)
-    if args.transcript is None:
-        print("\nNo transcript given: pass --transcript <session .jsonl> to check what the Chair showed and ran%s."
-              % (" (this run's session: %s)" % run.field("session") if run.field("session") else ""))
-    counts = dict((v, sum(1 for item in items if item[0] == v)) for v in (FAIL, WARN, PASS))
-    later = sum(1 for item in items if item[0] == LATER)
-    print("\n%d failed, %d warning(s), %d passed%s" % (counts[FAIL], counts[WARN], counts[PASS],
-                                                      ", %d not checked yet" % later if later else ""))
-    return 1 if counts[FAIL] else 0
+    text, failed = audit_file.render(run, items, split, span, args.transcript, found is not None, args.save)
+    print(text)
+    if args.save:
+        print(audit_file.save(folder, text))
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

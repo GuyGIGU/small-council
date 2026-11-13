@@ -29,9 +29,9 @@ decisions before it writes anything.
 7. **Tests.** New library code gets unit tests in `tests/py/` (`python -m unittest discover -s
    tests/py`), which need no bash and no git and run in seconds. Scenario evals stay where they are.
 8. **Deliver:** a CHANGELOG line under Unreleased; `architecture.md` updated where the session made a
-   debt row true; `python evals/run_all.py` green apart from the known `python3`-stub failure on
-   Windows. Commit on the session's own branch when that holds. Never push, never open a PR, never
-   touch main: report, and the user decides.
+   debt row true; the fast tier and the groups the change touches green (CI's full suite on three
+   systems is the gate before merge, since 2026-11-13). Commit and push the session's own branch.
+   Never open a PR, never touch main: report, and the planning session checks the diff and opens it.
 9. **Account for what you removed, and name the cause of a fix.** The report lists every rule,
    behaviour, test or assertion the session took out and where each stands now, or says none. A fix
    states what was wrong in one sentence and how that was observed. The planning session checks
@@ -163,10 +163,15 @@ doesn't enforce yet.
 **The task tree** · [`task-tree.md`](task-tree.md), a proposal the user asked for on 2026-11-13: the
 request, its tasks and their changes kept as one tree on disk, a builder's orders generated from
 it, and a builder's report checked against its diff. It gathers #50, #57, #58, #59, #60, #61, #64
-and #67 under one design, so those issues are built as its steps and not one by one:
-- T1 after S5: the task fields, their plan check, `NEEDS:` and the research rules (#64) · ~600–800k.
+and #67 under one design (and #93, added 2026-11-13), so those issues are built as its steps and
+not one by one:
+- T1 after S5: the task fields, their plan check, `NEEDS:` and the research rules (#64), plus
+  the decision checks from #93 (an `Owner:` row or `New way:`; the verifier's decision question)
+  · ~700–900k.
 - T2 after S7: the report head, the saved diff and the checks on it (#58, #59, #50, #60) · ~1M.
-- T3 after T1 and S8: the generated task pack (#57, #61, #67) and `council tree` · ~600–800k.
+- T3 after T1 and S8: the generated task pack (#57, #61, #67) and `council tree`, plus #93's setup
+  side (the project's decision records proposed into memory; the map's one-way-per-job table)
+  · ~700–900k.
 - T4 in S10: the planted drill cases (#70).
 
 ### The prose track — parallel with wave 2 (skills, doctrine, references only)
