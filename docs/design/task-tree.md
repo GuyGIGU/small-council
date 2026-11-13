@@ -144,9 +144,9 @@ hand-written brief, and post-game findings per run before and after.
 
 | Step | What | After | Rough size |
 |---|---|---|---|
-| T1 | Task fields (`Serves`, `Owner`, `Rests on`), the plan check for them, `NEEDS:` and the unknown-becomes-a-leaf rules (#64) | S5 (the plan check in Python) | ~600–800k |
+| T1 | Task fields (`Serves`, `Owner`, `Rests on`), the plan check for them, `NEEDS:` and the unknown-becomes-a-leaf rules (#64); the owner row or `New way:`, and the verifier's decision question (#93) | S5 (the plan check in Python) | ~700–900k |
 | T2 | The report head with `Cause` and `Removed`, the saved diff and the checks on it (#58, #59), the third-round refusal (#50), the task history (#60) | S7 (`check` in Python) | ~1M |
-| T3 | The generated task pack (#57, #61, #67), `council tree` | T1 and S8 | ~600–800k |
+| T3 | The generated task pack (#57, #61, #67), `council tree`; setup proposes the project's recorded decisions and fills the map's one-way-per-job table (#93) | T1 and S8 | ~700–900k |
 | T4 | The planted drill cases | S10 (#70) | part of S10 |
 
 ## Decided by the user (2026-11-13)
@@ -158,6 +158,15 @@ hand-written brief, and post-game findings per run before and after.
    the same workaround is not asked about twice. The Chair never ships one on its own call.
 3. **A builder's `NEEDS:`.** The Chair may run one probe or research seat a run inside the approved
    budget without asking, and asks before a second.
+
+4. **The project's own architectural decisions (#93).** Yes, folded into T1 and T3:
+   - At setup, `council-init` reads the project's decision records and architecture docs. Each
+     decision it finds becomes a proposed memory entry, citing its source, for the user to accept.
+   - The map gains a one-way-per-job table: the job, the owner, the one way it is done, and an
+     anchor path. A task's `Owner:` names a row of it, or the task says `New way:`.
+   - The verifier asks whether a change contradicts a recorded decision or adds a second way. If it
+     does, the verdict is INCOMPLETE.
+   - A map without the table skips the owner check, so older projects keep working.
 
 ## Until it is built: the cleanup's own sessions
 
