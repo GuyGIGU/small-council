@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Agent, Task, Workflow) — the Small Council's agent stop.
 #
-# While a council run this session may be driving is at its agent cap or past its token ceiling, and no
-# go of the user's covers the next agent (council cap allow), the call is refused: exit 2, the reason on
-# stderr, which Claude Code hands to Claude. A Small Council agent (subagent_type council-worker or
-# council-verifier) is also held to the record: refused when the council home or the run it names can't be
-# written from this session (issue 51), when no council run is open for it, or when its dispatch names a seat
-# the run's plan doesn't select. Anything else lets the call through, silently: no council, no in-progress
-# run, a run within its limits, an ordinary agent, input it can't read, or any fault of the helper's. The decision is the helper's (council cap check); this script only reads the
-# input. A call it lets through is counted as an agent start of the run this session drives (a Workflow
-# as one, however many agents it starts), so agents started together, or recorded late, still count.
-# Nothing goes to stdout, which Claude Code may read as JSON.
+# While a council run this session may be driving is at its agent cap or past its token ceiling, and no go
+# of the user's covers the next agent (council cap allow), the call is refused: exit 2, the reason on stderr,
+# which Claude Code hands to Claude. A Small Council agent (subagent_type council-worker or council-verifier)
+# is also held to the record: refused when the council home or the run it names can't be written from this
+# session (issue 51), when no council run is open for it, or when its dispatch names a seat the run's plan
+# doesn't select. Anything else lets the call through, silently: no council, no in-progress run, a run within
+# its limits, an ordinary agent, input it can't read, or any fault of the helper's. The decision is the
+# helper's (council cap check); this script only reads the input. A call it lets through is counted as an
+# agent start of the run this session drives (a Workflow as one, however many agents it starts), so agents
+# started together, or recorded late, still count. Nothing goes to stdout, which Claude Code may read as JSON.
 #
 # Portability: bash 3.2 (macOS), Git Bash on Windows, Linux — no jq, no Python.
 
