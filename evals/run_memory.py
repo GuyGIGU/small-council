@@ -463,6 +463,17 @@ with tempfile.TemporaryDirectory(prefix="council-memory-") as temporary:
     code, out, err = council(rv, "memory", "select", "unrelated/zzz.txt")
     check("so the accepted entry stays in its own scope", code == 0 and "F-5" not in out, out + err)
 
+    # A `mode:` line below a heading is a note: the helper's state_field reads the header only (issue 73).
+    state_file = inj / "session-state.md"
+    header_only = state_file.read_bytes()
+    no_mode = b"".join(line for line in header_only.splitlines(keepends=True) if not line.startswith(b"mode:"))
+    state_file.write_bytes(no_mode + b"\n## Notes\nmode: council-implement\n")
+    code, out, err = council(rv, "memory", "propose", "repair", "T1", "--scope", "src/**")
+    check("memory propose: a `mode: council-implement` note below a heading, none in the header, is not a build run",
+          no_mode != header_only and code == 2 and "repair proposals come from council-implement runs only" in err,
+          out + err)
+    state_file.write_bytes(header_only)
+
     sys.path.insert(0, str(ROOT / "scripts"))
     import memory as memory_script                            # noqa: E402  (the helper's own drafting code)
     flat = memory_script.one_line("config holds -----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAu1SU1LfV\n"

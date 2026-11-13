@@ -46,26 +46,11 @@ def header(content: str, exact_keys: bool = False, comments: bool = True) -> dic
     return fields
 
 
-def values(content: str, key: str) -> list[str]:
-    """Every `key:` line's value anywhere in the file, below the header too, its leading space dropped
-    (the reading memory.py and evidence.py have used; the helper's state_field reads the header only)."""
-    return [m.group(1) for m in map(re.compile(re.escape(key) + r":[ \t]*(.*)").match, cells.lines_of(content)) if m]
-
-
-def first_value(content: str, key: str) -> str:
-    """The first `key:` line's value anywhere in the file, a trailing '  # comment' and the ends taken
-    off ('' when there is none)."""
-    found = values(content, key)
-    return re.sub(r"[ \t]{2,}#.*$", "", found[0]).strip() if found else ""
-
-
-def first_word(content: str, key: str) -> str:
-    """The first word of the first `key:` line anywhere in the file that has one ('' when none does)."""
-    for value in values(content, key):
-        found = re.match(r"\S+", value)
-        if found:
-            return found.group(0)
-    return ""
+def field(content: str, key: str) -> str:
+    """One header field as the helper's state_field reads it: the first `key:` line above the first `## `
+    heading, a trailing '  # comment' taken off; '' when the header has none. A line below a heading that
+    starts with the key (a decision or note beginning `mode:`) is never the field."""
+    return header(content, exact_keys=True).get(key, "")
 
 
 def is_build_run(content: str) -> bool:

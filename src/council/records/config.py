@@ -89,15 +89,18 @@ def checking(home: str | Path | None) -> str:
     return "one per batch (default; '{}' is not a setting — one per batch or per task)".format(value)
 
 
+def _in_range(raw: str) -> int | None:
+    """An estimate figure as the helper reads it (seat_tokens), kept only inside 1k-1M."""
+    value = cells.token_count(raw)
+    return value if value is not None and 1000 <= value <= MAX_PER_WORKER else None
+
+
 def worker_estimate(home: str | Path) -> int | None:
     """configured_worker_estimate: `- estimate per worker:` in tokens, or None when unset or outside
     1k-1M (the route then keeps its no-history default)."""
     found = _first(home, SPACE + "*-" + SPACE + "*estimate per worker:" + SPACE
                    + "*([0-9][0-9.,]*" + SPACE + "*[kKmM]?)")
-    if not found:
-        return None
-    value = cells.token_count(found.group(1))
-    return value if value is not None and 1000 <= value <= MAX_PER_WORKER else None
+    return _in_range(found.group(1)) if found else None
 
 
 def seat_models(home: str | Path) -> str:
@@ -141,12 +144,9 @@ def gate_time_limit(home: str | Path) -> tuple[int | None, str]:
 
 
 def notifications_off(home: str | Path | None) -> bool:
-    """`- notifications: off`, a CRLF line included, as the helper's notifications_off reads it (status.py's
-    guard: a config over 64 KB, or a link, reads as on)."""
-    if home is None:
-        return False
+    """notifications_off: a `- notifications: off` line, a CRLF one included, in a config of any size."""
     rule = re.compile(r"[ \t]*-[ \t]*notifications:[ \t]*off[ \t]*(?:#.*)?", re.IGNORECASE)
-    return any(rule.fullmatch(line) for line in cells.lines_of(paths.text_of(path(home), home, limit=65536)))
+    return any(rule.fullmatch(line) for line in _lines(home))
 
 
 def memory_path(home: str | Path) -> str:
@@ -199,17 +199,12 @@ def editable(home: str | Path) -> tuple[Path, str]:
 
 
 def estimate_tokens(text: str) -> int | None:
-    """'150k', '150000', '1.2M' as tokens; None when unreadable or outside 1k-1M. Commas anywhere in the
-    digits are dropped, so '1,50k' reads as 150k here and as unset in the helper's route."""
-    match = re.fullmatch(r"([0-9][0-9.,]*)[ \t]*([kKmM]?)", str(text).strip())
-    if not match:
+    """A figure for the estimate per worker ('150k', '150000', '150,000', '1.2M') as tokens, read by the
+    route's rule (worker_estimate): None when unreadable, such as '1,50k', or outside 1k-1M. `council tune`
+    shows and applies only what the route would read, so the run is sized by the number it was shown."""
+    if not re.fullmatch(r"[0-9][0-9.,]*[ \t]*[kKmM]?", str(text).strip(" \t")):
         return None
-    try:
-        value = min(float(match.group(1).replace(",", "")), 1e7)  # past 308 digits: inf, no int
-    except ValueError:
-        return None
-    value = int(round(value * {"k": 1000, "m": 1000000}.get(match.group(2).lower(), 1)))
-    return value if 1000 <= value <= MAX_PER_WORKER else None
+    return _in_range(str(text))
 
 
 def estimate_line(text: str) -> tuple[int | None, str | None]:

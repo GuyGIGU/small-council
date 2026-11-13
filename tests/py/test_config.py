@@ -96,6 +96,13 @@ class StatusReadingTest(support.Scratch):
         self.assertTrue(config.notifications_off(self.home("- notifications: off  # quiet\r\n")))
         self.assertFalse(config.notifications_off(self.home("- notifications: of\r\n")))
 
+    def test_notifications_off_past_64_kb(self) -> None:
+        """The helper reads the whole file: a switch past 64 KB is still off."""
+        filler = "- note: " + "x" * 70000 + "\n"
+        self.assertTrue(config.notifications_off(self.home(filler + "- notifications: off\n")))
+        self.assertTrue(config.notifications_off(self.home(filler.replace("\n", "\r\n") + "- notifications: off\r\n")))
+        self.assertFalse(config.notifications_off(self.home(filler + "- notifications: on\n")))
+
     def test_memory_path(self) -> None:
         self.assertEqual(config.memory_path(self.home("## Memory\n- conventions: docs/conv.md (the team's)\n")),
                          "docs/conv.md")
@@ -123,7 +130,10 @@ class TuneEditTest(support.Scratch):
                          (150000, "  - estimate per worker: 150k (measured)"))
         self.assertEqual(config.estimate_line("- estimate per worker: lots\n"), (None, "- estimate per worker: lots"))
         self.assertEqual(config.estimate_line("nothing\n"), (None, None))
-        self.assertEqual(config.estimate_tokens("1,50k"), 150000)       # tune's reading; the route's is None
+        self.assertIsNone(config.estimate_tokens("1,50k"))              # the route's reading: unset, so tune's too
+        self.assertEqual(config.estimate_tokens("150,000"), 150000)
+        self.assertEqual(config.estimate_tokens("1.5k"), 1500)
+        self.assertIsNone(config.estimate_tokens("150 000"))
         self.assertIsNone(config.estimate_tokens("999"))
         self.assertIsNone(config.estimate_tokens("9" * 400 + "k"))       # tune read it as a crash
         self.assertEqual(config.estimate_line("- estimate per worker: " + "9" * 400 + "k\n"),

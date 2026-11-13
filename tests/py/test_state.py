@@ -32,20 +32,28 @@ class StateTest(support.Scratch):
         self.assertNotIn("mode", state.header(content, exact_keys=True))
         self.assertEqual(state.header(content, comments=False)["phase"], "work    # in the middle")
 
-    def test_values_anywhere(self) -> None:
+    def test_field_reads_the_header_only(self) -> None:
+        """The helper's state_field: a `mode:` line below a heading is a note, never the field."""
         content = STATE.lstrip("\ufeff")
-        self.assertEqual(state.values(content, "closed"), ["2026-01-03 09:00"])
-        self.assertEqual(state.first_value(content, "phase"), "work")
-        self.assertEqual(state.first_word(content, "mode"), "council-implement")
-        self.assertEqual(state.first_value(content, "absent"), "")
+        self.assertEqual(state.field(content, "phase"), "work")           # the first wins, its comment dropped
+        self.assertEqual(state.field(content, "closed"), "")             # it is only below the heading
+        self.assertEqual(state.field(content, "absent"), "")
+        self.assertEqual(state.field(content, "mode"), "")               # " mode :" does not start the line
+        below = "status: in-progress\n## Decisions so far\nmode: council-implement\n"
+        self.assertEqual(state.field(below, "mode"), "")
+        self.assertEqual(state.field("mode:   council-review  # why\r\n## Notes\r\n", "mode"), "council-review")
+        self.assertEqual(state.field("mode:\nmode: council-review\n", "mode"), "")   # the first line wins, empty too
+
+    def test_build_and_plan_marks(self) -> None:
+        content = STATE.lstrip("\ufeff")
         self.assertTrue(state.is_build_run(content))
         self.assertTrue(state.planned(content))
         self.assertFalse(state.planned("plan-schema:\n"))
 
-    def test_values_of_a_crlf_file_carry_no_carriage_return(self) -> None:
+    def test_a_crlf_file_carries_no_carriage_return(self) -> None:
         content = "mode: council-review\r\nstatus: in-progress\r\n## Notes\r\nclosed: never\r\n"
-        self.assertEqual(state.values(content, "status"), ["in-progress"])
-        self.assertEqual(state.values(content, "closed"), ["never"])
+        self.assertEqual(state.field(content, "status"), "in-progress")
+        self.assertEqual(state.field(content, "closed"), "")
 
     def test_decisions_are_unquoted(self) -> None:
         self.assertEqual(state.decisions(STATE),

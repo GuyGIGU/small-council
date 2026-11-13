@@ -183,7 +183,7 @@
    "longest_name": "token_count"
   },
   "src/council/records/config.py": {
-   "lines": 244,
+   "lines": 239,
    "longest": 20,
    "longest_name": "preferences_insertion"
   },
@@ -223,7 +223,7 @@
    "longest_name": "workflow_extra"
   },
   "src/council/records/state.py": {
-   "lines": 114,
+   "lines": 99,
    "longest": 14,
    "longest_name": "header"
   }

@@ -928,6 +928,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         code_l, line_out, err_l = council(repo, "status", "--line")
         check("status: project off switch makes --line print nothing", code_l == 0 and line_out == "",
               (code_l, line_out, err_l))
+        # The helper reads the whole config, a CRLF line included (issue 75).
+        config_path.write_bytes((original_config + "\n- notifications: off\n").replace("\n", "\r\n").encode("utf-8"))
+        code_l, line_out, err_l = council(repo, "status", "--line")
+        check("status: the off switch in a CRLF config makes --line print nothing", code_l == 0 and line_out == "",
+              (code_l, line_out, err_l))
+        config_path.write_bytes((original_config + "\n- note: " + "x" * 70000 + "\n- notifications: off\n").encode("utf-8"))
+        code_l, line_out, err_l = council(repo, "status", "--line")
+        check("status: the off switch past 64 KB of config makes --line print nothing", code_l == 0 and line_out == "",
+              (code_l, line_out, err_l))
         write(config_path, original_config)
         check("status: reading a run — summary, widget or data — writes nothing but clearing the card-due mark its first "
               "dispatch left (the status has now been read out)",
