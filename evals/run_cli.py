@@ -388,8 +388,10 @@ def runs_open(tmp):
           code == 0 and out.strip() == "Edit(/" + want + "/**)" and ":" not in out.strip()[5:], out)
     code, out, err = council(repo, "home", "rule", "x")
     check("home rule: refuses a word it doesn't take", code == 2 and "doesn't take" in err, out + err)
-    p = subprocess.run([BASH, "-c", 'H="$2"; source "$1"; council_home() { printf "%s\\n" "$H"; }; home_rule', "council",
-                        CLI.replace("\\", "/"), "C:/Users/Me/My Project/.council"],
+    # council home rule is Python (src/council/commands/home.py): the rule for a home given here, not found.
+    p = subprocess.run([sys.executable, "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1]); "
+                        "from council.commands import home; print(home.rule(sys.argv[2]))",
+                        os.path.join(ROOT, "src"), "C:/Users/Me/My Project/.council"],
                        capture_output=True, text=True, encoding="utf-8", errors="replace", env=GIT_ENV)
     check("home rule: a Windows home is written with the drive lower-case and no colon, blanks kept",
           p.stdout.strip() == "Edit(//c/Users/Me/My Project/.council/**)", p.stdout + p.stderr)

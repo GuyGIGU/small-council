@@ -65,7 +65,8 @@ Rules:
 | `references/roster/` | The seat catalogue | Seat principles (those are in the seat's doc) |
 | `agents/` | The worker and verifier contracts | Mode logic |
 | `bin/council` | Every command, its arguments, output and exit codes | Long-running work; anything a hook must not wait on |
-| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
+| `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing) and `sharing` (the sharing line); `git.py`, `clock.py` | Printing, argument parsing, a command's own logic |
+| `src/council/commands/` | The helper's commands ported from bash (D24), one module per area, behind `src/council/__main__.py`; `cli.py` reads the command line as `bin/council` does and holds the refusal | A run file's parser (that is `records/`) |
 | `scripts/` | Python readers, renderers and analyses, over `src/council/records` | Their own copy of a run-file parser |
 | `hooks/` | Enforcement at Claude Code events, the mod | Decisions: the helper makes them |
 | `evals/` | Machine proof that the contracts hold | Production logic |
@@ -181,7 +182,7 @@ folds them, and new code uses the named way.
 
 | Job | The one way | Notes |
 |---|---|---|
-| Find the council home | `council_home` (bash) | A worktree resolves to the main checkout's home |
+| Find the council home | `council_home` (bash); in Python `council.records.home.council_home` | A worktree resolves to the main checkout's home. **(debt)** two copies until the bash is retired (S9): the hooks and the bash commands use the bash one |
 | Find the run a command is for | `resolve_run`: `--run`, then `COUNCIL_RUN`, then this tree's one in-progress run, then the one this session drives on another tree. Two candidates at any step are a refusal naming `--run`; it never guesses (D6) | |
 | Read a config setting | One `configured_<key>` function per key, with a stated default | **(debt)** 44 references to `council.config.md` in `bin/council`, 6 readers. Scripts read it through `council.records.config`, one function per key |
 | Read a run's state field | `field <key> <file>`; in Python, `council.records.state` | Scripts no longer parse `session-state.md` themselves |
@@ -190,7 +191,8 @@ folds them, and new code uses the named way.
 | Refuse something | `die "<why — and the next command>"` (exit 2, stderr). From a hook: the helper prints `Small Council: …` on stdout with exit 2, and the hook moves it to stderr | Every refusal names what to do next (D19) |
 | Take the user's go | `council state decision="<their words>"`, read back with `decisions_since` after the event it unlocks | Never inferred, never the Chair's words (D7) |
 | Hand a path to awk | Through `ENVIRON`, never `-v` (Windows backslashes) | |
-| Run Python from the helper | `impact_python` finds a 3.8+ interpreter | A missing Python degrades with a stated message (until D24 lands) |
+| Run Python from the helper | `impact_python` finds a 3.8+ interpreter; `python_command` hands a ported command to `src/council/__main__.py` with its words as typed | A ported command without Python refuses and says how to get it (D24, D19); a script the bash runs still degrades with a stated message |
+| Read the command line | `main()` in `bin/council` for the bash commands; `council.commands.cli` for the ported ones, the same flags and refusals | **(debt)** two readers until S9 |
 | Match the user's words | `fold` and `found` inside the quote check | **(debt)** two copies in `bin/council` (`cmd_check`, `postgame_next_tasks`) |
 | Read a gate verdict | `gate_exit`, `gate_cmd`, `gate_proof` over `gates/<name>.json` | |
 | Count an agent | `council seat` records it; the agent gate counts starts; the ledger is written at close | One record per agent run, by id (`references/run-accounting.md`) |

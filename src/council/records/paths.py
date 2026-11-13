@@ -1,13 +1,12 @@
-"""The council home, run folders, and the guarded reads and atomic writes every council file goes through."""
+"""Run folders, and the guarded reads and atomic writes every council file goes through (the council
+home itself is found by records/home.py)."""
 from __future__ import annotations
 
 import os
 import stat
 import tempfile
 from pathlib import Path
-from typing import BinaryIO, Callable
-
-from council import git
+from typing import BinaryIO
 
 MAX_FILE = 4 * 1024 * 1024
 BOM = chr(0xFEFF)
@@ -16,52 +15,6 @@ STATE = "session-state.md"
 
 class RecordError(Exception):
     """A council file that cannot be read or written safely; the message names it."""
-
-
-# --- where the council lives -----------------------------------------------------------------------------
-def worktrees(porcelain: str) -> list[str]:
-    """Every non-bare worktree of `git worktree list --porcelain`, the main one first, with "(bare)"
-    first when the repository itself is bare (the helper's council_home reads it so)."""
-    found, current, bare, count = [], "", False, 0
-    for line in porcelain.split("\n"):
-        if line.startswith("worktree "):
-            if current and not bare:
-                found.append(current)
-            current, bare, count = line[len("worktree "):], False, count + 1
-        elif line == "bare":
-            bare = True
-            if count == 1:
-                found.append("(bare)")
-    if current and not bare:
-        found.append(current)
-    return found
-
-
-def home_from(top: str, superproject: str, porcelain: str, exists: Callable[[str], bool]) -> str:
-    """The council home's path from git's answers, as the helper's council_home picks it. `exists`
-    says whether a path is there (a folder or a file; the names make clear which is asked)."""
-    if superproject:
-        return top + "/.council"
-    listed = worktrees(porcelain)
-    main = listed[0] if listed else ""
-    if main == "(bare)":
-        trees = [tree for tree in listed if tree and tree != "(bare)"]
-        configured = next((tree for tree in trees if exists(tree + "/.council/council.config.md")), "")
-        main = configured or next((tree for tree in trees if exists(tree + "/.council")), "")
-    main = main or top
-    if not exists(main + "/.council") and exists(top + "/.council"):
-        main = top                                   # a 0.1 council inside a worktree
-    return main + "/.council"
-
-
-def council_home(cwd: str | Path) -> Path:
-    """The .council/ of the main checkout, shared by every linked worktree; ./.council outside git."""
-    top = git.text(cwd, "rev-parse", "--show-toplevel")
-    if not top:
-        return Path(os.path.abspath(str(cwd))) / ".council"
-    superproject = git.text(cwd, "rev-parse", "--show-superproject-working-tree") or ""
-    porcelain = git.text(cwd, "worktree", "list", "--porcelain") or ""
-    return Path(home_from(top, superproject, porcelain, os.path.exists))
 
 
 def home_of(run: Path) -> Path | None:
