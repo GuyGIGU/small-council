@@ -64,7 +64,7 @@ def budget(run: Path, field: str) -> str:
 def keyed(content: str) -> dict[tuple[str, str, str], str]:
     """Each (kind, id, field) row's value, trimmed and lower-cased; a later row wins."""
     found = {}
-    for line in content.splitlines():
+    for line in cells.lines_of(content):
         parts = line.split("\t")
         if len(parts) >= 4:
             found[(parts[0], parts[1], parts[2])] = parts[3].strip().lower()

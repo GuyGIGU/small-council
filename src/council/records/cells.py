@@ -57,8 +57,8 @@ def token_count(text: str) -> int | None:
     if not re.fullmatch(r"[0-9]+(\.[0-9]+)?[ \t]*[kKmM]", s):
         return None
     scale = 1000 if s[-1] in "kK" else 1000000
-    value = int(float(s[:-1].rstrip(" \t")) * scale + 0.5)
-    return None if value >= 10 ** 12 else value
+    value = float(s[:-1].rstrip(" \t")) * scale + 0.5      # a float: past 308 digits it is inf, too big
+    return None if value >= 10 ** 12 else int(value)
 
 
 def parse_json(text: str) -> Any:

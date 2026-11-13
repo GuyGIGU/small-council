@@ -95,9 +95,8 @@ def linked(path: str | Path) -> bool:
     """True when path itself is a symlink or a Windows junction (its parent may be linked; that is fine)."""
     path = Path(path)
     try:
-        if path.is_symlink():
-            return True
-        return os.path.realpath(str(path)) != os.path.join(os.path.realpath(str(path.parent)), path.name)
+        return path.is_symlink() or os.path.normcase(os.path.realpath(str(path))) != os.path.normcase(
+            os.path.join(os.path.realpath(str(path.parent)), path.name))
     except (OSError, ValueError):
         return True
 

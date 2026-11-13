@@ -45,6 +45,20 @@ class ReadTest(support.Scratch):
                          [{"seq": 1, "type": "t", "subject": "s", "value": "v", "detail": "d"}])
 
 
+    def test_strict_rows_keep_a_cell_holding_a_unicode_line_break(self) -> None:
+        # The helper's event_cell drops only controls below 0x20 and DEL, so U+2028 and U+0085 stay in a
+        # cell, and the helper reads the row whole (awk splits on newline only).
+        run = self.run_folder()
+        read = lambda path: path.read_text(encoding="utf-8")  # noqa: E731
+        (run / "events.tsv").write_bytes((HEADER + "1\t1\tat\tt\ts\tv\tnot needed\u2028here\u0085too\n").encode())
+        self.assertEqual(events.strict_rows(run, read),
+                         [{"seq": 1, "type": "t", "subject": "s", "value": "v",
+                           "detail": "not needed\u2028here\u0085too"}])
+        (run / "events.tsv").write_bytes((HEADER + "1\t1\tat\tt\ts\tv\td\n\n").encode())
+        with self.assertRaisesRegex(events.EventError, "malformed"):        # a blank row is still a broken stream
+            events.strict_rows(run, read)
+
+
 class AppendTest(support.Scratch):
     def stamped(self, extra: str = "events-schema: 1\n") -> Path:
         run = self.run_folder()
