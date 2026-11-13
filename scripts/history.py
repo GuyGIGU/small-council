@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import cockpit  # noqa: E402  (the read-only run snapshot)
 from council.records import paths  # noqa: E402
-from council.records import ledger as ledger_file  # noqa: E402
+from council.records import ledger as ledger_file, usage_gaps  # noqa: E402
 from council.records.cells import number  # noqa: E402
 import ledger   # noqa: E402  (seat evidence and advice)
 import outcomes as finding_outcomes  # noqa: E402  (read-only finding follow-up)
@@ -200,7 +200,7 @@ def history(home, outcomes=True):
                  "agents_per_run": spread([runs_of(s) for s in costed]),
                  "tokens_per_agent": spread(agents),
                  "tokens_by_planned_model": model_usage,
-                 "left_out": dict(sorted(left_out.items()))},
+                 "left_out": dict(sorted(left_out.items())), "unfigured": usage_gaps.left_out(complete)},
         "estimates": {"actual_over_estimate": spread(ratios)},
         "gates": {name: {"runs": len(e["runs"]), "failed_runs": len(e["failed_runs"])} for name, e in sorted(gates.items())},
         "proofs": {"before_checks": proofs["before"][0], "before_failed_as_intended": proofs["before"][1],

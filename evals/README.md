@@ -361,7 +361,13 @@ first dispatch or after close, the helper called through a shell variable, its o
 and a later session's transcript that didn't make the run's first dispatch owes no card.
 Run as the close's own audit (`--at-close`), the closing card reads "not checked yet" and every other
 FAIL stands; a stage skipped through `skip=` still fails, naming the reason; a paused run owes no claim index.
-Reading writes nothing. It also checks the dispatch case's graders for the status card and the close.
+Reading writes nothing, except with `--save` (the close's own): the report is kept whole as `<run>/audit.md`,
+a second save rewrites it, and no temporary file is left. An agent seat with no token figure is a FAIL under
+"Token figures", naming the seat and why; the Chair's own seat, a seat declared `agents=0` and a corrected
+figure are not gaps. It also checks the dispatch case's graders for the status card and the close.
+`run_cli.py --group runs` (`runs_close_keeps_audit`) drives the real close: audit.md, the close line, the closing
+card, `council run status`, a pause then a close again, and a close without Python; `run_tune.py` checks tune's
+one-line note of the seats it left out.
 
 The helper, hook, memory, cockpit, tuning and audit suites need bash and git. Without them they print
 `[SKIP]` and exit 3, so a run that checked nothing never passes; `--allow-skip` makes them exit 0.

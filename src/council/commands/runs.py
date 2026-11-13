@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 from council.commands import cli
+from council.records import audit_file
 from council.records import home as where
 from council.records import runs
 
@@ -37,8 +38,7 @@ def status(every: bool) -> int:
         line = "%s · %s · phase %s · %s · updated %s · %s" % (
             run.folder.split("/")[-1], dash(run.mode), dash(run.phase), dash(run.status), dash(run.updated),
             "here" if here else "elsewhere: " + run.code_root)
-        if run.actual:
-            line += " · " + run.actual
+        line += "".join(" · " + part for part in (run.actual, audit_file.said(run.folder)) if part)
         if here or every:
             cli.say(line)
             shown += 1
