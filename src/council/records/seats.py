@@ -49,9 +49,9 @@ def allowance_rows(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str
 
 
 def _raw_lines(run: Path, name: str) -> list[str]:
-    """The file's lines split on newline only, carriage returns kept (the agent stop's own reading)."""
+    """The file's lines as the helper's awk reads them (cells.lines_of: a CRLF file's last cell has no CR)."""
     run = Path(run)
-    return paths.text_of(path(run, name), run).split("\n")
+    return cells.lines_of(paths.text_of(path(run, name), run))
 
 
 def agent_starts(run: Path) -> int:

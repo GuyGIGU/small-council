@@ -13,7 +13,8 @@ What it measures, over bin/council, hooks/*.sh, scripts/*.py and src/**/*.py:
   is every def, nested or not, from its `def` line to its last line (ast).
 - parsers: files outside src/council/records/ that parse a council file themselves. A file parses one
   when its code, outside comments and docstrings, holds a string that is one of COUNCIL_FILES or
-  ends in `/` and one of them.
+  ends in `/` and one of them. COUNCIL_FILES is every file architecture §4's two tables name, read from
+  the doc, and NOT_IN_ARCHITECTURE, the files the code parses that §4 doesn't name yet.
 - config readers: functions that read council.config.md by that same rule, outside a bash
   `configured_*` function and src/council/records/config.py (top-level code counts as one per file).
 - call-backs: Python files that run bin/council: a subprocess or os process call whose command holds
@@ -39,9 +40,33 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BASELINE = "evals/ratchet.json"
-COUNCIL_FILES = ("session-state.md", "run-plan.tsv", "events.tsv", "seats.tsv", "usage.tsv", "ledger.tsv",
-                 "council.config.md")
+ARCHITECTURE = "docs/architecture.md"
+# Council files the code reads or writes that architecture §4's tables do not name yet. Name a file in §4
+# and take it off this list; the doc is the list's source, this is its known gap.
+NOT_IN_ARCHITECTURE = ("claims.jsonl", "corrections.jsonl", "cap-allowances.tsv", "repair-allowances.tsv",
+                       "tools.tsv", "tuning.md")
 CONFIG = "council.config.md"
+
+
+def architecture_files(text: str) -> list[str]:
+    """The council files by name that the tables of architecture §4 list in their first column: the home
+    files and the run folder's files. A folder (`runs/`), a pattern (`verify-<n>.md`) and a word are no name."""
+    section = re.search(r"^## 4\..*?(?=^## 5\.)", text, re.MULTILINE | re.DOTALL)
+    found = []
+    for line in (section.group(0) if section else "").splitlines():
+        if line.startswith("|"):
+            found += re.findall(r"`([A-Za-z][A-Za-z0-9-]*(?:\.[a-z]+)+)`", line.split("|")[1])
+    return [name for name in dict.fromkeys(found) if name.rsplit(".", 1)[1] in ("md", "tsv", "jsonl")]
+
+
+def council_files(root: Path) -> tuple[str, ...]:
+    """Every council file the ratchet guards: architecture §4's, then the known gap in it."""
+    doc = root / ARCHITECTURE
+    named = architecture_files(doc.read_text(encoding="utf-8", errors="replace")) if doc.is_file() else []
+    return tuple(dict.fromkeys(named + list(NOT_IN_ARCHITECTURE)))
+
+
+COUNCIL_FILES = council_files(ROOT)
 NEW_FUNCTION, NEW_MODULE = 60, 500
 SIZES = (("lines", "lines"), ("longest", "longest function"), ("shellcheck", "ShellCheck warnings"))
 COUNTS = (("parsers", "files that parse a council file"), ("config_readers", "council.config.md readers"),
@@ -417,7 +442,20 @@ def self_test() -> int:
         check("a new file that parses a council file raises the count and is named",
               code == 1 and any("files that parse a council file: 3, baseline 2 (new: scripts/fresh.py)" in line
                                 for line in out), out)
+        write(new, 'import json\nCLAIMS = "claims.jsonl"\n')
+        code, out = run(top)
+        check("a new file that parses claims.jsonl (not in the old list of seven) raises the count and is named",
+              code == 1 and any("files that parse a council file: 3, baseline 2 (new: scripts/fresh.py)" in line
+                                for line in out), out)
         new.unlink()
+        check("with the planted parser removed, the count is back at its baseline", run(top)[0] == 0, run(top)[1])
+        check("every council file architecture §4 names is guarded, and no folder or pattern is",
+              set(architecture_files((ROOT / ARCHITECTURE).read_text(encoding="utf-8"))) <= set(COUNCIL_FILES)
+              and not any("/" in n or "<" in n for n in COUNCIL_FILES), COUNCIL_FILES)
+        sample = ("## 4. x\n| File | W |\n|---|---|\n| `a.md` (memory) | x |\n| `b.tsv`, `c.jsonl` | `d.md` |\n"
+                  + "| `runs/<t>/`, `e-<n>.md`, `f/` | y |\n## 5. y\n| `g.md` | z |\n")
+        check("§4's first column gives the names; other columns, folders, patterns and later sections do not",
+              architecture_files(sample) == ["a.md", "b.tsv", "c.jsonl"], architecture_files(sample))
         sc = shutil.which("shellcheck")
         code, out = run(top, shellcheck=None)
         check("without shellcheck, its counts are reported as skipped", "ShellCheck skipped" in out[-1], out)

@@ -32,15 +32,40 @@ class StateTest(support.Scratch):
         self.assertNotIn("mode", state.header(content, exact_keys=True))
         self.assertEqual(state.header(content, comments=False)["phase"], "work    # in the middle")
 
-    def test_values_anywhere(self) -> None:
+    def test_field_reads_the_header_only(self) -> None:
+        """The helper's state_field: a `mode:` line below a heading is a note, never the field."""
         content = STATE.lstrip("\ufeff")
-        self.assertEqual(state.values(content, "closed"), ["2026-01-03 09:00"])
-        self.assertEqual(state.first_value(content, "phase"), "work")
-        self.assertEqual(state.first_word(content, "mode"), "council-implement")
-        self.assertEqual(state.first_value(content, "absent"), "")
-        self.assertTrue(state.is_build_run(content))
+        self.assertEqual(state.field(content, "phase"), "work")           # the first wins, its comment dropped
+        self.assertEqual(state.field(content, "closed"), "")             # it is only below the heading
+        self.assertEqual(state.field(content, "absent"), "")
+        self.assertEqual(state.field(content, "mode"), "")               # " mode :" does not start the line
+        below = "status: in-progress\n## Decisions so far\nmode: council-implement\n"
+        self.assertEqual(state.field(below, "mode"), "")
+        self.assertEqual(state.field("mode:   council-review  # why\r\n## Notes\r\n", "mode"), "council-review")
+        self.assertEqual(state.field("mode:\nmode: council-review\n", "mode"), "")   # the first line wins, empty too
+
+    def test_build_and_plan_marks(self) -> None:
+        content = STATE.lstrip("\ufeff")
+        self.assertFalse(state.is_build_run(content))                    # its `council-implement` is below a heading
+        self.assertTrue(state.is_build_run("mode: council-implement\nstatus: in-progress\n"))
+        self.assertTrue(state.is_build_run("mode: council-implement  # build\r\n## Notes\r\n"))
+        self.assertFalse(state.is_build_run("status: in-progress\n## Notes\nmode: council-implement\n"))
+        self.assertFalse(state.is_build_run("mode: council-implementation\n"))
         self.assertTrue(state.planned(content))
         self.assertFalse(state.planned("plan-schema:\n"))
+        self.assertFalse(state.planned("status: in-progress\n## Notes\nplan-schema: 1\n"))   # a note, not the header
+
+    def test_a_byte_order_mark_on_line_one_is_not_part_of_its_key(self) -> None:
+        """The helper's state_field drops the BOM from line 1, so a key there reads (repair.py's own read keeps it)."""
+        self.assertTrue(state.planned("﻿plan-schema: 1\nstatus: in-progress\n"))
+        self.assertTrue(state.is_build_run("﻿mode: council-implement\nstatus: in-progress\n"))
+        self.assertEqual(state.field("﻿mode: council-review\r\n", "mode"), "council-review")
+        self.assertEqual(state.header("﻿status: in-progress\nmode: x\n", exact_keys=True)["status"], "in-progress")
+
+    def test_a_crlf_file_carries_no_carriage_return(self) -> None:
+        content = "mode: council-review\r\nstatus: in-progress\r\n## Notes\r\nclosed: never\r\n"
+        self.assertEqual(state.field(content, "status"), "in-progress")
+        self.assertEqual(state.field(content, "closed"), "")
 
     def test_decisions_are_unquoted(self) -> None:
         self.assertEqual(state.decisions(STATE),

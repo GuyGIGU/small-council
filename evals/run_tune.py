@@ -275,6 +275,23 @@ with tempfile.TemporaryDirectory(prefix="council-tune-") as temporary:
     check("an estimate of 400 digits is unreadable, as 3000k is: tune proposes and does not crash",
           code == 0 and "Traceback" not in err and "cannot read" in out, (code, out[-300:], err[-300:]))
 
+    # One rule for the figure (issue 74): the route's. "1,50k" is unset to it, so tune says so and names the default.
+    for figure, shown in (("1,50k", None), ("150,000", "150k")):
+        repo = new_repo(base, "comma-" + figure.replace(",", "-"),
+                        CONFIG.replace("- agent cap: 10\n", "- agent cap: 10\n- estimate per worker: " + figure + "\n"))
+        make_runs(repo / ".council", 5, 150000)
+        code, out, err = council(repo, "tune")
+        rows = route(repo)
+        if shown is None:
+            check("tune: an estimate of 1,50k is unreadable, and the run uses the default 80k the route budgets",
+                  code == 0 and "cannot read" in out and "so it budgets 80k" in out and "PROPOSED: set it to 150k" in out
+                  and "150k (the route" not in out and rows.get(("budget", "verification", "estimated-tokens")) == "80000",
+                  (code, out[-500:], err[-300:], rows))
+        else:
+            check("tune: an estimate of 150,000 is 150k to tune and to the route",
+                  code == 0 and "estimate per worker: 150k (the route's default is 80k)" in out
+                  and rows.get(("budget", "verification", "estimated-tokens")) == "150000", (code, out[-500:], rows))
+
     repo = new_repo(base, "nosection", "# Council config\n\n## Roster\n")
     make_runs(repo / ".council", 5, 150000)
     code, out, err = council(repo, "tune", "apply", "budget", "150k", "--user-said", "yes")

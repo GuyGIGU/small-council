@@ -63,8 +63,8 @@ def rel(top, path):
 
 
 def run_value(run, name):
-    """A session-state value: the first `name:` line in the file, below its header too."""
-    return run_state.first_value(run_state.text(run, read=lambda path: evidence.read_file(path, required=False)), name)
+    """A session-state header field (the helper's state_field), trimmed."""
+    return run_state.field(run_state.text(run, read=lambda path: evidence.read_file(path, required=False)), name).strip()
 
 
 def citation_places(citation, top):

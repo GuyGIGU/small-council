@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from council.records import paths
+from council.records.cells import lines_of
 
 NAME = "ledger.tsv"
 MAX_LEDGER = 8 * 1024 * 1024
@@ -69,8 +70,7 @@ def read(where: str | Path) -> tuple[list[dict[str, Any]] | None, int]:
         raise LedgerError("the ledger is not a regular file under 8 MB: " + str(where))
     text = where.read_bytes().decode("utf-8-sig", errors="replace")    # a BOM (PowerShell 5.1) is no cell
     rows, bad = [], 0
-    for number, line in enumerate(text.split("\n")):                   # as awk splits lines: \n only
-        line = line.rstrip("\r")
+    for number, line in enumerate(lines_of(text)):
         if not line.strip() or (number == 0 and line.startswith("date\t")):
             continue
         cells = line.split("\t")

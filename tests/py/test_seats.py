@@ -39,6 +39,17 @@ class SeatsTest(support.Scratch):
         self.assertEqual(seats.allowance_rows(run)[0]["until"], "12")
         self.assertIsNone(seats.allowed_until(self.tmp))
 
+    def test_a_crlf_file_counts_as_its_lf_copy_when_the_figure_is_the_last_cell(self) -> None:
+        """The helper's awk drops each line's CR, so the last cell of a hand-edited CRLF file is a plain figure."""
+        run = self.run_folder()
+        (run / "agent-starts.tsv").write_bytes(b"at\tseed\r\nT\tbefore:3\r\nT\tAgent\r\n")
+        (run / "usage.tsv").write_bytes(b"at\tseat\tagent\tkind\truns\r\n"
+                                        + b"T\tw\tid1\tfinished\t4\r\nT\tw\t\tfinished\t3\r\n")
+        (run / "cap-allowances.tsv").write_bytes(b"at\tused\tn\tuntil\r\nT\t5\t1\t12\r\n")
+        self.assertEqual(seats.agent_starts(run), 4)
+        self.assertEqual(seats.workflow_extra(run), 3 + 2)
+        self.assertEqual(seats.allowed_until(run), 12)
+
     def test_corrections_keep_the_latest_with_evidence(self) -> None:
         run = self.run_folder()
         rows = [{"seat": "hunt", "field": "tokens", "to": 50000, "evidence": "transcript line 4", "from": "5"},

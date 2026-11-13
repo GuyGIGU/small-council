@@ -266,6 +266,10 @@ with tempfile.TemporaryDirectory() as folder:
           evidence.render(again) == (planned / "claims.jsonl").read_text(encoding="utf-8"))
     reviewed = fresh(folder, "not-a-plan", "council-review", plan_syn, {"verify-1.md": plan_rows})
     check("review: several rows for one claim are still a conflict to resolve", invoke(reviewed, "build").returncode == 2)
+    # A `mode:` line below a heading is a note: with no mode in the header, the run is not a plan (issue 73).
+    write(reviewed, "session-state.md", "status: in-progress\n## Notes\nmode: council-plan\n")
+    check("a `mode: council-plan` note below a heading does not make a run a plan: several rows still conflict",
+          invoke(reviewed, "build").returncode == 2)
 
     # Solo: the Chair checks its own items into verify-self.md, labelled self-checked, never as independent.
     own = head + "| 1 | One table | CONFIRMED | db.sql:4 read |\n| 2 | A queue | REFUTED | q.py:7 drains |\n"
