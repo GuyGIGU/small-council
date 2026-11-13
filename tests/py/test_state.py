@@ -46,7 +46,7 @@ class StateTest(support.Scratch):
 
     def test_build_and_plan_marks(self) -> None:
         content = STATE.lstrip("\ufeff")
-        self.assertFalse(state.is_build_run(content))                    # its `mode: council-implement` is below a heading
+        self.assertFalse(state.is_build_run(content))                    # its `council-implement` is below a heading
         self.assertTrue(state.is_build_run("mode: council-implement\nstatus: in-progress\n"))
         self.assertTrue(state.is_build_run("mode: council-implement  # build\r\n## Notes\r\n"))
         self.assertFalse(state.is_build_run("status: in-progress\n## Notes\nmode: council-implement\n"))
