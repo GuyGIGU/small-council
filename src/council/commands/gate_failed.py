@@ -3,6 +3,7 @@ baseline in this run — which failing tests are new, so a red the untouched cod
 change's."""
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -25,7 +26,7 @@ def said(call: Call, name: str, result: Result, secs: int, info: tuple, content:
                 % (name, secs, most, why, qname(name), out))
         kept = [line for line in gate_output.lines(content)
                 if not line.startswith("council: TIMED OUT") and line.strip(gate_output.SPACE)]
-        _indent(kept[-8:], "    ")
+        indent(kept[-8:], "    ")
         event(call.run, name, "failed", "exit=%d;seconds=%d;empty=0;timed_out=1" % (code, secs),
               "gate failed, and its event was not recorded")
         return False
@@ -42,7 +43,7 @@ def said(call: Call, name: str, result: Result, secs: int, info: tuple, content:
     else:
         cli.say("gate %s: FAIL (exit %d, %ss) — full output: %s" % (name, code, secs, out))
     hits = ["%d:%s" % (n, line) for n, line in enumerate(gate_output.lines(content), 1) if _HITS.search(line)][:12]
-    _indent(hits or gate_output.tail(content, 8), "    ")
+    indent(hits or gate_output.tail(content, 8), "    ")
     same = False
     baseline = Path(call.run, "gates", "baseline", gates.slug(name))
     if not fresh and Path(baseline.as_posix() + ".txt").is_file():
@@ -55,9 +56,11 @@ def said(call: Call, name: str, result: Result, secs: int, info: tuple, content:
 _HITS = re.compile(r"error|fail|exception|traceback|assert|panic|cannot|not found|undefined", re.IGNORECASE)
 
 
-def _indent(lines: list[str], pad: str) -> None:
+def indent(lines: list[str], pad: str) -> None:
+    """Lines of the output, as the helper's clip (an awk) printed them: Git Bash's awk reads in text mode, so on
+    Windows a line's closing CR is gone."""
     for line in lines:
-        cli.say(pad + gate_output.clip(line, 220))
+        cli.say(pad + gate_output.clip(line[:-1] if os.name == "nt" and line.endswith("\r") else line, 220))
 
 
 def compare(baseline: Path, content: str) -> bool:
@@ -73,10 +76,11 @@ def compare(baseline: Path, content: str) -> bool:
             cli.say("    the same test(s) are failing as at the baseline (%s) — no new one is named" % shown)
             return True
         cli.say("    failing now and not at the baseline (%s):" % shown)
-        _indent(new, "      ")
+        indent(new, "      ")
     elif now:
         cli.say("    the baseline's output names no failing test, so nothing can be compared — read %s next to this "
                 "one yourself" % shown)
     else:
-        cli.say("    this output names no failing test, so nothing can be compared — read it next to %s yourself" % shown)
+        cli.say("    this output names no failing test, so nothing can be compared — read it next to %s yourself"
+                % shown)
     return False

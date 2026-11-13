@@ -2,8 +2,8 @@
 mandatory, its side effects, and what its command's text gives away before it runs (gate_notes)."""
 from __future__ import annotations
 
-from council.commands import cli, gate_notes
-from council.records import config
+from council.commands import cli
+from council.records import config, gate_notes, gate_table
 from council.records import home as where
 
 
@@ -11,10 +11,10 @@ def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "gates")
     cli.no_words("gates", words)
     home = where.council_home()
-    cfg = home + "/council.config.md"
-    rows = config.gates(home)
+    cfg = config.path(home).as_posix()
+    rows = gate_table.gates(home)
     if not rows:
-        if config.gates_listed(home):
+        if gate_table.gates_listed(home):
             cli.say("the Gates section of %s is in an older layout (a list, not a table), so no gate can run — a "
                     "council-init refresh migrates it" % cfg)
         else:
@@ -25,7 +25,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     return 0
 
 
-def line(row: config.Gate) -> str:
+def line(row: gate_table.Gate) -> str:
     if row.command == "-":
         return "%s · (no command: its Command cell is empty, so it never runs) · run at: %s · mandatory: %s" % (
             row.name, row.at, row.mandatory)

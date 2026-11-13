@@ -30,7 +30,8 @@ def main(args: cli.Args, words: list[str]) -> int:
         raise cli.Refusal(
             "the --glob pattern(s) %smatch no file in this project, so this check could never look at anything — fix "
             "the --glob (a git pathspec: case matters, and a pattern with a / in it is anchored at the repo root, so "
-            "'src/*.py' covers every folder under a top-level src/ but not web/src/)" % "".join("'%s' " % g for g in globs))
+            "'src/*.py' covers every folder under a top-level src/ but not web/src/)"
+            % "".join("'%s' " % g for g in globs))
     files = changed_files(base_of(args.value("base")), globs)
     if not files:
         cli.say("changed: no files matched — nothing to check (this is a pass, not a skip)")
@@ -41,8 +42,8 @@ def main(args: cli.Args, words: list[str]) -> int:
         return 0
     cli.warn("changed: %d file(s) to check" % len(files))
     if each:
-        return max(shell.words(args.after + [name]) for name in files)
-    return max(shell.words(args.after + batch) for batch in batches(files, len(" ".join(args.after))))
+        return shell.ran(max(shell.words(args.after + [name]) for name in files))
+    return shell.ran(max(shell.words(args.after + batch) for batch in batches(files, len(" ".join(args.after)))))
 
 
 def options(words: list[str]) -> tuple[list[str], bool]:

@@ -766,7 +766,7 @@ for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks
 
 # bash 3.2 calls an empty "$@" or $* unbound under set -u, so the argument dispatch always guards them.
 bare = []
-for fn in ("main", "takes_flags", "no_words", "cmd_check", "cmd_gate"):
+for fn in ("main", "takes_flags", "no_words", "cmd_check"):
     body = re.search(r"^%s\(\) \{\n(.*?)^\}" % fn, cli, re.S | re.M)
     for i, line in enumerate((body.group(1) if body else "").split("\n"), 1):
         bit = re.sub(r"\$\{[0-9]\+[^}]*\}", "", re.sub(r"#.*$", "", line))    # ${1+"$@"} is the guarded form

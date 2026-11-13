@@ -1101,16 +1101,20 @@ def gate_lock(tmp):
     check("gate lock: an old lock with no owner file is cleared too",
           code == 0 and "gate lint: pass" in out and "cleared a gate lock" in err and not os.path.exists(lock), out + err)
 
-    # The holder stopped: by a signal its shell can catch, it releases the lock itself and records no
-    # verdict for the stopped gate; killed outright, the next call clears what it left.
+    # The holder stopped: by a signal it can catch, it releases the lock itself and records no verdict for
+    # the stopped gate; killed outright, the next call clears what it left. The owner file names the
+    # operating system's process (D33): on Windows a TERM from Git Bash ends a native process outright,
+    # so the caught stop is checked where there is one to catch, and the outright kill is taskkill's.
     owner = slash(os.path.join(lock, "owner"))
     before_stop = len(events(lrun))
-    code, out, err = council(lk, "gate", "stopped", "--run", lrun, "--",
-                             "kill -TERM \"$(head -n 1 '%s')\"; sleep 1; echo went-on" % owner)
-    check("gate lock: a gate call stopped by a signal releases its lock and records no result for the stopped gate",
-          code == 143 and not os.path.exists(lock) and len(events(lrun)) == before_stop
-          and not os.path.exists(os.path.join(lrun, "gates", "stopped.json")), "exit %d · %s%s" % (code, out, err))
-    code, out, err = council(lk, "gate", "killed", "--run", lrun, "--", "kill -9 \"$(head -n 1 '%s')\"" % owner)
+    if os.name != "nt":
+        code, out, err = council(lk, "gate", "stopped", "--run", lrun, "--",
+                                 "kill -TERM \"$(head -n 1 '%s')\"; sleep 1; echo went-on" % owner)
+        check("gate lock: a gate call stopped by a signal releases its lock and records no result for the stopped "
+              "gate", code == 143 and not os.path.exists(lock) and len(events(lrun)) == before_stop
+              and not os.path.exists(os.path.join(lrun, "gates", "stopped.json")), "exit %d · %s%s" % (code, out, err))
+    kill = "taskkill //F //PID" if os.name == "nt" else "kill -9"
+    code, out, err = council(lk, "gate", "killed", "--run", lrun, "--", "%s \"$(head -n 1 '%s')\"" % (kill, owner))
     left = os.path.isdir(lock)
     code2, out2, err2 = council(lk, "gate", "lint", "--run", lrun)
     check("gate lock: a gate call killed outright leaves its lock, and the next call clears it and runs",

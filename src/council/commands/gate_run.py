@@ -18,7 +18,8 @@ from council.commands import cli, gate_exec, gate_output, resolve
 from council.records import config, events, gates
 
 HITS = re.compile(r"error|fail|exception|traceback|assert|panic|cannot|not found|undefined", re.IGNORECASE)
-CMD_SWITCH = re.compile(r"(^|[ \t\n\v\f\r;&|(])([cC][mM][dD](\.[eE][xX][eE])?)([ \t\n\v\f\r]+)/([cCkK])([ \t\n\v\f\r]|$)")
+CMD_SWITCH = re.compile(r"(^|[ \t\n\v\f\r;&|(])([cC][mM][dD](\.[eE][xX][eE])?)([ \t\n\v\f\r]+)"
+                        r"/([cCkK])([ \t\n\v\f\r]|$)")
 WINDOWS_BASH = os.name == "nt" or sys.platform.startswith(("cygwin", "msys"))
 
 
@@ -97,7 +98,7 @@ def event(run: str, name: str, value: str, detail: str, said: str) -> None:
     try:
         events.append(Path(run), "gate." + ("invalidated" if value == "invalid" else "finished"), name, value, detail)
     except events.EventError as failure:
-        cli.warn("council: " + str(failure).replace(str(events.path(Path(run))), run + "/events.tsv"))
+        cli.warn("council: " + str(failure).replace(str(events.path(Path(run))), events.path(Path(run)).as_posix()))
         cli.warn("council: " + said)
 
 

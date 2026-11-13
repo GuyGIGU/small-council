@@ -13,7 +13,8 @@ RAN = re.compile(r"(running|ran)[ \t]+[1-9][0-9]*[ \t]+tests?([^a-z]|$)|tests ru
 NONE_SKIPPED = re.compile(r"(skip|fail|error|ignor|pend)[a-z]*:?[ \t]*0 tests?")
 NONE_RAN = re.compile(r"collected 0 items|no tests ran|ran 0 tests|no tests found|no test files|no tests to run"
                       r"|(^|[^0-9.])0 passing")
-ZERO_TESTS = re.compile(r"(^|[^0-9.])0 tests?([ \t]+(ran|run|found|collected|executed|in)([^a-z]|$)|[ \t]*[.,;]|[ \t]*$)")
+ZERO_TESTS = re.compile(r"(^|[^0-9.])0 tests?([ \t]+(ran|run|found|collected|executed|in)([^a-z]|$)"
+                        r"|[ \t]*[.,;]|[ \t]*$)")
 TEST_RUNNERS = ("pytest", "jest", "mocha", "vitest", "rspec", "phpunit", "unittest", "ctest ", " go test", "cargo test",
                 "npm test", "npm run test", "yarn test", "pnpm test", "dotnet test", "mvn test", "gradle test")
 ANSI = re.compile("\033\\[[0-9;]*[A-Za-z]")
@@ -102,7 +103,8 @@ def never_ran(content: str) -> bool:
     found = lines(content)
     if not content or not found:
         return False
-    return found[0].startswith("Microsoft Windows [Version") and re.search(r">[ ]*$", found[-1].replace("\r", "")) is not None
+    last = found[-1].replace("\r", "")
+    return found[0].startswith("Microsoft Windows [Version") and re.search(r">[ ]*$", last) is not None
 
 
 def missing_module(content: str) -> str:

@@ -9,11 +9,12 @@ import contextlib
 import importlib.util
 import io
 import re
+import sys
 from pathlib import Path
 from types import ModuleType
 
 from council.commands import cli, resolve
-from council.records import config
+from council.records import config, repairs
 
 ENGINE = Path(__file__).resolve().parents[3] / "scripts" / "repair.py"
 _LOADED: list[ModuleType] = []
@@ -24,27 +25,38 @@ def engine() -> ModuleType:
     if not _LOADED:
         spec = importlib.util.spec_from_file_location("council_repair_engine", str(ENGINE))
         module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        streams = sys.stdout, sys.stderr                 # it sets its own streams up as it loads
         spec.loader.exec_module(module)  # type: ignore[union-attr]
+        for kept in streams:
+            kept.reconfigure(encoding="utf-8", errors="surrogateescape")  # type: ignore[attr-defined]
         _LOADED.append(module)
     return _LOADED[0]
 
 
-def run_quietly(action: str, task: str | None, gate: str | None, run: str) -> tuple[int, str]:
-    """One repair.py action, its stdout and refusal kept as the helper's $( … 2>&1 ) kept them."""
-    repair, said = engine(), io.StringIO()
-    with contextlib.redirect_stdout(said):
-        try:
-            code = repair.act(action, task, gate, repair.checked_run(Path(run)))
-        except repair.ERRORS as exc:
-            said.write("repair: %s\n" % exc)
-            code = 2
+def run_quietly(action: str, task: str, gate: str | None, run: str) -> tuple[int, str]:
+    """One `repair.py <action> <task> [<gate>] --run <run>`, run here as the helper ran it, with what it printed
+    as $( … ) kept it: a record's refusal too (2>&1), the other actions' dropped (2>/dev/null)."""
+    repair, said, dropped = engine(), io.StringIO(), io.StringIO()
+    argv, sys.argv = sys.argv, ["repair.py", action, task] + ([gate] if gate is not None else []) + ["--run", run]
+    try:
+        with contextlib.redirect_stdout(said), contextlib.redirect_stderr(said if action == "record" else dropped):
+            try:
+                code = repair.main()
+            except SystemExit as stop:                     # argparse's own refusal
+                code = stop.code if isinstance(stop.code, int) else 2
+            except (repair.RepairError, repair.paths.RecordError, OSError, UnicodeError, ValueError,
+                    TypeError) as exc:
+                print("repair: " + str(exc), file=sys.stderr)
+                code = 2
+    finally:
+        sys.argv = argv
     return code, said.getvalue().rstrip("\n")
 
 
 def trail(run: str, name: str) -> str:
     """One gate's trail, "<state>\\t<task>\\t<seq>": none when the run keeps none, '' when it can't be read — a
     fault of the trail's own never stops a gate (it is said once)."""
-    if not Path(run, "repairs.jsonl").is_file():
+    if not repairs.kept(run):
         return "none\t-\t-"
     code, said = run_quietly("trail", name, None, run)
     if code != 0:
@@ -82,13 +94,13 @@ def record(run: str, name: str, code: int, gate_trail: str, same: bool) -> None:
         return
     if name.startswith(("before-", "after-", "regress-")):
         return
-    state = gate_trail.split("\t")[0]
+    state = gate_trail.split("\t", 1)[0]
     if code == 0 and state != "open":
         return
     if code != 0 and same and state != "open":
         cli.say("repair: not counted — the same tests fail as at the baseline, so this is no attempt on the task")
         return
-    if not gate_trail and Path(run, "repairs.jsonl").is_file():
+    if not gate_trail and repairs.kept(run):
         return                                   # unreadable: trail() has said so, once
     task = _task(run, name, code, gate_trail)
     if task is None:
@@ -116,7 +128,7 @@ def _task(run: str, name: str, code: int, gate_trail: str) -> str | None:
     if not current:
         cli.say('repair: not counted — no task id: council state next="task <n>: <title>"')
         return None
-    if not Path(run, "repairs.jsonl").is_file():
+    if not repairs.kept(run):
         return current
     status, said = run_quietly("free", current, name, run)
     if status != 0:

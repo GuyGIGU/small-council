@@ -9,6 +9,7 @@ gate's Windows id, signalled as on POSIX, and the Windows process tree is ended 
 the native programs a group signal may miss."""
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -66,8 +67,8 @@ def execute(top: str, base: str, command: str, out: str, limit: int) -> tuple[in
             return NO_ROOT, False
         shell.flush()
         try:
-            gate = subprocess.Popen(shell.argv_for([shell.bash(), "-c", command]), cwd=top, stdin=subprocess.DEVNULL,
-                                    stdout=handle, stderr=subprocess.STDOUT,
+            gate = subprocess.Popen(shell.argv_for(["bash", "-c", command]), executable=shell.bash(), cwd=top,
+                                    stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT,
                                     env=shell.child_env({"COUNCIL_BASE": base}), **_detached())
         except OSError:
             return NO_ROOT, False
@@ -131,7 +132,8 @@ def stop(pid: int) -> None:
     """Stop the gate whose process group pid leads, and every process it started."""
     if os.name == "nt":
         try:
-            subprocess.run(shell.argv_for([shell.bash(), "-c", WINDOWS_STOP, "council", str(pid)]), stdin=subprocess.DEVNULL,
+            subprocess.run(shell.argv_for([shell.bash(), "-c", WINDOWS_STOP, "council", str(pid)]),
+                           stdin=subprocess.DEVNULL,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
         except (OSError, subprocess.TimeoutExpired):
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL,
@@ -157,22 +159,16 @@ def _signal_group(pid: int, number: int) -> bool:
 
 
 def _signal(pid: int, number: int) -> None:
-    try:
+    with contextlib.suppress(OSError):
         os.kill(pid, number)
-    except OSError:
-        pass
 
 
 def _end_watchdog(watchdog: subprocess.Popen) -> None:
     if os.name == "nt" or not _signal_group(watchdog.pid, signal.SIGTERM):
-        try:
+        with contextlib.suppress(OSError):
             watchdog.terminate()
-        except OSError:
-            pass
-    try:
+    with contextlib.suppress(subprocess.TimeoutExpired):
         watchdog.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        pass
 
 
 def stop_running() -> None:
@@ -185,7 +181,5 @@ def stop_running() -> None:
 
 
 def _remove(flag: Path) -> None:
-    try:
+    with contextlib.suppress(OSError):
         flag.unlink()
-    except OSError:
-        pass

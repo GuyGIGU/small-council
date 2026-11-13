@@ -3,9 +3,9 @@ left out is said, counted and named if it was required; a green report with noth
 there is, so a set that ran nothing exits 4 and says NOTHING WAS CHECKED."""
 from __future__ import annotations
 
-from council.commands import cli, gate_lock, gate_notes, gate_output, gate_repair, gate_run
+from council.commands import cli, gate_lock, gate_output, gate_repair, gate_run
 from council.commands.gate import safe
-from council.records import config, gates
+from council.records import config, gate_notes, gate_table, gates
 
 STAGES = {"grounding": ("g", "grounding"), "verify": ("v", "verify"), "verification": ("v", "verify")}
 
@@ -40,10 +40,10 @@ def run_all(call: gate_run.Call, at: str, mode: str, wait: tuple[bool, str]) -> 
         stage, label = STAGES[at.translate(gate_output.ASCII_LOWER)]
     gate_lock.take(call.run, *wait)     # refuses, before anything is written, while another gate call runs
     call = call._replace(baseline=stage != "v")    # the untouched code: each gate's first output is its baseline
-    cfg = call.home + "/council.config.md"
-    rows = config.gates(call.home)
+    cfg = config.path(call.home).as_posix()
+    rows = gate_table.gates(call.home)
     if not rows:
-        if config.gates_listed(call.home):
+        if gate_table.gates_listed(call.home):
             cli.say("NOTHING WAS CHECKED — the Gates section of %s is in an older layout (a list, not a table), so no "
                     "gate could be read; a council-init refresh migrates it" % cfg)
         else:
@@ -72,7 +72,7 @@ def run_all(call: gate_run.Call, at: str, mode: str, wait: tuple[bool, str]) -> 
     return _summary(tally, cfg, label)
 
 
-def _runnable(call: gate_run.Call, row: config.Gate, stage: str, mode: str, tally: _Tally) -> str | None:
+def _runnable(call: gate_run.Call, row: gate_table.Gate, stage: str, mode: str, tally: _Tally) -> str | None:
     """The gate's repair trail ('' outside a build) when it runs in this set; None (said) when it does not."""
     name, must = row.name, row.must != "no"
     if row.cells != row.header_cells:    # before the --at filter: a shifted row's Run-at cell means nothing
@@ -122,7 +122,7 @@ def _runnable(call: gate_run.Call, row: config.Gate, stage: str, mode: str, tall
     return trail
 
 
-def _allowed(row: config.Gate, tally: _Tally) -> bool:
+def _allowed(row: gate_table.Gate, tally: _Tally) -> bool:
     """Safe to run unasked; else skipped, saying why."""
     if safe(row.side, row.needs, row.has_side):
         return True
@@ -140,7 +140,7 @@ def _allowed(row: config.Gate, tally: _Tally) -> bool:
     return False
 
 
-def _own_file(row: config.Gate, call: gate_run.Call, tally: _Tally) -> bool:
+def _own_file(row: gate_table.Gate, call: gate_run.Call, tally: _Tally) -> bool:
     """Two names that differ only in punctuation (unit tests, unit_tests) save to one gates/ file, and the
     second would overwrite the first's record."""
     slug = gates.slug(row.name)

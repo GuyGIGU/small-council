@@ -9,8 +9,8 @@ import shutil
 import time
 from pathlib import Path
 
-from council.commands import cli, gate_lock, gate_notes, gate_output, gate_repair, gate_run, gate_wait, resolve, shell
-from council.records import config, gates
+from council.commands import cli, gate_lock, gate_output, gate_repair, gate_run, resolve, shell
+from council.records import config, gate_notes, gate_table, gates, state_write
 from council.records import home as where
 
 USAGE = "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
@@ -29,7 +29,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     elif args.value("at"):
         raise cli.Refusal("--at works only with gate --all")
     try:
-        return _gate(args, words, command)
+        return shell.ran(_gate(args, words, command))
     finally:
         gate_lock.release()
 
@@ -62,7 +62,7 @@ def _gate(args: cli.Args, words: list[str], command: str) -> int:
     if wait.startswith("=") and (not limit.isdigit() or not limit.isascii() or limit == "0"):
         raise cli.Refusal("--wait=<seconds> takes a whole number of seconds above 0 (got '%s'); plain --wait waits "
                           "up to 20 minutes" % limit)
-    gate_wait.over(run)
+    state_write.clear_waiting(run)          # the run moves on: a wait it recorded is over
     if args.value("all") == "1":
         from council.commands import gate_set
         return gate_set.run_all(call, args.value("at"), mode, (bool(wait), limit))
@@ -71,7 +71,7 @@ def _gate(args: cli.Args, words: list[str], command: str) -> int:
 
 def refuse_closed(run: Path, why: str) -> None:
     """A closed run keeps the record its ledger counted."""
-    if gate_wait.closed(run):
+    if state_write.closed(run):
         raise cli.Refusal("run %s is closed (%s at %s) — %s"
                           % (run.name, resolve.field(run, "status"), resolve.field(run, "closed"), why))
 
@@ -130,7 +130,7 @@ def one(call: gate_run.Call, name: str, command: str, mode: str, wait: tuple[boo
 
 def _configured(home: str, name: str) -> str:
     """The config's command for a gate run by name, its side effects said when it is not safe to run unasked."""
-    row = next((gate for gate in config.gates(home) if gate.name == name), None)
+    row = next((gate for gate in gate_table.gates(home) if gate.name == name), None)
     if row is None:
         raise cli.Refusal("no gate named '%s' in council.config.md — pass the command after --" % name)
     if row.command == "-":

@@ -12,6 +12,10 @@ from pathlib import Path
 import re
 import sys
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from council.records import events as event_stream  # noqa: E402
 from council.records import gates as gate_files  # noqa: E402
@@ -351,48 +355,6 @@ def show(run, task, check=False):
     return 0
 
 
-def checked_run(run):
-    """The run folder as an absolute path, refused unless it is a real folder of a council-implement run."""
-    run = Path(run).absolute()
-    if run.is_symlink() or not run.is_dir():
-        raise RepairError("run must be a real directory")
-    content = run_state.text(run, read=lambda path: decode(artifact(path), path.name))
-    if not run_state.is_build_run(content):
-        raise RepairError("repair tracking is for council-implement runs only")
-    return run
-
-
-def act(action, task, gate, run):
-    """One action on a checked run (checked_run): record, trail, free, show or check."""
-    if action == "record":
-        return record(run, task, gate)
-    if action == "trail":                      # bin/council's question: trail <gate>
-        print("	".join(trail(run, task)))
-        return 0
-    if action == "free":                       # bin/council's question: free <task> <gate>
-        print(free(run, task, gate))
-        return 0
-    return show(run, task, check=action == "check")
-
-
-ERRORS = (RepairError, paths.RecordError, OSError, UnicodeError, ValueError, TypeError)
-
-
-def refused(exc):
-    """A refusal said as the command says it: "repair: <why>" on stderr, exit 2."""
-    sys.stdout.flush()
-    print("repair: " + str(exc), file=sys.stderr)
-    return 2
-
-
-def guarded(action, task, gate, run):
-    """act() on a run checked first (checked_run), with a refusal said as the command says it."""
-    try:
-        return act(action, task, gate, checked_run(run))
-    except ERRORS as exc:
-        return refused(exc)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("record", "show", "check", "trail", "free"))
@@ -400,26 +362,34 @@ def main():
     parser.add_argument("gate", nargs="?")
     parser.add_argument("--run", required=True, type=Path)
     args = parser.parse_args()
-    try:
-        run = checked_run(args.run)
-    except ERRORS as exc:
-        return refused(exc)
-    if args.action == "record" and (args.task is None or args.gate is None):
-        parser.error("record needs a task id and gate name")
-    if args.action == "trail" and (args.task is None or args.gate is not None):
-        parser.error("trail takes one gate name")
-    if args.action == "free" and (args.task is None or args.gate is None):
-        parser.error("free takes a task id and a gate name")
-    if args.action in ("show", "check") and args.gate is not None:
+    run = args.run.absolute()
+    if run.is_symlink() or not run.is_dir():
+        raise RepairError("run must be a real directory")
+    content = run_state.text(run, read=lambda path: decode(artifact(path), path.name))
+    if not run_state.is_build_run(content):
+        raise RepairError("repair tracking is for council-implement runs only")
+    if args.action == "record":
+        if args.task is None or args.gate is None:
+            parser.error("record needs a task id and gate name")
+        return record(run, args.task, args.gate)
+    if args.action == "trail":                 # bin/council's question: trail <gate>
+        if args.task is None or args.gate is not None:
+            parser.error("trail takes one gate name")
+        print("\t".join(trail(run, args.task)))
+        return 0
+    if args.action == "free":                  # bin/council's question: free <task> <gate>
+        if args.task is None or args.gate is None:
+            parser.error("free takes a task id and a gate name")
+        print(free(run, args.task, args.gate))
+        return 0
+    if args.gate is not None:
         parser.error("show/check take at most a task id")
-    try:
-        return act(args.action, args.task, args.gate, run)
-    except ERRORS as exc:
-        return refused(exc)
+    return show(run, args.task, check=args.action == "check")
 
 
 if __name__ == "__main__":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except (RepairError, paths.RecordError, OSError, UnicodeError, ValueError, TypeError) as exc:
+        print("repair: " + str(exc), file=sys.stderr)
+        sys.exit(2)

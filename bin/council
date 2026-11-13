@@ -5100,9 +5100,6 @@ function everyrun(s,   l) {                         # a scope that means every r
 # The changed files listed in a run's change index, one per line.
 index_paths() { sed -n 's/^## \(.*\)  (.*$/\1/p' "$1/index.md" 2>/dev/null; }
 
-# One item per line from a comma-separated list, trimmed.
-split_list() { printf '%s\n' "$1" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$'; }
-
 # Every anchor of the memory entries on stdin, as rows the check can work through in one pass:
 #   <id> <anchor> C <path> <lines>   a file and the lines it names
 #   <id> <anchor> F <path>           a file (it has a folder in it)

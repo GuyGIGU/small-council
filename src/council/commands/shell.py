@@ -4,7 +4,6 @@ started from here gets the value the helper had back, so Git Bash converts its p
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 
@@ -13,6 +12,7 @@ OUTER = "COUNCIL_ARG_CONV_EXCL"     # bin/council's python_run: "set:<value>", o
 
 def bash() -> str:
     """The bash a command line is run with: the first on PATH, as bin/council's own `bash -c` found it."""
+    import shutil                                  # only a command that runs one needs it (D34)
     return shutil.which("bash") or "bash"
 
 
@@ -108,3 +108,19 @@ def _quoted(word: str) -> str:
         else:
             out.extend("\\%03o" % byte for byte in char.encode("utf-8", "surrogateescape"))
     return "$'" + "".join(out) + "'"
+
+
+RETRIED = (85, 126, 127, 49)     # bin/council's python_run tries its next Python on these
+
+
+def ran(code: int) -> int:
+    """The exit code of a command that ran a project's own command. One of the codes bin/council's python_run
+    takes for "this Python could not start" (a gate whose tool was not found exits 127) is marked as this
+    Python's own, in the file COUNCIL_RAN names, so the command is not run again under the next Python."""
+    marker = os.environ.get("COUNCIL_RAN", "")
+    if code in RETRIED and marker:
+        try:
+            open(marker, "w").close()
+        except OSError:                     # bash then tries the next Python, as it did before the marker
+            return code
+    return code

@@ -2,37 +2,16 @@
 from __future__ import annotations
 
 import importlib
-import os
 import sys
 
 from council.commands import cli
 
 COMMANDS = {"home": "home", "sharing": "sharing", "run status": "runs", "cap": "cap", "run plan": "plan",
             "route": "route", "gate": "gate", "gates": "gate_list", "changed": "changed"}
-RETRIED = (85, 126, 127, 49)    # bin/council's python_run tries its next Python on these, unless told this one ran
 
 
 def main(argv: list[str]) -> int:
     """Run one council command line; the exit code is the command's (2 for a refusal)."""
-    code = 1
-    try:
-        code = _main(argv)
-    except SystemExit as stop:          # a gate call stopped by a signal (gate_lock) exits with its code
-        code = stop.code if isinstance(stop.code, int) else 1
-    finally:
-        if code in RETRIED and os.environ.get("COUNCIL_RAN"):
-            _ran(os.environ["COUNCIL_RAN"])
-    return code
-
-
-def _ran(marker: str) -> None:
-    try:
-        open(marker, "w").close()
-    except OSError:
-        pass
-
-
-def _main(argv: list[str]) -> int:
     _plain_streams()
     try:
         args = cli.parse(argv)

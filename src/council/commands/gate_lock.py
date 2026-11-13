@@ -8,6 +8,7 @@ before it writes anything. The holder releases on every way out, a stop by HUP, 
 process is gone is cleared by the next call, which says so."""
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import time
@@ -96,10 +97,8 @@ def _make(folder: Path) -> bool:
 
 
 def _rmdir(folder: Path) -> None:
-    try:
+    with contextlib.suppress(OSError):
         os.rmdir(str(folder))
-    except OSError:
-        pass
 
 
 def _stopped(number: int, frame: object) -> None:
