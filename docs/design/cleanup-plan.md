@@ -32,6 +32,10 @@ decisions before it writes anything.
    debt row true; `python evals/run_all.py` green apart from the known `python3`-stub failure on
    Windows. Commit on the session's own branch when that holds. Never push, never open a PR, never
    touch main: report, and the user decides.
+9. **Account for what you removed, and name the cause of a fix.** The report lists every rule,
+   behaviour, test or assertion the session took out and where each stands now, or says none. A fix
+   states what was wrong in one sentence and how that was observed. The planning session checks
+   both against the diff before it relays the report ([`task-tree.md`](task-tree.md)).
 
 ## Target layout
 
@@ -115,14 +119,21 @@ leaves `bin/council` dispatching the ported commands to `python -m council`. The
 happens in the port: names, comments and function sizes are fixed as the code is rewritten, so no
 bash is polished and then thrown away. Each starts from main after the one before it merges.
 
+The order is leaves first. `state` and `run open`, `close` and `resume` call the plan check (S5),
+usage (S4), the gates table (S6), the ledger, the memory file and redaction (S8), so they are ported
+after all of those, as S8b. S3 found this on 2026-11-13: porting them first would have meant a Python
+copy of about 560 lines beside bash that keeps running, or Python calling the bash back. A session
+that meets such a dependency stops and reports it; it does neither.
+
 | Session | Area (today's sections of `bin/council`) | Rough size |
 |---|---|---|
-| S3 | The dispatcher, the launcher, home and sharing, `run open/close/status/resume`, `state` | ~1M |
+| S3 | The dispatcher, the launcher, home and sharing, `run status`, and one lock rule for bash and Python writers | ~600k |
 | S4 | `seat`, usage, corrections, the agent stop (`cap show/allow/check`) | ~1M |
 | S5 | The run plan check and `route recommend` | ~600k |
 | S6 | `gate`, `gates`, `changed`, the repair glue | ~1M |
 | S7 | `index`, `collect`, `check` (citations, quotes, proofs, hygiene) | ~1–1.5M |
 | S8 | `map`, `doctor`, `fingerprint`, `memory`, `prior`, `ask`, `ledger` | ~1M |
+| S8b | `state`, `run open`, `run close`, `run resume` | ~600k |
 | S9 | Retire the bash: `bin/council` is the launcher only; hooks call the package and `session-start.sh` stops sourcing the helper; `scripts/` entry points go; views move to `src/council/views/` | ~600k |
 
 The open issues land on the Python, right after their area is ported, each as its own small session:
@@ -130,7 +141,7 @@ The open issues land on the Python, right after their area is ported, each as it
   per role), #69 (doctor reports live hooks), #51 (unwritable `.council/`);
 - after S5: #65 (a model per role), specified below;
 - after S6: #68 then #47 (don't rerun green gates);
-- after S7: #58, #64, #59, #60, #50 (the builder round loop);
+- after S7: #58, #59, #60, #50 (the builder round loop), as step T2 of the task tree below;
 - after S8: #55 (memory size budget and a tidy command), #62 (map refresh at close).
 
 Held until the user says otherwise: #63 (a lead-builder seat).
@@ -149,13 +160,23 @@ doesn't enforce yet.
 - The ledger records the model per seat.
 - `lead=` is left out while #63 is held.
 
+**The task tree** · [`task-tree.md`](task-tree.md), a proposal the user asked for on 2026-11-13: the
+request, its tasks and their changes kept as one tree on disk, a builder's orders generated from
+it, and a builder's report checked against its diff. It gathers #50, #57, #58, #59, #60, #61, #64
+and #67 under one design, so those issues are built as its steps and not one by one:
+- T1 after S5: the task fields, their plan check, `NEEDS:` and the research rules (#64) · ~600–800k.
+- T2 after S7: the report head, the saved diff and the checks on it (#58, #59, #50, #60) · ~1M.
+- T3 after T1 and S8: the generated task pack (#57, #61, #67) and `council tree` · ~600–800k.
+- T4 in S10: the planted drill cases (#70).
+
 ### The prose track — parallel with wave 2 (skills, doctrine, references only)
 
 - **P1** · #45, #52, #48, #49 (fewer questions; Deliver shows the PR first; the push freeze) · after
   the checking-mode PR merges, since both edit `council-implement` at its size cap · ~400–600k.
-- **P2 · One rule, one place (WS6)** · every rule gets one home and is cited from the others;
-  doctrine loads by surface (#67); builder rules generated from the config (#57) and rulings stored
-  by the helper (#61) once S3 has landed · ~1M.
+- **P2 · One rule, one place (WS6)** · every rule gets one home and is cited from the others, and
+  the doctrine is split so it can load by surface (#67). The helper side of #67, the builder rules
+  generated from the config (#57) and the rulings stored by the helper (#61) are step T3 of the task
+  tree · ~800k.
 - **P3 · Layout (WS3)** · `references/` split by who reads it (doctrine, seat docs, run contracts,
   templates), every pointer updated in the same branch · ~300–500k. After P2, so files move once.
 
@@ -169,10 +190,10 @@ doesn't enforce yet.
 
 ```
 now      S1 ─┐
-         S2 ─┴─► main ─► S3 ► S4 ► S5 ► S6 ► S7 ► S8 ► S9 ─► S10
+         S2 ─┴─► main ─► S3 ► S4 ► S5 ► S6 ► S7 ► S8 ► S8b ► S9 ─► S10
                           └ issue sessions after S4, S5, S6, S7, S8
 prose    P1 ───────────► P2 ─► P3            (alongside wave 2)
 ```
 
-About 10–14M tokens over 13 main sessions plus the small issue sessions. Two sessions at once at most
+About 10–14M tokens over 14 main sessions plus the small issue sessions. Two sessions at once at most
 on code, plus one on prose: more than that and they wait on each other's merges.
