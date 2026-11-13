@@ -28,7 +28,13 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import cockpit  # noqa: E402  (the read-only run snapshot)
+from council.clock import local_moment, utc_moment as utc_time  # noqa: E402
+from council.records import config, paths  # noqa: E402
+from council.records import seats as seat_files  # noqa: E402
+from council.records import state as run_state  # noqa: E402
+from council.records import plan as run_plan  # noqa: E402
 
 SCHEMA = "council.run-status/1"
 QUIET_MINUTES = 60         # an open run with no recorded activity for this long reads as quiet (stale)
@@ -66,24 +72,6 @@ SEAT_WORDS = {"running": "started", "done": "finished", "failed": "failed", "blo
 
 
 # --- time -----------------------------------------------------------------------------------------------------
-def local_time(text):
-    """A helper's local 'YYYY-MM-DD HH:MM[:SS]' stamp as an aware time, or None."""
-    text = (text or "").strip()[:19]
-    for form in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
-        try:
-            return datetime.strptime(text, form).astimezone()
-        except (ValueError, OverflowError, OSError):
-            continue
-    return None
-
-
-def utc_time(text):
-    try:
-        return datetime.strptime((text or "").strip(), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    except (ValueError, OverflowError):
-        return None
-
-
 def iso(moment):
     return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if moment else None
 
@@ -169,9 +157,9 @@ def checks_of(snap):
 
 def last_activity(snap):
     """The newest time any record of the run was written, and the list it came from."""
-    stamps = [local_time(snap["run"].get("updated")), local_time(snap["run"].get("closed"))]
-    stamps += [local_time(s["updated"]) for s in snap["seats"]]
-    stamps += [local_time(g["when"]) for g in snap["gates"]]
+    stamps = [local_moment(snap["run"].get("updated")), local_moment(snap["run"].get("closed"))]
+    stamps += [local_moment(s["updated"]) for s in snap["seats"]]
+    stamps += [local_moment(g["when"]) for g in snap["gates"]]
     stamps += [utc_time(e["at"]) for e in snap["events"]["last"]]
     stamps = [s for s in stamps if s]
     return max(stamps) if stamps else None
@@ -242,11 +230,11 @@ def recent_of(snap, ref, limit):
                 items.append({"at": iso(moment), "clock": clock(moment, ref), "text": text})
         return items[-limit:], "events"
     for seat in snap["seats"]:
-        moment = local_time(seat["updated"])
+        moment = local_moment(seat["updated"])
         if moment:
             items.append((moment, "{} {}".format(seat_name(snap, seat["slug"]), SEAT_WORDS.get(seat["state"], seat["state"]))))
     for gate in snap["gates"]:
-        moment = local_time(gate["when"])
+        moment = local_moment(gate["when"])
         if moment and gate_kind(gate["name"]) == "check":
             result = "unknown" if gate["exit"] is None else ("passed" if gate["exit"] == 0 else "failed")
             items.append((moment, "Check {} {}".format(check_name(gate["name"]), result)))
@@ -278,7 +266,7 @@ def usage_of(snap):
         text = "not reliably recorded (this run uses the older record format)"
     elif basis == "suspect":
         text = "not shown — some recorded counts look wrong ({})".format(listing(tokens.get("suspect_seats", []), 3))
-    elif not at_least and not agent_starts(snap["run"].get("path") or "."):   # a known zero is not an unknown
+    elif not at_least and not seat_files.agent_starts(snap["run"].get("path") or "."):   # a known zero is not an unknown
         closed = snap["run"].get("status", "").split(" ")[0] in ("complete", "abandoned", "paused")
         text = "no agent ran" if closed else "no agent has run yet"
     else:
@@ -300,93 +288,21 @@ def usage_of(snap):
 INTMAX = 2 ** 63 - 1    # the largest whole number bash's test reads; a comparison with more fails, and stops nothing
 
 
-def plan_budget(run_path, field):
-    """The last `budget run <field>` row's value in run-plan.tsv, spaces, tabs and carriage returns
-    removed ('' when there is none)."""
-    value = ""
-    for line in cockpit.text_of(Path(run_path) / "run-plan.tsv", run_path).split("\n"):
-        cells = line.split("\t")
-        if cells[:3] == ["budget", "run", field]:
-            value = cells[3] if len(cells) > 3 else ""
-    return re.sub(r"[ \t\r]", "", value)
-
-
 def budget_value(run_path, field):
     """A run-wide budget as a whole number, or None: missing, not a number, too large for bash, or a
     zero ceiling (an estimate may be 0)."""
-    value = plan_budget(run_path, field)
+    value = run_plan.budget(run_path, field)
     if not re.fullmatch(r"[0-9]+", value) or int(value) > INTMAX:
         return None
     return int(value) if field == "estimated-tokens" or int(value) > 0 else None
 
 
-def configured_cap(home):
-    """The project's `- agent cap: N` (the first such line of council.config.md), else 10."""
-    try:
-        config = (Path(home) / "council.config.md").read_bytes().decode("utf-8", errors="replace")
-    except (OSError, TypeError):
-        return 10
-    for line in config.split("\n"):
-        found = re.match(r"[ \t\n\r\f\v]*-[ \t\n\r\f\v]*agent cap:[ \t\n\r\f\v]*([0-9]+)", line)
-        if found:
-            return int(found.group(1)) if 0 < int(found.group(1)) <= INTMAX else 10
-    return 10
-
-
 def run_agent_cap(run_path, home=None):
     """The run's agent ceiling: its plan's budget/run/agent-cap, else the configured cap."""
-    value = plan_budget(run_path, "agent-cap")
+    value = run_plan.budget(run_path, "agent-cap")
     if value in ("", "0") or not re.fullmatch(r"[0-9]+", value):
-        return configured_cap(home if home is not None else Path(run_path).parent.parent)
+        return config.agent_cap(home if home is not None else Path(run_path).parent.parent)
     return int(value)
-
-
-def allowed_until(run_path):
-    """The user's latest go (council cap allow): the until of the last readable row of
-    cap-allowances.tsv (at, used, n, until, said) — agent runs may start below that count. A torn or
-    garbage row is passed over; None when no go is on record."""
-    until = None
-    for n, line in enumerate(cockpit.text_of(Path(run_path) / "cap-allowances.tsv", run_path).split("\n")):
-        cells = line.split("\t")
-        if n and len(cells) >= 4 and re.fullmatch(r"[0-9]{1,9}", cells[3]):
-            until = int(cells[3])
-    return until
-
-
-def agent_starts(run_path):
-    """The agent starts the gate let through (bin/council cap_starts): the rows of agent-starts.tsv after
-    its header, a "before:<n>" row counting n. A Workflow is one start; workflow_extra adds the rest."""
-    n = 0
-    for line in cockpit.text_of(Path(run_path) / "agent-starts.tsv", run_path).split("\n")[1:]:
-        if not line.strip():
-            continue
-        cells = line.split("\t")
-        seed = re.fullmatch(r"before:([0-9]{1,9})", cells[1]) if len(cells) > 1 else None
-        n += int(seed.group(1)) if seed else 1
-    return n
-
-
-def workflow_extra(run_path):
-    """A Workflow's agents beyond the one start the gate counted (bin/council cap_extra): for each
-    finished usage report of N > 1 agent runs (per agent id, the latest), N - 1."""
-    by_id, loose = {}, 0
-    for line in cockpit.text_of(Path(run_path) / "usage.tsv", run_path).split("\n")[1:]:
-        cells = line.split("\t")
-        if len(cells) < 5 or cells[3] != "finished" or not re.fullmatch(r"[0-9]{0,4}", cells[4]):
-            continue
-        k = int(cells[4]) if cells[4] else 1
-        if cells[2] == "":
-            loose += max(0, k - 1)
-        else:
-            by_id[cells[2]] = k
-    return loose + sum(max(0, k - 1) for k in by_id.values())
-
-
-def planned_run(run_path):
-    """Opened with plans and agent limits: session-state.md has a plan-schema: value. A run opened before
-    them is never stopped (bin/council cap_standing)."""
-    text = cockpit.text_of(Path(run_path) / "session-state.md", run_path)
-    return re.search(r"^\ufeff?plan-schema:[ \t]*[^ \t\r\n#]", text, re.MULTILINE) is not None
 
 
 def cap_standing(snap, run_path, home=None):
@@ -396,14 +312,14 @@ def cap_standing(snap, run_path, home=None):
     bash's test can't read never stops anything."""
     agents = (snap.get("usage") or {}).get("agents") or {}
     used = agents["total"] if agents.get("total") is not None else (agents.get("at_least") or 0)
-    used = max(used, agent_starts(run_path) + workflow_extra(run_path))    # counted from its start, once
+    used = max(used, seat_files.agent_starts(run_path) + seat_files.workflow_extra(run_path))    # counted from its start, once
     tokens = ((snap.get("usage") or {}).get("tokens") or {}).get("known") or 0
     cap = run_agent_cap(run_path, home)
     ceiling = budget_value(run_path, "token-ceiling")
-    until = allowed_until(run_path)
+    until = seat_files.allowed_until(run_path)
     over = (cap <= INTMAX and used >= cap) or (ceiling is not None and tokens <= INTMAX and tokens > ceiling)
     return {"agent_runs": used, "agent_cap": cap, "tokens": tokens, "ceiling": ceiling, "allowed_until": until,
-            "over": over, "stopped": over and planned_run(run_path) and (until is None or used >= until)}
+            "over": over, "stopped": over and run_state.planned(run_state.text(run_path)) and (until is None or used >= until)}
 
 
 def spend_of(snap, usage, run_path):
@@ -444,19 +360,7 @@ def oversized_memory(run_path):
         return None
     home = run_path.parent.parent
     root = home.parent
-    config = cockpit.text_of(home / "council.config.md", home)
-    in_memory = False
-    configured = ""
-    for line in config.splitlines():
-        if re.match(r"^##[ \t]+", line):
-            in_memory = bool(re.match(r"^##[ \t]+Memory(?:\W|$)", line, re.I))
-        elif in_memory:
-            match = re.match(r"^[ \t]*[-*][ \t]*conventions:[ \t]*(.*)$", line, re.I)
-            if match:
-                configured = match.group(1).strip().strip('`"\'')
-                configured = re.sub(r"[ \t]+\([^()]*\)[ \t]*$", "", configured)
-                configured = re.sub(r"[ \t]+[—–-][ \t].*$", "", configured).strip()
-                break
+    configured = config.memory_path(home)
     choices = []
     if configured:
         for raw in (configured, configured.split()[0]):
@@ -496,20 +400,10 @@ def roster_names(snap):
     for a seat no brief names, a skipped one most often. Read once per snapshot."""
     cached = snap.get("_roster")
     if cached is None:
-        cached, cols = {}, None
+        cached = {}
         home = Path(snap["run"].get("path") or ".").parent.parent
-        for line in cockpit.lines_of(cockpit.text_of(home / "council.config.md", home)):
-            if not line.lstrip().startswith("|"):
-                cols = None
-                continue
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            lower = [c.lower() for c in cells]
-            if {"seat", "slug", "lens"} <= set(lower):
-                cols = (lower.index("seat"), lower.index("slug"), lower.index("lens"))
-            elif cols and len(cells) > max(cols) and not set(cells[0]) <= set("-: "):
-                seat, slug, lens = (cockpit.clean(cells[i]).strip("`") for i in cols)
-                if slug and lens and seat:
-                    cached[slug] = "{} ({})".format(lens, seat)[:40]
+        for seat, slug, lens in config.roster(home):
+            cached[slug] = "{} ({})".format(lens, seat)[:40]
         snap["_roster"] = cached
     return cached
 
@@ -718,7 +612,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
         if check["name"] in mending_gates:
             continue
         if open_run:
-            text = "Check {} failed at {} and hasn't passed since.".format(check["name"], clock(local_time(check["when"]), now))
+            text = "Check {} failed at {} and hasn't passed since.".format(check["name"], clock(local_moment(check["when"]), now))
         else:
             text = "The run ended with check {} failing.".format(check["name"])
         attention.append({"kind": "failure", "severity": 2, "text": text})
@@ -758,7 +652,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
         go = "Stopped at the limit — waiting for your go."
     elif open_run and limit["over"] and limit["allowed_until"] is not None:
         go = "Your go allows up to {}.".format(plural(limit["allowed_until"], "agent run"))
-    elif open_run and limit["over"] and not planned_run(run_path):
+    elif open_run and limit["over"] and not run_state.planned(run_state.text(run_path)):
         go = "It was opened before agent limits, so new agents are not stopped."
     else:
         go = ""
@@ -841,8 +735,8 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
     if real:
         g = real[-1]
         result = "unknown" if g["exit"] is None else ("passed" if g["exit"] == 0 else "failed")
-        latest = {"name": check_name(g["name"]), "result": result, "at": iso(local_time(g["when"])),
-                  "clock": clock(local_time(g["when"]), now)}
+        latest = {"name": check_name(g["name"]), "result": result, "at": iso(local_moment(g["when"])),
+                  "clock": clock(local_moment(g["when"]), now)}
     items, source = recent_of(snap, now, recent)
     stage = stage_of(phase)
     next_step = run.get("next") if open_run else ""
@@ -872,7 +766,7 @@ def interpret(snap, now=None, quiet_minutes=QUIET_MINUTES, recent=5, home=None):
         "schema": SCHEMA,
         "snapshot_at": iso(now),
         "run": {"id": run.get("id", ""), "path": str(run_path), "project": project, "mode": run.get("mode", ""),
-                "started": clock(local_time(run.get("opened")), now) if local_time(run.get("opened")) else "",
+                "started": clock(local_moment(run.get("opened")), now) if local_moment(run.get("opened")) else "",
                 "mode_label": MODES.get(run.get("mode", ""), run.get("mode", "") or "Council run"),
                 "status": status, "phase": phase, "phase_label": phase_label(phase), "stage": stage,
                 "opened": run.get("opened", ""), "closed": run.get("closed", "")},
@@ -968,15 +862,6 @@ def notification_line(status):
     line = re.sub(r"\s+", " ", cockpit.clean(line))
     line = re.sub(r"[`*_#\[\]<>]", "", line).strip()
     return line if len(line) < 200 else line[:196].rstrip() + "..."
-
-
-def notifications_off(home):
-    """A project can suppress notification output without changing ordinary status."""
-    if home is None:
-        return False
-    root = Path(home)
-    content = cockpit.text_of(root / "council.config.md", root, limit=65536)
-    return bool(re.search(r"(?im)^[ \t]*-[ \t]*notifications:[ \t]*off[ \t]*(?:#.*)?$", content))
 
 
 # --- the chat widget ------------------------------------------------------------------------------------------
@@ -1168,14 +1053,14 @@ def main():
     parser.add_argument("--tui-command", action="append", default=[],
                         help="the exact terminal-view command to print (repeatable, e.g. per shell)")
     args = parser.parse_args()
-    if cockpit.linked(args.run) or not args.run.is_dir() or not (args.run / "session-state.md").is_file():
+    if not paths.is_run(args.run):
         print("status: not a council run folder (or a link to one): {}".format(args.run), file=sys.stderr)
         return 2
     now = utc_time(args.at) if args.at else None
     if args.at and not now:
         print("status: --at takes a UTC time like 2026-09-27T15:40:00Z", file=sys.stderr)
         return 2
-    if args.line and notifications_off(args.home or args.run.parent.parent):
+    if args.line and config.notifications_off(args.home or args.run.parent.parent):
         return 0
     reading = interpret(cockpit.snapshot(args.run, args.home, 40), now, home=args.home)
     if args.json:

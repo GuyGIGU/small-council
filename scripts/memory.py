@@ -14,8 +14,10 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import evidence  # noqa: E402  (sibling script: the claim ledger's parser)
 import repair    # noqa: E402  (sibling script: the repair trail's integrity check)
+from council.records import state as run_state  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -60,11 +62,9 @@ def rel(top, path):
         return path.resolve().as_posix()
 
 
-def state_field(run, name):
-    """A session-state value, read as bin/council's field() reads it."""
-    body = evidence.read_file(run / "session-state.md", required=False) or ""
-    match = re.search(r"^" + re.escape(name) + r":[ \t]*(.*)$", body, re.MULTILINE)
-    return re.sub(r"[ \t]{2,}#.*$", "", match.group(1)).strip() if match else ""
+def run_value(run, name):
+    """A session-state value: the first `name:` line in the file, below its header too."""
+    return run_state.first_value(run_state.text(run, read=lambda path: evidence.read_file(path, required=False)), name)
 
 
 def citation_places(citation, top):
@@ -123,7 +123,7 @@ def draft_claim(run, top, claim_id, scope, today):
     if not scope and not places:
         raise MemoryError_("claim {} cites no file of this project to scope it by — pass --scope".format(claim_id))
     sources = [rel(top, run) + "/" + link["ref"]]
-    deliverable = state_field(run, "deliverable")
+    deliverable = run_value(run, "deliverable")
     if deliverable:
         candidate = Path(deliverable) if os.path.isabs(deliverable) else top / deliverable
         if candidate.is_file():
@@ -138,7 +138,7 @@ def draft_claim(run, top, claim_id, scope, today):
         ("Failure", failure),
         ("Anchor", ", ".join(place for _, place in places)),
         ("Scope", one_line(scope, 200, copied=False) if scope else ", ".join(path for path, _ in places)),
-        ("Origin", "run {} ({})".format(name, one_line(state_field(run, "mode") or "unknown mode", 40))),
+        ("Origin", "run {} ({})".format(name, one_line(run_value(run, "mode") or "unknown mode", 40))),
         ("Evidence", ", ".join(sources)),
         ("Verdict", verdict),
         ("Drafted", "{} by council memory propose from claim {} of run {}".format(today, claim_id, name)),
@@ -146,7 +146,7 @@ def draft_claim(run, top, claim_id, scope, today):
 
 
 def draft_repair(run, top, task, scope, today):
-    if state_field(run, "mode") != "council-implement":
+    if run_value(run, "mode") != "council-implement":
         raise MemoryError_("repair proposals come from council-implement runs only")
     if not scope:
         raise MemoryError_("a repair proposal needs --scope: the paths, seats or mode the failure concerns")

@@ -16,7 +16,6 @@ a file the helper or the Chair already writes; the cockpit adds no state of its 
 """
 
 import argparse
-from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -29,161 +28,43 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from council import clock  # noqa: E402
+from council.records import cells  # noqa: E402
+from council.records import events as event_stream  # noqa: E402
+from council.records import gates as gate_files  # noqa: E402
+from council.records import paths  # noqa: E402
+from council.records import plan as run_plan  # noqa: E402
+from council.records import seats as seat_files  # noqa: E402
+from council.records import state as run_state  # noqa: E402
+from council.records.cells import CONTROL, clean, integer, lines_of, number, optional_number  # noqa: E402,F401
+from council.records.paths import contained, linked, text_of  # noqa: E402,F401  (the views read through these)
+
 SCHEMA = "council.run-snapshot/2"
-MAX_FILE = 4 * 1024 * 1024
-BOM = chr(0xFEFF)
 UNICODE = {"done": "✓", "running": "●", "queued": "○", "failed": "✗", "blocked": "■", "skipped": "–",
            "pass": "✓", "fail": "✗", "planned": "·", "unknown": "?", "top": "┌", "bottom": "└", "rule": "─"}
 ASCII = {"done": "+", "running": "*", "queued": "o", "failed": "x", "blocked": "!", "skipped": "-",
          "pass": "+", "fail": "x", "planned": ".", "unknown": "?", "top": "+", "bottom": "+", "rule": "-"}
-# Every C0 and C1 control (tab and newline included: a value is one cell), DEL, and the Unicode line
-# and paragraph separators: none may reach the terminal from a file.
-CONTROL = re.compile("[" + chr(0) + "-" + chr(0x1F) + chr(0x7F) + "-" + chr(0x9F) + chr(0x2028) + chr(0x2029) + "]")
 PLAIN = {"·": "|", "—": "-", "–": "-", "…": "...", "→": "->", "’": "'", "“": '"', "”": '"'}
 NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # the helper's next: at run open (COUNCIL_NEXT_AT_OPEN)
 CLAIM_MODES = ("council-review", "council-plan", "council-research")   # the modes that keep a claim index
 CONVERGE_RESULT = re.compile(r"(not met|partly met|partly|blocked|met)\b")
 CONVERGE_KEYS = {"not met": "not_met", "partly met": "partly", "partly": "partly", "blocked": "blocked", "met": "met"}
 
-
-# --- reading without getting in a live run's way ----------------------------------------------------------
-def linked(path):
-    """True when path itself is a symlink or a Windows junction (its parent may be linked; that is fine)."""
-    path = Path(path)
-    try:
-        return path.is_symlink() or os.path.realpath(str(path)) != os.path.join(os.path.realpath(str(path.parent)), path.name)
-    except (OSError, ValueError):
-        return True
+gate_kind = gate_files.kind                       # one rule for every view (status, history, the pet)
+failed_as_planned = gate_files.failed_as_planned
+corrections_of = seat_files.corrections
 
 
-def contained(path, root):
-    """True when path, links and junctions resolved, stays inside root, also resolved."""
-    try:
-        real, base = os.path.realpath(str(path)), os.path.realpath(str(root))
-    except (OSError, ValueError):
-        return False
-    return real == base or real.startswith(base.rstrip("\\/") + os.sep)
-
-
-def open_shared(path):
-    """On Windows, the file opened with read, write and delete sharing — so the helper's rename of a
-    file the cockpit is reading still succeeds. None where that is not available."""
-    if os.name != "nt":
-        return None
-    try:
-        import ctypes
-        import msvcrt
-        from ctypes import wintypes
-    except ImportError:
-        return None
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    create = kernel.CreateFileW
-    create.restype = wintypes.HANDLE
-    create.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
-                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
-    # GENERIC_READ; FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE; OPEN_EXISTING; FILE_ATTRIBUTE_NORMAL
-    handle = create(str(path), 0x80000000, 0x7, None, 3, 0x80, None)
-    if handle is None or handle == ctypes.c_void_p(-1).value:
-        raise OSError(ctypes.get_last_error(), "cannot open", str(path))
-    try:
-        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | getattr(os, "O_BINARY", 0))
-    except OSError:
-        kernel.CloseHandle(wintypes.HANDLE(handle))
-        raise
-    return os.fdopen(descriptor, "rb")
-
-
-def read_bytes(path, limit):
-    handle = open_shared(path) or open(str(path), "rb")
-    with handle:
-        return handle.read(limit + 1)
-
-
-def text_of(path, root=None, limit=MAX_FILE):
-    """A small regular file's text, or '' when it is missing, a link, outside root, too large or unreadable."""
-    path = Path(path)
-    try:
-        if linked(path) or not path.is_file() or (root is not None and not contained(path, root)):
-            return ""
-        data = read_bytes(path, limit)
-    except OSError:
-        return ""
-    if len(data) > limit:
-        return ""
-    return data.decode("utf-8", errors="replace").lstrip(BOM)
-
-
-def too_large(path, limit=MAX_FILE):
-    try:
-        return Path(path).is_file() and Path(path).stat().st_size > limit
-    except OSError:
-        return False
-
-
-def clean(value):
-    return re.sub(r" {2,}", " ", CONTROL.sub(" ", str(value))).strip()
-
-
-def integer(value):
-    """An int from an int or a string of digits, else None — never a list, a bool or a null."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value if abs(value) < 10 ** 12 else None
-    if isinstance(value, str) and re.fullmatch(r"-?[0-9]{1,12}", value.strip()):
-        return int(value.strip())
-    return None
-
-
-def parse_json(text):
-    try:
-        return json.loads(text)
-    except (ValueError, RecursionError):
-        return None
-
-
-# --- the run's files ------------------------------------------------------------------------------------------
-def lines_of(text):
-    """Lines as the helper's awk splits them: on newline only. str.splitlines() would also split on
-    form feeds, file separators and Unicode line breaks inside a cell, and invent rows."""
-    return [line.rstrip("\r") for line in text.split("\n")]
-
-
+# --- the run's files, through the records library -------------------------------------------------------------
 def header(run):
-    """The key: value lines of session-state.md, above its first heading — the first of a repeated
-    key, leading space dropped, then a trailing '  # comment' — as the helper's state_field reads them
-    (bin/council; its older field() also reads below the heading, which a header key never is)."""
-    fields = {}
-    for line in lines_of(text_of(run / "session-state.md", run)):
-        if line.startswith("## "):
-            break
-        key, sep, value = line.partition(":")
-        key = key.strip()
-        if sep and re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", key) and key not in fields:
-            fields[key] = clean(re.sub(r"[ \t]{2,}#.*$", "", value.lstrip(" \t")))
-    return fields
+    """The run's session-state header, read by the cockpit's rule (records.state.header), each value cleaned."""
+    return {key: clean(value) for key, value in run_state.header(run_state.text(run)).items()}
 
 
 def decisions(run, limit=20):
-    """The lines under session-state.md's '## Decisions so far' (council state decision=), oldest first."""
-    found, inside = [], False
-    for line in lines_of(text_of(run / "session-state.md", run)):
-        if line.startswith("## "):
-            inside = line.strip() == "## Decisions so far"
-            continue
-        if inside and line.startswith("- "):
-            found.append(clean(said(line[2:]))[:300])
-    return found[-limit:]
-
-
-def said(entry):
-    """'<time>: "<words>"' with the words as the user gave them. The helper escapes only quote marks and
-    backslashes (\\" and \\\\); a line holding anything else after a backslash, or a bare quote mark — written
-    before that, or by hand (C:\\temp\\new) — is shown as it is."""
-    m = re.match(r'^(.*?: )"((?:[^"\\]|\\["\\])*)"\s*$', entry)
-    if not m:
-        return entry
-    return '%s"%s"' % (m.group(1), re.sub(r'\\(["\\])', r"\1", m.group(2)))
+    """The user's recorded decisions (council state decision=), oldest first, each cleaned and cut to 300."""
+    return [clean(entry)[:300] for entry in run_state.decisions(run_state.text(run))][-limit:]
 
 
 def next_step(state):
@@ -196,89 +77,8 @@ def next_step(state):
     return step
 
 
-def tsv(run, name):
-    lines = [line for line in lines_of(text_of(run / name, run)) if line.strip() and not line.startswith("#")]
-    if not lines:
-        return []
-    keys = lines[0].split("\t")
-    return [dict(zip(keys, line.split("\t"))) for line in lines[1:]]
-
-
 def jsonl(run, name):
-    rows = []
-    for line in lines_of(text_of(run / name, run)):
-        row = parse_json(line)
-        if isinstance(row, dict):
-            rows.append(row)
-    return rows
-
-
-def number(value):
-    value = str(value or "").strip()
-    return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else 0
-
-
-def plan_of(run):
-    plan, seats = {}, {}
-    for line in lines_of(text_of(run / "run-plan.tsv", run)):
-        cells = line.split("\t")
-        if not line.strip() or line.startswith("#") or len(cells) < 5 or cells[0] == "kind":
-            continue
-        kind, ident, field, value, reason = (clean(c) for c in cells[:5])
-        if kind == "seat":
-            seats.setdefault(ident, {})[field] = value
-            if field == "disposition":
-                seats[ident]["reason"] = reason
-        elif kind == "context":
-            seats.setdefault(ident, {})["context"] = value
-        elif ident in ("run", "plan"):
-            plan[field] = value
-    plan["seats"] = seats
-    return plan
-
-
-def gates_of(run):
-    gates = []
-    folder = run / "gates"
-    if not folder.is_dir() or linked(folder):
-        return gates
-    for path in sorted(folder.glob("*.json")):
-        data = parse_json(text_of(path, run) or "{}")
-        if isinstance(data, dict) and "exit" in data:
-            gates.append({"name": clean(data.get("gate", path.stem)) or path.stem, "exit": integer(data.get("exit")),
-                          "seconds": integer(data.get("seconds")) or 0, "when": clean(data.get("when", "")),
-                          "command": clean(data.get("command", ""))[:200], "note": clean(data.get("note", "")),
-                          "proof": clean(data.get("proof", "change")), "void": void_of(data)})
-    return sorted(gates, key=lambda g: g["when"])
-
-
-def void_of(data):
-    """Why a red proves nothing, as council check reads it: marked invalid, stopped at its time limit, or a
-    command that never ran (exit 127). Empty when the result may count."""
-    if clean(data.get("invalid", "")):
-        return "marked invalid ({})".format(clean(data.get("invalid", "")))
-    if data.get("timed_out") is True:
-        return "timed out"
-    if integer(data.get("exit")) == 127:
-        return "never ran (exit 127)"
-    return ""
-
-
-def gate_kind(name):
-    """A build's before-proof is meant to fail — and so is a review fix's regress-proof, the new check run on the
-    version a verifier saw — and a probe is a dry run: none is a check of the work. Every view takes this rule."""
-    if name.startswith(("before-", "regress-")):
-        return "proof"
-    if name.startswith("probe-"):
-        return "probe"
-    return "check"
-
-
-def failed_as_planned(gate):
-    """A change-proof check that failed did its job: it showed the problem before the fix. A before-check declared
-    --proof preserve must pass, so its failure is a real one, and a void red (void_of) showed nothing."""
-    return (gate_kind(gate["name"]) == "proof" and gate["exit"] not in (0, None) and gate.get("proof") != "preserve"
-            and not gate.get("void"))
+    return cells.jsonl_rows(text_of(run / name, run))
 
 
 def repairs_of(run):
@@ -435,13 +235,11 @@ def converge_of(run, deliverable):
 
 
 def events_of(run, last):
-    path = run / "events.tsv"
-    if too_large(path):
+    stream = event_stream.table(run)
+    if stream.too_large:
         return {"count": None, "malformed": 0, "last": [], "present": True, "header_ok": None, "too_large": True,
                 "gates": {}, "chair": None}
-    lines = [line for line in lines_of(text_of(path, run)) if line.strip()]
-    rows = [line.split("\t") for line in lines[1:]]
-    good = [r for r in rows if len(r) == 7]
+    good = [r for r in stream.rows if len(r) == 7]
     shown = [{"seq": clean(r[1]), "at": clean(r[2]), "type": clean(r[3]), "subject": clean(r[4]),
               "value": clean(r[5]), "detail": clean(r[6])} for r in good[-last:]] if last else []
     gates = {}          # every gate's runs from the event stream: a re-run overwrites gates/<name>.json
@@ -458,9 +256,8 @@ def events_of(run, last):
             if result in ("passed", "failed"):
                 seen[result] += 1
                 seen["last"] = result
-    return {"count": len(good), "malformed": len(rows) - len(good), "last": shown, "present": bool(lines),
-            "header_ok": bool(lines) and lines[0] == "schema\tseq\tat\ttype\tsubject\tvalue\tdetail", "too_large": False,
-            "gates": gates, "chair": chair}
+    return {"count": len(good), "malformed": len(stream.rows) - len(good), "last": shown, "present": stream.present,
+            "header_ok": stream.header_ok, "too_large": False, "gates": gates, "chair": chair}
 
 
 def proposals_in(home):
@@ -477,32 +274,6 @@ def proposals_in(home):
         elif inside and (line.startswith("### ") or re.match(r"\s*-\s+PROPOSED\b", line)):
             count += 1
     return count
-
-
-def optional_number(value):
-    """A recorded count, or None when the cell is blank or not a plain number (never guessed as 0)."""
-    value = str(value if value is not None else "").strip()
-    return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else None
-
-
-def evidenced(text):
-    """Evidence names a source: at least one letter or digit once cleaned (the helper's awk asks the same)."""
-    return bool(re.search(r"[A-Za-z0-9]", clean(text or "")))
-
-
-def corrections_of(run):
-    """The latest evidence-backed correction per seat and field, from the append-only corrections.jsonl.
-    A correction never changes seats.tsv; it is laid over it here, and its evidence travels with it.
-    Read exactly as the helper's corrections_tsv reads it: a whole number of at most 12 digits, and
-    evidence that names something."""
-    latest = {}
-    for row in jsonl(run, "corrections.jsonl"):
-        seat, field, to = clean(row.get("seat", "")), clean(row.get("field", "")), integer(row.get("to"))
-        if seat and field in ("tokens", "agents") and to is not None and to >= 0 and evidenced(row.get("evidence")):
-            latest[(seat, field)] = {"seat": seat, "field": field, "to": to, "from": clean(row.get("from", "")),
-                                     "evidence": clean(row.get("evidence", ""))[:300], "at": clean(row.get("at", "")),
-                                     "added": row.get("added") is True}
-    return latest
 
 
 def seat_usage(row, fixes):
@@ -607,7 +378,7 @@ def snapshot(run, home=None, last_events=8):
         state["next"] = next_step(state)     # every reader — the screen, the card, the summary — shares this
     fixes = corrections_of(run)
     seats = []
-    for row in tsv(run, "seats.tsv"):
+    for row in seat_files.rows(run):
         slug = clean(row.get("slug", ""))
         if not slug:
             continue
@@ -619,7 +390,7 @@ def snapshot(run, home=None, last_events=8):
         for key in ("raw_tokens", "raw_agents", "raw_reported"):
             seat.pop(key)
         seats.append(seat)
-    recorded = {s["slug"] for s in seats} | {clean(r.get("slug", "")) for r in tsv(run, "seats.tsv")}
+    recorded = {s["slug"] for s in seats} | {clean(r.get("slug", "")) for r in seat_files.rows(run)}
     for slug in sorted({f["seat"] for f in fixes.values() if f["added"]} - recorded):
         if (slug, "agents") in fixes:        # an agent run never recorded, added from evidence (its figure may be unknown)
             seat = {"slug": slug, "state": "done", "agent": "", "updated": "", "added": True,
@@ -633,12 +404,12 @@ def snapshot(run, home=None, last_events=8):
         "run": {"id": clean(run.name), "path": str(run), **{k: state.get(k, "") for k in (
             "status", "mode", "phase", "updated", "opened", "closed", "size", "ask", "deliverable", "next", "actual",
             "waiting")}},
-        "plan": plan_of(run),
+        "plan": run_plan.summary(run),
         "decisions": decisions(run),
         "seats": seats,
         "usage": usage_totals(seats),
         "corrections": sorted(fixes.values(), key=lambda f: (f["seat"], f["field"])),
-        "gates": gates_of(run),
+        "gates": gate_files.results(run),
         "repairs": repairs_of(run),
         "claims": claims_of(run, state.get("mode", "")),
         "events": events_of(run, last_events),
@@ -796,21 +567,12 @@ def render(snap, ascii_only=False, width=None, reading=None):
         add(" Timeline ({} event(s){})".format(events["count"],
                                                ", {} malformed".format(events["malformed"]) if events["malformed"] else ""))
         for e in events["last"]:
-            add("  {} {:<20} {:<12} {}".format(local_time(e["at"]), e["type"][:20], e["subject"][:12], e["value"]))
+            add("  {} {:<20} {:<12} {}".format(clock.event_clock(e["at"]), e["type"][:20], e["subject"][:12], e["value"]))
     add(g["bottom"] + g["rule"] * (width - 1))
     out = "\n".join(lines)
     if ascii_only:
         out = "".join(PLAIN.get(ch, ch if ord(ch) < 128 else "?") for ch in out)
     return out
-
-
-def local_time(stamp):
-    """An event's UTC time as local HH:MM:SS, so it reads like the gates' local times."""
-    try:
-        moment = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-        return moment.astimezone().strftime("%H:%M:%S")
-    except (ValueError, OverflowError, OSError):
-        return stamp[11:19]
 
 
 def ascii_needed():
@@ -874,7 +636,7 @@ def main():
     parser.add_argument("--events", type=int, default=8)
     parser.add_argument("--interval", type=float, default=2.0)
     args = parser.parse_args()
-    if linked(args.run) or not args.run.is_dir() or not (args.run / "session-state.md").is_file():
+    if not paths.is_run(args.run):
         print("tui: not a council run folder (or a link to one): {}".format(args.run), file=sys.stderr)
         return 2
     ascii_only = args.ascii or ascii_needed()

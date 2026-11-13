@@ -23,11 +23,10 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from council.records.ledger import VERIFIERS, LedgerError, read as read_ledger  # noqa: E402,F401  (history and tune catch LedgerError)
+
 SCHEMA = "council.seat-advice/1"
-MAX_LEDGER = 8 * 1024 * 1024
-COLUMNS = ("date", "run", "mode", "seat", "raised", "kept", "cut", "refuted", "tokens")
-CHECKED = "2"           # the accounting column of a row whose tokens are a checked figure or "-"
-VERIFIERS = "(verifiers)"
 # The bar, stated once so the report, the doctrine and the tests read the same numbers.
 BAR = {
     "min_runs": 3,          # judged runs before a seat's record is weighed at all
@@ -43,67 +42,11 @@ BAR = {
     "drop_ceiling": 0.15,   # useful share's upper bound below this, after drop_runs → drop?
     "cost_ratio": 2.0,      # tokens per useful item above this multiple of the median → costly
 }
-CONTROL = re.compile(r"[\x00-\x1f\x7f]")
-
-
-class LedgerError(Exception):
-    """The ledger cannot be read."""
 
 
 def seat_of(slug):
     """A split worker (hunt-a) or a fresh round-2 one (hunt-r2) is its seat, as council ledger reads it."""
     return re.sub(r"-(r[0-9]+|[a-z])$", "", slug)
-
-
-def count(cell):
-    cell = cell.strip()
-    if not re.fullmatch(r"[0-9]{1,12}", cell):
-        raise ValueError(cell)
-    return int(cell)
-
-
-def tokens_of(cells):
-    """A row's trusted token figure: a number on a checked row, else None (unknown or unchecked)."""
-    checked = len(cells) > 9 and cells[9].strip() == CHECKED
-    cell = cells[8].strip()
-    if cell in ("-", ""):
-        if checked:
-            return None
-        raise ValueError(cell)
-    value = count(cell)
-    return value if checked else None
-
-
-def read_ledger(path):
-    """Rows of the ledger as dicts, and how many lines could not be read. None when there is no ledger."""
-    path = Path(path)
-    if not path.exists():
-        return None, 0
-    if not path.is_file() or path.stat().st_size > MAX_LEDGER:
-        raise LedgerError("the ledger is not a regular file under 8 MB: " + str(path))
-    text = path.read_bytes().decode("utf-8-sig", errors="replace")    # a BOM (PowerShell 5.1) is no cell
-    rows, bad = [], 0
-    for number, line in enumerate(text.split("\n")):                   # as awk splits lines: \n only
-        line = line.rstrip("\r")
-        if not line.strip() or (number == 0 and line.startswith("date\t")):
-            continue
-        cells = line.split("\t")
-        if len(cells) < len(COLUMNS) or not cells[1].strip() or not cells[3].strip():
-            bad += 1
-            continue
-        row = {"date": cells[0].strip(), "run": cells[1].strip(), "mode": cells[2].strip() or "-",
-               "seat": CONTROL.sub("", cells[3].strip())}
-        try:
-            if row["seat"] == VERIFIERS:
-                row.update(raised=0, kept=0, cut=0, refuted=0, tokens=tokens_of(cells))
-            else:
-                row.update(raised=count(cells[4]), kept=count(cells[5]), cut=count(cells[6]),
-                           refuted=count(cells[7]), tokens=tokens_of(cells))
-        except ValueError:
-            bad += 1
-            continue
-        rows.append(row)
-    return rows, bad
 
 
 def wilson(k, n, z):

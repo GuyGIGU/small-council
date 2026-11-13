@@ -478,6 +478,39 @@ check("checking: build-proof.md states one per batch as the default and per task
       "**Per task**" in build_proof and "Checking" in skill["council-implement"] and
       "per task only" in skill["council-implement"] and
       "- checking: one per batch" in read("references", "templates", "council.config.md"))
+cfg_template = read("references", "templates", "council.config.md")
+impl_deliver = flat(skill["council-implement"].split("## At Deliver", 1)[-1])
+deliver_doc = flat(doctrine["09-deliver.md"])
+check("open items: the config template carries `- open items: ask` and fix now; the build's Deliver reads the line "
+      "(missing means ask), fix now is one receipt line each with time and tokens and no per-item question, commit, "
+      "push and PR stay questions, and a data-loss hazard still gets its own line (#45)",
+      "- open items: ask" in cfg_template and '"open items": ask | fix now' in cfg_template and
+      "`- open items:` line (missing or unreadable: `ask`" in impl_deliver and "no per-item question" in impl_deliver and
+      "`<what> — ~<time> — ~<k>k tokens`" in impl_deliver and
+      "Commit, push and PR stay questions under either setting" in impl_deliver and
+      "A data-loss hazard still gets its own line to the user the moment you find it" in impl_deliver)
+check("09-deliver: the rulings go out as one AskUserQuestion — the harmless items under one plain sentence, the "
+      "recommended option first with what happens and what it costs, a real hazard its own question defaulting to "
+      "fix now, the detail in the log — and the kernel, the build receipt and the post-game point at it (#52)",
+      "ONE AskUserQuestion" in deliver_doc and "never as a numbered list of notes" in deliver_doc and
+      '"nothing here can break the app or lose work"' in deliver_doc and
+      "the recommended option first, and each option saying what happens next and what it costs" in deliver_doc and
+      "as its own question, with *fix now* as the default" in deliver_doc and
+      "in the log or the deliverable, not in the question" in deliver_doc and
+      all("(Deliver, step 6)" in flat(skill[s]) for s in ["context-core", "council-implement", "council-postgame"]) and
+      not any("numbered rulings" in skill[s] for s in ["council-implement", "council-postgame"]))
+check("implement: the push/PR order is the freeze, then git fetch and gh pr list --state all (did the base move, did "
+      "a related PR merge), then pr-body.md printed for the user's edit or OK; the PR question only after it (#48)",
+      "`git fetch`, then `gh pr list --state all`" in impl_deliver and "whether the base moved" in impl_deliver and
+      "a related PR merged" in impl_deliver and "print `<run>/pr-body.md` for the user's edit or OK" in impl_deliver and
+      "The PR question comes only after that OK" in impl_deliver and
+      -1 < impl_deliver.find("**The freeze:**") < impl_deliver.find("**Fetch first:**") < impl_deliver.find("**The PR text:**"))
+check("pushes: the config template carries `- pushes: on` with off and off until a date; under a freeze the build "
+      "commits, records it and stops, and the receipt's Built line says push and PR held by the freeze (#49)",
+      "- pushes: on" in cfg_template and '"pushes": on | off | off until <YYYY-MM-DD>' in cfg_template and
+      "`- pushes:` line (missing means `on`)" in impl_deliver and "`off until <date>` before that date" in impl_deliver and
+      "the freeze holds push and PR only" in impl_deliver and "record the commit in the log, and stop" in impl_deliver and
+      re.search(r"^Built: .*\[· push and PR held by the freeze\]$", skill["council-implement"], re.MULTILINE) is not None)
 check("verifier: judges the Done-when, never hunts past it, and notes the rest under ## Noticed — never as a verdict "
       "(a real batch's checks ran ten hours finding a narrower gap each round)",
       "Judge the Done-when, nothing wider" in verifier and "## Noticed" in verifier and "however narrow" in verifier

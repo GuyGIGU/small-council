@@ -117,20 +117,12 @@ the converge pass starts, `council state phase=challenge`.
      didn't name. When it can't compare, read both outputs side by side. Keep the standing clause
      on the receipt.
    - **It can't run** → config drift: log it and tell the user.
-   - **It fails during this task** → use the bounded loop in `references/repair-loop.md`:
-     `council gate` records it (no `council repair record`), inspect its advisory
-     category, saved output and baseline, then repair and rerun the **same** gate. The first failure
-     stays with the builder; the second calls for one independent read-only diagnosis if this task
-     has not used that worker already; otherwise stop and report. The third failed execution stops
-     product-code mutation for this task, and the gate is refused until the user's go
-     (`council repair allow <gate> --user-said "…"`). Jump to blocked-task logging and the receipt
-     (`council state phase=deliver skip="blocked: task <n>"`);
-     do not attempt steps 6–7 as a fix path, start another gate trail, or commit it as complete.
-     Preserve the diff and gate output; never silently revert unrelated work. Read-only review
-     cannot reopen repair. When the build stops blocked, run `council status --line`; if it prints
-     a line, send it once with a `PushNotification` tool (deferred? search the tools first).
-     Without Python 3.8+, log the same attempts and limit. Never count the intentionally failing
-     `before-<n>` check as a repair attempt.
+   - **It fails during this task** → the bounded loop in `references/repair-loop.md`: `council gate`
+     records it (no `council repair record`); inspect its saved output and baseline, repair, and rerun
+     the **same** gate. The third failed execution blocks the task: jump to blocked-task logging and
+     the receipt (`council state phase=deliver skip="blocked: task <n>"`);
+     do not attempt steps 6–7 as a fix path. A blocked build stops for the user (context-core,
+     Alerts). Never count the intentionally failing `before-<n>` check as an attempt.
 6. **After-evidence — only if the task is not blocked.** Run the same check again,
    `council gate after-<n> -- '<same command>'`, keeping `--proof preserve` if selected before editing.
    It must pass under the build-proof contract.
@@ -145,17 +137,14 @@ the converge pass starts, `council state phase=challenge`.
 
    It judges the Done-when only; the gate refuses a brief sending it hunting.
 
-   Batch as Checking says; track each with `council seat verify-<n> …`; one stopped at its turn limit is resumed with SendMessage
-   ("write your file now"), never re-dispatched. Then act on the verdict:
+   Batch as Checking says; track each with `council seat verify-<n> …` (one stopped at its turn limit:
+   context-core, Turns). Then act on the verdict:
    - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
      `c`), so the first verdict stays on disk. A fix that would add a task or a new mechanism — a
      lock, a guard, a file, another re-check round — gets one line to the user first.
-   - **A second failed verification** → a **clean-context diagnosis** if this task has not already
-     used its one diagnosis worker for a gate failure; otherwise stop and report. The worker is read-only.
-     Its dispatch message is its whole brief — the task and its Done-when, both verdict files, the
-     diff's path, `ref: none` — and it writes `<run>/seats/diagnose-<n>.md`, an index of root-cause
-     candidates (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it as role
-     `diagnosis` (`council run plan check`), then `council seat diagnose-<n> …`. Then one more attempt;
+   - **A second failed verification** → a **clean-context diagnosis** (repair-loop.md, The diagnosis
+     worker: its brief and `<run>/seats/diagnose-<n>.md`) if this task has not already used its one
+     diagnosis worker for a gate failure; otherwise stop and report. Then one more attempt;
      still failing → stop and report. A third check is refused (by `council seat` and the agent gate)
      until a `diagnose-…` seat is on record after the second verdict, or the user's go is
      (`council state decision="…"`).
@@ -239,7 +228,7 @@ The same seven lines after every build, in this order, whatever happened, so aft
 user reads it at a glance and notices the moment a line changes:
 
 ```
-Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>]
+Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>] [· push and PR held by the freeze]
 Works?: <what proved it — "ran <command> and <what happened>", or honestly "nobody ran it; proved by the tests and by reading the code">
 Checked by machine: <the gates' verdict line, baseline → now> | <the helper's own NOTHING WAS CHECKED line, quoted> [· <the standing red-baseline clause>]
 Shortcuts I took: <one line each> | none
@@ -253,23 +242,36 @@ and no unresolved verifier regression. A partly met or blocked task is named aft
 is not counted as built: "5 of 6 tasks · 1 partly met: exports stop at 5,000 rows". A task stopped
 by the repair limit is **blocked**, not merely partly met, even if some code works. A red mandatory
 gate or known regression cannot be hidden behind a clean count. `Cost:` labels helper-only usage
-as such; never imply that it includes the Chair or the whole session when those figures are not
-available. **Never omit the last four.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
+as such; never imply it includes the Chair or the whole session when those figures are unavailable.
+**Never omit the last four.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
 these — not a vibe: a hardcoded value, a skipped case, a swallowed error, a loosened or disabled
 check, a test that asserts less than the behaviour, a TODO left behind, or a fix whose only proof was
 a throwaway command. Every one also goes in the log's `## Shortcuts and concessions`.
 
-One carve-out: a **guardrails task** — fitting a formatter, linter, type check, audit or test runner —
-proves itself by the gate going red on a deliberate violation and green once it's removed
-(`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`). That is evidence, not a shortcut, and it doesn't
-belong on the shortcut line.
+A **guardrails task**'s both-ways proof (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`) is
+evidence, not a shortcut.
 
-Then the numbered rulings and memory proposals, as always.
+Then the rulings as one question (Deliver, step 6), and the memory proposals.
 
-**No commit, push or PR question while anything is left open.** First offer each `Left open:` item as
-*fix now* or *later* — a data-loss hazard defaults to fix now — and wait: "later" is the user's ruling,
-never yours. Ask the commit, push or PR question last and on its own, once the last verifier (a
-post-game's too) is back — never in the same message as a fix question.
+**No commit, push or PR question while anything is left open.** How items close is the config's
+`- open items:` line (missing or unreadable: `ask`, and say so):
+- **`ask`:** offer each `Left open:` item as *fix now* or *later* in that question
+  — a data-loss hazard defaults to fix now — and wait: "later" is the user's ruling, never yours.
+- **`fix now`:** no per-item question. Each item is one `Left open:` line — `<what> — ~<time> —
+  ~<k>k tokens` — and you fix it like the fix round: gates prove it; a re-check or spend past the
+  budget still needs the user's go; one you can't fix goes to the rulings question. A data-loss
+  hazard still gets its own line to the user the moment you find it.
+
+Commit, push and PR stay questions under either setting: ask them last, on their own, once the last
+verifier (a post-game's too) is back, never beside a fix question, and in this order:
+1. **The freeze:** the config's `- pushes:` line (missing means `on`). Under `off`, or `off until
+   <date>` before that date, the freeze holds push and PR only: commit as authorized, record the
+   commit in the log, and stop; the receipt's `Built:` line ends `· push and PR held by the freeze`.
+   From the date on, or for a word you can't read, it is `on`; say which.
+2. **Fetch first:** `git fetch`, then `gh pr list --state all`. Say whether the base moved since
+   `Start:` and whether a related PR merged; no remote or no `gh`, say that instead.
+3. **The PR text:** print `<run>/pr-body.md` for the user's edit or OK. The PR question comes only
+   after that OK.
 
 File the request (`council ask save`). Then **offer a post-game when the log shows one is worthwhile**
 — at least one of:

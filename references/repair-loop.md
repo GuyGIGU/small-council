@@ -21,7 +21,7 @@ checks that saved snapshots still match it.
 | Failed execution | Next step |
 |---|---|
 | First | Original builder investigates the output and the governing reference. |
-| Second | One independent, read-only diagnosis worker gets the task, both saved attempts, baseline and diff. The Chair chooses the fix. If this task already used its one diagnosis worker for verifier trouble, stop instead. |
+| Second | One independent, read-only diagnosis worker (The diagnosis worker, below). If this task already used its one diagnosis worker for verifier trouble, stop instead. |
 | Third | Stop product-code mutation and report the blocker and remaining uncertainty. No fourth automatic attempt. |
 
 Once a trail records its third failure, `council gate <that gate>` refuses to run it and says what to
@@ -32,11 +32,11 @@ failure goes under the new task id the gate names (`T2-2`). `gate --all` skips i
 
 The third failure stops the build, not just this gate. Do not start later tasks or continue to the
 after-evidence step, a verifier's fix path, another gate-repair trail, or a success commit for the
-same task. A read-only review may describe the stopped state; it must not authorize another fix.
+same task. A read-only review may describe the stopped state; it cannot reopen repair or authorize another fix.
 The Chair may still write the run log, check the saved repair trail, and give the receipt. Mark the
 task **blocked**, even if some requested behavior was implemented. A mandatory gate that remains
-red cannot support a "built" claim. Preserve the attempted diff and evidence for the user; do not
-automatically discard task changes or unrelated work to manufacture a green tree. If a known
+red cannot support a "built" claim. Preserve the attempted diff and the gate output for the user;
+never silently revert unrelated work, nor discard task changes to manufacture a green tree. If a known
 regression remains, name it and leave the result unmerged for a user decision about repair or
 rollback.
 
@@ -76,6 +76,15 @@ Verifier `INCOMPLETE` and `REGRESSION` verdicts keep the build mode's existing s
 protocol: two failed verifications trigger independent diagnosis; one more failure stops. Do not
 count verifier rows as gate executions or make a machine category from their prose. Both trails
 belong in the implementation log and final receipt.
+
+## The diagnosis worker
+
+A task gets one, for a second gate failure or a second failed verification, whichever comes first. It
+is read-only, and its dispatch message is its whole brief: the task and its Done-when, the two failed
+attempts (both saved gate outputs, or both verdict files), the baseline, the diff's path, and
+`ref: none`. It writes `<run>/seats/diagnose-<n>.md`, an index of root-cause candidates
+(`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it as role `diagnosis`
+(`council run plan check`), then `council seat diagnose-<n> …`. The Chair chooses the fix.
 
 Python 3.8+ is optional. Without it, keep the same three-attempt bound and save the gate paths and
 diagnosis in the implementation log manually. Existing runs need no migration.

@@ -11,6 +11,18 @@ Every suite runs even when another fails; each one's output is printed whole whe
 table of results, times and check counts, and it exits 1 if any suite failed. `--list` shows the jobs. A new `evals/run_*.py` must be added to
 its list, or the run fails, so no suite can be left out of CI.
 
+**The fast tier:** `python evals/run_all.py --fast` runs validation, the structural evals, the
+ratchet and its self-test, the unit tests in `tests/py/` (skipped, and said so, while that folder is
+absent) and the quickest scenario suites, in under a minute; `--list` marks its jobs. It is a first
+look while you work, not the gate: the full run is.
+
+**The ratchet:** `python evals/run_ratchet.py` compares sizes and structure with `evals/ratchet.json`:
+each file's lines, longest function and ShellCheck warnings (when `shellcheck` is on PATH), and the
+counts of files that parse a council file, `council.config.md` readers and scripts that run
+`bin/council`. A number may only go down; a regression is one line naming the file, the measure, the
+baseline and the new value. `--update` keeps a gain and refuses a rise, `--show` prints the files
+each count names, and `--self-test` plants each kind of regression and checks it is caught.
+
 ## 1. Validation — will the plugin load?
 
 ```bash
