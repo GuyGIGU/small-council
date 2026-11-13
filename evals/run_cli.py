@@ -3119,7 +3119,7 @@ def runs_helper_carries_next_steps(tmp):
         _, out, _ = council(tn, "run", "open", "council-review", env=env)
         r = out.strip().splitlines()[-1]
         write_plan(r, selected=("chair", "w1"))
-        to_deliver(tn, env=env)
+        to_deliver(tn)               # the plan check a phase change runs is Python (S5): only the close goes without it
         council(tn, "seat", "w1", "done", "agent=a1", "tokens=20000", env=env)
         return council(tn, "run", "close", env=env)
 
