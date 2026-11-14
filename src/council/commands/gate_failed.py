@@ -8,8 +8,8 @@ import re
 from pathlib import Path
 
 from council.commands import cli, gate_output
-from council.commands.gate_run import Call, Result, event, qname, recorded
-from council.records import gates
+from council.commands.gate_run import Call, Result, event, qname
+from council.records import gates, verdicts
 
 
 def said(call: Call, name: str, result: Result, secs: int, info: tuple, content: str) -> bool:
@@ -68,7 +68,7 @@ def compare(baseline: Path, content: str) -> bool:
     shown = "gates/baseline/%s.txt" % baseline.name
     seen = gate_output.failure_ids(gate_output.text(baseline.as_posix() + ".txt"))
     now = gate_output.failure_ids(content)
-    if recorded(baseline.as_posix() + ".json", "exit") == "0":    # green at the baseline: nothing old to subtract
+    if verdicts.number(baseline.as_posix() + ".json", "exit") == "0":  # green at the baseline: nothing old to subtract
         cli.say("    this gate passed at the baseline (%s), so every failure here is new" % shown)
     elif now and seen:
         new = [test for test in now if test not in seen][:12]

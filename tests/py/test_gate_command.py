@@ -13,7 +13,7 @@ from unittest import mock
 import support
 
 from council.commands import changed, cli, gate, gate_exec, gate_list, gate_lock, gate_output, gate_run, shell
-from council.records import events, gate_notes, gate_table, locks, state_write
+from council.records import events, gate_notes, gate_table, locks, state_write, verdicts
 
 HEAD = ("| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs |\n"
         "|---|---|---|---|---|---|---|---|\n")
@@ -141,7 +141,7 @@ class RunHelpersTest(support.Scratch):
         self.write(".council/runs/2026-01-02-030405-council-review/gates/baseline/t.json",
                    '{"gate": "t", "exit": 0, "seconds": 70}\n')
         path = str(run / "gates" / "baseline" / "t.json")
-        self.assertEqual((gate_run.recorded(path, "exit"), gate_run.recorded(path, "seconds")), ("0", "70"))
+        self.assertEqual((verdicts.number(path, "exit"), verdicts.number(path, "seconds")), ("0", "70"))
         call = gate_run.Call(run.as_posix(), str(self.tmp / ".council"), str(self.tmp), False, None, "", False)
         self.assertEqual(gate_run.limit(call, "t"), (210, "3× its 70s green baseline"))
         self.assertEqual(gate_run.limit(call, "u"), (1800, "the default, with no green baseline to go by"))

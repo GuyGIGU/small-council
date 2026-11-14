@@ -14,8 +14,8 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from council.commands import cli, gate_exec, gate_output, resolve
-from council.records import config, events, gates
+from council.commands import cli, event_note, gate_exec, gate_output, resolve
+from council.records import config, gates, verdicts
 
 HITS = re.compile(r"error|fail|exception|traceback|assert|panic|cannot|not found|undefined", re.IGNORECASE)
 CMD_SWITCH = re.compile(r"(^|[ \t\n\v\f\r;&|(])([cC][mM][dD](\.[eE][xX][eE])?)([ \t\n\v\f\r]+)"
@@ -57,16 +57,6 @@ def windows_command(command: str) -> str:
     return CMD_SWITCH.sub(lambda m: m.group(1) + m.group(2) + m.group(4) + "//" + m.group(5) + m.group(6), command)
 
 
-def recorded(path: str, key: str) -> str:
-    """A verdict's number, as the helper's sed read it: the last `"key": N` on the first line that has one."""
-    pattern = re.compile(r'.*"%s": *(%s)' % (key, "-?[0-9]+" if key == "exit" else "[0-9]+"))
-    for line in gate_output.lines(gate_output.text(path)):
-        found = pattern.match(line)
-        if found:
-            return found.group(1)
-    return ""
-
-
 def limit(call: Call, name: str) -> tuple[int, str]:
     """This gate's time limit in seconds and where it came from: --timeout; else the largest of three times its
     own green baseline in this run, the config's `- gate time limit:` and 120 s; with neither, 9 minutes for a
@@ -74,7 +64,7 @@ def limit(call: Call, name: str) -> tuple[int, str]:
     if call.timeout is not None:
         return call.timeout, "set by --timeout"
     baseline = gates.files(Path(call.run), gates.slug(name), baseline=True)[0].as_posix()
-    secs = recorded(baseline, "seconds") if recorded(baseline, "exit") == "0" else ""
+    secs = verdicts.number(baseline, "seconds") if verdicts.number(baseline, "exit") == "0" else ""
     seconds, raw = config.gate_time_limit(call.home)
     bad = " (the config's gate time limit '%s' is not a time)" % raw if raw and seconds is None else ""
     if not secs and seconds is None:
@@ -95,11 +85,7 @@ def limit(call: Call, name: str) -> tuple[int, str]:
 
 def event(run: str, name: str, value: str, detail: str, said: str) -> None:
     """One gate event; a failure to record it is said on stderr and never changes the gate's result."""
-    try:
-        events.append(Path(run), "gate." + ("invalidated" if value == "invalid" else "finished"), name, value, detail)
-    except events.EventError as failure:
-        cli.warn("council: " + str(failure).replace(str(events.path(Path(run))), events.path(Path(run)).as_posix()))
-        cli.warn("council: " + said)
+    event_note.append(run, "gate." + ("invalidated" if value == "invalid" else "finished"), name, value, detail, said)
 
 
 def run_gate(call: Call, name: str, command: str) -> Result:
