@@ -6981,6 +6981,78 @@ def models_per_role(tmp):
           code == 1 and "seat model overrides are off; enable seat models: on in council.config.md" in out, out)
 
 
+@part("reports")
+def reports_refusals(tmp):
+    """The words and flags memory, ledger, map, fingerprint, doctor, impact and prior refuse, each with its usage
+    or the next step, before anything is read or written."""
+    repo = new_repo(tmp, "reports")
+    write(os.path.join(repo, "src", "a.py"), "def f():\n    return 1\n")
+    write(os.path.join(repo, "tests", "test_a.py"), "from src.a import f\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n## Memory\n- conventions: docs/gone.md\n")
+    code, _, err = council(repo, "memory")
+    check("memory: a configured memory file that is missing is a refusal naming the line to fix",
+          code == 2 and "docs/gone.md, which doesn't exist" in err and "point '- conventions:'" in err, err)
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(repo, ".council", "conventions.md"), "# Conventions\n## Anti-Patterns (AP)\n### AP-1: revoke "
+          "first\n**Pattern:** revoke before lookup\n**Scope:** src/**\n")
+    before = read(os.path.join(repo, ".council", "conventions.md"))
+    short = "usage: council memory [index | select [path|slug …] | check | propose … | accept … | reject …]"
+    propose = "usage: council memory propose claim <id> [--scope <paths>] | memory propose repair <task> --scope"
+    for words, want in ((("memory", "index", "x"), short), (("memory", "nosuch"), "propose claim|repair <id>"),
+                        (("memory", "propose", "claim"), propose), (("memory", "propose", "guess", "C1"), propose),
+                        (("memory", "accept"), "usage: council memory accept F-<n> --user-said"),
+                        (("memory", "reject", "F-1"), "memory reject needs --user-said \"<the user's own words>\""),
+                        (("memory", "accept", "F-1", "--user-said", ""), "--user-said needs a value"),
+                        (("memory", "select", "--json"), "memory select doesn't take --json"),
+                        (("memory", "check", "--user-said", "x"), "memory doesn't take --user-said"),
+                        (("ledger", "advice", "0"), "usage: council ledger advice [how many recent runs"),
+                        (("ledger", "advice", "1", "2"), "usage: council ledger advice [N] [--json]"),
+                        (("ledger", "advice", "9999999"), "keep N under a million runs"),
+                        (("ledger", "x"), "usage: council ledger [how many recent runs, default 10]"),
+                        (("ledger", "--json"), "ledger doesn't take --json"),
+                        (("map",), "usage: council map status"), (("map", "status", "x"), "usage: council map status"),
+                        (("fingerprint", "x"), "usage: council fingerprint [check]"),
+                        (("doctor", "x"), "doctor doesn't take 'x'"), (("impact", "x"), "impact doesn't take 'x'"),
+                        (("impact",), "no open run on this working tree"), (("prior", "--json"), "prior doesn't take")):
+        code, out, err = council(repo, *words)
+        check("%s: refused — %s" % (" ".join(words), want), code == 2 and want in err and not out, out + err)
+    check("memory: no refusal touched the memory file", read(os.path.join(repo, ".council", "conventions.md")) == before)
+    for words, want in ((("ledger",), "no ledger yet — every completed run adds its seats to"),
+                        (("ledger", "advice"), "no ledger yet"), (("map", "status"), "no map yet — council-init builds")):
+        code, out, err = council(repo, *words)
+        check("%s: says what is missing, exit 0" % " ".join(words), code == 0 and want in out, out + err)
+
+
+@part("reports")
+def reports_impact(tmp):
+    """council impact needs the run's change baseline; council index sets it and refreshes the graph."""
+    repo = new_repo(tmp, "impact")
+    write(os.path.join(repo, "src", "a.py"), "def f():\n    return 1\n")
+    write(os.path.join(repo, "tests", "test_a.py"), "from src.a import f\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    code, run, err = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    code, out, err = council(repo, "impact")
+    check("impact: refused before council index gives the run a baseline",
+          code == 2 and "impact needs a change baseline — run council index first" in err, out + err)
+    write(os.path.join(repo, "src", "a.py"), "def f():\n    return 2\n")
+    code, out, err = council(repo, "index")
+    table = os.path.join(run, "impact.tsv")
+    check("index: refreshes the impact graph after the change index",
+          code == 0 and "impact: 1 changed" in out and "src/a.py" in read(table), out + err)
+    os.remove(table)
+    code, out, err = council(repo, "impact")
+    check("impact: writes impact.tsv from the run's base", code == 0 and "-> impact.tsv" in out
+          and read(table).startswith("kind\t") and "src/a.py" in read(table), out + err)
+    code, out, err = council(repo, "prior")
+    check("prior: no earlier council work on the changed files, exit 0",
+          code == 0 and "prior: no earlier council work mentions these paths" in out, out + err)
+
+
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")

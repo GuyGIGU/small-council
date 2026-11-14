@@ -48,8 +48,9 @@ class ConfigGatesTest(support.Scratch):
         self.assertFalse(gate_table.gates_listed(home))
 
     def test_bash_and_python_read_one_table_alike(self) -> None:
-        """Until doctor and run close are ported, bin/council's config_gates and its notes read the same table
-        (S7, S8): the two must agree, cell for cell and note for note."""
+        """Until run close is ported, bin/council's config_gates reads the same table (S8b): the two must agree,
+        cell for cell. The notes are Python's alone since doctor moved (S8); each row's are pinned as the helper's
+        gate_shape, gate_backslash and gate_winswitch gave them."""
         bash = shutil.which("bash")
         if bash is None:
             self.skipTest("no bash")
@@ -63,21 +64,19 @@ class ConfigGatesTest(support.Scratch):
             "| shifted | `a | b` | grounding | yes | ok | `true` | none | - |\n"
             "| é ü | `echo ü` | – | non-blocking | ✅ | `true` | none | — |\n")
         cfg = (Path(home) / "council.config.md").as_posix()
-        script = ('. "$1"; config_gates "$2"; printf "@@\\n"; config_gates "$2" | while IFS="$TAB" read -r n c r; do '
-                  'printf "%s|%s|%s|%s\\n" "$(shape_notes "$c" | tr "\\n" "~")" "$(gate_backslash "$c" && echo b)" '
-                  '"$(gate_winswitch "$c" && echo w)" "$n"; done')
-        said = subprocess.run(shell.argv_for([bash, "-c", script, "council", HELPER.as_posix(), cfg]),
+        script = '. "$1"; config_gates "$2"'
+        rows = subprocess.run(shell.argv_for([bash, "-c", script, "council", HELPER.as_posix(), cfg]),
                               stdout=subprocess.PIPE, check=True).stdout.decode("utf-8")
-        rows, notes = said.split("@@\n")
         python = gate_table.gates(home)
         self.assertEqual(rows.splitlines(), ["\t".join([g.name, g.command, g.at, g.mandatory, str(g.cells), g.checked,
                                                         g.side, g.needs, str(g.header_cells),
                                                         "1" if g.has_side else "0", g.stages, g.must, g.ran])
                                              for g in python])
-        self.assertEqual(notes.splitlines(), ["%s|%s|%s|%s" % ("".join(n + "~" for n in gate_notes.notes(g.command)),
-                                                               "b" if gate_notes.backslash(g.command) else "",
-                                                               "w" if gate_notes.winswitch(g.command) else "", g.name)
-                                              for g in python])
+        pinned = [("tests", ["pipe"], False, False), ("lint", ["masked"], False, False), ("win", [], True, True),
+                  ("cap", ["capture"], False, False), ("empty", [], False, False), ("typo", [], False, False),
+                  ("shifted", ["pipe"], False, False), ("é ü", [], False, False)]
+        self.assertEqual([(g.name, gate_notes.shapes(g.command), gate_notes.backslash(g.command),
+                           gate_notes.winswitch(g.command)) for g in python], pinned)
         self.assertEqual(len(python), 8)
 
 

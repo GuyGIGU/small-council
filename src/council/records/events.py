@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Callable, NamedTuple, Optional
 
-from council.records import cells, locks, owners, paths, state
+from council.records import bytewise, cells, locks, owners, paths, state
 
 NAME = "events.tsv"
 COLUMNS = ("schema", "seq", "at", "type", "subject", "value", "detail")
@@ -151,3 +151,56 @@ def append(run: Path, kind: str, subject: str, value: str, detail: str, once: bo
     if written is None or not released:
         raise EventError("could not append a valid event to {}".format(file))
     return written
+
+
+_AT = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+
+
+def check(run: str) -> tuple[int, list[str]]:
+    """event_check, as `council doctor` reads it: its exit code and every line it said, those on stderr with the
+    helper's "council: " ahead of them. `run` is the folder as the helper writes it. A run from before the stream
+    passes; else the stream must be whole, under the lock: the v1 header, then rows in sequence from 1, each with
+    seven cells, a UTC time and no empty cell, the first a run.opened."""
+    folder = Path(run)
+    file = run + "/" + NAME
+    schema = _schema(folder)
+    if schema not in ("", "1"):
+        return 1, ["council: unsupported events schema: %s" % schema]
+    if schema == "" and not path(folder).is_file():
+        return 0, ["events: legacy run · no event stream · %s" % run.rsplit("/", 1)[-1]]
+    if schema == "":
+        return 1, ["council: event file exists without an events-schema stamp: %s" % file]
+    lock = Path(file + ".lock")
+    if not locks.acquire(lock):
+        return 1, ["council: " + owners.unavailable(lock)]
+    try:
+        data = path(folder).read_bytes() if path(folder).is_file() else None
+    except OSError:
+        data = None
+    held = locks.release(lock)
+    if data is None:
+        return 1, ["council: events.tsv is missing from %s" % run.rsplit("/", 1)[-1]]
+    if data and not data.endswith(b"\n"):
+        return 1, ["events: final line is incomplete"]
+    said = _judged(bytewise.records(bytewise.read(data)))
+    bad = any(not line.startswith("events: valid") for line in said)
+    return (1 if bad or not held else 0), said
+
+
+def _judged(lines: list[str]) -> list[str]:
+    said = []
+    for number, line in enumerate(lines, 1):
+        line = re.sub(r"\r\Z", "", line)
+        if number == 1:
+            if line != HEADER:
+                said.append("events: bad header")
+            continue
+        c = line.split("\t")
+        if (len(c) != 7 or c[0] != "1" or not re.fullmatch("[0-9]+", c[1]) or int(c[1]) != number - 1
+                or not _AT.fullmatch(c[2]) or "" in c[3:] or (number == 2 and c[3] != "run.opened")):
+            said.append("events: invalid row %d" % number)
+    if len(lines) < 2:
+        said.append("events: no events")
+    if not said:
+        said.append("events: valid · %d event(s)" % (len(lines) - 1))
+    return said

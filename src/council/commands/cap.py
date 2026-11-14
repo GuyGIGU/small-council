@@ -1,8 +1,8 @@
 """council cap and council cap check: where a run stands against its agent stop, and the agent gate's
 decision (hooks/agent-gate.sh). references/run/run-accounting.md, "The stop at the limit".
 
-council cap allow stays in bin/council until the user's words can be redacted (S8) and a state field
-written (S8b) from Python.
+council cap allow stays in bin/council until a state field can be written from Python (S8b); the user's
+words it files can be redacted there now (records/redact.py).
 """
 from __future__ import annotations
 

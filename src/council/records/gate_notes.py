@@ -29,7 +29,7 @@ CHECKED = re.compile(r"\$\?|\|\|[ \t]*exit")
 
 
 def backslash(command: str) -> bool:
-    """A backslash outside quotes before a letter, digit or _: bash drops it (gate_backslash)."""
+    """A backslash outside quotes before a letter, digit or _: bash drops it."""
     quote, i = "", 0
     while i < len(command):
         char = command[i]
@@ -49,7 +49,7 @@ def backslash(command: str) -> bool:
 
 def winswitch(command: str) -> bool:
     """A word that starts with one / and reads as a Windows switch (/p:Name=Value, /t:Build, /nologo): Git Bash
-    turns it into a path before a Windows tool sees it, quoted or not (gate_winswitch)."""
+    turns it into a path before a Windows tool sees it, quoted or not."""
     prev = " "
     for i, char in enumerate(command):
         rest = command[i + 1:]
@@ -61,7 +61,7 @@ def winswitch(command: str) -> bool:
 
 
 class _Scan:
-    """gate_shape's walk over the command, one character at a time (its awk, state for state)."""
+    """The walk over the command, one character at a time (the helper's awk, state for state)."""
 
     def __init__(self, command: str) -> None:
         self.s, self.quote, self.word = command, "", ""
@@ -134,7 +134,7 @@ class _Scan:
 
 
 def shapes(command: str) -> list[str]:
-    """gate_shape: pipe, masked and capture, each when it holds, in that order."""
+    """The shapes: pipe, masked and capture, each when it holds, in that order."""
     scan = _Scan(command)
     scan.run()
     found = []
@@ -151,5 +151,5 @@ def shapes(command: str) -> list[str]:
 
 
 def notes(command: str) -> list[str]:
-    """shape_notes: one plain note per shape found, each finishing "the command …"."""
+    """One plain note per shape found, each finishing "the command …"."""
     return [SHAPES[shape] for shape in shapes(command)]

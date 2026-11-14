@@ -1,11 +1,10 @@
 """council check [<file> …] [--base <rev>]: every item's citation in the run's synthesis (or its seat files, or the
 files named), each request part's quote of the user's words, a post-game's next tasks, a build's proofs and, on a
 just-me council, the council ids a build left in shared text — into check.md, with a verdict line and exit 1 when
-anything is broken. Redaction is still bash's (S8), so bin/council runs this twice: COUNCIL_REDACT=words writes
-the request's words and the quotes for it to redact, then COUNCIL_REDACT=done checks against what it left."""
+anything is broken. The user's words are redacted before anything is compared with them, and a quote that holds a
+secret-looking string fails unless it is found as filed."""
 from __future__ import annotations
 
-import contextlib
 import os
 import re
 import time
@@ -13,12 +12,10 @@ from collections import Counter
 from pathlib import Path
 
 from council.commands import check_proofs, cite_check, cite_origin, cli, event_note, gate_output, hygiene, resolve
-from council.records import citations, quotes, request, run_files, seat_files
+from council.records import citations, quotes, redact, request, run_files, seat_files
 from council.records import home as where
 from council.records import sharing as shared
 
-STAGE = "COUNCIL_REDACT"
-REQUEST = ".request.txt"
 IMPLEMENT, POSTGAME = "council-implement", "council-postgame"
 REDACT_IT = "SECRET (it holds a secret-looking string — quote the redacted words the filed request has)"
 KEPT = re.compile(r"(^|[^a-z])(kept|cut)([^a-z]|$)")
@@ -29,16 +26,9 @@ def main(args: cli.Args, words: list[str]) -> int:
     for word in words:
         if not os.path.isfile(where.native(word)):
             raise cli.Refusal("check: no such file: %s" % word)
-    stage = os.environ.get(STAGE, "")
-    if stage not in ("words", "done"):
-        raise cli.Refusal("check redacts the request's words in bin/council before it checks them — run: council "
-                          "check")
     run = resolve.run_folder(args)
     mode = resolve.field(run, "mode")
-    files = chosen(run, words, mode)
-    if stage == "words":
-        return to_redact(run, files, mode)
-    return Check(run, args, mode).every(files)
+    return Check(run, args, mode).every(chosen(run, words, mode))
 
 
 def chosen(run: Path, words: list[str], mode: str) -> list[str]:
@@ -57,29 +47,20 @@ def _write(path: Path, lines: list[str]) -> None:
     path.write_bytes("".join(line + "\n" for line in lines).encode("utf-8", "surrogateescape"))
 
 
-def to_redact(run: Path, files: list[str], mode: str) -> int:
-    """The first pass: the user's own words (ask.md and the filed request, from "## In your words" on) in
-    .request.txt.raw, and each item quote's words, one a line, in .request.txt.quotes; the run folder on stdout."""
-    said = []
+def said(run: Path) -> str:
+    """The user's own words (ask.md and the filed request, from "## In your words" on), redacted, every run of
+    blanks and line ends one space."""
+    lines = []
     for path in (run / request.ASK, request.filed(run)):
         if path is not None and os.path.isfile(where.native(str(path))):
-            said += request.in_your_words("\n".join(quotes.file_lines(where.native(str(path)))))
-    _write(run / (REQUEST + ".raw"), said)
-    found = [quote.words for path in files if os.path.isfile(where.native(path))
-             for quote in quotes.item_quotes(where.native(path), "", mode) if quote.words]
-    _write(run / (REQUEST + ".quotes"), found)
-    cli.say(run.as_posix())
-    return 0
+            lines += request.in_your_words("\n".join(quotes.file_lines(where.native(str(path)))))
+    shown, _ = redact.redact("".join(line + "\n" for line in lines).encode("utf-8", "surrogateescape"))
+    return re.sub(rb"[ \t\r\n]+", b" ", shown).decode("utf-8", "surrogateescape")
 
 
-def _taken(path: Path) -> str:
-    try:
-        text = path.read_bytes().decode("utf-8", "surrogateescape")
-    except OSError:
-        return ""
-    with contextlib.suppress(OSError):
-        path.unlink()
-    return text
+def holds_secret(words: str) -> bool:
+    """Whether a quote's words hold a secret-looking string: one that would reach a tracked file."""
+    return redact.redact((words + "\n").encode("utf-8", "surrogateescape"))[1] != 0
 
 
 def label(path: str) -> str:
@@ -96,8 +77,7 @@ class Check:
         self.top = resolve.field(run, "code-root") or where.this_tree()
         self.base = self.given or resolve.field(run, "base")
         self.scope = cite_check.scope(self.top, self.base, run.as_posix(), mode)
-        self.said = _taken(run / REQUEST)
-        self.secret = iter(_taken(run / (REQUEST + ".secret")).split())
+        self.said = said(run)
         self.n: Counter = Counter()
         self.extra = ""
         self.table = ["# Citation check — " + time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -167,7 +147,7 @@ class Check:
     def quote(self, lab: str, quote: quotes.Quote) -> None:
         self.n["quotes"] += 1
         state = quote.status
-        if quote.words and next(self.secret, "0") != "0" and state != "ok":
+        if quote.words and state != "ok" and holds_secret(quote.words):
             state = REDACT_IT                                    # a secret in a quote would reach a tracked file
         self.n["found" if state == "ok" else "bad"] += 1
         self.row("%s#%s" % (lab, quote.n), "quote", state, "-")

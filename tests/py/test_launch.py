@@ -55,7 +55,21 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(started("check"), sorted(base + cites + ["council.commands." + name for name in (
             "check", "check_proofs", "cite_origin", "hygiene", "proof_reach")]))
         self.assertEqual(started("index"), sorted(base + ["council.commands." + name for name in (
-            "changed", "closed", "index", "index_symbols", "resolve", "shell")]))
+            "changed", "closed", "impact", "index", "index_symbols", "prior", "resolve", "script", "shell")]))
+
+    def test_the_memory_and_report_commands_load_only_their_own_modules(self) -> None:
+        base = ["council.commands", "council.commands.cli", "council.commands.dispatch"]
+        self.assertEqual(started("impact"), sorted(base + ["council.commands." + name for name in (
+            "impact", "resolve", "script")]))
+        self.assertEqual(started("prior"), sorted(base + ["council.commands.prior", "council.commands.resolve"]))
+        self.assertEqual(started("map", "status"), sorted(base + ["council.commands.map_status"]))
+        self.assertEqual(started("fingerprint"), sorted(base + ["council.commands.fingerprint"]))
+        self.assertEqual(started("ledger"), sorted(base + ["council.commands.ledger", "council.commands.script"]))
+        self.assertEqual(started("ask", "save"), sorted(base + ["council.commands.ask", "council.commands.resolve"]))
+        for words in (("memory",), ("memory", "check"), ("memory", "accept", "F-1")):   # select, check, write: on use
+            self.assertEqual(started(*words), sorted(base + ["council.commands.memory"]))
+        self.assertEqual(started("doctor"), sorted(base + ["council.commands." + name for name in (
+            "doctor", "fingerprint", "plan", "plan_check", "plan_models", "plan_tasks", "resolve")]))
 
     def test_an_unported_command_loads_none(self) -> None:
         self.assertEqual(started("run", "open"),

@@ -67,7 +67,7 @@ def show(home: str) -> None:
 
 
 def rows(home: str) -> list[tuple[bool, str, str]]:
-    """What "just me" needs, one (done, what, fix) each; bin/council's sharing_rows, which doctor reads."""
+    """What "just me" needs, one (done, what, fix) each; what council doctor reports as kept out."""
     root = os.path.dirname(home)
     found: list[tuple[bool, str, str]] = []
     if git.text(root, "rev-parse", "--git-dir") is None:

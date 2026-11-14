@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from council.records import cells, paths
+from council.records import bytewise, cells, paths
 
 NAME = "council.config.md"
 INTMAX = 2 ** 63 - 1     # the largest whole number bash's test reads; a larger one fails the test
@@ -140,6 +140,37 @@ def notifications_off(home: str | Path | None) -> bool:
     return any(rule.fullmatch(line) for line in _lines(home))
 
 
+def field(home: str | Path, key: str) -> str:
+    """A `key:` line of the config (stack-fingerprint, last-verified), as the helper's field reads it: cells.field."""
+    try:
+        data = path(home).read_bytes()
+    except OSError:
+        return ""
+    return cells.field(data.decode("utf-8", "surrogateescape"), key)
+
+
+def memory_line(home: str | Path) -> tuple[str, str] | None:
+    """The `- conventions:` path under ## Memory as the helper's memory_file reads it: the value with CRs, quotes,
+    a trailing (note) and a " — aside" taken off, and its first word (a path may hold a blank; a note may follow
+    one); None when there is no such line. memory_path() is status.py's older reading of the same line."""
+    try:
+        text = path(home).read_bytes().decode("utf-8", "surrogateescape")
+    except OSError:
+        return None
+    under = False
+    for line in text.split("\n")[:-1] if text.endswith("\n") else text.split("\n"):
+        if re.match(r"##[ \t]", line):
+            under = bool(re.match(r"##[ \t]+[Mm][Ee][Mm][Oo][Rr][Yy]([^A-Za-z]|\Z)", line))
+            continue
+        if under and re.match(r"[ \t]*[-*][ \t]*conventions:", line):
+            v = re.sub(r"[\r`\"']", "", re.sub(r"\A[ \t]*[-*][ \t]*conventions:[ \t]*", "", line, count=1))
+            v = re.sub(r"[ \t]+\([^()]*\)[ \t]*\Z", "", v, count=1)
+            v = re.sub(r"[ \t]+(—|–|-)[ \t].*\Z", "", v, count=1, flags=re.S)
+            v = re.sub(r"[ \t]+\Z", "", v, count=1)
+            return v, re.sub(r"[ \t].*\Z", "", v, count=1, flags=re.S)
+    return None
+
+
 def memory_path(home: str | Path) -> str:
     """The `- conventions:` path under the ## Memory heading, quotes and a trailing note taken off;
     '' when none is set (status.py's reading of what the helper's memory_file reads)."""
@@ -173,6 +204,41 @@ def roster(home: str | Path) -> list[tuple[str, str, str]]:
             if slug and lens and seat:
                 found.append((seat, slug, lens))
     return found
+
+
+def roster_rows(home: str | Path) -> list[tuple[str, str, str]]:
+    """The Roster table under ## Roster as the helper's awk read it, for memory and doctor: (slug, seat,
+    reference), "-" for an empty value, its columns found by their header names (Seat, else the first; Slug;
+    Reference), each cell trimmed of blanks, CRs, backticks and asterisks; a row with no seat, a rule row or a
+    <placeholder> left out. C-locale text (records/bytewise.py). roster() is the older reading that needs a Lens."""
+    try:
+        text = bytewise.read(path(home).read_bytes())
+    except OSError:
+        return []
+    found, inside, columns = [], False, None
+    for line in bytewise.records(text):
+        if line.startswith("## "):
+            inside, columns = line.startswith("## Roster"), None
+            continue
+        if not inside or not line.startswith("|"):
+            continue
+        cut = line.split("|")
+        if columns is None:
+            names = [bytewise.lower(_cell(c)) for c in cut]
+            columns = tuple(max([i for i in range(1, len(cut) - 1) if names[i] == h] or [d])
+                            for h, d in (("seat", 1), ("slug", 0), ("reference", 0)))
+            continue
+        seat, slug, ref = (_cell(cut[i]) if i and i < len(cut) else "" for i in columns)
+        if seat == "" or re.fullmatch(r":?-+:?", seat) or seat.startswith("<"):
+            continue
+        slug = "" if slug.startswith("<") else slug
+        ref = "" if ref.startswith("<") or re.fullmatch(r":?-+:?", ref) else ref
+        found.append((slug or "-", seat, ref or "-"))
+    return found
+
+
+def _cell(c: str) -> str:
+    return re.sub("[`*]", "", re.sub(r"\A[ \t\r]+|[ \t\r]+\Z", "", c))
 
 
 # --- the estimate per worker, as `council tune` reads and edits it ------------------------------------------

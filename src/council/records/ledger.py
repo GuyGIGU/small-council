@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any, Sequence
 
-from council.records import paths
+from council.records import bytewise, paths
 from council.records.cells import lines_of
 
 NAME = "ledger.tsv"
@@ -82,3 +82,17 @@ def read(where: str | Path) -> tuple[list[dict[str, Any]] | None, int]:
         except ValueError:
             bad += 1
     return rows, bad
+
+
+def raw_rows(home: str | Path) -> list[list[str]] | None:
+    """Every line of the ledger split at its tabs, as the helper's `council ledger` table read them (awk split at
+    tabs: no cell checked, the header kept; on Windows Git Bash's awk reads a line's CR LF as LF); None when there is no
+    ledger file. The checked rows the advice and history weigh come from read()."""
+    where = path(home)
+    if not where.is_file():
+        return None
+    try:
+        text = where.read_bytes().decode("utf-8", "surrogateescape")
+    except OSError:
+        return []
+    return [line.split("\t") for line in bytewise.records(text)]

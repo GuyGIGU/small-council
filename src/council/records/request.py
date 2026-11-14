@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from council.records import paths, state
+from council.records import cells, paths, state
 
 ASK = "ask.md"
 # Curly quotes, odd and invisible spaces fold to what a person typing a quote would write.
@@ -34,23 +34,80 @@ def in_your_words(content: str) -> list[str]:
     return found
 
 
-def filed(run: Path) -> Path | None:
-    """The filed request this run's words belong to: the state's ask:, else ask.md's continues: (backticks and
-    angle brackets dropped, its first word); a relative path is the project's (the council home's parent)."""
+def continued(run: Path) -> str:
+    """The filed request this run continues, as written: the state's ask:, else ask.md's continues: (backticks and
+    angle brackets dropped, up to its first blank); '' for a new request."""
     run = Path(run)
     name = state.field(state.text(run), "ask")
     if not name:
-        cont = state.field(paths.text_of(run / ASK, run), "continues")
-        name = (re.sub(r"[`<>]", "", cont).split() or [""])[0]
+        cont = cells.field(paths.text_of(run / ASK, run), "continues")
+        name = re.sub(r"[ \t\n\v\f\r].*$", "", re.sub(r"[`<>]", "", cont), flags=re.S)
+    return name
+
+
+def filed(run: Path) -> Path | None:
+    """The filed request this run's words belong to (continued); a relative path is the project's (the council
+    home's parent)."""
+    run = Path(run)
+    name = continued(run)
     if not name:
         return None
     where = Path(name)
     return where if where.is_absolute() or re.match(r"[A-Za-z]:", name) else run.parent.parent.parent / where
 
 
+def lines_kept(data: bytes) -> list[bytes]:
+    """A file's lines byte for byte, each with its newline: a last line with none stays without one."""
+    found = data.split(b"\n")
+    last = found.pop()
+    return [line + b"\n" for line in found] + ([last] if last else [])
+
+
+def _bare(line: bytes) -> bytes:
+    return line[:-1] if line.endswith(b"\n") else line
+
+
+def ask_words(data: bytes) -> bytes:
+    """An ask.md's "In your words" body, byte for byte: only "## In your words" and "## Later" end it, so a pasted
+    PR or issue with its own "## Summary" stays whole."""
+    out, inside = [], False
+    for line in lines_kept(data):
+        bare = _bare(line)
+        if not inside:
+            if not bare.startswith(b"## In your words"):
+                continue
+            inside = True
+        elif bare.startswith(b"## Later"):
+            inside = False
+        if not (bare.startswith(b"## In your words") or bare.startswith(b"## Later")):
+            out.append(line)
+    return b"".join(out)
+
+
+def ask_later(data: bytes) -> bytes:
+    """An ask.md's "Later" lines, from its first "## Later" heading on, without the headings and blank lines."""
+    out, inside = [], False
+    for line in lines_kept(data):
+        bare = _bare(line)
+        inside = inside or bare.startswith(b"## Later")
+        if inside and not bare.startswith(b"## Later") and not re.fullmatch(rb"[ \t\v\f\r]*", bare):
+            out.append(line)
+    return b"".join(out)
+
+
+def ask_sections(data: bytes, run: str = "") -> list[int]:
+    """The line numbers of the sections continuing runs add to a filed request ("## <date> — <mode>, run
+    <folder>"); with run, a run folder's name, only that run's (the whole name: …-review is not …-review-2). Only
+    a run folder's name counts: a dated heading in the user's own words is no section."""
+    who = re.escape(run.encode("utf-8", "surrogateescape")) if run else \
+        rb"[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}-[A-Za-z0-9-]+"
+    heading = re.compile(rb"## [0-9]{4}-[0-9]{2}-[0-9]{2} .*, run " + who + rb"[ \t\v\f\r]*", re.S)
+    return [at for at, line in enumerate(data.split(b"\n"), 1) if heading.fullmatch(line)]
+
+
 def words(run: Path) -> str:
-    """The user's words for this run, whitespace collapsed to single spaces, then folded. Unlike `council check`,
-    nothing is redacted yet: redaction is still bash's (S8)."""
+    """The user's words for this run, whitespace collapsed to single spaces, then folded; nothing is redacted (the
+    plan check reads them; `council check` redacts them first)."""
     run = Path(run)
     lines = in_your_words(paths.text_of(run / ASK, run))
     other = filed(run)
