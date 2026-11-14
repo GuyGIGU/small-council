@@ -5822,7 +5822,7 @@ def runs_close_keeps_audit(tmp):
         env = {"PATH": bare_path}
         bn = council(b, "run", "open", "council-review", env=env)[1].strip().splitlines()[-1]
         write_plan(bn, selected=("chair", "w1"))
-        to_deliver(b, env=env)
+        to_deliver(b)                # the plan check a phase change runs is Python (S5): only the close goes without it
         code, out, err = council(b, "run", "close", env=env)
         check("run close: without Python there is no audit, no audit.md and no error",
               code == 0 and "audit:" not in out + err and not os.path.exists(os.path.join(bn, "audit.md"))
