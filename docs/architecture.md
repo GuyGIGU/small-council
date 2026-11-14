@@ -147,7 +147,7 @@ never part of a cleanup or refactor branch (D23).
   `references/`, because project files carry their paths (a roster's doc column, a card's `source:`, a
   plan's `Ref:`, comments in the config). Moving one breaks every installed project.
 - **Config keys** in `council.config.md` (`approve without asking`, `agent cap`, `context packs`,
-  `seat models`, `build tier`, `checking`, `open items`, `pushes`, `sharing`, `notifications`,
+  `seat models`, `models`, `build tier`, `checking`, `open items`, `pushes`, `sharing`, `notifications`,
   `estimate per worker`, `gate time limit`, the Gates table's columns).
 - **JSON schemas**: `council.run-status/1`, `council.run-snapshot/2`, `council.history/4`,
   `council.tune/2`, `council.seat-advice/1`, `council.outcomes/1`.
@@ -156,9 +156,10 @@ never part of a cleanup or refactor branch (D23).
   verdict words (CONFIRMED / REFUTED / UNCERTAIN / MISCITED; OK / INCOMPLETE / REGRESSION /
   SCOPE-CREEP / CANNOT VERIFY; MET / PARTLY MET / NOT MET / CAN'T TELL), memory entry ids (AP, EC,
   D, F), `Principle N` numbering in seat docs.
-- **Environment variables**: `COUNCIL_ALLOW_NO_HOOKS`, `COUNCIL_ALLOW_PUSH`, `COUNCIL_ASCII`,
-  `COUNCIL_BASE`, `COUNCIL_BOM`, `COUNCIL_INDEX_CAP`, `COUNCIL_INDEX_NAMECAP`, `COUNCIL_MEMORY_SIZE_LIMIT`,
-  `COUNCIL_NEXT_AT_OPEN`, `COUNCIL_PET_LOG`, `COUNCIL_PLUGIN_ROOT`, `COUNCIL_RUN`, `COUNCIL_VERSION`.
+- **Environment variables**: `COUNCIL_ALLOW_NO_HOOKS`, `COUNCIL_ALLOW_PUSH`, `COUNCIL_ARG_CONV_EXCL`,
+  `COUNCIL_ASCII`, `COUNCIL_BASE`, `COUNCIL_BOM`, `COUNCIL_INDEX_CAP`, `COUNCIL_INDEX_NAMECAP`,
+  `COUNCIL_MEMORY_SIZE_LIMIT`, `COUNCIL_NEXT_AT_OPEN`, `COUNCIL_PET_LOG`, `COUNCIL_PLUGIN_ROOT`, `COUNCIL_RAN`,
+  `COUNCIL_RUN`, `COUNCIL_VERSION`.
 
 When an internal name disagrees with a contract word, the internal name takes the contract word.
 
@@ -195,7 +196,7 @@ folds them, and new code uses the named way.
 | Read a run's state field | `field <key> <file>`; in Python, `council.records.state` | Scripts no longer parse `session-state.md` themselves |
 | Record an event | `event_append` under the run's event lock; nothing else writes `events.tsv` | `council.records.events.append` follows it step for step but has no caller yet |
 | Write a shared TSV row | Under `event_lock`; never join a torn line | |
-| Take a run file's lock | bash `event_lock`; Python `council.records.locks.held`. The owner file names the holder by the operating system's process id, checked by `owner_alive` (bash) and `council.records.owners.holder_alive` (Python), so either language waits for the other (D33) | `gates.lock` keeps bash's own process id until gate is ported (S6) |
+| Take a run file's lock | bash `event_lock`; Python `council.records.locks.held`. The owner file names the holder by the operating system's process id, checked by `owner_alive` (bash) and `council.records.owners.holder_alive` (Python), so either language waits for the other (D33) | `gates.lock` too since gate is Python (S6): its holder is `council gate`'s own Python process |
 | Refuse something | `die "<why — and the next command>"` (exit 2, stderr). From a hook: the helper prints `Small Council: …` on stdout with exit 2, and the hook moves it to stderr | Every refusal names what to do next (D19) |
 | Take the user's go | `council state decision="<their words>"`, read back with `decisions_since` after the event it unlocks | Never inferred, never the Chair's words (D7) |
 | Hand a path to awk | Through `ENVIRON`, never `-v` (Windows backslashes) | |
@@ -203,7 +204,13 @@ folds them, and new code uses the named way.
 | Start a ported command | `council.commands.dispatch.COMMANDS` maps the command words to one module, imported on use. A new command adds a row there and its module in `src/council/commands/`; a stdlib module only some commands need is imported inside the function that uses it, never at the top of a module every command loads (D34) | `tests/py/test_launch.py` holds both |
 | Read the command line | `main()` in `bin/council` for the bash commands; `council.commands.cli` for the ported ones, the same flags and refusals | **(debt)** two readers until S9 |
 | Match the user's words | `fold` and `found` inside the quote check; in Python `council.records.request` (`fold`, `found`, `verdict`), which the plan check's Serves rule uses | **(debt)** three copies: two in `bin/council` (`cmd_check`, `postgame_next_tasks`) until `check` is ported (S7) onto `records.request`, which doesn't redact the request yet (redaction is bash's until S8) |
-| Read a gate verdict | `gate_exit`, `gate_cmd`, `gate_proof` over `gates/<name>.json` | |
+| Read a gate verdict | `gate_exit`, `gate_cmd`, `gate_proof` over `gates/<name>.json` | **(debt)** `council gate` reads a baseline's and a record's numbers with `council.commands.gate_run.recorded` (the same sed rule): two readers until `council check` is ported (S8) |
+| Read the Gates table | `council.records.gate_table` (`gates`, `gates_listed`: one `Gate` per row, the header found by the column names), for `council gate`, `gate --all` and `council gates` | **(debt)** bash `config_gates` and `gates_listed` stay for `council doctor` (until S7) and `run close` (until S8); `tests/py/test_gate_command.py` feeds one table to both and checks they agree |
+| Say what a gate command's text gives away | `council.records.gate_notes` (`notes`, `backslash`, `winswitch`): a pipe, a fallback, a captured runner, a dropped backslash, a Windows switch | **(debt)** bash `shape_notes`, `gate_shape`, `gate_backslash` and `gate_winswitch` stay for `council doctor` until S7; the same test checks both agree |
+| Read a gate's saved output | `council.commands.gate_output` (`zero_tests`, `failure_ids`, `missing_module`, `never_ran`) | **(debt)** bash `zero_tests`, `missing_module` and `gate_seconds` stay for `council check` until S8 |
+| Run a gate | `council gate` (`council.commands.gate_exec.execute`): `bash -c` in a process group of its own, a watchdog process stopping the whole tree at its limit; on Windows through `/proc/<pid>/winpid`, a group TERM, then `taskkill /T` | A project's command starts through `council.commands.shell`: the bash on PATH, the caller's `MSYS2_ARG_CONV_EXCL` back (`COUNCIL_ARG_CONV_EXCL`), and on Windows a command line written the way Git Bash's runtime splits it (`argv_for`) |
+| Record a build's repair attempt | `council gate` records it (`council.commands.gate_repair`), running `scripts/repair.py`'s `main()` in its own process | **(debt)** the script is loaded by path until the scripts move into the package (S9); `council repair` stays bash and runs the script itself |
+| Write a run's state | `council state` (bash `cmd_state`) | **(debt)** two state writers until S8b: `council.records.state_write.clear_waiting` does `council state waiting=` for `council gate` (the same lock, lines and event); S8b folds `cmd_state` onto `records/state_write.py` |
 | Count an agent | `council seat` records it; the agent gate (`council cap check`, `src/council/commands/agent_gate.py`) counts starts; the ledger is written at close | One record per agent run, by id (`references/run/run-accounting.md`) |
 | Read what a run's agents used | The per-seat rule: `council.records.usage` (`seat_list`, `usage_totals`, `standing`), read by `council cap`, the agent gate, the cockpit and the status card | **(debt)** bash keeps `seat_rows`, `run_usage`, `usage_words`, `usage_token_text`, `run_budget_value`, `agents_share`, `cap_standing`, `cap_starts`, `cap_extra`, `cap_allowed_until` and `run_agent_cap` for `run close`, `council seat`'s notes, `cap allow` and the ledger: two copies until S8b. `scripts/status.py` keeps its own `cap_standing`, `budget_value` and `run_agent_cap` until it moves onto `records.usage.standing` |
 | Hold a build to its verifier rounds | `batch_check_refusal` (one checker per batch, D18) and `check_round_refusal` (no third check without a diagnosis or the user's go) | **(debt)** two copies until seat is ported: `council.commands.rounds` for the agent gate, the bash pair for `council seat … running` |
@@ -246,7 +253,7 @@ The cleanup's workstreams. [`design/cleanup-plan.md`](design/cleanup-plan.md) ha
 |---|---|
 | 0 | This page, `decisions.md`, the root `CLAUDE.md` |
 | 1 | One Python library for config and run files; every script moves onto it; the copies go |
-| 2 | `bin/council` split into Python modules, one area per branch, with commands, output and exit codes unchanged (the eval suite is the proof). *Started (S3):* `bin/council` hands ported commands to `src/council/__main__.py`; `home`, `sharing` and `run status` live in `src/council/commands/`, and bash and Python writers share run-file locks (D33). *S4:* `cap` and `cap check` (the agent gate) followed; `seat`, `correct` and `cap allow` wait on the ledger and redaction (S8) and the state writer (S8b). *S5:* `run plan check`, `run plan show` and `route recommend`; the bash that stays runs the same plan check through `python_run`. `state`, `run open`, `run close` and `run resume` stay bash until the areas they call are ported (the plan check, usage, the gates table, the ledger, the memory file, redaction: S4–S8) |
+| 2 | `bin/council` split into Python modules, one area per branch, with commands, output and exit codes unchanged (the eval suite is the proof). *Started (S3):* `bin/council` hands ported commands to `src/council/__main__.py`; `home`, `sharing` and `run status` live in `src/council/commands/`, and bash and Python writers share run-file locks (D33). *S4:* `cap` and `cap check` (the agent gate) followed; `seat`, `correct` and `cap allow` wait on the ledger and redaction (S8) and the state writer (S8b). *S5:* `run plan check`, `run plan show` and `route recommend`; the bash that stays runs the same plan check through `python_run`. *S6:* `gate` (one gate, `--all`, `--invalid`), `gates` and `changed`, with the repair glue: a gate stopped at its limit takes every process it started on Windows and POSIX, and `python_run` tries no next Python when the command that ran exits 127 itself (`COUNCIL_RAN`). `state`, `run open`, `run close` and `run resume` stay bash until the areas they call are ported (the plan check, usage, the gates table, the ledger, the memory file, redaction: S4–S8) |
 | 3 | File layout: `references/` by audience, evals into fast unit and scenario tiers |
 | 4 | Quality gates as ratchets (ShellCheck, ruff, a type check on the library, size and complexity limits frozen at today's worst), and this page's rules as tests. *Started (S2):* `evals/run_ratchet.py` holds sizes, ShellCheck warnings, parsers, config readers and call-backs; `ruff.toml` runs on the whole tree. The type check is still to come |
 | 5 | Slop pass: story comments out, a naming pass, dead code deleted, duplicates folded |

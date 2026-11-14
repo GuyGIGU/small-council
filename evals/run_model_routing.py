@@ -93,9 +93,9 @@ def main():
             code, out, err = call(repo, "run", "plan", "check")
             check("{} cannot use an override".format(label),
                   code == 1 and "only worker seats can use sonnet or haiku" in out, out + err)
-        write_plan(run, "seat\tmapper\tmodel\topus\tinvalid alias\n")
+        write_plan(run, "seat\tmapper\tmodel\tgpt-4o\tinvalid alias\n")
         code, out, err = call(repo, "run", "plan", "check")
-        check("unsupported model alias is refused", code == 1 and "must be inherit, sonnet or haiku" in out,
+        check("unsupported model alias is refused", code == 1 and "must be inherit, fable, opus, sonnet or haiku" in out,
               out + err)
 
         config.write_text("# Test council config\n- seat models: off\n", encoding="utf-8", newline="\n")

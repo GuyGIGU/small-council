@@ -22,7 +22,7 @@ One installed plugin gives each repo a bespoke council, built to fit it.
   - list config-like files up to two levels deep;
   - read what CI runs.
 
-  It catches firmware, Xcode projects, notebooks and game engines that a manifest list misses.
+  It catches firmware, Xcode projects, notebooks and game engines a manifest list misses.
 - **Then confirm with manifests:** `package.json`, `tsconfig.json`, `pyproject.toml` /
   `requirements.txt`, `go.mod`, `Cargo.toml`, `pom.xml` / `build.gradle`, `*.csproj` / `*.sln`,
   `Gemfile`, `composer.json`, `mix.exs`, `pubspec.yaml`, `Package.swift` / `*.xcodeproj`,
@@ -48,7 +48,7 @@ For each catalog seat, decide **include / recast / drop** by its "applies when" 
   - any computation-heavy engine → numerical correctness;
   - any hot loop → performance.
 
-  Seats dropped for "zero surface" have gone on to produce a quarter of a review's findings once
+  Seats dropped for "zero surface" have produced a quarter of a review's findings once
   recast. Drop only when there's truly nothing to look at (no UI at all → no UI, UX or Frontend seats).
 - **Every seat gets:**
   - a lowercase **slug** — the name of its seat file;
@@ -119,18 +119,18 @@ On a yes, write `<home>/plans/guardrails.md` in council-plan's **full** task for
 `Domain` (Guardrails × Carmack — verify by machine, not by feel), `Ref: references/guardrails.md`,
 `Depends on`, `Touches`, `Constraints` and `Done when` — one task per check, cheapest first, and offer
 council-implement. **council-init installs nothing itself**, so every install gets before-and-after
-evidence, a blind verifier and a log row, like any other build. The reference has the task template.
+evidence, a blind verifier and a log row. The reference has the task template.
 
 Two things every guardrails task needs, or it fits a gate that can only pass:
 - **A two-sided Done-when** — the gate exits non-zero on a deliberate violation and 0 once it's
   removed. "Returns 0" alone is met by a tool that isn't even installed.
 - **The ratchet** for a new lint, format or type gate: `council changed --glob '<pat>' -- <tool>`,
-  entered `Mandatory: no`, with the count of problems that were already there written once into the
+  entered `Mandatory: no`, with the count of problems already there written once into the
   config's `## Notes`, never as a task list.
 
 On a no, write `guardrails: declined <date>` into the config and move on. `council doctor` then reports
 the project's missing checks as a warning rather than an error, so the decision sticks without being
-asked again; delete that line whenever you want them fitted.
+asked again; delete that line to have them fitted.
 
 ## Phase D — Build the map
 
@@ -163,13 +163,14 @@ Present:
 - the gates (✓/✗) and their side effects;
 - the run preferences, sharing included: team or just me (when to ask:
   `${CLAUDE_PLUGIN_ROOT}/references/run/sharing.md`);
+- a model per role, proposed from yours: `${CLAUDE_PLUGIN_ROOT}/references/run/models.md`;
 - a three-line summary of the map.
 
 Adjust on request. On confirmation, write:
 - **`.council/council.config.md`** from `${CLAUDE_PLUGIN_ROOT}/references/templates/council.config.md`,
   stamped `last-verified: <date> @ <short sha>`, with the `stack-fingerprint:` line `council
   fingerprint` printed. Run preferences start at the defaults, which are the user's to change:
-  approve without asking up to Squad, agent cap 10, context packs off, sharing as answered.
+  approve without asking up to Squad, agent cap 10, context packs off, sharing and models as answered.
 - **`.council/cards/<slug>.md`**, one per seat, from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`.
   A card translates the seat's doc to this project, in at most ~6 KB:
   - every principle of the doc, numbered as in the doc, one line each on what it means here — the

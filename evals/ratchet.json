@@ -12,18 +12,15 @@
     "bin/council: close_warnings",
     "bin/council: cmd_doctor",
     "bin/council: cmd_fingerprint",
-    "bin/council: cmd_gate",
-    "bin/council: cmd_gates",
     "bin/council: cmd_memory",
     "bin/council: council_home",
-    "bin/council: gate_limit",
     "bin/council: memory_file",
     "bin/council: notifications_off",
     "bin/council: sharing_rows",
     "hooks/session-start.sh: <top level>",
     "src/council/records/home.py: home_from"
    ],
-   "value": 13
+   "value": 10
   },
   "parsers": {
    "items": [
@@ -45,10 +42,10 @@
  },
  "files": {
   "bin/council": {
-   "lines": 7282,
+   "lines": 6467,
    "longest": 297,
    "longest_name": "cmd_check",
-   "shellcheck": 34
+   "shellcheck": 32
   },
   "hooks/agent-gate.sh": {
    "lines": 152,
@@ -190,6 +187,11 @@
    "longest": 31,
    "longest_name": "show"
   },
+  "src/council/commands/changed.py": {
+   "lines": 159,
+   "longest": 29,
+   "longest_name": "main"
+  },
   "src/council/commands/cli.py": {
    "lines": 121,
    "longest": 28,
@@ -199,6 +201,51 @@
    "lines": 43,
    "longest": 13,
    "longest_name": "main"
+  },
+  "src/council/commands/gate.py": {
+   "lines": 227,
+   "longest": 29,
+   "longest_name": "_mark"
+  },
+  "src/council/commands/gate_exec.py": {
+   "lines": 185,
+   "longest": 27,
+   "longest_name": "execute"
+  },
+  "src/council/commands/gate_failed.py": {
+   "lines": 86,
+   "longest": 39,
+   "longest_name": "said"
+  },
+  "src/council/commands/gate_list.py": {
+   "lines": 37,
+   "longest": 16,
+   "longest_name": "main"
+  },
+  "src/council/commands/gate_lock.py": {
+   "lines": 121,
+   "longest": 36,
+   "longest_name": "take"
+  },
+  "src/council/commands/gate_output.py": {
+   "lines": 134,
+   "longest": 18,
+   "longest_name": "failure_ids"
+  },
+  "src/council/commands/gate_repair.py": {
+   "lines": 137,
+   "longest": 26,
+   "longest_name": "record"
+  },
+  "src/council/commands/gate_run.py": {
+   "lines": 177,
+   "longest": 32,
+   "longest_name": "run_gate"
+  },
+  "src/council/commands/gate_set.py": {
+   "lines": 186,
+   "longest": 48,
+   "longest_name": "_runnable"
   },
   "src/council/commands/gate_writable.py": {
    "lines": 25,
@@ -216,9 +263,19 @@
    "longest_name": "shown"
   },
   "src/council/commands/plan_check.py": {
-   "lines": 375,
+   "lines": 367,
    "longest": 36,
    "longest_name": "seat_rules"
+  },
+  "src/council/commands/plan_models.py": {
+   "lines": 86,
+   "longest": 20,
+   "longest_name": "seat_model"
+  },
+  "src/council/commands/plan_tasks.py": {
+   "lines": 137,
+   "longest": 30,
+   "longest_name": "task_problems"
   },
   "src/council/commands/pushes.py": {
    "lines": 44,
@@ -250,6 +307,11 @@
    "longest": 33,
    "longest_name": "without_block"
   },
+  "src/council/commands/shell.py": {
+   "lines": 126,
+   "longest": 20,
+   "longest_name": "_quoted"
+  },
   "src/council/git.py": {
    "lines": 33,
    "longest": 13,
@@ -280,6 +342,16 @@
    "longest": 25,
    "longest_name": "append"
   },
+  "src/council/records/gate_notes.py": {
+   "lines": 155,
+   "longest": 25,
+   "longest_name": "operator"
+  },
+  "src/council/records/gate_table.py": {
+   "lines": 206,
+   "longest": 27,
+   "longest_name": "gates_listed"
+  },
   "src/council/records/gates.py": {
    "lines": 70,
    "longest": 18,
@@ -299,6 +371,16 @@
    "lines": 156,
    "longest": 30,
    "longest_name": "acquire"
+  },
+  "src/council/records/map_file.py": {
+   "lines": 58,
+   "longest": 18,
+   "longest_name": "ways"
+  },
+  "src/council/records/models.py": {
+   "lines": 91,
+   "longest": 12,
+   "longest_name": "parse"
   },
   "src/council/records/owners.py": {
    "lines": 105,
@@ -320,6 +402,16 @@
    "longest": 17,
    "longest_name": "pushes"
   },
+  "src/council/records/repairs.py": {
+   "lines": 12,
+   "longest": 3,
+   "longest_name": "kept"
+  },
+  "src/council/records/request.py": {
+   "lines": 98,
+   "longest": 20,
+   "longest_name": "verdict"
+  },
   "src/council/records/runs.py": {
    "lines": 118,
    "longest": 16,
@@ -339,6 +431,16 @@
    "lines": 99,
    "longest": 14,
    "longest_name": "header"
+  },
+  "src/council/records/state_write.py": {
+   "lines": 94,
+   "longest": 22,
+   "longest_name": "clear_waiting"
+  },
+  "src/council/records/tasks.py": {
+   "lines": 82,
+   "longest": 16,
+   "longest_name": "read"
   },
   "src/council/records/usage.py": {
    "lines": 203,

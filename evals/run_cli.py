@@ -1102,16 +1102,20 @@ def gate_lock(tmp):
     check("gate lock: an old lock with no owner file is cleared too",
           code == 0 and "gate lint: pass" in out and "cleared a gate lock" in err and not os.path.exists(lock), out + err)
 
-    # The holder stopped: by a signal its shell can catch, it releases the lock itself and records no
-    # verdict for the stopped gate; killed outright, the next call clears what it left.
+    # The holder stopped: by a signal it can catch, it releases the lock itself and records no verdict for
+    # the stopped gate; killed outright, the next call clears what it left. The owner file names the
+    # operating system's process (D33): on Windows a TERM from Git Bash ends a native process outright,
+    # so the caught stop is checked where there is one to catch, and the outright kill is taskkill's.
     owner = slash(os.path.join(lock, "owner"))
     before_stop = len(events(lrun))
-    code, out, err = council(lk, "gate", "stopped", "--run", lrun, "--",
-                             "kill -TERM \"$(head -n 1 '%s')\"; sleep 1; echo went-on" % owner)
-    check("gate lock: a gate call stopped by a signal releases its lock and records no result for the stopped gate",
-          code == 143 and not os.path.exists(lock) and len(events(lrun)) == before_stop
-          and not os.path.exists(os.path.join(lrun, "gates", "stopped.json")), "exit %d · %s%s" % (code, out, err))
-    code, out, err = council(lk, "gate", "killed", "--run", lrun, "--", "kill -9 \"$(head -n 1 '%s')\"" % owner)
+    if os.name != "nt":
+        code, out, err = council(lk, "gate", "stopped", "--run", lrun, "--",
+                                 "kill -TERM \"$(head -n 1 '%s')\"; sleep 1; echo went-on" % owner)
+        check("gate lock: a gate call stopped by a signal releases its lock and records no result for the stopped "
+              "gate", code == 143 and not os.path.exists(lock) and len(events(lrun)) == before_stop
+              and not os.path.exists(os.path.join(lrun, "gates", "stopped.json")), "exit %d · %s%s" % (code, out, err))
+    kill = "taskkill //F //PID" if os.name == "nt" else "kill -9"
+    code, out, err = council(lk, "gate", "killed", "--run", lrun, "--", "%s \"$(head -n 1 '%s')\"" % (kill, owner))
     left = os.path.isdir(lock)
     code2, out2, err2 = council(lk, "gate", "lint", "--run", lrun)
     check("gate lock: a gate call killed outright leaves its lock, and the next call clears it and runs",
@@ -6930,6 +6934,106 @@ def runs_usage(tmp):
         if code != 2 or not err.strip():
             took.append(" ".join(args) + f" (exit {code})")
     check("every command refuses a word or flag it doesn't take: exit 2, with a message", not took, "; ".join(took))
+
+@part("models")
+def models_per_role(tmp):
+    """`- models:` (D37): each role's model from the config, a verifier never weaker than its builder, and
+    `- seat models:` as it was."""
+    repo = new_repo(tmp, "models")
+    config = os.path.join(repo, ".council", "council.config.md")
+    write(config, "# Council config\n\n## Run preferences\n- agent cap: 10\n")
+    code, run, err = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    check("models: an implement run opens for the fixture", code == 0 and os.path.isdir(run), run + err)
+    plan_path = os.path.join(run, "run-plan.tsv")
+    write_plan(run, selected=("build",))
+    plain = read(plan_path)
+
+    def plan_with(**chosen):
+        write(plan_path, plain + "".join("seat\t%s\tmodel\t%s\tthis test's model\n" % (seat.replace("_", "-"), name)
+                                         for seat, name in chosen.items()))
+
+    def models_line(line):
+        write(config, "# Council config\n\n## Run preferences\n- agent cap: 10\n" + line)
+
+    code, out, _ = council(repo, "run", "plan", "check")
+    code_s, shown, _ = council(repo, "run", "plan", "show")
+    check("models: with no models line and no model rows the plan checks and shows as before",
+          code == 0 and "plan: valid" in out and code_s == 0 and "model" not in shown, out + shown)
+
+    models_line("- models: builder=sonnet, review=haiku, verifier=fable\n")
+    plan_with(build="sonnet", verify_plan="fable")
+    code, out, _ = council(repo, "run", "plan", "check")
+    code_s, shown, _ = council(repo, "run", "plan", "show")
+    check("models: a split is read — the builder on sonnet and the verifier on fable pass with seat models off",
+          code == 0 and "plan: valid" in out, out)
+    check("models: plan show names each role's model and each seat's",
+          code_s == 0 and "models: builder=sonnet · review=haiku · verifier=fable (council.config.md)" in shown
+          and "build (worker) · context focused · 15 tool calls · model sonnet" in shown
+          and "verify-plan (verifier) · context focused · 15 tool calls · model fable" in shown, shown)
+    plan_with(build="opus", verify_plan="opus")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: a seat on a model its role isn't configured for is refused, naming the fix",
+          code == 1 and "opus is not the builder model in council.config.md (- models: builder=sonnet) — set "
+          "builder=opus there, or make seat/build/model sonnet" in out, out)
+    plan_with(chair="opus")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: the Chair stays on the session's model",
+          code == 1 and "the Chair stays on the session's model — make seat/chair/model inherit" in out, out)
+
+    models_line("- models: builder=opus, verifier=sonnet\n")
+    plan_with(build="opus", verify_plan="sonnet")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: a verifier weaker than its builder is refused, and the refusal names the fix",
+          code == 1 and "verifier verify-plan on sonnet is weaker than builder build on opus — put the verifier on "
+          "opus or stronger (seat/verify-plan/model, and verifier= in council.config.md's - models:)" in out, out)
+    check("models: a build's verifier is also judged against the Chair, which builds on the session's model",
+          code == 1 and "verifier verify-plan on sonnet is weaker than the Chair, which builds, on inherit — put the "
+          "verifier on inherit, as its builder is" in out, out)
+    models_line("- models: verifier=opus\n")
+    plan_with(verify_plan="opus")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: a named verifier under a builder on the session's model is refused",
+          code == 1 and "verifier verify-plan on opus is weaker than builder build on inherit — put the verifier on "
+          "inherit, as its builder is" in out, out)
+
+    review = new_repo(tmp, "models-review")
+    write(os.path.join(review, ".council", "council.config.md"),
+          "# Council config\n\n## Run preferences\n- models: review=haiku, verifier=sonnet\n")
+    code, review_run, err = council(review, "run", "open", "council-review")
+    write_plan(review_run.strip(), selected=("hunt",))
+    append(os.path.join(review_run.strip(), "run-plan.tsv"),
+           "seat\thunt\tmodel\thaiku\treview seat\nseat\tverify-plan\tmodel\tsonnet\tverifier\n")
+    code, out, _ = council(review, "run", "plan", "check")
+    code_s, shown, _ = council(review, "run", "plan", "show")
+    check("models: a review, where nobody builds, may put its seats on haiku and its verifier on sonnet",
+          code == 0 and "plan: valid" in out and "model haiku" in shown and "model sonnet" in shown, out + shown + err)
+
+    for line, want in (("- models: builder=gpt-5\n", "council.config.md's `- models:` line: 'gpt-5' is not a model "
+                        "for builder — use inherit, fable, opus, sonnet or haiku"),
+                       ("- models: lead=opus\n", "council.config.md's `- models:` line: 'lead' is not a role — use "
+                        "builder, review or verifier")):
+        models_line(line)
+        write(plan_path, plain)
+        code, out, _ = council(repo, "run", "plan", "check")
+        check("models: an unknown name in the line is refused — " + line.strip(), code == 1 and want in out, out)
+    models_line("")
+    plan_with(build="gpt-5")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: an unknown name on a seat row is refused, listing the names",
+          code == 1 and "seat model must be inherit, fable, opus, sonnet or haiku" in out, out)
+
+    routed = "seat\tbuild\tpurpose\tmapping\tchart the area\n"
+    models_line("- seat models: on\n- models: builder=opus, verifier=opus\n")
+    write(plan_path, plain + routed + "seat\tbuild\tmodel\thaiku\tmapping seat\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: seat models: on still routes a mapping worker to haiku beside a models line",
+          code == 0 and "plan: valid" in out, out)
+    models_line("- seat models: off\n- models: builder=opus, verifier=opus\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: seat models: off still refuses that override",
+          code == 1 and "seat model overrides are off; enable seat models: on in council.config.md" in out, out)
+
 
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
 parser.add_argument("--list", action="store_true",
