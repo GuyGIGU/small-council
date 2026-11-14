@@ -12,9 +12,9 @@ from typing import NamedTuple
 VALUED = ("run", "code-root", "status", "base", "at", "proof", "session", "task", "risk", "complexity",
           "uncertainty", "surface", "agent-cap", "budget-tokens", "expand", "scope", "user-said", "pose",
           "exit-after", "transcript")
-GATE_VALUED = ("timeout", "invalid")      # council gate's own: "needs a value" whatever the flag
+GATE_VALUED = ("timeout", "invalid", "seat")   # council gate's own: "needs a value" whatever the flag
 SWITCHES = ("alongside", "all", "classic", "json", "watch", "widget", "line", "preview", "stop", "demo",
-            "still", "wait")
+            "still", "wait", "rerun")
 REPEATED = ("surface", "expand")
 MISSING = {"run": "a folder", "code-root": "a folder", "base": "a ref", "at": "grounding or verify"}
 

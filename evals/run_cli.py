@@ -1313,7 +1313,7 @@ def runs_gates_and_seats(tmp):
     code, out, _ = council(repo, "gate", "words", "--", "printf", "(%s)", "two words")
     check("gate: separate words stay separate arguments", code == 0 and read(os.path.join(gates, "words.txt")) == "(two words)",
           out + read(os.path.join(gates, "words.txt")))
-    code, out, _ = council(repo, "gate", "--all", "--at", "verify")
+    code, out, _ = council(repo, "gate", "--all", "--at", "verify", "--rerun")   # ok ran green above, on this tree (#68)
     check("gate --all: a failing optional gate doesn't fail the set", code == 0 and "gate bad: FAIL" in out and "gate must" not in out, out)
     check("gate --all --at: a gate with no Run-at value isn't run, and is never silent about it",
           "gate anytime: skipped \u2014 its Run at cell is empty" in out
@@ -1331,7 +1331,7 @@ def runs_gates_and_seats(tmp):
           "gates: 2 ran \u2014 1 pass, 1 FAIL (bad, not mandatory) \u00b7 7 skipped" in out, out)
     check("gate --all --at: a row whose columns shifted is still reported, not filtered away",
           "gate leaky: skipped \u2014 its row has" in out, out)
-    code2, out2, _ = council(repo, "gate", "--all", "--at=verify")
+    code2, out2, _ = council(repo, "gate", "--all", "--at=verify", "--rerun")
     check("gate --all --at=verify: the = form picks the same stage as --at verify",
           code2 == code and out2.strip().splitlines()[-1:] == out.strip().splitlines()[-1:], out2)
     code, out, _ = council(repo, "gate", "ship")
@@ -4945,7 +4945,7 @@ def gates_table(tmp):
     check("gate --all --at: a note in brackets is a note, and \u00b7 between two stages is a separator",
           code == 0 and "gate dot: pass" in out and "gate slow: pass" in out and "names no stage" not in out
           and "council gate byhand" in out, out)
-    code, out, _ = council(vocab, "gate", "--all", "--at", "grounding")
+    code, out, _ = council(vocab, "gate", "--all", "--at", "grounding", "--rerun")   # dot is green on this tree (#68)
     check("gate --all --at: a gate whose cell names only the other stage is not counted as a required skip",
           code == 0 and "gate dot: pass" in out and "slow" not in out and "1 skipped" in out, out)
     code, out, _ = council(vocab, "doctor")
@@ -5637,6 +5637,87 @@ def gate_invalid_proof(tmp):
           "only run-folder scripts ran it" in line_of(out, "task 4  proof  ok")
           and "only run-folder scripts" not in line_of(out, "task 5  proof  ok")
           and "check: 1 proved only through scripts in the run folder" in out, out)
+
+
+@part("gates")
+def gates_reuse_green_tree(tmp):
+    """#68: a builder runs the gates in its worktree, then the Chair ran them all again on the same files, and again
+    after integration. A configured gate's record names the tree it ran on and the seat; gate --all takes a green on
+    the very same files instead of running it, says so, and runs it again for any change, a red or --rerun."""
+    repo = small_council_repo(tmp, "reuse",
+        "| tests | `echo run >> ../reuse-tests.log && echo '3 passed'` | grounding, verify | yes | ok | `true` | none | - |\n"
+        "| flaky | `if [ -f ../reuse-red ]; then echo 'FAILED t::a'; exit 1; fi; echo '1 passed'` | verify | no | ok "
+        "| `true` | none | - |\n")
+    count = lambda: read(os.path.join(tmp, "reuse-tests.log")).count("run")      # noqa: E731 — how often tests ran
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    builder = os.path.join(tmp, "reuse-wt")
+    git(repo, "worktree", "add", "-q", "-b", "builder-1", builder)
+    write(os.path.join(tmp, "reuse-red"), "")
+    council(builder, "gate", "flaky", "--seat", "builder-1", "--run", run)
+    os.remove(os.path.join(tmp, "reuse-red"))
+    code, out, err = council(builder, "gate", "tests", "--seat", "builder-1", "--run", run)
+    verdict = json.loads(read(os.path.join(run, "gates", "tests.json")) or "{}")
+    head = verdict.get("tree", "")
+    check("gate --seat: a builder's run in its own worktree is recorded in the run's gate record, with its tree and seat",
+          code == 0 and verdict.get("seat") == "builder-1" and re.fullmatch("[0-9a-f]{40,64}", head) and count() == 1
+          and "runs in %s, the working tree it is called from" % slash(builder) in out, out + err + str(verdict))
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a builder's green on the same files is not run again, and the line names the gate, seat and tree",
+          code == 0 and count() == 1 and "gate tests: green on this tree already — builder-1 ran it on tree %s (" % head[:12]
+          in out and "--rerun runs it anyway" in out and "1 green on this tree already, not run again (tests)" in out,
+          out + err)
+    check("gate --all: a builder's red is never taken as green; the gate runs again",
+          "gate flaky: pass (exit 0" in out and "gate flaky: green" not in out, out)
+    code, out, err = council(repo, "gate", "--all", "--at", "verify", "--rerun")
+    check("gate --all --rerun: runs a gate that is green on this tree already",
+          code == 0 and count() == 2 and "gate tests: pass (exit 0" in out and "green on this tree" not in out, out + err)
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: with every gate green on this tree, none runs, and that is no NOTHING WAS CHECKED",
+          code == 0 and count() == 2 and "gate tests: green on this tree already — chair ran it" in out
+          and "gates: none ran — every one that could run here was green on this tree already" in out
+          and "NOTHING WAS CHECKED" not in out, out + err)
+
+    write(os.path.join(repo, "a.txt"), "a, edited\n")                    # uncommitted, unstaged
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: an uncommitted edit changes the tree, so a green from before it runs again",
+          code == 0 and count() == 3 and "gate tests: pass (exit 0" in out and "gate tests: green" not in out, out + err)
+    write(os.path.join(repo, "new.txt"), "new\n")                        # a new file git doesn't ignore
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a new untracked file changes the tree too", count() == 4 and "gate tests: green" not in out, out)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "integrated")
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: committing the very files it ran on keeps the tree, so the green stands",
+          count() == 4 and "gate tests: green on this tree already — chair ran it" in out, out)
+    write(os.path.join(builder, "b.txt"), "the builder's change\n")
+    git(builder, "add", "-A")
+    git(builder, "commit", "-q", "-m", "builder change")
+    council(builder, "gate", "tests", "--seat", "builder-1", "--run", run)
+    ran = count()
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a builder's green on other files (its change, not yet integrated) never stands for this tree",
+          count() == ran + 1 and "gate tests: pass (exit 0" in out and "gate tests: green" not in out, out + err)
+
+    council(repo, "gate", "tests", "--", "echo run >> ../reuse-tests.log && echo '1 passed'")
+    ran = count()
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a green of another command under the gate's name is no green for the configured one",
+          count() == ran + 1 and "gate tests: pass (exit 0" in out, out + err)
+    for args, why in ((("gate", "tests", "--rerun"), "--rerun works only with gate --all"),
+                      (("gate", "tests", "--seat", "builder 1"), "--seat takes the seat's slug"),
+                      (("gate", "tests", "--seat", "b1", "--invalid", "x"), "takes no --seat")):
+        code, out, err = council(repo, *args)
+        check("gate: refused, naming the next step — %s" % why, code == 2 and why in err and "council gate" in err,
+              out + err)
+    tree_repo = small_council_repo(tmp, "reusewrites",
+        "| gen | `echo x > generated.txt && echo '2 passed'` | verify | yes | ok | `true` | none | - |\n")
+    council(tree_repo, "run", "open", "council-review")
+    code, first, _ = council(tree_repo, "gate", "--all", "--at", "verify")
+    code, out, err = council(tree_repo, "gate", "--all", "--at", "verify")
+    check("gate: a gate that changes files git doesn't ignore keeps no tree, so it is never taken as green",
+          "the files changed while it ran" in first and "gate gen: pass (exit 0" in out and "gate gen: green" not in out,
+          first + out + err)
 
 
 @part("requests")
