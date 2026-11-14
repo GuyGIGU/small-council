@@ -28,5 +28,11 @@ updated: <YYYY-MM-DD>
 | Term | Meaning | Where in code |
 |---|---|---|
 
+## One way per job
+<Each recurring job (errors, config, data access, logging …), the module that owns it and the one way it is
+done here. A plan task's Owner names a row by its job; empty, the plan check skips the owner check.>
+| Job | Owner | The one way | Anchor path |
+|---|---|---|---|
+
 ## Conventions in the code
 <Naming, error handling, and patterns new code must match. Point at AP/EC entries instead of repeating them.>
