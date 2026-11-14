@@ -272,6 +272,16 @@
    "longest": 20,
    "longest_name": "seat_model"
   },
+  "src/council/commands/plan_tasks.py": {
+   "lines": 137,
+   "longest": 30,
+   "longest_name": "task_problems"
+  },
+  "src/council/commands/pushes.py": {
+   "lines": 44,
+   "longest": 14,
+   "longest_name": "main"
+  },
   "src/council/commands/resolve.py": {
    "lines": 103,
    "longest": 32,
@@ -362,6 +372,11 @@
    "longest": 30,
    "longest_name": "acquire"
   },
+  "src/council/records/map_file.py": {
+   "lines": 58,
+   "longest": 18,
+   "longest_name": "ways"
+  },
   "src/council/records/models.py": {
    "lines": 91,
    "longest": 12,
@@ -382,10 +397,20 @@
    "longest": 19,
    "longest_name": "summary"
   },
+  "src/council/records/pushes.py": {
+   "lines": 41,
+   "longest": 17,
+   "longest_name": "pushes"
+  },
   "src/council/records/repairs.py": {
    "lines": 12,
    "longest": 3,
    "longest_name": "kept"
+  },
+  "src/council/records/request.py": {
+   "lines": 98,
+   "longest": 20,
+   "longest_name": "verdict"
   },
   "src/council/records/runs.py": {
    "lines": 118,
@@ -411,6 +436,11 @@
    "lines": 94,
    "longest": 22,
    "longest_name": "clear_waiting"
+  },
+  "src/council/records/tasks.py": {
+   "lines": 82,
+   "longest": 16,
+   "longest_name": "read"
   },
   "src/council/records/usage.py": {
    "lines": 203,

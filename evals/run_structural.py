@@ -535,11 +535,12 @@ check("implement: the push/PR order is the freeze, then git fetch and gh pr list
       "The PR question comes only after that OK" in impl_deliver and
       -1 < impl_deliver.find("**The freeze:**") < impl_deliver.find("**Fetch first:**") < impl_deliver.find("**The PR text:**"))
 check("pushes: the config template carries `- pushes: on` with off and off until a date; under a freeze the build "
-      "commits, records it and stops, and the receipt's Built line says push and PR held by the freeze (#49)",
+      "commits, records it and stops, and the receipt's Built line says push and PR held by the freeze, with its date (#49)",
       "- pushes: on" in cfg_template and '"pushes": on | off | off until <YYYY-MM-DD>' in cfg_template and
       "`- pushes:` line (missing means `on`)" in impl_deliver and "`off until <date>` before that date" in impl_deliver and
       "the freeze holds push and PR only" in impl_deliver and "record the commit in the log, and stop" in impl_deliver and
-      re.search(r"^Built: .*\[· push and PR held by the freeze\]$", skill["council-implement"], re.MULTILINE) is not None)
+      re.search(r"^Built: .*\[· push and PR held by the freeze\[ until <date>\]\]$", skill["council-implement"], re.MULTILINE)
+      is not None)
 check("verifier: judges the Done-when, never hunts past it, and notes the rest under ## Noticed — never as a verdict "
       "(a real batch's checks ran ten hours finding a narrower gap each round)",
       "Judge the Done-when, nothing wider" in verifier and "## Noticed" in verifier and "however narrow" in verifier

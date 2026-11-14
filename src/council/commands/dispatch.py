@@ -7,7 +7,7 @@ import sys
 from council.commands import cli
 
 COMMANDS = {"home": "home", "sharing": "sharing", "run status": "runs", "cap": "cap", "run plan": "plan",
-            "route": "route", "gate": "gate", "gates": "gate_list", "changed": "changed"}
+            "route": "route", "gate": "gate", "gates": "gate_list", "changed": "changed", "pushes": "pushes"}
 
 
 def main(argv: list[str]) -> int:
