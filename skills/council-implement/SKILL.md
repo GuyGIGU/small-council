@@ -112,8 +112,8 @@ the converge pass starts, `council state phase=challenge`.
      didn't name. When it can't compare, read both outputs side by side. Keep the standing clause
      on the receipt.
    - **It can't run** → config drift (Prepare, Rules); log it too.
-   - **It fails during this task** → the bounded loop in `references/run/repair-loop.md`: `council gate`
-     records it (no `council repair record`); inspect its saved output and baseline, repair, and rerun
+   - **It fails during this task** → the bounded loop in `references/run/repair-loop.md` (a failure
+     nobody can explain, or a `NEEDS:`: its Unknowns): `council gate` records it (no `council repair record`); inspect its saved output and baseline, repair, and rerun
      the **same** gate. The third failed execution blocks the task: jump to blocked-task logging and
      the receipt (`council state phase=deliver skip="blocked: task <n>"`);
      do not attempt steps 6–7 as a fix path. A blocked build stops for the user (context-core,

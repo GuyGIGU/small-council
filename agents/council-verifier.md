@@ -75,10 +75,10 @@ current | latent` — never a verdict, a row or a new task.
   ran. Say what's missing.
 
 For build tasks, read `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md` and check its mode, pair and
-coverage contract independently. Trace the named invariants through the changed path, inspect test
-assertion changes and read the actual before-failure. A helper verdict or saved test path alone is
-not semantic proof; preservation alone cannot earn OK for a fix or new behaviour. Missing proof
-earns CANNOT VERIFY; code that establishes an unmet Done-when earns INCOMPLETE.
+coverage contract independently, as its Read the result says. Missing proof earns CANNOT VERIFY;
+code that establishes an unmet Done-when earns INCOMPLETE.
+On a build or a fix, also ask: does it contradict a recorded decision (a D or EC entry in scope) or add
+a second way beside the map's One way per job table? Then INCOMPLETE, citing the id or row (Checking).
 
 ## Checking work against a request (council-postgame)
 

@@ -89,6 +89,27 @@ never judges it by today's settings, and nobody rewrites it after the fact.
 When routing changes, edit the plan, state the reason, and check it again before acting on the new
 decision. The file is the current contract, not an event history; `log.md` remains the history.
 
+## Plan tasks
+
+A council-plan run's tasks are its deliverable, not this file, but the same check judges them: once
+`council state deliverable=<path>` names the plan, `council run plan check` also reads every task under
+its `## Task Sequence` (`### <n>. <title>` and its table), prints a `tasks:` line, and refuses the next
+stage while a task breaks a rule below. Beside `Depends on` and `Done when`, every task has three rows:
+
+| Row | What it holds | Refused when |
+|---|---|---|
+| **Serves** | the part of the request it serves, in quotes, word for word from ask.md's `## In your words` (and the filed request it continues). A support task (a test, a changelog line) quotes the part its parent serves | the row is missing, quotes nothing, quotes under three words, or quotes words the request never said |
+| **Owner** | the module or folder, and the job it extends: a row of `map.md`'s `## One way per job` table, named by its job. Or `New way: <why no existing way fits>`, which goes to the user as a ruling (Deliver, step 6) and, once they rule, into memory as a decision. A probe or research task says `Probe: <the question>` or `Research: <the question>` | the row is missing, `New way:` gives no why, or the map has the table and the row names none of its jobs |
+| **Rests on** | the facts the task takes as given, split by `;`, each ending with its evidence state (`references/run/evidence-model.md`) and `outside` when it is about something outside the repo: `the provider retries for 3 days (ASSUMED, outside); orders are keyed by id (OBSERVED)`. `—` when it rests on nothing | the row is missing, or a fact has no state |
+
+**An unknown becomes its own task.** A task resting on an `ASSUMED` or `INFERRED` fact marked `outside`
+(a tool, a platform, an API) depends on a probe or research task, directly or through other tasks, so
+the fact is measured or read before anything is built on it. A probe or research task needs none itself.
+
+A map with no `## One way per job` table, or one with no rows yet, skips the owner check and says so in
+one line, so older projects keep working. A closed run's plan is read as it was, and another mode's
+deliverable is not a plan.
+
 ## Compatibility
 
 New runs carry `plan-schema: 1` in `session-state.md`. A stamped run whose plan is missing is an

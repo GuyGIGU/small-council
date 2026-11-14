@@ -55,6 +55,21 @@ failure was introduced by the task; the record says `baseline: red`, `empty`, or
 The helper accepts artifacts up to 4 MB; if a gate writes more, keep its original output and record
 the failure and retry limit manually in the log instead of claiming the helper captured it.
 
+## Unknowns
+
+"I don't know yet" is an accepted answer; a guess is not.
+
+- **A failure nobody can explain stops code changes.** The next step is a probe that measures it
+  (a gate, a script, a query whose output settles the question), then the fix. Guess-and-rerun is
+  how a fix lands on a fix.
+- **A builder may return `NEEDS: <question>` and stop.** That is a correct outcome, not a failed
+  seat: record it `council seat <slug> done note="NEEDS: <question>"`, never `failed` or `blocked`.
+  The Chair building a task stops the same way: the question, not a guess.
+- **The answer.** The Chair may run one probe or research seat a run for it inside the approved budget,
+  without asking; before a second, it asks the user. A question only the user can answer joins the
+  rulings. A plan does the same ahead of time: a task resting on an unchecked fact outside the repo
+  has a probe or research task before it (`references/run/run-plan.md`, Plan tasks).
+
 ## Classification and routing
 
 The helper uses explicit text patterns, then a gate-name hint, to suggest a category and governing
