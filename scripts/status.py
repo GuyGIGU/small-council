@@ -31,10 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import cockpit  # noqa: E402  (the read-only run snapshot)
 from council.clock import local_moment, utc_moment as utc_time  # noqa: E402
-from council.records import audit_file, config, paths  # noqa: E402
-from council.records import seats as seat_files  # noqa: E402
-from council.records import state as run_state  # noqa: E402
-from council.records import plan as run_plan  # noqa: E402
+from council.records import audit_file, config, paths, plan as run_plan, pushes  # noqa: E402
+from council.records import seats as seat_files, state as run_state  # noqa: E402
 
 SCHEMA = "council.run-status/1"
 QUIET_MINUTES = 60         # an open run with no recorded activity for this long reads as quiet (stale)
@@ -536,6 +534,7 @@ def closing_of(snap, run_path, usage, check_text, attention):
     if run.get("status", "").split(" ")[0] not in ("complete", "paused", "abandoned"):
         return None
     claims, converge = snap["claims"], None
+    held = pushes.pushes(Path(run_path).parent.parent)[0] if run.get("mode") == "council-implement" else ""
     if run.get("mode") == "council-implement" and not claims.get("expected", True):
         # A build checks tasks, not claims: its final check is the log's Converge table.
         converge = cockpit.converge_of(run_path, run.get("deliverable", ""))
@@ -570,6 +569,7 @@ def closing_of(snap, run_path, usage, check_text, attention):
                 "" if "(limit " in usage["agent_runs_text"] else " (limit {})".format(usage["agent_cap"])),
             "chair": usage.get("chair_text"), "audit": audit_file.card_line(run_path),
             "left_for_you": [a["text"] for a in attention] + converge_open(converge)
+                            + ([held[:1].upper() + held[1:] + " (`- pushes:` in the config)."] if held else [])
                             + ["Rulings and next steps: see the summary in chat."]}
 
 

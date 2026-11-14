@@ -332,6 +332,11 @@
    "longest": 26,
    "longest_name": "run_folder_only"
   },
+  "src/council/commands/pushes.py": {
+   "lines": 44,
+   "longest": 14,
+   "longest_name": "main"
+  },
   "src/council/commands/resolve.py": {
    "lines": 103,
    "longest": 32,
@@ -451,6 +456,11 @@
    "lines": 71,
    "longest": 19,
    "longest_name": "summary"
+  },
+  "src/council/records/pushes.py": {
+   "lines": 41,
+   "longest": 17,
+   "longest_name": "pushes"
   },
   "src/council/records/quotes.py": {
    "lines": 147,

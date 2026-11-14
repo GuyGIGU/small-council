@@ -57,7 +57,11 @@ PreToolUse (hooks/bash-gate.sh), fed through hooks.json's own command and matche
     council in quotes, a comment, a heredoc or a case pattern, a command over 100 KB, and anything it
     can't parse;
   - touches the session's mark before a call that names council, so `council run open` right after it
-    finds one (after /reload-plugins too).
+    finds one (after /reload-plugins too);
+  - push freeze: while `- pushes: off` (or `off until` a later date) holds, refuses git push and gh pr
+    create (plain, compound, in a group or a substitution, after git -C or gh -R), naming the freeze,
+    its date and COUNCIL_ALLOW_PUSH=1; lets through that escape, push in quoted text or a heredoc, a
+    past date, pushes on, no council, and a missing or faulty helper.
 """
 import argparse
 import json
@@ -78,6 +82,7 @@ GIT_ENV = dict(os.environ, GIT_AUTHOR_NAME="eval", GIT_AUTHOR_EMAIL="eval@exampl
                GIT_COMMITTER_NAME="eval", GIT_COMMITTER_EMAIL="eval@example.invalid")
 GIT_ENV.pop("CLAUDE_CODE_SESSION_ID", None)
 GIT_ENV.pop("COUNCIL_ALLOW_NO_HOOKS", None)
+GIT_ENV.pop("COUNCIL_ALLOW_PUSH", None)       # the push freeze's escape: the evals set it themselves
 if os.environ.get("COUNCIL_EVAL_BASH"):                  # nested `bash` calls use that bash too
     GIT_ENV["PATH"] = os.path.dirname(BASH) + os.pathsep + GIT_ENV.get("PATH", "")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
@@ -956,6 +961,102 @@ def bash_gate(tmp):
 
 
 @part("main")
+def push_freeze(tmp):
+    # --- PreToolUse push freeze (issue 49): while the config's `- pushes:` holds push and PR, the bash gate
+    # refuses git push and gh pr create, matched as the pipe stop matches the helper; the decision is the
+    # helper's (council pushes check), and any fault of its lets the push through ------------------------
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        cmd = next((h["command"] for g in json.load(f)["hooks"].get("PreToolUse", []) for h in g.get("hooks", [])
+                    if "hooks/bash-gate.sh" in h.get("command", "")), "exit 1")
+
+    def frozen_repo(name, line):
+        repo = new_repo(tmp, name)
+        write(os.path.join(repo, ".council", "council.config.md"),
+              "# Council config\n\n## Run preferences\n- agent cap: 10\n" + line)
+        return repo
+
+    def gate(repo, command, env=None, hook=cmd, run_from=None):
+        payload = json.dumps({"session_id": "sP", "transcript_path": "/x/t.jsonl", "cwd": repo, "tool_name": "Bash",
+                              "tool_input": {"command": command, "description": "Ship it"}}, separators=(",", ":"))
+        t0 = time.time()
+        p = subprocess.run([BASH, "-c", hook], input=payload, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60, cwd=run_from or repo,
+                           env=dict(with_env(env), CLAUDE_PLUGIN_ROOT=ROOT))
+        return p.returncode, p.stdout, p.stderr, time.time() - t0
+
+    def said(code, out, err):
+        return f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()[:300]}"
+
+    dated = frozen_repo("freeze-dated", "- pushes: off until 2999-12-31\n")
+    for command, what in (("git push", "git push"),
+                          ("git add -A && git commit -m 'Fix the export' && git push -u origin HEAD", "git push"),
+                          ("cd app; npm test || exit 1\ngit push origin main", "git push"),
+                          ("gh pr create --title 'Fix the export' --body-file pr-body.md", "gh pr create"),
+                          ("out=$(git push 2>&1); echo \"$out\"", "git push"),
+                          ("git -C ../app push --force-with-lease", "git push"),
+                          ("{ git fetch; gh -R o/app pr create --fill; } > log.txt", "gh pr create")):
+        code, out, err, _ = gate(dated, command)
+        check(f"push freeze refuses {command!r} until 2999-12-31 — exit 2, one line on stderr naming the freeze, "
+              "its date and the escape", code == 2 and not out and err.count("\n") == 1
+              and err.startswith("Small Council: Push and PR held by the freeze until 2999-12-31")
+              and "`- pushes: off until 2999-12-31`" in err and f"COUNCIL_ALLOW_PUSH=1 {what}" in err,
+              said(code, out, err))
+    code, out, err, _ = gate(dated, "git push", run_from=tmp)
+    check("push freeze: the gate judges by the call's own cwd, not the folder the hook starts in",
+          code == 2 and "held by the freeze" in err, said(code, out, err))
+    for command in ("echo 'git push'",
+                    'git commit -m "Hold git push and gh pr create while frozen"',
+                    "git commit -F - <<'EOF'\nThen git push\nEOF",
+                    "git status && git log --oneline | grep push",
+                    "gh pr list --state all",
+                    "git status # then git push",
+                    "COUNCIL_ALLOW_PUSH=1 git push -u origin HEAD",
+                    "env COUNCIL_ALLOW_PUSH=1 gh pr create --fill",
+                    "export COUNCIL_ALLOW_PUSH=1; git fetch && git push",
+                    'echo "git push'):                                        # can't be parsed: let through
+        code, out, err, _ = gate(dated, command)
+        check(f"push freeze lets {command[:70]!r} through, silently", code == 0 and not out and not err, said(code, out, err))
+    code, out, err, _ = gate(dated, "COUNCIL_ALLOW_PUSH=0 git push")
+    check("push freeze: only COUNCIL_ALLOW_PUSH=1 is the escape", code == 2, said(code, out, err))
+    code, out, err, _ = gate(dated, "git push", env={"COUNCIL_ALLOW_PUSH": "1"})
+    check("push freeze: COUNCIL_ALLOW_PUSH=1 in the session's environment lets every push through",
+          code == 0 and not out and not err, said(code, out, err))
+
+    held = frozen_repo("freeze-off", "- pushes: off\n")
+    code, out, err, _ = gate(held, "git push")
+    check("push freeze: `- pushes: off` refuses with no date, naming the setting and the escape",
+          code == 2 and err.startswith("Small Council: Push and PR held by the freeze (`- pushes: off`")
+          and "COUNCIL_ALLOW_PUSH=1 git push" in err, said(code, out, err))
+    for label, line in (("a freeze whose date has passed", "- pushes: off until 2000-01-01\n"),
+                        ("pushes on", "- pushes: on\n"), ("no pushes line", ""),
+                        ("a value it can't read", "- pushes: frozen-ish\n")):
+        repo = frozen_repo("freeze-" + re.sub(r"[^a-z]+", "-", label), line)
+        code, out, err, _ = gate(repo, "git push && gh pr create --fill")
+        check(f"push freeze: {label} — git push and gh pr create go ahead, nothing said",
+              code == 0 and not out and not err, said(code, out, err))
+    code, out, err, _ = gate(new_repo(tmp, "freeze-no-council"), "git push")
+    check("push freeze: no council here — the push goes ahead, nothing said", code == 0 and not out and not err,
+          said(code, out, err))
+
+    # D20: a fault of the hook's own, or of the helper's, lets the push through; only the helper's own
+    # "Small Council:" refusal with exit 2 stops it.
+    plugin = os.path.join(tmp, "freeze-plugin")
+    os.makedirs(os.path.join(plugin, "hooks"))
+    shutil.copy(os.path.join(ROOT, "hooks", "bash-gate.sh"), os.path.join(plugin, "hooks", "bash-gate.sh"))
+    own = 'bash "%s"' % os.path.join(plugin, "hooks", "bash-gate.sh").replace("\\", "/")
+    code, out, err, _ = gate(dated, "git push", hook=own)
+    check("push freeze: no helper beside the hook — the push goes ahead, nothing said", code == 0 and not err,
+          said(code, out, err))
+    for label, body, want in (("a helper that fails with exit 2 and no reason", "echo oops >&2; exit 2", 0),
+                              ("a helper that crashes", "exit 139", 0),
+                              ("the helper's own refusal", "echo 'Small Council: held'; exit 2", 2)):
+        write(os.path.join(plugin, "bin", "council"), "#!/usr/bin/env bash\n" + body + "\n")
+        code, out, err, _ = gate(dated, "git push", hook=own)
+        check(f"push freeze: {label} — exit {want}", code == want and not out and (bool(err) == (want == 2)),
+              said(code, out, err))
+
+
+@part("main")
 def hooks_running(tmp):
     # --- A session whose hooks don't run (the plugin was enabled after it started) can't open a run: a whole
     # night ran with no agent stop and no seat check, and Claude was told to reload once, in a sub-bullet ---
@@ -1681,6 +1782,18 @@ def bash_gate_speed(tmp):
         code, out, err, secs = run_agent_gate(cmd, payload, here)
         check(f"pipe stop: {label} is let through, silently, in under 1 s", code == 0 and not out and not err and secs < 1,
               f"exit {code} · {secs:.2f} s · {err.strip()[:80]}")
+    # The push freeze asks the helper (a Python start) only for a command that pushes: every other call,
+    # one that says push in its text included, costs the walk alone.
+    frozen = new_repo(tmp, "push-freeze-speed")
+    write(os.path.join(frozen, ".council", "council.config.md"), "# Council config\n- pushes: off until 2999-12-31\n")
+    for label, command, want, limit in (("a commit whose message says git push", 'git commit -m "then git push"', 0, 1),
+                                        ("a plain ls", "ls -la", 0, 1),
+                                        ("a git push under the freeze", "git push", 2, 4)):
+        payload = json.dumps({"session_id": "sA", "cwd": frozen, "tool_name": "Bash", "tool_input": {"command": command}},
+                             separators=(",", ":"))
+        code, out, err, secs = run_agent_gate(cmd, payload, frozen)
+        check(f"push freeze: {label} is decided (exit {want}) in under {limit} s, inside the hook's 5 s",
+              code == want and not out and secs < limit, f"exit {code} · {secs:.2f} s · {err.strip()[:80]}")
 
 
 parser = argparse.ArgumentParser(description="Hook evals: run the plugin's hooks against scaffolded repos.")
