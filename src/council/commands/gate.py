@@ -15,12 +15,13 @@ from council.records import home as where
 
 USAGE = "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
 PROOF_ID = re.compile(r"[0-9A-Za-z_-]+")
+SEAT = re.compile(r"[0-9A-Za-z._-]+")
 NEEDS_ASK = re.compile(r"credential|secret|token|password|api.key|apikey|hardware|device", re.DOTALL)
 SAFE = ("none", "writes the tree", "writes files", "network", "-", "—")
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    cli.takes_flags(args, "gate", "all", "at", "proof", "timeout", "invalid", "wait", "--")
+    cli.takes_flags(args, "gate", "all", "at", "proof", "timeout", "invalid", "wait", "seat", "rerun", "--")
     every, command = args.value("all") == "1", given(args.after)
     if every:
         cli.no_words("gate --all", words)
@@ -28,10 +29,27 @@ def main(args: cli.Args, words: list[str]) -> int:
             raise cli.Refusal("gate --all runs the configured gates — it takes no command after --")
     elif args.value("at"):
         raise cli.Refusal("--at works only with gate --all")
+    elif args.value("rerun"):
+        raise cli.Refusal("--rerun works only with gate --all: a gate run by name always runs (council gate %s)"
+                          % gate_run.qname(" ".join(words) or "<name>"))
+    _seat(args)
     try:
         return shell.ran(_gate(args, words, command))
     finally:
         gate_lock.release()
+
+
+def _seat(args: cli.Args) -> None:
+    """--seat <slug>: the seat running this gate in its own tree (a builder in its worktree)."""
+    seat = args.value("seat")
+    if not seat:
+        return
+    if not SEAT.fullmatch(seat) or not seat.isascii():
+        raise cli.Refusal("--seat takes the seat's slug — letters, digits, dots, dashes and underscores, as the run "
+                          "plan names it: council gate <name> --seat builder-1 (got '%s')" % seat)
+    if args.value("invalid"):
+        raise cli.Refusal('--invalid marks a record and runs nothing, so it takes no --seat: council gate <name> '
+                          '--invalid "<why>"')
 
 
 def given(after: list[str]) -> str:
@@ -54,8 +72,8 @@ def _gate(args: cli.Args, words: list[str], command: str) -> int:
         invalid(run.as_posix(), " ".join(words), args, bool(command) or timeout is not None, limit)
         return 0
     home = where.council_home()
-    call = gate_run.Call(run.as_posix(), home, resolve.field(run, "code-root") or where.this_tree(), bool(command),
-                         timeout, args.value("proof"), False)
+    call = gate_run.Call(run.as_posix(), home, _top(run, args.value("seat")), bool(command), timeout,
+                         args.value("proof"), False, args.value("seat") or "chair", args.value("rerun") == "1")
     mode = resolve.field(run, "mode")
     if call.proof:
         _proof(args, mode, " ".join(words))
@@ -67,6 +85,18 @@ def _gate(args: cli.Args, words: list[str], command: str) -> int:
         from council.commands import gate_set
         return gate_set.run_all(call, args.value("at"), mode, (bool(wait), limit))
     return one(call, " ".join(words), command, mode, (bool(wait), limit))
+
+
+def _top(run: Path, seat: str) -> str:
+    """Where the gate runs: the run's code root; for a seat's own run (--seat), the working tree it calls from."""
+    root = resolve.field(run, "code-root") or where.this_tree()
+    if not seat:
+        return root
+    tree = where.this_tree()
+    if tree != root:
+        cli.say("note: %s's gate runs in %s, the working tree it is called from, not the run's code root (%s)"
+                % (seat, tree, root))
+    return tree
 
 
 def _proof(args: cli.Args, mode: str, name: str) -> None:
@@ -116,7 +146,8 @@ def one(call: gate_run.Call, name: str, command: str, mode: str, wait: tuple[boo
         cli.say("note: this gate command " + gate_notes.BACKSLASH)
     if gate_notes.winswitch(command):
         cli.say("note: this gate command " + gate_notes.WINSWITCH)
-    result = gate_run.run_gate(call, name, command)
+    configured = any(row.name == name and row.command == command for row in gate_table.gates(call.home))
+    result = gate_run.run_gate(call, name, command, configured)
     gate_repair.record(call.run, name, result.code, trail, result.same)    # in a build, said last
     return result.code
 

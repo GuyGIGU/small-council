@@ -65,7 +65,8 @@ Catch what's wrong before the user sees it.
    `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
    If optional Python is unavailable, check the same links by hand. This applies to synthesis
    claims in review, plan and research; build and post-game keep their own proof contracts.
-6. **Verification gates**, for modes that changed code: `council gate --all --at verify`.
+6. **Verification gates**, for modes that changed code: `council gate --all --at verify`. A gate
+   already green on this very tree is not run again; its line names who ran it (`--rerun` runs it).
 
 ## Solo runs
 

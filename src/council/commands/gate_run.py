@@ -3,7 +3,10 @@
 In a baseline set a gate's first output is also kept as gates/baseline/<name>.txt, so a later failure can be told
 apart from one the untouched code already had. Exit 0 with nothing behind it (no file matched, no test ran, a
 test gate that printed nothing) is said, never a plain pass; a hang stopped at its time limit is no pass and no
-proof."""
+proof.
+
+A configured gate's verdict also names the tree it ran on (git.files_tree) and the seat that ran it, so `gate --all`
+can take a green on the same tree instead of running it again (gate_set)."""
 from __future__ import annotations
 
 import os
@@ -14,6 +17,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
+from council import git
 from council.commands import cli, event_note, gate_exec, gate_output, resolve
 from council.records import config, gates, verdicts
 
@@ -33,6 +37,8 @@ class Call(NamedTuple):
     timeout: int | None    # --timeout, in seconds
     proof: str             # --proof change|preserve, or ''
     baseline: bool         # a baseline set: a gate's first output is kept
+    seat: str = "chair"    # who ran it: --seat, else the Chair
+    rerun: bool = False    # gate --all --rerun: run a gate already green on this tree
 
 
 class Result(NamedTuple):
@@ -88,12 +94,14 @@ def event(run: str, name: str, value: str, detail: str, said: str) -> None:
     event_note.append(run, "gate." + ("invalidated" if value == "invalid" else "finished"), name, value, detail, said)
 
 
-def run_gate(call: Call, name: str, command: str) -> Result:
-    """Run one gate and say its result; Result.code is its exit code."""
+def run_gate(call: Call, name: str, command: str, configured: bool = False) -> Result:
+    """Run one gate and say its result; Result.code is its exit code. A configured gate (the Gates table's row,
+    its own command) records the tree it ran on and the seat that ran it."""
     base = Path(call.run, "gates", gates.slug(name))
     out, verdict = base.as_posix() + ".txt", base.as_posix() + ".json"
     os.makedirs(str(base.parent), exist_ok=True)
     most, why = limit(call, name)
+    tree = git.files_tree(call.top) if configured else ""
     started = int(time.time())
     code, timed_out = gate_exec.execute(call.top, resolve.field(Path(call.run), "base"),
                                         windows_command(command) if WINDOWS_BASH else command, out, most)
@@ -112,14 +120,27 @@ def run_gate(call: Call, name: str, command: str) -> Result:
         empty, zero, note = _nothing(name, command, content)
     if call.proof:
         note += ', "proof": "%s"' % call.proof
+    if configured:
+        note = _tree(call, name, tree, code == 0 and not note) + note
     _write(verdict, '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s", "limit": %d%s}\n'
            % (json_esc(name), json_esc(command), code, secs, time.strftime("%Y-%m-%d %H:%M:%S"), most, note))
-    fresh = call.baseline and _keep_baseline(call.run, base, out, verdict)
+    fresh = call.baseline and keep_baseline(call.run, base, out, verdict)
     if code == 0:
         return _passed(call, name, secs, empty, zero)
     from council.commands import gate_failed
     same = gate_failed.said(call, name, Result(code, 0, False), secs, (most, why, timed_out, never, fresh), content)
     return Result(code, 0, same)
+
+
+def _tree(call: Call, name: str, tree: str, green: bool) -> str:
+    """The verdict's tree (the one it started on) and seat. A green counts for its tree only if the files are the
+    same once it has run: a gate that changed files git doesn't ignore, or an edit made while it ran, leaves no
+    tree on its record. A red keeps its tree; it is never reused (verdicts.green)."""
+    if tree and green and git.files_tree(call.top) != tree:
+        tree = ""
+        cli.say("note: gate %s — the files changed while it ran (it writes files git doesn't ignore, or something "
+                "else edited them), so a later gate --all runs it again" % name)
+    return ', "tree": "%s", "seat": "%s"' % (tree, call.seat)
 
 
 def _nothing(name: str, command: str, content: str) -> tuple[int, str, str]:
@@ -139,7 +160,7 @@ def _write(path: str, line: str) -> None:
         handle.write(line.encode("utf-8", "surrogateescape"))
 
 
-def _keep_baseline(run: str, base: Path, out: str, verdict: str) -> bool:
+def keep_baseline(run: str, base: Path, out: str, verdict: str) -> bool:
     """The first output of this gate in a baseline set becomes its baseline; True when it was kept now."""
     kept = Path(run, "gates", "baseline", base.name)
     if Path(kept.as_posix() + ".txt").is_file():
