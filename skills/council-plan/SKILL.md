@@ -165,6 +165,9 @@ round 2. **Off:** nothing extra.
   conflicts with still-applicable memory under Convene's rule.
 - **Group into build tasks,** at most 15. Merge if you're over.
 - **Every task gets:**
+  - **Serves**, **Owner** and **Rests on** (`references/run/run-plan.md`, Plan tasks): the request's
+    words it serves, the map's job it extends or `New way:` and why, and its facts with their states.
+    An `ASSUMED` or `INFERRED` fact outside the repo gets a probe or research task before it.
   - **Done when:** an observable check.
   - **Touches:** the files or areas it may change.
   - **Constraints:** every hard rule, settled memory entry and "Already decided" choice that binds
@@ -206,6 +209,9 @@ File the request first (Deliver, step 1), then write:
 | **Domain** | <what it checks> (<Seat>) × Carmack — <principle> |
 | **Ref** | `references/<file>.md` → Principle N |
 | **Depends on** | — (or Task N) |
+| **Serves** | "<the request's words, quoted exactly>" |
+| **Owner** | <module> — <the map's job it extends> (or New way: <why>, or Probe: <the question>) |
+| **Rests on** | <fact> (<STATE>[, outside]); … (or —) |
 | **Touches** | <files or areas> |
 | **Constraints** | "<the rule, quoted>" — <config hard rule, memory id, or Already decided>; or — |
 | **Done when** | <observable check> |
@@ -231,7 +237,8 @@ where to start, and which seat is worth having on hand during the build.>
 **Attribution is non-negotiable.** Every task has a Domain row and a Ref row. A combined task names
 its primary domain and cross-references the rest.
 
-In chat: the Summary table, the Verdict and the plan's path. Then the rulings as one question (Deliver, step 6),
+After `council state deliverable=<path>`, run `council run plan check`: it judges the tasks too, and a
+`New way:` it names joins the rulings. In chat: the Summary table, the Verdict and the plan's path. Then the rulings as one question (Deliver, step 6),
 the memory proposals, and the hand-off: *"Build it with council-implement?"*
 
 ## Notes

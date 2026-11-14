@@ -2039,7 +2039,7 @@ require_run_plan() {
     [ -z "$schema" ] && return 0                         # pre-v1 run: intentionally compatible
     die "cannot $action — run-plan.tsv is missing; restore it from references/templates/run-plan.tsv"
   fi
-  QUIET=1 plan_check "$run" || die "cannot $action — fix run-plan.tsv, then run: council run plan check --run ${run##*/}"
+  QUIET=1 plan_check "$run" || die "cannot $action — fix what it names (run-plan.tsv, or a plan's tasks), then run: council run plan check --run ${run##*/}"
 }
 
 # The user's decisions on record from a local minute on ("" counts them all): the lines council state
