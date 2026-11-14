@@ -104,6 +104,21 @@ def worker_estimate(home: str | Path) -> int | None:
     return _in_range(found.group(1)) if found else None
 
 
+def role_pairs(home: str | Path | None, key: str) -> tuple[bool, list[tuple[str, str, str]]]:
+    """The first `- key: role=value, ...` line as (written, [(role, equals, value)]): an HTML comment after it
+    dropped, every word lower-cased and trimmed, an empty piece skipped. `- models:` and `- estimates:` read
+    this way."""
+    found = first(home, SPACE + "*-" + SPACE + "*" + key + ":" + SPACE + "*(.*)")
+    return (True, pairs(found.group(1))) if found else (False, [])
+
+
+def pairs(text: str) -> list[tuple[str, str, str]]:
+    """The text after a role line's key as (role, equals, value) pieces, as role_pairs reads them."""
+    text = text.replace("\r", "").split("<!--", 1)[0].strip(" \t").translate(ASCII_LOWER)
+    pieces = [piece.strip(" \t") for piece in text.split(",")]
+    return [(w[0].strip(" \t"), w[1], w[2].strip(" \t")) for w in (p.partition("=") for p in pieces if p)]
+
+
 def seat_models(home: str | Path) -> str:
     """configured_seat_models: 'on' only for exactly `- seat models: on`; anything else is 'off'."""
     found = first(home, SPACE + "*-" + SPACE + "*seat models:" + SPACE + "*([A-Za-z]*)" + SPACE + r"*\Z")

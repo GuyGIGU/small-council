@@ -17,7 +17,6 @@ ORDER = ("haiku", "sonnet", "opus", "fable")      # weakest first: a verifier is
 NAMES = (INHERIT,) + ORDER[::-1]
 SAID = ", ".join(NAMES[:-1]) + " or " + NAMES[-1]  # "inherit, fable, opus, sonnet or haiku", for refusals
 ROLES = ("builder", "review", "verifier")
-LINE = config.SPACE + "*-" + config.SPACE + "*models:" + config.SPACE + "*(.*)"
 
 
 class Models(NamedTuple):
@@ -37,21 +36,14 @@ class Models(NamedTuple):
 
 def models(home: str | Path | None) -> Models:
     """The first `- models:` line, read; Models() when there is none or it says nothing."""
-    found = config.first(home, LINE)
-    if not found:
-        return Models()
-    text = found.group(1).replace("\r", "")
-    text = text.split("<!--", 1)[0].strip(" \t").translate(config.ASCII_LOWER)
-    return parse(text)
+    written, pieces = config.role_pairs(home, "models")
+    return parse(pieces) if written else Models()
 
 
-def parse(text: str) -> Models:
-    """'builder=opus, verifier=opus' as Models; the first word it can't take is its problem."""
+def parse(pieces: list[tuple[str, str, str]]) -> Models:
+    """The line's (role, equals, name) pieces as Models; the first word it can't take is its problem."""
     chosen: dict[str, str] = {}
-    for part in (p.strip(" \t") for p in text.split(",")):
-        if not part:
-            continue
-        role, equals, name = (w.strip(" \t") for w in part.partition("="))
+    for role, equals, name in pieces:
         problem = refusal(role, equals, name, chosen)
         if problem:
             return Models(written=True, problem=problem)

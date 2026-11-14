@@ -48,6 +48,7 @@ case "$(json_str agent_type)" in
   *council-verifier) kind=verifier ;;
   *) exit 0 ;;
 esac
+sid="$(json_str session_id)"; [ -z "$sid" ] || ( . "$(dirname "$0")/../bin/council" && mark_hooks_ran "$sid" seat-gate ) >/dev/null 2>&1   # council doctor reads it
 
 msg="$(json_str last_assistant_message)"
 empty=0
@@ -130,7 +131,6 @@ fi
 problems=""
 add() { problems="${problems}${problems:+; }$1"; }
 engine="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/scripts/evidence.py"
-py=""; table=""; rc=0; n=0
 # Python 3.8+, as the helper finds it; without it the claim index isn't built either.
 pick_python() {
   local c

@@ -21,7 +21,7 @@ from typing import NamedTuple
 
 from council.commands import cap, cli, gate_writable, resolve
 from council.records import home as where
-from council.records import plan, runs, seats, usage
+from council.records import hook_marks, plan, runs, seats, usage
 
 SLUG = re.compile(r"[A-Za-z0-9._-]+")
 KINDS = {"small-council:council-worker": "council-worker", "small-council:council-verifier": "council-verifier"}
@@ -62,6 +62,7 @@ class Where(NamedTuple):
 
 def check(session: str, words: list[str]) -> int:
     """The gate's decision for one agent start; exit 2 with the reason on stdout when it must wait."""
+    hook_marks.put(session, "agent-gate")          # the hook ran in this session, whatever the decision
     call = read_call(words)
     home = where.council_home()
     has_runs = os.path.isdir(home + "/runs")

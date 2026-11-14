@@ -36,7 +36,7 @@ case "$sid" in *'"session_id"'*) sid="${sid#*\"session_id\"}" ;; *) sid="" ;; es
 case "$sid" in :\"*) sid="${sid#:\"}" ;; ': "'*) sid="${sid#: \"}" ;; *) sid="" ;; esac
 sid="${sid%%\"*}"
 case "$sid" in ''|.*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*) sid="" ;; esac
-mark() { { [ -d "$1" ] || mkdir -p "$1"; } 2>/dev/null && { : > "$1/$sid"; } 2>/dev/null; }
+mark() { { [ -d "$1" ] || mkdir -p "$1"; } 2>/dev/null && { : > "$1/$sid"; : > "$1/$sid.bash-gate"; } 2>/dev/null; }
 if [ -n "$sid" ]; then
   [ -z "${XDG_CACHE_HOME:-}" ] || mark "$XDG_CACHE_HOME/small-council/sessions"
   [ -z "${HOME:-}" ] || [ "${XDG_CACHE_HOME:-}" = "$HOME/.cache" ] || mark "$HOME/.cache/small-council/sessions"

@@ -12,6 +12,7 @@ decision and its reasons in the run plan.
 council route recommend --task TEXT [--risk low|medium|high]
   [--complexity 1..10] [--uncertainty low|medium|high]
   [--surface NAME ...] [--agent-cap N] [--budget-tokens N] [--classic]
+  [--mode review|plan|implement|research|postgame]
 ```
 
 The command prints tab-separated rows with the same five-column header as a run plan:
@@ -101,7 +102,11 @@ budget are optimal.
 Earlier project docs give a no-history estimate of roughly 60–100k tokens per worker, with past
 runs described as averaging around 100k. The route estimate uses that range for planning; it is
 not a measured Phase 3 efficiency gain. Reliable per-task cost and effectiveness data are not yet
-available, so the routing policy is heuristic. The one measured input it takes is an `estimate per
-worker` line in `council.config.md`, which `council tune` proposes once five completed runs
-measure tokens per agent and the user approves; only a ceiling the user gives shrinks a run.
+available, so the routing policy is heuristic. The measured inputs it takes are an `estimate per
+worker` line and an `- estimates:` line (`review=`, `plan=`, `builder=`, `verifier=`, `converge=`) in
+`council.config.md`, which `council tune` proposes once five completed runs measure them and the user
+approves; only a ceiling the user gives shrinks a run. With `--mode`, the mode's workers are budgeted at
+their role's figure (review, plan, builder) and its verifiers at the verifier's (converge in a build),
+each falling back to `estimate per worker`; the `estimated-tokens` reason names the figures used. A
+builder costs several times a review seat, which one figure for every agent cannot show.
 Outcome-based tuning of the policy itself waits for the benchmark (`evals/bench/`).

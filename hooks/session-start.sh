@@ -36,7 +36,7 @@ scwd="$(printf '%s' "$input" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]
 case "$scwd" in [A-Za-z]:\\*) scwd="$(printf '%s' "$scwd" | tr '\\' '/')" ;; esac
 # This session's hooks run: `council run open` refuses in a session with no such mark (bin/council's
 # session_dirs says where it lives). Left in every project, council or not: the home may come later.
-mark_hooks_ran "$sid"
+mark_hooks_ran "$sid" session-start
 
 if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then cd "$CLAUDE_PROJECT_DIR" 2>/dev/null || exit 0; fi
 home="$(council_home)"
@@ -74,7 +74,7 @@ RUNS
 fi
 
 if [ -f "$home/council.config.md" ]; then
-  say "[Small Council] Council-enabled project. Council home: $home"
+  say "[Small Council] Council-enabled project. Council home: $home. $(python_run "council doctor" doctor hooks --line --session "$sid" 2>/dev/null)"
   say "- Substantial work? Check for a council mode first (council-review, council-plan, council-implement, council-research, council-postgame, spec-writer, test-architect). Propose it with its size and estimated cost, and wait for a go-ahead before any multi-agent run."
   say "- The \`council\` helper does the bookkeeping (\`council run status\`, \`council doctor\`). It is a bash script: run it in the Bash tool (Git Bash on Windows), never from PowerShell. Call it as a plain \`council <command>\`, never piped (a hook refuses \`| head\`, \`| tail\` and \`| grep\`: redirect it to a file and read that) and never through a shell variable or a full path: permission rules match the command text. Only if \`command -v council\` fails, write out bash \"$ROOT/bin/council\" <command> each time."
   if [ "$(configured_sharing "$home")" = "just me" ]; then

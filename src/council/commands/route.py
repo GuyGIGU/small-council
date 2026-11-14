@@ -7,10 +7,11 @@ import re
 from typing import NamedTuple
 
 from council.commands import cli
-from council.records import config
+from council.records import config, estimates
 from council.records import home as where
 
-FLAGS = ("task", "risk", "complexity", "uncertainty", "surface", "agent-cap", "budget-tokens", "classic")
+FLAGS = ("task", "risk", "complexity", "uncertainty", "surface", "agent-cap", "budget-tokens", "classic", "mode")
+MODES = ("review", "plan", "implement", "research", "postgame")
 LENSES = ("security", "data", "frontend", "architecture", "performance")    # specialists, by priority
 CANDIDATES = ("implementation", "testing") + LENSES + ("verification",)
 CHAIR_TOKENS = 20000
@@ -40,7 +41,8 @@ def main(args: cli.Args, words: list[str]) -> int:
         raise cli.Refusal("route recommend does not take --run; it uses this project's config")
     cli.no_words("route recommend", words[1:])
     home = where.council_home()
-    for row in recommend(read(args, config.agent_cap(home)), config.worker_estimate(home)):
+    asked = read(args, config.agent_cap(home))
+    for row in recommend(asked, config.worker_estimate(home), estimates.read(home)):
         cli.say("\t".join(row))
     return 0
 
@@ -74,6 +76,7 @@ class Asked(NamedTuple):
     cap_reason: str
     budget: str
     classic: bool
+    mode: str
 
 
 def read(args: cli.Args, project_cap: int) -> Asked:
@@ -89,6 +92,8 @@ def read(args: cli.Args, project_cap: int) -> Asked:
         cap, cap_reason = args.value("agent-cap"), "explicit cap within project's configured cap"
     if args.value("budget-tokens"):
         positive("budget-tokens", args.value("budget-tokens"))
+    if args.value("mode") and args.value("mode") not in MODES:
+        raise cli.Refusal("--mode must be one of: %s" % ", ".join(MODES))
     if args.value("risk") not in ("", "low", "medium", "high"):
         raise cli.Refusal("--risk must be low, medium or high")
     if args.value("uncertainty") not in ("", "low", "medium", "high"):
@@ -102,7 +107,7 @@ def read(args: cli.Args, project_cap: int) -> Asked:
             raise cli.Refusal("--surface needs a non-empty name")
     return Asked(cell(args.value("task")), args.value("risk"), args.value("complexity"), args.value("uncertainty"),
                  [cell(surface) for surface in args.lists["surface"]], cap, cap_reason, args.value("budget-tokens"),
-                 bool(args.value("classic")))
+                 bool(args.value("classic")), args.value("mode"))
 
 
 def signals(asked: Asked) -> dict[str, bool]:
@@ -221,13 +226,31 @@ def roster(asked: Asked, found: dict[str, bool], sized: Sized, judged: Assessed)
     return chosen + ["verification"]
 
 
-def recommend(asked: Asked, per_worker: int | None) -> list[tuple[str, ...]]:
-    """The recommendation's rows: kind, id, field, value, reason."""
+class Rate(NamedTuple):
+    """What an agent is budgeted at, and where the figure came from."""
+
+    tokens: int
+    why: str
+
+
+def rate(role: str, per_worker: int | None, roles: dict[str, int]) -> Rate:
+    """The role's own estimate (`- estimates:`), else `- estimate per worker:`, else the no-history figure."""
+    if roles.get(role):
+        return Rate(roles[role], "configured %s estimate (council.config.md)" % role)
+    if per_worker:
+        return Rate(per_worker, "configured estimate per worker (council.config.md)")
+    return Rate(NO_HISTORY, "no-history estimate")
+
+
+def recommend(asked: Asked, per_worker: int | None, roles: dict[str, int]) -> list[tuple[str, ...]]:
+    """The recommendation's rows: kind, id, field, value, reason. With --mode, workers and verifiers are
+    budgeted at their roles' estimates; without it, every agent at the estimate per worker."""
     found = signals(asked)
     judged = assess(asked, found)
     complexity = int(judged.complexity)
-    per, per_reason = (per_worker, "configured estimate per worker (council.config.md)") if per_worker \
-        else (NO_HISTORY, "no-history estimate")
+    worker_role, verifier_role = estimates.mode_roles(asked.mode) if asked.mode else ("", "")
+    worker, verifier = rate(worker_role, per_worker, roles), rate(verifier_role, per_worker, roles)
+    per = worker.tokens
     sized = size_of(asked, found, judged, per)
     chosen = roster(asked, found, sized, judged)
     status, verification = sized.status, sized.verification
@@ -235,13 +258,18 @@ def recommend(asked: Asked, per_worker: int | None) -> list[tuple[str, ...]]:
             and any(wanted(lens, found, complexity) and lens not in chosen for lens in LENSES):
         status = "constrained"
     workers = len(chosen) - 1 if chosen else 0
-    worker_tokens, verifier_tokens = (workers * per, per) if chosen else (0, 0)
+    worker_tokens, verifier_tokens = (workers * per, verifier.tokens) if chosen else (0, 0)
     budget = CHAIR_TOKENS + worker_tokens + verifier_tokens
     if asked.budget and budget > int(asked.budget):
         status, verification = "needs-rescope", "unavailable"
     rows = head(asked, judged, sized)
     rows.append(("budget", "route", "selected-agents", str(len(chosen)), "Chair is excluded; never exceeds agent cap"))
-    reason = "%s: %dk per selected agent plus 20k Chair; not measured or enforced" % (per_reason, (per + 500) // 1000)
+    if worker == verifier:
+        reason = "%s: %dk per selected agent plus 20k Chair; not measured or enforced" % (
+            worker.why, (per + 500) // 1000)
+    else:
+        reason = "%s: %dk per selected worker; %s: %dk for verification; plus 20k Chair; not measured or enforced" % (
+            worker.why, (per + 500) // 1000, verifier.why, (verifier.tokens + 500) // 1000)
     rows += budget_rows(asked, status, verification, (budget, worker_tokens, verifier_tokens), reason)
     rows += [("seat", lens, "disposition") + disposition(lens, chosen, found, asked.classic, complexity)
              for lens in CANDIDATES]
