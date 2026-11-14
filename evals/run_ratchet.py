@@ -20,7 +20,9 @@ What it measures, over bin/council, hooks/*.sh, scripts/*.py and src/**/*.py:
 - call-backs: Python files that run bin/council: a subprocess or os process call whose command holds
   the string `bin/council` or a name or attribute with "council" in it (architecture §2's cycle).
 A Python file the baseline doesn't list is new and is held to the plan's rule 6: no function over
-60 lines, no module over 500. Any import in scripts/ or src/ that is neither the standard library
+60 lines, no module over 500. So is every Python file in src/council/, listed or not: the package grows
+as commands are ported, so its files are held to those limits rather than frozen at their sizes (the
+user's call, 2026-11-14). bin/council, the hooks and scripts/ stay frozen. Any import in scripts/ or src/ that is neither the standard library
 nor the project's own module fails outright (D32).
 
 Python 3.8+, standard library only.
@@ -68,6 +70,7 @@ def council_files(root: Path) -> tuple[str, ...]:
 
 COUNCIL_FILES = council_files(ROOT)
 NEW_FUNCTION, NEW_MODULE = 60, 500
+CAPPED = "src/council/"                    # the package's sizes are held to rule 6, not frozen (2026-11-14)
 SIZES = (("lines", "lines"), ("longest", "longest function"), ("shellcheck", "ShellCheck warnings"))
 COUNTS = (("parsers", "files that parse a council file"), ("config_readers", "council.config.md readers"),
           ("callbacks", "scripts that run bin/council"))
@@ -244,12 +247,13 @@ def compare(base: dict, now: dict) -> tuple[list[str], list[str]]:
     bad, good = [], []
     for path, entry in now["files"].items():
         old = base["files"].get(path)
-        if old is None:
+        if old is None or (path.startswith(CAPPED) and path.endswith(".py")):
+            kind = "new file, " if old is None else ""
             if path.endswith(".py") and entry["longest"] > NEW_FUNCTION:
-                bad.append("%s: new file, longest function %d lines (%s), rule 6 allows %d" % (
-                    path, entry["longest"], entry["longest_name"], NEW_FUNCTION))
+                bad.append("%s: %slongest function %d lines (%s), rule 6 allows %d" % (
+                    path, kind, entry["longest"], entry["longest_name"], NEW_FUNCTION))
             if path.endswith(".py") and entry["lines"] > NEW_MODULE:
-                bad.append("%s: new file, %d lines, rule 6 allows %d" % (path, entry["lines"], NEW_MODULE))
+                bad.append("%s: %s%d lines, rule 6 allows %d" % (path, kind, entry["lines"], NEW_MODULE))
             if entry.get("shellcheck"):
                 bad.append("%s: new file, %d ShellCheck warnings, a new file starts at 0" % (path, entry["shellcheck"]))
             continue
@@ -367,7 +371,8 @@ SIBLING = 'import subprocess\nPATHS = ["hooks/gate.sh"]\nthing = subprocess.run(
 
 def scratch_tree(top: Path) -> Path:
     for rel, text in (("bin/council", BASH), ("hooks/gate.sh", "#!/usr/bin/env bash\nexit 0\n"),
-                      ("scripts/show.py", SCRIPT), ("scripts/sibling.py", SIBLING)):
+                      ("scripts/show.py", SCRIPT), ("scripts/sibling.py", SIBLING),
+                      ("src/council/lib.py", "def f():\n    return 1\n")):
         (top / rel).parent.mkdir(parents=True, exist_ok=True)
         write(top / rel, text)
     (top / "evals").mkdir(exist_ok=True)
@@ -449,6 +454,21 @@ def self_test() -> int:
                                 for line in out), out)
         new.unlink()
         check("with the planted parser removed, the count is back at its baseline", run(top)[0] == 0, run(top)[1])
+        lib = top / "src/council/lib.py"
+        write(lib, "def f():\n" + "    x = 1\n" * 59)
+        code, out = run(top)
+        check("a src/council file that grows within rule 6 passes: the package is held to limits, not frozen",
+              code == 0 and "lib.py" not in "\n".join(out), out)
+        write(lib, "def f():\n" + "    x = 1\n" * 60)
+        code, out = run(top)
+        check("a src/council file's 61-line function fails rule 6, though the baseline lists the file",
+              code == 1 and "REGRESSION src/council/lib.py: longest function 61 lines (f), rule 6 allows 60" in out,
+              out)
+        write(lib, "x = 1\n" * 501)
+        code, out = run(top)
+        check("a src/council file of 501 lines fails rule 6",
+              code == 1 and "REGRESSION src/council/lib.py: 501 lines, rule 6 allows 500" in out, out)
+        write(lib, "def f():\n    return 1\n")
         check("every council file architecture §4 names is guarded, and no folder or pattern is",
               set(architecture_files((ROOT / ARCHITECTURE).read_text(encoding="utf-8"))) <= set(COUNCIL_FILES)
               and not any("/" in n or "<" in n for n in COUNCIL_FILES), COUNCIL_FILES)

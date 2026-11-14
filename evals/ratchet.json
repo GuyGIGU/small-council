@@ -228,7 +228,7 @@
    "longest_name": "one"
   },
   "src/council/commands/dispatch.py": {
-   "lines": 43,
+   "lines": 44,
    "longest": 13,
    "longest_name": "main"
   },
@@ -313,9 +313,14 @@
    "longest_name": "shown"
   },
   "src/council/commands/plan_check.py": {
-   "lines": 375,
+   "lines": 367,
    "longest": 36,
    "longest_name": "seat_rules"
+  },
+  "src/council/commands/plan_models.py": {
+   "lines": 86,
+   "longest": 20,
+   "longest_name": "seat_model"
   },
   "src/council/commands/plan_tasks.py": {
    "lines": 137,
@@ -426,6 +431,11 @@
    "lines": 58,
    "longest": 18,
    "longest_name": "ways"
+  },
+  "src/council/records/models.py": {
+   "lines": 91,
+   "longest": 12,
+   "longest_name": "parse"
   },
   "src/council/records/owners.py": {
    "lines": 105,
