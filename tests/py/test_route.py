@@ -12,8 +12,9 @@ def asked(*argv: str, cap: int = 10) -> route.Asked:
     return route.read(cli.parse(["route", "recommend", *argv]), cap)
 
 
-def rows(*argv: str, cap: int = 10, per: int | None = None) -> dict[tuple[str, str, str], tuple[str, str]]:
-    return {row[:3]: row[3:] for row in route.recommend(asked(*argv, cap=cap), per)}
+def rows(*argv: str, cap: int = 10, per: int | None = None,
+         roles: dict[str, int] | None = None) -> dict[tuple[str, str, str], tuple[str, str]]:
+    return {row[:3]: row[3:] for row in route.recommend(asked(*argv, cap=cap), per, roles or {})}
 
 
 class ReadTest(unittest.TestCase):
@@ -92,6 +93,26 @@ class RecommendTest(unittest.TestCase):
         self.assertEqual(got[("run", "route", "policy")][0], "classic")
         self.assertEqual(got[("seat", "security", "disposition")],
                          ("skipped", "classic policy keeps a fixed implementation, testing and verification roster"))
+
+    def test_a_mode_budgets_workers_and_verification_at_their_roles(self) -> None:
+        task = ("--task", "Change authentication and persistent user records")
+        plain = rows(*task, per=100000, roles={"builder": 450000, "converge": 60000})
+        built = rows(*task, "--mode", "implement", per=100000, roles={"builder": 450000, "converge": 60000})
+        workers = int(built[("budget", "route", "selected-agents")][0]) - 1
+        self.assertEqual(built[("budget", "workers", "estimated-tokens")][0], str(workers * 450000))
+        self.assertEqual(built[("budget", "verification", "estimated-tokens")][0], "60000")
+        self.assertIn("configured builder estimate", built[("budget", "route", "estimated-tokens")][1])
+        self.assertIn("60k for verification", built[("budget", "route", "estimated-tokens")][1])
+        self.assertEqual(plain[("budget", "verification", "estimated-tokens")][0], "100000")    # no --mode: as before
+
+    def test_a_role_without_its_own_figure_takes_the_estimate_per_worker(self) -> None:
+        got = rows("--task", "security audit", "--mode", "review", per=90000, roles={"builder": 450000})
+        self.assertEqual(got[("budget", "verification", "estimated-tokens")][0], "90000")
+        self.assertIn("estimate per worker", got[("budget", "route", "estimated-tokens")][1])
+        self.assertNotIn("for verification", got[("budget", "route", "estimated-tokens")][1])
+
+    def test_a_mode_it_does_not_know_is_refused(self) -> None:
+        self.assertIn("--mode must be one of", ReadTest.refused(self, "--task", "x", "--mode", "build"))
 
 
 if __name__ == "__main__":

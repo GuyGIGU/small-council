@@ -30,10 +30,9 @@
     "scripts/outcomes.py",
     "scripts/quick_validate.py",
     "scripts/repair.py",
-    "scripts/status.py",
-    "scripts/tune.py"
+    "scripts/status.py"
    ],
-   "value": 12
+   "value": 11
   }
  },
  "files": {
@@ -149,7 +148,7 @@
    "longest_name": "interpret"
   },
   "scripts/tune.py": {
-   "lines": 342,
+   "lines": 341,
    "longest": 42,
    "longest_name": "proposals"
   },

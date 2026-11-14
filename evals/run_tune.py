@@ -328,6 +328,51 @@ with tempfile.TemporaryDirectory(prefix="council-tune-") as temporary:
     check("a config without ## Run preferences: refused, nothing written",
           code == 2 and "no ## Run preferences section" in err and not (repo / ".council" / "tuning.md").exists(), err)
 
+    # An estimate per role (issue 44): a build's builders cost far more than a review's seats, so each role is
+    # tuned from its own ledger rows, kept on the `- estimates:` line, and the route budgets a --mode with them.
+    repo = new_repo(base, "roles")
+    home = repo / ".council"
+    rows = ["date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\taccounting"]
+    for i in range(5):
+        run, day = "2026-10-{:02d}-100000-".format(i + 1), "2026-10-{:02d}".format(i + 1)
+        rows += ["\t".join((day, run + "implement", "council-implement", "task-1", "0", "0", "0", "0", str(450000 + i * 1000), "2")),
+                 "\t".join((day, run + "implement", "council-implement", "(verifiers)", "-", "-", "-", "-", "50000", "2")),
+                 "\t".join((day, run + "review", "council-review", "security", "1", "1", "0", "0", "90000", "2"))]
+    write(home / "ledger.tsv", "\n".join(rows) + "\n")
+    code, out, err = council(repo, "tune")
+    check("tune: each role is measured from its own rows — a builder at 450k, a build's converge check at 50k, a review seat in line",
+          code == 0 and "PROPOSED: set it to 450k" in out and "council tune apply budget:builder 450k" in out
+          and "median 452k per agent over 5 completed runs" in out and "median 50k per run over 5 completed runs" in out
+          and "review: not set — none" in out and "plan: not set — waiting" in out, out + err)
+    code, out, err = council(repo, "tune", "apply", "budget:builder", "450k", "--user-said", "yes, 450k for builders")
+    config_text = (home / "council.config.md").read_text(encoding="utf-8")
+    check("tune apply budget:builder: one `- estimates:` line under ## Run preferences, logged as the builder's change",
+          code == 0 and "estimates builder is now 450k (was none)" in out
+          and "- context packs: off\n- estimates: builder=450k\n" in config_text
+          and "applied · estimates builder: none → 450k" in (home / "tuning.md").read_text(encoding="utf-8"), out + err + config_text)
+    code, out, err = council(repo, "tune", "apply", "budget:converge", "50k", "--user-said", "yes, 50k for the converge check")
+    config_text = (home / "council.config.md").read_text(encoding="utf-8")
+    check("a second role joins the same line and keeps the first",
+          code == 0 and "- estimates: builder=450k, converge=50k\n" in config_text, out + err + config_text)
+    built, plain = route(repo, "--mode", "implement"), route(repo)
+    check("route --mode implement budgets builders at 450k and the converge check at 50k; with no --mode and no estimate per worker, 80k each",
+          built.get(("budget", "verification", "estimated-tokens")) == "50000"
+          and int(built[("budget", "workers", "estimated-tokens")]) % 450000 == 0
+          and plain.get(("budget", "verification", "estimated-tokens")) == "80000", (built, plain))
+    code, out, err = council(repo, "tune", "apply", "budget:review", "90k", "--user-said", "yes")
+    check("a role with no proposal has nothing to apply", code == 2 and "nothing to apply" in err, out + err)
+    code, out, err = council(repo, "tune", "apply", "budget:chair", "90k", "--user-said", "yes")
+    check("a role that is none of the five is refused, naming them",
+          code == 2 and "one of: review, plan, builder, verifier, converge" in err, out + err)
+    code, out, err = council(repo, "tune", "revert", "budget:builder", "--user-said", "undo that")
+    config_text = (home / "council.config.md").read_text(encoding="utf-8")
+    check("tune revert budget:builder refuses once the converge figure was added to its line: the line is not the one it wrote",
+          code == 2 and "edited since" in err and "builder=450k, converge=50k" in config_text, out + err + config_text)
+    code, out, err = council(repo, "tune", "revert", "budget:converge", "--user-said", "undo that")
+    config_text = (home / "council.config.md").read_text(encoding="utf-8")
+    check("tune revert budget:converge puts back the line as it was before that change",
+          code == 0 and "- estimates: builder=450k\n" in config_text and "converge" not in config_text, out + err + config_text)
+
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:
     print(f"[{'PASS' if good else 'FAIL'}] {name}" + ("" if good else f"\n        {str(detail)[:1200]}"))

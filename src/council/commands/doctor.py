@@ -45,8 +45,13 @@ class Doctor:
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    cli.takes_flags(args, "doctor")
+    cli.takes_flags(args, "doctor", "session", "line")
+    if words[:1] == ["hooks"]:
+        from council.commands import doctor_hooks
+        return doctor_hooks.main(args, words[1:])
     cli.no_words("doctor", words)
+    if args.value("line"):
+        raise cli.Refusal("doctor takes --line only as: council doctor hooks --line")
     home = where.council_home()
     doc = Doctor(home)
     if not os.path.isdir(where.native(home)):
@@ -73,6 +78,8 @@ def main(args: cli.Args, words: list[str]) -> int:
     if has_config and _git("rev-parse", "--git-dir")[0] == 0:
         stack(doc)
     kept_out(doc)
+    from council.commands import doctor_hooks
+    doctor_hooks.report(doc, doctor_hooks.session_id(args))
     cli.say("doctor: %d error(s), %d warning(s)" % (doc.errors, doc.warnings))
     return 0 if doc.errors == 0 else 1
 

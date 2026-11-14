@@ -17,7 +17,7 @@ to a protected subject (context-core, Limits), or to a review or post-game, whic
 3. **Resolve the target.** Your mode's `## At Convene` says how: a diff, a plan, a question.
 4. **Shape check** — from the map and file counts, without reading code. One dependent chain → Solo
    or one builder; independent slices → seats. Match paths against the roster's Surface column.
-5. **Size it.** Start with `council route recommend --task "<short task>"`, adding explicit
+5. **Size it.** Start with `council route recommend --task "<short task>" --mode <this mode>`, adding explicit
    `--risk`, `--complexity`, `--uncertainty`, or `--surface` inputs only when the known evidence
    warrants them. Routing and budget are advice, not authorization. Compare with the roster,
    surfaces, project history and risks;
@@ -28,7 +28,8 @@ to a protected subject (context-core, Limits), or to a review or post-game, whic
    item, one per 8 of the rest (Challenge, step 2) — within the agent cap, counting agents as Assign, step 6 does.
 6. **Estimate from this project's history.** `council ledger` shows each seat's average tokens per
    run; `council run status --all` shows whole runs. With no history, assume ~60–100k tokens per
-   worker. The route budgets with the config's `estimate per worker` (set by `council tune`), else 80k.
+   worker. The route budgets each agent at its role's `- estimates:` figure, else `estimate per worker`
+   (both set by `council tune`), else 80k. The size-and-cost line gives the figures it used.
 7. **Open the run.** `council run open <mode>` prints the run folder and records this session's id,
    so a compaction resumes the right run. It also creates `<run>/run-plan.tsv`: fill its run size,
    risk, complexity, uncertainty, token estimate, the route's `chair-tokens` and verification level

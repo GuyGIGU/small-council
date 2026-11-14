@@ -7228,6 +7228,72 @@ def models_per_role(tmp):
           code == 1 and "seat model overrides are off; enable seat models: on in council.config.md" in out, out)
 
 
+@part("models")
+def estimates_per_role(tmp):
+    """`- estimates:` (issue 44): `route recommend --mode` budgets a mode's workers and verifiers at their roles'
+    estimates, each falling back to `- estimate per worker:`; and `council doctor` says which hooks are live (issue 69)."""
+    repo = new_repo(tmp, "estimates")
+    config = os.path.join(repo, ".council", "council.config.md")
+    task = ("route", "recommend", "--task", "Change authentication and persistent user records")
+
+    def tokens(*extra, line=""):
+        write(config, "# Council config\n\n## Run preferences\n- agent cap: 10\n" + line)
+        code, out, err = council(repo, *task, *extra)
+        rows = {tuple(r.split("\t")[:3]): r.split("\t")[3:] for r in out.splitlines() if r.count("\t") >= 4}
+        return code, rows, err
+
+    code, rows, err = tokens("--mode", "implement", line="- estimates: builder=450k, converge=50k\n- estimate per worker: 100k\n")
+    workers = int(rows[("budget", "route", "selected-agents")][0]) - 1
+    reason = rows[("budget", "route", "estimated-tokens")][1]
+    check("route --mode implement: builders at the builder estimate, the verification at the converge check's, and the size line says so",
+          code == 0 and rows[("budget", "workers", "estimated-tokens")][0] == str(workers * 450000)
+          and rows[("budget", "verification", "estimated-tokens")][0] == "50000"
+          and "configured builder estimate" in reason and "450k per selected worker" in reason
+          and "configured converge estimate" in reason and "50k for verification" in reason, str(rows) + err)
+    code, rows, err = tokens("--mode", "review", line="- estimates: builder=450k\n- estimate per worker: 100k\n")
+    check("route --mode review: a role with no figure of its own takes the estimate per worker (the config's builder figure is not its)",
+          code == 0 and rows[("budget", "verification", "estimated-tokens")][0] == "100000"
+          and rows[("budget", "workers", "estimated-tokens")][0] == str(100000 * (int(rows[("budget", "route", "selected-agents")][0]) - 1))
+          and "configured estimate per worker" in rows[("budget", "route", "estimated-tokens")][1], str(rows) + err)
+    code, rows, err = tokens("--mode", "implement", line="- estimates: chair=900k, builder=3000k, converge=lots\n")
+    check("route --mode implement: a role or figure the line can't give is ignored, so the route's no-history 80k stands",
+          code == 0 and rows[("budget", "verification", "estimated-tokens")][0] == "80000", str(rows) + err)
+    code, rows, err = tokens(line="- estimates: builder=450k, converge=50k\n")
+    check("route with no --mode: the estimates line is not read, as before — every agent at the 80k default",
+          code == 0 and rows[("budget", "verification", "estimated-tokens")][0] == "80000", str(rows) + err)
+    code, out, err = council(repo, *task, "--mode", "build")
+    check("route --mode: a mode that is none of the five is refused, naming them",
+          code == 2 and "--mode must be one of: review, plan, implement, research, postgame" in err, out + err)
+
+    # Which hooks are live (issue 69): a hook that has fired in this session left a mark named after it.
+    def hook(event, what):
+        return "hook %-12s  %s" % (event, what)
+
+    marks = os.path.join(GIT_ENV["XDG_CACHE_HOME"], "small-council", "sessions")
+    os.makedirs(marks, exist_ok=True)
+    for name in ("s-doc", "s-doc.session-start", "s-doc.bash-gate", "s-doc.turn-end"):
+        open(os.path.join(marks, name), "w").close()
+    code, out, err = council(repo, "doctor", "hooks", "--session", "s-doc")
+    check("doctor hooks: one line per hook — live for the three that fired, not seen (and when it first runs) for the others, then the count",
+          code == 0 and hook("SessionStart", "live") in out and hook("Stop", "live") in out and hook("bash-gate", "live") in out
+          and hook("seat-gate", "not seen in this session (runs when a seat's agent stops)") in out
+          and hook("agent-gate", "not seen in this session (runs before an agent is dispatched)") in out
+          and "hooks: 3 of 5 live — the rest show as they fire" in out and "WARN" not in out, out + err)
+    code, out, err = council(repo, "doctor", "hooks", "--line", "--session", "s-doc")
+    check("doctor hooks --line: only the count, the SessionStart banner's line", code == 0 and out.strip().startswith("hooks: 3 of 5 live"), out + err)
+    code, out, err = council(repo, "doctor", "hooks", "--session", "s-late")
+    check("doctor hooks: a session where neither SessionStart nor the bash gate fired gets a WARN each, and the fix: restart the session",
+          code == 0 and "hooks: 0 of 5 live" in out and out.count("Fix: restart the session") == 2
+          and "the SessionStart hook has not run in this session" in out and "the bash-gate hook has not run in this session" in out, out + err)
+    code, out, err = council(repo, "doctor", "hooks", env={"CLAUDE_CODE_SESSION_ID": ""})
+    check("doctor hooks: with no session id it says it cannot know, and says where to run it",
+          code == 0 and "hooks: not known — this shell has no Claude Code session id" in out and "WARN" not in out, out + err)
+    code, out, err = council(repo, "doctor", "--session", "s-doc")
+    check("doctor: the full report ends with the hook lines, before its count", code in (0, 1) and out.index("hook SessionStart") < out.index("doctor: "), out + err)
+    code, out, err = council(repo, "doctor", "--line")
+    check("doctor: --line is for `doctor hooks` only, and a refusal says so", code == 2 and "council doctor hooks --line" in err, out + err)
+
+
 @part("reports")
 def reports_refusals(tmp):
     """The words and flags memory, ledger, map, fingerprint, doctor, impact and prior refuse, each with its usage
@@ -7333,6 +7399,8 @@ if not BASH or not GIT:
 with tempfile.TemporaryDirectory() as tmp:
     tmp = os.path.realpath(tmp)   # a runner's TEMP may be an 8.3 name (RUNNER~1); git prints the long one
     GIT_ENV["XDG_CACHE_HOME"] = os.path.join(tmp, "cache")   # session marks (see session()) stay here
+    GIT_ENV["HOME"] = os.path.join(tmp, "home")              # ~/.cache's marks too (the agent gate leaves one): never the user's own
+    os.makedirs(GIT_ENV["HOME"])
     for group, block in PARTS:
         if group in chosen and (only is None or block.__name__ in only):
             block(tmp)

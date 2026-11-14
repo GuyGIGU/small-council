@@ -102,7 +102,7 @@ this_tree() { local t; t="$(council_toplevel)"; [ -n "$t" ] || t="$(here)"; prin
 # before council-init makes one, and $HOME is set in Git Bash on Windows too. The SessionStart hook leaves
 # it, and hooks/bash-gate.sh touches it before any Bash call that names council (so it is there for the
 # very `council run open` call, after /reload-plugins too). `council run open` looks for the file named
-# after CLAUDE_CODE_SESSION_ID. Marks older than 30 days are cleared when a session starts.
+# after CLAUDE_CODE_SESSION_ID; <id>.<hook> names a hook that ran (council doctor reads them). Older than 30 days: cleared.
 # Hooks get Claude Code's environment; Bash tool commands also source the user's shell profile, so the two
 # can disagree on XDG_CACHE_HOME. So marks go to ~/.cache and, when set, $XDG_CACHE_HOME, and the check
 # looks in both. One folder per line.
@@ -123,7 +123,7 @@ mark_hooks_ran() {
   local dir
   session_file_ok "$1" || return 0
   while IFS= read -r dir; do
-    [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null && touch "$dir/$1" 2>/dev/null || continue
+    [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null && touch "$dir/$1" "$dir/$1.$2" 2>/dev/null || continue
     find "$dir" -type f -mtime +30 -exec rm -f {} + 2>/dev/null
   done <<DIRS
 $(session_dirs)
@@ -1640,11 +1640,11 @@ cmd_cap_allow() {
 # not: the card is owed once per run. Otherwise silent, exit 0. A fault of its own dies, which the hook
 # lets through.
 cmd_run_turn_end() {
-  local home session run st names="" n=0 last="" how at="<folder>" label=run mark cards="" said=""
+  local home run st names="" n=0 last="" how at="<folder>" label=run mark cards="" said=""
+  [ -n "${SESSION_ARG:-}" ] || return 0
+  mark_hooks_ran "$SESSION_ARG" turn-end            # the Stop hook ran, council project or not
   home="$(council_home)"
   [ -d "$home/runs" ] || return 0
-  session="${SESSION_ARG:-}"
-  [ -n "$session" ] || return 0
   while IFS= read -r run; do
     [ -n "$run" ] || continue
     st="$run/session-state.md"
@@ -1656,7 +1656,7 @@ cmd_run_turn_end() {
     ! notifications_off "$home" || continue
     names="$names${names:+, }${run##*/}"; n=$((n + 1)); last="${run##*/}"
   done <<RUNS
-$(session_runs "$home" "$session")
+$(session_runs "$home" "$SESSION_ARG")
 RUNS
   case "$cards" in
     '') ;;
@@ -3315,15 +3315,15 @@ council — the Small Council's helper (bash + git)
                                          (default 20), and advice only past the bar (optional Python 3.8+)
   council route recommend --task TEXT [--risk low|medium|high] [--complexity 1..10]
                          [--uncertainty low|medium|high] [--surface NAME ...]
-                         [--agent-cap N] [--budget-tokens N] [--classic]
+                         [--agent-cap N] [--budget-tokens N] [--classic] [--mode review|plan|implement|research|postgame]
                                          advisory TSV recommendation; does not open or alter a run
   council tune [propose] [--json]        tuning proposals from this project's own record: the estimate
                                          per worker (when five runs measure it), roster changes (via a
                                          refresh), behaviour held until a benchmark shows it helps
-  council tune apply budget <value> --user-said "…"
+  council tune apply budget[:ROLE] <value> --user-said "…"
                                          set the estimate per worker to the value it proposed, logged
                                          in tuning.md with the exact line it replaced
-  council tune revert budget --user-said "…"
+  council tune revert budget[:ROLE] --user-said "…"
                                          put that line back exactly
   council history [--json]               every run of this council home: cost, estimate accuracy, gates,
                                          repairs, verifier catches, seat evidence — a rate only when
@@ -3387,9 +3387,9 @@ main() {
                    val="$2"; shift 2 ;;
       --run=*|--code-root=*|--status=*|--base=*|--at=*|--proof=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*|--transcript=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --timeout|--invalid|--seat)                                       # council gate's own (src/council)
+      --timeout|--invalid|--seat|--mode)                                    # council gate's and route's own (src/council)
                    flag="${1#--}"; [ $# -ge 2 ] || die "--$flag needs a value"; val="$2"; shift 2 ;;
-      --timeout=*|--invalid=*|--seat=*) flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
+      --timeout=*|--invalid=*|--seat=*|--mode=*) flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
       --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still|--wait|--rerun) flag="${1#--}"; val=1; shift ;;
       --wait=*)    flag=wait; val="${1#*=}"; shift ;;                     # --wait=<seconds>: the queue's limit
       --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*|--rerun=*) die "${1%%=*} takes no value" ;;

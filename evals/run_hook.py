@@ -635,7 +635,7 @@ def memory_file_and_seat_check(tmp):
     code, out = run_hook(wt, "startup")
     first = out.splitlines()[0] if out.strip() else ""
     check("linked worktree: finds the main checkout's council", "[Small Council]" in first
-          and first.replace("\\", "/").rstrip("/").endswith("full/.council"), first)
+          and first.replace("\\", "/").split(". hooks:")[0].rstrip("/").endswith("full/.council"), first)
     check("linked worktree: the main checkout's run is someone else's",
           any("2026-09-15-100000-review" in line for line in lines_with(out, "different working tree")), out)
     code, out = run_hook(wt, "compact")
@@ -1157,6 +1157,54 @@ def hooks_running(tmp):
         check(f"bash gate: {label} leaves no mark",
               not os.path.exists(os.path.join(marks(), session)) and not os.path.exists(os.path.join(marks(), "..", "y")),
               " ".join(sorted(os.listdir(marks()))))
+
+
+@part("main")
+def each_hook_leaves_its_mark(tmp):
+    # --- Which hooks are live (issue 69): each of the five leaves a mark named after it for its session, and
+    # the SessionStart banner counts them. A hook that has not fired yet leaves none, and is not broken ------
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        events = json.load(f)["hooks"]
+    commands = {os.path.basename(h["command"].split("hooks/")[1].rstrip('"')): h["command"]
+                for groups in events.values() for g in groups for h in g["hooks"] if "hooks/" in h["command"]}
+    here = new_repo(tmp, "hook-marks")
+    write(os.path.join(here, ".council", "council.config.md"), "# Council config\n")
+    sid = "s-marks"
+
+    def left():
+        return sorted(n[len(sid) + 1:] for n in os.listdir(marks()) if n.startswith(sid + "."))
+
+    code, out = run_hook(here, session=sid)
+    banner = line_with(out, "Council-enabled project")
+    check("hook marks: SessionStart leaves its own mark, and its banner line ends with the count — one of five so far",
+          code == 0 and left() == ["session-start"] and banner.endswith("hooks: 1 of 5 live — the rest show as they fire (council doctor lists them)"),
+          f"{left()} · {out}")
+    code, out, err, _ = run_agent_gate(commands["bash-gate.sh"], json.dumps(
+        {"session_id": sid, "cwd": here, "hook_event_name": "PreToolUse", "tool_name": "Bash",
+         "tool_input": {"command": "council doctor"}}, separators=(",", ":")), here)
+    check("hook marks: the bash gate marks a Bash call that names council, silently", code == 0 and not out and not err
+          and left() == ["bash-gate", "session-start"], f"{left()} · {out} · {err}")
+    code, out, err, _ = run_agent_gate(commands["agent-gate.sh"], pre_tool(sid, here, tool="Agent"), here)
+    check("hook marks: the agent gate marks an agent dispatch it lets through, silently", code == 0 and not out and not err
+          and "agent-gate" in left(), f"{left()} · {out} · {err}")
+    code, out, err, _ = run_agent_gate(commands["turn-end.sh"], stop_input(sid, here), here)
+    check("hook marks: the Stop hook marks a turn's end, council run or none, silently", code == 0 and not out and not err
+          and "turn-end" in left(), f"{left()} · {out} · {err}")
+    seat = {"session_id": sid, "hook_event_name": "SubagentStop", "agent_type": "small-council:council-worker",
+            "agent_id": "a1", "last_assistant_message": "BLOCKED: nothing to review", "stop_hook_active": False, "cwd": here}
+    code, err = run_gate(None, None, payload=json.dumps(seat), env={"XDG_CACHE_HOME": GIT_ENV["XDG_CACHE_HOME"], "HOME": GIT_ENV["HOME"]})
+    check("hook marks: the seat gate marks a council agent's stop, and lets a BLOCKED reply through as before",
+          code == 0 and err == "" and "seat-gate" in left(), f"{left()} · {code} · {err}")
+    code, out, err = council(here, "doctor", "hooks", session=sid, hooks=False)
+    check("hook marks: council doctor then reports all five live, and `run open` finds the bare mark as before",
+          code == 0 and "hooks: 5 of 5 live" in out and "not seen" not in out and os.path.isfile(os.path.join(marks(), sid)), out + err)
+    code, out = run_hook(here, source="compact", session=sid)
+    check("hook marks: the banner after a compaction counts them all — hooks: 5 of 5 live, no remark",
+          code == 0 and line_with(out, "Council-enabled project").endswith("hooks: 5 of 5 live"), out)
+    code, out, err, _ = run_agent_gate(commands["agent-gate.sh"], pre_tool("../x", here, tool="Agent"), here)
+    check("hook marks: a session id that can't be a file name leaves nothing, and the gate says nothing",
+          code == 0 and not out and not err and not os.path.exists(os.path.join(marks(), "..", "x.agent-gate")),
+          f"{out} · {err}")
 
 
 @part("main")
