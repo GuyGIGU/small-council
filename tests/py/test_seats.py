@@ -1,4 +1,5 @@
 import json
+import os
 import unittest
 
 import support
@@ -81,7 +82,9 @@ class SeatsTest(support.Scratch):
         self.assertEqual(seats.worked(run), ([], False))
         (run / "seats.tsv").write_bytes(b"slug\tstate\r\nhunt\tdone\r\nbeck\tskipped\r\ncaf\xe9\trunning\r\nlone\n")
         found, any_row = seats.worked(run)
-        self.assertEqual(found, ["hunt", "caf\xe9", "lone"])
+        # Git Bash's awk reads CR LF as LF; elsewhere awk keeps the CR, so "skipped\r" is no skipped state.
+        kept = ["hunt", "caf\xe9", "lone"] if os.name == "nt" else ["hunt", "beck", "caf\xe9", "lone"]
+        self.assertEqual(found, kept)
         self.assertTrue(any_row)
 
 

@@ -2593,7 +2593,7 @@ memory_file() {
   local home="$1" root alt="" raw full first k
   root="${home%/*}"
   MEM_NOTE=""; MEM_ALT=""; MEM_ALT_N=0
-  raw="$(awk '
+  raw="$(LC_ALL=C awk '
     /^##[ \t]/ { m = ($0 ~ /^##[ \t]+[Mm][Ee][Mm][Oo][Rr][Yy]([^A-Za-z]|$)/); next }
     m && /^[ \t]*[-*][ \t]*conventions:/ {
       v = $0; sub(/^[ \t]*[-*][ \t]*conventions:[ \t]*/, "", v); gsub(/[\r`"\047]/, "", v)
