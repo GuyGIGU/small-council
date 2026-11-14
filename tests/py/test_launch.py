@@ -42,12 +42,19 @@ class DispatchTest(unittest.TestCase):
                          sorted(base + ["council.commands.plan", "council.commands.plan_check",
                                         "council.commands.resolve"]))
         self.assertEqual(started("route", "recommend", "--task", "x"), sorted(base + ["council.commands.route"]))
-        gate = base + ["council.commands." + name for name in ("gate", "gate_exec", "gate_lock", "gate_output",
-                                                                "gate_repair", "gate_run", "resolve", "shell")]
+        gate = base + ["council.commands." + name for name in ("closed", "event_note", "gate", "gate_exec",
+                                                                "gate_lock", "gate_output", "gate_repair",
+                                                                "gate_run", "resolve", "shell")]
         self.assertEqual(started("gate", "x"), sorted(gate + ["shutil"]))       # gate_set, gate_failed: on use
         self.assertEqual(started("gate", "--all"), sorted(gate + ["shutil"]))
         self.assertEqual(started("gates"), sorted(base + ["council.commands.gate_list"]))
         self.assertEqual(started("changed"), sorted(base + ["council.commands.changed", "council.commands.shell"]))
+        cites = ["council.commands." + name for name in ("cite_check", "event_note", "gate_output", "resolve")]
+        self.assertEqual(started("collect"), sorted(base + cites + ["council.commands.collect"]))
+        self.assertEqual(started("check"), sorted(base + cites + ["council.commands." + name for name in (
+            "check", "check_proofs", "cite_origin", "hygiene", "proof_reach")]))
+        self.assertEqual(started("index"), sorted(base + ["council.commands." + name for name in (
+            "changed", "closed", "index", "index_symbols", "resolve", "shell")]))
 
     def test_an_unported_command_loads_none(self) -> None:
         self.assertEqual(started("run", "open"),

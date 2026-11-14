@@ -9,8 +9,8 @@ import shutil
 import time
 from pathlib import Path
 
-from council.commands import cli, gate_lock, gate_output, gate_repair, gate_run, resolve, shell
-from council.records import config, gate_notes, gate_table, gates, state_write
+from council.commands import cli, closed, gate_lock, gate_output, gate_repair, gate_run, resolve, shell
+from council.records import config, gate_notes, gate_table, gates, state_write, verdicts
 from council.records import home as where
 
 USAGE = "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
@@ -41,7 +41,7 @@ def given(after: list[str]) -> str:
 
 def _gate(args: cli.Args, words: list[str], command: str) -> int:
     run = resolve.run_folder(args)
-    refuse_closed(run, "its checks are on record; run them in a new run")
+    closed.refuse(run, "its checks are on record; run them in a new run")
     timeout = None
     if args.value("timeout"):
         timeout = config.limit_seconds(args.value("timeout"))
@@ -67,13 +67,6 @@ def _gate(args: cli.Args, words: list[str], command: str) -> int:
         from council.commands import gate_set
         return gate_set.run_all(call, args.value("at"), mode, (bool(wait), limit))
     return one(call, " ".join(words), command, mode, (bool(wait), limit))
-
-
-def refuse_closed(run: Path, why: str) -> None:
-    """A closed run keeps the record its ledger counted."""
-    if state_write.closed(run):
-        raise cli.Refusal("run %s is closed (%s at %s) — %s"
-                          % (run.name, resolve.field(run, "status"), resolve.field(run, "closed"), why))
 
 
 def _proof(args: cli.Args, mode: str, name: str) -> None:
@@ -185,7 +178,7 @@ def _markable(name: str, slug: str, verdict: str) -> str:
     """The exit code a red record holds; a refusal when there is none to mark."""
     if not os.path.isfile(verdict):
         raise cli.Refusal("gate %s has no record in this run (gates/%s.json) — nothing to mark" % (name, slug))
-    code = gate_run.recorded(verdict, "exit")
+    code = verdicts.number(verdict, "exit")
     if not code:
         raise cli.Refusal("gate %s's record can't be read (gates/%s.json) — nothing was marked" % (name, slug))
     if int(code) == 0:
