@@ -51,8 +51,9 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
    Use Convene's approval rule; state the order and proceed when authorized. Without commit
    authorization, do not commit. The baseline question below still applies once, before task 1; a
    red mandatory gate you cannot fix stops the affected task.
-5. **Open the run.** `council run open council-implement`. Continue the input's request (Convene,
-   step 8). Then write the log header at `<home>/logs/<YYYY-MM-DD>-<slug>.md`.
+5. **Open the run.** `council run open council-implement`, then `council state input=<the input's
+   path>`. Continue the input's request (Convene, step 8). Then write the log header at
+   `<home>/logs/<YYYY-MM-DD>-<slug>.md`.
 6. **Rulings, not stalls.** Inside the approved scope, decide ambiguities and plan defects yourself
    and log each as a Ruling; stop only for a destructive action, a push or shared branch, a
    public contract, or scope or budget beyond approval.
@@ -118,7 +119,9 @@ the converge pass starts, `council state phase=challenge`.
      the receipt (`council state phase=deliver skip="blocked: task <n>"`);
      do not attempt steps 6–7 as a fix path. A blocked build stops for the user (context-core,
      Alerts).
-6. **After-evidence — only if the task is not blocked.** Run the same check again,
+6. **After-evidence — only if the task is not blocked.** First the report: `<run>/report-<n>.md`,
+   its head first, then `council patch save <n>` (`references/run/builder-report.md`); fix what a
+   refusal names. Then run the same check again,
    `council gate after-<n> -- '<same command>'`, keeping `--proof preserve` if selected before editing.
    It must pass under the build-proof contract.
 7. **Adversarial check — per task only, if not blocked.**
@@ -126,7 +129,7 @@ the converge pass starts, `council state phase=challenge`.
    - the task and its Done-when;
    - the proof mode and, for preservation, the invariants and their test paths;
    - the governing principle's text, quoted, so it is checked, not cited;
-   - the diff, written to `<run>/diff-<n>.patch`, passed by path;
+   - the round's saved patch and `patches/T<n>.md`, passed by path;
    - the before, after and gate outputs in `gates/`;
    - the task's risk class as the plan marks it, so a pair-less risky task is refused.
 
@@ -134,7 +137,8 @@ the converge pass starts, `council state phase=challenge`.
 
    Batch as Checking says; track each with `council seat verify-<n> …` (one stopped at its turn limit:
    context-core, Limits). Then act on the verdict:
-   - **INCOMPLETE or REGRESSION** → fix it and re-verify. The re-check writes `verify-<n>b.md` (then
+   - **INCOMPLETE or REGRESSION** → fix it as a new round (builder-report.md; a third in the same
+     files: repair-loop.md, Fix rounds) and re-verify. The re-check writes `verify-<n>b.md` (then
      `c`), so the first verdict stays on disk. A fix that would add a task or a new mechanism — a
      lock, a guard, a file, another re-check round — gets one line to the user first.
    - **A second failed verification** → a **clean-context diagnosis** (repair-loop.md, The diagnosis

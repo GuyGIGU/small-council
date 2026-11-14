@@ -154,7 +154,7 @@ else
     if ! grep -q '^## Index' "$path"; then
       add "add an '## Index' section with one line per item: '<n> · <severity> · <principle> · <path:line> · <title>' (write '(none) — <why>' for an empty lane)"
     else
-      # The same rule as index_shape in bin/council: change both together.
+      # The same rule as council.records.seat_files.shape (council collect and check): change both together.
       # A review item has to name a place; collect and check read the full citation, so this only sends
       # back an item with nothing place-like in any field ("1 · P1 · Principle 3 · Login has no rate limit").
       case "$(printf '%s' "$l1" | tr 'A-Z' 'a-z')" in *'review)'|*'review) ') review=1 ;; *) review=0 ;; esac

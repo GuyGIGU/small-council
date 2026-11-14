@@ -172,7 +172,7 @@ def classify(repo, close_commit, head, claim, cache=None):
     for start, end, insertion in spans:
         if insertion:
             # Lines inserted after old line `start`, inside or right next to the cited span, touch it:
-            # a missing guard can only be cited by the lines around the gap (the helper's cite_hunks rule).
+            # a missing guard can only be cited by the lines around the gap (the rule of cite_origin.hunks).
             touched = first - 1 <= start <= last
         else:
             # A modified or deleted old-side span must overlap the cited lines.

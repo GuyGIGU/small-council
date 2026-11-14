@@ -70,6 +70,17 @@ the failure and retry limit manually in the log instead of claiming the helper c
   rulings. A plan does the same ahead of time: a task resting on an unchecked fact outside the repo
   has a probe or research task before it (`references/run/run-plan.md`, Plan tasks).
 
+## Fix rounds
+
+The same stop, by files rather than by gate: patching one place over and over is how each fix
+regresses another case. A task's rounds are its saved reports and diffs (`council patch save`,
+`references/run/builder-report.md`): round 1 builds, each later round is a fix. A third fix round that
+touches a file the two fix rounds before it both touched is refused, and the task goes back to the
+plan as a redesign. Ask the user once, with what the patches tried and what each regressed
+(`council patch show <n>`); only on their go, recorded with `council state decision="…"`, does a
+round whose head carries `Redesign: <what the design changes, and why the patches failed>` save. The
+redesign starts the count again, and the receipt names it.
+
 ## Classification and routing
 
 The helper uses explicit text patterns, then a gate-name hint, to suggest a category and governing

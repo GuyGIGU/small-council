@@ -56,9 +56,6 @@ state_field() {
     }' "$2" 2>/dev/null
 }
 
-# Shorten each line to about N characters, at a space, so a multibyte character is never cut in half.
-clip() { awk -v n="$1" '{ if (length($0) > n) { t = substr($0, 1, n); sub(/ [^ ]*$/, "", t); $0 = t " …" } print }'; }
-
 # ------------------------------------------------------------------------------------------------
 # Where the council lives
 # ------------------------------------------------------------------------------------------------
@@ -3297,6 +3294,8 @@ council — the Small Council's helper (bash + git)
   council collect                        check every seat file: the brief's, a war room's debate.md's, and
                                          any other .md in seats/ (a Workflow's agents skip the seat hook)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md)
+  council patch save <task> [<report>]   a build round: its report's head checked against its diff, then both
+                                         saved → <run>/patches/ · patch show <task>: the task's rounds
   council map status                     how far the map is behind HEAD, by area
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
   council memory [index|check]           memory's one-line index · stale anchors and failure evidence
@@ -3493,6 +3492,7 @@ main() {
     changed) python_command "council changed" ${given[@]+"${given[@]}"} ;;
     collect) python_command "council collect" ${given[@]+"${given[@]}"} ;;
     check)   python_command "council check" ${given[@]+"${given[@]}"} ;;
+    patch)   python_command "council patch" ${given[@]+"${given[@]}"} ;;
     map)     python_command "council map" ${given[@]+"${given[@]}"} ;;
     fingerprint) python_command "council fingerprint" ${given[@]+"${given[@]}"} ;;
     memory)  python_command "council memory" ${given[@]+"${given[@]}"} ;;
