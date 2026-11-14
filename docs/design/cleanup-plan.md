@@ -32,7 +32,11 @@ decisions before it writes anything.
      spell out. A helper that only passes its arguments on is inlined.
    - Fold before you write. Before you add a function, search `src/council/` for one that already does
      the job, and use or extend it (rule 2).
-   - Plain over clever: no class where a function will do, no layer that adds only a name.
+   - Find the design that makes the job simple: one table in place of eleven copied arms is the clever
+     way and the plain way at once. The test is whether a change leaves the code shorter and easier to
+     read. A trick that saves lines but makes the reader work (a dense one-liner, indirection,
+     lines joined to fit) fails it, and so do a class where a function will do and a layer that adds
+     only a name.
 
    Code ported from bash is split at its seams to fit; it is not copied whole into one long function.
 7. **Tests.** New library code gets unit tests in `tests/py/` (`python -m unittest discover -s
