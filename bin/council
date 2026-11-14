@@ -4885,14 +4885,14 @@ council — the Small Council's helper (bash + git)
                                          the user's go, in their words, for a gate stopped at three
                                          failed repair attempts: it may run again
   council gate <name> [-- '<command>']   run one gate — quote the whole command, so && and quotes stay
-                                         inside it; output and exit code → <run>/gates/
+                                         inside it; output, exit code and the tree it ran on → <run>/gates/
   council gate before-<id>|after-<id> --proof change|preserve -- '<command>'   (id: a task number or a slug)
   council gate --wait[=<seconds>] <name>  queue behind a running gate call (20 minutes unless given), then run
                                          build proof: a failing then passing check, or an invariant
                                          passing on both versions (declare preserve before the edit)
-  council gate --all [--at grounding|verify]
-                                         run the configured gates · a run takes one gate call at a time:
-                                         a second is refused (exit 2) and writes nothing — wait for the first
+  council gate --all [--at grounding|verify] [--rerun]   the configured gates, one call per run at a time
+                                         (a second: exit 2); one green on this same tree runs only with --rerun
+  council gate … --seat <slug>           a seat's own run (a builder's), in the working tree it calls from
   council gate … --timeout <time>        this call's time limit per gate (900, 15m). Without it: the
                                          largest of 3× the gate's green baseline, the config's
                                          "- gate time limit:" and 120 s; with neither, 9 min for a
@@ -4998,12 +4998,12 @@ main() {
                    val="$2"; shift 2 ;;
       --run=*|--code-root=*|--status=*|--base=*|--at=*|--proof=*|--session=*|--task=*|--risk=*|--complexity=*|--uncertainty=*|--surface=*|--agent-cap=*|--budget-tokens=*|--expand=*|--scope=*|--user-said=*|--pose=*|--exit-after=*|--transcript=*)
                    flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --timeout|--invalid)                                              # council gate's own (src/council)
+      --timeout|--invalid|--seat)                                       # council gate's own (src/council)
                    flag="${1#--}"; [ $# -ge 2 ] || die "--$flag needs a value"; val="$2"; shift 2 ;;
-      --timeout=*|--invalid=*) flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
-      --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still|--wait) flag="${1#--}"; val=1; shift ;;
+      --timeout=*|--invalid=*|--seat=*) flag="${1%%=*}"; flag="${flag#--}"; val="${1#*=}"; shift ;;
+      --alongside|--all|--classic|--json|--watch|--widget|--line|--preview|--stop|--demo|--still|--wait|--rerun) flag="${1#--}"; val=1; shift ;;
       --wait=*)    flag=wait; val="${1#*=}"; shift ;;                     # --wait=<seconds>: the queue's limit
-      --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*) die "${1%%=*} takes no value" ;;
+      --alongside=*|--all=*|--classic=*|--json=*|--watch=*|--widget=*|--line=*|--preview=*|--stop=*|--demo=*|--still=*|--rerun=*) die "${1%%=*} takes no value" ;;
       --glob)      pos+=("$1"); shift                                   # council changed reads its own options
                    [ $# -eq 0 ] || { pos+=("$1"); shift; }
                    continue ;;
@@ -5018,7 +5018,7 @@ main() {
     [ -n "$val" ] || die "--$flag needs a value"
     case "$flag" in
       run) RUN_ARG="$val" ;;       code-root) CODE_ROOT_ARG="$val" ;;  status) STATUS_ARG="$val" ;;
-      session) SESSION_ARG="$val" ;;   # base: index's and check's; at, proof, all, wait, timeout, invalid: gate's
+      session) SESSION_ARG="$val" ;;   # base: index's and check's; at, proof, all, wait, timeout, invalid, seat, rerun: gate's
       alongside) ALONGSIDE=1 ;;    json) JSON_OUT=1 ;;  watch) WATCH=1 ;;
       widget) WIDGET=1 ;;          line) LINE=1 ;;               preview) PREVIEW=1 ;;
       expand) CONTEXT_EXPANDS+=("$val") ;;

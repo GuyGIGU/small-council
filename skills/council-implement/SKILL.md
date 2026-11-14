@@ -205,7 +205,8 @@ Follow-ups, never into a task.
   build ends at its plan's last task plus one fix round after converge; anything beyond is a
   follow-up or a new review run, never a hunt inside the build. One per batch: gates prove the fix round;
   a re-check needs the user's recorded go.
-- Then run the final gates: `council gate --all --at verify` (exit 4: context-core, The helper).
+- Then run the final gates: `council gate --all --at verify` (exit 4: context-core, The helper). A gate
+  already green on this very tree is not run again; its line names who ran it (`--rerun` runs it).
 - If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
   reported, never folded into a green receipt. Without Python, audit the log's attempts and
   saved gate outputs by hand.

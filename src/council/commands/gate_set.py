@@ -3,9 +3,12 @@ left out is said, counted and named if it was required; a green report with noth
 there is, so a set that ran nothing exits 4 and says NOTHING WAS CHECKED."""
 from __future__ import annotations
 
+from pathlib import Path
+
+from council import git
 from council.commands import cli, gate_lock, gate_output, gate_repair, gate_run
 from council.commands.gate import safe
-from council.records import config, gate_notes, gate_table, gates
+from council.records import config, gate_notes, gate_table, gates, verdicts
 
 STAGES = {"grounding": ("g", "grounding"), "verify": ("v", "verify"), "verification": ("v", "verify")}
 
@@ -21,6 +24,7 @@ class _Tally:
         self.reds: list[str] = []
         self.none: list[str] = []
         self.unrun: list[str] = []
+        self.reused: list[str] = []
         self.files: dict[str, str] = {}
 
     def skip(self, name: str, mandatory: bool, why: str) -> None:
@@ -54,8 +58,11 @@ def run_all(call: gate_run.Call, at: str, mode: str, wait: tuple[bool, str]) -> 
         trail = _runnable(call, row, stage, mode, tally)
         if trail is None:
             continue
+        if not call.rerun and _reused(call, row):
+            tally.reused.append(row.name)
+            continue
         tally.ran += 1
-        result = gate_run.run_gate(call, row.name, row.command)
+        result = gate_run.run_gate(call, row.name, row.command, configured=True)
         if result.code == 0:
             gate_repair.record(call.run, row.name, 0, trail, False)
             tally.passed += 1
@@ -122,6 +129,22 @@ def _runnable(call: gate_run.Call, row: gate_table.Gate, stage: str, mode: str, 
     return trail
 
 
+def _reused(call: gate_run.Call, row: gate_table.Gate) -> bool:
+    """A gate whose last run in this run was green, with the config's command, on the very files the code root
+    holds now: said in one line (the gate, the seat, the tree) and not run again. Its record stays as it is; in a
+    baseline set it becomes the baseline if the gate has none yet."""
+    base = Path(call.run, gates.FOLDER, gates.slug(row.name))
+    verdict = base.as_posix() + ".json"
+    green = verdicts.green(verdict, gate_run.json_esc(row.command))
+    if green is None or git.files_tree(call.top) != green.tree:
+        return False
+    if call.baseline:
+        gate_run.keep_baseline(call.run, base, base.as_posix() + ".txt", verdict)
+    cli.say("gate %s: green on this tree already — %s ran it on tree %s (%s), so it is not run again; council gate "
+            "--all --rerun runs it anyway" % (row.name, green.seat, green.tree[:12], green.when))
+    return True
+
+
 def _allowed(row: gate_table.Gate, tally: _Tally) -> bool:
     """Safe to run unasked; else skipped, saying why."""
     if safe(row.side, row.needs, row.has_side):
@@ -154,7 +177,7 @@ def _own_file(row: gate_table.Gate, call: gate_run.Call, tally: _Tally) -> bool:
 
 def _summary(tally: _Tally, cfg: str, label: str) -> int:
     at = " at '%s'" % label if label else ""
-    if tally.ran == 0:
+    if tally.ran == 0 and not tally.reused:
         if tally.old:
             cli.say("NOTHING WAS CHECKED — the Gates table in %s has no Side effects column (an older layout), so no "
                     "gate runs unasked; a council-init refresh adds it, or run a gate by name once the user agrees"
@@ -175,8 +198,12 @@ def _summary(tally: _Tally, cfg: str, label: str) -> int:
         tail += " · %d had nothing to check (%s — 0 files matched)" % (tally.empty, ", ".join(tally.none))
     if tally.nothing:
         tail += " · %d passed with nothing run (%s — see above)" % (tally.nothing, ", ".join(tally.unrun))
+    if tally.reused:
+        tail += " · %d green on this tree already, not run again (%s)" % (len(tally.reused), ", ".join(tally.reused))
     failing = tally.ran - tally.passed
-    if failing == 0:
+    if tally.ran == 0:
+        cli.say("gates: none ran — every one that could run here was green on this tree already%s" % tail)
+    elif failing == 0:
         cli.say("gates: %d ran — all pass%s" % (tally.ran, tail))
     else:
         cli.say("gates: %d ran — %d pass, %d FAIL (%s%s)%s" % (tally.ran, tally.passed, failing, ", ".join(tally.red),
