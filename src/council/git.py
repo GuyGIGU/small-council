@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 
@@ -39,10 +37,12 @@ def text(repo: str | Path, *args: str, extra: dict[str, str] | None = None, time
 def files_tree(top: str | Path) -> str:
     """The tree id of a working tree's files as they are on disk: committed, staged, unstaged and untracked
     alike (what .gitignore ignores is left out, and so is the council home, .council/, committed or not,
-    which the council writes as it works). Taken with `git add -A` into a copy of the index, then `git write-tree`, so the
-    real index is never touched; the blobs of changed files land in the object store as loose objects,
-    which git's own gc prunes. Two trees with the same files have the same id, whatever was committed or
-    staged. '' outside git, or when git fails."""
+    which the council writes as it works). Taken with `git add -A` into a copy of the index, then
+    `git write-tree`, so the real index is never touched; the blobs of changed files land in the object
+    store as loose objects, which git's own gc prunes. Two trees with the same files have the same id,
+    whatever was committed or staged. '' outside git, or when git fails."""
+    import shutil      # only council gate takes a tree: never loaded by the commands that don't (D34)
+    import tempfile
     index = text(top, "rev-parse", "--git-path", "index")
     if not index:
         return ""
