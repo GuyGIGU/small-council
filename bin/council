@@ -3214,6 +3214,7 @@ council — the Small Council's helper (bash + git)
   council sharing [just-me|team]         who sees the council: team (the default — .council/ is committed and
                                          CLAUDE.md points at it) or just me (git ignores it through its own
                                          exclude list, and the CLAUDE.md note goes); no word shows what's left
+  council pushes [check git push|gh pr create]  the push freeze · check: the bash gate's decision (exit 2 while held)
   council run open <mode> [--alongside] [--session=ID]
                                          open a run for a mode, e.g. council-review; prints its folder
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
@@ -3424,6 +3425,7 @@ main() {
   case "$cmd" in
     home)    python_command "council home" ${given[@]+"${given[@]}"} ;;
     sharing) python_command "council sharing" ${given[@]+"${given[@]}"} ;;
+    pushes)  python_command "council pushes" ${given[@]+"${given[@]}"} ;;
     run)
       sub="${1:-}"; [ $# -eq 0 ] || shift
       case "$sub" in
