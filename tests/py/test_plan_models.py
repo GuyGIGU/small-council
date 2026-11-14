@@ -64,6 +64,13 @@ class SeatModelTest(unittest.TestCase):
             "ERROR line 24: fable is not the builder model in council.config.md (- models: builder=inherit) — set "
             "builder=fable there, or make seat/build-1/model inherit"])
 
+    def test_a_seat_without_a_role_of_the_line_stays_on_inherit(self) -> None:
+        planning = PLAN.replace("council-implement", "council-plan")
+        given = GIVEN._replace(mode="council-plan", run=RUN.replace("implement", "plan"), models=SPLIT)
+        self.assertEqual(plan_check.judge(planning + rows(build_1="opus"), given).problems, [
+            "ERROR line 24: opus for build-1 needs a role council.config.md's - models: line names (a build's "
+            "builder, a review's seat or a verifier) — make seat/build-1/model inherit"])
+
     def test_the_chair_stays_on_the_sessions_model(self) -> None:
         self.assertEqual(problems(rows(chair="opus"), models=SPLIT), [
             "ERROR line 24: the Chair stays on the session's model — make seat/chair/model inherit"])

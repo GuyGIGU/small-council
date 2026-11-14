@@ -78,9 +78,9 @@ def seat_model(check: Check, ident: str, model: str, role: str, found: models.Mo
     elif seat_role == "chair":
         check.problem(line, "the Chair stays on the session's model — make seat/%s/model inherit" % ident)
     elif not role:
-        check.problem(line, "%s for %s needs a role council.config.md's - models: names (a build's builder, a "
-                            "review's seat or a verifier) — make it inherit" % (model, ident))
-    elif check.given.seat_models != "closed":
+        check.problem(line, "%s for %s needs a role council.config.md's - models: line names (a build's builder, a "
+                            "review's seat or a verifier) — make seat/%s/model inherit" % (model, ident, ident))
+    else:                                           # a closed run's role models were judged on their day
         check.problem(line, "%s is not the %s model in council.config.md (- models: %s=%s) — set %s=%s there, "
                             "or make seat/%s/model %s" % (model, role, role, found.of(role), role, model, ident,
                                                           found.of(role)))
