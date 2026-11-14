@@ -7,11 +7,12 @@ The seats work in parallel, each in its own window. You dispatch, then wait.
 - **All worker Agent calls go in one message**, with `subagent_type: small-council:council-worker`.
   The worker contract lives in that agent. If the type is unavailable, use `general-purpose` and paste
   the rules from `${CLAUDE_PLUGIN_ROOT}/agents/council-worker.md`.
-- For a selected worker seat planned as mapping or survey, pass its `seat/<slug>/model` value as the
-  Agent call's per-invocation `model` parameter when `- seat models: on` is configured. Omit that
-  parameter for `inherit` or when the plan has no model row. If dispatching through Workflow,
-  pass the same value to its `agent()` call. Never override the Chair or verifier: the run plan
-  check refuses it, but the `model` parameter isn't gated, so this rule is yours.
+- For a selected seat with a `seat/<slug>/model` row — a mapping or survey worker under `- seat
+  models: on`, or a builder, review or verifier seat under `- models:` — pass that value as the
+  Agent call's per-invocation `model` parameter; a verifier's too, wherever it is dispatched. Omit
+  that parameter for `inherit` or when the plan has no model row. If dispatching through Workflow,
+  pass the same value to its `agent()` call. Never put a seat on a model its plan row doesn't name:
+  the run plan check judges the plan, but the `model` parameter isn't gated, so this rule is yours.
   A configured force-subagent-model environment setting may override the plan; report that if known.
 - **Never pass `name`** on a council Agent call — with agent teams switched on, a named call becomes
   a teammate instead of a worker.

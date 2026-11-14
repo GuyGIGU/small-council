@@ -40,7 +40,8 @@ class DispatchTest(unittest.TestCase):
                                         "council.commands.gate_writable", "council.commands.resolve"]))
         self.assertEqual(started("run", "plan", "check"),     # rounds (datetime) waits for an open run's decisions
                          sorted(base + ["council.commands.plan", "council.commands.plan_check",
-                                        "council.commands.plan_tasks", "council.commands.resolve"]))
+                                        "council.commands.plan_models", "council.commands.plan_tasks",
+                                        "council.commands.resolve"]))
         self.assertEqual(started("route", "recommend", "--task", "x"), sorted(base + ["council.commands.route"]))
         gate = base + ["council.commands." + name for name in ("gate", "gate_exec", "gate_lock", "gate_output",
                                                                 "gate_repair", "gate_run", "resolve", "shell")]

@@ -263,9 +263,14 @@
    "longest_name": "shown"
   },
   "src/council/commands/plan_check.py": {
-   "lines": 375,
+   "lines": 367,
    "longest": 36,
    "longest_name": "seat_rules"
+  },
+  "src/council/commands/plan_models.py": {
+   "lines": 86,
+   "longest": 20,
+   "longest_name": "seat_model"
   },
   "src/council/commands/resolve.py": {
    "lines": 103,
@@ -356,6 +361,11 @@
    "lines": 156,
    "longest": 30,
    "longest_name": "acquire"
+  },
+  "src/council/records/models.py": {
+   "lines": 91,
+   "longest": 12,
+   "longest_name": "parse"
   },
   "src/council/records/owners.py": {
    "lines": 105,

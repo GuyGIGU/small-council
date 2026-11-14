@@ -15,6 +15,7 @@ deploy target, domain. Name the one thing that must never break.>
 - agent cap: 10
 - context packs: off
 - seat models: off
+- models: builder=inherit, review=inherit, verifier=inherit
 - build tier: light
 - checking: one per batch
 - open items: ask
@@ -41,6 +42,10 @@ deploy target, domain. Name the one thing that must never break.>
      "pushes": on | off | off until <YYYY-MM-DD> — off holds push and PR (a team freeze): a build
      commits and stops. From the date on it reads as on. Missing means on.
      "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.
+     "models": builder=, review=, verifier= — inherit (the session's model), fable, opus, sonnet or
+     haiku for each role's agents; a role left out, or no line, means inherit. council-init proposes
+     a split from its own model (references/run/models.md); a verifier is never on a weaker model
+     than the builder it checks, and the Chair stays on the session's model.
      "sharing": team | just me — team commits .council/ with the project; just me keeps it on this
      machine (git's own exclude list ignores it, and CLAUDE.md gets no note), so teammates never meet
      the council. `council sharing just-me` / `council sharing team` switches it; missing means team.
