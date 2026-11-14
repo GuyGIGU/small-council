@@ -101,7 +101,8 @@ planning session decides and checks; it does not build.
   of files outside `src/council/records/` that name a council file to parse it; the count of
   `council.config.md` readers outside one `configured_*` or `records/config.py` function; the count
   of scripts that call `bin/council` back. A number may only go down. A lower number rewrites the
-  baseline (`--update`), so every later session inherits the gain. New Python files are held to rule 6.
+  baseline (`--update`), so every later session inherits the gain. New Python files are held to rule 6, and so are `src/council/`'s, which may grow up to its limits
+  instead of being frozen (the user's call, 2026-11-14: freezing them pushed sessions to squeeze lines).
 - Lint: `ruff.toml` with the rule set the Python can pass today, plus a stricter set for
   `src/council/` (pyflakes, pycodestyle, bugbear, simplify, annotations). ShellCheck at warning level
   as a ratchet count, not a wall. CI runs the ratchet and the fast tier before the full suite.

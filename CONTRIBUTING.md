@@ -103,8 +103,10 @@ warnings (only where `shellcheck` is on PATH; otherwise reported as skipped), th
 `src/council/records/` that parse a council file, the `council.config.md` readers outside one
 `configured_*` reader, and the scripts that run `bin/council` back. A number may only go down; a
 regression is one line naming the file, the measure, the baseline and the new value. A Python file
-the baseline doesn't list is held to 60-line functions and 500-line modules, and any import outside
-the standard library in `scripts/` or `src/` fails (D32). Run `python evals/run_ratchet.py --update`
+the baseline doesn't list is held to 60-line functions and 500-line modules; so is every file in
+`src/council/`, which may grow up to those limits rather than being frozen at its size, since the
+package grows as commands are ported. `bin/council`, the hooks and `scripts/` stay frozen. Any
+import outside the standard library in `scripts/` or `src/` fails (D32). Run `python evals/run_ratchet.py --update`
 in the branch that lowers a number, so every later branch inherits the gain; it refuses to raise
 one, so a limit is never loosened by hand. `--show` prints the files each count names.
 

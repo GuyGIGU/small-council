@@ -50,7 +50,8 @@ python evals/run_all.py                   # everything, in parallel (about 30 mi
   warnings, and the counts of files that parse a council file, `council.config.md` readers and
   scripts that run `bin/council`. A number may only go down. When your change lowers one, run
   `python evals/run_ratchet.py --update` in the same branch so the gain is kept; it refuses to raise
-  one. A new Python file is held to 60-line functions and 500-line modules.
+  one. A new Python file is held to 60-line functions and 500-line modules, and so is every file in
+  `src/council/`: it may grow up to those limits. `bin/council`, the hooks and `scripts/` stay frozen.
 - Don't edit or stash tracked files while a suite is running: it reads the tree as it goes.
 - On Windows, `python3` can be the Microsoft Store stub (exit 49). The judgment fixture's gate fails
   for that reason alone, and it fails the same way on main.
