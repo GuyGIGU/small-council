@@ -1,7 +1,7 @@
 """council index [--base <rev>]: the change index — every file changed since the base (the merge-base with the default
 branch, or --base) with its hunks, the definitions its diff names, their callers and the tests that name it — into
-the run's index.md, and the base into its state. bin/council adds the earlier council work on these files and the
-impact graph after it (prior_hits and impact are still bash's, S8)."""
+the run's index.md, and the base into its state; then the earlier council work on these files (records/earlier.py)
+and the impact graph (council impact) are added after it."""
 from __future__ import annotations
 
 import os
@@ -10,8 +10,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from council.commands import changed, cli, closed, index_symbols, resolve
-from council.records import citations, run_files, state_set
+from council.commands import changed, cli, closed, impact, index_symbols, prior, resolve
+from council.records import bytewise, citations, earlier, run_files, state_set
 from council.records import home as where
 
 LABELS = {"A": "added", "D": "deleted", "?": "new, untracked"}
@@ -44,6 +44,8 @@ def main(args: cli.Args, words: list[str]) -> int:
     cli.no_words("index", words)
     run = resolve.run_folder(args)
     closed.refuse(run, "its change index is on record; index the change in a new run")  # before anything is written
+    postgame = resolve.field(run, "mode") == "council-postgame"
+    home = "" if postgame else where.council_home()                     # from where the command was run
     top = resolve.field(run, "code-root") or where.this_tree()
     try:
         os.chdir(where.native(top))
@@ -63,7 +65,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     index.every(changes(base))
     out = run / run_files.INDEX
     out.write_bytes(index.document(run.name).encode("utf-8", "surrogateescape"))
-    if resolve.field(run, "mode") == "council-postgame":
+    if postgame:
         # A post-game's verifier reads index.md and must never see the plan, the logs or their verdicts.
         cli.say("index: earlier council work left out (a post-game's verifier reads this file) — run council prior "
                 "yourself")
@@ -76,7 +78,23 @@ def main(args: cli.Args, words: list[str]) -> int:
     if index.n_over:
         cli.say("index: %d more past the %s-file cap — named at the end of the index but not indexed; give them an "
                 "owner too" % (index.n_over, index.cap))
+    if not postgame:
+        earlier_work(run, home)
+    if impact.refresh(run, top) != 0:
+        cli.warn("council: optional impact graph was not refreshed; the change index is still valid")
     return 0
+
+
+def earlier_work(run: Path, home: str) -> None:
+    """The earlier council work on these files (40 mentions at most), at the end of the index. A post-game's Chair
+    runs council prior for itself."""
+    found = earlier.hits(home, earlier.indexed(run))[:prior.SHOWN]
+    if not found:
+        return
+    listed = "".join("- %s\n" % earlier.line(row) for row in found)
+    with open(str(run / run_files.INDEX), "ab") as out:
+        out.write(b"## Earlier council work on these files\n" + bytewise.bytes_of(listed))
+    cli.say("earlier council work on these files: %d mention(s), listed at the end of the index" % len(found))
 
 
 def record(run: Path, base: str) -> None:

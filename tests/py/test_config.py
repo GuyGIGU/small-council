@@ -150,5 +150,22 @@ class TuneEditTest(support.Scratch):
             config.preferences_insertion("## Gates\n", "- x")
 
 
+class RosterRowsTest(support.Scratch):
+    def test_rows_as_the_helper_read_them(self) -> None:
+        self.write(".council/council.config.md", "﻿# c\r\n## Roster\r\n"
+                   "| Seat | Slug | Lens | Reference | Recast note |\r\n|---|---|---|---|---|\r\n"
+                   "| **Martin Fowler** | `fowler` | Structure | references/refactoring.md | kept |\r\n"
+                   "| No Slug |  | x |  | x |\r\n| <placeholder> | x | x | x | x |\r\n"
+                   "| Café Seat | café | x | - | x |\r\n|  | ghost | x | x | x |\r\n## Gates\r\n| Gate | x |\r\n")
+        self.assertEqual(config.roster_rows(self.tmp / ".council"),
+                         [("fowler", "Martin Fowler", "references/refactoring.md"), ("-", "No Slug", "-"),
+                          ("caf\xc3\xa9", "Caf\xc3\xa9 Seat", "-")])
+
+    def test_no_roster_and_no_config(self) -> None:
+        self.assertEqual(config.roster_rows(self.tmp / ".council"), [])
+        self.write(".council/council.config.md", "# c\n## Roster\nnone\n")
+        self.assertEqual(config.roster_rows(self.tmp / ".council"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

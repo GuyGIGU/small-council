@@ -2,11 +2,10 @@
 current task, and the pass of a gate whose trail is open closes it — recorded here, so the stop after three
 failures holds without a separate command. The gate's exit code never depends on this.
 
-The repair loop itself is scripts/repair.py, loaded here by path until the scripts move into the package (S9)."""
+The repair loop itself is scripts/repair.py, run here through council.commands.script."""
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import re
 import sys
@@ -16,21 +15,11 @@ from types import ModuleType
 from council.commands import cli, resolve
 from council.records import config, repairs
 
-ENGINE = Path(__file__).resolve().parents[3] / "scripts" / "repair.py"
-_LOADED: list[ModuleType] = []
-
 
 def engine() -> ModuleType:
     """scripts/repair.py as a module, loaded once."""
-    if not _LOADED:
-        spec = importlib.util.spec_from_file_location("council_repair_engine", str(ENGINE))
-        module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-        streams = sys.stdout, sys.stderr                 # it sets its own streams up as it loads
-        spec.loader.exec_module(module)  # type: ignore[union-attr]
-        for kept in streams:
-            kept.reconfigure(encoding="utf-8", errors="surrogateescape")  # type: ignore[attr-defined]
-        _LOADED.append(module)
-    return _LOADED[0]
+    from council.commands import script
+    return script.load("repair")
 
 
 def run_quietly(action: str, task: str, gate: str | None, run: str) -> tuple[int, str]:

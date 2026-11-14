@@ -1,4 +1,5 @@
 import json
+import os
 import unittest
 
 import support
@@ -73,6 +74,18 @@ class SeatsTest(support.Scratch):
             '{"seat": "map", "field": "tokens", "to": 7.0, "evidence": "log"}\n'
             '{"seat": "hunt", "field": "tokens", "to": 9, "evidence": "log"}\n')
         self.assertEqual(sorted(seats.corrections(run)), [("hunt", "tokens")])
+
+    def test_worked_leaves_out_skipped_seats(self) -> None:
+        run = self.run_folder()
+        self.assertEqual(seats.worked(run), ([], False))
+        (run / "seats.tsv").write_bytes(b"slug\tstate\n")
+        self.assertEqual(seats.worked(run), ([], False))
+        (run / "seats.tsv").write_bytes(b"slug\tstate\r\nhunt\tdone\r\nbeck\tskipped\r\ncaf\xe9\trunning\r\nlone\n")
+        found, any_row = seats.worked(run)
+        # Git Bash's awk reads CR LF as LF; elsewhere awk keeps the CR, so "skipped\r" is no skipped state.
+        kept = ["hunt", "caf\xe9", "lone"] if os.name == "nt" else ["hunt", "beck", "caf\xe9", "lone"]
+        self.assertEqual(found, kept)
+        self.assertTrue(any_row)
 
 
 if __name__ == "__main__":

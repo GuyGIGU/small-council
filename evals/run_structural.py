@@ -192,11 +192,14 @@ check("repair: helper and kernel expose inspectable repair trail",
       "cmd_repair()" in cli and "council repair record" in cli and "council repair record" in core and
       "repairs.jsonl" in core)
 check("memory: selected entries carry meaning and origin, failures stay observations",
-      "observed failure, not a rule" in cli and "origin:" in cli and
+      "observed failure, not a rule" in read("src", "council", "commands", "memory_select.py") and
+      "origin:" in read("src", "council", "commands", "memory_select.py") and
       "Observed Failures" in read("references", "templates", "conventions.md") and
       "keeping observed" in doctrine["04-brief.md"])
 check("memory: a failure is served only while its evidence supports it, and filed only on the user's words",
-      "failure_audit" in cli and "memory_replace" in cli and "--user-said" in cli and
+      "def audit" in read("src", "council", "records", "memory_audit.py") and
+      "def replace" in read("src", "council", "records", "memory.py") and
+      "--user-said" in read("src", "council", "commands", "memory.py") and
       os.path.isfile(os.path.join(ROOT, "scripts", "memory.py")) and
       "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
       "UNSUPPORTED" in doctrine["10-learn.md"])
@@ -234,7 +237,7 @@ check("accounting: seats record exact usage per agent run, a Workflow's agent co
       "seat_rows()" in cli and "def seat_usage" in read("src", "council", "records", "usage.py") and "cmd_correct" in cli and
       "usage.tsv" in cli)
 check("seat learning: roster advice weighs only judged runs, past a stated bar",
-      "cmd_ledger_advice" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
+      "def advice" in read("src", "council", "commands", "ledger.py") and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
       "council ledger advice" in doctrine["10-learn.md"] and
       "council ledger advice 20" in read("skills/council-init/SKILL.md") and
       "Below the bar" in read("skills/council-init/SKILL.md"))

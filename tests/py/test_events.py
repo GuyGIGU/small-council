@@ -135,5 +135,30 @@ class AppendTest(support.Scratch):
         self.assertTrue(all(re.match(r"1\t\d+\t", line) for line in (run / "events.tsv").read_text().splitlines()[1:]))
 
 
+class CheckTest(support.Scratch):
+    """events.check (council doctor's) against bin/council's event_check, which `council run events` keeps until
+    S8b: the same exit code and the same lines."""
+
+    OPENED = "1\t1\t2026-01-01T00:00:00Z\trun.opened\trun\tcouncil-review\tphase=convene\n"
+    STREAMS = (("1", HEADER + OPENED), ("1", HEADER + OPENED + "1\t2\t2026-01-01T00:00:01Z\tseat\thunt\tdone\tx\n"),
+               ("1", HEADER + OPENED + "1\t3\t2026-01-01T00:00:01Z\tseat\thunt\tdone\tx\n"),
+               ("1", HEADER + OPENED + "1\t2\tnot-a-time\tseat\thunt\tdone\tx\n"),
+               ("1", HEADER + OPENED + "1\t2\t2026-01-01T00:00:01Z\tseat\t\tdone\tx\n"),
+               ("1", HEADER + OPENED.replace("\n", "\r\n")), ("1", HEADER + OPENED + "1\t2\tno"),
+               ("1", "bad\n"), ("1", HEADER), ("1", None), ("2", HEADER + OPENED), ("", HEADER + OPENED), ("", None))
+
+    def test_the_same_verdict_as_the_helper(self) -> None:
+        for k, (schema, stream) in enumerate(self.STREAMS):
+            with self.subTest(schema=schema, stream=stream):
+                run = self.run_folder("2026-01-0%d-run%d" % (k % 9 + 1, k))
+                (run / "session-state.md").write_text("mode: review\n" + ("events-schema: %s\n" % schema if schema
+                                                                           else ""))
+                if stream is not None:
+                    (run / "events.tsv").write_bytes(stream.encode("utf-8"))
+                code, lines = events.check(run.as_posix())
+                bash_code, out = support.helper_bash(self, 'event_check "$1" 2>&1', run.as_posix())
+                self.assertEqual((code, "".join(line + "\n" for line in lines)), (bash_code, out.decode("utf-8")))
+
+
 if __name__ == "__main__":
     unittest.main()

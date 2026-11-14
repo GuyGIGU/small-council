@@ -21,6 +21,20 @@ def lines_of(text: str) -> list[str]:
     return [line.rstrip("\r") for line in text.split("\n")]
 
 
+def field(text: str, key: str) -> str:
+    """A `key:` line of a file that is not a run's state (ask.md, a seat card, the config), as the helper's field
+    reads one: the first line anywhere that starts with the key, the blanks after the colon and every carriage
+    return dropped, then a trailing '  # comment'. '' when no line has the key."""
+    bom = "﻿"
+    for at, line in enumerate(text.split("\n")):
+        if at == 0 and line.startswith(bom):
+            line = line[len(bom):]
+        if line.startswith(key + ":"):
+            value = re.sub(r"^[ \t\n\v\f\r]*", "", line[len(key) + 1:]).replace("\r", "")
+            return re.sub(r"[ \t\n\v\f\r]{2,}#.*$", "", value, flags=re.S)
+    return ""
+
+
 def integer(value: Any) -> int | None:
     """An int from an int or a string of up to 12 digits, else None: never a list, a bool or a null."""
     if isinstance(value, bool):

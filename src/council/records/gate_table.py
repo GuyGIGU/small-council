@@ -1,7 +1,7 @@
 """The Gates table of council.config.md: the gates a project has, as bin/council's config_gates and gates_listed
 read it — its header found by the column names, so an older table (no Side effects or Needs) still reads. Read
-by `council gate`, `gate --all` and `council gates`; bin/council keeps its awk for `council doctor` (S7) and
-`run close` (S8) until those are ported."""
+by `council gate`, `gate --all`, `council gates` and `council doctor`; bin/council keeps its config_gates awk for
+`run close` until that is ported (S8b)."""
 from __future__ import annotations
 
 import re

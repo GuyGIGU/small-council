@@ -33,6 +33,25 @@ class Scratch(unittest.TestCase):
         return folder
 
 
+HELPER = SRC.parent / "bin" / "council"
+
+
+def helper_bash(test: unittest.TestCase, script: str, *words: str, env: dict | None = None) -> tuple[int, bytes]:
+    """Run `script` in a bash that has sourced bin/council, its words as $1 …; (exit code, stdout bytes). Skips the
+    test where there is no bash. For the bash a port leaves in place: the two readers must agree."""
+    import os
+    import subprocess
+
+    from council.commands import shell
+    bash = shutil.which("bash")
+    if bash is None:
+        test.skipTest("no bash")
+    done = subprocess.run(shell.argv_for([bash, "-c", '. "$1"; shift; ' + script, "council", HELPER.as_posix(),
+                                          *words]), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                          env=dict(os.environ, **(env or {})))
+    return done.returncode, done.stdout
+
+
 def symlink_or_skip(test: unittest.TestCase, link: Path, target: Path, directory: bool = False) -> None:
     """Make a symlink, or skip the test where this machine doesn't allow one (Windows without rights)."""
     try:

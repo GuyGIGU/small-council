@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from council.records import cells, paths
+from council.records import bytewise, cells, paths
 
 SEATS = "seats.tsv"
 USAGE = "usage.tsv"
@@ -52,6 +52,18 @@ def _raw_lines(run: Path, name: str) -> list[str]:
     """The file's lines as the helper's awk reads them (cells.lines_of: a CRLF file's last cell has no CR)."""
     run = Path(run)
     return cells.lines_of(paths.text_of(path(run, name), run))
+
+
+def worked(run: Path) -> tuple[list[str], bool]:
+    """The slugs of seats.tsv's rows whose state is not skipped, and whether it has any row past the header, as
+    `council memory select` reads them (awk split at tabs, C-locale text: records/bytewise.py)."""
+    try:
+        text = bytewise.read(path(run).read_bytes())
+    except OSError:
+        return [], False
+    found = bytewise.records(text)[1:]
+    return [c[0] for c in (line.split("\t") for line in found) if (c[1] if len(c) > 1 else "") != "skipped"], \
+        bool(found)
 
 
 def agent_starts(run: Path) -> int:

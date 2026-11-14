@@ -19,15 +19,22 @@ class StateError(Exception):
 
 def put(run: Path, key: str, value: str) -> None:
     """Set the header field key to value. StateError when the run is closed or the state can't be written."""
+    put_all(run, [(key, value)])
+
+
+def put_all(run: Path, fields: list[tuple[str, str]], after_close: bool = False) -> None:
+    """Set each header field in turn, in one write. A closed run takes them only with after_close (`council ask
+    save`'s ask= and ask-saved=, which the user's words may still need after the close)."""
     run = Path(run)
     lock = str(path(run)) + ".lock"
     try:
         with locks.held(lock):
-            if closed(run):
+            if closed(run) and not after_close:
                 raise StateError("closed")
             lines = _raw_lines(path(run))
-            _put(lines, key + ":", "%s: %s" % (key, value.replace("\r", " ").replace("\n", " ")),
-                 header_only=False, add=True)
+            for key, value in fields:
+                _put(lines, key + ":", "%s: %s" % (key, value.replace("\r", " ").replace("\n", " ")),
+                     header_only=False, add=True)
             content = "\n".join(lines)
             if field(content, "phase") not in ("", "convene") and field(content, "next") == NEXT_AT_OPEN:
                 _put(lines, "next:", "next:", header_only=True, add=False)

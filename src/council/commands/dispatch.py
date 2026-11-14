@@ -8,7 +8,9 @@ from council.commands import cli
 
 COMMANDS = {"home": "home", "sharing": "sharing", "run status": "runs", "cap": "cap", "run plan": "plan",
             "route": "route", "gate": "gate", "gates": "gate_list", "changed": "changed", "collect": "collect",
-            "check": "check", "index": "index", "pushes": "pushes"}
+            "check": "check", "index": "index", "impact": "impact", "prior": "prior",
+            "map": "map_status", "fingerprint": "fingerprint", "ledger": "ledger",
+            "ask": "ask", "memory": "memory", "doctor": "doctor", "pushes": "pushes"}
 
 
 def main(argv: list[str]) -> int:

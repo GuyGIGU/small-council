@@ -56,3 +56,19 @@ def read(home: str | Path) -> list[Way] | None:
     """The table from a council home's map; None when there is no map or no table."""
     content = paths.text_of(path(home), home)
     return ways(content) if content else None
+
+
+_STAMP = re.compile(r"map-commit:[ \t\n\v\f\r]*([0-9a-fA-F]{7,40})")
+
+
+def commit(home: str | Path) -> str:
+    """The commit the map was built at (its first map-commit: line, 7 to 40 hex digits); '' when it has none."""
+    try:
+        data = path(home).read_bytes()
+    except OSError:
+        return ""
+    for line in data.decode("utf-8", "surrogateescape").split("\n"):
+        found = _STAMP.match(line)
+        if found:
+            return found.group(1)
+    return ""

@@ -62,7 +62,7 @@ TWO_WORD = {"run", "cap", "memory", "evidence", "context", "repair", "tune", "ro
 NOTE_LEADS = ("save the user's request", "another run is in progress", "a paused run is also open", "its code root is ",
               "first dispatch of this run", "run closed \u2014 show the user", "this run has used",
               "seats still marked", "the claim index is missing", "no request was filed", "no build log names",
-              "the log has no", "optional impact graph", "impact needs optional", "cleared a gate lock", "WARNING",
+              "the log has no", "optional impact graph", "cleared a gate lock", "WARNING",
               "several runs are open \u2014 only the paths", "checks are already running", "now ignores asks/",
               "KB, over the ~25 KB")
 NOTES = re.compile(r"council: (?:%s|\S+ now ignores asks/|\S+ is \d+ KB, over)"
