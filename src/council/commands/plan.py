@@ -1,12 +1,12 @@
 """council run plan check and council run plan show. bin/council's state, seat, context build and doctor
-run this same check (plan_check there); its rules are in plan_check.py."""
+run this same check (plan_check there); its rules are in plan_check.py, a delivered plan's tasks' in plan_tasks.py."""
 from __future__ import annotations
 
 import os
 import re
 from pathlib import Path
 
-from council.commands import cli, plan_check, resolve
+from council.commands import cli, plan_check, plan_tasks, resolve
 from council.records import cells, config, models, plan, seats
 from council.records import home as where
 
@@ -40,16 +40,16 @@ def main(args: cli.Args, sub: str, words: list[str]) -> int:
 
 
 def check(run: Path, quiet: bool) -> int:
-    """Print each problem and their count (exit 1), else the valid line unless quiet (exit 0)."""
+    """Print each problem and their count (exit 1), else the valid line unless quiet (exit 0); then a plan's tasks."""
     verdict = plan_check.judge(whole(run), settings(run, where.council_home()))
     for line in verdict.problems:
         cli.say(line)
     if verdict.problems:
         cli.say("plan: %d error(s) · %s" % (len(verdict.problems), plan.NAME))
-        return 1
-    if not quiet:
-        cli.say(verdict.valid)
-    return 0
+    tasks = plan_tasks.judge_run(run)                  # a delivered plan's tasks, their count line among the problems
+    for line in tasks.problems + ([] if quiet or verdict.problems or tasks.problems else [verdict.valid] + tasks.notes):
+        cli.say(line)
+    return 1 if verdict.problems or tasks.problems else 0
 
 
 def whole(run: Path) -> str:
