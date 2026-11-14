@@ -24,8 +24,17 @@ decisions before it writes anything.
 5. **Names and comments follow architecture §9.** A comment says why in a line or two. A story about
    the real run that taught a rule moves to `decisions.md` (as part of an existing entry's Source) or
    is dropped when the CHANGELOG already tells it.
-6. **Size limits for new Python:** a function at most 60 lines, a module at most 500. Code ported
-   from bash is split at its seams to fit; it is not copied whole into one long function.
+6. **Size limits for new Python:** a function at most 60 lines, a module at most 500. These are
+   ceilings, not targets: keep it simple.
+   - Split a function where its job changes, not where it reaches 60 lines. Each piece gets a name
+     that says what it does.
+   - A helper earns its place with a second caller, or by naming one idea its caller would otherwise
+     spell out. A helper that only passes its arguments on is inlined.
+   - Fold before you write. Before you add a function, search `src/council/` for one that already does
+     the job, and use or extend it (rule 2).
+   - Plain over clever: no class where a function will do, no layer that adds only a name.
+
+   Code ported from bash is split at its seams to fit; it is not copied whole into one long function.
 7. **Tests.** New library code gets unit tests in `tests/py/` (`python -m unittest discover -s
    tests/py`), which need no bash and no git and run in seconds. Scenario evals stay where they are.
 8. **Deliver:** a CHANGELOG line under Unreleased; `architecture.md` updated where the session made a
@@ -69,7 +78,7 @@ lines that put `src/` on `sys.path` and call into the package.
 Sizes are rough tokens for one builder session with machine checks and no checker agents.
 
 Which model builds: Opus for the ports (S1, S3–S9), for rule-writing at the size caps (P1, P2), for
-S10, #65 and #50; Sonnet for mechanical work (S2, P3) and the other single-issue sessions. The
+S10, S11, #65 and #50; Sonnet for mechanical work (S2, P3) and the other single-issue sessions. The
 planning session decides and checks; it does not build.
 
 ### Wave 1 — start now, in parallel (different files)
@@ -192,14 +201,41 @@ not one by one:
   eval over saved run folders (#70); README's Honest limits and `roadmap-status.md` brought up to
   date · ~0.8–1.2M.
 
+### The size pass — after S9, beside S10
+
+- **S11 · Make the Python smaller** · after S9, once every command is in one language · may run
+  beside S10, since S11 owns `src/council/` and `tests/py/` and S10 owns `evals/` and the documents it
+  names · ~600k–1M.
+  The port about doubled the helper. On 2026-11-14 about 4,600 lines of bash had become about 13,500
+  lines of Python in 102 files, with 3,541 lines of bash still to port. Rule 6 keeps each function and
+  module small, but nothing keeps the whole small. S11 shrinks it without changing behaviour (rule 1).
+  - Measure first. For three ported areas, compare the bash with the Python it became and count where
+    the extra lines went: docstrings, argument parsing, wrappers, copies, splits. The report gives
+    that count, and the cuts follow from it.
+  - Apply rule 6's split and fold rules to the code that came before them.
+  - Fold the copies. Two functions that do one job (parse a council file, read a table, quote a
+    path, word a refusal) become one in its owner (architecture §3), and the callers move to it
+    (rule 2).
+  - Delete what nothing calls. Search for every name's callers in the hooks, `scripts/` and the evals
+    before you delete it.
+  - Cut comments and docstrings that restate a name or a signature (architecture §9). Keep the ones
+    that say why.
+  - Remove wrappers that only pass their arguments on.
+
+  Done when the eval suite passes unchanged and the report gives `src/council/`'s line and file
+  counts before and after. The report also lists each fold and each deletion with the callers that
+  moved. `python evals/run_ratchet.py --update` keeps the gains. There is no line target. Never join
+  lines to fit: a split that the 60-line limit forced stays split.
+
 ## Order and totals
 
 ```
 now      S1 ─┐
-         S2 ─┴─► main ─► S3 ► S4 ► S5 ► S6 ► S7 ► S8 ► S8b ► S9 ─► S10
+         S2 ─┴─► main ─► S3 ► S4 ► S5 ► S6 ► S7 ► S8 ► S8b ► S9 ─┬► S10
+                                                                 └► S11
                           └ issue sessions after S4, S5, S6, S7, S8
 prose    P1 ───────────► P2 ─► P3            (alongside wave 2)
 ```
 
-About 10–14M tokens over 14 main sessions plus the small issue sessions. Two sessions at once at most
+About 11–15M tokens over 15 main sessions plus the small issue sessions. Two sessions at once at most
 on code, plus one on prose: more than that and they wait on each other's merges.
