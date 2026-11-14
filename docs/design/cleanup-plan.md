@@ -160,6 +160,17 @@ The open issues land on the Python, right after their area is ported, each as it
 
 Held until the user says otherwise: #63 (a lead-builder seat).
 
+**Port first (the user, 2026-11-14).** By then the Python was about three times the bash it
+replaced, the tokens were running about 1.5x this plan, and features landing on half-ported code
+had caused most of the merge conflicts. So the order changes once #44 and #69 merge:
+1. S8b, then S9, which retires the bash. After that, every command is in one language.
+2. S11 shrinks the Python while it is fresh, before anything else is built on it.
+3. Then T3, S10 with T4, and the held issues, each judged again against what S11 leaves. The held
+   issues are #55, #62, #47, the rest of #59 (`patch apply`, a `patch.saved` event) and of #60
+   (verdicts in the history), plus #57, #61, #67 and #93's setup side (T3).
+
+Until S11 merges, no feature session starts. A bug that blocks real use is the exception.
+
 **#65 · A model per role** · after S5, which ports the run plan check that enforces it · ~400–600k.
 The user agreed on 2026-11-12 to replace D30. The session adds the new decision to `decisions.md`
 and marks D30 superseded in the same branch as the code, so the index never claims a rule the helper
@@ -205,11 +216,10 @@ not one by one:
   eval over saved run folders (#70); README's Honest limits and `roadmap-status.md` brought up to
   date · ~0.8–1.2M.
 
-### The size pass — after S9, beside S10
+### The size pass — after S9, before S10 and the held features
 
-- **S11 · Make the Python smaller** · after S9, once every command is in one language · may run
-  beside S10, since S11 owns `src/council/` and `tests/py/` and S10 owns `evals/` and the documents it
-  names · ~600k–1M.
+- **S11 · Make the Python smaller** · after S9, once every command is in one language, and before
+  S10, T3 and the held issues (Port first, above) · ~600k–1M.
   The port about doubled the helper. On 2026-11-14 about 4,600 lines of bash had become about 13,500
   lines of Python in 102 files, with 3,541 lines of bash still to port. Rule 6 keeps each function and
   module small, but nothing keeps the whole small. S11 shrinks it without changing behaviour (rule 1).
@@ -235,11 +245,11 @@ not one by one:
 
 ```
 now      S1 ─┐
-         S2 ─┴─► main ─► S3 ► S4 ► S5 ► S6 ► S7 ► S8 ► S8b ► S9 ─┬► S10
-                                                                 └► S11
+         S2 ─┴─► main ─► S3 ► S4 ► S5 ► S6 ► S7 ► S8 ► #44/#69 ► S8b ► S9 ► S11 ─► T3, S10, held issues
                           └ issue sessions after S4, S5, S6, S7, S8
 prose    P1 ───────────► P2 ─► P3            (alongside wave 2)
 ```
 
-About 11–15M tokens over 15 main sessions plus the small issue sessions. Two sessions at once at most
+The plan was 10–14M tokens. By 2026-11-14 an estimated 12–14M had gone, with about 5–6M left
+(S8b, S9, S11, T3, S10 and the held issues). Two sessions at once at most
 on code, plus one on prose: more than that and they wait on each other's merges.
