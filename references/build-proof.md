@@ -116,6 +116,13 @@ new task. A brief that sends it hunting ("however narrow", "any route", "find an
 refused at dispatch. Real runs show why: a verifier told to name any route that still gets through
 found a narrower gap every round, and one batch's checks ran about ten hours and 1.7M tokens.
 
+**Decisions and one way.** On a build or a fix the checker also asks whether the change contradicts a
+recorded decision (the memory D and EC entries in scope, quoted in the brief) or adds a second way of
+doing a job beside a row of the `## One way per job` table in the council home's `map.md`: a second
+error type, config reader or data-access path beside the row's. If it does, the verdict is INCOMPLETE,
+citing the entry id or the table row, even when the Done-when is met. A new way the user ruled on is a
+recorded decision itself, so it is no second way.
+
 ## Read the result
 
 `council check` writes each task's verdict and note to `check.md`. Copy both into the log's Converge
@@ -136,6 +143,9 @@ Proof cell; a saved test note establishes its file exists, not that its assertio
 | `NO-BEFORE` / `NO-AFTER` | One side of the pair is missing. |
 | `NO-PROOF-YET` | The before-check's red proves nothing: marked invalid, stopped at its time limit, or never ran (exit 127). Run it again. |
 
+The verifier never takes a helper verdict or a saved test path as semantic proof: it traces the named
+invariants through the changed path, inspects test assertion changes and reads the actual
+before-failure. Preservation alone never earns OK for a fix or new behaviour.
 For preservation the verifier also traces the affected path, checks that the tests cover the named
 invariants and inspects assertion changes. A passing pair establishes only those checked invariants;
 it is not proof that every possible behaviour was preserved. Report any uncovered requirement.

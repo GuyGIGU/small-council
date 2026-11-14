@@ -6178,6 +6178,80 @@ def requests_bookkeeping(tmp):
     code, out, err = council(req, "run", "close")
     check("run close: warns when a continuing run never filed its words", "no request was filed" in err, err)
 
+@part("requests")
+def requests_plan_tasks(tmp):
+    # The task tree's trunk (docs/design/task-tree.md, T1): each plan task quotes what it serves, names who owns it
+    # and what it rests on, and an unchecked fact outside the repo is probed before anything is built on it.
+    pt = new_repo(tmp, "plan-tasks")
+    write(os.path.join(pt, "a.txt"), "a\n")
+    git(pt, "add", "-A")
+    git(pt, "commit", "-q", "-m", "a")
+    write(os.path.join(pt, ".council", "council.config.md"), "# Council config\n")
+    prun = council(pt, "run", "open", "council-plan")[1].strip()
+    write(os.path.join(prun, "ask.md"), "# Ask — charge once\n## In your words\nCharge the card once, even when the "
+          "provider retries the webhook.\nKeep the receipt email.\n")
+    write_plan(prun, selected=("w1",))
+    table = ("## One way per job\n| Job | Owner | The one way | Anchor path |\n|---|---|---|---|\n"
+             "| Charge a card | src/pay/ | the gateway client | src/pay/charge.py |\n")
+    mapf = os.path.join(pt, ".council", "map.md")
+    write(mapf, "# Codebase map — x\n" + table)
+    council(pt, "seat", "w1", "running", "agent=a1")
+    code, out, err = council(pt, "seat", "w1", "done", "agent=a1", "tokens=12345", "agents=1",
+                             "note=NEEDS: how long does the provider retry a webhook?")
+    seats = read(os.path.join(prun, "seats.tsv"))
+    check("seat: a NEEDS: return is recorded as done, a correct outcome, not a failed seat",
+          code == 0 and re.search(r"^w1\tdone\t.*NEEDS: how long", seats, re.MULTILINE) is not None
+          and "failed" not in out + err, out + err + seats)
+
+    def task(n, serves='"Charge the card once"', owner="src/pay/ — Charge a card", rests="—", depends="—"):
+        rows = [("Depends on", depends), ("Serves", serves), ("Owner", owner), ("Rests on", rests),
+                ("Done when", "a retried webhook charges once")]
+        return "### %d. Task %d\n| | |\n|---|---|\n%s\nWhy.\n\n" % (n, n, "".join(
+            "| **%s** | %s |\n" % (k, v) for k, v in rows if v is not None))
+
+    planf = os.path.join(pt, ".council", "plans", "charge.md")
+
+    def judged(*tasks_):
+        write(planf, "# Council Plan: charge\n## Task Sequence\n" + "".join(tasks_) + "## Summary\n")
+        return council(pt, "run", "plan", "check")
+    to_deliver(pt)
+    write(planf, "# Council Plan: charge\n")
+    code, out, err = council(pt, "state", "deliverable=.council/plans/charge.md")
+    code, out, err = judged(task(1, serves=None))
+    code2, out2, err2 = council(pt, "state", "phase=learn")
+    check("run plan check: once a plan is delivered, a task with no Serves row is refused, and so is the next stage",
+          code == 1 and "task 1 has no Serves row" in out and "tasks: 1 error(s) · " in out
+          and code2 == 2 and "fix what it names" in err2, out + err + out2 + err2)
+    code, out, _ = judged(task(1, serves='"charge it twice please"'))
+    check("run plan check: a Serves quote the request never said is refused",
+          code == 1 and "task 1's Serves quotes words the request never said" in out, out)
+    code, out, _ = judged(task(1, owner="src/pay/"))
+    check("run plan check: an Owner naming no row of the map's one-way-per-job table, and no New way:, is refused",
+          code == 1 and "task 1's Owner names no row" in out and "Charge a card" in out, out)
+    write(mapf, "# Codebase map — x\n## Shape\nx\n")
+    code, out, _ = judged(task(1, owner="src/pay/"))
+    check("run plan check: with no one-way-per-job table the owner check is skipped, and says so in one line",
+          code == 0 and "tasks: owner check skipped" in out and "tasks: 1 checked against the request" in out, out)
+    write(mapf, "# Codebase map — x\n" + table)
+    guess = "the provider retries for 3 days (ASSUMED, outside)"
+    code, out, _ = judged(task(1, rests=guess))
+    check("run plan check: a task resting on an ASSUMED fact outside the repo with no probe before it is refused",
+          code == 1 and "task 1 rests on 'the provider retries for 3 days' (ASSUMED, outside) with no probe" in out, out)
+    code, out, _ = judged(task(1, owner="Probe: how long does the provider retry?", rests=guess),
+                          task(2, serves='"Keep the receipt email."', owner="New way: no mail module yet", rests=guess,
+                               depends="Task 1"))
+    code2, out2, err2 = council(pt, "state", "phase=learn")
+    check("run plan check: with the probe in Depends on the plan passes, names the New way for the user, and moves on",
+          code == 0 and "tasks: 2 checked against the request" in out and "New way in task 2" in out and code2 == 0,
+          out + out2 + err2)
+    council(pt, "run", "close")
+    ledger = read(os.path.join(pt, ".council", "ledger.tsv"))
+    check("run close: the NEEDS: seat goes into the ledger like any finished seat",
+          re.search(r"\t%s\tcouncil-plan\tw1\t" % re.escape(os.path.basename(prun)), ledger) is not None, ledger)
+    code, out, _ = council(pt, "run", "plan", "check", "--run", os.path.basename(prun))
+    check("run plan check: a closed plan run's tasks are read as they were", code == 0 and "tasks:" not in out, out)
+
+
 @part("filing")
 def filed_request_paths(tmp):
     # The filed request stays inside asks/, in every legitimate spelling; a re-save replaces only its own run's words
