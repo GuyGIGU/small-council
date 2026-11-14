@@ -54,6 +54,8 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(started("collect"), sorted(base + cites + ["council.commands.collect"]))
         self.assertEqual(started("check"), sorted(base + cites + ["council.commands." + name for name in (
             "check", "check_proofs", "cite_origin", "hygiene", "proof_reach")]))
+        self.assertEqual(started("patch", "show", "1"), sorted(base + ["council.commands." + name for name in (
+            "gate_output", "patch", "patch_checks", "patch_history", "resolve")]))     # rounds: a third fix round only
         self.assertEqual(started("index"), sorted(base + ["council.commands." + name for name in (
             "changed", "closed", "impact", "index", "index_symbols", "prior", "resolve", "script", "shell")]))
 

@@ -36,6 +36,7 @@ graph of changed paths, direct dependencies and test hints.
 `precision-context.md` defines the optional, seat-specific context pack and its measurement limits.
 `run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.
 `evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
+`builder-report.md` defines a build round's report head and the checks of it against the saved diff.
 `finding-outcomes.md` defines what `council outcomes` compares. `war-room.md` defines the second
 round; `sharing.md` defines the team-or-just-me choice; `models.md` defines the model per role.
 

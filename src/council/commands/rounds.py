@@ -1,7 +1,8 @@
-"""The build loop's limits on starting a verifier (council-implement): one checker per batch under
-`- checking: one per batch` (D18), and no third check of a task without a diagnosis or the user's go.
-The agent gate asks them before a council verifier starts; `council seat … running` (bash until seat is
-ported) asks them again. Each returns why the start must wait, or None."""
+"""The build loop's limits (council-implement): one checker per batch under `- checking: one per batch` (D18),
+no third check of a task without a diagnosis or the user's go, and no third fix round in the same files without
+a redesign. The agent gate asks the first two before a council verifier starts; `council seat … running` (bash
+until seat is ported) asks them again; `council patch save` asks the third. Each returns why it must wait, or
+None."""
 from __future__ import annotations
 
 import re
@@ -90,6 +91,26 @@ def check_round(run: Path, slug: str) -> str | None:
     return ("cannot start %s — task %s has %d verdicts, and after the second the build loop allows one diagnosis and "
             "one more attempt: stop and report to the user. Another check needs their go: ask them, then record their "
             "words with council state decision=\"…\"" % (slug, task, verdicts))
+
+
+def third_fix_round(run: Path, task: int, earlier: list[tuple[list[str], str, str]], files: list[str],
+                    redesign: str) -> str | None:
+    """A task's third fix round in the same files goes back to the plan as a redesign (references/run/repair-loop.md,
+    Fix rounds). `earlier` holds the task's saved rounds, oldest first: (files, redesign note, saved at). Round 1
+    builds; each later round is a fix, counted from the last redesign on. A third that shares a file with the two
+    before it waits on a Redesign: line in its head and a decision of the user's since the last round."""
+    start = 1 + max((n for n, (_, note, _) in enumerate(earlier) if note), default=0)   # a redesign builds anew
+    fixes = [set(changed) for changed, _, _ in earlier[start:]]
+    shared = sorted(set(files).intersection(*fixes[-2:])) if len(fixes) >= 2 else []
+    if not shared:
+        return None
+    if redesign and decisions_since(run, local_minute(earlier[-1][2])) != 0:
+        return None
+    return ("task %d's third fix round touches the same files as the two before it (%s): stop patching — the task "
+            "goes back to the plan as a redesign. Ask the user, with what the patches tried and what each regressed "
+            "(council patch show %d); on their go, record their words with council state decision=\"…\", add "
+            "'Redesign: <what the design changes, and why the patches failed>' under the head's Assumed: line, and "
+            "save again" % (task, ", ".join(shared[:5]) + (" …" if len(shared) > 5 else ""), task))
 
 
 def _recorded(run: Path, slug: str) -> bool:

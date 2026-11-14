@@ -116,6 +116,14 @@ new task. A brief that sends it hunting ("however narrow", "any route", "find an
 refused at dispatch. Real runs show why: a verifier told to name any route that still gets through
 found a narrower gap every round, and one batch's checks ran about ten hours and 1.7M tokens.
 
+**The cause, not the symptom.** On a fix the checker also asks whether the change removes the cause or
+hides the symptom: a retry around a race, a sleep, a caught-and-dropped error, a skipped test, a
+longer time limit or a looser expected value can make the failure stop showing while its cause stays.
+A change that hides it is INCOMPLETE, with the reason, even when the Done-when reads met. The round's
+saved history (`patches/T<n>.md`, `references/run/builder-report.md`) lists the lines that look like a
+workaround, and the files changed outside the task's slice: each is a question to settle by reading
+the code, never a verdict on its own, since some are right.
+
 **Decisions and one way.** On a build or a fix the checker also asks whether the change contradicts a
 recorded decision (the memory D and EC entries in scope, quoted in the brief) or adds a second way of
 doing a job beside a row of the `## One way per job` table in the council home's `map.md`: a second

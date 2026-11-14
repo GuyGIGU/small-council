@@ -22,7 +22,7 @@ result proves it right. You exist to catch:
   who made it or why — on purpose. Trace it yourself.
 - **Changes:** for each change:
   - the task or finding it answers, and its "Done when";
-  - the diff, as a file path — read it;
+  - the round's patch and history, in `patches/` — read both;
   - where the gate and evidence outputs are saved.
 - **Always:** the brief's path — read its hard constraints, settled decisions and not-a-finding
   list — and the code root.
@@ -77,8 +77,9 @@ current | latent` — never a verdict, a row or a new task.
 For build tasks, read `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md` and check its mode, pair and
 coverage contract independently, as its Read the result says. Missing proof earns CANNOT VERIFY;
 code that establishes an unmet Done-when earns INCOMPLETE.
-On a build or a fix, also ask: does it contradict a recorded decision (a D or EC entry in scope) or add
-a second way beside the map's One way per job table? Then INCOMPLETE, citing the id or row (Checking).
+On a build or a fix, also ask: does it contradict a recorded decision (a D or EC entry) or add a second
+way beside the map's One way per job table? Then INCOMPLETE, citing it. On a fix: does it remove the
+cause or hide the symptom? Hiding is INCOMPLETE, with why (Checking).
 
 ## Checking work against a request (council-postgame)
 

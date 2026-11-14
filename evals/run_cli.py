@@ -5720,6 +5720,118 @@ def gates_reuse_green_tree(tmp):
           first + out + err)
 
 
+PATCH_HEAD = "Cause: {cause}\nOwner: src/pay.py\nRemoved: {removed}\nAssumed: nothing\n{extra}\nWhy, in prose.\n"
+
+
+@part("gates")
+def gates_patch_rounds(tmp):
+    """T2 (#58, #59, #50, #60): council patch save reads a build round's report head, saves the round's diff and
+    checks one against the other before the verifier sees either; patch show prints the task's rounds."""
+    repo = small_council_repo(tmp, "patch-rounds", "")
+    write(os.path.join(repo, "src", "pay.py"), "def charge(card):\n    return gateway(card)\n")
+    write(os.path.join(repo, "tests", "test_pay.py"),
+          "def test_charge_once():\n    assert charge(1) == 1\n\n\ndef test_receipt():\n    assert True\n")
+    write(os.path.join(repo, "docs", "rules.md"), "# Rules\n- Never charge a card twice.\n- Keep receipts.\n")
+    write(os.path.join(repo, ".council", "plans", "pay.md"),
+          "# Plan\n\n## Task Sequence\n### 1. Charge once\n| | |\n|---|---|\n| **Owner** | `src/pay.py` |\n"
+          "| **Touches** | `src/pay.py`, `tests/test_pay.py`, `docs/` |\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "pay")
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build", "input=.council/plans/pay.md")
+    report = os.path.join(run, "report-1.md")
+    saved = lambda n: os.path.isfile(os.path.join(run, "patches", "T1-%d.patch" % n))   # noqa: E731
+
+    def save(cause="none", removed="none", extra=""):
+        write(report, PATCH_HEAD.format(cause=cause, removed=removed, extra=extra))
+        return council(repo, "patch", "save", "1")
+
+    code, out, err = council(repo, "patch", "save", "1")
+    check("patch save: with no report there is nothing to check — refused, naming the head to write, nothing saved",
+          code == 2 and "report-1.md isn't there" in err and "Cause:" in err and not saved(1), out + err)
+    write(report, "I fixed it, all good.\n")
+    code, out, err = council(repo, "patch", "save", "1")
+    check("patch save: a report with no head is refused, naming the missing line and the next step",
+          code == 2 and "no Cause: line" in err and "council patch save 1" in err and not saved(1), out + err)
+    write(os.path.join(repo, "src", "pay.py"), "import time\n\n\ndef charge(card):\n    time.sleep(1)\n"
+          "    return gateway(card)\n")
+    write(os.path.join(repo, "a.txt"), "changed\n")
+    code, out, err = save()
+    patch = os.path.join(run, "patches", "T1-1.patch")
+    applies = subprocess.run(["git", "-C", repo, "apply", "-R", "--check", patch], capture_output=True).returncode
+    check("patch save: a first build's round is saved as a patch that reverses cleanly, with its record and history",
+          code == 0 and saved(1) and applies == 0 and os.path.isfile(os.path.join(run, "patches", "T1.md"))
+          and "task 1 round 1 saved" in out, out + err)
+    outside = line_of(out, "outside task 1's slice")
+    check("patch save: a file outside the task's Owner and Touches is flagged for the verifier, not refused",
+          "a.txt" in outside and "possible scope creep" in outside, out)
+    check("patch save: an added sleep is listed as a question for the verifier, not a verdict",
+          "sign — sleep · src/pay.py:5" in out and "remove the cause, or hide the symptom" in out, out)
+
+    write(os.path.join(repo, "tests", "test_pay.py"), "def test_receipt():\n    assert True\n")
+    code, out, err = save(cause="charge ran twice on a retried webhook · state: REPRODUCED")
+    check("patch save: a deleted test and its assertion with Removed: none are refused, each named, nothing saved",
+          code == 2 and "test removed" in err and "test_charge_once" in err and "assertion removed" in err
+          and not saved(2), out + err)
+    code, out, err = save(removed="test_charge_once, now in test_webhook")
+    check("patch save: a fix round with Cause: none is refused — a fix names its cause",
+          code == 2 and "is a fix: name its cause" in err and not saved(2), out + err)
+    code, out, err = save(cause="a race, probably · state: INFERRED", removed="tests/test_pay.py: test_charge_once")
+    check("patch save: a cause that is only INFERRED has not earned a code change — refused, naming the probe",
+          code == 2 and "hasn't earned a code change" in err and "Unknowns" in err and not saved(2), out + err)
+    code, out, err = save(cause="charge ran twice · state: REPRODUCED", removed="tests/test_pay.py: test_charge_once, "
+                          "folded into test_receipt")
+    check("patch save: listing the removed test in Removed saves the fix round as round 2",
+          code == 0 and saved(2) and "round 2 saved" in out, out + err)
+
+    write(os.path.join(repo, "docs", "rules.md"), "# Rules\n- Keep receipts.\n")
+    write(os.path.join(repo, "docs", "more.md"), "# More\n- Keep receipts for a year.\n")
+    code, out, err = save(cause="the rule was stale · state: OBSERVED")
+    check("patch save: a document rule taken out and not named in Removed is refused",
+          code == 2 and "rule removed" in err and "docs/rules.md:2" in err and not saved(3), out + err)
+    write(os.path.join(repo, "docs", "more.md"), "# More\n- Never charge a card twice.\n")
+    code, out, err = save(cause="the rule sat in the wrong file · state: OBSERVED")
+    check("patch save: a rule moved to another file, word for word, is no removal", code == 0 and saved(3), out + err)
+
+    write(os.path.join(repo, "src", "pay.py"), "def charge(card):\n    return gateway(card, 4)\n")
+    write(os.path.join(repo, "docs", "more.md"), "# More\n- Never charge a card twice (4).\n")
+    code, out, err = save(cause="patch 4 · state: REPRODUCED", removed="docs/more.md reworded")
+    check("patch save: a second fix round in the same file (docs/more.md, after the move) is saved",
+          code == 0 and saved(4), out + err)
+    write(os.path.join(repo, "src", "pay.py"), "def charge(card):\n    return gateway(card, 5)\n")
+    write(os.path.join(repo, "docs", "more.md"), "# More\n- Never charge a card twice (5).\n")
+    code, out, err = save(cause="patch 5 · state: REPRODUCED", removed="docs/more.md reworded")
+    check("patch save: a third fix round in the same files is refused — the task goes back to the plan as a redesign",
+          code == 2 and "third fix round" in err and "docs/more.md" in err and "council patch show 1" in err
+          and not saved(5), out + err)
+    redesign = "Redesign: charge by idempotency key; the patches moved the race around\n"
+    code, out, err = save(cause="patch 5 · state: REPRODUCED", removed="docs/more.md reworded", extra=redesign)
+    check("patch save: a Redesign line alone doesn't lift it — the user's go must be on record",
+          code == 2 and "third fix round" in err and not saved(5), out + err)
+    council(repo, "state", "decision=redesign it with an idempotency key")
+    code, out, err = save(cause="patch 5 · state: REPRODUCED", removed="docs/more.md reworded", extra=redesign)
+    check("patch save: with the Redesign line and the user's go, the round is saved", code == 0 and saved(5), out + err)
+    code, out, err = council(repo, "patch", "show", "1")
+    check("patch show: the task's history lists each round with its cause, its removals and the redesign",
+          code == 0 and "## Round 5" in out and "redesign: charge by idempotency key" in out
+          and "removed: tests/test_pay.py: test_charge_once" in out and "same files as the round before" in out,
+          out + err)
+    code, out, err = council(repo, "patch", "show", "2")
+    check("patch show: a task with no saved round says how to save one", code == 0 and "council patch save 2" in out,
+          out + err)
+    code, out, err = council(repo, "patch", "save", "x1")
+    check("patch save: a word that is no task number is refused with the shape", code == 2 and "task number" in err,
+          out + err)
+    review = small_council_repo(tmp, "patch-review", "")
+    council(review, "run", "open", "council-review")
+    code, out, err = council(review, "patch", "save", "1")
+    check("patch save: a review run has no build rounds — refused, naming the mode",
+          code == 2 and "council-implement" in err, out + err)
+
+
 @part("requests")
 def check_just_me_hygiene(tmp):
     """On a just-me council nothing teammates read may cite the council (references/run/sharing.md). A real build
