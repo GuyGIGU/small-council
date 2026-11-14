@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from council.commands import cli, plan_check, resolve
-from council.records import cells, config, plan, seats
+from council.records import cells, config, models, plan, seats
 from council.records import home as where
 
 USAGE = "usage: council run plan [check|show]"
@@ -33,7 +33,7 @@ def main(args: cli.Args, sub: str, words: list[str]) -> int:
     if word == "show":
         if check(run, quiet):
             return 1
-        for line in shown(whole(run)):
+        for line in shown(whole(run)) + models.shown(models.models(where.council_home())):
             cli.say(line)
         return 0
     raise cli.Refusal(USAGE)
@@ -65,16 +65,16 @@ def whole(run: Path) -> str:
 
 def settings(run: Path, home: str) -> plan_check.Settings:
     """The run's settings for the check, from its state, its allowances and the project's config."""
-    models, full_go = config.seat_models(home), True
+    routing, full_go = config.seat_models(home), True
     if resolve.field(run, "status") in ("complete", "abandoned"):
-        models = "closed"
+        routing = "closed"
     else:
         from council.commands import rounds          # datetime: only an open run needs a decision read
         opened = resolve.field(run, "opened")
         since = opened[:-3] if re.search(r":[0-9][0-9]\Z", opened) else opened
         full_go = rounds.decisions_since(run, since) > 0
     return plan_check.Settings(run.name, resolve.field(run, "mode"), config.agent_cap(home), seats.allowed_until(run),
-                    models, full_go)
+                    routing, full_go, models.models(home))
 
 
 def shown(content: str) -> list[str]:

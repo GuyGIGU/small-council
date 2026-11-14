@@ -50,15 +50,18 @@ cap, `council seat` tells the Chair to ask the user before starting more; the fi
 it, it records `run.cap_passed` and the status card says so. From the cap on, a hook refuses the next
 agent until the user's go is recorded with `council cap allow` (`references/run/run-accounting.md`).
 
-An optional `seat/<slug>/model` row is `inherit`, `sonnet`, or `haiku`. Missing means `inherit`.
-Overrides require `- seat models: on` in `council.config.md`, and only selected worker seats may use
-`sonnet` or `haiku`; keep the Chair and verifier on `inherit`. A worker requesting an override must
+An optional `seat/<slug>/model` row is `inherit`, `fable`, `opus`, `sonnet`, or `haiku`. Missing
+means `inherit`. A builder, review or verifier seat may take its role's model from the config's
+`- models:` line (`references/run/models.md`); the Chair stays on `inherit`, and the check refuses a
+verifier on a weaker model than a builder it checks — in a build, the Chair too.
+Otherwise overrides require `- seat models: on` in `council.config.md`, and only selected worker seats
+may use `sonnet` or `haiku`. A worker requesting an override must
 also declare `seat/<slug>/purpose = mapping` or `survey`. `other` cannot receive an override.
 A `mapping` seat charts an area of the code for `map.md` (what is where, how it connects); a `survey`
 seat gathers facts, files or candidates for others to judge; `other` is anything that judges,
 advises or builds. The checker verifies this declared purpose; the Chair must ensure the dispatched
 task actually fits it. These rules are checked in the run plan only: the Agent call's `model`
-parameter isn't gated, so the Chair keeps to the plan. A closed run (complete or abandoned) is not rechecked against today's `seat models` setting.
+parameter isn't gated, so the Chair keeps to the plan. A closed run (complete or abandoned) is not rechecked against today's `seat models` or `models` setting.
 
 Exactly one Chair must be selected. Solo selects no delegated agents; Squad selects at least one,
 and Full selects at least four. An open run's Full plan also needs the user's explicit size-and-cost

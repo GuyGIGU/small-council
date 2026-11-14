@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import re
 from typing import NamedTuple
-from council.records import cells
+
+from council.commands import plan_models
+from council.records import cells, models
 
 HEADER = "kind\tid\tfield\tvalue\treason"
 NUMBER = re.compile(r"[ \t\n\r\f\v]*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][-+]?[0-9]+)?")
@@ -23,6 +25,7 @@ class Settings(NamedTuple):
     go: int | None       # the user's latest go past the cap (council cap allow), if any
     seat_models: str     # on, off, or closed: a closed run's plan was judged by the setting of its day
     full_go: bool        # a decision of the user's since the run opened (or the run is closed)
+    models: models.Models = models.Models()   # the config's `- models:` line (D37): all inherit without it
 
 
 def number(text: str) -> float:
@@ -189,8 +192,8 @@ class Check:
                                 "on a stuck task)")
             self.role[ident] = v
         elif field == "model":
-            if v not in ("inherit", "sonnet", "haiku"):
-                self.problem(n, "seat model must be inherit, sonnet or haiku")
+            if v not in models.NAMES:
+                self.problem(n, "seat model must be " + models.SAID)
             self.model[ident] = v
         elif field == "purpose":
             if v not in ("mapping", "survey", "other"):
@@ -312,18 +315,7 @@ class Check:
             if not selected(ident) or self.role.get(ident, "") != "worker":
                 self.problem(self.at[("seat", ident, "purpose")],
                              "a purpose belongs only to a selected worker seat: " + ident)
-        for ident, model in self.model.items():
-            line = self.at[("seat", ident, "model")]
-            if not selected(ident):
-                self.problem(line, "a model choice belongs only to a selected seat: " + ident)
-            elif model != "inherit":
-                if self.role.get(ident, "") != "worker":
-                    self.problem(line, "only worker seats can use sonnet or haiku; %s has role %s"
-                                 % (ident, self.role.get(ident, "")))
-                if self.given.seat_models == "off":
-                    self.problem(line, "seat model overrides are off; enable seat models: on in council.config.md")
-                if self.purpose.get(ident, "") not in ("mapping", "survey"):
-                    self.problem(line, "sonnet or haiku needs seat/%s/purpose = mapping or survey" % ident)
+        plan_models.judge(self)                       # the models, and each verifier against its builders
 
     def size_rules(self, tally: Tally) -> None:
         """One Chair; the run size's agents; the verification level's verifier; the cap on agent runs."""

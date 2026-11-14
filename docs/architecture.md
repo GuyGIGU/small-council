@@ -146,7 +146,7 @@ never part of a cleanup or refactor branch (D23).
   `references/`, because project files carry their paths (a roster's doc column, a card's `source:`, a
   plan's `Ref:`, comments in the config). Moving one breaks every installed project.
 - **Config keys** in `council.config.md` (`approve without asking`, `agent cap`, `context packs`,
-  `seat models`, `build tier`, `checking`, `open items`, `pushes`, `sharing`, `notifications`,
+  `seat models`, `models`, `build tier`, `checking`, `open items`, `pushes`, `sharing`, `notifications`,
   `estimate per worker`, `gate time limit`, the Gates table's columns).
 - **JSON schemas**: `council.run-status/1`, `council.run-snapshot/2`, `council.history/4`,
   `council.tune/2`, `council.seat-advice/1`, `council.outcomes/1`.
