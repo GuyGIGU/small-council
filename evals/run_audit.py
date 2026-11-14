@@ -782,7 +782,8 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
 # The helper's advisory lines the audit does not count as refusals must still be the helper's words.
 sys.path.insert(0, str(ROOT / "scripts"))
 import audit                                                         # noqa: E402  (bytecode is off)
-helper = (ROOT / "bin" / "council").read_text(encoding="utf-8")
+helper = "\n".join(f.read_text(encoding="utf-8") for f in            # the helper is bin/council and src/council
+                   [ROOT / "bin" / "council", *sorted((ROOT / "src" / "council").rglob("*.py"))])
 stale = [lead for lead in audit.NOTE_LEADS if lead not in helper]
 check("every advisory line the audit lets pass is still one the helper prints", not stale, stale)
 
