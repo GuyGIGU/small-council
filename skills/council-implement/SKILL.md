@@ -224,7 +224,7 @@ The same seven lines after every build, in this order, whatever happened, so aft
 user reads it at a glance and notices the moment a line changes:
 
 ```
-Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>] [· push and PR held by the freeze]
+Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>] [· push and PR held by the freeze[ until <date>]]
 Works?: <what proved it — "ran <command> and <what happened>", or honestly "nobody ran it; proved by the tests and by reading the code">
 Checked by machine: <the gates' verdict line, baseline → now> | <the helper's own NOTHING WAS CHECKED line, quoted> [· <the standing red-baseline clause>]
 Shortcuts I took: <one line each> | none
@@ -260,10 +260,11 @@ Then the rulings as one question (Deliver, step 6), and the memory proposals.
 
 Commit, push and PR stay questions under either setting: ask them last, on their own, once the last
 verifier (a post-game's too) is back, never beside a fix question, and in this order:
-1. **The freeze:** the config's `- pushes:` line (missing means `on`). Under `off`, or `off until
-   <date>` before that date, the freeze holds push and PR only: commit as authorized, record the
-   commit in the log, and stop; the receipt's `Built:` line ends `· push and PR held by the freeze`.
-   From the date on, or for a word you can't read, it is `on`; say which.
+1. **The freeze:** `council pushes` reads the config's `- pushes:` line (missing means `on`). Under
+   `off`, or `off until <date>` before that date, the freeze holds push and PR only: commit as
+   authorized, record the commit in the log, and stop; the receipt's `Built:` line ends with the
+   words it prints after the dash, the date included. The bash gate refuses the push meanwhile.
+   From the date on, or for a word it can't read, it is `on`, and it says which.
 2. **Fetch first:** `git fetch`, then `gh pr list --state all`. Say whether the base moved since
    `Start:` and whether a related PR merged; no remote or no `gh`, say that instead.
 3. **The PR text:** print `<run>/pr-body.md` for the user's edit or OK. The PR question comes only

@@ -40,7 +40,8 @@ deploy target, domain. Name the one thing that must never break.>
      At Deliver). Ask: a fix-now-or-later question. Fix now: one line each in the receipt (what, rough
      time, rough tokens), fixed without asking. Commit, push and PR stay questions. Missing means ask.
      "pushes": on | off | off until <YYYY-MM-DD> — off holds push and PR (a team freeze): a build
-     commits and stops. From the date on it reads as on. Missing means on.
+     commits and stops, and the bash gate refuses git push and gh pr create (COUNCIL_ALLOW_PUSH=1 git
+     push … on your word). From the date on it reads as on. Missing means on. `council pushes` shows it.
      "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.
      "models": builder=, review=, verifier= — inherit (the session's model), fable, opus, sonnet or
      haiku for each role's agents; a role left out, or no line, means inherit. council-init proposes
