@@ -37,7 +37,7 @@ graph of changed paths, direct dependencies and test hints.
 `run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.
 `evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
 `finding-outcomes.md` defines what `council outcomes` compares. `war-room.md` defines the second
-round; `sharing.md` defines the team-or-just-me choice.
+round; `sharing.md` defines the team-or-just-me choice; `models.md` defines the model per role.
 
 At this level, with the seat docs: `build-proof.md` defines the proof a build records, and
 `guardrails.md` defines the checks a project needs before a green report means anything.

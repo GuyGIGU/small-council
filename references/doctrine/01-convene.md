@@ -61,7 +61,8 @@ to a protected subject (context-core, Limits), or to a review or post-game, whic
 - What you'll deliver, and where it will be saved.
 - Seats going: what each checks (context-core), and its slice size.
 - Seats not going, each with its reason: "Frontend (Dodds) — no UI files in this change".
-- The estimated cost.
+- The estimated cost, and the model each role runs on when `- models:` names one
+  (`references/run/models.md`).
 - End-of-run rulings and memory proposals.
 
 ## Rules

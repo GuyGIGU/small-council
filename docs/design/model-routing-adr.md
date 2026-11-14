@@ -1,5 +1,9 @@
 # ADR: opt-in model routing for mapping and survey seats
 
+Superseded in part by D37 (`references/run/models.md`, 2026-11): a builder, review or verifier seat may now take
+its role's model from `- models:`, and a verifier is never weaker than its builder. The mapping and survey
+rule below stands as written.
+
 ## Decision
 
 Record an optional `seat/<slug>/model` choice in the run plan: `inherit`, `sonnet`, or `haiku`.

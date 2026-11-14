@@ -79,8 +79,8 @@ def _flag(word: str, rest: list[str], words: list[str]) -> tuple[str, str] | Non
     if word.startswith("--") and name in SWITCHES:
         if not equals:
             return (name, "1")
-        if name == "wait":
-            return (name, value)
+        if name == "wait":                        # --wait=<seconds>: "=<seconds>", so --wait=1 is not plain --wait
+            return (name, "=" + value if value else "")
         raise Refusal("--%s takes no value" % name)
     if word == "--glob" or word.startswith("--glob=") or word == "--each":
         words.append(word)
