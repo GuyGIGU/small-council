@@ -28,13 +28,18 @@ class Item(NamedTuple):
     piece_of: int
 
 
+def clean(p: str) -> str:
+    """A path with its ends trimmed, backslashes as slashes, and a leading res:// and ./ off."""
+    p = re.sub(r"\A[Rr][Ee][Ss]://", "", trim(p).replace("\\", "/"), count=1)
+    while p.startswith("./"):
+        p = p[2:]
+    return p
+
+
 def normp(x: str) -> str:
     """A path as a scope item writes it: quotes, ./ and a leading / off, backslashes as slashes, no trailing dot or
     slash; res:// names the same file."""
-    x = trim(re.sub("[`\"']", "", x).replace("\\", "/"))
-    x = re.sub(r"^[Rr][Ee][Ss]://", "", x)
-    while x.startswith("./"):
-        x = x[2:]
+    x = clean(re.sub("[`\"']", "", x))
     return re.sub(r"/+\Z", "", re.sub(r"[.]+\Z", "", re.sub(r"\A/+", "", x)))
 
 
