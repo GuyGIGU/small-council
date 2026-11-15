@@ -17,12 +17,6 @@ class RecordError(Exception):
     """A council file that cannot be read or written safely; the message names it."""
 
 
-def home_of(run: Path) -> Path | None:
-    """The council home a run folder sits in (<home>/runs/<run>), or None for a run kept elsewhere."""
-    run = Path(run)
-    return run.parent.parent if run.parent.name == "runs" else None
-
-
 def is_run(folder: Path, refuse_links: bool = True) -> bool:
     """A run folder: a directory holding session-state.md, and itself no link when refuse_links."""
     folder = Path(folder)
@@ -127,7 +121,6 @@ def text_of(path: str | Path, root: str | Path | None = None, limit: int = MAX_F
 
 
 def too_large(path: str | Path, limit: int = MAX_FILE) -> bool:
-    """True when path is a file over limit bytes."""
     try:
         return Path(path).is_file() and Path(path).stat().st_size > limit
     except OSError:
