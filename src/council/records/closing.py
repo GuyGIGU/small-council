@@ -13,7 +13,7 @@ PAUSED = "council run close --status paused --run %s"
 
 
 def _field(run: Path, key: str) -> str:
-    return state.header(state.text(run), exact_keys=True).get(key, "")
+    return state.field(state.text(run), key)
 
 
 def undelivered(run: Path) -> str:

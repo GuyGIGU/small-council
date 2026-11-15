@@ -17,7 +17,8 @@ from council.records.cells import INTMAX
 Seat = Dict[str, Any]   # one seat's row and its figures, as seat_list builds it
 
 
-def seat_usage(row: dict[str, Any], fixes: dict[tuple[str, str], dict[str, Any]]) -> dict[str, Any]:
+def seat_usage(row: Seat, tokens_cell: str | None, agents_cell: str | None, reported: int | None,
+               fixes: dict[tuple[str, str], dict[str, Any]]) -> dict[str, Any]:
     """One seat's agent runs and tokens, each with how far the record supports it — kept identical to
     the helper's seat_rows (bin/council), which states the close line and the ledger. Bases: reported,
     corrected, pending (still working), partial or missing (a finished run's usage is unknown),
@@ -26,9 +27,8 @@ def seat_usage(row: dict[str, Any], fixes: dict[tuple[str, str], dict[str, Any]]
     slug, status = row["slug"], row["state"]
     executed = status not in ("queued", "skipped")          # as the helper's seat_rows selects rows
     finished = executed and status != "running"
-    cell = str(row["raw_tokens"] if row["raw_tokens"] is not None else "").strip()
-    recorded = cells.optional_number(cell)
-    runs, reported = cells.optional_number(row["raw_agents"]), row["raw_reported"]
+    recorded = cells.optional_number(str(tokens_cell if tokens_cell is not None else "").strip())
+    runs = cells.optional_number(agents_cell)
     legacy = reported is None
     fix_t, fix_a = fixes.get((slug, "tokens")), fixes.get((slug, "agents"))
     if fix_a:
@@ -74,31 +74,23 @@ def seat_list(run: Path, fixes: dict[tuple[str, str], dict[str, Any]] | None = N
     added from evidence (council correct unrecorded=yes)."""
     run = Path(run)
     fixes = seats.corrections(run) if fixes is None else fixes
-    found = []
-    for row in seats.rows(run):
-        slug = cells.clean(row.get("slug", ""))
-        if not slug:
-            continue
-        found.append(_figured({"slug": slug, "state": cells.clean(row.get("state", "")),
-                               "agent": cells.clean(row.get("agent", "")),
-                               "updated": cells.clean(row.get("updated", "")),
-                               "note": cells.clean(row.get("note", ""))[:120], "raw_tokens": row.get("tokens"),
-                               "raw_agents": row.get("agents"),
-                               "raw_reported": cells.optional_number(row.get("reported"))}, fixes))
-    recorded = {s["slug"] for s in found} | {cells.clean(r.get("slug", "")) for r in seats.rows(run)}
+    found, rows = [], seats.rows(run)
+    for row in rows:
+        seat = {"slug": cells.clean(row.get("slug", "")), "state": cells.clean(row.get("state", "")),
+                "agent": cells.clean(row.get("agent", "")), "updated": cells.clean(row.get("updated", "")),
+                "note": cells.clean(row.get("note", ""))[:120]}
+        if seat["slug"]:
+            seat.update(seat_usage(seat, row.get("tokens"), row.get("agents"),
+                                   cells.optional_number(row.get("reported")), fixes))
+            found.append(seat)
+    recorded = {cells.clean(r.get("slug", "")) for r in rows}
     for slug in sorted({f["seat"] for f in fixes.values() if f["added"]} - recorded):
         if (slug, "agents") in fixes:        # added from evidence; its figure may be unknown
-            found.append(_figured({"slug": slug, "state": "done", "agent": "", "updated": "", "added": True,
-                                   "note": "never recorded; added from evidence", "raw_tokens": None,
-                                   "raw_agents": None, "raw_reported": 0}, fixes))
+            seat = {"slug": slug, "state": "done", "agent": "", "updated": "", "added": True,
+                    "note": "never recorded; added from evidence"}
+            seat.update(seat_usage(seat, None, None, 0, fixes))
+            found.append(seat)
     return found
-
-
-def _figured(seat: Seat, fixes: dict[tuple[str, str], dict[str, Any]]) -> Seat:
-    seat.update(seat_usage(seat, fixes))
-    for key in ("raw_tokens", "raw_agents", "raw_reported"):
-        seat.pop(key)
-    return seat
 
 
 def usage_totals(seat_rows: list[Seat]) -> dict[str, Any]:
@@ -229,6 +221,5 @@ def standing(run: Path, home: str | Path | None) -> Standing:
     tokens = totals["tokens"]["known"]
     cap, ceiling, until = agent_cap(run, home), budget_value(run, "token-ceiling"), seats.allowed_until(run)
     over = (cap <= INTMAX and used >= cap) or (ceiling is not None and tokens <= INTMAX and tokens > ceiling)
-    limited = state.header(state.text(run), exact_keys=True).get("plan-schema", "") != ""   # opened with agent limits
-    stopped = over and limited and (until is None or used >= until)
+    stopped = over and state.planned(state.text(run)) and (until is None or used >= until)
     return Standing(used, recorded, cap, tokens, ceiling, until, over, stopped)
