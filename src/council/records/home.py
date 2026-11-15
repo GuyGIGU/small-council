@@ -56,6 +56,12 @@ def council_home(cwd: str | Path = ".") -> str:
     return home_from(top, superproject, porcelain, os.path.exists)
 
 
+def run_home(run: str | Path) -> str:
+    """The run's own council home: the folder above its last /runs/, else this tree's."""
+    posix = Path(run).as_posix()
+    return posix.rsplit("/runs/", 1)[0] if "/runs/" in posix else council_home()
+
+
 def here(cwd: str | Path = ".") -> str:
     """A folder as the helper's here() prints it: on Windows its full path with / (pwd -W); elsewhere
     $PWD when it names the folder, as bash's pwd keeps the path it was reached by, else the real path."""

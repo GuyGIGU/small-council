@@ -32,7 +32,8 @@ class CellsTest(unittest.TestCase):
         for text, want in (("74300", 74300), ("74,300", 74300), ("74 300", 74300), ("74.3k", 74300),
                            ("1.2M", 1200000), ("80k tokens", 80000), ("007", 7), ("0", 0)):
             self.assertEqual(cells.token_count(text), want, text)
-        for text in ("74,3k", "1,50k", "-5", "12 tool uses, 45000", "1e5", "", "1234567890123"):
+        for text in ("74,3k", "1,50k", "-5", "12 tool uses, 45000", "1e5", "", "1234567890123",
+                     "74304 tokens\n"):
             self.assertIsNone(cells.token_count(text), text)
 
     def test_token_count_of_a_number_past_a_float_is_none_not_a_crash(self) -> None:

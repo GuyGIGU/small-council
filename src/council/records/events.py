@@ -6,10 +6,10 @@ event_append, under the same lock, so a Python writer and a bash writer never sh
 from __future__ import annotations
 
 import re
-import time
 from pathlib import Path
 from typing import Callable, NamedTuple, Optional
 
+from council import clock
 from council.records import bytewise, cells, locks, owners, paths, state
 
 NAME = "events.tsv"
@@ -119,8 +119,8 @@ def _write(file: Path, kind: str, subject: str, value: str, detail: str, once: b
     seq = _next_seq(data)
     if seq is None:
         return None
-    row = "1\t{}\t{}\t{}\t{}\t{}\t{}\n".format(seq, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                                              cell(kind), cell(subject), cell(value), cell(detail))
+    row = "1\t{}\t{}\t{}\t{}\t{}\t{}\n".format(seq, clock.now_utc(), cell(kind), cell(subject), cell(value),
+                                              cell(detail))
     with open(str(file), "ab") as stream:
         stream.write(row.encode("utf-8", "surrogateescape"))
     return True
@@ -136,21 +136,52 @@ def append(run: Path, kind: str, subject: str, value: str, detail: str, once: bo
     schema = _schema(run)
     if schema == "":
         if file.is_file():
-            raise EventError("event file exists without an events-schema stamp: {}".format(file))
+            raise EventError("event file exists without an events-schema stamp: {}".format(file.as_posix()))
         return False
     if schema != "1":
         raise EventError("unsupported events schema: {}".format(schema))
     lock = Path(str(file) + ".lock")
     if not locks.acquire(lock, tries):
-        raise EventError(owners.unavailable(lock))
+        raise EventError(busy(lock))
     try:
         written = _write(file, kind, subject, value, detail, once)
     except OSError:
         written = None
     released = locks.release(lock)
     if written is None or not released:
-        raise EventError("could not append a valid event to {}".format(file))
+        raise EventError("could not append a valid event to {}".format(file.as_posix()))
     return written
+
+
+def busy(lock: Path) -> str:
+    """lock_unavailable's words (owners.unavailable), the lock written as the helper writes paths."""
+    return owners.unavailable(lock).replace(str(lock), lock.as_posix())
+
+
+def ready(run: Path) -> tuple[int, str]:
+    """event_ready: (0, '') when the stream takes a row; 1 and why for a torn last line; 2 and why otherwise."""
+    if not _schema(Path(run)):
+        return 0, ""
+    try:
+        data = path(run).read_bytes()
+    except OSError:
+        return 2, "events.tsv is missing"
+    if data and not data.endswith(b"\n"):
+        return 1, "its last line is torn"
+    if data[:-1].rsplit(b"\n", 1)[-1].replace(b"\r", b"") == HEADER.encode():
+        return 2, "it holds no events"
+    return (0, "") if _next_seq(data) else (2, "its last row is not a numbered event")
+
+
+def writable(run: Path) -> None:
+    """events_writable: EventError, naming the next step, while the stream can't take the events of a write."""
+    code, why = ready(run)
+    if code == 1:
+        raise EventError("the run's event stream is damaged (%s), so nothing was written — repair it: council run "
+                         "events repair --run %s" % (why, Path(run).name))
+    if code:
+        raise EventError("the run's event stream is lost (%s), so nothing was written — it can't be rebuilt; close "
+                         "the run: council run close --run %s" % (why, Path(run).name))
 
 
 _AT = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
@@ -172,7 +203,7 @@ def check(run: str) -> tuple[int, list[str]]:
         return 1, ["council: event file exists without an events-schema stamp: %s" % file]
     lock = Path(file + ".lock")
     if not locks.acquire(lock):
-        return 1, ["council: " + owners.unavailable(lock)]
+        return 1, ["council: " + busy(lock)]
     try:
         data = path(folder).read_bytes() if path(folder).is_file() else None
     except OSError:

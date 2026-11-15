@@ -1,5 +1,5 @@
-"""The memory file's reader (records/memory_entries.py, memory.py) against the bash that stays for the session-start
-hook and run open (bin/council's memory_entries and memory_file, until S8b): one file, the same rows."""
+"""The memory file's reader (records/memory_entries.py, memory.py): the rows and paths bin/council's memory_entries
+and memory_file gave, written out."""
 from __future__ import annotations
 
 import unittest
@@ -31,28 +31,37 @@ MEMORY = (
 )
 
 
+VERDICTS = "OBSERVED, REPRODUCED, CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE or SCOPE-CREEP"
+ROWS = [  # what bin/council's memory_entries printed for MEMORY: id title scope anchor state section meaning origin
+    # evidence verdict
+    ("AP-0", "top of the file is settled", "src/**", "-", "settled", "# Conventions — café", "-", "-", "-", "-"),
+    ("AP-1", "revoke before lookup", "council-review", "src/auth/session.py::revoke", "settled",
+     "## Accepted Patterns — never re-propose these", "revoke first", "-", "-", "-"),
+    ("EC-1", "a bold id", "council-plan", "-", "settled", "## Enforced Conventions (EC)", "always", "-", "-", "-"),
+    ("F-1", "a full observed failure", "src/cache/**", "-", "observed", "## Observed Failures (F)",
+     "the cache went stale", "review 2026-09-26", "src/cache/x.py:3", "OBSERVED"),
+    ("F-2", "a guess is never served", "src/**", "-", "unknown",
+     "failure entry: its verdict, INFERRED, does not establish a failure (%s)" % VERDICTS, "maybe", "x", "src/a.py:1",
+     "INFERRED"),
+    ("F-3", "no scope", "-", "-", "unknown", "failure entry: it has no Scope", "x", "x", "x", "CONFIRMED"),
+    ("F-4", "drafted", "-", "-", "off", "## Proposed", "x", "-", "-", "-"),
+    ("D-1", "under another heading", "ü/**", "-", "unknown", "## Notes", "-", "-", "-", "-")]
+SKIPPED = b"AP-2 (line 12)"   # MEM_SKIP=1: the entries the parser could not read
+
+
 class SameRowsTest(support.Scratch):
-    def bash_rows(self, path: str, skip: bool = False) -> bytes:
-        return support.helper_bash(self, 'memory_entries "$1"', path, env={"MEM_SKIP": "1"} if skip else None)[1]
-
-    def assert_same(self, data: bytes) -> None:
+    def assert_rows(self, data: bytes, rows: bytes, skipped: bytes = SKIPPED) -> None:
         path = self.write("conventions.md", data, binary=True).as_posix()
-        python = b"".join(bytewise.bytes_of(row) + b"\n" for row in memory.rows(path))
-        self.assertEqual(self.bash_rows(path), python)
-        self.assertEqual(self.bash_rows(path, skip=True).rstrip(b"\n"),
-                         bytewise.bytes_of(memory_entries.skipped(path)).rstrip(b"\n"))
+        self.assertEqual(b"".join(bytewise.bytes_of(row) + b"\n" for row in memory.rows(path)), rows)
+        self.assertEqual(bytewise.bytes_of(memory_entries.skipped(path)).rstrip(b"\n"), skipped)
 
-    def test_one_file_reads_the_same(self) -> None:
-        self.assert_same(MEMORY.encode("utf-8"))
-        ids = [memory_entries.cells(r)[0] for r in memory.rows((self.tmp / "conventions.md").as_posix())]
-        self.assertEqual(ids, ["AP-0", "AP-1", "EC-1", "F-1", "F-2", "F-3", "F-4", "D-1"])
-
-    def test_crlf_and_a_bom_read_the_same(self) -> None:
-        self.assert_same(b"\xef\xbb\xbf" + MEMORY.replace("\n", "\r\n").encode("utf-8"))
-
-    def test_a_stray_byte_and_an_empty_file_read_the_same(self) -> None:
-        self.assert_same(MEMORY.encode("utf-8").replace(b"caf\xc3\xa9", b"caf\xe9"))
-        self.assert_same(b"")
+    def test_one_file_reads_as_the_helper_read_it(self) -> None:
+        rows = "".join("\t".join(row) + "\n" for row in ROWS).encode("utf-8")
+        self.assert_rows(MEMORY.encode("utf-8"), rows)
+        self.assert_rows(b"\xef\xbb\xbf" + MEMORY.replace("\n", "\r\n").encode("utf-8"), rows)
+        self.assert_rows(MEMORY.encode("utf-8").replace(b"caf\xc3\xa9", b"caf\xe9"),
+                         rows.replace(b"caf\xc3\xa9", b"caf\xe9"))
+        self.assert_rows(b"", b"", b"")
 
 
 class StatesTest(support.Scratch):
@@ -78,37 +87,31 @@ class StatesTest(support.Scratch):
 
 
 class LocateTest(support.Scratch):
-    def bash_locate(self, home: str) -> list[str]:
-        out = support.helper_bash(self, 'memory_file "$1"; printf "%s\\n" "$MEM" "$MEM_CONF" "$MEM_NOTE" '
-                                  '"$MEM_ALT" "$MEM_ALT_N"', home)[1]
-        return out.decode("utf-8").split("\n")[:5]
+    """memory.locate: the MEM, MEM_CONF, MEM_NOTE, MEM_ALT and MEM_ALT_N bin/council's memory_file set ({t}: the
+    scratch folder)."""
 
-    def assert_same(self) -> memory.Located:
-        home = (self.tmp / ".council").as_posix()
-        found = memory.locate(home)
-        self.assertEqual(self.bash_locate(home), [found.path, found.conf, found.note, found.alt,
-                                                  str(found.alt_n)])
-        return found
+    def assert_found(self, *said: object) -> None:
+        found = memory.locate((self.tmp / ".council").as_posix())
+        self.assertEqual([found.path, found.conf, found.note, found.alt, found.alt_n],
+                         [s.format(t=self.tmp.as_posix()) if isinstance(s, str) else s for s in said])
 
     def test_the_default_then_a_root_file(self) -> None:
         self.write(".council/council.config.md", "# Council config\n")
-        self.assertTrue(self.assert_same().path.endswith("/.council/conventions.md"))
+        self.assert_found("{t}/.council/conventions.md", "", "", "", 0)
         self.write("conventions.md", MEMORY)
-        self.assertTrue(self.assert_same().path.endswith("/conventions.md"))
+        self.assert_found("{t}/conventions.md", "", "", "", 0)
 
     def test_a_configured_path_with_a_note_and_a_second_file(self) -> None:
         self.write(".council/council.config.md", "# c\n## Memory\n- conventions: `docs/My Notes/mem.md` (shared)\n")
         self.write("docs/My Notes/mem.md", MEMORY)
         self.write(".council/conventions.md", MEMORY)
-        found = self.assert_same()
-        self.assertTrue(found.path.endswith("docs/My Notes/mem.md"))
-        self.assertTrue(found.alt.endswith(".council/conventions.md") and found.alt_n > 0)
+        self.assert_found("{t}/docs/My Notes/mem.md", "{t}/docs/My Notes/mem.md", "", "{t}/.council/conventions.md", 8)
 
     def test_a_missing_configured_file_gives_way_and_says_so(self) -> None:
         self.write(".council/council.config.md", "# c\r\n## Memory\r\n- conventions: docs/gone.md — moved\r\n")
         self.write(".council/conventions.md", MEMORY)
-        found = self.assert_same()
-        self.assertIn("doesn't exist", found.note)
+        self.assert_found("{t}/.council/conventions.md", "{t}/docs/gone.md", "the config's memory path, docs/gone.md, "
+                          "doesn't exist — reading .council/conventions.md instead", "", 0)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
-"""The council home's .gitignore (records/ignores.py) against bin/council's home_ignores, asks_shared and
-ensure_ignored, which `council run open` keeps until S8b: the same answers and the same file written."""
+"""The council home's .gitignore (records/ignores.py): the answers bin/council's home_ignores and asks_shared gave
+and the file its ensure_ignored wrote, written out."""
 from __future__ import annotations
 
 import subprocess
@@ -19,35 +19,26 @@ class IgnoresTest(support.Scratch):
             self.write(".council/.gitignore", gitignore, binary=True)
         return (self.tmp / ".council").as_posix()
 
-    def bash(self, home: str) -> list[str]:
-        script = ('for p in runs/x asks/x active-run cards/x; do home_ignores "$1" "$p" && echo y || echo n; done; '
-                  'asks_shared "$1" && echo y || echo n')
-        return support.helper_bash(self, script, home)[1].decode().split()
-
-    def python(self, home: str) -> list[str]:
+    def python(self, home: str) -> str:
         said = [ignores.ignores(home, p) for p in ("runs/x", "asks/x", "active-run", "cards/x")]
-        return ["y" if s else "n" for s in said + [ignores.asks_shared(home)]]
+        return "".join("y" if s else "n" for s in said + [ignores.asks_shared(home)])
 
-    def test_answers_agree_in_and_outside_git(self) -> None:
-        for git, text in ((True, b"runs/\n!asks/\n"), (True, b"/runs\r\nactive-run\r\n"), (False, b" runs/ \nasks\n"),
-                          (True, None)):
+    def test_answers_in_and_outside_git(self) -> None:
+        """runs/x, asks/x, active-run and cards/x ignored, then asks/ shared."""
+        for git, text, said in ((True, b"runs/\n!asks/\n", "ynnny"), (True, b"/runs\r\nactive-run\r\n", "ynynn"),
+                                (False, b" runs/ \nasks\n", "nynnn"), (True, None, "nnnnn")):
             with self.subTest(git=git, text=text):
                 home = self.home(text, git)
-                self.assertEqual(self.python(home), self.bash(home))
+                self.assertEqual(self.python(home), said)
                 support.shutil.rmtree(str(self.tmp / ".council"))
 
-    def test_keep_out_writes_what_ensure_ignored_writes(self) -> None:
-        for text in (b"", b"# mine\r\nruns/", b"!asks/\n", None):
+    def test_keep_out_writes_what_ensure_ignored_wrote(self) -> None:
+        for text, wrote in ((b"", b"runs/\nasks/\nactive-run\n"),
+                            (b"# mine\r\nruns/", b"# mine\r\nruns/\r\nasks/\r\nactive-run\r\n"),
+                            (b"!asks/\n", b"!asks/\nruns/\nactive-run\n"), (None, b"runs/\nasks/\nactive-run\n")):
             with self.subTest(text=text):
-                home = self.home(text)
-                support.helper_bash(self, 'ensure_ignored "$1"', home)
-                bash = (self.tmp / ".council" / ".gitignore").read_bytes()
-                if text is None:
-                    (self.tmp / ".council" / ".gitignore").unlink()
-                else:
-                    self.write(".council/.gitignore", text, binary=True)
-                ignores.keep_out(home)
-                self.assertEqual((self.tmp / ".council" / ".gitignore").read_bytes(), bash)
+                ignores.keep_out(self.home(text))
+                self.assertEqual((self.tmp / ".council" / ".gitignore").read_bytes(), wrote)
                 support.shutil.rmtree(str(self.tmp / ".council"))
 
     def test_shared_requests_are_left_tracked(self) -> None:

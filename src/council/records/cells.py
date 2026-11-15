@@ -62,7 +62,7 @@ def token_count(text: str) -> int | None:
     """A token figure as the helper's seat_tokens reads one: 74300, 74,300, 74 300, 74.3k, 1.2M, with an
     optional trailing 'tokens'. Anything else (two numbers, a sign, '74,3k') is None, never a guess."""
     s = text.strip(" \t")
-    tail = re.search(r"[ \t]*tokens?$", s.lower())
+    tail = re.search(r"[ \t]*tokens?\Z", s.lower())    # \Z, as awk's $: the end of the whole value
     if tail:
         s = s[:tail.start()]
     if re.fullmatch(r"[0-9][0-9]?[0-9]?([, ][0-9][0-9][0-9])+", s) or re.fullmatch(r"[0-9]+", s):

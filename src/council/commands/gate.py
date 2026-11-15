@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from council.commands import cli, closed, gate_lock, gate_output, gate_repair, gate_run, resolve, shell
-from council.records import config, gate_notes, gate_table, gates, state_write, verdicts
+from council.records import config, gate_notes, gate_table, gates, paths, state_write, verdicts
 from council.records import home as where
 
 USAGE = "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
@@ -236,7 +236,7 @@ def _mark(run: str, slug: str, base: str, why: str) -> str:
         with open(verdict + ".tmp", "wb") as handle:
             handle.write("".join(re.sub(r"[}][ \t\r]*\Z", "", line, count=1) + tail + "\n" for line in lines)
                          .encode("utf-8", "surrogateescape"))
-        os.replace(verdict + ".tmp", verdict)
+        paths.swap_in(verdict + ".tmp", verdict)
     except OSError:
         if os.path.exists(verdict + ".tmp"):
             os.remove(verdict + ".tmp")

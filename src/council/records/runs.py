@@ -102,9 +102,10 @@ def skill(mode: str) -> str:
 
 
 def seat_summary(run: str | Path, working: str = "still working") -> str:
-    """'still working: a, b · done: c · failed: d' from the run's seats.tsv (every row after the header,
-    split as awk splits it); '' when there is no file or nothing to say."""
+    """'still working: a, b · done: c · failed: d' from seats.tsv, as Git Bash's awk reads it; '' for none."""
     content = (_raw(Path(run) / "seats.tsv") or b"").decode("utf-8", "surrogateescape")
+    if os.name == "nt":
+        content = content.replace("\r\n", "\n")
     groups: dict[str, list[str]] = {"working": [], "done": [], "failed": []}
     for line in _records(content)[1:]:
         cell = line.split("\t") + [""] * 6

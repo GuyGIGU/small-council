@@ -16,6 +16,36 @@ def bash() -> str:
     return shutil.which("bash") or "bash"
 
 
+def helper_bash() -> str:
+    """The bash that ran bin/council, which exports it as COUNCIL_BASH (else the first bash on PATH)."""
+    return os.environ.get("COUNCIL_BASH") or bash()
+
+
+def bash_exe() -> str:
+    """helper_bash() as cygpath -m writes it, Git's bin/bash.exe for usr/bin/bash.exe; '' without cygpath."""
+    import shutil
+    if not shutil.which("cygpath"):
+        return ""
+    try:
+        found = subprocess.run(["cygpath", "-m", helper_bash()], stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, encoding="utf-8", errors="surrogateescape")
+    except OSError:
+        return ""
+    exe = found.stdout.rstrip("\n") if found.returncode == 0 else ""
+    git = exe[:-len("/usr/bin/bash.exe")] + "/bin/bash.exe"
+    return git if exe.endswith("/usr/bin/bash.exe") and os.path.isfile(git) else exe
+
+
+def sh_quote(word: str) -> str:
+    """A word for a command the user pastes into bash: nothing inside is expanded."""
+    return "'" + word.rstrip("\n").replace("'", "'\\''") + "'"
+
+
+def ps_quote(word: str) -> str:
+    """A word for a command the user pastes into PowerShell: nothing inside is expanded."""
+    return "'" + word.rstrip("\n").replace("'", "''") + "'"
+
+
 def argv_for(argv: list[str]) -> list[str] | str:
     """Popen's args for a bash started from here, each word arriving as it is. On Windows they travel as one
     command line, which Git Bash's runtime splits by its own rule — inside double quotes \\ and \\" are escapes,

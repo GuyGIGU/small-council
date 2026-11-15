@@ -73,11 +73,6 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(started("doctor"), sorted(base + ["council.commands." + name for name in (
             "doctor", "fingerprint", "plan", "plan_check", "plan_models", "plan_tasks", "resolve")]))
 
-    def test_an_unported_command_loads_none(self) -> None:
-        self.assertEqual(started("run", "open"),
-                         ["council.commands", "council.commands.cli", "council.commands.dispatch"])
-
-
 class EntryTest(unittest.TestCase):
     def test_the_entry_parses_under_old_syntax_rules(self) -> None:
         data = ENTRY.read_bytes()

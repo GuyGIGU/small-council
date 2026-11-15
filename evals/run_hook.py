@@ -330,6 +330,9 @@ def session_start(tmp):
     check("full council: the helper runs in the Bash tool (Git Bash on Windows), never from PowerShell",
           "Bash tool (Git Bash on Windows)" in line_with(out, "plain `council <command>`")
           and "PowerShell" in line_with(out, "plain `council <command>`"), out)
+    check("full council: the plain call, with the reason, and no full-path fallback",
+          "match the command text" in line_with(out, "plain `council <command>`")
+          and "if it isn't on PATH, run it as" not in out, out)
     check("full council, team by default: no just-me line", "Just me:" not in out, out)
     check("full council: fresh map is not 'behind'", "behind" not in out, out)
     check("full council: counts 2 pending proposals (ignores the comment)", "2 memory proposal(s)" in out, out)

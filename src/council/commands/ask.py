@@ -11,7 +11,7 @@ from pathlib import Path
 
 from council.commands import cli, resolve
 from council.records import home as where
-from council.records import ignores, redact, request, state_set
+from council.records import ignores, redact, request, state_write
 
 USAGE = "usage: council ask save [slug]   (after writing the user's words to <run>/ask.md)"
 
@@ -61,10 +61,9 @@ def save(run: Path, slug: str) -> int:
     if not filing.current and no_words:
         raise cli.Refusal("ask.md says (no new words) but names no request to continue — add continues: <path> to "
                           "it, or run council state ask=<path>")
-    if ignores.keep_out(home):
-        cli.warn("council: %s/.gitignore now ignores asks/, so new requests stay on this machine; the ones already in "
-                 "git stay tracked. To share requests with the team, write '!asks/' in place of that line."
-                 % os.path.basename(home))
+    said = ignores.keep_out(home)
+    if said:
+        cli.warn("council: " + said)
     try:
         os.makedirs(where.native(asks), exist_ok=True)
     except OSError:
@@ -173,9 +172,8 @@ class Filing:
         target = self.target
         rel = target[len(self.root) + 1:] if target.startswith(self.root + "/") else target
         try:
-            state_set.put_all(self.run, [("ask", rel), ("ask-saved", time.strftime("%Y-%m-%d %H:%M"))],
-                              after_close=True)
-        except state_set.StateError as failure:
+            state_write.change(self.run, ["ask=" + rel, "ask-saved=" + time.strftime("%Y-%m-%d %H:%M")])
+        except state_write.StateError as failure:
             raise cli.Refusal(str(failure)) from None
         if red:
             cli.say("ask: redacted %d secret-looking string(s) — tell the user; it catches common shapes only, so "

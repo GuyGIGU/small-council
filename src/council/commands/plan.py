@@ -1,5 +1,5 @@
-"""council run plan check and council run plan show. bin/council's state, seat, context build and doctor
-run this same check (plan_check there); its rules are in plan_check.py, a delivered plan's tasks' in plan_tasks.py."""
+"""council run plan check and council run plan show, and require(): the check a stage change, a seat start or a
+context build makes first. Its rules are in plan_check.py, a delivered plan's tasks' in plan_tasks.py."""
 from __future__ import annotations
 
 import os
@@ -14,7 +14,7 @@ USAGE = "usage: council run plan [check|show]"
 Key = plan_check.Key
 
 
-def main(args: cli.Args, sub: str, words: list[str]) -> int:
+def main(args: cli.Args, words: list[str]) -> int:
     """council run plan [check|show] [--run <folder>]: a legacy run needs no plan; any other needs one."""
     cli.takes_flags(args, "run plan")
     if len(words) > 1:
@@ -50,6 +50,17 @@ def check(run: Path, quiet: bool) -> int:
     for line in tasks.problems + ([] if quiet or verdict.problems or tasks.problems else [verdict.valid] + tasks.notes):
         cli.say(line)
     return 1 if verdict.problems or tasks.problems else 0
+
+
+def require(run: Path, action: str) -> None:
+    """require_run_plan: a run with a plan may <action> only with a valid one; one from before plans needs none."""
+    if not plan.path(run).is_file():
+        if resolve.field(run, "plan-schema"):
+            raise cli.Refusal("cannot %s — %s is missing; restore it from references/templates/%s"
+                              % (action, plan.NAME, plan.NAME))
+    elif check(run, quiet=True):
+        raise cli.Refusal("cannot %s — fix what it names (%s, or a plan's tasks), then run: council run plan check "
+                          "--run %s" % (action, plan.NAME, run.name))
 
 
 def whole(run: Path) -> str:

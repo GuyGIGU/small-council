@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
+
+from council.records.home import native
 
 # (mark name, the event that runs it, when it first runs), in the order doctor says them.
 HOOKS = (("session-start", "SessionStart", "when the session starts, resumes or compacts"),
@@ -24,7 +27,7 @@ SAFE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
 
 def folders() -> list[Path]:
     """The mark folders, as `session_dirs` lists them: $XDG_CACHE_HOME's, and ~/.cache's unless that is the same."""
-    xdg, home = os.environ.get("XDG_CACHE_HOME", ""), os.environ.get("HOME", "")
+    xdg, home = native(os.environ.get("XDG_CACHE_HOME", "")), native(os.environ.get("HOME", ""))
     found = [Path(xdg) / "small-council" / "sessions"] if xdg else []
     if home and xdg != home + "/.cache":
         found.append(Path(home) / ".cache" / "small-council" / "sessions")
@@ -32,7 +35,7 @@ def folders() -> list[Path]:
 
 
 def put(session: str, hook: str) -> None:
-    """Leave this hook's mark (and the bare one) for the session; silent when it can't, as a hook must be."""
+    """Leave this hook's mark (and the bare one), then clear files over 30 days old; silent when it can't."""
     if not SAFE.fullmatch(session or ""):
         return
     for folder in folders():
@@ -42,6 +45,29 @@ def put(session: str, hook: str) -> None:
                 (folder / name).touch()
         except OSError:
             continue
+        old = time.time() - 31 * 86400
+        for top, _, names in os.walk(str(folder)):
+            for file in (os.path.join(top, name) for name in names):
+                try:
+                    if not os.path.islink(file) and os.path.isfile(file) and os.path.getmtime(file) <= old:
+                        os.remove(file)
+                except OSError:
+                    pass
+
+
+def ran(session: str) -> bool:
+    """hooks_ran: False only when no folder that a hook could write holds the session's bare mark."""
+    found = folders()
+    if not SAFE.fullmatch(session or "") or any((folder / session).is_file() for folder in found):
+        return True
+    for folder in found:
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return True
+        if not os.access(str(folder), os.W_OK):
+            return True
+    return not found
 
 
 def seen(session: str) -> list[str]:

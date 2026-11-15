@@ -78,11 +78,15 @@ def is_run(folder: str) -> bool:
     return os.path.isfile(where.native(folder) + "/" + paths.STATE)
 
 
-def open_runs(home: str, tree: str, status: str) -> list[str]:
-    """The open runs on this working tree with this status (runs_here): a run with no code-root counts as
-    this tree's."""
+def open_runs(home: str, tree: str, status: str = "") -> list[str]:
+    """The open runs on this working tree (runs_here), of this status when given; no code-root counts as here."""
     return [run.folder for run in runs.listing(home, 1000000, "open")
-            if run.code_root in (tree, "", "-") and run.status == status]
+            if run.code_root in (tree, "", "-") and status in ("", run.status)]
+
+
+def newest_run(home: str, tree: str) -> str:
+    """The newest run of any status on this working tree ('' when none): run audit's run when none is open."""
+    return next((run.folder for run in runs.listing(home, 1000000, "all") if run.code_root in (tree, "", "-")), "")
 
 
 def session_runs(home: str, session: str) -> list[str]:

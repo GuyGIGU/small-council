@@ -5,14 +5,12 @@ memory past what every run reads; and proposals awaiting the user's answer."""
 from __future__ import annotations
 
 import os
-import re
 
 from council.commands.doctor import Doctor
 from council.records import bytewise, memory, memory_audit, memory_entries
 from council.records import home as where
 from council.records.memory_entries import cells
 
-READ_EVERY_RUN = 25600       # bytes: about what every run reads of the memory
 TEMPLATE = "the plugin's references/templates/conventions.md shows"
 
 
@@ -99,11 +97,9 @@ def size(doc: Doctor, rows: list[str], mem: str) -> None:
             data = stream.read()
     except OSError:
         data = b""
-    if len(data) > READ_EVERY_RUN:
+    if len(data) > memory.COUNCIL_MEMORY_SIZE_LIMIT:
         doc.warn("memory is %d KB — past the ~25 KB every run reads" % (len(data) // 1024),
                  "at the end of the next run, propose a consolidation (merge duplicates, retire superseded entries)")
-    waiting = sum(1 for line in bytewise.records(bytewise.read(data)) if line.startswith("- PROPOSED"))
-    waiting += sum(1 for row in rows
-                   if cells(row)[4] == "off" and re.match(r"[#* ]*propos", bytewise.lower(cells(row)[5])))
+    waiting = memory_entries.pending(bytewise.read(data), rows)
     if waiting:
         doc.warn("%d memory proposal(s) await the user's yes/no" % waiting, "raise them at the next natural pause")

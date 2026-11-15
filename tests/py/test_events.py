@@ -136,8 +136,8 @@ class AppendTest(support.Scratch):
 
 
 class CheckTest(support.Scratch):
-    """events.check (council doctor's) against bin/council's event_check, which `council run events` keeps until
-    S8b: the same exit code and the same lines."""
+    """events.check (council doctor's and council run events check's): the exit code and lines bin/council's
+    event_check gave for each stream, in SAID ({run} the run folder, {name} its name)."""
 
     OPENED = "1\t1\t2026-01-01T00:00:00Z\trun.opened\trun\tcouncil-review\tphase=convene\n"
     STREAMS = (("1", HEADER + OPENED), ("1", HEADER + OPENED + "1\t2\t2026-01-01T00:00:01Z\tseat\thunt\tdone\tx\n"),
@@ -146,9 +146,16 @@ class CheckTest(support.Scratch):
                ("1", HEADER + OPENED + "1\t2\t2026-01-01T00:00:01Z\tseat\t\tdone\tx\n"),
                ("1", HEADER + OPENED.replace("\n", "\r\n")), ("1", HEADER + OPENED + "1\t2\tno"),
                ("1", "bad\n"), ("1", HEADER), ("1", None), ("2", HEADER + OPENED), ("", HEADER + OPENED), ("", None))
+    VALID, ROW3 = (0, "events: valid · %d event(s)\n"), (1, "events: invalid row 3\n")
+    SAID = ((0, VALID[1] % 1), (0, VALID[1] % 2), ROW3, ROW3, ROW3, (0, VALID[1] % 1),
+            (1, "events: final line is incomplete\n"), (1, "events: bad header\nevents: no events\n"),
+            (1, "events: no events\n"), (1, "council: events.tsv is missing from {name}\n"),
+            (1, "council: unsupported events schema: 2\n"),
+            (1, "council: event file exists without an events-schema stamp: {run}/events.tsv\n"),
+            (0, "events: legacy run · no event stream · {name}\n"))
 
     def test_the_same_verdict_as_the_helper(self) -> None:
-        for k, (schema, stream) in enumerate(self.STREAMS):
+        for k, ((schema, stream), (want, said)) in enumerate(zip(self.STREAMS, self.SAID)):
             with self.subTest(schema=schema, stream=stream):
                 run = self.run_folder("2026-01-0%d-run%d" % (k % 9 + 1, k))
                 (run / "session-state.md").write_text("mode: review\n" + ("events-schema: %s\n" % schema if schema
@@ -156,8 +163,8 @@ class CheckTest(support.Scratch):
                 if stream is not None:
                     (run / "events.tsv").write_bytes(stream.encode("utf-8"))
                 code, lines = events.check(run.as_posix())
-                bash_code, out = support.helper_bash(self, 'event_check "$1" 2>&1', run.as_posix())
-                self.assertEqual((code, "".join(line + "\n" for line in lines)), (bash_code, out.decode("utf-8")))
+                self.assertEqual((code, "".join(line + "\n" for line in lines)),
+                                 (want, said.format(run=run.as_posix(), name=run.name)))
 
 
 if __name__ == "__main__":

@@ -1,26 +1,29 @@
-"""council cap and council cap check: where a run stands against its agent stop, and the agent gate's
-decision (hooks/agent-gate.sh). references/run/run-accounting.md, "The stop at the limit".
-
-council cap allow stays in bin/council until a state field can be written from Python (S8b); the user's
-words it files can be redacted there now (records/redact.py).
+"""council cap, cap check and cap allow: where a run stands against its agent stop, the agent gate's decision
+(hooks/agent-gate.sh) and the user's go past it; and the note a seat call ends with. references/run/run-accounting.md,
+"The stop at the limit".
 """
 from __future__ import annotations
 
 import os
-import time
+import re
 from pathlib import Path
 
+from council import clock
 from council.commands import cli, resolve
+from council.records import events, locks, paths, redact, runs, seats, state_write, usage
 from council.records import home as where
-from council.records import runs, seats, usage
 
 TOOLS = ("Agent", "Task", "Workflow")
 DETAILS = ("type=", "seat=", "run=", "file=", "hunt=")
 GO = 'council cap allow <n> --user-said "<their words>"'
+HINT = "the next agent is refused until their go is recorded: " + GO
+ASK = "tell the user, and ask before starting more; " + HINT
+USAGE = ('usage: council cap [--run <folder>] | cap allow <n> --user-said "…" | cap check [--session ID] [<tool> '
+         '[type=… seat=… run=… file=…]]')
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    """council cap [--run <folder>] and council cap check [--session ID] [<tool> [type=… seat=… run=… file=…]]."""
+    """council cap [--run <folder>], cap check [--session ID] [<tool> [type=… seat=… run=… file=…]] and cap allow."""
     sub, rest = (words[0], words[1:]) if words else ("", [])
     if sub == "":
         cli.takes_flags(args, "cap")
@@ -38,7 +41,77 @@ def main(args: cli.Args, words: list[str]) -> int:
             cli.no_words("cap check", rest)
         from council.commands import agent_gate
         return agent_gate.check(args.value("session") or os.environ.get("CLAUDE_CODE_SESSION_ID", ""), rest)
-    raise cli.Refusal("cap %s is not ported to Python yet — run it through bin/council" % sub)
+    if sub != "allow":
+        raise cli.Refusal(USAGE)
+    cli.takes_flags(args, "cap allow", "user-said")
+    if len(rest) != 1:
+        raise cli.Refusal("usage: council cap allow <n> --user-said \"<the user's words>\" [--run <folder>]")
+    if not args.value("user-said").strip(" \t\n\v\f\r"):
+        raise cli.Refusal("cap allow needs --user-said \"<the user's own words>\" — their answer, not a summary of it")
+    return allow(args, rest[0])
+
+
+def allow(args: cli.Args, given: str) -> int:
+    """The user's go for n more agent runs, filed under the run's event lock, then run.cap_allowed."""
+    from council.commands import closed, event_note    # here: `council cap check`, the gate's, loads cap alone (D34)
+    n = given.lstrip("0")
+    if not re.fullmatch("[0-9]+", given) or not n or len(n) > 4 or int(n) > 1000:
+        raise cli.Refusal("cap allow takes how many more agent runs the user allowed, a whole number from 1 to 1000 — "
+                          "got: " + given)
+    run = resolve.run_folder(args)
+    closed.refuse(run, "no more agents start for it; open a new run")
+    said, lock = redact.said(args.value("user-said")) or "[redacted]", Path(str(events.path(run)) + ".lock")
+    if not locks.acquire(lock):
+        raise cli.Refusal("%s\ncouncil: the go was not recorded: the run's event lock is unavailable (%s)"
+                          % (events.busy(lock), lock.as_posix()))
+    try:
+        used = _file_go(run, n, said)
+    finally:
+        locks.release(lock)
+    if events.path(run).is_file():
+        event_note.append(run, "run.cap_allowed", "run", n, "used=%d;until=%d" % (used, used + int(n)),
+                          "the go is on record, but its event could not be written")
+    state_write.clear_waiting(run)
+    cli.say("cap: the user's go is on record — %s more agent run(s) may start, up to %d in all for %s"
+            % (n, used + int(n), run.name))
+    return 0
+
+
+def _file_go(run: Path, n: str, said: str) -> int:
+    file, used = seats.path(run, seats.ALLOWANCES), usage.standing(run, where.council_home()).used
+    try:
+        paths.append_row(file, "at\tused\tn\tuntil\tsaid\n", (clock.now_utc(), str(used), n, str(used + int(n)), said))
+    except OSError:
+        raise cli.Refusal("the go was not recorded: cannot write " + file.as_posix()) from None
+    return used
+
+
+def note(run: Path) -> None:
+    """After a seat call: the run against its cap and ceiling, on stderr; each first passing recorded once."""
+    from council.commands import event_note
+    stand = usage.standing(run, where.council_home())
+    used, tokens, limit, ceiling = stand.used, stand.tokens, stand.cap, stand.ceiling
+    if not resolve.field(run, "plan-schema"):
+        if used > limit:
+            cli.warn("council: this run has used %d agent runs, more than the cap of %d — it was opened before agent "
+                     "limits, so new agents are not stopped; tell the user" % (used, limit))
+        return
+    go = "the user's go covers up to %s agent runs" % stand.until if stand.until is not None and used < stand.until \
+        else ""
+    estimate, past = usage.agents_share(run), ceiling is not None and tokens > ceiling
+    at_cap = "this run has used all %d agent runs of its cap — %s" % (limit, go or "ask the user before starting "
+                                                                     "more; " + HINT)
+    for line, passed, kind, value, limit_of in (
+            ("this run has used %d agent runs, over its cap of %d — %s" % (used, limit, go or ASK) if used > limit
+             else at_cap if used == limit else "", used > limit, "cap", used, limit),
+            ("", estimate is not None and tokens > estimate, "estimate", tokens, estimate),
+            ("this run has used %d tokens, over its ceiling of %s — %s" % (tokens, ceiling, go or ASK) if past else "",
+             past, "ceiling", tokens, ceiling)):
+        if line:
+            cli.warn("council: " + line)
+        if passed and events.path(run).is_file():
+            event_note.append(run, "run.%s_passed" % kind, "run", str(value), "%s=%s" % (kind, limit_of),
+                              "the %s event could not be recorded" % kind, once=True)
 
 
 def show(run: Path) -> int:
@@ -93,8 +166,3 @@ def open_here(home: str, tree: str, session: str) -> list[str]:
     return [run.folder for run in runs.listing(home, 1000000, "open")
             if run.status == "in-progress" and (run.code_root in (tree, "", "-")
                                                  or (session != "" and (run.session or "-") == session))]
-
-
-def stamp() -> str:
-    """The helper's UTC stamp, now (now_utc)."""
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

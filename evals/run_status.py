@@ -34,6 +34,10 @@ import cockpit  # noqa: E402
 import history  # noqa: E402
 import pet  # noqa: E402  (the desktop pet: imported without a display, as CI has none)
 import status  # noqa: E402
+sys.path.insert(0, str(ROOT / "src"))
+from council.commands import seat_notes, shell  # noqa: E402  (the helper's own code, where bash once was sourced)
+from council.records import ledger as helper_ledger, state as helper_state, usage as helper_usage  # noqa: E402
+from council.records import seats as helper_seats  # noqa: E402
 
 checks = []
 AT = "2026-09-27T12:00:00Z"                       # every hand-made run is read at this moment
@@ -79,40 +83,19 @@ def fingerprint(folder):
             for p in sorted(Path(folder).rglob("*")) if p.is_file()}
 
 
-def sourced(repo, script):
-    """Run bash with the helper sourced (as the SessionStart hook sources it) and return stdout."""
-    env = os.environ.copy()
-    for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID"):
-        env.pop(var, None)
-    helper = str(ROOT / "bin" / "council").replace("\\", "/")
-    result = subprocess.run([BASH, "-c", 'source "{}"; {}'.format(helper, script)], cwd=repo, capture_output=True,
-                            text=True, encoding="utf-8", errors="replace", env=env, timeout=90)
-    return result.stdout
-
-
-RUN_BASIS = {"older": "legacy"}         # the close line's word for what the snapshot calls legacy
-
-
 def readers(repo, run):
-    """The helper's and the snapshot's reading of one run: per seat (basis, agent runs, trusted tokens)
-    and for the run (basis, agent runs, tokens). The two must be the same."""
-    path = str(run).replace("\\", "/")
-    bash_seats = {}
-    for line in sourced(repo, 'seat_rows "{}"'.format(path)).splitlines():
-        cells = line.split("\t")
-        if len(cells) == 9:
-            bash_seats[cells[0]] = (cells[2], int(cells[3]),
-                                    int(cells[5]) if cells[2] in ("reported", "corrected") else None)
-    words = sourced(repo, 'run_usage "{}"'.format(path)).split()
-    bash_run = (RUN_BASIS.get(words[0], words[0]), int(words[1]), int(float(words[3]))) if len(words) == 8 else None
+    """The helper's reading (records.usage, which the close line and the ledger use) and the snapshot's of one
+    run: per seat (basis, agent runs, trusted tokens) and for the run (basis, agent runs, tokens)."""
+    def seen(seats, totals):
+        per_seat = {x["slug"]: (x["tokens_basis"], x["agents"] if x["agents"] is not None else x["agents_at_least"],
+                                x["tokens"] if x["tokens_basis"] in ("reported", "corrected") else None)
+                    for x in seats if x["executed"]}
+        return per_seat, (totals["tokens"]["basis"], totals["agents"]["total"] if totals["agents"]["total"] is not None
+                          else totals["agents"]["at_least"], totals["tokens"]["known"])
+    listed = helper_usage.seat_list(run)
+    bash_seats, bash_run = seen(listed, helper_usage.usage_totals(listed))
     snap = cockpit.snapshot(run, None, 8)
-    py_seats = {x["slug"]: (x["tokens_basis"], x["agents"] if x["agents"] is not None else x["agents_at_least"],
-                            x["tokens"] if x["tokens_basis"] in ("reported", "corrected") else None)
-                for x in snap["seats"] if x["executed"]}
-    usage = snap["usage"]
-    py_run = (usage["tokens"]["basis"], usage["agents"]["total"] if usage["agents"]["total"] is not None
-              else usage["agents"]["at_least"], usage["tokens"]["known"])
-    return bash_seats, bash_run, py_seats, py_run
+    return (bash_seats, bash_run) + seen(snap["seats"], snap["usage"])
 
 
 def seat_row(run, slug):
@@ -1069,18 +1052,17 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         # --- the card's stop and the helper's, on the same folders (the hook refuses on the helper's reading) ---
         subprocess.run([GIT, "init", "-q"], cwd=stopbase, check=True)
         before = fingerprint(stopbase / ".council")
-        bash_lines = sourced(stopbase, "; ".join('cap_standing "{}"'.format(str(folder).replace("\\", "/"))
-                                                 for folder in stops.values())).splitlines()
         disagree = []
-        for (name, folder), line in zip(stops.items(), bash_lines + [""] * len(stops)):
+        for name, folder in stops.items():
+            held = helper_usage.standing(folder, str(stopbase / ".council"))
+            helper = (held.used, held.cap, held.tokens, held.ceiling, held.until, held.over, held.stopped)
             py = status.cap_standing(cockpit.snapshot(folder, None, 8), folder)
-            mine = " ".join(["-" if v is None else str(v) for v in (py["agent_runs"], py["agent_cap"], py["tokens"],
-                                                                     py["ceiling"], py["allowed_until"])]
-                            + [str(int(py["over"])), str(int(py["stopped"]))])
-            if line.strip() != mine:
-                disagree.append((name, line, mine))
-        check("readers: the card's stop and the helper's cap_standing read every case the same — agent runs, cap, "
-              "tokens, ceiling, the user's go, over and stopped", not disagree and len(bash_lines) == len(stops), disagree)
+            mine = tuple(py[k] for k in ("agent_runs", "agent_cap", "tokens", "ceiling", "allowed_until", "over",
+                                         "stopped"))
+            if helper != mine:
+                disagree.append((name, helper, mine))
+        check("readers: the card's stop and the helper's (usage.standing, which cap check refuses on) read every case "
+              "the same — agent runs, cap, tokens, ceiling, the user's go, over and stopped", not disagree, disagree)
         mismatch = []
         for name, folder in stops.items():
             code, out, err = council(stopbase, "cap", "--run", str(folder))
@@ -1121,14 +1103,17 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               all(c == 2 and e.strip() and "\n" not in e.strip() and "Traceback" not in e for (c, _, e), _ in refused),
               [(w, c, e.strip()) for (c, _, e), w in refused])
         code, out, err = council(stopbase, "pet", "--stop")
-        os.environ["PYTHONPATH"], saved = str(fakes / "none"), os.environ.get("PYTHONPATH")
+        # bin/council starts Python with -E, so PYTHONPATH can't hide tkinter: a python on PATH that blocks it can.
+        for name in ("python", "python3"):
+            write(fakes / "blocked" / name, "#!/bin/sh\nshift 2\nexec '%s' -E -s -c 'import runpy, sys; "
+                  "sys.modules[\"tkinter\"] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], "
+                  "run_name=\"__main__\")' \"$@\"\n" % sys.executable.replace("\\", "/"))
+            os.chmod(fakes / "blocked" / name, 0o755)
+        os.environ["PATH"], saved = str(fakes / "blocked") + os.pathsep + os.environ["PATH"], os.environ["PATH"]
         try:
             code_t, out_t, err_t = council(stopbase, "pet", "--demo")
         finally:
-            if saved is None:
-                os.environ.pop("PYTHONPATH", None)
-            else:
-                os.environ["PYTHONPATH"] = saved
+            os.environ["PATH"] = saved
         check("pet: council pet --stop with none open says so; without tkinter it says so in one line and exits non-zero",
               code == 0 and out.strip() == "No pet is open for this project." and code_t == 1 and out_t == ""
               and err_t.strip().startswith("council: the pet needs Python's tkinter") and "Traceback" not in err_t,
@@ -1270,8 +1255,11 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "unknown (partial), never a zero; agents=0 or a corrected 0 is a real 0; an agents-only correction is partial "
               "(the ruling); 160 and 13 digits are suspect",
               got == expect, got)
-        ledger = sourced(agree, 'ledger_tokens "{}"'.format(str(run_e).replace("\\", "/")))
-        check("ledger: a seat every reader calls partial gets no price", ledger.strip() == "wf\t-", ledger)
+        helper_ledger.record(run_e)
+        ledger = [row.split("\t") for row in read(helper_ledger.path(agree / ".council")).splitlines()
+                  if row.split("\t")[1:2] == [run_e.name]]
+        check("ledger: a seat every reader calls partial gets no price",
+              [(row[3], row[8]) for row in ledger] == [("wf", "-")], ledger)
         try:
             status.interpret(cockpit.snapshot(run_h, None, 8), NOW)
             crashed = False
@@ -1282,8 +1270,10 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
                          (1050000, "1.1M"), (26430386, "26.4M")]
         display_mismatch = []
         for tokens, expected in display_cases:
-            bash = sourced(agree, "usage_token_text {}".format(tokens)).strip()
-            close = sourced(agree, 'usage_words "complete 1 1 {} 0 1 0 0"'.format(tokens)).strip()
+            bash = helper_usage.token_text(tokens)
+            close = helper_usage.usage_words({"tokens": {"basis": "complete", "known": tokens, "missing_runs": 0,
+                                                         "unrecorded_seats": [], "legacy_seats": []},
+                                              "agents": {"basis": "exact", "at_least": 1}})
             snapshot = {"usage": {"tokens": {"basis": "complete", "total": tokens},
                                   "agents": {"total": 1, "at_least": 1}}}
             card = status.tokens_text(tokens)
@@ -1293,7 +1283,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
             display_dir = agree / "display"
             write(display_dir / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
                   "a\tdone\ta1\t{}\t-\t-\t1\t1\n".format(tokens))
-            progress = sourced(agree, 'progress_line "{}"'.format(str(display_dir).replace("\\", "/")))
+            progress = seat_notes.progress_line(display_dir, "")
             progress_amount = "~{} tokens so far".format(expected)
             actual = (bash, card, "{} tokens across 1 agent run".format(card), tui, history_line,
                       close, progress_amount if progress_amount in progress else progress)
@@ -1316,14 +1306,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         council(agree, "correct", "a", "tokens=0041234", "evidence=transcript B L42 uuid 1234abcd", "--run", run_j.name)
         council(agree, "correct", "a", "tokens=41300", "evidence=transcript B L77: the later report", "--run", run_j.name)
         lines = read(run_j / "corrections.jsonl").splitlines()
-        awk_view = sourced(agree, 'corrections_tsv "{}"'.format(str(run_j).replace("\\", "/"))).split()
+        awk_view = [[seat, field, str(f["to"]), str(int(f["added"]))]
+                    for (seat, field), f in helper_seats.corrections(run_j).items()]
         py_view = cockpit.corrections_of(run_j)
         check("correct: 13 digits, over 1,000 agent runs and evidence of spaces or control marks are refused; "
               "leading zeros are written as a plain number",
               refused == [2, 2, 2, 2] and len(lines) == 2 and '"to":41234,' in lines[0], (refused, lines))
         check("correct: the latest correction of a field counts, keeps the value it replaced, and both readers "
               "see it (review finding 5)",
-              awk_view == ["a", "tokens", "41300", "0"] and py_view[("a", "tokens")]["to"] == 41300
+              awk_view == [["a", "tokens", "41300", "0"]] and py_view[("a", "tokens")]["to"] == 41300
               and '"from":"40000"' in lines[1], (awk_view, py_view, lines))
 
         # --- an agent run the record missed, added from evidence ---------------------------------------------------
@@ -1398,13 +1389,13 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         run_l = fresh("waiting", ("a",))
         text = read(run_l / "session-state.md").replace("## Decisions so far", "waiting:   # only a note\n## Decisions so far")
         write(run_l / "session-state.md", text + "waiting: this line is below the heading\n")
-        helper_view = sourced(agree, 'state_field waiting "{}/session-state.md"'.format(str(run_l).replace("\\", "/"))).strip()
+        helper_view = helper_state.field(read(run_l / "session-state.md"), "waiting")
         check("state: the helper and the snapshot read the waiting: header the same way",
               helper_view == cockpit.header(run_l).get("waiting", "") == "# only a note",
               (helper_view, cockpit.header(run_l).get("waiting")))
 
         # --- a pasted command runs nothing (review finding 10) ---------------------------------------------------
-        quoted = sourced(agree, "sh_quote \"a'b\\$c\\`d\"; echo; ps_quote \"a'b\\$c\\`d\"").splitlines()
+        quoted = [shell.sh_quote("a'b$c`d"), shell.ps_quote("a'b$c`d")]
         check("status: the terminal-view command quotes paths literally for bash and PowerShell",
               quoted == ["'a'\\''b$c`d'", "'a''b$c`d'"], quoted)
 

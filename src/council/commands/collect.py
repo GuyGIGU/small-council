@@ -110,7 +110,7 @@ def one(run: Path, scope: cite_check.Scope, seat: seat_files.Seat, seats: list[s
     stray = seat.ref == "?"
     note = " not-in-brief" if stray else ""
     tally["strays" if stray else "total"] += 1
-    file = where.native(seat.out if cite_check.absolute(seat.out) else "%s/%s" % (run.as_posix(), seat.out))
+    file = where.native(seat_files.out_path(run, seat.slug, seat.out))
     shown, state = tokens(run, seat.slug)
     state = state_of(run, seat.slug, state, seats)
     live = state in LIVE                                     # its file may simply not be done yet

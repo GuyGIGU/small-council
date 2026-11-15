@@ -2,7 +2,20 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime, timezone
+
+
+def now_min() -> str:
+    return time.strftime("%Y-%m-%d %H:%M")
+
+
+def now_sec() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def now_utc() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def event_clock(stamp: str) -> str:

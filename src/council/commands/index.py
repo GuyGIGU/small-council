@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from council.commands import changed, cli, closed, impact, index_symbols, prior, resolve
-from council.records import bytewise, citations, earlier, run_files, state_set
+from council.records import bytewise, citations, earlier, run_files, state_write
 from council.records import home as where
 
 LABELS = {"A": "added", "D": "deleted", "?": "new, untracked"}
@@ -100,11 +100,8 @@ def earlier_work(run: Path, home: str) -> None:
 def record(run: Path, base: str) -> None:
     """The base into the state (council state base=…)."""
     try:
-        state_set.put(run, "base", base)
-    except state_set.StateError as failure:
-        if str(failure) == "closed":
-            closed.refuse(run, "it takes only deliverable=, decision= (and ask save) now; open a new run for more "
-                               "work")
+        state_write.change(run, ["base=" + base])
+    except state_write.StateError as failure:
         raise cli.Refusal(str(failure)) from None
 
 

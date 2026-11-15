@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import time
 from pathlib import Path
 from typing import BinaryIO
 
@@ -157,6 +158,26 @@ def current_umask() -> int:
     return mask
 
 
+def append_row(file: Path, head: str, cells: tuple[str, ...]) -> None:
+    """One TSV row: the head first in a new or empty file, never joined to a torn last line. OSError."""
+    old = file.read_bytes() if file.is_file() else b""
+    lead = "" if old.endswith(b"\n") else "\n" if old else head
+    with open(str(file), "ab") as out:
+        out.write((lead + "\t".join(cells) + "\n").encode("utf-8", "surrogateescape"))
+
+
+def swap_in(temporary: str | Path, path: str | Path) -> None:
+    """Move temporary over path as mv did; Windows refuses while a reader has path open, so try again for ~1 s."""
+    for wait in (0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.3, 0):
+        try:
+            os.replace(str(temporary), str(path))
+            return
+        except PermissionError:
+            if not wait:
+                raise
+            time.sleep(wait)
+
+
 def atomic_write(path: Path, data: bytes, prefix: str, suffix: str = "", keep_mode: bool = False,
                  refuse_link: bool = False) -> None:
     """Replace path with data through a temporary file beside it, so no reader sees half a file.
@@ -175,7 +196,7 @@ def atomic_write(path: Path, data: bytes, prefix: str, suffix: str = "", keep_mo
             stream.write(data)
         if mode is not None:
             os.chmod(temporary, mode)
-        os.replace(temporary, str(path))
+        swap_in(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
