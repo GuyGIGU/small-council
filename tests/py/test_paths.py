@@ -1,6 +1,8 @@
 import os
 import stat
+import threading
 import unittest
+from unittest import mock
 
 import support
 
@@ -77,6 +79,20 @@ class WriteTest(support.Scratch):
         with self.assertRaisesRegex(paths.RecordError, "symlink output is not allowed"):
             paths.atomic_write(self.tmp / "link.txt", b"y", prefix=".t-", refuse_link=True)
         self.assertEqual(target.read_bytes(), b"x")
+
+    def test_swap_in_waits_out_a_reader(self) -> None:
+        target, new = self.write("state.md", "old"), self.write("state.md.tmp1", "new")
+        reader = open(str(target), "rb")                 # Windows refuses the swap while this is open
+        threading.Timer(0.1, reader.close).start()
+        paths.swap_in(new, target)
+        self.assertEqual(target.read_bytes(), b"new")
+
+    def test_swap_in_raises_a_refusal_that_never_ends(self) -> None:
+        new = self.write("state.md.tmp1", "new")
+        refused = mock.patch.object(paths.os, "replace", side_effect=PermissionError("in use"))
+        with refused as replace, mock.patch.object(paths.time, "sleep"), self.assertRaises(PermissionError):
+            paths.swap_in(new, self.tmp / "state.md")
+        self.assertEqual(replace.call_count, 8)
 
 
 class HomeTest(support.Scratch):

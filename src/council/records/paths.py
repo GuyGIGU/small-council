@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import time
 from pathlib import Path
 from typing import BinaryIO
 
@@ -157,6 +158,17 @@ def current_umask() -> int:
     return mask
 
 
+def swap_in(temporary, path) -> None:
+    """Move temporary over path as mv did; Windows refuses while a reader has path open, so try again for ~1 s."""
+    for wait in (0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.3, 0):
+        try:
+            return os.replace(str(temporary), str(path))
+        except PermissionError:
+            if not wait:
+                raise
+            time.sleep(wait)
+
+
 def atomic_write(path: Path, data: bytes, prefix: str, suffix: str = "", keep_mode: bool = False,
                  refuse_link: bool = False) -> None:
     """Replace path with data through a temporary file beside it, so no reader sees half a file.
@@ -175,7 +187,7 @@ def atomic_write(path: Path, data: bytes, prefix: str, suffix: str = "", keep_mo
             stream.write(data)
         if mode is not None:
             os.chmod(temporary, mode)
-        os.replace(temporary, str(path))
+        swap_in(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

@@ -4,7 +4,6 @@ phase, status or wait makes. clear_waiting (wait_over) and state_set.put_all are
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 from typing import NamedTuple
 
@@ -187,19 +186,11 @@ def _put(lines: list, key: str, line: str, header_only: bool, add: bool) -> None
 
 
 def replace(file: Path, content: str) -> None:
-    """The file's content swapped in through <file>.tmp<pid>, as the helper's mv did. Windows refuses the swap
-    while another command reads the file (outside the lock), so a refusal is tried again for up to a second."""
+    """The file's content swapped in through <file>.tmp<pid>, as the helper's mv did."""
     temporary = Path("%s.tmp%d" % (file, os.getpid()))
     try:
         temporary.write_bytes(content.encode("utf-8", "surrogateescape"))
-        for wait in (0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.3, 0):
-            try:
-                os.replace(str(temporary), str(file))
-                break
-            except PermissionError:
-                if not wait:
-                    raise
-                time.sleep(wait)
+        paths.swap_in(temporary, file)
     finally:
         if temporary.exists():
             temporary.unlink()

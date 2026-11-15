@@ -10,7 +10,7 @@ import os
 import re
 from typing import NamedTuple
 
-from council.records import bytewise, config, memory_audit
+from council.records import bytewise, config, memory_audit, paths
 from council.records import home as where
 from council.records import memory_entries as parsed
 
@@ -212,7 +212,7 @@ def _swap(mem: str, before: str, after: str) -> str:
         shutil.copymode(where.native(mem), new)
         with open(where.native(after), "rb") as src, open(new, "wb") as out:
             out.write(src.read())
-        os.replace(new, where.native(mem))
+        paths.swap_in(new, where.native(mem))
     except OSError:
         with contextlib.suppress(OSError):
             os.remove(new)

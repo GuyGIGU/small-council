@@ -8,7 +8,7 @@ from pathlib import Path
 
 from council import clock
 from council.commands import cli, event_note, resolve
-from council.records import events, locks
+from council.records import events, locks, paths
 
 USAGE = "usage: council run events [show|check|repair]"
 
@@ -84,7 +84,7 @@ def repair(run: Path) -> int:
         part = len(data) - data.rfind(b"\n") - 1
         (run / copy).write_bytes(data)
         temporary.write_bytes(data[:len(data) - part])
-        os.replace(str(temporary), str(file))
+        paths.swap_in(temporary, file)
     except OSError:
         if temporary.exists():
             temporary.unlink()
