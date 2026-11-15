@@ -18,7 +18,7 @@ TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
 
 
-def main(args: cli.Args, sub: str, words: list[str]) -> int:
+def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "run open", "alongside", "session", "code-root")
     if len(words) > 1:
         raise cli.Refusal("run open takes one mode (got: %s)" % " ".join(words))

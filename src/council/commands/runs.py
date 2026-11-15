@@ -11,13 +11,10 @@ from council.records import runs
 SHOWN = 20          # lines of runs before "… and N more"
 
 
-def main(args: cli.Args, sub: str, words: list[str]) -> int:
-    """council run <sub> for the subcommands ported to Python."""
-    if sub == "status":
-        cli.takes_flags(args, "run status", "all")
-        cli.no_words("run status", words)
-        return status(bool(args.value("all")))
-    raise cli.Refusal("run %s is not ported to Python yet — run it through bin/council" % sub)
+def main(args: cli.Args, words: list[str]) -> int:
+    cli.takes_flags(args, "run status", "all")
+    cli.no_words("run status", words)
+    return status(bool(args.value("all")))
 
 
 def status(every: bool) -> int:

@@ -14,7 +14,7 @@ USAGE = "usage: council run plan [check|show]"
 Key = plan_check.Key
 
 
-def main(args: cli.Args, sub: str, words: list[str]) -> int:
+def main(args: cli.Args, words: list[str]) -> int:
     """council run plan [check|show] [--run <folder>]: a legacy run needs no plan; any other needs one."""
     cli.takes_flags(args, "run plan")
     if len(words) > 1:

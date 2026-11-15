@@ -11,7 +11,7 @@ from council.records import events, locks, paths
 USAGE = "usage: council run events [show|check|repair]"
 
 
-def main(args: cli.Args, sub: str, words: list[str]) -> int:
+def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "run events")
     if len(words) > 1:
         raise cli.Refusal(USAGE)

@@ -43,7 +43,7 @@ RUN_LINES = {   # one open run of this tree's or this session's, by what it is t
 }
 
 
-def main(args: cli.Args, sub: str, words: list[str]) -> int:
+def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "run session-start")
     cli.no_words("run session-start", words)
     with contextlib.suppress(Exception):      # the hook lets the session through on its own fault

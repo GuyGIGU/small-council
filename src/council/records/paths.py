@@ -161,9 +161,9 @@ def current_umask() -> int:
 def append_row(file: Path, head: str, cells: tuple[str, ...]) -> None:
     """One TSV row: the head first in a new or empty file, never joined to a torn last line. OSError."""
     old = file.read_bytes() if file.is_file() else b""
+    lead = "" if old.endswith(b"\n") else "\n" if old else head
     with open(str(file), "ab") as out:
-        out.write((("" if old.endswith(b"\n") else "\n" if old else head) + "\t".join(cells) + "\n")
-                  .encode("utf-8", "surrogateescape"))
+        out.write((lead + "\t".join(cells) + "\n").encode("utf-8", "surrogateescape"))
 
 
 def swap_in(temporary: str | Path, path: str | Path) -> None:

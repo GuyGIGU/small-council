@@ -32,10 +32,9 @@ EVIDENCE = "usage: council evidence build|show|check [--run <folder>]"
 ROOT = script.SCRIPTS.parent
 
 
-def main(args: cli.Args, *given: list[str]) -> int:
-    """`run audit` comes as (args, sub, words), the others as (args, words)."""
+def main(args: cli.Args, words: list[str]) -> int:
     command = "run audit" if args.words[0] == "run" else args.words[0]
-    words = list(given[-1])
+    words = list(words)
     sub = words.pop(0) if command == "evidence" and words else ""
     name, lead, takes, no_run = TABLE[command]
     label = command + (" " + sub if command == "evidence" else "")

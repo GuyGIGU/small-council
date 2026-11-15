@@ -13,7 +13,7 @@ STATUSES = ("complete", "abandoned", "paused")
 BASIS = {"legacy": "older"}          # the close event's basis words are the helper's
 
 
-def main(args: cli.Args, sub: str, words: list[str]) -> int:
+def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "run close", "status")
     cli.no_words("run close", words)
     status = args.value("status") or "complete"

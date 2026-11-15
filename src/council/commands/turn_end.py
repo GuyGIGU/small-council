@@ -10,7 +10,7 @@ from council.records import home as where
 DEFERRED = "(it may be a deferred tool: search the tools for it first)"
 
 
-def main(args: cli.Args, sub: str, words: list[str]) -> int:
+def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "run turn-end", "session")
     cli.no_words("run turn-end", words)
     if args.value("run"):

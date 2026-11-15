@@ -79,7 +79,7 @@ def rewrite(run: Path, slug: str, new: dict[str, str]) -> None:
     for at, line in enumerate(seat_files.lines(file)):
         c = line.split("\t")
         if at == 0 and c[0] == "slug":
-            out.append(c + HEADER[6 if len(c) < 7 else 7 if len(c) == 7 else 8:])
+            out.append(c + HEADER[min(max(len(c), 6), 8):])
             continue
         if at == 0:
             out.append(HEADER)

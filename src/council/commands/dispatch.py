@@ -6,7 +6,7 @@ import sys
 
 from council.commands import cli
 
-COMMANDS = {  # a `run <sub>` module's main takes (args, sub, words); every other's (args, words)
+COMMANDS = {  # each module's main takes (args, the words after the command's own)
     "home": "home",
     "sharing": "sharing",
     "run status": "runs",
@@ -86,9 +86,7 @@ def _route(args: cli.Args, command: str, words: list[str]) -> int:
         raise cli.Refusal(USAGES[command])
     name = COMMANDS[key]
     module = importlib.import_module("council.commands." + name)
-    if command == "run":
-        return int(module.main(args, words[0], words[1:]))
-    return int(module.main(args, words))
+    return int(module.main(args, words[1:] if command == "run" else words))
 
 
 def _usage() -> int:

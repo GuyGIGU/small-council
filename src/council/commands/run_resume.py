@@ -9,7 +9,7 @@ from council.records import events, locks, runs, state, state_write
 from council.records import home as where
 
 
-def main(args: cli.Args, sub: str, words: list[str]) -> int:
+def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "run resume", "session")
     cli.no_words("run resume", words)
     home, tree = where.council_home(), where.this_tree()
