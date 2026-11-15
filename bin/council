@@ -3431,7 +3431,7 @@ main() {
         open)   takes_flags "run open" alongside session code-root
                 [ $# -le 1 ] || die "run open takes one mode (got: $*)"
                 cmd_run_open ${1+"$@"} ;;
-        close)  takes_flags "run close" status; no_words "run close" ${1+"$@"}; cmd_run_close ;;
+        close)  python_command "council run close" ${given[@]+"${given[@]}"} ;;
         status|plan|events|session-start) python_command "council run $sub" ${given[@]+"${given[@]}"} ;;
         resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
         audit)  takes_flags "run audit" transcript; no_words "run audit" ${1+"$@"}; cmd_run_audit ;;
