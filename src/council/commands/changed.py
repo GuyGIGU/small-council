@@ -37,8 +37,7 @@ def main(args: cli.Args, words: list[str]) -> int:
         cli.say("changed: no files matched — nothing to check (this is a pass, not a skip)")
         return 0
     if not args.after:
-        for name in files:
-            cli.say(name)
+        cli.say_all(files)
         return 0
     cli.warn("changed: %d file(s) to check" % len(files))
     if each:

@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 from council.commands import cli, resolve
-from council.commands.memory import Memory, say_all, slugs
+from council.commands.memory import Memory, slugs
 from council.records import bytewise, earlier, memory, scope, seats
 from council.records import home as where
 from council.records.bytewise import DOT, EM
@@ -25,7 +25,7 @@ def select(args: cli.Args, found: Memory, words: list[str]) -> int:
     if run:
         keys += run_keys(run, found.home)
     out, said = Selection(keys, tree).lines(found.served)
-    say_all(out)
+    cli.say_all(out)
     for line in said:
         cli.warn(line)
     return 0

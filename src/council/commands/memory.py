@@ -8,7 +8,7 @@ supports it (records/memory_audit.py)."""
 from __future__ import annotations
 
 import os
-from typing import Iterable, NamedTuple
+from typing import NamedTuple
 
 from council.commands import cli
 from council.records import bytewise, config, memory, memory_audit, scope
@@ -41,7 +41,8 @@ def main(args: cli.Args, words: list[str]) -> int:
     found = load()
     rest = words[1:]
     if sub == "index":
-        return index(found)
+        cli.say_all(indexed(found))
+        return 0
     if sub == "select":
         from council.commands import memory_select
         return memory_select.select(args, found, rest)
@@ -102,16 +103,6 @@ def load() -> Memory:
 def slugs(home: str) -> list[str]:
     """The roster's slugs (C-locale text), as the scope matcher compares them."""
     return [slug for slug, _, _ in config.roster_rows(where.native(home)) if slug != "-"]
-
-
-def say_all(lines: Iterable[str]) -> None:
-    for line in lines:
-        cli.say(line)
-
-
-def index(found: Memory) -> int:
-    say_all(indexed(found))
-    return 0
 
 
 def indexed(found: Memory) -> list[str]:

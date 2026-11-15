@@ -29,10 +29,8 @@ def main(args: cli.Args, words: list[str]) -> int:
         raise cli.Refusal("patch %s takes a task number (3 or T3), not '%s'" % (words[0], words[1]))
     task, run = int(found.group(1)), resolve.run_folder(args)
     if words[0] == "show":
-        lines = patch_history.lines(run, task)
-        for line in lines or ["patch: task %d has no saved rounds — council patch save %d once its report is "
-                              "written" % (task, task)]:
-            cli.say(line)
+        cli.say_all(patch_history.lines(run, task) or ["patch: task %d has no saved rounds — council patch save %d "
+                                                       "once its report is written" % (task, task)])
         return 0
     report = Path(where.native(words[2])) if len(words) == 3 else report_head.report(run, task)
     return save(run, task, report, args.value("base"))

@@ -3,7 +3,7 @@ starts Python, so every command's words reach this module as typed."""
 from __future__ import annotations
 
 import sys
-from typing import NamedTuple
+from typing import Iterable, NamedTuple
 
 # Flags that take a value, with what the refusal says is missing.
 VALUED = ("run", "code-root", "status", "base", "at", "proof", "session", "task", "risk", "complexity",
@@ -117,6 +117,11 @@ def no_words(label: str, words: list[str]) -> None:
 
 def say(line: str) -> None:
     sys.stdout.write(line + "\n")
+
+
+def say_all(lines: Iterable[str]) -> None:
+    for line in lines:
+        say(line)
 
 
 def warn(line: str) -> None:

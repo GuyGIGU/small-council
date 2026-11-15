@@ -33,8 +33,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     if word == "show":
         if check(run, quiet):
             return 1
-        for line in shown(whole(run)) + models.shown(models.models(where.council_home())):
-            cli.say(line)
+        cli.say_all(shown(whole(run)) + models.shown(models.models(where.council_home())))
         return 0
     raise cli.Refusal(USAGE)
 
@@ -42,13 +41,11 @@ def main(args: cli.Args, words: list[str]) -> int:
 def check(run: Path, quiet: bool) -> int:
     """Print each problem and their count (exit 1), else the valid line unless quiet (exit 0); then a plan's tasks."""
     verdict = plan_check.judge(whole(run), settings(run, where.council_home()))
-    for line in verdict.problems:
-        cli.say(line)
+    cli.say_all(verdict.problems)
     if verdict.problems:
         cli.say("plan: %d error(s) · %s" % (len(verdict.problems), plan.NAME))
     tasks = plan_tasks.judge_run(run)                  # a delivered plan's tasks, their count line among the problems
-    for line in tasks.problems + ([] if quiet or verdict.problems or tasks.problems else [verdict.valid] + tasks.notes):
-        cli.say(line)
+    cli.say_all(tasks.problems + ([] if quiet or verdict.problems or tasks.problems else [verdict.valid] + tasks.notes))
     return 1 if verdict.problems or tasks.problems else 0
 
 

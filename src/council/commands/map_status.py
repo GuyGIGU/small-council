@@ -16,8 +16,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "map")
     if words != ["status"]:
         raise cli.Refusal("usage: council map status")
-    for line in status(where.council_home()):
-        cli.say(line)
+    cli.say_all(status(where.council_home()))
     return 0
 
 
