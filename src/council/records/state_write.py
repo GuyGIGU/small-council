@@ -11,7 +11,7 @@ from council import clock
 from council.records import cells, events, locks, paths, redact, stages
 from council.records.state import field, path, text
 
-NEXT_AT_OPEN = stages.NEXT_AT_OPEN
+COUNCIL_NEXT_AT_OPEN = stages.COUNCIL_NEXT_AT_OPEN    # frozen name (architecture section 6)
 AFTER_CLOSE = ("deliverable", "ask", "ask-saved", "decision")     # a ruling given after the close is still the user's
 DECISIONS = "## Decisions so far"
 
@@ -79,9 +79,9 @@ def _locked(run: Path, words: list, closing: bool, events_lost: bool, phase_note
     if "waiting" not in keys and set(keys) & {"phase", "status", "decision"} and field(before, "waiting"):
         words.append("waiting=")                          # a stage or status change ends a wait, unless it names one
     try:
-        lines = _raw_lines(path(run))
+        lines = raw_lines(path(run))
         _rewrite(lines, words, field(before, "phase"))
-        _replace(path(run), "".join(line + "\n" for line in lines))
+        replace(path(run), "".join(line + "\n" for line in lines))
     except OSError:
         raise StateError("cannot update " + path(run).as_posix()) from None
     after = text(run)
@@ -116,7 +116,7 @@ def _rewrite(lines: list, words: list, old_phase: str) -> None:
     if phase != old_phase and not named and stages.next_text(phase):
         _put(lines, "next:", "next: " + stages.next_text(phase), header_only=True, add=False)
     content = "\n".join(lines)
-    if cells.field(content, "phase") not in ("", "convene") and field(content, "next") == NEXT_AT_OPEN:
+    if cells.field(content, "phase") not in ("", "convene") and field(content, "next") == COUNCIL_NEXT_AT_OPEN:
         _put(lines, "next:", "next:", header_only=True, add=False)
     _put(lines, "updated:", "updated: " + clock.now_min(), header_only=False, add=False)
 
@@ -158,7 +158,7 @@ def clear_waiting(run: Path) -> bool:
     return True
 
 
-def _raw_lines(file: Path) -> list:
+def raw_lines(file: Path) -> list:
     """The state's lines as awk printed them: the BOM off line 1, a last line without a newline still a line. Git
     Bash's awk reads in text mode, so on Windows a line's carriage return is dropped; elsewhere it is kept."""
     content = file.read_bytes().decode("utf-8", "surrogateescape")
@@ -185,7 +185,8 @@ def _put(lines: list, key: str, line: str, header_only: bool, add: bool) -> None
         lines.append(line)
 
 
-def _replace(file: Path, content: str) -> None:
+def replace(file: Path, content: str) -> None:
+    """The file's content swapped in through <file>.tmp<pid>, as the helper's mv did."""
     temporary = Path("%s.tmp%d" % (file, os.getpid()))
     try:
         temporary.write_bytes(content.encode("utf-8", "surrogateescape"))

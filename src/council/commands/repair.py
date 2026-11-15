@@ -10,7 +10,7 @@ from pathlib import Path
 from council import clock
 from council.commands import cli, closed, event_note, resolve
 from council.commands.script_cmds import run_script
-from council.records import events, locks, redact, state_write
+from council.records import events, locks, redact, repairs, state_write
 
 USAGES = {"record": "usage: council repair record <task> <gate> [--run <folder>]",
           "show": "usage: council repair show [task] [--run <folder>]",
@@ -51,18 +51,14 @@ def allow(run: Path, gate: str, said: str) -> int:
     if not trail.getvalue().startswith("stop\t"):
         raise cli.Refusal("gate %s has no stopped repair trail in %s — there is nothing to allow" % (gate, run.name))
     task, seq = (trail.getvalue().rstrip("\n").split("\t") + [""])[1:3]
-    file, lock = run / "repair-allowances.tsv", Path(str(events.path(run)) + ".lock")
+    lock = Path(str(events.path(run)) + ".lock")
     if not locks.acquire(lock):
         raise cli.Refusal("%s\ncouncil: the go was not recorded: the run's event lock is unavailable (%s)"
                           % (events.busy(lock), lock.as_posix()))
-    row = "\t".join((clock.now_utc(), gate, task, seq, redact.said(said) or "[redacted]")) + "\n"
     try:
-        old = file.read_bytes() if file.is_file() else b""
-        with open(str(file), "ab") as out:          # a header for a new file; never join a torn last line
-            out.write((b"" if old.endswith(b"\n") else b"\n" if old else b"at\tgate\ttask\tseq\tsaid\n")
-                      + row.encode("utf-8", "surrogateescape"))
+        repairs.allow(run, (clock.now_utc(), gate, task, seq, redact.said(said) or "[redacted]"))
     except OSError:
-        raise cli.Refusal("the go was not recorded: cannot write " + file.as_posix()) from None
+        raise cli.Refusal("the go was not recorded: cannot write " + (run / repairs.ALLOWANCES).as_posix()) from None
     finally:
         locks.release(lock)
     event_note.append(run, "repair.allowed", gate, task, "stop_seq=" + seq,

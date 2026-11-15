@@ -59,7 +59,8 @@ def main(args: cli.Args, sub: str, words: list[str]) -> int:
 
 def _close(run: Path, status: str, lost: str, retake: bool, real: bool) -> None:
     """The close under its lock: the state, the ledger, the lines it says and the close event."""
-    totals = usage.usage_totals(usage.seat_list(run))
+    seat_list = usage.seat_list(run)
+    totals = usage.usage_totals(seat_list)
     words = closing.actual(run, totals)
     busy = ", ".join(row.get("slug", "") for row in seats.rows(run) if row.get("state") in ("running", "queued"))
     try:
@@ -82,7 +83,7 @@ def _close(run: Path, status: str, lost: str, retake: bool, real: bool) -> None:
     if real:
         t = totals["tokens"]
         detail = "agent_runs=%d;reported=%d;tokens=%d;basis=%s" % (
-            totals["agents"]["at_least"], t["reported_runs"], t["known"], BASIS.get(t["basis"], t["basis"]))
+            totals["agents"]["at_least"], usage.reported_runs(seat_list), t["known"], BASIS.get(t["basis"], t["basis"]))
         if not lost:
             close_report.chair(run)
             event_note.append(run, "run.paused" if status == "paused" else "run.closed", "run", status,

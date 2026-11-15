@@ -17,8 +17,12 @@ _LOADED: dict[str, ModuleType] = {}
 
 
 def load(name: str) -> ModuleType:
-    """scripts/<name>.py as a module, loaded once. It may set its own streams up as it loads; the command's stay."""
+    """scripts/<name>.py as a module, loaded once, as its own process had it: scripts/ first on the path (its
+    siblings import each other) and no bytecode left beside it. It may set its streams up as it loads; ours stay."""
     if name not in _LOADED:
+        sys.dont_write_bytecode = True
+        if str(SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS))
         spec = importlib.util.spec_from_file_location("council_script_" + name, str(SCRIPTS / (name + ".py")))
         module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
         streams = sys.stdout, sys.stderr

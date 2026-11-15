@@ -172,8 +172,7 @@ class Filing:
         target = self.target
         rel = target[len(self.root) + 1:] if target.startswith(self.root + "/") else target
         try:
-            state_set.put_all(self.run, [("ask", rel), ("ask-saved", time.strftime("%Y-%m-%d %H:%M"))],
-                              after_close=True)
+            state_set.put_all(self.run, [("ask", rel), ("ask-saved", time.strftime("%Y-%m-%d %H:%M"))])
         except state_set.StateError as failure:
             raise cli.Refusal(str(failure)) from None
         if red:

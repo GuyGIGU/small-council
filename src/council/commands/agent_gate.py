@@ -19,6 +19,7 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
+from council import clock
 from council.commands import cap, cli, gate_writable, resolve
 from council.records import home as where
 from council.records import hook_marks, plan, runs, seats, usage
@@ -180,7 +181,7 @@ def count_start(run: Path, tool: str, here: Where, refused: bool) -> usage.Stand
 
 def _append_start(file: Path, seed: int, tool: str, session: str) -> None:
     """One start row; a new file first takes the agents recorded before any start was counted."""
-    stamp = cap.stamp()
+    stamp = clock.now_utc()
     if not _filled(file):
         _write(file, "wb", "at\ttool\tsession\n")
         if seed > 0:

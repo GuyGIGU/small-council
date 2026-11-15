@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import builtins
 import os
-import sys
 from functools import reduce
 from pathlib import Path
 
@@ -67,11 +66,7 @@ def main(args: cli.Args, *given: list[str]) -> int:
 
 
 def run_script(name: str, words: list[str]) -> int:
-    """scripts/<name>.py run here as its own process ran it: its folder first on the path (audit.py and cockpit.py
-    import their siblings), no bytecode left beside it, its faults said as its __main__ says them."""
-    sys.dont_write_bytecode = True
-    if str(script.SCRIPTS) not in sys.path:
-        sys.path.insert(0, str(script.SCRIPTS))
+    """scripts/<name>.py run here, its faults said as its __main__ says them."""
     module = script.load(name)
     faults = tuple(reduce(getattr, fault.split("."), builtins if hasattr(builtins, fault) else module)
                    for fault in FAULTS.get(name, "").split())

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import os
 import re
-import time
 from pathlib import Path
 
 from council import clock
@@ -174,8 +173,3 @@ def open_here(home: str, tree: str, session: str) -> list[str]:
     return [run.folder for run in runs.listing(home, 1000000, "open")
             if run.status == "in-progress" and (run.code_root in (tree, "", "-")
                                                  or (session != "" and (run.session or "-") == session))]
-
-
-def stamp() -> str:
-    """The helper's UTC stamp, now (now_utc)."""
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

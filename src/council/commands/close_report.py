@@ -3,7 +3,6 @@ Chair's own tokens, and the record's follow-up line (said once)."""
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
 from council.commands import cli, script
@@ -23,8 +22,6 @@ def claims_note(run: Path) -> None:
 
 def audit(run: Path) -> None:
     """scripts/audit.py at the close, kept as audit.md: its verdict line and every FAIL line, on stdout."""
-    if str(script.SCRIPTS) not in sys.path:               # audit.py imports audit_figures beside it (script.load
-        sys.path.insert(0, str(script.SCRIPTS))           # should: see the close report's needs from others)
     code, out, err = script.captured("audit", ["--run", run.as_posix(), "--at-close", "--save"])
     lines = (out + err).split("\n")
     if code > 1:

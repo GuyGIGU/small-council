@@ -15,7 +15,7 @@ from council.records import home as where
 from council.records import memory_entries as parsed
 
 NAME = "conventions.md"
-READ_EVERY_RUN = 25600       # bytes: about the most memory every run should read
+COUNCIL_MEMORY_SIZE_LIMIT = 25600       # bytes: about the most memory every run should read
 TEMPLATE = "Write each entry as a heading (### AP-1: title) or a bullet (- **AP-1 — title** …)"
 _IDS = re.compile(r"(^|[^A-Za-z0-9_])(AP|EC|D|F)-[0-9]+([^A-Za-z0-9_]|\Z)"
                   r"|\A(#+|[-*+])[ \t]*[*_]*([Aa][Pp]|[Ee][Cc]|D|F)-?[0-9]+")
@@ -74,7 +74,7 @@ def size_note(home: str) -> str:
     """run open's note (after 'council: ') when the memory file is over the ~25 KB every run reads; else ''."""
     path = locate(home).path
     size = os.path.getsize(where.native(path)) if os.path.isfile(where.native(path)) else 0
-    if size <= READ_EVERY_RUN:
+    if size <= COUNCIL_MEMORY_SIZE_LIMIT:
         return ""
     return ("%s is %d KB, over the ~25 KB the council expects — every run reads it; at Learn, propose a consolidation"
             % (path.rsplit("/", 1)[-1], (size + 500) // 1000))

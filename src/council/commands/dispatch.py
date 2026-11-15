@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import importlib
-import importlib.util
 import sys
 
 from council.commands import cli
@@ -86,8 +85,6 @@ def _route(args: cli.Args, command: str, words: list[str]) -> int:
     if key not in COMMANDS or (command == "cap" and words[:1] and words[0] not in CAP_SUBS):
         raise cli.Refusal(USAGES[command])
     name = COMMANDS[key]
-    if importlib.util.find_spec("council.commands." + name) is None:   # a row whose module is to come
-        raise cli.Refusal("'%s' is not ported to Python yet — run it through bin/council" % " ".join(args.words))
     module = importlib.import_module("council.commands." + name)
     if command == "run":
         return int(module.main(args, words[0], words[1:]))

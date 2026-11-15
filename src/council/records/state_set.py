@@ -14,7 +14,7 @@ def put(run: Path, key: str, value: str) -> None:
     put_all(run, [(key, value)])
 
 
-def put_all(run: Path, fields: list, after_close: bool = False) -> None:
+def put_all(run: Path, fields: list) -> None:
     """Set each header field in turn, in one write. A closed run takes only what change lets it (deliverable=,
-    decision=, ask= and ask-saved=), so after_close changes nothing."""
+    decision=, ask= and ask-saved=)."""
     change(run, ["%s=%s" % pair for pair in fields])

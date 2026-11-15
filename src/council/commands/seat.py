@@ -87,7 +87,7 @@ def _tokens(value: str) -> str:
                       for line in value.split("\n"))
     if re.search("[kKmM]", plain):
         raise cli.Refusal("tokens=%s is a rounded figure — %s" % (value, EXACT))
-    count = None if "\n" in value else cells.token_count(value)      # awk's $ is the end of the whole value
+    count = cells.token_count(value)
     if value and count is None:
         raise cli.Refusal("tokens= takes one exact token count (74304, 74,304 or 74 304), got: " + value)
     if count is None or count < 1000:

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from council.commands import cli, event_note, resolve
-from council.records import events, locks, paths, runs, state, state_write
+from council.records import events, locks, runs, state, state_write
 from council.records import home as where
 
 
@@ -65,13 +65,11 @@ def _unclose(run: Path) -> None:
     if not locks.acquire(lock):
         raise cli.Refusal("%s\ncouncil: state lock unavailable: %s" % (events.busy(lock), lock.as_posix()))
     try:
-        content = file.read_bytes().decode("utf-8", "surrogateescape")
-        content = content.replace("\r\n", "\n") if os.name == "nt" else content   # Git Bash's awk reads in text mode
         kept, body = "", False
-        for line in content.split("\n")[:-1] if content.endswith("\n") else content.split("\n"):
+        for line in state_write.raw_lines(file):
             body = body or line.startswith("## ")
             kept += line + "\n" if body or not line.startswith(("closed:", "actual:")) else ""
-        paths.atomic_write(file, kept.encode("utf-8", "surrogateescape"), paths.STATE + ".", keep_mode=True)
+        state_write.replace(file, kept)
     except OSError:
         raise cli.Refusal("cannot update " + file.as_posix()) from None
     finally:

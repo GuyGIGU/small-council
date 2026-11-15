@@ -7,9 +7,9 @@ from pathlib import Path
 
 from council.records import plan, state
 
-NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
+COUNCIL_NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
 STAGES = {  # name: (rank, next step); a build stands where council-implement's build loop does (3-7)
-    "convene": (1, NEXT_AT_OPEN),
+    "convene": (1, COUNCIL_NEXT_AT_OPEN),
     "prepare": (2, "Prepare: the change index, the checks and earlier findings (doctrine 02-prepare.md)"),
     "assign": (3, "Assign: fill the run plan, then council run plan check (doctrine 03-assign.md)"),
     "brief": (4, "Brief: write brief.md with the memory in scope (doctrine 04-brief.md)"),

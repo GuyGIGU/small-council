@@ -103,8 +103,8 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
     head = git.text(top, "rev-parse", "-q", "--verify", "HEAD") or ""
     _write(native / paths.STATE, "status: in-progress\nmode: %s\nphase: convene\nupdated: %s\nopened: %s\n"
            "code-root: %s\nsession: %s\nplan-schema: 1\nevents-schema: 1\nsize:\nbase:\nstart-head: %s\n"
-           "deliverable:\nnext: %s\n%s\n" % (mode, clock.now_min(), clock.now_sec(), top, session, head,
-                                             INIT_NEXT if init else state_write.NEXT_AT_OPEN, state_write.DECISIONS))
+           "deliverable:\nnext: %s\n%s\n" % (mode, clock.now_min(), clock.now_sec(), top, session, head, INIT_NEXT
+                                             if init else state_write.COUNCIL_NEXT_AT_OPEN, state_write.DECISIONS))
     plan = template.read_bytes().decode("utf-8", "surrogateescape")
     plan = plan.replace("\r\n", "\n") if os.name == "nt" else plan      # Git Bash's awk reads in text mode
     for key, value in (("RUN", run.rsplit("/", 1)[1]), ("MODE", mode), ("AGENT_CAP", str(config.agent_cap(home)))):

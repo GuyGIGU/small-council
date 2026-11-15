@@ -102,9 +102,6 @@ def record(run: Path, base: str) -> None:
     try:
         state_set.put(run, "base", base)
     except state_set.StateError as failure:
-        if str(failure) == "closed":
-            closed.refuse(run, "it takes only deliverable=, decision= (and ask save) now; open a new run for more "
-                               "work")
         raise cli.Refusal(str(failure)) from None
 
 

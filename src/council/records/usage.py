@@ -40,11 +40,9 @@ def seat_usage(row: dict[str, Any], fixes: dict[tuple[str, str], dict[str, Any]]
     else:
         agents, basis_a, at_least = runs, "counted", runs
     tokens, basis_t, missing, pending = _seat_tokens(status, executed, recorded, agents, reported, fix_t)
-    with_usage = {"reported": at_least, "corrected": at_least, "partial": reported, "missing": reported,
-                  "pending": reported}.get(basis_t, 0)      # the agent runs whose usage was reported
     return {"tokens": tokens, "tokens_basis": basis_t, "tokens_recorded": recorded, "agents": agents,
             "agents_basis": basis_a, "agents_at_least": at_least, "missing_runs": missing, "pending_runs": pending,
-            "reported_runs": with_usage, "executed": executed, "finished": finished}
+            "executed": executed, "finished": finished}
 
 
 def _seat_tokens(status: str, executed: bool, recorded: int | None, agents: int | None, reported: int | None,
@@ -124,7 +122,6 @@ def usage_totals(seat_rows: list[Seat]) -> dict[str, Any]:
                    "verifiers": sum(s["tokens"] for s in verifier) if complete else None,
                    "missing_runs": sum(s["missing_runs"] for s in ran),
                    "pending_runs": sum(s["pending_runs"] for s in ran),
-                   "reported_runs": sum(s["reported_runs"] for s in ran),
                    "legacy_seats": named["legacy"], "suspect_seats": named["suspect"],
                    "unrecorded_seats": named["unrecorded"],
                    "added_seats": [s["slug"] for s in seat_rows if s.get("added")],
@@ -165,7 +162,7 @@ def usage_words(totals: dict[str, Any]) -> str:
     t, runs = totals["tokens"], totals["agents"]["at_least"]
     said = ("%d" if totals["agents"]["basis"] == "exact" else "at least %d") % runs
     known, unrecorded = token_text(t["known"]), t["unrecorded_seats"]
-    without = runs - t["reported_runs"] - t["pending_runs"]
+    without = t["missing_runs"]       # in a partial basis: the runs less those reported or pending
     tail = ", ".join(["%d without a usage report" % without] * (without > 0) +
                      ["%d seat(s) with no agent on record" % len(unrecorded)] * bool(unrecorded))
     return {"complete": "~%s tokens across %s agent run(s)" % (known, said),
@@ -175,6 +172,12 @@ def usage_words(totals: dict[str, Any]) -> str:
                       % (len(t["legacy_seats"]), said),
             "suspect": "tokens not stated — a recorded count no agent run can have · %s agent run(s)" % said,
             }.get(t["basis"], "")
+
+
+def reported_runs(seat_rows: list[Seat]) -> int:
+    """The agent runs whose usage was reported (the helper's run_usage $3)."""
+    return sum(s["agents_at_least"] - s["missing_runs"] - s["pending_runs"] for s in seat_rows
+               if s["executed"] and s["tokens_basis"] in ("reported", "corrected", "partial", "missing", "pending"))
 
 
 def agents_share(run: Path) -> int | None:
