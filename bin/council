@@ -3434,7 +3434,7 @@ main() {
         close)  takes_flags "run close" status; no_words "run close" ${1+"$@"}; cmd_run_close ;;
         status|plan|events|session-start) python_command "council run $sub" ${given[@]+"${given[@]}"} ;;
         resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
-        audit)  takes_flags "run audit" transcript; no_words "run audit" ${1+"$@"}; cmd_run_audit ;;
+        audit)  python_command "council run audit" ${given[@]+"${given[@]}"} ;;
         turn-end) takes_flags "run turn-end" session; no_words "run turn-end" ${1+"$@"}
                 [ -z "$RUN_ARG" ] || die "run turn-end looks at every in-progress run this session drives; it does not take --run"
                 cmd_run_turn_end ;;
@@ -3455,36 +3455,9 @@ main() {
     route)   python_command "council route" ${given[@]+"${given[@]}"} ;;
     index)   python_command "council index" ${given[@]+"${given[@]}"} ;;
     impact)  python_command "council impact" ${given[@]+"${given[@]}"} ;;
-    context) sub="${1:-}"; [ $# -eq 0 ] || shift
-             case "$sub" in
-               build) takes_flags "context build" expand
-                      [ $# -eq 1 ] || die "usage: council context build <seat> [--run <folder>] [--expand PATH ...]"
-                      cmd_context build "$1" ;;
-               show) takes_flags "context show"
-                     [ $# -eq 1 ] || die "usage: council context show <seat> [--run <folder>]"
-                     cmd_context show "$1" ;;
-               *) die "usage: council context build <seat> [--expand PATH ...] | context show <seat>" ;;
-             esac ;;
-    evidence) sub="${1:-}"; [ $# -eq 0 ] || shift
-              takes_flags "evidence $sub"; no_words "evidence $sub" ${1+"$@"}
-              case "$sub" in build|show|check) cmd_evidence "$sub" ;;
-                *) die "usage: council evidence build|show|check [--run <folder>]" ;;
-              esac ;;
-    repair) sub="${1:-}"; [ $# -eq 0 ] || shift
-            case "$sub" in
-              record) takes_flags "repair $sub"
-                      [ $# -eq 2 ] || die "usage: council repair record <task> <gate> [--run <folder>]"
-                      cmd_repair record "$1" "$2" ;;
-              show|check) takes_flags "repair $sub"
-                          [ $# -le 1 ] || die "usage: council repair $sub [task] [--run <folder>]"
-                          cmd_repair "$sub" ${1+"$@"} ;;
-              allow)  takes_flags "repair allow" user-said
-                      [ $# -ge 1 ] || die "usage: council repair allow <gate> --user-said \"<the user's words>\" [--run <folder>]"
-                      [ -n "$(printf '%s' "$MEMORY_SAID_ARG" | tr -d '[:space:]')" ] \
-                        || die "repair allow needs --user-said \"<the user's own words>\" — their answer, not a summary of it"
-                      cmd_repair allow "${1+$*}" ;;     # a gate name with a space may arrive as several words
-              *) die "usage: council repair record <task> <gate> | repair show|check [task] | repair allow <gate> --user-said \"…\"" ;;
-            esac ;;
+    context) python_command "council context" ${given[@]+"${given[@]}"} ;;
+    evidence) python_command "council evidence" ${given[@]+"${given[@]}"} ;;
+    repair)  python_command "council repair" ${given[@]+"${given[@]}"} ;;
     gate)    python_command "council gate" ${given[@]+"${given[@]}"} ;;
     gates)   python_command "council gates" ${given[@]+"${given[@]}"} ;;
     changed) python_command "council changed" ${given[@]+"${given[@]}"} ;;
@@ -3497,37 +3470,12 @@ main() {
     prior)   python_command "council prior" ${given[@]+"${given[@]}"} ;;
     ask)     python_command "council ask" ${given[@]+"${given[@]}"} ;;
     ledger)  python_command "council ledger" ${given[@]+"${given[@]}"} ;;
-    tune)    case "${1:-propose}" in
-               propose)      takes_flags tune json; [ $# -le 1 ] || die "usage: council tune [propose] [--json]"
-                             [ -z "$RUN_ARG" ] || die "tune reads this council home's record; it does not take --run"
-                             cmd_tune propose ;;
-               apply|revert) takes_flags "tune $1" user-said
-                             if [ "$1" = apply ]; then
-                               [ $# -eq 3 ] || die "usage: council tune apply budget <the value council tune showed, e.g. 150k> --user-said \"<the user's words>\""
-                             else
-                               [ $# -eq 2 ] || die "usage: council tune revert budget --user-said \"<the user's words>\""
-                             fi
-                             [ -z "$RUN_ARG" ] || die "tune reads this council home's record; it does not take --run"
-                             [ -n "$MEMORY_SAID_ARG" ] || die "tune $1 needs --user-said \"<the user's own words>\" — their answer, not a summary of it"
-                             cmd_tune "$1" "$2" "${3:-}" ;;
-               *)            die "usage: council tune [propose] [--json] | tune apply budget <value> --user-said \"…\" | tune revert budget --user-said \"…\"" ;;
-             esac ;;
-    history) takes_flags history json; no_words history ${1+"$@"}
-             [ -z "$RUN_ARG" ] || die "history reads every run of this council home; it does not take --run"
-             cmd_history ;;
-    outcomes) takes_flags outcomes json; no_words outcomes ${1+"$@"}
-              [ -z "$RUN_ARG" ] || die "outcomes reads every run of this council home's record; it does not take --run"
-              cmd_outcomes ;;
-    tui)     takes_flags tui watch json; no_words tui ${1+"$@"}
-             [ "$WATCH" -eq 0 ] || [ "$JSON_OUT" -eq 0 ] || die "tui takes --watch or --json, not both"
-             cmd_tui ;;
-    status)  takes_flags status widget json line preview; no_words status ${1+"$@"}
-             [ $((WIDGET + JSON_OUT + LINE)) -le 1 ] || die "status takes --widget, --json or --line, not together"
-             [ "$PREVIEW" -eq 0 ] || [ "$WIDGET" -eq 1 ] || die "--preview labels a widget: use it with --widget"
-             cmd_status ;;
-    pet)     takes_flags pet stop demo still pose exit-after; no_words pet ${1+"$@"}
-             [ -z "$RUN_ARG" ] || die "pet follows this session's run on this working tree; it does not take --run"
-             cmd_pet ;;
+    tune)    python_command "council tune" ${given[@]+"${given[@]}"} ;;
+    history) python_command "council history" ${given[@]+"${given[@]}"} ;;
+    outcomes) python_command "council outcomes" ${given[@]+"${given[@]}"} ;;
+    tui)     python_command "council tui" ${given[@]+"${given[@]}"} ;;
+    status)  COUNCIL_BASH="$BASH" python_command "council status" ${given[@]+"${given[@]}"} ;;
+    pet)     COUNCIL_BASH="$BASH" python_command "council pet" ${given[@]+"${given[@]}"} ;;
     correct) takes_flags correct; cmd_correct ${1+"$@"} ;;
     doctor)  python_command "council doctor" ${given[@]+"${given[@]}"} ;;
     version) takes_flags version; no_words version ${1+"$@"}; say "council $COUNCIL_VERSION" ;;
