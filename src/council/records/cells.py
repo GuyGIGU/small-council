@@ -53,16 +53,15 @@ def leading(cell: str) -> int:
     return int(found.group(1)) if found else 0
 
 
-def number(value: Any) -> int:
-    """A cell's whole number of up to 12 digits, else 0."""
-    value = str(value or "").strip()
-    return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else 0
-
-
 def optional_number(value: Any) -> int | None:
     """A recorded count, or None when the cell is blank or not a plain number (never guessed as 0)."""
     value = str(value if value is not None else "").strip()
     return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else None
+
+
+def number(value: Any) -> int:
+    """A cell's whole number of up to 12 digits, else 0."""
+    return optional_number(value) or 0
 
 
 def token_count(text: str) -> int | None:
