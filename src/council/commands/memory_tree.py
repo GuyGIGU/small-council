@@ -15,7 +15,6 @@ from council.records import home as where
 from council.records.closing import MODES
 from council.records.memory_entries import cells
 
-_WORD = re.compile(r"[A-Za-z0-9_]")
 
 
 class Tree:

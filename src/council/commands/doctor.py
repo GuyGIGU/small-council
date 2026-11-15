@@ -116,7 +116,7 @@ def roster(doc: Doctor) -> None:
         elif has_cards:
             card(doc, seat, slug, cards + "/" + slug + ".md")
     slugs = [slug for slug, _, _ in rows if slug != "-"]
-    shared = sorted({s for s in slugs if slugs.count(s) > 1}, key=lambda s: s.encode("utf-8", "surrogateescape"))
+    shared = sorted({s for s in slugs if slugs.count(s) > 1}, key=bytewise.text)
     if shared:
         doc.error("the roster repeats a slug: %s" % " ".join(shared),
                   "give each row its own slug — a lens that covers two areas gets two (dodds-web, dodds-admin)")
@@ -159,8 +159,7 @@ def _state_files(home: str) -> list[str]:
     except OSError:
         return []
     found = [folder + "/" + name + "/" + paths.STATE for name in names]
-    return sorted((f for f in found if os.path.isfile(where.native(f))),
-                  key=lambda f: f.encode("utf-8", "surrogateescape"))
+    return sorted((f for f in found if os.path.isfile(where.native(f))), key=bytewise.text)
 
 
 def open_runs(doc: Doctor) -> None:
