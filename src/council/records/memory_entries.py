@@ -170,10 +170,10 @@ class Parser:
 
     def fields(self, line: str) -> None:
         """A field line of the entry: its scope, its anchor, what it means, or a line that retires it."""
-        for name, attr in (("Scope", "scope"), ("Anchor", "anchor")):
+        for name in ("Scope", "Anchor", "Origin", "Evidence", "Verdict"):
             v = fieldval(line, name)
             if v:
-                setattr(self, attr, v)
+                setattr(self, name.lower(), v)
         v = next((v for v in (fieldval(line, m) for m in MEANINGS) if v), "")
         if v:
             self.meaning = v
@@ -182,10 +182,6 @@ class Parser:
             v = fieldval(line, "Observation")
         if v:
             self.failure = v
-        for name, attr in (("Origin", "origin"), ("Evidence", "evidence"), ("Verdict", "verdict")):
-            v = fieldval(line, name)
-            if v:
-                setattr(self, attr, v)
         lo = lower(line)
         for mark in MARKS:
             found = re.search(r"\*\*" + mark + r"( by)?:?\*\*:?", lo)
