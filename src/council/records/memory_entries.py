@@ -24,7 +24,6 @@ MARKS = ("retired", "superseded", "withdrawn")
 MEANINGS = ("Pattern", "Rule", "Convention", "Decision", "Failure", "Observation")
 VERDICTS = ("OBSERVED", "REPRODUCED", "CONFIRMED", "REFUTED", "MISCITED", "REGRESSION", "INCOMPLETE", "SCOPE-CREEP")
 VERDICT_LIST = "OBSERVED, REPRODUCED, CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE or SCOPE-CREEP"
-BOM = bytewise.read(b"\xef\xbb\xbf")
 _DOT = bytewise.DOT
 _ID = re.compile(r"(ap|ec|d|f)-?[0-9]+")
 _ASIDE = re.compile(r"[ \t]*(" + EM + "|" + EN + r"|-[ \t]|\(|\[|;|:|,).*\Z", re.S)
@@ -399,10 +398,7 @@ class Parser:
 def parse(text: str) -> Parser:
     """A memory file's text (C-locale) read through."""
     parser = Parser()
-    for n, raw in enumerate(bytewise.records(text), 1):
-        line = raw[:-1] if raw.endswith("\r") else raw
-        if n == 1 and line.startswith(BOM):
-            line = line[len(BOM):]
+    for n, line in enumerate(bytewise.lines(text), 1):
         parser.n = n
         parser.line(line)
     parser.flush()

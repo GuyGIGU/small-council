@@ -11,6 +11,7 @@ EN = "–".encode().decode("latin-1")
 DOT = "·".encode().decode("latin-1")         # the middle dot fields are separated by
 ELLIPSIS = "…".encode().decode("latin-1")
 ARROW = "→".encode().decode("latin-1")
+BOM = "\ufeff".encode().decode("latin-1")
 _LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 _UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
@@ -45,6 +46,14 @@ def records(text: str, fold: bool = True) -> list[str]:
     if text.endswith("\n") or not text:
         lines.pop()
     return lines
+
+
+def lines(text: str) -> list[str]:
+    """A file's records (fold off) as the memory's readers clean them: a line's last CR cut, the BOM off line 1."""
+    found = [raw[:-1] if raw.endswith("\r") else raw for raw in records(text)]
+    if found and found[0].startswith(BOM):
+        found[0] = found[0][len(BOM):]
+    return found
 
 
 def file_lines(path: str | Path, fold: bool = True) -> list[str]:

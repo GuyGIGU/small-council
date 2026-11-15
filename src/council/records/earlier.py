@@ -14,7 +14,6 @@ from council.records.paths import contents
 from council.records.run_files import INDEX
 
 DELIVERABLES = ("reviews", "logs", "research", "plans", "postgames")
-BOM = bytewise.read(b"\xef\xbb\xbf")
 _NAMED = re.compile(rb"## (.*)  \(")
 _PATHISH = re.compile(r"[A-Za-z0-9_./-]")
 _DOTS = re.compile(r"(^|[^A-Za-z0-9_./-])(\./)+\Z")
@@ -72,13 +71,9 @@ class Reader:
         self.paths, self.top = paths, top
 
     def file(self, shown: str, text: str) -> list[str]:
-        lines = bytewise.records(text)
         hit, areas = [""] * len(self.paths), []
         in_front = in_areas = False
-        for n, raw in enumerate(lines, 1):
-            line = raw[:-1] if raw.endswith("\r") else raw
-            if n == 1 and line.startswith(BOM):
-                line = line[len(BOM):]
+        for n, line in enumerate(bytewise.lines(text), 1):
             if n == 1 and line == "---":
                 in_front = True
             elif in_front:
