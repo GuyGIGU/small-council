@@ -1,6 +1,4 @@
-"""council state [key=value ...]: with no words the run's header; else every word is checked before anything is
-written, the change made by state_write.change, then the phase line and, when the run starts waiting on the user,
-the alert nudge (last, so it is seen)."""
+"""council state [key=value ...]: the header, or every word checked and then written by state_write.change."""
 from __future__ import annotations
 
 import os

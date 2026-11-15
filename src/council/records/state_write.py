@@ -17,16 +17,14 @@ DECISIONS = "## Decisions so far"
 
 
 class StateError(paths.RecordError):
-    """What the helper says on stderr when a state write is refused or fails: str() is its lines joined so that
-    'council: ' + str() prints each with its own 'council: '."""
+    """A refused or failed state write: its lines joined so each prints with its own 'council: '."""
 
     def __init__(self, *lines: str) -> None:
         super().__init__("\ncouncil: ".join(lines))
 
 
 class Changed(NamedTuple):
-    """The header after a change, the wait before it, and the lines (no 'council: ') to say about an event a close
-    let go."""
+    """The header after a change, the wait before it, and what to say about an event a close let go."""
     phase: str
     status: str
     waited: str
@@ -48,9 +46,7 @@ def closed_refusal(run: Path, why: str) -> str:
 
 
 def change(run: Path, words: list, closing: bool = False, events_lost: bool = False, phase_note: str = "") -> Changed:
-    """council state <key=value> ...: words already checked. closing (the close's own write, CLOSING=1) lets a
-    closed run take any key and a lost status event pass with a note; events_lost (EVENTS_LOST=1) records no phase
-    or status event. phase_note ends the phase event's detail (';skipped=…;reason=…'). StateError otherwise."""
+    """council state's write; closing lets a closed run change and its status event go; events_lost records none."""
     run = Path(run)
     lock = Path(str(path(run)) + ".lock")
     if not locks.acquire(lock):
@@ -143,8 +139,7 @@ def _event(run: Path, what: str, value: str, detail: str, closing: bool = False)
 
 
 def clear_waiting(run: Path) -> bool:
-    """wait_over: the run moves on — a seat or a gate — so a wait it recorded is cleared, silently. False, the state
-    as it was (or written but its event lost), when there was no wait, the run is closed, or the write failed."""
+    """wait_over: the run moves on, so its wait is cleared silently; False when there was none or it failed."""
     if not field(text(run), "waiting") or closed(run):
         return False
     try:

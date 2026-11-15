@@ -1,5 +1,4 @@
-"""What `council seat` says after the write: the progress line the Chair relays, a seat over its tool budget, and
-the one ask for tools=."""
+"""What `council seat` says after the write."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,8 +8,7 @@ from council.records import seat_files, seat_rows, seat_write, seats, usage
 
 
 def report(run: Path, slug: str, got: dict[str, str]) -> None:
-    """The progress line (with a seat over its plan's tool budget on it), then the run's first report without
-    tools= asked for them."""
+    """The progress line (a seat over its tool budget on it), then the first ask for tools=."""
     budget, over = seat_rows.tool_budget(run, slug), ""
     if got["tools"]:
         used = seat_rows.tool_calls(run, slug)
@@ -26,8 +24,7 @@ def report(run: Path, slug: str, got: dict[str, str]) -> None:
 
 
 def progress_line(run: Path, note: str) -> str:
-    """'seats: D of N done · still working: … · queued: … · failed: … · ~Xk tokens so far': seats, not agents;
-    an older row (no reported cell) never adds its tokens."""
+    """'seats: D of N done · still working: … · ~Xk tokens so far'; an older row's tokens are not added."""
     seated = done = tokens = 0
     older, named = False, {"running": [], "queued": [], "failed": []}
     for line in seat_files.lines(seats.path(run))[1:]:

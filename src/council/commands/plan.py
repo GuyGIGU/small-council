@@ -53,8 +53,7 @@ def check(run: Path, quiet: bool) -> int:
 
 
 def require(run: Path, action: str) -> None:
-    """require_run_plan: a run with a plan must have a valid one before it may <action> (its problems on stdout);
-    a run from before plans needs none."""
+    """require_run_plan: a run with a plan may <action> only with a valid one; one from before plans needs none."""
     if not plan.path(run).is_file():
         if resolve.field(run, "plan-schema"):
             raise cli.Refusal("cannot %s — %s is missing; restore it from references/templates/%s"

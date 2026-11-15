@@ -1,5 +1,4 @@
-"""council context build|show <seat>: a run-local, seat-specific context pack (scripts/context.py) at the level the
-validated run plan gives the selected seat. It only supplements brief.md and never edits project guidance."""
+"""council context build|show <seat>: a seat's context pack (scripts/context.py) at its run-plan level."""
 from __future__ import annotations
 
 import os

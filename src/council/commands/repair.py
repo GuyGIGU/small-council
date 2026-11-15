@@ -1,6 +1,4 @@
-"""council repair record|show|check|allow: a build's gate failures and repair outcomes (scripts/repair.py), and for a
-gate whose trail stopped at three failures the user's go, in their words, in <run>/repair-allowances.tsv under the
-run's event lock, then a repair.allowed event. The stopped trail stays closed: a later failure starts a new task."""
+"""council repair record|show|check|allow: the repair trail (scripts/repair.py) and the user's go past a stop."""
 from __future__ import annotations
 
 import contextlib

@@ -1,7 +1,4 @@
-"""council run turn-end --session ID: the Stop hook's decision (hooks/turn-end.sh). Each in-progress run this session
-drives with no seat working now waits on the user: one already waiting was asked for, so it is left alone (one alert
-per wait); one not yet is recorded and, with notifications on, the Chair is sent back for the owner's alert, exit 2.
-A run whose first status card is still due (card-due) sends the Chair back once for it too. Otherwise silent, 0."""
+"""council run turn-end --session ID: the Stop hook's decision (hooks/turn-end.sh)."""
 from __future__ import annotations
 
 import os

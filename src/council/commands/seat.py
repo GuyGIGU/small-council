@@ -1,6 +1,4 @@
-"""council seat <slug> <state> [agent= tokens= agents= tools= note=]: a seat's state and its agent's usage report,
-recorded under the seat lock in usage.tsv, seats.tsv and the event stream; then the progress line, the cap and the
-first dispatch's status card (references/run/run-accounting.md)."""
+"""council seat <slug> <state> [agent= tokens= agents= tools= note=] (references/run/run-accounting.md)."""
 from __future__ import annotations
 
 import contextlib
@@ -69,8 +67,7 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 
 def under(lock: Path, unavailable: str, body: Callable[[], T], unreleased: str = "") -> T:
-    """body() under the lock; refused with who holds it and then `unavailable`, or with `unreleased` (when given)
-    if it can't be let go."""
+    """body() under the lock: refused with its holder and `unavailable`, or `unreleased` if it stays held."""
     if not locks.acquire(lock):
         raise cli.Refusal("%s\ncouncil: %s" % (events.busy(lock), unavailable))
     try:
@@ -138,8 +135,7 @@ def _fields(words: list[str]) -> dict[str, str]:
 
 
 def _closed_out(run: Path, slug: str, state: str, got: dict[str, str]) -> bool:
-    """A closed run takes only a close-out that keeps every counted figure: the plan's Chair with no row, done
-    agents=0; a seat left running or queued, failed; a queued seat no agent took, skipped."""
+    """A closed run takes only a close-out that keeps every counted figure; True when the run is closed."""
     if not state_write.closed(run):
         return False
     key = (state, got["agents"], got["tokens"] + got["agent"], seat_rows.cell(run, slug, "state"),
@@ -153,8 +149,7 @@ def _closed_out(run: Path, slug: str, state: str, got: dict[str, str]) -> bool:
 
 
 def _may_record(run: Path, slug: str, state: str, got: dict[str, str]) -> None:
-    """The refusals that read the run: a done seat's file, the event stream, agents=0 with an agent on record, a
-    seat added from evidence, and a start the plan or the check rounds don't allow."""
+    """The refusals that read the run before anything is written."""
     missing = seat_write.missing_file(run, slug) if state == "done" and got["agents"] != "0" else ""
     if missing:
         raise cli.Refusal("seat %s has no file yet (%s), so it isn't done — resume its agent with SendMessage "

@@ -48,9 +48,7 @@ def asks_shared(home: str | Path) -> bool:
 
 
 def keep_out(home: str | Path) -> str:
-    """Add runs/, asks/ and active-run to the home's .gitignore unless git already ignores them (asks/ also not when
-    the user shares requests), in the file's own line endings, each on a line of its own. When asks/ was added while
-    requests are already in git, what the caller says (after 'council: '); else ''."""
+    """Make git ignore runs/, asks/ and active-run in the home; the line to say when tracked asks/ became ignored."""
     file, added = path(home), False
     data = _bytes(file)
     cr = b"\r" if data and b"\r" in data else b""

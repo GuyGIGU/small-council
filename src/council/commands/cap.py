@@ -52,8 +52,7 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 
 def allow(args: cli.Args, given: str) -> int:
-    """File the user's go, n more agent runs, in cap-allowances.tsv under the run's event lock (counted from the
-    stop's own count, read under the same lock), then a run.cap_allowed event."""
+    """The user's go for n more agent runs, filed under the run's event lock, then run.cap_allowed."""
     from council.commands import closed, event_note    # here: `council cap check`, the gate's, loads cap alone (D34)
     n = given.lstrip("0")
     if not re.fullmatch("[0-9]+", given) or not n or len(n) > 4 or int(n) > 1000:
@@ -88,8 +87,7 @@ def _file_go(run: Path, n: str, said: str) -> int:
 
 
 def note(run: Path) -> None:
-    """After a seat call: how the run stands against its agent cap and token ceiling, on stderr, and the first
-    passing of each recorded once (run.cap_passed, run.estimate_passed, run.ceiling_passed)."""
+    """After a seat call: the run against its cap and ceiling, on stderr; each first passing recorded once."""
     from council.commands import event_note
     stand = usage.standing(run, where.council_home())
     used, tokens, limit, ceiling = stand.used, stand.tokens, stand.cap, stand.ceiling

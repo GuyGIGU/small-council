@@ -35,8 +35,7 @@ def folders() -> list[Path]:
 
 
 def put(session: str, hook: str) -> None:
-    """Leave this hook's mark (and the bare one) for the session, then clear files older than 30 days (find
-    -mtime +30); silent when it can't, as a hook must be."""
+    """Leave this hook's mark (and the bare one), then clear files over 30 days old; silent when it can't."""
     if not SAFE.fullmatch(session or ""):
         return
     for folder in folders():
@@ -57,8 +56,7 @@ def put(session: str, hook: str) -> None:
 
 
 def ran(session: str) -> bool:
-    """False only when the bare mark is surely missing (hooks_ran): True when a folder holds it, and for an id that
-    can't be a file name, no folder, or a folder that can't be made or written (no hook could leave a mark there)."""
+    """hooks_ran: False only when no folder that a hook could write holds the session's bare mark."""
     found = folders()
     if not SAFE.fullmatch(session or "") or any((folder / session).is_file() for folder in found):
         return True

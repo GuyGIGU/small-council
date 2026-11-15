@@ -1,6 +1,4 @@
-"""council run events [show|check|repair]: the run's event stream judged, listed, or its torn last line mended (the
-one damage a killed writer leaves): a byte copy kept beside it, only the bytes after the last newline dropped, the
-stream checked again and the repair recorded. Nothing is ever rebuilt from guesses (references/run/event-stream.md)."""
+"""council run events [show|check|repair]: the event stream judged, listed, or its torn last line mended."""
 from __future__ import annotations
 
 import os

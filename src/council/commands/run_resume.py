@@ -1,5 +1,4 @@
-"""council run resume [--run <folder>]: carry on with an open run, a paused one or one another session drove — in
-progress again, a pause's closed: and actual: dropped, this session its driver, so a compaction here resumes it."""
+"""council run resume [--run <folder>]: an open run in progress again, driven by this session."""
 from __future__ import annotations
 
 import os

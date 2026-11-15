@@ -1,8 +1,4 @@
-"""council run session-start: the SessionStart hook's words for the session (hooks/session-start.sh hands it the
-hook's input). In a council project a short orientation: the modes, the map and settled decisions, memory proposals
-awaiting the user and, most of all, the open runs. Right after a compaction only the run this session drove (its id
-in session:) is resumed; every other open run is only reported. Elsewhere nothing, but the session's mark is left in
-every project. It must never break a session: any fault ends it quietly with exit 0 (D20)."""
+"""council run session-start: the SessionStart hook's words; any fault ends it quietly with exit 0 (D20)."""
 from __future__ import annotations
 
 import contextlib
@@ -90,8 +86,7 @@ def _start(raw: str) -> None:
 
 
 def _worktree(listed: list[runs.Listed], scwd: str, root: str) -> None:
-    """A session in a linked worktree while an in-progress run's code is elsewhere: Claude Code may refuse its
-    edits outside the worktree, so it can't drive that run. Said first, at startup too."""
+    """In a linked worktree, an in-progress run whose code is elsewhere can't be driven here: said first."""
     scwd = where.native(scwd)
     dirs = [git.text(scwd, "rev-parse", flag) for flag in ("--git-dir", "--git-common-dir")]
     if not all(dirs) or len({os.path.realpath(os.path.join(scwd, d)) for d in dirs}) < 2:
@@ -166,8 +161,7 @@ def _memory(home: str) -> None:
 
 
 def _runs(listed: list[runs.Listed], top: str, sid: str, event: str) -> str:
-    """Every open run said: this tree's and this session's described (at most 5), the rest summed up. Rows hold '-'
-    for an empty cell, as the hook's read did; a mine row carries its code root when it is another tree."""
+    """Every open run: this tree's and this session's described (at most 5), the rest summed up."""
     mine, others, gone, n_other, n_gone = [], [], [], 0, 0
     for r in listed:
         if r.code_root in ("-", top):
@@ -203,8 +197,7 @@ def _runs(listed: list[runs.Listed], top: str, sid: str, event: str) -> str:
 
 
 def _driving(mine: list, sid: str) -> str:
-    """The run this session drove: in progress with this session's id, else (none recorded, or no id) the first
-    in progress whose state was touched in the last 12 hours."""
+    """The run this session drove: by session id, else the first in progress touched in the last 12 hours."""
     fallback = ""
     for r, _ in mine:
         rsid = "" if r.session == "-" else r.session

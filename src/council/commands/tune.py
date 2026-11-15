@@ -1,6 +1,4 @@
-"""council tune [propose] [--json] | tune apply|revert budget … --user-said "…": conservative self-tuning
-(scripts/tune.py). propose only reads; apply and revert change the config's estimate per worker, only with the
-user's words, redacted here first and logged in tuning.md."""
+"""council tune [propose] [--json] | tune apply|revert budget … --user-said "…" (scripts/tune.py)."""
 from __future__ import annotations
 
 import os

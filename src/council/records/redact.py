@@ -232,9 +232,7 @@ def redact(data: bytes) -> tuple[bytes, int]:
 
 
 def said(words: str, line_breaks_only: bool = False) -> str:
-    """The user's words as one line, redacted (bin/council's redact_copy of a flattened copy): tabs, carriage
-    returns and newlines become spaces (council state, cap allow and repair allow also flatten vertical tabs and
-    form feeds; council tune does not, so passes line_breaks_only)."""
+    """The user's words redacted on one line; line_breaks_only (council tune) leaves  and ."""
     flat = re.sub("[\t\r\n]" if line_breaks_only else "[\t\r\n\x0b\x0c]", " ", words)
     shown = redact((flat + "\n").encode("utf-8", "surrogateescape"))[0]
     return shown.decode("utf-8", "surrogateescape").replace("\r", "").replace("\n", "")

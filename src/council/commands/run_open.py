@@ -1,5 +1,4 @@
-"""council run open <mode> [--alongside] [--session=ID] [--code-root=DIR]: a new run folder with its first files
-(session-state.md, run-plan.tsv from the template, log.md, seats.tsv, the run.opened event); its path on stdout."""
+"""council run open <mode> [--alongside] [--session=ID] [--code-root=DIR]: a new run folder; its path on stdout."""
 from __future__ import annotations
 
 import os

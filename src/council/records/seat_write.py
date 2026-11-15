@@ -1,6 +1,4 @@
-"""What `council seat` writes under seats.tsv.lock: usage.tsv's rows, the seat's figures derived from them
-(per agent id the latest report; references/run/run-accounting.md) and its seats.tsv row; and the seat file a
-done seat must have."""
+"""What `council seat` writes under seats.tsv.lock (references/run/run-accounting.md)."""
 from __future__ import annotations
 
 import os
@@ -33,8 +31,7 @@ def add(file: Path, rows: list[list[str]], header: str) -> None:
 
 
 def missing_file(run: Path, slug: str) -> str:
-    """The file a done seat still lacks ('' when it is there, or no brief names the seat): a verifier's
-    <slug>.md (or a re-check's <slug>b.md, a Workflow's <slug>-<letter>.md), a briefed seat's out: file."""
+    """The file a done seat still lacks: a verifier's, or a briefed seat's out:; '' when there or not briefed."""
     if slug.startswith("verify-"):
         names = [slug + ".md"] + seat_files.listed(run, slug + "[a-z].md") + seat_files.listed(run, slug + "-*.md")
         found, file = [run.as_posix() + "/" + name for name in names], run.as_posix() + "/" + slug + ".md"
@@ -49,8 +46,7 @@ def missing_file(run: Path, slug: str) -> str:
 
 
 def seat_usage(run: Path, slug: str) -> tuple[int, int, int, bool]:
-    """(agent runs, runs with usage, tokens, agents=0 declared) from usage.tsv: per agent id its latest runs and
-    its tokens as a running total, an id never reported one run with no usage, an id-less report on its own."""
+    """(agent runs, runs with usage, tokens, agents=0 declared) from usage.tsv, per agent id its latest."""
     runs = reported = tokens = 0
     declared, ids = False, {}
     for at, kind, n, figure in ((c[2], c[3], c[4], c[5]) for c in table(seats.path(run, seats.USAGE))[1:]
@@ -78,8 +74,7 @@ def seat_usage(run: Path, slug: str) -> tuple[int, int, int, bool]:
 
 
 def rewrite(run: Path, slug: str, new: dict[str, str]) -> None:
-    """Put the seat's row (new: state agent tokens note updated, and the derived agents reported total) in seats.tsv:
-    a lost header comes back, an older row (no reported cell) keeps its old rules, a new seat goes last."""
+    """The seat's row in seats.tsv: a lost header back, an older row under its old rules, a new seat last."""
     file, out, found = seats.path(run), [], False
     for at, line in enumerate(seat_files.lines(file)):
         c = line.split("\t")

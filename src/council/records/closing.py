@@ -1,5 +1,4 @@
-"""What a close reads in a run and decides: why it may not close as complete yet, the words for what its agents
-used, the five warnings of a complete close, and a build run's log."""
+"""What a close reads in a run and decides."""
 from __future__ import annotations
 
 import re
@@ -125,8 +124,7 @@ CHECKS = (  # (code, check: the value its line names, or None when the run passe
 
 
 def claims_stale(run: Path, says_stale: Callable[[], bool]) -> bool:
-    """A review, plan or research run's claim index missing, or older than a source it was built from (a deleted
-    one too, which only says_stale, the evidence check, can tell)."""
+    """A synthesis run's claim index missing, or older than a source (a deleted one only says_stale tells)."""
     synthesis, claims = run / "synthesis.md", run / "claims.jsonl"
     synthesised = _field(run, "mode") in ("council-review", "council-plan", "council-research")
     if not synthesised or not (synthesis.is_file() or claims.is_file()):

@@ -17,8 +17,7 @@ _LOADED: dict[str, ModuleType] = {}
 
 
 def load(name: str) -> ModuleType:
-    """scripts/<name>.py as a module, loaded once, as its own process had it: scripts/ first on the path (its
-    siblings import each other) and no bytecode left beside it. It may set its streams up as it loads; ours stay."""
+    """scripts/<name>.py loaded once as its own process had it: scripts/ on the path, no bytecode, our streams."""
     if name not in _LOADED:
         sys.dont_write_bytecode = True
         if str(SCRIPTS) not in sys.path:

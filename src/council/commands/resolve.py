@@ -79,8 +79,7 @@ def is_run(folder: str) -> bool:
 
 
 def open_runs(home: str, tree: str, status: str = "") -> list[str]:
-    """The open runs on this working tree (runs_here), only those with this status when one is given: a run with
-    no code-root counts as this tree's."""
+    """The open runs on this working tree (runs_here), of this status when given; no code-root counts as here."""
     return [run.folder for run in runs.listing(home, 1000000, "open")
             if run.code_root in (tree, "", "-") and status in ("", run.status)]
 

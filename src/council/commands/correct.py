@@ -1,6 +1,4 @@
-"""council correct <seat> tokens=<exact> agents=<exact> [unrecorded=yes] evidence="…": an evidence-backed correction
-of a seat's recorded figures. seats.tsv is never edited: one line per field goes to corrections.jsonl (compact JSON,
-keys in a fixed order), which every reader lays over the row (references/run/run-accounting.md)."""
+"""council correct <seat> tokens= agents= [unrecorded=yes] evidence="…": a line per field in corrections.jsonl."""
 from __future__ import annotations
 
 import json

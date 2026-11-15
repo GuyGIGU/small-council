@@ -1,6 +1,4 @@
-"""The commands that hand over to a scripts/ entry: evidence, tui, status, pet, history, outcomes and run audit. One
-row each says the script, the words it starts with (a capital word is filled in below), the flags the command takes
-and hands on as given, and why it refuses --run."""
+"""The commands that hand over to a scripts/ entry, one TABLE row each."""
 from __future__ import annotations
 
 import builtins

@@ -1,6 +1,4 @@
-"""The helper's one-line nudges to the Chair, on stderr: alert the user when the run starts waiting on them
-(waiting_nudge), show them the status card at the first dispatch and the close (status_nudge); and the card-due
-mark that sends the Chair back once for a card not yet shown."""
+"""The helper's one-line nudges to the Chair on stderr, and the card-due mark."""
 from __future__ import annotations
 
 import contextlib
@@ -26,8 +24,7 @@ def waiting_nudge(run: Path, named: bool) -> None:
 
 
 def status_nudge(run: Path, when: str, named: bool, follow: str = "") -> None:
-    """when='dispatch' (the first, which owes the card: card-due) or 'close' (always --run; a complete run also owes
-    the owner's alert). follow: what to tell them from the record, at the close."""
+    """Show the status card: at the first dispatch (marks card-due) or the close (with follow and the alert)."""
     at = " --run " + Path(run).name if named or when == "close" else ""
     lead = "first dispatch of this run — show the user its status now, once"
     alert = ""

@@ -22,8 +22,7 @@ def helper_bash() -> str:
 
 
 def bash_exe() -> str:
-    """helper_bash() as cygpath -m writes it, Git's usr/bin/bash.exe swapped for the bin/bash.exe that sets Git's
-    tools up; '' where there is no cygpath."""
+    """helper_bash() as cygpath -m writes it, Git's bin/bash.exe for usr/bin/bash.exe; '' without cygpath."""
     import shutil
     if not shutil.which("cygpath"):
         return ""

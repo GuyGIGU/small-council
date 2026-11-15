@@ -101,8 +101,7 @@ def raw_rows(home: str | Path) -> list[list[str]] | None:
 
 
 def _rewrite(ledger: Path, name: str, new: bytes, failed: str) -> bool:
-    """Every line but the run's rows (a new ledger: the header), then the new rows. No lock, as the helper takes
-    none: two runs writing at once, the last write wins."""
+    """The ledger less the run's rows, then the new rows; no lock, as the helper took none (the last write wins)."""
     try:
         old = bytewise.records(bytewise.read(ledger.read_bytes()) if ledger.is_file() else HEADER)
         kept = "".join(line + "\n" for line in old if (line.split("\t") + [""])[1] != bytewise.text(name))

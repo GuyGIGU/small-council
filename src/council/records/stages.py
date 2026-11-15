@@ -1,5 +1,4 @@
-"""The stages of a council run, in order: each one's rank and the next step `council state phase=` records
-(bin/council's stage_name_ok, stage_rank, stage_next, required_stages and stages_skipped)."""
+"""The stages of a council run, in order: each one's rank and the next step `council state phase=` records."""
 from __future__ import annotations
 
 import re
@@ -40,8 +39,7 @@ def next_text(stage: str) -> str:
 
 
 def required(run: Path) -> list[str]:
-    """The stages a run must enter, in order: a review, plan or research run whose plan selects a worker seat
-    (and is not Solo) enters all ten."""
+    """The stages a run must enter: all ten for a review, plan or research run with a worker, not Solo."""
     mode = state.field(state.text(run), "mode")
     if mode not in ("council-review", "council-plan", "council-research"):
         return REQUIRED.get(mode, "").split()
@@ -58,8 +56,7 @@ def required(run: Path) -> list[str]:
 
 
 def skipped(run: Path, frm: str, to: str) -> list[str]:
-    """The stages this run must enter that a move from frm to to passes over; none for a step back or a mode's
-    own phase."""
+    """The required stages a move from frm to to passes over; none for a step back or a mode's own phase."""
     low, high = rank(frm), rank(to)
     if low == 0 or high <= low:
         return []

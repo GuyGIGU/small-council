@@ -1,6 +1,4 @@
-"""council run close [--status complete|abandoned|paused]: under the run's close lock, refuse a complete close the
-run has not earned, then write the state, the ledger and the close event, say what the close leaves open, and read
-the run back with the method audit. A second close waits for the lock, then finds the run closed."""
+"""council run close [--status complete|abandoned|paused], under the run's close lock."""
 from __future__ import annotations
 
 import re
@@ -90,8 +88,7 @@ def _close(run: Path, status: str, lost: str, retake: bool, real: bool) -> None:
 
 
 def _complete(run: Path, home: str) -> tuple[str, str]:
-    """A complete close's warnings, ledger rows, filed request and build log: the warnings' codes for the close
-    event, and the record's follow-up line."""
+    """A complete close's warnings, ledger rows, request and build log: (warning codes, follow-up line)."""
     found = closing.warnings(run)
     for _, line in found:
         cli.warn("council: " + line)

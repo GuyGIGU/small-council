@@ -1,5 +1,4 @@
-"""What a close says from the scripts that read the run back: the claim index's staleness, the method audit, the
-Chair's own tokens, and the record's follow-up line (said once)."""
+"""What a close says from the scripts that read the run back."""
 from __future__ import annotations
 
 import re

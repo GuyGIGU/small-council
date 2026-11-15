@@ -19,8 +19,7 @@ def append(run: str | Path, kind: str, subject: str, value: str, detail: str, sa
 
 
 def need(run: str | Path, kind: str, subject: str, value: str, detail: str, refusal: str) -> bool:
-    """events.append, or a Refusal that says the event's own reason and then `refusal` (two stderr lines, exit 2).
-    False is success too: a run from before the stream, or a once-only event already on record."""
+    """events.append, or a Refusal: the event's reason, then `refusal`. False is success too."""
     try:
         return events.append(Path(run), kind, subject, value, detail)
     except events.EventError as failure:

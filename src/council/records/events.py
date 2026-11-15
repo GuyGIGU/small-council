@@ -159,8 +159,7 @@ def busy(lock: Path) -> str:
 
 
 def ready(run: Path) -> tuple[int, str]:
-    """event_ready: 0 when the stream takes a row (or the run keeps none); 1 and why for a torn last line, which
-    `council run events repair` mends; 2 and why when it is missing or damaged otherwise, which nothing rebuilds."""
+    """event_ready: (0, '') when the stream takes a row; 1 and why for a torn last line; 2 and why otherwise."""
     if not _schema(Path(run)):
         return 0, ""
     try:
