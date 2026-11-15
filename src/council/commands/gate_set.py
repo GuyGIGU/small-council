@@ -6,9 +6,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from council import git
-from council.commands import cli, gate_lock, gate_output, gate_repair, gate_run
+from council.commands import cli, gate_lock, gate_repair, gate_run
 from council.commands.gate import safe
-from council.records import config, gate_notes, gate_table, gates, verdicts
+from council.records import bytewise, config, gate_notes, gate_table, gates, verdicts
 
 STAGES = {"grounding": ("g", "grounding"), "verify": ("v", "verify"), "verification": ("v", "verify")}
 
@@ -39,9 +39,9 @@ def run_all(call: gate_run.Call, at: str, mode: str, wait: tuple[bool, str]) -> 
     """Run the set; 0 when every mandatory gate that ran passed, 1 when one failed, 4 when nothing ran."""
     stage, label = "", ""
     if at:
-        if at.translate(gate_output.ASCII_LOWER) not in STAGES:
+        if bytewise.lower(at) not in STAGES:
             raise cli.Refusal("--at takes grounding or verify (got '%s')" % at)
-        stage, label = STAGES[at.translate(gate_output.ASCII_LOWER)]
+        stage, label = STAGES[bytewise.lower(at)]
     gate_lock.take(call.run, *wait)     # refuses, before anything is written, while another gate call runs
     call = call._replace(baseline=stage != "v")    # the untouched code: each gate's first output is its baseline
     cfg = config.path(call.home).as_posix()

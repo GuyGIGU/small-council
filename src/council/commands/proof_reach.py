@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 
+from council.records import bytewise
 from council.records import home as where
 
 DROP = str.maketrans("", "", "\"'`")
@@ -86,8 +87,7 @@ def _named(token: str, state: _Words) -> str | None:
         token = token[:token.index("::")]
     if token.startswith("-") or token in (".", "./") or "*" in token or "?" in token or not re.search(r"[/.]", token):
         return None
-    base = token.rsplit("/", 1)[-1].translate(str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                                                            "abcdefghijklmnopqrstuvwxyz"))
+    base = bytewise.lower(token.rsplit("/", 1)[-1])
     if CONFIG.fullmatch(base) or state.away:          # a config, a log or a report is never the test that was saved
         return None
     path = token

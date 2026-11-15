@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import NamedTuple
 
-from council.records import citations
+from council.records import bytewise, citations
 from council.records.home import native
 
 AREA_MODES = ("council-plan", "council-research", "council-postgame")
@@ -68,13 +68,9 @@ def rel(top: str, path: str) -> str:
             found = drive.group(1) + ":" + found[2:]
         if found.startswith(top + "/"):
             return found[len(top) + 1:]
-        if _lower(found).startswith(_lower(top) + "/"):
+        if bytewise.lower(found).startswith(bytewise.lower(top) + "/"):
             return found[len(top) + 1:]
     return path
-
-
-def _lower(text: str) -> str:
-    return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in text)
 
 
 def run_cited(where: Scope, path: str, top: str) -> bool:

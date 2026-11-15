@@ -16,6 +16,7 @@ import os
 import re
 from typing import Tuple
 
+from council.records.bytewise import lower
 from council.records.home import native
 
 Row = Tuple[str, ...]
@@ -189,7 +190,7 @@ def parse(field: str) -> list[Row]:
     """The rows a citation field gives (see the module's doc), in the order the helper's reader printed them."""
     text = re.sub(r"[\r\t]", " ", field)
     bare = text.replace(" ", "")
-    if bare in ("", "-") or NOTHING.fullmatch(re.sub(r"[.`*_\"]", "", _lower(bare))):
+    if bare in ("", "-") or NOTHING.fullmatch(re.sub(r"[.`*_\"]", "", lower(bare))):
         return [("N", "-")]
     text = _join_lines(_undecorate(text))
     whole = _whole(text)
@@ -251,11 +252,6 @@ def line_verdict(listed: str, count: int, what: str = "file has") -> str:
         if first is not None and last is not None and last < first:
             return "bad-line (%s runs backwards)" % piece
     return "bad-line (the %s %d lines)" % (what, count)
-
-
-def _lower(text: str) -> str:
-    """ASCII letters lowered, as awk does in the C locale."""
-    return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in text)
 
 
 def count_lines(data: bytes | None) -> int:

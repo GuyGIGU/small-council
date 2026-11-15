@@ -5,13 +5,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from council.records import config
+from council.records import bytewise, config
 
 
 def sharing(home: str | Path) -> str:
     """configured_sharing: 'just me' for just me, just-me or private; 'team' for anything else or none."""
     found = config.first(home, config.SPACE + "*-" + config.SPACE + "*sharing:" + config.SPACE + "*(.*)")
-    value = found.group(1).replace("\r", "").translate(config.ASCII_LOWER) if found else ""
+    value = bytewise.lower(found.group(1).replace("\r", "")) if found else ""
     words = ("just me", "just-me", "private")
     if any(value == word or value.startswith(word + " ") for word in words):
         return "just me"

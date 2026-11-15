@@ -8,7 +8,6 @@ from pathlib import Path
 
 from council.records import bytewise
 
-ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 SPACE = " \t\n\v\f\r"
 RAN = re.compile(r"(running|ran)[ \t]+[1-9][0-9]*[ \t]+tests?([^a-z]|$)|tests run:[ \t]*[1-9]"
                  r"|(^|[^0-9])[1-9][0-9]*[ \t]+(passed|passing)([^a-z]|$)")
@@ -116,9 +115,9 @@ def missing_module(content: str) -> str:
 
 def is_test_gate(name: str, command: str) -> bool:
     """A test gate, told by its name or by a runner in its command, never by an argument (src tests)."""
-    if "test" in name.translate(ASCII_LOWER) or "spec" in name.translate(ASCII_LOWER):
+    if "test" in bytewise.lower(name) or "spec" in bytewise.lower(name):
         return True
-    padded = " " + command.translate(ASCII_LOWER) + " "
+    padded = " " + bytewise.lower(command) + " "
     return any(runner in padded for runner in TEST_RUNNERS)
 
 

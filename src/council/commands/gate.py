@@ -118,10 +118,10 @@ def safe(side: str, needs: str, has_side: bool) -> bool:
     """May `gate --all` run this gate unasked? Only if the table has a Side effects column, every side effect is
     on the safe list (none, writes the tree, network) and Needs names no credentials or hardware. A command's
     wording is no evidence that it is safe."""
-    if NEEDS_ASK.search(needs.translate(gate_output.ASCII_LOWER)) or not has_side or side == "-":
+    if NEEDS_ASK.search(bytewise.lower(needs)) or not has_side or side == "-":
         return False
     items = [item.strip(" \t\n\v\f\r") for item in side.split(",")]
-    return all(item.translate(gate_output.ASCII_LOWER) in SAFE for item in items if item)
+    return all(bytewise.lower(item) in SAFE for item in items if item)
 
 
 def one(call: gate_run.Call, name: str, command: str, mode: str, wait: tuple[bool, str]) -> int:

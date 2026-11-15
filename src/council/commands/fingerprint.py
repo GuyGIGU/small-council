@@ -7,7 +7,7 @@ import re
 import subprocess
 
 from council.commands import cli
-from council.records import config
+from council.records import bytewise, config
 from council.records import home as where
 
 MANIFESTS = re.compile(
@@ -24,7 +24,6 @@ LANGUAGES = frozenset(
      "tscn", "nix"])
 _WILD = re.compile(r".*\.(tf|csproj|fsproj|sln|uproject)\Z", re.S)
 _EXT = re.compile(r".*\.([A-Za-z0-9+]{1,10})\Z", re.S)
-_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 _ITEMS = re.compile(", | · |: ")
 
 
@@ -66,7 +65,7 @@ def stack_summary() -> str:
     seen: dict[str, int] = {}
     for f in files:
         ext = _EXT.match(f)
-        word = ext.group(1).translate(_ASCII_LOWER) if ext else ""
+        word = bytewise.lower(ext.group(1)) if ext else ""
         if word in LANGUAGES:
             seen[word] = seen.get(word, 0) + 1
     langs = sorted((w for w, n in seen.items() if n >= 3), key=_bytes_key)

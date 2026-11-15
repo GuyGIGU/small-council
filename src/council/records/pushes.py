@@ -8,7 +8,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from council.records import config
+from council.records import bytewise, config
 
 HELD = "push and PR held by the freeze"
 SETTINGS = "on, off or off until <YYYY-MM-DD>"
@@ -19,7 +19,7 @@ def value(home: str | Path | None) -> str:
     configured_checking reads its line)."""
     found = config.first(home, r"[ \t]*-[ \t]*pushes:[ \t]*(.*)")
     words = re.sub(r"[ \t]*(<!--.*)?$", "", found.group(1), count=1) if found else ""
-    return re.sub(r"[ \t]+", " ", words).translate(config.ASCII_LOWER)
+    return bytewise.lower(re.sub(r"[ \t]+", " ", words))
 
 
 def pushes(home: str | Path | None, today: date | None = None) -> tuple[str, str]:

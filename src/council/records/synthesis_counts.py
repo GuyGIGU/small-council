@@ -11,8 +11,8 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from council.records.bytewise import file_lines
-from council.records.seat_files import listed, lower
+from council.records.bytewise import file_lines, lower
+from council.records.seat_files import listed
 
 ITEM = re.compile(r"[-+]? *_*C?[0-9]+[a-z]?_*\.? +(·|\|) ")
 SEAT_ITEM = re.compile(r"[A-Za-z][A-Za-z0-9._-]*#C?[0-9]+[a-z]?")

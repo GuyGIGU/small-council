@@ -20,13 +20,9 @@ class Quote(NamedTuple):
     words: str
 
 
-def _lower(text: str) -> str:
-    return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in text)
-
-
 def loose(text: str) -> str:
     """Capitals, ** and ` marks don't count: what a near miss is compared on."""
-    return _lower(re.sub(r" +", " ", re.sub(r"[*_`]", "", text)))
+    return bytewise.lower(re.sub(r" +", " ", re.sub(r"[*_`]", "", text)))
 
 
 def word_count(text: str) -> int:
@@ -36,7 +32,7 @@ def word_count(text: str) -> int:
 def opened_at(line: str) -> int:
     """Where the last "quote:" that opens a quote starts (it may be introduced "· quote:", "— quote:", "(quote:");
     a title may say "Quote:" too, so the word must start a quote to count). -1 when none does."""
-    low, found, at = _lower(line), -1, 0
+    low, found, at = bytewise.lower(line), -1, 0
     while True:
         at = low.find("quote:", at)
         if at < 0:
@@ -87,8 +83,8 @@ def item_quotes(path: str | Path, said: str, mode: str) -> list[Quote]:
         parts = re.split(r" +· +", re.sub(r"^[-*+]? *", "", line)) if "·" in line else \
             re.split(r" +\| +", re.sub(r"^[-*+]? *", "", line))
         n = re.sub(r"[*_.]", "", parts[0])
-        part = len(parts) > 2 and _lower(parts[2]) == "ask" or (
-            mode == "council-postgame" and len(parts) > 1 and _lower(parts[1]) in ("must", "should"))
+        part = len(parts) > 2 and bytewise.lower(parts[2]) == "ask" or (
+            mode == "council-postgame" and len(parts) > 1 and bytewise.lower(parts[1]) in ("must", "should"))
         if len(parts) < 4 or not part:
             continue
         at = opened_at(line)
@@ -124,7 +120,7 @@ def next_tasks(path: str | Path, said: str) -> list[Task]:
             number = re.match(r"[0-9]+[.)]?[ \t]*", title)
             task = [re.sub(r"[.)]?[ \t]*$", "", number.group(0)), "", title[number.end():]] if number else \
                 ["?", "", title]
-        elif on and task and not task[1] and re.match(r"\|[ \t]*\**done when\**[ \t]*\|", _lower(line)):
+        elif on and task and not task[1] and re.match(r"\|[ \t]*\**done when\**[ \t]*\|", bytewise.lower(line)):
             cell = re.sub(r"\|[ \t]*$", "", re.sub(r"^\|[^|]*\|", "", line))
             task[1] = request.verdict(cell, said)
     return found + _flush(task)

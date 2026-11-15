@@ -109,7 +109,7 @@ class Check:
             return
         self.n["files"] += 1
         lab = label(path)
-        kept = any(re.match(r"##[ \t]", line) and KEPT.search(seat_files.lower(line))
+        kept = any(re.match(r"##[ \t]", line) and KEPT.search(bytewise.lower(line))
                    for line in bytewise.file_lines(file, fold=False))
         sections, heading = ("Kept|Cut", "## Kept or ## Cut") if kept else ("Index", "## Index")
         shape = seat_files.shape(file, sections)

@@ -81,7 +81,7 @@ def checking(home: str | Path | None) -> str:
         found = re.match(r"[ \t]*-[ \t]*checking:[ \t]*", line)
         if found:
             value = re.sub(r"[ \t]*(<!--.*)?$", "", line[found.end():], count=1)
-            value = re.sub(r"[ \t]+", " ", value).translate(ASCII_LOWER)
+            value = bytewise.lower(re.sub(r"[ \t]+", " ", value))
             break
     if value in CHECKING:
         return "{} (config)".format(value)
@@ -114,7 +114,7 @@ def role_pairs(home: str | Path | None, key: str) -> tuple[bool, list[tuple[str,
 
 def pairs(text: str) -> list[tuple[str, str, str]]:
     """The text after a role line's key as (role, equals, value) pieces, as role_pairs reads them."""
-    text = text.replace("\r", "").split("<!--", 1)[0].strip(" \t").translate(ASCII_LOWER)
+    text = bytewise.lower(text.replace("\r", "").split("<!--", 1)[0].strip(" \t"))
     pieces = [piece.strip(" \t") for piece in text.split(",")]
     return [(w[0].strip(" \t"), w[1], w[2].strip(" \t")) for w in (p.partition("=") for p in pieces if p)]
 
@@ -125,12 +125,9 @@ def seat_models(home: str | Path) -> str:
     return "on" if found and found.group(1) == "on" else "off"
 
 
-ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
-
-
 def limit_seconds(raw: str) -> int | None:
     """The helper's limit_seconds: '90', '15m', '2 hours' in seconds; None for anything else (or 0)."""
-    value = re.sub(r"[ \t\r]", "", raw).translate(ASCII_LOWER)
+    value = bytewise.lower(re.sub(r"[ \t\r]", "", raw))
     digits = re.match(r"[0-9]*", value).group(0)
     unit = value[len(digits):]
     digits = digits.lstrip("0")
