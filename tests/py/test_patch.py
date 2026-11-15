@@ -86,6 +86,18 @@ class DiffTest(unittest.TestCase):
         self.assertEqual([line.number for line in found["src/pay.py"].added], [4, 5, 6])
         self.assertEqual(found["src/pay.py"].added[1].text, "++ a line that looks like a header")
 
+    def test_a_hunk_header_as_git_writes_it_and_nothing_else(self) -> None:
+        self.assertEqual(diff.header("@@ -1,2 +5,3 @@ def f():"), (1, 5, 3))
+        self.assertEqual(diff.header("@@ -1 +5 @@"), (1, 5, 1))
+        self.assertEqual(diff.header("@@ -1 +05,0 @@"), (1, 5, 0))
+        for odd in ("@@ -1 +x @@", "@@ -1 +5,x @@", "@@ -1 +5@@", "@@ -1,2 @@ +7,2", "@@ -1 5 @@",
+                    "@@@ -1 -2 +5,3 @@@", "@@\t-1\t+5,3\t@@", "@@  -1  +5,3  @@", "+@@ -1 +5 @@"):
+            self.assertIsNone(diff.header(odd), odd)
+
+    def test_a_malformed_header_keeps_the_numbering_in_force(self) -> None:
+        text = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +7 @@\n+a\n@@ -1 +x @@\n+b\n"
+        self.assertEqual([line.number for line in diff.files(text)[0].added], [7, 8])
+
 
 class ChecksTest(unittest.TestCase):
     def test_removals_a_test_file_an_assertion_and_a_rule_but_not_a_moved_one(self) -> None:

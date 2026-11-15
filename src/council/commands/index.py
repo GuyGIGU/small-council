@@ -5,10 +5,9 @@ is added after it."""
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
-from council import clock, git
+from council import clock, diff, git
 from council.commands import changed, cli, closed, index_symbols, prior, resolve
 from council.records import bytewise, cells, citations, earlier, run_files, state_write
 from council.records import home as where
@@ -127,16 +126,13 @@ def _binary(path: str) -> bool:
         return True
 
 
-def hunks(diff: list[str]) -> str:
+def hunks(lines: list[str]) -> str:
     """A diff's hunks as the new file numbers them: 12, 30-34, or removed near 7."""
     found = []
-    for line in diff:
-        if not line.startswith("@@"):
-            continue
-        mark = re.search(r"\+[0-9]+(,[0-9]+)?", line)
-        if mark:
-            parts = mark.group(0)[1:].split(",")
-            start, count = int(parts[0]), int(parts[1]) if len(parts) > 1 else 1
+    for line in lines:
+        hunk = diff.header(line)
+        if hunk:
+            start, count = hunk.new, hunk.count
             found.append("removed near %d" % start if count == 0 else
                          str(start) if count == 1 else "%d-%d" % (start, start + count - 1))
     return ", ".join(found)

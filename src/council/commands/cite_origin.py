@@ -6,28 +6,26 @@ from __future__ import annotations
 import os
 import re
 
+from council import diff
 from council.commands.cite_check import Scope, absolute, git_ok, git_out, rel, run_cited
-from council.records import cells, citations
+from council.records import citations
 from council.records.home import native
 
 SHA = re.compile(r"[0-9a-f]+")
 
 
-def hunks(diff: bytes, spans: list[tuple[int, int]]) -> tuple[int, int, int]:
+def hunks(data: bytes, spans: list[tuple[int, int]]) -> tuple[int, int, int]:
     """From a -U0 diff and the cited spans: (a hunk inside or right next to a span, an added line inside a span,
     the file is not in the base under this name), each 0 or 1. A hunk's new side "+c,0" is lines removed after
     line c. A file the change added — or only renamed — shows as one big added hunk."""
     near = inside = new = 0
-    for line in diff.decode("utf-8", "surrogateescape").split("\n"):
+    for line in data.decode("utf-8", "surrogateescape").split("\n"):
         if line.startswith("new file mode "):
             new = 1
-        if not line.startswith("@@ "):
+        hunk = diff.header(line)
+        if hunk is None:
             continue
-        words = [w for w in re.split(r"[ \t]+", line) if w]
-        side = words[2][1:] if len(words) > 2 and words[2].startswith("+") else (words[2] if len(words) > 2 else "")
-        start, count = cells.leading(side), 1
-        if "," in side:
-            start, count = cells.leading(side[:side.index(",")]), cells.leading(side[side.index(",") + 1:])
+        start, count = hunk.new, hunk.count
         for first, last in spans:
             if count == 0:
                 near |= first - 1 <= start <= last

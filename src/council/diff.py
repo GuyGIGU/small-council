@@ -5,7 +5,22 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
-HUNK = re.compile(r"@@ -([0-9]+)(?:,[0-9]+)? \+([0-9]+)(?:,[0-9]+)? @@")
+HUNK = re.compile(r"@@ -([0-9]+)(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@")
+
+
+class Hunk(NamedTuple):
+    """A hunk header's old start, new start and new count (a count git leaves out is 1)."""
+
+    old: int
+    new: int
+    count: int
+
+
+def header(line: str) -> Hunk | None:
+    """The numbers of a hunk header as git writes it, '@@ -a[,b] +c[,d] @@'; None for any other line. The one
+    reader of a header: a caller skips a None one, and the numbering in force stays."""
+    found = HUNK.match(line)
+    return Hunk(int(found.group(1)), int(found.group(2)), int(found.group(3) or 1)) if found else None
 
 
 class Line(NamedTuple):
@@ -47,9 +62,9 @@ def files(text: str) -> list[File]:
         elif not found:
             continue
         elif line.startswith("@@"):
-            hunk = HUNK.match(line)
-            old, new = (int(hunk.group(1)), int(hunk.group(2))) if hunk else (0, 0)
-            head = False
+            hunk = header(line)
+            if hunk:
+                old, new, head = hunk.old, hunk.new, False
         elif head:
             found[-1] = _header(found[-1], line)
         elif line.startswith("-"):

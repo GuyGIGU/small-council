@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from council import git
+from council import diff, git
 from council.commands import resolve
 from council.records import home as where
 
@@ -79,8 +79,8 @@ def _file_lines(path: str) -> list[bytes]:
 def added(top: str, since: str) -> list[Line]:
     """The lines a diff from `since` (HEAD when none) adds, numbered as they now stand."""
     found, place, head, number = [], b"", False, 0
-    diff = git.run(top, "diff", "-M", "-U0", "--no-color", "--no-ext-diff", since, "--", ".", EXCLUDE, names=True)[1]
-    for line in _records(diff):
+    output = git.run(top, "diff", "-M", "-U0", "--no-color", "--no-ext-diff", since, "--", ".", EXCLUDE, names=True)[1]
+    for line in _records(output):
         if line.startswith(b"diff --git "):
             head, place = True, b""
         elif head and line.startswith(b"+++ "):
@@ -88,9 +88,9 @@ def added(top: str, since: str) -> list[Line]:
             place = place[2:] if place.startswith(b"b/") else place
             place = b"" if place == b"/dev/null" else place
         elif line.startswith(b"@@"):
-            head = False
-            mark = re.search(rb"\+[0-9]+", line)
-            number = int(mark.group(0)[1:]) if mark else number
+            hunk = diff.header(line.decode("latin-1"))
+            if hunk:
+                head, number = False, hunk.new
         elif not head and line.startswith(b"+"):
             if place:
                 found.append(Line(place, number, line[1:]))
