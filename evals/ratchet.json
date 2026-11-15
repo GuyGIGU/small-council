@@ -18,7 +18,6 @@
    "items": [
     "scripts/audit.py",
     "scripts/cockpit.py",
-    "scripts/context.py",
     "scripts/evidence.py",
     "scripts/memory.py",
     "scripts/outcomes.py",
@@ -27,7 +26,7 @@
     "scripts/status.py",
     "src/council/commands/session_start.py"
    ],
-   "value": 10
+   "value": 9
   }
  },
  "files": {
@@ -93,11 +92,6 @@
    "longest": 103,
    "longest_name": "render"
   },
-  "scripts/context.py": {
-   "lines": 457,
-   "longest": 139,
-   "longest_name": "build"
-  },
   "scripts/evidence.py": {
    "lines": 467,
    "longest": 87,
@@ -107,11 +101,6 @@
    "lines": 339,
    "longest": 119,
    "longest_name": "history"
-  },
-  "scripts/impact.py": {
-   "lines": 441,
-   "longest": 116,
-   "longest_name": "build"
   },
   "scripts/ledger.py": {
    "lines": 277,
@@ -149,7 +138,7 @@
    "longest_name": "interpret"
   },
   "scripts/tune.py": {
-   "lines": 341,
+   "lines": 339,
    "longest": 42,
    "longest_name": "proposals"
   },
@@ -233,18 +222,13 @@
    "longest": 37,
    "longest_name": "one"
   },
-  "src/council/commands/context.py": {
-   "lines": 82,
-   "longest": 33,
-   "longest_name": "build"
-  },
   "src/council/commands/correct.py": {
    "lines": 108,
    "longest": 31,
    "longest_name": "_fields"
   },
   "src/council/commands/dispatch.py": {
-   "lines": 100,
+   "lines": 98,
    "longest": 15,
    "longest_name": "main"
   },
@@ -329,7 +313,7 @@
    "longest_name": "refusal"
   },
   "src/council/commands/help.py": {
-   "lines": 170,
+   "lines": 166,
    "longest": 8,
    "longest_name": "main"
   },
@@ -343,14 +327,9 @@
    "longest": 19,
    "longest_name": "added"
   },
-  "src/council/commands/impact.py": {
-   "lines": 34,
-   "longest": 14,
-   "longest_name": "refresh"
-  },
   "src/council/commands/index.py": {
-   "lines": 256,
-   "longest": 44,
+   "lines": 254,
+   "longest": 42,
    "longest_name": "main"
   },
   "src/council/commands/index_symbols.py": {
@@ -494,7 +473,7 @@
    "longest_name": "status"
   },
   "src/council/commands/script.py": {
-   "lines": 66,
+   "lines": 65,
    "longest": 22,
    "longest_name": "run"
   },
@@ -724,7 +703,7 @@
    "longest_name": "verdict"
   },
   "src/council/records/run_files.py": {
-   "lines": 10,
+   "lines": 9,
    "longest": 0,
    "longest_name": ""
   },

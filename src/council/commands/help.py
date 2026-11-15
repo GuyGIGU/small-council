@@ -65,10 +65,6 @@ council — the Small Council's helper (bash + git)
                                          (or add an agent run the record missed); seats.tsv keeps
                                          the original, corrections.jsonl the evidence
   council index [--base REF]             change index → <run>/index.md (hunks, symbols, callers, tests)
-  council impact [--run <folder>]        refresh <run>/impact.tsv from the index baseline (optional Python 3.8+)
-  council context build <seat> [--expand PATH ...]
-                                         build a seat's plan-sized context pack after brief.md
-  council context show <seat>            print the pack path and its selection metrics
   council evidence build|show|check       index claims, provenance, states and verifier links from
                                          synthesis.md and verify-*.md into run-local claims.jsonl
   council repair record <task> <gate>     snapshot one completed gate attempt, classify its failure

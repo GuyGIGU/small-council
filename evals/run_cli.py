@@ -7190,7 +7190,7 @@ def estimates_per_role(tmp):
 
 @part("reports")
 def reports_refusals(tmp):
-    """The words and flags memory, ledger, map, fingerprint, doctor, impact and prior refuse, each with its usage
+    """The words and flags memory, ledger, map, fingerprint, doctor and prior refuse, each with its usage
     or the next step, before anything is read or written."""
     repo = new_repo(tmp, "reports")
     write(os.path.join(repo, "src", "a.py"), "def f():\n    return 1\n")
@@ -7221,8 +7221,7 @@ def reports_refusals(tmp):
                         (("ledger", "--json"), "ledger doesn't take --json"),
                         (("map",), "usage: council map status"), (("map", "status", "x"), "usage: council map status"),
                         (("fingerprint", "x"), "usage: council fingerprint [check]"),
-                        (("doctor", "x"), "doctor doesn't take 'x'"), (("impact", "x"), "impact doesn't take 'x'"),
-                        (("impact",), "no open run on this working tree"), (("prior", "--json"), "prior doesn't take")):
+                        (("doctor", "x"), "doctor doesn't take 'x'"), (("prior", "--json"), "prior doesn't take")):
         code, out, err = council(repo, *words)
         check("%s: refused — %s" % (" ".join(words), want), code == 2 and want in err and not out, out + err)
     check("memory: no refusal touched the memory file", read(os.path.join(repo, ".council", "conventions.md")) == before)
@@ -7233,28 +7232,34 @@ def reports_refusals(tmp):
 
 
 @part("reports")
-def reports_impact(tmp):
-    """council impact needs the run's change baseline; council index sets it and refreshes the graph."""
-    repo = new_repo(tmp, "impact")
+def reports_packs_removed(tmp):
+    """Context packs and the impact graph were removed (2026-11-15): an old config's `context packs: on` does
+    nothing, council index writes no impact.tsv, and an old run's contexts/ and impact.tsv stay as they were."""
+    repo = new_repo(tmp, "packs")
     write(os.path.join(repo, "src", "a.py"), "def f():\n    return 1\n")
     write(os.path.join(repo, "tests", "test_a.py"), "from src.a import f\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "a")
-    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(repo, ".council", "council.config.md"),
+          "# Council config\n## Run preferences\n- context packs: on\n")
     code, run, err = council(repo, "run", "open", "council-review")
     run = run.strip()
-    code, out, err = council(repo, "impact")
-    check("impact: refused before council index gives the run a baseline",
-          code == 2 and "impact needs a change baseline — run council index first" in err, out + err)
+    check("an old config's context packs: on is read without complaint",
+          code == 0 and "context" not in err and "config" not in err, err)
+    old = {os.path.join(run, "impact.tsv"): "kind\tpath\nchanged\tsrc/a.py\n",
+           os.path.join(run, "contexts", "x.md"): "# an old pack\n"}
+    for path, text in old.items():
+        write(path, text)
     write(os.path.join(repo, "src", "a.py"), "def f():\n    return 2\n")
     code, out, err = council(repo, "index")
-    table = os.path.join(run, "impact.tsv")
-    check("index: refreshes the impact graph after the change index",
-          code == 0 and "impact: 1 changed" in out and "src/a.py" in read(table), out + err)
-    os.remove(table)
-    code, out, err = council(repo, "impact")
-    check("impact: writes impact.tsv from the run's base", code == 0 and "-> impact.tsv" in out
-          and read(table).startswith("kind\t") and "src/a.py" in read(table), out + err)
+    check("index: the change index alone, no impact graph and no warning",
+          code == 0 and "index: 1 files" in out and "impact" not in out + err, out + err)
+    for words in (("context", "build", "x"), ("context", "show", "x"), ("impact",)):
+        code, out, err = council(repo, *words)
+        check("%s: an unknown command now, and the refusal names council help" % " ".join(words),
+              code == 2 and "unknown command '%s' — see: council help" % words[0] in err and not out, out + err)
+    check("an old run's impact.tsv and contexts/ are left as they were",
+          all(read(path) == text for path, text in old.items()))
     code, out, err = council(repo, "prior")
     check("prior: no earlier council work on the changed files, exit 0",
           code == 0 and "prior: no earlier council work mentions these paths" in out, out + err)

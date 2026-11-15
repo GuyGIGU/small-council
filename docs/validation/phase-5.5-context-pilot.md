@@ -1,3 +1,5 @@
+> Removed on 2026-11-15: context packs and their pilot (`evals/run_context_pilot.py`) are gone. This note stays as history.
+
 # Phase 5.5 — context delivery pilot
 
 ## Decision and scope

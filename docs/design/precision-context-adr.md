@@ -1,3 +1,5 @@
+> Removed on 2026-11-15: context packs (`council context`, `contexts/`) were off by default and no run showed they changed findings or tokens. This record stays as history.
+
 # ADR: bounded, seat-specific context packs
 
 ## Problem

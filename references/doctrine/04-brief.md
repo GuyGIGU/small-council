@@ -65,18 +65,6 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   tell the user.
 - **Hard rules go in word for word** — workers also load the project's CLAUDE.md, but the brief is
   the orders they must not miss.
-- **Context packs are opt-in.** Build them only when the config's run preferences say
-  `context packs: on`, or the user asks for them in this run. Otherwise skip this step and
-  dispatch from the complete brief — that is the normal path, not a fallback.
-- **When opted in, prepare each dispatched seat's context pack.** Run `council context build <slug>` after
-  `brief.md` exists. It takes the `minimal`, `focused` or `full` level from the validated run plan
-  and writes `contexts/<slug>.md` plus selection metrics. Inspect `council context show <slug>`;
-  if a needed path was omitted, rebuild with `--expand <path>` (repeatable) and record why in the
-  brief or run log. The pack is selected evidence, never a replacement for this brief
-  (`references/run/precision-context.md`).
-- **Keep the fallback honest.** Python 3.8+ is optional. If context building is unavailable or
-  fails, dispatch from the complete brief and reference docs; do not claim a pack was built.
-  Never rewrite a project `CLAUDE.md` as part of context preparation.
 
 ## Done when
 

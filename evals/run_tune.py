@@ -110,7 +110,7 @@ with tempfile.TemporaryDirectory(prefix="council-tune-") as temporary:
     code, out, err = council(repo, "tune")
     check("no record: the budget waits (0 of 5 needed), behaviour is held, no roster change",
           code == 0 and "waiting: too few completed runs with agents" in out and "(0 of 5 needed)" in out
-          and "held — behaviour is never tuned" in out and "context packs" in out and "no seat's record clears" in out,
+          and "held — behaviour is never tuned" in out and "how large a council convenes" in out and "no seat's record clears" in out,
           out + err)
 
     repo = new_repo(base, "close")
@@ -133,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix="council-tune-") as temporary:
         data = {}
     check("tune --json: the same proposals as data",
           code == 0 and data.get("schema") == "council.tune/2" and data["budget"]["status"] == "proposed"
-          and data["budget"]["value"] == 150000 and len(data["held"]) == 3, out[:400] + err)
+          and data["budget"]["value"] == 150000 and len(data["held"]) == 2, out[:400] + err)
     check("tune: with every agent's tokens on record, no seat is said to be left out",
           data["budget"]["unfigured"]["seats"] == 0 and "left out of the measurement" not in council(repo, "tune")[1], out)
 
@@ -170,7 +170,7 @@ with tempfile.TemporaryDirectory(prefix="council-tune-") as temporary:
         (("tune", "apply", "budget", "150k"), "needs --user-said"),
         (("tune", "apply", "budget", "--user-said", "yes"), "usage: council tune apply budget <the value"),
         (("tune", "apply", "budget", "200k", "--user-said", "yes"), "not the 200k the user was shown"),
-        (("tune", "apply", "context-packs", "150k", "--user-said", "yes"), "context-packs is held"),
+        (("tune", "apply", "run-size", "150k", "--user-said", "yes"), "run-size is held"),
         (("tune", "apply", "roster:hunt", "150k", "--user-said", "yes"), "goes through a council-init refresh"),
         (("tune", "apply", "budget", "150k", "--user-said", "   "), "the user's words are empty"),
         (("tune", "--run", "x"), "does not take --run"), (("tune", "bogus"), "usage: council tune"),

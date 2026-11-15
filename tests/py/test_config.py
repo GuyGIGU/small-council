@@ -27,6 +27,15 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.memory_path(home), "")
         self.assertEqual(config.roster(home), [])
 
+    def test_an_old_context_packs_line_changes_nothing(self) -> None:
+        """Context packs were removed on 2026-11-15: a config that still says `context packs: on` reads as one
+        without the line."""
+        prefs = "## Run preferences\n- agent cap: 6\n- build tier: full\n- seat models: on\n- sharing: just me\n"
+        readers = (config.agent_cap, config.build_tier, config.checking, config.worker_estimate, config.seat_models,
+                   sharing.sharing, config.gate_time_limit, config.notifications_off, config.memory_path, config.roster)
+        without = [reader(self.home(prefs)) for reader in readers]
+        self.assertEqual([reader(self.home(prefs + "- context packs: on\n")) for reader in readers], without)
+
     def test_agent_cap(self) -> None:
         lower = self.home("## Run preferences\n  - agent cap: 7 (lower)\r\n- agent cap: 3\n")
         self.assertEqual(config.agent_cap(lower), 7)

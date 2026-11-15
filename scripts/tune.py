@@ -9,7 +9,7 @@ every knob into one of three kinds:
   the estimate is off by more than a quarter.
 - **roster** — seats whose advice clears its bar. These change only through a council-init refresh,
   with the numbers shown.
-- **held** — behaviour: context packs, run size, verification depth. None is ever proposed without a
+- **held** — behaviour: run size, verification depth. None is ever proposed without a
   benchmark result showing the change helps, and no such result exists yet.
 
 `apply budget <value>` writes the value the user was shown into council.config.md's ## Run
@@ -45,8 +45,6 @@ MAX_PER_WORKER = config.MAX_PER_WORKER   # the most either reader accepts; the r
 OFF_BY = 0.25                   # a measured median this far from the estimate is worth a proposal
 KNOB = "estimate per worker"
 HELD = (
-    ("context-packs", "context packs (off unless the config says on)",
-     "no paired run shows packs change findings or tokens; the Phase 5.5 live comparison is deferred"),
     ("run-size", "how large a council convenes for a task",
      "no benchmark compares council sizes on the same tasks"),
     ("verification", "how deep verification goes",

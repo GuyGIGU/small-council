@@ -50,7 +50,7 @@ your mode's `## At <Stage>` section, if it has one. Each stage ends by recording
 | 1 | convene | `01-convene.md` | an open, approved run |
 | 2 | prepare | `02-prepare.md` | index.md, gate results, earlier findings |
 | 3 | assign | `03-assign.md` | a valid run-plan.tsv; every seat's slice, budget and state |
-| 4 | brief | `04-brief.md` | brief.md, with the memory in scope; seat context packs only if opted in (config `context packs: on`) |
+| 4 | brief | `04-brief.md` | brief.md, with the memory in scope |
 | 5 | work | `05-work.md` | seats/<slug>.md, one per worker |
 | 6 | collect | `06-collect.md` | a clean `council collect` |
 | 7 | judge | `07-judge.md` | synthesis.md, provisional claims.jsonl when Python is available |
@@ -77,8 +77,6 @@ Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.m
 says when to run each command. Rules for every run:
 
 - `council route recommend` is advisory before a run opens; record final choices in the plan.
-- `council impact` adds an optional `impact.tsv`; `council context build`, opt-in `contexts/`
-  beside `brief.md`, never replacing it.
 - `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
   It needs optional Python 3.8+. `council repair record` leaves a bounded trail in `repairs.jsonl`.
 - Never pipe a council command through head, tail or grep (a hook
