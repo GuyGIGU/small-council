@@ -7,7 +7,7 @@ from __future__ import annotations
 from council import git
 from council.commands import cli
 from council.records import home as where
-from council.records import map_file
+from council.records import bytewise, map_file
 
 AREAS = 12
 
@@ -21,7 +21,6 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 
 def status(home: str) -> list[str]:
-    """The lines map status prints."""
     if not map_file.path(where.native(home)).is_file():
         return ["no map yet — council-init builds .council/" + map_file.NAME]
     sha = map_file.commit(where.native(home))
@@ -36,7 +35,7 @@ def status(home: str) -> list[str]:
     # The whole repository, from any folder (paths are printed from the top).
     names = git.run(".", "-c", "diff.relative=false", "diff", "--name-only", sha, "HEAD", names=True)[1]
     names = names.decode("utf-8", "surrogateescape")
-    return lines + by_area(names[:-1].split("\n") if names.endswith("\n") else names.split("\n") if names else [])
+    return lines + by_area(bytewise.records(names, fold=False))
 
 
 def by_area(names: list[str]) -> list[str]:

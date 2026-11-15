@@ -61,7 +61,6 @@ def stack_summary() -> str:
 
 
 def digest(summary: str) -> str:
-    """git hash-object of the summary, cut to 12 characters."""
     return git.run(".", "hash-object", "--stdin", given=summary.encode("utf-8", "surrogateescape"))[1].decode()[:12]
 
 
