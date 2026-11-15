@@ -3441,17 +3441,8 @@ main() {
         *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show] | run events [show|check] | run audit [--transcript <file>]" ;;
       esac ;;
     state)   python_command "council state" ${given[@]+"${given[@]}"} ;;
-    seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;
-    cap)     sub="${1:-}"; [ $# -eq 0 ] || shift
-             case "$sub" in
-               ''|check) python_command "council cap${sub:+ $sub}" ${given[@]+"${given[@]}"} ;;
-               allow) takes_flags "cap allow" user-said
-                      [ $# -eq 1 ] || die "usage: council cap allow <n> --user-said \"<the user's words>\" [--run <folder>]"
-                      [ -n "$(printf '%s' "$MEMORY_SAID_ARG" | tr -d '[:space:]')" ] \
-                        || die "cap allow needs --user-said \"<the user's own words>\" — their answer, not a summary of it"
-                      cmd_cap_allow "$1" ;;
-               *) die "usage: council cap [--run <folder>] | cap allow <n> --user-said \"…\" | cap check [--session ID] [<tool> [type=… seat=… run=… file=…]]" ;;
-             esac ;;
+    seat)    python_command "council seat" ${given[@]+"${given[@]}"} ;;
+    cap)     python_command "council cap" ${given[@]+"${given[@]}"} ;;
     route)   python_command "council route" ${given[@]+"${given[@]}"} ;;
     index)   python_command "council index" ${given[@]+"${given[@]}"} ;;
     impact)  python_command "council impact" ${given[@]+"${given[@]}"} ;;
@@ -3528,7 +3519,7 @@ main() {
     pet)     takes_flags pet stop demo still pose exit-after; no_words pet ${1+"$@"}
              [ -z "$RUN_ARG" ] || die "pet follows this session's run on this working tree; it does not take --run"
              cmd_pet ;;
-    correct) takes_flags correct; cmd_correct ${1+"$@"} ;;
+    correct) python_command "council correct" ${given[@]+"${given[@]}"} ;;
     doctor)  python_command "council doctor" ${given[@]+"${given[@]}"} ;;
     version) takes_flags version; no_words version ${1+"$@"}; say "council $COUNCIL_VERSION" ;;
     help)    takes_flags help; no_words help ${1+"$@"}; usage ;;
