@@ -165,7 +165,7 @@ replaced, the tokens were running about 1.5x this plan, and features landing on 
 had caused most of the merge conflicts. So the order changes once #44 and #69 merge:
 1. S8b, then S9, which retires the bash. After that, every command is in one language.
 2. S11 shrinks the Python while it is fresh, before anything else is built on it.
-3. Then T3, S10 with T4, and the held issues, each judged again against what S11 leaves. The held
+3. Then T3, T5, S10 with T4, and the held issues, each judged again against what S11 leaves. The held
    issues are #55, #62, #47, the rest of #59 (`patch apply`, a `patch.saved` event) and of #60
    (verdicts in the history), plus #57, #61, #67 and #93's setup side (T3).
 
@@ -195,9 +195,12 @@ not one by one:
   · ~700–900k.
 - T2 after S7: the report head, the saved diff and the checks on it (#58, #59, #50, #60) · ~1M.
 - T3 after T1 and S8: the generated task pack (#57, #61, #67) and `council tree`, plus #93's setup
-  side (the project's decision records proposed into memory; the map's one-way-per-job table)
-  · ~700–900k.
+  side (the project's decision records proposed into memory; the map's one-way-per-job table), and
+  the stop for a bug underneath a task (`task-tree.md`, section 4, added 2026-11-15) · ~0.9–1.1M.
 - T4 in S10: the planted drill cases (#70).
+- T5 after T3: a fresh builder agent per task in place of the Chair building in its own window
+  (`task-tree.md`, section 6, planned 2026-11-15 on the user's word); it supersedes D4's last clause
+  in the branch that builds it · ~1–1.5M.
 
 ### The prose track — parallel with wave 2 (skills, doctrine, references only)
 

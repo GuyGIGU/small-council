@@ -1,6 +1,8 @@
 # The task tree: context down, evidence up
 
-Status: a proposal, written 2026-11-13 on the user's request. Nothing here is built or settled.
+Status: written 2026-11-13 on the user's request. Steps T1 and T2 are built and on main; T3 and T4
+are not. "A bug underneath stops the branch" (in section 4) and section 6, a fresh builder per task,
+were added 2026-11-15 and are proposals.
 Each part becomes a decision in [`../decisions.md`](../decisions.md) in the branch that builds it.
 
 ## The question
@@ -111,12 +113,104 @@ Three rules, all of which make "I don't know yet" an accepted result:
 
 A third fix round in the same files is refused (#50): the task goes back to the plan as a redesign.
 
+#### A bug underneath stops the branch (added 2026-11-15)
+
+The user's words: the council should say "hey, i've stopped working because there is this bug here
+that needs fixing", not ship a workaround that is found weeks later under all the work built on it.
+
+T1 and T2 cover a fix: it names its cause, and the verifier asks whether the cause is gone. They do
+not cover a first build that meets a bug in the code it builds on. That round's `Cause:` is `none`,
+the verifier's question is not asked, and the owner check tells the builder to stay in its slice. So
+the cheap path is to make up for the bug inside the slice, and the Done-when still reads met.
+
+- **The stop.** A builder that finds the code under its task wrong stops and returns
+  `NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <the command or test, and its output>`.
+  Wrong means a `Rests on` fact that is false, or code that does not do what its owner's row, its
+  tests or its own documentation say. It is the `NEEDS:` stop with a second kind of content, so it
+  is recorded the same way and counts as a correct outcome. `seen:` is OBSERVED or REPRODUCED; a
+  suspicion is a `NEEDS:` question and gets the probe.
+- **The Chair.** It stops that task and every task that depends on it or rests on the same code;
+  the others carry on. It tells the user in one line: what is wrong, where, and what is stopped.
+  The fix is a new task above the blocked one, with its own `Owner` (the code that has the bug) and
+  the `Serves` line of the task it unblocks. Its cause is already observed, so it needs no probe.
+  It starts only on the user's yes (decided, 5).
+  The implement skill's "blocked by something outside the input: log it; carry on with the other
+  tasks" becomes "carry on with the tasks that do not rest on it".
+- **The verifier, on every round.** Not only on a fix: does any added line exist only to make up
+  for other code in this repo? If so, name that code. Such a change is INCOMPLETE even when the
+  Done-when is met, unless the user ruled that workaround (decided, 2).
+- **Two more signs** for the helper's list: an added line that says workaround, hack, temporary,
+  "for now" or "until … is fixed", and an added `TODO`, `FIXME` or `XXX`.
+- **The pack** (section 2) carries the task's `Rests on` facts and the owner rows of the code it
+  calls. A builder that sees only its slice cannot tell a bug from a design.
+
 ### 5. The Chair's own context
 
 The Chair reads one-line returns and helper views, never seat files in bulk. Every fact it needs
 to resume is in a file the helper prints: the tree, the state, the rulings. A rule the Chair keeps
 breaking moves into the helper or a hook (architecture §7), because the skills are at their size
 caps and prose is the weakest enforcement.
+
+### 6. A fresh builder per task (added 2026-11-15)
+
+The user asked for this to be planned after a comparison with the other tools of this kind: the
+large ones (Superpowers, Get Shit Done, BMAD) all build each task in a fresh agent.
+
+Today the Chair builds in its own window (D4). Three things follow:
+
+- the Chair writes the code, names the cause and writes the receipt, so the checks on a builder
+  are the Chair checking itself, and "the builder stops on a bug underneath" (section 4) is the
+  Chair stopping itself;
+- the Chair's window is the largest context of a build, on the session's model, and every later
+  turn reads it again;
+- a build's verifier may not be on a cheaper model than the session's, because the Chair is the
+  builder it checks (D37).
+
+**What stays.** One writer at a time (kernel law 2). The loop's steps and its proof: the gates, the
+report head, `council patch save`, the fix rounds and their limits. The blind verifier. The size
+and cost proposal before anything starts.
+
+**What changes.** The writer is a builder agent, one task at a time, never two at once.
+
+| Step of a task | Today | Planned |
+|---|---|---|
+| Orders | The Chair reads the plan, the reference and the code | `council context build task-<n>` writes the pack (section 2); the Chair adds where to start and what worries it |
+| Before gate, the change, the gates, the report, `council patch save`, after gate | The Chair | A builder agent in a clean window. It returns one line: done, `NEEDS: <question>`, `NEEDS: fix …`, or blocked at the third failed gate |
+| What the Chair reads | The diff and the gate outputs | The one line and `council patch show <n>`: the head and what the checks found |
+| A fix round | The Chair, with everything it has read so far | A fresh builder, with the pack and the task's history (`patches/T<n>.md`) |
+| The verifier | Unchanged | Unchanged. It may be on any model that is not below the builder's |
+| A build of one small task | The Chair | The Chair still, when the size proposal says Solo: a fresh agent would cost more than the change |
+
+**In code, not in prose.**
+
+- A build seat (`build-<n>`) is a seat like any other: `council seat build-<n> running` is refused
+  while another build seat is running, and for a task that depends on a task stopped by
+  `NEEDS: fix` until the user's ruling is on record.
+- The helper already keeps the tree at the end of each saved round. When a build seat starts, a
+  tree that differs from the last saved round is named, file by file: someone edited outside a
+  round. That is how a Chair that "just fixes it" shows, with no new hook on every edit.
+- The seat gate covers the builder as it covers a worker: no report file, no stop.
+- The builder's contract is a new agent file with the edit tools a worker does not have. The loop's
+  text moves out of the implement skill, which is at its size cap, into a reference the builder
+  reads; the skill keeps the Chair's part.
+
+**What it costs.** The total tokens of a build will probably not fall: each builder reads the code
+it needs again. The gain is elsewhere: the Chair's window stays small through a long build, the
+builders and the verifier can run on a cheaper model than the session, and the builder's report is
+checked by someone who did not write it. So the estimate of a build is measured again from the
+ledger before the default changes (D39).
+
+**How we would know.** Scenarios for each refusal above, and the planted cases of T4. Then the
+build benchmark (`evals/bench.py`) run both ways on the same cases, the Chair building against a
+builder agent: tokens by role, hidden checks passed, false completion claims. The benchmark has
+never been run for a result; this is the first question it should answer.
+
+**Not in this step.** Parallel builders and a lead seat to merge them (#63) stay held. One builder
+at a time has nothing to merge.
+
+**The decision it changes.** D4 says only the Chair of council-implement edits project code. The
+branch that builds this adds an entry that supersedes that clause: one builder at a time edits
+project code, a builder agent or, for a Solo build, the Chair.
 
 ## How we would know it works
 
@@ -127,6 +221,11 @@ eval (#70):
   INCOMPLETE;
 - a builder that deletes a failing test and reports `Removed: none`: refused;
 - a task resting on a false assumption about a tool: the probe leaf runs first and the plan changes;
+- a task whose build calls a function in the repo that returns a wrong value: the builder returns
+  `NEEDS: fix` naming it, nothing in its slice handles the wrong value, and the Chair stops the
+  tasks that rest on it;
+- the same task, built around the wrong value with the Done-when met: the verifier returns INCOMPLETE
+  and names the function;
 - a task with no part of the request to serve: refused at the plan check;
 - a resumed run: the Chair's next step from `council tree` alone matches the step from full context.
 
@@ -146,8 +245,9 @@ hand-written brief, and post-game findings per run before and after.
 |---|---|---|---|
 | T1 | Task fields (`Serves`, `Owner`, `Rests on`), the plan check for them, `NEEDS:` and the unknown-becomes-a-leaf rules (#64); the owner row or `New way:`, and the verifier's decision question (#93) | S5 (the plan check in Python) | ~700–900k |
 | T2 | The report head with `Cause` and `Removed`, the saved diff and the checks on it (#58, #59), the third-round refusal (#50), the task history (#60) | S7 (`check` in Python) | ~1M |
-| T3 | The generated task pack (#57, #61, #67), `council tree`; setup proposes the project's recorded decisions and fills the map's one-way-per-job table (#93) | T1 and S8 | ~700–900k |
-| T4 | The planted drill cases | S10 (#70) | part of S10 |
+| T3 | The generated task pack (#57, #61, #67), `council tree`; setup proposes the project's recorded decisions and fills the map's one-way-per-job table (#93); the `NEEDS: fix` stop, the Chair's rule for it, the verifier's question on every round and the two signs | T1, S8 and S11 | ~0.9–1.1M |
+| T5 | A fresh builder per task (section 6): the builder's contract, the build seat and its refusals, the tree check, the implement skill's loop moved to a reference, the entry that supersedes D4's last clause | T3 (it needs the pack) | ~1–1.5M |
+| T4 | The planted drill cases, with the two for a bug underneath and the builder's | S10 (#70) | part of S10 |
 
 ## Decided by the user (2026-11-13)
 
@@ -168,6 +268,16 @@ hand-written brief, and post-game findings per run before and after.
      does, the verdict is INCOMPLETE.
    - A map without the table skips the owner check, so older projects keep working.
 
+5. **A bug underneath a task (2026-11-15).** The Chair always asks, in one line with the cost. It
+   never fixes code outside the plan, and never ships the workaround, on its own call. A small fix
+   inside the approved budget is asked about too.
+
+6. **A fresh builder per task (2026-11-15).** The user said to plan it; the plan is section 6. A
+   Solo build stays with the Chair (the user, 2026-11-15): one small task fills no window, so a
+   builder agent would cost a pack and a start for nothing. One part is still a proposal: a fix
+   round gets a fresh builder, not the same agent continued. T5 measures both ways before it is
+   settled.
+
 ## Until it is built: the cleanup's own sessions
 
 The cleanup runs on session briefs written by hand, so the same two rules apply to them now:
@@ -175,4 +285,8 @@ The cleanup runs on session briefs written by hand, so the same two rules apply 
 - every brief carries the request line in the user's words and names the state of the tree the
   work is judged against;
 - every report lists what it removed and, for a fix, its cause; the planning session checks both
-  against the diff before it relays anything.
+  against the diff before it relays anything;
+- an agent that finds a fault in code it builds on (another agent's file, the shared base) stops
+  and reports it. The planning session fixes the base and starts the agent again. No brief says
+  "work around it in your own files": the S8b and S9 brief did, and the integrator then had to fold
+  those workarounds.
