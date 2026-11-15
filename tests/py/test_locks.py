@@ -128,6 +128,37 @@ class LockTest(support.Scratch):
         locks.release(lock)
 
 
+class AcrossProcessesTest(support.Scratch):
+    def holder(self, lock: Path, seconds: float) -> tuple:
+        """Another Python that takes the lock, says its own id (a venv's python.exe is a launcher) and holds it."""
+        code = ("import os, sys, time\nsys.path.insert(0, sys.argv[1])\nfrom council.records import locks\n"
+                "assert locks.acquire(sys.argv[2])\nprint(os.getpid(), flush=True)\ntime.sleep(float(sys.argv[3]))\n"
+                "locks.release(sys.argv[2])\n")
+        proc = subprocess.Popen([sys.executable, "-I", "-c", code, str(support.SRC), str(lock), str(seconds)],
+                                stdout=subprocess.PIPE, text=True)
+        self.addCleanup(proc.stdout.close)
+        return proc, int(proc.stdout.readline())
+
+    def test_the_waiter_takes_the_lock_once_the_holder_releases(self) -> None:
+        lock = self.tmp / "events.tsv.lock"
+        proc, pid = self.holder(lock, 0.5)
+        self.assertEqual(owner_of(lock), b"%d\n" % pid)
+        self.assertTrue(locks.acquire(lock))
+        self.assertEqual(proc.wait(timeout=60), 0)
+        locks.release(lock)
+
+    def test_a_holder_killed_outright_leaves_its_lock_and_it_is_reclaimed_at_once(self) -> None:
+        lock = self.tmp / "events.tsv.lock"
+        proc, pid = self.holder(lock, 60)
+        if pid != proc.pid:
+            os.kill(pid, 9)                               # the interpreter itself, not only its launcher
+        proc.kill()
+        proc.wait(timeout=60)
+        self.assertTrue(lock.is_dir())
+        self.assertTrue(locks.acquire(lock, tries=2))           # reclaimed on the first look, taken on the next
+        locks.release(lock)
+
+
 class SharedReadTest(support.Scratch):
     @unittest.skipUnless(os.name == "nt", "delete sharing is a Windows matter")
     def test_a_waiter_reading_the_owner_does_not_stop_the_release(self) -> None:

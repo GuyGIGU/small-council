@@ -158,11 +158,12 @@ def current_umask() -> int:
     return mask
 
 
-def swap_in(temporary, path) -> None:
+def swap_in(temporary: str | Path, path: str | Path) -> None:
     """Move temporary over path as mv did; Windows refuses while a reader has path open, so try again for ~1 s."""
     for wait in (0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.3, 0):
         try:
-            return os.replace(str(temporary), str(path))
+            os.replace(str(temporary), str(path))
+            return
         except PermissionError:
             if not wait:
                 raise

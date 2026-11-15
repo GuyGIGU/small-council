@@ -82,9 +82,9 @@ class WriteTest(support.Scratch):
 
     def test_swap_in_waits_out_a_reader(self) -> None:
         target, new = self.write("state.md", "old"), self.write("state.md.tmp1", "new")
-        reader = open(str(target), "rb")                 # Windows refuses the swap while this is open
-        threading.Timer(0.1, reader.close).start()
-        paths.swap_in(new, target)
+        with open(str(target), "rb") as reader:          # Windows refuses the swap while this is open
+            threading.Timer(0.1, reader.close).start()
+            paths.swap_in(new, target)
         self.assertEqual(target.read_bytes(), b"new")
 
     def test_swap_in_raises_a_refusal_that_never_ends(self) -> None:
