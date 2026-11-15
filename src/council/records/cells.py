@@ -46,6 +46,12 @@ def integer(value: Any) -> int | None:
     return None
 
 
+def leading(cell: str) -> int:
+    """A cell as awk reads `$n + 0`: its leading whole number (blanks and a sign may come first), else 0."""
+    found = re.match(r"[ \t]*([+-]?[0-9]+)", cell)
+    return int(found.group(1)) if found else 0
+
+
 def number(value: Any) -> int:
     """A cell's whole number of up to 12 digits, else 0."""
     value = str(value or "").strip()

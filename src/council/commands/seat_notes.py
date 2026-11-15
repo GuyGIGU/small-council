@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from council.commands import cli
-from council.records import bytewise, seat_rows, seat_write, seats, usage
+from council.records import bytewise, cells, seat_rows, seat_write, seats, usage
 
 
 def report(run: Path, slug: str, got: dict[str, str]) -> None:
@@ -35,9 +35,9 @@ def progress_line(run: Path, note: str) -> str:
         seated, done = seated + 1, done + (c[1] == "done")
         named.get("failed" if c[1] == "blocked" else c[1], []).append(c[0])
         if short or c[7] == "":
-            older = older or seat_write.number(c[3]) > 0
+            older = older or cells.leading(c[3]) > 0
         else:
-            tokens += seat_write.number(c[3])
+            tokens += cells.leading(c[3])
     parts = ["seats: %d of %d done" % (done, seated)]
     parts += ["%s: %s" % (label, ", ".join(named[key])) for key, label in
               (("running", "still working"), ("queued", "queued"), ("failed", "failed")) if named[key]]

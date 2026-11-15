@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import re
 
-from council.records import bytewise, paths, scope
+from council.records import bytewise, cells, paths, scope
 from council.records import home as where
 from council.records.bytewise import trim
 from council.records.memory_entries import vword
@@ -186,15 +186,10 @@ def span(r: str) -> tuple[int, int] | None:
         s, e = r[:j], r[j + 1:]
     if len(s) > 9 or len(e) > 9:
         return None
-    first, last = _number(s), _number(e)
+    first, last = cells.leading(s), cells.leading(e)
     if last < first:
         first, last = last, first
     return (first, last) if first >= 1 else None
-
-
-def _number(text: str) -> int:
-    found = re.match(r"[ \t]*([+-]?[0-9]+)", text)
-    return int(found.group(1)) if found else 0
 
 
 def says(s: str, w: str) -> bool:
