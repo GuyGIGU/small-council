@@ -1,6 +1,6 @@
 """The council home's .gitignore: whether git ignores a path in the home, whether the user shares their requests
 (`!asks/`), and the lines that keep run scratch and the user's own words out of git. bin/council keeps its copy
-(home_ignores, asks_shared, ensure_ignored) for `council run open` until S8b."""
+(home_ignores, asks_shared, ensure_ignored) for the bash that stays."""
 from __future__ import annotations
 
 import os
@@ -47,10 +47,10 @@ def asks_shared(home: str | Path) -> bool:
     return any(_SHARED.fullmatch(line) for line in (_bytes(path(home)) or b"").split(b"\n"))
 
 
-def keep_out(home: str | Path) -> bool:
+def keep_out(home: str | Path) -> str:
     """Add runs/, asks/ and active-run to the home's .gitignore unless git already ignores them (asks/ also not when
-    the user shares requests), in the file's own line endings, each on a line of its own. True when asks/ was added
-    while requests are already in git: they stay tracked, and the caller says so."""
+    the user shares requests), in the file's own line endings, each on a line of its own. When asks/ was added while
+    requests are already in git, what the caller says (after 'council: '); else ''."""
     file, added = path(home), False
     data = _bytes(file)
     cr = b"\r" if data and b"\r" in data else b""
@@ -67,7 +67,10 @@ def keep_out(home: str | Path) -> bool:
         except OSError:
             continue
         added = added or want == "asks/"
-    return added and _tracked_asks(home)
+    if not (added and _tracked_asks(home)):
+        return ""
+    return ("%s/.gitignore now ignores asks/, so new requests stay on this machine; the ones already in git stay "
+            "tracked. To share requests with the team, write '!asks/' in place of that line." % os.path.basename(home))
 
 
 def _tracked_asks(home: str | Path) -> bool:
