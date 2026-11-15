@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks for `council run audit` (scripts/audit.py): a finished run read against what the method promises.
+"""Checks for `council run audit` (commands/audit.py): a finished run read against what the method promises.
 
 Every other suite tests the helper; this one tests the check that reads what a Chair actually did. Two
 runs are built here from nothing (no real project's content):

@@ -198,7 +198,7 @@ runs — a review run's refuted claims and a build run's recorded gate failures,
 and rejected — with its refusals, injection and redaction cases. The larger helper suite also
 covers legacy memory formats and anchor checks.
 
-`python evals/run_seats.py` checks seat learning (`council ledger advice`, `scripts/ledger.py`)
+`python evals/run_seats.py` checks seat learning (`council ledger advice`, `commands/seat_advice.py`)
 without a model: runs that credited no items (council-init, builds) count toward tokens only; a
 seat is weighed only after 3 judged runs and 15 items of evidence, at most five from any one run, so
 one big run is never many runs' worth; each piece of advice (retain, lower, narrow, pair, drop?,
@@ -317,7 +317,7 @@ before/after proofs and gate probes kept apart from the project's gates; repairs
 estimate accuracy computed right on a synthetic home; missing and malformed data named; odd run
 folders survived; and nothing written.
 
-`python evals/run_tune.py` checks conservative self-tuning (`council tune`, `scripts/tune.py`):
+`python evals/run_tune.py` checks conservative self-tuning (`council tune`, `commands/tune_knobs.py`):
 - the estimate is proposed only once five completed runs measure tokens per agent and it is off by
   more than a quarter;
 - behaviour is held, and the roster goes through a refresh;
@@ -329,7 +329,7 @@ folders survived; and nothing written.
 - BOM, CRLF, comments and file modes survive;
 - every refusal says why and writes nothing.
 
-`python evals/run_audit.py` checks `council run audit` (`scripts/audit.py`), the check that reads what
+`python evals/run_audit.py` checks `council run audit` (`commands/audit.py`), the check that reads what
 a Chair actually did in a finished run. A run built with the first real run's pattern, and its session
 transcript, must fail on each known problem: a stage skipped, the verifier recorded only when it
 finished, two copies of the checks at once, no record of the Chair's own seat, no status card at the

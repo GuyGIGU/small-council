@@ -21,7 +21,7 @@ records everything in a **run folder** inside the project's **council home** (`.
 | References | `references/` | By who reads it: the seat docs, `guardrails.md` and `build-proof.md` at the root, `doctrine/`, `run/` (the run's contracts), `roster/`, `templates/`, `spec-writer/`, `test-architect/`. `references/README.md` is the map. |
 | Agents | `agents/council-worker.md`, `agents/council-verifier.md` | The seat worker's and the blind verifier's contracts. |
 | Helper | `bin/council`, `src/council/` | The CLI for the mechanical steps: runs, state, seats, gates, the change index, checks, memory, the agent stop. `bin/council` only starts Python; every command is in `src/council/commands/` (§10). |
-| Scripts | `scripts/*.py` | Python for what bash does badly: status and the card, audit, history, tuning, evidence, repair, memory, the pet, the Chair's tokens. Run through the helper. |
+| Scripts | `scripts/*.py` | The views not yet in the package: status and the card, the cockpit, history, outcomes, the pet; and the repo's validator. Run through the helper. The tools (audit, tuning, evidence, repair, memory, seat advice, the Chair's tokens) are modules in `src/council/commands/`. |
 | Hooks | `hooks/*.sh`, `hooks/hooks.json` | Enforce what prose can't: SessionStart orientation and the session mark, the agent stop (PreToolUse on Agent, Task and Workflow), the Bash pipe guard and push freeze, the seat-file check (SubagentStop), the turn-end nudges (Stop). |
 | Mod | `hooks/council-view.tsx`, `hooks/council-scene.ts` | The council pane and the line above the prompt. It reads `scripts/status.py --json` and never writes a council file. |
 | Evals | `evals/` | Machine checks: structural pins, helper and hook scenarios, per-script suites, judgment fixtures (`evals/suite/`), the benchmark harness. `evals/run_all.py` runs them all. |
@@ -35,7 +35,7 @@ user ── Chair (main session)
           ├─ skills ──► doctrine ──► references (contracts, seat docs, templates)
           │ runs
           ├─ bin/council ──► src/council ──► run files (.council/)
-          │                    └─ scripts/*.py (in the same process)
+          │                    └─ scripts/*.py, the views (in the same process)
           │ dispatches
           └─ agents (worker, verifier) ── read brief + references, write one seat/verify file
 hooks ──► bin/council          mod ──► scripts/status.py
@@ -69,8 +69,8 @@ Rules:
 | `agents/` | The worker and verifier contracts | Mode logic |
 | `bin/council` | Finding a Python and starting `src/council/__main__.py` with the words as typed; the one refusal when there is none (D24) | A command's own logic; anything but the launch |
 | `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives), `runs` (the run listing), `sharing` (the sharing line), `pushes` (the push freeze line), `owners` (who holds a lock), `writable` (whether a folder takes a new file) and `usage` (the per-seat usage rule and the agent stop's standing), `usage_gaps` (the seats that were agent runs with no token figure, read from it), `audit_file` (audit.md and the audit's report text), `request` (the user's words from ask.md and the filed request, and the quote match), `tasks` (a plan deliverable's tasks and their rows), `map_file` (map.md's one-way-per-job table and its stamp), `report_head` (a build round's report and its head), `patches` (a build's saved rounds), `estimates` (the `- estimates:` line, one token figure per role, and what each role cost in the ledger), `tuning` (tuning.md and the one write that changes the config), `stages` (the stage table: rank, next step, required and skipped stages), `state_write` (the one writer of session-state.md), `closing` (what a close checks and says: undelivered runs, the usage words, the warnings), `synthesis_counts` (each seat's kept, cut and refuted items for the ledger), `seat_write` (seats.tsv's rows and the usage trail), `repairs` (the repair trail and the user's go past it), `hook_marks` (which hooks ran in a session), `memory` (the memory file, what is wrong with how it reads, and its one writer) with `memory_entries` (its entries), `memory_anchors` (what each **Anchor:** names) and `memory_audit` (each observed failure's support), `scope` (how a scope or an areas: list matches), `earlier` (earlier council work on some paths), `redact` (secret-looking strings out of the user's words), `ignores` (the home's .gitignore) and `bytewise` (text as the C-locale awk read it); `git.py`, `clock.py`, `diff.py` (a unified diff's files and lines) | Printing, argument parsing, a command's own logic |
-| `src/council/commands/` | Every helper command (D24), one module per area, behind `src/council/__main__.py`: `dispatch.py` maps the words to a module, `cli.py` reads the command line and holds the refusal, `help.py` the help text and the version. `script_cmds.py` runs the commands that hand over to a `scripts/` entry (through `script.py`, in process); `session_start.py` is the SessionStart hook's body (`council run session-start`) | A run file's parser (that is `records/`) |
-| `scripts/` | Python readers, renderers and analyses, over `src/council/records` | Their own copy of a run-file parser |
+| `src/council/commands/` | Every helper command (D24), one module per area, behind `src/council/__main__.py`: `dispatch.py` maps the words to a module, `cli.py` reads the command line and holds the refusal, `help.py` the help text and the version. The tools live here as modules of their own: `audit` (with `audit_checks`, the run's records, and `audit_calls`, how the helper was called), `chair_usage`, `evidence`, `memory_draft`, `repair_trail`, `tune_knobs` and `seat_advice`. `script.py` runs a tool's `main(words)` in process, says its faults as the tool's own process did, and is the one way in by path for a caller outside the helper (the seat-gate hook, the evals: `python src/council/commands/script.py <tool> <words>`); `script_cmds.py` runs the commands that hand over to a tool or a view script; `session_start.py` is the SessionStart hook's body (`council run session-start`) | A run file's parser (that is `records/`) |
+| `scripts/` | The five view scripts (`status`, `cockpit`, `pet`, `history`, `outcomes`), loaded by path by `commands/script.py` until they move into the package, over `src/council/records`; `quick_validate.py`, the repo's own validator | Their own copy of a run-file parser |
 | `hooks/` | Enforcement at Claude Code events, the mod; `session-mark.sh`, the one bash writer of the session mark, sourced by the bash and seat gates | Decisions: the helper makes them |
 | `evals/` | Machine proof that the contracts hold | Production logic |
 | `docs/` | Architecture, decisions, ADRs, validation | Rules the model must follow at run time (those are in skills, doctrine or references) |
@@ -84,10 +84,10 @@ home (`council_home`). Committed or ignored follows the project's sharing settin
 
 | File | Written by | Read by |
 |---|---|---|
-| `council.config.md` | `council init` (template: `references/templates/`); the user's hand edits are theirs | the helper (`configured_*`), `status.py` and `tune.py` through `council.records.config`, `session-start.sh` |
+| `council.config.md` | `council init` (template: `references/templates/`); the user's hand edits are theirs | the helper (`configured_*`), `status.py` and `council tune` through `council.records.config`, `session-start.sh` |
 | `conventions.md` (memory) | `council memory` on the user's words | the helper, `cockpit.py`, `status.py` |
 | `map.md` | council-init's mapping seats | `session-start.sh`, briefs |
-| `ledger.tsv` | `council run close` | `ledger.py`, `history.py`, `tune.py` |
+| `ledger.tsv` | `council run close` | `council ledger` (`seat_advice`), `history.py`, `council tune` (`tune_knobs`) |
 | `asks/`, `plans/`, `reviews/`, `logs/`, `postgames/`, `research/`, `cards/` | each mode's Deliver | later runs (`council prior`) |
 | `runs/<date-time>-<mode>/` | one run's working folder, below | |
 
@@ -98,16 +98,16 @@ Inside a run folder:
 | File | Written by | Read by |
 |---|---|---|
 | `session-state.md` | `council run open`, `council state` | the helper (`field`), the scripts through `council.records.state`, the mod, `session-start.sh` |
-| `run-plan.tsv` | the Chair, checked by `council run plan check` | the helper, `audit.py`, `cockpit.py`, `evidence.py`, `status.py`, `quick_validate.py` |
-| `events.tsv` | the helper only, through `event_append` (contract: `references/run/event-stream.md`) | the helper, `audit.py`, `cockpit.py`, `history.py`, `repair.py` |
-| `seats.tsv`, `usage.tsv` | `council seat` | the helper, `audit.py`, `cockpit.py`, `history.py`, `status.py` |
-| `agent-starts.tsv` | the agent gate (`council cap check`) | the helper, `audit.py`, `status.py` |
+| `run-plan.tsv` | the Chair, checked by `council run plan check` | the helper, `council run audit`, `cockpit.py`, `council evidence`, `status.py`, `quick_validate.py` |
+| `events.tsv` | the helper only, through `event_append` (contract: `references/run/event-stream.md`) | the helper, `council run audit`, `cockpit.py`, `history.py`, `council repair` |
+| `seats.tsv`, `usage.tsv` | `council seat` | the helper, `council run audit`, `cockpit.py`, `history.py`, `status.py` |
+| `agent-starts.tsv` | the agent gate (`council cap check`) | the helper, `council run audit`, `status.py` |
 | `ask.md` | the Chair (the user's words) | `council check`, `council ask save`, `status.py` |
-| `brief.md`, `seats/`, `verify-<n>.md`, `synthesis.md` | the Chair and its agents | `council collect`, `council check`, `audit.py`, `evidence.py` |
-| `gates/` | `council gate` | `council check`, `cockpit.py`, `evidence.py` |
+| `brief.md`, `seats/`, `verify-<n>.md`, `synthesis.md` | the Chair and its agents | `council collect`, `council check`, `council run audit`, `council evidence` |
+| `gates/` | `council gate` | `council check`, `cockpit.py`, `council evidence` |
 | `check.md` | `council check` | the Chair (the receipt), the audit |
-| `audit.md` | `council run close` (`audit.py --at-close --save`, through `records/audit_file`); a close again rewrites it | `council status` (the closing card), `council run status`, a later session |
-| `repairs.jsonl` | `council gate` / `repair.py` | `repair.py`, `memory.py`, `cockpit.py`, `status.py` |
+| `audit.md` | `council run close` (the audit with `--at-close --save`, through `records/audit_file`); a close again rewrites it | `council status` (the closing card), `council run status`, a later session |
+| `repairs.jsonl` | `council gate` / `council repair` (`repair_trail`) | `council repair`, `council memory propose`, `cockpit.py`, `status.py` |
 | `report-<n>.md` | the builder, at each round of task n (its head: `references/run/builder-report.md`) | `council patch save` |
 | `patches/` | `council patch save` (`T<n>-<r>.patch`, `.json`, and the task's history `T<n>.md`) | the verifier, a fix round's brief, `council patch show` |
 | `index.md` | `council index` | seats |
@@ -182,7 +182,7 @@ job (§8)? Will the next agent find it next to the code it relates to?
 | A seat's principle | The seat's reference doc at the root of `references/`, as `Principle N` | The catalogue row in `references/roster/expert-catalog.md` |
 | A run contract (a file's shape, a verdict, an event) | Its `references/run/<contract>.md` | The reader and the writer change in the same branch |
 | A new command or a check | A module in `src/council/commands/` and its row in `dispatch.COMMANDS` (D24) | Help text, `references/run/helper-commands.md`, a scenario in `evals/run_cli.py` |
-| A new analysis or view over run files | `scripts/<name>.py`, run through the helper, reading run files through `council.records` | Its own `evals/run_<name>.py` suite |
+| A new analysis or view over run files | A module in `src/council/commands/` with a `main(words)`, named in `script.TOOLS` and run through the helper, reading run files through `council.records` | Its own `evals/run_<name>.py` suite |
 | A config setting | A reader in `council.records.config`, the template line and its comment in `references/templates/council.config.md` | A missing line has a stated default; an unknown word reads as the default and says so |
 | An enforcement at a Claude Code event | A thin `hooks/<event>.sh` that asks the helper | `evals/run_hook.py`, including the fault path that must let the call through |
 | A design decision | `docs/decisions.md` (an ADR in `docs/design/` when it weighs options) | A CHANGELOG line in the same branch |
@@ -207,7 +207,7 @@ folds them, and new code uses the named way.
 | Refuse something | `raise cli.Refusal("<why — and the next command>")`: `council: <why>` on stderr, exit 2. From a hook: the helper prints `Small Council: …` on stdout with exit 2, and the hook moves it to stderr | Every refusal names what to do next (D19) |
 | Take the user's go | `council state decision="<their words>"`, read back with `council.commands.rounds.decisions_since` after the event it unlocks | Never inferred, never the Chair's words (D7) |
 | Hand a path to awk | Through `ENVIRON`, never `-v` (Windows backslashes) | Only the hooks keep awk |
-| Run Python from the helper | `bin/council` alone: one candidate order chosen without running anything (`python3 python`; `python python3` under Git Bash, MSYS2 and Cygwin), started with `-E -s` and the words as typed. Exit 85 (the entry's own refusal of a Python older than 3.8), 126, 127 or 49 tries the next candidate unless the command itself ran (`COUNCIL_RAN`); with none left it refuses, naming the command (D24, D34). A `scripts/` entry runs in the command's own process through `council.commands.script` (`run`, `captured`, `load`: scripts/ first on the path, no bytecode) | With no Python every command refuses, `help`, `-h` and a bare `council` among them; the SessionStart hook then prints nothing |
+| Run Python from the helper | `bin/council` alone: one candidate order chosen without running anything (`python3 python`; `python python3` under Git Bash, MSYS2 and Cygwin), started with `-E -s` and the words as typed. Exit 85 (the entry's own refusal of a Python older than 3.8), 126, 127 or 49 tries the next candidate unless the command itself ran (`COUNCIL_RAN`); with none left it refuses, naming the command (D24, D34). A tool or a `scripts/` view runs in the command's own process through `council.commands.script` (`run`, `captured`, `load`: a tool is imported, a view loaded by path with scripts/ first on the path and no bytecode) | With no Python every command refuses, `help`, `-h` and a bare `council` among them; the SessionStart hook then prints nothing |
 | Start a ported command | `council.commands.dispatch.COMMANDS` maps the command words to one module, imported on use. A new command adds a row there and its module in `src/council/commands/`; a stdlib module only some commands need is imported inside the function that uses it, never at the top of a module every command loads (D34) | `tests/py/test_launch.py` holds both |
 | Read the command line | `council.commands.cli` (`parse`, `takes_flags`, `no_words`, `Refusal`); each command's module holds its own word counts and `--run` refusals | |
 | Match the user's words | `council.records.request` (`fold`, `found`, `verdict`): `council check`'s quotes and next tasks (`council.records.quotes`), and the plan check's Serves rule | |
@@ -225,7 +225,7 @@ folds them, and new code uses the named way.
 | Read a seat file and its citations | `council.records.seat_files` (`brief_seats`, `items`, `shape`, `verify_problems`, `ref_title`), `council.records.citations` (`parse`, `rows`, `ranges`, `line_verdict`) and `council.records.seat_rows`, for `council collect` and `council check` (the run files they name, `brief.md` to `index.md`, in `council.records.run_files`); a citation's status and origin in `council.commands.cite_check` and `cite_origin` | `hooks/seat-gate.sh` keeps its own copy of the item-section rule (no Python start on the gate's path) |
 | Redact the user's words | `council.records.redact` (`redact`, bytes in and bytes out, with the count; `said`, a flattened one-line copy), for `council check`'s quotes, `council ask save`, `council memory`'s drafts and answers, `council state`'s decisions, `cap allow`, `tune` and `repair allow` | |
 | Run a gate | `council gate` (`council.commands.gate_exec.execute`): `bash -c` in a process group of its own, a watchdog process stopping the whole tree at its limit; on Windows through `/proc/<pid>/winpid`, a group TERM, then `taskkill /T` | A project's command starts through `council.commands.shell`: the bash on PATH, the caller's `MSYS2_ARG_CONV_EXCL` back (`COUNCIL_ARG_CONV_EXCL`), and on Windows a command line written the way Git Bash's runtime splits it (`argv_for`) |
-| Record a build's repair attempt | `council gate` (`council.commands.gate_repair`) and `council repair` run `scripts/repair.py`'s `main()` in their own process; `council.records.repairs` owns `repair-allowances.tsv` | **(debt)** `gate_repair.run_quietly` is a second way to run the script beside `council.commands.script.run`; the script is loaded by path until the scripts move into the package (S11) |
+| Record a build's repair attempt | `council gate` (`council.commands.gate_repair`) and `council repair` run `council.commands.repair_trail` through `council.commands.script` (`run`, `captured`), in their own process; `council.records.repairs` owns `repair-allowances.tsv` | — |
 | Write a run's state | `council.records.state_write.change`: `council state`, and `run open`, `resume`, `close` and `turn-end` through it (`raw_lines` and `replace` for a header rewrite of its own); `clear_waiting` is a thin caller, and `council index` and `council ask save` set their fields through `change` too | |
 | Count an agent | `council seat` records it; the agent gate (`council cap check`, `src/council/commands/agent_gate.py`) counts starts; the ledger is written at close | One record per agent run, by id (`references/run/run-accounting.md`) |
 | Read what a run's agents used | The per-seat rule: `council.records.usage` (`seat_list`, `usage_totals`, `usage_words`, `reported_runs`, `agents_share`, `standing`), read by `council cap`, the agent gate, `council seat`'s notes, `run close`, the ledger, the cockpit and the status card | **(debt)** `scripts/status.py` keeps its own `cap_standing`, `budget_value` and `run_agent_cap` until it moves onto `records.usage.standing` (S11) |

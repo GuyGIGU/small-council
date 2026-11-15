@@ -16,14 +16,14 @@
   },
   "parsers": {
    "items": [
-    "scripts/audit.py",
     "scripts/cockpit.py",
-    "scripts/evidence.py",
-    "scripts/memory.py",
     "scripts/outcomes.py",
     "scripts/quick_validate.py",
-    "scripts/repair.py",
     "scripts/status.py",
+    "src/council/commands/audit_checks.py",
+    "src/council/commands/evidence.py",
+    "src/council/commands/memory_draft.py",
+    "src/council/commands/repair_trail.py",
     "src/council/commands/session_start.py"
    ],
    "value": 9
@@ -72,45 +72,15 @@
    "longest_name": "",
    "shellcheck": 0
   },
-  "scripts/audit.py": {
-   "lines": 879,
-   "longest": 154,
-   "longest_name": "transcript"
-  },
-  "scripts/audit_figures.py": {
-   "lines": 27,
-   "longest": 12,
-   "longest_name": "token_figures"
-  },
-  "scripts/chair_usage.py": {
-   "lines": 130,
-   "longest": 45,
-   "longest_name": "main"
-  },
   "scripts/cockpit.py": {
    "lines": 534,
    "longest": 103,
    "longest_name": "render"
   },
-  "scripts/evidence.py": {
-   "lines": 467,
-   "longest": 87,
-   "longest_name": "synthesis"
-  },
   "scripts/history.py": {
    "lines": 339,
    "longest": 119,
    "longest_name": "history"
-  },
-  "scripts/ledger.py": {
-   "lines": 277,
-   "longest": 44,
-   "longest_name": "report"
-  },
-  "scripts/memory.py": {
-   "lines": 452,
-   "longest": 43,
-   "longest_name": "draft_claim"
   },
   "scripts/outcomes.py": {
    "lines": 312,
@@ -127,20 +97,10 @@
    "longest": 14,
    "longest_name": "frontmatter"
   },
-  "scripts/repair.py": {
-   "lines": 395,
-   "longest": 75,
-   "longest_name": "inspect_rows"
-  },
   "scripts/status.py": {
    "lines": 1078,
    "longest": 213,
    "longest_name": "interpret"
-  },
-  "scripts/tune.py": {
-   "lines": 339,
-   "longest": 42,
-   "longest_name": "proposals"
   },
   "src/council/__init__.py": {
    "lines": 1,
@@ -172,10 +132,30 @@
    "longest": 31,
    "longest_name": "save"
   },
+  "src/council/commands/audit.py": {
+   "lines": 432,
+   "longest": 44,
+   "longest_name": "main"
+  },
+  "src/council/commands/audit_calls.py": {
+   "lines": 159,
+   "longest": 55,
+   "longest_name": "pipelines"
+  },
+  "src/council/commands/audit_checks.py": {
+   "lines": 382,
+   "longest": 41,
+   "longest_name": "claim_index"
+  },
   "src/council/commands/cap.py": {
    "lines": 168,
    "longest": 31,
    "longest_name": "show"
+  },
+  "src/council/commands/chair_usage.py": {
+   "lines": 120,
+   "longest": 45,
+   "longest_name": "main"
   },
   "src/council/commands/changed.py": {
    "lines": 159,
@@ -257,6 +237,11 @@
    "longest": 8,
    "longest_name": "append"
   },
+  "src/council/commands/evidence.py": {
+   "lines": 465,
+   "longest": 57,
+   "longest_name": "main"
+  },
   "src/council/commands/fingerprint.py": {
    "lines": 103,
    "longest": 16,
@@ -293,7 +278,7 @@
    "longest_name": "failure_ids"
   },
   "src/council/commands/gate_repair.py": {
-   "lines": 126,
+   "lines": 104,
    "longest": 26,
    "longest_name": "record"
   },
@@ -338,7 +323,7 @@
    "longest_name": "definition"
   },
   "src/council/commands/ledger.py": {
-   "lines": 131,
+   "lines": 134,
    "longest": 25,
    "longest_name": "lines"
   },
@@ -357,6 +342,11 @@
    "longest": 30,
    "longest_name": "checked"
   },
+  "src/council/commands/memory_draft.py": {
+   "lines": 438,
+   "longest": 43,
+   "longest_name": "draft_claim"
+  },
   "src/council/commands/memory_select.py": {
    "lines": 136,
    "longest": 27,
@@ -368,7 +358,7 @@
    "longest_name": "orphans"
   },
   "src/council/commands/memory_write.py": {
-   "lines": 149,
+   "lines": 143,
    "longest": 38,
    "longest_name": "propose"
   },
@@ -428,9 +418,14 @@
    "longest_name": "main"
   },
   "src/council/commands/repair.py": {
-   "lines": 67,
+   "lines": 66,
    "longest": 28,
    "longest_name": "allow"
+  },
+  "src/council/commands/repair_trail.py": {
+   "lines": 389,
+   "longest": 59,
+   "longest_name": "record"
   },
   "src/council/commands/resolve.py": {
    "lines": 107,
@@ -473,12 +468,12 @@
    "longest_name": "status"
   },
   "src/council/commands/script.py": {
-   "lines": 65,
-   "longest": 22,
-   "longest_name": "run"
+   "lines": 101,
+   "longest": 19,
+   "longest_name": "guarded"
   },
   "src/council/commands/script_cmds.py": {
-   "lines": 109,
+   "lines": 93,
    "longest": 28,
    "longest_name": "main"
   },
@@ -486,6 +481,11 @@
    "lines": 213,
    "longest": 36,
    "longest_name": "main"
+  },
+  "src/council/commands/seat_advice.py": {
+   "lines": 243,
+   "longest": 44,
+   "longest_name": "report"
   },
   "src/council/commands/seat_notes.py": {
    "lines": 46,
@@ -513,9 +513,14 @@
    "longest_name": "_checked"
   },
   "src/council/commands/tune.py": {
-   "lines": 54,
+   "lines": 53,
    "longest": 37,
    "longest_name": "main"
+  },
+  "src/council/commands/tune_knobs.py": {
+   "lines": 336,
+   "longest": 43,
+   "longest_name": "proposals"
   },
   "src/council/commands/turn_end.py": {
    "lines": 59,
@@ -613,7 +618,7 @@
    "longest_name": "keep_out"
   },
   "src/council/records/ledger.py": {
-   "lines": 145,
+   "lines": 151,
    "longest": 23,
    "longest_name": "record"
   },

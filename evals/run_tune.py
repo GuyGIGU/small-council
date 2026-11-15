@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused, no-model checks for conservative self-tuning: `council tune` and scripts/tune.py.
+"""Focused, no-model checks for conservative self-tuning: `council tune` and commands/tune_knobs.py.
 
 Tuning must propose only from enough of the project's own record; change one line of the config only
 with the user's (redacted) words and only to the value they were shown; log every change with the

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused, no-model checks for seat learning: `council ledger advice` and scripts/ledger.py.
+"""Focused, no-model checks for seat learning: `council ledger advice` and commands/seat_advice.py.
 
 The advice must stay quiet until a seat's record clears the bar, count only runs that judged its
 items, and never read one run's many items as many runs' worth of evidence.

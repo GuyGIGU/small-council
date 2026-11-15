@@ -39,7 +39,7 @@ QUIET_MINUTES = 60         # an open run with no recorded activity for this long
 OLD_SNAPSHOT_MINUTES = 60  # a widget older than this tells the viewer to ask for a new one
 LEFT_SHOWN = 12            # the closing card's "Left for you" items; the text lists them all (lists are capped: ADR)
 MEMORY_SIZE_LIMIT = 25600   # bytes, shared with the helper's run-open warning
-ATTEMPTS = 3               # the repair loop's stop limit (scripts/repair.py)
+ATTEMPTS = 3               # the repair loop's stop limit (commands/repair_trail.py)
 STAGES = (("convene", "Setting up"), ("prepare", "Gathering context"), ("assign", "Choosing the experts"),
           ("brief", "Writing the briefs"), ("work", "Experts at work"), ("collect", "Collecting results"),
           ("judge", "Weighing the findings"), ("challenge", "Checking the findings"),
