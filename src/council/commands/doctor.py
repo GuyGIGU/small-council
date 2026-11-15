@@ -123,10 +123,8 @@ def roster(doc: Doctor) -> None:
 
 
 def card(doc: Doctor, seat: str, slug: str, path: str) -> None:
-    try:
-        with open(where.native(path), "rb") as stream:
-            data = stream.read()
-    except OSError:
+    data = paths.contents(where.native(path))
+    if data is None:
         doc.warn("seat '%s' has no card (cards/%s.md)" % (seat, slug),
                  "council-init refresh writes one from references/templates/seat-card.md")
         return

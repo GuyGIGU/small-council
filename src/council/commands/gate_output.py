@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from council.records import bytewise
+from council.records import bytewise, paths
 
 SPACE = " \t\n\v\f\r"
 RAN = re.compile(r"(running|ran)[ \t]+[1-9][0-9]*[ \t]+tests?([^a-z]|$)|tests run:[ \t]*[1-9]"
@@ -34,10 +34,7 @@ MISSING_MODULE = re.compile(r"^.*: No module named ([A-Za-z0-9_.]+)[ \t\n\v\f\r]
 
 def text(path: str | Path) -> str:
     """A saved output's text, its bytes kept (surrogateescape); '' when it can't be read."""
-    try:
-        return Path(path).read_bytes().decode("utf-8", "surrogateescape")
-    except OSError:
-        return ""
+    return (paths.contents(path) or b"").decode("utf-8", "surrogateescape")
 
 
 def clip(line: str, width: int) -> str:

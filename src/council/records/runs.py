@@ -35,7 +35,7 @@ def listing(home: str, limit: int = 30, which: str = "open") -> list[Listed]:
     line anywhere, however old; 'all' the newest by name. At most limit. Folders are home + /runs/<name>."""
     listed = []
     for state in _states(home + "/runs", which)[:limit]:
-        fields = listed_fields((_raw(state) or b"").decode("utf-8", "surrogateescape"))
+        fields = listed_fields((paths.contents(state) or b"").decode("utf-8", "surrogateescape"))
         if fields is not None:
             get = fields.get
             listed.append(Listed(state[:-len(paths.STATE) - 1], get("mode", ""), get("phase", ""),
@@ -53,17 +53,9 @@ def _states(runs: str, which: str) -> list[str]:
         return []
     if which == "open":
         states = sorted((runs + "/" + name + "/" + paths.STATE for name in names), reverse=True)
-        return [state for state in states if OPEN.search(_raw(state) or b"")]
+        return [state for state in states if OPEN.search(paths.contents(state) or b"")]
     states = [runs + "/" + name + "/" + paths.STATE for name in sorted(names, reverse=True)]
     return [state for state in states if os.path.isfile(state)]
-
-
-def _raw(file: str | Path) -> bytes | None:
-    try:
-        with open(str(file), "rb") as handle:
-            return handle.read()
-    except OSError:
-        return None
 
 
 def listed_fields(content: str) -> dict[str, str] | None:

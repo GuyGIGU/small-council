@@ -8,7 +8,7 @@ import os
 import re
 
 from council.commands.doctor import Doctor
-from council.records import config, gate_notes, gate_table
+from council.records import config, gate_notes, gate_table, paths
 from council.records import gates as gate_files
 from council.records import home as where
 
@@ -101,12 +101,7 @@ def last_seconds(home: str, name: str) -> int | None:
             continue
     if not stamped:
         return None
-    try:
-        with open(min(stamped)[2], "rb") as stream:
-            text = stream.read().decode("utf-8", "surrogateescape")
-    except OSError:
-        return None
-    for line in text.split("\n"):
+    for line in (paths.contents(min(stamped)[2]) or b"").decode("utf-8", "surrogateescape").split("\n"):
         found_line = _SECONDS.match(line)
         if found_line:
             return int(found_line.group(1))

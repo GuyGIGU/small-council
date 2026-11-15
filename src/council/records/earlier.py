@@ -10,6 +10,7 @@ from pathlib import Path
 
 from council.records import bytewise, scope
 from council.records import home as where
+from council.records.paths import contents
 from council.records.run_files import INDEX
 
 DELIVERABLES = ("reviews", "logs", "research", "plans", "postgames")
@@ -65,10 +66,7 @@ def hits(home: str, paths: list[str]) -> list[str]:
     reader = Reader(wanted, bytewise.lower(bytewise.text(top)))
     found: list[str] = []
     for shown in deliverables(home):
-        try:
-            data = Path(where.native(home + "/" + shown)).read_bytes()
-        except OSError:
-            continue
+        data = contents(where.native(home + "/" + shown))
         if data:
             found.extend(reader.file(bytewise.text(shown), bytewise.read(data)))
     return found

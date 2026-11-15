@@ -57,11 +57,7 @@ def _raw_lines(run: Path, name: str) -> list[str]:
 def worked(run: Path) -> tuple[list[str], bool]:
     """The slugs of seats.tsv's rows whose state is not skipped, and whether it has any row past the header, as
     `council memory select` reads them (awk split at tabs, C-locale text: records/bytewise.py)."""
-    try:
-        text = bytewise.read(path(run).read_bytes())
-    except OSError:
-        return [], False
-    found = bytewise.records(text)[1:]
+    found = bytewise.records(bytewise.read(paths.contents(path(run)) or b""))[1:]
     return [c[0] for c in (line.split("\t") for line in found) if (c[1] if len(c) > 1 else "") != "skipped"], \
         bool(found)
 

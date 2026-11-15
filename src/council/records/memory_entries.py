@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-from council.records import bytewise
+from council.records import bytewise, paths
 from council.records.bytewise import EM, EN, lower, trim, upper
 
 OFF = ["propos", "reject", "retire", "supersede", "deprecat", "withdraw", "obsolete", "archived", "pending", "draft",
@@ -413,24 +413,14 @@ def parse(text: str) -> Parser:
     return parser
 
 
-def _text(path: str) -> str | None:
-    try:
-        with open(path, "rb") as stream:
-            return bytewise.read(stream.read())
-    except OSError:
-        return None
-
-
 def rows(path: str) -> list[str]:
     """The entries of a memory file (a native path) as rows; none when it can't be read."""
-    text = _text(path)
-    return parse(text).rows if text is not None else []
+    return parse(bytewise.read(paths.contents(path) or b"")).rows
 
 
 def skipped(path: str) -> str:
     """The ids of lines that look like entries but are not read, with their line numbers; '' when none."""
-    text = _text(path)
-    return parse(text).unread() if text is not None else ""
+    return parse(bytewise.read(paths.contents(path) or b"")).unread()
 
 
 def pending(text: str, found: list[str]) -> int:

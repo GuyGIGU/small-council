@@ -154,11 +154,7 @@ def notifications_off(home: str | Path | None) -> bool:
 
 def field(home: str | Path, key: str) -> str:
     """A `key:` line of the config (stack-fingerprint, last-verified), as the helper's field reads it: cells.field."""
-    try:
-        data = path(home).read_bytes()
-    except OSError:
-        return ""
-    return cells.field(data.decode("utf-8", "surrogateescape"), key)
+    return cells.field((paths.contents(path(home)) or b"").decode("utf-8", "surrogateescape"), key)
 
 
 def memory_line(home: str | Path) -> tuple[str, str] | None:
@@ -219,12 +215,8 @@ def roster_rows(home: str | Path) -> list[tuple[str, str, str]]:
     reference), "-" for an empty value, its columns found by their header names (Seat, else the first; Slug;
     Reference), each cell trimmed of blanks, CRs, backticks and asterisks; a row with no seat, a rule row or a
     <placeholder> left out. C-locale text (records/bytewise.py). roster() is the older reading that needs a Lens."""
-    try:
-        text = bytewise.read(path(home).read_bytes())
-    except OSError:
-        return []
     found, inside, columns = [], False, None
-    for line in bytewise.records(text):
+    for line in bytewise.records(bytewise.read(paths.contents(path(home)) or b"")):
         if line.startswith("## "):
             inside, columns = line.startswith("## Roster"), None
             continue

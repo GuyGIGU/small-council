@@ -98,6 +98,15 @@ def read_bytes(path: str | Path, limit: int) -> bytes:
         return handle.read(limit + 1)
 
 
+def contents(path: str | Path) -> bytes | None:
+    """The whole file's bytes, None when it can't be read; unguarded (read_bytes and text_of are the guarded reads)."""
+    try:
+        with open(str(path), "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
 def text_of(path: str | Path, root: str | Path | None = None, limit: int = MAX_FILE,
             errors: str = "replace") -> str:
     """A small regular file's text, BOM dropped, or '' when it is missing, a link, outside root, too

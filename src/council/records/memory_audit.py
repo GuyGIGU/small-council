@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import re
 
-from council.records import bytewise, scope
+from council.records import bytewise, paths, scope
 from council.records import home as where
 from council.records.bytewise import trim
 from council.records.memory_entries import vword
@@ -203,11 +203,7 @@ def says(s: str, w: str) -> bool:
 
 
 def lines_of(f: str) -> list[str]:
-    try:
-        with open(where.native(f), "rb") as stream:
-            return bytewise.records(bytewise.read(stream.read()))
-    except OSError:
-        return []
+    return bytewise.records(bytewise.read(paths.contents(where.native(f)) or b""))
 
 
 def results(reqs: list[tuple[int, str, str, str]]) -> dict[int, tuple[str, str]]:
