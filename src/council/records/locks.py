@@ -1,16 +1,10 @@
-"""The helper's mkdir lock (bin/council: event_lock, event_unlock, event_lock_stale), step for step, so a
-Python writer and a bash writer of events.tsv or seats.tsv exclude each other.
+"""The mkdir lock that keeps two writers of one run file (events.tsv, seats.tsv) apart.
 
-A lock is a directory (`<file>.lock`) holding an `owner` file with the holder's process id: which id, and
-how it is checked, is records/owners.py (D33). A lock whose owner is no live process, or one with no
-readable owner that is ten seconds old, is stale. A stale lock is reclaimed only through a second
-directory, `<lock>.recover`, so two waiters never both remove it, and a writer never takes the lock while
-a reclaim is under way.
-
-A made directory is not yet a held lock: the owner file decides (bin/council's lock_claim). uutils mkdir
-0.10.0 exits 0 when the directory is already there, so a bash caller can be told it made a lock another
-holds. Both languages therefore hold a lock, or a `.recover`, only once they created its owner file
-exclusively (O_EXCL).
+A lock is a directory (`<file>.lock`) whose `owner` file names the holder's process (records/owners.py,
+D33). A lock whose owner is no live process, or one with no readable owner that is ten seconds old, is
+stale, and is reclaimed only through `<lock>.recover`, so two waiters never both remove it. A caller holds
+a lock, or a `.recover`, only once it created the owner file exclusively (O_EXCL): the folder alone is not
+a held lock.
 """
 from __future__ import annotations
 
@@ -27,7 +21,7 @@ STALE_SECONDS = 10   # a lock with no owner number this old was left by a writer
 
 
 def stale(lock: str | Path) -> bool:
-    """event_lock_stale: the lock exists and its holder is gone."""
+    """The lock exists and its holder is gone."""
     lock = Path(lock)
     if not lock.is_dir():
         return False
@@ -62,11 +56,11 @@ def make(folder: Path) -> bool:
     return True
 
 
-HELD, TAKEN, FAILED = 0, 1, 2   # lock_claim's exits
+HELD, TAKEN, FAILED = 0, 1, 2   # claim's answers
 
 
 def claim(folder: Path, owner: str) -> int:
-    """lock_claim: create folder/owner exclusively and write the owner line. HELD; TAKEN when another
+    """Create folder/owner exclusively and write the owner line. HELD; TAKEN when another
     caller's owner file is there or the folder went (leave it alone); FAILED when it couldn't be made or
     written (nothing of it is left)."""
     owner_file = folder / "owner"
@@ -93,7 +87,7 @@ def remove_folder(folder: Path) -> None:
 
 
 def release(lock: str | Path) -> bool:
-    """event_unlock: remove the owner file, then the lock directory. False when either is refused."""
+    """Remove the owner file, then the lock directory. False when either is refused."""
     lock = Path(lock)
     try:
         (lock / "owner").unlink()
@@ -122,7 +116,7 @@ def reclaim(lock: Path, recovery: Path, owner: str) -> bool:
 
 
 def acquire(lock: str | Path, tries: int = TRIES) -> bool:
-    """event_lock: take the lock, reclaiming a stale one, trying `tries` times 0.1 s apart."""
+    """Take the lock, reclaiming a stale one, trying `tries` times 0.1 s apart."""
     lock = Path(lock)
     recovery = Path(str(lock) + ".recover")
     owner = str(os.getpid())
