@@ -16,9 +16,9 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import NamedTuple
 
 from council.commands import shell
+from council.records import owners
 
 SRC = str(Path(__file__).resolve().parents[2])
 TIMED_OUT = 124
@@ -42,12 +42,8 @@ WATCH = ("import sys; sys.path.insert(0, sys.argv[1]); from council.commands imp
          "gate_exec.watch(int(sys.argv[2]), int(sys.argv[3]), sys.argv[4])")
 
 
-class Running(NamedTuple):
-    gate: subprocess.Popen
-    watchdog: subprocess.Popen | None
-
-
-RUNNING: list[Running] = []          # the gate this call is running, for stop_running on every way out
+# The gate this call is running and its watchdog, for stop_running on every way out.
+RUNNING: dict[subprocess.Popen, subprocess.Popen | None] = {}
 
 
 def _detached() -> dict:
@@ -72,9 +68,8 @@ def execute(top: str, base: str, command: str, out: str, limit: int) -> tuple[in
                                     env=shell.child_env({"COUNCIL_BASE": base}), **_detached())
         except OSError:
             return NO_ROOT, False
-    RUNNING.append(Running(gate, None))
-    watchdog = _watch(gate.pid, limit, flag)
-    RUNNING[-1] = Running(gate, watchdog)
+    RUNNING[gate] = None
+    watchdog = RUNNING[gate] = _watch(gate.pid, limit, flag)
     code = gate.wait() if watchdog is not None else _wait(gate, limit, flag)
     timed_out = flag.exists()
     if timed_out and watchdog is not None:
@@ -111,21 +106,10 @@ def watch(pid: int, limit: int, flag: str) -> None:
     started = time.monotonic()
     while time.monotonic() - started < limit:
         time.sleep(1)
-        if not _alive(pid):
+        if not owners.alive(pid):
             return
     Path(flag).touch()
     stop(pid)
-
-
-def _alive(pid: int) -> bool:
-    if os.name == "nt":
-        from council.records import owners
-        return owners.alive(pid)
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
 
 
 def stop(pid: int) -> None:
@@ -174,10 +158,10 @@ def _end_watchdog(watchdog: subprocess.Popen) -> None:
 def stop_running() -> None:
     """The gate still running and its watchdog, stopped: every way out of the helper (gate_unlock)."""
     while RUNNING:
-        running = RUNNING.pop()
-        stop(running.gate.pid)
-        if running.watchdog is not None:
-            _end_watchdog(running.watchdog)
+        gate, watchdog = RUNNING.popitem()
+        stop(gate.pid)
+        if watchdog is not None:
+            _end_watchdog(watchdog)
 
 
 def _remove(flag: Path) -> None:
