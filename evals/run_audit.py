@@ -609,7 +609,7 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     code, out, err = council(base, "run", "audit", "--run", str(miscited), "--transcript", str(log1))
     check("a cut claim a verifier found MISCITED (true, elsewhere) fails the claim index like a CONFIRMED one, as council evidence check reads it",
           item(out, "Claim index")[0] == "FAIL" and "C1" in item(out, "Claim index")[1], item(out, "Claim index")[1])
-    # An agent seat with no token figure (issue 54): the run total, the ledger and council tune all leave it out.
+    # An agent seat with no token figure (issue 54): the run total and the ledger both leave it out.
     # The one per-seat rule (records/usage.py) decides; the audit only says which seats and why.
     head = "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
 
