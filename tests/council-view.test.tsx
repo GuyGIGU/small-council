@@ -1,6 +1,6 @@
 // Run: claude plugin test .
 // The world beneath the plugin is a fixture: one council home with an open build run at stage 8, read
-// through a status.py answer shaped like the real `--json` reading. Hooks beneath answer `{ value }`.
+// through a status reader answer shaped like the real `--json` reading. Hooks beneath answer `{ value }`.
 import { expect, mock, test } from 'claude-code/testing'
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -83,7 +83,7 @@ function world(on: any, opts: World = {}) {
     const argv = [...e.argv] as string[]
     opts.calls?.push(argv)
     if (argv[0] === 'git') return ran(0, 'C:/proj/.git\nC:/proj\n')
-    if (argv.some(a => a.endsWith('/scripts/status.py'))) {
+    if (argv.some(a => a.endsWith('/src/council/commands/script.py'))) {
       return opts.noPython ? ran(9009, '') : ran(0, JSON.stringify(STATUS(opts.reading)))
     }
     return ran(127, '')
@@ -123,7 +123,7 @@ test("the bar draws this session's open run: stage, the agent at work, tokens ag
     else await has({ type: 'Svg' }, 'stage picture')
     await ui.unmount()
   }
-  const status = calls.find(a => a.some(x => x.endsWith('/scripts/status.py'))) ?? []
+  const status = calls.find(a => a.some(x => x.endsWith('/src/council/commands/script.py'))) ?? []
   expect(status.slice(-5)).toEqual(['--run', `C:/proj/.council/runs/${OPEN}`, '--home', 'C:/proj/.council', '--json'])
 })
 
@@ -269,7 +269,7 @@ test("the helper's order: the open run on this tree before this session's run on
     others: { [mine]: `status: in-progress${CRLF}session: sess-1${CRLF}code-root: D:/other${CRLF}` },
   })
   await start($, on)
-  const status = calls.filter(a => a.some(x => x.endsWith('/scripts/status.py'))).pop() ?? []
+  const status = calls.filter(a => a.some(x => x.endsWith('/src/council/commands/script.py'))).pop() ?? []
   expect(status).toContain(`C:/proj/.council/runs/${OPEN}`)
 })
 

@@ -1,7 +1,7 @@
 """Conservative, inspectable self-tuning: proposals from the project's own record, a change only on
 the user's words, every change logged and reversible.
 
-`propose` reads the history (scripts/history.py) and the seat advice (commands/seat_advice.py), and sorts
+`propose` reads the history (views/history.py) and the seat advice (commands/seat_advice.py), and sorts
 every knob into one of three kinds:
 - **budget** — the estimate per worker that `council route recommend` budgets with. It is the only
   knob this command changes. It is proposed when five completed runs measure tokens per agent and
@@ -26,15 +26,13 @@ import json
 from pathlib import Path
 from typing import Any, Pattern
 
-from council.commands import script
 from council.commands import seat_advice as ledger
 from council.records import config, estimates, paths  # noqa: F401  (paths.RecordError: a fault it says)
 from council.records import ledger as ledger_file, usage_gaps
 from council.records.tuning import TuningError as TuneError, log_entries, said_words, write_pair
 from council.records.config import ESTIMATE_LINES as LINES, ESTIMATE_PARTS as PARTS
 from council.records.config import estimate_line as configured, estimate_tokens as tokens
-
-history = script.load("history")     # scripts/history.py, until it moves into the package
+from council.views import history
 
 SCHEMA = "council.tune/2"
 DEFAULT_PER_WORKER = 80000      # the route's no-history estimate

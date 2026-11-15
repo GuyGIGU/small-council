@@ -14,10 +14,8 @@ ROOT = Path(__file__).resolve().parent.parent
 GIT = shutil.which("git")
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash") or (
     r"C:\Program Files\Git\bin\bash.exe" if Path(r"C:\Program Files\Git\bin\bash.exe").is_file() else None)
-sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
-import outcomes  # noqa: E402
-import history  # noqa: E402
+from council.views import history, outcomes  # noqa: E402
 from council.commands import tune_knobs as tune  # noqa: E402
 
 checks = []

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """A thin, read-only terminal cockpit for one council run.
 
 It reads what the run already records and draws one screen. The run's files are:
@@ -14,62 +13,43 @@ outside the run, is too large or does not parse is skipped rather than followed 
 the same snapshot as data (`council.run-snapshot/2`) for other tools. Every fact on screen comes from
 a file the helper or the Chair already writes; the cockpit adds no state of its own.
 """
+from __future__ import annotations
 
 import argparse
 import json
 import os
-from pathlib import Path
 import re
-import shutil
 import sys
 import time
+from pathlib import Path
+from typing import Any, Dict
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+from council.records import cells, events as event_stream, gates as gate_files, plan as run_plan, state as run_state
+from council.records import usage
+from council.records.cells import clean, integer
+from council.records.paths import contained, is_run, linked, text_of
+from council.records.seats import corrections as corrections_of
+from council.records.stages import COUNCIL_NEXT_AT_OPEN as NEXT_AT_OPEN
+from council.views.cockpit_screen import render
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from council import clock  # noqa: E402
-from council.records import cells  # noqa: E402
-from council.records import events as event_stream  # noqa: E402
-from council.records import gates as gate_files  # noqa: E402
-from council.records import paths  # noqa: E402
-from council.records import plan as run_plan  # noqa: E402
-from council.records import seats as seat_files  # noqa: E402
-from council.records import state as run_state  # noqa: E402
-from council.records import usage  # noqa: E402
-from council.records.cells import CONTROL, clean, integer, lines_of, number, optional_number  # noqa: E402,F401
-from council.records.paths import contained, linked, text_of  # noqa: E402,F401  (the views read through these)
-
+Snap = Dict[str, Any]
 SCHEMA = "council.run-snapshot/2"
-UNICODE = {"done": "✓", "running": "●", "queued": "○", "failed": "✗", "blocked": "■", "skipped": "–",
-           "pass": "✓", "fail": "✗", "planned": "·", "unknown": "?", "top": "┌", "bottom": "└", "rule": "─"}
-ASCII = {"done": "+", "running": "*", "queued": "o", "failed": "x", "blocked": "!", "skipped": "-",
-         "pass": "+", "fail": "x", "planned": ".", "unknown": "?", "top": "+", "bottom": "+", "rule": "-"}
-PLAIN = {"·": "|", "—": "-", "–": "-", "…": "...", "→": "->", "’": "'", "“": '"', "”": '"'}
-NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # the helper's next: at run open (COUNCIL_NEXT_AT_OPEN)
 CLAIM_MODES = ("council-review", "council-plan", "council-research")   # the modes that keep a claim index
 CONVERGE_RESULT = re.compile(r"(not met|partly met|partly|blocked|met)\b")
 CONVERGE_KEYS = {"not met": "not_met", "partly met": "partly", "partly": "partly", "blocked": "blocked", "met": "met"}
 
-gate_kind = gate_files.kind                       # one rule for every view (status, history, the pet)
-failed_as_planned = gate_files.failed_as_planned
-corrections_of = seat_files.corrections
-format_tokens = usage.token_text                  # the views' one rounding (records/usage.py)
 
-
-# --- the run's files, through the records library -------------------------------------------------------------
-def header(run):
+def header(run: Path) -> dict[str, str]:
     """The run's session-state header, read by the cockpit's rule (records.state.header), each value cleaned."""
     return {key: clean(value) for key, value in run_state.header(run_state.text(run)).items()}
 
 
-def decisions(run, limit=20):
+def decisions(run: Path, limit: int = 20) -> list[str]:
     """The user's recorded decisions (council state decision=), oldest first, each cleaned and cut to 300."""
     return [clean(entry)[:300] for entry in run_state.decisions(run_state.text(run))][-limit:]
 
 
-def next_step(state):
+def next_step(state: dict[str, str]) -> str:
     """The run's recorded next step. The one written at run open is Convene's own: nothing replaces it
     on its own, so once the run has left convene it is stale and reads as no step at all. A step the
     Chair recorded is shown as written."""
@@ -79,14 +59,14 @@ def next_step(state):
     return step
 
 
-def jsonl(run, name):
+def jsonl(run: Path, name: str) -> list[dict[str, Any]]:
     return cells.jsonl_rows(text_of(run / name, run))
 
 
-def repairs_of(run):
+def repairs_of(run: Path) -> dict[str, dict[str, Any]]:
     """Each repair task's last attempt, and the category of its last failed attempt (a trail that
     resolved ends on a RESOLVED row, which is no failure category)."""
-    tasks = {}
+    tasks: dict[str, dict[str, Any]] = {}
     for row in jsonl(run, "repairs.jsonl"):
         task = clean(row.get("task", "?")) or "?"
         result, category = clean(row.get("result", "")), clean(row.get("category", ""))
@@ -97,9 +77,9 @@ def repairs_of(run):
     return tasks
 
 
-def claim_index_stale(run):
+def claim_index_stale(run: Path) -> bool:
     """Fail closed on missing/unreadable indexes; reading never refreshes the index."""
-    sources = [p for p in [run / "synthesis.md"] + list(run.glob("verify-*.md")) if p.is_file()]
+    sources = [p for p in [run / "synthesis.md", *run.glob("verify-*.md")] if p.is_file()]
     try:
         index = run / "claims.jsonl"
         if linked(index) or any(linked(p) for p in sources):
@@ -130,7 +110,7 @@ def claim_index_stale(run):
         return True
 
 
-def claims_expected(run, mode):
+def claims_expected(run: Path, mode: str) -> bool:
     """A review, plan or research run keeps a claim index (the helper's close warns when it is missing), and a run
     with no recorded mode is read as one. Another mode keeps none — a build checks tasks, not claims — unless its
     folder holds a synthesis or an index all the same."""
@@ -142,7 +122,7 @@ def claims_expected(run, mode):
         return True
 
 
-def claims_of(run, mode=None):
+def claims_of(run: str | Path, mode: str | None = None) -> dict[str, Any]:
     """by_verdict counts every indexed claim. shipped counts what the closing card reports: the kept claims,
     and the cut ones a verifier was sent anyway; self_checked, those only the Chair's own check covers.
     expected is False for a run that keeps no claim index (a build), which is then never out of date."""
@@ -152,7 +132,9 @@ def claims_of(run, mode=None):
     if claim_index_stale(run):
         return {"total": 0, "by_verdict": {}, "stale": True, "shipped": {}, "self_checked": 0, "expected": True}
     rows = jsonl(run, "claims.jsonl")
-    verdicts, shipped, own = {}, {}, 0
+    verdicts: dict[str, int] = {}
+    shipped: dict[str, int] = {}
+    own = 0
     for row in rows:
         verdict = clean(row.get("verdict") or "UNVERIFIED").upper()[:24] or "UNVERIFIED"
         verdicts[verdict] = verdicts.get(verdict, 0) + 1
@@ -166,7 +148,7 @@ def claims_of(run, mode=None):
             "shipped": dict(sorted(shipped.items())), "self_checked": own, "expected": True}
 
 
-def converge_result(cell):
+def converge_result(cell: str) -> str:
     """A Converge Result cell's verdict, read after its last arrow ("partly met → met" is met) by its first words:
     met, partly, not_met, blocked or other."""
     words = re.sub(r"[`*_]", "", re.split("→|->", cell)[-1]).strip().lower()
@@ -174,7 +156,7 @@ def converge_result(cell):
     return CONVERGE_KEYS[found.group(1)] if found else "other"
 
 
-def converge_fixed(cell):
+def converge_fixed(cell: str) -> bool:
     """A met result that records the check finding it short first: an earlier verdict before an arrow ("partly met →
     met"), or one named after the leading "met" ("met (after 8cbfc45; verify-5 partly met)")."""
     parts = re.split("→|->", cell)
@@ -184,7 +166,7 @@ def converge_fixed(cell):
     return re.search(r"\b(not met|partly met|partly|blocked)\b", words[3:]) is not None
 
 
-def converge_of(run, deliverable):
+def converge_of(run: str | Path, deliverable: str) -> dict[str, Any]:
     """A build's final check, from its log's '## Converge' table (council-implement writes it at Challenge): each
     task's final result, and whether a fix came after the check found it short. {"missing": why} when no such
     table can be read: no deliverable, one outside the council home's logs folder, unreadable, or without one."""
@@ -199,8 +181,17 @@ def converge_of(run, deliverable):
     content = text_of(path, logs)
     if not content:
         return {"missing": "the build log can't be read"}
-    rows, inside, columns = [], False, None
-    for line in lines_of(content):
+    rows = converge_rows(content)
+    if not rows:
+        return {"missing": "the build log has no Converge table"}
+    return {"rows": rows}
+
+
+def converge_rows(content: str) -> list[dict[str, Any]]:
+    """The rows of the table under the log's '## Converge' heading, keyed by its Task, Done when and Result."""
+    rows: list[dict[str, Any]] = []
+    inside, columns = False, None
+    for line in cells.lines_of(content):
         if line.startswith("## "):
             if inside:
                 break
@@ -212,31 +203,27 @@ def converge_of(run, deliverable):
             if columns is not None:
                 break                               # the table ended
             continue
-        cells = [clean(c) for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+        row = [clean(c) for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
         if columns is None:
-            names = [c.lower() for c in cells]
+            names = [c.lower() for c in row]
             if "result" not in names:
                 break
             columns = {name: names.index(name) for name in ("task", "done when", "result") if name in names}
             continue
-        if all(re.fullmatch(r":?-{3,}:?", c) for c in cells if c):
+        if all(re.fullmatch(r":?-{3,}:?", c) for c in row if c):
             continue                                # the header's rule
-        def cell(name):
-            at = columns.get(name)
-            return cells[at] if at is not None and at < len(cells) else ""
-        result = cell("result")
+        cell = {name: row[at] if at < len(row) else "" for name, at in columns.items()}
+        result = cell.get("result", "")
         final = converge_result(result)
-        rows.append({"task": cell("task").replace("`", "")[:40] or str(len(rows) + 1),
-                     "done_when": cell("done when").replace("`", "")[:200], "result": final,
+        rows.append({"task": cell.get("task", "").replace("`", "")[:40] or str(len(rows) + 1),
+                     "done_when": cell.get("done when", "").replace("`", "")[:200], "result": final,
                      "fixed_after": final == "met" and converge_fixed(result)})
         if len(rows) >= 500:
             break
-    if not rows:
-        return {"missing": "the build log has no Converge table"}
-    return {"rows": rows}
+    return rows
 
 
-def events_of(run, last):
+def events_of(run: Path, last: int) -> dict[str, Any]:
     stream = event_stream.table(run)
     if stream.too_large:
         return {"count": None, "malformed": 0, "last": [], "present": True, "header_ok": None, "too_large": True,
@@ -244,7 +231,7 @@ def events_of(run, last):
     good = [r for r in stream.rows if len(r) == 7]
     shown = [{"seq": clean(r[1]), "at": clean(r[2]), "type": clean(r[3]), "subject": clean(r[4]),
               "value": clean(r[5]), "detail": clean(r[6])} for r in good[-last:]] if last else []
-    gates = {}          # every gate's runs from the event stream: a re-run overwrites gates/<name>.json
+    gates: dict[str, dict[str, Any]] = {}   # every gate's runs from the stream: a re-run overwrites gates/<name>.json
     chair = None        # the latest reading of the Chair's own tokens (council run close; it covers every span so far)
     for r in good:
         if r[3] == "run.chair_usage" and clean(r[5]).isdigit():
@@ -262,15 +249,30 @@ def events_of(run, last):
             "header_ok": stream.header_ok, "too_large": False, "gates": gates, "chair": chair}
 
 
-def proposals_in(home):
+def brief_names(snap: Snap) -> dict[str, str]:
+    """Seat names as the brief gives them — "### <slug> — <what it checks> (<Seat name>)". Read once per
+    snapshot, like every other run file."""
+    cached = snap.get("_names")
+    if cached is None:
+        cached = {}
+        run = Path(snap["run"].get("path") or ".")
+        for line in cells.lines_of(text_of(run / "brief.md", run)):
+            match = re.match(r"^###\s+([A-Za-z0-9._-]+)\s+[-—].*\(([^()]+)\)\s*$", line)
+            if match:
+                cached[match.group(1)] = clean(match.group(2))[:40]
+        snap["_names"] = cached
+    return cached
+
+
+def proposals_in(home: str | Path | None) -> int | None:
     """How many entries wait under memory's ## Proposed section (### headings or - PROPOSED lines)."""
     if not home:
         return None
-    text = text_of(Path(home) / "conventions.md", home)
-    if not text:
+    content = text_of(Path(home) / "conventions.md", home)
+    if not content:
         return None
     count, inside = 0, False
-    for line in text.splitlines():
+    for line in content.splitlines():
         if line.startswith("## "):
             inside = line[3:].strip().lower().startswith("propos")
         elif inside and (line.startswith("### ") or re.match(r"\s*-\s+PROPOSED\b", line)):
@@ -278,7 +280,7 @@ def proposals_in(home):
     return count
 
 
-def snapshot(run, home=None, last_events=8):
+def snapshot(run: str | Path, home: str | Path | None = None, last_events: int = 8) -> Snap:
     run = Path(run)
     state = header(run)
     if "next" in state:
@@ -303,166 +305,28 @@ def snapshot(run, home=None, last_events=8):
     }
 
 
-# --- drawing --------------------------------------------------------------------------------------------------
-def k(tokens):
-    return format_tokens(tokens) if tokens is not None else "—"
-
-
-def shown(value):
-    return "?" if value is None else str(value)
-
-
-def seat_tokens(seat):
-    """A seat's tokens: the trusted count, or an unverified recorded one marked with '?'."""
-    if seat["tokens"] is not None:
-        return k(seat["tokens"])
-    if seat.get("tokens_recorded"):
-        return str(seat["tokens_recorded"]) + "?"
-    return "—"
-
-
-def usage_line(tokens):
-    """Spent tokens as far as the records support: a total only when every agent run reported one."""
-    basis = tokens["basis"]
-    if basis == "complete":
-        return "{} (workers {}, verifiers {})".format(k(tokens["total"]), k(tokens["workers"]), k(tokens["verifiers"]))
-    if basis == "running":
-        return "{} so far".format(k(tokens["known"]))
-    if basis == "partial":
-        return "at least {} ({} agent run(s) without usage)".format(k(tokens["known"]), tokens["missing_runs"])
-    if basis == "legacy":
-        return "not reliably recorded (older records)"
-    if basis == "suspect":
-        return "not shown (implausible counts: {})".format(", ".join(tokens["suspect_seats"][:4]))
-    return "—"
-
-
-def reading_of(snap):
-    """The shared plain-language reading (scripts/status.py); the screen still draws without it."""
+# --- the screen, once or watched ------------------------------------------------------------------------------
+def reading_of(snap: Snap) -> dict[str, Any] | None:
+    """The shared plain-language reading (views/status.py); the screen still draws without it."""
     try:
-        import status
+        from council.views import status
         return status.interpret(snap)
     except Exception:  # noqa: BLE001 — a headline must never stop the screen from drawing
         return None
 
 
-def render(snap, ascii_only=False, width=None, reading=None):
-    g = ASCII if ascii_only else UNICODE
-    width = max(60, min(width or shutil.get_terminal_size((100, 30)).columns, 120))
-    run, plan = snap["run"], snap["plan"]
-    lines = []
-
-    def add(text=""):
-        text = CONTROL.sub(" ", text)            # nothing from a file can move the cursor or retitle the window
-        lines.append(text if len(text) <= width else text[:width - 1] + ("~" if ascii_only else "…"))
-
-    title = " Small Council — {} ".format(run["id"])
-    add(g["top"] + g["rule"] + title + g["rule"] * max(0, width - len(title) - 2))
-    add("  {} · phase {} · {} · updated {}".format(run["mode"] or "?", run["phase"] or "?", run["status"] or "?",
-                                                   run["updated"] or "?"))
-    if reading:
-        said = reading["state"]
-        add("  Status: " + (" — ".join((said["label"], said["summary"])) if said["summary"] else said["label"]))
-        for item in reading["attention"][:4]:
-            add("  {} {}".format("!" if item["severity"] >= 2 else "·", item["text"]))
-    if run["ask"]:
-        add("  Request: " + run["ask"])
-    if plan.get("size"):
-        add("  Plan: {} · risk {} · complexity {} · uncertainty {} · verification {}".format(
-            plan.get("size", "?"), plan.get("risk", "?"), plan.get("complexity", "?"), plan.get("uncertainty", "?"),
-            plan.get("level", "?")))
-    usage = snap["usage"]
-    spent = usage_line(usage["tokens"])
-    runs = usage["agents"]
-    budget = "  Budget: estimated {} · spent {} · {} agent run(s)".format(
-        k(number(plan.get("estimated-tokens"))), spent,
-        runs["total"] if runs["total"] is not None else "at least {}".format(runs["at_least"]))
-    if plan.get("agent-cap"):
-        budget += " (cap {})".format(plan["agent-cap"])
-    add(budget)
-    if run["next"] and run["status"] == "in-progress":
-        add("  Next: " + run["next"])
-    add()
-    add(" Seats")
-    planned = plan.get("seats", {})
-    drawn = set()
-    for seat in snap["seats"]:
-        drawn.add(seat["slug"])
-        info = planned.get(seat["slug"], {})
-        add("  {} {:<16} {:<8} {:>6}  {:<8} {}".format(g.get(seat["state"], "?"), seat["slug"][:16], seat["state"][:8],
-                                                     seat_tokens(seat), info.get("role", "")[:8], info.get("context", "")))
-    for slug, info in sorted(planned.items()):
-        if slug in drawn or info.get("disposition") not in ("selected", "skipped") or info.get("role") == "chair":
-            continue                                # the Chair is no seat to wait for
-        if info["disposition"] == "skipped":
-            add("  {} {:<16} skipped  — {}".format(g["skipped"], slug[:16], info.get("reason", "")))
-        else:
-            add("  {} {:<16} planned  {:>6}  {:<8} {}".format(g["queued"], slug[:16], "", info.get("role", "")[:8],
-                                                            info.get("context", "")))
-    if not snap["seats"] and not planned:
-        add("  none recorded yet")
-    if snap["gates"]:
-        add()
-        add(" Gates")
-        for gate in snap["gates"]:
-            planned = failed_as_planned(gate)
-            mark = g["unknown"] if gate["exit"] is None else (
-                g["pass"] if gate["exit"] == 0 else g["planned"] if planned else g["fail"])
-            void = gate_kind(gate["name"]) == "proof" and gate["exit"] not in (0, None) and gate.get("void")
-            label = "failed as planned" if planned else "no proof yet: " + gate["void"] if void else ""
-            note = " · ".join(words for words in (label, gate["note"]) if words)
-            add("  {} {:<16} exit {:<4} {:>4}s  {}{}".format(mark, gate["name"][:16], shown(gate["exit"]),
-                                                           gate["seconds"], gate["when"][-8:],
-                                                           "  " + note if note else ""))
-    if snap["repairs"]:
-        add()
-        add(" Repairs")
-        for task, info in sorted(snap["repairs"].items()):
-            add("  {} {}: attempt {} {} · {} · next {}".format(task, info["gate"], shown(info["attempts"]), info["result"],
-                                                             info["category"] or "-", info["next"] or "-"))
-    if snap["claims"].get("stale"):
-        add()
-        add(" Evidence")
-        add("  Claims index out of date")
-    elif snap["claims"]["total"]:
-        add()
-        add(" Evidence")
-        add("  {} claim(s) · ".format(snap["claims"]["total"])
-            + " · ".join("{} {}".format(n, v) for v, n in snap["claims"]["by_verdict"].items()))
-    if snap["memory"]["proposed"]:
-        add()
-        add(" Memory")
-        add("  {} proposal(s) wait for the user's yes or no".format(snap["memory"]["proposed"]))
-    events = snap["events"]
-    add()
-    if events.get("too_large"):
-        add(" Timeline: events.tsv is over 4 MB and was not read — council run events check --run <folder>")
-    elif not events["present"]:
-        add(" Timeline: no events.tsv (a run from before the event stream)")
-    else:
-        add(" Timeline ({} event(s){})".format(events["count"],
-                                               ", {} malformed".format(events["malformed"]) if events["malformed"] else ""))
-        for e in events["last"]:
-            add("  {} {:<20} {:<12} {}".format(clock.event_clock(e["at"]), e["type"][:20], e["subject"][:12], e["value"]))
-    add(g["bottom"] + g["rule"] * (width - 1))
-    out = "\n".join(lines)
-    if ascii_only:
-        out = "".join(PLAIN.get(ch, ch if ord(ch) < 128 else "?") for ch in out)
-    return out
-
-
-def ascii_needed():
+def ascii_needed() -> bool:
     """Plain ASCII on request (COUNCIL_ASCII=1), for a console that shows UTF-8 as mojibake."""
     return os.environ.get("COUNCIL_ASCII", "") not in ("", "0")
 
 
-def enable_vt():
+def enable_vt() -> None:
     """Ask a Windows console to honour ANSI escapes; harmless where they already work."""
     if os.name != "nt":
         return
     try:
         import ctypes
-        kernel = ctypes.windll.kernel32
+        kernel = ctypes.windll.kernel32  # type: ignore[attr-defined]
         handle = kernel.GetStdHandle(-11)
         mode = ctypes.c_uint32()
         if kernel.GetConsoleMode(handle, ctypes.byref(mode)):
@@ -471,7 +335,7 @@ def enable_vt():
         pass
 
 
-def watch(run, home, events, ascii_only, interval):
+def watch(run: Path, home: Path | None, events: int, ascii_only: bool, interval: float) -> int:
     """Redraw until the run reads as closed twice in a row. A state file that is briefly missing or
     empty (a helper replacing it) is read again, never taken for a closed run; one gone for ten polls
     ends the watch with an error."""
@@ -502,7 +366,7 @@ def watch(run, home, events, ascii_only, interval):
         time.sleep(interval)
 
 
-def main():
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", required=True, type=Path)
     parser.add_argument("--home", type=Path)
@@ -511,8 +375,8 @@ def main():
     parser.add_argument("--ascii", action="store_true")
     parser.add_argument("--events", type=int, default=8)
     parser.add_argument("--interval", type=float, default=2.0)
-    args = parser.parse_args()
-    if not paths.is_run(args.run):
+    args = parser.parse_args(argv)
+    if not is_run(args.run):
         print("tui: not a council run folder (or a link to one): {}".format(args.run), file=sys.stderr)
         return 2
     ascii_only = args.ascii or ascii_needed()
@@ -528,7 +392,3 @@ def main():
         return watch(args.run, args.home, events, ascii_only, max(0.5, min(args.interval, 60.0)))
     except KeyboardInterrupt:
         return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

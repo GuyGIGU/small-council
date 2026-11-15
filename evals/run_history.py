@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused, no-model checks for run history: `council history` and scripts/history.py.
+"""Focused, no-model checks for run history: `council history` and views/history.py.
 
 History must count everything but show a median, share or ratio only when enough runs carry its
 data; keep a build's before/after proofs and gate probes apart from the project's gates; say what
@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parent.parent
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 GIT = shutil.which("git")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-sys.path.insert(0, str(ROOT / "scripts"))
-import history  # noqa: E402
+sys.path.insert(0, str(ROOT / "src"))
+from council.views import history  # noqa: E402
 
 checks = []
 

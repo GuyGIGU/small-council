@@ -1,4 +1,4 @@
-"""The commands that hand over to a tool or a view script (commands/script.py), one TABLE row each."""
+"""The commands that hand over to a tool or a view (commands/script.py), one TABLE row each."""
 from __future__ import annotations
 
 import os
@@ -11,8 +11,8 @@ TABLE = {
     "evidence": ("evidence", ("SUB", "--run", "RUN"), (), ""),
     "tui": ("cockpit", ("--run", "RUN", "--home", "HOME"), ("watch", "json"), ""),
     "status": ("status", ("--run", "RUN", "--home", "HOME", "TUI"), ("widget", "json", "line", "preview"), ""),
-    "pet": ("pet", ("--project", "TREE", "--home", "HOME", "--council", "COUNCIL", "--bash", "BASH", "SESSION",
-                    "LAUNCH"), ("stop", "demo", "still", "pose", "exit-after"),
+    "pet": ("pet", ("--project", "TREE", "--home", "HOME", "SESSION", "LAUNCH"), ("stop", "demo", "still", "pose",
+                                                                                 "exit-after"),
             "pet follows this session's run on this working tree; it does not take --run"),
     "history": ("history", ("--home", "HOME"), ("json",),
                 "history reads every run of this council home; it does not take --run"),
@@ -21,7 +21,7 @@ TABLE = {
     "run audit": ("audit", ("--run", "RUN"), ("transcript",), ""),
 }
 EVIDENCE = "usage: council evidence build|show|check [--run <folder>]"
-ROOT = script.SCRIPTS.parent
+ROOT = Path(__file__).resolve().parents[3]          # the plugin's root, where bin/council is
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -41,8 +41,7 @@ def main(args: cli.Args, words: list[str]) -> int:
         if "RUN" in lead else ""
     session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     fill = {"RUN": lambda: [run], "HOME": lambda: [home], "SUB": lambda: [sub], "TREE": lambda: [where.this_tree()],
-            "TUI": lambda: tui_commands(Path(run)), "COUNCIL": lambda: [where.here(ROOT) + "/bin/council"],
-            "BASH": lambda: [shell.bash_exe() or shell.helper_bash()],
+            "TUI": lambda: tui_commands(Path(run)),
             "SESSION": lambda: ["--session", session] if session else [],
             "LAUNCH": lambda: [] if args.value("stop") else ["--launch"]}
     words = [word for token in lead for word in (fill[token]() if token in fill else [token])]

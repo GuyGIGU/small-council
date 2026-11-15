@@ -208,18 +208,18 @@ check("tune: one knob changed, only with the user's words; behaviour held until 
       os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "tune_knobs.py")) and
       "held" in read("src", "council", "commands", "tune_knobs.py") and "council tune" in read("skills", "council-init", "SKILL.md"))
 check("history: a read-only report over run folders, with a stated bar for every rate",
-      '"history"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "history.py")) and
-      "MIN_RUNS = 5" in read("scripts", "history.py"))
+      '"history"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "src", "council", "views", "history.py")) and
+      "MIN_RUNS = 5" in read("src", "council", "views", "history.py"))
 check("tui: a read-only cockpit script, reached through the helper, never part of a stage",
-      '"cockpit"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "cockpit.py")) and
+      '"cockpit"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "src", "council", "views", "cockpit.py")) and
       "council tui" not in "".join(doctrine.values()))
 kernel_text = read("skills", "context-core", "SKILL.md")
 check("status: one plain-language reading shared by the widget, the summary and the cockpit, shown once "
       "at first dispatch and on request — never a card per progress line",
-      '"status"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "status.py")) and
+      '"status"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "src", "council", "views", "status.py")) and
       "council status --widget" in kernel_text and "show_widget" in kernel_text and "never a card per progress line" in kernel_text
-      and "waiting=" in kernel_text and "interpret" in read("scripts", "status.py")
-      and "status.interpret" in read("scripts", "cockpit.py"))
+      and "waiting=" in kernel_text and "interpret" in read("src", "council", "views", "status.py")
+      and "status.interpret" in read("src", "council", "views", "cockpit.py"))
 check("status: showing it is a step where it happens — Work's dispatch, Challenge when its verifiers are the first "
       "dispatch, Learn's close — a show_widget tool is looked up before it is called missing, and the helper "
       "reminds the Chair at both moments (a real run showed neither card)",
@@ -578,8 +578,8 @@ view = read("hooks", "council-view.tsx")
 scene = read("hooks", "council-scene.ts")
 check("mod: hooks.json names the council view module beside the settings hooks",
       hooks_file.get("modules") == ["./council-view.tsx"] and bool(hooks_json))
-check("mod: the view finds runs and reads them through status.py --json, never writing council files",
-      "scripts/status.py" in view and "'--json'" in view and "$.fs.write" not in view)
+check("mod: the view finds runs and reads them through the status reader --json, never writing council files",
+      "src/council/commands/script.py" in view and "'status'" in view and "'--json'" in view and "$.fs.write" not in view)
 check("mod: the view draws the pane, the line above the prompt and the /council-view command",
       all(s in view for s in ("component: 'Pane'", "component: 'AbovePrompt'", "name: COMMAND", "'council-view'")))
 check("mod: the hall credits agent-avatars, as do NOTICE and LICENSE (MIT)",
