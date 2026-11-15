@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 from council.records import bytewise, request
+from council.records.seat_files import ITEM
 
-ITEM = re.compile(r"[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) ")
 NOT_EXACT = "NOT-EXACT (only capitals or * _ ` marks differ — copy the words exactly)"
 
 

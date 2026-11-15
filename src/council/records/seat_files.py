@@ -12,8 +12,7 @@ from typing import NamedTuple
 
 from council.records import bytewise, paths
 
-ITEM = re.compile(r"[-*+]?[ \t]*[*_]*C?[0-9]+[a-z]?[*_]*\.?[ \t]+(·|\|)[ \t]")
-SHAPE_ITEM = re.compile(r"[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) ")
+ITEM = re.compile(r"[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) ")
 HEADED_ITEM = re.compile(r"#+ *[*_]*C?[0-9]+[a-z]?[*_]* +(·|\|) ")
 NONE_LINE = re.compile(r" *([-*+] +)?[*_]*\([Nn]one\)")
 NOTE_ITEM = re.compile(r" +([-*+] +)?[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\||-|—|–) ")
@@ -152,9 +151,10 @@ def items(path: str | Path) -> list[Item]:
         if line.startswith("## "):
             section = re.sub(r"[ \t\r].*$", "", re.sub(r"^## +", "", bytewise.lower(line)), flags=re.S)
             continue
+        line = line.replace("\t", " ")
         if not ITEM.match(line):
             continue
-        parts = fields(re.sub(r"^[-*+]? *", "", line.replace("\r", "").replace("\t", " ")))
+        parts = fields(re.sub(r"^[-*+]? *", "", line.replace("\r", "")))
         if len(parts) < 4:
             continue
         number = re.sub(r"[*_.]", "", parts[0])
@@ -196,12 +196,12 @@ def shape(path: str | Path, sections: str = "Index") -> Shape:
             continue
         if pending:
             pending = False
-            if not SHAPE_ITEM.match(line) and not NONE_LINE.match(line):
+            if not ITEM.match(line) and not NONE_LINE.match(line):
                 inside = False
                 continue
         if NONE_LINE.match(line):
             none = True
-        elif SHAPE_ITEM.match(line):
+        elif ITEM.match(line):
             if len(fields(line)) >= 4:
                 parsed += 1
             else:
