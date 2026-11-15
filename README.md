@@ -127,7 +127,7 @@ is what it became after three months of real runs.
 | Checks on findings | none | blind verifiers, citation check, evidence grades |
 | Records | one output folder per review | runs, ledger, usage, memory, map, every request word for word |
 | Cost control | none | caps, estimates, a hook that stops at the limit |
-| Machinery | none | a 7,000-line helper, 4 hooks, 28 eval jobs on Windows, macOS and Linux |
+| Machinery | none | a helper of about 17,000 lines of Python behind a 53-line bash launcher, 5 hooks, 28 eval jobs on Windows, macOS and Linux |
 | Shared repos | commits conventions.md | a "just me" mode that keeps the council out of git, CLAUDE.md and commit messages |
 
 The principles are the same. The difference is that this one can tell you when it was wrong.
@@ -169,9 +169,9 @@ On **just me**, all of `.council/` stays local.
 
 ## Under the hood
 
-Two agents (an expert worker and a blind verifier), a bash helper called `council` that does the
-bookkeeping, four hooks that enforce limits and pick runs back up after a compaction, and fourteen
-expert seats tailored to each project.
+Two agents (an expert worker and a blind verifier), a helper called `council` (Python, started by a 53-line
+bash launcher) that does the bookkeeping, five hooks that enforce limits and pick runs back up after a
+compaction, and fourteen expert seats tailored to each project.
 
 More: [helper commands](references/run/helper-commands.md) · [reference docs](references/README.md) ·
 [sharing](references/run/sharing.md) · [checks](references/guardrails.md) ·
