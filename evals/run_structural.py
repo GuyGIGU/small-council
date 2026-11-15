@@ -68,8 +68,8 @@ for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.
              ("references", "run", "helper-commands.md"),
              ("references", "run", "evidence-model.md"),
              ("references", "run", "repair-loop.md"),
-             ("scripts", "evidence.py"),
-             ("scripts", "repair.py")]:
+             ("src", "council", "commands", "evidence.py"),
+             ("src", "council", "commands", "repair_trail.py")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
 for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
@@ -200,13 +200,13 @@ check("memory: a failure is served only while its evidence supports it, and file
       "def audit" in read("src", "council", "records", "memory_audit.py") and
       "def replace" in read("src", "council", "records", "memory.py") and
       "--user-said" in read("src", "council", "commands", "memory.py") and
-      os.path.isfile(os.path.join(ROOT, "scripts", "memory.py")) and
+      os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "memory_draft.py")) and
       "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
       "UNSUPPORTED" in doctrine["10-learn.md"])
 check("tune: one knob changed, only with the user's words; behaviour held until a benchmark shows it helps",
       "tune" in command and "config.worker_estimate" in read("src", "council", "commands", "route.py") and
-      os.path.isfile(os.path.join(ROOT, "scripts", "tune.py")) and
-      "held" in read("scripts", "tune.py") and "council tune" in read("skills", "council-init", "SKILL.md"))
+      os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "tune_knobs.py")) and
+      "held" in read("src", "council", "commands", "tune_knobs.py") and "council tune" in read("skills", "council-init", "SKILL.md"))
 check("history: a read-only report over run folders, with a stated bar for every rate",
       '"history"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "history.py")) and
       "MIN_RUNS = 5" in read("scripts", "history.py"))
@@ -235,7 +235,7 @@ check("accounting: seats record exact usage per agent run, a Workflow's agent co
       "seat_rows" in py and "def seat_usage" in read("src", "council", "records", "usage.py") and "correct" in command and
       "usage.tsv" in py)
 check("seat learning: roster advice weighs only judged runs, past a stated bar",
-      "def advice" in read("src", "council", "commands", "ledger.py") and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
+      "def advice" in read("src", "council", "commands", "ledger.py") and os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "seat_advice.py")) and
       "council ledger advice" in doctrine["10-learn.md"] and
       "council ledger advice 20" in read("skills/council-init/SKILL.md") and
       "Below the bar" in read("skills/council-init/SKILL.md"))

@@ -4730,7 +4730,8 @@ def runs_stage_order_and_close(tmp):
           and [l for l in fails if "Closing card" not in l] == shown, out + err + alone)
     check("run close: the audit inside the close never fails the closing card it hasn't asked for yet; a later run audit does",
           "audit: " in out and "Closing card" not in out and "  FAIL  Closing card: not shown after the close" in alone, out + alone)
-    p = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "audit.py"), "--run", aur, "--at-close"],
+    p = subprocess.run([sys.executable, os.path.join(ROOT, "src", "council", "commands", "script.py"), "audit", "--run", aur,
+                        "--at-close"],
                        capture_output=True, text=True, encoding="utf-8", env=dict(GIT_ENV, CLAUDE_CONFIG_DIR=cfg))
     check("audit --at-close: the closing card reads 'not checked yet', counted apart from pass, warn and FAIL",
           "  later  Closing card: not checked yet" in p.stdout and ", 1 not checked yet" in p.stdout, p.stdout + p.stderr)
@@ -4785,7 +4786,8 @@ def runs_stage_order_and_close(tmp):
           code == 0 and "The Chair's own work: 33k tokens over 4 model calls (its context's growth, from the session transcript)" in out,
           out + err)
     os.remove(os.path.join(ccfg, "projects", "eval-project", sid_a + ".jsonl"))
-    p = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "chair_usage.py"), "--run", cur], capture_output=True,
+    p = subprocess.run([sys.executable, os.path.join(ROOT, "src", "council", "commands", "script.py"), "chair_usage", "--run",
+                        cur], capture_output=True,
                        text=True, encoding="utf-8", env=dict(GIT_ENV, CLAUDE_CONFIG_DIR=ccfg))
     check("chair usage: a session with no transcript to read makes the figure a floor (basis=partial), never a guess",
           p.returncode == 0 and p.stdout.strip() == "tokens=9000;calls=2;basis=partial", p.stdout + p.stderr)

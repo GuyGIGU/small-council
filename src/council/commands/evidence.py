@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Project a council synthesis and blind-verifier tables into an evidence ledger.
 
 The Markdown remains authoritative. This is a deterministic, run-local index of its
@@ -6,25 +5,22 @@ claims and links, not an independent assessment of whether a claim is true. `tab
 reads one verifier file the same way, for the seat check that runs when a verifier stops.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
-from pathlib import Path
 import re
-import sys
+from pathlib import Path
+from typing import Any, Dict
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+from council.records import paths
+from council.records import plan as run_plan
+from council.records import state as run_state
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from council.records import paths  # noqa: E402
-from council.records import plan as run_plan  # noqa: E402
-from council.records import state as run_state  # noqa: E402
-
+Claim = Dict[str, Any]
 
 SCHEMA = 1
 STATES = {"OBSERVED", "REPRODUCED", "INFERRED", "ASSUMED", "UNVERIFIED"}
-VERDICTS = {"CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED"}
 VERDICT_WORD = re.compile(r"\b(CONFIRMED|REFUTED|UNCERTAIN|MISCITED)\b")
 # A plan's recommendation rests on several task assumptions, one verifier row each: the worst stands.
 WORST_FIRST = ("REFUTED", "UNCERTAIN", "MISCITED", "CONFIRMED")
@@ -39,20 +35,17 @@ MAX_INPUT = 1024 * 1024
 
 
 class EvidenceError(Exception):
-    """Invalid or unsafe run artifact."""
+    pass
 
 
-def read_file(path, required=True):
+def read_file(path: Path, required: bool = True) -> str | None:
     """A run artifact's text (BOM dropped, line endings made newlines), refusing a link, a non-regular
     file and one over 1 MB; None when it is missing and not required."""
-    try:
-        data = paths.artifact(path, MAX_INPUT, required)
-    except paths.RecordError as exc:
-        raise EvidenceError(str(exc)) from exc
+    data = paths.artifact(path, MAX_INPUT, required)
     return None if data is None else paths.universal(data.decode("utf-8-sig"))
 
 
-def within(parent, candidate):
+def within(parent: Path, candidate: Path) -> bool:
     try:
         candidate.relative_to(parent)
         return True
@@ -60,7 +53,7 @@ def within(parent, candidate):
         return False
 
 
-def proof_link(run, value):
+def proof_link(run: Path, value: str) -> bool:
     """A reproduction must point to an existing, local run artifact."""
     name = Path(value.replace("\\", "/"))
     if (name.is_absolute() or re.match(r"^[A-Za-z]:", value) or not name.parts or
@@ -77,9 +70,11 @@ def proof_link(run, value):
     return target.is_file()
 
 
-def run_fields(run):
-    """The run's mode (session-state.md) and its planned size and verification level (run-plan.tsv)."""
-    optional = lambda path: read_file(path, required=False)  # noqa: E731
+def optional(path: Path) -> str | None:
+    return read_file(path, required=False)
+
+
+def run_fields(run: Path) -> dict[str, Any]:
     mode = (run_state.field(run_state.text(run, read=optional), "mode").split() or [""])[0]
     plan = run_plan.keyed(run_plan.text(run, read=optional))
     return {"mode": mode,
@@ -87,7 +82,7 @@ def run_fields(run):
                            plan.get(("run", "run", "size")) == "solo")}
 
 
-def seat_index_ids(body):
+def seat_index_ids(body: str) -> set[str]:
     """Only the worker's Index, not a quoted example in its prose, proves an item exists."""
     inside = False
     ids = set()
@@ -104,7 +99,7 @@ def seat_index_ids(body):
     return ids
 
 
-def synthesis(run):
+def synthesis(run: Path) -> tuple[list[Claim], list[str]]:
     body = read_file(run / "synthesis.md")
     claims = []
     issues = []
@@ -142,58 +137,65 @@ def synthesis(run):
             issues.append("synthesis.md:{}: duplicate claim id {}".format(line_no, claim_id))
             continue
         ids.add(claim_id)
-        parts = [part.strip() for part in match.group(2).split(" · ")]
-        if len(parts) < 4 or any(not part for part in parts[:4]):
-            issues.append("synthesis.md:{}: claim needs strength, principle, citation and title".format(line_no))
-            continue
-        strength, principle, citation = parts[:3]
-        title = []
-        fields = {}
-        for part in parts[3:]:
-            key, sep, value = part.partition(": ")
-            if sep and key.lower() in ("state", "proof", "from", "why", "still-cut"):
-                if key.lower() in fields:
-                    issues.append("synthesis.md:{}: repeated {} field".format(line_no, key.lower()))
-                fields[key.lower()] = value.strip()
-            else:
-                title.append(part)
-        if not title:
-            issues.append("synthesis.md:{}: claim title is empty".format(line_no))
-        state = fields.get("state", "UNVERIFIED").upper()
-        if state not in STATES:
-            issues.append("synthesis.md:{}: unknown evidence state {}".format(line_no, state))
-            state = "UNVERIFIED"
-        sources = [entry.strip() for entry in fields.get("from", "").split(",") if entry.strip()]
-        proofs = [entry.strip() for entry in fields.get("proof", "").split(",") if entry.strip()]
-        claim = {
-            "schema": SCHEMA,
-            "id": claim_id,
-            "disposition": section,
-            "strength": strength,
-            "principle": principle,
-            "claim": " · ".join(title),
-            "citation": citation,
-            "cut_reason": fields.get("why", ""),
-            "evidence_state": state,
-            "state_declared": "state" in fields,
-            "proof": proofs,
-            "provenance": sources,
-            "source": "synthesis.md:{}".format(line_no),
-            "verification": [],
-            "verdict": "UNVERIFIED",
-        }
-        # Recorded only when they apply, so an older run's index stays current.
-        if section == "kept" and claim_id.startswith("C"):
-            claim["restored"] = True        # a cut claim the verifier found true, moved to Kept with its id
-        if "still-cut" in fields:
-            claim["still_cut"] = fields["still-cut"]
-        claims.append(claim)
+        claim = claim_of(claim_id, section, match.group(2), line_no, issues)
+        if claim is not None:
+            claims.append(claim)
     if not kept_seen or not kept_content:
         issues.append("synthesis.md: ## Kept needs a claim or (none) line")
     return claims, issues
 
 
-def cells_of(line):
+def claim_of(claim_id: str, section: str, rest: str, line_no: int, issues: list[str]) -> Claim | None:
+    """One Kept or Cut item line, after its id, as its claim; None (its problem said) when it has too few parts."""
+    parts = [part.strip() for part in rest.split(" · ")]
+    if len(parts) < 4 or any(not part for part in parts[:4]):
+        issues.append("synthesis.md:{}: claim needs strength, principle, citation and title".format(line_no))
+        return None
+    strength, principle, citation = parts[:3]
+    title: list[str] = []
+    fields: dict[str, str] = {}
+    for part in parts[3:]:
+        key, sep, value = part.partition(": ")
+        if sep and key.lower() in ("state", "proof", "from", "why", "still-cut"):
+            if key.lower() in fields:
+                issues.append("synthesis.md:{}: repeated {} field".format(line_no, key.lower()))
+            fields[key.lower()] = value.strip()
+        else:
+            title.append(part)
+    if not title:
+        issues.append("synthesis.md:{}: claim title is empty".format(line_no))
+    state = fields.get("state", "UNVERIFIED").upper()
+    if state not in STATES:
+        issues.append("synthesis.md:{}: unknown evidence state {}".format(line_no, state))
+        state = "UNVERIFIED"
+    sources = [entry.strip() for entry in fields.get("from", "").split(",") if entry.strip()]
+    proofs = [entry.strip() for entry in fields.get("proof", "").split(",") if entry.strip()]
+    claim: Claim = {
+        "schema": SCHEMA,
+        "id": claim_id,
+        "disposition": section,
+        "strength": strength,
+        "principle": principle,
+        "claim": " · ".join(title),
+        "citation": citation,
+        "cut_reason": fields.get("why", ""),
+        "evidence_state": state,
+        "state_declared": "state" in fields,
+        "proof": proofs,
+        "provenance": sources,
+        "source": "synthesis.md:{}".format(line_no),
+        "verification": [],
+        "verdict": "UNVERIFIED",
+    }
+    # Recorded only when they apply, so an older run's index stays current.
+    if section == "kept" and claim_id.startswith("C"):
+        claim["restored"] = True        # a cut claim the verifier found true, moved to Kept with its id
+    if "still-cut" in fields:
+        claim["still_cut"] = fields["still-cut"]
+    return claim
+
+
+def cells_of(line: str) -> list[str] | None:
     """A Markdown table row's cells — indented or not, with or without its closing pipe. An escaped \\|
     stays text, and so does one inside `code` (when the line's backticks pair up); an unescaped one
     elsewhere splits a cell, and the reader of an Evidence cell joins it back."""
@@ -217,17 +219,17 @@ def cells_of(line):
     return [cell.strip().replace("\\|", "|") for cell in cells]
 
 
-def plain(cell):
+def plain(cell: str) -> str:
     return MARKS.sub("", cell).strip()
 
 
-def claim_id_of(cell):
+def claim_id_of(cell: str) -> str:
     """The # cell as the synthesis writes the id: '**2**', '#2', '2.' and '`c1`' read as 2 and C1."""
     value = plain(cell).lstrip("#").strip().rstrip(".").strip()
     return value.upper() if re.fullmatch(r"[Cc][0-9]+", value) else value
 
 
-def verdict_of(cell):
+def verdict_of(cell: str) -> str | None:
     """The Verdict cell's verdict: its first word, in any case and with any mark around it. Another verdict
     later in capitals makes it ambiguous; lower-case words after it are the verifier's own prose."""
     text = plain(cell)
@@ -238,7 +240,7 @@ def verdict_of(cell):
     return None if set(VERDICT_WORD.findall(text[lead.end():])) - {verdict} else verdict
 
 
-def verdict_rows(name, body):
+def verdict_rows(name: str, body: str) -> tuple[list[tuple[int, list[str]]], list[str]]:
     """The rows of each table headed '# | Item | Verdict | Evidence' (the fourth heading may go on:
     'Evidence (path:line)'), as (line number, cells). A table split by a blank line carries on. A table
     with another heading whose rows carry a claim's number and verdict is named, never skipped quietly."""
@@ -260,7 +262,8 @@ def verdict_rows(name, body):
                 seen = True
                 continue
             table = (seen and len(cells) >= 4 and verdict_of(cells[2]) is not None   # it again, after a gap —
-                     and re.fullmatch(r"C?[0-9]+|-", claim_id_of(cells[0])) is not None)   # never a later table's heading
+                     and re.fullmatch(r"C?[0-9]+|-",
+                                      claim_id_of(cells[0])) is not None)   # never a later table's heading
         if table:
             rows.append((line_no, cells))
         elif not said and len(cells) > 2 and re.fullmatch(r"C?[0-9]+", claim_id_of(cells[0])) and \
@@ -271,8 +274,8 @@ def verdict_rows(name, body):
     return rows, issues
 
 
-def read_links(path, body, by_id):
-    """Link one verifier file's rows to their claims. Returns its problems."""
+def read_links(path: Path, body: str, by_id: dict[str, Claim]) -> list[str]:
+    """Link one verifier file's rows to their claims; its problems."""
     rows, issues = verdict_rows(path.name, body)
     for line_no, cells in rows:
         where = "{}:{}".format(path.name, line_no)
@@ -304,7 +307,7 @@ def read_links(path, body, by_id):
     return issues
 
 
-def settle(claims, several):
+def settle(claims: list[Claim], several: bool) -> list[str]:
     """Each claim's verdict from its links. An independent verifier's rows outrank the Chair's own check.
     Several rows are a conflict to resolve, except in a plan (several=True), where the worst stands."""
     issues = []
@@ -320,7 +323,7 @@ def settle(claims, several):
     return issues
 
 
-def verifier_rows(run, claims, several=None):
+def verifier_rows(run: Path, claims: list[Claim], several: bool | None = None) -> list[str]:
     """Link every verify-*.md row to its claim. several: may a claim have several rows (a plan)? By
     default the run's own mode says, so every reader of the index settles it the same way."""
     if several is None:
@@ -332,7 +335,7 @@ def verifier_rows(run, claims, several=None):
     return issues + settle(claims, several)
 
 
-def table_check(path):
+def table_check(path: Path) -> list[str]:
     """One verifier file, read as the claim index reads it (the seat check runs this when a verifier
     stops): what the index could not read, the verifier fixes now. Rows are matched to the synthesis
     ids only in a mode that indexes claims; build and post-game tables are checked for shape."""
@@ -349,7 +352,7 @@ def table_check(path):
     return issues + settle(claims, fields["mode"] == "council-plan")
 
 
-def assess(run, claims, self_check=False):
+def assess(run: Path, claims: list[Claim], self_check: bool = False) -> list[str]:
     issues = []
     for claim in claims:
         label = "claim {}".format(claim["id"])
@@ -377,7 +380,8 @@ def assess(run, claims, self_check=False):
                 issues.append(label + ": REPRODUCED needs a proof: run artifact")
             for proof in claim["proof"]:
                 normalized = proof.replace("\\", "/")
-                if not normalized.startswith("gates/") or not normalized.endswith(".json") or not proof_link(run, proof):
+                if not normalized.startswith("gates/") or not normalized.endswith(".json") or not proof_link(run,
+                                                                                                             proof):
                     issues.append(label + ": proof needs a saved gate verdict inside this run: " + proof)
         for source in claim["provenance"]:
             match = SEAT_SOURCE.fullmatch(source)
@@ -396,17 +400,17 @@ def assess(run, claims, self_check=False):
     return issues
 
 
-def render(claims):
+def render(claims: list[Claim]) -> str:
     return "".join(json.dumps(claim, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
                    for claim in claims)
 
 
-def main():
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("build", "show", "check", "table"))
     parser.add_argument("--run", type=Path)
     parser.add_argument("--file", type=Path, help="table: the one verifier file to read")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.action == "table":
         if args.file is None:
             raise EvidenceError("table needs --file <verify file>")
@@ -455,13 +459,7 @@ def main():
     if issues:
         print("evidence: {} issue(s) across {} claim(s)".format(len(issues), len(claims)))
         return 1
-    print("evidence: {} claim(s), all required links present (truth still requires independent review)".format(len(claims)))
+    print("evidence: {} claim(s), all required links present (truth still requires independent review)".format(
+        len(claims)))
     return 0
 
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except (EvidenceError, paths.RecordError, UnicodeError, OSError, ValueError) as exc:
-        print("evidence: " + str(exc), file=sys.stderr)
-        sys.exit(2)

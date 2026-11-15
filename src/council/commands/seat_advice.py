@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Seat learning from the council ledger: how much each seat's record can support, and advice only
 past a stated bar.
 
@@ -11,20 +10,14 @@ most a few items per run, because one run's items share a brief, a model and a d
 for the Chair to put to the user at a refresh; it never changes a roster, a route or a run.
 """
 
-import argparse
-import json
+from __future__ import annotations
+
 import math
-from pathlib import Path
-import re
 import statistics
-import sys
+from pathlib import Path
+from typing import Any
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from council.records.ledger import VERIFIERS, LedgerError, read as read_ledger  # noqa: E402,F401  (history and tune catch LedgerError)
+from council.records.ledger import VERIFIERS, LedgerError, seat_of, read as read_ledger  # noqa: F401  (history catches LedgerError)
 
 SCHEMA = "council.seat-advice/1"
 # The bar, stated once so the report, the doctrine and the tests read the same numbers.
@@ -44,12 +37,7 @@ BAR = {
 }
 
 
-def seat_of(slug):
-    """A split worker (hunt-a) or a fresh round-2 one (hunt-r2) is its seat, as council ledger reads it."""
-    return re.sub(r"-(r[0-9]+|[a-z])$", "", slug)
-
-
-def wilson(k, n, z):
+def wilson(k: float, n: float, z: float) -> tuple[float, float] | None:
     if n <= 0:
         return None
     p = k / n
@@ -59,7 +47,7 @@ def wilson(k, n, z):
     return max(0.0, c - h), min(1.0, c + h)
 
 
-def share(pairs, bar=BAR):
+def share(pairs: list[tuple[int, int]], bar: dict[str, float] = BAR) -> dict[str, Any] | None:
     """k of n summed over runs, from (k, n) per run, with a plausible range that counts at most
     bar['per_run'] items of any one run (its k scaled alike). A run with n = 0 adds nothing."""
     pairs = [(min(max(k, 0), n), n) for k, n in pairs if n > 0]
@@ -73,7 +61,7 @@ def share(pairs, bar=BAR):
             "counted": counted}
 
 
-def window(rows, last):
+def window(rows: list[dict[str, Any]], last: int) -> tuple[list[dict[str, Any]], list[str]]:
     """The rows of the last `last` runs, in the order runs first appear — as council ledger picks them."""
     order, seen = [], set()
     for row in rows:
@@ -84,8 +72,8 @@ def window(rows, last):
     return [row for row in rows if row["run"] in keep], [run for run in order if run in keep]
 
 
-def records(rows, runs):
-    """Per-seat tallies over judged runs (usefulness) and all runs (tokens), plus run-level facts."""
+def records(rows: list[dict[str, Any]], runs: list[str]) -> tuple[dict[str, Any], dict[str, Any], list[tuple[str,
+                                                                                                             str]]]:
     facts = {run: {"judged": False, "verified": False, "mode": "-", "seat_rows": 0} for run in runs}
     for row in rows:
         fact = facts[row["run"]]
@@ -127,8 +115,7 @@ def records(rows, runs):
     return seats, facts, loose
 
 
-def judge(seat, bar=BAR):
-    """Fill in a seat's shares and its advice: (code, reason)."""
+def judge(seat: dict[str, Any], bar: dict[str, float] = BAR) -> tuple[str, str]:
     judged, raised = len(seat["judged_runs"]), seat["raised"]
     tallies = seat["per_run"]
     seat["useful_share"] = share([(tallies[r]["kept"] - tallies[r]["refuted"], tallies[r]["raised"])
@@ -167,11 +154,11 @@ def judge(seat, bar=BAR):
                        "yet".format(pct(use["low"]), pct(use["high"])))
 
 
-def pct(x):
+def pct(x: float) -> str:
     return "{:.0%}".format(x)
 
 
-def report(ledger, last, bar=BAR):
+def report(ledger: Path, last: int, bar: dict[str, float] = BAR) -> dict[str, Any]:
     got, bad = read_ledger(ledger)
     if got is None:
         return {"schema": SCHEMA, "ledger": str(ledger), "window": {"last": last, "runs": 0, "judged": 0},
@@ -217,7 +204,7 @@ def report(ledger, last, bar=BAR):
             "seats": [seats[name] for name in sorted(seats)]}
 
 
-def render(data):
+def render(data: dict[str, Any]) -> str:
     lines = []
     w = data["window"]
     if not w["runs"]:
@@ -254,24 +241,3 @@ def render(data):
         lines.append("note: " + note)
     return "\n".join(lines)
 
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("advice",))
-    parser.add_argument("--ledger", required=True, type=Path)
-    parser.add_argument("--last", type=int, default=20)
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args()
-    if args.last < 1:
-        parser.error("--last must be at least 1")
-    data = report(args.ledger, args.last)
-    print(json.dumps(data, indent=2, sort_keys=True) if args.json else render(data))
-    return 0
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except (LedgerError, OSError, ValueError) as exc:
-        print("ledger: " + str(exc), file=sys.stderr)
-        sys.exit(2)

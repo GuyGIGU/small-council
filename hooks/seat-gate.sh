@@ -130,7 +130,7 @@ fi
 
 problems=""
 add() { problems="${problems}${problems:+; }$1"; }
-engine="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/scripts/evidence.py"
+engine="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/src/council/commands/script.py"
 # Python 3.8+, as the helper finds it; without it the claim index isn't built either.
 pick_python() {
   local c
@@ -196,9 +196,9 @@ else
     if ! grep -q '^[[:space:]]*|' "$path"; then
       add "add the verdict table: | # | Item | Verdict | Evidence |"
     elif [ -f "$engine" ] && py="$(pick_python)"; then
-      # The claim index's own reading of the table (evidence.py table): what the index could not read,
+      # The claim index's own reading of the table (evidence table): what the index could not read,
       # the verifier fixes now — not the Chair, by hand, after it. 1 is "problems"; anything else passes.
-      table="$("$py" "$engine" table --file "$path" 2>/dev/null)"; rc=$?
+      table="$("$py" "$engine" evidence table --file "$path" 2>/dev/null)"; rc=$?
       if [ "$rc" -eq 1 ] && [ -n "$table" ]; then
         n="$(printf '%s\n' "$table" | grep -c .)"
         table="$(printf '%s\n' "$table" | head -n 3 | awk 'NR > 1 { printf "; " } { printf "%s", $0 }')"

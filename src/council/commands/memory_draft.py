@@ -1,27 +1,23 @@
-#!/usr/bin/env python3
 """Draft and file observed-failure memory proposals from verified run evidence.
 
 The helper never decides that a failure matters or that the user agreed. `draft` turns one verified
 run record into a proposal, `insert` files it under ## Proposed, and `move` applies the user's yes
-or no. `insert` and `move` write a new copy of the memory file; bin/council checks that copy with
+or no. `insert` and `move` write a new copy of the memory file; council memory checks that copy with
 the same parser that serves memory, and that no other entry changed, before it replaces the original.
 """
 
+from __future__ import annotations
+
 import argparse
 import os
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
+from typing import Any, Iterator
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-import evidence  # noqa: E402  (sibling script: the claim ledger's parser)
-import repair    # noqa: E402  (sibling script: the repair trail's integrity check)
-from council.records import state as run_state  # noqa: E402
-
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+from council.commands import evidence                # the claim ledger's parser
+from council.commands import repair_trail as repair  # the repair trail's integrity check
+from council.records import state as run_state
 
 MAX_MEMORY = 1024 * 1024
 FAILURE_VERDICTS = ("REFUTED", "MISCITED")
@@ -35,10 +31,10 @@ PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?"
 
 
 class MemoryError_(Exception):
-    """The proposal cannot be drafted or filed safely."""
+    pass
 
 
-def one_line(text, limit=0, copied=True):
+def one_line(text: Any, limit: int = 0, copied: bool = True) -> str:
     """A field value: one line, and nothing the memory parser would read as a comment — nor, in text
     copied from a run artifact, as a field (**Scope:** …). Runs are collapsed in one pass, so "***"
     or "<!---" cannot reassemble into a marker. A private key goes whole, before the text is joined
@@ -55,19 +51,19 @@ def one_line(text, limit=0, copied=True):
     return text
 
 
-def rel(top, path):
+def rel(top: Path, path: Path) -> str:
     try:
         return path.resolve().relative_to(top.resolve()).as_posix()
     except ValueError:
         return path.resolve().as_posix()
 
 
-def run_value(run, name):
-    """A session-state header field (the helper's state_field), trimmed."""
-    return run_state.field(run_state.text(run, read=lambda path: evidence.read_file(path, required=False)), name).strip()
+def run_value(run: Path, name: str) -> str:
+    return run_state.field(run_state.text(run, read=lambda path: evidence.read_file(path, required=False)),
+                           name).strip()
 
 
-def citation_places(citation, top):
+def citation_places(citation: str, top: Path) -> list[tuple[str, str]]:
     """The places a claim's citation names ("src/a.py:12", "src/a.py:3-9, b.py:4") that are real files
     of this project, as (path, place) pairs. Anything else in it — a glob, a field marker, an absolute
     or climbing path, a file that is not there — is not a place to scope or anchor an entry by."""
@@ -83,7 +79,7 @@ def citation_places(citation, top):
     return places
 
 
-def verifier_reason(run, ref, verdict):
+def verifier_reason(run: Path, ref: str, verdict: str) -> str:
     """The verdict cell of the verifier row a claim links to ("REFUTED — revoke runs first"), or ''."""
     name, _, number = ref.rpartition(":")
     body = evidence.read_file(run / name, required=False) or ""
@@ -94,13 +90,13 @@ def verifier_reason(run, ref, verdict):
     return cells[2] if len(cells) > 2 and cells[2].upper().startswith(verdict) else ""
 
 
-def block(title, fields):
+def block(title: str, fields: list[tuple[str, str]]) -> str:
     lines = ["### F-0: " + one_line(title, 90)]
     lines += ["**{}:** {}".format(name, value) for name, value in fields if value]
     return "\n".join(lines) + "\n"
 
 
-def draft_claim(run, top, claim_id, scope, today):
+def draft_claim(run: Path, top: Path, claim_id: str, scope: str, today: str) -> str:
     recorded = evidence.read_file(run / "claims.jsonl", required=False)
     if recorded is None:
         raise MemoryError_("no claims.jsonl in this run — run council evidence build after Challenge")
@@ -145,7 +141,7 @@ def draft_claim(run, top, claim_id, scope, today):
     ])
 
 
-def draft_repair(run, top, task, scope, today):
+def draft_repair(run: Path, top: Path, task: str, scope: str, today: str) -> str:
     if run_value(run, "mode") != "council-implement":
         raise MemoryError_("repair proposals come from council-implement runs only")
     if not scope:
@@ -183,7 +179,7 @@ def draft_repair(run, top, task, scope, today):
 # ---------------------------------------------------------------------------------------------------
 # The memory file: read it whole, and keep every byte of the lines this command does not touch.
 
-def load_memory(path):
+def load_memory(path: Path) -> tuple[list[str], str]:
     if path.is_symlink():
         raise MemoryError_("the memory file is a symlink — edit it by hand")
     data = path.read_bytes()
@@ -197,7 +193,7 @@ def load_memory(path):
     return lines, ("\r\n" if crlf and crlf * 2 >= len(lines) else "\n")
 
 
-def visible(lines):
+def visible(lines: list[str]) -> Iterator[tuple[int, str]]:
     """(index, text) for the lines the memory parser reads: outside HTML comments and code fences."""
     incom = fence = False
     for index, raw in enumerate(lines):
@@ -217,7 +213,7 @@ def visible(lines):
             yield index, text
 
 
-def entry_id(heading_text):
+def entry_id(heading_text: str) -> str:
     """The id of a heading entry, as bin/council's memory parser reads one, or ''."""
     lower = heading_text.lower()
     bold = len(lower) - len(lower.lstrip("*_~"))
@@ -234,7 +230,7 @@ def entry_id(heading_text):
     return ident if dashed else re.sub(r"([0-9]+)$", r"-\1", ident)
 
 
-def cand_id(text):
+def cand_id(text: str) -> str:
     """The id of a line that opens like an entry, as bin/council's cand() reads one — an id, then a
     separator or nothing (`F-6 — …`, `F-6:`; never `F-6 follow up`) — or ''."""
     lower = text.lower().lstrip("*_~`")
@@ -245,8 +241,7 @@ def cand_id(text):
     return ident if "-" in ident else re.sub(r"([0-9]+)$", r"-\1", ident)
 
 
-def headings(lines):
-    """(index, level, text, entry id) for every heading the parser reads."""
+def headings(lines: list[str]) -> Iterator[tuple[int, int, str, str]]:
     for index, text in visible(lines):
         match = HEADING.match(text)
         if match:
@@ -254,7 +249,7 @@ def headings(lines):
             yield index, level, match.group(2), (entry_id(match.group(2)) if 2 <= level <= 4 else "")
 
 
-def section_kind(text):
+def section_kind(text: str) -> str:
     words = re.sub(r"[*_~`#]", "", text.lower())
     words = re.sub(r"^[^a-z0-9]+", "", words)
     name = re.split(r"[ \t]*(?:—|–|-[ \t]|\(|\[|;|:|,)", words, maxsplit=1)[0].strip()
@@ -267,7 +262,7 @@ def section_kind(text):
     return "other"
 
 
-def sections(lines):
+def sections(lines: list[str]) -> list[tuple[int, str]]:
     """Level-1/2 section headings as (index, kind); a first level-1 heading is the file's title."""
     found, seen = [], False
     for index, level, text, ident in headings(lines):
@@ -277,15 +272,14 @@ def sections(lines):
     return found
 
 
-def section_end(lines, start):
-    """The index just past the section that opens at `start`: its next section heading, or EOF."""
+def section_end(lines: list[str], start: int) -> int:
     for index, level, _, ident in headings(lines):
         if index > start and level <= 2 and not ident:
             return index
     return len(lines)
 
 
-def place(lines, at, new_lines, newline):
+def place(lines: list[str], at: int, new_lines: list[str], newline: str) -> list[str]:
     """Insert new_lines at `at` with one blank line around them, never doubling blank lines."""
     before, after = lines[:at], lines[at:]
     while before and before[-1].strip() == "":
@@ -300,12 +294,12 @@ def place(lines, at, new_lines, newline):
     return before + chunk + after
 
 
-def cited(lines, key):
+def cited(lines: list[str], key: str) -> bool:
     pattern = re.compile(re.escape(key) + r"(?![0-9A-Za-z_./-])")
     return any(pattern.search(text.replace("\\", "/")) for _, text in visible(lines))
 
 
-def first_evidence(entry_lines):
+def first_evidence(entry_lines: list[str]) -> str:
     for line in entry_lines:
         match = FIELD.match(line.strip())
         if match and match.group(1) == "Evidence":
@@ -313,7 +307,7 @@ def first_evidence(entry_lines):
     return ""
 
 
-def insert(memory, block_path, out):
+def insert(memory: Path, block_path: Path, out: Path) -> int:
     lines, newline = load_memory(memory)
     new = [line.rstrip("\r") for line in block_path.read_text(encoding="utf-8").strip("\n").split("\n")]
     head = HEADING.match(new[0]) if new else None
@@ -337,7 +331,7 @@ def insert(memory, block_path, out):
     return 0
 
 
-def find_entry(lines, wanted):
+def find_entry(lines: list[str], wanted: str) -> tuple[int, int]:
     """An entry's lines, as bin/council's memory parser reads them: a heading deeper than #### or a table
     row is never an entry (it names them as not read), and any entry heading ends the entry above it."""
     hits = [(index, level) for index, level, _, ident in headings(lines) if ident == wanted]
@@ -360,7 +354,7 @@ def find_entry(lines, wanted):
     return start, end
 
 
-def move(memory, wanted, target, said_path, today, out):
+def move(memory: Path, wanted: str, target: str, said_path: Path, today: str, out: Path) -> int:
     lines, newline = load_memory(memory)
     said = one_line(said_path.read_text(encoding="utf-8"), 300)
     if not said:
@@ -394,14 +388,14 @@ def move(memory, wanted, target, said_path, today, out):
     return 0
 
 
-def write(out, lines):
+def write(out: Path, lines: list[str]) -> None:
     if out.exists() or out.is_symlink():
         raise MemoryError_("refusing to overwrite " + str(out))
     with open(out, "w", encoding="utf-8", newline="") as stream:
         stream.write("".join(lines))
 
 
-def main():
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action")
     sub.required = True
@@ -410,7 +404,8 @@ def main():
     one.add_argument("id")
     one.add_argument("--run", required=True, type=Path)
     one.add_argument("--top", required=True, type=Path)
-    one.add_argument("--scope-file", type=Path, help="a file holding the scope (never an argument: Git Bash rewrites a leading /)")
+    one.add_argument("--scope-file", type=Path,
+                     help="a file holding the scope (never an argument: Git Bash rewrites a leading /)")
     one.add_argument("--today", required=True)
     two = sub.add_parser("insert")
     two.add_argument("--memory", required=True, type=Path)
@@ -423,7 +418,7 @@ def main():
     three.add_argument("--said", required=True, type=Path)
     three.add_argument("--today", required=True)
     three.add_argument("--out", required=True, type=Path)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.action == "draft":
         run = args.run.absolute()
         if run.is_symlink() or not run.is_dir():
@@ -439,14 +434,5 @@ def main():
         return 0
     if args.action == "insert":
         return insert(args.memory, args.block, args.out)
-    if not re.fullmatch(r"F-[0-9]+", args.id):
-        raise MemoryError_("accept and reject take an observed-failure id such as F-3")
     return move(args.memory, args.id, args.to, args.said, args.today, args.out)
 
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except (MemoryError_, evidence.EvidenceError, repair.RepairError, OSError, UnicodeError, ValueError) as exc:
-        print("memory: " + str(exc), file=sys.stderr)
-        sys.exit(2)

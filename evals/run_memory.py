@@ -474,8 +474,8 @@ with tempfile.TemporaryDirectory(prefix="council-memory-") as temporary:
           out + err)
     state_file.write_bytes(header_only)
 
-    sys.path.insert(0, str(ROOT / "scripts"))
-    import memory as memory_script                            # noqa: E402  (the helper's own drafting code)
+    sys.path.insert(0, str(ROOT / "src"))
+    from council.commands import memory_draft as memory_script  # noqa: E402  (the helper's own drafting code)
     flat = memory_script.one_line("config holds -----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAu1SU1LfV\n"
                                   "Rnrq0abc\n-----END RSA PRIVATE KEY----- and more", 60)
     cut = memory_script.one_line("config holds -----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAu1SU1LfV\n", 40)

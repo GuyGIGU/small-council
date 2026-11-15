@@ -1,4 +1,4 @@
-"""council repair record|show|check|allow: the repair trail (scripts/repair.py) and the user's go past a stop."""
+"""council repair record|show|check|allow: the repair trail (commands/repair_trail.py) and the user's go past a stop."""
 from __future__ import annotations
 
 import contextlib
@@ -6,8 +6,7 @@ import io
 from pathlib import Path
 
 from council import clock
-from council.commands import cli, closed, event_note, resolve
-from council.commands.script_cmds import run_script
+from council.commands import cli, closed, event_note, resolve, script
 from council.records import events, locks, redact, repairs, state_write
 
 USAGES = {"record": "usage: council repair record <task> <gate> [--run <folder>]",
@@ -33,14 +32,14 @@ def main(args: cli.Args, words: list[str]) -> int:
     if sub in ("record", "allow"):
         closed.refuse(run, "its repair trail is on record (council repair show)")
     if sub != "allow":
-        return run_script("repair", [sub] + words + ["--run", run.as_posix()])
+        return script.run("repair", [sub] + words + ["--run", run.as_posix()])
     return allow(run, " ".join(words), said)
 
 
 def allow(run: Path, gate: str, said: str) -> int:
     trail = io.StringIO()
     with contextlib.redirect_stdout(trail):
-        code = run_script("repair", ["trail", gate, "--run", run.as_posix()])
+        code = script.run("repair", ["trail", gate, "--run", run.as_posix()])
     if code:
         return 2
     if trail.getvalue().startswith("allowed\t"):

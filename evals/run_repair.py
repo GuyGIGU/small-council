@@ -10,7 +10,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE = ROOT / "scripts" / "repair.py"
+ENGINE = (str(ROOT / "src" / "council" / "commands" / "script.py"), "repair")   # the repair trail, run by path
 CLI = ROOT / "bin" / "council"
 BASH = (os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash") or
         (r"C:\Program Files\Git\bin\bash.exe" if Path(r"C:\Program Files\Git\bin\bash.exe").is_file() else None))
@@ -27,7 +27,7 @@ def write(path, content):
 
 
 def invoke(run, action, *words, via_cli=False):
-    prefix = (BASH, str(CLI), "repair") if via_cli else (sys.executable, str(ENGINE))
+    prefix = (BASH, str(CLI), "repair") if via_cli else (sys.executable, *ENGINE)
     return subprocess.run(prefix + (action,) + words + ("--run", str(run)), cwd=run,
                           capture_output=True, text=True, encoding="utf-8", errors="replace")
 

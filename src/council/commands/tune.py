@@ -1,11 +1,10 @@
-"""council tune [propose] [--json] | tune apply|revert budget … --user-said "…" (scripts/tune.py)."""
+"""council tune [propose] [--json] | tune apply|revert budget … --user-said "…" (commands/tune_knobs.py)."""
 from __future__ import annotations
 
 import os
 import shutil
 
-from council.commands import cli
-from council.commands.script_cmds import run_script
+from council.commands import cli, script
 from council.records import home as where
 from council.records import redact
 
@@ -35,7 +34,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     if not os.path.isdir(where.native(home)):
         raise cli.Refusal("no council here (no %s) — run council-init" % home)
     if propose:
-        return run_script("tune", ["propose", "--home", home] + (["--json"] if args.value("json") else []))
+        return script.run("tune", ["propose", "--home", home] + (["--json"] if args.value("json") else []))
     import tempfile
     try:
         folder = where.here(tempfile.mkdtemp())
@@ -49,6 +48,6 @@ def main(args: cli.Args, words: list[str]) -> int:
         raise cli.Refusal("cannot write " + folder) from None
     value = ["--value", words[2]] if action == "apply" else []
     try:
-        return run_script("tune", [action, words[1]] + value + ["--home", home, "--said", folder + "/said"])
+        return script.run("tune", [action, words[1]] + value + ["--home", home, "--said", folder + "/said"])
     finally:
         shutil.rmtree(folder, ignore_errors=True)
