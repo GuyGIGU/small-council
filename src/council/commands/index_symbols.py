@@ -5,9 +5,10 @@ const-arrow functions, Go methods, shell "name() {", and C-style signatures, nev
 from __future__ import annotations
 
 import fnmatch
-import os
 import re
 import subprocess
+
+from council.records import bytewise
 
 COMMON = ("if for while return switch catch else elif function def class self this true false null none nil new try "
           "with from import export async await public private protected static void int string bool var let const "
@@ -99,9 +100,7 @@ def _grep(*args: str) -> list[str]:
                               stdin=subprocess.DEVNULL)
     except OSError:
         return []
-    found = done.stdout.decode("utf-8", "surrogateescape").split("\n")
-    found = found[:-1] if found and found[-1] == "" else found
-    return [line[:-1] if os.name == "nt" and line.endswith("\r") else line for line in found]
+    return bytewise.records(done.stdout.decode("utf-8", "surrogateescape"))    # git ends every line in a newline
 
 
 class Search:

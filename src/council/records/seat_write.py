@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 
-from council.records import paths, seat_files, seat_rows, seats
+from council.records import bytewise, paths, seat_files, seat_rows, seats
 
 HEADER = ["slug", "state", "agent", "tokens", "updated", "note", "agents", "reported"]
 COUNT = re.compile("[0-9]*")
@@ -19,7 +19,7 @@ def number(cell: str) -> int:
 
 def table(file: Path) -> list[list[str]]:
     """A TSV file's rows as awk splits them, each padded to eight cells; [] when it can't be read."""
-    return [line.split("\t") + [""] * 8 for line in seat_files.lines(file)]
+    return [line.split("\t") + [""] * 8 for line in bytewise.file_lines(file, fold=False)]
 
 
 def add(file: Path, rows: list[list[str]], header: str) -> None:
@@ -76,7 +76,7 @@ def seat_usage(run: Path, slug: str) -> tuple[int, int, int, bool]:
 def rewrite(run: Path, slug: str, new: dict[str, str]) -> None:
     """The seat's row in seats.tsv: a lost header back, an older row under its old rules, a new seat last."""
     file, out, found = seats.path(run), [], False
-    for at, line in enumerate(seat_files.lines(file)):
+    for at, line in enumerate(bytewise.file_lines(file, fold=False)):
         c = line.split("\t")
         if at == 0 and c[0] == "slug":
             out.append(c + HEADER[min(max(len(c), 6), 8):])

@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
+from council.records import bytewise
+
 BOM = "﻿"
 ITEM = re.compile(r"[-*+]?[ \t]*[*_]*C?[0-9]+[a-z]?[*_]*\.?[ \t]+(·|\|)[ \t]")
 SHAPE_ITEM = re.compile(r"[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) ")
@@ -28,17 +30,6 @@ class Seat(NamedTuple):
     ref: str
     out: str
     cap: str
-
-
-def lines(path: str | Path) -> list[str]:
-    """A file's lines as awk reads them (bytes kept; a last line without a newline still a line); [] when it
-    can't be read."""
-    try:
-        content = Path(path).read_bytes().decode("utf-8", "surrogateescape")
-    except OSError:
-        return []
-    found = content.split("\n")
-    return found[:-1] if found[-1] == "" else found
 
 
 def lower(text: str) -> str:
@@ -61,7 +52,7 @@ def brief_seats(path: str | Path) -> list[Seat]:
     """The "## Seats" blocks of a brief (or of debate.md), in order. Backticks and quotes around values go."""
     found: list[Seat] = []
     inside, slug, ref, out, cap = False, "", "none", "", "8"
-    for line in lines(path):
+    for line in bytewise.file_lines(path, fold=False):
         if line.startswith("## "):
             inside = re.fullmatch(r"## Seats[ \t\r]*", line) is not None
             continue
@@ -124,7 +115,7 @@ def ref_title(path: str | Path) -> str:
     """A reference doc's title as a worker copies it — its first heading, after any front matter; else its first
     line of text — normalised (norm, else norm_wide)."""
     front, first, title = False, "", ""
-    for at, line in enumerate(lines(path)):
+    for at, line in enumerate(bytewise.file_lines(path, fold=False)):
         if at == 0:
             line = line[1:] if line.startswith(BOM) else line
             if re.fullmatch(r"---[ \t\r]*", line):
@@ -162,7 +153,7 @@ def items(path: str | Path) -> list[Item]:
     """A file's item lines, with the first word of the "## " heading above each, lowercased."""
     found: list[Item] = []
     section = ""
-    for line in lines(path):
+    for line in bytewise.file_lines(path, fold=False):
         if line.startswith("## "):
             section = re.sub(r"[ \t\r].*$", "", re.sub(r"^## +", "", lower(line)), flags=re.S)
             continue
@@ -195,7 +186,7 @@ def shape(path: str | Path, sections: str = "Index") -> Shape:
     wanted = re.compile("(^|[^a-z])(" + lower(sections) + ")([^a-z]|$)")
     parsed = unparsed = 0
     none = inside = pending = False
-    for raw in lines(path):
+    for raw in bytewise.file_lines(path, fold=False):
         if raw.startswith("## "):
             inside, pending = wanted.search(re.sub(r"^## +", "", lower(raw))) is not None, False
             continue
@@ -230,7 +221,7 @@ def shape(path: str | Path, sections: str = "Index") -> Shape:
 def verify_problems(path: str | Path) -> str:
     """The problems of a verify file's shape, each ending "; " ('' when none): line 1 '# Verification — <run
     title>', a verdict table, at most 16 KB. The seat-check hook holds a verifier to the same rule."""
-    found = lines(path)
+    found = bytewise.file_lines(path, fold=False)
     first = found[0].replace("\r", "") if found else ""
     first = first[1:] if first.startswith(BOM) else first
     problems = "" if first.startswith("# Verification") else "line 1 isn't '# Verification — <run title>'; "

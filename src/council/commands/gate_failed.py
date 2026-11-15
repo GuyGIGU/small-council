@@ -9,7 +9,7 @@ from pathlib import Path
 
 from council.commands import cli, gate_output
 from council.commands.gate_run import Call, Result, event, qname
-from council.records import gates, verdicts
+from council.records import bytewise, gates, verdicts
 
 
 def said(call: Call, name: str, result: Result, secs: int, info: tuple, content: str) -> bool:
@@ -24,7 +24,7 @@ def said(call: Call, name: str, result: Result, secs: int, info: tuple, content:
                 "A hang is no pass and no proof; if it truly needs longer: council gate %s --timeout <seconds>, or a "
                 'longer "- gate time limit:" under Run preferences in the config — full output: %s'
                 % (name, secs, most, why, qname(name), out))
-        kept = [line for line in gate_output.lines(content)
+        kept = [line for line in bytewise.records(content, fold=False)
                 if not line.startswith("council: TIMED OUT") and line.strip(gate_output.SPACE)]
         indent(kept[-8:], "    ")
         event(call.run, name, "failed", "exit=%d;seconds=%d;empty=0;timed_out=1" % (code, secs),
@@ -42,7 +42,8 @@ def said(call: Call, name: str, result: Result, secs: int, info: tuple, content:
                 "— full output: %s" % (name, secs, module, out))
     else:
         cli.say("gate %s: FAIL (exit %d, %ss) — full output: %s" % (name, code, secs, out))
-    hits = ["%d:%s" % (n, line) for n, line in enumerate(gate_output.lines(content), 1) if _HITS.search(line)][:12]
+    hits = ["%d:%s" % (n, line) for n, line in enumerate(bytewise.records(content, fold=False), 1)
+            if _HITS.search(line)][:12]
     indent(hits or gate_output.tail(content, 8), "    ")
     same = False
     baseline = Path(call.run, "gates", "baseline", gates.slug(name))

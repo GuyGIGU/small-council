@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from council import clock
-from council.records import cells, events, locks, paths, redact, stages
+from council.records import bytewise, cells, events, locks, paths, redact, stages
 from council.records.state import field, path, text
 
 COUNCIL_NEXT_AT_OPEN = stages.COUNCIL_NEXT_AT_OPEN    # frozen name (architecture section 6)
@@ -153,12 +153,7 @@ def raw_lines(file: Path) -> list:
     """The state's lines as awk printed them: the BOM off line 1, a last line without a newline still a line. Git
     Bash's awk reads in text mode, so on Windows a line's carriage return is dropped; elsewhere it is kept."""
     content = file.read_bytes().decode("utf-8", "surrogateescape")
-    if content.startswith(paths.BOM):
-        content = content[len(paths.BOM):]
-    if os.name == "nt":
-        content = content.replace("\r\n", "\n")
-    found = content.split("\n")
-    return found[:-1] if found[-1] == "" else found
+    return bytewise.records(content[len(paths.BOM):] if content.startswith(paths.BOM) else content)
 
 
 def _put(lines: list, key: str, line: str, header_only: bool, add: bool) -> None:

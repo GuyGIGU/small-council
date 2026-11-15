@@ -28,6 +28,24 @@ class BytewiseTest(unittest.TestCase):
         self.assertEqual(bytewise.records("a\nb"), ["a", "b"])
         self.assertEqual(bytewise.records("a\nb\n"), ["a", "b"])
         self.assertEqual(bytewise.records("a\r\nb\r\n"), ["a", "b"] if os.name == "nt" else ["a\r", "b\r"])
+        self.assertEqual(bytewise.records(""), [])
+        self.assertEqual(bytewise.records("\n"), [""])
+
+    def test_records_keep_the_carriage_return_everywhere_when_not_folded(self) -> None:
+        self.assertEqual(bytewise.records("a\r\nb\r\n", fold=False), ["a\r", "b\r"])
+        self.assertEqual(bytewise.records("a\r\nb", fold=False), ["a\r", "b"])
+
+
+class FileLinesTest(support.Scratch):
+    def test_a_file_reads_as_utf8_with_a_stray_byte_kept_and_its_bom_kept(self) -> None:
+        file = self.write("f.txt", b"\xef\xbb\xbfcaf\xc3\xa9\r\n\xff\n", binary=True)
+        crlf = ["﻿café", "\udcff"] if os.name == "nt" else ["﻿café\r", "\udcff"]
+        self.assertEqual(bytewise.file_lines(file), crlf)
+        self.assertEqual(bytewise.file_lines(file, fold=False), ["﻿café\r", "\udcff"])
+
+    def test_an_unreadable_file_has_no_lines(self) -> None:
+        self.assertEqual(bytewise.file_lines(self.tmp / "missing"), [])
+        self.assertEqual(bytewise.file_lines(self.tmp), [])
 
 
 class ScopeTest(unittest.TestCase):

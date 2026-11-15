@@ -2,12 +2,11 @@
 post-game next task's Done-when row. Both are matched by records.request's rule (fold, then whole words)."""
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.records import request
+from council.records import bytewise, request
 
 ITEM = re.compile(r"[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) ")
 NOT_EXACT = "NOT-EXACT (only capitals or * _ ` marks differ — copy the words exactly)"
@@ -32,18 +31,6 @@ def loose(text: str) -> str:
 
 def word_count(text: str) -> int:
     return len([word for word in re.split(r"[ \t\n]+", text) if word])
-
-
-def file_lines(path: str | Path) -> list[str]:
-    """A file's lines as awk reads them, bytes kept; Git Bash's awk drops a CR before each newline on Windows."""
-    try:
-        content = Path(path).read_bytes().decode("utf-8", "surrogateescape")
-    except OSError:
-        return []
-    if os.name == "nt":
-        content = content.replace("\r\n", "\n")
-    found = content.split("\n")
-    return found[:-1] if found and found[-1] == "" else found
 
 
 def opened_at(line: str) -> int:
@@ -93,7 +80,7 @@ def item_quotes(path: str | Path, said: str, mode: str) -> list[Quote]:
     must or should item, quotes the request word for word."""
     found = []
     said = request.fold(said)
-    for raw in file_lines(path):
+    for raw in bytewise.file_lines(path):
         line = raw.replace("\r", "").replace("\t", " ")
         if not ITEM.match(line):
             continue
@@ -124,7 +111,7 @@ def next_tasks(path: str | Path, said: str) -> list[Task]:
     said = request.fold(said)
     found: list[Task] = []
     on, task = False, None
-    for raw in file_lines(path):
+    for raw in bytewise.file_lines(path):
         line = raw[:-1] if raw.endswith("\r") else raw
         if re.match(r"###[ \t]+Next tasks", line):
             on = True

@@ -168,12 +168,8 @@ def memory_line(home: str | Path) -> tuple[str, str] | None:
     """The `- conventions:` path under ## Memory as the helper's memory_file reads it: the value with CRs, quotes,
     a trailing (note) and a " — aside" taken off, and its first word (a path may hold a blank; a note may follow
     one); None when there is no such line. memory_path() is status.py's older reading of the same line."""
-    try:
-        text = path(home).read_bytes().decode("utf-8", "surrogateescape")
-    except OSError:
-        return None
     under = False
-    for line in text.split("\n")[:-1] if text.endswith("\n") else text.split("\n"):
+    for line in bytewise.file_lines(path(home), fold=False):
         if re.match(r"##[ \t]", line):
             under = bool(re.match(r"##[ \t]+[Mm][Ee][Mm][Oo][Rr][Yy]([^A-Za-z]|\Z)", line))
             continue

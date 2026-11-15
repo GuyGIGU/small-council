@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from council.commands import cli, closed, gate_lock, gate_output, gate_repair, gate_run, resolve, shell
-from council.records import config, gate_notes, gate_table, gates, paths, state_write, verdicts
+from council.records import bytewise, config, gate_notes, gate_table, gates, paths, state_write, verdicts
 from council.records import home as where
 
 USAGE = "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
@@ -231,7 +231,7 @@ def _mark(run: str, slug: str, base: str, why: str) -> str:
     while os.path.isfile("%s/%s-%d.json" % (folder, slug, k)):
         k += 1
     verdict, tail = base + ".json", ', "invalid": "%s"}' % gate_run.json_esc(why)
-    lines = gate_output.lines(gate_output.text(verdict))
+    lines = bytewise.file_lines(verdict, fold=False)
     try:
         with open(verdict + ".tmp", "wb") as handle:
             handle.write("".join(re.sub(r"[}][ \t\r]*\Z", "", line, count=1) + tail + "\n" for line in lines)

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from council.commands import cli, gate_output, proof_reach
-from council.records import config, verdicts
+from council.records import bytewise, config, verdicts
 
 KINDS = ("change", "preserve")
 FALSE_GREEN = '"note": "exit 0, but'
@@ -75,7 +75,7 @@ def _ran_nothing(before: Path, after: Path) -> bool:
     outputs = (_output(before), _output(after))
     return verdicts.holds(before, FALSE_GREEN) or verdicts.holds(after, FALSE_GREEN) \
         or any(line.startswith("changed: no files matched")
-               for out in outputs for line in gate_output.lines(gate_output.text(out))) \
+               for out in outputs for line in bytewise.file_lines(out, fold=False)) \
         or any(_blank(out) for out in outputs) \
         or any(gate_output.zero_tests(gate_output.text(out)) for out in outputs)
 

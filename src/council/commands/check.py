@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 from council.commands import check_proofs, cite_check, cite_origin, cli, event_note, gate_output, hygiene, resolve
-from council.records import citations, quotes, redact, request, run_files, seat_files
+from council.records import bytewise, citations, quotes, redact, request, run_files, seat_files
 from council.records import home as where
 from council.records import sharing as shared
 
@@ -53,7 +53,7 @@ def said(run: Path) -> str:
     lines = []
     for path in (run / request.ASK, request.filed(run)):
         if path is not None and os.path.isfile(where.native(str(path))):
-            lines += request.in_your_words("\n".join(quotes.file_lines(where.native(str(path)))))
+            lines += request.in_your_words("\n".join(bytewise.file_lines(where.native(str(path)))))
     shown, _ = redact.redact("".join(line + "\n" for line in lines).encode("utf-8", "surrogateescape"))
     return re.sub(rb"[ \t\r\n]+", b" ", shown).decode("utf-8", "surrogateescape")
 
@@ -110,7 +110,7 @@ class Check:
         self.n["files"] += 1
         lab = label(path)
         kept = any(re.match(r"##[ \t]", line) and KEPT.search(seat_files.lower(line))
-                   for line in seat_files.lines(file))
+                   for line in bytewise.file_lines(file, fold=False))
         sections, heading = ("Kept|Cut", "## Kept or ## Cut") if kept else ("Index", "## Index")
         shape = seat_files.shape(file, sections)
         if shape.unparsed:

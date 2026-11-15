@@ -4,6 +4,7 @@ that it matches, counts and cuts what the awk did; it is turned back into the fi
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 EM = "—".encode().decode("latin-1")          # the em dash's three bytes, as three characters
 EN = "–".encode().decode("latin-1")
@@ -34,16 +35,24 @@ def text(value: str) -> str:
     return value.encode("utf-8", "surrogateescape").decode("latin-1")
 
 
-def records(text: str) -> list[str]:
+def records(text: str, fold: bool = True) -> list[str]:
     """A file's lines as awk reads them: split at newlines, none after a final one. Git Bash's awk, sed and grep
     read a file in text mode, a CR LF as LF, so on Windows a line's own last CR is gone before the reader sees
-    it; elsewhere it stays."""
-    if os.name == "nt":
+    it; elsewhere it stays. With fold False the CR stays everywhere, as the helper's readers that kept it did."""
+    if fold and os.name == "nt":
         text = text.replace("\r\n", "\n")
     lines = text.split("\n")
     if text.endswith("\n") or not text:
         lines.pop()
     return lines
+
+
+def file_lines(path: str | Path, fold: bool = True) -> list[str]:
+    """A file's records (above), read as UTF-8 with a stray byte kept (surrogateescape); [] when it can't be read."""
+    try:
+        return records(Path(path).read_bytes().decode("utf-8", "surrogateescape"), fold)
+    except OSError:
+        return []
 
 
 def lower(s: str) -> str:

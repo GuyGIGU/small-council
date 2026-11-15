@@ -19,7 +19,7 @@ from typing import NamedTuple
 
 from council import git
 from council.commands import cli, event_note, gate_exec, gate_output, resolve
-from council.records import config, gates, verdicts
+from council.records import bytewise, config, gates, verdicts
 
 HITS = re.compile(r"error|fail|exception|traceback|assert|panic|cannot|not found|undefined", re.IGNORECASE)
 CMD_SWITCH = re.compile(r"(^|[ \t\n\v\f\r;&|(])([cC][mM][dD](\.[eE][xX][eE])?)([ \t\n\v\f\r]+)"
@@ -145,7 +145,7 @@ def _tree(call: Call, name: str, tree: str, green: bool) -> str:
 
 def _nothing(name: str, command: str, content: str) -> tuple[int, str, str]:
     """(empty, the no-test line, the verdict note) for a gate that exited 0."""
-    if any(line.startswith("changed: no files matched") for line in gate_output.lines(content)):
+    if any(line.startswith("changed: no files matched") for line in bytewise.records(content, fold=False)):
         return 1, "", ""
     zero = gate_output.zero_tests(content)
     if zero:

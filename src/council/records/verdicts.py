@@ -7,20 +7,13 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
+from council.records import bytewise
+
 COMMAND = re.compile(r'.*"command": "(.*)", "exit"')
 
 
-def _lines(path: str | Path) -> list[str]:
-    try:
-        content = Path(path).read_bytes().decode("utf-8", "surrogateescape")
-    except OSError:
-        return []
-    found = content.split("\n")
-    return found[:-1] if found and found[-1] == "" else found
-
-
 def _first(path: str | Path, pattern: re.Pattern) -> str:
-    for line in _lines(path):
+    for line in bytewise.file_lines(path, fold=False):
         found = pattern.match(line)
         if found:
             return found.group(1)
@@ -44,7 +37,7 @@ def command(path: str | Path) -> str:
 
 def holds(path: str | Path, words: str) -> bool:
     """Whether the verdict's text holds these words anywhere (grep -q)."""
-    return any(words in line for line in _lines(path))
+    return any(words in line for line in bytewise.file_lines(path, fold=False))
 
 
 class Green(NamedTuple):
