@@ -28,11 +28,8 @@ def main(args: cli.Args, sub: str, words: list[str]) -> int:
         raise cli.Refusal("close lock unavailable: %s — another close of this run is still going; if none is, "
                           "remove that folder and close again" % lock.as_posix())
     code, lost = events.ready(run)
-    try:
-        if code == 1:                                     # a torn line: refused with the repair; the lock is left
-            events.writable(run)                          # to the stale-lock check, as a close that dies leaves it
-    except events.EventError as failure:
-        raise cli.Refusal(str(failure)) from None
+    if code == 1:                                         # a torn line: refused with the repair; the lock is left
+        event_note.writable(run)                          # to the stale-lock check, as a close that dies leaves it
     held = closing.undelivered(run) if status == "complete" and not state_write.closed(run) else ""
     if held:
         locks.release(lock)
@@ -41,7 +38,7 @@ def main(args: cli.Args, sub: str, words: list[str]) -> int:
     if lost:
         cli.warn("council: the event stream is lost (%s): the run closes, but its events were not recorded" % lost)
     old = (resolve.field(run, "status"), resolve.field(run, "closed"))
-    retake = state_write.closed(run) and old[0] == "complete" and status == "abandoned" and closed.stopped_short(run)
+    retake = state_write.closed(run) and old[0] == "complete" and status == "abandoned" and closing.stopped_short(run)
     if state_write.closed(run) and not retake:
         locks.release(lock)
         if old[0] != status:

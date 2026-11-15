@@ -1,6 +1,6 @@
 """The one writer of a run's session-state.md (bin/council's cmd_state): `change` sets header fields and files
 the user's decisions under the state lock, keeps next: and updated:, and records the run.* event a change of
-phase, status or wait makes. clear_waiting (wait_over) and state_set.put_all are thin callers."""
+phase, status or wait makes. clear_waiting (wait_over) is a thin caller."""
 from __future__ import annotations
 
 import os
@@ -110,13 +110,9 @@ def _rewrite(lines: list, words: list, old_phase: str) -> None:
             flat = value.replace("\r", " ").replace("\n", " ")
             _put(lines, key + ":", key + ": " + flat, header_only=False, add=True)
     phase, named = cells.field("\n".join(lines), "phase"), "next" in [word.split("=", 1)[0] for word in words]
-    if phase == "build" and old_phase != "build" and not named:  # a build starts on task 1, where its gates count
-        _put(lines, "next:", "next: task 1 — the first task of the plan", header_only=True, add=False)
-    phase = cells.field("\n".join(lines), "phase")
     if phase != old_phase and not named and stages.next_text(phase):
         _put(lines, "next:", "next: " + stages.next_text(phase), header_only=True, add=False)
-    content = "\n".join(lines)
-    if cells.field(content, "phase") not in ("", "convene") and field(content, "next") == COUNCIL_NEXT_AT_OPEN:
+    if phase not in ("", "convene") and field("\n".join(lines), "next") == COUNCIL_NEXT_AT_OPEN:
         _put(lines, "next:", "next:", header_only=True, add=False)
     _put(lines, "updated:", "updated: " + clock.now_min(), header_only=False, add=False)
 

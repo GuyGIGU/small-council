@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from council.records import paths
+
 NAME = "repairs.jsonl"
 ALLOWANCES = "repair-allowances.tsv"
 
@@ -14,9 +16,5 @@ def kept(run: str | Path) -> bool:
 
 
 def allow(run: Path, cells: tuple[str, ...]) -> None:
-    """One row of the allowances: a header first in a new file, and never joined to a torn last line. OSError."""
-    file = Path(run) / ALLOWANCES
-    old = file.read_bytes() if file.is_file() else b""
-    with open(str(file), "ab") as out:
-        out.write((b"" if old.endswith(b"\n") else b"\n" if old else b"at\tgate\ttask\tseq\tsaid\n")
-                  + ("\t".join(cells) + "\n").encode("utf-8", "surrogateescape"))
+    """One row of the allowances (OSError)."""
+    paths.append_row(Path(run) / ALLOWANCES, "at\tgate\ttask\tseq\tsaid\n", cells)

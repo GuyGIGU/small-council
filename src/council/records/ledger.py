@@ -100,12 +100,6 @@ def raw_rows(home: str | Path) -> list[list[str]] | None:
     return [line.split("\t") for line in bytewise.records(text)]
 
 
-def _ledger(run: Path) -> Path:
-    """The ledger of the run's own council home: the path before its last /runs/, else this tree's home."""
-    text = Path(run).as_posix()
-    return path(text[:text.rfind("/runs/")] if "/runs/" in text else home.council_home())
-
-
 def _rewrite(ledger: Path, name: str, new: bytes, failed: str) -> bool:
     """Every line but the run's rows (a new ledger: the header), then the new rows. No lock, as the helper takes
     none: two runs writing at once, the last write wins."""
@@ -139,7 +133,7 @@ def record(run: Path) -> int:
     if spent:
         rows.append(lead + [VERIFIERS, "-", "-", "-", "-", "-" if "-" in spent else sum(spent)])
     new = "".join("\t".join(str(cell) for cell in row + [CHECKED]) + "\n" for row in rows)
-    if not new or not _rewrite(_ledger(run), run.name, new.encode("utf-8", "surrogateescape"),
+    if not new or not _rewrite(path(home.run_home(run)), run.name, new.encode("utf-8", "surrogateescape"),
                                "the ledger was not updated"):
         return 0
     return seated
@@ -147,6 +141,6 @@ def record(run: Path) -> int:
 
 def forget(run: Path) -> None:
     """Take the run's rows out of the ledger (ledger_forget): a complete close taken back as abandoned."""
-    ledger = _ledger(run)
+    ledger = path(home.run_home(run))
     if ledger.is_file():
         _rewrite(ledger, Path(run).name, b"", "its rows for %s are still there" % Path(run).name)

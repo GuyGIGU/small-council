@@ -14,17 +14,11 @@ CARD_DUE = "card-due"   # "due" from the first dispatch, "reminded" once the tur
 TOOL = "with a PushNotification tool (it may be a deferred tool: search the tools for it before deciding there is none)"
 
 
-def home_of(run: Path) -> str:
-    """The run's own council home: the folder above its runs/, else this tree's."""
-    posix = Path(run).as_posix()
-    return posix.rsplit("/runs/", 1)[0] if "/runs/" in posix else where.council_home()
-
-
 def waiting_nudge(run: Path, named: bool) -> None:
     """The run now waits on the user: send them the alert line once. named: the call passed --run."""
     at = " --run " + Path(run).name if named else ""
     clears = "Their answer clears the wait at the next stage change, or council state waiting=%s clears it" % at
-    if config.notifications_off(home_of(run)):
+    if config.notifications_off(where.run_home(run)):
         cli.warn("council: the run now waits on the user. " + clears)
     else:
         cli.warn("council: the run now waits on the user: send the line `council status --line%s` prints, once, %s. %s"
@@ -39,7 +33,7 @@ def status_nudge(run: Path, when: str, named: bool, follow: str = "") -> None:
     alert = ""
     if when == "close":
         lead = "run closed — show the user its closing card now, once"
-        if resolve.field(run, "status") == "complete" and not config.notifications_off(home_of(run)):
+        if resolve.field(run, "status") == "complete" and not config.notifications_off(where.run_home(run)):
             alert = ("; then send the owner the line `council status --line%s` prints, once, with a PushNotification "
                      "tool" % at)
     cli.warn("council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred "

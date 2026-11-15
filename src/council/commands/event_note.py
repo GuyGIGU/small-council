@@ -25,3 +25,11 @@ def need(run: str | Path, kind: str, subject: str, value: str, detail: str, refu
         return events.append(Path(run), kind, subject, value, detail)
     except events.EventError as failure:
         raise cli.Refusal("%s\ncouncil: %s" % (failure, refusal)) from None
+
+
+def writable(run: Path) -> None:
+    """events.writable, as a Refusal."""
+    try:
+        events.writable(run)
+    except events.EventError as failure:
+        raise cli.Refusal(str(failure)) from None

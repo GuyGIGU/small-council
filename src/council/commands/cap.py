@@ -10,7 +10,7 @@ from pathlib import Path
 
 from council import clock
 from council.commands import cli, resolve
-from council.records import events, locks, redact, runs, seats, state_write, usage
+from council.records import events, locks, paths, redact, runs, seats, state_write, usage
 from council.records import home as where
 
 TOOLS = ("Agent", "Task", "Workflow")
@@ -79,14 +79,9 @@ def allow(args: cli.Args, given: str) -> int:
 
 
 def _file_go(run: Path, n: str, said: str) -> int:
-    """The go's row; a torn last line is never joined."""
     file, used = seats.path(run, seats.ALLOWANCES), usage.standing(run, where.council_home()).used
     try:
-        size = file.stat().st_size if file.exists() else 0
-        lead = "\n" if size and not file.read_bytes().endswith(b"\n") else "" if size else "at\tused\tn\tuntil\tsaid\n"
-        with open(str(file), "ab") as stream:
-            stream.write(("%s%s\t%d\t%s\t%d\t%s\n" % (lead, clock.now_utc(), used, n, used + int(n), said))
-                         .encode("utf-8", "surrogateescape"))
+        paths.append_row(file, "at\tused\tn\tuntil\tsaid\n", (clock.now_utc(), str(used), n, str(used + int(n)), said))
     except OSError:
         raise cli.Refusal("the go was not recorded: cannot write " + file.as_posix()) from None
     return used

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from council import clock
 from council.commands import cli, event_note, resolve, seat
-from council.records import events, ledger, seat_rows, seats
+from council.records import ledger, seat_rows, seats
 
 USAGE = ('usage: council correct <seat> tokens=<exact> agents=<exact> [unrecorded=yes] evidence="<where the figure '
          'comes from>"')
@@ -22,10 +22,7 @@ def main(args: cli.Args, words: list[str]) -> int:
         raise cli.Refusal(USAGE)
     slug, got = words[0], _fields(words[0], words[1:])
     run = resolve.run_folder(args)
-    try:
-        events.writable(run)
-    except events.EventError as failure:
-        raise cli.Refusal(str(failure)) from None
+    event_note.writable(run)
     added, name = got["unrecorded"], run.name
     if added and not (got["agents"] and int(got["agents"]) > 0):
         _refuse("unrecorded=yes adds an agent run the record missed — give agents= (1 or more), and tokens= if the "

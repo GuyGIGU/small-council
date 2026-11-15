@@ -78,6 +78,11 @@ def _short_of_deliver(run: Path) -> str | None:
     return None if phase in ("deliver", "learn") else phase or "unknown"
 
 
+def stopped_short(run: Path) -> bool:
+    """A council mode's run that never reached Deliver, which its close may re-close as abandoned."""
+    return _field(run, "mode") in MODES and _short_of_deliver(run) is not None
+
+
 def _red_gates(run: Path) -> str | None:
     """The required gates whose last run in this run failed, in byte order."""
     required, last = {g.name for g in gate_table.gates(home.council_home()) if g.must != "no"}, {}

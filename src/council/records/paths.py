@@ -158,6 +158,14 @@ def current_umask() -> int:
     return mask
 
 
+def append_row(file: Path, head: str, cells: tuple[str, ...]) -> None:
+    """One TSV row: the head first in a new or empty file, never joined to a torn last line. OSError."""
+    old = file.read_bytes() if file.is_file() else b""
+    with open(str(file), "ab") as out:
+        out.write((("" if old.endswith(b"\n") else "\n" if old else head) + "\t".join(cells) + "\n")
+                  .encode("utf-8", "surrogateescape"))
+
+
 def swap_in(temporary: str | Path, path: str | Path) -> None:
     """Move temporary over path as mv did; Windows refuses while a reader has path open, so try again for ~1 s."""
     for wait in (0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.3, 0):

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from council import clock, git
 from council.commands import cli, event_note, resolve
-from council.records import config, events, hook_marks, ignores, memory, paths, request, seats, state_write
+from council.records import config, events, hook_marks, ignores, memory, paths, request, seat_write, seats, state_write
 from council.records import plan as plan_file
 from council.records import home as where
 
@@ -17,7 +17,6 @@ MODES = ("council-review", "council-plan", "council-implement", "council-researc
 ASKED = MODES[:5]                                  # the modes that save the user's request first
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
-HEAD = "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
 
 
 def main(args: cli.Args, sub: str, words: list[str]) -> int:
@@ -115,7 +114,7 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
     except OSError:
         raise cli.Refusal("cannot write %s/%s" % (run, plan_file.NAME)) from None
     _write(native / "log.md", "# Run log — %s · opened %s\n" % (mode, clock.now_sec()))
-    _write(native / seats.SEATS, HEAD)
+    _write(native / seats.SEATS, "\t".join(seat_write.HEADER) + "\n")
     return run
 
 

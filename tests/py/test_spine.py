@@ -10,8 +10,8 @@ from unittest import mock
 
 import support  # noqa: F401  (src/ on the path)
 from council import clock
-from council.commands import closed, event_note, cli, nudges, resolve
-from council.records import events, redact, stages, state_write
+from council.commands import event_note, cli, nudges, resolve
+from council.records import closing, events, redact, stages, state_write
 
 OPENED = events.HEADER + "\n1\t1\t2026-01-01T00:00:00Z\trun.opened\trun\tcouncil-review\tphase=convene\n"
 STATE = ("mode: council-review\nstatus: in-progress\nphase: judge\nwaiting: q\nnext: n\nupdated: x\nevents-schema: 1\n"
@@ -101,7 +101,8 @@ class StagesTest(Spine):
         self.assertEqual(stages.skipped(self.run, "prepare", "deliver"), ["judge", "challenge"])
         self.assertEqual(stages.skipped(self.run, "deliver", "prepare"), [])
         self.assertEqual(stages.skipped(self.run, "my-step", "learn"), [])
-        self.assertEqual((stages.rank("build"), stages.next_text("build"), stages.rank("x")), (5, "", 0))
+        self.assertEqual((stages.rank("build"), stages.next_text("build"), stages.rank("x")),
+                         (5, "task 1 — the first task of the plan", 0))
         self.assertTrue(stages.name_ok("a-b", "test-architect") and not stages.name_ok("a-b", "council-review"))
 
 
@@ -164,9 +165,9 @@ class SmallPiecesTest(Spine):
         self.assertEqual(resolve.newest_run(home + "/none", "/t"), "")
 
     def test_stopped_short_and_the_clock(self) -> None:
-        self.assertTrue(closed.stopped_short(self.run))
+        self.assertTrue(closing.stopped_short(self.run))
         (self.run / "session-state.md").write_text(STATE.replace("judge", "learn"))
-        self.assertFalse(closed.stopped_short(self.run))
+        self.assertFalse(closing.stopped_short(self.run))
         self.assertRegex(clock.now_sec(), r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$")
         self.assertRegex(clock.now_utc(), r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.assertEqual(len(clock.now_min()), 16)

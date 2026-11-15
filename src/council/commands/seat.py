@@ -160,10 +160,7 @@ def _may_record(run: Path, slug: str, state: str, got: dict[str, str]) -> None:
         raise cli.Refusal("seat %s has no file yet (%s), so it isn't done — resume its agent with SendMessage "
                           "(\"write your file now with what you have, then finish\"), or record it: council seat %s "
                           "failed note=\"…\"" % (slug, missing, slug))
-    try:
-        events.writable(run)
-    except events.EventError as failure:
-        raise cli.Refusal(str(failure)) from None
+    event_note.writable(run)
     if got["agents"] == "0" and (got["agent"] or seat_rows.cell(run, slug, "agent")):
         raise cli.Refusal("agents=0 says no agent ran for %s, but an agent id is on record for it — report that "
                           "agent's usage instead" % slug)

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from council.commands import cli, resolve
 from council.records import home as where
-from council.records import ignores, redact, request, state_set
+from council.records import ignores, redact, request, state_write
 
 USAGE = "usage: council ask save [slug]   (after writing the user's words to <run>/ask.md)"
 
@@ -172,8 +172,8 @@ class Filing:
         target = self.target
         rel = target[len(self.root) + 1:] if target.startswith(self.root + "/") else target
         try:
-            state_set.put_all(self.run, [("ask", rel), ("ask-saved", time.strftime("%Y-%m-%d %H:%M"))])
-        except state_set.StateError as failure:
+            state_write.change(self.run, ["ask=" + rel, "ask-saved=" + time.strftime("%Y-%m-%d %H:%M")])
+        except state_write.StateError as failure:
             raise cli.Refusal(str(failure)) from None
         if red:
             cli.say("ask: redacted %d secret-looking string(s) — tell the user; it catches common shapes only, so "

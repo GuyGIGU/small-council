@@ -1,5 +1,5 @@
 """Seat files and the rows about a seat (records/seat_files.py, seat_rows.py), a gate's saved verdict
-(records/verdicts.py) and a header field set without an event (records/state_set.py): the records `council
+(records/verdicts.py) and a header field set without an event (records/state_write.py): the records `council
 collect`, `check` and `index` read and write (S7)."""
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import unittest
 
 import support
 
-from council.records import seat_files, seat_rows, state_set, verdicts
+from council.records import seat_files, seat_rows, state_write, verdicts
 
 
 class SeatFilesTest(support.Scratch):
@@ -86,20 +86,20 @@ class StateSetTest(support.Scratch):
         state = self.write(".council/runs/%s/session-state.md" % run.name,
                            "mode: council-review\nphase: work\nnext: size the run and ask for the go-ahead\n"
                            "updated: old\n## Notes\nbase: in the body\n")
-        state_set.put(run, "base", "abc123")
+        state_write.change(run, ["base=abc123"])
         lines = state.read_text(encoding="utf-8").split("\n")
         self.assertEqual(lines[:3], ["mode: council-review", "phase: work", "next:"])    # a stale Convene next
         self.assertTrue(lines[3].startswith("updated: 20"))
         self.assertEqual(lines[4:], ["base: abc123", "## Notes", "base: in the body", ""])
-        state_set.put(run, "base", "def")
+        state_write.change(run, ["base=def"])
         self.assertIn("base: def\n## Notes", state.read_text(encoding="utf-8"))
         self.assertFalse(os.path.exists(str(state) + ".lock"))
 
     def test_a_closed_run_is_not_written(self) -> None:
         run = self.run_folder()
         self.write(".council/runs/%s/session-state.md" % run.name, "status: complete\nclosed: 2026-01-02 03:04\n")
-        with self.assertRaises(state_set.StateError):
-            state_set.put(run, "base", "x")
+        with self.assertRaises(state_write.StateError):
+            state_write.change(run, ["base=x"])
 
 
 if __name__ == "__main__":

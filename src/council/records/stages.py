@@ -14,7 +14,7 @@ STAGES = {  # name: (rank, next step); a build stands where council-implement's 
     "assign": (3, "Assign: fill the run plan, then council run plan check (doctrine 03-assign.md)"),
     "brief": (4, "Brief: write brief.md with the memory in scope (doctrine 04-brief.md)"),
     "work": (5, "Work: start the seats and record each one (doctrine 05-work.md)"),
-    "build": (5, ""),                                     # task 1, set where the build loop's gates read it
+    "build": (5, "task 1 — the first task of the plan"),  # where the build loop's gates count
     "collect": (6, "Collect: council collect until it is clean (doctrine 06-collect.md)"),
     "judge": (7, "Judge: weigh the findings into synthesis.md (doctrine 07-judge.md)"),
     "challenge": (8, "Challenge: verify what is kept (doctrine 08-challenge.md)"),
