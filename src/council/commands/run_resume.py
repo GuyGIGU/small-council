@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from council.commands import cli, event_note, resolve
-from council.records import runs, state, state_write
+from council.records import paths, runs, state, state_write
 from council.records import home as where
 
 
@@ -67,6 +67,6 @@ def _unclose(run: Path) -> None:
             for line in state_write.raw_lines(file):
                 body = body or line.startswith("## ")
                 kept += line + "\n" if body or not line.startswith(("closed:", "actual:")) else ""
-            state_write.replace(file, kept)
+            paths.atomic_write(file, kept.encode("utf-8", "surrogateescape"), ".state.", keep_mode=True)
         except OSError:
             raise cli.Refusal("cannot update " + file.as_posix()) from None

@@ -3634,6 +3634,13 @@ def resume(tmp):
           "sess-old" in out + err and "still working: hunt" in out, out + err)
     code, out, err = council(rs, "state", "phase=assign")
     check("run resume: plain commands act on the run again", code == 0 and "phase assign · in-progress" in out, out + err)
+    if os.name != "nt":
+        os.chmod(rstate, 0o640)
+    council(rs, "state", "phase=assign")
+    left = [n for n in os.listdir(rrun) if n.startswith(".state.") or ".tmp" in n]
+    check("state: the state file is swapped in whole — no temporary file left, and a mode the user set is kept",
+          not left and (os.name == "nt" or os.stat(rstate).st_mode & 0o7777 == 0o640),
+          f"{left} · {oct(os.stat(rstate).st_mode)}")
     to_deliver(rs)
     council(rs, "run", "close")
     code, _, err = council(rs, "run", "resume", "--run", rname)

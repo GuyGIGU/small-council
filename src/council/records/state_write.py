@@ -3,7 +3,6 @@ the user's decisions under the state lock, keeps next: and updated:, and records
 phase, status or wait makes. clear_waiting (wait_over) is a thin caller."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import NamedTuple
 
@@ -77,7 +76,8 @@ def _locked(run: Path, words: list, closing: bool, events_lost: bool, phase_note
     try:
         lines = raw_lines(path(run))
         _rewrite(lines, words, field(before, "phase"))
-        replace(path(run), "".join(line + "\n" for line in lines))
+        data = "".join(line + "\n" for line in lines).encode("utf-8", "surrogateescape")
+        paths.atomic_write(path(run), data, ".state.", keep_mode=True)
     except OSError:
         raise StateError("cannot update " + path(run).as_posix()) from None
     after = text(run)
@@ -169,14 +169,3 @@ def _put(lines: list, key: str, line: str, header_only: bool, add: bool) -> None
             return
     if add:
         lines.append(line)
-
-
-def replace(file: Path, content: str) -> None:
-    """The file's content swapped in through <file>.tmp<pid>, as the helper's mv did."""
-    temporary = Path("%s.tmp%d" % (file, os.getpid()))
-    try:
-        temporary.write_bytes(content.encode("utf-8", "surrogateescape"))
-        paths.swap_in(temporary, file)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
