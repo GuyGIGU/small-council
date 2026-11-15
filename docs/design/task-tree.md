@@ -272,9 +272,11 @@ hand-written brief, and post-game findings per run before and after.
    never fixes code outside the plan, and never ships the workaround, on its own call. A small fix
    inside the approved budget is asked about too.
 
-6. **A fresh builder per task (2026-11-15).** The user said to plan it; the plan is section 6. Two
-   parts of it are proposals until the user rules: a Solo build stays with the Chair, and a fix
-   round gets a fresh builder, not the same agent continued.
+6. **A fresh builder per task (2026-11-15).** The user said to plan it; the plan is section 6. A
+   Solo build stays with the Chair (the user, 2026-11-15): one small task fills no window, so a
+   builder agent would cost a pack and a start for nothing. One part is still a proposal: a fix
+   round gets a fresh builder, not the same agent continued. T5 measures both ways before it is
+   settled.
 
 ## Until it is built: the cleanup's own sessions
 
