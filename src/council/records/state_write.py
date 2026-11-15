@@ -1,16 +1,37 @@
-"""Writes to a run's session-state.md. So far the one that is Python: a wait that is over (`council state
-waiting=`'s path, which `council gate` takes). bin/council's cmd_state writes the rest: two state writers until
-the state writer is ported (S8b), which grows this module into the one."""
+"""The one writer of a run's session-state.md (bin/council's cmd_state): `change` sets header fields and files
+the user's decisions under the state lock, keeps next: and updated:, and records the run.* event a change of
+phase, status or wait makes. clear_waiting (wait_over) and state_set.put_all are thin callers."""
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
+from typing import NamedTuple
 
-from council.records import events, locks, paths
+from council import clock
+from council.records import cells, events, locks, paths, redact, stages
 from council.records.state import field, path, text
 
-NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
+NEXT_AT_OPEN = stages.NEXT_AT_OPEN
+AFTER_CLOSE = ("deliverable", "ask", "ask-saved", "decision")     # a ruling given after the close is still the user's
+DECISIONS = "## Decisions so far"
+
+
+class StateError(paths.RecordError):
+    """What the helper says on stderr when a state write is refused or fails: str() is its lines joined so that
+    'council: ' + str() prints each with its own 'council: '."""
+
+    def __init__(self, *lines: str) -> None:
+        super().__init__("\ncouncil: ".join(lines))
+
+
+class Changed(NamedTuple):
+    """The header after a change, the wait before it, and the lines (no 'council: ') to say about an event a close
+    let go."""
+    phase: str
+    status: str
+    waited: str
+    waiting: str
+    warnings: list
 
 
 def closed(run: Path) -> bool:
@@ -19,45 +40,125 @@ def closed(run: Path) -> bool:
     return field(content, "status") in ("complete", "abandoned") and field(content, "closed") != ""
 
 
-def clear_waiting(run: Path) -> bool:
-    """The run moves on — a seat or a gate: its `waiting:` is cleared, as `council state waiting=` does (bin/council
-    cmd_state), under the same lock, with the same lines and the one run.waiting_changed event. False, the state
-    as it was, when there was no wait, the run is closed, or the lock or the event stream can't be had."""
+def closed_refusal(run: Path, why: str) -> str:
+    """refuse_closed's words: 'run <name> is closed (<status> at <closed>) — <why>'."""
+    content = text(run)
+    return "run %s is closed (%s at %s) — %s" % (Path(run).name, field(content, "status"), field(content, "closed"),
+                                                 why)
+
+
+def change(run: Path, words: list, closing: bool = False, events_lost: bool = False, phase_note: str = "") -> Changed:
+    """council state <key=value> ...: words already checked. closing (the close's own write, CLOSING=1) lets a
+    closed run take any key and a lost status event pass with a note; events_lost (EVENTS_LOST=1) records no phase
+    or status event. phase_note ends the phase event's detail (';skipped=…;reason=…'). StateError otherwise."""
     run = Path(run)
-    if not field(text(run), "waiting") or closed(run) or not _takes_events(run):
+    lock = Path(str(path(run)) + ".lock")
+    if not locks.acquire(lock):
+        raise StateError(events.busy(lock), "state lock unavailable: " + lock.as_posix())
+    try:
+        changed = _locked(run, list(words), closing, events_lost, phase_note)
+    except BaseException:
+        locks.release(lock)
+        raise
+    if not locks.release(lock):
+        raise StateError("state changed, but its lock could not be released: " + lock.as_posix())
+    return changed
+
+
+def _locked(run: Path, words: list, closing: bool, events_lost: bool, phase_note: str) -> Changed:
+    keys = [word.split("=", 1)[0] for word in words]
+    if not events_lost and set(keys) & {"phase", "status", "waiting"}:
+        try:
+            events.writable(run)
+        except events.EventError as failure:
+            raise StateError(str(failure)) from None
+    if not closing and closed(run) and not set(keys) <= set(AFTER_CLOSE):
+        raise StateError(closed_refusal(run, "it takes only deliverable=, decision= (and ask save) now; open a new "
+                                             "run for more work"))
+    before = text(run)
+    if "waiting" not in keys and set(keys) & {"phase", "status", "decision"} and field(before, "waiting"):
+        words.append("waiting=")                          # a stage or status change ends a wait, unless it names one
+    try:
+        lines = _raw_lines(path(run))
+        _rewrite(lines, words, field(before, "phase"))
+        _replace(path(run), "".join(line + "\n" for line in lines))
+    except OSError:
+        raise StateError("cannot update " + path(run).as_posix()) from None
+    after = text(run)
+    old, new = (field(before, "phase"), field(before, "status")), (field(after, "phase"), field(after, "status"))
+    said = []
+    if not events_lost and old[0] != new[0]:
+        _event(run, "phase", new[0], "from=" + old[0] + phase_note)
+    if not events_lost and old[1] != new[1]:
+        said = _event(run, "status", new[1], "from=" + old[1], closing)
+    waited, waiting = field(before, "waiting"), field(after, "waiting")
+    if bool(waited) != bool(waiting):
+        try:
+            _event(run, "waiting", "on" if waiting else "off", "from=on" if waited else "from=off")
+        except StateError as failure:                     # what a close let go was said before this
+            raise StateError(*said, str(failure)) from None
+    return Changed(new[0], new[1], waited, waiting, said)
+
+
+def _rewrite(lines: list, words: list, old_phase: str) -> None:
+    """Each word into the lines as cmd_state's awk passes write it, then the next: rules and updated:."""
+    for word in words:
+        key, _, value = word.partition("=")
+        if key == "decision":
+            _decide(lines, value)
+        elif key != "skip":                               # a skip's reason goes on the phase event, not the header
+            flat = value.replace("\r", " ").replace("\n", " ")
+            _put(lines, key + ":", key + ": " + flat, header_only=False, add=True)
+    phase, named = cells.field("\n".join(lines), "phase"), "next" in [word.split("=", 1)[0] for word in words]
+    if phase == "build" and old_phase != "build" and not named:  # a build starts on task 1, where its gates count
+        _put(lines, "next:", "next: task 1 — the first task of the plan", header_only=True, add=False)
+    phase = cells.field("\n".join(lines), "phase")
+    if phase != old_phase and not named and stages.next_text(phase):
+        _put(lines, "next:", "next: " + stages.next_text(phase), header_only=True, add=False)
+    content = "\n".join(lines)
+    if cells.field(content, "phase") not in ("", "convene") and field(content, "next") == NEXT_AT_OPEN:
+        _put(lines, "next:", "next:", header_only=True, add=False)
+    _put(lines, "updated:", "updated: " + clock.now_min(), header_only=False, add=False)
+
+
+def _decide(lines: list, words: str) -> None:
+    """The user's words, redacted, under ## Decisions so far as a JSON string; every line loses its carriage return."""
+    entry = '- %s: "%s"' % (clock.now_min(), redact.said(words).replace("\\", "\\\\").replace('"', '\\"'))
+    out, inside, done = [], False, False
+    for line in (line[:-1] if line.endswith("\r") else line for line in lines):
+        if inside and line.startswith("## "):
+            out.append(entry)
+            inside, done = False, True
+        inside = inside or line == DECISIONS
+        out.append(line)
+    lines[:] = out + ([entry] if inside else [] if done else [DECISIONS, entry])
+
+
+def _event(run: Path, what: str, value: str, detail: str, closing: bool = False) -> list:
+    """run.<what>_changed; [] when recorded. A close's lost status event is said, and the close goes on."""
+    try:
+        events.append(run, "run.%s_changed" % what, "run", value, detail)
+        return []
+    except events.EventError as failure:
+        if not closing:
+            raise StateError(str(failure), "state changed, but the %s event could not be recorded" % what) from None
+        return [str(failure), "the status event could not be recorded; the close goes on — council run events check "
+                "--run " + run.name]
+
+
+def clear_waiting(run: Path) -> bool:
+    """wait_over: the run moves on — a seat or a gate — so a wait it recorded is cleared, silently. False, the state
+    as it was (or written but its event lost), when there was no wait, the run is closed, or the write failed."""
+    if not field(text(run), "waiting") or closed(run):
         return False
     try:
-        with locks.held(str(path(run)) + ".lock"):
-            if closed(run):
-                return False
-            lines = _raw_lines(path(run))
-            _put(lines, "waiting:", "waiting: ", header_only=False, add=True)
-            content = "\n".join(lines)
-            if field(content, "phase") not in ("", "convene") and field(content, "next") == NEXT_AT_OPEN:
-                _put(lines, "next:", "next:", header_only=True, add=False)
-            _put(lines, "updated:", "updated: " + time.strftime("%Y-%m-%d %H:%M"), header_only=False, add=False)
-            _replace(path(run), "".join(line + "\n" for line in lines))
-            events.append(run, "run.waiting_changed", "run", "off", "from=on")
-    except (OSError, paths.RecordError):
+        change(run, ["waiting="])
+    except StateError:
         return False
     return True
 
 
-def _takes_events(run: Path) -> bool:
-    """event_ready: the run's event stream takes an event (or the run keeps none)."""
-    if not field(text(run), "events-schema"):
-        return True
-    try:
-        data = (run / "events.tsv").read_bytes()
-    except OSError:
-        return False
-    if not data.endswith(b"\n"):                 # empty, or its last line is torn
-        return False
-    last = data[:-1].rsplit(b"\n", 1)[-1].replace(b"\r", b"").decode("utf-8", "surrogateescape").split("\t")
-    return len(last) == 7 and last[0] == "1" and last[1].isdigit() and last[1].isascii()
-
-
-def _raw_lines(file: Path) -> list[str]:
+def _raw_lines(file: Path) -> list:
     """The state's lines as awk printed them: the BOM off line 1, a last line without a newline still a line. Git
     Bash's awk reads in text mode, so on Windows a line's carriage return is dropped; elsewhere it is kept."""
     content = file.read_bytes().decode("utf-8", "surrogateescape")
@@ -69,7 +170,7 @@ def _raw_lines(file: Path) -> list[str]:
     return found[:-1] if found[-1] == "" else found
 
 
-def _put(lines: list[str], key: str, line: str, header_only: bool, add: bool) -> None:
+def _put(lines: list, key: str, line: str, header_only: bool, add: bool) -> None:
     """The first line starting with key becomes line. With add, one goes above the first heading (or at the end)
     when there is none; with header_only, a line below the first heading never counts."""
     for at, found in enumerate(lines):

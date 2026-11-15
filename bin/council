@@ -3432,17 +3432,15 @@ main() {
                 [ $# -le 1 ] || die "run open takes one mode (got: $*)"
                 cmd_run_open ${1+"$@"} ;;
         close)  takes_flags "run close" status; no_words "run close" ${1+"$@"}; cmd_run_close ;;
-        status) python_command "council run status" ${given[@]+"${given[@]}"} ;;
+        status|plan|events|session-start) python_command "council run $sub" ${given[@]+"${given[@]}"} ;;
         resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
-        plan)   python_command "council run plan" ${given[@]+"${given[@]}"} ;;
-        events) takes_flags "run events"; [ $# -le 1 ] || die "usage: council run events [show|check|repair]"; cmd_run_events ${1+"$@"} ;;
         audit)  takes_flags "run audit" transcript; no_words "run audit" ${1+"$@"}; cmd_run_audit ;;
         turn-end) takes_flags "run turn-end" session; no_words "run turn-end" ${1+"$@"}
                 [ -z "$RUN_ARG" ] || die "run turn-end looks at every in-progress run this session drives; it does not take --run"
                 cmd_run_turn_end ;;
         *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show] | run events [show|check] | run audit [--transcript <file>]" ;;
       esac ;;
-    state)   takes_flags state; cmd_state ${1+"$@"} ;;
+    state)   python_command "council state" ${given[@]+"${given[@]}"} ;;
     seat)    takes_flags seat; cmd_seat ${1+"$@"} ;;
     cap)     sub="${1:-}"; [ $# -eq 0 ] || shift
              case "$sub" in
