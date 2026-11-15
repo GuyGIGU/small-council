@@ -195,8 +195,8 @@ not one by one:
   · ~700–900k.
 - T2 after S7: the report head, the saved diff and the checks on it (#58, #59, #50, #60) · ~1M.
 - T3 after T1 and S8: the generated task pack (#57, #61, #67) and `council tree`, plus #93's setup
-  side (the project's decision records proposed into memory; the map's one-way-per-job table)
-  · ~700–900k.
+  side (the project's decision records proposed into memory; the map's one-way-per-job table), and
+  the stop for a bug underneath a task (`task-tree.md`, section 4, added 2026-11-15) · ~0.9–1.1M.
 - T4 in S10: the planted drill cases (#70).
 
 ### The prose track — parallel with wave 2 (skills, doctrine, references only)
