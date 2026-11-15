@@ -126,7 +126,7 @@ CHECKS = (  # (code, check: the value its line names, or None when the run passe
 def claims_stale(run: Path, says_stale: Callable[[], bool]) -> bool:
     """A synthesis run's claim index missing, or older than a source (a deleted one only says_stale tells)."""
     synthesis, claims = run / "synthesis.md", run / "claims.jsonl"
-    synthesised = _field(run, "mode") in ("council-review", "council-plan", "council-research")
+    synthesised = _field(run, "mode") in stages.SYNTHESISED
     if not synthesised or not (synthesis.is_file() or claims.is_file()):
         return False
     if says_stale() or not (synthesis.is_file() and claims.is_file()):

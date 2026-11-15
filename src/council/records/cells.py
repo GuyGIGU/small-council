@@ -8,6 +8,7 @@ from typing import Any
 # Every C0 and C1 control (tab and newline included: a value is one cell), DEL, and the Unicode line
 # and paragraph separators: none may reach a terminal or a page from a file.
 CONTROL = re.compile("[" + chr(0) + "-" + chr(0x1F) + chr(0x7F) + "-" + chr(0x9F) + chr(0x2028) + chr(0x2029) + "]")
+INTMAX = 2 ** 63 - 1     # the largest whole number bash's test reads; a larger one fails the test
 
 
 def clean(value: Any) -> str:

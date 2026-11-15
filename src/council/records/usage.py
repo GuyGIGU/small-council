@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, NamedTuple
 
 from council.records import cells, config, plan, seats, state
+from council.records.cells import INTMAX
 
-INTMAX = 2 ** 63 - 1    # the largest whole number bash's test reads; a comparison with more fails, and stops nothing
 Seat = Dict[str, Any]   # one seat's row and its figures, as seat_list builds it
 
 

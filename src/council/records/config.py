@@ -10,9 +10,9 @@ import re
 from pathlib import Path
 
 from council.records import bytewise, cells, paths
+from council.records.cells import INTMAX
 
 NAME = "council.config.md"
-INTMAX = 2 ** 63 - 1     # the largest whole number bash's test reads; a larger one fails the test
 AGENT_CAP = 10
 SPACE = "[ \t\n\r\f\v]"  # sed's [[:space:]]
 MAX_EDIT = 1024 * 1024

@@ -12,9 +12,9 @@ import subprocess
 
 from council.records import bytewise, paths, scope
 from council.records import home as where
+from council.records.closing import MODES
 from council.records.memory_entries import cells
 
-MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame")
 _WORD = re.compile(r"[A-Za-z0-9_]")
 
 

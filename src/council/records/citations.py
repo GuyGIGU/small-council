@@ -17,6 +17,7 @@ import re
 from typing import Tuple
 
 from council.records.bytewise import lower
+from council.records.cells import INTMAX
 from council.records.home import native
 
 Row = Tuple[str, ...]
@@ -27,7 +28,6 @@ JOINED_NUMBER = re.compile(r"[0-9]+([ \t]*-[ \t]*[0-9]+)?")
 WORD = re.compile(r"[^ ,;|()<>{}]+")
 LINK = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^ ]*")
 LINE_AT = re.compile(r"(:|#)[Ll]?[0-9]")
-INT_MAX = 2 ** 63 - 1                       # what bash's test reads as a number
 
 
 def _ext(path: str) -> bool:
@@ -216,7 +216,7 @@ def rows(top: str, field: str) -> list[Row]:
 def bash_int(text: str) -> int | None:
     """A number as bash's test reads one: blanks around it are fine, inside it or a sign-less junk is not."""
     found = re.fullmatch(r"[ \t\n]*([+-]?[0-9]+)[ \t\n]*", text)
-    if not found or abs(int(found.group(1))) > INT_MAX:
+    if not found or abs(int(found.group(1))) > INTMAX:
         return None
     return int(found.group(1))
 

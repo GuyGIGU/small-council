@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
+from council.records.report_head import STATES
+
 SEQUENCE = "## Task Sequence"
-STATES = ("OBSERVED", "REPRODUCED", "INFERRED", "ASSUMED", "UNVERIFIED")
 NOTHING = ("", "-", "—", "none", "nothing")
 FACT_STATE = re.compile(r"\((" + "|".join(STATES) + r")(\s*,\s*outside)?\)\s*$", re.IGNORECASE)
 HEADING = re.compile(r"###\s+([0-9]+)[.)]?\s*(.*)")

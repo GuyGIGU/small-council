@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from council.commands import cite_check, cli, event_note, gate_output, resolve
-from council.records import bytewise, citations, run_files, seat_files, seat_rows
+from council.records import bytewise, citations, paths, run_files, seat_files, seat_rows
 from council.records import home as where
 
 LIVE = ("running", "queued")
@@ -150,7 +150,7 @@ class Checked:
                  flag: Callable[..., None]) -> None:
         self.notes = ""
         first = head[0].replace("\r", "") if head else ""
-        if not (first[1:] if first.startswith(seat_files.BOM) else first).startswith("# "):
+        if not (first[1:] if first.startswith(paths.BOM) else first).startswith("# "):
             self._note(" no-heading", flag)
         self.ref = proof_of_reading(seat.ref, head[1:], flag)
         self.shape = seat_files.shape(file)

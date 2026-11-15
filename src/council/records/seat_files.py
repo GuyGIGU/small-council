@@ -10,9 +10,8 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.records import bytewise
+from council.records import bytewise, paths
 
-BOM = "﻿"
 ITEM = re.compile(r"[-*+]?[ \t]*[*_]*C?[0-9]+[a-z]?[*_]*\.?[ \t]+(·|\|)[ \t]")
 SHAPE_ITEM = re.compile(r"[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) ")
 HEADED_ITEM = re.compile(r"#+ *[*_]*C?[0-9]+[a-z]?[*_]* +(·|\|) ")
@@ -113,7 +112,7 @@ def ref_title(path: str | Path) -> str:
     front, first, title = False, "", ""
     for at, line in enumerate(bytewise.file_lines(path, fold=False)):
         if at == 0:
-            line = line[1:] if line.startswith(BOM) else line
+            line = line[1:] if line.startswith(paths.BOM) else line
             if re.fullmatch(r"---[ \t\r]*", line):
                 front = True
                 continue
@@ -219,7 +218,7 @@ def verify_problems(path: str | Path) -> str:
     title>', a verdict table, at most 16 KB. The seat-check hook holds a verifier to the same rule."""
     found = bytewise.file_lines(path, fold=False)
     first = found[0].replace("\r", "") if found else ""
-    first = first[1:] if first.startswith(BOM) else first
+    first = first[1:] if first.startswith(paths.BOM) else first
     problems = "" if first.startswith("# Verification") else "line 1 isn't '# Verification — <run title>'; "
     if not any(re.match(r"[ \t\n\v\f\r]*\|", line) for line in found):
         problems += "no verdict table (| # | Item | Verdict | Evidence |); "
