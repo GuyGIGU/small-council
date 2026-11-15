@@ -59,21 +59,28 @@ def _add(x: str, out: list[Item], whole_at: list[int]) -> None:
         out.append(Item(x, False, 0))
 
 
-def items(s: str) -> list[Item]:
-    """A scope or areas list as its items."""
-    out: list[Item] = []
-    whole_at, depth, cur = [0], 0, ""
-    for c in s:
+def _split(text: str, separators: str) -> list[str]:
+    """text cut at each separator that sits outside braces."""
+    pieces, depth, cur = [], 0, ""
+    for c in text:
         if c == "{":
             depth += 1
         elif c == "}" and depth:
             depth -= 1
-        if c in ",;" and not depth:
-            _add(cur, out, whole_at)
+        if c in separators and not depth:
+            pieces.append(cur)
             cur = ""
         else:
             cur += c
-    _add(cur, out, whole_at)
+    return pieces + [cur]
+
+
+def items(s: str) -> list[Item]:
+    """A scope or areas list as its items."""
+    out: list[Item] = []
+    whole_at = [0]
+    for piece in _split(s, ",;"):
+        _add(piece, out, whole_at)
     return out
 
 
@@ -94,18 +101,7 @@ def expand(g: str, out: list[str] | None = None) -> list[str]:
     if not start or not end or len(out) >= 64:
         out.append(g)
         return out
-    body, alts, depth, cur = g[start:end - 1], [], 0, ""
-    for c in body:
-        if c == "{":
-            depth += 1
-        elif c == "}":
-            depth -= 1
-        if c == "," and not depth:
-            alts.append(cur)
-            cur = ""
-        else:
-            cur += c
-    alts.append(cur)
+    alts = _split(g[start:end - 1], ",")      # balanced: the scan above found its closing brace
     if len(alts) < 2:
         out.append(g)
         return out
