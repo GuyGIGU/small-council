@@ -2,10 +2,8 @@
  "about": "Written by python evals/run_ratchet.py --update; numbers here may only go down.",
  "counts": {
   "callbacks": {
-   "items": [
-    "scripts/pet.py"
-   ],
-   "value": 1
+   "items": [],
+   "value": 0
   },
   "config_readers": {
    "items": [
@@ -16,15 +14,15 @@
   },
   "parsers": {
    "items": [
-    "scripts/cockpit.py",
-    "scripts/outcomes.py",
     "scripts/quick_validate.py",
-    "scripts/status.py",
     "src/council/commands/audit_checks.py",
     "src/council/commands/evidence.py",
     "src/council/commands/memory_draft.py",
     "src/council/commands/repair_trail.py",
-    "src/council/commands/session_start.py"
+    "src/council/commands/session_start.py",
+    "src/council/views/cockpit.py",
+    "src/council/views/outcomes.py",
+    "src/council/views/status.py"
    ],
    "value": 9
   }
@@ -72,35 +70,10 @@
    "longest_name": "",
    "shellcheck": 0
   },
-  "scripts/cockpit.py": {
-   "lines": 534,
-   "longest": 103,
-   "longest_name": "render"
-  },
-  "scripts/history.py": {
-   "lines": 339,
-   "longest": 119,
-   "longest_name": "history"
-  },
-  "scripts/outcomes.py": {
-   "lines": 312,
-   "longest": 57,
-   "longest_name": "outcomes"
-  },
-  "scripts/pet.py": {
-   "lines": 927,
-   "longest": 216,
-   "longest_name": "show"
-  },
   "scripts/quick_validate.py": {
    "lines": 305,
    "longest": 14,
    "longest_name": "frontmatter"
-  },
-  "scripts/status.py": {
-   "lines": 1078,
-   "longest": 213,
-   "longest_name": "interpret"
   },
   "src/council/__init__.py": {
    "lines": 1,
@@ -278,7 +251,7 @@
    "longest_name": "failure_ids"
   },
   "src/council/commands/gate_repair.py": {
-   "lines": 104,
+   "lines": 105,
    "longest": 26,
    "longest_name": "record"
   },
@@ -323,7 +296,7 @@
    "longest_name": "definition"
   },
   "src/council/commands/ledger.py": {
-   "lines": 134,
+   "lines": 135,
    "longest": 25,
    "longest_name": "lines"
   },
@@ -468,13 +441,13 @@
    "longest_name": "status"
   },
   "src/council/commands/script.py": {
-   "lines": 101,
+   "lines": 87,
    "longest": 19,
    "longest_name": "guarded"
   },
   "src/council/commands/script_cmds.py": {
-   "lines": 93,
-   "longest": 28,
+   "lines": 92,
+   "longest": 27,
    "longest_name": "main"
   },
   "src/council/commands/seat.py": {
@@ -518,7 +491,7 @@
    "longest_name": "main"
   },
   "src/council/commands/tune_knobs.py": {
-   "lines": 336,
+   "lines": 334,
    "longest": 43,
    "longest_name": "proposals"
   },
@@ -796,6 +769,76 @@
    "lines": 23,
    "longest": 12,
    "longest_name": "blocked"
+  },
+  "src/council/views/__init__.py": {
+   "lines": 2,
+   "longest": 0,
+   "longest_name": ""
+  },
+  "src/council/views/cockpit.py": {
+   "lines": 394,
+   "longest": 34,
+   "longest_name": "converge_rows"
+  },
+  "src/council/views/cockpit_screen.py": {
+   "lines": 178,
+   "longest": 25,
+   "longest_name": "_head"
+  },
+  "src/council/views/history.py": {
+   "lines": 356,
+   "longest": 41,
+   "longest_name": "_catch_lines"
+  },
+  "src/council/views/outcomes.py": {
+   "lines": 306,
+   "longest": 34,
+   "longest_name": "outcomes"
+  },
+  "src/council/views/pet.py": {
+   "lines": 487,
+   "longest": 41,
+   "longest_name": "_view"
+  },
+  "src/council/views/pet_shapes.py": {
+   "lines": 199,
+   "longest": 39,
+   "longest_name": "_arc"
+  },
+  "src/council/views/pet_window.py": {
+   "lines": 266,
+   "longest": 39,
+   "longest_name": "run"
+  },
+  "src/council/views/status.py": {
+   "lines": 444,
+   "longest": 46,
+   "longest_name": "interpret"
+  },
+  "src/council/views/status_card.py": {
+   "lines": 278,
+   "longest": 50,
+   "longest_name": "text"
+  },
+  "src/council/views/status_closing.py": {
+   "lines": 130,
+   "longest": 26,
+   "longest_name": "filed_request"
+  },
+  "src/council/views/status_names.py": {
+   "lines": 41,
+   "longest": 11,
+   "longest_name": "roster_names"
+  },
+  "src/council/views/status_usage.py": {
+   "lines": 164,
+   "longest": 39,
+   "longest_name": "usage_of"
+  },
+  "src/council/views/words.py": {
+   "lines": 60,
+   "longest": 10,
+   "longest_name": "span"
   }
  }
 }
