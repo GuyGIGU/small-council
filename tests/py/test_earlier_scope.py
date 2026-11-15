@@ -36,6 +36,12 @@ class BytewiseTest(unittest.TestCase):
         self.assertEqual(bytewise.records("a\r\nb", fold=False), ["a\r", "b"])
 
 
+    def test_clip_cuts_at_the_last_space_or_at_the_width(self) -> None:
+        self.assertEqual(bytewise.clip("aaa bbb", 7), "aaa bbb")
+        self.assertEqual(bytewise.clip("aaa bbb ccc", 9), "aaa bbb " + bytewise.ELLIPSIS)
+        self.assertEqual(bytewise.clip("aaaaaaaaaa", 4, "…"), "aaaa …")
+
+
 class FileLinesTest(support.Scratch):
     def test_a_file_reads_as_utf8_with_a_stray_byte_kept_and_its_bom_kept(self) -> None:
         file = self.write("f.txt", b"\xef\xbb\xbfcaf\xc3\xa9\r\n\xff\n", binary=True)
@@ -89,7 +95,7 @@ class EarlierTest(support.Scratch):
             bytewise.EM, " " + bytewise.EM + " "))
 
     def test_clip_cuts_at_a_space(self) -> None:
-        clipped = earlier.clip("a " * 80)
+        clipped = bytewise.clip("a " * 80, 120)
         self.assertTrue(clipped.endswith(" " + bytewise.ELLIPSIS) and len(clipped) <= 120 + len(bytewise.ELLIPSIS) + 1)
 
     def test_the_paths_an_index_lists(self) -> None:

@@ -38,12 +38,8 @@ def text(path: str | Path) -> str:
 
 
 def clip(line: str, width: int) -> str:
-    """The helper's clip: a line past width cut at its last space within it, then ' …'."""
-    if len(line) <= width:
-        return line
-    cut = line[:width]
-    space = cut.rfind(" ")
-    return (cut[:space] if space >= 0 else cut) + " …"
+    """bytewise.clip of a gate's UTF-8 text: a line past width cut at its last space within it, then ' …'."""
+    return bytewise.clip(line, width, "…")
 
 
 def zero_tests(content: str) -> str:

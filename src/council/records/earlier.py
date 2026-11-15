@@ -48,13 +48,6 @@ def deliverables(home: str) -> list[str]:
     return found
 
 
-def clip(text: str) -> str:
-    """A line cut to 120 characters (bytes) at a space, with an ellipsis."""
-    if len(text) <= 120:
-        return text
-    return re.sub(r" [^ ]*\Z", "", text[:120], count=1, flags=re.S) + " " + bytewise.ELLIPSIS
-
-
 def hits(home: str, paths: list[str]) -> list[str]:
     """For each deliverable, each path it names (tab-separated: the path, <folder>/<file>:<line>, the line clipped),
     else whose areas cover it (the path, <folder>/<file>, "(its areas cover <item>)"). paths are C-locale text."""
@@ -121,7 +114,7 @@ class Reader:
             while at >= 0:
                 after = s0[at + len(path):at + len(path) + 2]
                 if self.boundary(s0, at) and not _AFTER.match(after):
-                    hit[i] = where_at + "\t" + clip(line.lstrip(" \t"))
+                    hit[i] = where_at + "\t" + bytewise.clip(line.lstrip(" \t"), 120)
                     break
                 at = s0.find(path, at + 1)
 

@@ -65,6 +65,16 @@ def upper(s: str) -> str:
     return s.translate(_UPPER)
 
 
+def clip(text: str, width: int, dots: str = ELLIPSIS) -> str:
+    """The helper's clip: a line past width cut at its last space within it, then a space and the dots (C-locale
+    text counts bytes and takes the ellipsis's three bytes; a command's own text passes its own "…")."""
+    if len(text) <= width:
+        return text
+    cut = text[:width]
+    space = cut.rfind(" ")
+    return (cut[:space] if space >= 0 else cut) + " " + dots
+
+
 def trim(s: str) -> str:
     """Spaces and tabs off both ends: gsub(/^[ \\t]+|[ \\t]+$/, "")."""
     return s.strip(" \t")
