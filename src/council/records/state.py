@@ -7,13 +7,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Callable, Optional
-
 from council.records import cells, paths
 
 NAME = paths.STATE
 KEY = re.compile(r"[A-Za-z][A-Za-z0-9-]*")
-Reader = Callable[[Path], Optional[str]]
 
 
 def path(run: Path) -> Path:
@@ -21,13 +18,8 @@ def path(run: Path) -> Path:
     return Path(run) / NAME
 
 
-def text(run: Path, read: Reader | None = None) -> str:
-    """The state file's text: by default the guarded read (a link, a file outside the run, one over
-    4 MB or a missing one reads as ''); `read` gives a caller's own policy, such as one that refuses."""
-    run = Path(run)
-    if read is None:
-        return paths.text_of(path(run), run)
-    return read(path(run)) or ""
+def text(run: Path, read: paths.Reader | None = None) -> str:
+    return paths.run_text(run, NAME, read)
 
 
 def header(content: str, exact_keys: bool = False, comments: bool = True) -> dict[str, str]:

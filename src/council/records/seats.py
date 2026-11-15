@@ -24,8 +24,7 @@ def path(run: Path, name: str = SEATS) -> Path:
 
 
 def _rows(run: Path, name: str, limit: int) -> list[dict[str, str]]:
-    run = Path(run)
-    return cells.tsv_rows(paths.text_of(path(run, name), run, limit))
+    return cells.tsv_rows(paths.run_text(run, name, limit=limit))
 
 
 def rows(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:

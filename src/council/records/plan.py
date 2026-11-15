@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from council.records import cells, paths
 
 NAME = "run-plan.tsv"
-Reader = Callable[[Path], Optional[str]]
 
 
 def path(run: Path) -> Path:
@@ -16,18 +15,13 @@ def path(run: Path) -> Path:
     return Path(run) / NAME
 
 
-def text(run: Path, read: Reader | None = None) -> str:
-    """The plan's text, by the guarded read unless `read` gives a caller's own policy."""
-    run = Path(run)
-    if read is None:
-        return paths.text_of(path(run), run)
-    return read(path(run)) or ""
+def text(run: Path, read: paths.Reader | None = None) -> str:
+    return paths.run_text(run, NAME, read)
 
 
 def rows(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
     """The plan's rows as dicts keyed by its header line ("#" comments skipped)."""
-    run = Path(run)
-    return cells.tsv_rows(paths.text_of(path(run), run, limit))
+    return cells.tsv_rows(paths.run_text(run, NAME, limit=limit))
 
 
 def selected(run: Path, slug: str) -> bool:

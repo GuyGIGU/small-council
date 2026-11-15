@@ -1,13 +1,13 @@
 """events.tsv: the run's append-only event stream (references/run/event-stream.md).
 
-Seven tab-separated cells a row: schema, seq, at, type, subject, value, detail. `append` is the helper's
-event_append, under the same lock, so a Python writer and a bash writer never share a sequence number.
+Seven tab-separated cells a row: schema, seq, at, type, subject, value, detail. `append` writes under
+the stream's lock, so two writers never share a sequence number.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Callable, NamedTuple, Optional
+from typing import NamedTuple
 
 from council import clock
 from council.records import bytewise, cells, locks, owners, paths, state
@@ -15,7 +15,6 @@ from council.records import bytewise, cells, locks, owners, paths, state
 NAME = "events.tsv"
 COLUMNS = ("schema", "seq", "at", "type", "subject", "value", "detail")
 HEADER = "\t".join(COLUMNS)
-Reader = Callable[[Path], Optional[str]]
 
 
 class EventError(paths.RecordError):
@@ -47,11 +46,10 @@ def table(run: Path, limit: int = paths.MAX_FILE) -> Table:
 
 def records(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
     """The stream's rows as dicts keyed by its own header line ("#" and blank lines skipped)."""
-    run = Path(run)
-    return cells.tsv_rows(paths.text_of(path(run), run, limit))
+    return cells.tsv_rows(paths.run_text(run, NAME, limit=limit))
 
 
-def strict_rows(run: Path, read: Reader) -> list[dict[str, object]]:
+def strict_rows(run: Path, read: paths.Reader) -> list[dict[str, object]]:
     """Every row, refusing a stream without the v1 header or with any row out of sequence (the repair
     loop trusts a gate's record only from a whole stream). `read` returns the file's text."""
     lines = cells.lines_of(re.sub(r"\n\Z", "", read(path(run)) or ""))   # on newline only: a cell may hold U+2028

@@ -6,11 +6,12 @@ import os
 import stat
 import time
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Callable, Optional
 
 MAX_FILE = 4 * 1024 * 1024
 BOM = chr(0xFEFF)
 STATE = "session-state.md"
+Reader = Callable[[Path], Optional[str]]   # a caller's own read policy, such as one that refuses
 
 
 class RecordError(Exception):
@@ -118,6 +119,13 @@ def text_of(path: str | Path, root: str | Path | None = None, limit: int = MAX_F
         return data.decode("utf-8", errors=errors).lstrip(BOM)
     except UnicodeError:
         return ""
+
+
+def run_text(run: Path, name: str, read: Reader | None = None, limit: int = MAX_FILE) -> str:
+    """A run file's text by the guarded read (a link, a file outside the run, one over limit or a missing
+    one reads as ''), unless `read` gives a caller's own policy."""
+    file = Path(run) / name
+    return text_of(file, run, limit) if read is None else read(file) or ""
 
 
 def too_large(path: str | Path, limit: int = MAX_FILE) -> bool:
