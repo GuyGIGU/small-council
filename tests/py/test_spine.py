@@ -105,11 +105,22 @@ class StagesTest(Spine):
         self.assertTrue(stages.name_ok("a-b", "test-architect") and not stages.name_ok("a-b", "council-review"))
 
 
+CARD = ("show the user its %s now, once: hand the output of `council status --widget%s` to a show_widget tool (it may "
+        "be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s` — "
+        "and if the card fails to render, give that text and carry on")
+
+
 class NudgeTest(Spine):
-    def bash(self, when: str, named: bool = False, follow: str = "") -> str:
-        out = support.helper_bash(self, 'RUN_ARG="$2" FOLLOW="$3" status_nudge "$1" "$4" 2>&1', self.run.as_posix(),
-                                  "x" if named else "", follow, when)[1]
-        return out.decode("utf-8")
+    def said(self, when: str, named: bool = False, follow: str = "") -> str:
+        """What bin/council's status_nudge said."""
+        at = " --run " + self.run.name if named or when == "close" else ""
+        if when == "dispatch":
+            return "council: first dispatch of this run — " + CARD % ("status", at, at) + "\n"
+        said = "council: run closed — " + CARD % ("closing card", at, at)
+        if follow:
+            said += ("; and tell them, from the record — %s; then send the owner the line `council status --line%s` "
+                     "prints, once, with a PushNotification tool" % (follow, at))
+        return said + "\n"
 
     def python(self, *args: object) -> str:
         said = io.StringIO()
@@ -121,12 +132,12 @@ class NudgeTest(Spine):
         for when, named, follow, status in (("dispatch", False, "", "in-progress"), ("dispatch", True, "", "x"),
                                             ("close", False, "what was found", "complete"), ("close", True, "", "x")):
             (self.run / "session-state.md").write_text(STATE.replace("in-progress", status))
-            self.assertEqual(self.python(when, named, follow), self.bash(when, named, follow), when)
+            self.assertEqual(self.python(when, named, follow), self.said(when, named, follow), when)
             self.assertEqual(nudges.card_due(self.run), when == "dispatch")
             (self.run / "card-due").unlink() if when == "dispatch" else None
         (self.tmp / ".council" / "council.config.md").write_text("- notifications: off\n")
         (self.run / "session-state.md").write_text(STATE.replace("in-progress", "complete"))
-        self.assertEqual(self.python("close", False), self.bash("close"))
+        self.assertEqual(self.python("close", False), self.said("close"))
 
     def test_the_card_due_mark(self) -> None:
         self.assertFalse(nudges.card_due(self.run))

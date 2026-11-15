@@ -34,13 +34,14 @@ TEXTS = {
     "postgame": read("skills", "council-postgame", "SKILL.md"),
     "war-room": read("references", "run", "war-room.md"),
     "guardrails": read("references", "guardrails.md"),
-    "helper": read("bin", "council"),
+    "helper": "\n".join(read("src", "council", "commands", f)       # bin/council starts these
+                        for f in sorted(os.listdir(os.path.join(ROOT, "src", "council", "commands"))) if f.endswith(".py")),
 }
 FLAT = {k: " ".join(v.split()) for k, v in TEXTS.items()}
 
 RULES = [  # (where, the rule, the phrase that carries it)
     ("helper", "nothing checked is never a pass", "NOTHING WAS CHECKED"),
-    ("helper", "the verdict line names pass, FAIL and skipped", "$passed pass, $nfail FAIL"),
+    ("helper", "the verdict line names pass, FAIL and skipped", "%d pass, %d FAIL"),
     ("helper", "a config with no gates is a doctor error", "every council report on this project says NOTHING WAS CHECKED"),
     ("helper", "a build's proof is checked, not trusted", "BEFORE-PASSED"),
     ("implement", "the receipt names the shortcuts taken", "Shortcuts I took:"),

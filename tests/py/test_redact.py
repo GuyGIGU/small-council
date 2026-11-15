@@ -1,10 +1,10 @@
-"""Redaction of the user's words (records/redact.py) against bin/council's redact_copy, which stays for the bash that
-has not moved (state, cap allow, tune, repair): the same bytes out and the same count."""
+"""Redaction of the user's words (records/redact.py): the bytes and the count bin/council's redact_copy gave,
+written out."""
 from __future__ import annotations
 
 import unittest
 
-import support
+import support  # noqa: F401  (puts src/ on the path)
 
 from council.records import redact
 
@@ -28,27 +28,22 @@ LINES = [
 ]
 
 
-class SameAsTheHelperTest(support.Scratch):
-    def helper(self, data: bytes) -> tuple[bytes, int]:
-        src = self.write("said.raw", data, binary=True).as_posix()
-        dst = (self.tmp / "said").as_posix()
-        code, out = support.helper_bash(self, 'redact_copy "$1" "$2"', src, dst)
-        self.assertEqual(code, 0)
-        return (self.tmp / "said").read_bytes(), int(out or b"0")
+SAID = [LINES[0], "Key: [redacted] · token=[redacted] · café", 'password: [redacted] and PASSWORD="[redacted]"',
+        "my db password is [redacted]", "api_key = '[redacted]'", *LINES[5:8], "a passphrase: [redacted]",
+        "Authorization: Bearer [redacted]", "[redacted private key]", *LINES[13:15],
+        "AWS: aws_secret_access_key=[redacted]"]
 
-    def assert_same(self, data: bytes) -> tuple[bytes, int]:
-        python = redact.redact(data)
-        self.assertEqual(self.helper(data), python)
-        return python
 
+class SameAsTheHelperTest(unittest.TestCase):
     def test_the_whole_text_with_crlf_and_no_final_newline(self) -> None:
-        """Redaction goes line by line, so one text holds every shape."""
+        """Redaction goes line by line, so one text holds every shape: what bin/council's redact_copy wrote, and
+        its count, for the text with LF, with CR LF and with no final newline."""
         text = "\n".join(LINES).encode("utf-8") + b"\ncaf\xe9 (a stray byte) token=ghp_abcdefghijklmnopqrstuvwxyz1234"
-        out, count = self.assert_same(text + b"\n")
-        self.assertGreaterEqual(count, 6)
-        self.assertIn(b"caf\xe9 (a stray byte)", out)
-        self.assert_same(text.replace(b"\n", b"\r\n") + b"\r\n")
-        self.assert_same(text)
+        said = "\n".join(SAID).encode("utf-8") + b"\ncaf\xe9 (a stray byte) token=[redacted]"
+        self.assertEqual(redact.redact(text + b"\n"), (said + b"\n", 11))
+        crlf = text.replace(b"\n", b"\r\n") + b"\r\n"
+        self.assertEqual(redact.redact(crlf), (said.replace(b"\n", b"\r\n") + b"\r\n", 11))
+        self.assertEqual(redact.redact(text), (said, 11))
 
 
 class RedactTest(unittest.TestCase):
