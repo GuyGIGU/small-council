@@ -5821,6 +5821,13 @@ def check_just_me_hygiene(tmp):
     places = [l.split("  ")[1] for l in out.splitlines() if l.startswith("hygiene  ") and "  " in l[9:]]
     check("check (just me): a build with no recorded start reads only uncommitted work and the PR body, and says so",
           code == 1 and "no recorded start" in out and sorted(places) == ["NOTES.md:2", "PR body pr-body.md:2"], out)
+    write(state, re.sub(r"(?m)^(opened: \S+ \d\d:\d\d):\d\d$", r"\1", read(state)))     # an older helper's stamp
+    code, out, err = council(repo, "check")
+    places = [l.split("  ")[1] for l in out.splitlines() if l.startswith("hygiene  ") and "  " in l[9:]]
+    check("check (just me): a run whose opened: has no seconds still counts only the untracked files newer than "
+          "the run — the hour-old note is not the build's",
+          code == 1 and sorted(places) == ["NOTES.md:2", "PR body pr-body.md:2"] and "opened: " in read(state)
+          and not re.search(r"(?m)^opened: .*:\d\d:\d\d$", read(state)), out)
     write(cfg, "# Council config — hygiene\n\n## Run preferences\n- sharing: team\n")
     code, out, err = council(repo, "check")
     check("check (team): a team council may cite its files, so nothing is scanned and the check passes",
