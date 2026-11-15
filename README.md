@@ -160,7 +160,7 @@ On **just me**, all of `.council/` stays local.
 
 - `council doctor` finds drift (a moved file, a check that can't run) and says how to fix each item.
 - Your requests are saved in `.council/asks/`, which git ignores.
-- The status card, live terminal view, council pane and desktop pet need Python 3.8+. Everything else
+- The status card and the council pane need Python 3.8+. Everything else
   is bash 3.2. The pane and the line above the prompt are a Claude Code mod (Claude Code 2.1.287 or
   later; the desktop app from 2.1.286): they show in the terminal, the desktop app and VS Code, and
   never in `claude -p`.

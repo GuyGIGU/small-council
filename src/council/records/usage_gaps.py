@@ -1,5 +1,5 @@
-"""Seats that were real agent runs but have no token figure: the one rule `council run close`'s audit, the
-status card's reader and `council tune`'s note share, over the per-seat figures of usage.py.
+"""Seats that were real agent runs but have no token figure: the one rule `council run close`'s audit and the
+status card's reader share, over the per-seat figures of usage.py.
 
 A seat is a gap when its agent ran (it is executed and its agent count is not declared zero) and its tokens
 carry no trusted figure: a finished run with no usage report, a seat with no agent on record, or a figure no
@@ -49,25 +49,3 @@ def words(gaps: list[dict[str, Any]], most: int = 6) -> str:
     """The gaps as one line: each seat with its reason, the rest counted."""
     shown = ["%s (%s)" % (gap["seat"], gap["why"]) for gap in gaps[:most]]
     return "; ".join(shown) + ("; and %d more" % (len(gaps) - most) if len(gaps) > most else "")
-
-
-def left_out(snapshots: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    """What a measure over completed runs leaves out for want of a token figure: the seats and the runs
-    they were in, and how many seats for each kind of gap (cockpit snapshots, each with its seats and plan)."""
-    seats, runs, kinds = 0, 0, {}
-    for snap in snapshots:
-        roles = {slug: fields.get("role") for slug, fields in snap["plan"].get("seats", {}).items()}
-        gaps = unfigured(snap["seats"], skip=chairs(roles))
-        seats, runs = seats + len(gaps), runs + bool(gaps)
-        for gap in gaps:
-            kinds[gap["kind"]] = kinds.get(gap["kind"], 0) + 1
-    return {"seats": seats, "runs": runs, "kinds": dict(sorted(kinds.items()))}
-
-
-def note(gone: dict[str, Any]) -> list[str]:
-    """The one line `council tune` says when seats were left out of its measurement, else nothing."""
-    if not gone["seats"]:
-        return []
-    kinds = ", ".join("%d %s" % (n, kind) for kind, n in gone["kinds"].items())
-    said = "left out of the measurement: %d seat(s) in %d completed run(s) ran as agents with no token figure (%s)"
-    return [said % (gone["seats"], gone["runs"], kinds) + "; council run audit --run <run> names each"]

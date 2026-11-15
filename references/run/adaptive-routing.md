@@ -102,10 +102,9 @@ budget are optimal.
 Earlier project docs give a no-history estimate of roughly 60–100k tokens per worker, with past
 runs described as averaging around 100k. The route estimate uses that range for planning; it is
 not a measured Phase 3 efficiency gain. Reliable per-task cost and effectiveness data are not yet
-available, so the routing policy is heuristic. The measured inputs it takes are an `estimate per
+available, so the routing policy is heuristic. The inputs it takes are an `estimate per
 worker` line and an `- estimates:` line (`review=`, `plan=`, `builder=`, `verifier=`, `converge=`) in
-`council.config.md`, which `council tune` proposes once five completed runs measure them and the user
-approves; only a ceiling the user gives shrinks a run. With `--mode`, the mode's workers are budgeted at
+`council.config.md`, which the user edits by hand; only a ceiling the user gives shrinks a run. With `--mode`, the mode's workers are budgeted at
 their role's figure (review, plan, builder) and its verifiers at the verifier's (converge in a build),
 each falling back to `estimate per worker`; the `estimated-tokens` reason names the figures used. A
 builder costs several times a review seat, which one figure for every agent cannot show.

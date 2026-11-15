@@ -28,10 +28,7 @@ class CellsTest(unittest.TestCase):
         self.assertEqual(cells.leading(""), 0)
         self.assertEqual(cells.leading("\r5"), 0)
 
-    def test_number_and_optional_number(self) -> None:
-        self.assertEqual(cells.number(" 42 "), 42)
-        self.assertEqual(cells.number(""), 0)
-        self.assertEqual(cells.number("x"), 0)
+    def test_optional_number(self) -> None:
         self.assertIsNone(cells.optional_number(""))
         self.assertIsNone(cells.optional_number(None))
         self.assertEqual(cells.optional_number("0"), 0)

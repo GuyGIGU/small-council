@@ -48,11 +48,7 @@ SUITES = [
     ("Repair loop evals", ["evals/run_repair.py"], "shared"),
     ("Memory evals", ["evals/run_memory.py"], "shared"),
     ("Seat learning evals", ["evals/run_seats.py"], "shared"),
-    ("Run cockpit evals", ["evals/run_tui.py"], "alone"),     # a rename race and a watcher's timing
     ("Status and accounting evals", ["evals/run_status.py"], "shared"),
-    ("Run history evals", ["evals/run_history.py"], "shared"),
-    ("Finding outcomes evals", ["evals/run_outcomes.py"], "shared"),
-    ("Tuning evals", ["evals/run_tune.py"], "shared"),
     ("Run audit evals", ["evals/run_audit.py"], "shared"),
     ("Benchmark harness self-test (no model calls)", ["evals/bench.py", "self-test"], "shared"),
     ("Repair drill trace checker self-test (no model calls)",
@@ -70,8 +66,8 @@ NO_COUNT = {"scripts/quick_validate.py", "evals/run_phrases.py"}
 # Every group of the helper and hook evals takes minutes, so none is here.
 FAST = {"Validate plugin", "Structural evals", "Ratchet (sizes and structure only go down)",
         "Ratchet self-test", "Unit tests (tests/py)",
-        "Repair drill trace checker self-test (no model calls)", "Run history evals", "Seat learning evals",
-        "Finding outcomes evals", "Repair loop evals", "Evidence model evals",
+        "Repair drill trace checker self-test (no model calls)", "Seat learning evals",
+        "Repair loop evals", "Evidence model evals",
         "Benchmark harness self-test (no model calls)", "Model routing evals"}
 UNIT_TESTS = ROOT / "tests" / "py"
 

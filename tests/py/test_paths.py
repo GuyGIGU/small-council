@@ -103,18 +103,6 @@ class WriteTest(support.Scratch):
 
 
 class HomeTest(support.Scratch):
-    def test_run_folders_need_a_state_file_and_keep_the_newest(self) -> None:
-        home = self.tmp / ".council"
-        for name in ("2026-01-01-000000-council-plan", "2026-01-02-000000-council-review", "notes"):
-            (home / "runs" / name).mkdir(parents=True)
-        for name in ("2026-01-01-000000-council-plan", "2026-01-02-000000-council-review"):
-            (home / "runs" / name / "session-state.md").write_text("status: done\n")
-        self.assertEqual([p.name for p in paths.run_folders(home)],
-                         ["2026-01-01-000000-council-plan", "2026-01-02-000000-council-review"])
-        self.assertEqual([p.name for p in paths.run_folders(home, 1)], ["2026-01-02-000000-council-review"])
-        self.assertEqual(len(paths.run_folders(home, require_state=False)), 3)
-        self.assertEqual(paths.run_folders(self.tmp / "nowhere"), [])
-
     def test_is_run(self) -> None:
         run = self.run_folder()
         self.assertFalse(paths.is_run(run))

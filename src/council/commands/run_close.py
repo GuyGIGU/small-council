@@ -74,7 +74,7 @@ def _close(run: Path, status: str, lost: str, retake: bool, real: bool) -> None:
         cli.warn("council: seats still marked running or queued: %s — their results will not be collected; wait for "
                  "them, or record each (council seat <slug> failed or skipped) before closing" % busy)
     close_report.claims_note(run)
-    codes, follow = _complete(run, home) if status == "complete" else ("", "")
+    codes = _complete(run, home) if status == "complete" else ""
     if real:
         t = totals["tokens"]
         detail = "agent_runs=%d;reported=%d;tokens=%d;basis=%s" % (
@@ -84,11 +84,11 @@ def _close(run: Path, status: str, lost: str, retake: bool, real: bool) -> None:
             event_note.append(run, "run.paused" if status == "paused" else "run.closed", "run", status,
                               detail + (";warnings=" + codes if codes else ""), "the run is closed, but its close "
                               "event could not be recorded — council run events check --run " + run.name)
-        nudges.status_nudge(run, "close", True, follow)
+        nudges.status_nudge(run, "close", True)
 
 
-def _complete(run: Path, home: str) -> tuple[str, str]:
-    """A complete close's warnings, ledger rows, request and build log: (warning codes, follow-up line)."""
+def _complete(run: Path, home: str) -> str:
+    """A complete close's warnings, ledger rows, request and build log: the warning codes."""
     found = closing.warnings(run)
     for _, line in found:
         cli.warn("council: " + line)
@@ -98,11 +98,10 @@ def _complete(run: Path, home: str) -> tuple[str, str]:
     mode = resolve.field(run, "mode")
     if mode in closing.MODES and not resolve.field(run, "ask-saved"):
         cli.warn("council: no request was filed for this run — council ask save --run " + run.name)
-    follow = close_report.follow_up(home)
     log = closing.build_log(run, home) if mode == "council-implement" else ""
     if log:
         cli.warn("council: " + log)
-    return ",".join(code for code, _ in found), follow
+    return ",".join(code for code, _ in found)
 
 
 def _empty_pointer(home: str, run: Path) -> None:

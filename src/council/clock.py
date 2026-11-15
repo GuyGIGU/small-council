@@ -18,16 +18,6 @@ def now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def event_clock(stamp: str) -> str:
-    """An event's UTC time ('2026-09-30T10:14:16Z') as local HH:MM:SS; its own characters 11-19 when it
-    does not parse."""
-    try:
-        moment = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-        return moment.astimezone().strftime("%H:%M:%S")
-    except (ValueError, OverflowError, OSError):
-        return stamp[11:19]
-
-
 def utc_moment(text: str | None) -> datetime | None:
     """The helper's UTC stamp ('2026-09-30T10:14:16Z') as an aware time, or None."""
     try:

@@ -46,7 +46,7 @@ def check(name, good, detail=""):
 
 def council(repo, *args, timeout=120):
     env = os.environ.copy()
-    for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID", "COUNCIL_ASCII"):
+    for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID"):
         env.pop(var, None)
     env.update(GIT_AUTHOR_NAME="eval", GIT_AUTHOR_EMAIL="eval@example.invalid",
                GIT_COMMITTER_NAME="eval", GIT_COMMITTER_EMAIL="eval@example.invalid")
@@ -634,7 +634,7 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("Token figures: the Chair's own seat is not an agent run, so no figure is owed", verdict == "pass", words)
     verdict, words = figures("fig-declared", "verify-1\tdone\t\t\t2026-09-30 13:23\t\t0\t0\n")
     check("Token figures: a seat declared agents=0 (the Chair did the work) is no gap", verdict == "pass", words)
-    # Corrected from evidence, a figure is a figure (council correct), as the ledger and the cockpit read it.
+    # Corrected from evidence, a figure is a figure (council correct), as the ledger and the status card read it.
     fixed = run1_copy("fig-corrected")
     write(fixed / "seats.tsv", head + "verify-1\tdone\ta4c08e8e07813e7ee\t\t2026-09-30 13:23\t\t1\t0\n")
     write(fixed / "corrections.jsonl", json.dumps({"seat": "verify-1", "field": "tokens", "to": 94152, "from": "",
@@ -831,13 +831,13 @@ check("graders: status-shown and run-closed exist as tool_used graders on Bash",
 check("graders: a Chair that shows the card at dispatch and after close, and closes, passes both",
       "status-shown" not in failed and "run-closed" not in failed, failed)
 found, failed = graded(trace_rows(["council run open council-review", "council seat hunt running agent=a1",
-                                   "council run status", "council tui"]))
-check("graders: no card at all and no close fails both (run status and tui are not the card)",
+                                   "council run status"]))
+check("graders: no card at all and no close fails both (run status is not the card)",
       "status-shown" in failed and "run-closed" in failed, failed)
 found, failed = graded(trace_rows(["council status"] * 3 + ["council status --widget"] * 4 + ["council run close"]))
 check("graders: a card per progress line (seven) fails status-shown", "status-shown" in failed, failed)
 
-# A suite that checked nothing never passes: without bash and git the five suites that need them
+# A suite that checked nothing never passes: without bash and git the three suites that need them
 # stop at once — exit 3, unless --allow-skip — and run_all.py fails a job that reports no checks.
 with tempfile.TemporaryDirectory(prefix="council-noshell-") as empty:
     env = {"PATH": empty, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"}
@@ -848,7 +848,7 @@ with tempfile.TemporaryDirectory(prefix="council-noshell-") as empty:
         check("no-shell: an empty PATH hides bash and git", False, empty)
     else:
         runs = {}
-        for suite in ("run_cli.py", "run_hook.py", "run_memory.py", "run_tui.py", "run_tune.py"):
+        for suite in ("run_cli.py", "run_hook.py", "run_memory.py"):
             for extra in ([], ["--allow-skip"]):
                 try:
                     done = subprocess.run([sys.executable, str(ROOT / "evals" / suite), *extra], cwd=str(ROOT), env=env,
@@ -872,10 +872,10 @@ def job_result(script, code, output):
 
 
 check("run_all: a suite that exits 0 with no 'N/N checks passed' line, or 0/0, fails; a counted pass passes",
-      job_result("evals/run_tui.py", 0, b"[SKIP] bash or git unavailable\n") == (False, "FAILED (no checks ran)")
-      and not job_result("evals/run_tui.py", 0, b"\n0/0 checks passed\n")[0]
-      and job_result("evals/run_tui.py", 0, b"\n12/12 checks passed\n") == (True, "passed")
-      and job_result("evals/run_tui.py", 1, b"\n11/12 checks passed\n") == (False, "FAILED (exit 1)"))
+      job_result("evals/run_status.py", 0, b"[SKIP] bash or git unavailable\n") == (False, "FAILED (no checks ran)")
+      and not job_result("evals/run_status.py", 0, b"\n0/0 checks passed\n")[0]
+      and job_result("evals/run_status.py", 0, b"\n12/12 checks passed\n") == (True, "passed")
+      and job_result("evals/run_status.py", 1, b"\n11/12 checks passed\n") == (False, "FAILED (exit 1)"))
 check("run_all: only the suites that report their own way are spared the count, and each is on the list",
       run_all.NO_COUNT <= set(args[0] for _, args, _ in run_all.SUITES)
       and job_result("scripts/quick_validate.py", 0, b"validation OK: 0 warning(s)\n")[0])

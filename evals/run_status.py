@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Focused, no-model checks for run accounting and the plain-language status: `council seat`,
-`council correct`, `council status [--widget | --json]`, views/status.py and the cockpit's reading.
+`council correct`, `council status [--widget | --json]`, views/status.py and the run's snapshot.
 
-Three parts:
+Two parts:
 - Accounting, through the helper. A token count is one number, stored as whole tokens. A repeated or
   resumed report never adds twice. A Workflow reports its agent count. Missing and older figures stay
   unknown, never zero. A correction keeps the original and its evidence.
@@ -11,7 +11,6 @@ Three parts:
   unknown). A recovered failure is no current problem. A long run stays compact, and a record never
   reaches the widget unescaped. Reading a run writes nothing. The stop at the limit and the user's go
   read the same on the card as in the helper (`cap_standing`, `council cap`).
-- The desktop pet (`council pet`, views/pet.py), never with a window: CI has no display.
 """
 
 import hashlib
@@ -30,11 +29,9 @@ BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 GIT = shutil.which("git")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(ROOT / "src"))
-from council.views import cockpit, cockpit_screen, history, status, status_closing, status_usage, words  # noqa: E402
-from council.views import pet, pet_shapes  # noqa: E402  (the desktop pet: imported without a display, as CI has none)
-ENTRY = ROOT / "src" / "council" / "commands" / "script.py"
+from council.views import snapshot, status, status_closing, status_usage, words  # noqa: E402
 sys.path.insert(0, str(ROOT / "src"))
-from council.commands import seat_notes, shell  # noqa: E402  (the helper's own code, where bash once was sourced)
+from council.commands import seat_notes  # noqa: E402  (the helper's own code, where bash once was sourced)
 from council.records import ledger as helper_ledger, state as helper_state, usage as helper_usage  # noqa: E402
 from council.records import seats as helper_seats  # noqa: E402
 
@@ -52,7 +49,7 @@ SKIP = "skip=this test is about what comes after Deliver"     # a run closes com
 
 def council(repo, *args, timeout=90):
     env = os.environ.copy()
-    for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID", "COUNCIL_ASCII"):
+    for var in ("COUNCIL_RUN", "CLAUDE_CODE_SESSION_ID"):
         env.pop(var, None)
     if os.environ.get("COUNCIL_EVAL_BASH"):
         env["PATH"] = str(Path(BASH).parent) + os.pathsep + env.get("PATH", "")
@@ -93,7 +90,7 @@ def readers(repo, run):
                           else totals["agents"]["at_least"], totals["tokens"]["known"])
     listed = helper_usage.seat_list(run)
     bash_seats, bash_run = seen(listed, helper_usage.usage_totals(listed))
-    snap = cockpit.snapshot(run, None, 8)
+    snap = snapshot.snapshot(run, None, 8)
     return (bash_seats, bash_run) + seen(snap["seats"], snap["usage"])
 
 
@@ -148,7 +145,7 @@ def make_run(base, name, status_value="in-progress", phase="work", seats=(), gat
 
 
 def reading(run, **kw):
-    return status.interpret(cockpit.snapshot(run, None, 40), NOW, **kw)
+    return status.interpret(snapshot.snapshot(run, None, 40), NOW, **kw)
 
 
 def v2(slug, state, tokens, runs, reported, minutes=5, note=""):
@@ -189,45 +186,39 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           r["state"]["key"] == "failing" and any(a["kind"] == "failure" and "lint" in a["text"] for a in r["attention"]),
           (r["state"], r["attention"]))
     plain, card = status.text(r), status.widget(r)
-    frame = cockpit.render(cockpit.snapshot(base / ".council" / "runs" / "failing", None, 8), reading=r)
     check("status: a failing check is said once — the label, then the stage; the attention line names the check "
           "(a real run read 'A check is failing. A check failed.')",
           plain.splitlines()[1] == "Status: A check is failing. Stage: Experts at work (stage 5 of 10)."
-          and "Needs you: Check lint failed" in plain and "A check failed" not in plain + card + frame
+          and "Needs you: Check lint failed" in plain and "A check failed" not in plain + card
           and card.count("A check is failing") == 2       # the screen-reader line and the badge, nothing under it
           and re.search(r'<h2 class="sr">[^<]*: A check is failing\. Seats:', card) is not None
-          and "  Status: A check is failing" in frame.splitlines()[2:3]
           and status.notification_line(r).endswith("council: A check is failing."),
-          (plain, card[:900], frame, status.notification_line(r)))
-    check("pet: a failing check still has its own short line",
-          pet.view({"kind": "status", "status": json.loads(json.dumps(r))})[1] == "A check failed",
-          pet.view({"kind": "status", "status": json.loads(json.dumps(r))}))
+          (plain, card[:900], status.notification_line(r)))
     r = reading(make_run(base, "failing-busy", seats=[v2("hunt", "running", "", 1, 0, 3)], gates=[("lint", 1, 10)]))
     check("status: a failing check with a seat at work still says who is working",
           status.text(r).splitlines()[1].startswith("Status: A check is failing. Working now: ") and
           "Hunt" in r["state"]["summary"], status.text(r))
 
     # --- the next step: the one written at run open is Convene's, and stale once the run has left it ------
-    default_next = "next: {}\n".format(cockpit.NEXT_AT_OPEN)
+    default_next = "next: {}\n".format(snapshot.NEXT_AT_OPEN)
     at_open = make_run(base, "next-at-convene", phase="convene", extra_state=default_next)
     late = make_run(base, "next-late", phase="learn", seats=[v2("beck", "done", 50000, 1, 1)], extra_state=default_next)
     own = make_run(base, "next-own", phase="learn", seats=[v2("beck", "done", 50000, 1, 1)],
                    extra_state="next: send the report to the owner\n")
     views = {}
     for name, folder in (("open", at_open), ("late", late), ("own", own)):
-        snap = cockpit.snapshot(folder, None, 8)
+        snap = snapshot.snapshot(folder, None, 8)
         r = reading(folder)
-        views[name] = (r["progress"]["next"], status.text(r), status.widget(r), cockpit.render(snap, reading=r),
-                       snap["run"]["next"])
+        views[name] = (r["progress"]["next"], status.text(r), status.widget(r), snap["run"]["next"])
     check("next: the step written at run open shows while the run is still at convene",
-          views["open"][0] == cockpit.NEXT_AT_OPEN and all("Next:" in v for v in views["open"][1:4]), views["open"][:2])
-    check("next: past convene that open-time step is never shown — not in the data, the summary, the card or the "
-          "terminal view (a real run read 'Next: size the run…' at stage 10 of 10)",
-          views["late"][0] == "" and views["late"][4] == ""
-          and not any("Next:" in v or "size the run" in v for v in views["late"][1:4]), views["late"][:2])
+          views["open"][0] == snapshot.NEXT_AT_OPEN and all("Next:" in v for v in views["open"][1:3]), views["open"][:2])
+    check("next: past convene that open-time step is never shown — not in the data, the summary or the card "
+          "(a real run read 'Next: size the run…' at stage 10 of 10)",
+          views["late"][0] == "" and views["late"][3] == ""
+          and not any("Next:" in v or "size the run" in v for v in views["late"][1:3]), views["late"][:2])
     check("next: a step the Chair recorded still shows past convene",
           views["own"][0] == "send the report to the owner"
-          and all("send the report to the owner" in v for v in views["own"][1:4]), views["own"][:2])
+          and all("send the report to the owner" in v for v in views["own"][1:3]), views["own"][:2])
 
     rec = [{"task": "T2", "gate": "tests", "attempt": 1, "result": "failed", "category": "TEST_FAILURE",
             "action": "builder-diagnose"}]
@@ -300,7 +291,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("closing card: unfiled paths never read arbitrary files", reading(closed)["closing"]["request"] ==
           "No filed request recorded.")
 
-    original_claims = read(closed / "claims.jsonl")             # put back below: the pet reads this run later
+    original_claims = read(closed / "claims.jsonl")             # put back below
 
     def closing_claims(rows):
         write(closed / "verify-1.md", "# Verification\n")      # the index is current only while its sources exist
@@ -379,7 +370,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     legacy = make_run(base, "legacy", seats=[("hunt", "done", "verifier", "160", local(5)[:16], "", "1"),
                                              ("beck", "done", "", "201000", local(4)[:16], "", "1")],
                       seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents")
-    snap = cockpit.snapshot(legacy, None, 8)
+    snap = snapshot.snapshot(legacy, None, 8)
     r = status.interpret(snap, NOW)
     check("tokens: an older record's figures are never totalled — its units were never checked",
           snap["usage"]["tokens"]["total"] is None and r["usage"]["basis"] == "legacy"
@@ -388,22 +379,22 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           and r["usage"]["agent_runs_text"].startswith("at least 2"), r["usage"])
     edge = make_run(base, "edge", status_value="complete", seats=[v2("hunt", "done", 1000, 1, 1)])
     check("tokens: exactly 1,000 is a real count to the reader, not suspect",
-          cockpit.snapshot(edge, None, 8)["usage"]["tokens"]["basis"] == "complete")
+          snapshot.snapshot(edge, None, 8)["usage"]["tokens"]["basis"] == "complete")
     suspect = make_run(base, "suspect", status_value="complete", seats=[v2("hunt", "done", 160, 1, 1), v2("beck", "done", 50000, 1, 1)])
-    snap = cockpit.snapshot(suspect, None, 8)
+    snap = snapshot.snapshot(suspect, None, 8)
     check("tokens: a count under a thousand for an agent run is suspect, not a total",
           snap["usage"]["tokens"]["basis"] == "suspect" and snap["usage"]["tokens"]["total"] is None
           and snap["usage"]["tokens"]["suspect_seats"] == ["hunt"], snap["usage"])
     partial = make_run(base, "partial", status_value="complete",
                        seats=[v2("hunt", "done", 50000, 2, 1), v2("beck", "done", "", 1, 0)])
-    snap = cockpit.snapshot(partial, None, 8)
+    snap = snapshot.snapshot(partial, None, 8)
     r = status.interpret(snap, NOW)
     check("tokens: missing usage reports make the total a lower bound, and say how many",
           snap["usage"]["tokens"]["basis"] == "partial" and snap["usage"]["tokens"]["missing_runs"] == 2
           and r["usage"]["text"].startswith("at least 50k"), (snap["usage"], r["usage"]["text"]))
     whole = make_run(base, "whole", status_value="complete",
                      seats=[v2("hunt", "done", 50000, 1, 1), v2("verify-1", "done", 4625154, 38, 38)])
-    snap = cockpit.snapshot(whole, None, 8)
+    snap = snapshot.snapshot(whole, None, 8)
     check("tokens: every agent run reported → an exact total, split workers from verifiers, with the exact run count",
           snap["usage"]["tokens"]["total"] == 4675154 and snap["usage"]["tokens"]["verifiers"] == 4625154
           and snap["usage"]["agents"]["total"] == 39, snap["usage"])
@@ -413,7 +404,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         {"schema": 1, "seat": "beck", "field": "tokens", "from": "201000", "to": 200958, "evidence": "transcript B L951"},
         {"schema": 1, "seat": "beck", "field": "agents", "from": "1", "to": 1, "evidence": "transcript B L868"},
         {"schema": 1, "seat": "beck", "field": "tokens", "from": "201000", "to": 99, "evidence": ""})))
-    snap = cockpit.snapshot(legacy, None, 8)
+    snap = snapshot.snapshot(legacy, None, 8)
     check("corrections: evidence-backed figures lay over an older record and make its totals exact; one without evidence is ignored",
           snap["usage"]["tokens"]["total"] == 361318 and snap["usage"]["agents"]["total"] == 2
           and sorted(snap["usage"]["tokens"]["corrected_seats"]) == ["beck", "hunt"], snap["usage"])
@@ -570,184 +561,6 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "over": True, "stopped": False, "text": go6}, lim["go covers, over"]["usage"]["limit"])
     check("stop: reading the stop and the go writes nothing", fingerprint(stopbase) == before)
 
-    # --- the desktop pet (views/pet.py) — no window: CI has no display ----------------------------------------
-    check("pet: views/pet.py imports without a display, and without loading tkinter", "tkinter" not in sys.modules)
-    boxes, marks = {}, {}
-    for pose in pet.POSES:
-        steps = pet_shapes.shapes(pose)
-        pts = [p for s in steps if s[0] in ("polygon", "line") for p in s[1]]
-        pts += [(s[1][0] + dx * s[1][2], s[1][1] + dy * s[1][2]) for s in steps if s[0] == "oval" for dx, dy in ((-1, -1), (1, 1))]
-        boxes[pose] = tuple(round(f(p[i] for p in pts), 1) for i, f in ((0, min), (1, min), (0, max), (1, max)))
-        marks[pose] = (sorted(s[2] for s in steps if s[0] == "text"), sum(1 for s in steps if s[0] == "oval"))
-    body = pet_shapes.path_points(pet_shapes.BODY)
-    half_moon = pet_shapes.path_points("M31 49 h14 a7 7 0 0 1 -14 0 Z")[0][0]
-    check("pet: the design's paths are sampled into shapes of the same extent — the body 20..80 by 20..88, a "
-          "half-moon eye below its line, everything inside the 100 x 100 box",
-          len(body) == 1 and body[0][1] and tuple(round(f(p[i] for p in body[0][0]), 1) for i, f in (
-              (0, min), (1, min), (0, max), (1, max))) == (20.0, 20.0, 80.0, 88.0)
-          and min(p[1] for p in half_moon) == 49.0 and round(max(p[1] for p in half_moon), 1) == 56.0
-          and all(0 <= b[0] and 0 <= b[1] and b[2] <= 100 and b[3] <= 100 for b in boxes.values()), (boxes, body[0][0][:4]))
-    check("pet: each pose keeps its marks — 'z z' asleep, two eyes with no pupils and the '?' badge needing you, "
-          "five confetti dots when done",
-          marks == {"asleep": (["z", "z"], 0), "working": ([], 0), "needs-you": (["?"], 3), "stopped": ([], 0),
-                    "done": ([], 5)}, marks)
-    check("pet: no brown face lines in any pose — the cream outline is enough",
-          not any(step[0] == "line" and step[2].upper() == "#993C1D" for pose in pet.POSES for step in pet_shapes.shapes(pose)))
-
-    def pet_view(folder):
-        return pet.view({"kind": "status", "status": json.loads(json.dumps(reading(folder)))})
-
-    runs_at = base / ".council" / "runs"
-    seen = {"no go": pet_view(stops["no go"]), "go covers": pet_view(stops["go covers"]),
-            "ceiling": pet_view(stops["ceiling"]), "waiting": pet_view(runs_at / "waiting"),
-            "blocked": pet_view(runs_at / "blocked"), "running": pet_view(runs_at / "running"),
-            "done": pet_view(closing_base / ".council" / "runs" / "closing"), "paused": pet_view(runs_at / "paused"),
-            "abandoned": pet_view(runs_at / "abandoned"), "stale": pet_view(runs_at / "stale"),
-            "unreadable": pet_view(runs_at / "broken"), "no run": pet.view({"kind": "none"}),
-            "error": pet.view({"kind": "error", "note": "Can't read the run right now"}),
-            "garbage": pet.view({"kind": "status", "status": {"run": [], "usage": 3}})}
-    want = {"no go": ("stopped", "4 of 4 agents used · your go?", "warning"),
-            "go covers": ("working", "1 of 1 seats in · 50k", "neutral"),
-            "ceiling": ("stopped", "627k of 600k tokens · your go?", "warning"),
-            "waiting": ("needs-you", "Approve the 3-seat plan (~300k tokens)?", "accent"),
-            "blocked": ("needs-you", "Build stopped · your decision?", "accent"),
-            "running": ("working", "1 of 2 seats in · 50k", "neutral"),
-            "done": ("done", "Review done · 2 findings confirmed", "success"),
-            "paused": ("asleep", "Run paused", "neutral"), "abandoned": ("asleep", "Run stopped early", "neutral"),
-            "stale": ("asleep", "Quiet for 3 h 10 min", "neutral"),
-            "unreadable": ("asleep", "Can't read the run's records", "neutral"),
-            "no run": ("asleep", "No run open", "neutral"), "error": ("asleep", "Can't read the run right now", "neutral"),
-            "garbage": ("asleep", "Can't read the run right now", "neutral")}
-    check("pet: each reading of council status --json gets its pose and bubble — stopped at the limit (Part A's field), "
-          "needs you, working, done, asleep, and a calm fallback for anything unreadable",
-          seen == want, {k: (seen[k], want[k]) for k in want if seen.get(k) != want[k]})
-    long_ask = pet_view(long_wait)
-    check("pet: a long or marked-up question becomes one short plain bubble",
-          long_ask[0] == "needs-you" and len(long_ask[1]) <= 48 and long_ask[1].endswith("…")
-          and not re.search(r"[<>*\n]", long_ask[1]), long_ask)
-    rows = [(Path("r5"), "/elsewhere", "s-other"), (Path("r4"), "/tree", "s-other"), (Path("r3"), "/tree", ""),
-            (Path("r2"), "/elsewhere", "s-me"), (Path("r1"), "", "")]
-    check("pet: it follows the session's run, else this tree's run with no session, else any on this tree",
-          (pet.pick(rows, "/tree", "s-me"), pet.pick(rows, "/tree", "s-new"), pet.pick(rows, "/tree", ""),
-           pet.pick(rows[:1], "/tree", "s-me")) == (Path("r2"), Path("r3"), Path("r4"), None),
-          (pet.pick(rows, "/tree", "s-me"), pet.pick(rows, "/tree", "s-new"), pet.pick(rows, "/tree", "")))
-
-    follow_home = base / "follow" / ".council"
-    write(follow_home / "runs" / "2026-09-27-100000-review" / "session-state.md", "status: in-progress\nsession: s1\n## D\n")
-    canned = [{"run": {"status": "in-progress"}, "state": {"key": "running"}}]
-
-    class Canned(pet.Follower):
-        def helper(self, *words):
-            return 0, json.dumps(canned[0]), ""
-
-    follower = Canned("bash", "council", follow_home, str(base / "follow"), "s1", str(base / "follow"))
-    first = follower.read(now=1000.0)
-    write(follow_home / "runs" / "2026-09-27-100000-review" / "session-state.md", "status: complete\nsession: s1\n## D\n")
-    canned[0] = {"run": {"status": "complete", "mode_label": "Review"}, "state": {"key": "completed"}}
-    shown_done = follower.read(now=1001.0)
-    later = follower.read(now=1001.0 + pet.DONE_SECONDS + 1)
-    check("pet: a finished run stays on show as done for a while, then the pet goes back to sleep",
-          pet.view(first)[0] == "working" and pet.view(shown_done)[0] == "done" and later == {"kind": "none"},
-          (first, shown_done, later))
-
-    def pet_args(*argv):
-        try:
-            opts = pet.parse_args(list(argv))
-            return (opts.pose, opts.demo, opts.still, opts.exit_after)
-        except pet.UsageError as exc:
-            return str(exc)
-    parsed = {argv: pet_args(*argv) for argv in (("--pose", "sleepy"), ("--demo", "--pose", "done"), ("--stop", "--demo"),
-                                                 ("--exit-after", "0"), ("--exit-after", "nan"), ("--exit", "3"),
-                                                 ("--exit-after", "2.5", "--pose", "needs-you", "--still"), ("--demo",))}
-    check("pet: arguments — an unknown pose, --demo with --pose, --stop with anything, a bad --exit-after or an "
-          "abbreviation are refused, each in one line; good ones parse",
-          all(isinstance(parsed[a], str) and "\n" not in parsed[a] for a in list(parsed)[:6])
-          and "asleep, working, needs-you, stopped or done" in parsed[("--pose", "sleepy")]
-          and parsed[("--exit-after", "2.5", "--pose", "needs-you", "--still")] == ("needs-you", False, True, 2.5)
-          and parsed[("--demo",)] == (None, True, False, None), parsed)
-    same = pet.pet_files(base / "proj")["pid"] == pet.pet_files(str(base / "proj") + os.sep)["pid"]
-    check("pet: one pet per project — its files sit in the OS temp folder, keyed by the project path, never in .council/",
-          same and pet.pet_files(base / "proj")["pid"] != pet.pet_files(base / "other")["pid"]
-          and Path(pet.pet_files(base / "proj")["pid"]).parent == Path(tempfile.gettempdir())
-          and ".council" not in pet.pet_files(base / "proj")["pid"], pet.pet_files(base / "proj"))
-
-    fakes = base / "fake-tk"
-    write(fakes / "none" / "tkinter" / "__init__.py", "raise ImportError(\"No module named '_tkinter'\")\n")
-    write(fakes / "headless" / "tkinter" / "__init__.py", "class TclError(Exception):\n    pass\n\n\n"
-          "def Tk(*args, **kwargs):\n    raise TclError('no display name and no $DISPLAY environment variable')\n")
-    plain = {}
-    for kind in ("none", "headless"):
-        env = dict(os.environ, PYTHONPATH=str(fakes / kind))
-        done = subprocess.run([sys.executable, str(ENTRY), "pet", "--launch", "--demo", "--project",
-                               str(base / ("proj-" + kind))], capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", env=env, timeout=60)
-        plain[kind] = (done.returncode, done.stdout, done.stderr.strip())
-    check("pet: no tkinter, or no display — one plain line, exit 1, no traceback, nothing started",
-          plain["none"][0] == 1 and plain["none"][2].startswith("council: the pet needs Python's tkinter")
-          and plain["headless"][0] == 1 and plain["headless"][2].startswith("council: there is no screen")
-          and all(p[1] == "" and "\n" not in p[2] and "Traceback" not in p[2] for p in plain.values())
-          and not pet.running(base / "proj-none"), plain)
-
-    project = base / "proj-held"
-    holder = ("import os, sys, time\nsys.path.insert(0, {scripts!r})\nfrom council.views import pet\n"
-              "files = pet.pet_files({project!r})\nlock = pet.Lock(files['lock'])\nassert lock.take()\n"
-              "open(files['pid'], 'w').write(str(os.getpid()))\nprint('ready', flush=True)\nstart = time.time()\n"
-              "while time.time() - start < 60 and not ({listens} and os.path.exists(files['stop'])):\n    time.sleep(0.05)\n"
-              "os.remove(files['pid'])\nlock.release()\n")
-
-    def hold(listens):
-        proc = subprocess.Popen([sys.executable, "-c", holder.format(scripts=str(ROOT / "src"), project=str(project),
-                                                                        listens=listens)],
-                                stdout=subprocess.PIPE, text=True)
-        proc.stdout.readline()
-        return proc
-
-    gentle = hold(True)
-    held = pet.running(project)
-    again = subprocess.run([sys.executable, str(ENTRY), "pet", "--launch", "--demo", "--project", str(project)],
-                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-    stopped_out = subprocess.run([sys.executable, str(ENTRY), "pet", "--stop", "--project", str(project)],
-                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-    gentle_code = gentle.wait(timeout=10)
-    stubborn = hold(False)
-    forced = pet.stop_pet(project, grace=0.5)
-    stubborn_code = stubborn.wait(timeout=10)
-    none_out = subprocess.run([sys.executable, str(ENTRY), "pet", "--stop", "--project", str(project)],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-    check("pet: while one runs, a second is refused; --stop asks it to close, ends one that doesn't, and says when none "
-          "is open — its lock, pid and stop files cleared",
-          held and again.returncode == 0 and "already on the desktop" in again.stdout
-          and stopped_out.returncode == 0 and stopped_out.stdout.strip() == "The pet is closed." and gentle_code == 0
-          and forced is True and stubborn_code != 0 and not pet.running(project)
-          and none_out.stdout.strip() == "No pet is open for this project."
-          and not os.path.exists(pet.pet_files(project)["pid"]) and not os.path.exists(pet.pet_files(project)["stop"]),
-          (held, again.stdout, again.stderr, stopped_out.stdout, stopped_out.stderr, gentle_code, forced, stubborn_code,
-           none_out.stdout))
-
-    # --- history leaves out what it can't count ------------------------------------------------------------
-    home = base / "hist"
-    for i in range(5):
-        make_run(home.parent / "hist-root", "2026-09-2{}-000000-review".format(i), status_value="complete",
-                 seats=[v2("hunt", "done", 60000, 1, 1), v2("beck", "done", 40000, 1, 1)])
-    make_run(home.parent / "hist-root", "2026-09-19-000000-review", status_value="complete",
-             seats=[("hunt", "done", "", "160", local(5)[:16], "", "1")], seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents")
-    make_run(home.parent / "hist-root", "2026-09-18-000000-review", status_value="complete",
-             seats=[("wf", "done", "a-wf", "2967380", local(5)[:16], "", "1", "")])
-    inexact = make_run(home.parent / "hist-root", "2026-09-17-000000-review", status_value="complete",
-                       seats=[("hunt", "done", "", "160", local(5)[:16], "", "1")],
-                       seats_header="slug\tstate\tagent\ttokens\tupdated\tnote\tagents")
-    write(inexact / "corrections.jsonl", json.dumps({"schema": 1, "seat": "hunt", "field": "tokens", "from": "160",
-                                                     "to": 160360, "evidence": "transcript A L1679"}) + "\n")
-    data = history.history(home.parent / "hist-root" / ".council")
-    check("history: only runs with complete, exact records are costed; the rest are counted and named, never zeroes",
-          data["cost"]["tokens_per_agent"]["enough"] and data["cost"]["tokens_per_agent"]["median"] == 50000
-          and data["cost"]["tokens_per_agent"]["n"] == 5
-          and data["cost"]["left_out"] == {"older records (units never checked)": 2,
-                                           "agent-run count not exact": 1}, data["cost"])
-    check("history: the report says five runs make a figure eligible, not reliable, and lists what was left out",
-          "eligible, not reliable" in history.render(data) and "left out of cost figures" in history.render(data),
-          history.render(data))
-
     # --- the widget --------------------------------------------------------------------------------------
     evil = make_run(base, "evil", seats=[v2("hunt", "running", "", 1, 0, 3,
                                             note='<img src=x onerror="alert(1)"> \x1b[2J</details><script>bad()</script>')],
@@ -780,20 +593,9 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           len(big.encode("utf-8")) < 16 * 1024 and "latest 12 of 120" in big and big.count("<li>") <= 12 + 12 + 5 + 5 + 12,
           len(big.encode("utf-8")))
 
-    # --- the cockpit keeps working ------------------------------------------------------------------------
-    frame = cockpit.render(cockpit.snapshot(legacy, None, 8), reading=status.interpret(cockpit.snapshot(legacy, None, 8), NOW))
-    check("tui: the terminal fallback still draws, with the shared status line on top",
-          "Small Council —" in frame and "Status:" in frame and "Budget:" in frame, frame)
-    old6 = make_run(base, "six-columns", seats=[("hunt", "done", "a1", "74000", local(5)[:16], "")],
-                    seats_header="slug\tstate\tagent\ttokens\tupdated\tnote")
-    try:
-        frame = cockpit.render(cockpit.snapshot(old6, None, 8), reading=reading(old6))
-        ok = "Small Council —" in frame and "74000?" in frame
-    except Exception as exc:  # noqa: BLE001
-        ok, frame = False, repr(exc)
-    check("tui: a six-column record from before agent counting still draws, its figure marked unchecked", ok, frame)
+    # --- the snapshot's records ---------------------------------------------------------------------------
     ghost = make_run(base, "ghost", seats=[v2("hunt", "done", 50000, 1, 1, note="part one part two\x1cthree")])
-    snap = cockpit.snapshot(ghost, None, 8)
+    snap = snapshot.snapshot(ghost, None, 8)
     check("records: a line break inside a note never becomes a seat of its own",
           [s["slug"] for s in snap["seats"]] == ["hunt"], [s["slug"] for s in snap["seats"]])
 
@@ -894,8 +696,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         code, text_out, err = council(repo, "status")
         code_w, widget_out, err_w = council(repo, "status", "--widget")
         code_j, json_out, err_j = council(repo, "status", "--json")
-        check("status: the summary names the state, what needs the user, and the exact terminal-view command",
-              code == 0 and "Status:" in text_out and "Needs you:" in text_out and "tui --watch --run" in text_out
+        check("status: the summary names the state and what needs the user, and no live-view line",
+              code == 0 and "Status:" in text_out and "Needs you:" in text_out and "Live view" not in text_out
               and run.name in text_out, text_out + err)
         check("status: --widget prints one self-contained fragment; --json the same reading as data",
               code_w == 0 and widget_out.lstrip().startswith("<style>") and code_j == 0
@@ -936,7 +738,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         subprocess.run([GIT, "init", "-q"], cwd=stepping, check=True)
         write(stepping / ".council" / "council.config.md", "# Council config\n")
         srun = Path(council(stepping, "run", "open", "council-review")[1].strip())
-        at_open_line = "\nnext: {}\n".format(cockpit.NEXT_AT_OPEN)
+        at_open_line = "\nnext: {}\n".format(snapshot.NEXT_AT_OPEN)
         opened = read(srun / "session-state.md")
         council(stepping, "state", "size=solo")
         sized = read(srun / "session-state.md")
@@ -945,7 +747,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         moved = read(srun / "session-state.md")
         check("next: a run opens with Convene's step (the helper and the readers agree on its words) and keeps it "
               "while it is at convene",
-              at_open_line in opened and at_open_line in sized and "Next: " + cockpit.NEXT_AT_OPEN in shown_at_convene,
+              at_open_line in opened and at_open_line in sized and "Next: " + snapshot.NEXT_AT_OPEN in shown_at_convene,
               opened + shown_at_convene)
         check("next: leaving convene replaces that step with Prepare's own, naming its doctrine file",
               "\nnext: Prepare" in moved and "02-prepare.md" in moved and "size the run" not in moved
@@ -956,16 +758,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("next: a step the Chair recorded shows until the stage changes, and the new stage records its own",
               "\nnext: read the diff first\n" in mine and "03-assign.md" in read(srun / "session-state.md")
               and "Next: Assign" in council(stepping, "status")[1], read(srun / "session-state.md"))
-        write(srun / "session-state.md", re.sub(r"\nnext: [^\n]*\n", "\nnext: " + cockpit.NEXT_AT_OPEN + "\n",
+        write(srun / "session-state.md", re.sub(r"\nnext: [^\n]*\n", "\nnext: " + snapshot.NEXT_AT_OPEN + "\n",
                                                 read(srun / "session-state.md"), count=1))   # as a run an older helper moved on
         stale_text = council(stepping, "status")[1]
         stale_data = json.loads(council(stepping, "status", "--json")[1])
         stale_card = council(stepping, "status", "--widget")[1]
-        stale_tui = council(stepping, "tui")[1]
         check("next: a run already past convene with the open-time step still in its file shows no next step — "
-              "summary, data, card and terminal view",
+              "summary, data and card",
               "Next:" not in stale_text and stale_data["progress"]["next"] == "" and "Next:" not in stale_card
-              and "Next:" not in stale_tui and "Status:" in stale_tui, (stale_text, stale_data["progress"], stale_tui))
+              and "Status:" in stale_text, (stale_text, stale_data["progress"]))
         council(stepping, "state", "size=squad")
         check("next: that run's next state update empties the stale step too",
               "\nnext:\n" in read(srun / "session-state.md"), read(srun / "session-state.md"))
@@ -1055,7 +856,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         for name, folder in stops.items():
             held = helper_usage.standing(folder, str(stopbase / ".council"))
             helper = (held.used, held.cap, held.tokens, held.ceiling, held.until, held.over, held.stopped)
-            py = status_usage.cap_standing(cockpit.snapshot(folder, None, 8), folder)
+            py = status_usage.cap_standing(snapshot.snapshot(folder, None, 8), folder)
             mine = tuple(py[k] for k in ("agent_runs", "agent_cap", "tokens", "ceiling", "allowed_until", "over",
                                          "stopped"))
             if helper != mine:
@@ -1083,40 +884,6 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               and via["go covers"]["usage"]["limit"]["stopped"] is False and go6 in line_l,
               ([v.get("usage", {}).get("limit") for v in via.values()], line_l, err_l))
         check("status through the helper: reading the stop and the go writes nothing", fingerprint(stopbase / ".council") == before)
-
-        # --- council pet, through the helper — never a window here ---------------------------------------------
-        follower = pet.Follower(sys.executable, str(ENTRY), stopbase / ".council", str(stopbase), "", str(stopbase))
-        followed = follower.read()
-        followed_limit = followed.get("status", {}).get("usage", {}).get("limit", {})
-        check("pet: it follows this tree's newest open run through `council status --json` (the user's go included), "
-              "and reading writes nothing",
-              followed.get("kind") == "status" and followed["status"].get("run", {}).get("id") == "torn-row"
-              and followed_limit.get("allowed_until") == 6 and followed_limit.get("stopped") is False
-              and pet.view(followed)[0] in pet.POSES and fingerprint(stopbase / ".council") == before,
-              (followed.get("kind"), followed.get("detail"), followed.get("status", {}).get("run", {}).get("id"),
-               followed_limit, pet.view(followed)))
-        refused = [(council(stopbase, "pet", *w), w) for w in (
-            ("--pose", "sleepy"), ("now",), ("--run", "x"), ("--stop", "--demo"), ("--still=1",), ("--exit-after", "0"))]
-        check("pet: council pet refuses a bad pose, a word, --run, --stop with another option, a value on a switch and a "
-              "bad --exit-after — exit 2, one line, before any window",
-              all(c == 2 and e.strip() and "\n" not in e.strip() and "Traceback" not in e for (c, _, e), _ in refused),
-              [(w, c, e.strip()) for (c, _, e), w in refused])
-        code, out, err = council(stopbase, "pet", "--stop")
-        # bin/council starts Python with -E, so PYTHONPATH can't hide tkinter: a python on PATH that blocks it can.
-        for name in ("python", "python3"):
-            write(fakes / "blocked" / name, "#!/bin/sh\nshift 2\nexec '%s' -E -s -c 'import runpy, sys; "
-                  "sys.modules[\"tkinter\"] = None; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], "
-                  "run_name=\"__main__\")' \"$@\"\n" % sys.executable.replace("\\", "/"))
-            os.chmod(fakes / "blocked" / name, 0o755)
-        os.environ["PATH"], saved = str(fakes / "blocked") + os.pathsep + os.environ["PATH"], os.environ["PATH"]
-        try:
-            code_t, out_t, err_t = council(stopbase, "pet", "--demo")
-        finally:
-            os.environ["PATH"] = saved
-        check("pet: council pet --stop with none open says so; without tkinter it says so in one line and exits non-zero",
-              code == 0 and out.strip() == "No pet is open for this project." and code_t == 1 and out_t == ""
-              and err_t.strip().startswith("council: the pet needs Python's tkinter") and "Traceback" not in err_t,
-              (code, out, err, code_t, out_t, err_t))
 
         rows_before = read(run / "seats.tsv")
         refused = [council(repo, "correct", *w) for w in (
@@ -1242,14 +1009,14 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
                 continue
             if bash_seats != py_seats or bash_run != py_run:
                 mismatch.append((name, bash_seats, py_seats, bash_run, py_run))
-        check("readers: the helper (close line, ledger) and the snapshot (widget, tui, history) read every basis the same — "
+        check("readers: the helper (close line, ledger) and the snapshot (widget, card) read every basis the same — "
               "per seat and for the run (found in review: a finished seat with no agent split them)",
               not mismatch and len(cases) == 11, mismatch)
         expect = {"complete": "complete", "no-agent seat": "partial", "declared no agent": "complete", "missing usage": "partial",
                   "malformed agents cell": "partial",
                   "still working": "running", "agents-only correction": "partial", "corrected zero": "complete",
                   "suspect": "suspect", "thirteen digits": "suspect", "older": "legacy"}
-        got = {name: cockpit.snapshot(folder, None, 8)["usage"]["tokens"]["basis"] for name, folder in cases.items()}
+        got = {name: snapshot.snapshot(folder, None, 8)["usage"]["tokens"]["basis"] for name, folder in cases.items()}
         check("readers: each case lands on the basis the accounting reference names — a seat with no agent on record is "
               "unknown (partial), never a zero; agents=0 or a corrected 0 is a real 0; an agents-only correction is partial "
               "(the ruling); 160 and 13 digits are suspect",
@@ -1260,7 +1027,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("ledger: a seat every reader calls partial gets no price",
               [(row[3], row[8]) for row in ledger] == [("wf", "-")], ledger)
         try:
-            status.interpret(cockpit.snapshot(run_h, None, 8), NOW)
+            status.interpret(snapshot.snapshot(run_h, None, 8), NOW)
             crashed = False
         except Exception:  # noqa: BLE001
             crashed = True
@@ -1273,25 +1040,23 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
             close = helper_usage.usage_words({"tokens": {"basis": "complete", "known": tokens, "missing_runs": 0,
                                                          "unrecorded_seats": [], "legacy_seats": []},
                                               "agents": {"basis": "exact", "at_least": 1}})
-            snapshot = {"usage": {"tokens": {"basis": "complete", "total": tokens},
-                                  "agents": {"total": 1, "at_least": 1}}}
+            snap = {"usage": {"tokens": {"basis": "complete", "total": tokens},
+                              "agents": {"total": 1, "at_least": 1}}}
             card = status.tokens_text(tokens)
-            status_line = status_usage.usage_of(snapshot)["text"]
-            tui = cockpit_screen.k(tokens)
-            history_line = history.k(tokens)
+            status_line = status_usage.usage_of(snap)["text"]
             display_dir = agree / "display"
             write(display_dir / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
                   "a\tdone\ta1\t{}\t-\t-\t1\t1\n".format(tokens))
             progress = seat_notes.progress_line(display_dir, "")
             progress_amount = "~{} tokens so far".format(expected)
-            actual = (bash, card, "{} tokens across 1 agent run".format(card), tui, history_line,
+            actual = (bash, card, "{} tokens across 1 agent run".format(card),
                       close, progress_amount if progress_amount in progress else progress)
-            wanted = (expected, expected, "{} tokens across 1 agent run".format(expected), expected,
-                      "~" + expected, "~" + expected + " tokens across 1 agent run(s)",
+            wanted = (expected, expected, "{} tokens across 1 agent run".format(expected),
+                      "~" + expected + " tokens across 1 agent run(s)",
                       "~" + expected + " tokens so far")
             if actual != wanted or expected not in status_line:
                 display_mismatch.append((tokens, actual, wanted, status_line))
-        check("display: progress, close, card, TUI and history use half-up rounding and the same M threshold",
+        check("display: progress, close and card use half-up rounding and the same M threshold",
               not display_mismatch, display_mismatch)
 
         # --- corrections are normalised and bounded, so both readers read the same line (review finding 2) ---
@@ -1307,7 +1072,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         lines = read(run_j / "corrections.jsonl").splitlines()
         awk_view = [[seat, field, str(f["to"]), str(int(f["added"]))]
                     for (seat, field), f in helper_seats.corrections(run_j).items()]
-        py_view = cockpit.corrections_of(run_j)
+        py_view = snapshot.corrections_of(run_j)
         check("correct: 13 digits, over 1,000 agent runs and evidence of spaces or control marks are refused; "
               "leading zeros are written as a plain number",
               refused == [2, 2, 2, 2] and len(lines) == 2 and '"to":41234,' in lines[0], (refused, lines))
@@ -1390,13 +1155,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         write(run_l / "session-state.md", text + "waiting: this line is below the heading\n")
         helper_view = helper_state.field(read(run_l / "session-state.md"), "waiting")
         check("state: the helper and the snapshot read the waiting: header the same way",
-              helper_view == cockpit.header(run_l).get("waiting", "") == "# only a note",
-              (helper_view, cockpit.header(run_l).get("waiting")))
-
-        # --- a pasted command runs nothing (review finding 10) ---------------------------------------------------
-        quoted = [shell.sh_quote("a'b$c`d"), shell.ps_quote("a'b$c`d")]
-        check("status: the terminal-view command quotes paths literally for bash and PowerShell",
-              quoted == ["'a'\\''b$c`d'", "'a''b$c`d'"], quoted)
+              helper_view == snapshot.header(run_l).get("waiting", "") == "# only a note",
+              (helper_view, snapshot.header(run_l).get("waiting")))
 
         # --- failing, recovery and blocked, driven through the helper (review finding 7) ---------------------------
         code, out, err = council(agree, "run", "open", "council-implement", "--alongside")
@@ -1437,7 +1197,7 @@ with tempfile.TemporaryDirectory(prefix="council-stale-status-") as temporary:
         write(stale_run / source, "# Source\n")
         os.utime(stale_run / source, (index_at + 5, index_at + 5))
         before = fingerprint(stale_run)
-        snap = cockpit.snapshot(stale_run)
+        snap = snapshot.snapshot(stale_run)
         reading = status.interpret(snap, now=NOW)
         labels = [item["label"] for item in reading["evidence"]]
         check("status: newer " + source + " hides stale verdicts and labels the index",
@@ -1445,18 +1205,18 @@ with tempfile.TemporaryDirectory(prefix="council-stale-status-") as temporary:
               "Claims index out of date" in labels, labels)
         check("status: stale " + source + " read writes nothing", before == fingerprint(stale_run))
         os.utime(stale_run / source, (index_at - 5, index_at - 5))
-    check("status: a current index keeps its verdicts", cockpit.claims_of(stale_run)["by_verdict"] == {"CONFIRMED": 1})
+    check("status: a current index keeps its verdicts", snapshot.claims_of(stale_run)["by_verdict"] == {"CONFIRMED": 1})
     (stale_run / "verify-1-a.md").unlink()
-    deleted_verifier = cockpit.claims_of(stale_run)
+    deleted_verifier = snapshot.claims_of(stale_run)
     check("status: a deleted verifier referenced by the index marks claims stale",
           deleted_verifier["stale"] and not deleted_verifier["by_verdict"], deleted_verifier)
     (stale_run / "verify-1-a.md").write_text("# Verification\n", encoding="utf-8")
     (stale_run / "synthesis.md").unlink()
-    deleted_synthesis = cockpit.claims_of(stale_run)
+    deleted_synthesis = snapshot.claims_of(stale_run)
     check("status: a deleted synthesis referenced by the index marks claims stale",
           deleted_synthesis["stale"] and not deleted_synthesis["by_verdict"], deleted_synthesis)
     (stale_run / "claims.jsonl").unlink()
-    check("status: missing claim index is visible", cockpit.claims_of(stale_run)["stale"])
+    check("status: missing claim index is visible", snapshot.claims_of(stale_run)["stale"])
 
 # A build checks tasks, not claims. The real build runs of 2026-10-01 and 2026-10-02 closed with "Claim index out
 # of date; verifier counts unknown", though no build keeps a claim index: its final check is the build log's
@@ -1465,7 +1225,7 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
     root = Path(temporary)
 
     def build_reading(run):          # the block above rebinds reading
-        return status.interpret(cockpit.snapshot(run, None, 40), NOW)
+        return status.interpret(snapshot.snapshot(run, None, 40), NOW)
 
     build = make_run(root, "build", status_value="complete", phase="learn",
                      seats=[v2("verify-1", "done", 90000, 1, 1), v2("verify-2", "done", 80000, 1, 1)],
@@ -1499,7 +1259,6 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
     r = build_reading(build)
     final = r["closing"] or {}
     card, plain = status.widget(r), status.text(r)
-    screen = cockpit.render(cockpit.snapshot(build, None, 40), width=110, reading=r)
     check("closing card, build: reading the run and its log writes nothing", fingerprint(root) == before)
     check("closing card, build: the Verified line reads the build log's final check, never a claim index",
           final.get("verification") == "Final check: 2 of 4 tasks met (1 after a fix the check asked for); "
@@ -1507,9 +1266,9 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
           final.get("converge") == {"total": 4, "met": 2, "partly": 1, "not_met": 1, "blocked": 0, "other": 0,
                                     "fixed_after": 1}, final)
     check("closing card, build: no view says the claim index is out of date or the verifier counts unknown",
-          not any(words in view for view in (card, plain, screen) for words in ("ndex out of date",
-                                                                                 "verifier counts unknown")),
-          (plain, screen[-600:]))
+          not any(words in view for view in (card, plain) for words in ("ndex out of date",
+                                                                         "verifier counts unknown")),
+          plain)
     check("closing card, build: each task the final check left short is under 'Left for you', with its Done-when",
           "Task 3 partly met: the import keeps <quotes>" in final.get("left_for_you", []) and
           "Task 4 not met: a closed run stays closed" in final.get("left_for_you", []) and
@@ -1556,7 +1315,7 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
     check("claims: a review, or a run with no recorded mode, with verifier reports and no index still reads as out "
           "of date (fail closed)",
           (build_reading(review)["closing"] or {}).get("verification") == "Claim index out of date; verifier counts unknown."
-          and cockpit.claims_of(nomode)["stale"], build_reading(review)["closing"])
+          and snapshot.claims_of(nomode)["stale"], build_reading(review)["closing"])
 
 # "What you asked" was cut mid-word on the real closing card of 2026-10-01 ("…if you get my intention this skill is
 # to be the ma"): a filed request past its limit ends on a whole word, then "…".

@@ -1,46 +1,37 @@
-"""A thin, read-only terminal cockpit for one council run.
+"""A read-only snapshot of one council run, for the status views (views/status.py and its parts).
 
-It reads what the run already records and draws one screen. The run's files are:
+It reads what the run already records. The run's files are:
 - session-state.md, run-plan.tsv and seats.tsv;
 - events.tsv and gates/*.json;
 - repairs.jsonl and claims.jsonl.
 It also reads the memory proposals waiting in the council home. It never writes a file, appends an
-event or changes a run, so it can be closed at any time. On Windows each file is opened with delete
-sharing, so a helper that replaces a file by rename while the cockpit reads it is never refused.
-Every value is stripped of control characters before it is drawn, and a file that is a link, leads
-outside the run, is too large or does not parse is skipped rather than followed or trusted.
-`--watch` redraws every two seconds until the run has read as closed twice in a row. `--json` prints
-the same snapshot as data (`council.run-snapshot/2`) for other tools. Every fact on screen comes from
-a file the helper or the Chair already writes; the cockpit adds no state of its own.
+event or changes a run. On Windows each file is opened with delete sharing, so a helper that replaces
+a file by rename while the snapshot reads it is never refused. Every value is stripped of control
+characters, and a file that is a link, leads outside the run, is too large or does not parse is
+skipped rather than followed or trusted. Every fact comes from a file the helper or the Chair already
+writes; the snapshot adds no state of its own.
 """
 from __future__ import annotations
 
-import argparse
-import json
-import os
 import re
-import sys
-import time
 from pathlib import Path
 from typing import Any, Dict
 
 from council.records import cells, events as event_stream, gates as gate_files, plan as run_plan, state as run_state
 from council.records import usage
 from council.records.cells import clean, integer
-from council.records.paths import contained, is_run, linked, text_of
+from council.records.paths import contained, linked, text_of
 from council.records.seats import corrections as corrections_of
 from council.records.stages import COUNCIL_NEXT_AT_OPEN as NEXT_AT_OPEN
-from council.views.cockpit_screen import render
 
 Snap = Dict[str, Any]
-SCHEMA = "council.run-snapshot/2"
 CLAIM_MODES = ("council-review", "council-plan", "council-research")   # the modes that keep a claim index
 CONVERGE_RESULT = re.compile(r"(not met|partly met|partly|blocked|met)\b")
 CONVERGE_KEYS = {"not met": "not_met", "partly met": "partly", "partly": "partly", "blocked": "blocked", "met": "met"}
 
 
 def header(run: Path) -> dict[str, str]:
-    """The run's session-state header, read by the cockpit's rule (records.state.header), each value cleaned."""
+    """The run's session-state header, read by records.state.header's rule, each value cleaned."""
     return {key: clean(value) for key, value in run_state.header(run_state.text(run)).items()}
 
 
@@ -284,11 +275,10 @@ def snapshot(run: str | Path, home: str | Path | None = None, last_events: int =
     run = Path(run)
     state = header(run)
     if "next" in state:
-        state["next"] = next_step(state)     # every reader — the screen, the card, the summary — shares this
+        state["next"] = next_step(state)     # every reader — the card, the summary — shares this
     fixes = corrections_of(run)
     seats = usage.seat_list(run, fixes)
     return {
-        "schema": SCHEMA,
         "run": {"id": clean(run.name), "path": str(run), **{k: state.get(k, "") for k in (
             "status", "mode", "phase", "updated", "opened", "closed", "size", "ask", "deliverable", "next", "actual",
             "waiting")}},
@@ -303,92 +293,3 @@ def snapshot(run: str | Path, home: str | Path | None = None, last_events: int =
         "events": events_of(run, last_events),
         "memory": {"proposed": proposals_in(home)},
     }
-
-
-# --- the screen, once or watched ------------------------------------------------------------------------------
-def reading_of(snap: Snap) -> dict[str, Any] | None:
-    """The shared plain-language reading (views/status.py); the screen still draws without it."""
-    try:
-        from council.views import status
-        return status.interpret(snap)
-    except Exception:  # noqa: BLE001 — a headline must never stop the screen from drawing
-        return None
-
-
-def ascii_needed() -> bool:
-    """Plain ASCII on request (COUNCIL_ASCII=1), for a console that shows UTF-8 as mojibake."""
-    return os.environ.get("COUNCIL_ASCII", "") not in ("", "0")
-
-
-def enable_vt() -> None:
-    """Ask a Windows console to honour ANSI escapes; harmless where they already work."""
-    if os.name != "nt":
-        return
-    try:
-        import ctypes
-        kernel = ctypes.windll.kernel32  # type: ignore[attr-defined]
-        handle = kernel.GetStdHandle(-11)
-        mode = ctypes.c_uint32()
-        if kernel.GetConsoleMode(handle, ctypes.byref(mode)):
-            kernel.SetConsoleMode(handle, mode.value | 0x0004)
-    except (AttributeError, OSError, ValueError):
-        pass
-
-
-def watch(run: Path, home: Path | None, events: int, ascii_only: bool, interval: float) -> int:
-    """Redraw until the run reads as closed twice in a row. A state file that is briefly missing or
-    empty (a helper replacing it) is read again, never taken for a closed run; one gone for ten polls
-    ends the watch with an error."""
-    interactive = sys.stdout.isatty()
-    if interactive:
-        enable_vt()
-    last, closed, missing = None, 0, 0
-    while True:
-        snap = snapshot(run, home, events)
-        status = snap["run"]["status"]
-        frame = render(snap, ascii_only, reading=reading_of(snap))
-        sys.stdout.write(("\x1b[2J\x1b[H" if interactive else "") + frame + "\n")
-        sys.stdout.flush()
-        if not status:
-            missing += 1
-            closed = 0
-            if missing >= 10:
-                print("tui: the run's session-state.md has been unreadable for {} polls — stopping".format(missing),
-                      file=sys.stderr)
-                return 1
-        else:
-            missing = 0
-            closed = closed + 1 if status != "in-progress" and status == last else (1 if status != "in-progress" else 0)
-            if closed >= 2:
-                print("the run is {} — nothing more will change here".format(status))
-                return 0
-        last = status
-        time.sleep(interval)
-
-
-def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run", required=True, type=Path)
-    parser.add_argument("--home", type=Path)
-    parser.add_argument("--watch", action="store_true")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--ascii", action="store_true")
-    parser.add_argument("--events", type=int, default=8)
-    parser.add_argument("--interval", type=float, default=2.0)
-    args = parser.parse_args(argv)
-    if not is_run(args.run):
-        print("tui: not a council run folder (or a link to one): {}".format(args.run), file=sys.stderr)
-        return 2
-    ascii_only = args.ascii or ascii_needed()
-    events = max(0, min(args.events, 200))
-    if args.json:
-        print(json.dumps(snapshot(args.run, args.home, events), indent=2, sort_keys=True))
-        return 0
-    if not args.watch:
-        snap = snapshot(args.run, args.home, events)
-        print(render(snap, ascii_only, reading=reading_of(snap)))
-        return 0
-    try:
-        return watch(args.run, args.home, events, ascii_only, max(0.5, min(args.interval, 60.0)))
-    except KeyboardInterrupt:
-        return 0

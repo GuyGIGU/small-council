@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from council.records import config
-from council.views.cockpit import brief_names
+from council.views.snapshot import brief_names
 
 
 def roster_names(snap: dict[str, Any]) -> dict[str, str]:

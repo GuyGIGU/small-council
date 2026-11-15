@@ -23,8 +23,8 @@ def waiting_nudge(run: Path, named: bool) -> None:
                  % (at, TOOL, clears))
 
 
-def status_nudge(run: Path, when: str, named: bool, follow: str = "") -> None:
-    """Show the status card: at the first dispatch (marks card-due) or the close (with follow and the alert)."""
+def status_nudge(run: Path, when: str, named: bool) -> None:
+    """Show the status card: at the first dispatch (marks card-due) or the close (with the alert)."""
     at = " --run " + Path(run).name if named or when == "close" else ""
     lead = "first dispatch of this run — show the user its status now, once"
     alert = ""
@@ -35,8 +35,8 @@ def status_nudge(run: Path, when: str, named: bool, follow: str = "") -> None:
                      "tool" % at)
     cli.warn("council: %s: hand the output of `council status --widget%s` to a show_widget tool (it may be a deferred "
              "tool: search the tools for it before deciding there is none), else relay `council status%s` — and if the "
-             "card fails to render, give that text and carry on%s%s"
-             % (lead, at, at, "; and tell them, from the record — " + follow if follow else "", alert))
+             "card fails to render, give that text and carry on%s"
+             % (lead, at, at, alert))
     if when != "close":
         mark_card(run, "due")
 

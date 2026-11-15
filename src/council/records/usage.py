@@ -2,7 +2,7 @@
 the agent stop stands (the helper's seat_rows, run_usage and cap_standing).
 
 seats.tsv, usage.tsv, agent-starts.tsv, cap-allowances.tsv and corrections.jsonl are read through
-seats.py; this module only applies the rule to what they hold, so the status card, the cockpit and the
+seats.py; this module only applies the rule to what they hold, so the status card, the run's snapshot and the
 agent stop count alike.
 """
 from __future__ import annotations

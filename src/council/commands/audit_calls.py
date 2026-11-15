@@ -10,9 +10,9 @@ Call = Dict[str, Any]
 
 HELPER_WORDS = {"home", "run", "state", "seat", "cap", "correct", "index", "evidence", "repair",
                 "gate", "gates", "changed", "collect", "check", "map", "fingerprint", "memory", "prior", "ask",
-                "ledger", "route", "tune", "history", "outcomes", "tui", "status", "pet", "doctor", "help",
+                "ledger", "route", "status", "doctor", "help",
                 "sharing", "version"}
-TWO_WORD = {"run", "cap", "memory", "evidence", "repair", "tune", "route"}
+TWO_WORD = {"run", "cap", "memory", "evidence", "repair", "route"}
 
 
 def heredoc_free(command: str) -> str:

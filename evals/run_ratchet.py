@@ -46,7 +46,7 @@ ARCHITECTURE = "docs/architecture.md"
 # Council files the code reads or writes that architecture §4's tables do not name yet. Name a file in §4
 # and take it off this list; the doc is the list's source, this is its known gap.
 NOT_IN_ARCHITECTURE = ("claims.jsonl", "corrections.jsonl", "cap-allowances.tsv", "repair-allowances.tsv",
-                       "tools.tsv", "tuning.md")
+                       "tools.tsv")
 CONFIG = "council.config.md"
 
 

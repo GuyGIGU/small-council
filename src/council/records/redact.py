@@ -17,7 +17,7 @@ one. In this order:
    password also a short plain word; for the rest also a count of up to 10 digits, a call, a dotted name, words
    joined by - _ . or /, a CamelCase name, or a value with no digit. What stays marked becomes [redacted].
 
-`said` is the one-line form council state, cap allow, tune and repair allow file. tests/py/test_redact.py holds this
+`said` is the one-line form council state, cap allow and repair allow file. tests/py/test_redact.py holds this
 to bin/council's sed copy (redact_copy) while that is there."""
 from __future__ import annotations
 
@@ -231,8 +231,8 @@ def redact(data: bytes) -> tuple[bytes, int]:
     return result, result.count(REDACTED) - data.count(REDACTED)
 
 
-def said(words: str, line_breaks_only: bool = False) -> str:
-    """The user's words redacted on one line; line_breaks_only (council tune) leaves  and ."""
-    flat = re.sub("[\t\r\n]" if line_breaks_only else "[\t\r\n\x0b\x0c]", " ", words)
+def said(words: str) -> str:
+    """The user's words redacted on one line."""
+    flat = re.sub("[\t\r\n\x0b\x0c]", " ", words)
     shown = redact((flat + "\n").encode("utf-8", "surrogateescape"))[0]
     return shown.decode("utf-8", "surrogateescape").replace("\r", "").replace("\n", "")

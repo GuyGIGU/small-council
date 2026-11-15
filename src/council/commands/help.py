@@ -118,31 +118,11 @@ council — the Small Council's helper (bash + git)
                          [--uncertainty low|medium|high] [--surface NAME ...]
                          [--agent-cap N] [--budget-tokens N] [--classic] [--mode review|plan|implement|research|postgame]
                                          advisory TSV recommendation; does not open or alter a run
-  council tune [propose] [--json]        tuning proposals from this project's own record: the estimate
-                                         per worker (when five runs measure it), roster changes (via a
-                                         refresh), behaviour held until a benchmark shows it helps
-  council tune apply budget[:ROLE] <value> --user-said "…"
-                                         set the estimate per worker to the value it proposed, logged
-                                         in tuning.md with the exact line it replaced
-  council tune revert budget[:ROLE] --user-said "…"
-                                         put that line back exactly
-  council history [--json]               every run of this council home: cost, estimate accuracy, gates,
-                                         repairs, verifier catches, seat evidence — a rate only when
-                                         enough runs carry its data (optional Python 3.8+)
-  council outcomes [--json]              cited lines changed after closed runs; Kept/Cut comparison and per-run,
-                                         mode and seat counts (optional Python 3.8+)
-  council tui [--watch | --json]         a read-only cockpit for the run: plan, seats, gates, repairs,
-                                         evidence, memory proposals and recent events (--watch redraws
-                                         until the run stops; optional Python 3.8+)
   council status [--widget [--preview] | --json | --line]
                                          the run in plain words: what is happening, whether it moves,
                                          what needs the user, where the evidence is; --widget prints
                                          a snapshot card for a chat widget host; --line gives a short
                                          notification sentence (optional Python 3.8+)
-  council pet [--demo | --pose <name>] [--still] [--exit-after <s>]
-                                         a desktop pet that shows how this tree's run is going — only
-                                         when the user asks; opens a small window and returns at once
-                                         (optional Python 3.8+ with tkinter) · pet --stop closes it
   council doctor                         drift scan; every finding comes with a fix
 
 Run-scoped commands act on the one in-progress run on this working tree; otherwise pass --run <folder>

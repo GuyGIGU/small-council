@@ -22,7 +22,7 @@ class EventError(paths.RecordError):
 
 
 class Table(NamedTuple):
-    """The stream as the cockpit reads it: every row after the header, split into cells."""
+    """The stream as the run's snapshot reads it: every row after the header, split into cells."""
     present: bool
     header_ok: bool | None
     rows: list[list[str]]

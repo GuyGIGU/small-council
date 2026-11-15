@@ -43,13 +43,6 @@ def void_of(data: dict[str, Any]) -> str:
     return ""
 
 
-def failed_as_planned(gate: dict[str, Any]) -> bool:
-    """A change-proof that failed did its job: it showed the problem before the fix. A before-check
-    declared --proof preserve must pass, and a void red (void_of) showed nothing."""
-    return (kind(gate["name"]) == "proof" and gate["exit"] not in (0, None) and gate.get("proof") != "preserve"
-            and not gate.get("void"))
-
-
 def results(run: Path) -> list[dict[str, Any]]:
     """Every saved verdict with an exit, in time order: name, exit, seconds, when, command, note, proof,
     void. A link, a file outside the run or one that does not parse is left out."""

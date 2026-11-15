@@ -3,7 +3,7 @@ Python process: the repair loop for `council gate`, the claim index for `council
 `council memory`, the card for `council status`. Each is a module of the package (TOOLS): a tool in commands/, a
 view in views/.
 
-A caller outside the helper (the seat-gate hook, the council view, the pet, the evals) runs one by path, through
+A caller outside the helper (the seat-gate hook, the council view, the evals) runs one by path, through
 the same run():
     python src/council/commands/script.py <tool> <words>"""
 from __future__ import annotations
@@ -20,16 +20,12 @@ from types import ModuleType
 from typing import Callable
 
 TOOLS = {"audit": "commands.audit", "chair_usage": "commands.chair_usage", "evidence": "commands.evidence",
-         "memory": "commands.memory_draft", "repair": "commands.repair_trail", "tune": "commands.tune_knobs",
-         "cockpit": "views.cockpit", "history": "views.history", "outcomes": "views.outcomes", "pet": "views.pet",
-         "status": "views.status"}
+         "memory": "commands.memory_draft", "repair": "commands.repair_trail", "status": "views.status"}
 FAULTS = {  # what a tool says as '<tool>: <fault>' and exits 2 on, as its own process did; names in its module
     "evidence": "EvidenceError paths.RecordError UnicodeError OSError ValueError",
-    "history": "ledger.LedgerError OSError ValueError",
     "memory": "MemoryError_ evidence.EvidenceError repair.RepairError evidence.paths.RecordError OSError UnicodeError "
               "ValueError",
     "repair": "RepairError paths.RecordError OSError UnicodeError ValueError TypeError",
-    "tune": "TuneError paths.RecordError OSError UnicodeError ValueError",
 }
 
 
@@ -82,6 +78,6 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True
     sys.path[0] = str(Path(__file__).resolve().parents[2])      # the package's folder, not this file's
     for stream in (sys.stdout, sys.stderr):
-        if stream is not None:                                  # the pet's window (pythonw) may have none
+        if stream is not None:                                  # a windowless Python (pythonw) may have none
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
     sys.exit(run(sys.argv[1], sys.argv[2:]))
