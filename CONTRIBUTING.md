@@ -13,8 +13,8 @@ you change anything.
   `## At <Stage>` headings named after real stages: target resolution, the per-item format, owner
   rules, the deliverable. Copy `skills/council-review/SKILL.md` for shape, brevity and voice.
 - **The helper does the mechanics.** If a step can be done or checked by a script — opening and
-  closing runs, gates, the change index, checking seat files or citations — it belongs in
-  `bin/council`, not in prose the model has to remember.
+  closing runs, gates, the change index, checking seat files or citations — it belongs in the
+  helper (`src/council/commands/`), not in prose the model has to remember.
 - **The agents carry the contracts.** The seat worker's rules live in `agents/council-worker.md`, the
   verifier's in `agents/council-verifier.md`. Dispatch messages point at the brief and never restate
   a contract.
@@ -50,19 +50,19 @@ doctrine or the helper.
   line competes for attention.
 - **Commands.** Name helper commands in backticks. The structural eval checks that each one exists.
 
-## Changing the helper (`bin/council`)
+## Changing the helper
 
-- **New logic is Python** ([decision D24](docs/decisions.md)). The bash helper is moving to Python
-  modules one area at a time, with commands, output and exit codes unchanged. Until an area moves,
-  its bash follows the rules below. [`docs/architecture.md`](docs/architecture.md) says where new code
-  goes and the one way each recurring job is done.
-- **Bash 3.2 compatible** — macOS ships it. No associative arrays, no `mapfile`, no `${var,,}`.
-- **Paths go to awk through `ENVIRON`**, never `-v`, which eats the backslashes in Windows paths.
-- **Short, plain output**, meant for the Chair to read. Errors go to stderr with exit code 2. A gate
-  returns its own exit code.
-- **The SessionStart hook sources this file**, so anything at the top level must be safe to source.
-  Nothing it calls may exit.
-- **Every command is covered in `evals/run_cli.py`.**
+- **Every command is Python** ([decision D24](docs/decisions.md)): a module in `src/council/commands/`
+  with its row in `dispatch.COMMANDS`, reading run files through `src/council/records/`.
+  `bin/council` only finds a Python and starts it; it takes no command logic.
+  [`docs/architecture.md`](docs/architecture.md) says where new code goes and the one way each
+  recurring job is done.
+- **The bash that stays** (the launcher and the hooks) is bash 3.2 compatible — macOS ships it. No
+  associative arrays, no `mapfile`, no `${var,,}`; paths go to awk through `ENVIRON`, never `-v`,
+  which eats the backslashes in Windows paths.
+- **Short, plain output**, meant for the Chair to read. A refusal is `cli.Refusal`: stderr, exit
+  code 2, and the next step named (D19). A gate returns its own exit code.
+- **Every command is covered in `evals/run_cli.py`** (or a hook's path in `evals/run_hook.py`).
 
 ## Adding a seat
 
@@ -104,8 +104,8 @@ warnings (only where `shellcheck` is on PATH; otherwise reported as skipped), th
 `configured_*` reader, and the scripts that run `bin/council` back. A number may only go down; a
 regression is one line naming the file, the measure, the baseline and the new value. A Python file
 the baseline doesn't list is held to 60-line functions and 500-line modules; so is every file in
-`src/council/`, which may grow up to those limits rather than being frozen at its size, since the
-package grows as commands are ported. `bin/council`, the hooks and `scripts/` stay frozen. Any
+`src/council/`, which may grow up to those limits rather than being frozen at its size.
+`bin/council`, the hooks and `scripts/` stay frozen. Any
 import outside the standard library in `scripts/` or `src/` fails (D32). Run `python evals/run_ratchet.py --update`
 in the branch that lowers a number, so every later branch inherits the gain; it refuses to raise
 one, so a limit is never loosened by hand. `--show` prints the files each count names.
@@ -117,7 +117,7 @@ versions. `ruff.toml` turns on the widest set today's Python passes, and a stric
 **Releasing:**
 1. Bump `version` in `.claude-plugin/plugin.json` — installed users only get an update when it
    changes.
-2. Bump `COUNCIL_VERSION` in `bin/council`.
+2. Bump `COUNCIL_VERSION` in `src/council/commands/help.py`.
 3. Add the matching `CHANGELOG.md` entry. An eval checks that all three agree.
 4. Run the behavioral drills and, with the Claude Code CLI, `claude plugin validate . --strict`.
 5. After green CI and owner approval, merge with a merge commit only; do not squash or rebase.
