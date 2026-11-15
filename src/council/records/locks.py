@@ -53,7 +53,8 @@ def stale(lock: str | Path) -> bool:
     return int(time.time()) - modified >= STALE_SECONDS
 
 
-def _make(folder: Path) -> bool:
+def make(folder: Path) -> bool:
+    """mkdir: True when this call made the folder."""
     try:
         os.mkdir(str(folder))
     except OSError:
@@ -85,7 +86,8 @@ def claim(folder: Path, owner: str) -> int:
     return HELD
 
 
-def _remove_folder(folder: Path) -> None:
+def remove_folder(folder: Path) -> None:
+    """rmdir, quietly: an empty lock folder whose owner file was never written."""
     with suppress(OSError):
         os.rmdir(str(folder))
 
@@ -106,6 +108,19 @@ def release(lock: str | Path) -> bool:
     return True
 
 
+def reclaim(lock: Path, recovery: Path, owner: str) -> bool:
+    """A stale lock cleared through <lock>.recover (a stale .recover first); True when this call cleared it."""
+    if stale(recovery):
+        release(recovery)
+    cleared = False
+    if stale(lock) and make(recovery):
+        claimed = claim(recovery, owner)
+        cleared = claimed == HELD and stale(lock) and release(lock)
+        if claimed != TAKEN:                      # another reclaimer's: leave it to that one
+            release(recovery)
+    return cleared
+
+
 def acquire(lock: str | Path, tries: int = TRIES) -> bool:
     """event_lock: take the lock, reclaiming a stale one, trying `tries` times 0.1 s apart."""
     lock = Path(lock)
@@ -113,7 +128,7 @@ def acquire(lock: str | Path, tries: int = TRIES) -> bool:
     owner = str(os.getpid())
     count = 0
     while True:
-        if not recovery.is_dir() and _make(lock):
+        if not recovery.is_dir() and make(lock):
             claimed = claim(lock, owner)              # the owner file decides who holds it, not mkdir
             if claimed == HELD:
                 if recovery.is_dir():                 # a reclaim began just before: yield this lock to it
@@ -121,17 +136,10 @@ def acquire(lock: str | Path, tries: int = TRIES) -> bool:
                     continue
                 return True
             if claimed == FAILED:
-                _remove_folder(lock)
+                remove_folder(lock)
                 return False
             # TAKEN: another caller holds it — wait like any other
-        if stale(recovery):
-            release(recovery)
-        if stale(lock) and _make(recovery):
-            claimed = claim(recovery, owner)
-            if claimed == HELD and stale(lock):
-                release(lock)
-            if claimed != TAKEN:                      # another reclaimer's: leave it to that one
-                release(recovery)
+        reclaim(lock, recovery, owner)
         count += 1
         if count >= tries:
             return False
