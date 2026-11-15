@@ -238,15 +238,9 @@ def seat_runs(candidates: list[str], slug: str, kind: str) -> Planned:
         if not resolve.field(Path(run), "plan-schema"):
             legacy = True
             continue
-        if _selected(Path(run), slug) or (also and _selected(Path(run), also)):
+        if plan.selected(Path(run), slug) or (also and plan.selected(Path(run), also)):
             count, last = count + 1, run
     return Planned(count, last, legacy)
-
-
-def _selected(run: Path, slug: str) -> bool:
-    """The run's plan marks the seat selected (run_plan_has_selected)."""
-    return any(row.get("kind") == "seat" and row.get("id") == slug and row.get("field") == "disposition"
-               and row.get("value") == "selected" for row in plan.rows(run))
 
 
 def _slug(value: str) -> str:

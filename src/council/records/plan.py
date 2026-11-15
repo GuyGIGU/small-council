@@ -30,6 +30,11 @@ def rows(run: Path, limit: int = paths.MAX_FILE) -> list[dict[str, str]]:
     return cells.tsv_rows(paths.text_of(path(run), run, limit))
 
 
+def selected(run: Path, slug: str) -> bool:
+    """The plan marks the seat selected (run_plan_has_selected): a `seat <slug> disposition selected` row."""
+    return any(line.split("\t")[:4] == ["seat", slug, "disposition", "selected"] for line in cells.lines_of(text(run)))
+
+
 def summary(run: Path) -> dict[str, Any]:
     """The run-wide fields (rows for run and plan) by field, and each seat's fields under "seats" (a
     disposition's reason as "reason", a context row's value as "context"); every cell cleaned."""

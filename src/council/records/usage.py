@@ -24,7 +24,7 @@ def seat_usage(row: dict[str, Any], fixes: dict[tuple[str, str], dict[str, Any]]
     unrecorded (no agent on record: unknown, never zero), no-agent (declared with agents=0, or corrected
     so), suspect (a count no agent run can have), legacy (a row from before the accounting columns)."""
     slug, status = row["slug"], row["state"]
-    executed = status not in ("", "queued", "skipped")      # as the helper's seat_rows selects rows
+    executed = status not in ("queued", "skipped")          # as the helper's seat_rows selects rows
     finished = executed and status != "running"
     cell = str(row["raw_tokens"] if row["raw_tokens"] is not None else "").strip()
     recorded = cells.optional_number(cell)
@@ -40,9 +40,11 @@ def seat_usage(row: dict[str, Any], fixes: dict[tuple[str, str], dict[str, Any]]
     else:
         agents, basis_a, at_least = runs, "counted", runs
     tokens, basis_t, missing, pending = _seat_tokens(status, executed, recorded, agents, reported, fix_t)
+    with_usage = {"reported": at_least, "corrected": at_least, "partial": reported, "missing": reported,
+                  "pending": reported}.get(basis_t, 0)      # the agent runs whose usage was reported
     return {"tokens": tokens, "tokens_basis": basis_t, "tokens_recorded": recorded, "agents": agents,
             "agents_basis": basis_a, "agents_at_least": at_least, "missing_runs": missing, "pending_runs": pending,
-            "executed": executed, "finished": finished}
+            "reported_runs": with_usage, "executed": executed, "finished": finished}
 
 
 def _seat_tokens(status: str, executed: bool, recorded: int | None, agents: int | None, reported: int | None,
@@ -122,6 +124,7 @@ def usage_totals(seat_rows: list[Seat]) -> dict[str, Any]:
                    "verifiers": sum(s["tokens"] for s in verifier) if complete else None,
                    "missing_runs": sum(s["missing_runs"] for s in ran),
                    "pending_runs": sum(s["pending_runs"] for s in ran),
+                   "reported_runs": sum(s["reported_runs"] for s in ran),
                    "legacy_seats": named["legacy"], "suspect_seats": named["suspect"],
                    "unrecorded_seats": named["unrecorded"],
                    "added_seats": [s["slug"] for s in seat_rows if s.get("added")],
@@ -155,6 +158,31 @@ def token_text(tokens: int) -> str:
             return "{}M".format(tenths // 10)
         return "{}.{}M".format(tenths // 10, tenths % 10)
     return "{}k".format(int(tokens + 500) // 1000)
+
+
+def usage_words(totals: dict[str, Any]) -> str:
+    """The state file's actual: and the close line's words for usage_totals (usage_words); '' when no agent ran."""
+    t, runs = totals["tokens"], totals["agents"]["at_least"]
+    said = ("%d" if totals["agents"]["basis"] == "exact" else "at least %d") % runs
+    known, unrecorded = token_text(t["known"]), t["unrecorded_seats"]
+    without = runs - t["reported_runs"] - t["pending_runs"]
+    tail = ", ".join(["%d without a usage report" % without] * (without > 0) +
+                     ["%d seat(s) with no agent on record" % len(unrecorded)] * bool(unrecorded))
+    return {"complete": "~%s tokens across %s agent run(s)" % (known, said),
+            "running": "~%s tokens so far across %s agent run(s) — still working" % (known, said),
+            "partial": "at least ~%s tokens across %s agent run(s) — %s" % (known, said, tail),
+            "legacy": "tokens not reliably recorded (%d older row(s)) · %s agent run(s)"
+                      % (len(t["legacy_seats"]), said),
+            "suspect": "tokens not stated — a recorded count no agent run can have · %s agent run(s)" % said,
+            }.get(t["basis"], "")
+
+
+def agents_share(run: Path) -> int | None:
+    """The agents' part of the run's estimate (agents_share): the estimate less the chair's when that is smaller."""
+    estimate, chair = budget_value(run, "estimated-tokens"), budget_value(run, "chair-tokens")
+    if estimate is None or chair is None or chair >= estimate:
+        return estimate
+    return estimate - chair
 
 
 def budget_value(run: Path, field: str) -> int | None:

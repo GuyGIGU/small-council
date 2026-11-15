@@ -92,6 +92,14 @@ def brief_seats(path: str | Path) -> list[Seat]:
     return found
 
 
+def out_path(run: Path, slug: str, out: str | None = None) -> str:
+    """A seat's output file (seat_out): its brief block's out: (else seats/<slug>.md), under the run unless absolute."""
+    if out is None:
+        out = next((seat.out for seat in brief_seats(Path(run) / "brief.md") if seat.slug == slug), None)
+        out = out or "seats/" + slug + ".md"
+    return out if re.match("/|[A-Za-z]:", out) else "%s/%s" % (Path(run).as_posix(), out)
+
+
 def norm(text: str) -> str:
     """Letters and digits only, lowercased — for comparing a seat's ref: line with its doc's title."""
     return "".join(lower(c) for c in text if c.isascii() and c.isalnum())
