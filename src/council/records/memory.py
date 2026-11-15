@@ -1,8 +1,7 @@
 """The project's memory file: which file it is (the config's `- conventions:` path under ## Memory, else
 .council/conventions.md, else a root one), what is wrong with how it reads (one id on two entries, ids that no entry
 carries, lines that open like an entry but are not read), the entries a run is served (an observed failure only
-while its evidence still supports it, records/memory_audit.py), and the one guarded way to rewrite it. bin/council
-keeps memory_file and memory_entries for the session-start hook (S8b)."""
+while its evidence still supports it, records/memory_audit.py), and the one guarded way to rewrite it."""
 from __future__ import annotations
 
 import os
@@ -90,13 +89,8 @@ def rows(path: str) -> list[str]:
 def idlines(path: str) -> int:
     """How many lines (outside comments) name an entry id: a file with no entries yet, or one whose entries the
     council can't read."""
-    try:
-        with open(where.native(path), "rb") as stream:
-            text = bytewise.read(stream.read())
-    except OSError:
-        return 0
     count, comment = 0, False
-    for line in bytewise.records(text):
+    for line in bytewise.records(bytewise.read(paths.contents(where.native(path)) or b"")):
         if comment or re.match(r"[ \t]*<!--", line):
             comment = "-->" not in line
         elif _IDS.search(line):
