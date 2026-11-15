@@ -132,6 +132,7 @@ the cheap path is to make up for the bug inside the slice, and the Done-when sti
   the others carry on. It tells the user in one line: what is wrong, where, and what is stopped.
   The fix is a new task above the blocked one, with its own `Owner` (the code that has the bug) and
   the `Serves` line of the task it unblocks. Its cause is already observed, so it needs no probe.
+  It starts only on the user's yes (decided, 5).
   The implement skill's "blocked by something outside the input: log it; carry on with the other
   tasks" becomes "carry on with the tasks that do not rest on it".
 - **The verifier, on every round.** Not only on a fix: does any added line exist only to make up
@@ -185,13 +186,6 @@ hand-written brief, and post-game findings per run before and after.
 | T3 | The generated task pack (#57, #61, #67), `council tree`; setup proposes the project's recorded decisions and fills the map's one-way-per-job table (#93); the `NEEDS: fix` stop, the Chair's rule for it, the verifier's question on every round and the two signs | T1, S8 and S11 | ~0.9–1.1M |
 | T4 | The planted drill cases, with the two for a bug underneath | S10 (#70) | part of S10 |
 
-## Open, for the user (2026-11-15)
-
-- **Who decides the fix for a bug underneath.** Proposed: the Chair always asks, in one line with
-  the cost, and never fixes code outside the plan or ships the workaround on its own call. The other
-  choice is to let it fix a small one inside the approved budget without asking, as it may run one
-  probe for a `NEEDS:` question.
-
 ## Decided by the user (2026-11-13)
 
 1. **`Serves:` on every task.** Yes. The plan check refuses a task without it. A support task (a
@@ -210,6 +204,10 @@ hand-written brief, and post-game findings per run before and after.
    - The verifier asks whether a change contradicts a recorded decision or adds a second way. If it
      does, the verdict is INCOMPLETE.
    - A map without the table skips the owner check, so older projects keep working.
+
+5. **A bug underneath a task (2026-11-15).** The Chair always asks, in one line with the cost. It
+   never fixes code outside the plan, and never ships the workaround, on its own call. A small fix
+   inside the approved budget is asked about too.
 
 ## Until it is built: the cleanup's own sessions
 
