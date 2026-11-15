@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from pathlib import Path
+
+from council import git
 
 NAME = ".gitignore"
 KEPT_OUT = ("runs/", "asks/", "active-run")
@@ -29,12 +30,8 @@ def ignores(home: str | Path, inside: str) -> bool:
     """Does git ignore this path under the home? Patterns only, so a file already tracked doesn't change the
     answer. Outside git (check-ignore can't answer), the home's .gitignore has the line or not."""
     home = str(home)
-    try:
-        code = subprocess.run(["git", "-C", os.path.dirname(home), "check-ignore", "--no-index", "-q", "--",
-                               os.path.basename(home) + "/" + inside], stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL).returncode
-    except OSError:
-        code = 128
+    code = git.run(os.path.dirname(home), "check-ignore", "--no-index", "-q", "--",
+                   os.path.basename(home) + "/" + inside)[0]
     if code <= 1:
         return code == 0
     first = re.escape(inside.split("/", 1)[0].encode("utf-8", "surrogateescape"))
@@ -73,10 +70,4 @@ def keep_out(home: str | Path) -> str:
 
 def _tracked_asks(home: str | Path) -> bool:
     home = str(home)
-    try:
-        listed = subprocess.run(["git", "-C", os.path.dirname(home), "ls-files", "--",
-                                 os.path.basename(home) + "/asks"], stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL).stdout
-    except OSError:
-        return False
-    return bool(listed.strip())
+    return bool(git.run(os.path.dirname(home), "ls-files", "--", os.path.basename(home) + "/asks")[1].strip())

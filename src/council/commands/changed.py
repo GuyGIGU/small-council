@@ -6,9 +6,9 @@ pathspecs, which know no {a,b}: '*.{js,jsx}' is read as '*.js' and '*.jsx'."""
 from __future__ import annotations
 
 import os
-import subprocess
 
 from council.commands import cli, shell
+from council.git import run
 from council.records import home as where
 
 USAGE = "usage: council changed [--base <ref>] [--glob '<pattern>'] [--each] -- <command> …"
@@ -84,12 +84,8 @@ def expand(pattern: str) -> list[str]:
 
 def git(*args: str) -> str | None:
     """git's stdout in this folder (names kept as they are: core.quotePath off), None when it fails."""
-    try:
-        done = subprocess.run(["git", "-c", "core.quotePath=false"] + list(args), stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-    except OSError:
-        return None
-    return done.stdout.decode("utf-8", "surrogateescape") if done.returncode == 0 else None
+    code, out = run(".", *args, names=True)
+    return out.decode("utf-8", "surrogateescape") if code == 0 else None
 
 
 def default_branch() -> str | None:

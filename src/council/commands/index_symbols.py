@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import fnmatch
 import re
-import subprocess
 
+from council import git
 from council.records import bytewise
 
 COMMON = ("if for while return switch catch else elif function def class self this true false null none nil new try "
@@ -95,12 +95,7 @@ def symbols(diff: list[str]) -> list[str]:
 
 
 def _grep(*args: str) -> list[str]:
-    try:
-        done = subprocess.run(["git", "grep"] + list(args), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                              stdin=subprocess.DEVNULL)
-    except OSError:
-        return []
-    return bytewise.records(done.stdout.decode("utf-8", "surrogateescape"))    # git ends every line in a newline
+    return bytewise.records(git.run(".", "grep", *args)[1].decode("utf-8", "surrogateescape"))   # each line ends in \n
 
 
 class Search:

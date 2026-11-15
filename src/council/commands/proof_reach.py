@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 
+from council import git
 from council.records import bytewise
 from council.records import home as where
 
@@ -32,13 +32,6 @@ def _up(path: str) -> str:
         path = shorter
     return path
 
-
-def _git(top: str, *args: str) -> int:
-    try:
-        return subprocess.run(["git", "-C", top] + list(args), stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL).returncode
-    except OSError:
-        return 127
 
 
 def _inside(top: str, sub: str, root: str) -> bool:
@@ -122,8 +115,8 @@ def test_path(top: str, command: str) -> str:
         path = _named(token, state)
         if path is None or not os.path.isfile(os.path.join(top, where.native(path))):
             continue
-        if _git(top, "ls-files", "--error-unmatch", "--", where.native(path)) == 0 \
-                or _git(top, "check-ignore", "-q", "--", where.native(path)) == 1:
+        if git.run(top, "ls-files", "--error-unmatch", "--", where.native(path))[0] == 0 \
+                or git.run(top, "check-ignore", "-q", "--", where.native(path))[0] == 1:
             hit = _up(path)
             return hit[2:] if hit.startswith("./") else hit
     return ""

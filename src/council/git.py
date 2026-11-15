@@ -1,4 +1,5 @@
-"""Running git: `output` for a caller that must stop on a failure, `text` for one that reads a failure as unknown."""
+"""Running git: `output` for a caller that must stop on a failure, `text` for one that reads a failure as unknown,
+`run` for one that reads the exit code itself."""
 from __future__ import annotations
 
 import os
@@ -16,6 +17,18 @@ def output(repo: str | Path, *args: str, allow_error: bool = False) -> bytes:
     if result.returncode and not allow_error:
         raise GitError(result.stderr.decode("utf-8", "replace").strip() or "git failed")
     return result.stdout
+
+
+def run(repo: str | Path, *args: str, given: bytes = b"", names: bool = False) -> tuple[int, bytes]:
+    """git -C repo <args>'s exit code and stdout, its stderr dropped and `given` its only input; with names, a path
+    is printed as it is (core.quotePath off). 127 and b'' when git can't start."""
+    quote = ["-c", "core.quotePath=false"] if names else []
+    try:
+        done = subprocess.run(["git", "-C", str(repo)] + quote + list(args), input=given, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL)
+    except OSError:
+        return 127, b""
+    return done.returncode, done.stdout
 
 
 def text(repo: str | Path, *args: str, extra: dict[str, str] | None = None, timeout: int = 20) -> str | None:

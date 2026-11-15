@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from pathlib import Path
 from typing import NamedTuple
 
+from council import git
 from council.records import bytewise, citations
 from council.records.home import native
 
@@ -34,20 +34,12 @@ def scope(top: str, base: str, run: str, mode: str) -> Scope:
 
 def git_ok(top: str, *args: str) -> bool:
     """Whether git -C top <args> succeeds; its output is not read."""
-    try:
-        return subprocess.run(["git", "-C", native(top)] + list(args), stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL).returncode == 0
-    except OSError:
-        return False
+    return git.run(native(top), *args)[0] == 0
 
 
 def git_out(top: str, *args: str) -> bytes:
     """git -C top <args>'s stdout, whatever its exit code; b'' when git can't start."""
-    try:
-        return subprocess.run(["git", "-C", native(top)] + list(args), stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL).stdout
-    except OSError:
-        return b""
+    return git.run(native(top), *args)[1]
 
 
 def absolute(path: str) -> bool:

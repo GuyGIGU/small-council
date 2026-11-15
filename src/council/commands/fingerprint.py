@@ -4,8 +4,8 @@ line and exits 1 when the stack changed (council doctor reads the same)."""
 from __future__ import annotations
 
 import re
-import subprocess
 
+from council import git
 from council.commands import cli
 from council.records import bytewise, config
 from council.records import home as where
@@ -31,7 +31,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "fingerprint")
     if len(words) > 1 or words[:1] not in ([], ["check"]):
         raise cli.Refusal("usage: council fingerprint [check]")
-    if _git("rev-parse", "--git-dir")[0] != 0:
+    if git.run(".", "rev-parse", "--git-dir")[0] != 0:
         raise cli.Refusal("the stack fingerprint needs a git repository")
     if words:
         found, said = check()
@@ -42,23 +42,14 @@ def main(args: cli.Args, words: list[str]) -> int:
     return 0
 
 
-def _git(*args: str, given: bytes | None = None, cwd: str | None = None) -> tuple[int, bytes]:
-    try:
-        done = subprocess.run(["git"] + list(args), input=given, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                              cwd=cwd)
-    except OSError:
-        return 127, b""
-    return done.returncode, done.stdout
-
-
 def _bytes_key(text: str) -> bytes:
     return text.encode("utf-8", "surrogateescape")
 
 
 def stack_summary() -> str:
     """'manifests: <names> · languages: <extensions>' (none for an empty list), each list in byte order."""
-    top = _git("rev-parse", "--show-toplevel")[1].decode("utf-8", "surrogateescape").rstrip("\n")
-    out = _git("-c", "core.quotePath=false", "ls-files", cwd=where.native(top) if top else None)[1]   # the whole repo
+    top = git.run(".", "rev-parse", "--show-toplevel")[1].decode("utf-8", "surrogateescape").rstrip("\n")
+    out = git.run(where.native(top) if top else ".", "ls-files", names=True)[1]   # the whole repo
     files = out.decode("utf-8", "surrogateescape").rstrip("\n").split("\n")
     names = {_WILD.sub(r"*.\1", f.rsplit("/", 1)[-1]) for f in files
              if f.count("/") <= 2 and MANIFESTS.fullmatch(f.rsplit("/", 1)[-1])}
@@ -75,7 +66,7 @@ def stack_summary() -> str:
 
 def digest(summary: str) -> str:
     """git hash-object of the summary, cut to 12 characters."""
-    return _git("hash-object", "--stdin", given=summary.encode("utf-8", "surrogateescape"))[1].decode()[:12]
+    return git.run(".", "hash-object", "--stdin", given=summary.encode("utf-8", "surrogateescape"))[1].decode()[:12]
 
 
 def minus(have: str, lacks: str) -> str:
