@@ -84,7 +84,6 @@ def _rel(path: str, root: str) -> str:
 
 
 def rows(path: str) -> list[str]:
-    """The entries of a memory file as rows (records/memory_entries.py)."""
     return parsed.rows(where.native(path))
 
 

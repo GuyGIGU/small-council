@@ -16,7 +16,6 @@ _SHARED = re.compile(rb"[ \t\n\v\f\r]*!/?asks/?[ \t\n\v\f\r]*")
 
 
 def path(home: str | Path) -> Path:
-    """The council home's .gitignore."""
     return Path(home) / NAME
 
 

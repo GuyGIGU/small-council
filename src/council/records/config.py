@@ -26,7 +26,6 @@ class ConfigError(paths.RecordError):
 
 
 def path(home: str | Path) -> Path:
-    """The config file of a council home."""
     return Path(home) / NAME
 
 

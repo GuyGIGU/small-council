@@ -11,7 +11,6 @@ NAME = "run-plan.tsv"
 
 
 def path(run: Path) -> Path:
-    """The plan of a run folder."""
     return Path(run) / NAME
 
 

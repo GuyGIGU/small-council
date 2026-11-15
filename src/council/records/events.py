@@ -30,7 +30,6 @@ class Table(NamedTuple):
 
 
 def path(run: Path) -> Path:
-    """The event stream of a run folder."""
     return Path(run) / NAME
 
 

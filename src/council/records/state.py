@@ -14,7 +14,6 @@ KEY = re.compile(r"[A-Za-z][A-Za-z0-9-]*")
 
 
 def path(run: Path) -> Path:
-    """The state file of a run folder."""
     return Path(run) / NAME
 
 
@@ -46,7 +45,6 @@ def field(content: str, key: str) -> str:
 
 
 def is_build_run(content: str) -> bool:
-    """The header's `mode:` is council-implement, as the helper tests it (`field mode` = council-implement)."""
     return field(content, "mode") == "council-implement"
 
 
