@@ -122,14 +122,15 @@ def gates_together(cwd, run, names):
 
 
 def events_together(cwd, run, names):
-    """Append one event per name to the run's stream at the same moment — each from its own bash with
-    the helper sourced, as the SessionStart hook sources it — and return each one's (exit code, stdout,
-    stderr). Gate calls no longer contend for the events lock (a run takes one `council gate` at a
-    time), so the lock's races are driven straight through event_append."""
-    script = 'source "$1"; event_append "$2" gate.finished "$3" passed "exit=0;seconds=0;empty=0"'
-    return all_finished([subprocess.Popen([BASH, "-c", script, "council", CLI.replace("\\", "/"), run, name], cwd=cwd,
-                                          env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                          encoding="utf-8", errors="replace") for name in names])
+    """Append one event per name to the run's stream at the same moment — each from its own Python, through
+    the helper's one event writer — and return each one's (exit code, stdout, stderr). Gate calls no longer
+    contend for the events lock (a run takes one `council gate` at a time), so the lock's races are driven
+    straight through events.append."""
+    script = ("import sys\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[1])\nfrom council.records import events\n"
+              "events.append(Path(sys.argv[2]), 'gate.finished', sys.argv[3], 'passed', 'exit=0;seconds=0;empty=0')\n")
+    return all_finished([subprocess.Popen([sys.executable, "-I", "-c", script, os.path.join(ROOT, "src"), run, name],
+                                          cwd=cwd, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                          text=True, encoding="utf-8", errors="replace") for name in names])
 
 
 def all_finished(procs):
@@ -834,23 +835,6 @@ def event_lock_stress(tmp):
           not trouble and code == 0 and len(events(stress_run)) == 25, out + err + "\n".join(trouble), full=True)
 
 
-@part("timing")
-def lock_false_mkdir(tmp):
-    """uutils mkdir 0.10.0 (Ubuntu 26.04's mkdir) looks for the path, then makes it, and exits 0 when it
-    finds a directory there after all: of two calls racing for one lock, both were told they had it, and
-    events got the same sequence number. Here mkdir always says so; a held lock must still make a call wait."""
-    lock = os.path.join(tmp, "false-mkdir", "events.tsv.lock").replace("\\", "/")
-    os.makedirs(os.path.dirname(lock))
-    script = ('source "$1"; mkdir() { command mkdir "$1" 2>/dev/null || [ -d "$1" ]; }\n'
-              'command mkdir "$2"; sleep 30 & holder=$!; printf "%s\\n" "$holder" > "$2/owner"\n'
-              'if event_lock "$2" 3 2>/dev/null; then echo taken; else echo waited; fi\n'
-              'IFS= read -r now < "$2/owner"; [ "$now" = "$holder" ] && echo kept; kill "$holder"\n')
-    p = subprocess.run([BASH, "-c", script, "council", CLI.replace("\\", "/"), lock], env=GIT_ENV,
-                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-    check("event lock: a mkdir that exits 0 on a directory already there (uutils mkdir 0.10.0) does not take a held lock",
-          p.stdout.split() == ["waited", "kept"], p.stdout + p.stderr)
-
-
 @part("runs")
 def python_launcher(tmp):
     """A ported command starts one Python and no probe: the entry refuses a Python older than 3.8 itself
@@ -892,79 +876,10 @@ def python_launcher(tmp):
 
 
 @part("timing")
-def lock_across_languages(tmp):
-    """A bash writer and a Python writer of one record must exclude each other (D33). On Windows bash once
-    named itself by its MSYS process id, which Python reads as some other process (or none), and bash's kill
-    read a Python holder's Windows id as no process: each would have taken a lock the other held."""
-    folder = os.path.join(tmp, "cross-lock")
-    os.makedirs(folder)
-    src = os.path.join(ROOT, "src")
-    py_hold = ("import os, sys, time\nsys.path.insert(0, sys.argv[1])\nfrom council.records import locks\n"
-               "assert locks.acquire(sys.argv[2])\nprint('held', os.getpid(), flush=True)\ntime.sleep(float(sys.argv[3]))\n"
-               "locks.release(sys.argv[2])\n")
-    py_wait = ("import sys\nsys.path.insert(0, sys.argv[1])\nfrom pathlib import Path\n"
-               "from council.records import locks, owners\nlock = Path(sys.argv[2])\n"
-               "if locks.acquire(lock, int(sys.argv[3])):\n    print('taken')\n    locks.release(lock)\n"
-               "else:\n    print(owners.unavailable(lock))\n")
-    sh_hold = 'source "$1"; event_lock "$2" || exit 1; echo held; sleep "$3" >/dev/null 2>&1; event_unlock "$2"\n'
-    sh_wait = 'source "$1"; if event_lock "$2" "$3"; then echo taken; event_unlock "$2"; fi\n'
-    cli = CLI.replace("\\", "/")
-
-    def holder(kind, lock, seconds):
-        argv = ([sys.executable, "-I", "-c", py_hold, src, lock, str(seconds)] if kind == "python"
-                else [BASH, "-c", sh_hold, "council", cli, lock, str(seconds)])
-        proc = subprocess.Popen(argv, env=GIT_ENV, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                text=True, encoding="utf-8", errors="replace")
-        # A venv's python.exe is a launcher that runs the interpreter as its child: the holder says its own id.
-        said = proc.stdout.readline().split()
-        pid = int(said[1]) if len(said) > 1 else proc.pid
-        return proc, said[:1] == ["held"], read(os.path.join(lock, "owner")).strip(), pid
-
-    def waiter(kind, lock, tries):
-        argv = ([sys.executable, "-I", "-c", py_wait, src, lock, str(tries)] if kind == "python"
-                else [BASH, "-c", sh_wait, "council", cli, lock, str(tries)])
-        started = time.monotonic()
-        p = subprocess.run(argv, env=GIT_ENV, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=120)
-        return p.stdout.strip(), p.stderr.strip(), time.monotonic() - started
-
-    for held_by, waits in (("bash", "python"), ("python", "bash")):
-        lock = slash(os.path.join(folder, "%s-held.lock" % held_by))
-        proc, ready, owner, pid = holder(held_by, lock, 4)
-        out, err, _ = waiter(waits, lock, 5)
-        refusal = out if waits == "python" else err
-        proc.communicate(timeout=60)
-        after, _, _ = waiter(waits, lock, 5)
-        check("lock across languages: a %s holder names itself by its operating system's process id, and a %s "
-              "waiter waits for it, then gives up naming the lock, that process and what to do" % (held_by, waits),
-              ready and owner == str(pid) and refusal.startswith(
-                  ("council: " if waits == "bash" else "") + "event lock unavailable: %s (held by process %s, age "
-                  % (lock if waits == "bash" else os.path.normpath(lock), owner))
-              and "run this again once that call ends" in refusal and "taken" not in out,
-              "owner %r · holder pid %d · stdout %r · stderr %r" % (owner, pid, out, err))
-        check("lock across languages: once the %s holder releases, the %s waiter takes the lock" % (held_by, waits),
-              after == "taken" and not os.path.exists(lock), after)
-    for held_by, waits in (("bash", "python"), ("python", "bash")):
-        lock = slash(os.path.join(folder, "%s-dead.lock" % held_by))
-        proc, ready, owner, pid = holder(held_by, lock, 20)
-        if pid != proc.pid:
-            os.kill(pid, 9)          # the interpreter itself, not only its launcher (TerminateProcess on Windows)
-        proc.kill()
-        proc.stdout.close()          # a killed bash's sleep may keep the pipe open: don't read to its end
-        proc.wait(timeout=60)
-        out, err, took = waiter(waits, lock, 5)
-        check("lock across languages: a %s holder killed outright leaves its lock, and a %s waiter reclaims it at once"
-              % (held_by, waits),
-              ready and owner == str(pid) and out == "taken" and not os.path.exists(lock) and took < 5,
-              "owner %r · stdout %r · stderr %r · %.1f s" % (owner, out, err, took))
-
-
-@part("timing")
 def lock_unnamed_owner(tmp):
-    """An owner line no process could have written (0, past the system's largest id) is no owner in either
-    language (D33): a young lock is waited for and the refusal says no holder is named; one 10 s old is
-    taken. Before, bash read 0 as alive (kill -0 0 is its own group) and a huge id as dead, and Python read 0
-    as dead on Windows and raised a ctypes traceback for an id of 2^32 or more."""
+    """An owner line no process could have written (0, past the system's largest id) is no owner (D33): a
+    young lock is waited for and the refusal says no holder is named; one 10 s old is taken. Before, Python
+    read 0 as dead on Windows and raised a ctypes traceback for an id of 2^32 or more."""
     folder = os.path.join(tmp, "unnamed-lock")
     os.makedirs(folder)
     src = os.path.join(ROOT, "src")
@@ -972,29 +887,23 @@ def lock_unnamed_owner(tmp):
                "from council.records import locks, owners\nlock = Path(sys.argv[2])\n"
                "if locks.acquire(lock, int(sys.argv[3])):\n    print('taken')\n    locks.release(lock)\n"
                "else:\n    print(owners.unavailable(lock))\n")
-    sh_wait = 'source "$1"; if event_lock "$2" "$3"; then echo taken; event_unlock "$2"; fi\n'
     seen = []
-    for waits in ("bash", "python"):
-        for line in ("0", str(2 ** 32), "1" + "0" * 30):
-            for age in ("young", "old"):
-                lock = slash(os.path.join(folder, "%s-%d-%s.lock" % (waits, len(line), age)))
-                os.mkdir(lock)
-                write(os.path.join(lock, "owner"), line + "\n")
-                if age == "old":
-                    old = time.time() - 30
-                    os.utime(lock, (old, old))
-                argv = ([sys.executable, "-I", "-c", py_wait, src, lock, "5"] if waits == "python"
-                        else [BASH, "-c", sh_wait, "council", CLI.replace("\\", "/"), lock, "5"])
-                p = subprocess.run(argv, env=GIT_ENV, capture_output=True, text=True, encoding="utf-8",
-                                   errors="replace", timeout=120)
-                said = (p.stdout + p.stderr).strip()
-                ok = (said == "taken" and not os.path.exists(lock) if age == "old"
-                      else "(no holder named in it, age " in said and "taken" not in said and os.path.isdir(lock))
-                seen.append("%s waiter · owner %s… · %s: %s%s" % (waits, line[:12], age, "ok" if ok else "WRONG ",
-                                                                   "" if ok else repr(said)))
-        check("lock with an owner no process could have (0, 2^32, 10^30): a %s waiter waits for a young one, "
-              "saying no holder is named, and takes one 10 s old" % waits,
-              all(" ok" in s for s in seen if s.startswith(waits)), "\n".join(seen), full=True)
+    for line in ("0", str(2 ** 32), "1" + "0" * 30):
+        for age in ("young", "old"):
+            lock = slash(os.path.join(folder, "%d-%s.lock" % (len(line), age)))
+            os.mkdir(lock)
+            write(os.path.join(lock, "owner"), line + "\n")
+            if age == "old":
+                old = time.time() - 30
+                os.utime(lock, (old, old))
+            p = subprocess.run([sys.executable, "-I", "-c", py_wait, src, lock, "5"], env=GIT_ENV,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+            said = (p.stdout + p.stderr).strip()
+            ok = (said == "taken" and not os.path.exists(lock) if age == "old"
+                  else "(no holder named in it, age " in said and "taken" not in said and os.path.isdir(lock))
+            seen.append("owner %s… · %s: %s%s" % (line[:12], age, "ok" if ok else "WRONG ", "" if ok else repr(said)))
+    check("lock with an owner no process could have (0, 2^32, 10^30): a waiter waits for a young one, saying no "
+          "holder is named, and takes one 10 s old", all(" ok" in s for s in seen), "\n".join(seen), full=True)
 
 
 @part("timing")
@@ -3173,15 +3082,11 @@ def runs_helper_carries_next_steps(tmp):
         write(os.path.join(past, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n" + "".join(
             "{}\tdone\ta\t150000\t-\t-\t1\t1\n".format(slug) for slug in ("hunt", "beck", "verify-1")))
 
-    def close_one(env=None):
-        _, out, _ = council(tn, "run", "open", "council-review", env=env)
-        r = out.strip().splitlines()[-1]
-        write_plan(r, selected=("chair", "w1"))
-        to_deliver(tn)               # the plan check a phase change runs is Python (S5): only the close goes without it
-        council(tn, "seat", "w1", "done", "agent=a1", "tokens=20000", env=env)
-        return council(tn, "run", "close", env=env)
-
-    code, out, err = close_one()
+    _, out, _ = council(tn, "run", "open", "council-review")
+    write_plan(out.strip().splitlines()[-1], selected=("chair", "w1"))
+    to_deliver(tn)
+    council(tn, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    code, out, err = council(tn, "run", "close")
     follow = [line for line in err.splitlines() if "from the record" in line]
     check("run close: with a tuning proposal on record, the close's last line names it and its command, with the closing card",
           code == 0 and len(follow) == 1 and "council tune" in follow[0] and follow[0] == err.strip().splitlines()[-1]
@@ -3189,13 +3094,9 @@ def runs_helper_carries_next_steps(tmp):
     dirs = [os.path.dirname(shutil.which(t)) for t in ("bash", "git") if shutil.which(t)]
     bare_path = os.pathsep.join(dict.fromkeys(dirs))
     if len(dirs) == 2 and not (shutil.which("python", path=bare_path) or shutil.which("python3", path=bare_path)):
-        for i in range(5):           # a new proposal on record, so with Python this close would say it
-            past = os.path.join(tn, ".council", "runs", "2026-09-{:02d}-100000-review".format(i + 1))
-            write(os.path.join(past, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n" + "".join(
-                "{}\tdone\ta\t400000\t-\t-\t1\t1\n".format(slug) for slug in ("hunt", "beck", "verify-1")))
-        code, out, err = close_one(env={"PATH": bare_path})
-        check("run close: without Python, no follow-up line and no error", code == 0 and "from the record" not in err
-              and "Traceback" not in err, err)
+        code, out, err = council(tn, "run", "close", env={"PATH": bare_path})
+        check("run close: with no Python on PATH, it refuses with its label, exit 2", code == 2 and out == ""
+              and "council run close needs Python 3.8 or newer, and none is on PATH" in err, err)
     else:
         print("note: python sits beside bash or git here, so the no-Python close is not checked on this system")
 
@@ -6010,22 +5911,15 @@ def runs_close_keeps_audit(tmp):
     code, out, err = council(r, "status", "--run", name)
     check("status: with no audit saved, the card says so and names the command that reads the run",
           code == 0 and "Audit: none saved: council run audit --run %s" % name in out, out + err)
-    # Without Python there is no audit and the close says nothing of it.
+    # With no Python a run does not open: the launcher refuses with the command's label (D24).
     dirs = [os.path.dirname(shutil.which(t)) for t in ("bash", "git") if shutil.which(t)]
     bare_path = os.pathsep.join(dict.fromkeys(dirs))
     if len(dirs) == 2 and not (shutil.which("python", path=bare_path) or shutil.which("python3", path=bare_path)):
-        b = new_repo(tmp, "keep-audit-nopython")
-        write(os.path.join(b, ".council", "council.config.md"), "# Council config\n")
-        env = {"PATH": bare_path}
-        bn = council(b, "run", "open", "council-review", env=env)[1].strip().splitlines()[-1]
-        write_plan(bn, selected=("chair", "w1"))
-        to_deliver(b)                # the plan check a phase change runs is Python (S5): only the close goes without it
-        code, out, err = council(b, "run", "close", env=env)
-        check("run close: without Python there is no audit, no audit.md and no error",
-              code == 0 and "audit:" not in out + err and not os.path.exists(os.path.join(bn, "audit.md"))
-              and "Traceback" not in err, out + err)
+        code, out, err = council(r, "run", "open", "council-review", "--alongside", env={"PATH": bare_path})
+        check("run open: with no Python on PATH, it refuses with its label, exit 2", code == 2 and out == ""
+              and "council run open needs Python 3.8 or newer, and none is on PATH" in err, err)
     else:
-        print("note: python sits beside bash or git here, so the no-Python close is not checked on this system")
+        print("note: python sits beside bash or git here, so the no-Python open is not checked on this system")
 
 
 @part("runs")

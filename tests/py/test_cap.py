@@ -151,7 +151,7 @@ class GateTest(support.Scratch):
         (run / "seats.tsv").write_text("slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
                                        "a\tdone\tx\t52000\tT\t\t2\t2\n", encoding="utf-8")
         here = agent_gate.Where(self.home, "/no/tree", "s\t1")
-        with mock.patch.object(cap, "stamp", return_value="NOW"):
+        with mock.patch.object(agent_gate.clock, "now_utc", return_value="NOW"):
             agent_gate.count_start(run, "Agent", here, False)
             self.assertEqual((run / "agent-starts.tsv").read_text(),
                              "at\ttool\tsession\nNOW\tbefore:2\t-\nNOW\tAgent\ts 1\n")

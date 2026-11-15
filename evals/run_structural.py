@@ -310,7 +310,7 @@ check("10-learn: 'stop for tonight' mid-run closes the run paused, never complet
       '"stop for tonight"' in doctrine["10-learn.md"] and "`--status paused`" in doctrine["10-learn.md"])
 check("10-learn: the close runs the audit itself, and the Chair tells the user each FAIL",
       "prints each FAIL of `council run audit --run <folder>`" in doctrine["10-learn.md"]
-      and "Tell the user each FAIL line" in doctrine["10-learn.md"] and "--at-close" in command.get("run_close", ""))
+      and "Tell the user each FAIL line" in doctrine["10-learn.md"])   # run_cli runs_stage_order_and_close: the close audits
 check("kernel: a handoff to a new session lists open hazards before any commit or PR, and opens in the main checkout",
       'under "Ask fix-now/later before\n  any commit or PR"' in core and "never an app-made worktree" in core)
 check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
@@ -373,11 +373,6 @@ through_variable = [label for label, t in texts.items()
                     if re.search(r"""\$\{?(C|COUNCIL)\}? (run|state|seat|gate|status|index|collect|check)\b|\b(C|COUNCIL)=["']?bash """, t)]
 check("helper call form: no skill, doctrine, agent or reference shows a council call through a variable",
       not through_variable, ", ".join(through_variable))
-# The session-start hook is the first thing a session reads about the helper; the real run copied the
-# full path it printed into that variable.
-check("hook: session-start teaches the plain `council <command>` call, with the reason",
-      "plain \\`council <command>\\`" in hook and "match the command text" in hook
-      and "if it isn't on PATH, run it as" not in hook)
 check("every --option those mentions use exists in the helper", bool(flags) and not bad_flags, "; ".join(bad_flags[:8]))
 
 # 5. Modes
@@ -570,15 +565,12 @@ check("hook: SessionStart runs session-start.sh", any("hooks/session-start.sh" i
 check("hook: SubagentStop runs seat-gate.sh for council agents only",
       any(g.get("matcher") == "^small-council:council-(worker|verifier)$" and any("hooks/seat-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in stop_groups))
-check("hook: session-start shares the helper's resolver", '. "$ROOT/bin/council"' in hook)
 check("hook: session-start always exits 0", hook.rstrip().endswith("exit 0"))
-check("hook: silent outside council projects", '[ -d "$home" ] || exit 0' in hook)
 gate_code = "\n".join(l for l in gate.split("\n") if not l.lstrip().startswith("#"))
 check("hook: seat-gate's code (not a comment) exits early on stop_hook_active — run_hook tests that it never blocks twice",
       re.search(r"stop_hook_active.*exit 0", gate_code) is not None)
 check("hook: seat-gate's code looks for BLOCKED at a line's start — run_hook tests the forms",
       "'^[[:space:]>*_]*blocked" in gate_code)
-check("hook: session-start resumes only this session's run", "field session" in hook and "session_id" in hook)
 check("hook: PreToolUse runs agent-gate.sh for the Agent, Task and Workflow tools only",
       any(g.get("matcher") == "^(Agent|Task|Workflow)$" and any("hooks/agent-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in hooks_json.get("PreToolUse", [])))
@@ -624,8 +616,7 @@ check("just me: sharing.md says when to ask, what stays out of the shared projec
 check("just me: council sharing is not on the permission list (it edits git's exclude list and CLAUDE.md)",
       '"Bash(council sharing' not in skill["council-init"])
 check("just me: the session hears it, and specs and test specs stay out of the shared tree",
-      "configured_sharing" in hook and "Just me:" in hook
-      and ".council/specs/" in skill["spec-writer"] and "<home>/specs/" in skill["test-architect"])
+      ".council/specs/" in skill["spec-writer"] and "<home>/specs/" in skill["test-architect"])
 check("model routing: plan, doctrine and ADR state the opt-in boundary",
       "seat/<slug>/model" in read("references", "run", "run-plan.md") and
       "seat models: on" in read("references", "doctrine", "03-assign.md") and
