@@ -1,8 +1,5 @@
-"""The helper's command line: its flags, read as bin/council's main() reads them, and its refusals.
-
-bin/council still reads the same flags for the commands that are bash; it hands a ported command's
-words over unchanged, and they are read again here.
-"""
+"""The helper's command line: its flags, as bin/council's main() read them, and its refusals. bin/council only
+starts Python, so every command's words reach this module as typed."""
 from __future__ import annotations
 
 import sys
@@ -23,6 +20,10 @@ class Refusal(Exception):
     """A refusal or usage error: 'council: <message>' on stderr, exit 2. The message names the next step (D19)."""
 
 
+class Help(Exception):
+    """-h or --help, met among the flags: the command list is printed, exit 0."""
+
+
 class Args(NamedTuple):
     """What the command line said: the words, the flags in the order given, and each flag's value."""
 
@@ -38,7 +39,7 @@ class Args(NamedTuple):
 
 
 def parse(argv: list[str]) -> Args:
-    """The words and flags of a council command line, refusing what bin/council's main() refuses."""
+    """The words and flags of a council command line, refusing what bin/council's main() refused."""
     words: list[str] = []
     flags: list[str] = []
     values: dict[str, str] = {}
@@ -69,7 +70,7 @@ def _flag(word: str, rest: list[str], words: list[str]) -> tuple[str, str] | Non
     if word == "--":
         return ("--", "")
     if word in ("-h", "--help"):
-        raise Refusal("help is printed by bin/council: run council help")
+        raise Help
     if word.startswith("--") and name in VALUED + GATE_VALUED:
         if equals:
             return (name, value)

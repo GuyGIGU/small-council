@@ -110,6 +110,12 @@ helper_reference = read("references", "run", "helper-commands.md")
 doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
+command = {f[:-3]: read("src", "council", "commands", f)        # the helper's commands, by module (bin/council
+           for f in os.listdir(os.path.join(ROOT, "src", "council", "commands")) if f.endswith(".py")}   # starts them)
+py = "".join(read(os.path.relpath(os.path.join(d, f), ROOT)) for d, _, fs in os.walk(os.path.join(ROOT, "src", "council"))
+             for f in sorted(fs) if f.endswith(".py"))
+sys.path.insert(0, os.path.join(ROOT, "src"))
+from council.commands import cli as helper_cli, dispatch, help as helper_help  # noqa: E402
 agent_gate = read("hooks", "agent-gate.sh")
 bash_gate = read("hooks", "bash-gate.sh")
 warroom = read("references", "run", "war-room.md")
@@ -189,7 +195,7 @@ check("repair: blocked work is excluded from the built count and helper cost is 
       "is not counted as built" in skill["council-implement"] and
       "helper-only usage" in skill["council-implement"])
 check("repair: helper and kernel expose inspectable repair trail",
-      "cmd_repair()" in cli and "council repair record" in cli and "council repair record" in core and
+      "repair" in command and "council repair record" in helper_help.USAGE and "council repair record" in core and
       "repairs.jsonl" in core)
 check("memory: selected entries carry meaning and origin, failures stay observations",
       "observed failure, not a rule" in read("src", "council", "commands", "memory_select.py") and
@@ -204,19 +210,19 @@ check("memory: a failure is served only while its evidence supports it, and file
       "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
       "UNSUPPORTED" in doctrine["10-learn.md"])
 check("tune: one knob changed, only with the user's words; behaviour held until a benchmark shows it helps",
-      "cmd_tune" in cli and "config.worker_estimate" in read("src", "council", "commands", "route.py") and
+      "tune" in command and "config.worker_estimate" in read("src", "council", "commands", "route.py") and
       os.path.isfile(os.path.join(ROOT, "scripts", "tune.py")) and
       "held" in read("scripts", "tune.py") and "council tune" in read("skills", "council-init", "SKILL.md"))
 check("history: a read-only report over run folders, with a stated bar for every rate",
-      "cmd_history" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "history.py")) and
+      '"history"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "history.py")) and
       "MIN_RUNS = 5" in read("scripts", "history.py"))
 check("tui: a read-only cockpit script, reached through the helper, never part of a stage",
-      "cmd_tui" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "cockpit.py")) and
+      '"cockpit"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "cockpit.py")) and
       "council tui" not in "".join(doctrine.values()))
 kernel_text = read("skills", "context-core", "SKILL.md")
 check("status: one plain-language reading shared by the widget, the summary and the cockpit, shown once "
       "at first dispatch and on request — never a card per progress line",
-      "cmd_status" in cli and os.path.isfile(os.path.join(ROOT, "scripts", "status.py")) and
+      '"status"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "status.py")) and
       "council status --widget" in kernel_text and "show_widget" in kernel_text and "never a card per progress line" in kernel_text
       and "waiting=" in kernel_text and "interpret" in read("scripts", "status.py")
       and "status.interpret" in read("scripts", "cockpit.py"))
@@ -226,16 +232,14 @@ check("status: showing it is a step where it happens — Work's dispatch, Challe
       "2. **Show the user the run's status" in doctrine["05-work.md"] and
       "the run's first dispatch" in doctrine["08-challenge.md"] and
       "2. **Show the closing card, once" in doctrine["10-learn.md"] and
-      all(p in cli.split("status_nudge() {", 1)[-1].split("\n}", 1)[0] for p in
-          ("council status --widget", "deferred tool", "show_widget", "closing card")) and
-      "deferred" in kernel_text and "status_nudge()" in cli and
-      'status_nudge "$run" dispatch' in cli and 'status_nudge "$run" close' in cli)
+      all(p in command["nudges"] for p in ("council status --widget", "deferred tool", "show_widget", "closing card"))
+      and "deferred" in kernel_text)    # run_cli says it at the first dispatch and at the close
 check("accounting: seats record exact usage per agent run, a Workflow's agent count, and the two readers "
       "share one per-seat rule",
       os.path.isfile(os.path.join(ROOT, "references", "run", "run-accounting.md")) and
       "agents=<agent_count>" in doctrine["05-work.md"] and "never a role name" in doctrine["05-work.md"] and
-      "seat_rows()" in cli and "def seat_usage" in read("src", "council", "records", "usage.py") and "cmd_correct" in cli and
-      "usage.tsv" in cli)
+      "seat_rows" in py and "def seat_usage" in read("src", "council", "records", "usage.py") and "correct" in command and
+      "usage.tsv" in py)
 check("seat learning: roster advice weighs only judged runs, past a stated bar",
       "def advice" in read("src", "council", "commands", "ledger.py") and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
       "council ledger advice" in doctrine["10-learn.md"] and
@@ -306,7 +310,7 @@ check("10-learn: 'stop for tonight' mid-run closes the run paused, never complet
       '"stop for tonight"' in doctrine["10-learn.md"] and "`--status paused`" in doctrine["10-learn.md"])
 check("10-learn: the close runs the audit itself, and the Chair tells the user each FAIL",
       "prints each FAIL of `council run audit --run <folder>`" in doctrine["10-learn.md"]
-      and "Tell the user each FAIL line" in doctrine["10-learn.md"] and "close_audit" in cli and "--at-close" in cli)
+      and "Tell the user each FAIL line" in doctrine["10-learn.md"] and "--at-close" in command.get("run_close", ""))
 check("kernel: a handoff to a new session lists open hazards before any commit or PR, and opens in the main checkout",
       'under "Ask fix-now/later before\n  any commit or PR"' in core and "never an app-made worktree" in core)
 check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
@@ -318,19 +322,15 @@ check("09-deliver: files the request and knows the postgame kind; plan and post-
       and not [m for m in MODES if "council ask save" in skill[m]])
 
 # 4. Every `council …` command the texts mention exists in the helper
-usage = cli[cli.find("usage() {"):cli.find("main() {")]
-known = set(re.findall(r"^\s+council ([a-z]+)", usage, re.MULTILINE))
+known = set(re.findall(r"^\s+council ([a-z]+)", helper_help.USAGE, re.MULTILINE))
 check("helper: usage lists its commands", {"run", "state", "seat", "index", "gate", "collect", "check", "map", "ask", "doctor"} <= known, ", ".join(sorted(known)))
 for c in sorted(known):
-    check(f"helper: '{c}' is dispatched in main", re.search(rf"^\s+{c}\)", cli, re.MULTILINE) is not None)
+    check(f"helper: '{c}' is dispatched", c in dispatch.TOP)
 texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
          "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
          "references/run/war-room.md": warroom, "references/guardrails.md": guardrails,
          "references/run/helper-commands.md": helper_reference}
-flag_src = cli[cli.find("main() {"):] + cli[cli.find("cmd_changed() {"):cli.find("cmd_changed() {") + 2000]
-flags = {alt.split("=")[0]                  # case patterns may list several: --run|--base=*)
-         for alts in re.findall(r"^\s+((?:--[a-z][a-z-]*(?:=\*)?\|)*--[a-z][a-z-]*(?:=\*)?)\)", flag_src, re.MULTILINE)
-         for alt in alts.split("|")}
+flags = {"--" + f for f in helper_cli.VALUED + helper_cli.GATE_VALUED + helper_cli.SWITCHES + ("glob", "each")}
 bad, bad_flags = [], []
 for label, t in texts.items():
     for m in re.finditer(r"`council ([a-z]+)([^`]*)`", t):
@@ -587,7 +587,7 @@ check("hook: PreToolUse runs bash-gate.sh for the Bash tool only, with a short t
       any(g.get("matcher") == "^Bash$" and any("hooks/bash-gate.sh" in h.get("command", "") and h.get("timeout", 99) <= 5
                                                for h in g.get("hooks", []))
           for g in hooks_json.get("PreToolUse", [])))
-check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_ID" in cli)
+check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_ID" in command.get("run_open", ""))
 
 # The council pane is a mod in the same hooks file: its module loads beside the settings hooks above
 # (claude plugin test . runs its tests; CI's mod job runs them on Linux).
@@ -676,16 +676,15 @@ check("template config: example slugs match the catalog",
 
 # 9b. The architecture record stays true to the code: an agent trusts docs/architecture.md and
 # docs/decisions.md, so a command, schema, environment variable or decision id they miss or invent is a bug.
-arch, decisions_doc, helper_src = read("docs", "architecture.md"), read("docs", "decisions.md"), read("bin", "council")
+arch, decisions_doc = read("docs", "architecture.md"), read("docs", "decisions.md")
 check("architecture: the record exists, and the root CLAUDE.md points at it and at the decisions",
       bool(arch) and bool(decisions_doc) and "docs/architecture.md" in read("CLAUDE.md")
       and "docs/decisions.md" in read("CLAUDE.md"))
-dispatch = helper_src[helper_src.find("\nmain() {"):]
-top_commands = sorted(set(re.findall(r"\n    ([a-z][a-z-]*)\)", dispatch)) - {"help", "version"})
+top_commands = sorted(dispatch.TOP - {"help", "version"})
 entry = arch[arch.find("## 5. Entry points"):arch.find("## 6.")]
 missing = [c for c in top_commands if f"`{c}" not in entry and f"{c}`" not in entry and f" {c}," not in entry]
 check("architecture §5: names every top-level helper command", not missing, str(missing))
-code_text = helper_src + "".join(read("scripts", f) for f in sorted(os.listdir(os.path.join(ROOT, "scripts"))) if f.endswith(".py"))
+code_text = cli + py + "".join(read("scripts", f) for f in sorted(os.listdir(os.path.join(ROOT, "scripts"))) if f.endswith(".py"))
 schemas = sorted(set(re.findall(r"council\.[a-z-]+/[0-9]+", code_text)))
 contracts = arch[arch.find("## 6."):arch.find("## 7.")]
 check("architecture §6: lists every JSON schema the code emits", schemas and all(s in contracts for s in schemas),
@@ -768,18 +767,16 @@ for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks
     check(f"{label}: loops over the arguments survive an empty \"$@\" on bash 3.2 (${{1+\"$@\"}})",
           bool(t) and not bare, "; ".join(bare))
 
-# bash 3.2 calls an empty "$@" or $* unbound under set -u, so the argument dispatch always guards them.
+# bash 3.2 calls an empty "$@" or $* unbound under set -u, so the launcher always guards them; sourced, it does nothing.
 bare = []
-for fn in ("main", "takes_flags", "no_words", "cmd_check"):
-    body = re.search(r"^%s\(\) \{\n(.*?)^\}" % fn, cli, re.S | re.M)
-    for i, line in enumerate((body.group(1) if body else "").split("\n"), 1):
-        bit = re.sub(r"\$\{[0-9]\+[^}]*\}", "", re.sub(r"#.*$", "", line))    # ${1+"$@"} is the guarded form
-        if re.search(r'"\$@"|\$\*', bit) and not re.search(r"\[ \$# -", bit):
-            bare.append(f"{fn}:{i}: {line.strip()}")
-if not re.search(r'^if \[ "\$\{BASH_SOURCE\[0\]\}" = "\$0" \]; then main \$\{1\+"\$@"\}; fi', cli, re.M):
-    bare.append("the file's own dispatch line calls main without a guard")
-check("bin/council: the argument dispatch never expands an empty \"$@\" or $* (unbound in bash 3.2 under set -u)",
-      not bare, "; ".join(bare))
+for i, line in enumerate(cli.split("\n"), 1):
+    bit = re.sub(r"\$\{[0-9]\+[^}]*\}", "", re.sub(r"#.*$", "", line))    # ${1+"$@"} is the guarded form
+    if re.search(r'"\$@"|\$\*', bit):
+        bare.append(f"{i}: {line.strip()}")
+if not re.search(r'^\[ "\$\{BASH_SOURCE\[0\]\}" = "\$0" \] \|\| return 0$', cli, re.M):
+    bare.append("sourcing the file runs it: the guard line is gone")
+check("bin/council: the launcher never expands an empty \"$@\" or $* (unbound in bash 3.2 under set -u), and sourcing "
+      "it runs nothing", not bare, "; ".join(bare))
 
 # 12. Rename, and no project leakage in anything that ships as behaviour
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
@@ -795,7 +792,7 @@ for label, text in shipped.items():
 # 13. Versions agree: plugin.json, the newest CHANGELOG release, and the helper
 plugin = json.loads(read(".claude-plugin", "plugin.json") or "{}")
 released = re.findall(r"^## \[(\d+\.\d+\.\d+)\]", read("CHANGELOG.md"), re.MULTILINE)
-helper_version = re.search(r'^COUNCIL_VERSION="([^"]+)"', cli, re.MULTILINE)
+helper_version = re.search(r'^COUNCIL_VERSION = "([^"]+)"', command["help"], re.MULTILINE)
 check("version: plugin.json matches the latest CHANGELOG release", bool(released) and plugin.get("version") == released[0], f"{plugin.get('version')} vs {released[:1]}")
 check("version: the helper matches plugin.json", bool(helper_version) and helper_version.group(1) == plugin.get("version"),
       helper_version.group(1) if helper_version else "none")

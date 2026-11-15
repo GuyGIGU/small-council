@@ -3,8 +3,6 @@ lock, the time limit, and the stop of a whole process tree."""
 from __future__ import annotations
 
 import os
-import shutil
-import subprocess
 import time
 import unittest
 from pathlib import Path
@@ -17,7 +15,6 @@ from council.records import events, gate_notes, gate_table, locks, state_write, 
 
 HEAD = ("| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs |\n"
         "|---|---|---|---|---|---|---|---|\n")
-HELPER = Path(__file__).resolve().parents[2] / "bin" / "council"
 
 
 class ConfigGatesTest(support.Scratch):
@@ -47,13 +44,9 @@ class ConfigGatesTest(support.Scratch):
         home = self.config("- run `council gate --all`\n")
         self.assertFalse(gate_table.gates_listed(home))
 
-    def test_bash_and_python_read_one_table_alike(self) -> None:
-        """Until run close is ported, bin/council's config_gates reads the same table (S8b): the two must agree,
-        cell for cell. The notes are Python's alone since doctor moved (S8); each row's are pinned as the helper's
-        gate_shape, gate_backslash and gate_winswitch gave them."""
-        bash = shutil.which("bash")
-        if bash is None:
-            self.skipTest("no bash")
+    def test_one_table_read_as_the_helper_read_it(self) -> None:
+        """Each row's cells as bin/council's config_gates gave them, and its notes as the helper's gate_shape,
+        gate_backslash and gate_winswitch gave them."""
         home = self.config(
             HEAD + "| tests | `pytest -q \\| tee x` | Grounding, Verify | yes | ✓ 2026-09-15 | `true` | none | - |\n"
             "| lint | `ruff . ; echo ok` | verification | **Yes** | ✔ | `true` | writes the tree, network | - |\n"
@@ -63,15 +56,21 @@ class ConfigGatesTest(support.Scratch):
             "| typo | `true` | grounding, verfy | n | broken | `true` | none | - |\n"
             "| shifted | `a | b` | grounding | yes | ok | `true` | none | - |\n"
             "| é ü | `echo ü` | – | non-blocking | ✅ | `true` | none | — |\n")
-        cfg = (Path(home) / "council.config.md").as_posix()
-        script = '. "$1"; config_gates "$2"'
-        rows = subprocess.run(shell.argv_for([bash, "-c", script, "council", HELPER.as_posix(), cfg]),
-                              stdout=subprocess.PIPE, check=True).stdout.decode("utf-8")
         python = gate_table.gates(home)
-        self.assertEqual(rows.splitlines(), ["\t".join([g.name, g.command, g.at, g.mandatory, str(g.cells), g.checked,
-                                                        g.side, g.needs, str(g.header_cells),
-                                                        "1" if g.has_side else "0", g.stages, g.must, g.ran])
-                                             for g in python])
+        self.assertEqual([(g.name, g.command, g.at, g.mandatory, g.checked, g.side, g.needs, g.stages, g.must, g.ran)
+                          for g in python], [
+            ("tests", "pytest -q | tee x", "Grounding, Verify", "yes", "✓ 2026-09-15", "none", "-", "gv", "yes", "ok"),
+            ("lint", "ruff . ; echo ok", "verification", "**Yes**", "✔", "writes the tree, network", "-", "v", "yes",
+             "ok"),
+            ("win", "msbuild /p:x=y tools\\run.ps1", "manual", "not mandatory", "✗ no GPU", "-", "an API key", "m",
+             "no", "not"),
+            ("cap", "o=$(pytest); case $o in *ok*) exit 0;; esac", "both", "always", "later", "deploys", "-", "gv",
+             "yes", "?"),
+            ("empty", "-", "-", "no", "ok", "none", "-", "-", "no", "ok"),
+            ("typo", "true", "grounding, verfy", "n", "broken", "none", "-", "g?", "no", "not"),
+            ("shifted", "a | b", "grounding", "yes", "ok", "none", "-", "g", "yes", "ok"),
+            ("é ü", "echo ü", "–", "non-blocking", "✅", "none", "—", "-", "no", "ok")])
+        self.assertEqual({(g.cells, g.header_cells, g.has_side) for g in python}, {(10, 10, True)})
         pinned = [("tests", ["pipe"], False, False), ("lint", ["masked"], False, False), ("win", [], True, True),
                   ("cap", ["capture"], False, False), ("empty", [], False, False), ("typo", [], False, False),
                   ("shifted", ["pipe"], False, False), ("é ü", [], False, False)]

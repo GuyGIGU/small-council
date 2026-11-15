@@ -1,4 +1,4 @@
-"""The ported commands' dispatcher: COMMANDS maps a command's words to one module, imported only on use (D34)."""
+"""The helper's dispatcher: COMMANDS maps a command's words to one module, imported only on use (D34)."""
 from __future__ import annotations
 
 import importlib
@@ -52,6 +52,14 @@ COMMANDS = {  # a `run <sub>` module's main takes (args, sub, words); every othe
     "help": "help",
     "version": "help",
 }
+USAGES = {  # a sub of `run` or `cap` with no row
+    "run": "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] "
+           "| run plan [check|show] | run events [show|check] | run audit [--transcript <file>]",
+    "cap": 'usage: council cap [--run <folder>] | cap allow <n> --user-said "…" | cap check [--session ID] '
+           "[<tool> [type=… seat=… run=… file=…]]",
+}
+CAP_SUBS = ("", "check", "allow")
+TOP = {key.split(" ")[0] for key in COMMANDS}
 
 
 def main(argv: list[str]) -> int:
@@ -59,9 +67,11 @@ def main(argv: list[str]) -> int:
     _plain_streams()
     try:
         args = cli.parse(argv)
-        if not args.words:
+        if args.flags and not args.words:
             raise cli.Refusal("a flag needs a command — see: council help")
-        return _route(args, args.words[0], args.words[1:])
+        return _route(args, args.words[0], args.words[1:]) if args.words else _usage()
+    except cli.Help:
+        return _usage()
     except cli.Refusal as refusal:
         cli.warn("council: %s" % refusal)
         return 2
@@ -71,13 +81,21 @@ def main(argv: list[str]) -> int:
 
 def _route(args: cli.Args, command: str, words: list[str]) -> int:
     key = command + " " + words[0] if command == "run" and words else command
-    name = COMMANDS.get(key)
-    if name is None or importlib.util.find_spec("council.commands." + name) is None:   # a row whose module is to come
+    if command not in TOP:
+        raise cli.Refusal("unknown command '%s' — see: council help" % command)
+    if key not in COMMANDS or (command == "cap" and words[:1] and words[0] not in CAP_SUBS):
+        raise cli.Refusal(USAGES[command])
+    name = COMMANDS[key]
+    if importlib.util.find_spec("council.commands." + name) is None:   # a row whose module is to come
         raise cli.Refusal("'%s' is not ported to Python yet — run it through bin/council" % " ".join(args.words))
     module = importlib.import_module("council.commands." + name)
     if command == "run":
         return int(module.main(args, words[0], words[1:]))
     return int(module.main(args, words))
+
+
+def _usage() -> int:
+    return int(importlib.import_module("council.commands.help").usage())
 
 
 def _plain_streams() -> None:
