@@ -1103,6 +1103,10 @@ def runs_change_index(tmp):
               [("scripts/deploy.sh", 2), ("scripts/ai/role_def.gd", 4), ("webapp/backend/main.py", 5), ("core/x.py", 6)]), out)
     code, out, _ = council(pr, "prior", "api.py")
     check("prior: a path inside a longer name (api.py.bak) is not a mention", "no earlier council work" in out, out)
+    write(os.path.join(prv, "2026-09-05-tab.md"), "# t\n6 · P3 · tabbed.py:2\tthen\tmore words\n")
+    code, out, _ = council(pr, "prior", "tabbed.py")
+    check("prior: a mentioned line that holds a tab is shown whole",
+          "tabbed.py — reviews/2026-09-05-tab.md:2 — 6 · P3 · tabbed.py:2\tthen\tmore words\n" in out, out)
     for i in range(45):
         write(os.path.join(prv, f"2026-07-{i:02d}-many.md"), "---\nareas: src/**\n---\n# many\n")
     code, out, _ = council(pr, "prior", "src/a.py")
