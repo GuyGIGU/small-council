@@ -6,6 +6,7 @@ from pathlib import Path
 
 from council.records import plan, state
 
+SYNTHESISED = ("council-review", "council-plan", "council-research")    # the modes whose seats end in a synthesis
 COUNCIL_NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
 STAGES = {  # name: (rank, next step); a build stands where council-implement's build loop does (3-7)
     "convene": (1, COUNCIL_NEXT_AT_OPEN),
@@ -41,7 +42,7 @@ def next_text(stage: str) -> str:
 def required(run: Path) -> list[str]:
     """The stages a run must enter: all ten for a review, plan or research run with a worker, not Solo."""
     mode = state.field(state.text(run), "mode")
-    if mode not in ("council-review", "council-plan", "council-research"):
+    if mode not in SYNTHESISED:
         return REQUIRED.get(mode, "").split()
     rows = []                                             # (kind, id, field, value): the plan's rows, trimmed
     for line in plan.text(run).split("\n"):

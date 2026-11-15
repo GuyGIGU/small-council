@@ -6,11 +6,11 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import time
 from pathlib import Path
 
+from council import clock
 from council.commands import cli, closed, gate_lock, gate_output, gate_repair, gate_run, resolve, shell
-from council.records import config, gate_notes, gate_table, gates, paths, state_write, verdicts
+from council.records import bytewise, config, gate_notes, gate_table, gates, paths, state_write, verdicts
 from council.records import home as where
 
 USAGE = "usage: council gate <name> [-- '<command>']   |   council gate --all [--at grounding|verify]"
@@ -118,10 +118,10 @@ def safe(side: str, needs: str, has_side: bool) -> bool:
     """May `gate --all` run this gate unasked? Only if the table has a Side effects column, every side effect is
     on the safe list (none, writes the tree, network) and Needs names no credentials or hardware. A command's
     wording is no evidence that it is safe."""
-    if NEEDS_ASK.search(needs.translate(gate_output.ASCII_LOWER)) or not has_side or side == "-":
+    if NEEDS_ASK.search(bytewise.lower(needs)) or not has_side or side == "-":
         return False
     items = [item.strip(" \t\n\v\f\r") for item in side.split(",")]
-    return all(item.translate(gate_output.ASCII_LOWER) in SAFE for item in items if item)
+    return all(bytewise.lower(item) in SAFE for item in items if item)
 
 
 def one(call: gate_run.Call, name: str, command: str, mode: str, wait: tuple[bool, str]) -> int:
@@ -231,19 +231,15 @@ def _mark(run: str, slug: str, base: str, why: str) -> str:
     while os.path.isfile("%s/%s-%d.json" % (folder, slug, k)):
         k += 1
     verdict, tail = base + ".json", ', "invalid": "%s"}' % gate_run.json_esc(why)
-    lines = gate_output.lines(gate_output.text(verdict))
+    lines = bytewise.file_lines(verdict, fold=False)
+    marked = "".join(re.sub(r"[}][ \t\r]*\Z", "", line, count=1) + tail + "\n" for line in lines)
     try:
-        with open(verdict + ".tmp", "wb") as handle:
-            handle.write("".join(re.sub(r"[}][ \t\r]*\Z", "", line, count=1) + tail + "\n" for line in lines)
-                         .encode("utf-8", "surrogateescape"))
-        paths.swap_in(verdict + ".tmp", verdict)
+        paths.atomic_write(Path(verdict), marked.encode("utf-8", "surrogateescape"), slug + ".json.tmp", keep_mode=True)
     except OSError:
-        if os.path.exists(verdict + ".tmp"):
-            os.remove(verdict + ".tmp")
         raise cli.Refusal("cannot update %s" % verdict) from None
     with open(base + ".txt", "ab") as handle:
         handle.write(("\ncouncil: marked invalid %s — %s. This red proves nothing; run the check again once it is "
-                      "fixed.\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), why)).encode("utf-8", "surrogateescape"))
+                      "fixed.\n" % (clock.now_sec(), why)).encode("utf-8", "surrogateescape"))
     keep = "%s/%s-%d" % (folder, slug, k)
     shutil.copyfile(verdict, keep + ".json")
     if os.path.isfile(base + ".txt"):

@@ -2,44 +2,23 @@
 current task, and the pass of a gate whose trail is open closes it — recorded here, so the stop after three
 failures holds without a separate command. The gate's exit code never depends on this.
 
-The repair loop itself is scripts/repair.py, run here through council.commands.script."""
+The repair loop itself is commands/repair_trail.py, run here through council.commands.script."""
 from __future__ import annotations
 
-import contextlib
-import io
 import re
-import sys
 from pathlib import Path
-from types import ModuleType
 
 from council.commands import cli, resolve
 from council.records import config, repairs
 
 
-def engine() -> ModuleType:
-    """scripts/repair.py as a module, loaded once."""
-    from council.commands import script
-    return script.load("repair")
-
-
 def run_quietly(action: str, task: str, gate: str | None, run: str) -> tuple[int, str]:
-    """One `repair.py <action> <task> [<gate>] --run <run>`, run here as the helper ran it, with what it printed
-    as $( … ) kept it: a record's refusal too (2>&1), the other actions' dropped (2>/dev/null)."""
-    repair, said, dropped = engine(), io.StringIO(), io.StringIO()
-    argv, sys.argv = sys.argv, ["repair.py", action, task] + ([gate] if gate is not None else []) + ["--run", run]
-    try:
-        with contextlib.redirect_stdout(said), contextlib.redirect_stderr(said if action == "record" else dropped):
-            try:
-                code = repair.main()
-            except SystemExit as stop:                     # argparse's own refusal
-                code = stop.code if isinstance(stop.code, int) else 2
-            except (repair.RepairError, repair.paths.RecordError, OSError, UnicodeError, ValueError,
-                    TypeError) as exc:
-                print("repair: " + str(exc), file=sys.stderr)
-                code = 2
-    finally:
-        sys.argv = argv
-    return code, said.getvalue().rstrip("\n")
+    """One `repair <action> <task> [<gate>] --run <run>`, with what it printed kept as the helper's $( … ) kept
+    it: a record's refusal too (2>&1), the other actions' dropped (2>/dev/null)."""
+    from council.commands import script            # loaded on use: a gate with no repair trail never needs it
+    code, said, errors = script.captured("repair", [action, task] + ([gate] if gate is not None else []) + ["--run",
+                                                                                                            run])
+    return code, (said + errors if action == "record" else said).rstrip("\n")
 
 
 def trail(run: str, name: str) -> str:

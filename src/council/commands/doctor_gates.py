@@ -8,12 +8,12 @@ import os
 import re
 
 from council.commands.doctor import Doctor
-from council.records import config, gate_notes, gate_table
+from council.records import config, gate_notes, gate_table, paths
 from council.records import gates as gate_files
 from council.records import home as where
 
 SLOW = 300                  # seconds: a grounding gate slower than this holds up every review
-_SECONDS = re.compile(r'.*"seconds": *([0-9][0-9]*)')
+_SECONDS = re.compile(r'^.*"seconds": *([0-9]+)', re.M)     # the first line that has one, its last
 
 
 def gates(doc: Doctor) -> None:
@@ -101,13 +101,5 @@ def last_seconds(home: str, name: str) -> int | None:
             continue
     if not stamped:
         return None
-    try:
-        with open(min(stamped)[2], "rb") as stream:
-            text = stream.read().decode("utf-8", "surrogateescape")
-    except OSError:
-        return None
-    for line in text.split("\n"):
-        found_line = _SECONDS.match(line)
-        if found_line:
-            return int(found_line.group(1))
-    return None
+    seconds = _SECONDS.search((paths.contents(min(stamped)[2]) or b"").decode("utf-8", "surrogateescape"))
+    return int(seconds.group(1)) if seconds else None

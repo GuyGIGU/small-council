@@ -10,10 +10,10 @@ from pathlib import Path
 
 from council.records import bytewise, scope
 from council.records import home as where
+from council.records.paths import contents
 from council.records.run_files import INDEX
 
 DELIVERABLES = ("reviews", "logs", "research", "plans", "postgames")
-BOM = bytewise.read(b"\xef\xbb\xbf")
 _NAMED = re.compile(rb"## (.*)  \(")
 _PATHISH = re.compile(r"[A-Za-z0-9_./-]")
 _DOTS = re.compile(r"(^|[^A-Za-z0-9_./-])(\./)+\Z")
@@ -47,13 +47,6 @@ def deliverables(home: str) -> list[str]:
     return found
 
 
-def clip(text: str) -> str:
-    """A line cut to 120 characters (bytes) at a space, with an ellipsis."""
-    if len(text) <= 120:
-        return text
-    return re.sub(r" [^ ]*\Z", "", text[:120], count=1, flags=re.S) + " " + bytewise.ELLIPSIS
-
-
 def hits(home: str, paths: list[str]) -> list[str]:
     """For each deliverable, each path it names (tab-separated: the path, <folder>/<file>:<line>, the line clipped),
     else whose areas cover it (the path, <folder>/<file>, "(its areas cover <item>)"). paths are C-locale text."""
@@ -65,10 +58,7 @@ def hits(home: str, paths: list[str]) -> list[str]:
     reader = Reader(wanted, bytewise.lower(bytewise.text(top)))
     found: list[str] = []
     for shown in deliverables(home):
-        try:
-            data = Path(where.native(home + "/" + shown)).read_bytes()
-        except OSError:
-            continue
+        data = contents(where.native(home + "/" + shown))
         if data:
             found.extend(reader.file(bytewise.text(shown), bytewise.read(data)))
     return found
@@ -81,13 +71,9 @@ class Reader:
         self.paths, self.top = paths, top
 
     def file(self, shown: str, text: str) -> list[str]:
-        lines = bytewise.records(text)
         hit, areas = [""] * len(self.paths), []
         in_front = in_areas = False
-        for n, raw in enumerate(lines, 1):
-            line = raw[:-1] if raw.endswith("\r") else raw
-            if n == 1 and line.startswith(BOM):
-                line = line[len(BOM):]
+        for n, line in enumerate(bytewise.lines(text), 1):
             if n == 1 and line == "---":
                 in_front = True
             elif in_front:
@@ -123,7 +109,7 @@ class Reader:
             while at >= 0:
                 after = s0[at + len(path):at + len(path) + 2]
                 if self.boundary(s0, at) and not _AFTER.match(after):
-                    hit[i] = where_at + "\t" + clip(line.lstrip(" \t"))
+                    hit[i] = where_at + "\t" + bytewise.clip(line.lstrip(" \t"), 120)
                     break
                 at = s0.find(path, at + 1)
 

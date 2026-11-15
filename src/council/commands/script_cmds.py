@@ -1,9 +1,7 @@
-"""The commands that hand over to a scripts/ entry, one TABLE row each."""
+"""The commands that hand over to a tool or a view (commands/script.py), one TABLE row each."""
 from __future__ import annotations
 
-import builtins
 import os
-from functools import reduce
 from pathlib import Path
 
 from council.commands import cli, nudges, resolve, script, shell
@@ -13,8 +11,8 @@ TABLE = {
     "evidence": ("evidence", ("SUB", "--run", "RUN"), (), ""),
     "tui": ("cockpit", ("--run", "RUN", "--home", "HOME"), ("watch", "json"), ""),
     "status": ("status", ("--run", "RUN", "--home", "HOME", "TUI"), ("widget", "json", "line", "preview"), ""),
-    "pet": ("pet", ("--project", "TREE", "--home", "HOME", "--council", "COUNCIL", "--bash", "BASH", "SESSION",
-                    "LAUNCH"), ("stop", "demo", "still", "pose", "exit-after"),
+    "pet": ("pet", ("--project", "TREE", "--home", "HOME", "SESSION", "LAUNCH"), ("stop", "demo", "still", "pose",
+                                                                                 "exit-after"),
             "pet follows this session's run on this working tree; it does not take --run"),
     "history": ("history", ("--home", "HOME"), ("json",),
                 "history reads every run of this council home; it does not take --run"),
@@ -22,14 +20,8 @@ TABLE = {
                  "outcomes reads every run of this council home's record; it does not take --run"),
     "run audit": ("audit", ("--run", "RUN"), ("transcript",), ""),
 }
-FAULTS = {  # what each script's own __main__ prints as '<script>: <fault>' and exits 2 on
-    "evidence": "EvidenceError paths.RecordError UnicodeError OSError ValueError",
-    "history": "ledger.LedgerError OSError ValueError",
-    "tune": "TuneError paths.RecordError OSError UnicodeError ValueError",
-    "repair": "RepairError paths.RecordError OSError UnicodeError ValueError TypeError",
-}
 EVIDENCE = "usage: council evidence build|show|check [--run <folder>]"
-ROOT = script.SCRIPTS.parent
+ROOT = Path(__file__).resolve().parents[3]          # the plugin's root, where bin/council is
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -49,25 +41,16 @@ def main(args: cli.Args, words: list[str]) -> int:
         if "RUN" in lead else ""
     session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     fill = {"RUN": lambda: [run], "HOME": lambda: [home], "SUB": lambda: [sub], "TREE": lambda: [where.this_tree()],
-            "TUI": lambda: tui_commands(Path(run)), "COUNCIL": lambda: [where.here(ROOT) + "/bin/council"],
-            "BASH": lambda: [shell.bash_exe() or shell.helper_bash()],
+            "TUI": lambda: tui_commands(Path(run)),
             "SESSION": lambda: ["--session", session] if session else [],
             "LAUNCH": lambda: [] if args.value("stop") else ["--launch"]}
     words = [word for token in lead for word in (fill[token]() if token in fill else [token])]
     for flag, value in ((flag, args.value(flag)) for flag in takes if args.value(flag)):
         words += ["--" + flag] + ([] if flag in cli.SWITCHES else [_mixed(value) if flag == "transcript" else value])
-    code = run_script(name, words)
+    code = script.run(name, words)
     if command == "status" and code == 0 and not args.value("json"):
         nudges.clear_card(Path(run))                     # the status was read out: no card is owed
     return code
-
-
-def run_script(name: str, words: list[str]) -> int:
-    """scripts/<name>.py run here, its faults said as its __main__ says them."""
-    module = script.load(name)
-    faults = tuple(reduce(getattr, fault.split("."), builtins if hasattr(builtins, fault) else module)
-                   for fault in FAULTS.get(name, "").split())
-    return script.run(name, words, faults)
 
 
 def _refuse(command: str, sub: str, args: cli.Args, no_run: str) -> None:

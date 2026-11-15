@@ -13,8 +13,7 @@ DEFERRED = "(it may be a deferred tool: search the tools for it first)"
 def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "run turn-end", "session")
     cli.no_words("run turn-end", words)
-    if args.value("run"):
-        raise cli.Refusal("run turn-end looks at every in-progress run this session drives; it does not take --run")
+    cli.takes_no_run(args, "run turn-end looks at every in-progress run this session drives")
     session = args.value("session")
     if not session:
         return 0

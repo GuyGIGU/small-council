@@ -1,5 +1,5 @@
 // The council view's values in $.state (hooks/council-view.tsx). One reading of the open run, taken
-// from scripts/status.py --json, so the pane and the bar say what the status card says.
+// from the status reader (src/council/commands/script.py status --json), so the pane and the bar say what the status card says.
 export type CouncilSeat = {
   slug: string
   name: string

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Focused, no-model checks for run accounting and the plain-language status: `council seat`,
-`council correct`, `council status [--widget | --json]`, scripts/status.py and the cockpit's reading.
+`council correct`, `council status [--widget | --json]`, views/status.py and the cockpit's reading.
 
 Three parts:
 - Accounting, through the helper. A token count is one number, stored as whole tokens. A repeated or
@@ -11,7 +11,7 @@ Three parts:
   unknown). A recovered failure is no current problem. A long run stays compact, and a record never
   reaches the widget unescaped. Reading a run writes nothing. The stop at the limit and the user's go
   read the same on the card as in the helper (`cap_standing`, `council cap`).
-- The desktop pet (`council pet`, scripts/pet.py), never with a window: CI has no display.
+- The desktop pet (`council pet`, views/pet.py), never with a window: CI has no display.
 """
 
 import hashlib
@@ -29,11 +29,10 @@ ROOT = Path(__file__).resolve().parent.parent
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 GIT = shutil.which("git")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-sys.path.insert(0, str(ROOT / "scripts"))
-import cockpit  # noqa: E402
-import history  # noqa: E402
-import pet  # noqa: E402  (the desktop pet: imported without a display, as CI has none)
-import status  # noqa: E402
+sys.path.insert(0, str(ROOT / "src"))
+from council.views import cockpit, cockpit_screen, history, status, status_closing, status_usage, words  # noqa: E402
+from council.views import pet, pet_shapes  # noqa: E402  (the desktop pet: imported without a display, as CI has none)
+ENTRY = ROOT / "src" / "council" / "commands" / "script.py"
 sys.path.insert(0, str(ROOT / "src"))
 from council.commands import seat_notes, shell  # noqa: E402  (the helper's own code, where bash once was sourced)
 from council.records import ledger as helper_ledger, state as helper_state, usage as helper_usage  # noqa: E402
@@ -571,17 +570,17 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
               "over": True, "stopped": False, "text": go6}, lim["go covers, over"]["usage"]["limit"])
     check("stop: reading the stop and the go writes nothing", fingerprint(stopbase) == before)
 
-    # --- the desktop pet (scripts/pet.py) — no window: CI has no display ----------------------------------------
-    check("pet: scripts/pet.py imports without a display, and without loading tkinter", "tkinter" not in sys.modules)
+    # --- the desktop pet (views/pet.py) — no window: CI has no display ----------------------------------------
+    check("pet: views/pet.py imports without a display, and without loading tkinter", "tkinter" not in sys.modules)
     boxes, marks = {}, {}
     for pose in pet.POSES:
-        steps = pet.shapes(pose)
+        steps = pet_shapes.shapes(pose)
         pts = [p for s in steps if s[0] in ("polygon", "line") for p in s[1]]
         pts += [(s[1][0] + dx * s[1][2], s[1][1] + dy * s[1][2]) for s in steps if s[0] == "oval" for dx, dy in ((-1, -1), (1, 1))]
         boxes[pose] = tuple(round(f(p[i] for p in pts), 1) for i, f in ((0, min), (1, min), (0, max), (1, max)))
         marks[pose] = (sorted(s[2] for s in steps if s[0] == "text"), sum(1 for s in steps if s[0] == "oval"))
-    body = pet.path_points(pet.BODY)
-    half_moon = pet.path_points("M31 49 h14 a7 7 0 0 1 -14 0 Z")[0][0]
+    body = pet_shapes.path_points(pet_shapes.BODY)
+    half_moon = pet_shapes.path_points("M31 49 h14 a7 7 0 0 1 -14 0 Z")[0][0]
     check("pet: the design's paths are sampled into shapes of the same extent — the body 20..80 by 20..88, a "
           "half-moon eye below its line, everything inside the 100 x 100 box",
           len(body) == 1 and body[0][1] and tuple(round(f(p[i] for p in body[0][0]), 1) for i, f in (
@@ -593,7 +592,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           marks == {"asleep": (["z", "z"], 0), "working": ([], 0), "needs-you": (["?"], 3), "stopped": ([], 0),
                     "done": ([], 5)}, marks)
     check("pet: no brown face lines in any pose — the cream outline is enough",
-          not any(step[0] == "line" and step[2].upper() == "#993C1D" for pose in pet.POSES for step in pet.shapes(pose)))
+          not any(step[0] == "line" and step[2].upper() == "#993C1D" for pose in pet.POSES for step in pet_shapes.shapes(pose)))
 
     def pet_view(folder):
         return pet.view({"kind": "status", "status": json.loads(json.dumps(reading(folder)))})
@@ -679,7 +678,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     plain = {}
     for kind in ("none", "headless"):
         env = dict(os.environ, PYTHONPATH=str(fakes / kind))
-        done = subprocess.run([sys.executable, str(ROOT / "scripts" / "pet.py"), "--launch", "--demo", "--project",
+        done = subprocess.run([sys.executable, str(ENTRY), "pet", "--launch", "--demo", "--project",
                                str(base / ("proj-" + kind))], capture_output=True, text=True, encoding="utf-8",
                               errors="replace", env=env, timeout=60)
         plain[kind] = (done.returncode, done.stdout, done.stderr.strip())
@@ -690,14 +689,14 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           and not pet.running(base / "proj-none"), plain)
 
     project = base / "proj-held"
-    holder = ("import os, sys, time\nsys.path.insert(0, {scripts!r})\nimport pet\n"
+    holder = ("import os, sys, time\nsys.path.insert(0, {scripts!r})\nfrom council.views import pet\n"
               "files = pet.pet_files({project!r})\nlock = pet.Lock(files['lock'])\nassert lock.take()\n"
               "open(files['pid'], 'w').write(str(os.getpid()))\nprint('ready', flush=True)\nstart = time.time()\n"
               "while time.time() - start < 60 and not ({listens} and os.path.exists(files['stop'])):\n    time.sleep(0.05)\n"
               "os.remove(files['pid'])\nlock.release()\n")
 
     def hold(listens):
-        proc = subprocess.Popen([sys.executable, "-c", holder.format(scripts=str(ROOT / "scripts"), project=str(project),
+        proc = subprocess.Popen([sys.executable, "-c", holder.format(scripts=str(ROOT / "src"), project=str(project),
                                                                         listens=listens)],
                                 stdout=subprocess.PIPE, text=True)
         proc.stdout.readline()
@@ -705,15 +704,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
 
     gentle = hold(True)
     held = pet.running(project)
-    again = subprocess.run([sys.executable, str(ROOT / "scripts" / "pet.py"), "--launch", "--demo", "--project", str(project)],
+    again = subprocess.run([sys.executable, str(ENTRY), "pet", "--launch", "--demo", "--project", str(project)],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-    stopped_out = subprocess.run([sys.executable, str(ROOT / "scripts" / "pet.py"), "--stop", "--project", str(project)],
+    stopped_out = subprocess.run([sys.executable, str(ENTRY), "pet", "--stop", "--project", str(project)],
                                  capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     gentle_code = gentle.wait(timeout=10)
     stubborn = hold(False)
     forced = pet.stop_pet(project, grace=0.5)
     stubborn_code = stubborn.wait(timeout=10)
-    none_out = subprocess.run([sys.executable, str(ROOT / "scripts" / "pet.py"), "--stop", "--project", str(project)],
+    none_out = subprocess.run([sys.executable, str(ENTRY), "pet", "--stop", "--project", str(project)],
                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     check("pet: while one runs, a second is refused; --stop asks it to close, ends one that doesn't, and says when none "
           "is open — its lock, pid and stop files cleared",
@@ -1056,7 +1055,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         for name, folder in stops.items():
             held = helper_usage.standing(folder, str(stopbase / ".council"))
             helper = (held.used, held.cap, held.tokens, held.ceiling, held.until, held.over, held.stopped)
-            py = status.cap_standing(cockpit.snapshot(folder, None, 8), folder)
+            py = status_usage.cap_standing(cockpit.snapshot(folder, None, 8), folder)
             mine = tuple(py[k] for k in ("agent_runs", "agent_cap", "tokens", "ceiling", "allowed_until", "over",
                                          "stopped"))
             if helper != mine:
@@ -1086,7 +1085,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         check("status through the helper: reading the stop and the go writes nothing", fingerprint(stopbase / ".council") == before)
 
         # --- council pet, through the helper — never a window here ---------------------------------------------
-        follower = pet.Follower(BASH, str(ROOT / "bin" / "council"), stopbase / ".council", str(stopbase), "", str(stopbase))
+        follower = pet.Follower(sys.executable, str(ENTRY), stopbase / ".council", str(stopbase), "", str(stopbase))
         followed = follower.read()
         followed_limit = followed.get("status", {}).get("usage", {}).get("limit", {})
         check("pet: it follows this tree's newest open run through `council status --json` (the user's go included), "
@@ -1277,8 +1276,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
             snapshot = {"usage": {"tokens": {"basis": "complete", "total": tokens},
                                   "agents": {"total": 1, "at_least": 1}}}
             card = status.tokens_text(tokens)
-            status_line = status.usage_of(snapshot)["text"]
-            tui = cockpit.k(tokens)
+            status_line = status_usage.usage_of(snapshot)["text"]
+            tui = cockpit_screen.k(tokens)
             history_line = history.k(tokens)
             display_dir = agree / "display"
             write(display_dir / "seats.tsv", "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
@@ -1568,7 +1567,7 @@ with tempfile.TemporaryDirectory(prefix="council-request-cut-") as temporary:
 
     def asked(title, said):
         write(root / ".council" / "asks" / "a.md", "# {}\n\n## In your words\n{}\n".format(title, said))
-        return status.filed_request(asked_run, ".council/asks/a.md")
+        return status_closing.filed_request(asked_run, ".council/asks/a.md")
 
     def whole(got, original, limit):           # the longest run of whole words that fits, then "…"
         return (got.endswith("…") and len(got) <= limit and original.startswith(got[:-1])
@@ -1579,8 +1578,8 @@ with tempfile.TemporaryDirectory(prefix="council-request-cut-") as temporary:
     check("request: words past their limit end on a whole word, then '…'", whole(got, said, 220), got)
     check("request: words within their limit are shown whole, with no '…'", asked("", "Fix the parser.") == "Fix the parser.")
     check("request: a single word longer than the limit is cut inside it, then '…'", asked("", "a" * 300) == "a" * 219 + "…")
-    check("request: a word that ends right where '…' still fits is kept", status.cut("ab cdefgh ijk", 10) == "ab cdefgh…",
-          status.cut("ab cdefgh ijk", 10))
+    check("request: a word that ends right where '…' still fits is kept", words.cut("ab cdefgh ijk", 10) == "ab cdefgh…",
+          words.cut("ab cdefgh ijk", 10))
     title = " ".join(["Title"] * 40)
     got = asked(title, "Fix it.")
     check("request: a title past its limit ends on a whole word, then '…'",

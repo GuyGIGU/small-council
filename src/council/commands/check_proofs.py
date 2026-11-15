@@ -3,14 +3,11 @@ on trust. A task proves itself as before-<n> then after-<n>; a review fix as reg
 version the verifier saw) then after-<n>. The name says which, so after-2789 is never a task's."""
 from __future__ import annotations
 
-import fnmatch
-import os
-import re
 from pathlib import Path
 from typing import NamedTuple
 
 from council.commands import cli, gate_output, proof_reach
-from council.records import config, verdicts
+from council.records import bytewise, config, seat_files, verdicts
 
 KINDS = ("change", "preserve")
 FALSE_GREEN = '"note": "exit 0, but'
@@ -33,11 +30,7 @@ class Tally:
 
 
 def _named(gates: Path, pattern: str) -> list[Path]:
-    try:
-        names = sorted(name for name in os.listdir(gates) if fnmatch.fnmatchcase(name, pattern))
-    except OSError:
-        return []
-    return [gates / name for name in names if (gates / name).is_file()]
+    return [gates / name for name in seat_files.listed(gates, pattern) if (gates / name).is_file()]
 
 
 def _code(value: str, empty: int) -> int:
@@ -63,20 +56,13 @@ def _output(verdict: Path) -> Path:
     return verdict.with_name(verdict.name[:-len(".json")] + ".txt")
 
 
-def _blank(path: Path) -> bool:
-    try:
-        return not re.sub(rb"[ \t\n\v\f\r]", b"", path.read_bytes())
-    except OSError:
-        return True
-
-
 def _ran_nothing(before: Path, after: Path) -> bool:
     """A preserve proof whose before or after ran no test: a false green, no files matched, no output, 0 tests."""
     outputs = (_output(before), _output(after))
     return verdicts.holds(before, FALSE_GREEN) or verdicts.holds(after, FALSE_GREEN) \
         or any(line.startswith("changed: no files matched")
-               for out in outputs for line in gate_output.lines(gate_output.text(out))) \
-        or any(_blank(out) for out in outputs) \
+               for out in outputs for line in bytewise.file_lines(out, fold=False)) \
+        or any(gate_output.blank(gate_output.text(out)) for out in outputs) \
         or any(gate_output.zero_tests(gate_output.text(out)) for out in outputs)
 
 

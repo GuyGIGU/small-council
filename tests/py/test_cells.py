@@ -20,6 +20,14 @@ class CellsTest(unittest.TestCase):
         self.assertIsNone(cells.integer(10 ** 12))
         self.assertIsNone(cells.integer("1.5"))
 
+    def test_leading_reads_a_cell_as_awk_adds_zero_to_it(self) -> None:
+        self.assertEqual(cells.leading(" \t+12abc"), 12)
+        self.assertEqual(cells.leading("-3,4"), -3)
+        self.assertEqual(cells.leading("1e3"), 1)
+        self.assertEqual(cells.leading(" x7"), 0)
+        self.assertEqual(cells.leading(""), 0)
+        self.assertEqual(cells.leading("\r5"), 0)
+
     def test_number_and_optional_number(self) -> None:
         self.assertEqual(cells.number(" 42 "), 42)
         self.assertEqual(cells.number(""), 0)

@@ -8,13 +8,12 @@ supports it (records/memory_audit.py)."""
 from __future__ import annotations
 
 import os
-import re
-from typing import Iterable, NamedTuple
+from typing import NamedTuple
 
 from council.commands import cli
 from council.records import bytewise, config, memory, memory_audit, scope
 from council.records import home as where
-from council.records.bytewise import DOT, ELLIPSIS
+from council.records.bytewise import DOT
 from council.records.memory_entries import cells
 
 USAGE = ("usage: council memory [index | select [path|slug …] | check | propose claim|repair <id> | accept|reject "
@@ -42,7 +41,8 @@ def main(args: cli.Args, words: list[str]) -> int:
     found = load()
     rest = words[1:]
     if sub == "index":
-        return index(found)
+        cli.say_all(indexed(found))
+        return 0
     if sub == "select":
         from council.commands import memory_select
         return memory_select.select(args, found, rest)
@@ -105,16 +105,6 @@ def slugs(home: str) -> list[str]:
     return [slug for slug, _, _ in config.roster_rows(where.native(home)) if slug != "-"]
 
 
-def say_all(lines: Iterable[str]) -> None:
-    for line in lines:
-        cli.say(line)
-
-
-def index(found: Memory) -> int:
-    say_all(indexed(found))
-    return 0
-
-
 def indexed(found: Memory) -> list[str]:
     """What council memory (index) says: every entry and whether a brief gets it, the scope items that match
     nothing, and what of the file goes unread (doctor counts the same lines)."""
@@ -123,12 +113,6 @@ def indexed(found: Memory) -> list[str]:
     from council.commands import memory_tree
     return ([bytewise.shown(line) for line in index_lines(found.served)]
             + memory_tree.Tree(where.this_tree()).orphans(found.entries, slugs(found.home)) + memory.unread(found.mem))
-
-
-def clip(t: str) -> str:
-    if len(t) <= 60:
-        return t
-    return re.sub(r" [^ ]*\Z", "", t[:60], count=1) + " " + ELLIPSIS
 
 
 def index_lines(served: list[str]) -> list[str]:
@@ -149,7 +133,7 @@ def index_lines(served: list[str]) -> list[str]:
             continue
         if c[4] == "off":
             out.append("%s %s not served (%s)" % (head, DOT, c[5] if c[5].startswith("marked") else "under "
-                                                   + clip(c[5])))
+                                                   + bytewise.clip(c[5], 60)))
             continue
         unserved += 1
         if c[5].startswith("failure entry: "):
@@ -159,7 +143,7 @@ def index_lines(served: list[str]) -> list[str]:
                        "its own section" % (head, DOT, bytewise.EM))
         else:
             out.append("%s %s NOT SERVED %s its section, %s, is not one the council reads as settled"
-                       % (head, DOT, bytewise.EM, clip(c[5])))
+                       % (head, DOT, bytewise.EM, bytewise.clip(c[5], 60)))
     if unserved:
         one = unserved == 1
         out.append("memory: WARNING %s %d entr%s never reach%s a brief: move %s under a fitting settled section, "

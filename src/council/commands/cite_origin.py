@@ -7,16 +7,10 @@ import os
 import re
 
 from council.commands.cite_check import Scope, absolute, git_ok, git_out, rel, run_cited
-from council.records import citations
+from council.records import cells, citations
 from council.records.home import native
 
 SHA = re.compile(r"[0-9a-f]+")
-
-
-def _number(text: str) -> int:
-    """awk's numeric reading of a string: its leading digits, 0 without."""
-    found = re.match(r"[ \t]*[+-]?[0-9]+", text)
-    return int(found.group(0)) if found else 0
 
 
 def hunks(diff: bytes, spans: list[tuple[int, int]]) -> tuple[int, int, int]:
@@ -31,9 +25,9 @@ def hunks(diff: bytes, spans: list[tuple[int, int]]) -> tuple[int, int, int]:
             continue
         words = [w for w in re.split(r"[ \t]+", line) if w]
         side = words[2][1:] if len(words) > 2 and words[2].startswith("+") else (words[2] if len(words) > 2 else "")
-        start, count = _number(side), 1
+        start, count = cells.leading(side), 1
         if "," in side:
-            start, count = _number(side[:side.index(",")]), _number(side[side.index(",") + 1:])
+            start, count = cells.leading(side[:side.index(",")]), cells.leading(side[side.index(",") + 1:])
         for first, last in spans:
             if count == 0:
                 near |= first - 1 <= start <= last

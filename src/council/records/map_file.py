@@ -13,8 +13,6 @@ TABLE = "## One way per job"
 
 
 class Way(NamedTuple):
-    """One row of the table."""
-
     job: str
     owner: str
     way: str
@@ -22,7 +20,6 @@ class Way(NamedTuple):
 
 
 def path(home: str | Path) -> Path:
-    """The map of a council home."""
     return Path(home) / NAME
 
 

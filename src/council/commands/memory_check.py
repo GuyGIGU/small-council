@@ -7,7 +7,8 @@ from __future__ import annotations
 import os
 import re
 
-from council.commands.memory import Memory, say_all
+from council.commands import cli
+from council.commands.memory import Memory
 from council.commands.memory_tree import Tree, line_counts
 from council.records import bytewise, citations, memory, memory_anchors
 from council.records import home as where
@@ -49,7 +50,7 @@ class Anchors:
 
 def check(found: Memory) -> int:
     lines, code = checked(found)
-    say_all(lines)
+    cli.say_all(lines)
     return code
 
 

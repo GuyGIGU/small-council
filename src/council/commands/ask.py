@@ -11,7 +11,7 @@ from pathlib import Path
 
 from council.commands import cli, resolve
 from council.records import home as where
-from council.records import ignores, redact, request, state_write
+from council.records import ignores, paths, redact, request, state_write
 
 USAGE = "usage: council ask save [slug]   (after writing the user's words to <run>/ask.md)"
 
@@ -26,11 +26,7 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 
 def _read(path: str) -> bytes:
-    try:
-        with open(where.native(path), "rb") as stream:
-            return stream.read()
-    except OSError:
-        return b""
+    return paths.contents(where.native(path)) or b""
 
 
 def _real(folder: str) -> str:

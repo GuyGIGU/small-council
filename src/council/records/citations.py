@@ -16,6 +16,8 @@ import os
 import re
 from typing import Tuple
 
+from council.records.bytewise import lower
+from council.records.cells import INTMAX
 from council.records.home import native
 
 Row = Tuple[str, ...]
@@ -26,7 +28,6 @@ JOINED_NUMBER = re.compile(r"[0-9]+([ \t]*-[ \t]*[0-9]+)?")
 WORD = re.compile(r"[^ ,;|()<>{}]+")
 LINK = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^ ]*")
 LINE_AT = re.compile(r"(:|#)[Ll]?[0-9]")
-INT_MAX = 2 ** 63 - 1                       # what bash's test reads as a number
 
 
 def _ext(path: str) -> bool:
@@ -189,7 +190,7 @@ def parse(field: str) -> list[Row]:
     """The rows a citation field gives (see the module's doc), in the order the helper's reader printed them."""
     text = re.sub(r"[\r\t]", " ", field)
     bare = text.replace(" ", "")
-    if bare in ("", "-") or NOTHING.fullmatch(re.sub(r"[.`*_\"]", "", _lower(bare))):
+    if bare in ("", "-") or NOTHING.fullmatch(re.sub(r"[.`*_\"]", "", lower(bare))):
         return [("N", "-")]
     text = _join_lines(_undecorate(text))
     whole = _whole(text)
@@ -215,7 +216,7 @@ def rows(top: str, field: str) -> list[Row]:
 def bash_int(text: str) -> int | None:
     """A number as bash's test reads one: blanks around it are fine, inside it or a sign-less junk is not."""
     found = re.fullmatch(r"[ \t\n]*([+-]?[0-9]+)[ \t\n]*", text)
-    if not found or abs(int(found.group(1))) > INT_MAX:
+    if not found or abs(int(found.group(1))) > INTMAX:
         return None
     return int(found.group(1))
 
@@ -251,11 +252,6 @@ def line_verdict(listed: str, count: int, what: str = "file has") -> str:
         if first is not None and last is not None and last < first:
             return "bad-line (%s runs backwards)" % piece
     return "bad-line (the %s %d lines)" % (what, count)
-
-
-def _lower(text: str) -> str:
-    """ASCII letters lowered, as awk does in the C locale."""
-    return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in text)
 
 
 def count_lines(data: bytes | None) -> int:

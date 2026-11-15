@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from pathlib import Path
 from typing import NamedTuple
 
-from council.records import citations
+from council import git
+from council.records import bytewise, citations
 from council.records.home import native
 
 AREA_MODES = ("council-plan", "council-research", "council-postgame")
@@ -28,26 +28,17 @@ class Scope(NamedTuple):
 
 
 def scope(top: str, base: str, run: str, mode: str) -> Scope:
-    """The scope a mode's citations are read in."""
     return Scope(top, base, run, mode in AREA_MODES, mode == "council-review")
 
 
 def git_ok(top: str, *args: str) -> bool:
     """Whether git -C top <args> succeeds; its output is not read."""
-    try:
-        return subprocess.run(["git", "-C", native(top)] + list(args), stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL).returncode == 0
-    except OSError:
-        return False
+    return git.run(native(top), *args)[0] == 0
 
 
 def git_out(top: str, *args: str) -> bytes:
     """git -C top <args>'s stdout, whatever its exit code; b'' when git can't start."""
-    try:
-        return subprocess.run(["git", "-C", native(top)] + list(args), stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL).stdout
-    except OSError:
-        return b""
+    return git.run(native(top), *args)[1]
 
 
 def absolute(path: str) -> bool:
@@ -68,13 +59,9 @@ def rel(top: str, path: str) -> str:
             found = drive.group(1) + ":" + found[2:]
         if found.startswith(top + "/"):
             return found[len(top) + 1:]
-        if _lower(found).startswith(_lower(top) + "/"):
+        if bytewise.lower(found).startswith(bytewise.lower(top) + "/"):
             return found[len(top) + 1:]
     return path
-
-
-def _lower(text: str) -> str:
-    return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in text)
 
 
 def run_cited(where: Scope, path: str, top: str) -> bool:

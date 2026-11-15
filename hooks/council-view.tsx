@@ -1,6 +1,6 @@
 // The council view: a pane beside the chat and a one-line bar above the prompt, both showing the open
 // council run. It only reads: it finds the run the helper would pick and asks the council's own status
-// reader (scripts/status.py --json) for it, so both say exactly what the status card says. Nothing
+// reader (src/council/commands/script.py status --json) for it, so both say exactly what the status card says. Nothing
 // here writes a council file. If a Claude Code update breaks it, only the view disappears; the council
 // keeps working through its helper and its settings hooks.
 import { atom, read, update } from 'claude-code'
@@ -124,7 +124,7 @@ async function findRun($: any, at: string): Promise<Found | null> {
 
 async function readStatus($: any, at: string, run: string): Promise<any | null> {
   const root = slashes(String($.plugin.root))
-  const args = [`${root}/scripts/status.py`, '--run', run, '--home', at, '--json']
+  const args = [`${root}/src/council/commands/script.py`, 'status', '--run', run, '--home', at, '--json']
   const candidates = python ? [python] : [['python'], ['py', '-3'], ['python3']]
   const tried: string[] = []
   for (const py of candidates) {

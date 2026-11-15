@@ -1,25 +1,20 @@
-#!/usr/bin/env python3
 """Read-only, conservative comparison of finding citations with later Git changes.
 
 "Changed after the run" describes timing only; it does not show that a council finding caused
 the change. Claims without a trustworthy closed-run snapshot are left as can't tell.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
-from pathlib import Path
 import re
-import sys
+from pathlib import Path
+from typing import Any, Dict, List, Union
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from council.git import text as git  # noqa: E402  (a failure reads as unknown)
-from council.records import paths  # noqa: E402
-from council.records import state as run_state  # noqa: E402
-from council.records.cells import clean  # noqa: E402
+from council.git import text as git    # a failure reads as unknown
+from council.records import paths, state as run_state
+from council.records.cells import clean
 
 SCHEMA = "council.outcomes/1"
 OUTCOMES = ("changed at cited lines", "file changed elsewhere", "unchanged", "file gone or renamed", "can't tell")
@@ -28,16 +23,18 @@ MAX_ARTIFACT = 2 * 1024 * 1024
 STATE_LIMIT = 128 * 1024
 SAFE_PATH = re.compile(r"^[A-Za-z0-9_./@+-]+$")
 CITATION = re.compile(r"^(.+):([1-9][0-9]*)(?:-([1-9][0-9]*))?$")
+Spans = Union[str, List[tuple]]     # one file's outcome for every citation of it, or its old-side hunks
+Counts = Dict[str, Dict[str, int]]
 
 
-def state_fields(folder):
+def state_fields(folder: Path) -> dict[str, str]:
     """The run's header fields, trimmed, with no comment taken off; empty when the file is a link, over
     128 KB or not UTF-8."""
     content = run_state.text(folder, read=lambda path: paths.text_of(path, limit=STATE_LIMIT, errors="strict"))
     return {key: value.strip() for key, value in run_state.header(content, comments=False).items()}
 
 
-def run_code_root(state, default):
+def run_code_root(state: dict[str, str], default: Path) -> Path | None:
     """Use a run's recorded working tree; only legacy runs without one use the caller's tree."""
     recorded = state.get("code-root")
     if not recorded or recorded == "-":
@@ -51,7 +48,7 @@ def run_code_root(state, default):
         return None
 
 
-def parse_citation(value):
+def parse_citation(value: Any) -> tuple[str, int, int] | None:
     if not isinstance(value, str):
         return None
     match = CITATION.fullmatch(value.strip())
@@ -68,7 +65,7 @@ def parse_citation(value):
     return path, start, end
 
 
-def read_claims(path):
+def read_claims(path: Path) -> list[dict[str, Any]] | None:
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_ARTIFACT:
         return None
     claims = []
@@ -88,7 +85,7 @@ def read_claims(path):
     return claims
 
 
-def reviewed_uncommitted(index):
+def reviewed_uncommitted(index: Path) -> bool:
     """Recognize the explicit dirty-tree marker written by council index."""
     try:
         if index.is_symlink() or not index.is_file() or index.stat().st_size > MAX_ARTIFACT:
@@ -101,17 +98,17 @@ def reviewed_uncommitted(index):
         return False
 
 
-def commit_at_close(repo, closed):
+def commit_at_close(repo: Path, closed: str) -> str | None:
     if not closed:
         return None
     return git(repo, "rev-list", "-1", "--before=" + closed, "HEAD")
 
 
-def tracked(repo, commit, path):
+def tracked(repo: Path, commit: str, path: str) -> bool:
     return git(repo, "cat-file", "-e", commit + ":" + path) is not None
 
 
-def parse_hunks(diff):
+def parse_hunks(diff: str) -> list[tuple[int, int, bool]]:
     """Return old-side line spans from unified diff; a zero-length span is an insertion after `start`."""
     spans = []
     for line in diff.splitlines():
@@ -123,21 +120,12 @@ def parse_hunks(diff):
     return spans
 
 
-def file_changes(repo, close_commit, head, path):
+def file_changes(repo: Path, close_commit: str, head: str, path: str) -> Spans:
     """One file's change from close to HEAD: an outcome for every citation of it, or its old-side hunks."""
     if not tracked(repo, close_commit, path):
         # A citation that was not present at the run's recorded close cannot be compared reliably.
         return "can't tell"
     if not tracked(repo, head, path):
-        # git diff --name-status is consulted to distinguish a rename from a plain deletion.
-        names = git(repo, "diff", "--no-color", "--name-status", "-M", close_commit, head, "--", path)
-        if names:
-            for row in names.splitlines():
-                columns = row.split("\t")
-                if columns and columns[0].startswith("R"):
-                    return "file gone or renamed"
-                if columns and columns[0] == "D":
-                    return "file gone or renamed"
         return "file gone or renamed"
     # --no-color: a colour setting of "always" would wrap the @@ headers in escape codes.
     # --ignore-cr-at-eol: a file whose only change is its line endings (LF to CRLF) has no hunks.
@@ -154,7 +142,8 @@ def file_changes(repo, close_commit, head, path):
     return parse_hunks(diff)
 
 
-def classify(repo, close_commit, head, claim, cache=None):
+def classify(repo: Path | None, close_commit: str | None, head: str | None, claim: dict[str, Any],
+             cache: dict[tuple[str, str, str], Spans] | None = None) -> str:
     """Sort one claim; `cache` is shared by one run's claims, so a file cited twice is compared once."""
     parsed = parse_citation(claim.get("citation"))
     if parsed is None or close_commit is None or head is None:
@@ -170,28 +159,25 @@ def classify(repo, close_commit, head, claim, cache=None):
     if not spans:
         return "unchanged"
     for start, end, insertion in spans:
-        if insertion:
-            # Lines inserted after old line `start`, inside or right next to the cited span, touch it:
-            # a missing guard can only be cited by the lines around the gap (the rule of cite_origin.hunks).
-            touched = first - 1 <= start <= last
-        else:
-            # A modified or deleted old-side span must overlap the cited lines.
-            touched = start <= last and end >= first
-        if touched:
+        # Lines inserted after old line `start`, inside or right next to the cited span, touch it: a missing
+        # guard can only be cited by the lines around the gap (the rule of cite_origin.hunks). A modified or
+        # deleted old-side span must overlap the cited lines.
+        if (first - 1 <= start <= last) if insertion else (start <= last and end >= first):
             return "changed at cited lines"
     return "file changed elsewhere"
 
 
-def add_count(target, disposition, outcome):
+def add_count(target: Counts, disposition: str, outcome: str) -> None:
     counts = target.setdefault(disposition, {name: 0 for name in OUTCOMES})
     counts[outcome] += 1
 
 
-def outcomes(home, repo, recent=1000):
+def outcomes(home: str | Path, repo: str | Path, recent: int = 1000) -> dict[str, Any]:
     home, repo = Path(home), Path(repo)
     head = git(repo, "rev-parse", "--verify", "HEAD")
     runs = []
-    modes, seats = {}, {}
+    modes: dict[str, Counts] = {}
+    seats: dict[str, Counts] = {}
     totals = {"kept": {name: 0 for name in OUTCOMES}, "cut": {name: 0 for name in OUTCOMES}}
     if home.is_dir() and not paths.linked(home):
         for folder in paths.run_folders(home, recent, require_state=False):
@@ -201,35 +187,10 @@ def outcomes(home, repo, recent=1000):
             claims = read_claims(folder / "claims.jsonl")
             if claims is None:
                 continue
-            # A council home can hold runs for several working trees. Compare each citation with
-            # the code root recorded by that run; a missing recorded root is unknown, not a reason
-            # to silently compare it with the caller's unrelated repository.
-            run_repo = run_code_root(state, repo)
-            run_head = git(run_repo, "rev-parse", "--verify", "HEAD") if run_repo else None
-            close_commit = commit_at_close(run_repo, state["closed"]) if run_repo else None
-            # `base` is council index's merge-base, not a close-time snapshot. The index's explicit
-            # dirty marker is the available evidence that the run reviewed uncommitted files.
-            if close_commit is None or reviewed_uncommitted(folder / "index.md"):
-                close_commit = None
             mode = clean(state.get("mode") or "unknown") or "unknown"
-            run_data = {"run": clean(folder.name), "mode": mode, "claims": []}
-            cache = {}  # this run's claims share each cited file's tracked checks and diff
-            for claim in claims:
-                disposition = str(claim.get("disposition", "")).lower()
-                if disposition not in ("kept", "cut"):
-                    disposition = "kept" if disposition == "keep" else "unknown"
-                if disposition == "unknown":
-                    continue
-                outcome = classify(run_repo, close_commit, run_head, claim, cache)
-                sources = claim.get("provenance")
-                if not isinstance(sources, list):
-                    sources = []
-                claim_data = {"id": str(claim.get("id", "?")), "disposition": disposition,
-                              "citation": claim.get("citation", "-"), "outcome": outcome,
-                              "seats": sorted(set(clean(source.split("#", 1)[0]) for source in sources
-                                                  if isinstance(source, str) and source and
-                                                  not source.startswith("gate:") and clean(source.split("#", 1)[0])))}
-                run_data["claims"].append(claim_data)
+            run_data = {"run": clean(folder.name), "mode": mode, "claims": run_claims(folder, state, repo, claims)}
+            for claim_data in run_data["claims"]:
+                disposition, outcome = claim_data["disposition"], claim_data["outcome"]
                 add_count(totals, disposition, outcome)
                 add_count(modes.setdefault(mode, {}), disposition, outcome)
                 for seat in claim_data["seats"]:
@@ -243,24 +204,59 @@ def outcomes(home, repo, recent=1000):
     return {"schema": SCHEMA, "head": head, "runs": runs, "totals": totals,
             "by_mode": {key: modes[key] for key in sorted(modes)},
             "by_seat": {key: seats[key] for key in sorted(seats)},
-            "note": "Changed after the run describes timing; it does not show that a council finding caused the change."}
+            "note": "Changed after the run describes timing; it does not show that a council finding caused the "
+                    "change."}
 
 
-def brief(data):
+def run_claims(folder: Path, state: dict[str, str], repo: Path, claims: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One closed run's kept and cut claims, each with its outcome and the seats that raised it."""
+    # A council home can hold runs for several working trees. Compare each citation with
+    # the code root recorded by that run; a missing recorded root is unknown, not a reason
+    # to silently compare it with the caller's unrelated repository.
+    run_repo = run_code_root(state, repo)
+    run_head = git(run_repo, "rev-parse", "--verify", "HEAD") if run_repo else None
+    close_commit = commit_at_close(run_repo, state["closed"]) if run_repo else None
+    # `base` is council index's merge-base, not a close-time snapshot. The index's explicit
+    # dirty marker is the available evidence that the run reviewed uncommitted files.
+    if close_commit is None or reviewed_uncommitted(folder / "index.md"):
+        close_commit = None
+    found: list[dict[str, Any]] = []
+    cache: dict[tuple[str, str, str], Spans] = {}   # this run's claims share each cited file's checks and diff
+    for claim in claims:
+        disposition = str(claim.get("disposition", "")).lower()
+        if disposition not in ("kept", "cut"):
+            disposition = "kept" if disposition == "keep" else "unknown"
+        if disposition == "unknown":
+            continue
+        outcome = classify(run_repo, close_commit, run_head, claim, cache)
+        sources = claim.get("provenance")
+        if not isinstance(sources, list):
+            sources = []
+        found.append({"id": str(claim.get("id", "?")), "disposition": disposition,
+                      "citation": claim.get("citation", "-"), "outcome": outcome,
+                      "seats": sorted(set(clean(source.split("#", 1)[0]) for source in sources
+                                          if isinstance(source, str) and source and
+                                          not source.startswith("gate:") and clean(source.split("#", 1)[0])))})
+    return found
+
+
+def brief(data: dict[str, Any]) -> str:
     """The close's follow-up (council run close): one plain line when kept findings' cited lines changed since."""
     n = data["totals"]["kept"][OUTCOMES[0]]
     if not n:
         return ""
-    return "{} kept finding(s) from earlier runs saw their cited lines change since (council outcomes; timing, not proof)".format(n)
+    return ("{} kept finding(s) from earlier runs saw their cited lines change since (council outcomes; timing, "
+            "not proof)".format(n))
 
 
-def render(data):
+def render(data: dict[str, Any]) -> str:
     kept, cut = data["totals"]["kept"], data["totals"]["cut"]
     lines = ["council outcomes · {} run(s) · {} Kept · {} Cut".format(
         len(data["runs"]), sum(kept.values()), sum(cut.values()))]
     lines.append("Kept: {} at cited lines · {} elsewhere · {} unchanged · {} gone or renamed · {} can't tell".format(
         kept[OUTCOMES[0]], kept[OUTCOMES[1]], kept[OUTCOMES[2]], kept[OUTCOMES[3]], kept[OUTCOMES[4]]))
-    lines.append("Cut comparison: {} at cited lines · {} elsewhere · {} unchanged · {} gone or renamed · {} can't tell".format(
+    lines.append("Cut comparison: {} at cited lines · {} elsewhere · {} unchanged · {} gone or renamed · {} can't "
+                 "tell".format(
         cut[OUTCOMES[0]], cut[OUTCOMES[1]], cut[OUTCOMES[2]], cut[OUTCOMES[3]], cut[OUTCOMES[4]]))
     if data["runs"]:
         run_lines = []
@@ -282,7 +278,7 @@ def render(data):
     return "\n".join(lines)
 
 
-def group_text(label, grouped):
+def group_text(label: str, grouped: Counts) -> str:
     parts = []
     for kind in ("kept", "cut"):
         counts = grouped.get(kind)
@@ -291,14 +287,15 @@ def group_text(label, grouped):
     return "{}: {}".format(label, ", ".join(parts) if parts else "no claims")
 
 
-def main():
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--home", required=True, type=Path)
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--brief", action="store_true", help="one plain line when there is something to say, else nothing")
+    parser.add_argument("--brief", action="store_true",
+                        help="one plain line when there is something to say, else nothing")
     parser.add_argument("--recent", type=int, default=1000, help="read only the newest N runs (the close reads 20)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     data = outcomes(args.home, args.repo, max(1, args.recent))
     if args.brief:
         if brief(data):
@@ -307,6 +304,3 @@ def main():
     print(json.dumps(data, indent=2, sort_keys=True) if args.json else render(data))
     return 0
 
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -1,8 +1,7 @@
-"""Who holds a lock (D33): the process its owner file names (the system's id, whichever language wrote it;
-bin/council: lock_owner), whether it runs, and what a waiter that gives up says. A lock is taken only from a
-dead holder, never from one that reads alive; a line no process could have written (named) is no owner,
-stale once 10 s old, as bash reads it too. Windows soon reuses a dead process's id: there a live process made
-REUSE_SECONDS after the owner file was written is not its holder (Python only: bash can't read a start)."""
+"""Who holds a lock (D33): the process its owner file names, whether it runs, and what a waiter that gives
+up says. A lock is taken only from a dead holder, never from one that reads alive; a line no process could
+have written (named) is no owner, stale once 10 s old. Windows soon reuses a dead process's id: there a live
+process made REUSE_SECONDS after the owner file was written is not its holder."""
 from __future__ import annotations
 
 import os
@@ -83,7 +82,7 @@ def _windows(pid: int) -> tuple[bool, float | None]:
 
 
 def first_line(path: Path) -> str | None:
-    """The first line as bash's `IFS= read -r` reads it, None if unreadable; shared for delete on Windows."""
+    """The first line without its newline, None if unreadable; shared for delete on Windows."""
     try:
         shared = open_shared(path)
         with shared if shared is not None else open(str(path), "rb") as handle:

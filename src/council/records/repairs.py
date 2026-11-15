@@ -1,4 +1,4 @@
-"""<run>/repairs.jsonl: a build's repair trail, one row per attempt on a task, written and read by scripts/repair.py
+"""<run>/repairs.jsonl: a build's repair trail, one row per attempt on a task, written and read by repair_trail.py
 (references/run/repair-loop.md); and <run>/repair-allowances.tsv, the user's go for a gate whose trail stopped."""
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ ALLOWANCES = "repair-allowances.tsv"
 
 
 def kept(run: str | Path) -> bool:
-    """The run keeps a repair trail: its file is there."""
     return (Path(run) / NAME).is_file()
 
 

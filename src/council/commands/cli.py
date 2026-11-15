@@ -3,7 +3,7 @@ starts Python, so every command's words reach this module as typed."""
 from __future__ import annotations
 
 import sys
-from typing import NamedTuple
+from typing import Iterable, NamedTuple
 
 # Flags that take a value, with what the refusal says is missing.
 VALUED = ("run", "code-root", "status", "base", "at", "proof", "session", "task", "risk", "complexity",
@@ -104,15 +104,24 @@ def takes_flags(args: Args, label: str, *allowed: str) -> None:
         raise Refusal("%s takes nothing after -- — see: council help" % label)
 
 
+def takes_no_run(args: Args, reads: str) -> None:
+    """--run refused for a command that reads no one run: '<what it reads>; it does not take --run'."""
+    if args.value("run"):
+        raise Refusal(reads + "; it does not take --run")
+
+
 def no_words(label: str, words: list[str]) -> None:
-    """Refuse words a command doesn't take."""
     if words:
         raise Refusal("%s doesn't take '%s' — see: council help" % (label, " ".join(words)))
 
 
 def say(line: str) -> None:
-    """One line on stdout."""
     sys.stdout.write(line + "\n")
+
+
+def say_all(lines: Iterable[str]) -> None:
+    for line in lines:
+        say(line)
 
 
 def warn(line: str) -> None:

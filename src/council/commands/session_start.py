@@ -11,7 +11,7 @@ from fnmatch import fnmatchcase
 
 from council import git
 from council.commands import cli, doctor_hooks
-from council.records import hook_marks, memory, memory_entries, runs, sharing, state
+from council.records import hook_marks, memory, memory_entries, paths, runs, sharing, state
 from council.records import home as where
 from council.records.bytewise import text as bytewise
 
@@ -232,7 +232,9 @@ def _described(r: runs.Listed, at: str, sid: str, event: str, driving: str, here
     else:
         kind = "unfinished"
     if kind in ("driving", "live after clear", "unfinished"):
-        said["seats"] = _seats(r.folder, MORE if kind == "unfinished" and event != "clear" else "")
+        working = MORE if kind == "unfinished" and event != "clear" else "still working"
+        seats = runs.seat_summary(where.native(r.folder), working)
+        said["seats"] = " Seats — %s." % seats if seats else ""
     return RUN_LINES[kind].format(**said)
 
 
@@ -290,11 +292,6 @@ def _active_run(home: str, root: str, sid: str, event: str, driving: str) -> Non
                 "--run \"%s\" --status abandoned)." % (said, updated or "unknown", run, run))
 
 
-def _seats(run: str, working: str = "") -> str:
-    seats = runs.seat_summary(where.native(run), working or "still working")
-    return " Seats — %s." % seats if seats else ""
-
-
 def _recent(path: str, minutes: int) -> bool:
     """The hook's find -mmin -<minutes>: the file changed that recently, or any regular file under the folder."""
     native, limit = where.native(path), time.time() - minutes * 60
@@ -310,11 +307,8 @@ def _recent(path: str, minutes: int) -> bool:
 
 def _text(path: str) -> str | None:
     """A file's text (its bytes kept); None when it is missing or unreadable."""
-    try:
-        with open(where.native(path), "rb") as stream:
-            return stream.read().decode("utf-8", "surrogateescape")
-    except OSError:
-        return None
+    data = paths.contents(where.native(path))
+    return None if data is None else data.decode("utf-8", "surrogateescape")
 
 
 def _name(folder: str) -> str:

@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.records import paths
+from council.records import bytewise, paths
 
 OPEN = re.compile(rb"^(\xef\xbb\xbf)?status:[ \t\r\f\v]*(in-progress|paused)", re.MULTILINE)
 KEY = re.compile(r"^[a-z][a-z0-9-]*:")
@@ -35,7 +35,7 @@ def listing(home: str, limit: int = 30, which: str = "open") -> list[Listed]:
     line anywhere, however old; 'all' the newest by name. At most limit. Folders are home + /runs/<name>."""
     listed = []
     for state in _states(home + "/runs", which)[:limit]:
-        fields = listed_fields((_raw(state) or b"").decode("utf-8", "surrogateescape"))
+        fields = listed_fields((paths.contents(state) or b"").decode("utf-8", "surrogateescape"))
         if fields is not None:
             get = fields.get
             listed.append(Listed(state[:-len(paths.STATE) - 1], get("mode", ""), get("phase", ""),
@@ -53,25 +53,9 @@ def _states(runs: str, which: str) -> list[str]:
         return []
     if which == "open":
         states = sorted((runs + "/" + name + "/" + paths.STATE for name in names), reverse=True)
-        return [state for state in states if OPEN.search(_raw(state) or b"")]
+        return [state for state in states if OPEN.search(paths.contents(state) or b"")]
     states = [runs + "/" + name + "/" + paths.STATE for name in sorted(names, reverse=True)]
     return [state for state in states if os.path.isfile(state)]
-
-
-def _raw(file: str | Path) -> bytes | None:
-    try:
-        with open(str(file), "rb") as handle:
-            return handle.read()
-    except OSError:
-        return None
-
-
-def _records(content: str) -> list[str]:
-    """Lines as awk reads them: split on newline, no empty record after a final newline."""
-    records = content.split("\n")
-    if content.endswith("\n") or not content:
-        records.pop()
-    return records
 
 
 def listed_fields(content: str) -> dict[str, str] | None:
@@ -80,7 +64,7 @@ def listed_fields(content: str) -> dict[str, str] | None:
     if not content:
         return None
     fields: dict[str, str] = {}
-    for number, line in enumerate(_records(content)):
+    for number, line in enumerate(bytewise.records(content)):
         if number == 0 and line.startswith(paths.BOM):
             line = line[1:]
         line = line.replace("\r", "")
@@ -103,11 +87,8 @@ def skill(mode: str) -> str:
 
 def seat_summary(run: str | Path, working: str = "still working") -> str:
     """'still working: a, b · done: c · failed: d' from seats.tsv, as Git Bash's awk reads it; '' for none."""
-    content = (_raw(Path(run) / "seats.tsv") or b"").decode("utf-8", "surrogateescape")
-    if os.name == "nt":
-        content = content.replace("\r\n", "\n")
     groups: dict[str, list[str]] = {"working": [], "done": [], "failed": []}
-    for line in _records(content)[1:]:
+    for line in bytewise.file_lines(Path(run) / "seats.tsv")[1:]:
         cell = line.split("\t") + [""] * 6
         if cell[1] in ("running", "queued"):
             groups["working"].append(cell[0] + (" (war-room round 2)" if "round 2" in cell[5] else ""))

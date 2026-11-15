@@ -10,7 +10,7 @@ from pathlib import Path
 
 from council import clock
 from council.commands import cli, resolve
-from council.records import events, locks, paths, redact, runs, seats, state_write, usage
+from council.records import events, paths, redact, runs, seats, state_write, usage
 from council.records import home as where
 
 TOOLS = ("Agent", "Task", "Workflow")
@@ -18,21 +18,17 @@ DETAILS = ("type=", "seat=", "run=", "file=", "hunt=")
 GO = 'council cap allow <n> --user-said "<their words>"'
 HINT = "the next agent is refused until their go is recorded: " + GO
 ASK = "tell the user, and ask before starting more; " + HINT
-USAGE = ('usage: council cap [--run <folder>] | cap allow <n> --user-said "…" | cap check [--session ID] [<tool> '
-         '[type=… seat=… run=… file=…]]')
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    """council cap [--run <folder>], cap check [--session ID] [<tool> [type=… seat=… run=… file=…]] and cap allow."""
+    """cap, cap check and cap allow: dispatch refuses any other sub with the usage (USAGES["cap"])."""
     sub, rest = (words[0], words[1:]) if words else ("", [])
     if sub == "":
         cli.takes_flags(args, "cap")
         return show(resolve.run_folder(args))
     if sub == "check":
         cli.takes_flags(args, "cap check", "session")
-        if args.value("run"):
-            raise cli.Refusal("cap check looks at every in-progress run this session may be driving; "
-                              "it does not take --run")
+        cli.takes_no_run(args, "cap check looks at every in-progress run this session may be driving")
         if rest and rest[0] in TOOLS:
             for word in rest[1:]:
                 if not (word.startswith(DETAILS) or word == "workflow=verifier"):
@@ -41,8 +37,6 @@ def main(args: cli.Args, words: list[str]) -> int:
             cli.no_words("cap check", rest)
         from council.commands import agent_gate
         return agent_gate.check(args.value("session") or os.environ.get("CLAUDE_CODE_SESSION_ID", ""), rest)
-    if sub != "allow":
-        raise cli.Refusal(USAGE)
     cli.takes_flags(args, "cap allow", "user-said")
     if len(rest) != 1:
         raise cli.Refusal("usage: council cap allow <n> --user-said \"<the user's words>\" [--run <folder>]")
@@ -61,13 +55,8 @@ def allow(args: cli.Args, given: str) -> int:
     run = resolve.run_folder(args)
     closed.refuse(run, "no more agents start for it; open a new run")
     said, lock = redact.said(args.value("user-said")) or "[redacted]", Path(str(events.path(run)) + ".lock")
-    if not locks.acquire(lock):
-        raise cli.Refusal("%s\ncouncil: the go was not recorded: the run's event lock is unavailable (%s)"
-                          % (events.busy(lock), lock.as_posix()))
-    try:
+    with event_note.locked(lock, "the go was not recorded: the run's event lock is unavailable (%s)" % lock.as_posix()):
         used = _file_go(run, n, said)
-    finally:
-        locks.release(lock)
     if events.path(run).is_file():
         event_note.append(run, "run.cap_allowed", "run", n, "used=%d;until=%d" % (used, used + int(n)),
                           "the go is on record, but its event could not be written")

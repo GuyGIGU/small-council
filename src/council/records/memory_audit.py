@@ -14,18 +14,13 @@ from __future__ import annotations
 import os
 import re
 
-from council.records import bytewise, scope
+from council.records import bytewise, cells, paths, scope
 from council.records import home as where
 from council.records.bytewise import trim
-from council.records.memory_entries import vword
+from council.records.memory_entries import cells as columns, vword
 
 VERIFIER = ("CONFIRMED", "REFUTED", "MISCITED", "REGRESSION", "INCOMPLETE", "SCOPE-CREEP")
 _REC = re.compile(r"\.(md|txt|json|jsonl|tsv|csv|log|out|html|xml|yml|yaml)\Z")
-
-
-def _cells(row: str) -> list[str]:
-    found = row.split("\t")
-    return found + [""] * (10 - len(found))
 
 
 def rows_alone(found: list[str]) -> list[str]:
@@ -33,7 +28,7 @@ def rows_alone(found: list[str]) -> list[str]:
     count: dict[str, int] = {}
     scopes: dict[str, str] = {}
     for row in found:
-        cells = _cells(row)
+        cells = columns(row)
         if cells[4] == "observed":
             count[cells[0]] = count.get(cells[0], 0) + 1
             scopes[cells[0]] = cells[2]
@@ -186,15 +181,10 @@ def span(r: str) -> tuple[int, int] | None:
         s, e = r[:j], r[j + 1:]
     if len(s) > 9 or len(e) > 9:
         return None
-    first, last = _number(s), _number(e)
+    first, last = cells.leading(s), cells.leading(e)
     if last < first:
         first, last = last, first
     return (first, last) if first >= 1 else None
-
-
-def _number(text: str) -> int:
-    found = re.match(r"[ \t]*([+-]?[0-9]+)", text)
-    return int(found.group(1)) if found else 0
 
 
 def says(s: str, w: str) -> bool:
@@ -203,11 +193,7 @@ def says(s: str, w: str) -> bool:
 
 
 def lines_of(f: str) -> list[str]:
-    try:
-        with open(where.native(f), "rb") as stream:
-            return bytewise.records(bytewise.read(stream.read()))
-    except OSError:
-        return []
+    return bytewise.records(bytewise.read(paths.contents(where.native(f)) or b""))
 
 
 def results(reqs: list[tuple[int, str, str, str]]) -> dict[int, tuple[str, str]]:
@@ -237,7 +223,7 @@ def audit(found: list[str], home: str, top: str, mem: str) -> list[str]:
     out = rows_alone(found)
     pieces = Pieces()
     for row in found:
-        cells = _cells(row)
+        cells = columns(row)
         if cells[4] == "observed":
             pieces.entry(cells)
     if not pieces.out:
@@ -283,7 +269,7 @@ def verdicts(located: list[tuple[int, str, str, str, str, str]], checked: dict[i
             shows.add(entry)
     listed: list[str] = []
     for row in found:
-        cells = _cells(row)
+        cells = columns(row)
         if cells[4] == "observed" and cells[0] not in listed:
             listed.append(cells[0])
     for entry in listed:

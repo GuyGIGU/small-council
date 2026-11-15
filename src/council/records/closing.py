@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from council.records import events, gate_table, home, plan, seat_files, stages, state, usage
+from council.records import bytewise, events, gate_table, home, plan, seat_files, stages, state, usage
 
 MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame")
 EARLY = ("convene", "prepare", "assign", "brief", "work", "build", "collect", "judge", "challenge")
@@ -13,7 +13,7 @@ PAUSED = "council run close --status paused --run %s"
 
 
 def _field(run: Path, key: str) -> str:
-    return state.header(state.text(run), exact_keys=True).get(key, "")
+    return state.field(state.text(run), key)
 
 
 def undelivered(run: Path) -> str:
@@ -126,7 +126,7 @@ CHECKS = (  # (code, check: the value its line names, or None when the run passe
 def claims_stale(run: Path, says_stale: Callable[[], bool]) -> bool:
     """A synthesis run's claim index missing, or older than a source (a deleted one only says_stale tells)."""
     synthesis, claims = run / "synthesis.md", run / "claims.jsonl"
-    synthesised = _field(run, "mode") in ("council-review", "council-plan", "council-research")
+    synthesised = _field(run, "mode") in stages.SYNTHESISED
     if not synthesised or not (synthesis.is_file() or claims.is_file()):
         return False
     if says_stale() or not (synthesis.is_file() and claims.is_file()):
@@ -138,13 +138,15 @@ def claims_stale(run: Path, says_stale: Callable[[], bool]) -> bool:
 def build_log(run: Path, council_home: str) -> str:
     """A build run's log: '' when one names the run and has its Shortcuts section, else the line to say."""
     folder, name = Path(home.native(council_home)) / "logs", re.escape(run.name)
-    logs = [(f, seat_files.lines(folder / f)) for f in seat_files.listed(folder, "*.md") if (folder / f).is_file()]
+    logs = [(f, bytewise.file_lines(folder / f, fold=False))
+            for f in seat_files.listed(folder, "*.md") if (folder / f).is_file()]
     found = [f for pattern in ("Run:[^|]*%s([^0-9A-Za-z-]|$)", "(^|[^0-9A-Za-z-])%s([^0-9A-Za-z-]|$)")
              for f, lines in logs if any(re.search(pattern % name, line) for line in lines)]
     if not found:
         return ('no build log names this run — write %s/logs/<date>-<slug>.md with "Run: %s" and a "## Shortcuts and '
                 'concessions" section' % (council_home, run.name))
-    if any(line.startswith("## Shortcuts and concessions") for line in seat_files.lines(folder / found[0])):
+    if any(line.startswith("## Shortcuts and concessions")
+           for line in bytewise.file_lines(folder / found[0], fold=False)):
         return ""
     return ('the log has no "## Shortcuts and concessions" section — say what was traded away, or the single word '
             'none: %s/logs/%s' % (council_home, found[0]))

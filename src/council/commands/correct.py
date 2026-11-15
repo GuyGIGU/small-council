@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from council import clock
-from council.commands import cli, event_note, resolve, seat
+from council.commands import cli, event_note, resolve
 from council.records import ledger, seat_rows, seats
 
 USAGE = ('usage: council correct <seat> tokens=<exact> agents=<exact> [unrecorded=yes] evidence="<where the figure '
@@ -33,8 +33,9 @@ def main(args: cli.Args, words: list[str]) -> int:
         _refuse("%s is not a seat of %s — only a recorded seat can be corrected (an agent run never recorded: "
                 "unrecorded=yes)" % (slug, name))
     lock = Path(str(seats.path(run)) + ".lock")
-    seat.under(lock, "seat lock unavailable: " + lock.as_posix(), lambda: _write(run, slug, got),
-               "corrected, but the seat lock could not be released")
+    with event_note.locked(lock, "seat lock unavailable: " + lock.as_posix(),
+                           "corrected, but the seat lock could not be released"):
+        _write(run, slug, got)
     if resolve.field(run, "status") == "complete":       # the ledger is a copy of the record: refresh it
         cli.say("ledger: %d seat row(s) of %s refreshed" % (ledger.record(run), name))
     return 0

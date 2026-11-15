@@ -4,15 +4,14 @@ from __future__ import annotations
 import contextlib
 import re
 from pathlib import Path
-from typing import Callable, TypeVar
+from typing import Callable
 
 from council import clock
 from council.commands import cap, cli, closed, event_note, nudges, plan, resolve, rounds, seat_notes
-from council.records import cells, events, ledger, locks, seat_rows, seat_write, seats, state_write
+from council.records import cells, ledger, seat_rows, seat_write, seats, state_write
 from council.records import home as where
 from council.records import plan as run_plan
 
-T = TypeVar("T")
 USAGE = ("usage: council seat <slug> <queued|running|done|failed|blocked|skipped> [agent=ID] [tokens=N] [agents=N] "
          "[note=TEXT]")
 STATES = ("queued", "running", "done", "failed", "blocked", "skipped")
@@ -48,8 +47,9 @@ def main(args: cli.Args, words: list[str]) -> int:
     _may_record(run, slug, state, got)
     state_write.clear_waiting(run)                       # the call is good: the run moves on
     lock = Path(str(seats.path(run)) + ".lock")
-    first, dup = under(lock, "seat lock unavailable: " + lock.as_posix(), lambda: _record(run, slug, state, got),
-                       "seat changed, but its lock could not be released: " + lock.as_posix())
+    with event_note.locked(lock, "seat lock unavailable: " + lock.as_posix(),
+                           "seat changed, but its lock could not be released: " + lock.as_posix()):
+        first, dup = _record(run, slug, state, got)
     if closed_out and resolve.field(run, "status") == "complete":       # the ledger copies the record
         cli.say("ledger: %d seat row(s) of %s refreshed" % (ledger.record(run), run.name))
     if got["tools"] and not dup:                          # tool calls, kept apart from usage.tsv's columns
@@ -64,19 +64,6 @@ def main(args: cli.Args, words: list[str]) -> int:
     if first:
         nudges.status_nudge(run, "dispatch", bool(args.value("run")))
     return 0
-
-
-def under(lock: Path, unavailable: str, body: Callable[[], T], unreleased: str = "") -> T:
-    """body() under the lock: refused with its holder and `unavailable`, or `unreleased` if it stays held."""
-    if not locks.acquire(lock):
-        raise cli.Refusal("%s\ncouncil: %s" % (events.busy(lock), unavailable))
-    try:
-        result = body()
-    finally:
-        released = locks.release(lock)
-    if not released and unreleased:
-        raise cli.Refusal(unreleased)
-    return result
 
 
 def _tokens(value: str) -> str:

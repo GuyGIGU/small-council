@@ -6,7 +6,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+from council.records import bytewise, paths
+
 SPACE = " \t\n\v\f\r"
 RAN = re.compile(r"(running|ran)[ \t]+[1-9][0-9]*[ \t]+tests?([^a-z]|$)|tests run:[ \t]*[1-9]"
                  r"|(^|[^0-9])[1-9][0-9]*[ \t]+(passed|passing)([^a-z]|$)")
@@ -33,32 +34,19 @@ MISSING_MODULE = re.compile(r"^.*: No module named ([A-Za-z0-9_.]+)[ \t\n\v\f\r]
 
 def text(path: str | Path) -> str:
     """A saved output's text, its bytes kept (surrogateescape); '' when it can't be read."""
-    try:
-        return Path(path).read_bytes().decode("utf-8", "surrogateescape")
-    except OSError:
-        return ""
-
-
-def lines(content: str) -> list[str]:
-    """Lines as awk and grep read them: on newline only, a last line without one still a line."""
-    found = content.split("\n")
-    return found[:-1] if found and found[-1] == "" else found
+    return (paths.contents(path) or b"").decode("utf-8", "surrogateescape")
 
 
 def clip(line: str, width: int) -> str:
-    """The helper's clip: a line past width cut at its last space within it, then ' …'."""
-    if len(line) <= width:
-        return line
-    cut = line[:width]
-    space = cut.rfind(" ")
-    return (cut[:space] if space >= 0 else cut) + " …"
+    """bytewise.clip of a gate's UTF-8 text: a line past width cut at its last space within it, then ' …'."""
+    return bytewise.clip(line, width, "…")
 
 
 def zero_tests(content: str) -> str:
     """The line of a passing gate's output that says no test ran, clipped to 120 — unless another line shows
     tests did run (go's "ok <package>", cargo's "running 5 tests", maven's "Tests run: 5", "5 passed")."""
     ran, hit = False, None
-    for line in lines(content):
+    for line in bytewise.records(content, fold=False):
         line = line.replace("\r", "")
         lower = line.lower()
         if re.match(r"ok[ \t]+[^ \t]+\t", lower) and "[no test" not in lower:
@@ -82,7 +70,7 @@ def failure_ids(content: str) -> list[str]:
     """The failing tests a runner's output names, in order, once each, run times dropped: pytest, go, unittest,
     node --test, jest/vitest, TAP and cargo. A log line naming a moment is no test."""
     found: list[str] = []
-    for raw in lines(content):
+    for raw in bytewise.records(content, fold=False):
         line = ANSI.sub("", raw.replace("\r", ""))
         for rule, take in FAILURE_LINES:
             match = rule.match(line)
@@ -100,7 +88,7 @@ def failure_ids(content: str) -> list[str]:
 
 def never_ran(content: str) -> bool:
     """cmd.exe that never got its /c switch: its version banner first, a prompt last, and nothing else ran."""
-    found = lines(content)
+    found = bytewise.records(content, fold=False)
     if not content or not found:
         return False
     last = found[-1].replace("\r", "")
@@ -110,7 +98,8 @@ def never_ran(content: str) -> bool:
 def missing_module(content: str) -> str:
     """The module `python -m <module>` could not find, when Python's one line saying so is all a gate printed
     besides `council changed`'s own lines; '' otherwise (a traceback's ModuleNotFoundError is a check that ran)."""
-    said = [line for line in lines(content) if line.strip(SPACE) and not line.startswith("changed: ")]
+    said = [line for line in bytewise.records(content, fold=False)
+            if line.strip(SPACE) and not line.startswith("changed: ")]
     if len(said) != 1:
         return ""
     found = MISSING_MODULE.match(said[0])
@@ -119,9 +108,9 @@ def missing_module(content: str) -> str:
 
 def is_test_gate(name: str, command: str) -> bool:
     """A test gate, told by its name or by a runner in its command, never by an argument (src tests)."""
-    if "test" in name.translate(ASCII_LOWER) or "spec" in name.translate(ASCII_LOWER):
+    if "test" in bytewise.lower(name) or "spec" in bytewise.lower(name):
         return True
-    padded = " " + command.translate(ASCII_LOWER) + " "
+    padded = " " + bytewise.lower(command) + " "
     return any(runner in padded for runner in TEST_RUNNERS)
 
 
@@ -131,4 +120,4 @@ def blank(content: str) -> bool:
 
 def tail(content: str, count: int) -> list[str]:
     """`tail -n count` as $( ) keeps it: trailing empty lines dropped."""
-    return "\n".join(lines(content)[-count:]).rstrip("\n").split("\n")
+    return "\n".join(bytewise.records(content, fold=False)[-count:]).rstrip("\n").split("\n")

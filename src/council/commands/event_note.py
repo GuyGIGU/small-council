@@ -2,10 +2,12 @@
 and never changes the result), `need` for one that refuses without it (event_append || die)."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 from council.commands import cli
-from council.records import events
+from council.records import events, locks
 
 
 def append(run: str | Path, kind: str, subject: str, value: str, detail: str, said: str, once: bool = False) -> bool:
@@ -24,6 +26,20 @@ def need(run: str | Path, kind: str, subject: str, value: str, detail: str, refu
         return events.append(Path(run), kind, subject, value, detail)
     except events.EventError as failure:
         raise cli.Refusal("%s\ncouncil: %s" % (failure, refusal)) from None
+
+
+@contextmanager
+def locked(lock: Path, unavailable: str, unreleased: str = "") -> Iterator[None]:
+    """A with block under a run file's lock: refused with its holder and `unavailable` when it can't be taken,
+    and with `unreleased`, when one is given, if the lock stays held after the block."""
+    if not locks.acquire(lock):
+        raise cli.Refusal("%s\ncouncil: %s" % (events.busy(lock), unavailable))
+    try:
+        yield
+    finally:
+        released = locks.release(lock)
+    if not released and unreleased:
+        raise cli.Refusal(unreleased)
 
 
 def writable(run: Path) -> None:

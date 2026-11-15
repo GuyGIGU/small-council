@@ -1,12 +1,11 @@
 """council state [key=value ...]: the header, or every word checked and then written by state_write.change."""
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
 from council.commands import cli, nudges, plan, resolve
-from council.records import stages, state, state_write
+from council.records import bytewise, stages, state, state_write
 
 STATUSES = ("in-progress", "paused", "complete", "abandoned")
 PLANNED = ("brief", "build", "work", "collect", "judge", "challenge", "deliver", "learn")   # need a valid plan
@@ -31,11 +30,7 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 def _header(run: Path) -> None:
     """The lines above the first heading, as awk prints them (a BOM kept; on Windows a line's CR dropped)."""
-    content = state.path(run).read_bytes().decode("utf-8", "surrogateescape")
-    if os.name == "nt":
-        content = content.replace("\r\n", "\n")
-    lines = content.split("\n")
-    for line in lines[:-1] if lines[-1] == "" else lines:
+    for line in bytewise.records(state.path(run).read_bytes().decode("utf-8", "surrogateescape")):
         if line.startswith("## "):
             return
         cli.say(line)
