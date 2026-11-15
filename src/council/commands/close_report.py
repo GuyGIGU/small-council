@@ -20,7 +20,7 @@ def claims_note(run: Path) -> None:
 
 
 def audit(run: Path) -> None:
-    """scripts/audit.py at the close, kept as audit.md: its verdict line and every FAIL line, on stdout."""
+    """The audit at the close, kept as audit.md: its verdict line and every FAIL line, on stdout."""
     code, out, err = script.captured("audit", ["--run", run.as_posix(), "--at-close", "--save"])
     lines = (out + err).split("\n")
     if code > 1:

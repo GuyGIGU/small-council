@@ -11,7 +11,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE = ROOT / "scripts" / "evidence.py"
+ENGINE = (str(ROOT / "src" / "council" / "commands" / "script.py"), "evidence")   # the claim index, run by path
 CLI = ROOT / "bin" / "council"
 BASH = (os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash") or
         (r"C:\Program Files\Git\bin\bash.exe" if Path(r"C:\Program Files\Git\bin\bash.exe").is_file() else None))
@@ -33,12 +33,12 @@ def invoke(run, action, via_cli=False):
     if via_cli:
         return subprocess.run((BASH, str(CLI), "evidence", action, "--run", str(run)), cwd=run,
                               capture_output=True, text=True, encoding="utf-8", errors="replace")
-    return subprocess.run((sys.executable, str(ENGINE), action, "--run", str(run)), cwd=run,
+    return subprocess.run((sys.executable, *ENGINE, action, "--run", str(run)), cwd=run,
                           capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def invoke_table(path):
-    return subprocess.run((sys.executable, str(ENGINE), "table", "--file", str(path)), capture_output=True,
+    return subprocess.run((sys.executable, *ENGINE, "table", "--file", str(path)), capture_output=True,
                           text=True, encoding="utf-8", errors="replace")
 
 
@@ -258,8 +258,8 @@ with tempfile.TemporaryDirectory() as folder:
           built.returncode == 0 and [c["verdict"] for c in claims(planned)] == ["REFUTED", "UNCERTAIN"] and
           [len(c["verification"]) for c in claims(planned)] == [2, 2] and invoke(planned, "check").returncode == 0,
           built.stdout + built.stderr)
-    sys.path.insert(0, str(ROOT / "scripts"))
-    import evidence                    # noqa: E402  (memory propose reads the index through it)
+    sys.path.insert(0, str(ROOT / "src"))
+    from council.commands import evidence  # noqa: E402  (memory propose reads the index through it)
     again, _ = evidence.synthesis(planned)
     check("plan: a reader that doesn't name the mode (memory propose) finds the index current",
           evidence.verifier_rows(planned, again) == [] and

@@ -276,7 +276,8 @@ def check_repo(repo, good, case, say):
         ledger = [(r.get("attempt"), r.get("result"), r.get("action")) for r in rows]
         traced = [(e["attempt"], e["result"], e["action"]) for e in good]
         say("PASS" if ledger == traced else "FAIL", "kept copy: repairs.jsonl matches the trace", str(ledger))
-        helper = subprocess.run([sys.executable, str(ROOT / "scripts" / "repair.py"), "check", "--run", str(run)],
+        helper = subprocess.run([sys.executable, str(ROOT / "src" / "council" / "commands" / "script.py"), "repair",
+                                 "check", "--run", str(run)],
                                 capture_output=True, text=True, encoding="utf-8")
         say("PASS" if helper.returncode == 0 else "FAIL", "kept copy: helper `repair check`",
             (helper.stdout + helper.stderr).strip().splitlines()[-1] if (helper.stdout + helper.stderr).strip() else "")

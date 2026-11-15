@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 """The Chair's own tokens for a council run, read from the session transcripts. Read-only.
 
-    python3 scripts/chair_usage.py --run <run folder> [--transcript <session .jsonl>]
+    python src/council/commands/script.py chair_usage --run <run folder> [--transcript <session .jsonl>]
 
 Seats record what each agent used; the Chair's own reading and judging never had a record. Claude Code
 writes every main-thread model call to the session's .jsonl with its usage. A call's context is its new
@@ -12,61 +11,55 @@ span, its context less the call before it, when that is more. That is the measur
 writes and adds nothing; a compaction shrinks the context and adds nothing until it grows again.
 
 Each call is counted once (the transcript repeats a call's usage on every block it wrote). Agents' calls
-(sidechains) and Claude Code's <synthetic> entries (all-zero usage, no model call) are left out. The sessions read are the one the run's state names
-and each one a resume came from (its run.resumed event's was=); with --transcript, that file alone.
+(sidechains) and Claude Code's <synthetic> entries (all-zero usage, no model call) are left out. The sessions read
+are the one the run's state names and each one a resume came from (its run.resumed event's was=); with
+--transcript, that file alone.
 
 Prints one line, tokens=<n>;calls=<n>;basis=<complete|partial>, and exits 0; partial means a session the
 run was driven from had no transcript to read (or a resume from before was= was recorded), so the figure
 is a floor. Exits 3 with the reason on stderr when there is nothing to read; 2 when the run can't be read.
 """
 
+from __future__ import annotations
+
 import argparse
-from datetime import datetime, timedelta, timezone
-import json
-from pathlib import Path
 import re
 import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import audit  # noqa: E402  (the run reader, its spans and the transcript finder)
+from council.clock import iso_moment
+from council.commands.audit import Span, find_transcript, spans, transcript_lines
+from council.commands.audit_checks import Run
+from council.records import paths
+
+SIZES = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
 
 
-def number(usage, name):
-    value = usage.get(name)
-    return value if isinstance(value, int) and value > 0 else 0
-
-
-def calls_of(path):
+def calls_of(path: Path) -> list[tuple[datetime, int]]:
     """The main thread's model calls in time order, once each: [(time, context size)]."""
     seen, calls = set(), []
-    with open(str(path), "rb") as handle:
-        for raw in handle:
-            try:
-                line = json.loads(raw.decode("utf-8", "replace"))
-            except ValueError:
-                continue
-            if not isinstance(line, dict) or line.get("type") != "assistant" or line.get("isSidechain"):
-                continue
-            message = line.get("message") if isinstance(line.get("message"), dict) else {}
-            usage = message.get("usage") if isinstance(message.get("usage"), dict) else None
-            key = message.get("id") or line.get("requestId")
-            stamp = line.get("timestamp")
-            when = audit.iso_moment(stamp) if isinstance(stamp, str) else None
-            if usage is None or not isinstance(key, str) or when is None or key in seen:
-                continue
-            seen.add(key)
-            size = sum(number(usage, n) for n in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
-            # Claude Code's <synthetic> entries (an interrupted or failed turn) carry all-zero usage: no model
-            # call ran, and as a baseline it would count the next call's whole context as growth.
-            if size and message.get("model") != "<synthetic>":
-                calls.append((when, size))
+    for line in transcript_lines(path):
+        if line.get("type") != "assistant":
+            continue
+        message = line.get("message") if isinstance(line.get("message"), dict) else {}
+        usage = message.get("usage") if isinstance(message.get("usage"), dict) else None
+        key = message.get("id") or line.get("requestId")
+        stamp = line.get("timestamp")
+        when = iso_moment(stamp) if isinstance(stamp, str) else None
+        if usage is None or not isinstance(key, str) or when is None or key in seen:
+            continue
+        seen.add(key)
+        size = sum(value for value in map(usage.get, SIZES) if isinstance(value, int) and value > 0)
+        # Claude Code's <synthetic> entries (an interrupted or failed turn) carry all-zero usage: no model
+        # call ran, and as a baseline it would count the next call's whole context as growth.
+        if size and message.get("model") != "<synthetic>":
+            calls.append((when, size))
     calls.sort(key=lambda c: c[0])
     return calls
 
 
-def growth(calls, opened):
-    """(tokens, calls) of context growth for the calls inside the spans."""
+def growth(calls: list[tuple[datetime, int]], opened: list[Span]) -> tuple[int, int]:
     now = datetime.now(timezone.utc)
     total = count = 0
     before = 0
@@ -79,16 +72,16 @@ def growth(calls, opened):
     return total, count
 
 
-def main():
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="The Chair's own tokens for a council run (read-only).")
     parser.add_argument("--run", required=True, type=Path)
     parser.add_argument("--transcript", type=Path, help="the Claude Code session .jsonl that drove the run")
-    args = parser.parse_args()
-    if not audit.paths.is_run(args.run, refuse_links=False):
+    args = parser.parse_args(argv)
+    if not paths.is_run(args.run, refuse_links=False):
         print("chair usage: not a run folder: {}".format(args.run), file=sys.stderr)
         return 2
-    run = audit.Run(args.run)
-    opened = audit.spans(run)
+    run = Run(args.run)
+    opened = spans(run)
     if not opened:
         print("chair usage: the run has no open span in its events", file=sys.stderr)
         return 3
@@ -105,7 +98,7 @@ def main():
                 sessions.append(was.group(1))
         files = []
         for session in [s for s in sessions if s]:
-            found = audit.find_transcript(session)
+            found = find_transcript(session)
             if found is None:
                 partial = True
             else:
@@ -125,6 +118,3 @@ def main():
     print("tokens={};calls={};basis={}".format(total, count, "partial" if partial else "complete"))
     return 0
 
-
-if __name__ == "__main__":
-    sys.exit(main())

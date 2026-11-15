@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused, no-model checks for seat learning: `council ledger advice` and scripts/ledger.py.
+"""Focused, no-model checks for seat learning: `council ledger advice` and commands/seat_advice.py.
 
 The advice must stay quiet until a seat's record clears the bar, count only runs that judged its
 items, and never read one run's many items as many runs' worth of evidence.
@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 GIT = shutil.which("git")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
-sys.path.insert(0, str(ROOT / "scripts"))
-import ledger  # noqa: E402  (the helper's own seat-learning code)
+sys.path.insert(0, str(ROOT / "src"))
+from council.commands import seat_advice as ledger  # noqa: E402  (the helper's own seat-learning code)
 
 checks = []
 HEADER = "date\trun\tmode\tseat\traised\tkept\tcut\trefuted\ttokens\taccounting\n"

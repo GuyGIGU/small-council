@@ -1,6 +1,6 @@
 """audit.md: the run audit as `council run close` saw it, kept in the run folder, and the audit's report text.
 
-The close writes it (scripts/audit.py --at-close --save), through the one atomic writer, whole each time: a
+The close writes it (council.commands.audit --at-close --save), through the one atomic writer, whole each time: a
 run closed again rewrites it. `council run audit` alone reads and prints the same report and writes nothing.
 """
 from __future__ import annotations

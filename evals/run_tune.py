@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused, no-model checks for conservative self-tuning: `council tune` and scripts/tune.py.
+"""Focused, no-model checks for conservative self-tuning: `council tune` and commands/tune_knobs.py.
 
 Tuning must propose only from enough of the project's own record; change one line of the config only
 with the user's (redacted) words and only to the value they were shown; log every change with the
@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parent.parent
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 GIT = shutil.which("git")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-sys.path.insert(0, str(ROOT / "scripts"))
-import tune  # noqa: E402
+sys.path.insert(0, str(ROOT / "src"))
+from council.commands import tune_knobs as tune  # noqa: E402
 
 checks = []
 CONFIG = ("# Council config\n\n## Run preferences\n- approve without asking: up to squad\n- agent cap: 10\n"

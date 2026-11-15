@@ -39,7 +39,7 @@ Passing either number emits one event, and passing the ceiling on an open run as
 starting work until the owner says go. These token figures are context size, not a bill.
 
 **The Chair's own work.** No seat records it. At `council run close` (and a pause) the helper reads the
-transcripts of the sessions that drove the run (`scripts/chair_usage.py`: the session the state names, and
+transcripts of the sessions that drove the run (`council.commands.chair_usage`: the session the state names, and
 each one a resume came from) and adds up how much the Chair's context grew in its own model calls while
 the run was open, each call once. That is the measure an agent's figure uses (its final context size), so
 the two compare; a cache rebuilt after an idle gap adds nothing, and agents' calls are left out (their

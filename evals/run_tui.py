@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused, no-model checks for the read-only run cockpit: `council tui` and scripts/cockpit.py.
+"""Focused, no-model checks for the read-only run cockpit: `council tui` and views/cockpit.py.
 
 The cockpit must show what the run's own files say, keep terminal control codes out of the screen,
 survive malformed or legacy runs, stop watching once the run closes, and never write a byte.
@@ -18,7 +18,7 @@ import time
 ROOT = Path(__file__).resolve().parent.parent
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 GIT = shutil.which("git")
-COCKPIT = ROOT / "scripts" / "cockpit.py"
+COCKPIT = [str(ROOT / "src" / "council" / "commands" / "script.py"), "cockpit"]
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 checks = []
 
@@ -223,7 +223,7 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
     except OSError:
         made = False
     if made:
-        result = subprocess.run([sys.executable, str(COCKPIT), "--run", str(alias)], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        result = subprocess.run([sys.executable, *COCKPIT, "--run", str(alias)], capture_output=True, text=True, encoding="utf-8", errors="replace")
         check("cockpit: a run folder that is a link or junction is refused", result.returncode == 2
               and "link" in result.stderr, result.stderr)
         if os.name == "nt":
@@ -236,7 +236,7 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
     if os.name == "nt":
         loop = ('fail=0; i=0; while [ $i -lt 300 ]; do printf "status: in-progress\\nn: %s\\n" "$i" > "$1.tmp"; '
                 'mv -f "$1.tmp" "$1" 2>/dev/null || { fail=$((fail + 1)); rm -f "$1.tmp"; }; i=$((i + 1)); done; echo "$fail"')
-        readers = {"cockpit": "sys.path.insert(0, sys.argv[2]); import cockpit; read = lambda: cockpit.text_of(Path(sys.argv[1]))",
+        readers = {"cockpit": "sys.path.insert(0, sys.argv[2]); from council.views import cockpit; read = lambda: cockpit.text_of(Path(sys.argv[1]))",
                    "plain": "read = lambda: open(sys.argv[1], 'rb').close()"}
         failures = {}
         for name, setup in readers.items():
@@ -244,7 +244,7 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
             target.write_text("status: in-progress\n", encoding="utf-8")
             code = ("import sys, time\nfrom pathlib import Path\n" + setup + "\nend = time.time() + 120\n"
                     "while time.time() < end:\n    try:\n        read()\n    except OSError:\n        pass\n")
-            reader = subprocess.Popen([sys.executable, "-c", code, str(target), str(ROOT / "scripts")])
+            reader = subprocess.Popen([sys.executable, "-c", code, str(target), str(ROOT / "src")])
             time.sleep(0.5)
             result = subprocess.run([BASH, "-c", loop, "loop", target.as_posix()], capture_output=True, text=True, encoding="utf-8", errors="replace")
             reader.kill()
@@ -255,7 +255,7 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
               failures)
 
     # Watching survives a state file that is briefly gone, and stops by itself once the run is closed
-    proc = subprocess.Popen([sys.executable, str(COCKPIT), "--run", str(run), "--watch", "--interval", "0.5"],
+    proc = subprocess.Popen([sys.executable, *COCKPIT, "--run", str(run), "--watch", "--interval", "0.5"],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
     time.sleep(1.2)
     state_file = run / "session-state.md"
@@ -287,15 +287,14 @@ with tempfile.TemporaryDirectory(prefix="council-tui-") as temporary:
           code == 0 and "no events.tsv" in out and "garbage" in out, out + err)
     code, out, err = council(repo, "tui", "--watch", "--run", legacy.name)
     check("tui --watch on a closed run reads it closed twice and stops", code == 0 and "the run is complete" in out, out + err)
-    result = subprocess.run([sys.executable, str(COCKPIT), "--run", str(repo)], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    result = subprocess.run([sys.executable, *COCKPIT, "--run", str(repo)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     check("cockpit: a folder that is not a run is refused", result.returncode == 2 and "not a council run" in result.stderr,
           result.stderr)
 
 # A build's before-proof and a review fix's regress-proof are meant to fail first. Real run 2's screen drew each
 # such proof with the failure mark; they are drawn as failed as planned. A preserve-proof before-check must pass.
-sys.path.insert(0, str(ROOT / "scripts"))
-import cockpit  # noqa: E402
-import status  # noqa: E402
+sys.path.insert(0, str(ROOT / "src"))
+from council.views import cockpit, cockpit_screen, status  # noqa: E402
 with tempfile.TemporaryDirectory(prefix="council-tui-planned-") as temporary:
     build = Path(temporary) / ".council" / "runs" / "2026-10-04-000000-implement"
     write(build / "session-state.md", "status: in-progress\nmode: council-implement\nphase: build\n## Decisions so far\n")
@@ -321,8 +320,8 @@ with tempfile.TemporaryDirectory(prefix="council-tui-planned-") as temporary:
     check("tui: passing checks keep the pass mark",
           all(line and line[2] in ("✓", "+") and "failed as planned" not in line for line in passing), passing)
     check("tui: the card and the screen take the before/regress/probe rule from one function",
-          getattr(cockpit, "gate_kind", None) is not None and status.gate_kind is cockpit.gate_kind,
-          getattr(cockpit, "gate_kind", None))
+          getattr(cockpit_screen, "gate_kind", None) is not None and status.gate_kind is cockpit_screen.gate_kind,
+          getattr(cockpit_screen, "gate_kind", None))
 
 # A red that proves nothing — marked invalid, stopped at its time limit, or never run — is no proof yet, as
 # council check reads it: never drawn as failed as planned.

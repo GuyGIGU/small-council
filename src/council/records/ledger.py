@@ -20,6 +20,7 @@ CHECKED = "2"           # the accounting column of a row whose tokens are a chec
 VERIFIERS = "(verifiers)"
 HEADER = "\t".join(COLUMNS) + "\taccounting\n"
 CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+WORKER = re.compile(r"-(r[0-9]+|[a-z])\Z")
 
 
 class LedgerError(paths.RecordError):
@@ -29,6 +30,11 @@ class LedgerError(paths.RecordError):
 def path(home: str | Path) -> Path:
     """The ledger of a council home."""
     return Path(home) / NAME
+
+
+def seat_of(slug: str) -> str:
+    """A split worker (hunt-a) or a fresh round-2 one (hunt-r2) is its seat."""
+    return WORKER.sub("", slug, count=1)
 
 
 def count(cell: str) -> int:

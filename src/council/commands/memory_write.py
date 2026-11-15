@@ -2,8 +2,8 @@
 failure from one verified record of a run — a claim a blind verifier REFUTED or MISCITED (claims.jsonl), or a build
 task's failed gate trail (repairs.jsonl) — and files it under ## Proposed; it is refused unless, once the user says
 yes, it would be served. accept files the user's answer under Observed Failures with the date and their words; reject
-moves it to ## Rejected as one line. The drafts and moves are scripts/memory.py's, run in this process; the file is
-replaced only through records/memory.py's guarded replace, and secret-looking strings are redacted first."""
+moves it to ## Rejected as one line. The drafts and moves are commands/memory_draft.py's, run in this process; the
+file is replaced only through records/memory.py's guarded replace, and secret-looking strings are redacted first."""
 from __future__ import annotations
 
 import os
@@ -26,15 +26,9 @@ def main(args: cli.Args, found: Memory, sub: str, words: list[str]) -> int:
     return answer(args, found, sub, words[0])
 
 
-def _faults() -> tuple[type[BaseException], ...]:
-    module = script.load("memory")
-    return (module.MemoryError_, module.evidence.EvidenceError, module.repair.RepairError, OSError, UnicodeError,
-            ValueError)
-
-
 def _script(words: list[str]) -> tuple[int, str]:
-    """scripts/memory.py run here: its exit code and what it printed; what it said on stderr is shown."""
-    code, said, errors = script.captured("memory", words, _faults())
+    """commands/memory_draft.py run here: its exit code and what it printed; what it said on stderr is shown."""
+    code, said, errors = script.captured("memory", words)
     if errors:
         cli.warn(errors.rstrip("\n"))
     return code, said

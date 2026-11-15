@@ -198,7 +198,7 @@ runs — a review run's refuted claims and a build run's recorded gate failures,
 and rejected — with its refusals, injection and redaction cases. The larger helper suite also
 covers legacy memory formats and anchor checks.
 
-`python evals/run_seats.py` checks seat learning (`council ledger advice`, `scripts/ledger.py`)
+`python evals/run_seats.py` checks seat learning (`council ledger advice`, `commands/seat_advice.py`)
 without a model: runs that credited no items (council-init, builds) count toward tokens only; a
 seat is weighed only after 3 judged runs and 15 items of evidence, at most five from any one run, so
 one big run is never many runs' worth; each piece of advice (retain, lower, narrow, pair, drop?,
@@ -285,14 +285,14 @@ python evals/record_eval.py                                                     
 - **CI:** `.github/workflows/evals.yml` runs on demand only: Claude Code and both models pinned, the
   Bash sandbox installed, Bash granted only past the triggering smoke, and a cost ceiling.
 
-`python evals/run_tui.py` checks the read-only run cockpit (`council tui`, `scripts/cockpit.py`)
+`python evals/run_tui.py` checks the read-only run cockpit (`council tui`, `views/cockpit.py`)
 against a real helper-made run: the plan, seats, gates, a repair's next step, evidence counts and
 memory proposals on screen; the `--json` snapshot; plain ASCII on request; escape codes in a file
 neutralised; a legacy run and malformed files still drawn; `--watch` stopping by itself when the
 run closes; and every file of the run and the council home byte-for-byte unchanged afterwards.
 
 `python evals/run_status.py` checks run accounting and the plain-language status (`council seat`,
-`council correct`, `council status [--widget | --json]`, `scripts/status.py`), about 90 s:
+`council correct`, `council status [--widget | --json]`, `views/status.py`), about 90 s:
 - **Accounting, through the helper.** A token count is one plausible number stored whole. A repeated
   or resumed report counts once. A Workflow reports its agent count. Missing and older figures stay
   unknown. A correction is normalised, bounded, and keeps the original and its evidence.
@@ -307,17 +307,17 @@ run closes; and every file of the run and the council home byte-for-byte unchang
 - **The stop at the limit.** No go, a go that covers the next agent, a used-up go, torn or garbage
   rows, the ceiling, a closed run and values too large for bash: the card, text, `--line` and JSON
   say "stopped" or "your go", and read the same as `cap_standing` and `council cap` on each folder.
-- **The desktop pet** (`council pet`, `scripts/pet.py`), with no window: it imports without a display;
+- **The desktop pet** (`council pet`, `views/pet.py`), with no window: it imports without a display;
   the design's paths keep their shapes; each status reading gets its pose and bubble; argument,
   no-tkinter and no-display refusals are one line; one pet per project, and `--stop` closes it.
 
-`python evals/run_history.py` checks history across runs (`council history`, `scripts/history.py`):
+`python evals/run_history.py` checks history across runs (`council history`, `views/history.py`):
 counts always, but a median, share or ratio only once five runs (not items) carry its data; a build's
 before/after proofs and gate probes kept apart from the project's gates; repairs, claims and
 estimate accuracy computed right on a synthetic home; missing and malformed data named; odd run
 folders survived; and nothing written.
 
-`python evals/run_tune.py` checks conservative self-tuning (`council tune`, `scripts/tune.py`):
+`python evals/run_tune.py` checks conservative self-tuning (`council tune`, `commands/tune_knobs.py`):
 - the estimate is proposed only once five completed runs measure tokens per agent and it is off by
   more than a quarter;
 - behaviour is held, and the roster goes through a refresh;
@@ -329,7 +329,7 @@ folders survived; and nothing written.
 - BOM, CRLF, comments and file modes survive;
 - every refusal says why and writes nothing.
 
-`python evals/run_audit.py` checks `council run audit` (`scripts/audit.py`), the check that reads what
+`python evals/run_audit.py` checks `council run audit` (`commands/audit.py`), the check that reads what
 a Chair actually did in a finished run. A run built with the first real run's pattern, and its session
 transcript, must fail on each known problem: a stage skipped, the verifier recorded only when it
 finished, two copies of the checks at once, no record of the Chair's own seat, no status card at the

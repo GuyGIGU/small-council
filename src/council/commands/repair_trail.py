@@ -1,26 +1,22 @@
-#!/usr/bin/env python3
 """Record bounded, evidence-linked repair attempts for a council build run.
 
 Classification and routing are advisory. This command never runs a gate, dispatches an
 agent, edits project code, or claims that a failure was caused by the current change.
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import re
-import sys
+from pathlib import Path
+from typing import Any
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from council.records import events as event_stream  # noqa: E402
-from council.records import gates as gate_files  # noqa: E402
-from council.records import paths  # noqa: E402
-from council.records import state as run_state  # noqa: E402
+from council.records import events as event_stream
+from council.records import gates as gate_files
+from council.records import paths
+from council.records import state as run_state
 
 SCHEMA = 1
 MAX_FILE = 4 * 1024 * 1024
@@ -28,18 +24,24 @@ TASK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 PATTERNS = (
     # bin/council's own last line for a gate it stopped at its time limit: a hang, whatever it printed before.
     ("TIMEOUT_FAILURE", r"^council: timed out after [0-9]+s", "quality-concurrency.md"),
-    ("ENVIRONMENT_FAILURE", r"command not found|no such file or directory|modulenotfounderror|permission denied|connection refused|credential|authentication failed", "quality-operability.md"),
-    ("SCHEMA_FAILURE", r"migration (?:failed|error)|schema (?:mismatch|error)|unknown column|relation .* does not exist", "quality-postgres.md"),
-    ("DATA_FAILURE", r"constraint failed|duplicate key|foreign key|data corruption|integrityerror", "quality-postgres.md"),
+    ("ENVIRONMENT_FAILURE", r"command not found|no such file or directory|modulenotfounderror|permission denied"
+                            r"|connection refused|credential|authentication failed", "quality-operability.md"),
+    ("SCHEMA_FAILURE", r"migration (?:failed|error)|schema (?:mismatch|error)|unknown column"
+                       r"|relation .* does not exist", "quality-postgres.md"),
+    ("DATA_FAILURE", r"constraint failed|duplicate key|foreign key|data corruption|integrityerror",
+     "quality-postgres.md"),
     ("CONCURRENCY_FAILURE", r"deadlock|data race|race detected|concurrent modification", "quality-concurrency.md"),
     ("TYPE_FAILURE", r"\bts[0-9]{4}\b|\btypeerror\b|\bmypy\b|incompatible types", "quality-backend.md"),
     ("LINT_FAILURE", r"\b(?:ruff|eslint|flake8|pylint)\b|lint(?:ing)? (?:failed|error)", "quality-testing.md"),
-    ("TEST_FAILURE", r"\bassertionerror\b|^failed [^ ]+::|^failed tests[/\\]|\b[1-9][0-9]* failed(?:,| in|$)", "quality-testing.md"),
+    ("TEST_FAILURE", r"\bassertionerror\b|^failed [^ ]+::|^failed tests[/\\]|\b[1-9][0-9]* failed(?:,| in|$)",
+     "quality-testing.md"),
     ("BUILD_FAILURE", r"build failed|compilation failed|compiler error|linker error", "quality-operability.md"),
     ("PERFORMANCE_FAILURE", r"benchmark regression|performance regression|timeout exceeded", "quality-performance.md"),
     ("CONFIG_FAILURE", r"invalid config|configuration error|missing environment variable", "quality-operability.md"),
-    ("RUNTIME_FAILURE", r"^traceback \(most recent call last\)|\bpanic:|unhandled exception|segmentation fault", "quality-backend.md"),
+    ("RUNTIME_FAILURE", r"^traceback \(most recent call last\)|\bpanic:|unhandled exception|segmentation fault",
+     "quality-backend.md"),
 )
+ESCALATION = {1: "builder-diagnose", 2: "independent-diagnosis", 3: "stop"}   # the action after the nth failure
 NAME_HINTS = (
     ("type", "TYPE_FAILURE", "quality-backend.md"),
     ("lint", "LINT_FAILURE", "quality-testing.md"),
@@ -52,23 +54,18 @@ class RepairError(Exception):
     """The repair record cannot be trusted or safely updated."""
 
 
-def artifact(path, required=True):
-    """A run artifact's bytes, refusing a link, a non-regular file and one over 4 MB; None when it is
-    missing and not required."""
-    try:
-        return paths.artifact(path, MAX_FILE, required)
-    except paths.RecordError as exc:
-        raise RepairError(str(exc)) from exc
+def artifact(path: Path, required: bool = True) -> bytes | None:
+    return paths.artifact(path, MAX_FILE, required)
 
 
-def decode(data, label):
+def decode(data: bytes, label: str) -> str:
     try:
         return data.decode("utf-8-sig")
     except UnicodeError as exc:
         raise RepairError("non-UTF-8 artifact: " + label) from exc
 
 
-def event_rows(run):
+def event_rows(run: Path) -> list[dict[str, Any]]:
     """The whole event stream, refused unless every row is in sequence after the v1 header."""
     try:
         return event_stream.strict_rows(run, lambda path: decode(artifact(path), path.name))
@@ -76,7 +73,7 @@ def event_rows(run):
         raise RepairError(str(exc)) from exc
 
 
-def event_for(run, gate):
+def event_for(run: Path, gate: str) -> dict[str, Any]:
     latest = next((row for row in reversed(event_rows(run))
                    if row["type"] == "gate.finished" and row["subject"] == gate), None)
     if latest is None:
@@ -84,7 +81,7 @@ def event_for(run, gate):
     return latest
 
 
-def gate_result(run, gate):
+def gate_result(run: Path, gate: str) -> tuple[Any, ...]:
     slug = gate_files.slug(gate)
     if not slug or slug in (".", ".."):
         raise RepairError("invalid gate name")
@@ -108,7 +105,7 @@ def gate_result(run, gate):
     return slug, verdict_bytes, output_bytes, verdict, event, detail
 
 
-def classify(gate, output):
+def classify(gate: str, output: str) -> tuple[str, str, str]:
     lines = output.splitlines()
     for category, pattern, lens in PATTERNS:
         regex = re.compile(pattern, re.IGNORECASE)
@@ -121,7 +118,7 @@ def classify(gate, output):
     return "UNKNOWN", "governing task reference", "no recognized failure signal"
 
 
-def load_ledger(run):
+def load_ledger(run: Path) -> list[dict[str, Any]]:
     data = artifact(run / "repairs.jsonl", required=False)
     if data is None:
         return []
@@ -137,11 +134,11 @@ def load_ledger(run):
     return rows
 
 
-def atomic_bytes(path, data):
+def atomic_bytes(path: Path, data: bytes) -> None:
     paths.atomic_write(path, data, prefix=".repair-", refuse_link=True)
 
 
-def baseline(run, slug, gate):
+def baseline(run: Path, slug: str, gate: str) -> str:
     verdict_path, output_path = gate_files.files(run, slug, baseline=True)
     data = artifact(verdict_path, required=False)
     if data is None:
@@ -163,7 +160,7 @@ def baseline(run, slug, gate):
     return "empty" if b"changed: no files matched" in output else "green"
 
 
-def record(run, task, gate):
+def record(run: Path, task: str, gate: str) -> int:
     if not TASK.fullmatch(task) or not gate:
         raise RepairError("task must be a short safe id and gate must be named")
     slug, verdict_bytes, output_bytes, verdict, event, detail = gate_result(run, gate)
@@ -186,7 +183,7 @@ def record(run, task, gate):
     failures = sum(row.get("result") == "failed" for row in prior)
     if verdict["exit"] != 0:
         failures += 1
-        action = {1: "builder-diagnose", 2: "independent-diagnosis", 3: "stop"}.get(failures)
+        action = ESCALATION.get(failures)
         if action is None:
             raise RepairError("three failures already reached the stop limit")
         category, lens, signal = classify(gate, output_bytes.decode("utf-8", errors="replace"))
@@ -224,7 +221,7 @@ def record(run, task, gate):
     return 0
 
 
-def inspect_rows(run, rows, check=False):
+def inspect_rows(run: Path, rows: list[dict[str, Any]], check: bool = False) -> list[str]:
     if not rows:
         raise RepairError("no repair attempts recorded")
     seen = set()
@@ -251,7 +248,7 @@ def inspect_rows(run, rows, check=False):
         gates[key] = row.get("gate")
         if row.get("result") == "failed":
             failures[key] = failures.get(key, 0) + 1
-            expected = {1: "builder-diagnose", 2: "independent-diagnosis", 3: "stop"}.get(failures[key])
+            expected = ESCALATION.get(failures[key])
             if expected is None or row.get("action") != expected or row.get("exit") == 0:
                 raise RepairError("invalid repair escalation")
         elif row.get("result") == "passed":
@@ -262,46 +259,50 @@ def inspect_rows(run, rows, check=False):
         if row["action"] in ("stop", "resolved"):
             closed.add(key)
         if check:
-            event = events.get(row["event_seq"])
-            if (event is None or event["type"] != "gate.finished" or
-                    event["subject"] != row.get("gate") or
-                    event["value"] != ("passed" if row["result"] == "passed" else "failed")):
-                raise RepairError("repair row has no matching gate execution event")
-            detail = event_stream.details(event["detail"])
-            if detail.get("exit") != str(row.get("exit")):
-                raise RepairError("repair row and gate event exit disagree")
-            proof_json = row.get("proof_json", "")
-            proof_text = row.get("proof_text", "")
-            prefix = "repairs/{}-{}-".format(key, row["attempt"])
-            if (not proof_json.startswith(prefix) or not proof_text.startswith(prefix) or
-                    not proof_json.endswith(".json") or not proof_text.endswith(".txt") or
-                    ".." in proof_json or ".." in proof_text):
-                raise RepairError("unsafe proof path in repair record")
-            verdict = artifact(run / proof_json)
-            output = artifact(run / proof_text)
-            if hashlib.sha256(verdict + b"\n" + output).hexdigest() != row.get("proof_sha256"):
-                raise RepairError("repair proof changed: " + proof_text)
-            try:
-                saved = json.loads(decode(verdict, proof_json))
-            except (ValueError, TypeError) as exc:
-                raise RepairError("invalid saved repair verdict") from exc
-            if (not isinstance(saved, dict) or saved.get("gate") != row.get("gate") or
-                    saved.get("exit") != row.get("exit")):
-                raise RepairError("repair row and saved verdict disagree")
-            if row["result"] == "failed":
-                category, lens, signal = classify(row["gate"], output.decode("utf-8", errors="replace"))
-                if (row.get("category"), row.get("lens"), row.get("signal")) != (category, lens, signal):
-                    raise RepairError("repair classification changed from saved output")
-            elif ((row.get("category"), row.get("lens"), row.get("signal")) !=
-                  ("RESOLVED", "-", "gate exit 0") or detail.get("empty") == "1" or
-                  b"changed: no files matched" in output):
-                raise RepairError("repair resolution did not check anything")
+            proven(run, row, events.get(row["event_seq"]))
         lines.append("{} #{} {} {} → {} [{}]".format(key, row["attempt"], row["result"],
                                                      row["category"], row["action"], row["proof_text"]))
     return lines
 
 
-def allowances(run):
+def proven(run: Path, row: dict[str, Any], event: dict[str, Any] | None) -> None:
+    """A recorded attempt still matches its gate event and its saved proof."""
+    if (event is None or event["type"] != "gate.finished" or
+            event["subject"] != row.get("gate") or
+            event["value"] != ("passed" if row["result"] == "passed" else "failed")):
+        raise RepairError("repair row has no matching gate execution event")
+    detail = event_stream.details(event["detail"])
+    if detail.get("exit") != str(row.get("exit")):
+        raise RepairError("repair row and gate event exit disagree")
+    proof_json = row.get("proof_json", "")
+    proof_text = row.get("proof_text", "")
+    prefix = "repairs/{}-{}-".format(row["task"], row["attempt"])
+    if (not proof_json.startswith(prefix) or not proof_text.startswith(prefix) or
+            not proof_json.endswith(".json") or not proof_text.endswith(".txt") or
+            ".." in proof_json or ".." in proof_text):
+        raise RepairError("unsafe proof path in repair record")
+    verdict = artifact(run / proof_json)
+    output = artifact(run / proof_text)
+    if hashlib.sha256(verdict + b"\n" + output).hexdigest() != row.get("proof_sha256"):
+        raise RepairError("repair proof changed: " + proof_text)
+    try:
+        saved = json.loads(decode(verdict, proof_json))
+    except (ValueError, TypeError) as exc:
+        raise RepairError("invalid saved repair verdict") from exc
+    if (not isinstance(saved, dict) or saved.get("gate") != row.get("gate") or
+            saved.get("exit") != row.get("exit")):
+        raise RepairError("repair row and saved verdict disagree")
+    if row["result"] == "failed":
+        category, lens, signal = classify(row["gate"], output.decode("utf-8", errors="replace"))
+        if (row.get("category"), row.get("lens"), row.get("signal")) != (category, lens, signal):
+            raise RepairError("repair classification changed from saved output")
+    elif ((row.get("category"), row.get("lens"), row.get("signal")) !=
+          ("RESOLVED", "-", "gate exit 0") or detail.get("empty") == "1" or
+          b"changed: no files matched" in output):
+        raise RepairError("repair resolution did not check anything")
+
+
+def allowances(run: Path) -> set[tuple[str, str]]:
     """The user's recorded go for stopped gates (bin/council `repair allow`): (gate, stop event seq) pairs."""
     data = artifact(run / "repair-allowances.tsv", required=False)
     if data is None:
@@ -310,7 +311,7 @@ def allowances(run):
     return {(cells[1], cells[3]) for cells in rows if len(cells) >= 5}
 
 
-def trail(run, gate):
+def trail(run: Path, gate: str) -> tuple[str, str, str]:
     """One gate's repair state for bin/council, which refuses a stopped gate and names the task to
     record a failure under: none, open (its task), resolved, stop (its task and the stop's event seq)
     or allowed (the user's go is on record; a fresh task id, since the stopped trail stays closed)."""
@@ -330,7 +331,7 @@ def trail(run, gate):
     return "allowed", fresh, seq
 
 
-def free(run, task, gate):
+def free(run: Path, task: str, gate: str) -> str:
     """The task id to record a first failure of <gate> under, from the task the Chair is on: that id
     while no trail uses it, else one of its own (T1-logs, then T1-logs-2…), so a second gate failing
     in the same task never gets an id record() refuses."""
@@ -343,7 +344,7 @@ def free(run, task, gate):
     return next(c for c in [stem] + [stem + "-" + str(n) for n in range(2, 10000)] if c not in used)
 
 
-def show(run, task, check=False):
+def show(run: Path, task: str | None, check: bool = False) -> int:
     rows = load_ledger(run)
     if task:
         rows = [row for row in rows if row.get("task") == task]
@@ -355,13 +356,13 @@ def show(run, task, check=False):
     return 0
 
 
-def main():
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("record", "show", "check", "trail", "free"))
     parser.add_argument("task", nargs="?")
     parser.add_argument("gate", nargs="?")
     parser.add_argument("--run", required=True, type=Path)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     run = args.run.absolute()
     if run.is_symlink() or not run.is_dir():
         raise RepairError("run must be a real directory")
@@ -386,10 +387,3 @@ def main():
         parser.error("show/check take at most a task id")
     return show(run, args.task, check=args.action == "check")
 
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except (RepairError, paths.RecordError, OSError, UnicodeError, ValueError, TypeError) as exc:
-        print("repair: " + str(exc), file=sys.stderr)
-        sys.exit(2)

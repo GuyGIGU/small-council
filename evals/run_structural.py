@@ -68,8 +68,8 @@ for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.
              ("references", "run", "helper-commands.md"),
              ("references", "run", "evidence-model.md"),
              ("references", "run", "repair-loop.md"),
-             ("scripts", "evidence.py"),
-             ("scripts", "repair.py")]:
+             ("src", "council", "commands", "evidence.py"),
+             ("src", "council", "commands", "repair_trail.py")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
 for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
@@ -200,26 +200,26 @@ check("memory: a failure is served only while its evidence supports it, and file
       "def audit" in read("src", "council", "records", "memory_audit.py") and
       "def replace" in read("src", "council", "records", "memory.py") and
       "--user-said" in read("src", "council", "commands", "memory.py") and
-      os.path.isfile(os.path.join(ROOT, "scripts", "memory.py")) and
+      os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "memory_draft.py")) and
       "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
       "UNSUPPORTED" in doctrine["10-learn.md"])
 check("tune: one knob changed, only with the user's words; behaviour held until a benchmark shows it helps",
       "tune" in command and "config.worker_estimate" in read("src", "council", "commands", "route.py") and
-      os.path.isfile(os.path.join(ROOT, "scripts", "tune.py")) and
-      "held" in read("scripts", "tune.py") and "council tune" in read("skills", "council-init", "SKILL.md"))
+      os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "tune_knobs.py")) and
+      "held" in read("src", "council", "commands", "tune_knobs.py") and "council tune" in read("skills", "council-init", "SKILL.md"))
 check("history: a read-only report over run folders, with a stated bar for every rate",
-      '"history"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "history.py")) and
-      "MIN_RUNS = 5" in read("scripts", "history.py"))
+      '"history"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "src", "council", "views", "history.py")) and
+      "MIN_RUNS = 5" in read("src", "council", "views", "history.py"))
 check("tui: a read-only cockpit script, reached through the helper, never part of a stage",
-      '"cockpit"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "cockpit.py")) and
+      '"cockpit"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "src", "council", "views", "cockpit.py")) and
       "council tui" not in "".join(doctrine.values()))
 kernel_text = read("skills", "context-core", "SKILL.md")
 check("status: one plain-language reading shared by the widget, the summary and the cockpit, shown once "
       "at first dispatch and on request — never a card per progress line",
-      '"status"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "scripts", "status.py")) and
+      '"status"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "src", "council", "views", "status.py")) and
       "council status --widget" in kernel_text and "show_widget" in kernel_text and "never a card per progress line" in kernel_text
-      and "waiting=" in kernel_text and "interpret" in read("scripts", "status.py")
-      and "status.interpret" in read("scripts", "cockpit.py"))
+      and "waiting=" in kernel_text and "interpret" in read("src", "council", "views", "status.py")
+      and "status.interpret" in read("src", "council", "views", "cockpit.py"))
 check("status: showing it is a step where it happens — Work's dispatch, Challenge when its verifiers are the first "
       "dispatch, Learn's close — a show_widget tool is looked up before it is called missing, and the helper "
       "reminds the Chair at both moments (a real run showed neither card)",
@@ -235,7 +235,7 @@ check("accounting: seats record exact usage per agent run, a Workflow's agent co
       "seat_rows" in py and "def seat_usage" in read("src", "council", "records", "usage.py") and "correct" in command and
       "usage.tsv" in py)
 check("seat learning: roster advice weighs only judged runs, past a stated bar",
-      "def advice" in read("src", "council", "commands", "ledger.py") and os.path.isfile(os.path.join(ROOT, "scripts", "ledger.py")) and
+      "def advice" in read("src", "council", "commands", "ledger.py") and os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "seat_advice.py")) and
       "council ledger advice" in doctrine["10-learn.md"] and
       "council ledger advice 20" in read("skills/council-init/SKILL.md") and
       "Below the bar" in read("skills/council-init/SKILL.md"))
@@ -578,8 +578,8 @@ view = read("hooks", "council-view.tsx")
 scene = read("hooks", "council-scene.ts")
 check("mod: hooks.json names the council view module beside the settings hooks",
       hooks_file.get("modules") == ["./council-view.tsx"] and bool(hooks_json))
-check("mod: the view finds runs and reads them through status.py --json, never writing council files",
-      "scripts/status.py" in view and "'--json'" in view and "$.fs.write" not in view)
+check("mod: the view finds runs and reads them through the status reader --json, never writing council files",
+      "src/council/commands/script.py" in view and "'status'" in view and "'--json'" in view and "$.fs.write" not in view)
 check("mod: the view draws the pane, the line above the prompt and the /council-view command",
       all(s in view for s in ("component: 'Pane'", "component: 'AbovePrompt'", "name: COMMAND", "'council-view'")))
 check("mod: the hall credits agent-avatars, as do NOTICE and LICENSE (MIT)",

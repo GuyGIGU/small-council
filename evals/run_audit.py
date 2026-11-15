@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks for `council run audit` (scripts/audit.py): a finished run read against what the method promises.
+"""Checks for `council run audit` (commands/audit.py): a finished run read against what the method promises.
 
 Every other suite tests the helper; this one tests the check that reads what a Chair actually did. Two
 runs are built here from nothing (no real project's content):
@@ -35,7 +35,7 @@ sys.dont_write_bytecode = True                      # importing the grader reade
 ROOT = Path(__file__).resolve().parent.parent
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 GIT = shutil.which("git")
-AUDIT = ROOT / "scripts" / "audit.py"
+AUDIT = (str(ROOT / "src" / "council" / "commands" / "script.py"), "audit")   # the audit, run by path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 checks = []
 
@@ -647,11 +647,11 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     # atomically and whole; without it the audit writes nothing.
     kept = run1_copy("kept")
     before = fingerprint(kept)
-    plain = subprocess.run([sys.executable, str(AUDIT), "--run", str(kept), "--transcript", str(log1)],
+    plain = subprocess.run([sys.executable, *AUDIT, "--run", str(kept), "--transcript", str(log1)],
                            capture_output=True, text=True, encoding="utf-8", errors="replace")
     check("without --save the audit writes nothing and says so", fingerprint(kept) == before
           and "Read-only: nothing was written." in plain.stdout, plain.stdout + plain.stderr)
-    saved = subprocess.run([sys.executable, str(AUDIT), "--run", str(kept), "--transcript", str(log1), "--at-close",
+    saved = subprocess.run([sys.executable, *AUDIT, "--run", str(kept), "--transcript", str(log1), "--at-close",
                             "--save"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     where = kept / "audit.md"
     body = where.read_text(encoding="utf-8") if where.is_file() else ""
@@ -664,7 +664,7 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("--save leaves no temporary file behind in the run folder",
           sorted(set(fingerprint(kept)) - set(before)) == ["audit.md"], str(sorted(set(fingerprint(kept)) - set(before))))
     write(kept / "seats.tsv", head + "verify-1\tdone\ta4c08e8e07813e7ee\t\t2026-09-30 13:23\t\t1\t0\n")
-    subprocess.run([sys.executable, str(AUDIT), "--run", str(kept), "--at-close", "--save"], capture_output=True, text=True,
+    subprocess.run([sys.executable, *AUDIT, "--run", str(kept), "--at-close", "--save"], capture_output=True, text=True,
                    encoding="utf-8", errors="replace")
     again = where.read_text(encoding="utf-8")
     check("a second --save rewrites audit.md whole: the new record shows and the old transcript window is gone",
@@ -672,7 +672,7 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
           and "No transcript given" in again, again)
     # council run close runs this audit as it closes: the closing card comes after, so it is not judged yet —
     # every other FAIL still is (the night's one audit printed four FAILs the user never heard).
-    at_close = subprocess.run([sys.executable, str(AUDIT), "--run", str(run1), "--transcript", str(log1), "--at-close"],
+    at_close = subprocess.run([sys.executable, *AUDIT, "--run", str(run1), "--transcript", str(log1), "--at-close"],
                               capture_output=True, text=True, encoding="utf-8", errors="replace")
     check("--at-close: the closing card reads 'not checked yet', counted apart; the other FAILs stand and exit 1",
           at_close.returncode == 1 and re.search(r"^  later  Closing card: not checked yet", at_close.stdout, re.MULTILINE)
@@ -780,10 +780,11 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
           item(out, "Status card at the first dispatch")[0] == "FAIL", item(out, "Status card at the first dispatch")[1])
 
 # The helper's advisory lines the audit does not count as refusals must still be the helper's words.
-sys.path.insert(0, str(ROOT / "scripts"))
-import audit                                                         # noqa: E402  (bytecode is off)
+sys.path.insert(0, str(ROOT / "src"))
+from council.commands import audit                                   # noqa: E402
 helper = "\n".join(f.read_text(encoding="utf-8") for f in            # the helper is bin/council and src/council
-                   [ROOT / "bin" / "council", *sorted((ROOT / "src" / "council").rglob("*.py"))])
+                   [ROOT / "bin" / "council", *sorted(p for p in (ROOT / "src" / "council").rglob("*.py")
+                                                      if p.name != "audit.py")])   # the audit itself is no helper
 stale = [lead for lead in audit.NOTE_LEADS if lead not in helper]
 check("every advisory line the audit lets pass is still one the helper prints", not stale, stale)
 

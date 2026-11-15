@@ -1,10 +1,12 @@
 """council ledger [N] | ledger advice [N] [--json]: each seat's record over the last N completed runs (default 10) —
 runs, items raised, kept, cut and refuted, tokens per run and the share shipped — from the council home's
 ledger.tsv; advice weighs each seat's judged runs with a plausible range and advises only past a stated bar
-(scripts/ledger.py). Both only read: neither changes a roster, a route or a run."""
+(commands/seat_advice.py). Both only read: neither changes a roster, a route or a run."""
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 from council.commands import cli, script
 from council.records import home as where
@@ -15,7 +17,6 @@ ADVICE = "usage: council ledger advice [how many recent runs, default 20] [--jso
 _NUMBER = r"[+-]?([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][+-]?[0-9]+)?"
 _PREFIX = re.compile(r"[ \t\n\v\f\r]*(" + _NUMBER + ")")
 _STRNUM = re.compile(r"[ \t\n]*" + _NUMBER + r"[ \t\n]*\Z")
-_WORKER = re.compile(r"-(r[0-9]+|[a-z])\Z")
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -48,10 +49,13 @@ def advice(args: cli.Args, last: str) -> int:
         raise cli.Refusal("ledger advice: keep N under a million runs")
     if int(last) <= 0:
         raise cli.Refusal(ADVICE)
-    words = ["advice", "--ledger", where.council_home() + "/" + ledger.NAME, "--last", last]
-    if "json" in args.flags:
-        words.append("--json")
-    return script.run("ledger", words, faults=(ledger.LedgerError, OSError, ValueError))
+
+    def said() -> int:
+        from council.commands import seat_advice     # the advice's own code: only advice loads it
+        data = seat_advice.report(Path(where.council_home() + "/" + ledger.NAME), int(last))
+        cli.say(json.dumps(data, indent=2, sort_keys=True) if "json" in args.flags else seat_advice.render(data))
+        return 0
+    return script.guarded("ledger", said, (ledger.LedgerError, OSError, ValueError))
 
 
 def number(cell: str) -> float:
@@ -90,7 +94,7 @@ class Table:
         seats: dict[str, dict[str, float]] = {}
         counted, priced, unjudged = set(), set(), False
         for cells in (c for c in self.rows if c[1] in kept_runs):
-            seat = _WORKER.sub("", cells[3], count=1)
+            seat = ledger.seat_of(cells[3])
             s = seats.setdefault(seat, dict.fromkeys(("runs", "raised", "kept", "cut", "refd", "tok", "truns",
                                                       "jraised"), 0.0))
             if (cells[1], seat) not in counted:

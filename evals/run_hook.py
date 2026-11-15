@@ -867,7 +867,7 @@ def memory_file_and_seat_check(tmp):
                "| M1 | admins only | NOT MET | asked, no part covers it |\n")
     code, err = run_gate(verifier, f"Wrote {met} — 1 met, 0 partly met, 2 not met, 0 can't tell, 1 missing, 0 not asked")
     check("seat check: a post-game verifier file passes", code == 0, err)
-    # The claim index's own reading of a review's verifier table (evidence.py table): in run 1 the stop
+    # The claim index's own reading of a review's verifier table (evidence table): in run 1 the stop
     # check passed a table the index couldn't read, and the Chair fixed the blind verifier's file by hand.
     review_run = os.path.join(tmp, "review-run")
     write(os.path.join(review_run, "session-state.md"), "status: in-progress\nmode: council-review\n")
