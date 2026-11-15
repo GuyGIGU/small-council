@@ -5,7 +5,6 @@ while its evidence still supports it, records/memory_audit.py), and the one guar
 keeps memory_file and memory_entries for the session-start hook (S8b)."""
 from __future__ import annotations
 
-import contextlib
 import os
 import re
 from typing import NamedTuple
@@ -205,16 +204,9 @@ def _swap(mem: str, before: str, after: str) -> str:
         same = False
     if not same:
         return "%s changed while this ran — nothing written; run it again" % mem
-    import shutil                                   # only a write needs it (D34)
-    new = where.native(mem + ".council-new")
     try:
-        shutil.copyfile(where.native(mem), new)
-        shutil.copymode(where.native(mem), new)
-        with open(where.native(after), "rb") as src, open(new, "wb") as out:
-            out.write(src.read())
-        paths.swap_in(new, where.native(mem))
+        with open(where.native(after), "rb") as src:
+            paths.atomic_write(where.native(mem), src.read(), ".council-new-", keep_mode=True)
     except OSError:
-        with contextlib.suppress(OSError):
-            os.remove(new)
         return "could not write %s" % mem
     return ""

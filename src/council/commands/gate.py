@@ -232,14 +232,10 @@ def _mark(run: str, slug: str, base: str, why: str) -> str:
         k += 1
     verdict, tail = base + ".json", ', "invalid": "%s"}' % gate_run.json_esc(why)
     lines = bytewise.file_lines(verdict, fold=False)
+    marked = "".join(re.sub(r"[}][ \t\r]*\Z", "", line, count=1) + tail + "\n" for line in lines)
     try:
-        with open(verdict + ".tmp", "wb") as handle:
-            handle.write("".join(re.sub(r"[}][ \t\r]*\Z", "", line, count=1) + tail + "\n" for line in lines)
-                         .encode("utf-8", "surrogateescape"))
-        paths.swap_in(verdict + ".tmp", verdict)
+        paths.atomic_write(Path(verdict), marked.encode("utf-8", "surrogateescape"), slug + ".json.tmp", keep_mode=True)
     except OSError:
-        if os.path.exists(verdict + ".tmp"):
-            os.remove(verdict + ".tmp")
         raise cli.Refusal("cannot update %s" % verdict) from None
     with open(base + ".txt", "ab") as handle:
         handle.write(("\ncouncil: marked invalid %s — %s. This red proves nothing; run the check again once it is "

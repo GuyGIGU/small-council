@@ -70,7 +70,6 @@ def repair(run: Path) -> int:
     file = events.path(run)
     lock = Path(str(file) + ".lock")
     copy = "events.tsv.bak-%s-%d" % (clock.now_utc().replace("-", "").replace(":", ""), os.getpid())
-    temporary = Path("%s.tmp%d" % (file, os.getpid()))
     with event_note.locked(lock, "events: the event lock is unavailable: " + lock.as_posix()):
         try:
             data = file.read_bytes()
@@ -79,11 +78,8 @@ def repair(run: Path) -> int:
                 return 0
             part = len(data) - data.rfind(b"\n") - 1
             (run / copy).write_bytes(data)
-            temporary.write_bytes(data[:len(data) - part])
-            paths.swap_in(temporary, file)
+            paths.atomic_write(file, data[:len(data) - part], "events.tsv.tmp", keep_mode=True)
         except OSError:
-            if temporary.exists():
-                temporary.unlink()
             raise cli.Refusal("events: could not repair %s (the copy, if made, is %s/%s)"
                               % (file.as_posix(), run.as_posix(), copy)) from None
     if events.check(run.as_posix())[0]:
