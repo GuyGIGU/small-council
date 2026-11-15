@@ -2,7 +2,6 @@
 stamp and areas, the ledger's cells as awk read them, a filed request's sections, and the one-line fields."""
 from __future__ import annotations
 
-import os
 import unittest
 
 import support
@@ -50,9 +49,7 @@ class LedgerTest(support.Scratch):
     def test_raw_rows_keep_the_header_and_every_line(self) -> None:
         self.assertIsNone(ledger.raw_rows(self.tmp))
         self.write("ledger.tsv", b"date\trun\tseat\r\n2026\tr1\thunt\r\n\r\nx\n", binary=True)
-        cr = "" if os.name == "nt" else "\r"           # Git Bash's awk read a CR LF as LF
-        self.assertEqual(ledger.raw_rows(self.tmp), [["date", "run", "seat" + cr], ["2026", "r1", "hunt" + cr],
-                                                     [cr], ["x"]])
+        self.assertEqual(ledger.raw_rows(self.tmp), [["date", "run", "seat"], ["2026", "r1", "hunt"], [""], ["x"]])
 
 
 class RequestTest(support.Scratch):

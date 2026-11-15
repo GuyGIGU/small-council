@@ -3519,6 +3519,16 @@ def runs_worktrees_close_and_find(tmp):
           code == 0 and "phase prepare · paused" in out and os.path.basename(bomrun.strip()) in out
           and not body.startswith("﻿") and body.count("status:") == 1 and "status: paused" in body,
           out + err + body)
+    # A CR right before a newline is dropped as the file is read, on every OS: a CRLF state comes back all LF.
+    with open(bom_state, "rb") as f:
+        crlf = f.read().replace(b"\n", b"\r\n")
+    with open(bom_state, "wb") as f:
+        f.write(crlf)
+    code, out, err = council(bom, "state", "focus=one rule for line ends", "--run", bomrun)
+    with open(bom_state, "rb") as f:
+        body = f.read()
+    check("state: a CRLF state file is rewritten with LF line ends, on every OS",
+          code == 0 and b"\r" not in body and b"focus: one rule for line ends\n" in body, out + err + repr(body))
 
     # --run as a Windows path (backslashes, a trailing one) names the same run as its folder name
     wp = new_repo(tmp, "winpath")

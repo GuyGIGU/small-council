@@ -105,8 +105,7 @@ class OutputTest(unittest.TestCase):
         from council.commands import gate_failed
         with mock.patch.object(cli, "say") as said:
             gate_failed.indent(["x: No module named y\r", "z"], "  ")
-        kept = "" if os.name == "nt" else "\r"           # Git Bash's awk reads in text mode; elsewhere the CR stays
-        self.assertEqual([c.args[0] for c in said.call_args_list], ["  x: No module named y" + kept, "  z"])
+        self.assertEqual([c.args[0] for c in said.call_args_list], ["  x: No module named y", "  z"])  # every OS
 
     def test_failure_ids(self) -> None:
         out = ("FAILED tests/a.py::t1 - AssertionError: x\n--- FAIL: TestGo (0.01s)\nnot ok 3 - tap name\n"
@@ -293,10 +292,8 @@ class WaitTest(support.Scratch):
         self.assertEqual((run / "session-state.md").read_bytes(), held.encode())
         (run / "session-state.md.lock" / "owner").unlink()
         (run / "session-state.md.lock").rmdir()
-        self.assertTrue(state_write.clear_waiting(run))      # a CRLF file, as awk rewrites it: Git Bash's awk reads
-        crlf = b"\n" if os.name == "nt" else b"\r\n"         # in text mode, so every CR goes; elsewhere only the
-        self.assertEqual((run / "session-state.md").read_bytes(),     # rewritten line loses its own
-                         b"status: in-progress" + crlf + b"waiting: \nevents-schema: 1" + crlf)
+        self.assertTrue(state_write.clear_waiting(run))      # a CRLF file is rewritten with LF lines, on every OS
+        self.assertEqual((run / "session-state.md").read_bytes(), b"status: in-progress\nwaiting: \nevents-schema: 1\n")
 
 
 if __name__ == "__main__":

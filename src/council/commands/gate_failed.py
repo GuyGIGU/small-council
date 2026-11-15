@@ -3,7 +3,6 @@ baseline in this run — which failing tests are new, so a red the untouched cod
 change's."""
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
@@ -57,10 +56,9 @@ def said(call: Call, name: str, result: Result, secs: int, info: tuple, content:
 
 
 def indent(lines: list[str], pad: str) -> None:
-    """Lines of the output, as the helper's clip (an awk) printed them: Git Bash's awk reads in text mode, so on
-    Windows a line's closing CR is gone."""
+    """Lines of the output, each clipped, a line's closing CR (the one before its newline) gone, on every OS."""
     for line in lines:
-        cli.say(pad + gate_output.clip(line[:-1] if os.name == "nt" and line.endswith("\r") else line, 220))
+        cli.say(pad + gate_output.clip(line[:-1] if line.endswith("\r") else line, 220))
 
 
 def compare(baseline: tuple[Path, Path], content: str) -> bool:

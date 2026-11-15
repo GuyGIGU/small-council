@@ -3,7 +3,6 @@ ASCII letters with a case, and blanks that are space and tab. A reader ported fr
 that it matches, counts and cuts what the awk did; it is turned back into the file's own bytes to be shown."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 EM = "—".encode().decode("latin-1")          # the em dash's three bytes, as three characters
@@ -37,10 +36,9 @@ def text(value: str) -> str:
 
 
 def records(text: str, fold: bool = True) -> list[str]:
-    """A file's lines as awk reads them: split at newlines, none after a final one. Git Bash's awk, sed and grep
-    read a file in text mode, a CR LF as LF, so on Windows a line's own last CR is gone before the reader sees
-    it; elsewhere it stays. With fold False the CR stays everywhere, as the helper's readers that kept it did."""
-    if fold and os.name == "nt":
+    """A file's lines: split at newlines, none after a final one. A CR right before a newline is dropped, on every
+    OS (an unterminated last line keeps what it has); with fold False every CR stays."""
+    if fold:
         text = text.replace("\r\n", "\n")
     lines = text.split("\n")
     if text.endswith("\n") or not text:
