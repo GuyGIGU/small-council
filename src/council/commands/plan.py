@@ -11,7 +11,6 @@ from council.records import cells, config, models, plan, seats
 from council.records import home as where
 
 USAGE = "usage: council run plan [check|show]"
-Key = plan_check.Key
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -88,8 +87,8 @@ def settings(run: Path, home: str) -> plan_check.Settings:
 def shown(content: str) -> list[str]:
     """council run plan show's summary of a valid plan: its run, its budget and each considered seat. It reads
     the rows as written, untrimmed, the last of a repeated row winning."""
-    v: dict[Key, str] = {}
-    why: dict[Key, str] = {}
+    v: dict[plan_check.Key, str] = {}
+    why: dict[plan_check.Key, str] = {}
     order: list[str] = []
     routed = False
     for line in cells.lines_of(content):
@@ -120,7 +119,7 @@ def shown(content: str) -> list[str]:
     return lines
 
 
-def seat_line(ident: str, v: dict[Key, str], why: dict[Key, str], routed: bool) -> str:
+def seat_line(ident: str, v: dict[plan_check.Key, str], why: dict[plan_check.Key, str], routed: bool) -> str:
     """'    selected — security (worker) · context focused · 12 tool calls — <why>'; the model only once
     some seat asks for another."""
     disposition = v.get(("seat", ident, "disposition"), "")
