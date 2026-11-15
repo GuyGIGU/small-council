@@ -52,8 +52,9 @@ def qname(name: str) -> str:
 
 
 def json_esc(value: str) -> str:
-    """The helper's json_esc: \\ and " escaped, tab, CR and newline as spaces."""
-    return re.sub("[\t\r\n]", " ", value.replace("\\", "\\\\").replace('"', '\\"'))
+    """A JSON string's inside: \\ and " escaped, and every control character (tab, CR, newline and the rest below
+    0x20) a space, so a verdict stays one line of valid JSON and a command reads as verdicts already on disk do."""
+    return re.sub("[\x00-\x1f]", " ", value.replace("\\", "\\\\").replace('"', '\\"'))
 
 
 def windows_command(command: str) -> str:

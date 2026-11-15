@@ -1247,6 +1247,13 @@ def runs_gates_and_seats(tmp):
     verdict = json.loads(read(os.path.join(gates, "quoted.json")) or "{}")
     check("gate: one quoted command keeps its quotes and &&", code == 5 and read(os.path.join(gates, "quoted.txt")) == "a  b\n", out)
     check("gate: the verdict records the command as written", verdict.get("command") == 'echo "a  b" && exit 5', str(verdict))
+    code, out, _ = council(repo, "gate", "controls", "--", "echo 'a\x1bb\x0cc\td'")
+    try:
+        verdict = json.loads(read(os.path.join(gates, "controls.json")) or "{}")
+    except ValueError as failure:
+        verdict = {"unreadable": str(failure)}
+    check("gate: a command holding control characters still leaves a verdict of valid JSON, each one a space",
+          code == 0 and verdict.get("command") == "echo 'a b c d'", str(verdict))
     code, out, _ = council(repo, "gate", "words", "--", "printf", "(%s)", "two words")
     check("gate: separate words stay separate arguments", code == 0 and read(os.path.join(gates, "words.txt")) == "(two words)",
           out + read(os.path.join(gates, "words.txt")))

@@ -2,6 +2,7 @@
 lock, the time limit, and the stop of a whole process tree."""
 from __future__ import annotations
 
+import json
 import os
 import time
 import unittest
@@ -131,6 +132,8 @@ class RunHelpersTest(support.Scratch):
     def test_qname_json_and_windows_switch(self) -> None:
         self.assertEqual((gate_run.qname("unit tests"), gate_run.qname("lint")), ('"unit tests"', "lint"))
         self.assertEqual(gate_run.json_esc('a\\b "c"\td'), 'a\\\\b \\"c\\" d')
+        self.assertEqual(gate_run.json_esc("f\x0cg\x1bh\x00i\r\nj\x7fé"), "f g h i  j\x7fé")
+        self.assertEqual(json.loads('"%s"' % gate_run.json_esc("x\x01\x1f\x0b")), "x   ")
         self.assertEqual(gate_run.windows_command('cmd /c "x" && CMD.EXE  /K y'), 'cmd //c "x" && CMD.EXE  //K y')
         self.assertEqual(gate_run.windows_command("echo /c/x"), "echo /c/x")
 
