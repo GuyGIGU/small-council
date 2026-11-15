@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 from typing import Pattern
 
 from council import git
@@ -110,7 +111,7 @@ def switch(home: str, want: str) -> None:
     if settings.is_file():
         try:
             data = settings.read_bytes()
-            _write_in_place(str(settings), setting.with_sharing(data, label))
+            settings.write_bytes(setting.with_sharing(data, label))
         except OSError:
             raise cli.Refusal("couldn't write %s/%s" % (home, config.NAME)) from None
         cli.say("council.config.md: - sharing: " + label)
@@ -204,7 +205,7 @@ def drop(file: str, begin: Pattern[bytes], end: Pattern[bytes]) -> int:
         with open(file, "rb") as handle:
             answer, data = without_block(handle.read(), begin, end)
         if answer in (REMOVED, EMPTIED):
-            _write_in_place(file, data)
+            Path(file).write_bytes(data)
     except OSError:
         return UNREADABLE
     return answer
@@ -273,11 +274,5 @@ def ignored_by(root: str) -> str:
 
 
 def tracked_count(root: str) -> int:
-    """How many council files git tracks."""
     listed = git.text(root, "ls-files", "--", ".council")
     return len(listed.split("\n")) if listed else 0
-
-
-def _write_in_place(file: str, data: bytes) -> None:
-    with open(file, "wb") as handle:
-        handle.write(data)

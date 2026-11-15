@@ -11,7 +11,6 @@ from council.records import cells, config, models, plan, seats
 from council.records import home as where
 
 USAGE = "usage: council run plan [check|show]"
-Key = plan_check.Key
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -33,8 +32,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     if word == "show":
         if check(run, quiet):
             return 1
-        for line in shown(whole(run)) + models.shown(models.models(where.council_home())):
-            cli.say(line)
+        cli.say_all(shown(whole(run)) + models.shown(models.models(where.council_home())))
         return 0
     raise cli.Refusal(USAGE)
 
@@ -42,13 +40,11 @@ def main(args: cli.Args, words: list[str]) -> int:
 def check(run: Path, quiet: bool) -> int:
     """Print each problem and their count (exit 1), else the valid line unless quiet (exit 0); then a plan's tasks."""
     verdict = plan_check.judge(whole(run), settings(run, where.council_home()))
-    for line in verdict.problems:
-        cli.say(line)
+    cli.say_all(verdict.problems)
     if verdict.problems:
         cli.say("plan: %d error(s) · %s" % (len(verdict.problems), plan.NAME))
     tasks = plan_tasks.judge_run(run)                  # a delivered plan's tasks, their count line among the problems
-    for line in tasks.problems + ([] if quiet or verdict.problems or tasks.problems else [verdict.valid] + tasks.notes):
-        cli.say(line)
+    cli.say_all(tasks.problems + ([] if quiet or verdict.problems or tasks.problems else [verdict.valid] + tasks.notes))
     return 1 if verdict.problems or tasks.problems else 0
 
 
@@ -91,8 +87,8 @@ def settings(run: Path, home: str) -> plan_check.Settings:
 def shown(content: str) -> list[str]:
     """council run plan show's summary of a valid plan: its run, its budget and each considered seat. It reads
     the rows as written, untrimmed, the last of a repeated row winning."""
-    v: dict[Key, str] = {}
-    why: dict[Key, str] = {}
+    v: dict[plan_check.Key, str] = {}
+    why: dict[plan_check.Key, str] = {}
     order: list[str] = []
     routed = False
     for line in cells.lines_of(content):
@@ -123,7 +119,7 @@ def shown(content: str) -> list[str]:
     return lines
 
 
-def seat_line(ident: str, v: dict[Key, str], why: dict[Key, str], routed: bool) -> str:
+def seat_line(ident: str, v: dict[plan_check.Key, str], why: dict[plan_check.Key, str], routed: bool) -> str:
     """'    selected — security (worker) · context focused · 12 tool calls — <why>'; the model only once
     some seat asks for another."""
     disposition = v.get(("seat", ident, "disposition"), "")

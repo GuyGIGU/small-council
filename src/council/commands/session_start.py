@@ -232,7 +232,9 @@ def _described(r: runs.Listed, at: str, sid: str, event: str, driving: str, here
     else:
         kind = "unfinished"
     if kind in ("driving", "live after clear", "unfinished"):
-        said["seats"] = _seats(r.folder, MORE if kind == "unfinished" and event != "clear" else "")
+        working = MORE if kind == "unfinished" and event != "clear" else "still working"
+        seats = runs.seat_summary(where.native(r.folder), working)
+        said["seats"] = " Seats — %s." % seats if seats else ""
     return RUN_LINES[kind].format(**said)
 
 
@@ -288,11 +290,6 @@ def _active_run(home: str, root: str, sid: str, event: str, driving: str) -> Non
         cli.say("- UNFINISHED COUNCIL RUN: %s, updated: %s). Before new council work, ask the user whether to resume "
                 "it (council run resume --run \"%s\", then re-invoke that mode's skill) or close it (council run close "
                 "--run \"%s\" --status abandoned)." % (said, updated or "unknown", run, run))
-
-
-def _seats(run: str, working: str = "") -> str:
-    seats = runs.seat_summary(where.native(run), working or "still working")
-    return " Seats — %s." % seats if seats else ""
 
 
 def _recent(path: str, minutes: int) -> bool:

@@ -268,8 +268,6 @@ class Check:
         tally = Tally()
         for ident, disposition in self.disp.items():
             role = self.role.get(ident, "")
-            if ident not in self.role:
-                self.problem(0, "seat %s has no role row" % ident)
             if disposition != "selected":
                 tally.skipped += 1
                 if ident in self.ctx:

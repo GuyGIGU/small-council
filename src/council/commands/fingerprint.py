@@ -42,10 +42,6 @@ def main(args: cli.Args, words: list[str]) -> int:
     return 0
 
 
-def _bytes_key(text: str) -> bytes:
-    return text.encode("utf-8", "surrogateescape")
-
-
 def stack_summary() -> str:
     """'manifests: <names> · languages: <extensions>' (none for an empty list), each list in byte order."""
     top = git.run(".", "rev-parse", "--show-toplevel")[1].decode("utf-8", "surrogateescape").rstrip("\n")
@@ -59,13 +55,12 @@ def stack_summary() -> str:
         word = bytewise.lower(ext.group(1)) if ext else ""
         if word in LANGUAGES:
             seen[word] = seen.get(word, 0) + 1
-    langs = sorted((w for w, n in seen.items() if n >= 3), key=_bytes_key)
-    return "manifests: %s · languages: %s" % (", ".join(sorted(names, key=_bytes_key)) or "none",
+    langs = sorted((w for w, n in seen.items() if n >= 3), key=bytewise.text)
+    return "manifests: %s · languages: %s" % (", ".join(sorted(names, key=bytewise.text)) or "none",
                                               ", ".join(langs) or "none")
 
 
 def digest(summary: str) -> str:
-    """git hash-object of the summary, cut to 12 characters."""
     return git.run(".", "hash-object", "--stdin", given=summary.encode("utf-8", "surrogateescape"))[1].decode()[:12]
 
 

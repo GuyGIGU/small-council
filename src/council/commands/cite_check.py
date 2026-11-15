@@ -28,7 +28,6 @@ class Scope(NamedTuple):
 
 
 def scope(top: str, base: str, run: str, mode: str) -> Scope:
-    """The scope a mode's citations are read in."""
     return Scope(top, base, run, mode in AREA_MODES, mode == "council-review")
 
 

@@ -10,12 +10,11 @@ import re
 import shutil
 import subprocess
 
+from council import git
 from council.records import bytewise, paths, scope
 from council.records import home as where
 from council.records.closing import MODES
 from council.records.memory_entries import cells
-
-_WORD = re.compile(r"[A-Za-z0-9_]")
 
 
 class Tree:
@@ -24,9 +23,9 @@ class Tree:
     def __init__(self, top: str) -> None:
         self.top = top
         native = where.native(top)
-        self.git = _run(["git", "-C", native, "rev-parse", "--git-dir"])[0] == 0
+        self.git = git.run(native, "rev-parse", "--git-dir")[0] == 0
         if self.git:
-            listed = _run(["git", "-C", native, "-c", "core.quotepath=off", "ls-files", "-co", "--exclude-standard"])[1]
+            listed = git.run(native, "ls-files", "-co", "--exclude-standard", names=True)[1]
             self.files = [f for f in bytewise.records(bytewise.read(listed)) if not f.startswith(".council/")]
         else:
             self.files = _walk(native)
@@ -60,10 +59,9 @@ class Tree:
         if not names:
             return set()
         with _patterns(names) as pat:
-            words = ["grep", "-h", "-o", "-w", "-F", "-f", pat]
             tail = ["--untracked", "--", ".", ":(exclude).council"] if self.git else \
                 ["--no-index", "--", ".", ":(exclude).council", ":(exclude).git"]
-            code, out = _run(["git"] + words + tail, cwd=where.native(self.top))
+            code, out = git.run(where.native(self.top), "grep", "-h", "-o", "-w", "-F", "-f", pat, *tail)
             if code > 1:
                 out += _grep(["-r", "-h", "-o", "-w", "-F", "-f", pat, "--exclude-dir=.git", "--exclude-dir=.council",
                               "."], self.top)

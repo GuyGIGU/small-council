@@ -121,7 +121,7 @@
    "longest_name": "claim_index"
   },
   "src/council/commands/cap.py": {
-   "lines": 161,
+   "lines": 157,
    "longest": 31,
    "longest_name": "show"
   },
@@ -131,8 +131,8 @@
    "longest_name": "main"
   },
   "src/council/commands/changed.py": {
-   "lines": 155,
-   "longest": 29,
+   "lines": 154,
+   "longest": 28,
    "longest_name": "main"
   },
   "src/council/commands/check.py": {
@@ -146,7 +146,7 @@
    "longest_name": "status"
   },
   "src/council/commands/cite_check.py": {
-   "lines": 178,
+   "lines": 177,
    "longest": 27,
    "longest_name": "place"
   },
@@ -156,7 +156,7 @@
    "longest_name": "_one"
   },
   "src/council/commands/cli.py": {
-   "lines": 128,
+   "lines": 131,
    "longest": 28,
    "longest_name": "_flag"
   },
@@ -171,8 +171,8 @@
    "longest_name": "refuse"
   },
   "src/council/commands/collect.py": {
-   "lines": 246,
-   "longest": 37,
+   "lines": 245,
+   "longest": 36,
    "longest_name": "one"
   },
   "src/council/commands/correct.py": {
@@ -186,17 +186,17 @@
    "longest_name": "main"
   },
   "src/council/commands/doctor.py": {
-   "lines": 281,
+   "lines": 280,
    "longest": 38,
    "longest_name": "main"
   },
   "src/council/commands/doctor_gates.py": {
-   "lines": 108,
+   "lines": 105,
    "longest": 40,
    "longest_name": "row"
   },
   "src/council/commands/doctor_hooks.py": {
-   "lines": 57,
+   "lines": 56,
    "longest": 13,
    "longest_name": "report"
   },
@@ -216,7 +216,7 @@
    "longest_name": "main"
   },
   "src/council/commands/fingerprint.py": {
-   "lines": 93,
+   "lines": 88,
    "longest": 16,
    "longest_name": "stack_summary"
   },
@@ -286,7 +286,7 @@
    "longest_name": "added"
   },
   "src/council/commands/index.py": {
-   "lines": 245,
+   "lines": 241,
    "longest": 42,
    "longest_name": "main"
   },
@@ -301,17 +301,17 @@
    "longest_name": "lines"
   },
   "src/council/commands/map_status.py": {
-   "lines": 54,
-   "longest": 17,
+   "lines": 52,
+   "longest": 16,
    "longest_name": "status"
   },
   "src/council/commands/memory.py": {
-   "lines": 161,
+   "lines": 152,
    "longest": 35,
    "longest_name": "index_lines"
   },
   "src/council/commands/memory_check.py": {
-   "lines": 130,
+   "lines": 131,
    "longest": 30,
    "longest_name": "checked"
   },
@@ -326,7 +326,7 @@
    "longest_name": "lines"
   },
   "src/council/commands/memory_tree.py": {
-   "lines": 205,
+   "lines": 203,
    "longest": 27,
    "longest_name": "orphans"
   },
@@ -341,7 +341,7 @@
    "longest_name": "status_nudge"
   },
   "src/council/commands/patch.py": {
-   "lines": 154,
+   "lines": 152,
    "longest": 35,
    "longest_name": "save"
   },
@@ -356,13 +356,13 @@
    "longest_name": "_round"
   },
   "src/council/commands/plan.py": {
-   "lines": 140,
+   "lines": 136,
    "longest": 33,
    "longest_name": "shown"
   },
   "src/council/commands/plan_check.py": {
-   "lines": 367,
-   "longest": 36,
+   "lines": 365,
+   "longest": 34,
    "longest_name": "seat_rules"
   },
   "src/council/commands/plan_models.py": {
@@ -386,8 +386,8 @@
    "longest_name": "run_folder_only"
   },
   "src/council/commands/pushes.py": {
-   "lines": 44,
-   "longest": 14,
+   "lines": 43,
+   "longest": 13,
    "longest_name": "main"
   },
   "src/council/commands/repair.py": {
@@ -406,12 +406,12 @@
    "longest_name": "run_folder"
   },
   "src/council/commands/rounds.py": {
-   "lines": 153,
+   "lines": 152,
    "longest": 34,
    "longest_name": "check_round"
   },
   "src/council/commands/route.py": {
-   "lines": 351,
+   "lines": 350,
    "longest": 32,
    "longest_name": "recommend"
   },
@@ -466,12 +466,12 @@
    "longest_name": "progress_line"
   },
   "src/council/commands/session_start.py": {
-   "lines": 318,
+   "lines": 315,
    "longest": 35,
    "longest_name": "_active_run"
   },
   "src/council/commands/sharing.py": {
-   "lines": 283,
+   "lines": 278,
    "longest": 33,
    "longest_name": "without_block"
   },

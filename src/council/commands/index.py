@@ -10,7 +10,7 @@ from pathlib import Path
 
 from council import clock, git
 from council.commands import changed, cli, closed, index_symbols, prior, resolve
-from council.records import bytewise, citations, earlier, run_files, state_write
+from council.records import bytewise, cells, citations, earlier, run_files, state_write
 from council.records import home as where
 
 LABELS = {"A": "added", "D": "deleted", "?": "new, untracked"}
@@ -127,10 +127,6 @@ def _binary(path: str) -> bool:
         return True
 
 
-def _number(text: str) -> int | None:
-    return int(text) if re.fullmatch(r"[0-9]+", text) else None
-
-
 def hunks(diff: list[str]) -> str:
     """A diff's hunks as the new file numbers them: 12, 30-34, or removed near 7."""
     found = []
@@ -216,8 +212,8 @@ class Index:
         lines += ["- tests: %s\n" % tests] if tests else []
         lines += ["- note: %s\n" % note] if note else []
         self.body.append("".join(lines) + "\n")
-        self.added += _number(counts[0]) or 0
-        self.deleted += _number(counts[1]) or 0
+        self.added += cells.integer(counts[0]) or 0
+        self.deleted += cells.integer(counts[1]) or 0
 
     def document(self, name: str) -> str:
         """index.md: the header, each file's section, then the files past the cap."""

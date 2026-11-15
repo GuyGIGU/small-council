@@ -49,7 +49,7 @@ def records(text: str, fold: bool = True) -> list[str]:
 
 
 def lines(text: str) -> list[str]:
-    """A file's records (fold off) as the memory's readers clean them: a line's last CR cut, the BOM off line 1."""
+    """A file's records as the memory's readers clean them: a line's last CR cut, the BOM off line 1."""
     found = [raw[:-1] if raw.endswith("\r") else raw for raw in records(text)]
     if found and found[0].startswith(BOM):
         found[0] = found[0][len(BOM):]

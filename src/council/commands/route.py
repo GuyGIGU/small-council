@@ -34,7 +34,6 @@ BROAD = ("cross module", "multiple", "several", "end to end")
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    """council route recommend --task TEXT [routing flags]."""
     if not words or words[0] != "recommend":
         raise cli.Refusal("usage: council route recommend --task TEXT [routing flags]")
     cli.takes_flags(args, "route recommend", *FLAGS)

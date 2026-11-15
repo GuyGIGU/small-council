@@ -19,7 +19,6 @@ NO_SESSION = ("hooks: not known — this shell has no Claude Code session id; "
 
 
 def session_id(args: cli.Args) -> str:
-    """The session asked about: --session, else the one Claude Code gave this Bash call."""
     return args.value("session") or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
 
 
