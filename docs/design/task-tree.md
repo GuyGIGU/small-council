@@ -1,7 +1,8 @@
 # The task tree: context down, evidence up
 
 Status: written 2026-11-13 on the user's request. Steps T1 and T2 are built and on main; T3 and T4
-are not. "A bug underneath stops the branch" (in section 4) was added 2026-11-15 and is a proposal.
+are not. "A bug underneath stops the branch" (in section 4) and section 6, a fresh builder per task,
+were added 2026-11-15 and are proposals.
 Each part becomes a decision in [`../decisions.md`](../decisions.md) in the branch that builds it.
 
 ## The question
@@ -150,6 +151,67 @@ to resume is in a file the helper prints: the tree, the state, the rulings. A ru
 breaking moves into the helper or a hook (architecture §7), because the skills are at their size
 caps and prose is the weakest enforcement.
 
+### 6. A fresh builder per task (added 2026-11-15)
+
+The user asked for this to be planned after a comparison with the other tools of this kind: the
+large ones (Superpowers, Get Shit Done, BMAD) all build each task in a fresh agent.
+
+Today the Chair builds in its own window (D4). Three things follow:
+
+- the Chair writes the code, names the cause and writes the receipt, so the checks on a builder
+  are the Chair checking itself, and "the builder stops on a bug underneath" (section 4) is the
+  Chair stopping itself;
+- the Chair's window is the largest context of a build, on the session's model, and every later
+  turn reads it again;
+- a build's verifier may not be on a cheaper model than the session's, because the Chair is the
+  builder it checks (D37).
+
+**What stays.** One writer at a time (kernel law 2). The loop's steps and its proof: the gates, the
+report head, `council patch save`, the fix rounds and their limits. The blind verifier. The size
+and cost proposal before anything starts.
+
+**What changes.** The writer is a builder agent, one task at a time, never two at once.
+
+| Step of a task | Today | Planned |
+|---|---|---|
+| Orders | The Chair reads the plan, the reference and the code | `council context build task-<n>` writes the pack (section 2); the Chair adds where to start and what worries it |
+| Before gate, the change, the gates, the report, `council patch save`, after gate | The Chair | A builder agent in a clean window. It returns one line: done, `NEEDS: <question>`, `NEEDS: fix …`, or blocked at the third failed gate |
+| What the Chair reads | The diff and the gate outputs | The one line and `council patch show <n>`: the head and what the checks found |
+| A fix round | The Chair, with everything it has read so far | A fresh builder, with the pack and the task's history (`patches/T<n>.md`) |
+| The verifier | Unchanged | Unchanged. It may be on any model that is not below the builder's |
+| A build of one small task | The Chair | The Chair still, when the size proposal says Solo: a fresh agent would cost more than the change |
+
+**In code, not in prose.**
+
+- A build seat (`build-<n>`) is a seat like any other: `council seat build-<n> running` is refused
+  while another build seat is running, and for a task that depends on a task stopped by
+  `NEEDS: fix` until the user's ruling is on record.
+- The helper already keeps the tree at the end of each saved round. When a build seat starts, a
+  tree that differs from the last saved round is named, file by file: someone edited outside a
+  round. That is how a Chair that "just fixes it" shows, with no new hook on every edit.
+- The seat gate covers the builder as it covers a worker: no report file, no stop.
+- The builder's contract is a new agent file with the edit tools a worker does not have. The loop's
+  text moves out of the implement skill, which is at its size cap, into a reference the builder
+  reads; the skill keeps the Chair's part.
+
+**What it costs.** The total tokens of a build will probably not fall: each builder reads the code
+it needs again. The gain is elsewhere: the Chair's window stays small through a long build, the
+builders and the verifier can run on a cheaper model than the session, and the builder's report is
+checked by someone who did not write it. So the estimate of a build is measured again from the
+ledger before the default changes (D39).
+
+**How we would know.** Scenarios for each refusal above, and the planted cases of T4. Then the
+build benchmark (`evals/bench.py`) run both ways on the same cases, the Chair building against a
+builder agent: tokens by role, hidden checks passed, false completion claims. The benchmark has
+never been run for a result; this is the first question it should answer.
+
+**Not in this step.** Parallel builders and a lead seat to merge them (#63) stay held. One builder
+at a time has nothing to merge.
+
+**The decision it changes.** D4 says only the Chair of council-implement edits project code. The
+branch that builds this adds an entry that supersedes that clause: one builder at a time edits
+project code, a builder agent or, for a Solo build, the Chair.
+
 ## How we would know it works
 
 Behaviour is proved by running it (D25), so each part ships with planted cases in the Chair drill
@@ -184,7 +246,8 @@ hand-written brief, and post-game findings per run before and after.
 | T1 | Task fields (`Serves`, `Owner`, `Rests on`), the plan check for them, `NEEDS:` and the unknown-becomes-a-leaf rules (#64); the owner row or `New way:`, and the verifier's decision question (#93) | S5 (the plan check in Python) | ~700–900k |
 | T2 | The report head with `Cause` and `Removed`, the saved diff and the checks on it (#58, #59), the third-round refusal (#50), the task history (#60) | S7 (`check` in Python) | ~1M |
 | T3 | The generated task pack (#57, #61, #67), `council tree`; setup proposes the project's recorded decisions and fills the map's one-way-per-job table (#93); the `NEEDS: fix` stop, the Chair's rule for it, the verifier's question on every round and the two signs | T1, S8 and S11 | ~0.9–1.1M |
-| T4 | The planted drill cases, with the two for a bug underneath | S10 (#70) | part of S10 |
+| T5 | A fresh builder per task (section 6): the builder's contract, the build seat and its refusals, the tree check, the implement skill's loop moved to a reference, the entry that supersedes D4's last clause | T3 (it needs the pack) | ~1–1.5M |
+| T4 | The planted drill cases, with the two for a bug underneath and the builder's | S10 (#70) | part of S10 |
 
 ## Decided by the user (2026-11-13)
 
@@ -208,6 +271,10 @@ hand-written brief, and post-game findings per run before and after.
 5. **A bug underneath a task (2026-11-15).** The Chair always asks, in one line with the cost. It
    never fixes code outside the plan, and never ships the workaround, on its own call. A small fix
    inside the approved budget is asked about too.
+
+6. **A fresh builder per task (2026-11-15).** The user said to plan it; the plan is section 6. Two
+   parts of it are proposals until the user rules: a Solo build stays with the Chair, and a fix
+   round gets a fresh builder, not the same agent continued.
 
 ## Until it is built: the cleanup's own sessions
 
