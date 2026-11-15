@@ -80,8 +80,7 @@ def item_quotes(path: str | Path, said: str, mode: str) -> list[Quote]:
         line = raw.replace("\r", "").replace("\t", " ")
         if not ITEM.match(line):
             continue
-        parts = re.split(r" +· +", re.sub(r"^[-*+]? *", "", line)) if "·" in line else \
-            re.split(r" +\| +", re.sub(r"^[-*+]? *", "", line))
+        parts = re.split(r" +· +" if "·" in line else r" +\| +", re.sub(r"^[-*+]? *", "", line))
         n = re.sub(r"[*_.]", "", parts[0])
         part = len(parts) > 2 and bytewise.lower(parts[2]) == "ask" or (
             mode == "council-postgame" and len(parts) > 1 and bytewise.lower(parts[1]) in ("must", "should"))
