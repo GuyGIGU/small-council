@@ -10,7 +10,7 @@ from pathlib import Path
 
 from council import clock
 from council.commands import cli, resolve
-from council.records import events, locks, paths, redact, runs, seats, state_write, usage
+from council.records import events, paths, redact, runs, seats, state_write, usage
 from council.records import home as where
 
 TOOLS = ("Agent", "Task", "Workflow")
@@ -61,13 +61,8 @@ def allow(args: cli.Args, given: str) -> int:
     run = resolve.run_folder(args)
     closed.refuse(run, "no more agents start for it; open a new run")
     said, lock = redact.said(args.value("user-said")) or "[redacted]", Path(str(events.path(run)) + ".lock")
-    if not locks.acquire(lock):
-        raise cli.Refusal("%s\ncouncil: the go was not recorded: the run's event lock is unavailable (%s)"
-                          % (events.busy(lock), lock.as_posix()))
-    try:
+    with event_note.locked(lock, "the go was not recorded: the run's event lock is unavailable (%s)" % lock.as_posix()):
         used = _file_go(run, n, said)
-    finally:
-        locks.release(lock)
     if events.path(run).is_file():
         event_note.append(run, "run.cap_allowed", "run", n, "used=%d;until=%d" % (used, used + int(n)),
                           "the go is on record, but its event could not be written")

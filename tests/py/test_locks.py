@@ -42,8 +42,6 @@ class LockTest(support.Scratch):
         started = time.time()
         self.assertFalse(locks.acquire(lock, tries=3))
         self.assertGreaterEqual(time.time() - started, 0.15)
-        with self.assertRaisesRegex(locks.LockError, "event lock unavailable"), locks.held(lock, tries=1):
-            pass
         self.assertTrue(lock.is_dir())                     # the holder's lock is untouched
 
     def test_two_threads_never_hold_it_together(self) -> None:
@@ -53,7 +51,9 @@ class LockTest(support.Scratch):
 
         def work():
             for _ in range(25):
-                with locks.held(lock):
+                if not locks.acquire(lock):
+                    raise RuntimeError("the lock was never free")
+                try:
                     inside[0] += 1
                     if inside[0] > 1:
                         overlaps.append(1)
@@ -61,6 +61,8 @@ class LockTest(support.Scratch):
                     time.sleep(0.001)
                     counter.write_text(str(value + 1))
                     inside[0] -= 1
+                finally:
+                    locks.release(lock)
 
         threads = [threading.Thread(target=work) for _ in range(2)]
         for thread in threads:

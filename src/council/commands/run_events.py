@@ -69,27 +69,23 @@ def repair(run: Path) -> int:
                           % why)
     file = events.path(run)
     lock = Path(str(file) + ".lock")
-    if not locks.acquire(lock):
-        raise cli.Refusal("%s\ncouncil: events: the event lock is unavailable: %s"
-                          % (events.busy(lock), lock.as_posix()))
     copy = "events.tsv.bak-%s-%d" % (clock.now_utc().replace("-", "").replace(":", ""), os.getpid())
     temporary = Path("%s.tmp%d" % (file, os.getpid()))
-    try:
-        data = file.read_bytes()
-        if not data or data.endswith(b"\n"):                # another repair got here first
-            cli.say("events: nothing to repair — the last line is whole now")
-            return 0
-        part = len(data) - data.rfind(b"\n") - 1
-        (run / copy).write_bytes(data)
-        temporary.write_bytes(data[:len(data) - part])
-        paths.swap_in(temporary, file)
-    except OSError:
-        if temporary.exists():
-            temporary.unlink()
-        raise cli.Refusal("events: could not repair %s (the copy, if made, is %s/%s)"
-                          % (file.as_posix(), run.as_posix(), copy)) from None
-    finally:
-        locks.release(lock)
+    with event_note.locked(lock, "events: the event lock is unavailable: " + lock.as_posix()):
+        try:
+            data = file.read_bytes()
+            if not data or data.endswith(b"\n"):                # another repair got here first
+                cli.say("events: nothing to repair — the last line is whole now")
+                return 0
+            part = len(data) - data.rfind(b"\n") - 1
+            (run / copy).write_bytes(data)
+            temporary.write_bytes(data[:len(data) - part])
+            paths.swap_in(temporary, file)
+        except OSError:
+            if temporary.exists():
+                temporary.unlink()
+            raise cli.Refusal("events: could not repair %s (the copy, if made, is %s/%s)"
+                              % (file.as_posix(), run.as_posix(), copy)) from None
     if events.check(run.as_posix())[0]:
         raise cli.Refusal("events: dropped the torn last line (%d bytes; copy: %s), but the stream still doesn't check "
                           "— council run events check" % (part, copy))

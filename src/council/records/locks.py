@@ -16,20 +16,14 @@ from __future__ import annotations
 
 import os
 import time
-from contextlib import contextmanager, suppress
+from contextlib import suppress
 from pathlib import Path
-from typing import Iterator
 
-from council.records.owners import first_line, holder_alive, named, unavailable
-from council.records.paths import RecordError
+from council.records.owners import first_line, holder_alive, named
 
 TRIES = 200          # the helper's default: 200 tries, 0.1 s apart
 PAUSE = 0.1
 STALE_SECONDS = 10   # a lock with no owner number this old was left by a writer killed before writing it
-
-
-class LockError(RecordError):
-    """A lock that could not be taken in the tries allowed."""
 
 
 def stale(lock: str | Path) -> bool:
@@ -142,15 +136,3 @@ def acquire(lock: str | Path, tries: int = TRIES) -> bool:
         if count >= tries:
             return False
         time.sleep(PAUSE)
-
-
-@contextmanager
-def held(lock: str | Path, tries: int = TRIES) -> Iterator[Path]:
-    """The lock for the length of a with block; LockError when it can't be taken."""
-    lock = Path(lock)
-    if not acquire(lock, tries):
-        raise LockError(unavailable(lock))
-    try:
-        yield lock
-    finally:
-        release(lock)
