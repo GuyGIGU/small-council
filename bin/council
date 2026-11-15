@@ -3428,16 +3428,12 @@ main() {
     run)
       sub="${1:-}"; [ $# -eq 0 ] || shift
       case "$sub" in
-        open)   takes_flags "run open" alongside session code-root
-                [ $# -le 1 ] || die "run open takes one mode (got: $*)"
-                cmd_run_open ${1+"$@"} ;;
+        open)   python_command "council run open" ${given[@]+"${given[@]}"} ;;
         close)  takes_flags "run close" status; no_words "run close" ${1+"$@"}; cmd_run_close ;;
         status|plan|events|session-start) python_command "council run $sub" ${given[@]+"${given[@]}"} ;;
-        resume) takes_flags "run resume" session; no_words "run resume" ${1+"$@"}; cmd_run_resume ;;
+        resume) python_command "council run resume" ${given[@]+"${given[@]}"} ;;
         audit)  takes_flags "run audit" transcript; no_words "run audit" ${1+"$@"}; cmd_run_audit ;;
-        turn-end) takes_flags "run turn-end" session; no_words "run turn-end" ${1+"$@"}
-                [ -z "$RUN_ARG" ] || die "run turn-end looks at every in-progress run this session drives; it does not take --run"
-                cmd_run_turn_end ;;
+        turn-end) python_command "council run turn-end" ${given[@]+"${given[@]}"} ;;
         *) die "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] | run plan [check|show] | run events [show|check] | run audit [--transcript <file>]" ;;
       esac ;;
     state)   python_command "council state" ${given[@]+"${given[@]}"} ;;

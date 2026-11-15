@@ -61,10 +61,9 @@ def save(run: Path, slug: str) -> int:
     if not filing.current and no_words:
         raise cli.Refusal("ask.md says (no new words) but names no request to continue — add continues: <path> to "
                           "it, or run council state ask=<path>")
-    if ignores.keep_out(home):
-        cli.warn("council: %s/.gitignore now ignores asks/, so new requests stay on this machine; the ones already in "
-                 "git stay tracked. To share requests with the team, write '!asks/' in place of that line."
-                 % os.path.basename(home))
+    said = ignores.keep_out(home)
+    if said:
+        cli.warn("council: " + said)
     try:
         os.makedirs(where.native(asks), exist_ok=True)
     except OSError:
