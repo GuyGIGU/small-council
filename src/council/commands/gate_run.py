@@ -17,11 +17,10 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from council import git
+from council import clock, git
 from council.commands import cli, event_note, gate_exec, gate_output, resolve
-from council.records import config, gates, verdicts
+from council.records import bytewise, config, gates, verdicts
 
-HITS = re.compile(r"error|fail|exception|traceback|assert|panic|cannot|not found|undefined", re.IGNORECASE)
 CMD_SWITCH = re.compile(r"(^|[ \t\n\v\f\r;&|(])([cC][mM][dD](\.[eE][xX][eE])?)([ \t\n\v\f\r]+)"
                         r"/([cCkK])([ \t\n\v\f\r]|$)")
 WINDOWS_BASH = os.name == "nt" or sys.platform.startswith(("cygwin", "msys"))
@@ -97,9 +96,9 @@ def event(run: str, name: str, value: str, detail: str, said: str) -> None:
 def run_gate(call: Call, name: str, command: str, configured: bool = False) -> Result:
     """Run one gate and say its result; Result.code is its exit code. A configured gate (the Gates table's row,
     its own command) records the tree it ran on and the seat that ran it."""
-    base = Path(call.run, "gates", gates.slug(name))
-    out, verdict = base.as_posix() + ".txt", base.as_posix() + ".json"
-    os.makedirs(str(base.parent), exist_ok=True)
+    stem = gates.slug(name)
+    verdict, out = (path.as_posix() for path in gates.files(Path(call.run), stem))
+    os.makedirs(str(Path(out).parent), exist_ok=True)
     most, why = limit(call, name)
     tree = git.files_tree(call.top) if configured else ""
     started = int(time.time())
@@ -122,9 +121,10 @@ def run_gate(call: Call, name: str, command: str, configured: bool = False) -> R
         note += ', "proof": "%s"' % call.proof
     if configured:
         note = _tree(call, name, tree, code == 0 and not note) + note
-    _write(verdict, '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s", "limit": %d%s}\n'
-           % (json_esc(name), json_esc(command), code, secs, time.strftime("%Y-%m-%d %H:%M:%S"), most, note))
-    fresh = call.baseline and keep_baseline(call.run, base, out, verdict)
+    line = ('{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s", "limit": %d%s}\n'
+            % (json_esc(name), json_esc(command), code, secs, clock.now_sec(), most, note))
+    Path(verdict).write_bytes(line.encode("utf-8", "surrogateescape"))
+    fresh = call.baseline and keep_baseline(call.run, stem, out, verdict)
     if code == 0:
         return _passed(call, name, secs, empty, zero)
     from council.commands import gate_failed
@@ -145,7 +145,7 @@ def _tree(call: Call, name: str, tree: str, green: bool) -> str:
 
 def _nothing(name: str, command: str, content: str) -> tuple[int, str, str]:
     """(empty, the no-test line, the verdict note) for a gate that exited 0."""
-    if any(line.startswith("changed: no files matched") for line in gate_output.lines(content)):
+    if any(line.startswith("changed: no files matched") for line in bytewise.records(content, fold=False)):
         return 1, "", ""
     zero = gate_output.zero_tests(content)
     if zero:
@@ -155,20 +155,15 @@ def _nothing(name: str, command: str, content: str) -> tuple[int, str, str]:
     return 0, "", ""
 
 
-def _write(path: str, line: str) -> None:
-    with open(path, "wb") as handle:
-        handle.write(line.encode("utf-8", "surrogateescape"))
-
-
-def keep_baseline(run: str, base: Path, out: str, verdict: str) -> bool:
+def keep_baseline(run: str, stem: str, out: str, verdict: str) -> bool:
     """The first output of this gate in a baseline set becomes its baseline; True when it was kept now."""
-    kept = Path(run, "gates", "baseline", base.name)
-    if Path(kept.as_posix() + ".txt").is_file():
+    kept_verdict, kept_out = gates.files(Path(run), stem, baseline=True)
+    if kept_out.is_file():
         return False
     try:
-        os.makedirs(str(kept.parent), exist_ok=True)
-        shutil.copyfile(out, kept.as_posix() + ".txt")
-        shutil.copyfile(verdict, kept.as_posix() + ".json")
+        os.makedirs(str(kept_out.parent), exist_ok=True)
+        shutil.copyfile(out, str(kept_out))
+        shutil.copyfile(verdict, str(kept_verdict))
     except OSError:
         return False
     return True

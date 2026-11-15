@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import time
 from pathlib import Path
 from typing import NamedTuple
 
+from council import git
 from council.commands import resolve
 from council.records import home as where
 
@@ -42,17 +42,8 @@ class Line(NamedTuple):
     text: bytes
 
 
-def _git(top: str, *args: str) -> tuple[int, bytes]:
-    try:
-        done = subprocess.run(["git", "-C", top, "-c", "core.quotePath=false"] + list(args),
-                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    except OSError:
-        return 127, b""
-    return done.returncode, done.stdout
-
-
 def _commit(top: str, rev: str) -> bool:
-    return bool(rev) and _git(top, "rev-parse", "-q", "--verify", rev + "^{commit}")[0] == 0
+    return bool(rev) and git.run(top, "rev-parse", "-q", "--verify", rev + "^{commit}", names=True)[0] == 0
 
 
 def base(run: Path, top: str, given: str) -> str:
@@ -67,7 +58,7 @@ def base(run: Path, top: str, given: str) -> str:
         return ""
     indexed = indexed if _commit(top, indexed) else ""
     start = start if _commit(top, start) else ""
-    if indexed and start and _git(top, "merge-base", "--is-ancestor", indexed, start)[0] == 0:
+    if indexed and start and git.run(top, "merge-base", "--is-ancestor", indexed, start, names=True)[0] == 0:
         indexed = ""
     return indexed or start
 
@@ -88,7 +79,8 @@ def _file_lines(path: str) -> list[bytes]:
 def added(top: str, since: str) -> list[Line]:
     """The lines a diff from `since` (HEAD when none) adds, numbered as they now stand."""
     found, place, head, number = [], b"", False, 0
-    for line in _records(_git(top, "diff", "-M", "-U0", "--no-color", "--no-ext-diff", since, "--", ".", EXCLUDE)[1]):
+    diff = git.run(top, "diff", "-M", "-U0", "--no-color", "--no-ext-diff", since, "--", ".", EXCLUDE, names=True)[1]
+    for line in _records(diff):
         if line.startswith(b"diff --git "):
             head, place = True, b""
         elif head and line.startswith(b"+++ "):
@@ -141,7 +133,7 @@ def _text_file(path: str) -> bool:
 def untracked(top: str, since: float | None) -> list[Line]:
     """Files git doesn't track, changed after the run opened (with no opened: time, all of them), whole."""
     found = []
-    for name in _records(_git(top, "ls-files", "-o", "--exclude-standard")[1]):
+    for name in _records(git.run(top, "ls-files", "-o", "--exclude-standard", names=True)[1]):
         if name.startswith(b".council/") or name.endswith(b"/"):
             continue
         path = os.path.join(top, os.fsdecode(name))
@@ -157,13 +149,15 @@ def untracked(top: str, since: float | None) -> list[Line]:
 
 def unpushed(top: str, since: str) -> list[Line]:
     """The commit messages since the base that no remote branch has yet."""
-    branch = _git(top, "symbolic-ref", "-q", "--short", "HEAD")[1].strip()
-    pushed = _git(top, "rev-parse", "-q", "--verify", "@{upstream}")[1].split()
+    branch = git.run(top, "symbolic-ref", "-q", "--short", "HEAD", names=True)[1].strip()
+    pushed = git.run(top, "rev-parse", "-q", "--verify", "@{upstream}", names=True)[1].split()
     if branch:
-        pushed += _git(top, "rev-parse", "-q", "--verify", "refs/remotes/origin/" + os.fsdecode(branch))[1].split()
+        pushed += git.run(top, "rev-parse", "-q", "--verify", "refs/remotes/origin/" + os.fsdecode(branch),
+                          names=True)[1].split()
     done = ["--not"] + [os.fsdecode(sha) for sha in pushed] if pushed else []
     found, sha, number = [], b"", 0
-    for line in _records(_git(top, "log", "--no-merges", "--format=@@commit %h%n%B", since + "..HEAD", *done)[1]):
+    log = git.run(top, "log", "--no-merges", "--format=@@commit %h%n%B", since + "..HEAD", *done, names=True)[1]
+    for line in _records(log):
         if line.startswith(b"@@commit "):
             sha, number = (line.split() + [b""])[1], 0
             continue
@@ -188,7 +182,7 @@ def _bodies(run: Path) -> list[Line]:
 
 def _read(run: Path, top: str, since: str, opened: str) -> list[Line]:
     top, found = where.native(top), []
-    if os.path.isdir(top) and _git(top, "rev-parse", "--git-dir")[0] == 0:
+    if os.path.isdir(top) and git.run(top, "rev-parse", "--git-dir", names=True)[0] == 0:
         since = since if _commit(top, since) else ""
         if _commit(top, since or "HEAD"):
             found += added(top, since or "HEAD")

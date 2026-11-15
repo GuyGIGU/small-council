@@ -11,9 +11,9 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from council.records.seat_files import lines, listed, lower
+from council.records.bytewise import file_lines, lower
+from council.records.seat_files import ITEM, listed
 
-ITEM = re.compile(r"[-+]? *_*C?[0-9]+[a-z]?_*\.? +(·|\|) ")
 SEAT_ITEM = re.compile(r"[A-Za-z][A-Za-z0-9._-]*#C?[0-9]+[a-z]?")
 NUMBER = re.compile(r"#?C?[0-9]+[a-z]?")
 WORD = re.compile(r"[A-Za-z][A-Za-z0-9._-]*")
@@ -70,7 +70,7 @@ def named(field: str, n: str, known: Callable[[str], bool]) -> list[tuple[str, s
 def refuted(path: Path) -> set[str]:
     """The item numbers a verify file's table calls REFUTED, read by its "#" and "Verdict" columns."""
     found, verdict, number = set(), 0, 1
-    for line in lines(path):
+    for line in file_lines(path, fold=False):
         if not line.startswith("|"):
             continue
         cells = line.split("|") + [""]
@@ -94,9 +94,10 @@ def counts(run: Path) -> dict[str, tuple[int, int, int]]:
     run = Path(run)
     if not (run / "synthesis.md").is_file():
         return {}
-    slugs = set(" ".join(line.split("\t")[0] for line in lines(run / "seats.tsv")[1:]).split(" ")) - {""}
+    rows = file_lines(run / "seats.tsv", fold=False)[1:]
+    slugs = set(" ".join(line.split("\t")[0] for line in rows).split(" ")) - {""}
     tally, once, owners, section = {}, set(), {}, ""             # type: dict, set, dict, str
-    for raw in lines(run / "synthesis.md"):
+    for raw in file_lines(run / "synthesis.md", fold=False):
         if raw.startswith("## "):
             section = "k" if raw.startswith("## Kept") else "c" if raw.startswith("## Cut") else ""
             continue

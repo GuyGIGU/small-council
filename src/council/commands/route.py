@@ -8,6 +8,7 @@ from typing import NamedTuple
 
 from council.commands import cli
 from council.records import config, estimates
+from council.records.bytewise import lower
 from council.records import home as where
 
 FLAGS = ("task", "risk", "complexity", "uncertainty", "surface", "agent-cap", "budget-tokens", "classic", "mode")
@@ -121,11 +122,6 @@ def signals(asked: Asked) -> dict[str, bool]:
     found["high risk"] = any(" %s " % word in text for word in HIGH_RISK)
     found["broad"] = any(" %s " % word in text for word in BROAD)
     return found
-
-
-def lower(text: str) -> str:
-    """ASCII letters lower-cased, as tr does; every other character as it is."""
-    return text.translate(config.ASCII_LOWER)
 
 
 class Assessed(NamedTuple):

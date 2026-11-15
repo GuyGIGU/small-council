@@ -5,21 +5,16 @@ import os
 import re
 from pathlib import Path
 
-from council.records import paths, seat_files, seat_rows, seats
+from council.records import bytewise, paths, seat_files, seat_rows, seats
+from council.records.cells import leading
 
 HEADER = ["slug", "state", "agent", "tokens", "updated", "note", "agents", "reported"]
 COUNT = re.compile("[0-9]*")
 
 
-def number(cell: str) -> int:
-    """A cell as awk reads `$n + 0`: its leading whole number, else 0."""
-    found = re.match(r"[ \t]*([+-]?[0-9]+)", cell)
-    return int(found.group(1)) if found else 0
-
-
 def table(file: Path) -> list[list[str]]:
     """A TSV file's rows as awk splits them, each padded to eight cells; [] when it can't be read."""
-    return [line.split("\t") + [""] * 8 for line in seat_files.lines(file)]
+    return [line.split("\t") + [""] * 8 for line in bytewise.file_lines(file, fold=False)]
 
 
 def add(file: Path, rows: list[list[str]], header: str) -> None:
@@ -76,7 +71,7 @@ def seat_usage(run: Path, slug: str) -> tuple[int, int, int, bool]:
 def rewrite(run: Path, slug: str, new: dict[str, str]) -> None:
     """The seat's row in seats.tsv: a lost header back, an older row under its old rules, a new seat last."""
     file, out, found = seats.path(run), [], False
-    for at, line in enumerate(seat_files.lines(file)):
+    for at, line in enumerate(bytewise.file_lines(file, fold=False)):
         c = line.split("\t")
         if at == 0 and c[0] == "slug":
             out.append(c + HEADER[min(max(len(c), 6), 8):])
@@ -100,6 +95,6 @@ def _row(cells: list[str], new: dict[str, str]) -> list[str]:
     head = [c[0], new["state"], new["agent"] or c[2]]
     if len(cells) >= 8 and c[7] != "":
         return head + [new["total"], new["updated"], new["note"] or c[5], new["agents"], new["reported"]]
-    agents = (1 if c[6] == "" else number(c[6])) + bool(new["agent"] and c[2] and new["agent"] != c[2])
-    tokens = str(number(c[3]) + int(new["tokens"])) if new["tokens"] else c[3]
+    agents = (1 if c[6] == "" else leading(c[6])) + bool(new["agent"] and c[2] and new["agent"] != c[2])
+    tokens = str(leading(c[3]) + int(new["tokens"])) if new["tokens"] else c[3]
     return head + [tokens, new["updated"], new["note"] or c[5], str(agents)]

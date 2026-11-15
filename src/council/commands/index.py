@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
-import time
 from pathlib import Path
 
+from council import clock, git
 from council.commands import changed, cli, closed, index_symbols, prior, resolve
 from council.records import bytewise, citations, earlier, run_files, state_write
 from council.records import home as where
@@ -17,15 +16,6 @@ from council.records import home as where
 LABELS = {"A": "added", "D": "deleted", "?": "new, untracked"}
 INTRO = ("Symbols come from definitions in the diff; callers and tests are matched by name (git grep) —\n"
          "a starting point for tracing, not proof.\n\n")
-
-
-def _git(*args: str) -> tuple[int, bytes]:
-    try:
-        done = subprocess.run(["git", "-c", "core.quotePath=false"] + list(args), stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-    except OSError:
-        return 127, b""
-    return done.returncode, done.stdout
 
 
 def _text(data: bytes) -> str:
@@ -51,13 +41,13 @@ def main(args: cli.Args, words: list[str]) -> int:
         os.chdir(where.native(top))
     except OSError:
         raise cli.Refusal("cannot enter the code root: %s" % top) from None
-    if _git("rev-parse", "--git-dir")[0] != 0:
+    if git.run(".", "rev-parse", "--git-dir", names=True)[0] != 0:
         raise cli.Refusal("the code root is not a git repository — the change index needs git")
     ref = args.value("base") or changed.default_branch() or "HEAD"
-    code, found = _git("merge-base", "HEAD", ref)
+    code, found = git.run(".", "merge-base", "HEAD", ref, names=True)
     base = _text(found).strip() if code == 0 else ""
     if not base:
-        code, found = _git("rev-parse", "-q", "--verify", ref + "^{commit}")
+        code, found = git.run(".", "rev-parse", "-q", "--verify", ref + "^{commit}", names=True)
         base = _text(found).strip() if code == 0 else ""
     if not base:
         raise cli.Refusal("unknown base: %s" % ref)
@@ -107,12 +97,12 @@ def changes(base: str) -> list[tuple[str, str, str]]:
     """status, path, old path (a rename's or a copy's, else "-") for each changed file, by path, each once; an
     untracked folder (a nested repository or worktree) is not a changed file."""
     found = []
-    for line in records(_git("diff", "-M", "--name-status", base, "--", ".")[1]):
+    for line in records(git.run(".", "diff", "-M", "--name-status", base, "--", ".", names=True)[1]):
         cells = line.split("\t")
         state = cells[0][:1]
         cell = (cells + ["", ""])
         found.append((state, cell[2], cell[1]) if state in ("R", "C") else (state, cell[1], "-"))
-    for line in records(_git("ls-files", "--others", "--exclude-standard")[1]):
+    for line in records(git.run(".", "ls-files", "--others", "--exclude-standard", names=True)[1]):
         if not line.endswith("/"):
             found.append(("?", line, "-"))
     seen, kept = set(), []
@@ -161,8 +151,8 @@ class Index:
 
     def __init__(self, base: str, ref: str) -> None:
         self.base, self.ref = base, ref
-        self.short = _text(_git("rev-parse", "--short", base)[1]).strip()
-        self.head = _text(_git("rev-parse", "--short", "HEAD")[1]).strip()
+        self.short = _text(git.run(".", "rev-parse", "--short", base, names=True)[1]).strip()
+        self.head = _text(git.run(".", "rev-parse", "--short", "HEAD", names=True)[1]).strip()
         self.cap, self.most = _cap("COUNCIL_INDEX_CAP", "80")      # files indexed in full (the evals lower it)
         self.namecap, self.named = _cap("COUNCIL_INDEX_NAMECAP", "200")   # past the cap: how many are named
         self.body, self.over = [], []
@@ -203,12 +193,13 @@ class Index:
             diff = ["+" + line for line in records(data)[:400]]
         else:
             paths = [old, path] if state in ("R", "C") else [path]   # both paths, so git pairs them
-            numbers = (records(_git("diff", "-M", "--numstat", self.base, "--", *paths)[1]) or [""])[0].split("\t")
+            numstat = git.run(".", "diff", "-M", "--numstat", self.base, "--", *paths, names=True)[1]
+            numbers = (records(numstat) or [""])[0].split("\t")
             add, deleted = numbers[0], numbers[1] if len(numbers) > 1 else ""
             if add == "-":
                 self.body.append("## %s  (%s, binary)\n\n" % (path, label))
                 return
-            diff = records(_git("diff", "-M", "-U0", self.base, "--", *paths)[1])
+            diff = records(git.run(".", "diff", "-M", "-U0", self.base, "--", *paths, names=True)[1])
             spans = hunks(diff)
         self.section(path, label, (add, deleted), spans, diff)
 
@@ -230,12 +221,12 @@ class Index:
 
     def document(self, name: str) -> str:
         """index.md: the header, each file's section, then the files past the cap."""
-        dirty = self.n_new > 0 or bool(_git("--no-optional-locks", "status", "--porcelain",
-                                            "--untracked-files=no")[1].split(b"\n", 1)[0])
+        dirty = self.n_new > 0 or bool(git.run(".", "--no-optional-locks", "status", "--porcelain",
+                                               "--untracked-files=no", names=True)[1].split(b"\n", 1)[0])
         head = ["# Change index — %s\n" % name,
                 "base: %s (%s) · head: %s%s · generated: %s\n" % (self.short, self.ref, self.head,
                                                                    " + uncommitted changes" if dirty else "",
-                                                                   time.strftime("%Y-%m-%d %H:%M:%S")),
+                                                                   clock.now_sec()),
                 "files: %d (+%d/-%d)" % (self.n_files, self.added, self.deleted)]
         if self.n_over:
             head.append(" · past the %s-file cap: %d (named at the end, not indexed — they still need an owner)"

@@ -8,10 +8,10 @@ import contextlib
 import io
 import os
 import re
-import subprocess
 import time
 from pathlib import Path
 
+from council import git
 from council.commands import cli, fingerprint, plan, resolve
 from council.records import bytewise, cells, config, events, ignores, map_file, paths, runs, sharing
 from council.records import home as where
@@ -75,7 +75,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     from council.commands import doctor_memory
     doctor_memory.memory_file(doc)
     map_stamp(doc)
-    if has_config and _git("rev-parse", "--git-dir")[0] == 0:
+    if has_config and git.run(".", "rev-parse", "--git-dir")[0] == 0:
         stack(doc)
     kept_out(doc)
     from council.commands import doctor_hooks
@@ -123,10 +123,8 @@ def roster(doc: Doctor) -> None:
 
 
 def card(doc: Doctor, seat: str, slug: str, path: str) -> None:
-    try:
-        with open(where.native(path), "rb") as stream:
-            data = stream.read()
-    except OSError:
+    data = paths.contents(where.native(path))
+    if data is None:
         doc.warn("seat '%s' has no card (cards/%s.md)" % (seat, slug),
                  "council-init refresh writes one from references/templates/seat-card.md")
         return
@@ -237,14 +235,6 @@ def active_run(doc: Doctor) -> None:
         doc.warn("active-run points at a folder that no longer exists: %s" % p, "empty .council/active-run")
 
 
-def _git(*words: str) -> tuple[int, str]:
-    try:
-        done = subprocess.run(["git"] + list(words), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    except OSError:
-        return 127, ""
-    return done.returncode, done.stdout.decode("utf-8", "surrogateescape").strip()
-
-
 def map_stamp(doc: Doctor) -> None:
     if not _isfile(doc.home + "/" + map_file.NAME):
         doc.warn("no %s" % map_file.NAME, "council-init builds it")
@@ -252,12 +242,13 @@ def map_stamp(doc: Doctor) -> None:
     sha = map_file.commit(where.native(doc.home))
     if not sha:
         doc.warn("%s has no map-commit stamp" % map_file.NAME, "refresh the map and stamp map-commit")
-    elif _git("rev-parse", "--git-dir")[0] == 0 and _git("cat-file", "-e", sha + "^{commit}")[0] != 0:
+    elif git.run(".", "rev-parse", "--git-dir")[0] == 0 and git.run(".", "cat-file", "-e", sha + "^{commit}")[0] != 0:
         doc.warn("map-commit %s isn't in this repo's history (a rebase or squash removed it), so nobody can tell "
                  "what changed since" % sha[:9],
                  "rebuild the map with a council-init refresh, and stamp the new map-commit")
     else:
-        code, behind = _git("rev-list", "--count", sha + "..HEAD")
+        code, out = git.run(".", "rev-list", "--count", sha + "..HEAD")
+        behind = out.decode("utf-8", "surrogateescape").strip()
         if code == 0 and re.fullmatch("[0-9]+", behind) and int(behind) > 50:
             doc.warn("the map is %s commits behind HEAD" % behind,
                      "refresh the changed areas (council map status lists them)")

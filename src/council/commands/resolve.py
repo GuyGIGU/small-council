@@ -94,14 +94,9 @@ def session_runs(home: str, session: str) -> list[str]:
     if not session:
         return []
     return [run.folder for run in runs.listing(home, 1000000, "open")
-            if run.status == "in-progress" and _dash(run.session) == session]
+            if run.status == "in-progress" and (run.session or "-") == session]
 
 
 def names(folders: list[str]) -> str:
     """Run folders as 'name, name'."""
     return ", ".join(folder.split("/")[-1] for folder in folders)
-
-
-def _dash(value: str) -> str:
-    """A listed value as list_runs prints it: '-' for an empty one."""
-    return value or "-"

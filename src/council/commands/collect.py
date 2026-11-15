@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from council.commands import cite_check, cli, event_note, gate_output, resolve
-from council.records import citations, run_files, seat_files, seat_rows
+from council.records import bytewise, citations, paths, run_files, seat_files, seat_rows
 from council.records import home as where
 
 LIVE = ("running", "queued")
@@ -129,7 +129,7 @@ def one(run: Path, scope: cite_check.Scope, seat: seat_files.Seat, seats: list[s
         row(seat.slug, "missing", "-", "-", "-", "-", shown, note)
         flags.flag(stray, live)
         return
-    head = seat_files.lines(file)[:9]
+    head = bytewise.file_lines(file, fold=False)[:9]
     blocked = [line for line in head[1:] if line.startswith("BLOCKED")]
     if blocked:
         said = gate_output.clip(blocked[0].replace("\r", ""), 140)
@@ -150,11 +150,11 @@ class Checked:
                  flag: Callable[..., None]) -> None:
         self.notes = ""
         first = head[0].replace("\r", "") if head else ""
-        if not (first[1:] if first.startswith(seat_files.BOM) else first).startswith("# "):
+        if not (first[1:] if first.startswith(paths.BOM) else first).startswith("# "):
             self._note(" no-heading", flag)
         self.ref = proof_of_reading(seat.ref, head[1:], flag)
         self.shape = seat_files.shape(file)
-        if not any(line.startswith("## Index") for line in seat_files.lines(file)):
+        if not any(line.startswith("## Index") for line in bytewise.file_lines(file, fold=False)):
             self._note(" no-index", flag)
         if self.shape.unparsed:
             self._note(" unparsed-index(%d)" % self.shape.unparsed, flag)

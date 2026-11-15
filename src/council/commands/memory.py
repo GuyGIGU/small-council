@@ -8,13 +8,12 @@ supports it (records/memory_audit.py)."""
 from __future__ import annotations
 
 import os
-import re
 from typing import Iterable, NamedTuple
 
 from council.commands import cli
 from council.records import bytewise, config, memory, memory_audit, scope
 from council.records import home as where
-from council.records.bytewise import DOT, ELLIPSIS
+from council.records.bytewise import DOT
 from council.records.memory_entries import cells
 
 USAGE = ("usage: council memory [index | select [path|slug …] | check | propose claim|repair <id> | accept|reject "
@@ -125,12 +124,6 @@ def indexed(found: Memory) -> list[str]:
             + memory_tree.Tree(where.this_tree()).orphans(found.entries, slugs(found.home)) + memory.unread(found.mem))
 
 
-def clip(t: str) -> str:
-    if len(t) <= 60:
-        return t
-    return re.sub(r" [^ ]*\Z", "", t[:60], count=1) + " " + ELLIPSIS
-
-
 def index_lines(served: list[str]) -> list[str]:
     """Every entry on one line, with whether a brief gets it; then a warning for the entries none does."""
     out, unserved = [], 0
@@ -149,7 +142,7 @@ def index_lines(served: list[str]) -> list[str]:
             continue
         if c[4] == "off":
             out.append("%s %s not served (%s)" % (head, DOT, c[5] if c[5].startswith("marked") else "under "
-                                                   + clip(c[5])))
+                                                   + bytewise.clip(c[5], 60)))
             continue
         unserved += 1
         if c[5].startswith("failure entry: "):
@@ -159,7 +152,7 @@ def index_lines(served: list[str]) -> list[str]:
                        "its own section" % (head, DOT, bytewise.EM))
         else:
             out.append("%s %s NOT SERVED %s its section, %s, is not one the council reads as settled"
-                       % (head, DOT, bytewise.EM, clip(c[5])))
+                       % (head, DOT, bytewise.EM, bytewise.clip(c[5], 60)))
     if unserved:
         one = unserved == 1
         out.append("memory: WARNING %s %d entr%s never reach%s a brief: move %s under a fitting settled section, "

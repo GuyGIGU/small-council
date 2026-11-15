@@ -18,7 +18,6 @@ READ_ONLY = "Read-only: nothing was written."
 
 
 def path(run: Path) -> Path:
-    """The audit file of a run folder."""
     return Path(run) / NAME
 
 

@@ -11,7 +11,7 @@ from fnmatch import fnmatchcase
 
 from council import git
 from council.commands import cli, doctor_hooks
-from council.records import hook_marks, memory, memory_entries, runs, sharing, state
+from council.records import hook_marks, memory, memory_entries, paths, runs, sharing, state
 from council.records import home as where
 from council.records.bytewise import text as bytewise
 
@@ -310,11 +310,8 @@ def _recent(path: str, minutes: int) -> bool:
 
 def _text(path: str) -> str | None:
     """A file's text (its bytes kept); None when it is missing or unreadable."""
-    try:
-        with open(where.native(path), "rb") as stream:
-            return stream.read().decode("utf-8", "surrogateescape")
-    except OSError:
-        return None
+    data = paths.contents(where.native(path))
+    return None if data is None else data.decode("utf-8", "surrogateescape")
 
 
 def _name(folder: str) -> str:

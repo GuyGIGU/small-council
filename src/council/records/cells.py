@@ -8,6 +8,7 @@ from typing import Any
 # Every C0 and C1 control (tab and newline included: a value is one cell), DEL, and the Unicode line
 # and paragraph separators: none may reach a terminal or a page from a file.
 CONTROL = re.compile("[" + chr(0) + "-" + chr(0x1F) + chr(0x7F) + "-" + chr(0x9F) + chr(0x2028) + chr(0x2029) + "]")
+INTMAX = 2 ** 63 - 1     # the largest whole number bash's test reads; a larger one fails the test
 
 
 def clean(value: Any) -> str:
@@ -46,16 +47,21 @@ def integer(value: Any) -> int | None:
     return None
 
 
-def number(value: Any) -> int:
-    """A cell's whole number of up to 12 digits, else 0."""
-    value = str(value or "").strip()
-    return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else 0
+def leading(cell: str) -> int:
+    """A cell as awk reads `$n + 0`: its leading whole number (blanks and a sign may come first), else 0."""
+    found = re.match(r"[ \t]*([+-]?[0-9]+)", cell)
+    return int(found.group(1)) if found else 0
 
 
 def optional_number(value: Any) -> int | None:
     """A recorded count, or None when the cell is blank or not a plain number (never guessed as 0)."""
     value = str(value if value is not None else "").strip()
     return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else None
+
+
+def number(value: Any) -> int:
+    """A cell's whole number of up to 12 digits, else 0."""
+    return optional_number(value) or 0
 
 
 def token_count(text: str) -> int | None:

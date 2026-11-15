@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from council.records import paths
+from council.records.cells import CONTROL
 
 NAME = "tuning.md"
 ENTRY = re.compile(r"^## T-(\d+) · (\S+) · (applied|reverted T-\d+) · "
                    r"(estimate per worker|estimates \S+): (\S+) → (\S+)[ \t]*\r?$", re.MULTILINE)
 EXACT = re.compile(r"^- exact: (\{.*\})[ \t]*\r?$", re.MULTILINE)
-CONTROL = re.compile("[" + chr(0) + "-" + chr(0x1F) + chr(0x7F) + "-" + chr(0x9F) + chr(0x2028) + chr(0x2029) + "]")
 START = ("# Tuning log\n\nEach change `council tune` made to council.config.md, with its evidence, the user's own\n"
          "words, and the exact line it replaced. Undo the last one with\n"
          "`council tune revert budget --user-said \"…\"`.\n")

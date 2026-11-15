@@ -10,9 +10,9 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-BOM = "﻿"
-ITEM = re.compile(r"[-*+]?[ \t]*[*_]*C?[0-9]+[a-z]?[*_]*\.?[ \t]+(·|\|)[ \t]")
-SHAPE_ITEM = re.compile(r"[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) ")
+from council.records import bytewise, paths
+
+ITEM = re.compile(r"[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) ")
 HEADED_ITEM = re.compile(r"#+ *[*_]*C?[0-9]+[a-z]?[*_]* +(·|\|) ")
 NONE_LINE = re.compile(r" *([-*+] +)?[*_]*\([Nn]one\)")
 NOTE_ITEM = re.compile(r" +([-*+] +)?[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\||-|—|–) ")
@@ -30,26 +30,11 @@ class Seat(NamedTuple):
     cap: str
 
 
-def lines(path: str | Path) -> list[str]:
-    """A file's lines as awk reads them (bytes kept; a last line without a newline still a line); [] when it
-    can't be read."""
-    try:
-        content = Path(path).read_bytes().decode("utf-8", "surrogateescape")
-    except OSError:
-        return []
-    found = content.split("\n")
-    return found[:-1] if found[-1] == "" else found
-
-
-def lower(text: str) -> str:
-    """ASCII letters lowered, as awk and tr do byte by byte."""
-    return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in text)
-
-
 def _key(line: str, name: str) -> str | None:
     """The value after "name:" however it is written ("- ref:", "ref:", "- **ref:**", "- Refs:", "- `ref:`",
     "- ref :", indented), or None: a near-miss spelling must never switch the proof of reading off."""
-    found = re.match(r"[ \t]*[-*+]?[ \t]*[`*_]*" + name + r"(s|erence|erences)?[`*_]*[ \t]*:[`*_]*", lower(line))
+    found = re.match(r"[ \t]*[-*+]?[ \t]*[`*_]*" + name + r"(s|erence|erences)?[`*_]*[ \t]*:[`*_]*",
+                     bytewise.lower(line))
     return line[found.end():] if found else None
 
 
@@ -61,7 +46,7 @@ def brief_seats(path: str | Path) -> list[Seat]:
     """The "## Seats" blocks of a brief (or of debate.md), in order. Backticks and quotes around values go."""
     found: list[Seat] = []
     inside, slug, ref, out, cap = False, "", "none", "", "8"
-    for line in lines(path):
+    for line in bytewise.file_lines(path, fold=False):
         if line.startswith("## "):
             inside = re.fullmatch(r"## Seats[ \t\r]*", line) is not None
             continue
@@ -76,7 +61,7 @@ def brief_seats(path: str | Path) -> list[Seat]:
         value = _key(line, "ref")
         if value is not None:
             value = _clean(value)
-            if value and lower(value) != "none":
+            if value and bytewise.lower(value) != "none":
                 ref = value if ref == "none" else ref + " ;; " + value
             continue
         value = _key(line, "out")
@@ -102,7 +87,7 @@ def out_path(run: Path, slug: str, out: str | None = None) -> str:
 
 def norm(text: str) -> str:
     """Letters and digits only, lowercased — for comparing a seat's ref: line with its doc's title."""
-    return "".join(lower(c) for c in text if c.isascii() and c.isalnum())
+    return "".join(bytewise.lower(c) for c in text if c.isascii() and c.isalnum())
 
 
 WIDE_DROPS = (rb"\xe2\x80[\x80-\xbf]|\xe2\x81[\x80-\xbf]|\xe2[\x86-\xac][\x80-\xbf]",     # dashes, quotes, arrows
@@ -117,16 +102,16 @@ def norm_wide(text: str) -> str:
     for drop in WIDE_DROPS:
         data = re.sub(drop, b"", data)
     data = re.sub(rb"[^A-Za-z0-9\x80-\xff]", b"", data)
-    return lower(data.decode("utf-8", "surrogateescape"))
+    return bytewise.lower(data.decode("utf-8", "surrogateescape"))
 
 
 def ref_title(path: str | Path) -> str:
     """A reference doc's title as a worker copies it — its first heading, after any front matter; else its first
     line of text — normalised (norm, else norm_wide)."""
     front, first, title = False, "", ""
-    for at, line in enumerate(lines(path)):
+    for at, line in enumerate(bytewise.file_lines(path, fold=False)):
         if at == 0:
-            line = line[1:] if line.startswith(BOM) else line
+            line = line[1:] if line.startswith(paths.BOM) else line
             if re.fullmatch(r"---[ \t\r]*", line):
                 front = True
                 continue
@@ -162,13 +147,14 @@ def items(path: str | Path) -> list[Item]:
     """A file's item lines, with the first word of the "## " heading above each, lowercased."""
     found: list[Item] = []
     section = ""
-    for line in lines(path):
+    for line in bytewise.file_lines(path, fold=False):
         if line.startswith("## "):
-            section = re.sub(r"[ \t\r].*$", "", re.sub(r"^## +", "", lower(line)), flags=re.S)
+            section = re.sub(r"[ \t\r].*$", "", re.sub(r"^## +", "", bytewise.lower(line)), flags=re.S)
             continue
+        line = line.replace("\t", " ")
         if not ITEM.match(line):
             continue
-        parts = fields(re.sub(r"^[-*+]? *", "", line.replace("\r", "").replace("\t", " ")))
+        parts = fields(re.sub(r"^[-*+]? *", "", line.replace("\r", "")))
         if len(parts) < 4:
             continue
         number = re.sub(r"[*_.]", "", parts[0])
@@ -192,12 +178,12 @@ def shape(path: str | Path, sections: str = "Index") -> Shape:
     and ends the section. An attempted item is a line that starts with a number (after a bullet or bold), a table
     row or a heading that does, or any line holding " · "; it parses with at least four fields. An indented line
     is a note under an item unless it is written as one. Other prose is ignored."""
-    wanted = re.compile("(^|[^a-z])(" + lower(sections) + ")([^a-z]|$)")
+    wanted = re.compile("(^|[^a-z])(" + bytewise.lower(sections) + ")([^a-z]|$)")
     parsed = unparsed = 0
     none = inside = pending = False
-    for raw in lines(path):
+    for raw in bytewise.file_lines(path, fold=False):
         if raw.startswith("## "):
-            inside, pending = wanted.search(re.sub(r"^## +", "", lower(raw))) is not None, False
+            inside, pending = wanted.search(re.sub(r"^## +", "", bytewise.lower(raw))) is not None, False
             continue
         if not inside:
             continue
@@ -210,12 +196,12 @@ def shape(path: str | Path, sections: str = "Index") -> Shape:
             continue
         if pending:
             pending = False
-            if not SHAPE_ITEM.match(line) and not NONE_LINE.match(line):
+            if not ITEM.match(line) and not NONE_LINE.match(line):
                 inside = False
                 continue
         if NONE_LINE.match(line):
             none = True
-        elif SHAPE_ITEM.match(line):
+        elif ITEM.match(line):
             if len(fields(line)) >= 4:
                 parsed += 1
             else:
@@ -230,9 +216,9 @@ def shape(path: str | Path, sections: str = "Index") -> Shape:
 def verify_problems(path: str | Path) -> str:
     """The problems of a verify file's shape, each ending "; " ('' when none): line 1 '# Verification — <run
     title>', a verdict table, at most 16 KB. The seat-check hook holds a verifier to the same rule."""
-    found = lines(path)
+    found = bytewise.file_lines(path, fold=False)
     first = found[0].replace("\r", "") if found else ""
-    first = first[1:] if first.startswith(BOM) else first
+    first = first[1:] if first.startswith(paths.BOM) else first
     problems = "" if first.startswith("# Verification") else "line 1 isn't '# Verification — <run title>'; "
     if not any(re.match(r"[ \t\n\v\f\r]*\|", line) for line in found):
         problems += "no verdict table (| # | Item | Verdict | Evidence |); "

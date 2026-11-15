@@ -11,7 +11,6 @@ ALLOWANCES = "repair-allowances.tsv"
 
 
 def kept(run: str | Path) -> bool:
-    """The run keeps a repair trail: its file is there."""
     return (Path(run) / NAME).is_file()
 
 

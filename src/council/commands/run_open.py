@@ -9,11 +9,11 @@ from council import clock, git
 from council.commands import cli, event_note, resolve
 from council.records import config, events, hook_marks, ignores, memory, paths, request, seat_write, seats, state_write
 from council.records import plan as plan_file
+from council.records import closing
 from council.records import home as where
 
-MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame",
-         "council-init", "test-architect", "context-core")
-ASKED = MODES[:5]                                  # the modes that save the user's request first
+ASKED = closing.MODES                              # the modes that save the user's request first
+MODES = ASKED + ("council-init", "test-architect", "context-core")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
 

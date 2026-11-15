@@ -10,11 +10,11 @@ import re
 import shutil
 import subprocess
 
-from council.records import bytewise, scope
+from council.records import bytewise, paths, scope
 from council.records import home as where
+from council.records.closing import MODES
 from council.records.memory_entries import cells
 
-MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame")
 _WORD = re.compile(r"[A-Za-z0-9_]")
 
 
@@ -130,11 +130,7 @@ def line_counts(top: str, files: set[str]) -> dict[str, int]:
     for f in files:
         name = bytewise.shown(f)
         full = name if name.startswith("/") or re.match(r"[A-Za-z]:", name) else top + "/" + name
-        try:
-            with open(where.native(full), "rb") as stream:
-                count = len(bytewise.records(bytewise.read(stream.read())))
-        except OSError:
-            continue
+        count = len(bytewise.records(bytewise.read(paths.contents(where.native(full)) or b"")))
         if count:
             out[f] = count
     return out

@@ -33,7 +33,7 @@ def status(every: bool) -> int:
     for run in listed:
         here = run.code_root in (tree, "")
         line = "%s · %s · phase %s · %s · updated %s · %s" % (
-            run.folder.split("/")[-1], dash(run.mode), dash(run.phase), dash(run.status), dash(run.updated),
+            run.folder.split("/")[-1], *(value or "-" for value in (run.mode, run.phase, run.status, run.updated)),
             "here" if here else "elsewhere: " + run.code_root)
         line += "".join(" · " + part for part in (run.actual, audit_file.said(run.folder)) if part)
         if here or every:
@@ -47,8 +47,3 @@ def status(every: bool) -> int:
     if len(others) > room:
         cli.say("… and %d more open in other working trees" % (len(others) - room))
     return 0
-
-
-def dash(value: str) -> str:
-    """A value as the helper's run rows write it: '-' for an empty one."""
-    return value or "-"

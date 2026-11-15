@@ -10,9 +10,9 @@ import re
 from pathlib import Path
 
 from council.records import bytewise, cells, paths
+from council.records.cells import INTMAX
 
 NAME = "council.config.md"
-INTMAX = 2 ** 63 - 1     # the largest whole number bash's test reads; a larger one fails the test
 AGENT_CAP = 10
 SPACE = "[ \t\n\r\f\v]"  # sed's [[:space:]]
 MAX_EDIT = 1024 * 1024
@@ -26,7 +26,6 @@ class ConfigError(paths.RecordError):
 
 
 def path(home: str | Path) -> Path:
-    """The config file of a council home."""
     return Path(home) / NAME
 
 
@@ -48,6 +47,13 @@ def first(home: str | Path | None, pattern: str) -> re.Match | None:
         if found:
             return found
     return None
+
+
+def folded(home: str | Path | None, key: str) -> str:
+    """The first `- key:` line's value: an HTML comment after it ignored, spaces folded, lowercased."""
+    found = first(home, r"[ \t]*-[ \t]*" + key + r":[ \t]*(.*)")
+    words = re.sub(r"[ \t]*(<!--.*)?$", "", found.group(1), count=1) if found else ""
+    return bytewise.lower(re.sub(r"[ \t]+", " ", words))
 
 
 def agent_cap(home: str | Path | None) -> int:
@@ -76,13 +82,7 @@ CHECKING = ("one per batch", "per task")
 def checking(home: str | Path | None) -> str:
     """configured_checking: 'one per batch (config)' or 'per task (config)', else one per batch as a
     default, said so (the first `- checking:` line, an HTML comment after it ignored, spaces folded)."""
-    value = ""
-    for line in _lines(home):
-        found = re.match(r"[ \t]*-[ \t]*checking:[ \t]*", line)
-        if found:
-            value = re.sub(r"[ \t]*(<!--.*)?$", "", line[found.end():], count=1)
-            value = re.sub(r"[ \t]+", " ", value).translate(ASCII_LOWER)
-            break
+    value = folded(home, "checking")
     if value in CHECKING:
         return "{} (config)".format(value)
     if not value:
@@ -114,7 +114,7 @@ def role_pairs(home: str | Path | None, key: str) -> tuple[bool, list[tuple[str,
 
 def pairs(text: str) -> list[tuple[str, str, str]]:
     """The text after a role line's key as (role, equals, value) pieces, as role_pairs reads them."""
-    text = text.replace("\r", "").split("<!--", 1)[0].strip(" \t").translate(ASCII_LOWER)
+    text = bytewise.lower(text.replace("\r", "").split("<!--", 1)[0].strip(" \t"))
     pieces = [piece.strip(" \t") for piece in text.split(",")]
     return [(w[0].strip(" \t"), w[1], w[2].strip(" \t")) for w in (p.partition("=") for p in pieces if p)]
 
@@ -125,12 +125,9 @@ def seat_models(home: str | Path) -> str:
     return "on" if found and found.group(1) == "on" else "off"
 
 
-ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
-
-
 def limit_seconds(raw: str) -> int | None:
     """The helper's limit_seconds: '90', '15m', '2 hours' in seconds; None for anything else (or 0)."""
-    value = re.sub(r"[ \t\r]", "", raw).translate(ASCII_LOWER)
+    value = bytewise.lower(re.sub(r"[ \t\r]", "", raw))
     digits = re.match(r"[0-9]*", value).group(0)
     unit = value[len(digits):]
     digits = digits.lstrip("0")
@@ -157,23 +154,15 @@ def notifications_off(home: str | Path | None) -> bool:
 
 def field(home: str | Path, key: str) -> str:
     """A `key:` line of the config (stack-fingerprint, last-verified), as the helper's field reads it: cells.field."""
-    try:
-        data = path(home).read_bytes()
-    except OSError:
-        return ""
-    return cells.field(data.decode("utf-8", "surrogateescape"), key)
+    return cells.field((paths.contents(path(home)) or b"").decode("utf-8", "surrogateescape"), key)
 
 
 def memory_line(home: str | Path) -> tuple[str, str] | None:
     """The `- conventions:` path under ## Memory as the helper's memory_file reads it: the value with CRs, quotes,
     a trailing (note) and a " — aside" taken off, and its first word (a path may hold a blank; a note may follow
     one); None when there is no such line. memory_path() is status.py's older reading of the same line."""
-    try:
-        text = path(home).read_bytes().decode("utf-8", "surrogateescape")
-    except OSError:
-        return None
     under = False
-    for line in text.split("\n")[:-1] if text.endswith("\n") else text.split("\n"):
+    for line in bytewise.file_lines(path(home), fold=False):
         if re.match(r"##[ \t]", line):
             under = bool(re.match(r"##[ \t]+[Mm][Ee][Mm][Oo][Rr][Yy]([^A-Za-z]|\Z)", line))
             continue
@@ -226,12 +215,8 @@ def roster_rows(home: str | Path) -> list[tuple[str, str, str]]:
     reference), "-" for an empty value, its columns found by their header names (Seat, else the first; Slug;
     Reference), each cell trimmed of blanks, CRs, backticks and asterisks; a row with no seat, a rule row or a
     <placeholder> left out. C-locale text (records/bytewise.py). roster() is the older reading that needs a Lens."""
-    try:
-        text = bytewise.read(path(home).read_bytes())
-    except OSError:
-        return []
     found, inside, columns = [], False, None
-    for line in bytewise.records(text):
+    for line in bytewise.records(bytewise.read(paths.contents(path(home)) or b"")):
         if line.startswith("## "):
             inside, columns = line.startswith("## Roster"), None
             continue

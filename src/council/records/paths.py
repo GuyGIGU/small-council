@@ -6,21 +6,16 @@ import os
 import stat
 import time
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Callable, Optional
 
 MAX_FILE = 4 * 1024 * 1024
 BOM = chr(0xFEFF)
 STATE = "session-state.md"
+Reader = Callable[[Path], Optional[str]]   # a caller's own read policy, such as one that refuses
 
 
 class RecordError(Exception):
     """A council file that cannot be read or written safely; the message names it."""
-
-
-def home_of(run: Path) -> Path | None:
-    """The council home a run folder sits in (<home>/runs/<run>), or None for a run kept elsewhere."""
-    run = Path(run)
-    return run.parent.parent if run.parent.name == "runs" else None
 
 
 def is_run(folder: Path, refuse_links: bool = True) -> bool:
@@ -98,6 +93,15 @@ def read_bytes(path: str | Path, limit: int) -> bytes:
         return handle.read(limit + 1)
 
 
+def contents(path: str | Path) -> bytes | None:
+    """The whole file's bytes, None when it can't be read; unguarded (read_bytes and text_of are the guarded reads)."""
+    try:
+        with open(str(path), "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
 def text_of(path: str | Path, root: str | Path | None = None, limit: int = MAX_FILE,
             errors: str = "replace") -> str:
     """A small regular file's text, BOM dropped, or '' when it is missing, a link, outside root, too
@@ -117,8 +121,14 @@ def text_of(path: str | Path, root: str | Path | None = None, limit: int = MAX_F
         return ""
 
 
+def run_text(run: Path, name: str, read: Reader | None = None, limit: int = MAX_FILE) -> str:
+    """A run file's text by the guarded read (a link, a file outside the run, one over limit or a missing
+    one reads as ''), unless `read` gives a caller's own policy."""
+    file = Path(run) / name
+    return text_of(file, run, limit) if read is None else read(file) or ""
+
+
 def too_large(path: str | Path, limit: int = MAX_FILE) -> bool:
-    """True when path is a file over limit bytes."""
     try:
         return Path(path).is_file() and Path(path).stat().st_size > limit
     except OSError:

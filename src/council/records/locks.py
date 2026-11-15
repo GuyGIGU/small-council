@@ -1,39 +1,27 @@
-"""The helper's mkdir lock (bin/council: event_lock, event_unlock, event_lock_stale), step for step, so a
-Python writer and a bash writer of events.tsv or seats.tsv exclude each other.
+"""The mkdir lock that keeps two writers of one run file (events.tsv, seats.tsv) apart.
 
-A lock is a directory (`<file>.lock`) holding an `owner` file with the holder's process id: which id, and
-how it is checked, is records/owners.py (D33). A lock whose owner is no live process, or one with no
-readable owner that is ten seconds old, is stale. A stale lock is reclaimed only through a second
-directory, `<lock>.recover`, so two waiters never both remove it, and a writer never takes the lock while
-a reclaim is under way.
-
-A made directory is not yet a held lock: the owner file decides (bin/council's lock_claim). uutils mkdir
-0.10.0 exits 0 when the directory is already there, so a bash caller can be told it made a lock another
-holds. Both languages therefore hold a lock, or a `.recover`, only once they created its owner file
-exclusively (O_EXCL).
+A lock is a directory (`<file>.lock`) whose `owner` file names the holder's process (records/owners.py,
+D33). A lock whose owner is no live process, or one with no readable owner that is ten seconds old, is
+stale, and is reclaimed only through `<lock>.recover`, so two waiters never both remove it. A caller holds
+a lock, or a `.recover`, only once it created the owner file exclusively (O_EXCL): the folder alone is not
+a held lock.
 """
 from __future__ import annotations
 
 import os
 import time
-from contextlib import contextmanager, suppress
+from contextlib import suppress
 from pathlib import Path
-from typing import Iterator
 
-from council.records.owners import first_line, holder_alive, named, unavailable
-from council.records.paths import RecordError
+from council.records.owners import first_line, holder_alive, named
 
 TRIES = 200          # the helper's default: 200 tries, 0.1 s apart
 PAUSE = 0.1
 STALE_SECONDS = 10   # a lock with no owner number this old was left by a writer killed before writing it
 
 
-class LockError(RecordError):
-    """A lock that could not be taken in the tries allowed."""
-
-
 def stale(lock: str | Path) -> bool:
-    """event_lock_stale: the lock exists and its holder is gone."""
+    """The lock exists and its holder is gone."""
     lock = Path(lock)
     if not lock.is_dir():
         return False
@@ -59,7 +47,8 @@ def stale(lock: str | Path) -> bool:
     return int(time.time()) - modified >= STALE_SECONDS
 
 
-def _make(folder: Path) -> bool:
+def make(folder: Path) -> bool:
+    """mkdir: True when this call made the folder."""
     try:
         os.mkdir(str(folder))
     except OSError:
@@ -67,11 +56,11 @@ def _make(folder: Path) -> bool:
     return True
 
 
-HELD, TAKEN, FAILED = 0, 1, 2   # lock_claim's exits
+HELD, TAKEN, FAILED = 0, 1, 2   # claim's answers
 
 
 def claim(folder: Path, owner: str) -> int:
-    """lock_claim: create folder/owner exclusively and write the owner line. HELD; TAKEN when another
+    """Create folder/owner exclusively and write the owner line. HELD; TAKEN when another
     caller's owner file is there or the folder went (leave it alone); FAILED when it couldn't be made or
     written (nothing of it is left)."""
     owner_file = folder / "owner"
@@ -91,13 +80,14 @@ def claim(folder: Path, owner: str) -> int:
     return HELD
 
 
-def _remove_folder(folder: Path) -> None:
+def remove_folder(folder: Path) -> None:
+    """rmdir, quietly: an empty lock folder whose owner file was never written."""
     with suppress(OSError):
         os.rmdir(str(folder))
 
 
 def release(lock: str | Path) -> bool:
-    """event_unlock: remove the owner file, then the lock directory. False when either is refused."""
+    """Remove the owner file, then the lock directory. False when either is refused."""
     lock = Path(lock)
     try:
         (lock / "owner").unlink()
@@ -112,14 +102,27 @@ def release(lock: str | Path) -> bool:
     return True
 
 
+def reclaim(lock: Path, recovery: Path, owner: str) -> bool:
+    """A stale lock cleared through <lock>.recover (a stale .recover first); True when this call cleared it."""
+    if stale(recovery):
+        release(recovery)
+    cleared = False
+    if stale(lock) and make(recovery):
+        claimed = claim(recovery, owner)
+        cleared = claimed == HELD and stale(lock) and release(lock)
+        if claimed != TAKEN:                      # another reclaimer's: leave it to that one
+            release(recovery)
+    return cleared
+
+
 def acquire(lock: str | Path, tries: int = TRIES) -> bool:
-    """event_lock: take the lock, reclaiming a stale one, trying `tries` times 0.1 s apart."""
+    """Take the lock, reclaiming a stale one, trying `tries` times 0.1 s apart."""
     lock = Path(lock)
     recovery = Path(str(lock) + ".recover")
     owner = str(os.getpid())
     count = 0
     while True:
-        if not recovery.is_dir() and _make(lock):
+        if not recovery.is_dir() and make(lock):
             claimed = claim(lock, owner)              # the owner file decides who holds it, not mkdir
             if claimed == HELD:
                 if recovery.is_dir():                 # a reclaim began just before: yield this lock to it
@@ -127,30 +130,11 @@ def acquire(lock: str | Path, tries: int = TRIES) -> bool:
                     continue
                 return True
             if claimed == FAILED:
-                _remove_folder(lock)
+                remove_folder(lock)
                 return False
             # TAKEN: another caller holds it — wait like any other
-        if stale(recovery):
-            release(recovery)
-        if stale(lock) and _make(recovery):
-            claimed = claim(recovery, owner)
-            if claimed == HELD and stale(lock):
-                release(lock)
-            if claimed != TAKEN:                      # another reclaimer's: leave it to that one
-                release(recovery)
+        reclaim(lock, recovery, owner)
         count += 1
         if count >= tries:
             return False
         time.sleep(PAUSE)
-
-
-@contextmanager
-def held(lock: str | Path, tries: int = TRIES) -> Iterator[Path]:
-    """The lock for the length of a with block; LockError when it can't be taken."""
-    lock = Path(lock)
-    if not acquire(lock, tries):
-        raise LockError(unavailable(lock))
-    try:
-        yield lock
-    finally:
-        release(lock)

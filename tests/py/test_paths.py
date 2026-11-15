@@ -10,6 +10,13 @@ from council.records import home, paths
 
 
 class ReadTest(support.Scratch):
+    def test_contents_is_every_byte_or_none(self) -> None:
+        self.write("a.md", b"\xef\xbb\xbfa\r\n\xff", binary=True)
+        self.assertEqual(paths.contents(self.tmp / "a.md"), b"\xef\xbb\xbfa\r\n\xff")
+        self.assertEqual(paths.contents(str(self.write("empty.md", ""))), b"")
+        self.assertIsNone(paths.contents(self.tmp / "missing.md"))
+        self.assertIsNone(paths.contents(self.tmp))
+
     def test_text_of_drops_the_bom_and_reads_missing_as_empty(self) -> None:
         self.write("a.md", "﻿status: done\n")
         self.assertEqual(paths.text_of(self.tmp / "a.md"), "status: done\n")
@@ -108,13 +115,11 @@ class HomeTest(support.Scratch):
         self.assertEqual(len(paths.run_folders(home, require_state=False)), 3)
         self.assertEqual(paths.run_folders(self.tmp / "nowhere"), [])
 
-    def test_is_run_and_home_of(self) -> None:
+    def test_is_run(self) -> None:
         run = self.run_folder()
         self.assertFalse(paths.is_run(run))
         (run / "session-state.md").write_text("status: in-progress\n")
         self.assertTrue(paths.is_run(run))
-        self.assertEqual(paths.home_of(run), self.tmp / ".council")
-        self.assertIsNone(paths.home_of(self.tmp))
 
     def test_worktrees_and_home_from(self) -> None:
         porcelain = "worktree /main\nHEAD a\nbranch x\n\nworktree /wt\nHEAD b\n"

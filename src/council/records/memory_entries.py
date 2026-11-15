@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-from council.records import bytewise
+from council.records import bytewise, paths
 from council.records.bytewise import EM, EN, lower, trim, upper
 
 OFF = ["propos", "reject", "retire", "supersede", "deprecat", "withdraw", "obsolete", "archived", "pending", "draft",
@@ -24,7 +24,6 @@ MARKS = ("retired", "superseded", "withdrawn")
 MEANINGS = ("Pattern", "Rule", "Convention", "Decision", "Failure", "Observation")
 VERDICTS = ("OBSERVED", "REPRODUCED", "CONFIRMED", "REFUTED", "MISCITED", "REGRESSION", "INCOMPLETE", "SCOPE-CREEP")
 VERDICT_LIST = "OBSERVED, REPRODUCED, CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE or SCOPE-CREEP"
-BOM = bytewise.read(b"\xef\xbb\xbf")
 _DOT = bytewise.DOT
 _ID = re.compile(r"(ap|ec|d|f)-?[0-9]+")
 _ASIDE = re.compile(r"[ \t]*(" + EM + "|" + EN + r"|-[ \t]|\(|\[|;|:|,).*\Z", re.S)
@@ -170,10 +169,10 @@ class Parser:
 
     def fields(self, line: str) -> None:
         """A field line of the entry: its scope, its anchor, what it means, or a line that retires it."""
-        for name, attr in (("Scope", "scope"), ("Anchor", "anchor")):
+        for name in ("Scope", "Anchor", "Origin", "Evidence", "Verdict"):
             v = fieldval(line, name)
             if v:
-                setattr(self, attr, v)
+                setattr(self, name.lower(), v)
         v = next((v for v in (fieldval(line, m) for m in MEANINGS) if v), "")
         if v:
             self.meaning = v
@@ -182,10 +181,6 @@ class Parser:
             v = fieldval(line, "Observation")
         if v:
             self.failure = v
-        for name, attr in (("Origin", "origin"), ("Evidence", "evidence"), ("Verdict", "verdict")):
-            v = fieldval(line, name)
-            if v:
-                setattr(self, attr, v)
         lo = lower(line)
         for mark in MARKS:
             found = re.search(r"\*\*" + mark + r"( by)?:?\*\*:?", lo)
@@ -403,34 +398,21 @@ class Parser:
 def parse(text: str) -> Parser:
     """A memory file's text (C-locale) read through."""
     parser = Parser()
-    for n, raw in enumerate(bytewise.records(text), 1):
-        line = raw[:-1] if raw.endswith("\r") else raw
-        if n == 1 and line.startswith(BOM):
-            line = line[len(BOM):]
+    for n, line in enumerate(bytewise.lines(text), 1):
         parser.n = n
         parser.line(line)
     parser.flush()
     return parser
 
 
-def _text(path: str) -> str | None:
-    try:
-        with open(path, "rb") as stream:
-            return bytewise.read(stream.read())
-    except OSError:
-        return None
-
-
 def rows(path: str) -> list[str]:
     """The entries of a memory file (a native path) as rows; none when it can't be read."""
-    text = _text(path)
-    return parse(text).rows if text is not None else []
+    return parse(bytewise.read(paths.contents(path) or b"")).rows
 
 
 def skipped(path: str) -> str:
     """The ids of lines that look like entries but are not read, with their line numbers; '' when none."""
-    text = _text(path)
-    return parse(text).unread() if text is not None else ""
+    return parse(bytewise.read(paths.contents(path) or b"")).unread()
 
 
 def pending(text: str, found: list[str]) -> int:

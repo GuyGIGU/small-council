@@ -17,6 +17,7 @@ import re
 
 from council.records.bytewise import ARROW, EM, EN, lower, trim
 from council.records.memory_entries import cells
+from council.records.scope import clean
 
 _EXT = re.compile(
     r"\.(py|pyi|pyx|js|jsx|mjs|cjs|ts|tsx|gd|gdshader|tscn|tres|godot|cs|java|kt|kts|go|rs|rb|php|swift|c|h|cc|cpp"
@@ -25,13 +26,6 @@ _EXT = re.compile(
 _NOTHING = re.compile(r"(none|n/a|na|tbd|-|" + EM + "|" + EN + r"|\(none\))\Z")
 _NAMED = re.compile(r"[A-Za-z_][A-Za-z0-9_.:#-]*(\(\))?\Z")
 _NOTE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*(\(\))?\Z")
-
-
-def clean(p: str) -> str:
-    p = re.sub(r"\A[Rr][Ee][Ss]://", "", trim(p).replace("\\", "/"), count=1)
-    while p.startswith("./"):
-        p = p[2:]
-    return p
 
 
 def nm(s: str) -> str:

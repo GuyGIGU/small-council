@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.records import config
+from council.records import bytewise, config
 
 
 class Gate(NamedTuple):
@@ -41,17 +41,6 @@ RAN_OK = ("yes", "y", "true", "ok", "okay", "pass", "passed", "passes", "passing
 RAN_NOT = ("no", "n", "false", "not", "never", "fails", "failed", "failing", "broken", "blocked", "skip", "skipped",
            "unrunnable", "unprobed")
 HEADS = {"gate": 0, "name": 0, "command": 1, "runat": 2, "mandatory": 3, "checked": 4}
-
-
-def _raw_lines(home: str | Path) -> list[str]:
-    """The config's lines as awk reads them: split on newline only, a carriage return kept, bytes that are
-    not UTF-8 kept as they came (surrogateescape)."""
-    try:
-        data = config.path(home).read_bytes()
-    except OSError:
-        return []
-    lines = data.decode("utf-8", errors="surrogateescape").split("\n")
-    return lines[:-1] if lines and lines[-1] == "" else lines
 
 
 def table_cells(line: str) -> list[str]:
@@ -157,7 +146,7 @@ def gates(home: str | Path) -> list[Gate]:
     (no Side effects or Needs) still reads. A row with a name and an empty Command cell has '-' for a command."""
     found: list[Gate] = []
     inside, columns, header_cells = False, None, 0
-    for line in _raw_lines(home):
+    for line in bytewise.file_lines(config.path(home), fold=False):
         if line.startswith("## "):
             inside, columns = line.startswith("## Gates"), None
             continue
@@ -182,7 +171,7 @@ def gates_listed(home: str | Path) -> bool:
     command in a list item or on an indented line under one, and no table. A backticked council command is
     a note, not a gate."""
     inside = item = comment = listed = table = False
-    for line in _raw_lines(home):
+    for line in bytewise.file_lines(config.path(home), fold=False):
         if line.startswith("## "):
             inside, item = line.startswith("## Gates"), False
             continue

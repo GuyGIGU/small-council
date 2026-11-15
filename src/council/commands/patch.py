@@ -10,10 +10,9 @@ outside the task's slice and the lines that look like a workaround, as questions
 from __future__ import annotations
 
 import re
-import time
 from pathlib import Path
 
-from council import diff, git
+from council import clock, diff, git
 from council.commands import cli, gate_output, patch_checks, patch_history, resolve
 from council.records import home as where
 from council.records import map_file, paths, patches, report_head, tasks
@@ -73,7 +72,7 @@ def save(run: Path, task: int, report: Path, base: str) -> int:
         _refuse(task, problems)
     out, cut = _slice(run, task, files)
     one = patches.Round(task, len(earlier) + 1, max([r.seq for r in every], default=0) + 1,
-                        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), start, tree, files,
+                        clock.now_utc(), start, tree, files,
                         sum(len(f.added) for f in found), sum(len(f.removed) for f in found), head._asdict(),
                         out, [list(sign) for sign in patch_checks.signs(found)], cut)
     try:

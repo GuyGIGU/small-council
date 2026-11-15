@@ -8,12 +8,12 @@ before it writes anything. The holder releases on every way out, a stop by HUP, 
 process is gone is cleared by the next call, which says so."""
 from __future__ import annotations
 
-import contextlib
 import os
 import signal
 import time
 from pathlib import Path
 
+from council import clock
 from council.commands import cli, gate_exec
 from council.records import locks, owners
 
@@ -23,18 +23,14 @@ EXITS = {"SIGHUP": 129, "SIGINT": 130, "SIGTERM": 143}
 HELD: list[Path] = []
 
 
-def now() -> str:
-    return time.strftime("%Y-%m-%d %H:%M:%S")
-
-
 def take(run: str, wait: bool, limit: str = str(WAIT_LIMIT)) -> None:
     """Hold the run's gate lock until release(), or refuse (exit 2) before anything is written. limit is
     --wait's, in seconds, as given: one that is no number refuses at the first wait, as bash's test did."""
     lock, recovery, me = Path(run + "/gates.lock"), Path(run + "/gates.lock.recover"), str(os.getpid())
     tries = waited = 0
     while True:
-        if not recovery.is_dir() and _make(lock):
-            claimed = locks.claim(lock, me + "\n" + now())     # the owner file decides who holds it, not mkdir
+        if not recovery.is_dir() and locks.make(lock):
+            claimed = locks.claim(lock, me + "\n" + clock.now_sec())  # the owner file decides who holds it, not mkdir
             if claimed == locks.HELD:
                 if recovery.is_dir():                             # a reclaimer got in first: yield
                     locks.release(lock)
@@ -42,10 +38,12 @@ def take(run: str, wait: bool, limit: str = str(WAIT_LIMIT)) -> None:
                 _hold(lock)
                 return
             if claimed == locks.FAILED:
-                _rmdir(lock)
+                locks.remove_folder(lock)
                 raise cli.Refusal("cannot write the gate lock %s — nothing was started" % lock.as_posix())
         pid, since = _owner(lock)
-        _reclaim(lock, recovery, me, pid, since)
+        if locks.reclaim(lock, recovery, me):
+            cli.warn("council: cleared a gate lock left by a call that is no longer running%s"
+                     % (" (process %s, started %s)" % (pid, since or "unknown") if pid else ""))
         holder = owners.named(pid) if pid.isdigit() else None
         if holder is not None and owners.holder_alive(holder, lock / "owner"):
             if not wait:
@@ -73,32 +71,6 @@ def _owner(lock: Path) -> tuple[str, str]:
     except OSError:
         return "", ""
     return lines[0], (lines[1] if len(lines) > 1 else "")
-
-
-def _reclaim(lock: Path, recovery: Path, me: str, pid: str, since: str) -> None:
-    """A lock left by a call that is no longer running is cleared, through <lock>.recover, and said once."""
-    if locks.stale(recovery):
-        locks.release(recovery)
-    if locks.stale(lock) and _make(recovery):
-        claimed = locks.claim(recovery, me)
-        if claimed == locks.HELD and locks.stale(lock) and locks.release(lock):
-            cli.warn("council: cleared a gate lock left by a call that is no longer running%s"
-                     % (" (process %s, started %s)" % (pid, since or "unknown") if pid else ""))
-        if claimed != locks.TAKEN:                       # another reclaimer's: leave it to that one
-            locks.release(recovery)
-
-
-def _make(folder: Path) -> bool:
-    try:
-        os.mkdir(str(folder))
-    except OSError:
-        return False
-    return True
-
-
-def _rmdir(folder: Path) -> None:
-    with contextlib.suppress(OSError):
-        os.rmdir(str(folder))
 
 
 def _stopped(number: int, frame: object) -> None:

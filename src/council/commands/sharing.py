@@ -8,7 +8,7 @@ from typing import Pattern
 
 from council import git
 from council.commands import cli
-from council.records import config, home as where
+from council.records import config, paths, home as where
 from council.records import sharing as setting
 
 # The marked blocks "just me" takes out or puts in: council-init's note in CLAUDE.md / AGENTS.md (under
@@ -28,8 +28,7 @@ REMOVED, NO_BLOCK, UNREADABLE, UNENDED, EMPTIED = 0, 1, 2, 3, 5
 def main(args: cli.Args, words: list[str]) -> int:
     """council sharing shows the setting and what it needs; sharing just-me|team switches it."""
     cli.takes_flags(args, "sharing")
-    if args.value("run"):
-        raise cli.Refusal("sharing is the whole council's setting; it does not take --run")
+    cli.takes_no_run(args, "sharing is the whole council's setting")
     first = words[0] if words else ""
     if first == "":
         show(where.council_home())
@@ -86,7 +85,7 @@ def rows(home: str) -> list[tuple[bool, str, str]]:
         else:
             found.append((True, "no council files in git", ""))
     noted = [name if folder == root else folder + "/" + name for folder in note_folders(root) for name in NOTES
-             if has_note(_bytes(folder + "/" + name))]
+             if has_note(paths.contents(folder + "/" + name))]
     if noted:
         found.append((False, "the Small Council note is still in %s, so teammates' AI sessions read it"
                       % " and ".join(noted), "council sharing just-me takes it out"))
@@ -157,7 +156,7 @@ def _exclude(root: str, just_me: bool) -> None:
 
 def _exclude_council(root: str, exclude: str) -> None:
     """Add the council's block to the exclude list, in the list's own line endings."""
-    data = _bytes(exclude) or b""
+    data = paths.contents(exclude) or b""
     cr = "\r" if b"\r" in data else ""
     lines = [EXCL_BEGIN, "/.council/"]
     if git.text(root, "check-ignore", "-q", "--no-index", "--", ".claude/settings.local.json") is None:
@@ -277,14 +276,6 @@ def tracked_count(root: str) -> int:
     """How many council files git tracks."""
     listed = git.text(root, "ls-files", "--", ".council")
     return len(listed.split("\n")) if listed else 0
-
-
-def _bytes(file: str) -> bytes | None:
-    try:
-        with open(file, "rb") as handle:
-            return handle.read()
-    except OSError:
-        return None
 
 
 def _write_in_place(file: str, data: bytes) -> None:

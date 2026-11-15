@@ -42,8 +42,6 @@ class LockTest(support.Scratch):
         started = time.time()
         self.assertFalse(locks.acquire(lock, tries=3))
         self.assertGreaterEqual(time.time() - started, 0.15)
-        with self.assertRaisesRegex(locks.LockError, "event lock unavailable"), locks.held(lock, tries=1):
-            pass
         self.assertTrue(lock.is_dir())                     # the holder's lock is untouched
 
     def test_two_threads_never_hold_it_together(self) -> None:
@@ -53,7 +51,9 @@ class LockTest(support.Scratch):
 
         def work():
             for _ in range(25):
-                with locks.held(lock):
+                if not locks.acquire(lock):
+                    raise RuntimeError("the lock was never free")
+                try:
                     inside[0] += 1
                     if inside[0] > 1:
                         overlaps.append(1)
@@ -61,6 +61,8 @@ class LockTest(support.Scratch):
                     time.sleep(0.001)
                     counter.write_text(str(value + 1))
                     inside[0] -= 1
+                finally:
+                    locks.release(lock)
 
         threads = [threading.Thread(target=work) for _ in range(2)]
         for thread in threads:
@@ -80,6 +82,31 @@ class LockTest(support.Scratch):
         self.assertEqual(owner_of(lock), "{}\n".format(os.getpid()).encode())
         self.assertFalse((self.tmp / "events.tsv.lock.recover").exists())
         locks.release(lock)
+
+    def test_reclaim_clears_only_a_stale_lock_and_says_so(self) -> None:
+        lock, recovery = self.tmp / "gates.lock", self.tmp / "gates.lock.recover"
+        lock.mkdir()
+        put_owner(lock, os.getppid())                     # a live holder: left alone
+        self.assertFalse(locks.reclaim(lock, recovery, str(os.getpid())))
+        self.assertTrue(lock.is_dir())
+        put_owner(lock, dead_pid())
+        recovery.mkdir()
+        put_owner(recovery, dead_pid())                   # a reclaimer that died: its .recover goes first
+        self.assertTrue(locks.reclaim(lock, recovery, str(os.getpid())))
+        self.assertFalse(lock.exists())
+        self.assertFalse(recovery.exists())
+        self.assertFalse(locks.reclaim(lock, recovery, str(os.getpid())))   # nothing left to clear
+
+    def test_make_and_remove_folder(self) -> None:
+        folder = self.tmp / "x.lock"
+        self.assertTrue(locks.make(folder))
+        self.assertFalse(locks.make(folder))
+        (folder / "owner").write_bytes(b"1\n")
+        locks.remove_folder(folder)                        # not empty: quietly kept
+        self.assertTrue(folder.is_dir())
+        (folder / "owner").unlink()
+        locks.remove_folder(folder)
+        self.assertFalse(folder.exists())
 
     def test_a_lock_without_an_owner_is_stale_only_once_old(self) -> None:
         lock = self.tmp / "events.tsv.lock"
@@ -177,7 +204,7 @@ class ClaimTest(support.Scratch):
     def setUp(self) -> None:
         super().setUp()
         self.other = os.getppid()                         # a live process that is not this one
-        self.real_make = locks._make
+        self.real_make = locks.make
         self.racer = None                                 # writes another's owner file inside the fake mkdir
 
         def lenient_make(folder: Path) -> bool:
@@ -191,10 +218,10 @@ class ClaimTest(support.Scratch):
                 self.racer(folder)
             return True
 
-        locks._make = lenient_make
+        locks.make = lenient_make
 
     def tearDown(self) -> None:
-        locks._make = self.real_make
+        locks.make = self.real_make
         super().tearDown()
 
     def test_an_existing_lock_with_another_owner_is_not_taken(self) -> None:

@@ -4,12 +4,14 @@ that it matches, counts and cuts what the awk did; it is turned back into the fi
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 EM = "—".encode().decode("latin-1")          # the em dash's three bytes, as three characters
 EN = "–".encode().decode("latin-1")
 DOT = "·".encode().decode("latin-1")         # the middle dot fields are separated by
 ELLIPSIS = "…".encode().decode("latin-1")
 ARROW = "→".encode().decode("latin-1")
+BOM = "\ufeff".encode().decode("latin-1")
 _LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 _UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
@@ -34,16 +36,32 @@ def text(value: str) -> str:
     return value.encode("utf-8", "surrogateescape").decode("latin-1")
 
 
-def records(text: str) -> list[str]:
+def records(text: str, fold: bool = True) -> list[str]:
     """A file's lines as awk reads them: split at newlines, none after a final one. Git Bash's awk, sed and grep
     read a file in text mode, a CR LF as LF, so on Windows a line's own last CR is gone before the reader sees
-    it; elsewhere it stays."""
-    if os.name == "nt":
+    it; elsewhere it stays. With fold False the CR stays everywhere, as the helper's readers that kept it did."""
+    if fold and os.name == "nt":
         text = text.replace("\r\n", "\n")
     lines = text.split("\n")
     if text.endswith("\n") or not text:
         lines.pop()
     return lines
+
+
+def lines(text: str) -> list[str]:
+    """A file's records (fold off) as the memory's readers clean them: a line's last CR cut, the BOM off line 1."""
+    found = [raw[:-1] if raw.endswith("\r") else raw for raw in records(text)]
+    if found and found[0].startswith(BOM):
+        found[0] = found[0][len(BOM):]
+    return found
+
+
+def file_lines(path: str | Path, fold: bool = True) -> list[str]:
+    """A file's records (above), read as UTF-8 with a stray byte kept (surrogateescape); [] when it can't be read."""
+    try:
+        return records(Path(path).read_bytes().decode("utf-8", "surrogateescape"), fold)
+    except OSError:
+        return []
 
 
 def lower(s: str) -> str:
@@ -54,6 +72,16 @@ def lower(s: str) -> str:
 def upper(s: str) -> str:
     """awk's toupper in the C locale."""
     return s.translate(_UPPER)
+
+
+def clip(text: str, width: int, dots: str = ELLIPSIS) -> str:
+    """The helper's clip: a line past width cut at its last space within it, then a space and the dots (C-locale
+    text counts bytes and takes the ellipsis's three bytes; a command's own text passes its own "…")."""
+    if len(text) <= width:
+        return text
+    cut = text[:width]
+    space = cut.rfind(" ")
+    return (cut[:space] if space >= 0 else cut) + " " + dots
 
 
 def trim(s: str) -> str:

@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 
 from council.commands.doctor import Doctor
-from council.records import bytewise, memory, memory_audit, memory_entries
+from council.records import bytewise, memory, memory_audit, memory_entries, paths
 from council.records import home as where
 from council.records.memory_entries import cells
 
@@ -92,11 +92,7 @@ def said(doc: Doctor, rows: list[str], mem: str) -> None:
 
 
 def size(doc: Doctor, rows: list[str], mem: str) -> None:
-    try:
-        with open(where.native(mem), "rb") as stream:
-            data = stream.read()
-    except OSError:
-        data = b""
+    data = paths.contents(where.native(mem)) or b""
     if len(data) > memory.COUNCIL_MEMORY_SIZE_LIMIT:
         doc.warn("memory is %d KB — past the ~25 KB every run reads" % (len(data) // 1024),
                  "at the end of the next run, propose a consolidation (merge duplicates, retire superseded entries)")
