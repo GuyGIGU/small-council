@@ -6,9 +6,9 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import time
 from pathlib import Path
 
+from council import clock
 from council.commands import cli, closed, gate_lock, gate_output, gate_repair, gate_run, resolve, shell
 from council.records import bytewise, config, gate_notes, gate_table, gates, paths, state_write, verdicts
 from council.records import home as where
@@ -239,7 +239,7 @@ def _mark(run: str, slug: str, base: str, why: str) -> str:
         raise cli.Refusal("cannot update %s" % verdict) from None
     with open(base + ".txt", "ab") as handle:
         handle.write(("\ncouncil: marked invalid %s — %s. This red proves nothing; run the check again once it is "
-                      "fixed.\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), why)).encode("utf-8", "surrogateescape"))
+                      "fixed.\n" % (clock.now_sec(), why)).encode("utf-8", "surrogateescape"))
     keep = "%s/%s-%d" % (folder, slug, k)
     shutil.copyfile(verdict, keep + ".json")
     if os.path.isfile(base + ".txt"):

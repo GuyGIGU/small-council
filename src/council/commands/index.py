@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import os
 import re
-import time
 from pathlib import Path
 
-from council import git
+from council import clock, git
 from council.commands import changed, cli, closed, impact, index_symbols, prior, resolve
 from council.records import bytewise, citations, earlier, run_files, state_write
 from council.records import home as where
@@ -229,7 +228,7 @@ class Index:
         head = ["# Change index — %s\n" % name,
                 "base: %s (%s) · head: %s%s · generated: %s\n" % (self.short, self.ref, self.head,
                                                                    " + uncommitted changes" if dirty else "",
-                                                                   time.strftime("%Y-%m-%d %H:%M:%S")),
+                                                                   clock.now_sec()),
                 "files: %d (+%d/-%d)" % (self.n_files, self.added, self.deleted)]
         if self.n_over:
             head.append(" · past the %s-file cap: %d (named at the end, not indexed — they still need an owner)"

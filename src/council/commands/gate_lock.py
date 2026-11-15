@@ -13,6 +13,7 @@ import signal
 import time
 from pathlib import Path
 
+from council import clock
 from council.commands import cli, gate_exec
 from council.records import locks, owners
 
@@ -22,10 +23,6 @@ EXITS = {"SIGHUP": 129, "SIGINT": 130, "SIGTERM": 143}
 HELD: list[Path] = []
 
 
-def now() -> str:
-    return time.strftime("%Y-%m-%d %H:%M:%S")
-
-
 def take(run: str, wait: bool, limit: str = str(WAIT_LIMIT)) -> None:
     """Hold the run's gate lock until release(), or refuse (exit 2) before anything is written. limit is
     --wait's, in seconds, as given: one that is no number refuses at the first wait, as bash's test did."""
@@ -33,7 +30,7 @@ def take(run: str, wait: bool, limit: str = str(WAIT_LIMIT)) -> None:
     tries = waited = 0
     while True:
         if not recovery.is_dir() and locks.make(lock):
-            claimed = locks.claim(lock, me + "\n" + now())     # the owner file decides who holds it, not mkdir
+            claimed = locks.claim(lock, me + "\n" + clock.now_sec())  # the owner file decides who holds it, not mkdir
             if claimed == locks.HELD:
                 if recovery.is_dir():                             # a reclaimer got in first: yield
                     locks.release(lock)

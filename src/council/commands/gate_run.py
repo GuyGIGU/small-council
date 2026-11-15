@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from council import git
+from council import clock, git
 from council.commands import cli, event_note, gate_exec, gate_output, resolve
 from council.records import bytewise, config, gates, verdicts
 
@@ -123,7 +123,7 @@ def run_gate(call: Call, name: str, command: str, configured: bool = False) -> R
     if configured:
         note = _tree(call, name, tree, code == 0 and not note) + note
     _write(verdict, '{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s", "limit": %d%s}\n'
-           % (json_esc(name), json_esc(command), code, secs, time.strftime("%Y-%m-%d %H:%M:%S"), most, note))
+           % (json_esc(name), json_esc(command), code, secs, clock.now_sec(), most, note))
     fresh = call.baseline and keep_baseline(call.run, base, out, verdict)
     if code == 0:
         return _passed(call, name, secs, empty, zero)

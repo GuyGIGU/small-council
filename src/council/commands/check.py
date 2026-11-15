@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import os
 import re
-import time
 from collections import Counter
 from pathlib import Path
 
+from council import clock
 from council.commands import check_proofs, cite_check, cite_origin, cli, event_note, gate_output, hygiene, resolve
 from council.records import bytewise, citations, quotes, redact, request, run_files, seat_files
 from council.records import home as where
@@ -80,7 +80,7 @@ class Check:
         self.said = said(run)
         self.n: Counter = Counter()
         self.extra = ""
-        self.table = ["# Citation check — " + time.strftime("%Y-%m-%d %H:%M:%S"),
+        self.table = ["# Citation check — " + clock.now_sec(),
                       "base: " + (self.base or "unknown — origin not checked"), "",
                       "| item | cite | status | origin |", "|---|---|---|---|"]
 
