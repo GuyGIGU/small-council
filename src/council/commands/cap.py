@@ -30,9 +30,7 @@ def main(args: cli.Args, words: list[str]) -> int:
         return show(resolve.run_folder(args))
     if sub == "check":
         cli.takes_flags(args, "cap check", "session")
-        if args.value("run"):
-            raise cli.Refusal("cap check looks at every in-progress run this session may be driving; "
-                              "it does not take --run")
+        cli.takes_no_run(args, "cap check looks at every in-progress run this session may be driving")
         if rest and rest[0] in TOOLS:
             for word in rest[1:]:
                 if not (word.startswith(DETAILS) or word == "workflow=verifier"):

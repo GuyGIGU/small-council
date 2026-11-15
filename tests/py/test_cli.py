@@ -55,6 +55,12 @@ class ParseTest(unittest.TestCase):
             cli.no_words("home rule", ["a", "b"])
         self.assertEqual(str(caught.exception), "home rule doesn't take 'a b' — see: council help")
 
+    def test_takes_no_run_names_what_the_command_reads(self) -> None:
+        cli.takes_no_run(cli.parse(["sharing"]), "sharing is the whole council's setting")
+        with self.assertRaises(cli.Refusal) as caught:
+            cli.takes_no_run(cli.parse(["sharing", "--run", "r"]), "sharing is the whole council's setting")
+        self.assertEqual(str(caught.exception), "sharing is the whole council's setting; it does not take --run")
+
 
 class HomeRuleTest(unittest.TestCase):
     def test_windows_drive_lower_case_no_colon_blanks_kept(self) -> None:

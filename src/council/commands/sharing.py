@@ -28,8 +28,7 @@ REMOVED, NO_BLOCK, UNREADABLE, UNENDED, EMPTIED = 0, 1, 2, 3, 5
 def main(args: cli.Args, words: list[str]) -> int:
     """council sharing shows the setting and what it needs; sharing just-me|team switches it."""
     cli.takes_flags(args, "sharing")
-    if args.value("run"):
-        raise cli.Refusal("sharing is the whole council's setting; it does not take --run")
+    cli.takes_no_run(args, "sharing is the whole council's setting")
     first = words[0] if words else ""
     if first == "":
         show(where.council_home())
