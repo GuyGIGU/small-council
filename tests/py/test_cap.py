@@ -162,6 +162,16 @@ class GateTest(support.Scratch):
             agent_gate.count_start(run, "Task", here, True)                 # refused by another run: not counted
         self.assertEqual((run / "agent-starts.tsv").read_text().count("\n"), 5)
 
+    def test_a_starts_file_that_cannot_be_read_or_written_leaves_the_start_uncounted(self) -> None:
+        run = self.run_folder()
+        (run / "session-state.md").write_text(STATE, encoding="utf-8")
+        (run / "agent-starts.tsv").write_text("at\ttool\tsession\nT\tAgent\ts\n", encoding="utf-8")
+        here = agent_gate.Where(self.home, "/no/tree", "s")
+        with mock.patch.object(agent_gate.paths, "append_row", side_effect=PermissionError("denied")):
+            stand = agent_gate.count_start(run, "Agent", here, False)   # no raise: the hook lets the call through
+        self.assertFalse(stand.stopped)
+        self.assertEqual((run / "agent-starts.tsv").read_text(), "at\ttool\tsession\nT\tAgent\ts\n")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,7 +22,7 @@ from typing import NamedTuple
 from council import clock
 from council.commands import cap, cli, gate_writable, resolve
 from council.records import home as where
-from council.records import hook_marks, plan, runs, seats, usage
+from council.records import hook_marks, paths, plan, runs, seats, usage
 
 SLUG = re.compile(r"[A-Za-z0-9._-]+")
 KINDS = {"small-council:council-worker": "council-worker", "small-council:council-verifier": "council-verifier"}
@@ -173,48 +173,16 @@ def count_start(run: Path, tool: str, here: Where, refused: bool) -> usage.Stand
     try:
         stand = usage.standing(run, here.home)
         if not stand.stopped:
-            _append_start(file, stand.used - seats.workflow_extra(run), tool, here.session)
+            seed, stamp, head = stand.used - seats.workflow_extra(run), clock.now_utc(), "at\ttool\tsession\n"
+            try:
+                if seed > 0 and not (file.is_file() and file.stat().st_size):   # new: the agents before any start
+                    paths.append_row(file, head, (stamp, "before:%d" % seed, "-"))
+                paths.append_row(file, head, (stamp, tool, here.session.replace("\t", " ")))
+            except OSError:
+                pass                            # the start goes uncounted; the hook lets the call through (D20)
     finally:
         locks.release(lock)
     return stand
-
-
-def _append_start(file: Path, seed: int, tool: str, session: str) -> None:
-    """One start row; a new file first takes the agents recorded before any start was counted."""
-    stamp = clock.now_utc()
-    if not _filled(file):
-        _write(file, "wb", "at\ttool\tsession\n")
-        if seed > 0:
-            _write(file, "ab", "%s\tbefore:%d\t-\n" % (stamp, seed))
-    if not _filled(file):
-        _write(file, "wb", "at\ttool\tsession\n")
-    if not _ends_line(file):
-        _write(file, "ab", "\n")                              # never join a torn line
-    _write(file, "ab", "%s\t%s\t%s\n" % (stamp, tool, session.replace("\t", " ")))
-
-
-def _filled(file: Path) -> bool:
-    try:
-        return file.stat().st_size > 0
-    except OSError:
-        return False
-
-
-def _ends_line(file: Path) -> bool:
-    try:
-        with open(str(file), "rb") as handle:
-            handle.seek(-1, os.SEEK_END)
-            return handle.read(1) == b"\n"
-    except OSError:
-        return True                                           # empty or unreadable: nothing to end
-
-
-def _write(file: Path, mode: str, line: str) -> None:
-    try:
-        with open(str(file), mode) as handle:
-            handle.write(line.encode("utf-8", "surrogateescape"))
-    except OSError:
-        pass
 
 
 class Planned(NamedTuple):

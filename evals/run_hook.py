@@ -1527,6 +1527,17 @@ def agent_gate_unwritable(tmp):
         check("unwritable: an ordinary agent is never refused for it", code == 0 and not err, said(code, out, err))
     code, out, err = gate(repo, worker, orders)
     check("unwritable: once the folder is writable again the worker starts", code == 0 and not err, said(code, out, err))
+    counted = os.path.join(run, "agent-starts.tsv")
+    with open(counted, "rb") as f:
+        kept = f.read()
+    os.remove(counted)
+    os.makedirs(counted)                                  # a starts file that can't be written: the gate's own fault
+    code, out, err = gate(repo, worker, orders)
+    check("unwritable: a starts file that can't be written lets the worker start, uncounted — exit 0, nothing said (D20)",
+          code == 0 and not out and not err and os.path.isdir(counted), said(code, out, err))
+    os.rmdir(counted)
+    with open(counted, "wb") as f:
+        f.write(kept)
 
     with unwritable(run) as blocked:
         if blocked:
