@@ -10,9 +10,9 @@ import os
 import re
 import shutil
 import tempfile
-import time
 from pathlib import Path
 
+from council import clock
 from council.commands import cli, resolve, script
 from council.commands.memory import Memory
 from council.records import bytewise, events, memory, redact
@@ -63,7 +63,7 @@ def propose(args: cli.Args, found: Memory, kind: str, source: str) -> int:
         with open(tmp + "/scope", "w", encoding="utf-8", errors="surrogateescape", newline="\n") as stream:
             stream.write(args.value("scope") + "\n")
         code, raw = _script(["draft", kind, source, "--run", run.as_posix(), "--top", found.top, "--scope-file",
-                             tmp + "/scope", "--today", time.strftime("%Y-%m-%d")])
+                             tmp + "/scope", "--today", clock.now_date()])
         if code:
             return 2
         red = _redacted(raw.encode("utf-8", "surrogateescape"), tmp + "/draft")
@@ -127,7 +127,7 @@ def answer(args: cli.Args, found: Memory, sub: str, entry: str) -> int:
         _redacted(said.encode("utf-8", "surrogateescape"), tmp + "/said")
         target, state = ("observed", "observed") if sub == "accept" else ("rejected", "gone")
         code, _ = _script(["move", entry, "--to", target, "--memory", tmp + "/before", "--said", tmp + "/said",
-                           "--today", time.strftime("%Y-%m-%d"), "--out", tmp + "/after"])
+                           "--today", clock.now_date(), "--out", tmp + "/after"])
         if code:
             return 2
         refused = memory.replace(found.mem, tmp + "/before", tmp + "/after", want, state, found.home, found.top)

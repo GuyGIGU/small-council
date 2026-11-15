@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import os
 import re
-import time
 from pathlib import Path
 
+from council import clock
 from council.commands import cli, resolve
 from council.records import home as where
 from council.records import ignores, paths, redact, request, state_write
@@ -74,6 +74,7 @@ class Filing:
     def __init__(self, run: Path, home: str, mode: str, current: str) -> None:
         self.run, self.home, self.mode, self.current = run, home, mode, current
         self.root, self.name, self.own, self.target = os.path.dirname(home), run.name, False, ""
+        self.today = clock.now_date()                     # one date for the file's name and the section's heading
         if current:
             self.target = self.continued()
             second = request.lines_kept(_read(self.target))[1:2]
@@ -126,7 +127,7 @@ class Filing:
         name = slug.replace("\r", "").encode("utf-8", "surrogateescape").lower()
         name = re.sub(rb"^-+", b"", re.sub(rb"[^a-z0-9]+", b"-", name.rstrip(b"\n")))
         name = re.sub(rb"-*$", b"", name[:40]).decode("utf-8", "surrogateescape") or "request"
-        base = "%s/asks/%s-%s" % (self.home, time.strftime("%Y-%m-%d"), name)
+        base = "%s/asks/%s-%s" % (self.home, self.today, name)
         target, n = base + ".md", 2
         while os.path.lexists(where.native(target)):
             target, n = "%s-%d.md" % (base, n), n + 1
@@ -137,7 +138,7 @@ class Filing:
         before; every other run's section stays."""
         shown, red, status = b"", 0, "no new words"
         if not (no_words and not later):
-            section = ("\n## %s — %s, run %s\n" % (time.strftime("%Y-%m-%d"), self.mode or "-", self.name)).encode(
+            section = ("\n## %s — %s, run %s\n" % (self.today, self.mode or "-", self.name)).encode(
                 "utf-8", "surrogateescape")
             shown, red = redact.redact(section + request.ask_words(data) + request.ask_later(data))
             status = "continued"
@@ -168,7 +169,7 @@ class Filing:
         target = self.target
         rel = target[len(self.root) + 1:] if target.startswith(self.root + "/") else target
         try:
-            state_write.change(self.run, ["ask=" + rel, "ask-saved=" + time.strftime("%Y-%m-%d %H:%M")])
+            state_write.change(self.run, ["ask=" + rel, "ask-saved=" + clock.now_min()])
         except state_write.StateError as failure:
             raise cli.Refusal(str(failure)) from None
         if red:

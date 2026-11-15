@@ -20,6 +20,9 @@ class ClockTest(unittest.TestCase):
         self.assertEqual(clock.local_moment("2026-01-02 03:04:05 extra").second, 5)
         self.assertIsNone(clock.local_moment(""))
 
+    def test_the_date_stamp(self) -> None:
+        self.assertRegex(clock.now_date(), r"^\d{4}-\d\d-\d\d$")
+
 
 if __name__ == "__main__":
     unittest.main()
