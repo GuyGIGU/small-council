@@ -48,7 +48,7 @@ case "$(json_str agent_type)" in
   *council-verifier) kind=verifier ;;
   *) exit 0 ;;
 esac
-sid="$(json_str session_id)"; [ -z "$sid" ] || ( . "$(dirname "$0")/../bin/council" && mark_hooks_ran "$sid" seat-gate ) >/dev/null 2>&1   # council doctor reads it
+sid="$(json_str session_id)"; . "${BASH_SOURCE[0]%[/\\\\]*}/session-mark.sh" 2>/dev/null && mark_session "$sid" seat-gate   # council doctor reads it
 
 msg="$(json_str last_assistant_message)"
 empty=0

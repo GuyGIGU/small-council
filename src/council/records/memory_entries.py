@@ -433,6 +433,13 @@ def skipped(path: str) -> str:
     return parse(text).unread() if text is not None else ""
 
 
+def pending(text: str, found: list[str]) -> int:
+    """The proposals awaiting the user's yes/no in a memory file's text and its rows: '- PROPOSED' lines and entries
+    under a Proposed heading (the session's banner and council doctor count them alike)."""
+    return sum(1 for line in bytewise.records(text) if line.startswith("- PROPOSED")) + \
+        sum(1 for row in found if cells(row)[4] == "off" and re.match(r"[#* ]*propos", lower(cells(row)[5])))
+
+
 def cells(row: str) -> list[str]:
     """A row's columns, as awk -F'\\t' gives them (empty past the last)."""
     found = row.split("\t")
