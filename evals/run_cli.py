@@ -1581,6 +1581,20 @@ def agent_stop(tmp):
     council(absurd, "seat", "w1", "done", "agent=a1", "tokens=5000")
     code, out, err = council(absurd, "cap", "check")
     check("cap check: a cap too large to compare never stops an agent — exit 0", code == 0 and not out, out + err)
+    # One way to read a plan row: lines end at LF (CRs before it cut), a value is trimmed of blanks at its ends
+    # only, and the first row of a repeated key wins, in every reader (the cap, the seat's tool budget).
+    rowsr = new_repo(tmp, "plan-row-rule")
+    write(os.path.join(rowsr, ".council", "council.config.md"), "# Council config\n- agent cap: 9\n")
+    _, rows_run, _ = council(rowsr, "run", "open", "council-review")
+    with open(os.path.join(rows_run.strip(), "run-plan.tsv"), "wb") as f:
+        f.write(b"kind\tid\tfield\tvalue\treason\r\nbudget\trun\tagent-cap\t 2 \tfirst\r\n"
+                b"budget\trun\tagent-cap\t7\tlater\r\nbudget\trun\testimated-tokens\t1 000\tan inner blank\r\n"
+                b"budget\thunt\ttool-calls\t3\tfirst\r\nbudget\thunt\ttool-calls\t30\tlater\r\n")
+    code, out, err = council(rowsr, "seat", "hunt", "done", "agent=a1", "tokens=5000")
+    code2, out2, err2 = council(rowsr, "cap")
+    check("plan rows: a CRLF plan's first agent-cap and tool budget win, trimmed; '1 000' is no estimate",
+          code == 0 and "tool budget of 3\n" in err and "1 of 2 agent runs used" in out2
+          and "run.estimate_passed" not in read(os.path.join(rows_run.strip(), "events.tsv")), out + err + out2 + err2)
 
 @part("runs")
 def runs_memory(tmp):

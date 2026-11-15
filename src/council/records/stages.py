@@ -44,14 +44,11 @@ def required(run: Path) -> list[str]:
     mode = state.field(state.text(run), "mode")
     if mode not in SYNTHESISED:
         return REQUIRED.get(mode, "").split()
-    rows = []                                             # (kind, id, field, value): the plan's rows, trimmed
-    for line in plan.text(run).split("\n"):
-        c = (line[:-1] if line.endswith("\r") else line).split("\t") + ["", "", "", ""]
-        rows.append((c[0], c[1], c[2], c[3].strip(" ")))
-    size = [key[3] for key in rows if key[:3] == ("run", "run", "size")]
-    workers = {key[1] for key in rows if key[0] == "seat" and key[2:] == ("role", "worker")}
-    picked = {key[1] for key in rows if key[0] == "seat" and key[2:] == ("disposition", "selected")}
-    if size[-1:] != ["solo"] and workers & picked:
+    rows = plan.keyed(plan.text(run))                    # (kind, id, field): value, the first row of each
+    workers = {key[1] for key, value in rows.items() if key[0] == "seat" and (key[2], value) == ("role", "worker")}
+    picked = {key[1] for key, value in rows.items()
+              if key[0] == "seat" and (key[2], value) == ("disposition", "selected")}
+    if rows.get(("run", "run", "size")) != "solo" and workers & picked:
         return [stage for stage in STAGES if stage != "build"]
     return SHORT.split()
 

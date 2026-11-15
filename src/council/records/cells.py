@@ -22,6 +22,11 @@ def lines_of(text: str) -> list[str]:
     return [line.rstrip("\r") for line in text.split("\n")]
 
 
+def tab_rows(text: str) -> list[list[str]]:
+    """A TSV file's lines (lines_of), each as its raw cells: split at tabs, nothing trimmed."""
+    return [line.split("\t") for line in lines_of(text)]
+
+
 def field(text: str, key: str) -> str:
     """A `key:` line of a file that is not a run's state (ask.md, a seat card, the config), as the helper's field
     reads one: the first line anywhere that starts with the key, the blanks after the colon and every carriage
@@ -87,7 +92,7 @@ def parse_json(text: str) -> Any:
 def tsv_rows(text: str) -> list[dict[str, str]]:
     """A TSV file's rows as dicts keyed by its first row. Blank and "#" lines are skipped, and a short
     row's missing cells read as empty."""
-    rows = [line.split("\t") for line in lines_of(text) if line.strip() and not line.startswith("#")]
+    rows = [row for row in tab_rows(text) if "".join(row).strip() and not row[0].startswith("#")]
     if not rows:
         return []
     head = rows[0]
