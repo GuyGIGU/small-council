@@ -22,10 +22,8 @@ def _text(data: bytes) -> str:
 
 
 def records(data: bytes) -> list[str]:
-    """Lines as awk reads them; Git Bash's awk drops a CR before each newline on Windows."""
-    found = _text(data).split("\n")
-    found = found[:-1] if found and found[-1] == "" else found
-    return [line[:-1] if os.name == "nt" and line.endswith("\r") else line for line in found]
+    """git's output or a file's bytes as lines: bytewise.records of the UTF-8 text."""
+    return bytewise.records(_text(data))
 
 
 def main(args: cli.Args, words: list[str]) -> int:

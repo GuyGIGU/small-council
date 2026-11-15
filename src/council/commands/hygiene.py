@@ -13,6 +13,7 @@ from typing import NamedTuple
 
 from council import diff, git
 from council.commands import resolve
+from council.records import bytewise
 from council.records import home as where
 
 MIB = 1048576
@@ -64,16 +65,13 @@ def base(run: Path, top: str, given: str) -> str:
 
 
 def _records(data: bytes) -> list[bytes]:
-    found = data.split(b"\n")
-    return found[:-1] if found and found[-1] == b"" else found
+    """git's output as lines, each CR kept (bytewise.records)."""
+    return [bytewise.bytes_of(line) for line in bytewise.records(bytewise.read(data), fold=False)]
 
 
 def _file_lines(path: str) -> list[bytes]:
-    try:
-        data = Path(path).read_bytes()
-    except OSError:
-        return []
-    return [line[:-1] if os.name == "nt" and line.endswith(b"\r") else line for line in _records(data)]
+    """A file's lines as bytes (bytewise.file_lines); [] when it can't be read."""
+    return [line.encode("utf-8", "surrogateescape") for line in bytewise.file_lines(path)]
 
 
 def added(top: str, since: str) -> list[Line]:
