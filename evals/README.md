@@ -168,37 +168,7 @@ python evals/run_hook.py       # needs bash + git
 Its checks come in two groups, like the helper evals' (`--list`, `--group`): `timing`, which times
 the hooks against their 15 s limit and runs alone, and `main`.
 
-## 5. Impact evals — are direct dependencies and limits honest?
-
-```bash
-python evals/run_impact.py   # needs Python 3.8+, bash and git for the CLI handoff
-```
-
-Uses temporary repositories to check committed/staged/unstaged/untracked changes, renames and
-deletions, Python AST, sibling-script and literal JS/TS imports, likely test links, `not-inspected`
-limit rows for files no provider reads, deterministic TSV, and the `council index` → `impact.tsv`
-handoff. With full Git history it also graphs a real range of this repository (`132dc37..869d5cf`,
-where helper scripts import their neighbours); a shallow clone skips that check. This is not a
-claim of runtime coverage.
-
-## 6. Context evals — do seat packs stay relevant, small, and safe?
-
-```bash
-python evals/run_context.py   # needs Python 3.8+; bash and git for the CLI handoff
-```
-
-Uses temporary fixture runs to check selected-seat scope, shared hard constraints, direct caller
-and test links, context levels, byte reduction with relevant paths retained, deterministic Markdown
-and metrics, explicit expansion, path containment, and the index-only fallback. When Bash is
-available, it also checks `council context build <seat>` against a validated run plan.
-
-`python evals/run_context_pilot.py` is a separate, no-network Phase 5.5 measurement. It compares
-the **brief alone** with the **brief plus pack actually referenced at dispatch** on three fixture
-shapes. It also checks retention of known paths and a hard rule. Its byte counts are not agent
-tokens or finding-quality results. See `docs/validation/phase-5.5-context-pilot.md` for the
-measured result and the live paired-run protocol.
-
-## 7. Evidence evals — do claims retain their support and verification trail?
+## 5. Evidence evals — do claims retain their support and verification trail?
 
 ```bash
 python evals/run_evidence.py   # needs Python 3.8+; bash for the CLI handoff
@@ -208,7 +178,7 @@ Uses temporary run artifacts to check provisional `UNVERIFIED` status, determini
 provenance and verifier links, stale snapshots, refuted and conflicting verdicts, missing proof,
 proof traversal, missing state and cut-P1 verification. It does not judge the truth of a claim.
 
-## 8. Repair loop evals — are retries bounded and inspectable?
+## 6. Repair loop evals — are retries bounded and inspectable?
 
 ```bash
 python evals/run_repair.py   # needs Python 3.8+; bash for the CLI handoff
@@ -249,7 +219,7 @@ fourth attempt after the stop, the drill rig untouched. With `--repo` it also re
 running git in the kept copy. `--self-test` runs it and the drill's graders on synthetic traces of a
 correct drill and each kind of violation.
 
-## 9. Phrase checks — advisory
+## 7. Phrase checks — advisory
 
 ```bash
 python evals/run_phrases.py
@@ -258,7 +228,7 @@ python evals/run_phrases.py
 Looks for the wording of the field-tested rules and warns if one is missing. It never fails: a
 reworded rule shouldn't break the build, and a phrase proves nothing about behaviour.
 
-## 10. Behavioural suite — runs Claude for real, so it costs tokens
+## 8. Behavioural suite — runs Claude for real, so it costs tokens
 
 `evals/suite/` holds cases for `claude plugin eval` (plugin.json → `experimental.evals`). Each case runs
 with and without the plugin, and the report shows what the plugin adds (Δ). Graders are the answer
@@ -381,7 +351,7 @@ The helper, hook, memory, cockpit, tuning and audit suites need bash and git. Wi
 `run_all.py` also fails a suite that reports no `N/N checks passed` line, or zero checks.
 `run_audit.py` checks both.
 
-## 11. Benchmark — Small Council against plain Claude Code
+## 9. Benchmark — Small Council against plain Claude Code
 
 ```bash
 python evals/bench.py self-test        # no model: every case unsolved when untouched, solvable, traps scored
@@ -394,7 +364,7 @@ restored original tests, frozen and protected files, scope, removed assertions a
 claims; `compare` reports the arms side by side and refuses to call fewer than ten pairs a result.
 A pilot is paid — see `evals/bench/README.md` for the protocol and the cost.
 
-## 12. Behavioral drills — run in Claude Code
+## 10. Behavioral drills — run in Claude Code
 
 See `behavioral-drills.md` (D1–D26). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

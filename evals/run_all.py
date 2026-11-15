@@ -44,9 +44,6 @@ SUITES = [
     ("Unit tests (tests/py)", ["-m", "unittest", "discover", "-s", "tests/py"], "unit"),   # skipped while absent
     ("Helper evals", ["evals/run_cli.py"], "groups"),
     ("Model routing evals", ["evals/run_model_routing.py"], "shared"),
-    ("Impact evals", ["evals/run_impact.py"], "shared"),
-    ("Context evals", ["evals/run_context.py"], "shared"),
-    ("Context delivery pilot (byte accounting, no model calls)", ["evals/run_context_pilot.py"], "shared"),
     ("Evidence model evals", ["evals/run_evidence.py"], "shared"),
     ("Repair loop evals", ["evals/run_repair.py"], "shared"),
     ("Memory evals", ["evals/run_memory.py"], "shared"),
@@ -67,14 +64,14 @@ SUITES = [
 
 # These say pass their own way (a validation line, a JSON measurement, advisory phrases), not with a
 # "N/N checks passed" line; every other job must print one, with at least one check.
-NO_COUNT = {"scripts/quick_validate.py", "evals/run_context_pilot.py", "evals/run_phrases.py"}
+NO_COUNT = {"scripts/quick_validate.py", "evals/run_phrases.py"}
 
 # The fast tier, by job name: each takes seconds on a Windows laptop with the others running beside it.
 # Every group of the helper and hook evals takes minutes, so none is here.
 FAST = {"Validate plugin", "Structural evals", "Ratchet (sizes and structure only go down)",
-        "Ratchet self-test", "Unit tests (tests/py)", "Context delivery pilot (byte accounting, no model calls)",
+        "Ratchet self-test", "Unit tests (tests/py)",
         "Repair drill trace checker self-test (no model calls)", "Run history evals", "Seat learning evals",
-        "Finding outcomes evals", "Repair loop evals", "Evidence model evals", "Context evals", "Impact evals",
+        "Finding outcomes evals", "Repair loop evals", "Evidence model evals",
         "Benchmark harness self-test (no model calls)", "Model routing evals"}
 UNIT_TESTS = ROOT / "tests" / "py"
 

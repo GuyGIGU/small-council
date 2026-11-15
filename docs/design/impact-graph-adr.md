@@ -1,3 +1,5 @@
+> Removed on 2026-11-15: the impact graph (`council impact`, `impact.tsv`) fed only the context packs, which went with it. This record stays as history.
+
 # ADR: bounded run-local impact graph
 
 ## Problem

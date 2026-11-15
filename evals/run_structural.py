@@ -64,13 +64,12 @@ for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.
              ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"), ("hooks", "agent-gate.sh"),
              ("hooks", "bash-gate.sh"),
-             ("references", "templates", "run-plan.tsv"), ("references", "run", "impact-graph.md"),
+             ("references", "templates", "run-plan.tsv"),
              ("references", "run", "helper-commands.md"),
-             ("references", "run", "precision-context.md"), ("references", "run", "evidence-model.md"),
+             ("references", "run", "evidence-model.md"),
              ("references", "run", "repair-loop.md"),
-             ("scripts", "impact.py"), ("scripts", "context.py"), ("scripts", "evidence.py"),
-             ("scripts", "repair.py"),
-             ("docs", "design", "precision-context-adr.md")]:
+             ("scripts", "evidence.py"),
+             ("scripts", "repair.py")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
 for s in SKILLS:
     check(f"layout: skills/{s}/SKILL.md exists", bool(read("skills", s, "SKILL.md")))
@@ -163,11 +162,6 @@ check("kernel: new runs require a validated run plan before Brief or dispatch",
       "council run plan check" in core and "before Brief, Build or any worker starts" in core)
 check("kernel: adaptive routing is advisory before a run opens",
       "council route recommend" in core and "advisory" in core)
-check("kernel: optional impact graph is available beside the change index",
-      "council impact" in core and "impact.tsv" in core)
-check("kernel: seat-specific context packs are available without replacing the brief",
-      "council context build" in core and "brief.md" in core and "contexts/" in core)
-check("kernel: context packs are opt-in via the config", "only if opted in" in core and "context packs: on" in core)
 check("kernel: evidence ledger is optional and does not replace synthesis", "council evidence build" in core and
       "optional Python 3.8+" in core and "synthesis.md" in core)
 check("challenge: refreshed evidence links are checked", "council evidence build" in doctrine["08-challenge.md"] and
@@ -268,10 +262,6 @@ check("implement: small tasks of one kind share a verifier (build-proof.md, Chec
       "up to five of one kind" in read("references", "build-proof.md").split("## Checking", 1)[-1])
 check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
-check("02-prepare: distinguishes optional graph from the fallback index",
-      "impact.tsv" in doctrine["02-prepare.md"] and "fallback" in doctrine["02-prepare.md"])
-check("03-assign: impact hints need inspection before ownership",
-      "impact.tsv" in doctrine["03-assign.md"] and "before assigning" in doctrine["03-assign.md"])
 check("01-convene: checks the stack fingerprint", "council fingerprint check" in doctrine["01-convene.md"])
 check("01-convene: a config with no stack fingerprint is offered a refresh too", "no stack-fingerprint" in doctrine["01-convene.md"])
 check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
@@ -405,7 +395,7 @@ check("init: never offers a blanket council allowlist (gate and changed run arbi
 check("init: the permission offer covers the helper commands the modes run without asking",
       all(f'"Bash(council {c}:*)"' in skill["council-init"] for c in [
           "run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
-          "doctor", "home", "fingerprint", "status", "evidence", "context", "repair", "impact", "route", "history",
+          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "history",
           "outcomes", "version"]))
 check("init: cap, tune and correct keep asking (cap allow records the user's go past the agent stop)",
       not any(f'"Bash(council {c}' in skill["council-init"] for c in ["cap", "tune", "correct"])
@@ -602,8 +592,7 @@ check("mod: the view has its tests", "claude-code/testing" in read("tests", "cou
 cfg, conv, mp = read("references", "templates", "council.config.md"), read("references", "templates", "conventions.md"), read("references", "templates", "map.md")
 check("template config: last-verified stamp", "last-verified:" in cfg)
 check("template config: run preferences", "## Run preferences" in cfg and "approve without asking: up to squad" in cfg and "agent cap: 10" in cfg)
-check("template config: experimental routing options start off",
-      "- context packs: off" in cfg and "- seat models: off" in cfg)
+check("template config: experimental routing options start off", "- seat models: off" in cfg)
 check("template config: sharing starts at team, and says what just me does and how to switch",
       "- sharing: team" in cfg and "just me" in cfg and "council sharing just-me" in cfg)
 sharing_doc = read("references", "run", "sharing.md")
@@ -624,8 +613,6 @@ check("model routing: plan, doctrine and ADR state the opt-in boundary",
 # The agent gate does judge a council agent's dispatch now; what no hook checks is the model it is given.
 check("05-work: what isn't gated is the Agent call's `model` parameter, not the dispatch",
       "the `model` parameter isn't gated" in flat(doctrine["05-work.md"]) and "dispatch itself isn't gated" not in flat(doctrine["05-work.md"]))
-check("04-brief: packs are built only when opted in, brief-only is the normal path",
-      "Context packs are opt-in" in doctrine["04-brief.md"] and "context packs: on" in doctrine["04-brief.md"])
 check("template config: roster has slugs and surface markers", "| Seat | Slug | Lens | Surface | Reference | Recast note |" in cfg)
 check("template config: gates table", "| Gate | Command | Run at | Mandatory | Checked |" in cfg)
 check("template conventions: AP / EC / D / Proposed / Rejected", all(s in conv for s in ["## Accepted Patterns", "## Enforced Conventions", "## Decisions", "## Proposed", "## Rejected"]))

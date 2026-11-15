@@ -31,9 +31,7 @@ Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is
 `helper-commands.md` lists the helper commands by purpose without loading that table on every run.
 `adaptive-routing.md` documents the optional pre-run recommendation and its limits.
 `run-plan.md` defines the checked decision state for a run. `event-stream.md` defines the
-append-only record of CLI-observable actions. `impact-graph.md` defines the optional run-local
-graph of changed paths, direct dependencies and test hints.
-`precision-context.md` defines the optional, seat-specific context pack and its measurement limits.
+append-only record of CLI-observable actions.
 `run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.
 `evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
 `builder-report.md` defines a build round's report head and the checks of it against the saved diff.

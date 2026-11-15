@@ -1,7 +1,6 @@
 """A scripts/ entry point run inside the command's own Python process, its main() called with the words the helper
-gave it: the repair loop for `council gate`, the seat advice for `council ledger advice`, the impact graph for
-`council index`, the memory drafts for `council memory`. The scripts are loaded by path until they move into the
-package (S9)."""
+gave it: the repair loop for `council gate`, the seat advice for `council ledger advice`, the memory drafts for
+`council memory`. The scripts are loaded by path until they move into the package (S9)."""
 from __future__ import annotations
 
 import contextlib

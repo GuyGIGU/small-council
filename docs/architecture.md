@@ -21,7 +21,7 @@ records everything in a **run folder** inside the project's **council home** (`.
 | References | `references/` | By who reads it: the seat docs, `guardrails.md` and `build-proof.md` at the root, `doctrine/`, `run/` (the run's contracts), `roster/`, `templates/`, `spec-writer/`, `test-architect/`. `references/README.md` is the map. |
 | Agents | `agents/council-worker.md`, `agents/council-verifier.md` | The seat worker's and the blind verifier's contracts. |
 | Helper | `bin/council`, `src/council/` | The CLI for the mechanical steps: runs, state, seats, gates, the change index, checks, memory, the agent stop. `bin/council` only starts Python; every command is in `src/council/commands/` (§10). |
-| Scripts | `scripts/*.py` | Python for what bash does badly: status and the card, audit, history, tuning, impact, context packs, evidence, repair, memory, the pet, the Chair's tokens. Run through the helper. |
+| Scripts | `scripts/*.py` | Python for what bash does badly: status and the card, audit, history, tuning, evidence, repair, memory, the pet, the Chair's tokens. Run through the helper. |
 | Hooks | `hooks/*.sh`, `hooks/hooks.json` | Enforce what prose can't: SessionStart orientation and the session mark, the agent stop (PreToolUse on Agent, Task and Workflow), the Bash pipe guard and push freeze, the seat-file check (SubagentStop), the turn-end nudges (Stop). |
 | Mod | `hooks/council-view.tsx`, `hooks/council-scene.ts` | The council pane and the line above the prompt. It reads `scripts/status.py --json` and never writes a council file. |
 | Evals | `evals/` | Machine checks: structural pins, helper and hook scenarios, per-script suites, judgment fixtures (`evals/suite/`), the benchmark harness. `evals/run_all.py` runs them all. |
@@ -110,7 +110,7 @@ Inside a run folder:
 | `repairs.jsonl` | `council gate` / `repair.py` | `repair.py`, `memory.py`, `cockpit.py`, `status.py` |
 | `report-<n>.md` | the builder, at each round of task n (its head: `references/run/builder-report.md`) | `council patch save` |
 | `patches/` | `council patch save` (`T<n>-<r>.patch`, `.json`, and the task's history `T<n>.md`) | the verifier, a fix round's brief, `council patch show` |
-| `index.md`, `impact.tsv`, `contexts/` | `council index`, `impact.py`, `context.py` | seats, `context.py` |
+| `index.md` | `council index` | seats |
 
 ## 5. Entry points
 
@@ -121,7 +121,7 @@ Inside a run folder:
 - **Helper commands** (`council help` gives exact syntax; `references/run/helper-commands.md` gives the
   purpose of each): `home`, `sharing`, `pushes`,
   `run open|close|status|resume|plan|events|audit|turn-end`, `state`, `seat`, `cap show|allow|check`,
-  `route recommend`, `index`, `impact`, `context`,
+  `route recommend`, `index`,
   `evidence`, `repair`, `gate`, `gates`, `changed`, `collect`, `check`, `patch`, `map`, `fingerprint`,
   `memory`, `prior`, `ask`, `ledger`, `tune`, `history`, `outcomes`, `tui`, `status`, `pet`,
   `correct`, `doctor`, `version`, `help`.
@@ -149,7 +149,7 @@ never part of a cleanup or refactor branch (D23).
 - **Seat doc paths**: the 14 seat docs, `guardrails.md` and `build-proof.md` stay at the root of
   `references/`, because project files carry their paths (a roster's doc column, a card's `source:`, a
   plan's `Ref:`, comments in the config). Moving one breaks every installed project.
-- **Config keys** in `council.config.md` (`approve without asking`, `agent cap`, `context packs`,
+- **Config keys** in `council.config.md` (`approve without asking`, `agent cap`,
   `seat models`, `models`, `build tier`, `checking`, `open items`, `pushes`, `sharing`, `notifications`,
   `estimate per worker`, `estimates`, `gate time limit`, the Gates table's columns).
 - **JSON schemas**: `council.run-status/1`, `council.run-snapshot/2`, `council.history/4`,
@@ -233,7 +233,7 @@ folds them, and new code uses the named way.
 | Hold a build to its fix rounds | `council.commands.rounds.third_fix_round`, asked by `council patch save`: no third fix round in the same files without a redesign and the user's go (D38) | Beside the verifier-round rules, in the same module |
 | Save a build round and check its report | `council patch save` (`src/council/commands/patch.py`): the head through `council.records.report_head`, the diff from `council.git.files_tree`'s tree, the checks in `patch_checks.py`, the rounds in `council.records.patches` | The round's diff is taken between two trees, never from the index or HEAD |
 | Read a diff's files and lines | `council.diff.files`, for `council patch` | **(debt)** `cite_origin.hunks`, `hygiene` and `index.hunks` each read `git diff` hunks their own way; folding them onto it is its own task |
-| Check a run plan | `council run plan check` (`src/council/commands/plan_check.py`; a delivered plan's tasks in `plan_tasks.py`, `references/run/run-plan.md`, Plan tasks). `council state` (each phase from Brief on), `council seat … queued/running`, `council context build` and `council doctor` reach the same check through `council.commands.plan.check` | A closed run's plan is judged by the settings of its day; Full needs a decision of the user's since the run opened (D7) |
+| Check a run plan | `council run plan check` (`src/council/commands/plan_check.py`; a delivered plan's tasks in `plan_tasks.py`, `references/run/run-plan.md`, Plan tasks). `council state` (each phase from Brief on), `council seat … queued/running` and `council doctor` reach the same check through `council.commands.plan.check` | A closed run's plan is judged by the settings of its day; Full needs a decision of the user's since the run opened (D7) |
 | Prove a build task | `council gate before-<id>` / `after-<id>`, checked by `council check` (`references/build-proof.md`) | |
 | Check a document's contract | A structural pin in `evals/run_structural.py` | Only for documents; behaviour is proved by running it (D25) |
 | Hold a limit (a size, a count, a lint warning) | A number in `evals/ratchet.json`, measured by `evals/run_ratchet.py`; it may only go down, and `--update` keeps a gain | Never a hand-kept list of files or exceptions |

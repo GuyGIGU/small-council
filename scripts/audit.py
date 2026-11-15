@@ -50,11 +50,11 @@ SEAT_STAGES = ("assign", "brief", "work", "collect")   # stages 3-6: a run with 
 MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame")
 CLAIM_MODES = ("council-review", "council-plan", "council-research")
 VERDICTS = ("CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED")
-HELPER_WORDS = {"home", "run", "state", "seat", "cap", "correct", "index", "impact", "context", "evidence", "repair",
+HELPER_WORDS = {"home", "run", "state", "seat", "cap", "correct", "index", "evidence", "repair",
                 "gate", "gates", "changed", "collect", "check", "map", "fingerprint", "memory", "prior", "ask",
                 "ledger", "route", "tune", "history", "outcomes", "tui", "status", "pet", "doctor", "help",
                 "sharing", "version"}
-TWO_WORD = {"run", "cap", "memory", "evidence", "context", "repair", "tune", "route"}
+TWO_WORD = {"run", "cap", "memory", "evidence", "repair", "tune", "route"}
 # The helper's advisory lines on stderr ("council: ..." without a refusal): everything else on a
 # "council:" line is a refusal (die, exit 2) or a record that failed to write. A lock refusal is
 # answered by waiting, not by a second call, so it is listed here too. evals/run_audit.py checks that
@@ -62,7 +62,7 @@ TWO_WORD = {"run", "cap", "memory", "evidence", "context", "repair", "tune", "ro
 NOTE_LEADS = ("save the user's request", "another run is in progress", "a paused run is also open", "its code root is ",
               "first dispatch of this run", "run closed \u2014 show the user", "this run has used",
               "seats still marked", "the claim index is missing", "no request was filed", "no build log names",
-              "the log has no", "optional impact graph", "cleared a gate lock", "WARNING",
+              "the log has no", "cleared a gate lock", "WARNING",
               "several runs are open \u2014 only the paths", "checks are already running", "now ignores asks/",
               "KB, over the ~25 KB")
 NOTES = re.compile(r"council: (?:%s|\S+ now ignores asks/|\S+ is \d+ KB, over)"

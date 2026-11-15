@@ -1,7 +1,7 @@
 """council index [--base <rev>]: the change index — every file changed since the base (the merge-base with the default
 branch, or --base) with its hunks, the definitions its diff names, their callers and the tests that name it — into
 the run's index.md, and the base into its state; then the earlier council work on these files (records/earlier.py)
-and the impact graph (council impact) are added after it."""
+is added after it."""
 from __future__ import annotations
 
 import os
@@ -10,7 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from council.commands import changed, cli, closed, impact, index_symbols, prior, resolve
+from council.commands import changed, cli, closed, index_symbols, prior, resolve
 from council.records import bytewise, citations, earlier, run_files, state_write
 from council.records import home as where
 
@@ -80,8 +80,6 @@ def main(args: cli.Args, words: list[str]) -> int:
                 "owner too" % (index.n_over, index.cap))
     if not postgame:
         earlier_work(run, home)
-    if impact.refresh(run, top) != 0:
-        cli.warn("council: optional impact graph was not refreshed; the change index is still valid")
     return 0
 
 

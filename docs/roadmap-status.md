@@ -27,8 +27,8 @@ local automated checks, not a new live agent run.
 | 1 Structured run model (run plan) | 0.8; the stop at the agent cap or token ceiling (a hook, `council cap allow`) in 0.15 | `run_cli`, `run_hook` | Yes: the fresh run's plan was checked, and seats were gated on it. It counted 3 planned agents where 6 really ran (the verifier was a 4-agent Workflow), which only the new accounting shows. The stop was seen live once (2026-09-29), in a practice run set up at its 2-agent cap: it refused a real agent start, the Chair asked, and once the user's go was recorded the agent ran. No real council run has reached it yet. | Stopping the agents a running Workflow starts (the hook sees only the Workflow call) |
 | 2 Event contract | 0.9 | `run_cli` | Yes: the fresh run wrote 32 events, and `events check` passed | — |
 | 3 Adaptive routing | 0.10 | `run_cli` | No: the fresh run was sized by hand | — |
-| 4 Impact engine | 0.11; sibling-script imports and "not inspected" rows in 0.16 | `run_impact`, including a real range of this repo's history (skipped on CI's shallow checkout) | Both real reviews produced 0 dependency/test/limit rows: sibling-script imports were missed. On that history the fix now finds 6 sibling links and 18 not-inspected files, in tests only; not yet seen in a real run | Transitive and dynamic imports; imports through other folders put on `sys.path`; a config hint for test names |
-| 5 Precision context | 0.12 (opt-in, off) | `run_context`, byte pilot | No | The paired live comparison |
+| 4 Impact engine | 0.11; removed 2026-11-15 | — | No run showed it changed findings or tokens | — |
+| 5 Precision context | 0.12 (opt-in, off); removed 2026-11-15 | — | No | — |
 | 6 Evidence model | 0.13 | `run_evidence` | Partly: copied verifier parts caused duplicate conflicts; a later rebuild omitted --run after close and failed, leaving the Judge-time index stale. The second run never built an index | — |
 | 7 Closed-loop diagnosis | 0.13 | `run_repair`, and `run_status` drives it through the helper | Partly: an earlier live drill recorded three failures, but its trace was lost | — |
 | 8 Memory evolution | 0.13 | `run_memory` | No | — |

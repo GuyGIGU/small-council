@@ -13,7 +13,6 @@ deploy target, domain. Name the one thing that must never break.>
 ## Run preferences
 - approve without asking: up to squad
 - agent cap: 10
-- context packs: off
 - seat models: off
 - models: builder=inherit, review=inherit, verifier=inherit
 - build tier: light
@@ -27,8 +26,6 @@ deploy target, domain. Name the one thing that must never break.>
 <!-- "approve without asking": solo | squad | full — a /command or instruction to proceed without
      further confirmation approves up to this size. Full needs explicit size-and-cost approval;
      approval already given carries forward. "agent cap": agents per run, verifiers included.
-     "context packs": off | on — on builds a seat-specific evidence pack for each dispatched worker
-     (experimental: it adds material and its benefit is unmeasured). Missing means off.
      "build tier": light | full — how much proof a build records (references/build-proof.md, Tiers):
      light records a before/after pair for risky tasks only; full records one for every task.
      Missing means light. Yours to change.

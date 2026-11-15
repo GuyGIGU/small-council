@@ -170,7 +170,7 @@ Adjust on request. On confirmation, write:
 - **`.council/council.config.md`** from `${CLAUDE_PLUGIN_ROOT}/references/templates/council.config.md`,
   stamped `last-verified: <date> @ <short sha>`, with the `stack-fingerprint:` line `council
   fingerprint` printed. Run preferences start at the defaults, which are the user's to change:
-  approve without asking up to Squad, agent cap 10, context packs off, sharing and models as answered.
+  approve without asking up to Squad, agent cap 10, sharing and models as answered.
 - **`.council/cards/<slug>.md`**, one per seat, from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`.
   A card translates the seat's doc to this project, in at most ~6 KB:
   - every principle of the doc, numbered as in the doc, one line each on what it means here — the
@@ -218,8 +218,8 @@ Adjust on request. On confirmation, write:
      "Bash(council collect:*)", "Bash(council check:*)", "Bash(council ask:*)", "Bash(council prior:*)",
      "Bash(council memory:*)", "Bash(council ledger:*)", "Bash(council gates:*)", "Bash(council map:*)",
      "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)",
-     "Bash(council status:*)", "Bash(council evidence:*)", "Bash(council context:*)",
-     "Bash(council repair:*)", "Bash(council impact:*)", "Bash(council route:*)",
+     "Bash(council status:*)", "Bash(council evidence:*)", "Bash(council repair:*)",
+     "Bash(council route:*)",
      "Bash(council history:*)", "Bash(council outcomes:*)", "Bash(council version:*)"
    ] } }
    ```

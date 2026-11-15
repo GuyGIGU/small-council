@@ -2,7 +2,7 @@
 
 New runs keep an append-only `events.tsv` beside `session-state.md`. The CLI writes events for
 mechanical actions it can observe: opening, resuming and closing a run; changing its phase or status;
-updating a seat; building a context pack; and finishing a gate, collection or citation check. The
+updating a seat; and finishing a gate, collection or citation check. The
 file is local to the run and ignored by git. It is an observation record, not the authority for
 current state: use
 `session-state.md`, `seats.tsv`, gate verdicts and `run-plan.tsv` for that.
@@ -42,7 +42,6 @@ read the TSV directly, or use `council run events show --run <folder>` for a sho
 | `run.cap_allowed` | `run` | more agent runs allowed | `used=<n>;until=<n>` — the user's go past the cap or ceiling (`council cap allow`); their words are in `cap-allowances.tsv` (after 0.14) |
 | `seat.updated` | seat slug | new state | `tokens=<seat total>;agent_runs=<n>;reported=<n>` (0.14; before: `tokens=<cumulative tokens>`) — totals so far, never to be summed across events |
 | `seat.usage_corrected` | seat slug | `tokens` or `agents` | `from=<recorded>;to=<exact>` — an evidence-backed correction, whose evidence is in `corrections.jsonl` (0.14) |
-| `context.built` | seat slug | context level | `expands=<n>;metrics=<run-local path>` (see `precision-context.md`) |
 | `gate.finished` | gate name | `passed` or `failed` | `exit=<code>;seconds=<n>;empty=<0 or 1>`, and `;timed_out=1` when the helper stopped it at its time limit (exit 124) |
 | `gate.invalidated` | gate name | `invalid` | `exit=<the record's code>;why=<the reason given>` — `council gate <name> --invalid "<why>"`: a red that proves nothing, marked on its record (`;` in the reason becomes `,`) |
 | `collect.finished` | `run` | `passed` or `failed` | `seats=<n>` |

@@ -57,12 +57,10 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(started("patch", "show", "1"), sorted(base + ["council.commands." + name for name in (
             "gate_output", "patch", "patch_checks", "patch_history", "resolve")]))     # rounds: a third fix round only
         self.assertEqual(started("index"), sorted(base + ["council.commands." + name for name in (
-            "changed", "closed", "impact", "index", "index_symbols", "prior", "resolve", "script", "shell")]))
+            "changed", "closed", "index", "index_symbols", "prior", "resolve", "shell")]))
 
     def test_the_memory_and_report_commands_load_only_their_own_modules(self) -> None:
         base = ["council.commands", "council.commands.cli", "council.commands.dispatch"]
-        self.assertEqual(started("impact"), sorted(base + ["council.commands." + name for name in (
-            "impact", "resolve", "script")]))
         self.assertEqual(started("prior"), sorted(base + ["council.commands.prior", "council.commands.resolve"]))
         self.assertEqual(started("map", "status"), sorted(base + ["council.commands.map_status"]))
         self.assertEqual(started("fingerprint"), sorted(base + ["council.commands.fingerprint"]))

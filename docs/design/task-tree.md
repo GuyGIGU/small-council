@@ -34,7 +34,7 @@ those two causes. It adds no agents: machine checks over checker agents stays th
 | Trunk: the request | `ask.md`, in the user's own words; hard constraints and memory in the brief | Nothing ties a task to the part of the request it serves until a post-game splits the request afterwards |
 | Branch: a task | A plan task with `Depends on` and `Done when`; the verifier judges the Done-when | No owner (which module, which existing way it extends). No list of what it rests on |
 | Leaf: one change | Change or preserve proof through `before-`/`after-` gates (`references/build-proof.md`) | Fix rounds and repairs carry no stated cause |
-| Context down | `brief.md`, written by hand; opt-in context packs that add evidence beside it (`references/precision-context.md`), unmeasured | A builder's orders are composed by the Chair each time; rulings and builder rules are re-typed (#57, #61) |
+| Context down | `brief.md`, written by hand. The opt-in seat packs that added evidence beside it were removed on 2026-11-15: off by default and never measured | A builder's orders are composed by the Chair each time; rulings and builder rules are re-typed (#57, #61) |
 | Evidence up | A seat file and one line back; the receipt's `Shortcuts I took`, `Not proved`, `Left open` | All self-reported. Nothing lists what was removed. Nothing compares the report with the diff (#58, #59) |
 | Unknowns | Evidence states (`ASSUMED`, `INFERRED`); one diagnosis worker on a second failure | No rule that an unexplained failure stops code changes. "I don't know" is not an accepted answer from a builder (#64) |
 | Patch on patch | The repair loop stops at a third failure | Nothing notices a third fix round in the same files (#50) |
@@ -69,7 +69,9 @@ verdict. After a compaction the Chair resumes from that view, not from memory.
 5. what earlier tasks in this run changed in the same files, from the change index;
 6. what was left out, by name, so an omission is visible.
 
-It extends today's context provider; it is not a second one. The Chair adds judgement (where to
+It is the only context provider. The seat packs that `council context build` wrote until 2026-11-15
+chose index entries by a seat's slice, which is a different job, so T3 writes this one new, in the
+package, on the records owners. The Chair adds judgement (where to
 start, what worries it) and nothing else. A pack is smaller than a hand-written brief plus the
 whole plan, and the part that was lost on the day above (the state of the tree the work is judged
 against) is in it by construction. Seats get doctrine by surface the same way (#67).

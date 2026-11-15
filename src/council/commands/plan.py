@@ -1,5 +1,5 @@
-"""council run plan check and council run plan show, and require(): the check a stage change, a seat start or a
-context build makes first. Its rules are in plan_check.py, a delivered plan's tasks' in plan_tasks.py."""
+"""council run plan check and council run plan show, and require(): the check a stage change or a seat start
+makes first. Its rules are in plan_check.py, a delivered plan's tasks' in plan_tasks.py."""
 from __future__ import annotations
 
 import os

@@ -21,17 +21,11 @@ The seats work in parallel, each in its own window. You dispatch, then wait.
 ```
 Seat: <slug> — <what it checks> · <mode> run
 Brief: <abs>/brief.md
-Context: <abs>/contexts/<slug>.md — if built, read it for selected evidence; the brief remains authoritative
 Reference: <abs card or doc path(s)>
 Doc: <abs path of the full doc behind each card>
 Format: <your mode's per-item format>
 Write <abs run>/seats/<slug>.md
 ```
-
-- **A context pack supplements the orders.** Include the `Context:` line only if that seat's pack
-  was built successfully for the current brief and code state. A failed rebuild can leave an old
-  pack on disk; existence alone does not establish freshness. Do not imply that omitted paths are
-  safe.
 
 - The agent gate refuses a council agent with no open run or plan row.
 

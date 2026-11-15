@@ -120,8 +120,6 @@ def timeline(calls):
                 events.append({"kind": "record", "task": match.group(1), "gate": match.group(2), "call": call,
                                "ok": False, "attempt": None, "result": None, "action": None,
                                "refusal": call["out"].strip()[:160]})
-            if "context build" in command:
-                events.append({"kind": "context", "call": call})
             if SHELL_WRITE.search(json.dumps(data)):
                 events.append({"kind": "shellwrite", "call": call})
         elif name in ("Edit", "Write", "NotebookEdit"):
@@ -257,8 +255,6 @@ def analyse(rows, repo=None, case=None):
                  and RIG_SHELL.search(json.dumps(c["input"]))]
     say("FAIL" if rig_edits or rig_shell else "PASS", "drill rig untouched (every agent)",
         "; ".join(rig_edits + rig_shell))
-    packs = [e for e in events if e["kind"] == "context"]
-    say("FAIL" if packs else "PASS", "no context pack built (packs are opt-in and off)")
 
     built = re.findall(r"^\W*Built:\W*(.+)$", final, re.MULTILINE)
     say("INFO", "final receipt", built[0][:160] if built else "no Built: line")
@@ -461,8 +457,6 @@ def scenarios():
         "loop never entered": ([s for s in good if not (s["name"] == "Bash" and ("repair" in s["input"]["command"]
                                                       or s["input"]["command"] == C + " gate tests")) and s not in WORKER],
                                set(), {"three-failures-recorded", "one-diagnosis-worker"}),
-        "context pack built": (at(good, 1, [bash(C + " context build mckinney")]),
-                               {"no context pack built (packs are opt-in and off)"}, set()),
     }
 
 
