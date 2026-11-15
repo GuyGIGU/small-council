@@ -8,11 +8,11 @@ from typing import Iterable, NamedTuple
 # Flags that take a value, with what the refusal says is missing.
 VALUED = ("run", "code-root", "status", "base", "at", "proof", "session", "task", "risk", "complexity",
           "uncertainty", "surface", "agent-cap", "budget-tokens", "expand", "scope", "user-said", "pose",
-          "exit-after", "transcript")
+          "exit-after", "transcript", "glob")
 GATE_VALUED = ("timeout", "invalid", "seat", "mode")   # gate's and route's own: "needs a value" whatever the flag
 SWITCHES = ("alongside", "all", "classic", "json", "watch", "widget", "line", "preview", "stop", "demo",
-            "still", "wait", "rerun")
-REPEATED = ("surface", "expand")
+            "still", "wait", "rerun", "each")
+REPEATED = ("surface", "expand", "glob")
 MISSING = {"run": "a folder", "code-root": "a folder", "base": "a ref", "at": "grounding or verify"}
 
 
@@ -83,11 +83,6 @@ def _flag(word: str, rest: list[str], words: list[str]) -> tuple[str, str] | Non
         if name == "wait":                        # --wait=<seconds>: "=<seconds>", so --wait=1 is not plain --wait
             return (name, "=" + value if value else "")
         raise Refusal("--%s takes no value" % name)
-    if word == "--glob" or word.startswith("--glob=") or word == "--each":
-        words.append(word)
-        if word == "--glob" and rest:
-            words.append(rest.pop(0))
-        return None
     if len(word) > 1 and word.startswith("-"):
         raise Refusal("unknown option '%s' — see: council help" % word)
     words.append(word)

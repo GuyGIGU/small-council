@@ -26,9 +26,13 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(args.words, ["gate", "x"])
         self.assertEqual(args.after, ["echo", "--run"])
 
-    def test_glob_words_pass_through(self) -> None:
-        self.assertEqual(cli.parse(["changed", "--glob", "*.py", "--each", "--glob=x"]).words,
-                         ["changed", "--glob", "*.py", "--each", "--glob=x"])
+    def test_glob_and_each_are_ordinary_flags(self) -> None:
+        args = cli.parse(["changed", "--glob", "*.py", "--each", "--glob=x", "--glob", "-*.sh"])
+        self.assertEqual((args.words, args.lists["glob"], args.value("each")),
+                         (["changed"], ["*.py", "x", "-*.sh"], "1"))
+        self.assertEqual(self.refusal("changed", "--glob"), "--glob needs a value")
+        self.assertEqual(self.refusal("changed", "--glob="), "--glob needs a value")
+        self.assertEqual(self.refusal("changed", "--each=1"), "--each takes no value")
 
     def test_refusals_say_what_is_missing(self) -> None:
         self.assertEqual(self.refusal("home", "--run"), "--run needs a folder")

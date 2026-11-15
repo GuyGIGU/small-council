@@ -214,11 +214,6 @@ class ChangedTest(unittest.TestCase):
         self.assertTrue(all(sum(len(f) + 3 for f in chunk) <= changed.LINE_BUDGET - 10 for chunk in found))
         self.assertEqual(changed.batches(["a"], 10), [["a"]])
 
-    def test_options(self) -> None:
-        self.assertEqual(changed.options(["--glob", "*.{a,b}", "--each", "--glob=c"]), (["*.a", "*.b", "c"], True))
-        with self.assertRaises(cli.Refusal):
-            changed.options(["--glob"])
-
 
 class LockTest(support.Scratch):
     def test_take_refuse_and_release(self) -> None:

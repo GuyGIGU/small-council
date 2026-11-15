@@ -4201,6 +4201,14 @@ def requests_and_proofs(tmp):
     code, out, err = council(chg, "changed", "--base", "no-such-ref", "--glob", "*.py")
     check("changed: a --base that isn't a ref is an error, never a quietly smaller file list",
           code == 2 and "not a ref in this repository" in err, err)
+    said = [council(chg, *argv)[::2] for argv in (("changed", "--glob"), ("changed", "--glob=", "--", "true"),
+                                                   ("changed", "--glob", "a.py", "extra"), ("changed", "--each=1"),
+                                                   ("version", "--each"))]
+    check("changed: --glob and --each are ordinary flags, refused as every flag is",
+          said == [(2, "council: --glob needs a value\n"), (2, "council: --glob needs a value\n"),
+                   (2, "council: changed doesn't take 'extra' — see: council help\n"),
+                   (2, "council: --each takes no value\n"),
+                   (2, "council: version doesn't take --each — see: council help\n")], str(said))
     code, out, err = council(chg, "changed", "--glob", "*.py", "--", "wc", "-l")
     check("changed: says how many files the check actually looked at", "file(s) to check" in (out + err), out + err)
     os.remove(os.path.join(chg, "src", "branch.py"))
