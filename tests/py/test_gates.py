@@ -22,12 +22,6 @@ class GatesTest(support.Scratch):
         self.assertEqual(gates.void_of({"exit": 127}), "never ran (exit 127)")
         self.assertEqual(gates.void_of({"exit": 1, "timed_out": "yes"}), "")
 
-    def test_failed_as_planned(self) -> None:
-        self.assertTrue(gates.failed_as_planned({"name": "before-1", "exit": 1}))
-        self.assertFalse(gates.failed_as_planned({"name": "before-1", "exit": 1, "proof": "preserve"}))
-        self.assertFalse(gates.failed_as_planned({"name": "before-1", "exit": 1, "void": "timed out"}))
-        self.assertFalse(gates.failed_as_planned({"name": "tests", "exit": 1}))
-
     def test_results_in_time_order(self) -> None:
         run = self.run_folder()
         (run / "gates").mkdir()

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import html
 import re
-from typing import Any, Iterable
+from typing import Any
 
 from council.clock import utc_moment
 from council.records.cells import clean
@@ -22,7 +22,7 @@ def headline(state: dict[str, Any]) -> str:
     return "{}. {}".format(state["label"], state["summary"]) if state["summary"] else state["label"] + "."
 
 
-def text(status: Status, tui_commands: Iterable[str] = ()) -> str:
+def text(status: Status) -> str:
     run, state = status["run"], status["state"]
     if status.get("closing"):
         closing = status["closing"]
@@ -35,7 +35,6 @@ def text(status: Status, tui_commands: Iterable[str] = ()) -> str:
             lines.append("The Chair's own work: " + closing["chair"])
         lines.append("Left for you:")
         lines.extend("- " + item for item in closing["left_for_you"])
-        lines.extend("Live view in a terminal — " + command for command in tui_commands or ())
         return "\n".join(lines)
     now = utc_moment(status["snapshot_at"])
     lines = ["{} · {} · {}".format(run["project"] or "council", run["mode_label"], run["id"])]
@@ -69,8 +68,6 @@ def text(status: Status, tui_commands: Iterable[str] = ()) -> str:
     if usage["spend_text"]:
         lines.append("Spend: " + usage["spend_text"])
     lines.append("As of {} (last activity {}).".format(clock(now, now), fresh["last_activity_clock"] or "unknown"))
-    for command in tui_commands or ():
-        lines.append("Live view in a terminal — " + command)
     return "\n".join(lines)
 
 

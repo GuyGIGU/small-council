@@ -15,14 +15,7 @@ from council.records.cells import INTMAX
 NAME = "council.config.md"
 AGENT_CAP = 10
 SPACE = "[ \t\n\r\f\v]"  # sed's [[:space:]]
-MAX_EDIT = 1024 * 1024
 MAX_PER_WORKER = 1000000
-ESTIMATE_LINES = re.compile(r"^[ \t]*-[ \t]*estimate per worker:[^\r\n]*", re.MULTILINE)
-ESTIMATE_PARTS = re.compile(r"([ \t]*-[ \t]*estimate per worker:[ \t]*)([0-9][0-9.,]*[ \t]*[kKmM]?)?(.*)$")
-
-
-class ConfigError(paths.RecordError):
-    """The config can't be edited safely; the message says what to do instead."""
 
 
 def path(home: str | Path) -> Path:
@@ -241,56 +234,9 @@ def _cell(c: str) -> str:
     return re.sub("[`*]", "", re.sub(r"\A[ \t\r]+|[ \t\r]+\Z", "", c))
 
 
-# --- the estimate per worker, as `council tune` reads and edits it ------------------------------------------
-def editable(home: str | Path) -> tuple[Path, str]:
-    """The config's path and text for an edit; refuses a link, a missing file and one over 1 MB."""
-    where = path(home)
-    if where.is_symlink():
-        raise ConfigError("council.config.md is a link — change the file it points to by hand")
-    if not where.is_file():
-        raise ConfigError("no council.config.md in {} — run council-init".format(home))
-    raw = where.read_bytes()
-    if len(raw) > MAX_EDIT:
-        raise ConfigError("council.config.md is over 1 MB; refusing to edit it")
-    return where, raw.decode("utf-8")
-
-
 def estimate_tokens(text: str) -> int | None:
     """A figure for the estimate per worker ('150k', '150000', '150,000', '1.2M') as tokens, read by the
-    route's rule (worker_estimate): None when unreadable, such as '1,50k', or outside 1k-1M. `council tune`
-    shows and applies only what the route would read, so the run is sized by the number it was shown."""
+    route's rule (worker_estimate): None when unreadable, such as '1,50k', or outside 1k-1M."""
     if not re.fullmatch(r"[0-9][0-9.,]*[ \t]*[kKmM]?", str(text).strip(" \t")):
         return None
     return _in_range(str(text))
-
-
-def estimate_line(text: str) -> tuple[int | None, str | None]:
-    """(value, the exact line) of the first estimate-per-worker line; value None when it is unreadable,
-    both None when there is no such line."""
-    found = ESTIMATE_LINES.search(text)
-    if not found:
-        return None, None
-    value = ESTIMATE_PARTS.match(found.group(0)).group(2)
-    return (estimate_tokens(value) if value else None), found.group(0)
-
-
-def preferences_insertion(text: str, line: str) -> tuple[int, str]:
-    """(offset, exact text) that adds line as the last item of ## Run preferences, outside HTML comments."""
-    newline = "\r\n" if text.count("\r\n") * 2 > text.count("\n") else "\n"
-    section = re.search("^(?:" + paths.BOM + r")?## Run preferences[ \t]*\r?$", text, re.MULTILINE)
-    if not section:
-        raise ConfigError("council.config.md has no ## Run preferences section — a council-init refresh adds one")
-    rest = text[section.end():]
-    end = re.search(r"^## ", rest, re.MULTILINE)
-    body = rest[:end.start()] if end else rest
-    comments = [(m.start(), m.end()) for m in re.finditer(r"<!--.*?(?:-->|\Z)", body, re.DOTALL)]
-    items = [m for m in re.finditer(r"^[ \t]*-[^\r\n]*(?:\r?\n|\Z)", body, re.MULTILINE)
-             if not any(a <= m.start() < b for a, b in comments)]
-    if items:
-        at = section.end() + items[-1].end()
-    else:
-        heading_end = re.match(r"\r?\n", rest)
-        at = section.end() + (heading_end.end() if heading_end else 0)
-    if at >= len(text) and not text.endswith("\n"):
-        return at, newline + line
-    return at, line + newline

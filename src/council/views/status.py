@@ -1,8 +1,8 @@
 """What a council run is doing, in plain words.
 
 This is the one reading of a run's records that every status view shares: the chat widget
-(`council status --widget`), the short text summary (`council status`) and the terminal cockpit's
-headline (`council tui`). It takes the cockpit's read-only snapshot and answers four questions:
+(`council status --widget`) and the short text summary (`council status`). It takes the run's
+read-only snapshot (views/snapshot.py) and answers four questions:
 - what is happening now;
 - is the run moving;
 - does anything need the user;
@@ -28,14 +28,14 @@ from council.records import config, paths
 from council.records.cells import clean
 from council.records.gates import kind as gate_kind    # one rule for every view: a proof fails first, a probe dry-runs
 from council.records.memory import COUNCIL_MEMORY_SIZE_LIMIT
-from council.views import cockpit
+from council.views import snapshot
 from council.views.status_card import notification_line, text, widget
 from council.views.status_closing import closing_of
 from council.views.status_names import check_name, seat_name
 from council.views.status_usage import used
 from council.views.words import clock, iso, listing, plural, span, tokens_text
 
-Snap = Dict[str, Any]    # a run's snapshot (cockpit.snapshot)
+Snap = Dict[str, Any]    # a run's snapshot (snapshot.snapshot)
 SCHEMA = "council.run-status/1"
 QUIET_MINUTES = 60         # an open run with no recorded activity for this long reads as quiet (stale)
 ATTEMPTS = 3               # the repair loop's stop limit (commands/repair_trail.py)
@@ -420,8 +420,6 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--line", action="store_true", help="one short line for a notification")
     parser.add_argument("--preview", action="store_true")
     parser.add_argument("--at", help="read the run as of this UTC time (YYYY-MM-DDTHH:MM:SSZ), for tests")
-    parser.add_argument("--tui-command", action="append", default=[],
-                        help="the exact terminal-view command to print (repeatable, e.g. per shell)")
     args = parser.parse_args(argv)
     if not paths.is_run(args.run):
         print("status: not a council run folder (or a link to one): {}".format(args.run), file=sys.stderr)
@@ -432,7 +430,7 @@ def main(argv: list[str]) -> int:
         return 2
     if args.line and config.notifications_off(args.home or args.run.parent.parent):
         return 0
-    reading = interpret(cockpit.snapshot(args.run, args.home, 40), now, home=args.home)
+    reading = interpret(snapshot.snapshot(args.run, args.home, 40), now, home=args.home)
     if args.json:
         print(json.dumps(reading, indent=2, sort_keys=True))
     elif args.widget:
@@ -440,5 +438,5 @@ def main(argv: list[str]) -> int:
     elif args.line:
         print(notification_line(reading))
     else:
-        print(text(reading, args.tui_command))
+        print(text(reading))
     return 0

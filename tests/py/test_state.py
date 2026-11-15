@@ -72,7 +72,7 @@ class StateTest(support.Scratch):
                          ['2026-01-02 10:00: "go "full" C:\\temp"', "2026-01-02 11:00: raw words"])
         self.assertEqual(state.unquote('t: "a\\nb"'), 't: "a\\nb"')            # only \" and \\ are the helper's
 
-    def test_text_and_in_progress(self) -> None:
+    def test_text(self) -> None:
         home = self.tmp / ".council"
         for name, status in (("2026-01-01-000000-a", "in-progress"), ("2026-01-02-000000-b", "complete"),
                              ("2026-01-03-000000-c", "in-progress (resumed)")):
@@ -84,9 +84,6 @@ class StateTest(support.Scratch):
         self.assertEqual(state.text(home / "runs" / "empty"), "")
         self.assertEqual(state.text(home / "runs" / "empty", read=lambda path: "x: " + path.name),
                          "x: session-state.md")
-        self.assertEqual(state.in_progress(home), [(home / "runs" / "2026-01-03-000000-c", "/p", "s-c"),
-                                                   (home / "runs" / "2026-01-01-000000-a", "/p", "s-a")])
-        self.assertEqual(state.in_progress(self.tmp / "nowhere"), [])
 
 
 if __name__ == "__main__":

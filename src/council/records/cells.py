@@ -59,11 +59,6 @@ def optional_number(value: Any) -> int | None:
     return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else None
 
 
-def number(value: Any) -> int:
-    """A cell's whole number of up to 12 digits, else 0."""
-    return optional_number(value) or 0
-
-
 def token_count(text: str) -> int | None:
     """A token figure as the helper's seat_tokens reads one: 74300, 74,300, 74 300, 74.3k, 1.2M, with an
     optional trailing 'tokens'. Anything else (two numbers, a sign, '74,3k') is None, never a guess."""

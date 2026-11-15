@@ -11,7 +11,7 @@ from council.records.usage import agents_share, budget_value, standing
 from council.views.status_names import seat_name
 from council.views.words import listing, plural, tokens_text
 
-Snap = Dict[str, Any]    # a run's snapshot (views/cockpit.snapshot)
+Snap = Dict[str, Any]    # a run's snapshot (views/snapshot.snapshot)
 
 
 def usage_of(snap: Snap) -> dict[str, Any]:

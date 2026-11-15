@@ -1,3 +1,5 @@
+> Removed on 2026-11-15: `council tune` and its evals (`evals/run_tune.py`) are gone (D40). This note stays as history.
+
 # Phase 13 — conservative, inspectable self-tuning
 
 ## What changed

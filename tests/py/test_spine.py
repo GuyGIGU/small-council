@@ -112,15 +112,15 @@ CARD = ("show the user its %s now, once: hand the output of `council status --wi
 
 
 class NudgeTest(Spine):
-    def said(self, when: str, named: bool = False, follow: str = "") -> str:
+    def said(self, when: str, named: bool = False, alert: bool = False) -> str:
         """What bin/council's status_nudge said."""
         at = " --run " + self.run.name if named or when == "close" else ""
         if when == "dispatch":
             return "council: first dispatch of this run — " + CARD % ("status", at, at) + "\n"
         said = "council: run closed — " + CARD % ("closing card", at, at)
-        if follow:
-            said += ("; and tell them, from the record — %s; then send the owner the line `council status --line%s` "
-                     "prints, once, with a PushNotification tool" % (follow, at))
+        if alert:
+            said += ("; then send the owner the line `council status --line%s` prints, once, with a PushNotification "
+                     "tool" % at)
         return said + "\n"
 
     def python(self, *args: object) -> str:
@@ -130,10 +130,10 @@ class NudgeTest(Spine):
         return said.getvalue()
 
     def test_the_status_nudge_says_what_bin_council_says(self) -> None:
-        for when, named, follow, status in (("dispatch", False, "", "in-progress"), ("dispatch", True, "", "x"),
-                                            ("close", False, "what was found", "complete"), ("close", True, "", "x")):
+        for when, named, alert, status in (("dispatch", False, False, "in-progress"), ("dispatch", True, False, "x"),
+                                           ("close", False, True, "complete"), ("close", True, False, "x")):
             (self.run / "session-state.md").write_text(STATE.replace("in-progress", status))
-            self.assertEqual(self.python(when, named, follow), self.said(when, named, follow), when)
+            self.assertEqual(self.python(when, named), self.said(when, named, alert), when)
             self.assertEqual(nudges.card_due(self.run), when == "dispatch")
             (self.run / "card-due").unlink() if when == "dispatch" else None
         (self.tmp / ".council" / "council.config.md").write_text("- notifications: off\n")
@@ -149,9 +149,8 @@ class NudgeTest(Spine):
 
 
 class SmallPiecesTest(Spine):
-    def test_said_flattens_either_set(self) -> None:
+    def test_said_flattens_the_line(self) -> None:
         self.assertEqual(redact.said("a\tb\r\nc\x0bd\x0ce"), "a b  c d e")
-        self.assertEqual(redact.said("a\tb\nc\x0bd", line_breaks_only=True), "a b c\x0bd")
         self.assertIn("[redacted]", redact.said("token=sk-abcdefghijklmnopqrstuvwxyz123456"))
 
     def test_open_runs_of_any_status_and_the_newest(self) -> None:

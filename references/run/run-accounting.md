@@ -1,8 +1,8 @@
 # Run accounting — what a run's numbers mean
 
 A run records who worked, how many agents ran and what they reported using. Every reader (the
-status widget, `council tui`, the close line, the ledger, `council history`, `council tune`) says a
-number only as far as the record supports it. Blank is unknown, never zero.
+status widget, the close line, the ledger) says a number only as far as the record supports it.
+Blank is unknown, never zero.
 
 ## Words
 
@@ -25,9 +25,9 @@ is a Workflow the Chair runs: its `agent_count` is its agent runs.
 (160360). A figure is never rounded when stored, and a rounded figure is never accepted.
 
 Every display uses one rule: round half up to a whole thousand below 995,000 tokens, and to one
-decimal million at or above 995,000; omit a trailing `.0`. The progress and close lines, status
-card/text, TUI and history now agree: 26,430,386 appears as `26.4M` everywhere (the close line
-and history prefix estimated totals with `~`), and 2,500 appears as `3k`. Only the display is
+decimal million at or above 995,000; omit a trailing `.0`. The progress and close lines and the status
+card/text agree: 26,430,386 appears as `26.4M` everywhere (the close line prefixes estimated
+totals with `~`), and 2,500 appears as `3k`. Only the display is
 rounded; the stored totals and accounting bases stay exact.
 
 The close line, the status card, text and JSON and the estimate event compare known exact
@@ -98,12 +98,6 @@ The `seat.updated` event carries a seat's totals so far, so summing events count
 - **The close line** (`actual:` in `session-state.md`) uses the same bases.
 - **The ledger** marks rows it writes with `accounting` 2. Their tokens are a checked figure or "-".
   Rows without the mark are older, and their tokens are never priced by `council ledger advice`.
-- **`council history` costs only completed runs whose basis is complete, with an exact agent-run
-  count.** It counts every other run under "left out", with the reason.
-- **`council tune` reads that history.** Five measured runs make a proposal eligible; they do not
-  make it reliable. Read its spread. A run with a seat that has no figure is already left out of
-  the measurement; `council tune` now says in one line how many seats in how many completed runs it
-  left out, by kind (no agent id recorded, no usage report, an unusable figure).
 - **The close's audit names each seat that was an agent run with no token figure** (the `Token
   figures` item, a FAIL, from `records/usage_gaps.py` over the per-seat rule above: a basis of
   partial, missing, unrecorded or suspect; the Chair's own seat, a seat declared `agents=0` and a seat

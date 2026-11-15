@@ -146,9 +146,9 @@ check("kernel: approval threshold from the config", "approve without asking" in 
 # Solo, build and post-game runs never read 05-work.md, so the steps every run needs sit in the kernel
 # (a real Solo run skipped the Chair's seat record and wrote no ledger row for its findings).
 check("kernel: the steps every run needs — the Chair's own seat record, the owner alert after waiting=, "
-      "the pet only when asked, and a resume (never a re-dispatch) at an agent's turn limit",
+      "and a resume (never a re-dispatch) at an agent's turn limit",
       "`council seat chair done agents=0`" in core and "council status --line" in flat(core)
-      and "PushNotification" in core and "`council pet`" in core and "60 turns" in core
+      and "PushNotification" in core and "60 turns" in core
       and "never re-dispatch it" in core)
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
 # The method a review run reads before it touches the project (method-vs-helper-10: 59,407 bytes before
@@ -203,23 +203,12 @@ check("memory: a failure is served only while its evidence supports it, and file
       os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "memory_draft.py")) and
       "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
       "UNSUPPORTED" in doctrine["10-learn.md"])
-check("tune: one knob changed, only with the user's words; behaviour held until a benchmark shows it helps",
-      "tune" in command and "config.worker_estimate" in read("src", "council", "commands", "route.py") and
-      os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "tune_knobs.py")) and
-      "held" in read("src", "council", "commands", "tune_knobs.py") and "council tune" in read("skills", "council-init", "SKILL.md"))
-check("history: a read-only report over run folders, with a stated bar for every rate",
-      '"history"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "src", "council", "views", "history.py")) and
-      "MIN_RUNS = 5" in read("src", "council", "views", "history.py"))
-check("tui: a read-only cockpit script, reached through the helper, never part of a stage",
-      '"cockpit"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "src", "council", "views", "cockpit.py")) and
-      "council tui" not in "".join(doctrine.values()))
 kernel_text = read("skills", "context-core", "SKILL.md")
-check("status: one plain-language reading shared by the widget, the summary and the cockpit, shown once "
+check("status: one plain-language reading shared by the widget and the summary, shown once "
       "at first dispatch and on request — never a card per progress line",
       '"status"' in command.get("script_cmds", "") and os.path.isfile(os.path.join(ROOT, "src", "council", "views", "status.py")) and
       "council status --widget" in kernel_text and "show_widget" in kernel_text and "never a card per progress line" in kernel_text
-      and "waiting=" in kernel_text and "interpret" in read("src", "council", "views", "status.py")
-      and "status.interpret" in read("src", "council", "views", "cockpit.py"))
+      and "waiting=" in kernel_text and "interpret" in read("src", "council", "views", "status.py"))
 check("status: showing it is a step where it happens — Work's dispatch, Challenge when its verifiers are the first "
       "dispatch, Learn's close — a show_widget tool is looked up before it is called missing, and the helper "
       "reminds the Chair at both moments (a real run showed neither card)",
@@ -395,10 +384,9 @@ check("init: never offers a blanket council allowlist (gate and changed run arbi
 check("init: the permission offer covers the helper commands the modes run without asking",
       all(f'"Bash(council {c}:*)"' in skill["council-init"] for c in [
           "run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
-          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "history",
-          "outcomes", "version"]))
-check("init: cap, tune and correct keep asking (cap allow records the user's go past the agent stop)",
-      not any(f'"Bash(council {c}' in skill["council-init"] for c in ["cap", "tune", "correct"])
+          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version"]))
+check("init: cap and correct keep asking (cap allow records the user's go past the agent stop)",
+      not any(f'"Bash(council {c}' in skill["council-init"] for c in ["cap", "correct"])
       and "`council cap` stays off" in skill["council-init"])
 check("init: a refresh offers an earlier, shorter permission list the rules it lacks",
       "offer to add the rules it lacks" in " ".join(skill["council-init"].split())

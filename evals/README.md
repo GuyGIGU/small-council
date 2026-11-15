@@ -5,8 +5,8 @@ Eight automated layers, an advisory one, and hand-run drills. A skill isn't done
 **Every free suite at once:** `python evals/run_all.py` is what CI runs on Ubuntu, Windows and macOS.
 It runs each suite as its own process with the command shown in its section below, several at a time
 (`--jobs N`, default: the number of CPUs), and the helper and hook evals as their groups side by
-side. Suites and groups that time the helper or a hook, or race the helper's locks (the cockpit evals
-and the `timing` groups of the helper and hook evals), run alone first, with nothing else running.
+side. Suites and groups that time the helper or a hook, or race the helper's locks (the `timing`
+groups of the helper and hook evals), run alone first, with nothing else running.
 Every suite runs even when another fails; each one's output is printed whole when it finishes, then a
 table of results, times and check counts, and it exits 1 if any suite failed. `--list` shows the jobs. A new `evals/run_*.py` must be added to
 its list, or the run fails, so no suite can be left out of CI.
@@ -285,19 +285,13 @@ python evals/record_eval.py                                                     
 - **CI:** `.github/workflows/evals.yml` runs on demand only: Claude Code and both models pinned, the
   Bash sandbox installed, Bash granted only past the triggering smoke, and a cost ceiling.
 
-`python evals/run_tui.py` checks the read-only run cockpit (`council tui`, `views/cockpit.py`)
-against a real helper-made run: the plan, seats, gates, a repair's next step, evidence counts and
-memory proposals on screen; the `--json` snapshot; plain ASCII on request; escape codes in a file
-neutralised; a legacy run and malformed files still drawn; `--watch` stopping by itself when the
-run closes; and every file of the run and the council home byte-for-byte unchanged afterwards.
-
 `python evals/run_status.py` checks run accounting and the plain-language status (`council seat`,
 `council correct`, `council status [--widget | --json]`, `views/status.py`), about 90 s:
 - **Accounting, through the helper.** A token count is one plausible number stored whole. A repeated
   or resumed report counts once. A Workflow reports its agent count. Missing and older figures stay
   unknown. A correction is normalised, bounded, and keeps the original and its evidence.
 - **Two readers.** Eleven helper-written cases, plus a separate added-run check, read the same by the helper (close line,
-  ledger) and by the snapshot (widget, `tui`, history), seat by seat and for the run.
+  ledger) and by the snapshot (widget, card), seat by seat and for the run.
 - **Status, from hand-made runs read at a fixed time.** Every state the widget shows (starting,
   running, waiting, failing, recovering, blocked, completed, paused, stopped, stale, unknown).
   Failing, recovering and blocked are also driven through `council gate` and `council repair`.
@@ -307,27 +301,6 @@ run closes; and every file of the run and the council home byte-for-byte unchang
 - **The stop at the limit.** No go, a go that covers the next agent, a used-up go, torn or garbage
   rows, the ceiling, a closed run and values too large for bash: the card, text, `--line` and JSON
   say "stopped" or "your go", and read the same as `cap_standing` and `council cap` on each folder.
-- **The desktop pet** (`council pet`, `views/pet.py`), with no window: it imports without a display;
-  the design's paths keep their shapes; each status reading gets its pose and bubble; argument,
-  no-tkinter and no-display refusals are one line; one pet per project, and `--stop` closes it.
-
-`python evals/run_history.py` checks history across runs (`council history`, `views/history.py`):
-counts always, but a median, share or ratio only once five runs (not items) carry its data; a build's
-before/after proofs and gate probes kept apart from the project's gates; repairs, claims and
-estimate accuracy computed right on a synthetic home; missing and malformed data named; odd run
-folders survived; and nothing written.
-
-`python evals/run_tune.py` checks conservative self-tuning (`council tune`, `commands/tune_knobs.py`):
-- the estimate is proposed only once five completed runs measure tokens per agent and it is off by
-  more than a quarter;
-- behaviour is held, and the roster goes through a refresh;
-- `apply` needs the value the user was shown and their words. Secret-looking text is redacted even
-  when split across lines. It writes one line, and the route then budgets with it;
-- only a ceiling the user gave shrinks a run;
-- `revert` puts back the exact bytes for six awkward file shapes, and refuses over a hand edit;
-- a failed config write leaves the log as it was;
-- BOM, CRLF, comments and file modes survive;
-- every refusal says why and writes nothing.
 
 `python evals/run_audit.py` checks `council run audit` (`commands/audit.py`), the check that reads what
 a Chair actually did in a finished run. A run built with the first real run's pattern, and its session
@@ -343,10 +316,9 @@ a second save rewrites it, and no temporary file is left. An agent seat with no 
 "Token figures", naming the seat and why; the Chair's own seat, a seat declared `agents=0` and a corrected
 figure are not gaps. It also checks the dispatch case's graders for the status card and the close.
 `run_cli.py --group runs` (`runs_close_keeps_audit`) drives the real close: audit.md, the close line, the closing
-card, `council run status`, a pause then a close again, and a close without Python; `run_tune.py` checks tune's
-one-line note of the seats it left out.
+card, `council run status`, a pause then a close again, and a close without Python.
 
-The helper, hook, memory, cockpit, tuning and audit suites need bash and git. Without them they print
+The helper, hook, memory and audit suites need bash and git. Without them they print
 `[SKIP]` and exit 3, so a run that checked nothing never passes; `--allow-skip` makes them exit 0.
 `run_all.py` also fails a suite that reports no `N/N checks passed` line, or zero checks.
 `run_audit.py` checks both.

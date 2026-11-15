@@ -3071,7 +3071,9 @@ def runs_helper_carries_next_steps(tmp):
     council(nx, "seat", "w1", "done", "agent=a1", "tokens=20000")
     code, out, err = council(nx, "run", "close")
     check("run close: with nothing in the record to report, no follow-up line", code == 0 and "from the record" not in err, err)
-    # Five completed runs whose agents spent 150k each against an 80k estimate: tune has a proposal.
+    # Five completed runs whose agents spent 150k each against an 80k estimate: before 2026-11-15 the close named
+    # a tuning proposal from them ("from the record"). Tuning is cut: no such line, and an old project's
+    # tuning.md and runs/.follow-said are left where they are, read by nothing.
     tn = new_repo(tmp, "close-followup")
     write(os.path.join(tn, ".council", "council.config.md"), "# Council config\n")
     for i in range(5):
@@ -3081,16 +3083,21 @@ def runs_helper_carries_next_steps(tmp):
               "budget\trun\testimated-tokens\t260000\tr\n")
         write(os.path.join(past, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n" + "".join(
             "{}\tdone\ta\t150000\t-\t-\t1\t1\n".format(slug) for slug in ("hunt", "beck", "verify-1")))
+    old = {os.path.join(tn, ".council", "tuning.md"): "# Tuning log\n",
+           os.path.join(tn, ".council", "runs", ".follow-said"): "an old follow-up line\n"}
+    for path, text in old.items():
+        write(path, text)
 
     _, out, _ = council(tn, "run", "open", "council-review")
     write_plan(out.strip().splitlines()[-1], selected=("chair", "w1"))
     to_deliver(tn)
     council(tn, "seat", "w1", "done", "agent=a1", "tokens=20000")
     code, out, err = council(tn, "run", "close")
-    follow = [line for line in err.splitlines() if "from the record" in line]
-    check("run close: with a tuning proposal on record, the close's last line names it and its command, with the closing card",
-          code == 0 and len(follow) == 1 and "council tune" in follow[0] and follow[0] == err.strip().splitlines()[-1]
-          and "closing card" in follow[0], err)
+    check("run close: a record that once gave a tuning proposal gives no follow-up line now; the closing card is "
+          "still the last line", code == 0 and "from the record" not in err and "council tune" not in out + err
+          and "closing card" in err.strip().splitlines()[-1], err)
+    check("run close: an old tuning.md and runs/.follow-said are left as they were",
+          all(read(path) == text for path, text in old.items()))
     dirs = [os.path.dirname(shutil.which(t)) for t in ("bash", "git") if shutil.which(t)]
     bare_path = os.pathsep.join(dict.fromkeys(dirs))
     if len(dirs) == 2 and not (shutil.which("python", path=bare_path) or shutil.which("python3", path=bare_path)):
@@ -3099,39 +3106,6 @@ def runs_helper_carries_next_steps(tmp):
               and "council run close needs Python 3.8 or newer, and none is on PATH" in err, err)
     else:
         print("note: python sits beside bash or git here, so the no-Python close is not checked on this system")
-
-@part("runs")
-def runs_close_followup_once(tmp):
-    # The close's follow-up line is said once (run 2's follow-up: it came back at every later close while the
-    # record had the same thing to say); a later close says it again only when the record's line changed.
-    fo = new_repo(tmp, "followup-once")
-    write(os.path.join(fo, ".council", "council.config.md"), "# Council config\n")
-
-    def past_runs(spend):
-        for i in range(5):
-            past = os.path.join(fo, ".council", "runs", "2026-09-{:02d}-100000-review".format(i + 1))
-            write(os.path.join(past, "session-state.md"), "status: complete\nmode: council-review\nphase: deliver\n## Decisions so far\n")
-            write(os.path.join(past, "run-plan.tsv"), "kind\tid\tfield\tvalue\treason\nrun\trun\tsize\tsquad\tr\n"
-                  "budget\trun\testimated-tokens\t260000\tr\n")
-            write(os.path.join(past, "seats.tsv"), "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n" + "".join(
-                "{}\tdone\ta\t{}\t-\t-\t1\t1\n".format(slug, spend) for slug in ("hunt", "beck", "verify-1")))
-
-    def close_one():
-        _, out, _ = council(fo, "run", "open", "council-review")
-        r = out.strip().splitlines()[-1]
-        write_plan(r, selected=("chair", "w1"))
-        to_deliver(fo)
-        council(fo, "seat", "w1", "done", "agent=a1", "tokens=20000")
-        _, _, err = council(fo, "run", "close")
-        return [line for line in err.splitlines() if "from the record" in line]
-
-    past_runs(150000)
-    first, second = close_one(), close_one()
-    past_runs(400000)
-    third = close_one()
-    check("run close: the follow-up is said at the first close, not again while the record says the same, and again "
-          "once it changes", len(first) == 1 and second == [] and len(third) == 1 and third != first,
-          "first %s · second %s · third %s" % (first, second, third), full=True)
 
 @part("runs")
 def runs_card_says_what_is_known(tmp):
@@ -7265,6 +7239,31 @@ def reports_packs_removed(tmp):
     code, out, err = council(repo, "prior")
     check("prior: no earlier council work on the changed files, exit 0",
           code == 0 and "prior: no earlier council work mentions these paths" in out, out + err)
+
+
+@part("reports")
+def reports_views_removed(tmp):
+    """History, tuning, outcomes, the terminal view and the pet were removed (2026-11-15, D40): each is refused as
+    any unknown command is, council help names none of them, and council status prints no live-view line."""
+    repo = new_repo(tmp, "views")
+    write(os.path.join(repo, ".council", "council.config.md"),
+          "# Council config\n## Run preferences\n- estimate per worker: 150k\n- estimates: review=100k\n")
+    code, run, err = council(repo, "run", "open", "council-review")
+    check("an old config's estimate lines are read without complaint", code == 0 and "estimate" not in err, err)
+    for words in (("history",), ("history", "--json"), ("tune",), ("tune", "propose", "--json"),
+                  ("tune", "apply", "budget", "150k", "--user-said", "yes"), ("tune", "revert", "budget"),
+                  ("outcomes",), ("outcomes", "--json"), ("tui",), ("tui", "--watch"), ("tui", "--json"),
+                  ("pet",), ("pet", "--stop"), ("pet", "--demo")):
+        code, out, err = council(repo, *words)
+        check("%s: an unknown command now, and the refusal names council help" % " ".join(words),
+              code == 2 and err == "council: unknown command '%s' — see: council help\n" % words[0] and not out,
+              out + err)
+    code, out, err = council(repo, "help")
+    check("help: names none of the removed commands", code == 0 and not any(
+        "council " + word in out for word in ("history", "tune", "outcomes", "tui", "pet")), out)
+    code, out, err = council(repo, "status")
+    check("status: an open run's card has no live-view line", code == 0 and "Status:" in out
+          and "Live view" not in out and "tui" not in out, out + err)
 
 
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")

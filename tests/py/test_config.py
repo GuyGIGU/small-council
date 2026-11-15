@@ -125,38 +125,14 @@ class StatusReadingTest(support.Scratch):
         self.assertEqual(config.roster(home), [("Security", "sec", "auth")])
 
 
-class TuneEditTest(support.Scratch):
-    def test_editable_refuses_what_tune_must_not_edit(self) -> None:
-        with self.assertRaisesRegex(config.ConfigError, "run council-init"):
-            config.editable(self.tmp)
-        self.write("council.config.md", "x" * (1024 * 1024 + 1))
-        with self.assertRaisesRegex(config.ConfigError, "over 1 MB"):
-            config.editable(self.tmp)
-        self.write("council.config.md", "ok\n")
-        self.assertEqual(config.editable(self.tmp), (self.tmp / "council.config.md", "ok\n"))
-
-    def test_estimate_line_and_tokens(self) -> None:
-        self.assertEqual(config.estimate_line("a\n  - estimate per worker: 150k (measured)\nb"),
-                         (150000, "  - estimate per worker: 150k (measured)"))
-        self.assertEqual(config.estimate_line("- estimate per worker: lots\n"), (None, "- estimate per worker: lots"))
-        self.assertEqual(config.estimate_line("nothing\n"), (None, None))
-        self.assertIsNone(config.estimate_tokens("1,50k"))              # the route's reading: unset, so tune's too
+class EstimateTokensTest(unittest.TestCase):
+    def test_estimate_tokens(self) -> None:
+        self.assertIsNone(config.estimate_tokens("1,50k"))              # the route's reading: unset
         self.assertEqual(config.estimate_tokens("150,000"), 150000)
         self.assertEqual(config.estimate_tokens("1.5k"), 1500)
         self.assertIsNone(config.estimate_tokens("150 000"))
         self.assertIsNone(config.estimate_tokens("999"))
-        self.assertIsNone(config.estimate_tokens("9" * 400 + "k"))       # tune read it as a crash
-        self.assertEqual(config.estimate_line("- estimate per worker: " + "9" * 400 + "k\n"),
-                         (None, "- estimate per worker: " + "9" * 400 + "k"))
-
-    def test_preferences_insertion(self) -> None:
-        text = "## Run preferences\n- agent cap: 10\n<!-- - hidden: x -->\n## Gates\n"
-        at, piece = config.preferences_insertion(text, "- estimate per worker: 90k")
-        self.assertEqual(text[:at] + piece + text[at:],
-                         "## Run preferences\n- agent cap: 10\n- estimate per worker: 90k\n"
-                         "<!-- - hidden: x -->\n## Gates\n")
-        with self.assertRaises(config.ConfigError):
-            config.preferences_insertion("## Gates\n", "- x")
+        self.assertIsNone(config.estimate_tokens("9" * 400 + "k"))
 
 
 class RosterRowsTest(support.Scratch):

@@ -60,6 +60,4 @@ saving.
 
 - The plan check judges what the plan asks for, not what ran: the Agent call's `model` parameter
   isn't gated, and a force-subagent-model setting can override it.
-- `council history` groups tokens by each seat's planned model (`seat/<slug>/model`); for `inherit`
-  it can't know which model ran.
 - A closed run's role models are not rechecked against today's line.

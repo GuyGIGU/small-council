@@ -151,7 +151,7 @@ no bare principle numbers, no "lanes", no "AP/EC".
 **The run's status.** Show it twice — at the run's first dispatch (once per run) and after `council run close` —
 as the helper's reminder then says: `council status --widget` to a `show_widget` tool (deferred: search
 for it first; call its `read_me` once), else relay `council status`. Otherwise only when the user
-asks — never a card per progress line. `council pet` opens the desktop pet, only when the user asks.
+asks — never a card per progress line.
 
 **Alerts.** When you stop for the user's answer, `council state waiting="<the question>"`. At the
 turn's end a hook records a wait you didn't and sends you back once to send what `council status

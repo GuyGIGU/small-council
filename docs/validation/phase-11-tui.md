@@ -1,3 +1,5 @@
+> Removed on 2026-11-15: `council tui` and its evals (`evals/run_tui.py`) are gone (D40). This note stays as history.
+
 # Phase 11 — a thin terminal cockpit
 
 ## What changed

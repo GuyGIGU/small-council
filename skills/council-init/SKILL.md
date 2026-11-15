@@ -219,8 +219,7 @@ Adjust on request. On confirmation, write:
      "Bash(council memory:*)", "Bash(council ledger:*)", "Bash(council gates:*)", "Bash(council map:*)",
      "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)",
      "Bash(council status:*)", "Bash(council evidence:*)", "Bash(council repair:*)",
-     "Bash(council route:*)",
-     "Bash(council history:*)", "Bash(council outcomes:*)", "Bash(council version:*)"
+     "Bash(council route:*)", "Bash(council version:*)"
    ] } }
    ```
 
@@ -242,8 +241,7 @@ Adjust on request. On confirmation, write:
    `council changed`."* Never widen this list to `council *`.
 
    **`council cap` stays off too**: `council cap allow` records the user's go past the agent stop,
-   so it must ask every time. So do `council tune` (`tune apply` changes the config) and
-   `council correct`.
+   so it must ask every time. So does `council correct`.
 
    At a **refresh**, read `.claude/settings.local.json` first: if it holds `Bash(council *)` or a
    `council gate` rule from an earlier version, offer to replace it with this list, and say why; an
@@ -270,10 +268,6 @@ Configs drift. On a re-run, or "refresh the council":
   its surface to `src/ui/**`?" Below the bar, say
   the record is too thin and change nothing. A lens the runs keep flagging outside their lanes is a
   separate proposal: name the runs. The user decides; nothing changes without a yes.
-- **Tuning from the record.** `council tune` proposes an estimate per role and the estimate per worker once
-  five completed runs measure it, and holds every behaviour change until a benchmark shows it
-  helps. Put a proposal to the user with its evidence; on their yes, `council tune apply
-  budget[:role] <value shown> --user-said "…"` (`revert` undoes it). Logged in `.council/tuning.md`.
 - Re-check **every path and gate** in the config against the repo, dry-running the gates again
   (`council run open council-init` first — `council gate probe-<name> -- '…'` needs an open run;
   close it when you are done), and update `last-verified`.

@@ -368,7 +368,7 @@ def agent_limit(run: Run, say: Say) -> None:
 
 def token_figures(run: Run, say: Say) -> None:
     """Every seat that was an agent run has a token figure. Graded FAIL, as the other gaps in a run's own record
-    are: the Chair left the run total, the ledger and council tune short, and can put it right with council correct."""
+    are: the Chair left the run total and the ledger short, and can put it right with council correct."""
     label = "Token figures"
     if run.status != "complete":
         say(PASS, label, "not checked: the run did not complete")
@@ -378,5 +378,5 @@ def token_figures(run: Run, say: Say) -> None:
         say(PASS, label, "every agent run's tokens are on record")
         return
     fix = 'council correct <seat> tokens=<exact> agents=<exact> evidence="<source>" --run ' + run.name
-    lead = "%d seat(s) ran as agents with no token figure, so the run total, the ledger and council tune leave them out"
+    lead = "%d seat(s) ran as agents with no token figure, so the run total and the ledger leave them out"
     say(FAIL, label, "%s: %s; put one right with %s" % (lead % len(gaps), usage_gaps.words(gaps), fix))

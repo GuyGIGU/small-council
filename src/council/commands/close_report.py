@@ -6,7 +6,6 @@ from pathlib import Path
 
 from council.commands import cli, script
 from council.records import audit_file, closing, events, usage
-from council.records import home as where
 
 
 def claims_note(run: Path) -> None:
@@ -52,25 +51,3 @@ def chair(run: Path) -> None:
     cli.say("the Chair's own work: %s%s tokens over %s model call%s (its context's growth, from the session "
             "transcript; not in the agents' figures)"
             % ("at least " * (basis == "partial"), usage.token_text(int(tokens)), calls, "s" * (calls != "1")))
-
-
-def follow_up(home: str) -> str:
-    """What the record has to say (tune, outcomes) as one line; '' when it said the same at the last close."""
-    said = script.captured("tune", ["propose", "--home", home, "--brief"])[1] + script.captured(
-        "outcomes", ["--home", home, "--repo", where.this_tree(), "--brief", "--recent", "20"])[1]
-    follow = " · ".join(line for line in said.split("\n") if line.split())
-    memory = Path(where.native(home)) / "runs" / ".follow-said"
-    try:
-        before = memory.read_bytes().decode("utf-8", "surrogateescape").rstrip("\n")
-    except OSError:
-        before = None
-    try:
-        if not follow:
-            memory.unlink()
-        elif before == follow:
-            return ""
-        else:
-            memory.write_bytes((follow + "\n").encode("utf-8", "surrogateescape"))
-    except OSError:
-        pass
-    return follow

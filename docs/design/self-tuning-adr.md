@@ -1,3 +1,5 @@
+> Removed on 2026-11-15: `council tune` was never used; the token estimates are edited by hand in `council.config.md` (D40). This record stays as history.
+
 # ADR: conservative, inspectable self-tuning
 
 ## Problem

@@ -4,46 +4,30 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from council.commands import cli, nudges, resolve, script, shell
+from council.commands import cli, nudges, resolve, script
 from council.records import home as where
 
 TABLE = {
-    "evidence": ("evidence", ("SUB", "--run", "RUN"), (), ""),
-    "tui": ("cockpit", ("--run", "RUN", "--home", "HOME"), ("watch", "json"), ""),
-    "status": ("status", ("--run", "RUN", "--home", "HOME", "TUI"), ("widget", "json", "line", "preview"), ""),
-    "pet": ("pet", ("--project", "TREE", "--home", "HOME", "SESSION", "LAUNCH"), ("stop", "demo", "still", "pose",
-                                                                                 "exit-after"),
-            "pet follows this session's run on this working tree; it does not take --run"),
-    "history": ("history", ("--home", "HOME"), ("json",),
-                "history reads every run of this council home; it does not take --run"),
-    "outcomes": ("outcomes", ("--home", "HOME", "--repo", "TREE"), ("json",),
-                 "outcomes reads every run of this council home's record; it does not take --run"),
-    "run audit": ("audit", ("--run", "RUN"), ("transcript",), ""),
+    "evidence": ("evidence", ("SUB", "--run", "RUN"), ()),
+    "status": ("status", ("--run", "RUN", "--home", "HOME"), ("widget", "json", "line", "preview")),
+    "run audit": ("audit", ("--run", "RUN"), ("transcript",)),
 }
 EVIDENCE = "usage: council evidence build|show|check [--run <folder>]"
-ROOT = Path(__file__).resolve().parents[3]          # the plugin's root, where bin/council is
 
 
 def main(args: cli.Args, words: list[str]) -> int:
     command = "run audit" if args.words[0] == "run" else args.words[0]
     words = list(words)
     sub = words.pop(0) if command == "evidence" and words else ""
-    name, lead, takes, no_run = TABLE[command]
+    name, lead, takes = TABLE[command]
     label = command + (" " + sub if command == "evidence" else "")
     cli.takes_flags(args, label, *takes)
     cli.no_words(label, words)
-    _refuse(command, sub, args, no_run)
+    _refuse(command, sub, args)
     home = where.council_home()
-    if command in ("history", "outcomes") and not os.path.isdir(where.native(home)):
-        cli.say("no council here (no %s) — run council-init" % home)
-        return 0
     run = (_audited(args, home) if command == "run audit" else resolve.run_folder(args).as_posix()) \
         if "RUN" in lead else ""
-    session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    fill = {"RUN": lambda: [run], "HOME": lambda: [home], "SUB": lambda: [sub], "TREE": lambda: [where.this_tree()],
-            "TUI": lambda: tui_commands(Path(run)),
-            "SESSION": lambda: ["--session", session] if session else [],
-            "LAUNCH": lambda: [] if args.value("stop") else ["--launch"]}
+    fill = {"RUN": lambda: [run], "HOME": lambda: [home], "SUB": lambda: [sub]}
     words = [word for token in lead for word in (fill[token]() if token in fill else [token])]
     for flag, value in ((flag, args.value(flag)) for flag in takes if args.value(flag)):
         words += ["--" + flag] + ([] if flag in cli.SWITCHES else [_mixed(value) if flag == "transcript" else value])
@@ -53,13 +37,9 @@ def main(args: cli.Args, words: list[str]) -> int:
     return code
 
 
-def _refuse(command: str, sub: str, args: cli.Args, no_run: str) -> None:
+def _refuse(command: str, sub: str, args: cli.Args) -> None:
     if command == "evidence" and sub not in ("build", "show", "check"):
         raise cli.Refusal(EVIDENCE)
-    if no_run and args.value("run"):
-        raise cli.Refusal(no_run)
-    if command == "tui" and args.value("watch") and args.value("json"):
-        raise cli.Refusal("tui takes --watch or --json, not both")
     if command == "status" and sum(bool(args.value(f)) for f in ("widget", "json", "line")) > 1:
         raise cli.Refusal("status takes --widget, --json or --line, not together")
     if command == "status" and args.value("preview") and not args.value("widget"):
@@ -75,16 +55,6 @@ def _audited(args: cli.Args, home: str) -> str:
     if not newest:
         raise cli.Refusal("no run on this working tree to audit — pass --run <folder>")
     return newest
-
-
-def tui_commands(run: Path) -> list[str]:
-    """The terminal-view command the status prints: for PowerShell and Git Bash where there is cygpath."""
-    council, folder, exe = where.here(ROOT) + "/bin/council", where.here(run), shell.bash_exe()
-    plain = "bash %s tui --watch --run %s" % (shell.sh_quote(council), shell.sh_quote(folder))
-    if not exe:
-        return ["--tui-command", plain]
-    return ["--tui-command", "PowerShell: & %s %s tui --watch --run %s" % tuple(map(shell.ps_quote, (exe, council,
-            folder))), "--tui-command", "Git Bash: " + plain]
 
 
 def _mixed(path: str) -> str:

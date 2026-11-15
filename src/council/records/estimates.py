@@ -9,13 +9,11 @@ from __future__ import annotations
 
 import re
 
-from council.records import config, ledger
+from council.records import config
 
 KEY = "estimates"
 ROLES = ("review", "plan", "builder", "verifier", "converge")
 WORKERS = {"review": "review", "plan": "plan", "implement": "builder"}      # a mode's worker role
-LINES = re.compile(r"^[ \t]*-[ \t]*estimates:[^\r\n]*", re.MULTILINE)
-PARTS = re.compile(r"([ \t]*-[ \t]*estimates:[ \t]*)(.*?)([ \t]*<!--.*)?$")
 
 
 def mode_roles(mode: str) -> tuple[str, str]:
@@ -39,48 +37,3 @@ def figures(pieces: list[tuple[str, str, str]]) -> dict[str, int]:
 def read(home: object) -> dict[str, int]:
     """The role figures of the config's first `- estimates:` line; {} when it has none."""
     return figures(config.role_pairs(home, KEY)[1])
-
-
-def figure(text: str, role: str) -> int | None:
-    """One role's figure in a config's text, as read() reads it."""
-    found = LINES.search(text)
-    return figures(config.pairs(PARTS.match(found.group(0)).group(2))).get(role) if found else None
-
-
-def with_role(text: str, role: str, shown: str) -> tuple[str, dict]:
-    """The config text with the role's figure set to `shown` ('450k') and the record that undoes it: the first
-    `- estimates:` line keeps its other pieces and its comment, and a config without one gets the line as the
-    last item of ## Run preferences."""
-    piece = "{}={}".format(role, shown)
-    found = LINES.search(text)
-    if not found:
-        at, inserted = config.preferences_insertion(text, "- estimates: " + piece)
-        after = "- estimates: " + piece
-        return text[:at] + inserted + text[at:], {"before": None, "after": after, "inserted": inserted}
-    head, body, comment = PARTS.match(found.group(0)).groups()
-    pieces = [p.strip() for p in body.split(",") if p.strip()]
-    same = [i for i, p in enumerate(pieces) if p.partition("=")[0].strip().lower() == role]
-    if same:
-        pieces[same[0]] = piece
-    else:
-        pieces.append(piece)
-    after = head + ("" if head[-1] in " \t" else " ") + ", ".join(pieces) + (comment or "")
-    record = {"before": found.group(0), "after": after, "inserted": None}
-    return text[:found.start()] + after + text[found.end():], record
-
-
-def measured(rows: list[dict]) -> dict[str, list[int]]:
-    """What each role cost per run, from the ledger's rows: a worker role's tokens per agent (the mean over the
-    run's seats of that role), a verifier role's tokens for the run (the `(verifiers)` row, all of that run's
-    verifiers). A seat whose tokens are unknown is left out, never counted as zero; a mode with no role of its
-    own (research, a post-game) adds none."""
-    per_run: dict[tuple[str, str], list[int]] = {}
-    for row in rows:
-        worker, verifier = mode_roles(row["mode"])
-        role = verifier if row["seat"] == ledger.VERIFIERS else worker
-        if role and row["tokens"] is not None:
-            per_run.setdefault((role, row["run"]), []).append(row["tokens"])
-    found: dict[str, list[int]] = {}
-    for (role, _), tokens in per_run.items():
-        found.setdefault(role, []).append(sum(tokens) // len(tokens))
-    return found

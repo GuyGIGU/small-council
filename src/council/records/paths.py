@@ -26,18 +26,6 @@ def is_run(folder: Path, refuse_links: bool = True) -> bool:
     return folder.is_dir() and (folder / STATE).is_file()
 
 
-def run_folders(home: Path, newest: int | None = None, require_state: bool = True) -> list[Path]:
-    """The run folders under <home>/runs, oldest first by name, links left out; the newest N when given.
-    With require_state, a folder without session-state.md is no run and is not counted."""
-    runs = Path(home) / "runs"
-    if not runs.is_dir() or linked(runs):
-        return []
-    found = [p for p in runs.iterdir() if p.is_dir() and not linked(p)
-             and (not require_state or (p / STATE).is_file())]
-    found.sort(key=lambda p: p.name)
-    return found[-newest:] if newest else found
-
-
 # --- reading without getting in a live run's way ----------------------------------------------------------
 def linked(path: str | Path) -> bool:
     """True when path itself is a symlink or a Windows junction (its parent may be linked; that is fine)."""

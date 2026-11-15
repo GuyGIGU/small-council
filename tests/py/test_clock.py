@@ -7,11 +7,6 @@ from council import clock
 
 
 class ClockTest(unittest.TestCase):
-    def test_event_clock(self) -> None:
-        moment = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
-        self.assertEqual(clock.event_clock("2026-01-02T03:04:05Z"), moment.astimezone().strftime("%H:%M:%S"))
-        self.assertEqual(clock.event_clock("2026-01-02 03:04:05 local"), "03:04:05")
-
     def test_utc_and_iso_moments(self) -> None:
         want = datetime(2026, 9, 30, 10, 14, 16, tzinfo=timezone.utc)
         self.assertEqual(clock.utc_moment("2026-09-30T10:14:16Z"), want)

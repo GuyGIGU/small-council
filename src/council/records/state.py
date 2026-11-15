@@ -1,4 +1,4 @@
-"""session-state.md: a run's header fields, its recorded decisions, and the runs open in a council home.
+"""session-state.md: a run's header fields and its recorded decisions.
 
 The header is every `key: value` line above the first `## ` heading. The helper's state_field reads a
 key only there, so a note below the heading never reads as a field.
@@ -24,7 +24,7 @@ def text(run: Path, read: paths.Reader | None = None) -> str:
 def header(content: str, exact_keys: bool = False, comments: bool = True) -> dict[str, str]:
     """The header's fields, the first of a repeated key winning, with the value's leading space dropped
     and, with comments, a trailing '  # comment'. exact_keys takes only a key at the start of its line,
-    as the helper's state_field does; otherwise space around the key is allowed (the cockpit's rule)."""
+    as the helper's state_field does; otherwise space around the key is allowed (the snapshot's rule)."""
     fields = {}
     for line in cells.lines_of(content.lstrip(paths.BOM)):    # the helper drops the BOM from line 1
         if line.startswith("## "):
@@ -72,18 +72,3 @@ def decisions(content: str) -> list[str]:
         if inside and line.startswith("- "):
             found.append(unquote(line[2:]))
     return found
-
-
-def in_progress(home: Path) -> list[tuple[Path, str, str]]:
-    """The in-progress runs under a council home, newest first: (folder, code-root, session), each read
-    from its header with the cockpit's rule. Every entry of runs/ is tried; one with no state is skipped."""
-    runs, rows = Path(home) / "runs", []
-    try:
-        names = sorted((entry.name for entry in runs.iterdir()), reverse=True)
-    except OSError:
-        return rows
-    for name in names:
-        fields = {k: cells.clean(v) for k, v in header(text(runs / name)).items()}
-        if fields.get("status", "").split(" ")[0] == "in-progress":
-            rows.append((runs / name, fields.get("code-root", ""), fields.get("session", "")))
-    return rows

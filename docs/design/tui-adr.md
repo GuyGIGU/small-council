@@ -1,3 +1,5 @@
+> Removed on 2026-11-15: `council tui` was never used; the status card is the run's one view (D40). This record stays as history.
+
 # ADR: a thin terminal cockpit
 
 ## Problem

@@ -1,4 +1,4 @@
-"""Times, spans, counts and token figures in plain words, said one way by the status, its card and the pet."""
+"""Times, spans, counts and token figures in plain words, said one way by the status and its card."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
