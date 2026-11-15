@@ -17,8 +17,7 @@ class _Tally:
     """What the set did, for its summary line."""
 
     def __init__(self) -> None:
-        self.ran = self.passed = self.skipped = self.required = self.empty = self.nothing = 0
-        self.failed = 0
+        self.ran = self.passed = self.skipped = self.failed = 0
         self.old = False
         self.red: list[str] = []
         self.reds: list[str] = []
@@ -31,7 +30,6 @@ class _Tally:
         cli.say("gate %s: skipped — %s" % (name, why))
         self.skipped += 1
         if mandatory:
-            self.required += 1
             self.reds.append(name)
 
 
@@ -67,10 +65,8 @@ def run_all(call: gate_run.Call, at: str, mode: str, wait: tuple[bool, str]) -> 
             gate_repair.record(call.run, row.name, 0, trail, False)
             tally.passed += 1
             if result.empty == 1:
-                tally.empty += 1
                 tally.none.append(row.name)
             elif result.empty in (2, 3):
-                tally.nothing += 1
                 tally.unrun.append(row.name)
         else:                            # the set's failures are no attempts: a build counts its own gate runs
             tally.red.append(row.name)
@@ -133,13 +129,13 @@ def _reused(call: gate_run.Call, row: gate_table.Gate) -> bool:
     """A gate whose last run in this run was green, with the config's command, on the very files the code root
     holds now: said in one line (the gate, the seat, the tree) and not run again. Its record stays as it is; in a
     baseline set it becomes the baseline if the gate has none yet."""
-    base = Path(call.run, gates.FOLDER, gates.slug(row.name))
-    verdict = base.as_posix() + ".json"
+    stem = gates.slug(row.name)
+    verdict, out = (path.as_posix() for path in gates.files(Path(call.run), stem))
     green = verdicts.green(verdict, gate_run.json_esc(row.command))
     if green is None or git.files_tree(call.top) != green.tree:
         return False
     if call.baseline:
-        gate_run.keep_baseline(call.run, base, base.as_posix() + ".txt", verdict)
+        gate_run.keep_baseline(call.run, stem, out, verdict)
     cli.say("gate %s: green on this tree already — %s ran it on tree %s (%s), so it is not run again; council gate "
             "--all --rerun runs it anyway" % (row.name, green.seat, green.tree[:12], green.when))
     return True
@@ -191,13 +187,13 @@ def _summary(tally: _Tally, cfg: str, label: str) -> int:
     tail = ""
     if tally.skipped:
         tail = " · %d skipped" % tally.skipped
-        if tally.required:
+        if tally.reds:
             tail += " (%d of them required: %s — so this run proves less than it looks)" % (
-                tally.required, ", ".join(tally.reds))
-    if tally.empty:
-        tail += " · %d had nothing to check (%s — 0 files matched)" % (tally.empty, ", ".join(tally.none))
-    if tally.nothing:
-        tail += " · %d passed with nothing run (%s — see above)" % (tally.nothing, ", ".join(tally.unrun))
+                len(tally.reds), ", ".join(tally.reds))
+    if tally.none:
+        tail += " · %d had nothing to check (%s — 0 files matched)" % (len(tally.none), ", ".join(tally.none))
+    if tally.unrun:
+        tail += " · %d passed with nothing run (%s — see above)" % (len(tally.unrun), ", ".join(tally.unrun))
     if tally.reused:
         tail += " · %d green on this tree already, not run again (%s)" % (len(tally.reused), ", ".join(tally.reused))
     failing = tally.ran - tally.passed

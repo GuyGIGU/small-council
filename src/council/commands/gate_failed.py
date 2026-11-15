@@ -11,12 +11,14 @@ from council.commands import cli, gate_output
 from council.commands.gate_run import Call, Result, event, qname
 from council.records import bytewise, gates, verdicts
 
+_HITS = re.compile(r"error|fail|exception|traceback|assert|panic|cannot|not found|undefined", re.IGNORECASE)
+
 
 def said(call: Call, name: str, result: Result, secs: int, info: tuple, content: str) -> bool:
     """Say why the gate failed; True when it names only the tests that failed at the baseline. info is
     (limit, where the limit came from, timed out, cmd ran nothing, its baseline was kept by this run)."""
     most, why, timed_out, never, fresh = info
-    code, out = result.code, Path(call.run, "gates", gates.slug(name) + ".txt").as_posix()
+    code, out = result.code, gates.files(Path(call.run), gates.slug(name))[1].as_posix()
     if code == 97:
         cli.say("gate %s: could not enter the code root: %s" % (name, call.top))
     if timed_out:                              # a hang: what it was doing last, and no baseline to compare
@@ -46,15 +48,12 @@ def said(call: Call, name: str, result: Result, secs: int, info: tuple, content:
             if _HITS.search(line)][:12]
     indent(hits or gate_output.tail(content, 8), "    ")
     same = False
-    baseline = Path(call.run, "gates", "baseline", gates.slug(name))
-    if not fresh and Path(baseline.as_posix() + ".txt").is_file():
+    baseline = gates.files(Path(call.run), gates.slug(name), baseline=True)
+    if not fresh and baseline[1].is_file():
         same = compare(baseline, content)
     event(call.run, name, "failed", "exit=%d;seconds=%d;empty=0" % (code, secs),
           "gate failed, and its event was not recorded")
     return same
-
-
-_HITS = re.compile(r"error|fail|exception|traceback|assert|panic|cannot|not found|undefined", re.IGNORECASE)
 
 
 def indent(lines: list[str], pad: str) -> None:
@@ -64,12 +63,14 @@ def indent(lines: list[str], pad: str) -> None:
         cli.say(pad + gate_output.clip(line[:-1] if os.name == "nt" and line.endswith("\r") else line, 220))
 
 
-def compare(baseline: Path, content: str) -> bool:
-    """It may have been red before the change too: say what is new. True when no new failing test is named."""
-    shown = "gates/baseline/%s.txt" % baseline.name
-    seen = gate_output.failure_ids(gate_output.text(baseline.as_posix() + ".txt"))
+def compare(baseline: tuple[Path, Path], content: str) -> bool:
+    """It may have been red before the change too: say what is new. True when no new failing test is named.
+    baseline is the (verdict, output) pair of the gate's baseline run."""
+    verdict, out = baseline
+    shown = "gates/baseline/" + out.name
+    seen = gate_output.failure_ids(gate_output.text(out))
     now = gate_output.failure_ids(content)
-    if verdicts.number(baseline.as_posix() + ".json", "exit") == "0":  # green at the baseline: nothing old to subtract
+    if verdicts.number(verdict, "exit") == "0":  # green at the baseline: nothing old to subtract
         cli.say("    this gate passed at the baseline (%s), so every failure here is new" % shown)
     elif now and seen:
         new = [test for test in now if test not in seen][:12]
