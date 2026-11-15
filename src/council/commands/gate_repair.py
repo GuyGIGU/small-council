@@ -8,13 +8,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from council.commands import cli, resolve, script
+from council.commands import cli, resolve
 from council.records import config, repairs
 
 
 def run_quietly(action: str, task: str, gate: str | None, run: str) -> tuple[int, str]:
     """One `repair <action> <task> [<gate>] --run <run>`, with what it printed kept as the helper's $( … ) kept
     it: a record's refusal too (2>&1), the other actions' dropped (2>/dev/null)."""
+    from council.commands import script            # loaded on use: a gate with no repair trail never needs it
     code, said, errors = script.captured("repair", [action, task] + ([gate] if gate is not None else []) + ["--run",
                                                                                                             run])
     return code, (said + errors if action == "record" else said).rstrip("\n")

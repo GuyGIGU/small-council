@@ -8,7 +8,7 @@ import json
 import re
 from pathlib import Path
 
-from council.commands import cli, script, seat_advice
+from council.commands import cli, script
 from council.records import home as where
 from council.records import ledger
 
@@ -51,6 +51,7 @@ def advice(args: cli.Args, last: str) -> int:
         raise cli.Refusal(ADVICE)
 
     def said() -> int:
+        from council.commands import seat_advice     # the advice's own code: only advice loads it
         data = seat_advice.report(Path(where.council_home() + "/" + ledger.NAME), int(last))
         cli.say(json.dumps(data, indent=2, sort_keys=True) if "json" in args.flags else seat_advice.render(data))
         return 0
