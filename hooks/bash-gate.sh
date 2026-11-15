@@ -30,17 +30,12 @@ walk=""; case "$input" in *push*) walk=1 ;; *create*) walk=1 ;; esac   # one pat
 case "$input" in *council*) sid="${input:0:1000}" ;; *) [ -n "$walk" ] || exit 0; sid="" ;; esac
 
 # The session's mark, from the id near the start of the input (Claude Code writes it first; a pattern
-# over the whole input could take seconds). The id test is bin/council's session_file_ok. Builtins
-# only, so no process starts once the folder is there; a failure is silent and changes nothing.
+# over the whole input could take seconds), written by hooks/session-mark.sh: builtins only, so no
+# process starts once the folder is there; a failure is silent and changes nothing.
 case "$sid" in *'"session_id"'*) sid="${sid#*\"session_id\"}" ;; *) sid="" ;; esac
 case "$sid" in :\"*) sid="${sid#:\"}" ;; ': "'*) sid="${sid#: \"}" ;; *) sid="" ;; esac
 sid="${sid%%\"*}"
-case "$sid" in ''|.*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*) sid="" ;; esac
-mark() { { [ -d "$1" ] || mkdir -p "$1"; } 2>/dev/null && { : > "$1/$sid"; : > "$1/$sid.bash-gate"; } 2>/dev/null; }
-if [ -n "$sid" ]; then
-  [ -z "${XDG_CACHE_HOME:-}" ] || mark "$XDG_CACHE_HOME/small-council/sessions"
-  [ -z "${HOME:-}" ] || [ "${XDG_CACHE_HOME:-}" = "$HOME/.cache" ] || mark "$HOME/.cache/small-council/sessions"
-fi
+. "${BASH_SOURCE[0]%[/\\\\]*}/session-mark.sh" 2>/dev/null && mark_session "$sid" bash-gate
 
 [ "${#input}" -le 100000 ] || exit 0
 case "$input" in *'|'*) ;; *) [ -n "$walk" ] || exit 0 ;; esac
