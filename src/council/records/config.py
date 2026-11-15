@@ -49,6 +49,13 @@ def first(home: str | Path | None, pattern: str) -> re.Match | None:
     return None
 
 
+def folded(home: str | Path | None, key: str) -> str:
+    """The first `- key:` line's value: an HTML comment after it ignored, spaces folded, lowercased."""
+    found = first(home, r"[ \t]*-[ \t]*" + key + r":[ \t]*(.*)")
+    words = re.sub(r"[ \t]*(<!--.*)?$", "", found.group(1), count=1) if found else ""
+    return bytewise.lower(re.sub(r"[ \t]+", " ", words))
+
+
 def agent_cap(home: str | Path | None) -> int:
     """configured_agent_cap: the first `- agent cap: N`, else 10 (also for 0 or a number bash can't read)."""
     found = first(home, SPACE + "*-" + SPACE + "*agent cap:" + SPACE + "*([0-9]+)")
@@ -75,13 +82,7 @@ CHECKING = ("one per batch", "per task")
 def checking(home: str | Path | None) -> str:
     """configured_checking: 'one per batch (config)' or 'per task (config)', else one per batch as a
     default, said so (the first `- checking:` line, an HTML comment after it ignored, spaces folded)."""
-    value = ""
-    for line in _lines(home):
-        found = re.match(r"[ \t]*-[ \t]*checking:[ \t]*", line)
-        if found:
-            value = re.sub(r"[ \t]*(<!--.*)?$", "", line[found.end():], count=1)
-            value = bytewise.lower(re.sub(r"[ \t]+", " ", value))
-            break
+    value = folded(home, "checking")
     if value in CHECKING:
         return "{} (config)".format(value)
     if not value:
