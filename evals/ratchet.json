@@ -559,17 +559,17 @@
    "longest_name": ""
   },
   "src/council/records/audit_file.py": {
-   "lines": 83,
+   "lines": 82,
    "longest": 27,
    "longest_name": "render"
   },
   "src/council/records/bytewise.py": {
-   "lines": 80,
+   "lines": 89,
    "longest": 10,
    "longest_name": "records"
   },
   "src/council/records/cells.py": {
-   "lines": 110,
+   "lines": 109,
    "longest": 15,
    "longest_name": "token_count"
   },
@@ -589,7 +589,7 @@
    "longest_name": "roster_rows"
   },
   "src/council/records/earlier.py": {
-   "lines": 154,
+   "lines": 149,
    "longest": 15,
    "longest_name": "hits"
   },
@@ -599,7 +599,7 @@
    "longest_name": "with_role"
   },
   "src/council/records/events.py": {
-   "lines": 237,
+   "lines": 234,
    "longest": 29,
    "longest_name": "check"
   },
@@ -629,7 +629,7 @@
    "longest_name": "put"
   },
   "src/council/records/ignores.py": {
-   "lines": 67,
+   "lines": 66,
    "longest": 22,
    "longest_name": "keep_out"
   },
@@ -639,32 +639,32 @@
    "longest_name": "record"
   },
   "src/council/records/locks.py": {
-   "lines": 146,
+   "lines": 140,
    "longest": 25,
    "longest_name": "stale"
   },
   "src/council/records/map_file.py": {
-   "lines": 74,
+   "lines": 71,
    "longest": 18,
    "longest_name": "ways"
   },
   "src/council/records/memory.py": {
-   "lines": 212,
+   "lines": 205,
    "longest": 25,
    "longest_name": "replace"
   },
   "src/council/records/memory_anchors.py": {
-   "lines": 165,
+   "lines": 159,
    "longest": 24,
    "longest_name": "split_name"
   },
   "src/council/records/memory_audit.py": {
-   "lines": 288,
+   "lines": 283,
    "longest": 34,
    "longest_name": "verdicts"
   },
   "src/council/records/memory_entries.py": {
-   "lines": 435,
+   "lines": 427,
    "longest": 44,
    "longest_name": "line"
   },
@@ -674,7 +674,7 @@
    "longest_name": "refusal"
   },
   "src/council/records/owners.py": {
-   "lines": 105,
+   "lines": 104,
    "longest": 20,
    "longest_name": "_windows"
   },
@@ -684,22 +684,22 @@
    "longest_name": "rounds"
   },
   "src/council/records/paths.py": {
-   "lines": 211,
+   "lines": 212,
    "longest": 26,
    "longest_name": "open_shared"
   },
   "src/council/records/plan.py": {
-   "lines": 76,
+   "lines": 69,
    "longest": 19,
    "longest_name": "summary"
   },
   "src/council/records/pushes.py": {
-   "lines": 41,
+   "lines": 33,
    "longest": 17,
    "longest_name": "pushes"
   },
   "src/council/records/quotes.py": {
-   "lines": 130,
+   "lines": 129,
    "longest": 23,
    "longest_name": "next_tasks"
   },
@@ -709,9 +709,9 @@
    "longest_name": "redact"
   },
   "src/council/records/repairs.py": {
-   "lines": 20,
+   "lines": 19,
    "longest": 3,
-   "longest_name": "kept"
+   "longest_name": "allow"
   },
   "src/council/records/report_head.py": {
    "lines": 106,
@@ -734,9 +734,9 @@
    "longest_name": "listed_fields"
   },
   "src/council/records/scope.py": {
-   "lines": 194,
-   "longest": 35,
-   "longest_name": "expand"
+   "lines": 195,
+   "longest": 26,
+   "longest_name": "glob_re"
   },
   "src/council/records/seat_files.py": {
    "lines": 239,
@@ -754,7 +754,7 @@
    "longest_name": "seat_usage"
   },
   "src/council/records/seats.py": {
-   "lines": 123,
+   "lines": 122,
    "longest": 14,
    "longest_name": "workflow_extra"
   },
@@ -769,7 +769,7 @@
    "longest_name": "required"
   },
   "src/council/records/state.py": {
-   "lines": 99,
+   "lines": 89,
    "longest": 14,
    "longest_name": "header"
   },
@@ -779,7 +779,7 @@
    "longest_name": "_locked"
   },
   "src/council/records/synthesis_counts.py": {
-   "lines": 121,
+   "lines": 120,
    "longest": 34,
    "longest_name": "named"
   },
@@ -794,7 +794,7 @@
    "longest_name": "write_pair"
   },
   "src/council/records/usage.py": {
-   "lines": 234,
+   "lines": 225,
    "longest": 30,
    "longest_name": "usage_totals"
   },
