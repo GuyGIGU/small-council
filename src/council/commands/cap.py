@@ -18,12 +18,10 @@ DETAILS = ("type=", "seat=", "run=", "file=", "hunt=")
 GO = 'council cap allow <n> --user-said "<their words>"'
 HINT = "the next agent is refused until their go is recorded: " + GO
 ASK = "tell the user, and ask before starting more; " + HINT
-USAGE = ('usage: council cap [--run <folder>] | cap allow <n> --user-said "…" | cap check [--session ID] [<tool> '
-         '[type=… seat=… run=… file=…]]')
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    """council cap [--run <folder>], cap check [--session ID] [<tool> [type=… seat=… run=… file=…]] and cap allow."""
+    """cap, cap check and cap allow: dispatch refuses any other sub with the usage (USAGES["cap"])."""
     sub, rest = (words[0], words[1:]) if words else ("", [])
     if sub == "":
         cli.takes_flags(args, "cap")
@@ -39,8 +37,6 @@ def main(args: cli.Args, words: list[str]) -> int:
             cli.no_words("cap check", rest)
         from council.commands import agent_gate
         return agent_gate.check(args.value("session") or os.environ.get("CLAUDE_CODE_SESSION_ID", ""), rest)
-    if sub != "allow":
-        raise cli.Refusal(USAGE)
     cli.takes_flags(args, "cap allow", "user-said")
     if len(rest) != 1:
         raise cli.Refusal("usage: council cap allow <n> --user-said \"<the user's words>\" [--run <folder>]")

@@ -17,7 +17,6 @@ CHECKED = ("git push", "gh pr create")
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    """council pushes [check <git push|gh pr create>]."""
     sub, rest = (words[0], words[1:]) if words else ("", [])
     if sub == "":
         cli.takes_flags(args, "pushes")

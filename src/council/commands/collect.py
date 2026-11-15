@@ -106,7 +106,6 @@ def state_of(run: Path, slug: str, state: str, seats: list[seat_files.Seat]) -> 
 
 def one(run: Path, scope: cite_check.Scope, seat: seat_files.Seat, seats: list[seat_files.Seat], flags: Flags,
         tally: dict) -> None:
-    """One seat's row."""
     stray = seat.ref == "?"
     note = " not-in-brief" if stray else ""
     tally["strays" if stray else "total"] += 1

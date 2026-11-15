@@ -111,13 +111,11 @@ def takes_no_run(args: Args, reads: str) -> None:
 
 
 def no_words(label: str, words: list[str]) -> None:
-    """Refuse words a command doesn't take."""
     if words:
         raise Refusal("%s doesn't take '%s' — see: council help" % (label, " ".join(words)))
 
 
 def say(line: str) -> None:
-    """One line on stdout."""
     sys.stdout.write(line + "\n")
 
 

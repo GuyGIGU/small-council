@@ -114,7 +114,6 @@ def third_fix_round(run: Path, task: int, earlier: list[tuple[list[str], str, st
 
 
 def _recorded(run: Path, slug: str) -> bool:
-    """The seat has a state in seats.tsv (the helper's seat_field … 2)."""
     return any(row.get("slug") == slug and row.get("state") for row in seats.rows(run))
 
 
