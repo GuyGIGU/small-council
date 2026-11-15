@@ -105,6 +105,25 @@ class AppendTest(support.Scratch):
         with self.assertRaisesRegex(events.EventError, "unsupported events schema: 2"):
             events.append(newer, "x", "y", "z", "")
 
+    def test_a_state_past_the_guarded_read_is_named_with_the_next_step(self) -> None:
+        big = self.stamped(extra="events-schema: 1\n" + "x" * (4 * 1024 * 1024) + "\n")
+        (big / "events.tsv").write_text(HEADER)
+        with self.assertRaisesRegex(events.EventError, "is a link, lies outside the run or is over 4 MB.*put a plain "
+                                                       "copy of it, under that size, in its place: .*session-state"):
+            events.append(big, "x", "y", "z", "")
+        self.assertEqual(events.check(big.as_posix())[0], 1)
+        linked = self.run_folder("2026-01-02-030407-council-plan")
+        target = self.tmp / "state-elsewhere.md"
+        target.write_text("events-schema: 1\n")
+        support.symlink_or_skip(self, linked / "session-state.md", target)
+        (linked / "events.tsv").write_text(HEADER)
+        with self.assertRaisesRegex(events.EventError, "is a link, lies outside the run"):
+            events.append(linked, "x", "y", "z", "")
+
+    def test_details_the_first_of_a_repeated_key_wins(self) -> None:
+        self.assertEqual(events.details("skipped=hunt;reason=not needed;skipped=all"),
+                         {"skipped": "hunt", "reason": "not needed"})
+
     def test_a_held_lock_stops_the_append(self) -> None:
         run = self.stamped()
         events.append(run, "run.opened", "run", "m", "")

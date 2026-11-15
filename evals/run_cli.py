@@ -731,6 +731,16 @@ def runs_open(tmp):
     code, out, err = council(legacy, "seat", "old-worker", "running", "agent=old")
     check("legacy run: a pre-contract run without a plan still works", code == 0 and "old-worker" in out, out + err)
     council(legacy, "run", "close", "--status", "abandoned")
+    # The stamp is read by the state's one guarded read: a state over 4 MB (or a link) is not read, and says so.
+    huge = new_repo(tmp, "huge-state")
+    write(os.path.join(huge, ".council", "council.config.md"), "# Council config\n")
+    _, huge_run, _ = council(huge, "run", "open", "council-review")
+    huge_run = huge_run.strip()
+    append(os.path.join(huge_run, "session-state.md"), "x" * (4 * 1024 * 1024) + "\n")
+    code, _, err = council(huge, "run", "events", "check", "--run", os.path.basename(huge_run))
+    check("run events check: a state over 4 MB is named, with the next step, not called unstamped",
+          code == 1 and "session-state.md is a link, lies outside the run or is over 4 MB" in err
+          and "put a plain copy of it, under that size, in its place" in err and "without an events-schema" not in err, err)
 
     # A relative --code-root is stored absolute: in a real build every gate exited 97 ("cd" failed) once
     # the Chair's cwd was a worktree, because session-state.md kept the path as typed.
