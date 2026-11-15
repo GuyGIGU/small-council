@@ -1,3 +1,5 @@
+> Removed on 2026-11-15: `council history` was never used, and the council keeps no report across runs (D40). This record stays as history.
+
 # ADR: history across runs, without a database or a dashboard
 
 ## Problem

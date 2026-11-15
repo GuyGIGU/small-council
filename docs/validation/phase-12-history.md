@@ -1,3 +1,5 @@
+> Removed on 2026-11-15: `council history` and its evals (`evals/run_history.py`) are gone (D40). This note stays as history.
+
 # Phase 12 — history across runs, gated on enough data
 
 ## What changed
