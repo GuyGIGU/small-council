@@ -7872,6 +7872,67 @@ def runs_dispatch_record(tmp):
 
 
 @part("lifecycle")
+def runs_build_seat(tmp):
+    # T5 (D42): a builder agent per task, on build seat task-<n>. One builder at a time edits project code, its done
+    # needs report-<n>.md unless it stopped with NEEDS:, and its start names the files changed outside a round.
+    bs = new_repo(tmp, "build-seat")
+    write(os.path.join(bs, "a.txt"), "a\n")
+    write(os.path.join(bs, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    git(bs, "add", "-A")
+    git(bs, "commit", "-q", "-m", "init")
+    _, out, _ = council(bs, "run", "open", "council-implement", env=session("sB"))
+    brun = out.strip().splitlines()[-1]
+    opened = re.search(r"^start-head: (\S+)$", read(os.path.join(brun, "session-state.md")), re.MULTILINE)
+    write_plan(brun, selected=("task-1", "task-2"))
+    code, out, err = council(bs, "seat", "task-1", "queued")
+    check("seat: a build seat starts with no line about files when nothing changed since the commit the run opened on",
+          code == 0 and "outside any round" not in err, out + err)
+    council(bs, "seat", "task-1", "running", "agent=b1")
+    code, out, err = council(bs, "seat", "task-2", "queued")
+    check("seat: one builder at a time — task-2 is refused while task-1 runs, naming it and both next steps",
+          code == 2 and "cannot start task-2 — task-1 is running, and one builder at a time edits project code (D42)"
+          in err and "council seat task-1 done tokens=<n> tools=<n>" in err
+          and 'council seat task-1 failed note="…"' in err and "\ntask-2\t" not in read(os.path.join(brun, "seats.tsv")),
+          out + err)
+    code, out, err = council(bs, "seat", "task-1", "running", "agent=b1")
+    check("seat: the same build seat recorded running again while it runs is no second builder", code == 0, out + err)
+    code, out, err = council(bs, "seat", "task-1", "done", "tokens=20000")
+    check("seat: a build seat's done with no report-<n>.md is refused as a verifier's missing file is",
+          code == 2 and "seat task-1 has no file yet (%s/report-1.md), so it isn't done" % slash(brun) in err, out + err)
+    code, out, err = council(bs, "seat", "task-1", "done", "tokens=20000", "note=NEEDS: which table holds the key?")
+    check("seat: ... except a NEEDS: return, which writes no round", code == 0, out + err)
+    write(os.path.join(bs, "a.txt"), "b\n")
+    write(os.path.join(bs, "new.txt"), "n\n")
+    code, out, err = council(bs, "seat", "task-1", "running", "agent=b2")
+    check("seat: a build seat's start names, file by file, what changed since the commit the run opened on — a notice, "
+          "exit 0", code == 0 and "council: 2 file(s) changed since the commit the run opened on (%s), outside any round "
+          "— an edit made outside a round, or a file a gate left. council patch save puts them in task 1's round:\n"
+          "council:   a.txt\ncouncil:   new.txt\n" % (opened.group(1)[:12] if opened else "?") in err, out + err)
+    write(os.path.join(brun, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra="")
+          .replace("src/pay.py", "a.txt"))
+    council(bs, "patch", "save", "1")
+    code, out, err = council(bs, "seat", "task-1", "done", "tokens=20000")
+    check("seat: with report-1.md written, the build seat's done is recorded", code == 0, out + err)
+    code, out, err = council(bs, "seat", "task-2", "queued")
+    check("seat: a start with the files as the last saved round left them says nothing about files",
+          code == 0 and "outside any round" not in err, out + err)
+    council(bs, "seat", "task-2", "skipped")
+    write(os.path.join(bs, "gate.log"), "left by a gate\n")
+    code, out, err = council(bs, "seat", "task-2", "running", "agent=b3")
+    check("seat: after a saved round, a start names what changed since that round",
+          code == 0 and "council: 1 file(s) changed since the last saved round (task 1 round 1), outside any round" in err
+          and "council:   gate.log\n" in err and "a.txt" not in err, out + err)
+    _, out, _ = council(bs, "run", "open", "council-review", "--alongside", env=session("sB"))
+    rrun = out.strip().splitlines()[-1]
+    write_plan(rrun, selected=("task-1", "task-3"))
+    council(bs, "seat", "task-1", "running", "agent=r1", "--run", rrun)
+    code, out, err = council(bs, "seat", "task-3", "running", "agent=r3", "--run", rrun)
+    code2, out2, err2 = council(bs, "seat", "task-3", "done", "tokens=20000", "--run", rrun)
+    check("seat: outside a build, task-3 is an ordinary seat — it starts beside a running task-1, needs no report and "
+          "names no files", code == 0 and code2 == 0 and "outside any round" not in err, out + err + out2 + err2)
+
+
+@part("lifecycle")
 def runs_status_card_owed_once(tmp):
     # The run's first status card is owed once per run, at its first dispatch: the helper marks it due, any
     # council status call for the run clears it, and the turn-end hook sends the Chair back once while it is due.

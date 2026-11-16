@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from council import clock
-from council.commands import cap, cli, closed, event_note, nudges, plan, resolve, rounds, seat_notes
+from council.commands import build_seat, cap, cli, closed, event_note, nudges, plan, resolve, rounds, seat_notes
 from council.records import cells, ledger, seat_rows, seat_write, seats, state_write
 from council.records import home as where
 from council.records import plan as run_plan
@@ -45,6 +45,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     run = resolve.run_folder(args)
     closed_out = _closed_out(run, slug, state, got)
     _may_record(run, slug, state, got)
+    starting = build_seat.starts(run, slug, state)        # read before the write changes the seat's state
     state_write.clear_waiting(run)                       # the call is good: the run moves on
     lock = Path(str(seats.path(run)) + ".lock")
     with event_note.locked(lock, "seat lock unavailable: " + lock.as_posix(),
@@ -60,6 +61,8 @@ def main(args: cli.Args, words: list[str]) -> int:
         except OSError:
             cli.warn("council: the tool-call count was not recorded (%s)" % tools.as_posix())
     seat_notes.report(run, slug, got)
+    if starting:
+        build_seat.say_outside(run, slug)
     cap.note(run)                                         # the reminders last, so they are seen
     if first:
         nudges.status_nudge(run, "dispatch", bool(args.value("run")))
@@ -137,7 +140,8 @@ def _closed_out(run: Path, slug: str, state: str, got: dict[str, str]) -> bool:
 
 def _may_record(run: Path, slug: str, state: str, got: dict[str, str]) -> None:
     """The refusals that read the run before anything is written."""
-    missing = seat_write.missing_file(run, slug) if state == "done" and got["agents"] != "0" else ""
+    missing = seat_write.missing_file(run, slug) or build_seat.missing_report(run, slug, got["note"]) \
+        if state == "done" and got["agents"] != "0" else ""
     if missing:
         raise cli.Refusal("seat %s has no file yet (%s), so it isn't done — resume its agent with SendMessage "
                           "(\"write your file now with what you have, then finish\"), or record it: council seat %s "
@@ -155,7 +159,8 @@ def _may_record(run: Path, slug: str, state: str, got: dict[str, str]) -> None:
         if run_plan.path(run).is_file() and not run_plan.selected(run, slug):
             raise cli.Refusal("cannot start seat %s — run-plan.tsv does not mark it selected; update the plan and "
                               "run: council run plan check --run %s" % (slug, run.name))
-        why = rounds.batch_check(run, slug, where.council_home()) or rounds.check_round(run, slug)
+        why = rounds.batch_check(run, slug, where.council_home()) or rounds.check_round(run, slug) \
+            or build_seat.start_refusal(run, slug)
         if why:
             raise cli.Refusal(why)
 
