@@ -15,8 +15,8 @@ SessionStart (hooks/session-start.sh):
   - stays fast and short with many open runs: other trees' runs summed up, gone trees named, at most 5
     of this tree's runs described;
   - says nothing about complete or abandoned runs; keeps a 0.2 run's fields in place (no code-root);
-  - still finds a legacy run through the old active-run pointer (no status line, CRLF, <mode>-output),
-    offers a finished one to close as complete, and never claims an old one after a compaction;
+  - reads no old active-run pointer (a 0.1/0.2 run left open outside runs/ is not reported), and still
+    finds a root conventions.md with CRLF endings;
   - finds the MAIN checkout's .council/ from a linked worktree; reports a stale or rewritten map;
     survives garbage;
   - warns first when the session's own cwd is a linked worktree and an in-progress run's code is
@@ -394,7 +394,8 @@ def session_start(tmp):
 
     write(os.path.join(full, ".council", "active-run"), ".council/runs/2026-09-15-100000-review\n")
     code, out = run_hook(full, "startup")
-    check("old pointer into runs/: the run is reported once", out.count("2026-09-15-100000-review (") == 1, out)
+    check("an old active-run pointer is read by nothing: the run it names is reported once, by the usual scan",
+          out.count("2026-09-15-100000-review (") == 1, out)
 
     # Which run a compaction resumes
     sess = new_repo(tmp, "sess")
@@ -563,29 +564,19 @@ def many_open_runs(tmp):
     old_rel = ".council/review-output/2026-09-07-1200"
     write(os.path.join(legacy, ".council", "active-run"), old_rel + "\n", crlf=True)
     write(os.path.join(legacy, old_rel, "session-state.md"), "# Session state\nphase: 5 — awaiting worker returns\n", crlf=True)
+    with open(os.path.join(legacy, ".council", "active-run"), "rb") as f:
+        pointer = f.read()
     code, out = run_hook(legacy, "startup")
-    check("legacy run without status: flagged unfinished", "UNFINISHED COUNCIL RUN" in out, out)
-    check("legacy run: mode inferred from the old folder name", "council-review (legacy run)" in out, out)
+    check("legacy: a run left open outside runs/ behind the old active-run pointer is not reported — nothing reads "
+          "the pointer now", "UNFINISHED COUNCIL RUN" not in out and "2026-09-07-1200" not in out, out)
     code, raw = run_hook(legacy, "startup", raw=True)
-    check("legacy CRLF state: no carriage returns leak into output", b"\r" not in raw, repr(raw))
+    check("legacy CRLF config and memory: no carriage returns leak into output", b"\r" not in raw, repr(raw))
     check("legacy root conventions.md: found", "Settled decisions:" in out and "conventions.md" in out, out)
-    age(os.path.join(legacy, old_rel, "session-state.md"), 3 * 86400)
     code, out = run_hook(legacy, "compact")
-    check("legacy run untouched for days: a compaction never says this session was running it",
-          not compacted(out) and "2026-09-07-1200" in out, out)
-    # A build's log is written after every task, so it is evidence of work, never of a finished run.
-    write(os.path.join(legacy, old_rel, "implementation-log.md"),
-          "# Implementation log\n**Tasks completed:** 3/15\nNext session resumes at Task 11.\n")
-    code, out = run_hook(legacy, "startup")
-    line = line_with(out, "2026-09-07-1200")
-    check("legacy run holding only a build log: never called probably finished, and never offered as complete",
-          "probably finished" not in line and "--status complete" not in line
-          and "council run resume" in line and "--status abandoned" in line, out)
-    write(os.path.join(legacy, old_rel, "FINAL-REVIEW.md"), "# Final review\n")
-    code, out = run_hook(legacy, "startup")
-    line = line_with(out, "2026-09-07-1200")
-    check("legacy run holding its final deliverable: offered to close as complete, not abandoned",
-          "--status complete" in line and "--status abandoned" not in line and "FINAL-REVIEW.md" in line, out)
+    with open(os.path.join(legacy, ".council", "active-run"), "rb") as f:
+        same = f.read() == pointer
+    check("legacy: after a compaction too, the old run is not named, and the pointer is left byte for byte",
+          not compacted(out) and "2026-09-07-1200" not in out and same, out)
 
 @part("main")
 def seat_gate_replies(tmp):

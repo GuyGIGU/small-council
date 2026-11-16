@@ -7,7 +7,6 @@ import re
 import stat
 import sys
 import time
-from fnmatch import fnmatchcase
 
 from council import git
 from council.commands import cli, doctor_hooks
@@ -81,8 +80,8 @@ def _start(raw: str) -> None:
     _banner(home, sid)
     _map(home)
     _memory(home)
-    driving = _runs(listed, top, sid, event) if listed else ""
-    _active_run(home, root, sid, event, driving)
+    if listed:
+        _runs(listed, top, sid, event)
 
 
 def _worktree(listed: list[runs.Listed], scwd: str, root: str) -> None:
@@ -253,43 +252,6 @@ def _elsewhere(others: list[str], n_other: int, gone: list[str], n_gone: int) ->
     elif n_gone > 1:
         cli.say("- %d council runs were left open in a working tree that no longer exists: %s. Ask the user, then "
                 "close each: council run close --run <name> --status abandoned." % (n_gone, said))
-
-
-def _active_run(home: str, root: str, sid: str, event: str, driving: str) -> None:
-    """Older layouts (0.1/0.2) kept one pointer to the in-flight run; runs outside runs/ are only found here."""
-    pointer = _text(home + "/active-run")
-    if not pointer:
-        return
-    run = pointer.split("\n")[0].replace("\r", "")
-    if not re.match(r"/|[A-Za-z]:", run):
-        run = root + "/" + run
-    content = _text(run + "/" + state.NAME) if run and not run.startswith(home + "/runs/") else None
-    if content is None or re.match(r"complete|abandoned", state.field(content, "status")):
-        return
-    mode, phase, updated, rsid = (state.field(content, key) for key in ("mode", "phase", "updated", "session"))
-    if not mode and "-output/" in run:
-        m = run[:run.rfind("-output/")].rsplit("/", 1)[-1]
-        mode = "council-%s (legacy run)" % (m[len("council-"):] if m.startswith("council-") else m)
-    names = sorted(os.listdir(where.native(run)))     # bash's glob: case matters, also on Windows
-    final = next((name for pattern in ("FINAL-*.md", "PLAN-*.md") for name in names
-                  if fnmatchcase(name, pattern) and os.path.isfile(where.native(run + "/" + name))), "")
-    said = "%s (%s, phase: %s" % (run, mode or "unknown mode", phase or "unknown")
-    if event == "compact" and ((sid and rsid == sid) or (not rsid and not driving and not final
-                                                         and _recent(run + "/" + state.NAME, 720))):
-        cli.say("- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: %s). Re-invoke that mode's skill, read %s/%s, and "
-                "resume at that phase. Do not restart, do not re-dispatch seats whose files exist, do not skip the "
-                "completeness check." % (said, run, state.NAME))
-    elif event == "compact":
-        cli.say("- Also open (an older run layout), not this session's run: %s)%s. Leave it unless the user asks."
-                % (said, " — it holds %s, so it is probably finished" % final if final else ""))
-    elif final:
-        cli.say("- UNFINISHED COUNCIL RUN (an older run layout): %s, updated: %s). It holds its final deliverable "
-                "(%s), so it is probably finished: ask the user, then close it as complete (council run close --run "
-                "\"%s\" --status complete)." % (said, updated or "unknown", final, run))
-    else:
-        cli.say("- UNFINISHED COUNCIL RUN: %s, updated: %s). Before new council work, ask the user whether to resume "
-                "it (council run resume --run \"%s\", then re-invoke that mode's skill) or close it (council run close "
-                "--run \"%s\" --status abandoned)." % (said, updated or "unknown", run, run))
 
 
 def _recent(path: str, minutes: int) -> bool:

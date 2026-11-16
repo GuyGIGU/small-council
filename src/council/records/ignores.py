@@ -11,7 +11,7 @@ from council import git
 from council.records import paths
 
 NAME = ".gitignore"
-KEPT_OUT = ("runs/", "asks/", "active-run")
+KEPT_OUT = ("runs/", "asks/")
 _SHARED = re.compile(rb"[ \t\n\v\f\r]*!/?asks/?[ \t\n\v\f\r]*")
 
 
@@ -38,12 +38,12 @@ def asks_shared(home: str | Path) -> bool:
 
 
 def keep_out(home: str | Path) -> str:
-    """Make git ignore runs/, asks/ and active-run in the home; the line to say when tracked asks/ became ignored."""
+    """Make git ignore runs/ and asks/ in the home; the line to say when tracked asks/ became ignored."""
     file, added = path(home), False
     data = paths.contents(file)
     cr = b"\r" if data and b"\r" in data else b""
     for want in KEPT_OUT:
-        if ignores(home, want + "x" if want.endswith("/") else want):
+        if ignores(home, want + "x"):
             continue
         if want == "asks/" and asks_shared(home):
             continue

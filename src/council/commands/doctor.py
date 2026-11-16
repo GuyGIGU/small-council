@@ -18,7 +18,6 @@ from council.records import home as where
 from council.records import plan as plan_file
 
 PLUGIN = Path(__file__).resolve().parents[3].as_posix()
-ACTIVE = "active-run"       # the 0.2 pointer to the open run; doctor only says it is left behind
 CARD_LIMIT = 8192
 STALE_DAYS = 2              # find -mtime +2: open for three whole days or more
 
@@ -71,7 +70,6 @@ def main(args: cli.Args, words: list[str]) -> int:
         doctor_gates.gates(doc)
     open_runs(doc)
     run_plans(doc)
-    active_run(doc)
     from council.commands import doctor_memory
     doctor_memory.memory_file(doc)
     map_stamp(doc)
@@ -212,26 +210,6 @@ def _plan_check(folder: str) -> tuple[int, list[str]]:
     with contextlib.redirect_stdout(said), contextlib.redirect_stderr(said):
         code = plan.check(Path(where.native(folder)), True)
     return code, said.getvalue().splitlines()
-
-
-def active_run(doc: Doctor) -> None:
-    pointer = where.native(doc.home + "/" + ACTIVE)
-    try:
-        data = Path(pointer).read_bytes()
-    except OSError:
-        return
-    if not data:
-        return
-    p = data.split(b"\n")[0].replace(b"\r", b"").decode("utf-8", "surrogateescape")
-    p = p if p.startswith("/") or re.match(r"[A-Za-z]:", p) else doc.root + "/" + p
-    if _isfile(p + "/" + paths.STATE):
-        if _field(p, "status").startswith(("complete", "abandoned")):
-            doc.warn("active-run still points at a closed run", "empty .council/active-run (0.3 doesn't use it)")
-        else:
-            doc.warn("an older run is still marked open: %s" % p,
-                     "resume it, or: council run close --run \"%s\" --status abandoned" % p)
-    else:
-        doc.warn("active-run points at a folder that no longer exists: %s" % p, "empty .council/active-run")
 
 
 def map_stamp(doc: Doctor) -> None:

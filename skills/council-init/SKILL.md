@@ -184,9 +184,9 @@ Adjust on request. On confirmation, write:
   (`grep -n '^## Principle' <doc>`), read each principle's section only as you write its line, and
   save the card before starting the next. After a compaction, carry on from the first seat without
   a card.
-- **`.council/.gitignore`** containing `runs/`, `asks/` (the user's own words stay on their own
-  machine) and `active-run`, for older runs. Config, memory, map, plans, reviews, logs and research
-  stay tracked. `council run open` adds any of the three that is missing. A user who wants the team
+- **`.council/.gitignore`** containing `runs/` and `asks/` (the user's own words stay on their own
+  machine). Config, memory, map, plans, reviews, logs and research stay tracked. `council run open`
+  adds either line that is missing. A user who wants the team
   to see their requests says so: write `!asks/` in place of the `asks/` line, and nothing adds it back.
 - **Memory:** keep an existing `conventions.md` wherever it is, and record its path in the config's
   Memory section. Otherwise create `.council/conventions.md` from the template. Obvious accepted

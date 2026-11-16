@@ -3355,7 +3355,8 @@ def runs_worktrees_close_and_find(tmp):
     write(os.path.join(repo, ".council", "active-run"), run2 + "\n")
     code, out, _ = council(repo, "run", "close", "--run", run2, "--status", "abandoned")
     check("run close: abandons a run", code == 0 and "abandoned" in out, out)
-    check("run close: empties the old active-run pointer when it names the run", read(os.path.join(repo, ".council", "active-run")).strip() == "")
+    check("run close: an old active-run pointer naming the run is read by nothing and left as it is",
+          read(os.path.join(repo, ".council", "active-run")) == run2 + "\n")
     to_deliver(repo)
     code, out, _ = council(repo, "run", "close")
     st = read(os.path.join(run, "session-state.md"))
@@ -5951,10 +5952,32 @@ def runs_gitignore(tmp):
     lg_run = council(legacy, "run", "open", "council-implement")[1].strip()
     write(os.path.join(lg_run, "ask.md"), "# Ask — deploy\n## In your words\nuse my key and ship it\n")
     gi_lines = read(os.path.join(legacy, ".council", ".gitignore")).split()
-    check("run open: a home with no .gitignore gets one that ignores runs/, asks/ and active-run before any words are written",
-          {"runs/", "asks/", "active-run"} <= set(gi_lines)
+    check("run open: a home with no .gitignore gets one that ignores runs/ and asks/ before any words are written",
+          sorted(gi_lines) == ["asks/", "runs/"]
           and not [l for l in status_lines(legacy) if "runs/" in l], " · ".join(status_lines(legacy)))
     council(legacy, "run", "close", "--status", "abandoned")
+    # A 0.1/0.2 home's active-run pointer, naming a run left open outside runs/: nothing reads or writes it now
+    pointed = new_repo(tmp, "old-pointer-home")
+    write(os.path.join(pointed, ".council", "council.config.md"), "# Council config\n")
+    old_rel = ".council/review-output/2026-09-07-1200"
+    write(os.path.join(pointed, old_rel, "session-state.md"), "# Session state\nphase: 5 — awaiting worker returns\n")
+    pointer = os.path.join(pointed, ".council", "active-run")
+    with open(pointer, "wb") as f:
+        f.write(old_rel.encode() + b"\r\n")
+    p_run = council(pointed, "run", "open", "council-review")[1].strip()
+    with open(pointer, "rb") as f:
+        opened_with = f.read()
+    with open(pointer, "wb") as f:                            # now naming the run the close closes
+        f.write(b".council/runs/" + os.path.basename(p_run).encode() + b"\r\n")
+    _, doc_out, _ = council(pointed, "doctor")
+    code, close_out, _ = council(pointed, "run", "close", "--status", "abandoned")
+    with open(pointer, "rb") as f:
+        kept = f.read()
+    check("run open, doctor and close: an old active-run file is left byte for byte, its line is not added to "
+          ".gitignore, and doctor says nothing of it",
+          bool(p_run) and code == 0 and opened_with == old_rel.encode() + b"\r\n" and kept == b".council/runs/" + os.path.basename(p_run).encode() + b"\r\n"
+          and "active-run" not in read(os.path.join(pointed, ".council", ".gitignore"))
+          and "active-run" not in doc_out and "older run" not in doc_out, repr(kept) + doc_out + close_out)
     old = new_repo(tmp, "home-0-6")
     write(os.path.join(old, ".council", "council.config.md"), "# Council config\n")
     write(os.path.join(old, ".council", "asks", "2026-09-10-old.md"), "# Ask — old\n")
@@ -6007,7 +6030,7 @@ def runs_gitignore(tmp):
     loose_gi = read(os.path.join(loose, ".council", ".gitignore")).split()
     code, out, _ = council(loose, "doctor")
     check("run open outside git: writes each ignore line once, and doctor finds them",
-          sorted(loose_gi) == ["active-run", "asks/", "runs/"]
+          sorted(loose_gi) == ["asks/", "runs/"]
           and not [l for l in out.splitlines() if "runs/" in l or "asks/" in l], " ".join(loose_gi) + " · " + out)
 
 @part("runs")

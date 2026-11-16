@@ -33,9 +33,9 @@ class IgnoresTest(support.Scratch):
                 support.shutil.rmtree(str(self.tmp / ".council"))
 
     def test_keep_out_writes_what_ensure_ignored_wrote(self) -> None:
-        for text, wrote in ((b"", b"runs/\nasks/\nactive-run\n"),
-                            (b"# mine\r\nruns/", b"# mine\r\nruns/\r\nasks/\r\nactive-run\r\n"),
-                            (b"!asks/\n", b"!asks/\nruns/\nactive-run\n"), (None, b"runs/\nasks/\nactive-run\n")):
+        for text, wrote in ((b"", b"runs/\nasks/\n"), (b"# mine\r\nruns/", b"# mine\r\nruns/\r\nasks/\r\n"),
+                            (b"!asks/\n", b"!asks/\nruns/\n"), (None, b"runs/\nasks/\n"),
+                            (b"runs/\nactive-run\n", b"runs/\nactive-run\nasks/\n")):   # an old line is left as it is
             with self.subTest(text=text):
                 ignores.keep_out(self.home(text))
                 self.assertEqual((self.tmp / ".council" / ".gitignore").read_bytes(), wrote)

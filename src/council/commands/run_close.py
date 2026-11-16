@@ -1,7 +1,6 @@
 """council run close [--status complete|abandoned|paused], under the run's close lock."""
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from council import clock
@@ -68,7 +67,6 @@ def _close(run: Path, status: str, lost: str, retake: bool, real: bool) -> None:
     if retake:
         ledger.forget(run)
     home = where.council_home()
-    _empty_pointer(home, run)
     cli.say("closed %s — %s%s" % (run.name, status, " · " + words if words else ""))
     if busy and status != "abandoned":
         cli.warn("council: seats still marked running or queued: %s — their results will not be collected; wait for "
@@ -103,15 +101,3 @@ def _complete(run: Path, home: str) -> str:
         cli.warn("council: " + log)
     return ",".join(code for code, _ in found)
 
-
-def _empty_pointer(home: str, run: Path) -> None:
-    """The 0.1/0.2 single pointer (active-run): emptied when it names this run."""
-    pointer = Path(where.native(home)) / "active-run"
-    try:
-        data = pointer.read_bytes()
-        named = data.split(b"\n")[0].replace(b"\r", b"").decode("utf-8", "surrogateescape")
-        named = named if re.match("/|[A-Za-z]:", named) else home.rsplit("/", 1)[0] + "/" + named
-        if data and where.native(named) == run.as_posix():
-            pointer.write_bytes(b"")
-    except OSError:
-        pass
