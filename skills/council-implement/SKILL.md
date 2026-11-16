@@ -5,14 +5,16 @@ description: Build an approved Small Council plan, fix review findings or comple
 
 # Council Implement (mode)
 
-One builder, one task at a time, in this window. Parallel agents read; one hand writes code.
+One builder, one task at a time: a builder agent per task, or you yourself in a Solo build. Parallel
+agents read; one hand writes code.
 **Invoke `context-core`**, then run:
 1. stages 1–2 with this file's sections;
 2. **the build loop below**, in place of stages 3–7;
 3. then stages 8–10.
 
-You dispatch only verifiers (how many: build-proof.md, Checking — one, at converge, by
-default) and at most one diagnosis worker per stuck task.
+You dispatch only builders (none in a Solo build), verifiers (how many: build-proof.md, Checking —
+one, at converge, by default) and at most one diagnosis worker per stuck task. Outside a Solo build
+you never edit project code yourself.
 
 **Carmack's filter:** the smallest change satisfying the task, proved by machine.
 
@@ -83,47 +85,40 @@ receipt's `Checked by machine:` line ends with **exactly one clause** about it �
 *"… · the test suite has been red since 4 August, so nothing here was verified by it"*. It disappears
 the moment it passes.
 
-Before changing code, make sure the run plan names the inline Chair and expected verifiers with
-their context and tool budgets; `council run plan check` must pass. Then `council state phase=build`,
+Before changing code, make sure the run plan names the Chair, the build seats (`task-<n>`, role
+`worker`, one per task; none in a Solo build) and the expected verifiers with their context and tool
+budgets; `council run plan check` must pass. Then `council state phase=build`,
 not `assign`: the build loop replaces the stages in between. When
 the converge pass starts, `council state phase=challenge`.
 
 ## The build loop — for each task
 
-1. **Load the task's orders and its governing reference doc first.** `council context build task-<n>`
-   prints the orders, the doc's path among them; add only judgement: where to start, what worries
-   you. Plugin references live under `${CLAUDE_PLUGIN_ROOT}`; project-local `.council/refs/…` under
-   the council home.
-2. **Before-evidence — choose proof for the task before editing.** Read
-   `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
-   contract — which tasks need a pair under the light tier (the default), compiling a new check
-   first, `council gate before-<n>` and `--invalid` — and follow it. Log the mode and invariants.
-   Label support with `references/run/evidence-model.md`; cite saved outputs for `REPRODUCED`.
-3. **Plan the change:** files, minimal diff, governing principle, effects on later tasks, watchpoints.
-4. **Implement.**
-   - Match existing patterns.
-   - Build what the task says, nothing more — no "while we're here".
-   - Honour memory.
-   - *The function least likely to cause a problem is the one that doesn't exist.*
-5. **Gates for what you touched:** `council gate <name>`, judged by exit code.
-   - **Never run a gate whose side effects involve cost, hardware, deploys or credentials** without
-     asking the user first (`council gates` lists them).
-   - **Your change broke it** → fix it before moving on.
-   - **A mandatory gate is red that was green at baseline** → hard stop until you understand why.
-   - **Red at baseline and waved through** → carry on: check only that your change added no new
-     failure (repair-loop.md, The log). Keep the standing clause on the receipt.
-   - **It can't run** → config drift (Prepare, Rules); log it too.
-   - **It fails during this task** → the bounded loop in `references/run/repair-loop.md` (a failure
-     nobody can explain, or a `NEEDS:`: its Unknowns): `council gate` records it (no `council repair record`); inspect its saved output and baseline, repair, and rerun
-     the **same** gate. The third failed execution blocks the task: jump to blocked-task logging and
-     the receipt (`council state phase=deliver skip="blocked: task <n>"`);
-     do not attempt steps 6–7 as a fix path. A blocked build stops for the user (context-core,
-     Alerts).
-6. **After-evidence — only if the task is not blocked.** First the report: `<run>/report-<n>.md`,
-   its head first, then `council patch save <n>` (`references/run/builder-report.md`); fix what a
-   refusal names. Then run the same check again,
-   `council gate after-<n> -- '<same command>'`, keeping `--proof preserve` if selected before editing.
-   It must pass under the build-proof contract.
+Steps 1–6 build one round of the task (`${CLAUDE_PLUGIN_ROOT}/references/run/builder-loop.md`);
+steps 7 and 8 are yours.
+
+1–6. **Build the task.** Solo: follow builder-loop.md yourself, to its return line. Otherwise:
+   - **Queue it:** `council seat task-<n> queued`. The helper names each file changed outside a saved
+     round: log each; one you edited yourself is a shortcut, and goes on the receipt. It refuses a
+     second build seat while one runs, and a task that is or rests on a `NEEDS: fix` stop until the
+     user's decision is on record (Edge cases).
+   - **Dispatch** `small-council:council-builder`, `model` from the plan row, with this message and
+     nothing else. `Start:` is your only judgement; its orders come from `council context build task-<n>`,
+     which it runs itself, so never paste them.
+
+     ```
+     Seat: task-<n>
+     Run: <absolute run folder>
+     Start: <where to start and what worries you; for a fix round, the verdict file and the item to fix>
+     Write <absolute run folder>/report-<n>.md
+     ```
+   - **Record it:** `council seat task-<n> running agent=<id>`. On its line,
+     `council seat task-<n> done tokens=<n> tools=<n>`; a `NEEDS:` return, `done note="NEEDS: …"`
+     (repair-loop.md, Unknowns; Edge cases); a `BLOCKED:` return, `blocked note="…"`.
+   - **Read** the line and `council patch show <n>`, never the diff.
+
+   A `BLOCKED:` line (yours, in a Solo build): jump to blocked-task logging and the receipt
+   (`council state phase=deliver skip="blocked: task <n>"`); do not attempt steps 6–7 as a fix path.
+   A blocked build stops for the user (context-core, Alerts).
 7. **Adversarial check — per task only, if not blocked.**
    Dispatch `small-council:council-verifier` with:
    - the task and its Done-when;
@@ -136,7 +131,9 @@ the converge pass starts, `council state phase=challenge`.
    It judges the Done-when only (build-proof.md, Checking).
 
    Batch as Checking says; track each with `council seat verify-<n> …` (one stopped at its turn limit:
-   context-core, Limits). Then act on the verdict:
+   context-core, Limits). Then act on the verdict; a fix below is a new round, built by a fresh
+   builder on the same seat (Solo: you), its `Start:` naming the verdict file and the item, its
+   orders linking the task's history:
    - **INCOMPLETE or REGRESSION** → fix it as a new round (builder-report.md; a third in the same
      files: repair-loop.md, Fix rounds) and re-verify. The re-check writes `verify-<n>b.md` (then
      `c`), so the first verdict stays on disk. A fix that would add a task or a new mechanism — a
@@ -155,7 +152,7 @@ the converge pass starts, `council state phase=challenge`.
      "tried and failed" list there too. After a compaction, resume from `council tree`.
    - If commits are on, commit only a task whose mandatory gates pass and whose verifier has no
      unresolved regression. Leave blocked work uncommitted; log its diff and state. Rollback needs
-     the user's decision.
+     the user's decision; then `council patch revert <n>` undoes the task's last saved round.
 
 ## The log — `<home>/logs/<YYYY-MM-DD>-<slug>.md`, appended after every task
 
@@ -223,12 +220,16 @@ user reads it at a glance and notices the moment a line changes:
 ```
 Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>] [· push and PR held by the freeze[ until <date>]]
 Works?: <what proved it — "ran <command> and <what happened>", or honestly "nobody ran it; proved by the tests and by reading the code">
-Checked by machine: <the gates' verdict line, baseline → now> | <the helper's own NOTHING WAS CHECKED line, quoted> [· <the standing red-baseline clause>]
+Checked by machine: <council check's line, word for word: the gates' verdict line, baseline → now | the helper's own NOTHING WAS CHECKED line> [· <the standing red-baseline clause>]
 Shortcuts I took: <one line each> | none
-Not proved: <what nobody actually checked> | nothing
+Not proved: <council check's line, word for word>[ · <what else nobody actually checked>] | nothing
 Left open: <each pre-existing hazard, follow-up, verifier note not taken, known hazard from a handoff> | nothing
 Cost: helpers ~<k>k tokens across <n> agents; Chair usage <actual total or "unavailable"> · <the proof line from council check> · log: <path>
 ```
+
+`Checked by machine:` and `Not proved:` are the two lines `council check` prints on a build, copied
+word for word: add to `Not proved:`, never cut from either. The standing red-baseline clause is yours
+to append. Its revert check (build-proof.md) shows in those lines and in its `check:` line.
 
 The first `Built:` number counts only fully met tasks with required proof, passing mandatory gates,
 and no unresolved verifier regression. A partly met or blocked task is named after the count but
