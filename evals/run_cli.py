@@ -1891,6 +1891,20 @@ def runs_memory(tmp):
     shutil.copytree(mw, mwn, ignore=shutil.ignore_patterns(".git", ".gitignore", "build"))
     code, out2, _ = council(mwn, "memory", "check")
     check("memory check: outside git the same search gives the same answer", out2 == out, out + "\n---\n" + out2)
+    # A file over paths.MAX_FILE (4 MiB) is not searched, as no other council reader takes one: a name found only in
+    # it reads as stale (before, the search read every byte of it).
+    mbig = new_repo(tmp, "memwords-big")
+    write(os.path.join(mbig, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(mbig, "bundle.js"), "function loadBundleZq(){}\n" + "var x = 1;\n" * (550 * 1024))
+    write(os.path.join(mbig, ".council", "conventions.md"), "# m\n## Enforced Conventions\n"
+          "### EC-1: a name in a big file\n**Anchor:** loadBundleZq\n"
+          "### EC-2: the same name, its file named\n**Anchor:** bundle.js:loadBundleZq\n")
+    git(mbig, "add", "-A")
+    git(mbig, "commit", "-q", "-m", "i")
+    code, out, _ = council(mbig, "memory", "check")
+    check("memory check: a file over 4 MB is not searched: a name only there reads as stale",
+          os.path.getsize(os.path.join(mbig, "bundle.js")) > 4 * 1024 * 1024 and code == 1
+          and "STALE  EC-1" in out and "STALE  EC-2" in out and "2 stale anchor(s) across 2 entries" in out, out)
 
     # Memory: the entry shapes real projects write
     ms = new_repo(tmp, "memshapes")
