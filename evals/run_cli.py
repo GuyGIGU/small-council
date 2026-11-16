@@ -549,6 +549,11 @@ def runs_open(tmp):
         code, out, _ = council(repo, "run", "plan", "check")
         check("run plan check: refuses invalid token ceiling " + bad,
               code == 1 and "token-ceiling must be a positive integer" in out, out)
+    # A figure is 1 to 12 plain digits (cells.optional_number): 13 digits is no number (before, it was valid).
+    write(plan_path, good_plan.replace("\testimated-tokens\t100000\t", "\testimated-tokens\t" + "1" * 13 + "\t"))
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: a 13-digit estimated-tokens is refused as no integer",
+          code == 1 and "estimated-tokens must be a non-negative integer" in out, out)
     write(plan_path, good_plan)
 
     # Advisory routing is deterministic policy output, never a run mutation or agent dispatch.
