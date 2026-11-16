@@ -2,6 +2,7 @@
 lock, the time limit, and the stop of a whole process tree."""
 from __future__ import annotations
 
+import json
 import os
 import time
 import unittest
@@ -130,6 +131,8 @@ class RunHelpersTest(support.Scratch):
     def test_qname_json_and_windows_switch(self) -> None:
         self.assertEqual((gate_run.qname("unit tests"), gate_run.qname("lint")), ('"unit tests"', "lint"))
         self.assertEqual(gate_run.json_esc('a\\b "c"\td'), 'a\\\\b \\"c\\" d')
+        self.assertEqual(gate_run.json_esc("f\x0cg\x1bh\x00i\r\nj\x7fé"), "f g h i  j\x7fé")
+        self.assertEqual(json.loads('"%s"' % gate_run.json_esc("x\x01\x1f\x0b")), "x   ")
         self.assertEqual(gate_run.windows_command('cmd /c "x" && CMD.EXE  /K y'), 'cmd //c "x" && CMD.EXE  //K y')
         self.assertEqual(gate_run.windows_command("echo /c/x"), "echo /c/x")
 
@@ -212,11 +215,6 @@ class ChangedTest(unittest.TestCase):
         self.assertEqual([name for chunk in found for name in chunk], files)
         self.assertTrue(all(sum(len(f) + 3 for f in chunk) <= changed.LINE_BUDGET - 10 for chunk in found))
         self.assertEqual(changed.batches(["a"], 10), [["a"]])
-
-    def test_options(self) -> None:
-        self.assertEqual(changed.options(["--glob", "*.{a,b}", "--each", "--glob=c"]), (["*.a", "*.b", "c"], True))
-        with self.assertRaises(cli.Refusal):
-            changed.options(["--glob"])
 
 
 class LockTest(support.Scratch):

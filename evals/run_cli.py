@@ -731,6 +731,16 @@ def runs_open(tmp):
     code, out, err = council(legacy, "seat", "old-worker", "running", "agent=old")
     check("legacy run: a pre-contract run without a plan still works", code == 0 and "old-worker" in out, out + err)
     council(legacy, "run", "close", "--status", "abandoned")
+    # The stamp is read by the state's one guarded read: a state over 4 MB (or a link) is not read, and says so.
+    huge = new_repo(tmp, "huge-state")
+    write(os.path.join(huge, ".council", "council.config.md"), "# Council config\n")
+    _, huge_run, _ = council(huge, "run", "open", "council-review")
+    huge_run = huge_run.strip()
+    append(os.path.join(huge_run, "session-state.md"), "x" * (4 * 1024 * 1024) + "\n")
+    code, _, err = council(huge, "run", "events", "check", "--run", os.path.basename(huge_run))
+    check("run events check: a state over 4 MB is named, with the next step, not called unstamped",
+          code == 1 and "session-state.md is a link, lies outside the run or is over 4 MB" in err
+          and "put a plain copy of it, under that size, in its place" in err and "without an events-schema" not in err, err)
 
     # A relative --code-root is stored absolute: in a real build every gate exited 97 ("cd" failed) once
     # the Chair's cwd was a worktree, because session-state.md kept the path as typed.
@@ -1103,6 +1113,10 @@ def runs_change_index(tmp):
               [("scripts/deploy.sh", 2), ("scripts/ai/role_def.gd", 4), ("webapp/backend/main.py", 5), ("core/x.py", 6)]), out)
     code, out, _ = council(pr, "prior", "api.py")
     check("prior: a path inside a longer name (api.py.bak) is not a mention", "no earlier council work" in out, out)
+    write(os.path.join(prv, "2026-09-05-tab.md"), "# t\n6 · P3 · tabbed.py:2\tthen\tmore words\n")
+    code, out, _ = council(pr, "prior", "tabbed.py")
+    check("prior: a mentioned line that holds a tab is shown whole",
+          "tabbed.py — reviews/2026-09-05-tab.md:2 — 6 · P3 · tabbed.py:2\tthen\tmore words\n" in out, out)
     for i in range(45):
         write(os.path.join(prv, f"2026-07-{i:02d}-many.md"), "---\nareas: src/**\n---\n# many\n")
     code, out, _ = council(pr, "prior", "src/a.py")
@@ -1172,6 +1186,20 @@ def index_limits(tmp):
     check("index: a nested worktree's folder is not a changed file", ".claude/worktrees" not in uidx and "index: 4 files" in out, out + uidx)
     code, out, err = council(os.path.join(uni, "sub"), "index", "--run", "../.council/runs/" + os.path.basename(urun))
     check("index --run: a relative run path works from a subfolder", code == 0 and out.startswith("index: 4 files"), out + err)
+    # An untracked file's lines are read as every other reader reads them (bytewise.records): a CR before a newline
+    # goes on Windows; a last line with no newline keeps its CR on every OS, so `last_one()<CR>` defines no name.
+    crl = new_repo(tmp, "crlast")
+    write(os.path.join(crl, "a.txt"), "x\n")
+    git(crl, "add", "-A")
+    git(crl, "commit", "-q", "-m", "init")
+    write(os.path.join(crl, ".council", "council.config.md"), "# Council config\n")
+    with open(os.path.join(crl, "tools.sh"), "wb") as f:
+        f.write(b"first() {\r\n  :\r\n}\r\nlast_one()\r")
+    code, crun, _ = council(crl, "run", "open", "council-review")
+    code, out, err = council(crl, "index")
+    cidx = read(os.path.join(crun.strip(), "index.md"))
+    check("index: an untracked file's unterminated last line keeps its CR, on every OS",
+          code == 0 and "- symbols: first\n" in cidx and "last_one" not in cidx, out + err + cidx)
     staged = new_repo(tmp, "staged")
     write(os.path.join(staged, "a.py"), "a = 1\n")
     git(staged, "add", "-A")
@@ -1219,6 +1247,13 @@ def runs_gates_and_seats(tmp):
     verdict = json.loads(read(os.path.join(gates, "quoted.json")) or "{}")
     check("gate: one quoted command keeps its quotes and &&", code == 5 and read(os.path.join(gates, "quoted.txt")) == "a  b\n", out)
     check("gate: the verdict records the command as written", verdict.get("command") == 'echo "a  b" && exit 5', str(verdict))
+    code, out, _ = council(repo, "gate", "controls", "--", "echo 'a\x1bb\x0cc\td'")
+    try:
+        verdict = json.loads(read(os.path.join(gates, "controls.json")) or "{}")
+    except ValueError as failure:
+        verdict = {"unreadable": str(failure)}
+    check("gate: a command holding control characters still leaves a verdict of valid JSON, each one a space",
+          code == 0 and verdict.get("command") == "echo 'a b c d'", str(verdict))
     code, out, _ = council(repo, "gate", "words", "--", "printf", "(%s)", "two words")
     check("gate: separate words stay separate arguments", code == 0 and read(os.path.join(gates, "words.txt")) == "(two words)",
           out + read(os.path.join(gates, "words.txt")))
@@ -4258,6 +4293,14 @@ def requests_and_proofs(tmp):
     code, out, err = council(chg, "changed", "--base", "no-such-ref", "--glob", "*.py")
     check("changed: a --base that isn't a ref is an error, never a quietly smaller file list",
           code == 2 and "not a ref in this repository" in err, err)
+    said = [council(chg, *argv)[::2] for argv in (("changed", "--glob"), ("changed", "--glob=", "--", "true"),
+                                                   ("changed", "--glob", "a.py", "extra"), ("changed", "--each=1"),
+                                                   ("version", "--each"))]
+    check("changed: --glob and --each are ordinary flags, refused as every flag is",
+          said == [(2, "council: --glob needs a value\n"), (2, "council: --glob needs a value\n"),
+                   (2, "council: changed doesn't take 'extra' — see: council help\n"),
+                   (2, "council: --each takes no value\n"),
+                   (2, "council: version doesn't take --each — see: council help\n")], str(said))
     code, out, err = council(chg, "changed", "--glob", "*.py", "--", "wc", "-l")
     check("changed: says how many files the check actually looked at", "file(s) to check" in (out + err), out + err)
     os.remove(os.path.join(chg, "src", "branch.py"))

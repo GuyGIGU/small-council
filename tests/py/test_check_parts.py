@@ -12,7 +12,7 @@ from unittest import mock
 import support
 
 from council import clock
-from council.commands import check, check_proofs, event_note, hygiene, index, index_symbols, proof_reach
+from council.commands import check, check_proofs, cite_origin, event_note, hygiene, index, index_symbols, proof_reach
 from council.records import events
 
 
@@ -139,6 +139,12 @@ class IndexTest(unittest.TestCase):
         self.assertFalse(index_symbols.not_indexed("src/app.py"))
         self.assertEqual(index.hunks(["@@ -1,2 +3,0 @@", "@@ -9 +12 @@", "@@ -20 +30,5 @@", "+@@ not one"]),
                          "removed near 3, 12, 30-34")
+        self.assertEqual(index.hunks(["@@ -1 +x @@", "@@ -1,2 @@ +7,2", "@@ -9 +12 @@"]), "12")   # skipped
+
+    def test_cite_origin_reads_the_new_side_and_skips_a_malformed_header(self) -> None:
+        self.assertEqual(cite_origin.hunks(b"@@ -4 +5,0 @@\n", [(6, 9)]), (1, 0, 0))    # removed after line 5
+        self.assertEqual(cite_origin.hunks(b"@@ -4 +5,2 @@\n+a\n+b\n", [(6, 9)]), (1, 1, 0))
+        self.assertEqual(cite_origin.hunks(b"new file mode 100644\n@@ -1 5 @@\n", [(5, 5)]), (0, 0, 1))
 
 
 class SmallTest(support.Scratch):

@@ -5,10 +5,10 @@ run closed again rewrites it. `council run audit` alone reads and prints the sam
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from council import clock
 from council.records import paths
 
 NAME = "audit.md"
@@ -50,7 +50,7 @@ def render(run: Any, items: list[tuple[str, str, str]], split: int, span: str, t
     lines = ["Run audit: %s (%s, %s). %s" % (run.name, run.mode or "no mode", run.status or "no status",
                                               kept if saving else READ_ONLY)]
     if saving:
-        lines.append("Taken at: " + datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        lines.append("Taken at: " + clock.now_utc())
     if transcript is not None:
         lines.append("Transcript: %s%s" % (transcript, " (found from the run's session id)" if found else ""))
     lines.append("\nFrom the run's records")

@@ -11,13 +11,13 @@ from council.commands import cli, shell
 from council.git import run
 from council.records import home as where
 
-USAGE = "usage: council changed [--base <ref>] [--glob '<pattern>'] [--each] -- <command> …"
 LINE_BUDGET = 7000     # a Windows .cmd tool takes one command line of at most 8,191 characters
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    cli.takes_flags(args, "changed", "base", "code-root", "--")
-    globs, each = options(words)
+    cli.takes_flags(args, "changed", "base", "code-root", "glob", "each", "--")
+    cli.no_words("changed", words)
+    globs = [spelled for pattern in args.lists["glob"] for spelled in expand(pattern)]
     top = args.value("code-root") or where.this_tree()
     try:
         os.chdir(where.native(top))
@@ -40,27 +40,9 @@ def main(args: cli.Args, words: list[str]) -> int:
         cli.say_all(files)
         return 0
     cli.warn("changed: %d file(s) to check" % len(files))
-    if each:
+    if args.value("each"):
         return shell.ran(max(shell.words(args.after + [name]) for name in files))
     return shell.ran(max(shell.words(args.after + batch) for batch in batches(files, len(" ".join(args.after)))))
-
-
-def options(words: list[str]) -> tuple[list[str], bool]:
-    """The --glob patterns (each spelled out) and --each; any other word is a refusal."""
-    globs, each, rest = [], False, list(words)
-    while rest:
-        word = rest.pop(0)
-        if word == "--each":
-            each = True
-        elif word == "--glob":
-            if not rest:
-                raise cli.Refusal("--glob needs a pattern")
-            globs += expand(rest.pop(0))
-        elif word.startswith("--glob="):
-            globs += expand(word[len("--glob="):])
-        else:
-            raise cli.Refusal(USAGE)
-    return globs, each
 
 
 def expand(pattern: str) -> list[str]:
