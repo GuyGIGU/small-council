@@ -6,7 +6,8 @@ Gather every shared fact once, so no seat has to.
 
 1. **Config.** Read `council.config.md` (roster, gates, hard rules, run preferences).
 2. **Map.** `council map status`. Behind in areas this run touches → re-survey only those areas and
-   patch their sections; bump `map-commit` only when every changed area has been covered. No map →
+   patch their sections, folding in any `## Changes` lines (`council map touch`) and deleting them; a
+   refresh moves `map-commit`, and only once every changed area has been covered. No map →
    write one from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`. Hard ceiling: ~10 skeleton
    reads — manifests, entry points, schemas, route tables.
 3. **Change index** — for anything with a diff: `council index [--base <ref>]` writes

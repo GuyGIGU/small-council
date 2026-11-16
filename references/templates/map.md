@@ -3,7 +3,9 @@ map-commit: <full sha>
 updated: <YYYY-MM-DD>
 <!-- Small Council orientation map: read this BEFORE exploring the code. It is an index, not
      documentation — keep it under ~250 lines. Refresh incrementally: `git diff --stat <map-commit>..HEAD`,
-     re-survey only the changed areas, patch those sections, bump map-commit. -->
+     re-survey only the changed areas, patch those sections, bump map-commit. Between refreshes,
+     `council map touch <dir>="<line>"` adds a line per area under a dated `## Changes <date>` section at
+     the end. A refresh folds those sections into the body above, deletes them, and moves map-commit. -->
 
 ## Shape
 <One paragraph: what the system is, its main runtime pieces, and how they talk to each other.>
