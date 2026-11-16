@@ -150,8 +150,8 @@ def clear_waiting(run: Path) -> bool:
 
 
 def raw_lines(file: Path) -> list:
-    """The state's lines as awk printed them: the BOM off line 1, a last line without a newline still a line. Git
-    Bash's awk reads in text mode, so on Windows a line's carriage return is dropped; elsewhere it is kept."""
+    """The state's lines as bytewise.records reads them: the BOM off line 1, a last line without a newline still a
+    line, and a CR right before a newline dropped, on every OS."""
     content = file.read_bytes().decode("utf-8", "surrogateescape")
     return bytewise.records(content[len(paths.BOM):] if content.startswith(paths.BOM) else content)
 
