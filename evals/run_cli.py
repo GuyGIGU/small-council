@@ -6021,6 +6021,24 @@ def gates_patch_rounds(tmp):
     code, out, err = council(repo, "patch", "save", "x1")
     check("patch save: a word that is no task number is refused with the shape", code == 2 and "task number" in err,
           out + err)
+    write(os.path.join(repo, "src", "stopgap.py"),
+          "import tempfile\n\n\ndef guard(card):\n    # a workaround for gateway() charging twice\n"
+          "    seen = set()  # for now\n    # TODO: take this out until the gateway is fixed\n"
+          "    temporary_dir = tempfile.mkdtemp()\n    return seen, temporary_dir, 'hackathon XXX-XXXX'\n")
+    write(os.path.join(repo, "docs", "notes.md"), "# Notes\n- TODO: a workaround for now.\n")
+    write(os.path.join(run, "report-2.md"), PATCH_HEAD.format(cause="none", removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "2")
+    signs = [line for line in out.splitlines() if "patch: sign" in line]
+    check("patch save: an added line that says workaround, for now or until … is fixed is a sign for the verifier",
+          code == 0 and "sign — workaround words · src/stopgap.py:5" in out
+          and "sign — workaround words · src/stopgap.py:6" in out
+          and "sign — workaround words · src/stopgap.py:7" in out, out + err)
+    check("patch save: an added TODO is a sign of its own, recorded in the task's history",
+          "sign — todo · src/stopgap.py:7" in out
+          and "- sign: todo · src/stopgap.py:7" in read(os.path.join(run, "patches", "T2.md")), out + err)
+    check("patch save: an identifier, a word that only holds one, a mask and a document file are not signs",
+          len(signs) == 4 and "stopgap.py:8" not in out and "stopgap.py:9" not in out and "notes.md" not in
+          "\n".join(signs), out + err)
     review = small_council_repo(tmp, "patch-review", "")
     council(review, "run", "open", "council-review")
     code, out, err = council(review, "patch", "save", "1")
