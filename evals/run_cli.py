@@ -6325,7 +6325,8 @@ def gates_patch_rounds(tmp):
 def gates_revert_check(tmp):
     """T5: council check on a build reruns each ok change proof with the task's saved rounds taken off, in a scratch
     copy outside the project (its tests kept), and expects it to fail; a rerun that still passes is REVERT-PASSED,
-    exit 1; one that can't be made is said and never counts."""
+    exit 1; one that can't be made is said and never counts. Then the receipt's two lines, from the records, just
+    before the closing line and in check.md; and each round's history names the gates that went red before it."""
     repo, run = revert_build(tmp, "revert")
     write(os.path.join(repo, "tests", "test_calc.sh"), '[ "$(bash src/calc.sh)" = fixed ] && echo "1 passed"\n')
     council(repo, "gate", "lint", "--", "echo bad; exit 1")
@@ -6340,6 +6341,7 @@ def gates_revert_check(tmp):
     council(repo, "gate", "--all", "--at", "verify")
     disk = {path: read(os.path.join(repo, path)) for path in ("src/calc.sh", "src/two.sh", "tests/test_two.sh")}
     code, out, err = council(repo, "check")
+    lines = out.splitlines()
     check("check: a change proof that fails with its task's rounds taken off stands, and says so in its row",
           "task 1  proof  ok · test saved: tests/test_calc.sh · revert check: fails with task 1's rounds taken off "
           "(exit 1), so the test shows the change" in out, out)
@@ -6352,6 +6354,12 @@ def gates_revert_check(tmp):
           os.path.isfile(os.path.join(run, "gates", "reverted", "after-1.txt"))
           and all(read(os.path.join(repo, path)) == text for path, text in disk.items())
           and not os.path.exists(os.path.join(run, "gates", "reverted", "after-1.json")), out)
+    check("check: a build's receipt lines come just before the closing check: line, from the gate records",
+          len(lines) > 2 and lines[-3] == "Checked by machine: lint: no baseline → pass · unit: pass → pass"
+          and lines[-2] == "Not proved: nothing" and lines[-1].startswith("check: "), out)
+    check("check: check.md holds the two receipt lines too",
+          "\n\nChecked by machine: lint: no baseline → pass · unit: pass → pass\nNot proved: nothing\n"
+          in read(os.path.join(run, "check.md")), read(os.path.join(run, "check.md")))
 
     write(os.path.join(repo, "tests", "test_three.sh"), '[ "$(bash src/three.sh)" = two ] && echo "1 passed"\n')
     write(os.path.join(repo, "src", "three.sh"), "echo one\n")
@@ -6368,6 +6376,21 @@ def gates_revert_check(tmp):
           "files on disk cleanly: src/three.sh" in out, out)
     check("check: a task with no saved round is not rerun, and its row reads as before",
           "task 4  proof  ok · test saved: tests/test_calc.sh\n" in out, out)
+    check("check: Not proved names the revert check that couldn't be made and the gates run on other files",
+          "task 3's revert check: round 1 does not come off the files on disk cleanly: src/three.sh"
+          in line_of(out, "Not proved:")
+          and "gate unit: ran on other files than those on disk now (tree " in line_of(out, "Not proved:"), out)
+    review = small_council_repo(tmp, "revert-review", "")
+    council(review, "run", "open", "council-review")
+    code, out, err = council(review, "check")
+    check("check: a run that is not a build prints neither receipt line",
+          "Checked by machine" not in out and "Not proved" not in out, out + err)
+    bare = small_council_repo(tmp, "revert-bare", "")
+    council(bare, "run", "open", "council-implement")
+    code, out, err = council(bare, "check")
+    check("check: a build with no gate record quotes the helper's own NOTHING WAS CHECKED words",
+          "Checked by machine: NOTHING WAS CHECKED — this project has no automated check configured (no Gates row in "
+          in out and "Not proved: nothing" in out, out + err)
 
 
 @part("gates")

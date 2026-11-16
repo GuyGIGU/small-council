@@ -8,6 +8,11 @@ from typing import Any
 from council.records import cells, paths
 
 FOLDER = "gates"
+# The helper's own words when the config gives no gate to run: gate --all says them (gate_set), and a build's
+# receipt line quotes them (receipt).
+NO_GATE_ROW = "NOTHING WAS CHECKED — this project has no automated check configured (no Gates row in %s)"
+OLDER_LAYOUT = ("NOTHING WAS CHECKED — the Gates section of %s is in an older layout (a list, not a table), so no "
+                "gate could be read; a council-init refresh migrates it")
 
 
 def slug(name: str) -> str:
@@ -43,12 +48,13 @@ def void_of(data: dict[str, Any]) -> str:
     return ""
 
 
-def results(run: Path) -> list[dict[str, Any]]:
-    """Every saved verdict with an exit, in time order: name, exit, seconds, when, command, note, proof,
-    void. A link, a file outside the run or one that does not parse is left out."""
+def results(run: Path, baseline: bool = False) -> list[dict[str, Any]]:
+    """Every saved verdict with an exit, in time order (the baselines kept before the build, when asked): name,
+    exit, seconds, when, command, note, proof, void and tree. A link, a file outside the run or one that does not
+    parse is left out."""
     run = Path(run)
     found = []
-    folder = run / FOLDER
+    folder = run / FOLDER / "baseline" if baseline else run / FOLDER
     if not folder.is_dir() or paths.linked(folder):
         return found
     for verdict in sorted(folder.glob("*.json")):
@@ -59,5 +65,5 @@ def results(run: Path) -> list[dict[str, Any]]:
                           "when": cells.clean(data.get("when", "")),
                           "command": cells.clean(data.get("command", ""))[:200],
                           "note": cells.clean(data.get("note", "")), "proof": cells.clean(data.get("proof", "change")),
-                          "void": void_of(data)})
+                          "void": void_of(data), "tree": cells.clean(data.get("tree", ""))})
     return sorted(found, key=lambda gate: gate["when"])

@@ -176,7 +176,7 @@ output is kept as `gates/reverted/after-<n>.txt`.
 - It still passes: `REVERT-PASSED`, a broken proof, and `council check` exits 1.
 - It can't be made: a round doesn't come off the files on disk cleanly, the files can't be copied,
   the command runs files under `.council/`, or the rerun timed out, never ran or ran no test. The row
-  says why, and it is neither a pass nor a problem:
+  says why, and it is neither a pass nor a problem: it goes under `Not proved:`.
 
 A preservation proof, a proof that is not `ok` and a task with no saved round are not rerun.
 
@@ -193,3 +193,22 @@ the Done-when names, or whether assertions were weakened; a revert check not mad
 independent verifier must inspect those facts before a task counts as built. Missing-tool,
 collection or test-syntax failures earn CANNOT VERIFY, not proof of changed product behaviour.
 Missing proof earns CANNOT VERIFY; code that establishes an unmet Done-when earns INCOMPLETE.
+
+## The receipt lines
+
+On a build, `council check` prints two lines just before its closing `check:` line and writes them into
+`check.md`, composed only from the records: the gate records (`gates/`, and the baseline under
+`gates/baseline/`), the proofs and the revert checks. The Chair copies them into the receipt as they
+are; it writes neither.
+
+```
+Checked by machine: <each gate: its baseline result → its result now> | <the helper's NOTHING WAS CHECKED words>
+Not proved: <what the records show nobody checked> | nothing
+```
+
+`Checked by machine:` names each gate that checks the work (the proof pairs and probes are not gates
+here): `unit: FAIL → pass · lint: no baseline → pass`. With no gate on record it quotes the helper's
+NOTHING WAS CHECKED words. `Not proved:` lists a task of the plan with no proof pair, or a pair missing a
+side or reading `NO-PROOF-YET`; a configured gate never run; a gate that timed out, never ran, was marked
+invalid or passed with nothing run; a gate whose recorded tree is not the files on disk now; and a revert
+check that could not be made. Same records, same lines. A run that is not a build prints neither.

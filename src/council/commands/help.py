@@ -96,7 +96,8 @@ council — the Small Council's helper (bash + git)
                                          any other .md in seats/ (a Workflow's agents skip the seat hook)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md); in a build, each
                                          proof (an ok change proof with saved rounds is rerun with them taken
-                                         off, and must fail)
+                                         off, and must fail) and the receipt's Checked by machine and Not
+                                         proved lines, from the records
   council patch save <task> [<report>]   a build round: its report's head checked against its diff, then both
                                          saved → <run>/patches/ · patch show <task>: the task's rounds
   council patch apply|revert <task> [--round <r>]
