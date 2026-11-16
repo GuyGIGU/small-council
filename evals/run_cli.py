@@ -294,6 +294,35 @@ def line_of(out, text):
     return next((line for line in out.splitlines() if text in line), "")
 
 
+def revert_build(tmp, name):
+    """A council-implement run with a configured gate, green at its baseline, for a build whose rounds are saved."""
+    repo = small_council_repo(tmp, name, "| unit | `echo '1 passed'` | grounding, verify | yes | ok | `true` | none "
+                                         "| - |\n")
+    write(os.path.join(repo, "src", "calc.sh"), "echo broken\n")
+    write(os.path.join(repo, "src", "two.sh"), "echo old\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "code")
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build")
+    council(repo, "gate", "--all", "--at", "grounding")
+    return repo, run
+
+
+def built(repo, run, task, files, test, cause="none"):
+    """Task <task>, proved and saved: its test red (before-<n>), the files written, the test green (after-<n>),
+    then its round saved."""
+    command = "bash " + test
+    council(repo, "gate", "before-%d" % task, "--", command)
+    for path, text in files.items():
+        write(os.path.join(repo, path), text)
+    council(repo, "gate", "after-%d" % task, "--", command)
+    write(os.path.join(run, "report-%d.md" % task), PATCH_HEAD.format(cause=cause, removed="none", extra=""))
+    return council(repo, "patch", "save", str(task))
+
+
 VERDICT_FILE = "# Verification — x\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | INCOMPLETE | a.py:1 |\n"
 
 
@@ -6290,6 +6319,152 @@ def gates_patch_rounds(tmp):
     code, out, err = council(review, "patch", "save", "1")
     check("patch save: a review run has no build rounds — refused, naming the mode",
           code == 2 and "council-implement" in err, out + err)
+
+
+@part("gates")
+def gates_revert_check(tmp):
+    """T5: council check on a build reruns each ok change proof with the task's saved rounds taken off, in a scratch
+    copy outside the project (its tests kept), and expects it to fail; a rerun that still passes is REVERT-PASSED,
+    exit 1; one that can't be made is said and never counts. Then the receipt's two lines, from the records, just
+    before the closing line and in check.md; and each round's history names the gates that went red before it."""
+    repo, run = revert_build(tmp, "revert")
+    write(os.path.join(repo, "tests", "test_calc.sh"), '[ "$(bash src/calc.sh)" = fixed ] && echo "1 passed"\n')
+    council(repo, "gate", "lint", "--", "echo bad; exit 1")
+    council(repo, "gate", "lint", "--", "echo bad; exit 1")
+    code, out, err = built(repo, run, 1, {"src/calc.sh": "echo fixed\n"}, "tests/test_calc.sh")
+    check("revert check fixture: task 1 is saved as round 1", code == 0 and "task 1 round 1 saved" in out, out + err)
+    write(os.path.join(repo, "tests", "test_two.sh"), "exit 1\n")         # red for a reason no code change touches
+    code, out, err = built(repo, run, 2, {"src/two.sh": "echo new\n", "tests/test_two.sh": "echo '1 passed'\n"},
+                           "tests/test_two.sh")
+    check("revert check fixture: task 2 is saved", code == 0 and "task 2 round 1 saved" in out, out + err)
+    code, out, err = council(repo, "patch", "show", "1")
+    check("patch show: a round's history names the gates that went red since the save before it, with how often "
+          "(a before-proof meant to fail first is no red gate)",
+          code == 0 and "- gates red since the save before: lint ×2" in out and "before-1" not in line_of(out, "red"),
+          out + err)
+    code, out, err = council(repo, "patch", "show", "2")
+    check("patch show: a round with no gate red since the save before says none", code == 0
+          and "- gates red since the save before: none" in out, out + err)
+    council(repo, "gate", "lint", "--", "echo '1 passed'")
+    council(repo, "gate", "--all", "--at", "verify")
+    disk = {path: read(os.path.join(repo, path)) for path in ("src/calc.sh", "src/two.sh", "tests/test_two.sh")}
+    code, out, err = council(repo, "check")
+    lines = out.splitlines()
+    check("check: a change proof that passes in the copy with the change on (the control) and fails with its task's "
+          "rounds taken off stands, and says so in its row",
+          "task 1  proof  ok · test saved: tests/test_calc.sh · revert check: passes in a scratch copy with the change "
+          "on, fails with task 1's rounds taken off (exit 1), so the test shows the change" in out, out)
+    check("check: a change proof that still passes with its task's rounds taken off is REVERT-PASSED, a problem "
+          "naming the next step, and the check exits 1",
+          code == 1 and "task 2  proof  REVERT-PASSED" in out and "after-2 still passes with task 2's rounds taken "
+          "off (its tests kept)" in out and "run before-2 and after-2 again, then council check" in out
+          and "| task 2 | proof | REVERT-PASSED |" in read(os.path.join(run, "check.md")), out + err)
+    check("check: the control's and the rerun's outputs are kept under gates/reverted/, and the project's files are "
+          "as they were",
+          os.path.isfile(os.path.join(run, "gates", "reverted", "after-1.txt"))
+          and os.path.isfile(os.path.join(run, "gates", "reverted", "after-1-with-change.txt"))
+          and all(read(os.path.join(repo, path)) == text for path, text in disk.items())
+          and not os.path.exists(os.path.join(run, "gates", "reverted", "after-1.json")), out)
+    check("check: a build's receipt lines come just before the closing check: line, from the gate records",
+          len(lines) > 2 and lines[-3] == "Checked by machine: lint: no baseline → pass · unit: pass → pass"
+          and lines[-2] == "Not proved: nothing" and lines[-1].startswith("check: "), out)
+    check("check: check.md holds the two receipt lines too",
+          "\n\nChecked by machine: lint: no baseline → pass · unit: pass → pass\nNot proved: nothing\n"
+          in read(os.path.join(run, "check.md")), read(os.path.join(run, "check.md")))
+
+    write(os.path.join(repo, "tests", "test_three.sh"), '[ "$(bash src/three.sh)" = two ] && echo "1 passed"\n')
+    write(os.path.join(repo, "src", "three.sh"), "echo one\n")
+    built(repo, run, 3, {"src/three.sh": "echo two\n"}, "tests/test_three.sh")
+    write(os.path.join(repo, "src", "three.sh"), "echo two  # since\n")    # changed after its round was saved
+    write(os.path.join(repo, ".gitignore"), "build/\n")
+    write(os.path.join(repo, "build", "value.txt"), "fixed\n")             # git ignores it: the copy leaves it out
+    write(os.path.join(repo, "tests", "test_five.sh"),
+          'grep -q fixed build/value.txt && grep -q five src/five.sh && echo "1 passed"\n')
+    built(repo, run, 5, {"src/five.sh": "echo five\n"}, "tests/test_five.sh")
+    write(os.path.join(run, "gates", "before-4.json"), '{"gate": "before-4", "command": "bash tests/test_calc.sh", '
+          '"exit": 1, "seconds": 1, "when": "2026-09-16 10:00:00"}\n')
+    write(os.path.join(run, "gates", "after-4.json"), '{"gate": "after-4", "command": "bash tests/test_calc.sh", '
+          '"exit": 0, "seconds": 1, "when": "2026-09-16 10:00:01"}\n')
+    code, out, err = council(repo, "check")
+    check("check: a round that won't come off the files on disk is no revert check — said in the row, never a pass "
+          "or a problem",
+          "task 3  proof  ok · test saved: tests/test_three.sh · revert check not made: round 1 does not come off the "
+          "files on disk cleanly: src/three.sh" in out, out)
+    check("check: a task with no saved round is not rerun, and its row reads as before",
+          "task 4  proof  ok · test saved: tests/test_calc.sh\n" in out, out)
+    check("check: a check that reads a file git ignores passes in the project, but not in the copy with the change "
+          "on (the control), so the revert check is not made and no round comes off",
+          "task 5  proof  ok · test saved: tests/test_five.sh · revert check not made: the check doesn't pass in a "
+          "scratch copy even with the change on (exit 2) — it needs files the copy leaves out" in out
+          and not os.path.exists(os.path.join(run, "gates", "reverted", "after-5.txt")), out)
+    check("check: Not proved names the revert checks that couldn't be made and the gates run on other files",
+          "task 3's revert check: round 1 does not come off the files on disk cleanly: src/three.sh"
+          in line_of(out, "Not proved:")
+          and "task 5's revert check: the check doesn't pass in a scratch copy even with the change on (exit 2)"
+          in line_of(out, "Not proved:")
+          and "gate unit: ran on other files than those on disk now (tree " in line_of(out, "Not proved:"), out)
+    review = small_council_repo(tmp, "revert-review", "")
+    council(review, "run", "open", "council-review")
+    code, out, err = council(review, "check")
+    check("check: a run that is not a build prints neither receipt line",
+          "Checked by machine" not in out and "Not proved" not in out, out + err)
+    bare = small_council_repo(tmp, "revert-bare", "")
+    council(bare, "run", "open", "council-implement")
+    code, out, err = council(bare, "check")
+    check("check: a build with no gate record quotes the helper's own NOTHING WAS CHECKED words",
+          "Checked by machine: NOTHING WAS CHECKED — this project has no automated check configured (no Gates row in "
+          in out and "Not proved: nothing" in out, out + err)
+
+
+@part("gates")
+def gates_patch_apply_revert(tmp):
+    """T5 (#59): council patch revert takes a saved round off the code root's files and patch apply puts it back,
+    the task's last round unless --round names another; each is refused, changing nothing, when the patch won't go
+    cleanly, and no record changes."""
+    repo, run = revert_build(tmp, "apply")
+    write(os.path.join(repo, "tests", "test_calc.sh"), '[ "$(bash src/calc.sh)" = fixed ] && echo "1 passed"\n')
+    built(repo, run, 1, {"src/calc.sh": "echo fixed\n"}, "tests/test_calc.sh")
+    records = {name: read(os.path.join(run, "patches", name)) for name in os.listdir(os.path.join(run, "patches"))}
+    code, out, err = council(repo, "patch", "revert", "1")
+    check("patch revert: the task's last round comes off the code root's files, and no record changes",
+          code == 0 and read(os.path.join(repo, "src", "calc.sh")) == "echo broken\n"
+          and not os.path.exists(os.path.join(repo, "tests", "test_calc.sh")) and "task 1 round 1 taken off" in out
+          and {name: read(os.path.join(run, "patches", name)) for name in os.listdir(os.path.join(run, "patches"))}
+          == records, out + err)
+    code, out, err = council(repo, "patch", "revert", "1")
+    check("patch revert: a round already off is refused, naming its files and the next step, nothing changed",
+          code == 2 and "patch revert refused, nothing changed: task 1 round 1 doesn't come off" in err
+          and "src/calc.sh" in err and "council patch show 1" in err
+          and read(os.path.join(repo, "src", "calc.sh")) == "echo broken\n", out + err)
+    code, out, err = council(repo, "patch", "apply", "1")
+    check("patch apply: the task's last round goes back on the files",
+          code == 0 and read(os.path.join(repo, "src", "calc.sh")) == "echo fixed\n"
+          and "task 1 round 1 put back on" in out, out + err)
+    code, out, err = council(repo, "patch", "apply", "1")
+    check("patch apply: a round the files already hold is refused, naming them, nothing changed",
+          code == 2 and "patch apply refused, nothing changed" in err and "src/calc.sh" in err
+          and "tests/test_calc.sh" in err and read(os.path.join(repo, "src", "calc.sh")) == "echo fixed\n", out + err)
+    code, out, err = council(repo, "patch", "revert", "1", "--round", "1")
+    first = read(os.path.join(repo, "src", "calc.sh"))
+    council(repo, "patch", "apply", "1", "--round", "1")
+    check("patch revert|apply --round: the round named comes off, and goes back on",
+          code == 0 and first == "echo broken\n" and read(os.path.join(repo, "src", "calc.sh")) == "echo fixed\n",
+          out + err)
+    write(os.path.join(repo, "src", "calc.sh"), "echo fixed, then changed\n")
+    write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="it was not fixed enough · state: OBSERVED",
+                                                              removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "1")
+    check("patch save: after a revert and an apply, the next round diffs from the last saved round as before",
+          code == 0 and "task 1 round 2 saved" in out and "1 file(s), +1 −1" in out, out + err)
+    for words, want in ((("patch", "revert", "2"), "task 2 has no saved rounds — council patch save 2"),
+                        (("patch", "revert", "1", "--round", "5"), "task 1 has no round '5' — its saved rounds are 1, 2"),
+                        (("patch", "apply", "1", "--base", "HEAD"), "patch apply doesn't take --base"),
+                        (("patch", "show", "1", "--round", "1"), "patch show doesn't take --round"),
+                        (("patch", "undo", "1"), "patch apply|revert <task> [--round <r>]"),
+                        (("check", "--round", "1"), "check doesn't take --round — see: council help"),
+                        (("gate", "x", "--round", "1"), "gate doesn't take --round — see: council help")):
+        code, out, err = council(repo, *words)
+        check("%s: refused, naming the next step" % " ".join(words), code == 2 and want in err, out + err)
 
 
 @part("gates")

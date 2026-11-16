@@ -1,13 +1,13 @@
 """A build task's history across its rounds (#60), from its saved patches and heads: what each round changed, its
-cause, what it removed and assumed, what the checks found, and where it touched the same files as the round
-before. council patch save writes it to `patches/T<n>.md` for the next round's brief and the verifier; council
-patch show prints it."""
+cause, the gates that went red since the save before it (from the event stream), what it removed and assumed, what
+the checks found, and where it touched the same files as the round before. council patch save writes it to
+`patches/T<n>.md` for the next round's brief and the verifier; council patch show prints it."""
 from __future__ import annotations
 
 from pathlib import Path
 
 from council.commands import cli, gate_output
-from council.records import patches
+from council.records import events, gates, patches
 
 # A sign's question for the verifier: a fix round's (its head names a cause), and a first build's (Cause: none).
 SIGN_QUESTION = "does it remove the cause, or hide the symptom?"
@@ -23,13 +23,32 @@ def lines(run: str | Path, task: int) -> list[str]:
            "From the saved patches and report heads (council patch show %d). Signs are questions for the verifier, "
            "never verdicts." % task]
     before: list[str] = []
+    every, finished = patches.rounds(run), _red_gates(run)
     for one in found:
-        out += [""] + _round(one, before)
+        since = max((other.at for other in every if other.seq < one.seq), default="")
+        reds = None if finished is None else [name for at, name in finished if since < at <= one.at]
+        out += [""] + _round(one, before, reds)
         before = one.files
     return out
 
 
-def _round(one: patches.Round, before: list[str]) -> list[str]:
+def _red_gates(run: str | Path) -> list[tuple[str, str]] | None:
+    """When each gate that checks the work finished red, from the run's event stream (a before- or regress-proof
+    is meant to fail first, and a probe is a dry run, so neither counts); None for a run with no stream."""
+    if not events.path(Path(run)).is_file():
+        return None
+    return [(row.get("at", ""), row.get("subject", "")) for row in events.records(Path(run))
+            if row.get("type") == "gate.finished" and row.get("value") == "failed"
+            and gates.kind(row.get("subject", "")) == "check"]
+
+
+def _named(reds: list[str]) -> str:
+    """after-1 ×2, lint: each gate once, in the order it first went red, with how often when more than once."""
+    counts = {name: reds.count(name) for name in reds}
+    return ", ".join(name + (" ×%d" % count if count > 1 else "") for name, count in counts.items()) or "none"
+
+
+def _round(one: patches.Round, before: list[str], reds: list[str] | None) -> list[str]:
     head = one.head
     cause = head.get("cause", "")
     out = ["## Round %d · %s · %s" % (one.round, patches.name(one.task, one.round) + ".patch",
@@ -37,6 +56,7 @@ def _round(one: patches.Round, before: list[str]) -> list[str]:
            "- changed: %d file(s), +%d −%d: %s" % (len(one.files), one.added, one.removed,
                                                    ", ".join(one.files) or "nothing"),
            "- cause: %s" % ("%s (%s)" % (cause, head.get("state")) if head.get("state") else "none, a first build"),
+           *(["- gates red since the save before: %s" % _named(reds)] if reds is not None else []),
            "- owner: %s · removed: %s · assumed: %s" % (head.get("owner", ""), head.get("removed", ""),
                                                         head.get("assumed", ""))]
     if head.get("redesign"):
