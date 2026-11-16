@@ -81,8 +81,9 @@ last line included (`CEILING` in `src/council/commands/context.py`). Left out's 
 While the pack is over the ceiling, the last of parts 1-5 still in it is dropped whole and named
 under Left out, never cut midway. The last line is `pack: <bytes> bytes of 8000; left out: <parts> |
 nothing`. Measured in T3: 2,238 bytes for the eval's build task and 1,614 for the plan-check
-fixture's task, against 1,650 for the seat brief block in 04-brief.md alone; the standing builder
-rules (2,234 bytes) are linked, not inlined. The ceiling is a guard, not a target.
+fixture's task, against 1,650 for the seat brief block in 04-brief.md alone; in the first real build
+(2026-11-16, three tasks, a config with hard rules, a map table and memory) 3,971 to 4,385 bytes. The
+standing builder rules (2,234 bytes) are linked, not inlined. The ceiling is a guard, not a target.
 
 ### 3. Evidence comes up as an account the helper checks
 
