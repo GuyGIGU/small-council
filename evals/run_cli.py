@@ -6615,6 +6615,25 @@ def requests_war_room(tmp):
 
 @part("filing")
 def close_claim_index(tmp):
+    # Only LF ends a line of synthesis.md and a verify file: a bare CR or a form feed inside a claim is text.
+    lf = new_repo(tmp, "lf-only-claims")
+    write(os.path.join(lf, ".council", "council.config.md"), "# Council config\n")
+    _, lf_run, _ = council(lf, "run", "open", "council-review")
+    lf_run = lf_run.strip()
+    write(os.path.join(lf_run, "seats", "hunt.md"), "# Hunt\n## Index\n3 · P1 · Principle 1 · a.txt:1 · Expiry\n")
+    with open(os.path.join(lf_run, "synthesis.md"), "wb") as f:
+        f.write("# Synthesis\n## Kept\n1 · P1 · Principle 1 · a.txt:1 · Expiry\rskipped · state: OBSERVED · "
+                "from: hunt#3\n## Cut\n(none)\n".encode())
+    with open(os.path.join(lf_run, "verify-1.md"), "wb") as f:
+        f.write("# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+                "| 1 | Expiry | CONFIRMED | a.txt:1\x0cmore |\r\n".encode())
+    code, out, err = council(lf, "evidence", "build", "--run", lf_run)
+    index = [json.loads(line) for line in read(os.path.join(lf_run, "claims.jsonl")).split("\n") if line]
+    check("evidence build: a bare CR or a form feed does not end a line — one claim, its verdict linked",
+          code == 0 and len(index) == 1 and index[0]["claim"] == "Expiry\rskipped"
+          and index[0]["verification"][0]["evidence"] == "a.txt:1\x0cmore"
+          and index[0]["verification"][0]["ref"] == "verify-1.md:4", out + err + str(index))
+    council(lf, "run", "close", "--status", "abandoned")
     # Closing a synthesis run warns about an absent or outdated claim index without rebuilding it.
     stale_repo = new_repo(tmp, "stale-claims")
     write(os.path.join(stale_repo, ".council", "council.config.md"), "# Council config\n")

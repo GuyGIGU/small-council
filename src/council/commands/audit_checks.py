@@ -4,7 +4,6 @@ agent seat with a token figure, the agent limit. Each check says pass, warn or F
 words)."""
 from __future__ import annotations
 
-import json
 import os
 import re
 from datetime import datetime, timedelta
@@ -13,7 +12,7 @@ from typing import Any, Callable, Dict
 
 from council.clock import iso_moment
 from council.records import events as event_stream
-from council.records import paths, usage, usage_gaps
+from council.records import cells, paths, usage, usage_gaps
 from council.records import plan as run_plan
 from council.records import seats as seat_files
 from council.records import state as run_state
@@ -287,14 +286,7 @@ def claim_index(run: Run, say: Say) -> None:
         return
     newer = [p.name for p in [run.folder / "synthesis.md"] + sorted(run.folder.glob("verify-*.md"))
              if p.is_file() and p.stat().st_mtime > index.stat().st_mtime + 1]
-    claims = []
-    for line in paths.text_of(index, limit=MAX_FILE).splitlines():
-        try:
-            claim = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(claim, dict):
-            claims.append(claim)
+    claims = cells.jsonl_rows(paths.text_of(index, limit=MAX_FILE))
     kept = [c for c in claims if c.get("disposition") == "kept"]
     open_claims = [str(c.get("id", "?")) for c in kept if str(c.get("verdict", "")).upper() not in VERDICTS]
     # A cut claim a verifier CONFIRMED is a lone dissenter that was right — unless synthesis.md says why it

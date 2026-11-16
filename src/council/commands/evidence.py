@@ -16,6 +16,7 @@ from typing import Any, Dict
 from council.records import paths
 from council.records import plan as run_plan
 from council.records import state as run_state
+from council.records.cells import lines_of
 
 Claim = Dict[str, Any]
 
@@ -39,10 +40,10 @@ class EvidenceError(Exception):
 
 
 def read_file(path: Path, required: bool = True) -> str | None:
-    """A run artifact's text (BOM dropped, line endings made newlines), refusing a link, a non-regular
-    file and one over 1 MB; None when it is missing and not required."""
+    """A run artifact's text (BOM dropped), refusing a link, a non-regular file and one over 1 MB; None when it
+    is missing and not required. Only a newline ends a line (lines_of)."""
     data = paths.artifact(path, MAX_INPUT, required)
-    return None if data is None else paths.universal(data.decode("utf-8-sig"))
+    return None if data is None else data.decode("utf-8-sig")
 
 
 def within(parent: Path, candidate: Path) -> bool:
@@ -86,7 +87,7 @@ def seat_index_ids(body: str) -> set[str]:
     """Only the worker's Index, not a quoted example in its prose, proves an item exists."""
     inside = False
     ids = set()
-    for line in body.splitlines():
+    for line in lines_of(body):
         if line.strip() == "## Index":
             inside = True
             continue
@@ -107,7 +108,7 @@ def synthesis(run: Path) -> tuple[list[Claim], list[str]]:
     ids = set()
     kept_seen = False
     kept_content = False
-    for line_no, line in enumerate(body.splitlines(), 1):
+    for line_no, line in enumerate(lines_of(body), 1):
         if line.startswith("## "):
             # A section is Kept or Cut by its first word, as council check reads it: "## Cut (not shipped)"
             # is the Cut section. Any other heading naming kept or cut is read by no one, so it is said.
@@ -246,7 +247,7 @@ def verdict_rows(name: str, body: str) -> tuple[list[tuple[int, list[str]]], lis
     with another heading whose rows carry a claim's number and verdict is named, never skipped quietly."""
     rows, issues = [], []
     table, seen, said = None, False, False   # table: None outside a table, else whether it is a verdict table
-    for line_no, line in enumerate(body.splitlines(), 1):
+    for line_no, line in enumerate(lines_of(body), 1):
         cells = cells_of(line)
         if cells is None:
             table = None
@@ -432,7 +433,7 @@ def main(argv: list[str]) -> int:
         issues += verifier_rows(run, expected, several)
         if issues or body != render(expected):
             raise EvidenceError("claims.jsonl is stale or source artifacts are invalid — run council evidence build")
-        claims = [json.loads(line) for line in body.splitlines() if line.strip()]
+        claims = [json.loads(line) for line in lines_of(body) if line.strip()]
         for claim in claims:
             links = ",".join(item["ref"] for item in claim["verification"]) or "none"
             own = claim["verification"] and all(item.get("self") for item in claim["verification"])

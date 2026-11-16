@@ -62,9 +62,6 @@ class ReadTest(support.Scratch):
             paths.artifact(self.tmp / "big.md", 1024 * 1024)
         self.assertEqual(paths.artifact(self.write("ok.md", "hi"), 1024), b"hi")
 
-    def test_universal_newlines(self) -> None:
-        self.assertEqual(paths.universal("a\r\nb\rc\n"), "a\nb\nc\n")
-
 
 class WriteTest(support.Scratch):
     def test_atomic_write_replaces_and_leaves_no_temporary(self) -> None:
