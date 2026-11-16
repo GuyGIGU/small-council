@@ -1264,7 +1264,7 @@ def index_limits(tmp):
     code, out, err = council(os.path.join(uni, "sub"), "index", "--run", "../.council/runs/" + os.path.basename(urun))
     check("index --run: a relative run path works from a subfolder", code == 0 and out.startswith("index: 4 files"), out + err)
     # An untracked file's lines are read as every other reader reads them (bytewise.records): a CR before a newline
-    # goes on Windows; a last line with no newline keeps its CR on every OS, so `last_one()<CR>` defines no name.
+    # goes on every OS; a last line with no newline keeps its CR, so `last_one()<CR>` defines no name.
     crl = new_repo(tmp, "crlast")
     write(os.path.join(crl, "a.txt"), "x\n")
     git(crl, "add", "-A")
@@ -1272,11 +1272,15 @@ def index_limits(tmp):
     write(os.path.join(crl, ".council", "council.config.md"), "# Council config\n")
     with open(os.path.join(crl, "tools.sh"), "wb") as f:
         f.write(b"first() {\r\n  :\r\n}\r\nlast_one()\r")
+    with open(os.path.join(crl, "braces.sh"), "wb") as f:
+        f.write(b"next_line()\r\n{\r\n  :\r\n}\r\n")
     code, crun, _ = council(crl, "run", "open", "council-review")
     code, out, err = council(crl, "index")
     cidx = read(os.path.join(crun.strip(), "index.md"))
     check("index: an untracked file's unterminated last line keeps its CR, on every OS",
           code == 0 and "- symbols: first\n" in cidx and "last_one" not in cidx, out + err + cidx)
+    check("index: a CRLF line `name()` with its brace on the next line names the function, on every OS (Linux and "
+          "macOS kept the CR, and named nothing)", code == 0 and "- symbols: next_line\n" in cidx, out + err + cidx)
     staged = new_repo(tmp, "staged")
     write(os.path.join(staged, "a.py"), "a = 1\n")
     git(staged, "add", "-A")
