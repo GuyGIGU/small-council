@@ -387,6 +387,22 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("memory size: a configured /docs/… is the repo's own file, as council memory and run open read it",
           any(a["kind"] == "memory-size" and "project-memory.md is 66 KB" in a["text"]
               for a in r["attention"]), r["attention"])
+    write(memorybase / ".council" / "council.config.md",
+          "# Council config\n## Memory\n- conventions: docs/project-memory.md\n- memory budget: 80 KB\n")
+    r = reading(memoryrun)
+    check("memory size: a memory inside the config's memory budget has no note",
+          not any(a["kind"] == "memory-size" for a in r["attention"]), r["attention"])
+    write(memorybase / ".council" / "council.config.md",
+          "# Council config\n## Memory\n- conventions: docs/project-memory.md\n- memory budget: 60 KB\n")
+    r = reading(memoryrun)
+    check("memory size: the card says run open's one sentence, against the config's memory budget",
+          [a["text"] for a in r["attention"] if a["kind"] == "memory-size"] == [
+              "project-memory.md is 66 KB, over the ~60 KB the council expects — every run reads it; at Learn, "
+              "propose a consolidation (council memory tidy lists the merges and retirements it finds)."],
+          r["attention"])
+    r = reading(make_run(memorybase, "memory-closed", status_value="complete", phase="learn"))
+    check("memory size: a closed run's card has no memory note (the close said it)",
+          not any(a["kind"] == "memory-size" for a in r["attention"]), r["attention"])
 
     # --- what the numbers may say ----------------------------------------------------------------------
     legacy = make_run(base, "legacy", seats=[("hunt", "done", "verifier", "160", local(5)[:16], "", "1"),

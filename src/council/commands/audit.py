@@ -48,7 +48,7 @@ NOTE_LEADS = ("save the user's request", "another run is in progress", "a paused
               "seats still marked", "the claim index is missing", "no request was filed", "no build log names",
               "the log has no", "cleared a gate lock", "WARNING",
               "several runs are open \u2014 only the paths", "checks are already running", "now ignores asks/",
-              "KB, over the ~25 KB")
+              "KB, over the ~")
 NOTES = re.compile(r"council: (?:%s|\S+ now ignores asks/|\S+ is \d+ KB, over)"
                    % "|".join(re.escape(lead) for lead in NOTE_LEADS[:-2]))
 

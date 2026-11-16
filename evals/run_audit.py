@@ -791,6 +791,13 @@ helper = "\n".join(f.read_text(encoding="utf-8") for f in            # the helpe
                                                       if p.name != "audit.py")])   # the audit itself is no helper
 stale = [lead for lead in audit.NOTE_LEADS if lead not in helper]
 check("every advisory line the audit lets pass is still one the helper prints", not stale, stale)
+from council.records import memory as memory_records                 # noqa: E402
+with tempfile.TemporaryDirectory(prefix="council-audit-note-") as folder:   # the note as the helper says it
+    (Path(folder) / "council.config.md").write_text("## Memory\n- memory budget: 40 KB\n", encoding="utf-8")
+    (Path(folder) / "conventions.md").write_text("x" * 50000, encoding="utf-8")
+    size_note = "council: " + memory_records.size_note(Path(folder).as_posix())
+check("the memory size note is an advisory line at any memory budget, not a refusal",
+      "over the ~40 KB" in size_note and audit.NOTES.match(size_note) is not None, size_note)
 
 # How the helper was called, in the forms a real night used: 29 of 124 piped calls were seen before.
 FORMS = [

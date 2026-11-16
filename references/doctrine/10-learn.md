@@ -40,9 +40,10 @@
     `council memory reject …` on a no. Run it only after they answered in the chat — it records
     their words and the date, and checks the entry would be served before filing it.
   - **Decisions (D)** are recorded only in the user's own words.
-- **Memory over ~25 KB** → the helper warns at run open; propose a
-  consolidation as numbered operations ("merge AP-7 into AP-3", "retire EC-2 — superseded by
-  EC-9"), applied one by one on the user's yes. Never rewrite the file wholesale. To retire an entry, move it under `## Retired` with a
+- **Memory over its budget** (`- memory budget:`, 25 KB by default) → the helper warns at run open
+  and at close; propose a consolidation as numbered operations ("merge AP-7 into AP-3", "retire EC-2 —
+  superseded by EC-9"), applied one by one on the user's yes. `council memory tidy` lists the ones
+  reading alone can find (the same rule under two ids, a retired id still named); it writes nothing. Never rewrite the file wholesale. To retire an entry, move it under `## Retired` with a
   `**Retired:** <date> — <why>` line; no run reads it after that.
 - **Stale anchors:** `council memory check` lists entries whose anchored file, line or symbol is
   gone. Propose re-anchoring or retiring each, as operations like the ones above. Anchor new entries

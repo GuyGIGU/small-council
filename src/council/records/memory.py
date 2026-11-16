@@ -69,22 +69,27 @@ def locate(home: str) -> Located:
 
 
 def size_note(home: str) -> str:
-    """run open's note (after 'council: ') when the memory file is over the ~25 KB every run reads; else ''."""
+    """The one sentence (after 'council: ') for a memory file over the config's memory budget (config.memory_budget,
+    25 KB by default) — said by run open, the close, council status and council doctor; '' when it is not over."""
+    budget, raw = config.memory_budget(where.native(home))
     path = locate(home).path
-    size = oversized(path)
+    size = oversized(path, budget)
     if not size:
         return ""
-    return ("%s is %d KB, over the ~25 KB the council expects — every run reads it; at Learn, propose a consolidation"
-            % (path.rsplit("/", 1)[-1], (size + 500) // 1000))
+    unread_budget = (" (the config's memory budget, '%s', is not a whole number of KB from 1 to 1024, so the default "
+                     "holds)" % raw if raw and config.memory_kb(raw) is None else "")
+    return ("%s is %d KB, over the ~%d KB the council expects%s — every run reads it; at Learn, propose a "
+            "consolidation (council memory tidy lists the merges and retirements it finds)"
+            % (path.rsplit("/", 1)[-1], (size + 500) // 1000, budget // 1024, unread_budget))
 
 
-def oversized(path: str) -> int:
-    """The memory file's size in bytes when it is over the ~25 KB every run reads; 0 when it is not, or is no file."""
+def oversized(path: str, budget: int) -> int:
+    """The memory file's size in bytes when it is over the budget (bytes); 0 when it is not, or is no file."""
     try:
         size = os.path.getsize(where.native(path)) if os.path.isfile(where.native(path)) else 0
     except OSError:
         size = 0
-    return size if size > COUNCIL_MEMORY_SIZE_LIMIT else 0
+    return size if size > budget else 0
 
 
 def proposals(home: str) -> int | None:

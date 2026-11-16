@@ -1,8 +1,8 @@
 # Conventions — <project>
 <!-- Small Council memory. Every council run reads this file first. Settled entries record the USER's
-     decisions: agents may only PROPOSE (the Proposed section); the user confirms. Keep it under ~25 KB —
-     past that, the council proposes a consolidation as numbered operations (merge, retire), never a
-     rewrite.
+     decisions: agents may only PROPOSE (the Proposed section); the user confirms. Keep it under ~25 KB (the
+     config's `- memory budget:`) — past that, the council proposes a consolidation as numbered operations
+     (merge, retire; `council memory tidy` lists the ones it finds), never a rewrite.
      Every entry may carry **Scope:** (paths, globs or seat slugs it concerns — leave it out and every
      run reads the entry) and **Anchor:** (the paths, symbols or path:lines it is about, separated by
      commas; a path:line may list lines, as in `src/api/auth.py:42,60-71` — a path or a symbol
