@@ -60,7 +60,7 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(started("context", "build", "task-1"), sorted(base + ["council.commands." + name for name in (
             "context", "gate_list", "patch_checks", "resolve", "task_slice")]))
         self.assertEqual(started("tree"), sorted(base + ["council.commands." + name for name in (
-            "patch_checks", "resolve", "task_slice", "tree")]))
+            "build_seat", "patch_checks", "resolve", "task_slice", "tree")]))     # build_seat: the stop's reader
         self.assertEqual(started("index"), sorted(base + ["council.commands." + name for name in (
             "changed", "closed", "index", "index_symbols", "prior", "resolve", "shell")]))
 

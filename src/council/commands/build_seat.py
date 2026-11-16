@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 from council import git
-from council.commands import cli, resolve, rounds, task_slice
+from council.commands import cli, resolve, task_slice
 from council.records import events, gates, patches, paths, report_head, seat_rows, seats, tasks
 from council.records import home as where
 
@@ -97,6 +97,7 @@ def stop_of(run: Path, slug: str) -> str:
     number = tasks.number(slug)
     if number is not None and resolved(verdicts(run), number):
         return RESOLVED
+    from council.commands import rounds      # datetime, only once a stop is read (D34)
     at = _stopped_at(run, slug)
     if not at or rounds.decisions_since(run, rounds.local_minute(at)) > 0:
         return RELEASED
