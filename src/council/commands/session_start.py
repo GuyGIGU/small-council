@@ -135,8 +135,17 @@ def _map(home: str) -> None:
         said += (" (it was built on a commit that is no longer in this repo's history: trust its structure, verify "
                  "details)")
     elif behind.isdigit() and int(behind) > 0:
-        said += " (%s commits behind HEAD: trust its structure, verify details)" % behind
+        said += " (%s commits behind HEAD%s: trust its structure, verify details)" % (behind, _busiest(sha))
     cli.say(said + ".")
+
+
+def _busiest(sha: str) -> str:
+    """'; most changed since: src/ 41, docs/ 9', the three areas with the most files changed since the map's
+    commit; '' when none changed, or on any fault, which drops the areas and keeps the line (D20)."""
+    top: list[tuple[str, int]] = []
+    with contextlib.suppress(Exception):
+        top = map_file.areas(map_file.changed(".", sha, "HEAD"))[:3]
+    return "; most changed since: " + ", ".join("%s %d" % pair for pair in top) if top else ""
 
 
 def _memory(home: str) -> None:

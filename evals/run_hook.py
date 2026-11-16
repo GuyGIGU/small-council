@@ -641,7 +641,24 @@ def memory_file_and_seat_check(tmp):
         write(os.path.join(full, "app.txt"), f"v{n}\n")
         git(full, "commit", "-q", "-am", f"change {n}")
     code, out = run_hook(full, "startup")
-    check("stale map: reports commits behind", "2 commits behind HEAD" in out, out)
+    check("stale map: reports commits behind, and the areas most changed since",
+          "(2 commits behind HEAD; most changed since: app.txt 1: trust its structure, verify details)."
+          in line_with(out, "Orientation"), out)
+    for n, area in enumerate(("src/", "docs/", "lib/", "tests/", "src/", "docs/", "src/")):
+        write(os.path.join(full, area, "f%d.txt" % n), "x\n")
+    git(full, "add", "-A")
+    git(full, "commit", "-q", "-m", "areas")
+    code, out = run_hook(full, "startup")
+    check("stale map: at most three areas, the busiest first (a tie in reverse byte order, as map status sorts)",
+          "(3 commits behind HEAD; most changed since: src/ 3, docs/ 2, tests/ 1: trust its structure, verify details)."
+          in line_with(out, "Orientation"), out)
+    write(os.path.join(full, ".council", "map.md"), "# Codebase map\nmap-commit: %s\n" % git(full, "rev-parse", "HEAD"))
+    write(os.path.join(full, ".council", "notes.md"), "x\n")
+    git(full, "add", "-A")
+    git(full, "commit", "-q", "-m", "council only")
+    code, out = run_hook(full, "startup")
+    check("stale map: commits that changed only .council/ name no area, and the line stays as it was",
+          "(1 commits behind HEAD: trust its structure, verify details)." in line_with(out, "Orientation"), out)
     write(os.path.join(full, ".council", "map.md"), "# Codebase map\nmap-commit: 0123456789abcdef0123456789abcdef01234567\n")
     code, out = run_hook(full, "startup")
     check("map built on a commit no longer in history: said so, not presented as current",
