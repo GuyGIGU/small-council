@@ -3235,6 +3235,17 @@ def runs_worktrees_close_and_find(tmp):
     check("home: a linked worktree uses the main checkout's council", slash(out).lower().endswith("/repo/.council"), out)
     code, out, _ = council(wt, "run", "status")
     check("run status: runs from the main checkout show as elsewhere in a worktree", "elsewhere:" in out, out)
+    # One test of "this run is on this tree": its code-root is this tree, blank or '-' (runs.here), everywhere.
+    dash = new_repo(tmp, "code-root-dash")
+    write(os.path.join(dash, ".council", "council.config.md"), "# Council config\n")
+    _, dash_run, _ = council(dash, "run", "open", "council-review")
+    dash_state = os.path.join(dash_run.strip(), "session-state.md")
+    write(dash_state, re.sub(r"(?m)^code-root: .*$", "code-root: -", read(dash_state)))
+    code, out, _ = council(dash, "run", "status")
+    code2, out2, err2 = council(dash, "run", "open", "council-plan")
+    check("run status: a run whose code-root is '-' is here, as every other reader takes it",
+          code == 0 and " · here" in out and "elsewhere" not in out and code2 == 2 and "already in progress" in err2,
+          out + out2 + err2)
 
     # A bare repository with worktrees: the council lives in the worktree that holds the config
     bsrc = new_repo(tmp, "bare-src")

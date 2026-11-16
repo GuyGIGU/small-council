@@ -38,6 +38,9 @@ class ListingTest(support.Scratch):
         listed = runs.listing(self.home(), 30, "open")
         self.assertEqual([run.status for run in listed], ["complete"])
 
+    def test_a_run_is_here_when_its_code_root_is_this_tree_blank_or_a_dash(self) -> None:
+        self.assertEqual([runs.here(root, "/t") for root in ("/t", "", "-", "/elsewhere")], [True, True, True, False])
+
     def test_fields_as_list_runs_reads_them(self) -> None:
         fields = runs.listed_fields("﻿status: in-progress    # note\r\nphase:\tconvene\r\n"
                                      "Mode: x\nmode: a\tb  # cut\nmode: second\n## Body\nactual: 1 agent\n")

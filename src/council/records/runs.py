@@ -76,6 +76,12 @@ def listed_fields(content: str) -> dict[str, str] | None:
     return fields
 
 
+def here(code_root: str, tree: str) -> bool:
+    """A run is on this tree when its code-root is this tree, blank or '-'. A helper-written code-root is an
+    absolute path with forward slashes; blank is a run from before --code-root; '-' is never written."""
+    return code_root in (tree, "", "-")
+
+
 def skill(mode: str) -> str:
     """The skill that owns a run, from its mode: field (0.2 runs sometimes wrote the short name)."""
     if mode.startswith("council-") or mode in ("test-architect", "spec-writer", "context-core"):
