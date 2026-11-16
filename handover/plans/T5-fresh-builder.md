@@ -42,9 +42,8 @@ Added to the scope by the night plan:
 | E. Benchmark arm | Opus builder | `evals/bench.py` and its self-test; no model calls in CI |
 | Planner | me | `docs/architecture.md` (§3 agents row, §6 new names, §8 rows), `docs/design/task-tree.md`, CHANGELOG, `src/council/commands/plan_models.py` stays until the D37 question is answered |
 
-The seat slug must be settled first. The design says `build-<n>`, but `tasks.number` and
-`council tree` match only `3`, `T3` and `task-3`, so a `build-3` note would land under "unclaimed".
-Either `tasks.number` learns `build-<n>` (one shared parser), or the seat is `task-<n>`.
+The seat slug is settled (the owner, 2026-11-16): the build seat is `task-<n>`, which `tasks.number`
+and `council tree` already match. The design's `build-<n>` changes to `task-<n>` in the same branch.
 
 ## What proves it
 
@@ -54,8 +53,8 @@ Either `tasks.number` learns `build-<n>` (one shared parser), or the seat is `ta
   (passes).
 - The fast tier, ruff, the ratchet ("ShellCheck measured"), the touched run_cli groups, timing last and
   alone, and CI on all three OS.
-- Then the benchmark run both ways on the same cases. This is a paid run: about $12-25 for a pilot, and
-  $50-90 for 10 or more pairs. It is the owner's go, not part of the build.
+- Then the benchmark run both ways on the same cases: a pilot only (about $12-25) after T5 merges (the
+  owner, 2026-11-16). Ten or more pairs ($50-90) are decided from the pilot's result.
 
 ## What could go wrong
 
@@ -79,7 +78,9 @@ in the scratchpad), and the planner's checks. The benchmark run is extra and pai
 
 ## The entry proposed for `docs/decisions.md` (for the owner's word; not written)
 
-| D41 | One builder at a time edits project code: a builder agent (`small-council:council-builder`) per task in council-implement, or the Chair itself for a Solo build. Agents still read and write only their own seat or verify file, except the builder, which writes the project code of its one task and its `report-<n>.md`. This supersedes D4's last clause ("and only council-implement's Chair edits project code"). | the user, <date> | `council seat` (one build seat running at a time); `seat-gate.sh`; agent contracts | supersedes D4 (last clause) |
+| D42 | One builder at a time edits project code: a builder agent (`small-council:council-builder`) per task in council-implement, or the Chair itself for a Solo build. Agents still read and write only their own seat or verify file, except the builder, which writes the project code of its one task and its `report-<n>.md`. This supersedes D4's last clause ("and only council-implement's Chair edits project code"). | the user, <date> | `council seat` (one build seat running at a time); `seat-gate.sh`; agent contracts | supersedes D4 (last clause) |
 
-D37 needs a matching change: "in a build the Chair, which builds, counts as a builder" holds only for a
-Solo build. Whether that is an amendment in D41 or its own entry is the owner's call.
+D41 is taken by T3's entry for `council context` (proposed in PR #116). D37 changes in the same entry,
+as the owner chose on 2026-11-16: the Chair counts as a builder only for a Solo build. The D42 text then
+ends: "…and D37's clause "in a build the Chair, which builds, counts as a builder" now reads "in a Solo
+build the Chair, which builds, counts as a builder"." with Supersedes `D4 (last clause), D37 (that clause)`.
