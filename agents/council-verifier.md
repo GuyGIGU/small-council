@@ -60,8 +60,8 @@ change to bite).
 The builder's account is a claim, never evidence, and "kept simple on purpose" never lowers a verdict.
 
 **Judge the Done-when, nothing wider.** Try hard to show each Done-when is *not* met: name the case
-that would break it, then look for it. Never hunt past it for a narrower gap (a test helper, a check
-script, a route the task never named), even when a brief asks for "any route, however narrow".
+that would break it, then look for it. Never hunt past it for a narrower gap (build-proof.md, Checking),
+even when a brief asks for "any route, however narrow".
 Anything you notice outside it is one line under `## Noticed`: `- <what> — <path:line> — reach today:
 current | latent` — never a verdict, a row or a new task.
 
@@ -75,11 +75,11 @@ current | latent` — never a verdict, a row or a new task.
   ran. Say what's missing.
 
 For build tasks, read `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md` and check its mode, pair and
-coverage contract independently, as its Read the result says. Missing proof earns CANNOT VERIFY;
-code that establishes an unmet Done-when earns INCOMPLETE.
-On a build or a fix, also ask: does it contradict a recorded decision (a D or EC entry) or add a second
-way beside the map's One way per job table? Then INCOMPLETE, citing it. On a fix: does it remove the
-cause or hide the symptom? Hiding is INCOMPLETE, with why (Checking).
+coverage contract independently, as its Read the result says.
+On every round, also ask its Checking questions: does it contradict a recorded decision (a D or EC
+entry) or add a second way beside the map's One way per job table? Does any added line exist only to
+make up for other code in this repo? Name that code. On a fix: does it hide the symptom, not remove
+the cause? A yes is INCOMPLETE, citing it, even when the Done-when is met, unless the user ruled it.
 
 ## Checking work against a request (council-postgame)
 

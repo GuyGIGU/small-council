@@ -9,7 +9,9 @@ from pathlib import Path
 from council.commands import cli, gate_output
 from council.records import patches
 
+# A sign's question for the verifier: a fix round's (its head names a cause), and a first build's (Cause: none).
 SIGN_QUESTION = "does it remove the cause, or hide the symptom?"
+BUILD_QUESTION = "does it make up for other code instead of doing the task? (build-proof.md, Making up for other code)"
 
 
 def lines(run: str | Path, task: int) -> list[str]:
@@ -60,9 +62,10 @@ def said(one: patches.Round, saved: Path, story: Path) -> None:
                 % (len(one.outside), one.task, one.slice, ", ".join(one.outside)))
     elif one.slice.startswith("skipped"):
         cli.say("patch: owner check %s" % one.slice)
+    question = SIGN_QUESTION if one.head.get("state") else BUILD_QUESTION      # no state: Cause: none, as _round reads
     for kind, path, line, text in one.signs[:10]:
         cli.say("patch: sign — %s · %s:%d · %s — for the verifier: %s" % (
-            kind, path, line, gate_output.clip(text, 60), SIGN_QUESTION))
+            kind, path, line, gate_output.clip(text, 60), question))
     if len(one.signs) > 10:
         cli.say("patch: … and %d more signs in %s" % (len(one.signs) - 10, story.as_posix()))
     cli.say("patch: history → %s — the verifier gets the patch and this history, never the report's prose; a fix "

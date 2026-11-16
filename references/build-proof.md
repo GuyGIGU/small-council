@@ -112,7 +112,8 @@ is one council-implement run.
 
 Either way the checker judges the Done-when and nothing wider: it tries hard to show each Done-when
 is not met, and anything it notices beyond one is a line with its reach today, never a verdict or a
-new task. A brief that sends it hunting ("however narrow", "any route", "find anything else") is
+new task. It never hunts past it for a narrower gap (a test helper, a check script, a route the task
+never named). A brief that sends it hunting ("however narrow", "any route", "find anything else") is
 refused at dispatch. Real runs show why: a verifier told to name any route that still gets through
 found a narrower gap every round, and one batch's checks ran about ten hours and 1.7M tokens.
 
@@ -131,9 +132,19 @@ error type, config reader or data-access path beside the row's. If it does, the 
 citing the entry id or the table row, even when the Done-when is met. A new way the user ruled on is a
 recorded decision itself, so it is no second way.
 
+**Making up for other code.** On every round, a first build too, the checker also asks whether any
+added line exists only to make up for other code in this repo: a guard, a conversion, a retry or a
+special case that answers a bug in the code the task builds on instead of doing the task. If so, it
+names that code (`path:line`) and the verdict is INCOMPLETE, even when the Done-when is met, unless
+the user ruled that workaround (a recorded decision, quoted in the brief). The builder's way out is
+the stop, `NEEDS: fix …` (`references/run/repair-loop.md`, Unknowns). The history's
+`workaround words` and `todo` signs point at such lines; like every sign, they are questions, not
+verdicts.
+
 ## Read the result
 
-`council check` writes each task's verdict and note to `check.md`. Copy both into the log's Converge
+`council check` checks the saved before/after gates against their declared proof mode and names the
+saved test when it can. It writes each task's verdict and note to `check.md`. Copy both into the log's Converge
 Proof cell; a saved test note establishes its file exists, not that its assertions are adequate.
 
 | Verdict | Meaning |
@@ -161,3 +172,4 @@ The helper compares recorded modes, commands, exits and outputs; it cannot tell 
 change check failed for the intended reason, a test exercises the path, or assertions were weakened.
 The independent verifier must inspect those facts before a task counts as built. Missing-tool,
 collection or test-syntax failures earn CANNOT VERIFY, not proof of changed product behaviour.
+Missing proof earns CANNOT VERIFY; code that establishes an unmet Done-when earns INCOMPLETE.

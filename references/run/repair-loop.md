@@ -46,14 +46,23 @@ repeat the actual gate after a change rather than re-recording old output. The h
 record a different gate under the same task or to reopen a stopped/resolved trail. If several gates
 fail, address them deliberately as distinct task/gate trails or explain the dependency in the log.
 
+## The log
+
 The ledger is `<run>/repairs.jsonl`; each attempt has immutable-by-convention gate verdict and
 output snapshots under `<run>/repairs/`. `check` detects changed snapshots. These are local run
 artifacts, not a substitute for the tracked implementation log. Add the classification, route,
-attempt count, actual cause found, and any human ruling to the log. Never infer that a baseline-red
-failure was introduced by the task; the record says `baseline: red`, `empty`, or `unknown`, not
-“regression.” An exit-zero baseline that checked zero files is `empty`, not green.
-The helper accepts artifacts up to 4 MB; if a gate writes more, keep its original output and record
-the failure and retry limit manually in the log instead of claiming the helper captured it.
+attempt count, actual cause found, and any human ruling to the log. Include each failed gate
+attempt's category, suggested lens, actual cause (or uncertainty), snapshot paths and next action.
+`council repair check T<n>` checks saved snapshots when used. At converge, a broken saved repair
+trail is reported, never folded into a green receipt. Without Python, audit the log's attempts and
+saved gate outputs by hand.
+
+Never infer that a baseline-red failure was introduced by the task; the record says `baseline: red`,
+`empty`, or `unknown`, not “regression.” An exit-zero baseline that checked zero files is `empty`, not
+green. For a gate red at baseline and waved through, `council gate <name>` names the tests failing
+now that `gates/baseline/<name>.txt` didn't name. When it can't compare, read both outputs side by
+side. The helper accepts artifacts up to 4 MB; if a gate writes more, keep its original output and
+record the failure and retry limit manually in the log instead of claiming the helper captured it.
 
 ## Unknowns
 
@@ -64,7 +73,19 @@ the failure and retry limit manually in the log instead of claiming the helper c
   how a fix lands on a fix.
 - **A builder may return `NEEDS: <question>` and stop.** That is a correct outcome, not a failed
   seat: record it `council seat <slug> done note="NEEDS: <question>"`, never `failed` or `blocked`.
-  The Chair building a task stops the same way: the question, not a guess.
+  The Chair building a task stops the same way: the question, not a guess. It records the stop on the
+  task's seat with `agents=0` (`council seat task-<n> done agents=0 note="NEEDS: …"`), as for its own
+  seat (context-core): no agent ran, so the audit asks no token figure of it.
+- **A bug underneath stops the task.** A builder that finds the code under its task wrong stops and
+  returns `NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <the command or test, and its output>`.
+  Wrong means a `Rests on` fact that is false, or code that does not do what its owner's row, its
+  tests or its own documentation say. It is the `NEEDS:` stop with a second kind of content, recorded
+  the same way (`note="NEEDS: fix …"`), and a correct outcome. `seen:` is OBSERVED or REPRODUCED; a
+  suspicion is a `NEEDS: <question>` and gets the probe. Never make up for the bug inside the task's
+  slice: the verifier names such a line (`build-proof.md`, Checking). The Chair building a task stops
+  the same way; what it stops and asks: council-implement, Edge cases. The stop is resolved when the
+  fix task's `after-<n>` gate passes and then the stopped task's own `after-<n>` gate passes;
+  `council tree` then shows its note as `was stopped: NEEDS: …`.
 - **The answer.** The Chair may run one probe or research seat a run for it inside the approved budget,
   without asking; before a second, it asks the user. A question only the user can answer joins the
   rulings. A plan does the same ahead of time: a task resting on an unchecked fact outside the repo
@@ -111,6 +132,8 @@ attempts (both saved gate outputs, or both verdict files), the baseline, the dif
 `ref: none`. It writes `<run>/seats/diagnose-<n>.md`, an index of root-cause candidates
 (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it as role `diagnosis`
 (`council run plan check`), then `council seat diagnose-<n> …`. The Chair chooses the fix.
+A third check is refused (by `council seat` and the agent gate) until a `diagnose-…` seat is on
+record after the second verdict, or the user's go is (`council state decision="…"`).
 
 Python 3.8+ is optional. Without it, keep the same three-attempt bound and save the gate paths and
 diagnosis in the implementation log manually. Existing runs need no migration.

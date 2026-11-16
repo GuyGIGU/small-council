@@ -12,6 +12,7 @@ NOTHING = ("", "-", "—", "none", "nothing")
 FACT_STATE = re.compile(r"\((" + "|".join(STATES) + r")(\s*,\s*outside)?\)\s*$", re.IGNORECASE)
 HEADING = re.compile(r"###\s+([0-9]+)[.)]?\s*(.*)")
 ROW = re.compile(r"\|\s*\**([^|*]+?)\**\s*\|(.*)\|\s*$")
+NAMED = re.compile(r"(?:[Tt](?:ask-?)?)?([0-9]+)")
 
 
 class Task(NamedTuple):
@@ -48,6 +49,12 @@ def read(content: str) -> list[Task]:
         if row:
             found[-1].rows.setdefault(row.group(1).strip().lower(), row.group(2).strip())
     return found
+
+
+def number(word: str) -> int | None:
+    """The task a word names: 3, T3 or task-3 (t3, Task3); None for any other word."""
+    found = NAMED.fullmatch(word)
+    return int(found.group(1)) if found else None
 
 
 def facts(cell: str) -> list[Fact] | None:
