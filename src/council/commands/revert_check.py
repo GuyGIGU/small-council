@@ -37,7 +37,7 @@ def check(run: Path, top: str, number: str, command: str) -> tuple[str, str, str
     try:
         if any(_under(scratch, Path(folder)) for folder in (where.native(top), run)):
             return _unmade("the scratch folder %s is inside the project or the run folder" % scratch.as_posix())
-        why = _copy(top, tree, scratch) or _undo(run, top, int(number), command, scratch)
+        why = write_copy(top, tree, scratch) or _undo(run, top, int(number), command, scratch)
         return _unmade(why) if why else _rerun(run, number, command, scratch)
     finally:
         _remove(scratch)
@@ -52,23 +52,52 @@ def _under(path: Path, folder: Path) -> bool:
     return inner == outer or inner.startswith(outer.rstrip(os.sep) + os.sep)
 
 
-def _copy(top: str, tree: str, scratch: Path) -> str:
-    """The files of the tree, copied as they are on disk now into scratch; '' when done, else why not."""
+def write_copy(top: str, tree: str, scratch: Path) -> str:
+    """The tree of the files on disk now, written into scratch from its own blobs: git's bytes, which the saved
+    rounds' patches were taken between, whatever line ends the checkout has (core.autocrlf). A submodule is
+    copied from disk. '' when done, else why not."""
     try:
-        listed = git.output(top, "ls-tree", "-r", "-z", "--full-tree", tree)
-        for entry in listed.decode("utf-8", "surrogateescape").split("\0"):
-            if "\t" not in entry:
-                continue
-            kind, path = entry.split(" ")[1], entry.split("\t", 1)[1]
-            source, target = os.path.join(where.native(top), path), scratch / path
+        listed = git.output(top, "ls-tree", "-r", "-z", "--full-tree", tree).decode("utf-8", "surrogateescape")
+        entries = [entry.split("\t", 1)[0].split(" ") + [entry.split("\t", 1)[1]]
+                   for entry in listed.split("\0") if "\t" in entry]
+        blobs = _blobs(top, [sha for _, kind, sha, _ in entries if kind == "blob"])
+        for mode, kind, sha, path in entries:
+            target = scratch / path
             target.parent.mkdir(parents=True, exist_ok=True)
             if kind == "commit":
-                shutil.copytree(source, str(target), symlinks=True, ignore=shutil.ignore_patterns(".git"))
+                shutil.copytree(os.path.join(where.native(top), path), str(target), symlinks=True,
+                                ignore=shutil.ignore_patterns(".git"))
+            elif mode == "120000":
+                _link(blobs[sha], target)
             else:
-                shutil.copy2(source, str(target), follow_symlinks=False)
-    except (git.GitError, OSError) as failure:
+                target.write_bytes(blobs[sha])
+                if mode == "100755":
+                    target.chmod(target.stat().st_mode | 0o111)
+    except (git.GitError, OSError, KeyError, ValueError) as failure:
         return "the files could not be copied to a scratch folder (%s)" % failure
     return ""
+
+
+def _blobs(top: str, shas: list[str]) -> dict[str, bytes]:
+    """Each blob's bytes, read in one git cat-file --batch."""
+    code, data = git.run(top, "cat-file", "--batch", given="".join(sha + "\n" for sha in shas).encode("ascii"))
+    if code:
+        raise OSError("git cat-file exited %d" % code)
+    found, at = {}, 0
+    while at < len(data):
+        end = data.index(b"\n", at)
+        sha, _, size = data[at:end].decode("ascii").split(" ")
+        found[sha] = data[end + 1:end + 1 + int(size)]
+        at = end + 2 + int(size)
+    return found
+
+
+def _link(text: bytes, target: Path) -> None:
+    """A symlink as git holds it; a file holding its target where this system makes none."""
+    try:
+        os.symlink(text.decode("utf-8", "surrogateescape"), str(target))
+    except (OSError, NotImplementedError):
+        target.write_bytes(text)
 
 
 def _undo(run: Path, top: str, task: int, command: str, scratch: Path) -> str:
@@ -81,7 +110,7 @@ def _undo(run: Path, top: str, task: int, command: str, scratch: Path) -> str:
         patch = patches.folder(run) / (patches.name(task, one.round) + ".patch")
         if not patch.is_file():
             return "the patch of round %d is not in %s" % (one.round, patches.folder(run).as_posix())
-        wrong = patch_apply.undo(scratch, patch, tuple(sorted(tests)))
+        wrong = patch_apply.undo(scratch, patch, tuple(sorted(tests)), raw=True)
         if wrong:
             return "round %d does not come off the files on disk cleanly: %s" % (one.round, ", ".join(wrong))
     return ""

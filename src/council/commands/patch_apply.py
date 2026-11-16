@@ -21,22 +21,24 @@ NAMED = re.compile(r"error: (.+?): .+")
 GLOB = re.compile(r"([*?\[\\])")
 
 
-def undo(folder: str | Path, patch: Path, keep: tuple[str, ...] = ()) -> list[str]:
+def undo(folder: str | Path, patch: Path, keep: tuple[str, ...] = (), raw: bool = False) -> list[str]:
     """Take a saved round's patch off the files in folder, all or nothing, the paths in keep left as they are:
-    [] when it came off; else the files that would not (git's own words when it names none)."""
-    return _apply(folder, patch, True, keep)
+    [] when it came off; else the files that would not (git's own words when it names none). raw: the folder
+    holds git's own bytes (a copy written from the tree's blobs), so no line end is converted either way."""
+    return _apply(folder, patch, True, keep, raw)
 
 
 def redo(folder: str | Path, patch: Path) -> list[str]:
     """Put a saved round's patch back on the files in folder, all or nothing; what would not apply, as undo."""
-    return _apply(folder, patch, False, ())
+    return _apply(folder, patch, False, (), False)
 
 
-def _apply(folder: str | Path, patch: Path, reverse: bool, keep: tuple[str, ...]) -> list[str]:
+def _apply(folder: str | Path, patch: Path, reverse: bool, keep: tuple[str, ...], raw: bool) -> list[str]:
     """git apply in folder, which need not be a repository: git looks for none above it, so a scratch copy in a
-    folder under some other repository is patched as itself."""
-    args = ["apply", "--whitespace=nowarn"] + (["-R"] if reverse else []) \
-        + ["--exclude=" + GLOB.sub(r"\\\1", path) for path in keep] + [str(patch)]
+    folder under some other repository is patched as itself. A code root is patched under its own settings, so a
+    file checked out with CRLF (core.autocrlf) takes a patch taken between git's LF trees."""
+    args = (["-c", "core.autocrlf=false"] if raw else []) + ["apply", "--whitespace=nowarn"] \
+        + (["-R"] if reverse else []) + ["--exclude=" + GLOB.sub(r"\\\1", path) for path in keep] + [str(patch)]
     ceiling = os.path.dirname(os.path.abspath(str(folder)))
     try:
         git.output(folder, *args, extra={"GIT_CEILING_DIRECTORIES": ceiling})
