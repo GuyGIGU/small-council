@@ -1,5 +1,6 @@
 """Where the council lives: the council home (the helper's council_home), the folder a command runs in
-(here), the working tree runs are compared with (this_tree), and a path argument as Python opens it."""
+(here), the working tree runs are compared with (this_tree), a path argument as Python opens it, and the
+plugin's own folder (plugin_root)."""
 from __future__ import annotations
 
 import os
@@ -61,6 +62,12 @@ def run_home(run: str | Path) -> str:
     """The run's own council home: the folder above its last /runs/, else this tree's."""
     posix = Path(run).as_posix()
     return posix.rsplit("/runs/", 1)[0] if "/runs/" in posix else council_home()
+
+
+def plugin_root() -> str:
+    """The Small Council plugin's folder: CLAUDE_PLUGIN_ROOT when it is set, else the folder this package lives in
+    (src/council/records/ is three levels below it), written with /."""
+    return os.environ.get("CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parents[3].as_posix()
 
 
 def here(cwd: str | Path = ".") -> str:

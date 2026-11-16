@@ -89,13 +89,21 @@ def _refuse(task: int, problems: list[str]) -> None:
                       "council patch save %d" % (len(problems), task))
 
 
+def since(run: Path, every: list[patches.Round]) -> tuple[patches.Round | None, str]:
+    """What a round is diffed from with no --base: the run's last saved round and its tree; else no round and the
+    commit the run opened on (start-head; '' when it records none). council context build names it in a pack."""
+    if every:
+        return every[-1], every[-1].tree
+    return None, resolve.field(run, "start-head")
+
+
 def _start(run: Path, top: str, base: str, every: list[patches.Round]) -> str:
     """The tree the round starts from: --base; else the run's last saved round; else the commit it opened on."""
     if base:
         return base
-    if every:
-        return every[-1].tree
-    opened = resolve.field(run, "start-head")
+    last, opened = since(run, every)
+    if last:
+        return opened
     found = git.text(top, "rev-parse", "-q", "--verify", opened + "^{tree}") if opened else None
     if not found:
         raise cli.Refusal("this run has no commit it opened on (start-head), so the first round has no start — "

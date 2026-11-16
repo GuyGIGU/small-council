@@ -113,7 +113,7 @@ def _banner(home: str, sid: str) -> None:
             "<command>`, never piped (a hook refuses `| head`, `| tail` and `| grep`: redirect it to a file and read "
             "that) and never through a shell variable or a full path: permission rules match the command text. Only if "
             "`command -v council` fails, write out bash \"%s/bin/council\" <command> each time."
-            % os.environ.get("CLAUDE_PLUGIN_ROOT", ""))
+            % where.plugin_root())
     if sharing.sharing(home) == "just me":
         cli.say("- Just me: this council is the user's alone. Git ignores .council/ and no project file mentions the "
                 "council, so teammates never meet it. Keep it that way: commit messages, PR text, code comments and "

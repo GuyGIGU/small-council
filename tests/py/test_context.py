@@ -3,12 +3,16 @@ the config's hard rules, and the ceiling — whole parts dropped from the end, n
 line counting the printed bytes."""
 from __future__ import annotations
 
+import os
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import support
 
 from council.commands import context, task_slice
 from council.records import config, patches, tasks
+from council.records import home as where
 from test_plan_tasks import MAP, plan, task
 
 
@@ -51,16 +55,30 @@ class PartsTest(support.Scratch):
             self.write(".council/map.md", ways)
         return task_slice.cut(run, ".council/plans/x.md", plan(body), 1)
 
+    @property
+    def folder(self) -> Path:
+        return self.tmp / ".council" / "runs" / "2026-01-02-030405-implement"
+
     def test_part_one_quotes_the_task_as_the_plan_writes_it(self) -> None:
         rests = "a unique key (OBSERVED); the provider retries (ASSUMED, outside); a hunch"
         found = self.slice_of(task(1, rests=rests))
-        self.assertEqual(context.task(found.task), [
+        self.assertEqual(context.task(self.folder, found.task), [
             "## The task", "Task 1: Task 1", 'Serves: "Charge the card once"',
             "Done when: a retried webhook charges once", "Rests on:", "- a unique key (OBSERVED)",
             "- the provider retries (ASSUMED, outside)", "- a hunch (no evidence state)", ""])
-        self.assertIn("Rests on: nothing", context.task(self.slice_of(task(1, rests="—")).task))
+        self.assertIn("Rests on: nothing", context.task(self.folder, self.slice_of(task(1, rests="—")).task))
         self.assertIn("Rests on: (the plan gives no Rests on row)",
-                      context.task(self.slice_of(task(1, rests=None)).task))
+                      context.task(self.folder, self.slice_of(task(1, rests=None)).task))
+
+    def test_part_one_shows_a_needs_stop_on_the_tasks_own_seat(self) -> None:
+        found = self.slice_of(task(1))
+        self.write(".council/runs/2026-01-02-030405-implement/seats.tsv",
+                   "slug\tstate\tagent\ttokens\tupdated\tnote\n"
+                   "T1\tdone\t\t\t10:00\tNEEDS: fix a.py:2 · does: x · should: y · seen: z\n"
+                   "task-2\tdone\t\t\t10:00\tNEEDS: is the key unique?\n"
+                   "1\tdone\t\t\t10:00\tall done\n")
+        self.assertEqual(context.task(self.folder, found.task)[-2:],
+                         ["Stopped earlier: NEEDS: fix a.py:2 · does: x · should: y · seen: z", ""])
 
     def test_part_two_names_the_owner_row_the_slice_and_the_rows_inside_touches(self) -> None:
         body = task(1).replace("| **Done when**", "| **Touches** | `src/mail/outbox.py` |\n| **Ref** | "
@@ -69,8 +87,20 @@ class PartsTest(support.Scratch):
         self.assertEqual(out[:3], ["## Owner", "Owner: src/pay/ — Charge a card", "The one way: Charge a card · "
                                    "src/pay/ · charge() through the gateway client · src/pay/charge.py"])
         self.assertIn("Slice: src/pay/, src/mail/outbox.py, src/pay/charge.py", out)
+        self.assertIn("Other map rows inside Touches:", out)
         self.assertIn("- Send an email · src/mail/ · the outbox queue · src/mail/outbox.py", out)
-        self.assertIn("Ref: references/quality-backend.md — read it there; it is not copied here", out)
+        with mock.patch.dict(os.environ, {"CLAUDE_PLUGIN_ROOT": ""}):
+            self.assertIn("Ref: %s/references/quality-backend.md — read it there; it is not copied here"
+                          % where.plugin_root(), context.owner(self.slice_of(body)))
+
+    def test_a_ref_is_whole_only_for_a_file_the_plugin_has(self) -> None:
+        self.write("plugin/references/refactoring.md", "# R\n")
+        root = (self.tmp / "plugin").as_posix()
+        with mock.patch.dict(os.environ, {"CLAUDE_PLUGIN_ROOT": root}):
+            self.assertEqual(context.plugin_paths("`references/refactoring.md` → Principle 2; references/none.md, "
+                                                   "docs/references/refactoring.md"),
+                             "`%s/references/refactoring.md` → Principle 2; references/none.md, "
+                             "docs/references/refactoring.md" % root)
 
     def test_part_two_says_when_there_is_no_table_or_a_new_way(self) -> None:
         self.assertIn("The one way: the map has no one-way-per-job table",

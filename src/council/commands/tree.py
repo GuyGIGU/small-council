@@ -33,7 +33,7 @@ def main(args: cli.Args, words: list[str]) -> int:
 def lines(run: Path, named: str, found: list[tasks.Task]) -> list[str]:
     out = ["tree: %s · run %s · %d task(s)" % (named, Path(run).name, len(found)), "",
            "Request (%s, in the user's words):" % request.ASK] + _request(run)
-    needs, unclaimed = _needs(run, {task.number for task in found})
+    needs, unclaimed = seat_needs(run, {task.number for task in found})
     rounds: dict[int, int] = {}
     for one in patches.rounds(run):
         rounds[one.task] = rounds.get(one.task, 0) + 1
@@ -89,8 +89,9 @@ def _verdicts(run: Path) -> dict[int, str]:
     return found
 
 
-def _needs(run: Path, numbers: set) -> tuple[dict[int, list[str]], list[tuple[str, str]]]:
-    """The seats' NEEDS: returns: on the task a seat's slug names (task-3, T3), else listed apart."""
+def seat_needs(run: Path, numbers: set) -> tuple[dict[int, list[str]], list[tuple[str, str]]]:
+    """The seats' NEEDS: returns: on the task a seat's slug names (task-3, T3), else listed apart. council context
+    build shows a task's own as Stopped earlier."""
     claimed: dict[int, list[str]] = {}
     unclaimed = []
     for row in seats.rows(run):

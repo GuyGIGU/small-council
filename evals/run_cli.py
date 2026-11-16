@@ -6840,31 +6840,48 @@ def requests_task_pack(tmp):
     """T3 (docs/design/task-tree.md, section 2): council context build task-<n> prints a build task's orders from the
     run's files, in six parts, within 8,000 bytes, and writes nothing."""
     repo, run = pack_run(tmp, "task-pack")
+    opened = re.search(r"^start-head: (\S+)$", read(os.path.join(run, "session-state.md")), re.MULTILINE)
+    code, out, err = council(repo, "context", "build", "task-1")
+    check("context build: under the heading, the run folder, the code root, and before any saved round the commit "
+          "the run opened on as what the round is judged against; a task with no NEEDS: stop has no Stopped earlier",
+          code == 0 and "\nRun folder: %s\nCode root: %s\nJudged against: the commit the run opened on, %s\n\n" % (
+              slash(run), slash(git(repo, "rev-parse", "--show-toplevel")), opened.group(1)[:12] if opened else "?")
+          in out and "Stopped earlier" not in out, out + err)
     write(os.path.join(repo, "src", "pay", "charge.py"), "def run():\n    return 2\n")
     write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra="")
           .replace("src/pay.py", "src/pay/charge.py"))
     code, out, err = council(repo, "patch", "save", "1")
     check("context build: the fixture's task 1 round is saved, an earlier task's change to task 2's files",
           code == 0 and "task 1 round 1 saved" in out, out + err)
+    tree = json.loads(read(os.path.join(run, "patches", "T1-1.json")) or "{}").get("tree", "?")
+    stop = "NEEDS: fix src/pay/webhook.py:2 · does: returns 1 · should: read the event · seen: pytest, 1 failed"
+    council(repo, "seat", "task-2", "done", "agents=0", "note=" + stop)
     before = sorted(os.listdir(run))
-    code, out, err = council(repo, "context", "build", "task-2")
+    code, out, err = council(repo, "context", "build", "task-2", env={"CLAUDE_PLUGIN_ROOT": ""})
     heads = [line for line in out.splitlines() if line.startswith("## ")]
     check("context build: the six parts, in order, each a ## heading, exit 0",
           code == 0 and heads == ["## The task", "## Owner", "## Hard constraints and memory",
                                   "## Rulings and standing rules", "## Earlier changes to these files", "## Left out"]
           and out.startswith("# Task pack — task 2 · .council/plans/charge.md\n"), out + err)
-    check("context build: part 1 holds the title, the Serves quote as the plan writes it, Done when and the Rests on "
-          "facts with their states",
+    check("context build: after a saved round, the round is judged against that round's tree",
+          "\nJudged against: the last saved round's tree, %s — task 1 round 1 (T1-1.patch)\n\n## The task" % tree[:12]
+          in out, out)
+    check("context build: part 1 holds the title, the Serves quote as the plan writes it, Done when, the Rests on "
+          "facts with their states, and the NEEDS: note of the task's seat as Stopped earlier",
           "Task 2: Read the webhook once\nServes: \"Charge the card once, even when the provider retries the webhook\"\n"
           "Done when: a webhook delivered twice charges once\nRests on:\n- the charge table has a unique key (OBSERVED)\n"
-          "- the provider retries for 3 days (OBSERVED, outside)\n" in out, out)
+          "- the provider retries for 3 days (OBSERVED, outside)\nStopped earlier: %s\n\n## Owner" % stop in out, out)
+    whole = lambda label: line_of(out, label).split(": ", 1)[-1].split(" — ")[-1 if label == "Proof:" else 0]  # noqa: E731
+    plugin = lambda *parts: os.path.join(ROOT, "references", *parts)                                          # noqa: E731
     check("context build: part 2 holds the Owner, the map row it names, the slice council patch save judges, the "
-          "rows of the code it calls, what it must not touch, and the Ref and Domain rows",
+          "other map rows inside its Touches, what it must not touch, and the Ref, a plugin file by its whole path, "
+          "and the Domain",
           "Owner: src/pay/ — Charge a card\nThe one way: Charge a card · src/pay/ · the gateway client · "
           "src/pay/charge.py\nSlice: src/pay/, src/pay/charge.py, src/pay/webhook.py\n"
-          "Code it calls (map rows inside Touches):\n- Read a webhook · src/hooks/ · the signed-event reader · "
+          "Other map rows inside Touches:\n- Read a webhook · src/hooks/ · the signed-event reader · "
           "src/pay/webhook.py\nMust not touch: anything outside the slice" in out
-          and "Send mail" not in out and "Ref: references/quality-backend.md — read it there" in out
+          and "Send mail" not in out and line_of(out, "Ref: ").endswith(" — read it there; it is not copied here")
+          and os.path.isfile(whole("Ref: ")) and os.path.samefile(whole("Ref: "), plugin("quality-backend.md"))
           and "Domain: payments" in out, out)
     check("context build: part 3 holds the config's hard rules word for word, the task's Constraints and the memory "
           "entries in scope as council memory select prints them",
@@ -6873,12 +6890,17 @@ def requests_task_pack(tmp):
           "Constraints: no new table; keep the webhook's 200 reply\n" in out
           and "AP-1 · the gateway retries on its own · scope: src/pay/**" in out and "EC-1 · every module" in out
           and "AP-2" not in out and "memory: 1 scoped and 1 every-run entries of 3 apply" in out, out)
-    check("context build: part 4 holds the user's decision, ask.md's Later words, the gates, the time limit and one "
-          "line linking the standing builder rules",
+    check("context build: part 4 holds the user's decision, ask.md's Later words, the gates, the time limit, the "
+          "task's proof gates linking build-proof.md and one line linking the standing builder rules, each by its "
+          "whole path in the plugin",
           '"charge by the idempotency key"' in line_of(out, "idempotency")
           and "- 2026-11-16 10:00: and log each retry we drop" in out
           and "- unit · true · run at: verify · mandatory: yes" in out
           and "Gate time limit: 20m (the config's - gate time limit:)" in out
+          and line_of(out, "Proof:").startswith("Proof: council gate before-2, then after-2, one command in both — ")
+          and os.path.samefile(whole("Proof:"), plugin("build-proof.md"))
+          and line_of(out, "Standing builder rules:").endswith(" — read it before the first edit")
+          and os.path.samefile(whole("Standing builder rules:"), plugin("run", "builder-rules.md"))
           and out.count("references/run/builder-rules.md") == 1, out)
     check("context build: part 5 names task 1's saved round on the same file, with its cause",
           "- task 1 round 1 (T1-1.patch): src/pay/charge.py · Cause: none, a first build" in out, out)
@@ -6890,6 +6912,16 @@ def requests_task_pack(tmp):
           and "Keep the receipt" not in out and "Charge once" not in out, last)
     check("context build: writes nothing — the run folder is as it was", sorted(os.listdir(run)) == before
           and not err.strip(), err)
+    elsewhere = os.path.join(tmp, "task-pack-plugin")
+    write(os.path.join(elsewhere, "references", "quality-backend.md"), "# Backend\n")
+    code, out, err = council(repo, "context", "build", "task-2", env={"CLAUDE_PLUGIN_ROOT": slash(elsewhere)})
+    check("context build: with CLAUDE_PLUGIN_ROOT set, the plugin's paths are under it",
+          code == 0 and "Ref: %s/references/quality-backend.md — read" % slash(elsewhere) in out
+          and "Standing builder rules: %s/references/run/builder-rules.md — read" % slash(elsewhere) in out, out + err)
+    os.remove(os.path.join(elsewhere, "references", "quality-backend.md"))
+    code, out, err = council(repo, "context", "build", "task-2", env={"CLAUDE_PLUGIN_ROOT": slash(elsewhere)})
+    check("context build: a Ref naming no file of the plugin's is printed as the plan writes it",
+          code == 0 and "Ref: references/quality-backend.md — read it there" in out, out + err)
 
     big = "- " + "x" * 120
     plan = os.path.join(repo, ".council", "plans", "charge.md")

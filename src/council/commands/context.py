@@ -6,6 +6,7 @@ whole and named under Left out, which is never dropped. The Chair hands the prin
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from council.commands import cli, gate_list, patch_checks, resolve, task_slice
@@ -17,6 +18,8 @@ NAMES = ("The task", "Owner", "Hard constraints and memory", "Rulings and standi
          "Earlier changes to these files")
 USAGE = "usage: council context build task-<n> [--run <folder>] — a build task's orders, printed"
 BUILDER_RULES = "references/run/builder-rules.md"
+BUILD_PROOF = "references/build-proof.md"
+PLUGIN_REF = re.compile(r"(?<![\w./-])references/[\w./-]*\w")    # a path in a Ref cell that may be the plugin's
 NEVER = ("- Never in a pack: the plan's other tasks, the code itself, seat files, and the Chair's Ruling: lines "
          "(they sit in the build log, which nothing reads).")
 
@@ -37,14 +40,31 @@ def main(args: cli.Args, words: list[str]) -> int:
         raise cli.Refusal("%s has no task %d — %s" % (
             named, number, "its tasks: %s; council context build <one of them>" % listed if listed else
             "its ## Task Sequence lists none; write the plan's tasks first"))
-    heading = ["# Task pack — task %d · %s" % (number, named), ""]
+    heading = ["# Task pack — task %d · %s" % (number, named)] + _where(run) + [""]
     cli.say_all(fit(heading, parts(run, found)))
     return 0
 
 
+def _where(run: Path) -> list[str]:
+    """Under the heading: the run folder as the helper prints a run, the code root, and what the task's next round
+    is judged against — what council patch save diffs it from with no --base."""
+    from council.commands import patch    # patch save's own start, once a pack is built
+    last, start = patch.since(run, patches.rounds(run))
+    if last:
+        against = "the last saved round's tree, %s — task %d round %d (%s.patch)" % (
+            start[:12], last.task, last.round, patches.name(last.task, last.round))
+    else:
+        against = ("the commit the run opened on, %s" % start[:12] if start else
+                   "nothing yet: the run records no commit it opened on (start-head) — council patch save <task> "
+                   "--base <rev> names one")
+    return ["Run folder: %s" % Path(run).as_posix(), "Code root: %s" % (resolve.field(run, "code-root") or "here"),
+            "Judged against: %s" % against]
+
+
 def parts(run: Path, found: task_slice.Slice) -> list[list[str]]:
     """Parts 1-5, each its `## ` heading, its lines and a blank line."""
-    return [task(found.task), owner(found), constraints(run, found), rulings(run), earlier(run, found)]
+    return [task(run, found.task), owner(found), constraints(run, found), rulings(run, found.task.number),
+            earlier(run, found)]
 
 
 def fit(heading: list[str], given: list[list[str]]) -> list[str]:
@@ -81,7 +101,7 @@ def count(body: list[str], dropped: list[str]) -> str:
     return line
 
 
-def task(entry: tasks.Task) -> list[str]:
+def task(run: Path, entry: tasks.Task) -> list[str]:
     rows = entry.rows
     out = ["## " + NAMES[0], "Task %d: %s" % (entry.number, entry.title),
            "Serves: %s" % rows.get("serves", "(the plan gives no Serves row)"),
@@ -95,6 +115,8 @@ def task(entry: tasks.Task) -> list[str]:
         out.append("Rests on:")
         out += ["- %s (%s)" % (f.text, (f.state or "no evidence state") + (", outside" if f.outside else ""))
                 for f in facts]
+    from council.commands import tree     # council tree's own match of a seat to a task
+    out += ["Stopped earlier: %s" % note for note in tree.seat_needs(run, {entry.number})[0].get(entry.number, [])]
     return out + [""]
 
 
@@ -114,14 +136,23 @@ def owner(found: task_slice.Slice) -> list[str]:
                                         if tasks.kind(rows.get("owner")) == "new" else "the Owner names no map row"))
     out.append("Slice: %s" % (", ".join(dict.fromkeys(found.paths)) or "the Owner and Touches name no path"))
     called = _called(found)
-    out += (["Code it calls (map rows inside Touches):"] + ["- " + _way(way) for way in called]) if called else []
+    out += (["Other map rows inside Touches:"] + ["- " + _way(way) for way in called]) if called else []
     out.append("Must not touch: anything outside the slice — a change outside these paths is named at council "
                "patch save, for the verifier.")
-    for key, label in (("ref", "Ref"), ("domain", "Domain")):
-        if rows.get(key):
-            out.append("%s: %s%s" % (label, rows[key], " — read it there; it is not copied here" if key == "ref"
-                                     else ""))
+    if rows.get("ref"):
+        out.append("Ref: %s — read it there; it is not copied here" % plugin_paths(rows["ref"]))
+    if rows.get("domain"):
+        out.append("Domain: %s" % rows["domain"])
     return out + [""]
+
+
+def plugin_paths(cell: str) -> str:
+    """A Ref cell with each references/… path that names a file of the plugin's written whole."""
+    root = where.plugin_root()
+    def whole(found: re.Match) -> str:
+        path = root + "/" + found.group(0)
+        return path if os.path.isfile(where.native(path)) else found.group(0)
+    return PLUGIN_REF.sub(whole, cell)
 
 
 def _called(found: task_slice.Slice) -> list:
@@ -162,7 +193,7 @@ def _memory(run: Path, given: list[str]) -> list[str]:
     return out
 
 
-def rulings(run: Path) -> list[str]:
+def rulings(run: Path, number: int) -> list[str]:
     home = Path(run).parent.parent
     out = ["## " + NAMES[3], "The user's decisions in this run (council state decision=):"]
     out += ["- " + entry for entry in state.decisions(state.text(run))] or ["- none yet"]
@@ -175,8 +206,10 @@ def rulings(run: Path) -> list[str]:
         "%s (the config's - gate time limit:)" % raw if seconds else
         "'%s' is not a time, so the defaults hold (council help, council gate … --timeout)" % raw if raw else
         "not set in the config: the defaults hold (council help, council gate … --timeout)"))
-    out.append("Standing builder rules: %s, in the Small Council plugin — read it before the first edit"
-               % BUILDER_RULES)
+    root = where.plugin_root()
+    out.append("Proof: council gate before-%d, then after-%d, one command in both — %s/%s" % (
+        number, number, root, BUILD_PROOF))
+    out.append("Standing builder rules: %s/%s — read it before the first edit" % (root, BUILDER_RULES))
     return out + [""]
 
 

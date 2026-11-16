@@ -333,6 +333,16 @@ def session_start(tmp):
     check("full council: the plain call, with the reason, and no full-path fallback",
           "match the command text" in line_with(out, "plain `council <command>`")
           and "if it isn't on PATH, run it as" not in out, out)
+    check("full council: the fallback names the helper under CLAUDE_PLUGIN_ROOT, as the hook sets it",
+          'write out bash "%s/bin/council" <command> each time.' % ROOT in out, out)
+    direct = subprocess.run([BASH, os.path.join(ROOT, "bin", "council"), "run", "session-start"],
+                            input=json.dumps({"session_id": "eval", "hook_event_name": "SessionStart"}),
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=full, timeout=60,
+                            env=with_env({"CLAUDE_PLUGIN_ROOT": None, "CLAUDE_PROJECT_DIR": full}))
+    named = re.search(r'write out bash "(.*)/bin/council" <command>', direct.stdout)
+    check("council run session-start with no CLAUDE_PLUGIN_ROOT: the fallback names the plugin's own bin/council",
+          direct.returncode == 0 and named is not None and named.group(1) != ""
+          and os.path.samefile(named.group(1), ROOT), direct.stdout + direct.stderr)
     check("full council, team by default: no just-me line", "Just me:" not in out, out)
     check("full council: fresh map is not 'behind'", "behind" not in out, out)
     check("full council: counts 2 pending proposals (ignores the comment)", "2 memory proposal(s)" in out, out)
