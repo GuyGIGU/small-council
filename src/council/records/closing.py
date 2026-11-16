@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from council.records import bytewise, events, gate_table, home, map_file, plan, seat_files, stages, state, usage
+from council.records import bytewise, events, gate_table, home, map_file, memory, plan, seat_files, stages, state, usage
 
 MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame")
 EARLY = ("convene", "prepare", "assign", "brief", "work", "build", "collect", "judge", "challenge")
@@ -123,6 +123,11 @@ def _unmapped(run: Path) -> str | None:
     return ", ".join(left) or None
 
 
+def _memory_over(run: Path) -> str | None:
+    """The memory file's one size sentence (memory.size_note) while it is over the config's memory budget."""
+    return memory.size_note(home.run_home(run)) or None
+
+
 CHECKS = (  # (code, check: the value its line names, or None when the run passes, line)
     ("phase", _short_of_deliver, "closed as complete at stage {value}, so it never reached Deliver — if it stopped "
      "early, tell the user, or close it as abandoned: council run close --run {name} --status abandoned"),
@@ -134,6 +139,7 @@ CHECKS = (  # (code, check: the value its line names, or None when the run passe
     ("verdicts", _no_verdicts, "closed as complete with no verifier verdicts (no verify-*.md in the run folder)"),
     ("map-touched", _unmapped, "the run changed {value} since it opened, with no line in the map yet — say what "
      "changed in each, in the user's words: council map touch <dir>=\"<line>\" …"),
+    ("memory-over", _memory_over, "{value}"),
 )
 
 
