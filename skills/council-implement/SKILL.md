@@ -90,8 +90,10 @@ the converge pass starts, `council state phase=challenge`.
 
 ## The build loop — for each task
 
-1. **Load the governing reference doc first.** Plugin references live under `${CLAUDE_PLUGIN_ROOT}`;
-   project-local `.council/refs/…` under the council home.
+1. **Load the task's orders and its governing reference doc first.** `council context build task-<n>`
+   prints the orders, the doc's path among them; add only judgement: where to start, what worries
+   you. Plugin references live under `${CLAUDE_PLUGIN_ROOT}`; project-local `.council/refs/…` under
+   the council home.
 2. **Before-evidence — choose proof for the task before editing.** Read
    `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`, the authoritative mode, coverage and pair
    contract — which tasks need a pair under the light tier (the default), compiling a new check
@@ -109,9 +111,7 @@ the converge pass starts, `council state phase=challenge`.
    - **Your change broke it** → fix it before moving on.
    - **A mandatory gate is red that was green at baseline** → hard stop until you understand why.
    - **Red at baseline and waved through** → carry on: check only that your change added no new
-     failure — `council gate <name>` names the tests failing now that `gates/baseline/<name>.txt`
-     didn't name. When it can't compare, read both outputs side by side. Keep the standing clause
-     on the receipt.
+     failure (repair-loop.md, The log). Keep the standing clause on the receipt.
    - **It can't run** → config drift (Prepare, Rules); log it too.
    - **It fails during this task** → the bounded loop in `references/run/repair-loop.md` (a failure
      nobody can explain, or a `NEEDS:`: its Unknowns): `council gate` records it (no `council repair record`); inspect its saved output and baseline, repair, and rerun
@@ -142,20 +142,17 @@ the converge pass starts, `council state phase=challenge`.
      `c`), so the first verdict stays on disk. A fix that would add a task or a new mechanism — a
      lock, a guard, a file, another re-check round — gets one line to the user first.
    - **A second failed verification** → a **clean-context diagnosis** (repair-loop.md, The diagnosis
-     worker: its brief and `<run>/seats/diagnose-<n>.md`) if this task has not already used its one
-     diagnosis worker for a gate failure; otherwise stop and report. Then one more attempt;
-     still failing → stop and report. A third check is refused (by `council seat` and the agent gate)
-     until a `diagnose-…` seat is on record after the second verdict, or the user's go is
-     (`council state decision="…"`).
+     worker: its brief, `<run>/seats/diagnose-<n>.md` and when a third check may run) if this task
+     has not already used its one diagnosis worker for a gate failure; otherwise stop and report.
+     Then one more attempt; still failing → stop and report.
    - **SCOPE-CREEP** → revert the extra change.
    - **CANNOT VERIFY** → add the missing check, or say why none can exist.
    - **A wrong finding** → don't "fix" it; log it as refuted, with evidence.
 8. **Log and state — now, not at the end.**
    - Append the task's log entry.
-   - Include each failed gate attempt's category, suggested lens, actual cause (or uncertainty),
-     snapshot paths and next action. `council repair check T<n>` checks saved snapshots when used.
+   - Include each failed gate attempt, as repair-loop.md, The log, says.
    - Update the state: `council state next="task <n+1>: <title>" attempts="T<n> 1/3"`. Keep a short
-     "tried and failed" list there too.
+     "tried and failed" list there too. After a compaction, resume from `council tree`.
    - If commits are on, commit only a task whose mandatory gates pass and whose verifier has no
      unresolved regression. Leave blocked work uncommitted; log its diff and state. Rollback needs
      the user's decision.
@@ -211,13 +208,9 @@ Follow-ups, never into a task.
   a re-check needs the user's recorded go.
 - Then run the final gates: `council gate --all --at verify` (exit 4: context-core, The helper). A gate
   already green on this very tree is not run again; its line names who ran it (`--rerun` runs it).
-- If this run has `repairs.jsonl`, run `council repair check`; a broken saved repair trail is
-  reported, never folded into a green receipt. Without Python, audit the log's attempts and
-  saved gate outputs by hand.
+- If this run has `repairs.jsonl`, run `council repair check` (repair-loop.md, The log).
 - Draft any PR text as `<run>/pr-body.md`; the PR is opened from it at Deliver, after the user's OK.
-  Then `council check`. It checks
-  the saved before/after gates against their declared proof mode (`references/build-proof.md`) and
-  names the saved test when it can. Copy each verdict and its
+  Then `council check` (build-proof.md, Read the result). Copy each verdict and its
   full note into the `## Converge` table's **Proof** column: `ok` shows a change, `preserved` shows
   the checked invariants held on both versions. Broken proof is fixed or reported; no proof is
   reported as NO PROOF. Passing invariants alone never establish new behaviour.
@@ -300,7 +293,11 @@ offered; a Squad is usually right.
 ## Edge cases
 
 - **Plan names code that no longer exists** → follow the intent, not the path; log it.
-- **Blocked by something outside the input** → log it; carry on with the other tasks.
+- **Blocked by something outside the input** → log it; carry on with the tasks that do not rest on it.
+- **A `NEEDS: fix` return** (a bug in the code under a task: repair-loop.md, Unknowns) → stop that
+  task and every task that depends on it or rests on the same code. Tell the user in one line: what
+  is wrong, where, and what is stopped. The fix is a new task above the blocked one, with its own
+  Owner and the Serves line of the task it unblocks; it starts only on the user's yes.
 - **Two tasks share one change** → change once; keep each Done-when, evidence and verdict.
 - **"Also add X" mid-build** → record their words under ask.md's `## Later, in your words`; it is
   authorized. Ask only about scope or cost beyond the approved budget.

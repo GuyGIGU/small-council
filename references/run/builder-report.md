@@ -25,6 +25,15 @@ Redesign: <what the design changes, and why the patches failed>      (a third fi
   moved, replaced, or gone and why. `none` means none.
 - A head that is missing, out of order, or gives a cause no state it can read is refused.
 
+## When the builder stops instead
+
+A builder that cannot finish a round with a true report returns one line and writes no round:
+`NEEDS: <question>`, or, when the code under its task is wrong,
+`NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <the command or test, and its output>`
+(repair-loop.md, Unknowns, says when each applies and how it is recorded). It never makes up for that
+code inside its slice to reach a met Done-when: on every round the verifier asks whether an added
+line exists only to do that.
+
 ## What `council patch save` checks
 
 It takes the round's diff: from the run's last saved round (the first: the commit the run opened on,
@@ -36,7 +45,7 @@ or `--base <rev>`) to the files on disk now, `.council/` and what git ignores le
 | Removed | a deleted test file; a removed test, assertion or document rule (a line with never, always, must, only …) whose words were not added back anywhere in the round; the head's Removed line doesn't name it | refused: name it, or put it back |
 | Third fix round | repair-loop.md, Fix rounds | refused until the redesign is ruled |
 | Owner | a changed file outside the task's slice: the paths in its plan task's Owner and Touches, and the map row its Owner names (the plan is the run's `input=`) | flagged for the verifier as possible scope creep; skipped, in one line, with no plan or no path |
-| Workaround signs | an added line of code that retries, sleeps, catches everything, skips a test, sets a time limit or loosens an expected value, or an assertion changed in place | listed for the verifier as questions, never verdicts: some are right |
+| Workaround signs | an added line of code that retries, sleeps, catches everything, skips a test, sets a time limit or loosens an expected value; says workaround, hack, temporary, "for now" or "until … is fixed"; or adds a `TODO`, `FIXME` or `XXX`; or an assertion changed in place | listed for the verifier as questions, never verdicts: some are right |
 
 A refused round saves nothing, so it keeps its number. The signs are patterns: they miss what they
 don't name, and the verifier's question below is the real check.

@@ -34,7 +34,8 @@ Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is
 append-only record of CLI-observable actions.
 `run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.
 `evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
-`builder-report.md` defines a build round's report head and the checks of it against the saved diff.
+`builder-report.md` defines a build round's report head and the checks of it against the saved diff;
+`builder-rules.md` lists the standing rules every build task carries, which its orders link.
 `war-room.md` defines the second round; `sharing.md` defines the team-or-just-me choice;
 `models.md` defines the model per role.
 
