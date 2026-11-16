@@ -141,6 +141,13 @@ the stop, `NEEDS: fix …` (`references/run/repair-loop.md`, Unknowns). The hist
 `workaround words` and `todo` signs point at such lines; like every sign, they are questions, not
 verdicts.
 
+**Exists, not a stub, wired in.** For each thing the Done-when names (a function, a command, a
+route, a setting), the checker also asks three things: it is in the tree; its body does the work (no
+placeholder return, no empty or TODO body, no answer hard-coded to fit the test); and a path from an
+entry point that ships reaches it, the chain cited (`path:line` to `path:line`). Missing or a stub is
+INCOMPLETE; present but called by nothing is INCOMPLETE, naming where it should be wired in. Like the
+other questions it asks only of what the Done-when names, never wider.
+
 ## Read the result
 
 `council check` checks the saved before/after gates against their declared proof mode and names the
