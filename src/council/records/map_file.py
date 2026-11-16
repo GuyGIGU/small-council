@@ -1,15 +1,18 @@
 """map.md, the project's codebase map in the council home: its one-way-per-job table (job · owner · the one way ·
-anchor path), which a plan task's Owner row names."""
+anchor path), which a plan task's Owner row names; its map-commit stamp; the top-level areas changed since a commit;
+and its one writer, which adds the user's lines under a dated ## Changes section."""
 from __future__ import annotations
 
 import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.records import paths
+from council import git
+from council.records import bytewise, paths
 
 NAME = "map.md"
 TABLE = "## One way per job"
+CHANGES = "## Changes "
 
 
 class Way(NamedTuple):
@@ -64,8 +67,76 @@ def commit(home: str | Path) -> str:
         data = path(home).read_bytes()
     except OSError:
         return ""
-    for line in data.decode("utf-8", "surrogateescape").split("\n"):
+    found = _stamp(data.decode("utf-8", "surrogateescape").split("\n"))
+    return found[1].group(1) if found else ""
+
+
+def _stamp(lines: list[str]) -> tuple[int, re.Match] | None:
+    """The first map-commit: line with a commit: its index and match."""
+    for n, line in enumerate(lines):
         found = _STAMP.match(line)
         if found:
-            return found.group(1)
-    return ""
+            return n, found
+    return None
+
+
+def areas(names: list[str]) -> list[tuple[str, int]]:
+    """(area, files) per top-level folder (with its slash) or root file, the busiest first and, at a tie, in
+    reverse byte order (sort -rn), .council/ left out."""
+    counts: dict[str, int] = {}
+    for name in names:
+        if name.startswith(".council/"):
+            continue
+        area = name.split("/", 1)[0] + "/" if "/" in name else name
+        counts[area] = counts.get(area, 0) + 1
+    return sorted(counts.items(), key=lambda pair: (pair[1], pair[0].encode("utf-8", "surrogateescape")),
+                  reverse=True)
+
+
+def changed(top: str | Path, since: str, until: str = "") -> list[str]:
+    """The files changed from a commit to `until` (a commit) or, without it, to the tracked files on disk, named from
+    the top of the repository whatever folder top is."""
+    names = git.run(top, "-c", "diff.relative=false", "diff", "--name-only", since, *([until] if until else []),
+                    names=True)[1]
+    return bytewise.records(names.decode("utf-8", "surrogateescape"), fold=False)
+
+
+def noted(home: str | Path, since: str) -> set[str]:
+    """The areas a `- <area>: <line>` names under a ## Changes <YYYY-MM-DD> section dated on or after since."""
+    found, inside = set(), False
+    for line in paths.text_of(path(home), home).split("\n"):
+        line = line.rstrip("\r")
+        if line.startswith("## "):
+            day = line[len(CHANGES):].strip() if line.startswith(CHANGES) else ""
+            inside = bool(re.fullmatch(r"\d{4}-\d\d-\d\d", day)) and day >= since
+        elif inside and line.startswith("- ") and ": " in line:
+            found.add(line[2:].split(": ", 1)[0])
+    return found
+
+
+class Touched(NamedTuple):
+    stamped: bool        # map-commit moved to HEAD
+    left: list[str]      # the areas changed since the stamp that this touch did not cover
+
+
+def touch(home: str | Path, lines: list[tuple[str, str]], head: str, behind: list[str], day: str) -> Touched:
+    """Add `- <area>: <line>` for each pair under ## Changes <day> at the end of the map (to that section when it
+    is already the last one), through the one atomic write. map-commit moves to head only when the pairs cover every
+    area in behind (the areas changed since the stamp); no other line or section changes. Raises OSError."""
+    data = path(home).read_bytes().decode("utf-8", "surrogateescape")
+    nl = "\r\n" if "\r\n" in data else "\n"
+    rows = data.split("\n")
+    left = [area for area in behind if area not in {area for area, _ in lines}]
+    stamp = _stamp(rows)
+    if stamp and not left:
+        n, found = stamp
+        rows[n] = rows[n][:found.start(1)] + head + rows[n][found.end(1):]
+    text = "\n".join(rows)
+    if text and not text.endswith("\n"):
+        text += nl
+    heads = [row.rstrip("\r") for row in text.split("\n") if row.startswith("## ")]
+    if heads[-1:] != [CHANGES + day]:
+        text += (nl if text and not text.endswith(nl + nl) else "") + CHANGES + day + nl
+    text += "".join("- %s: %s%s" % (area, said, nl) for area, said in lines)
+    paths.atomic_write(path(home), text.encode("utf-8", "surrogateescape"), ".map.", keep_mode=True)
+    return Touched(bool(stamp) and not left, left)

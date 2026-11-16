@@ -320,7 +320,7 @@ for label, t in texts.items():
             bad.append(f"{label}: council {c}")
         elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume", "plan", "events", "audit", "turn-end"}):
             bad.append(f"{label}: council run {' '.join(rest[:1])}")
-        elif c == "map" and (not rest or rest[0] != "status"):
+        elif c == "map" and (not rest or rest[0] not in {"status", "touch"}):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")
 check("every `council …` command mentioned exists in the helper", not bad, "; ".join(bad[:8]))
 # A permission rule such as Bash(council run:*) matches the command's text. A real run reached the helper

@@ -3811,6 +3811,79 @@ def runs_worktrees_close_and_find(tmp):
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
 
+@part("runs")
+def runs_map_touch(tmp):
+    # council map touch: the user's line for each top-level area, under a dated ## Changes section at the end of
+    # the map; map-commit moves to HEAD only once every area changed since it has a line. A complete close of a
+    # run that changed tracked files names the areas the map has no line for yet: a warning, never a refusal.
+    repo = new_repo(tmp, "maptouch")
+    for name in ("src/a.py", "docs/x.md", "README.md"):
+        write(os.path.join(repo, name), "a\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    built, mapf = git(repo, "rev-parse", "HEAD"), os.path.join(repo, ".council", "map.md")
+    code, out, err = council(repo, "map", "touch", "src/=x")
+    check("map touch: with no map, refused, naming council-init",
+          code == 2 and "council: no map yet — council-init builds .council/map.md, and map touch adds to it" in err
+          and not os.path.exists(mapf), out + err)
+    table = ("## One way per job\n| Job | Owner | The one way | Anchor path |\n|---|---|---|---|\n"
+             "| Parse | src/ | the reader | src/a.py |\n")
+    write(mapf, "# Codebase map — x\nupdated: 2026-09-15\n\n" + table)
+    code, out, err = council(repo, "map", "touch", "src/=x")
+    check("map touch: a map with no map-commit stamp is refused, naming the refresh",
+          code == 2 and "map.md has no map-commit stamp — refresh the map and stamp it (council-init's Refresh)" in err,
+          out + err)
+    write(mapf, "# Codebase map — x\nmap-commit: 0123456789abcdef0123456789abcdef01234567\n\n" + table)
+    code, out, err = council(repo, "map", "touch", "src/=x")
+    check("map touch: a stamp that isn't in this repo's history is refused, naming the rebuild",
+          code == 2 and "isn't in this repo's history — rebuild the map (council-init's Refresh)" in err, out + err)
+    original = "# Codebase map — x\nmap-commit: %s (built)\nupdated: 2026-09-15\n\n%s" % (built, table)
+    write(mapf, original)
+    for name in ("src/a.py", "docs/x.md"):
+        write(os.path.join(repo, name), "b\n")
+    git(repo, "commit", "-q", "-am", "two")
+    head = git(repo, "rev-parse", "HEAD")
+    shape = 'council map touch <dir>="<line>" …'
+    for words, want in ((("map", "touch"), 'usage: council map status | map touch <dir>="<line>" …'),
+                        (("map", "touch", "src"), "map touch takes <dir>=\"<line>\" pairs, and 'src' isn't one — for "
+                                                  "example: council map touch src/=\"the parser moved into records/\""),
+                        (("map", "touch", "src/=", "docs/=x"),
+                         "the line for src/ is empty — give one line, in the user's words: council map touch "
+                         "src/=\"<line>\""),
+                        (("map", "touch", "src/=a\nb"),
+                         "the line for src/ spans more than one line — give it as one: council map touch src/=\"<line>\""),
+                        (("map", "touch", "nope/=x"), "nope/ is not a top-level area of this repo — name a top-level "
+                                                      "folder (src/) or a root file, as council map status lists them: "
+                                                      + shape),
+                        (("map", "touch", ".council/=x"), ".council/ is not a top-level area of this repo"),
+                        (("map", "touch", "src/=a", "src=b"), "src/ is named twice — give each area one line: " + shape),
+                        (("map", "touch", "src/=a", "--status", "x"), "map doesn't take --status")):
+        code, out, err = council(repo, *words)
+        check("map touch %s: refused — %s" % (" ".join(words).replace("\n", "\\n"), want),
+              code == 2 and want in err and not out and read(mapf) == original, out + err)
+    code, out, err = council(repo, "map", "touch", "src/=the reader moved to src/a.py")
+    section = re.search(r"\n\n## Changes (\d{4}-\d\d-\d\d)\n", read(mapf))
+    check("map touch: the line goes under a dated ## Changes section at the end, and the rest of the map stays byte "
+          "for byte",
+          code == 0 and section is not None and read(mapf) == original + section.group(0)[1:] +
+          "- src/: the reader moved to src/a.py\n" and out.startswith("Wrote ") and "map.md — 1 line(s) under ## "
+          "Changes " in out, out + err + read(mapf))
+    check("map touch: map-commit stays while an area changed since it (docs/) has no line, and it says which",
+          ("map-commit stays at %s: no line here yet for docs/, changed since it — give each a line too (%s), or "
+           "refresh the map" % (built[:9], shape)) in out and "map-commit: %s (built)" % built in read(mapf), out)
+    code, out, err = council(os.path.join(repo, "src"), "map", "touch", "docs=the guide grew", "src=the reader too",
+                             "README.md=a root file is an area")
+    check("map touch: from a subfolder, docs is read as docs/; a touch covering every area changed since the stamp "
+          "moves map-commit to HEAD, and joins today's section",
+          code == 0 and read(mapf).count("## Changes") == 1 and read(mapf).endswith(
+              "- src/: the reader moved to src/a.py\n- docs/: the guide grew\n- src/: the reader too\n"
+              "- README.md: a root file is an area\n")
+          and "map-commit: %s (built)" % head in read(mapf)
+          and "map-commit now at %s (HEAD): every area changed since the stamp has a line" % head[:9] in out, out + err)
+    code, out, _ = council(repo, "map", "status")
+    check("map touch: map status reads the touched map as up to date", "map: up to date" in out, out)
+
+
 @part("lifecycle")
 def runs_init_plan(tmp):
     """A setup run opens with a plan that fits setup; doctor judges only open runs' plans."""
@@ -7557,7 +7630,8 @@ def reports_refusals(tmp):
                         (("ledger", "advice", "9999999"), "keep N under a million runs"),
                         (("ledger", "x"), "usage: council ledger [how many recent runs, default 10]"),
                         (("ledger", "--json"), "ledger doesn't take --json"),
-                        (("map",), "usage: council map status"), (("map", "status", "x"), "usage: council map status"),
+                        (("map",), 'usage: council map status | map touch <dir>="<line>" …'),
+                        (("map", "status", "x"), 'usage: council map status | map touch <dir>="<line>" …'),
                         (("fingerprint", "x"), "usage: council fingerprint [check]"),
                         (("doctor", "x"), "doctor doesn't take 'x'"), (("prior", "--json"), "prior doesn't take")):
         code, out, err = council(repo, *words)

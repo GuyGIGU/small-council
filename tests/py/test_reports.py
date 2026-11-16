@@ -38,6 +38,37 @@ class MapTest(support.Scratch):
         self.assertEqual(map_status.by_area(["src/a.py", "src/b.py", "docs/x.md", "README.md", ".council/map.md",
                                              "tests/t.py", "tests/u.py"]),
                          ["     2  tests/", "     2  src/", "     1  docs/", "     1  README.md"])
+        self.assertEqual(map_file.areas(["src/a.py", "docs/x.md", "src/b.py", ".council/map.md"]),
+                         [("src/", 2), ("docs/", 1)])
+        self.assertEqual(len(map_status.by_area(["a%d/x" % n for n in range(20)])), map_status.AREAS)
+
+    def test_touch_adds_a_dated_section_and_leaves_the_rest(self) -> None:
+        head, built = "f" * 40, "0" * 40
+        table = map_file.TABLE + "\n| Job | Owner | The one way | Anchor path |\n|---|---|---|---|\n"
+        before = "# Map\nmap-commit: %s (built)\nupdated: 2026-09-15\n\n%s| Parse | src/ | the reader | src/a.py |" % (
+            built, table)
+        self.write("map.md", before)
+        touched = map_file.touch(self.tmp, [("src/", "moved")], head, ["src/", "docs/"], "2026-11-16")
+        self.assertEqual(touched, map_file.Touched(False, ["docs/"]))
+        after = (self.tmp / "map.md").read_text(encoding="utf-8")
+        self.assertEqual(after, before + "\n\n## Changes 2026-11-16\n- src/: moved\n")
+        self.assertEqual(map_file.ways(after), [map_file.Way("Parse", "src/", "the reader", "src/a.py")])
+        touched = map_file.touch(self.tmp, [("docs/", "grew")], head, ["docs/"], "2026-11-16")
+        self.assertEqual(touched, map_file.Touched(True, []))
+        self.assertEqual((self.tmp / "map.md").read_text(encoding="utf-8"),
+                         before.replace(built, head) + "\n\n## Changes 2026-11-16\n- src/: moved\n- docs/: grew\n")
+        map_file.touch(self.tmp, [("src/", "again")], head, [], "2026-11-17")
+        self.assertTrue((self.tmp / "map.md").read_text(encoding="utf-8").endswith(
+            "- docs/: grew\n\n## Changes 2026-11-17\n- src/: again\n"))
+        self.assertEqual(map_file.noted(self.tmp, "2026-11-17"), {"src/"})
+        self.assertEqual(map_file.noted(self.tmp, "2026-11-16"), {"src/", "docs/"})
+
+    def test_touch_keeps_crlf_and_the_stamps_own_words(self) -> None:
+        self.write("map.md", "# Map\r\nmap-commit: abcdef1 (built)\r\n")
+        map_file.touch(self.tmp, [("README.md", "said")], "e" * 40, [], "2026-11-16")
+        self.assertEqual((self.tmp / "map.md").read_bytes(),
+                         b"# Map\r\nmap-commit: " + b"e" * 40 + b" (built)\r\n\r\n## Changes 2026-11-16\r\n"
+                         b"- README.md: said\r\n")
 
 
 class LedgerTest(support.Scratch):

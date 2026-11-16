@@ -98,6 +98,9 @@ council — the Small Council's helper (bash + git)
   council patch save <task> [<report>]   a build round: its report's head checked against its diff, then both
                                          saved → <run>/patches/ · patch show <task>: the task's rounds
   council map status                     how far the map is behind HEAD, by area
+  council map touch <dir>="<line>" …     the user's line for each top-level area, under today's
+                                         ## Changes in the map; map-commit moves to HEAD once every
+                                         area changed since it has a line
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
   council memory [index|check]           memory's one-line index · stale anchors and failure evidence
   council memory select [path|slug …]    scoped rules and observed failures with provenance

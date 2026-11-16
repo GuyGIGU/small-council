@@ -62,7 +62,9 @@ class DispatchTest(unittest.TestCase):
     def test_the_memory_and_report_commands_load_only_their_own_modules(self) -> None:
         base = ["council.commands", "council.commands.cli", "council.commands.dispatch"]
         self.assertEqual(started("prior"), sorted(base + ["council.commands.prior", "council.commands.resolve"]))
-        self.assertEqual(started("map", "status"), sorted(base + ["council.commands.map_status"]))
+        self.assertEqual(started("map", "status"), sorted(base + ["council.commands.map_status"]))   # touch: on use
+        self.assertEqual(started("map", "touch", "src/=x"),
+                         sorted(base + ["council.commands.map_status", "council.commands.map_touch"]))
         self.assertEqual(started("fingerprint"), sorted(base + ["council.commands.fingerprint"]))
         self.assertEqual(started("ledger"), sorted(base + ["council.commands.ledger", "council.commands.script"]))
         self.assertEqual(started("ask", "save"), sorted(base + ["council.commands.ask", "council.commands.resolve"]))
