@@ -105,6 +105,13 @@ def rows(path: str) -> list[str]:
     return parsed.rows(where.native(path))
 
 
+def placed(path: str) -> list[tuple[str, str]]:
+    """Each entry's row with the section it sits under, which a retired mark leaves as it was (the row's section
+    column then says "marked retired")."""
+    found = parsed.parse(bytewise.read(paths.contents(where.native(path)) or b""))
+    return list(zip(found.rows, found.places))
+
+
 def idlines(path: str) -> int:
     """How many lines (outside comments) name an entry id: a file with no entries yet, or one whose entries the
     council can't read."""

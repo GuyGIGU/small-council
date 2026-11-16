@@ -1,7 +1,8 @@
-"""council memory [index | select [path|slug …] | check | propose claim|repair <id> | accept|reject F-<n>]: the
-project's memory as the council serves it. index lists every entry and whether a brief gets it; select prints the
-entries that apply to a run's files, seats and mode (or to the paths and slugs given); check finds anchors the code
-no longer has and observed failures whose evidence no longer supports them; propose drafts an observed failure from
+"""council memory [index | select [path|slug …] | check | tidy | propose claim|repair <id> | accept|reject F-<n>]:
+the project's memory as the council serves it. index lists every entry and whether a brief gets it; select prints
+the entries that apply to a run's files, seats and mode (or to the paths and slugs given); check finds anchors the
+code no longer has and observed failures whose evidence no longer supports them; tidy lists the merges and
+retirements a consolidation could propose, and writes nothing; propose drafts an observed failure from
 a run's verified record under ## Proposed, and accept or reject files the user's answer in their words. The memory
 file and its entries are records/memory.py's; an observed failure is served only while its evidence still
 supports it (records/memory_audit.py)."""
@@ -16,9 +17,9 @@ from council.records import home as where
 from council.records.bytewise import DOT
 from council.records.memory_entries import cells
 
-USAGE = ("usage: council memory [index | select [path|slug …] | check | propose claim|repair <id> | accept|reject "
-         "F-<n> --user-said \"…\"]")
-SHORT = "usage: council memory [index | select [path|slug …] | check | propose … | accept … | reject …]"
+USAGE = ("usage: council memory [index | select [path|slug …] | check | tidy | propose claim|repair <id> | "
+         "accept|reject F-<n> --user-said \"…\"]")
+SHORT = "usage: council memory [index | select [path|slug …] | check | tidy | propose … | accept … | reject …]"
 PROPOSE = ("usage: council memory propose claim <id> [--scope <paths>] | memory propose repair <task> --scope "
            "<paths> [--run <folder>]")
 
@@ -49,6 +50,9 @@ def main(args: cli.Args, words: list[str]) -> int:
     if sub == "check":
         from council.commands import memory_check
         return memory_check.check(found)
+    if sub == "tidy":
+        from council.commands import memory_tidy
+        return memory_tidy.tidy(found)
     if sub in ("propose", "accept", "reject"):
         from council.commands import memory_write
         return memory_write.main(args, found, sub, rest)

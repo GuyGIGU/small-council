@@ -195,6 +195,7 @@ class Parser:
         self.rows: list[str] = []
         self.read: set[str] = set()
         self.cands: list[tuple[str, int]] = []
+        self.places: list[str] = []          # each entry's section, one per row: a retired mark leaves it
         self.sec, self.secname, self.sub_st, self.sublvl, self.subname, self.elvl = "settled", "", "", 0, "", 0
         self.id = self.title = self.scope = self.anchor = self.est = self.ewhere = ""
         self.meaning = self.failure = self.origin = self.evidence = self.verdict = self.para = self.fbefore = ""
@@ -318,6 +319,7 @@ class Parser:
         self.scope = self.anchor = self.meaning = self.failure = self.origin = self.evidence = self.verdict = ""
         self.est = self.sub_st or self.sec
         self.ewhere = self.subname if self.sub_st else self.secname
+        self.places.append(self.ewhere)
         if self.est != "off" and ("~~" in mark or _RETIRED_TITLE.search(lower(self.title))):
             self.est, self.ewhere = "off", "marked retired"
         if bullet:
