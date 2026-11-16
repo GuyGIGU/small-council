@@ -19,6 +19,7 @@ from council.commands import repair_trail as repair  # the repair trail's integr
 from council.records import bytewise, state as run_state
 from council.records.home import absolute, native
 from council.records import memory_entries as parsed
+from council.records.cells import lines_of
 
 MAX_MEMORY = 1024 * 1024
 FAILURE_VERDICTS = ("REFUTED", "MISCITED")
@@ -83,7 +84,7 @@ def verifier_reason(run: Path, ref: str, verdict: str) -> str:
     """The verdict cell of the verifier row a claim links to ("REFUTED — revoke runs first"), or ''."""
     name, _, number = ref.rpartition(":")
     body = evidence.read_file(run / name, required=False) or ""
-    lines = body.split("\n")
+    lines = lines_of(body)
     if not number.isdigit() or not 1 <= int(number) <= len(lines):
         return ""
     cells = [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", lines[int(number) - 1])[1:-1]]
