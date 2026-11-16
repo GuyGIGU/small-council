@@ -9,7 +9,10 @@ side. Suites and groups that time the helper or a hook, or race the helper's loc
 groups of the helper and hook evals), run alone first, with nothing else running.
 Every suite runs even when another fails; each one's output is printed whole when it finishes, then a
 table of results, times and check counts, and it exits 1 if any suite failed. `--list` shows the jobs. A new `evals/run_*.py` must be added to
-its list, or the run fails, so no suite can be left out of CI.
+its list, or the run fails, so no suite can be left out of CI. `--shard K/N` runs part K of N, the
+split every part works out alike (the jobs run alone all in part 1, the rest shared out by their
+Windows times): CI runs its Windows leg as three parts on three machines, and the check
+`evals (windows-latest)` passes once every leg has.
 
 **The fast tier:** `python evals/run_all.py --fast` runs validation, the structural evals, the
 ratchet and its self-test, the unit tests in `tests/py/` (skipped, and said so, while that folder is
@@ -114,7 +117,9 @@ a hang (each call has a 120 s timeout that is reported as a failed check).
 
 Its checks come in blocks, and each block belongs to a group (`@part("…")` in the file). A group runs
 in one process and needs nothing from another, so `run_all.py` runs the groups side by side:
-`--list` prints them, `--group runs,gates` runs only those. With no options every group runs, in file
+`--list` prints them, `--group runs,gates` runs only those. `runs` is the blocks that carry on with the
+first run's repo; `lifecycle` is the run blocks that set up all they need, split off so neither group
+is the one every other waits for. With no options every group runs, in file
 order, as before. The `timing` group (six workers on one lock, a stale lock, the gate lock, speed limits) runs alone.
 A block left without a group stops the suite, so none can be skipped.
 
@@ -315,7 +320,7 @@ Reading writes nothing, except with `--save` (the close's own): the report is ke
 a second save rewrites it, and no temporary file is left. An agent seat with no token figure is a FAIL under
 "Token figures", naming the seat and why; the Chair's own seat, a seat declared `agents=0` and a corrected
 figure are not gaps. It also checks the dispatch case's graders for the status card and the close.
-`run_cli.py --group runs` (`runs_close_keeps_audit`) drives the real close: audit.md, the close line, the closing
+`run_cli.py --group lifecycle` (`runs_close_keeps_audit`) drives the real close: audit.md, the close line, the closing
 card, `council run status`, a pause then a close again, and a close without Python.
 
 The helper, hook, memory and audit suites need bash and git. Without them they print

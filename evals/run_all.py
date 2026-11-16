@@ -5,12 +5,16 @@
     python evals/run_all.py --jobs 1   # one after another
     python evals/run_all.py --fast     # the fast tier only (FAST below): under two minutes, while you work
     python evals/run_all.py --list     # the jobs, and which are in the fast tier, without running them
+    python evals/run_all.py --shard 2/3   # part 2 of 3: CI splits its Windows leg across three machines
 
 Each suite runs as its own process with the same command CI used to run it on its own, so each keeps
 its own temporary folders. The helper evals (run_cli.py, the long pole) and the hook evals run as
 their groups (--list), side by side. Suites and groups that time the helper or a hook, or race the
 helper's locks, run alone, before the rest start, so a busy machine can't make them fail. Every suite
 runs even when another fails; each one's output is printed whole once it finishes, then a summary.
+With --shard K/N it runs part K of N: every part works out the same split from the same list, so the
+N parts together run each job once. The jobs that run alone are all in part 1 (on a machine of its own
+each still runs alone); the rest go, longest first, to the part with the least work so far.
 Exits 1 if any suite failed, or reported no "N/N checks passed" line or zero checks (a suite that
 skipped everything), or if an evals/run_*.py file is missing from the list below.
 
@@ -139,6 +143,8 @@ def main():
                         help="how many suites run at the same time (default: the number of CPUs)")
     parser.add_argument("--fast", action="store_true", help="run only the fast tier (marked fast in --list)")
     parser.add_argument("--list", action="store_true", help="print the jobs and their commands; run nothing")
+    parser.add_argument("--shard", metavar="K/N", type=shard_spec,
+                        help="run only part K of N, the one split every part works out (see the top of this file)")
     opts = parser.parse_args()
 
     jobs, problems, skipped = [], [], []
@@ -155,6 +161,8 @@ def main():
         else:
             jobs.append(Job(name, args, how == "alone"))
     problems += ["%s is not in evals/run_all.py's list, so it would never run" % f for f in unlisted()]
+    if opts.shard:
+        jobs = shard(jobs, *opts.shard)
     if opts.list:
         for job in jobs:
             print("%-6s %-4s %-60s %s" % ("alone" if job.alone else "shared", "fast" if job.name in FAST else "",
@@ -181,8 +189,9 @@ def main():
 
     started = time.monotonic()
     width = max(1, opts.jobs)
-    print("%s%d jobs: %d run alone first, then the rest %d at a time" % (
-        "The fast tier, a first look and not the gate: " if opts.fast else "", len(jobs),
+    print("%s%s%d jobs: %d run alone first, then the rest %d at a time" % (
+        "The fast tier, a first look and not the gate: " if opts.fast else "",
+        "Part %d of %d: " % opts.shard if opts.shard else "", len(jobs),
         sum(j.alone for j in jobs), width), flush=True)
     for line in skipped:
         print("[skip] " + line, flush=True)
@@ -223,15 +232,37 @@ def main():
     return 1 if failed or problems else 0
 
 
-# Rough seconds each job took on CI's Windows leg, so the longest start first. A job missing here
-# still runs; it just starts after the ones listed.
-WEIGHTS = {"Helper evals: runs": 345, "Helper evals: requests": 313, "Status and accounting evals": 196,
-           "Helper evals: collect": 191, "Helper evals: filing": 155, "Helper evals: gates": 137,
-           "Helper evals: citations": 115, "Memory evals": 105, "Tuning evals": 75, "Hook evals: main": 60}
+# Rough seconds each job took on CI's Windows leg (2026-11-15), so the longest start first and --shard
+# can share them out. A job missing here still runs; it counts as 10 s.
+WEIGHTS = {"Helper evals: runs": 260, "Helper evals: gates": 244, "Helper evals: lifecycle": 210,
+           "Hook evals: main": 196, "Helper evals: requests": 179, "Status and accounting evals": 137,
+           "Helper evals: collect": 105, "Helper evals: timing": 57, "Helper evals: filing": 46,
+           "Hook evals: timing": 46, "Memory evals": 40, "Run audit evals": 39, "Helper evals: citations": 32,
+           "Unit tests (tests/py)": 24, "Benchmark harness self-test (no model calls)": 18,
+           "Helper evals: models": 16, "Helper evals: reports": 14, "Model routing evals": 12}
 
 
 def weight(job):
     return WEIGHTS.get(job.name, 10)
+
+
+def shard_spec(text):
+    """'K/N' as (K, N), with 1 <= K <= N."""
+    match = re.fullmatch(r"([1-9][0-9]*)/([1-9][0-9]*)", text)
+    if not match or int(match.group(1)) > int(match.group(2)):
+        raise argparse.ArgumentTypeError("%r is not K/N with 1 <= K <= N (say --shard 1/3)" % text)
+    return int(match.group(1)), int(match.group(2))
+
+
+def shard(jobs, k, n):
+    """Part k of n of the jobs, in their own order: the ones run alone in part 1, the rest longest first
+    (ties by name) each to the part with the least weight so far, the earliest part on a tie."""
+    load, part = [0] * n, {}
+    for job in [j for j in jobs if j.alone] + sorted((j for j in jobs if not j.alone),
+                                                     key=lambda j: (-weight(j), j.name)):
+        part[job.name] = 0 if job.alone else load.index(min(load))
+        load[part[job.name]] += weight(job)
+    return [j for j in jobs if part[j.name] == k - 1]
 
 
 if __name__ == "__main__":
