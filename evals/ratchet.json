@@ -105,7 +105,7 @@
    "longest_name": "save"
   },
   "src/council/commands/audit.py": {
-   "lines": 432,
+   "lines": 433,
    "longest": 44,
    "longest_name": "main"
   },
@@ -270,7 +270,7 @@
    "longest_name": "refusal"
   },
   "src/council/commands/help.py": {
-   "lines": 146,
+   "lines": 150,
    "longest": 8,
    "longest_name": "main"
   },
@@ -300,12 +300,17 @@
    "longest_name": "lines"
   },
   "src/council/commands/map_status.py": {
-   "lines": 52,
-   "longest": 16,
+   "lines": 44,
+   "longest": 13,
    "longest_name": "status"
   },
+  "src/council/commands/map_touch.py": {
+   "lines": 79,
+   "longest": 29,
+   "longest_name": "main"
+  },
   "src/council/commands/memory.py": {
-   "lines": 152,
+   "lines": 156,
    "longest": 35,
    "longest_name": "index_lines"
   },
@@ -323,6 +328,11 @@
    "lines": 136,
    "longest": 27,
    "longest_name": "lines"
+  },
+  "src/council/commands/memory_tidy.py": {
+   "lines": 79,
+   "longest": 16,
+   "longest_name": "retirements"
   },
   "src/council/commands/memory_tree.py": {
    "lines": 149,
@@ -465,7 +475,7 @@
    "longest_name": "progress_line"
   },
   "src/council/commands/session_start.py": {
-   "lines": 275,
+   "lines": 276,
    "longest": 34,
    "longest_name": "_runs"
   },
@@ -525,12 +535,12 @@
    "longest_name": "lines"
   },
   "src/council/records/closing.py": {
-   "lines": 152,
+   "lines": 172,
    "longest": 26,
    "longest_name": "undelivered"
   },
   "src/council/records/config.py": {
-   "lines": 216,
+   "lines": 244,
    "longest": 24,
    "longest_name": "roster_table"
   },
@@ -595,12 +605,12 @@
    "longest_name": "stale"
   },
   "src/council/records/map_file.py": {
-   "lines": 71,
-   "longest": 18,
-   "longest_name": "ways"
+   "lines": 142,
+   "longest": 21,
+   "longest_name": "touch"
   },
   "src/council/records/memory.py": {
-   "lines": 224,
+   "lines": 236,
    "longest": 25,
    "longest_name": "replace"
   },
@@ -615,7 +625,7 @@
    "longest_name": "verdicts"
   },
   "src/council/records/memory_entries.py": {
-   "lines": 487,
+   "lines": 489,
    "longest": 37,
    "longest_name": "line"
   },
@@ -770,7 +780,7 @@
    "longest_name": "claim_index_stale"
   },
   "src/council/views/status.py": {
-   "lines": 425,
+   "lines": 414,
    "longest": 46,
    "longest_name": "interpret"
   },
