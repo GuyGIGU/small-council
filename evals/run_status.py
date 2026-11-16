@@ -561,8 +561,10 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           and shown["ceiling, go"] == (True, False, 3, "Your go allows up to 3 agent runs."), shown)
     check("stop: a closed run over its cap is over, but nothing is stopped and no go is asked for",
           shown["closed over"] == (True, False, None, ""), shown)
-    check("stop: a cap or ceiling too large for bash to compare stops nothing, as in the helper",
-          shown["unreadable cap"] == (False, False, None, "") and shown["unreadable ceiling"] == (False, False, None, ""), shown)
+    check("stop: a 20-digit plan agent-cap is no number, so the configured cap (4) stands and 12 runs are stopped; "
+          "a 20-digit ceiling is no ceiling and stops nothing",
+          shown["unreadable cap"] == (True, True, None, STOPPED) and shown["unreadable ceiling"] == (False, False, None, ""),
+          shown)
     items = {name: [(a["kind"], a["severity"]) for a in r["attention"] if a["kind"] in ("cap", "ceiling", "stop")]
              for name, r in lim.items()}
     check("stop: over the cap or ceiling needs the user only while stopped; on the user's go it is a note, and "
