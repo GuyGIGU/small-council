@@ -91,7 +91,7 @@ def _worktree(listed: list[runs.Listed], scwd: str, root: str) -> None:
     if not all(dirs) or len({os.path.realpath(os.path.join(scwd, d)) for d in dirs}) < 2:
         return
     wt = git.text(scwd, "rev-parse", "--show-toplevel") or ""
-    away = next((r for r in listed if r.status == "in-progress" and r.code_root not in ("-", wt)
+    away = next((r for r in listed if r.status == "in-progress" and not runs.here(r.code_root, wt)
                  and os.path.isdir(where.native(r.code_root))), None)
     if away:
         cli.say("[Small Council] This session runs in a linked worktree (%s). Claude Code may refuse edits outside it, "
@@ -163,7 +163,7 @@ def _runs(listed: list[runs.Listed], top: str, sid: str, event: str) -> str:
     """Every open run: this tree's and this session's described (at most 5), the rest summed up."""
     mine, others, gone, n_other, n_gone = [], [], [], 0, 0
     for r in listed:
-        if r.code_root in ("-", top):
+        if runs.here(r.code_root, top):
             mine.append((r, "-"))
         elif os.path.isdir(where.native(r.code_root)) and sid and r.session == sid:
             mine.append((r, r.code_root))     # its code is in a linked worktree: still this session's own run
