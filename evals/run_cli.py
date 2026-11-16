@@ -294,6 +294,35 @@ def line_of(out, text):
     return next((line for line in out.splitlines() if text in line), "")
 
 
+def revert_build(tmp, name):
+    """A council-implement run with a configured gate, green at its baseline, for a build whose rounds are saved."""
+    repo = small_council_repo(tmp, name, "| unit | `echo '1 passed'` | grounding, verify | yes | ok | `true` | none "
+                                         "| - |\n")
+    write(os.path.join(repo, "src", "calc.sh"), "echo broken\n")
+    write(os.path.join(repo, "src", "two.sh"), "echo old\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "code")
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build")
+    council(repo, "gate", "--all", "--at", "grounding")
+    return repo, run
+
+
+def built(repo, run, task, files, test, cause="none"):
+    """Task <task>, proved and saved: its test red (before-<n>), the files written, the test green (after-<n>),
+    then its round saved."""
+    command = "bash " + test
+    council(repo, "gate", "before-%d" % task, "--", command)
+    for path, text in files.items():
+        write(os.path.join(repo, path), text)
+    council(repo, "gate", "after-%d" % task, "--", command)
+    write(os.path.join(run, "report-%d.md" % task), PATCH_HEAD.format(cause=cause, removed="none", extra=""))
+    return council(repo, "patch", "save", str(task))
+
+
 VERDICT_FILE = "# Verification — x\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | INCOMPLETE | a.py:1 |\n"
 
 
@@ -6290,6 +6319,55 @@ def gates_patch_rounds(tmp):
     code, out, err = council(review, "patch", "save", "1")
     check("patch save: a review run has no build rounds — refused, naming the mode",
           code == 2 and "council-implement" in err, out + err)
+
+
+@part("gates")
+def gates_patch_apply_revert(tmp):
+    """T5 (#59): council patch revert takes a saved round off the code root's files and patch apply puts it back,
+    the task's last round unless --round names another; each is refused, changing nothing, when the patch won't go
+    cleanly, and no record changes."""
+    repo, run = revert_build(tmp, "apply")
+    write(os.path.join(repo, "tests", "test_calc.sh"), '[ "$(bash src/calc.sh)" = fixed ] && echo "1 passed"\n')
+    built(repo, run, 1, {"src/calc.sh": "echo fixed\n"}, "tests/test_calc.sh")
+    records = {name: read(os.path.join(run, "patches", name)) for name in os.listdir(os.path.join(run, "patches"))}
+    code, out, err = council(repo, "patch", "revert", "1")
+    check("patch revert: the task's last round comes off the code root's files, and no record changes",
+          code == 0 and read(os.path.join(repo, "src", "calc.sh")) == "echo broken\n"
+          and not os.path.exists(os.path.join(repo, "tests", "test_calc.sh")) and "task 1 round 1 taken off" in out
+          and {name: read(os.path.join(run, "patches", name)) for name in os.listdir(os.path.join(run, "patches"))}
+          == records, out + err)
+    code, out, err = council(repo, "patch", "revert", "1")
+    check("patch revert: a round already off is refused, naming its files and the next step, nothing changed",
+          code == 2 and "patch revert refused, nothing changed: task 1 round 1 doesn't come off" in err
+          and "src/calc.sh" in err and "council patch show 1" in err
+          and read(os.path.join(repo, "src", "calc.sh")) == "echo broken\n", out + err)
+    code, out, err = council(repo, "patch", "apply", "1")
+    check("patch apply: the task's last round goes back on the files",
+          code == 0 and read(os.path.join(repo, "src", "calc.sh")) == "echo fixed\n"
+          and "task 1 round 1 put back on" in out, out + err)
+    code, out, err = council(repo, "patch", "apply", "1")
+    check("patch apply: a round the files already hold is refused, naming them, nothing changed",
+          code == 2 and "patch apply refused, nothing changed" in err and "src/calc.sh" in err
+          and "tests/test_calc.sh" in err and read(os.path.join(repo, "src", "calc.sh")) == "echo fixed\n", out + err)
+    code, out, err = council(repo, "patch", "revert", "1", "--round", "1")
+    first = read(os.path.join(repo, "src", "calc.sh"))
+    council(repo, "patch", "apply", "1", "--round", "1")
+    check("patch revert|apply --round: the round named comes off, and goes back on",
+          code == 0 and first == "echo broken\n" and read(os.path.join(repo, "src", "calc.sh")) == "echo fixed\n",
+          out + err)
+    write(os.path.join(repo, "src", "calc.sh"), "echo fixed, then changed\n")
+    write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="it was not fixed enough · state: OBSERVED",
+                                                              removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "1")
+    check("patch save: after a revert and an apply, the next round diffs from the last saved round as before",
+          code == 0 and "task 1 round 2 saved" in out and "1 file(s), +1 −1" in out, out + err)
+    for words, want in ((("patch", "revert", "2"), "task 2 has no saved rounds — council patch save 2"),
+                        (("patch", "revert", "1", "--round", "5"), "task 1 has no round '5' — its saved rounds are 1, 2"),
+                        (("patch", "apply", "1", "--base", "HEAD"), "patch apply doesn't take --base"),
+                        (("patch", "show", "1", "--round", "1"), "patch show doesn't take --round"),
+                        (("patch", "undo", "1"), "patch apply|revert <task> [--round <r>]")):
+        code, out, err = council(repo, *words)
+        check("%s: refused, naming the next step" % " ".join(words), code == 2 and want in err, out + err)
 
 
 @part("gates")

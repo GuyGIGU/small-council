@@ -11,9 +11,11 @@ class GitError(RuntimeError):
     """A git command that failed; the message is git's own stderr."""
 
 
-def output(repo: str | Path, *args: str, allow_error: bool = False) -> bytes:
-    """git -C repo <args>'s stdout as bytes; a failure raises GitError unless allow_error."""
-    result = subprocess.run(["git", "-C", str(repo)] + list(args), capture_output=True)
+def output(repo: str | Path, *args: str, allow_error: bool = False, extra: dict[str, str] | None = None) -> bytes:
+    """git -C repo <args>'s stdout as bytes, with `extra` added to its environment; a failure raises GitError
+    unless allow_error."""
+    env = dict(os.environ, **extra) if extra else None
+    result = subprocess.run(["git", "-C", str(repo)] + list(args), capture_output=True, env=env)
     if result.returncode and not allow_error:
         raise GitError(result.stderr.decode("utf-8", "replace").strip() or "git failed")
     return result.stdout
