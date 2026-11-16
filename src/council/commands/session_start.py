@@ -10,7 +10,7 @@ import time
 
 from council import git
 from council.commands import cli, doctor_hooks
-from council.records import hook_marks, memory, paths, runs, sharing, state
+from council.records import hook_marks, map_file, memory, paths, runs, sharing, state
 from council.records import home as where
 
 MORE = "were running when that session ended (they are gone — re-dispatch each once if you resume)"
@@ -122,23 +122,30 @@ def _banner(home: str, sid: str) -> None:
 
 
 def _map(home: str) -> None:
-    text = _text(home + "/map.md")
-    if text is None:
+    if paths.contents(map_file.path(where.native(home))) is None:
         return
-    sha = next((m.group(1) for m in (re.match(r"map-commit:[ \t\r\f\v]*([0-9a-fA-F]{7,40})", line)
-                                     for line in text.split("\n")) if m), "")
+    sha = map_file.commit(where.native(home))
     behind, lost = "", sha and git.text(".", "cat-file", "-e", sha + "^{commit}") is None
     if sha and not lost:
         behind = git.text(".", "rev-list", "--count", sha + "..HEAD") or ""
     lost = lost and git.text(".", "rev-parse", "--git-dir") is not None
-    said = ("- Orientation: %s/map.md lists where things live, hot spots and vocabulary — check it before exploring "
-            "unfamiliar code" % home)
+    said = ("- Orientation: %s/%s lists where things live, hot spots and vocabulary — check it before exploring "
+            "unfamiliar code" % (home, map_file.NAME))
     if lost:
         said += (" (it was built on a commit that is no longer in this repo's history: trust its structure, verify "
                  "details)")
     elif behind.isdigit() and int(behind) > 0:
-        said += " (%s commits behind HEAD: trust its structure, verify details)" % behind
+        said += " (%s commits behind HEAD%s: trust its structure, verify details)" % (behind, _busiest(sha))
     cli.say(said + ".")
+
+
+def _busiest(sha: str) -> str:
+    """'; most changed since: src/ 41, docs/ 9', the three areas with the most files changed since the map's
+    commit; '' when none changed, or on any fault, which drops the areas and keeps the line (D20)."""
+    top: list[tuple[str, int]] = []
+    with contextlib.suppress(Exception):
+        top = map_file.areas(map_file.changed(".", sha, "HEAD"))[:3]
+    return "; most changed since: " + ", ".join("%s %d" % pair for pair in top) if top else ""
 
 
 def _memory(home: str) -> None:
@@ -263,12 +270,6 @@ def _recent(path: str, minutes: int) -> bool:
             if stat.S_ISREG(info.st_mode) and info.st_mtime > limit:
                 return True
     return False
-
-
-def _text(path: str) -> str | None:
-    """A file's text (its bytes kept); None when it is missing or unreadable."""
-    data = paths.contents(where.native(path))
-    return None if data is None else data.decode("utf-8", "surrogateescape")
 
 
 def _name(folder: str) -> str:

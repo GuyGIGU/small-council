@@ -180,15 +180,6 @@ def recent_of(snap: Snap, ref: datetime, limit: int) -> tuple[list[dict[str, Any
     return [{"at": iso(m), "clock": clock(m, ref), "text": t} for m, t in items[-limit:]], "records"
 
 
-def oversized_memory(run_path: Path) -> dict[str, Any] | None:
-    """The memory file every council command reads (records/memory.locate), when it is too large."""
-    if run_path.parent.name != "runs":
-        return None
-    path = memory.locate(run_path.parent.parent.as_posix()).path
-    size = memory.oversized(path)
-    return {"name": clean(path.rsplit("/", 1)[-1])[:80], "bytes": size, "kb": (size + 500) // 1000} if size else None
-
-
 def evidence_of(snap: Snap, run_path: Path) -> list[dict[str, str]]:
     """Where the supporting records are, as paths the user (or the Chair) can open."""
     run = Path(run_path)
@@ -321,11 +312,9 @@ def notes_of(snap: Snap, run_path: Path, status: str, open_run: bool) -> list[di
     if snap["memory"].get("proposed"):
         attention.append({"kind": "memory", "severity": 1, "text": "{} for your yes or no.".format(
             plural(snap["memory"]["proposed"], "drafted lesson waits", "drafted lessons wait"))})
-    large = oversized_memory(run_path)
-    if open_run and large:
-        attention.append({"kind": "memory-size", "severity": 1, "text": (
-            "{} is {} KB, over the ~25 KB the council expects. At Learn, propose a consolidation.".format(
-                large["name"], large["kb"]))})
+    large = memory.size_note(run_path.parent.parent.as_posix()) if open_run and run_path.parent.name == "runs" else ""
+    if large:
+        attention.append({"kind": "memory-size", "severity": 1, "text": clean(large) + "."})
     if not status:
         attention.append({"kind": "data", "severity": 2, "text": "The run's status file is missing or can't be read."})
     return attention

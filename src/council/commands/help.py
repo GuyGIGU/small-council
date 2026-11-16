@@ -104,8 +104,12 @@ council — the Small Council's helper (bash + git)
                                          quote each gives, with what they depend on, facts, proof, rounds,
                                          Converge result and NEEDS:
   council map status                     how far the map is behind HEAD, by area
+  council map touch <dir>="<line>" …     the user's line for each top-level area, under today's
+                                         ## Changes in the map; map-commit moves to HEAD once every
+                                         area changed since it has a line
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
-  council memory [index|check]           memory's one-line index · stale anchors and failure evidence
+  council memory [index|check|tidy]      memory's one-line index · stale anchors and failure evidence · the
+                                         merges and retirements reading alone can find, numbered (writes nothing)
   council memory select [path|slug …]    scoped rules and observed failures with provenance
   council memory propose claim|repair <id> [--scope …]
                                          draft an observed failure from the run's verified record

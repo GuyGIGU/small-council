@@ -104,6 +104,9 @@ or pattern-matching?"). Not a seat.
 - map: .council/map.md
 - cards: .council/cards/ (one per seat slug)
 - ledger: .council/ledger.tsv (each completed run adds a row per seat)
+<!-- Add `- memory budget: <n> KB` here (a whole number from 1 to 1024; 25 KB when it is left out): past it,
+     run open, a complete close, council status and council doctor say the memory has grown past what every
+     run should read, and council memory tidy lists the merges and retirements it can find. -->
 
 ## Notes
 <free-form, owned by the user>

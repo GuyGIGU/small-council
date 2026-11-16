@@ -93,9 +93,9 @@ def said(doc: Doctor, rows: list[str], mem: str) -> None:
 
 def size(doc: Doctor, rows: list[str], mem: str) -> None:
     data = paths.contents(where.native(mem)) or b""
-    if len(data) > memory.COUNCIL_MEMORY_SIZE_LIMIT:
-        doc.warn("memory is %d KB — past the ~25 KB every run reads" % (len(data) // 1024),
-                 "at the end of the next run, propose a consolidation (merge duplicates, retire superseded entries)")
+    note = memory.size_note(doc.home)
+    if note:
+        doc.warn(note, "at the end of the next run, put council memory tidy's operations to the user, one at a time")
     waiting = memory_entries.pending(bytewise.read(data), rows)
     if waiting:
         doc.warn("%d memory proposal(s) await the user's yes/no" % waiting, "raise them at the next natural pause")

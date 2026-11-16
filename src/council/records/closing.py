@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from council.records import bytewise, events, gate_table, home, plan, seat_files, stages, state, usage
+from council.records import bytewise, events, gate_table, home, map_file, memory, plan, seat_files, stages, state, usage
 
 MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame")
 EARLY = ("convene", "prepare", "assign", "brief", "work", "build", "collect", "judge", "challenge")
@@ -111,6 +111,23 @@ def _no_verdicts(run: Path) -> str | None:
     return None if verified or level == "self" else ""
 
 
+def _unmapped(run: Path) -> str | None:
+    """The top-level areas whose tracked files the run changed since the commit it opened on, less those a map line
+    under ## Changes has named since the day it opened; None with no map or none left."""
+    start, top, council = _field(run, "start-head"), _field(run, "code-root"), home.native(home.run_home(run))
+    top = home.native(top) if top not in ("", "-") else "."
+    if not start or not map_file.path(council).is_file() or not Path(top).is_dir():
+        return None
+    noted = map_file.noted(council, _field(run, "opened")[:10])
+    left = [area for area, _ in map_file.areas(map_file.changed(top, start)) if area not in noted]
+    return ", ".join(left) or None
+
+
+def _memory_over(run: Path) -> str | None:
+    """The memory file's one size sentence (memory.size_note) while it is over the config's memory budget."""
+    return memory.size_note(home.run_home(run)) or None
+
+
 CHECKS = (  # (code, check: the value its line names, or None when the run passes, line)
     ("phase", _short_of_deliver, "closed as complete at stage {value}, so it never reached Deliver — if it stopped "
      "early, tell the user, or close it as abandoned: council run close --run {name} --status abandoned"),
@@ -120,6 +137,9 @@ CHECKS = (  # (code, check: the value its line names, or None when the run passe
     ("deliverable", lambda run: None if _field(run, "deliverable") else "", "closed as complete with no deliverable "
      "recorded — council state deliverable=<path> --run {name}"),
     ("verdicts", _no_verdicts, "closed as complete with no verifier verdicts (no verify-*.md in the run folder)"),
+    ("map-touched", _unmapped, "the run changed {value} since it opened, with no line in the map yet — say what "
+     "changed in each, in the user's words: council map touch <dir>=\"<line>\" …"),
+    ("memory-over", _memory_over, "{value}"),
 )
 
 

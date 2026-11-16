@@ -2075,6 +2075,121 @@ def memory_moves_by_the_parsers_rules(tmp):
           and b"### F-1" not in after and b"was F-1, evidence a.md:1" in after and "codec" not in err,
           out + err + after.decode("utf-8", "replace"))
 
+@part("runs")
+def memory_budget(tmp):
+    """The memory budget (`- memory budget: <n> KB` under ## Memory, 25 KB by default) and the one sentence that says
+    a memory file is over it: at run open, in council status, in council doctor and at a complete close."""
+    repo = small_council_repo(tmp, "memory-budget", "| tests | `true` | grounding, verify | yes | ok | `true` | none | - |\n")
+    config = read(os.path.join(repo, ".council", "council.config.md"))
+    write(os.path.join(repo, ".council", "conventions.md"), "x" * 30000)
+    tail = (" the council expects — every run reads it; at Learn, propose a consolidation (council memory tidy lists "
+            "the merges and retirements it finds)")
+    for budget, want, why in (("40 KB", "", "a 40 KB budget holds a 30 KB memory: no note"),
+                              ("20 KB", "conventions.md is 30 KB, over the ~20 KB" + tail,
+                               "a 20 KB budget: the note names it"),
+                              ("20kb <!-- trimmed in March -->", "conventions.md is 30 KB, over the ~20 KB" + tail,
+                               "the unit in any case and a comment after it"),
+                              ("lots", "conventions.md is 30 KB, over the ~25 KB the council expects (the config's "
+                               "memory budget, 'lots', is not a whole number of KB from 1 to 1024, so the default "
+                               "holds) — every run reads it", "words it can't read: the default, said so"),
+                              ("2048 KB", "over the ~25 KB the council expects (the config's memory budget, "
+                               "'2048 KB', is not a whole number of KB from 1 to 1024", "past 1024 KB: the default")):
+        write(os.path.join(repo, ".council", "council.config.md"),
+              config + "\n## Memory\n- memory budget: %s\n" % budget)
+        code, run, err = council(repo, "run", "open", "council-review", "--alongside")
+        check("memory budget: run open, " + why, code == 0 and (want in err if want else "KB, over" not in err), err)
+        council(repo, "run", "close", "--run", run.strip(), "--status", "abandoned")
+    write(os.path.join(repo, ".council", "council.config.md"), config + "\n## Memory\n- memory budget: 20 KB\n")
+    code, out, err = council(repo, "doctor")
+    check("memory budget: doctor says the same sentence, rounded as run open rounds it (30,000 bytes is 30 KB)",
+          "WARN  conventions.md is 30 KB, over the ~20 KB" + tail in out
+          and "Fix: at the end of the next run, put council memory tidy's operations to the user, one at a time" in out,
+          out + err)
+    write(os.path.join(repo, ".council", "council.config.md"), config + "\n## Memory\n- memory budget: 40 KB\n")
+    code, out, err = council(repo, "doctor")
+    check("memory budget: doctor is quiet while the memory is inside the budget", "KB, over" not in out, out)
+    write(os.path.join(repo, ".council", "council.config.md"), config)
+    code, run, err = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    code, out, err = council(repo, "status", "--run", run)
+    check("memory budget: the open run's card says the same sentence",
+          code == 0 and "conventions.md is 30 KB, over the ~25 KB" + tail + "." in out, out + err)
+    council(repo, "gate", "--all")
+    write_plan(run)
+    write(os.path.join(run, "verify-1.md"), "# Verification — finished\n| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    to_deliver(repo)
+    council(repo, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
+    code, out, err = council(repo, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("memory budget: a complete close says the sentence once, and its event records memory-over",
+          code == 0 and err.count("council: conventions.md is 30 KB, over the ~25 KB" + tail + "\n") == 1
+          and closed and "memory-over" in closed[-1][6], err + str(closed))
+    code, run, err = council(repo, "run", "open", "council-review")
+    code, out, err = council(repo, "run", "close", "--run", run.strip(), "--status", "abandoned")
+    closed = [e for e in events(run.strip()) if e[3] == "run.closed"]
+    check("memory budget: an abandoned close is not nagged", code == 0 and "KB, over" not in err
+          and closed and "memory-over" not in closed[-1][6], err + str(closed))
+    write(os.path.join(repo, ".council", "conventions.md"), "x" * 20000)
+    code, run, err = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write_plan(run)
+    write(os.path.join(run, "verify-1.md"), "# Verification — finished\n| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    to_deliver(repo)
+    council(repo, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
+    code, out, err = council(repo, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("memory budget: a memory inside the budget adds no close warning",
+          code == 0 and "KB, over" not in err and closed and "memory-over" not in closed[-1][6], err + str(closed))
+
+
+@part("runs")
+def memory_tidy(tmp):
+    """council memory tidy: the merges and retirements reading alone can find, numbered; it writes nothing."""
+    repo = new_repo(tmp, "memory-tidy")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    mem = os.path.join(repo, ".council", "conventions.md")
+    write(mem, "# Conventions\n## Accepted Patterns (AP)\n"
+               "### AP-1: median returns the upper middle\n**Pattern:** even lists return the upper middle · **Why:** the spec\n"
+               "### AP-2: reports never round\n**Pattern:** raw numbers\n"
+               "### AP-3: Median  returns the upper middle.\n**Pattern:** Even lists return the upper middle. · **Why:** filed again\n"
+               "### AP-4: migrations follow EC-2\n**Pattern:** run them in order\n"
+               "### AP-5: an old flag stays\n**Retired:** 2026-10-30 — superseded by AP-2\n"
+               "### AP-6: reports never round down\n**Pattern:** raw numbers\n"
+               "## Enforced Conventions (EC)\n### EC-1: every module has a docstring\n**Rule:** always\n"
+               "## Retired\n### EC-2: no global caches\n**Rule:** never\n**Retired:** 2026-10-30 — superseded by EC-9\n")
+    before = open(mem, "rb").read()
+    code, out, err = council(repo, "memory", "tidy")
+    check("memory tidy: the same rule under two ids is a merge, an entry naming a retired id and one marked retired "
+          "outside ## Retired are retirements, numbered; a near-duplicate and the retired entry itself are not",
+          code == 0 and out.splitlines() == [
+              "1. merge AP-3 into AP-1",
+              "2. retire AP-4 — it names EC-2, which is retired",
+              "3. retire AP-5 — marked retired, but it still sits under ## Accepted Patterns (AP); move it under "
+              "## Retired",
+              "memory tidy: 3 operation(s) for conventions.md, nothing written — put each to the user and apply it on "
+              "their yes, one at a time",
+              "memory tidy: rules now enforced by a hook are not looked for — nothing reads what the hooks enforce"],
+          out + err)
+    check("memory tidy: writes nothing — the memory file's bytes are unchanged", open(mem, "rb").read() == before)
+    write(mem, "# Conventions\n## Accepted Patterns (AP)\n### AP-1: reports never round\n**Pattern:** raw numbers\n"
+               "## Retired\n### AP-2: an old flag\n**Retired:** 2026-10-30 — superseded by AP-1\n")
+    code, out, err = council(repo, "memory", "tidy")
+    check("memory tidy: with nothing found it says so, and its last line says what it never looks for",
+          code == 0 and out.splitlines() == [
+              "memory tidy: nothing to merge or retire in conventions.md",
+              "memory tidy: rules now enforced by a hook are not looked for — nothing reads what the hooks enforce"],
+          out + err)
+    code, out, err = council(repo, "memory", "tidy", "AP-1")
+    check("memory tidy: takes no words — refused with the usage",
+          code == 2 and "usage: council memory [index | select [path|slug …] | check | tidy | propose … | accept … "
+          "| reject …]" in err, err)
+    os.remove(mem)
+    code, out, err = council(repo, "memory", "tidy")
+    check("memory tidy: with no memory file it refuses as memory select does, naming council-init",
+          code == 2 and "no memory file (" in err and "council-init creates .council/conventions.md" in err
+          and not out, out + err)
+
+
 @part("timing")
 def memory_speed(tmp):
     # Scopes and keys as projects really write them: a folder with a blank in its name, a Godot
@@ -3838,6 +3953,127 @@ def runs_worktrees_close_and_find(tmp):
     council(fresh, "run", "close", "--status", "abandoned")
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
+
+@part("runs")
+def runs_map_touch(tmp):
+    # council map touch: the user's line for each top-level area, under a dated ## Changes section at the end of
+    # the map; map-commit moves to HEAD only once every area changed since it has a line. A complete close of a
+    # run that changed tracked files names the areas the map has no line for yet: a warning, never a refusal.
+    repo = new_repo(tmp, "maptouch")
+    for name in ("src/a.py", "docs/x.md", "README.md"):
+        write(os.path.join(repo, name), "a\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    built, mapf = git(repo, "rev-parse", "HEAD"), os.path.join(repo, ".council", "map.md")
+    code, out, err = council(repo, "map", "touch", "src/=x")
+    check("map touch: with no map, refused, naming council-init",
+          code == 2 and "council: no map yet — council-init builds .council/map.md, and map touch adds to it" in err
+          and not os.path.exists(mapf), out + err)
+    table = ("## One way per job\n| Job | Owner | The one way | Anchor path |\n|---|---|---|---|\n"
+             "| Parse | src/ | the reader | src/a.py |\n")
+    write(mapf, "# Codebase map — x\nupdated: 2026-09-15\n\n" + table)
+    code, out, err = council(repo, "map", "touch", "src/=x")
+    check("map touch: a map with no map-commit stamp is refused, naming the refresh",
+          code == 2 and "map.md has no map-commit stamp — refresh the map and stamp it (council-init's Refresh)" in err,
+          out + err)
+    write(mapf, "# Codebase map — x\nmap-commit: 0123456789abcdef0123456789abcdef01234567\n\n" + table)
+    code, out, err = council(repo, "map", "touch", "src/=x")
+    check("map touch: a stamp that isn't in this repo's history is refused, naming the rebuild",
+          code == 2 and "isn't in this repo's history — rebuild the map (council-init's Refresh)" in err, out + err)
+    original = "# Codebase map — x\nmap-commit: %s (built)\nupdated: 2026-09-15\n\n%s" % (built, table)
+    write(mapf, original)
+    for name in ("src/a.py", "docs/x.md"):
+        write(os.path.join(repo, name), "b\n")
+    git(repo, "commit", "-q", "-am", "two")
+    head = git(repo, "rev-parse", "HEAD")
+    shape = 'council map touch <dir>="<line>" …'
+    for words, want in ((("map", "touch"), 'usage: council map status | map touch <dir>="<line>" …'),
+                        (("map", "touch", "src"), "map touch takes <dir>=\"<line>\" pairs, and 'src' isn't one — for "
+                                                  "example: council map touch src/=\"the parser moved into records/\""),
+                        (("map", "touch", "src/=", "docs/=x"),
+                         "the line for src/ is empty — give one line, in the user's words: council map touch "
+                         "src/=\"<line>\""),
+                        # On Windows Git Bash hands the helper a native command line, where a newline separates
+                        # words: the helper gets src/=a and b, and refuses b as no pair (the map is unchanged either way)
+                        (("map", "touch", "src/=a\nb"),
+                         "map touch takes <dir>=\"<line>\" pairs, and 'b' isn't one" if os.name == "nt" else
+                         "the line for src/ spans more than one line — give it as one: council map touch src/=\"<line>\""),
+                        (("map", "touch", "nope/=x"), "nope/ is not a top-level area of this repo — name a top-level "
+                                                      "folder (src/) or a root file, as council map status lists them: "
+                                                      + shape),
+                        (("map", "touch", ".council/=x"), ".council/ is not a top-level area of this repo"),
+                        (("map", "touch", "src/=a", "src=b"), "src/ is named twice — give each area one line: " + shape),
+                        (("map", "touch", "src/=a", "--status", "x"), "map doesn't take --status")):
+        code, out, err = council(repo, *words)
+        check("map touch %s: refused — %s" % (" ".join(words).replace("\n", "\\n"), want),
+              code == 2 and want in err and not out and read(mapf) == original, out + err)
+    code, out, err = council(repo, "map", "touch", "src/=the reader moved to src/a.py")
+    section = re.search(r"\n\n## Changes (\d{4}-\d\d-\d\d)\n", read(mapf))
+    check("map touch: the line goes under a dated ## Changes section at the end, and the rest of the map stays byte "
+          "for byte",
+          code == 0 and section is not None and read(mapf) == original + section.group(0)[1:] +
+          "- src/: the reader moved to src/a.py\n" and out.startswith("Wrote ") and "map.md — 1 line(s) under ## "
+          "Changes " in out, out + err + read(mapf))
+    check("map touch: map-commit stays while an area changed since it (docs/) has no line, and it says which",
+          ("map-commit stays at %s: no line here yet for docs/, changed since it — give each a line too (%s), or "
+           "refresh the map" % (built[:9], shape)) in out and "map-commit: %s (built)" % built in read(mapf), out)
+    code, out, err = council(os.path.join(repo, "src"), "map", "touch", "docs=the guide grew", "src=the reader too",
+                             "README.md=a root file is an area")
+    check("map touch: from a subfolder, docs is read as docs/; a touch covering every area changed since the stamp "
+          "moves map-commit to HEAD, and joins today's section",
+          code == 0 and read(mapf).count("## Changes") == 1 and read(mapf).endswith(
+              "- src/: the reader moved to src/a.py\n- docs/: the guide grew\n- src/: the reader too\n"
+              "- README.md: a root file is an area\n")
+          and "map-commit: %s (built)" % head in read(mapf)
+          and "map-commit now at %s (HEAD): every area changed since the stamp has a line" % head[:9] in out, out + err)
+    code, out, _ = council(repo, "map", "status")
+    check("map touch: map status reads the touched map as up to date", "map: up to date" in out, out)
+
+    # At close: the areas a run changed (tracked files, since the commit it opened on) that the map has no line for
+    repo = new_repo(tmp, "mapclose")
+    for name in ("src/a.py", "docs/x.md"):
+        write(os.path.join(repo, name), "a\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    write(os.path.join(repo, ".council", "map.md"), "# Codebase map — x\nmap-commit: %s\n\n%s"
+          % (git(repo, "rev-parse", "HEAD"), table))
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config — map\n")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write_plan(run)
+    write(os.path.join(run, "verify-1.md"), "# Verification — x\n| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    to_deliver(repo)
+    council(repo, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
+    for name in ("src/a.py", "docs/x.md", "lib/new.py"):          # lib/ is new and untracked: not the map's business
+        write(os.path.join(repo, name), "c\n")
+    council(repo, "map", "touch", "docs/=the guide moved")
+    code, out, err = council(repo, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("run close: a run that changed tracked files names the areas with no map line yet, and the next step",
+          code == 0 and ('council: the run changed src/ since it opened, with no line in the map yet — say what '
+                         'changed in each, in the user\'s words: council map touch <dir>="<line>" …') in err
+          and "docs/" not in line_of(err, "with no line in the map") and "lib/" not in err, err)
+    check("run close: the map warning is in the close event's warnings=, and the run closes complete",
+          closed and closed[-1][6].endswith("warnings=map-touched")
+          and "status: complete" in read(os.path.join(run, "session-state.md")), str(closed))
+    git(repo, "commit", "-q", "-am", "three")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write_plan(run)
+    write(os.path.join(run, "verify-1.md"), "# Verification — x\n| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    to_deliver(repo)
+    council(repo, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
+    code, out, err = council(repo, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("run close: a review that changed no file says nothing about the map",
+          code == 0 and "map" not in err and closed and "warnings=" not in closed[-1][6], err + str(closed))
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write(os.path.join(repo, "src", "a.py"), "d\n")
+    code, out, err = council(repo, "run", "close", "--status", "abandoned")
+    check("run close --status abandoned: a run that changed files is never asked for map lines",
+          code == 0 and "map" not in err, err)
+
 
 @part("lifecycle")
 def runs_init_plan(tmp):
@@ -7881,7 +8117,7 @@ def reports_refusals(tmp):
     write(os.path.join(repo, ".council", "conventions.md"), "# Conventions\n## Anti-Patterns (AP)\n### AP-1: revoke "
           "first\n**Pattern:** revoke before lookup\n**Scope:** src/**\n")
     before = read(os.path.join(repo, ".council", "conventions.md"))
-    short = "usage: council memory [index | select [path|slug …] | check | propose … | accept … | reject …]"
+    short = "usage: council memory [index | select [path|slug …] | check | tidy | propose … | accept … | reject …]"
     propose = "usage: council memory propose claim <id> [--scope <paths>] | memory propose repair <task> --scope"
     for words, want in ((("memory", "index", "x"), short), (("memory", "nosuch"), "propose claim|repair <id>"),
                         (("memory", "propose", "claim"), propose), (("memory", "propose", "guess", "C1"), propose),
@@ -7895,7 +8131,8 @@ def reports_refusals(tmp):
                         (("ledger", "advice", "9999999"), "keep N under a million runs"),
                         (("ledger", "x"), "usage: council ledger [how many recent runs, default 10]"),
                         (("ledger", "--json"), "ledger doesn't take --json"),
-                        (("map",), "usage: council map status"), (("map", "status", "x"), "usage: council map status"),
+                        (("map",), 'usage: council map status | map touch <dir>="<line>" …'),
+                        (("map", "status", "x"), 'usage: council map status | map touch <dir>="<line>" …'),
                         (("fingerprint", "x"), "usage: council fingerprint [check]"),
                         (("doctor", "x"), "doctor doesn't take 'x'"), (("prior", "--json"), "prior doesn't take")):
         code, out, err = council(repo, *words)

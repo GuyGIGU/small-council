@@ -125,7 +125,8 @@ In chat, give:
 ## At Learn — the map and memory
 
 - **Keep the map true.** If the research found the map missing something or wrong, patch `map.md` in
-  the same run.
+  the same run. A refresh folds the map's `## Changes` sections (`council map touch`) into the body
+  and moves `map-commit`.
 - **Mapping questions:** each line of inquiry covers one top-level area and fills the map template's
   sections for it. Merge into one map of at most ~250 lines, and set `map-commit` to HEAD.
 - **Memory:** propose candidates as usual (Learn).

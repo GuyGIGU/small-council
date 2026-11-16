@@ -108,6 +108,27 @@ with tempfile.TemporaryDirectory(prefix="council-memory-") as temporary:
     code, out, err = council(repo, "memory", "check")
     check("observed failure anchors are checked", code == 1 and
           "STALE  F-1" in out and "bad-line" in out, out + err)
+    code, out, err = council(repo, "memory", "tidy")
+    check("tidy: a memory with no duplicate and no retired id proposes nothing, and says so", code == 0 and
+          out.startswith("memory tidy: nothing to merge or retire in conventions.md\n"), out + err)
+
+    tidy = Path(temporary) / "tidy"            # bullet and numbered entries, a sub-section and a status mark
+    tidy.mkdir()
+    subprocess.run([GIT, "init", "-q"], cwd=tidy, check=True)
+    write(tidy / ".council" / "council.config.md", "# Council config\n")
+    write(tidy / ".council" / "conventions.md",
+          "# Memory\n## Enforced Conventions\n- **EC-1 — Never push to main.** pushes go through a PR\n"
+          "- **EC-2 — never push to MAIN** filed again\n1. **EC-3 — keep D-2 in mind.** the old rule\n"
+          "- **EC-4 — one client.** **Status:** superseded by EC-1\n"
+          "## Decisions\n### Retired decisions\n### D-2: the old ruling\n**Decision:** x\n")
+    before = (tidy / ".council" / "conventions.md").read_bytes()
+    code, out, err = council(tidy, "memory", "tidy")
+    check("tidy: bullet and numbered entries, a retired sub-section and a status mark, each read as the parser "
+          "reads them", code == 0 and out.splitlines()[:3] == [
+              "1. merge EC-2 into EC-1", "2. retire EC-3 — it names D-2, which is retired",
+              "3. retire EC-4 — marked superseded by ec-1, but it still sits under ## Enforced Conventions; move it "
+              "under ## Retired"], out + err)
+    check("tidy: the memory file is left byte for byte", (tidy / ".council" / "conventions.md").read_bytes() == before)
 
     # What an observed failure needs before any brief gets it — each of these is left out, and says why.
     write(memory,
