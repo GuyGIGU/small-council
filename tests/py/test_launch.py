@@ -55,7 +55,8 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(started("check"), sorted(base + cites + ["council.commands." + name for name in (
             "check", "check_proofs", "cite_origin", "hygiene", "proof_reach")]))
         self.assertEqual(started("patch", "show", "1"), sorted(base + ["council.commands." + name for name in (
-            "gate_output", "patch", "patch_checks", "patch_history", "resolve")]))     # rounds: a third fix round only
+            "gate_output", "patch", "patch_checks", "patch_history", "resolve", "task_slice")]))  # rounds: a third
+        # fix round only; plan_tasks: only once a plan and a task are there
         self.assertEqual(started("index"), sorted(base + ["council.commands." + name for name in (
             "changed", "closed", "index", "index_symbols", "prior", "resolve", "shell")]))
 
