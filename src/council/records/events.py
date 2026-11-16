@@ -103,12 +103,8 @@ def _schema(run: Path) -> str:
 def _unstamped(run: Path, file: str) -> str:
     """Why a run with an event file has no stamp to read: its state is not read (a link, a file outside the run or
     one over the size limit), or it has none. `file` is the event file as the message names it."""
-    found = state.path(run)
-    if paths.linked(found) or paths.too_large(found) or (found.is_file() and not paths.contained(found, run)):
-        return ("the run's %s is a link, lies outside the run or is over %s, so its events-schema stamp is not read "
-                "and no event can be recorded — put a plain copy of it, under that size, in its place: %s"
-                % (state.NAME, paths.megabytes(paths.MAX_FILE), found.as_posix()))
-    return "event file exists without an events-schema stamp: %s" % file
+    return (state.unread(run, "its events-schema stamp is not read and no event can be recorded")
+            or "event file exists without an events-schema stamp: %s" % file)
 
 
 def _recorded(data: bytes, kind: str) -> bool:

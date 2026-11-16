@@ -782,6 +782,24 @@ def runs_open(tmp):
     check("run events check: a state over 4 MB is named, with the next step, not called unstamped",
           code == 1 and "session-state.md is a link, lies outside the run or is over 4 MB" in err
           and "put a plain copy of it, under that size, in its place" in err and "without an events-schema" not in err, err)
+    # council state and run resume read the state by the same guarded read, and refuse the same way.
+    code, out, err = council(huge, "state", "--run", os.path.basename(huge_run))
+    check("state: a state over 4 MB is not printed; the refusal names it and the next step",
+          code == 2 and not out and "session-state.md is a link, lies outside the run or is over 4 MB, so council state "
+          "does not print it — put a plain copy of it, under that size, in its place" in err, out[:200] + err)
+    os.remove(os.path.join(huge_run, "events.tsv"))
+    before = read(os.path.join(huge_run, "session-state.md"))
+    code, out, err = council(huge, "run", "resume", "--run", os.path.basename(huge_run))
+    check("run resume: a state over 4 MB is not resumed, even with no event stream; the refusal names the next step",
+          code == 2 and "is over 4 MB, so it is not resumed — put a plain copy of it" in err
+          and read(os.path.join(huge_run, "session-state.md")) == before, out + err)
+    with open(os.path.join(huge_run, "session-state.md"), "wb") as f:
+        f.write(b"\xef\xbb\xbfnote: caf\xe9\n" + before.replace("x" * (4 * 1024 * 1024) + "\n", "").encode("utf-8"))
+    shown = subprocess.run([BASH, CLI, "state", "--run", os.path.basename(huge_run)], cwd=huge, capture_output=True,
+                           env=GIT_ENV, timeout=120)
+    check("state: the header is printed as the guarded read gives it: no byte-order mark, a stray byte as U+FFFD",
+          shown.returncode == 0 and shown.stdout.startswith(b"note: caf\xef\xbf\xbd\nstatus: in-progress\n"),
+          repr(shown.stdout[:80]) + shown.stderr.decode("utf-8", "replace"))
 
     # A relative --code-root is stored absolute: in a real build every gate exited 97 ("cd" failed) once
     # the Chair's cwd was a worktree, because session-state.md kept the path as typed.

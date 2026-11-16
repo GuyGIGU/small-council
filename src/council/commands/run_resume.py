@@ -23,6 +23,9 @@ def main(args: cli.Args, words: list[str]) -> int:
             raise cli.Refusal("several runs are open on this working tree — pass --run <folder>: "
                               + resolve.names(mine))
         run = Path(mine[0])
+    why = state.unread(run, "it is not resumed")
+    if why:
+        raise cli.Refusal(why)
     status, old = resolve.field(run, "status").split(" ")[0], resolve.field(run, "session")
     if status in ("complete", "abandoned"):
         raise cli.Refusal("%s is closed (%s) — open a new run instead: council run open %s"

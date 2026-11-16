@@ -21,6 +21,16 @@ def text(run: Path, read: paths.Reader | None = None) -> str:
     return paths.run_text(run, NAME, read)
 
 
+def unread(run: Path, so: str) -> str:
+    """Why text leaves the run's state out (a link, a file outside the run, one over the size limit), with what that
+    stops (`so`) and the next step (D19); '' when text reads it."""
+    found = path(run)
+    if not (paths.linked(found) or paths.too_large(found) or (found.is_file() and not paths.contained(found, run))):
+        return ""
+    return ("the run's %s is a link, lies outside the run or is over %s, so %s — put a plain copy of it, under that "
+            "size, in its place: %s" % (NAME, paths.megabytes(paths.MAX_FILE), so, found.as_posix()))
+
+
 def header(content: str, exact_keys: bool = False, comments: bool = True) -> dict[str, str]:
     """The header's fields, the first of a repeated key winning, with the value's leading space dropped
     and, with comments, a trailing '  # comment'. exact_keys takes only a key at the start of its line,
