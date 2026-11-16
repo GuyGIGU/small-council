@@ -798,6 +798,11 @@ with tempfile.TemporaryDirectory(prefix="council-audit-note-") as folder:   # th
     size_note = "council: " + memory_records.size_note(Path(folder).as_posix())
 check("the memory size note is an advisory line at any memory budget, not a refusal",
       "over the ~40 KB" in size_note and audit.NOTES.match(size_note) is not None, size_note)
+from council.records import closing as closing_records               # noqa: E402
+unmapped = "council: " + next(text for code, _, text in closing_records.CHECKS if code == "map-touched").format(
+    value="src/", name="run")
+check("the close's map-touched warning is an advisory line, not a refusal (a build that changed code always says it)",
+      audit.NOTES.match(unmapped) is not None, unmapped)
 
 # How the helper was called, in the forms a real night used: 29 of 124 piped calls were seen before.
 FORMS = [
