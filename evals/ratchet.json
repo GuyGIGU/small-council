@@ -95,7 +95,7 @@
    "longest_name": ""
   },
   "src/council/commands/agent_gate.py": {
-   "lines": 322,
+   "lines": 290,
    "longest": 38,
    "longest_name": "dispatch_refusal"
   },
@@ -185,8 +185,8 @@
    "longest_name": "main"
   },
   "src/council/commands/doctor.py": {
-   "lines": 280,
-   "longest": 38,
+   "lines": 258,
+   "longest": 37,
    "longest_name": "main"
   },
   "src/council/commands/doctor_gates.py": {
@@ -280,7 +280,7 @@
    "longest_name": "main"
   },
   "src/council/commands/hygiene.py": {
-   "lines": 232,
+   "lines": 212,
    "longest": 20,
    "longest_name": "added"
   },
@@ -325,7 +325,7 @@
    "longest_name": "lines"
   },
   "src/council/commands/memory_tree.py": {
-   "lines": 203,
+   "lines": 149,
    "longest": 27,
    "longest_name": "orphans"
   },
@@ -415,7 +415,7 @@
    "longest_name": "recommend"
   },
   "src/council/commands/run_close.py": {
-   "lines": 117,
+   "lines": 103,
    "longest": 37,
    "longest_name": "main"
   },
@@ -465,9 +465,9 @@
    "longest_name": "progress_line"
   },
   "src/council/commands/session_start.py": {
-   "lines": 315,
-   "longest": 35,
-   "longest_name": "_active_run"
+   "lines": 277,
+   "longest": 34,
+   "longest_name": "_runs"
   },
   "src/council/commands/sharing.py": {
    "lines": 278,
@@ -720,8 +720,8 @@
    "longest_name": "header"
   },
   "src/council/records/state_write.py": {
-   "lines": 182,
-   "longest": 33,
+   "lines": 171,
+   "longest": 34,
    "longest_name": "_locked"
   },
   "src/council/records/synthesis_counts.py": {
