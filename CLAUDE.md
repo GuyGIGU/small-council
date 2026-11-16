@@ -23,9 +23,9 @@ file is the short version. The rest is in:
 
 ## Hard limits the checks enforce
 
-- Skills: 20,000 characters and 500 lines each. The verifier contract: 8,000 characters. A doctrine
-  file: 6,000. A review run's method load: 59,407 bytes (D13). When you add a rule, move detail into
-  the reference the skill points at instead of growing the skill.
+- Skills: 20,000 characters and 500 lines each. Each agent contract (worker, verifier, builder):
+  8,000 characters. A doctrine file: 6,000. A review run's method load: 59,407 bytes (D13). When you
+  add a rule, move detail into the reference the skill points at instead of growing the skill.
 - A helper refusal names the next step (D19). A hook lets the call through on its own fault, and
   never writes to stdout (D20).
 - Every command and hook path has a scenario in `evals/run_cli.py` or `evals/run_hook.py`. Prove
@@ -60,7 +60,8 @@ python evals/run_all.py                   # everything, in parallel (about 30 mi
 
 The plugin is installed in this session, so its hooks judge your commands here too. `council …` piped
 into `head`, `tail` or `grep` is refused (D21): redirect the output to a file and read that. To try a
-command by hand, use a scratch git repo outside this one. Never use this repo's own `.council/`.
+command by hand, use a scratch git repo outside this one. Never use this repo's own `.council/`. The
+seat gate judges a `small-council:council-builder`'s stop as it judges a worker's and a verifier's.
 
 ## Delivering a change
 

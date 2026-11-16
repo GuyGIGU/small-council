@@ -99,7 +99,7 @@ steps 7 and 8 are yours.
 1–6. **Build the task.** Solo: follow builder-loop.md yourself, to its return line. Otherwise:
    - **Queue it:** `council seat task-<n> queued`. The helper names each file changed outside a saved
      round: log each; one you edited yourself is a shortcut, and goes on the receipt. It refuses a
-     second build seat while one runs, and a task that is or depends on a `NEEDS: fix` stop until
+     second build seat while one is queued or running, and a task that is or depends on a `NEEDS: fix` stop until
      the user's decision is on record (Edge cases).
    - **Dispatch** `small-council:council-builder`, `model` from the plan row, with this message and
      nothing else. `Start:` is your only judgement; its orders come from `council context build task-<n>`,
@@ -296,7 +296,8 @@ offered; a Squad is usually right.
 - **Plan names code that no longer exists** → follow the intent, not the path; log it.
 - **Blocked by something outside the input** → log it; carry on with the tasks that do not rest on it.
 - **A `NEEDS: fix` return** (a bug in the code under a task: repair-loop.md, Unknowns) → stop that
-  task and every task that depends on it or rests on the same code. Tell the user in one line: what
+  task and every task that depends on it (`Depends on`; the helper refuses them). A task that only
+  shares the code is not stopped: its builder is held to the same rule. Tell the user in one line: what
   is wrong, where, and what is stopped. The fix is a new task above the blocked one, with its own
   Owner and the Serves line of the task it unblocks; it starts only on the user's yes.
 - **Two tasks share one change** → change once; keep each Done-when, evidence and verdict.

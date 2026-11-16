@@ -503,7 +503,8 @@ check("a bug underneath: repair-loop.md and builder-report.md give the builder o
       needs_fix in repair_contract and needs_fix in builder_report and 'note="NEEDS: fix …"' in repair_contract
       and "carry on with the tasks that do not rest on it" in skill["council-implement"]
       and all(p in flat(skill["council-implement"]) for p in (
-          "stop that task and every task that depends on it or rests on the same code",
+          "stop that task and every task that depends on it (`Depends on`; the helper refuses them)",
+          "A task that only shares the code is not stopped: its builder is held to the same rule.",
           "the Serves line of the task it unblocks", "it starts only on the user's yes")))
 check("a bug underneath: the verifier asks on every round whether an added line only makes up for other code, naming "
       "it; build-proof.md, Checking, holds the rule, with the user's ruling as its one exception",

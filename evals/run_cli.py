@@ -8076,6 +8076,14 @@ def runs_build_seat(tmp):
     code, out, err = council(bs, "seat", "task-1", "queued")
     check("seat: a build seat starts with no line about files when nothing changed since the commit the run opened on",
           code == 0 and "outside any round" not in err, out + err)
+    code, out, err = council(bs, "seat", "task-2", "queued")
+    check("seat: a queued build seat is taken — task-2 is refused while task-1 is queued, before its builder is "
+          "recorded running", code == 2 and "cannot start task-2 — task-1 is queued, and one builder at a time edits "
+          "project code (D42)" in err and "\ntask-2\t" not in read(os.path.join(brun, "seats.tsv")), out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-2", "file=report-2",
+                             "run=" + bname)
+    check("cap check: two dispatches sent together — the second builder is refused while the first is only queued",
+          code == 2 and out.startswith("Small Council: cannot start task-2 — task-1 is queued"), out + err)
     council(bs, "seat", "task-1", "running", "agent=b1")
     code, out, err = council(bs, "seat", "task-2", "queued")
     check("seat: one builder at a time — task-2 is refused while task-1 runs, naming it and both next steps",
@@ -8212,6 +8220,7 @@ def runs_build_seat_fix_stop(tmp):
           and "\ntask-2\t" not in read(os.path.join(frun, "seats.tsv")), repr(refused))
     code, out, err = council(fs, "seat", "task-3", "queued")
     check("seat: a task that neither is nor depends on the stopped task starts", code == 0, out + err)
+    council(fs, "seat", "task-3", "skipped")
     code, out, err = council(fs, "cap", "check", "--session", "sX", "Agent", builder, "seat=task-2", "file=report-2",
                              "run=" + os.path.basename(frun))
     check("cap check: the agent gate refuses a builder for that dependant before it starts, for the same reason",
@@ -8219,7 +8228,10 @@ def runs_build_seat_fix_stop(tmp):
                                        "src/pay/webhook.py:2"), out + err)
     council(fs, "state", "decision=fix the webhook reader first, as its own task")
     code, out, err = council(fs, "seat", "task-1", "done", "agent=f1", "tokens=21000")
-    starts = [council(fs, "seat", slug, "queued") for slug in ("task-1", "task-2", "task-3")]
+    starts = []
+    for slug in ("task-1", "task-2", "task-3"):                # one at a time: each is queued, then set aside
+        starts.append(council(fs, "seat", slug, "queued"))
+        council(fs, "seat", slug, "skipped")
     check("seat: once the user's decision is on record, the stop is released and all three start — a late usage "
           "report on the stop after the decision does not bring the refusal back",
           code == 0 and [c for c, _, _ in starts] == [0, 0, 0], out + err + repr(starts))
@@ -8234,8 +8246,8 @@ def runs_build_seat_fix_stop(tmp):
     council(fs, "seat", "task-1", "running", "agent=g2")
     council(fs, "seat", "task-1", "done", "tokens=20000", "note=" + FIX_STOP)
     council(fs, "state", "input=")
-    code, out, err = council(fs, "seat", "task-2", "queued")
     code1, out1, err1 = council(fs, "seat", "task-1", "queued")
+    code, out, err = council(fs, "seat", "task-2", "queued")
     check("seat: with no input= plan only the task itself is judged — its dependant starts, it is refused",
           code == 0 and code1 == 2 and "cannot start task-1 — task 1 stopped" in err1, out + err + out1 + err1)
     council(fs, "seat", "task-2", "skipped")

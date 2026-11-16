@@ -142,8 +142,9 @@ the cheap path is to make up for the bug inside the slice, and the Done-when sti
   tests or its own documentation say. It is the `NEEDS:` stop with a second kind of content, so it
   is recorded the same way and counts as a correct outcome. `seen:` is OBSERVED or REPRODUCED; a
   suspicion is a `NEEDS:` question and gets the probe.
-- **The Chair.** It stops that task and every task that depends on it or rests on the same code;
-  the others carry on. It tells the user in one line: what is wrong, where, and what is stopped.
+- **The Chair.** It stops that task and every task that depends on it (`Depends on`, which the
+  helper reads); the others carry on. A task that only shares the code is not stopped: its own
+  builder is held to the same rule, so it stops too if it meets the bug. It tells the user in one line: what is wrong, where, and what is stopped.
   The fix is a new task above the blocked one, with its own `Owner` (the code that has the bug) and
   the `Serves` line of the task it unblocks. Its cause is already observed, so it needs no probe.
   It starts only on the user's yes (decided, 5).

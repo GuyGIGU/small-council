@@ -6,7 +6,7 @@
 # Code hands to Claude. A Small Council agent (subagent_type council-worker, council-verifier or council-builder) is
 # also held to the record: refused when the council home or the run it names can't be written from this session
 # (issue 51), when no council run is open for it, when its dispatch names a seat the run's plan doesn't select, or,
-# for a builder, while another runs. Anything else lets the call through, silently: no council, no in-progress run,
+# for a builder, while another is queued or runs. Anything else lets the call through, silently: no council, no in-progress run,
 # a run within its limits, an ordinary agent, input it can't read, or any fault of the helper's. The decision is the
 # helper's (council cap check); this script only reads the input. A call it lets through is counted as an agent
 # start of the run this session drives (a Workflow as one, however many agents it starts), so agents started

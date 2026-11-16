@@ -35,9 +35,13 @@ class BuildSeatTest(support.Scratch):
         self.assertIsNone(build_seat.start_refusal(self.build("council-review", b"task-1\trunning\t\t\tT\t\t\t\n"),
                                                    "task-2"))
 
-    def test_done_and_queued_build_seats_do_not_refuse(self) -> None:
+    def test_a_queued_build_seat_is_taken_and_a_done_one_is_not(self) -> None:
         run = self.build(seats=b"task-1\tdone\ta1\t\tT\t\t\t\ntask-3\tqueued\t\t\tT\t\t\t\n")
-        self.assertIsNone(build_seat.start_refusal(run, "task-2"))
+        why = build_seat.start_refusal(run, "task-2")
+        self.assertIn("cannot start task-2 — task-3 is queued, and one builder at a time", why)
+        self.assertIsNone(build_seat.start_refusal(run, "task-3"))        # its own dispatch, or its running
+        done = self.build(seats=b"task-1\tdone\ta1\t\tT\t\t\t\ntask-3\tskipped\t\t\tT\t\t\t\n")
+        self.assertIsNone(build_seat.start_refusal(done, "task-2"))
 
     def test_done_needs_the_report_unless_the_builder_stopped_with_needs(self) -> None:
         run = self.build()

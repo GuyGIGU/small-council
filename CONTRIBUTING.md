@@ -16,8 +16,9 @@ you change anything.
   closing runs, gates, the change index, checking seat files or citations — it belongs in the
   helper (`src/council/commands/`), not in prose the model has to remember.
 - **The agents carry the contracts.** The seat worker's rules live in `agents/council-worker.md`, the
-  verifier's in `agents/council-verifier.md`. Dispatch messages point at the brief and never restate
-  a contract.
+  verifier's in `agents/council-verifier.md`, the builder's in `agents/council-builder.md`. Dispatch
+  messages point at the brief and never restate a contract. A step of the build loop goes in
+  `references/run/builder-loop.md`, which the builder follows, not in council-implement.
 - **The hooks enforce what prose can't.** SessionStart handles orientation and resume, and marks the
   session so `council run open` can tell its hooks run; PreToolUse stops new agents at a run's limit
   and refuses a council command piped into head, tail or grep (that Bash hook marks the session too);

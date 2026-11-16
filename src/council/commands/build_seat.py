@@ -1,9 +1,9 @@
 """The build seat (D42): `task-<n>` in a council-implement run, where a builder agent edits the project code of task
-n. One builder at a time: a build seat does not start while another runs, nor while a `NEEDS: fix` stop stands on
-its task or a task it depends on. Its `done` needs `report-<n>.md`, unless it stopped with a `NEEDS:` line. When
-one starts, the files changed since the run's last saved round are named. It also holds the one reader of a task's
-stop (stop_of), which council tree asks too. `council seat` and the agent gate ask it, as they ask `rounds` for a
-verifier. A Solo build records no build seat, so nothing here fires for it."""
+n. One builder at a time: a build seat does not start while another is queued or runs, nor while a `NEEDS: fix`
+stop stands on its task or a task it depends on. Its `done` needs `report-<n>.md`, unless it stopped with a `NEEDS:`
+line. When one starts, the files changed since the run's last saved round are named. It also holds the one reader
+of a task's stop (stop_of), which council tree asks too. `council seat` and the agent gate ask it, as they ask
+`rounds` for a verifier. A Solo build records no build seat, so nothing here fires for it."""
 from __future__ import annotations
 
 import re
@@ -29,17 +29,20 @@ def task_of(run: Path, slug: str) -> int | None:
 
 
 def start_refusal(run: Path, slug: str) -> str | None:
-    """Why build seat <slug> can't start now: another build seat is running (one builder at a time), or a NEEDS: fix
-    stop stands on its task or on a task it depends on; None when it may, or when <slug> is no build seat."""
+    """Why build seat <slug> can't start now: another build seat is queued or running (one builder at a time; a seat
+    is taken from its queued, so a second dispatch sent before the first is recorded running is refused), or a
+    NEEDS: fix stop stands on its task or on a task it depends on; None when it may, or when <slug> is no build
+    seat."""
     task = task_of(run, slug)
     if task is None:
         return None
-    other = next((row.get("slug", "") for row in seats.rows(run) if row.get("state") == "running"
-                  and row.get("slug") != slug and SEAT.fullmatch(row.get("slug", ""))), "")
+    other, state = next(((row.get("slug", ""), row.get("state", "")) for row in seats.rows(run)
+                         if row.get("state") in STARTED and row.get("slug") != slug
+                         and SEAT.fullmatch(row.get("slug", ""))), ("", ""))
     if other:
-        return ("cannot start %s — %s is running, and one builder at a time edits project code (D42). Wait for its "
+        return ("cannot start %s — %s is %s, and one builder at a time edits project code (D42). Wait for its "
                 "line and record it (council seat %s done tokens=<n> tools=<n>, or done note=\"NEEDS: …\"); if its "
-                "agent is gone, record it: council seat %s failed note=\"…\"" % (slug, other, other, other))
+                "agent is gone, record it: council seat %s failed note=\"…\"" % (slug, other, state, other, other))
     return _fix_refusal(run, slug, task)
 
 
