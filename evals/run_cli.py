@@ -1705,6 +1705,32 @@ def runs_memory(tmp):
     check("memory check: a name after the listed lines is an anchor of its own",
           "STALE  EC-3 — nothing in the code is named robust_mean any more" in out, out)
 
+    # Memory check's one search: a whole word in one of the tree's files, the same in git and outside it
+    mw = new_repo(tmp, "memwords")
+    write(os.path.join(mw, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(mw, "src", "a.py"), "x = cfg.a.b.c\nkept_name = 1\n")
+    write(os.path.join(mw, ".gitignore"), "build/\n")
+    write(os.path.join(mw, "build", "out.py"), "ignored_name = 1\n")
+    with open(os.path.join(mw, "data.bin"), "wb") as f:
+        f.write(b"\0binary_only_name\n")
+    write(os.path.join(mw, ".council", "conventions.md"), "# m\n## Enforced Conventions\n"
+          "### EC-1: a dotted name inside a longer one\n**Anchor:** a.b\n### EC-2: a plain name\n**Anchor:** kept_name\n"
+          "### EC-3: only in an ignored file\n**Anchor:** ignored_name\n### EC-4: only in a binary file\n**Anchor:** binary_only_name\n"
+          "### EC-5: part of a word\n**Anchor:** ept_nam\n### EC-6: a name in its file\n**Anchor:** src/a.py::a.b\n")
+    git(mw, "add", "-A")
+    git(mw, "commit", "-q", "-m", "i")
+    code, out, _ = council(mw, "memory", "check")
+    want = ["STALE  EC-3 — nothing in the code is named ignored_name any more",
+            "STALE  EC-4 — nothing in the code is named binary_only_name any more",
+            "STALE  EC-5 — nothing in the code is named ept_nam any more", "3 stale anchor(s) across 6 entries"]
+    check("memory check: a name is found as a whole word in a tracked or untracked file — a.b inside a.b.c too — and "
+          "not in an ignored or a binary file, or inside a longer word",
+          code == 1 and all(w in out for w in want) and "EC-1" not in out and "EC-2" not in out and "EC-6" not in out, out)
+    mwn = os.path.join(tmp, "memwords-nogit")                # the same files, with no git and nothing ignored
+    shutil.copytree(mw, mwn, ignore=shutil.ignore_patterns(".git", ".gitignore", "build"))
+    code, out2, _ = council(mwn, "memory", "check")
+    check("memory check: outside git the same search gives the same answer", out2 == out, out + "\n---\n" + out2)
+
     # Memory: the entry shapes real projects write
     ms = new_repo(tmp, "memshapes")
     write(os.path.join(ms, ".council", "council.config.md"), "# c\n")
