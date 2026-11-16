@@ -24,7 +24,7 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(sharing.sharing(home), "team")
         self.assertEqual(config.gate_time_limit(home), (None, ""))
         self.assertFalse(config.notifications_off(home))
-        self.assertEqual(config.memory_path(home), "")
+        self.assertIsNone(config.memory_line(home))
         self.assertEqual(config.roster_table(home), [])
 
     def test_an_old_context_packs_line_changes_nothing(self) -> None:
@@ -32,7 +32,7 @@ class ConfiguredTest(support.Scratch):
         without the line."""
         prefs = "## Run preferences\n- agent cap: 6\n- build tier: full\n- seat models: on\n- sharing: just me\n"
         readers = (config.agent_cap, config.build_tier, config.checking, config.worker_estimate, config.seat_models,
-                   sharing.sharing, config.gate_time_limit, config.notifications_off, config.memory_path,
+                   sharing.sharing, config.gate_time_limit, config.notifications_off, config.memory_line,
                    config.roster_table)
         without = [reader(self.home(prefs)) for reader in readers]
         self.assertEqual([reader(self.home(prefs + "- context packs: on\n")) for reader in readers], without)
@@ -114,12 +114,12 @@ class StatusReadingTest(support.Scratch):
         self.assertTrue(config.notifications_off(self.home(filler.replace("\n", "\r\n") + "- notifications: off\r\n")))
         self.assertFalse(config.notifications_off(self.home(filler + "- notifications: on\n")))
 
-    def test_memory_path(self) -> None:
-        self.assertEqual(config.memory_path(self.home("## Memory\n- conventions: docs/conv.md (the team's)\n")),
-                         "docs/conv.md")
-        self.assertEqual(config.memory_path(self.home("## Memory notes\n* Conventions: docs/c.md — by hand\n")),
-                         "docs/c.md")
-        self.assertEqual(config.memory_path(self.home("- conventions: elsewhere.md\n")), "")
+    def test_memory_line(self) -> None:
+        """The one reading of the memory path (records/memory.locate builds on it): the key is exact, lower case."""
+        self.assertEqual(config.memory_line(self.home("## Memory\n- conventions: docs/conv.md (the team's)\n")),
+                         ("docs/conv.md", "docs/conv.md"))
+        self.assertIsNone(config.memory_line(self.home("## Memory notes\n* Conventions: docs/c.md — by hand\n")))
+        self.assertIsNone(config.memory_line(self.home("- conventions: elsewhere.md\n")))
 
     def test_roster(self) -> None:
         table = ("| Seat | Slug | Lens |\n|---|---|---|\n| **Security** | `sec` | *auth* |\n| | x | y |\n"

@@ -24,10 +24,9 @@ from pathlib import Path
 from typing import Any, Dict
 
 from council.clock import local_moment, utc_moment as utc_time
-from council.records import config, paths
+from council.records import config, memory, paths
 from council.records.cells import clean
 from council.records.gates import kind as gate_kind    # one rule for every view: a proof fails first, a probe dry-runs
-from council.records.memory import COUNCIL_MEMORY_SIZE_LIMIT
 from council.views import snapshot
 from council.views.status_card import notification_line, text, widget
 from council.views.status_closing import closing_of
@@ -182,28 +181,12 @@ def recent_of(snap: Snap, ref: datetime, limit: int) -> tuple[list[dict[str, Any
 
 
 def oversized_memory(run_path: Path) -> dict[str, Any] | None:
-    """Size the file council memory reads: configured path first, then the usual fallbacks."""
+    """The memory file every council command reads (records/memory.locate), when it is too large."""
     if run_path.parent.name != "runs":
         return None
-    home = run_path.parent.parent
-    root = home.parent
-    configured = config.memory_path(home)
-    choices = []
-    if configured:
-        for raw in (configured, configured.split()[0]):
-            path = Path(raw)
-            choices.append(path if path.is_absolute() else root / path)
-    choices.extend((home / "conventions.md", root / "conventions.md"))
-    for path in choices:
-        try:
-            if path.is_file():
-                size = path.stat().st_size
-                if size > COUNCIL_MEMORY_SIZE_LIMIT:
-                    return {"name": clean(path.name)[:80], "bytes": size, "kb": (size + 500) // 1000}
-                return None
-        except OSError:
-            continue
-    return None
+    path = memory.locate(run_path.parent.parent.as_posix()).path
+    size = memory.oversized(path)
+    return {"name": clean(path.rsplit("/", 1)[-1])[:80], "bytes": size, "kb": (size + 500) // 1000} if size else None
 
 
 def evidence_of(snap: Snap, run_path: Path) -> list[dict[str, str]]:

@@ -71,11 +71,20 @@ def locate(home: str) -> Located:
 def size_note(home: str) -> str:
     """run open's note (after 'council: ') when the memory file is over the ~25 KB every run reads; else ''."""
     path = locate(home).path
-    size = os.path.getsize(where.native(path)) if os.path.isfile(where.native(path)) else 0
-    if size <= COUNCIL_MEMORY_SIZE_LIMIT:
+    size = oversized(path)
+    if not size:
         return ""
     return ("%s is %d KB, over the ~25 KB the council expects — every run reads it; at Learn, propose a consolidation"
             % (path.rsplit("/", 1)[-1], (size + 500) // 1000))
+
+
+def oversized(path: str) -> int:
+    """The memory file's size in bytes when it is over the ~25 KB every run reads; 0 when it is not, or is no file."""
+    try:
+        size = os.path.getsize(where.native(path)) if os.path.isfile(where.native(path)) else 0
+    except OSError:
+        size = 0
+    return size if size > COUNCIL_MEMORY_SIZE_LIMIT else 0
 
 
 def _rel(path: str, root: str) -> str:

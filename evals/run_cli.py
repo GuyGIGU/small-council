@@ -427,6 +427,16 @@ def runs_open(tmp):
     code, _, err = council(configured_memory, "run", "open", "council-review")
     check("run open: the configured memory file, not only the default, is measured",
           code == 0 and "project-memory.md is 66 KB" in err, err)
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- conventions: /docs/project-memory.md\n")
+    code, out, err = council(configured_memory, "status")
+    check("status: sizes the memory file council memory and run open read — a configured /docs/… is the repo's own",
+          code == 0 and "project-memory.md is 66 KB" in out, out + err)
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- Conventions: docs/project-memory.md\n")
+    code, out, err = council(configured_memory, "status")
+    check("status: a `Conventions:` key in capitals is no conventions key, so no configured file is sized",
+          code == 0 and "project-memory.md" not in out, out + err)
     plan_path = os.path.join(run, "run-plan.tsv")
     check("run open: creates and stamps a versioned run plan",
           os.path.isfile(plan_path) and "plan-schema: 1" in st and "\t{{MODE}}\t" not in read(plan_path), read(plan_path) + st)

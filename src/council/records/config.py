@@ -154,7 +154,7 @@ def field(home: str | Path, key: str) -> str:
 def memory_line(home: str | Path) -> tuple[str, str] | None:
     """The `- conventions:` path under ## Memory as the helper's memory_file reads it: the value with CRs, quotes,
     a trailing (note) and a " — aside" taken off, and its first word (a path may hold a blank; a note may follow
-    one); None when there is no such line. memory_path() is status.py's older reading of the same line."""
+    one); None when there is no such line."""
     under = False
     for line in bytewise.file_lines(path(home), fold=False):
         if re.match(r"##[ \t]", line):
@@ -167,22 +167,6 @@ def memory_line(home: str | Path) -> tuple[str, str] | None:
             v = re.sub(r"[ \t]+\Z", "", v, count=1)
             return v, re.sub(r"[ \t].*\Z", "", v, count=1, flags=re.S)
     return None
-
-
-def memory_path(home: str | Path) -> str:
-    """The `- conventions:` path under the ## Memory heading, quotes and a trailing note taken off;
-    '' when none is set (status.py's reading of what the helper's memory_file reads)."""
-    in_memory = False
-    for line in paths.text_of(path(home), home).splitlines():
-        if re.match(r"^##[ \t]+", line):
-            in_memory = bool(re.match(r"^##[ \t]+Memory(?:\W|$)", line, re.I))
-        elif in_memory:
-            match = re.match(r"^[ \t]*[-*][ \t]*conventions:[ \t]*(.*)$", line, re.I)
-            if match:
-                configured = match.group(1).strip().strip('`"\'')
-                configured = re.sub(r"[ \t]+\([^()]*\)[ \t]*$", "", configured)
-                return re.sub(r"[ \t]+[—–-][ \t].*$", "", configured).strip()
-    return ""
 
 
 class Seat(NamedTuple):

@@ -365,6 +365,12 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     check("memory size: the card follows the configured memory path",
           any(a["kind"] == "memory-size" and "project-memory.md is 66 KB" in a["text"]
               for a in r["attention"]), r["attention"])
+    write(memorybase / ".council" / "council.config.md",
+          "# Council config\n## Memory\n- conventions: /docs/project-memory.md\n")
+    r = reading(memoryrun)
+    check("memory size: a configured /docs/… is the repo's own file, as council memory and run open read it",
+          any(a["kind"] == "memory-size" and "project-memory.md is 66 KB" in a["text"]
+              for a in r["attention"]), r["attention"])
 
     # --- what the numbers may say ----------------------------------------------------------------------
     legacy = make_run(base, "legacy", seats=[("hunt", "done", "verifier", "160", local(5)[:16], "", "1"),
