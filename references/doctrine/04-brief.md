@@ -68,5 +68,4 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 
 ## Done when
 
-brief.md is written; when packs are opted in, dispatched seats have a pack or the brief-only
-fallback is explicit. → `council state phase=work`
+brief.md is written. → `council state phase=work`

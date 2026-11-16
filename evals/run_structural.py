@@ -384,10 +384,17 @@ check("init: never offers a blanket council allowlist (gate and changed run arbi
 check("init: the permission offer covers the helper commands the modes run without asking",
       all(f'"Bash(council {c}:*)"' in skill["council-init"] for c in [
           "run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
-          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version"]))
+          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version", "context", "tree"]))
 check("init: cap and correct keep asking (cap allow records the user's go past the agent stop)",
       not any(f'"Bash(council {c}' in skill["council-init"] for c in ["cap", "correct"])
       and "`council cap` stays off" in skill["council-init"])
+check("init: setup fills the map's One way per job table and proposes the project's recorded decisions in the "
+      "PROPOSED format, citing file:line, and says no command accepts one (task-tree.md, decided 4)",
+      "references/roster/decision-records.md" in skill["council-init"]
+      and "Setup fills it" in read("references", "templates", "map.md")
+      and "- PROPOSED decision:" in read("references", "templates", "conventions.md")
+      and all(p in flat(read("references", "roster", "decision-records.md")) for p in (
+          "- PROPOSED decision:", "(evidence: <file:line>;", "`council memory accept` takes only", "## One way per job")))
 check("init: a refresh offers an earlier, shorter permission list the rules it lacks",
       "offer to add the rules it lacks" in " ".join(skill["council-init"].split())
       and "**Permission rules:**" in skill["council-init"].split("## Refresh (re-runs)")[1])
@@ -483,6 +490,27 @@ check("checking: build-proof.md states one per batch as the default and per task
       "**Per task**" in build_proof and "Checking" in skill["council-implement"] and
       "per task only" in skill["council-implement"] and
       "- checking: one per batch" in read("references", "templates", "council.config.md"))
+# A bug underneath stops the branch (docs/design/task-tree.md, section 4, and T3): the builder's stop, the Chair's
+# rule for it, the verifier's question on every round, and the orders a task is built from.
+builder_report = read("references", "run", "builder-report.md")
+needs_fix = "`NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <the command or test, and its output>`"
+check("a bug underneath: repair-loop.md and builder-report.md give the builder one NEEDS: fix return line, recorded as "
+      "a NEEDS: seat; the implement skill stops the task and those resting on it and starts the fix only on a yes",
+      needs_fix in repair_contract and needs_fix in builder_report and 'note="NEEDS: fix …"' in repair_contract
+      and "carry on with the tasks that do not rest on it" in skill["council-implement"]
+      and all(p in flat(skill["council-implement"]) for p in (
+          "stop that task and every task that depends on it or rests on the same code",
+          "the Serves line of the task it unblocks", "it starts only on the user's yes")))
+check("a bug underneath: the verifier asks on every round whether an added line only makes up for other code, naming "
+      "it; build-proof.md, Checking, holds the rule, with the user's ruling as its one exception",
+      "On every round" in verifier and "make up for other code in this repo? Name that code." in flat(verifier)
+      and "**Making up for other code.** On every round" in build_proof
+      and "unless the user ruled that workaround" in flat(build_proof))
+check("the task's orders: the build loop takes them from council context build and resumes from council tree after a "
+      "compaction; the standing builder rules are one reference, which the orders link and never copy",
+      "`council context build task-<n>`" in skill["council-implement"]
+      and "resume from `council tree`" in skill["council-implement"]
+      and "never copy it" in flat(read("references", "run", "builder-rules.md")))
 cfg_template = read("references", "templates", "council.config.md")
 impl_deliver = flat(skill["council-implement"].split("## At Deliver", 1)[-1])
 deliver_doc = flat(doctrine["09-deliver.md"])

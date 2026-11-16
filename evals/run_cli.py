@@ -303,6 +303,34 @@ def backdated_decision(run, words="go on"):
     write(st, read(st).replace("## Decisions so far\n", '## Decisions so far\n- 2000-01-01 00:00: "%s"\n' % words, 1))
 
 
+def pack_task(n, title, rows):
+    return "### %d. %s\n| | |\n|---|---|\n%s\nWhy.\n\n" % (n, title, "".join("| **%s** | %s |\n" % kv for kv in rows))
+
+
+def pack_run(tmp, name):
+    """A build run on a project with a config (gates, a time limit, hard rules), a map with the one-way table, a
+    memory file and a three-task plan; the user's request and a later word in ask.md, and a decision on record."""
+    repo = new_repo(tmp, name)
+    for path in ("src/pay/charge.py", "src/pay/webhook.py", "src/mail/receipt.py"):
+        write(os.path.join(repo, path), "def run():\n    return 1\n")
+    write(os.path.join(repo, ".council", "council.config.md"), PACK_CONFIG)
+    write(os.path.join(repo, ".council", "map.md"), PACK_MAP)
+    write(os.path.join(repo, ".council", "conventions.md"), PACK_MEMORY)
+    write(os.path.join(repo, ".council", "plans", "charge.md"),
+          "# Council Plan: charge\n## Task Sequence\n" + "".join(PACK_TASKS) + "## Summary\nx\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "pay")
+    run = council(repo, "run", "open", "council-implement")[1].strip()
+    write_plan(run, selected=("task-2",))
+    write(os.path.join(run, "ask.md"), "# Ask — charge once\n## In your words\nCharge the card once, even when the "
+          "provider retries the webhook.\nKeep the receipt email.\n## Later, in your words\n- 2026-11-16 10:00: "
+          "and log each retry we drop\n")
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build", "input=.council/plans/charge.md")
+    council(repo, "state", "decision=charge by the idempotency key")
+    return repo, run
+
+
 CONFIG = """# Council config — eval
 last-verified: 2026-09-15 @ eval
 
@@ -6169,8 +6197,10 @@ def gates_patch_rounds(tmp):
     outside = line_of(out, "outside task 1's slice")
     check("patch save: a file outside the task's Owner and Touches is flagged for the verifier, not refused",
           "a.txt" in outside and "possible scope creep" in outside, out)
-    check("patch save: an added sleep is listed as a question for the verifier, not a verdict",
-          "sign — sleep · src/pay.py:5" in out and "remove the cause, or hide the symptom" in out, out)
+    check("patch save: an added sleep on a first build (Cause: none) is a question for the verifier, not a verdict: "
+          "does it make up for other code instead of doing the task",
+          "sign — sleep · src/pay.py:5 · time.sleep(1) — for the verifier: does it make up for other code instead of "
+          "doing the task? (build-proof.md, Making up for other code)" in out and "hide the symptom" not in out, out)
 
     write(os.path.join(repo, "tests", "test_pay.py"), "def test_receipt():\n    assert True\n")
     code, out, err = save(cause="charge ran twice on a retried webhook · state: REPRODUCED")
@@ -6226,11 +6256,76 @@ def gates_patch_rounds(tmp):
     code, out, err = council(repo, "patch", "save", "x1")
     check("patch save: a word that is no task number is refused with the shape", code == 2 and "task number" in err,
           out + err)
+    write(os.path.join(repo, "src", "stopgap.py"),
+          "import tempfile\n\n\ndef guard(card):\n    # a workaround for gateway() charging twice\n"
+          "    seen = set()  # for now\n    # TODO: take this out until the gateway is fixed\n"
+          "    temporary_dir = tempfile.mkdtemp()\n    return seen, temporary_dir, 'hackathon XXX-XXXX'\n")
+    write(os.path.join(repo, "docs", "notes.md"), "# Notes\n- TODO: a workaround for now.\n")
+    write(os.path.join(run, "report-2.md"), PATCH_HEAD.format(cause="none", removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "2")
+    signs = [line for line in out.splitlines() if "patch: sign" in line]
+    check("patch save: an added line that says workaround, for now or until … is fixed is a sign for the verifier",
+          code == 0 and "sign — workaround words · src/stopgap.py:5" in out
+          and "sign — workaround words · src/stopgap.py:6" in out
+          and "sign — workaround words · src/stopgap.py:7" in out, out + err)
+    check("patch save: an added TODO is a sign of its own, recorded in the task's history",
+          "sign — todo · src/stopgap.py:7" in out
+          and "- sign: todo · src/stopgap.py:7" in read(os.path.join(run, "patches", "T2.md")), out + err)
+    check("patch save: an identifier, a word that only holds one, a mask and a document file are not signs",
+          len(signs) == 4 and "stopgap.py:8" not in out and "stopgap.py:9" not in out and "notes.md" not in
+          "\n".join(signs), out + err)
+    write(os.path.join(repo, "src", "stopgap.py"), read(os.path.join(repo, "src", "stopgap.py"))
+          + "\n\ndef settle():\n    time.sleep(2)\n")
+    write(os.path.join(run, "report-2.md"), PATCH_HEAD.format(cause="the guard raced the gateway · state: REPRODUCED",
+                                                               removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "2")
+    check("patch save: a sign on a fix round asks whether it removes the cause or hides the symptom",
+          code == 0 and "sign — sleep · src/stopgap.py:13 · time.sleep(2) — for the verifier: does it remove the cause, "
+          "or hide the symptom?" in out and "make up for other code" not in out, out + err)
     review = small_council_repo(tmp, "patch-review", "")
     council(review, "run", "open", "council-review")
     code, out, err = council(review, "patch", "save", "1")
     check("patch save: a review run has no build rounds — refused, naming the mode",
           code == 2 and "council-implement" in err, out + err)
+
+
+@part("gates")
+def gates_just_me_tree(tmp):
+    """F1: council sharing just-me puts /.council/ in .git/info/exclude, and the files' tree was taken with a git add
+    whose pathspec named that ignored folder: git refused, so no gate kept a tree and patch save could not run. On a
+    just-me council a gate keeps the same tree a team council's gives, a green on it is not run again, and a build
+    round is saved."""
+    repo = small_council_repo(tmp, "just-me-tree",
+        "| tests | `echo run >> ../just-me-tests.log && echo '3 passed'` | grounding, verify | yes | ok | `true` | none "
+        "| - |\n")
+    write(os.path.join(repo, ".council", "plans", "a.md"), "# Plan\n\n## Task Sequence\n### 1. Edit a\n| | |\n"
+          "|---|---|\n| **Owner** | `a.txt` |\n| **Touches** | `a.txt` |\n")
+    git(repo, "rm", "-r", "-q", "--cached", ".council")
+    git(repo, "commit", "-q", "-m", "the council is no project file")
+    count = lambda: read(os.path.join(tmp, "just-me-tests.log")).count("run")      # noqa: E731 — how often tests ran
+    run = council(repo, "run", "open", "council-implement")[1].strip()
+    write_plan(run)
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build", "input=.council/plans/a.md")
+    tree = lambda: json.loads(read(os.path.join(run, "gates", "tests.json")) or "{}").get("tree", "")   # noqa: E731
+    council(repo, "gate", "tests")
+    team = tree()
+    code, out, err = council(repo, "sharing", "just-me")
+    ignored = subprocess.run([GIT, "-C", repo, "check-ignore", "-q", ".council/council.config.md"]).returncode == 0
+    check("sharing just-me: git ignores .council/ from here on", code == 0 and ignored, out + err)
+    code, out, err = council(repo, "gate", "tests")
+    check("gate on a just-me council: the verdict keeps the files' tree, the very one a team council's gives",
+          code == 0 and re.fullmatch("[0-9a-f]{40,64}", tree()) and tree() == team and count() == 2,
+          "team %r, just me %r · %s" % (team, tree(), out + err))
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all on a just-me council: a green on the same tree is not run again, as on a team council",
+          code == 0 and count() == 2 and "gate tests: green on this tree already — chair ran it" in out, out + err)
+    write(os.path.join(repo, "a.txt"), "a, edited\n")
+    write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "1")
+    patch = read(os.path.join(run, "patches", "T1-1.patch"))
+    check("patch save on a just-me council: the round is saved, its patch holding the change and no council file",
+          code == 0 and "task 1 round 1 saved" in out and "+a, edited" in patch and ".council" not in patch, out + err)
 
 
 @part("requests")
@@ -6943,6 +7038,249 @@ def requests_plan_tasks(tmp):
           re.search(r"\t%s\tcouncil-plan\tw1\t" % re.escape(os.path.basename(prun)), ledger) is not None, ledger)
     code, out, _ = council(pt, "run", "plan", "check", "--run", os.path.basename(prun))
     check("run plan check: a closed plan run's tasks are read as they were", code == 0 and "tasks:" not in out, out)
+
+
+PACK_CONFIG = ("# Council config — pack\n\n## Gates\n| Gate | Command | Run at | Mandatory | Checked | Side effects | Needs |\n"
+               "|---|---|---|---|---|---|---|\n| unit | `true` | verify | yes | ok | none | — |\n\n"
+               "## Run preferences\n- gate time limit: 20m\n\n## Hard rules\n- never write to the production database\n"
+               "- engine output stays byte-identical unless a task says otherwise\n\n## Memory\n"
+               "- conventions: .council/conventions.md\n")
+PACK_MAP = ("# Codebase map — pack\n## One way per job\n| Job | Owner | The one way | Anchor path |\n|---|---|---|---|\n"
+            "| Charge a card | src/pay/ | the gateway client | src/pay/charge.py |\n"
+            "| Read a webhook | src/hooks/ | the signed-event reader | src/pay/webhook.py |\n"
+            "| Send mail | src/mail/ | the mailer | src/mail/send.py |\n")
+PACK_MEMORY = ("# Conventions\n## Accepted Patterns (AP) — intentional; never flag these\n"
+               "### AP-1: the gateway retries on its own\n**Pattern:** no retry loop around charge() · **Why:** the "
+               "gateway's client retries\n**Scope:** src/pay/**\n"
+               "### AP-2: receipts are plain text\n**Pattern:** no HTML mail · **Why:** the users asked\n"
+               "**Scope:** src/mail/**\n"
+               "## Enforced Conventions (EC) — always / never rules\n"
+               "### EC-1: every module has a docstring\n**Rule:** always · **Why:** tooling\n"
+               "## Proposed — awaiting the user's yes/no\n")
+
+
+
+PACK_TASKS = (
+    pack_task(1, "Charge once", [("Serves", '"Charge the card once"'), ("Owner", "src/pay/ — Charge a card"),
+                                 ("Rests on", "—"), ("Touches", "`src/pay/charge.py`"),
+                                 ("Done when", "a retried charge runs once")]),
+    pack_task(2, "Read the webhook once", [
+        ("Depends on", "Task 1"), ("Serves", '"Charge the card once, even when the provider retries the webhook"'),
+        ("Owner", "src/pay/ — Charge a card"),
+        ("Rests on", "the charge table has a unique key (OBSERVED); the provider retries for 3 days (OBSERVED, "
+                     "outside)"),
+        ("Touches", "`src/pay/charge.py`, `src/pay/webhook.py`"), ("Ref", "references/quality-backend.md"),
+        ("Domain", "payments"), ("Constraints", "no new table; keep the webhook's 200 reply"),
+        ("Done when", "a webhook delivered twice charges once")]),
+    pack_task(3, "Keep the receipt", [("Serves", '"Keep the receipt email."'), ("Owner", "src/mail/ — Send mail"),
+                                      ("Rests on", "—"), ("Touches", "`src/mail/receipt.py`"),
+                                      ("Done when", "a charge still mails its receipt")]),
+)
+
+
+@part("requests")
+def requests_task_pack(tmp):
+    """T3 (docs/design/task-tree.md, section 2): council context build task-<n> prints a build task's orders from the
+    run's files, in six parts, within 8,000 bytes, and writes nothing."""
+    repo, run = pack_run(tmp, "task-pack")
+    opened = re.search(r"^start-head: (\S+)$", read(os.path.join(run, "session-state.md")), re.MULTILINE)
+    code, out, err = council(repo, "context", "build", "task-1")
+    check("context build: under the heading, the run folder, the code root, and before any saved round the commit "
+          "the run opened on as what the round is judged against; a task with no NEEDS: stop has no Stopped earlier",
+          code == 0 and "\nRun folder: %s\nCode root: %s\nJudged against: the commit the run opened on, %s\n\n" % (
+              slash(run), slash(git(repo, "rev-parse", "--show-toplevel")), opened.group(1)[:12] if opened else "?")
+          in out and "Stopped earlier" not in out, out + err)
+    write(os.path.join(repo, "src", "pay", "charge.py"), "def run():\n    return 2\n")
+    write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra="")
+          .replace("src/pay.py", "src/pay/charge.py"))
+    code, out, err = council(repo, "patch", "save", "1")
+    check("context build: the fixture's task 1 round is saved, an earlier task's change to task 2's files",
+          code == 0 and "task 1 round 1 saved" in out, out + err)
+    tree = json.loads(read(os.path.join(run, "patches", "T1-1.json")) or "{}").get("tree", "?")
+    stop = "NEEDS: fix src/pay/webhook.py:2 · does: returns 1 · should: read the event · seen: pytest, 1 failed"
+    council(repo, "seat", "task-2", "done", "agents=0", "note=" + stop)
+    before = sorted(os.listdir(run))
+    code, out, err = council(repo, "context", "build", "task-2", env={"CLAUDE_PLUGIN_ROOT": ""})
+    heads = [line for line in out.splitlines() if line.startswith("## ")]
+    check("context build: the six parts, in order, each a ## heading, exit 0",
+          code == 0 and heads == ["## The task", "## Owner", "## Hard constraints and memory",
+                                  "## Rulings and standing rules", "## Earlier changes to these files", "## Left out"]
+          and out.startswith("# Task pack — task 2 · .council/plans/charge.md\n"), out + err)
+    check("context build: after a saved round, the round is judged against that round's tree",
+          "\nJudged against: the last saved round's tree, %s — task 1 round 1 (T1-1.patch)\n\n## The task" % tree[:12]
+          in out, out)
+    check("context build: part 1 holds the title, the Serves quote as the plan writes it, Done when, the Rests on "
+          "facts with their states, and the NEEDS: note of the task's seat as Stopped earlier",
+          "Task 2: Read the webhook once\nServes: \"Charge the card once, even when the provider retries the webhook\"\n"
+          "Done when: a webhook delivered twice charges once\nRests on:\n- the charge table has a unique key (OBSERVED)\n"
+          "- the provider retries for 3 days (OBSERVED, outside)\nStopped earlier: %s\n\n## Owner" % stop in out, out)
+    whole = lambda label: line_of(out, label).split(": ", 1)[-1].split(" — ")[-1 if label == "Proof:" else 0]  # noqa: E731
+    plugin = lambda *parts: os.path.join(ROOT, "references", *parts)                                          # noqa: E731
+    check("context build: part 2 holds the Owner, the map row it names, the slice council patch save judges, the "
+          "other map rows inside its Touches, what it must not touch, and the Ref, a plugin file by its whole path, "
+          "and the Domain",
+          "Owner: src/pay/ — Charge a card\nThe one way: Charge a card · src/pay/ · the gateway client · "
+          "src/pay/charge.py\nSlice: src/pay/, src/pay/charge.py, src/pay/webhook.py\n"
+          "Other map rows inside Touches:\n- Read a webhook · src/hooks/ · the signed-event reader · "
+          "src/pay/webhook.py\nMust not touch: anything outside the slice" in out
+          and "Send mail" not in out and line_of(out, "Ref: ").endswith(" — read it there; it is not copied here")
+          and os.path.isfile(whole("Ref: ")) and os.path.samefile(whole("Ref: "), plugin("quality-backend.md"))
+          and "Domain: payments" in out, out)
+    check("context build: part 3 holds the config's hard rules word for word, the task's Constraints and the memory "
+          "entries in scope as council memory select prints them",
+          "Hard rules (the config's ## Hard rules, word for word):\n- never write to the production database\n"
+          "- engine output stays byte-identical unless a task says otherwise\n"
+          "Constraints: no new table; keep the webhook's 200 reply\n" in out
+          and "AP-1 · the gateway retries on its own · scope: src/pay/**" in out and "EC-1 · every module" in out
+          and "AP-2" not in out and "memory: 1 scoped and 1 every-run entries of 3 apply" in out, out)
+    check("context build: part 4 holds the user's decision, ask.md's Later words, the gates, the time limit, the "
+          "task's proof gates linking build-proof.md and one line linking the standing builder rules, each by its "
+          "whole path in the plugin",
+          '"charge by the idempotency key"' in line_of(out, "idempotency")
+          and "- 2026-11-16 10:00: and log each retry we drop" in out
+          and "- unit · true · run at: verify · mandatory: yes" in out
+          and "Gate time limit: 20m (the config's - gate time limit:)" in out
+          and line_of(out, "Proof:").startswith("Proof: council gate before-2, then after-2, one command in both — ")
+          and os.path.samefile(whole("Proof:"), plugin("build-proof.md"))
+          and line_of(out, "Standing builder rules:").endswith(" — read it before the first edit")
+          and os.path.samefile(whole("Standing builder rules:"), plugin("run", "builder-rules.md"))
+          and out.count("references/run/builder-rules.md") == 1, out)
+    check("context build: part 5 names task 1's saved round on the same file, with its cause",
+          "- task 1 round 1 (T1-1.patch): src/pay/charge.py · Cause: none, a first build" in out, out)
+    last = out.splitlines()[-1]
+    size = len(out.encode("utf-8"))
+    check("context build: part 6 says what a pack never carries, and the last line counts the printed bytes",
+          "- Never in a pack: the plan's other tasks, the code itself, seat files, and the Chair's Ruling: lines" in out
+          and last == "pack: %d bytes of 8000; left out: nothing" % size and size <= 8000
+          and "Keep the receipt" not in out and "Charge once" not in out, last)
+    check("context build: writes nothing — the run folder is as it was", sorted(os.listdir(run)) == before
+          and not err.strip(), err)
+    elsewhere = os.path.join(tmp, "task-pack-plugin")
+    write(os.path.join(elsewhere, "references", "quality-backend.md"), "# Backend\n")
+    code, out, err = council(repo, "context", "build", "task-2", env={"CLAUDE_PLUGIN_ROOT": slash(elsewhere)})
+    check("context build: with CLAUDE_PLUGIN_ROOT set, the plugin's paths are under it",
+          code == 0 and "Ref: %s/references/quality-backend.md — read" % slash(elsewhere) in out
+          and "Standing builder rules: %s/references/run/builder-rules.md — read" % slash(elsewhere) in out, out + err)
+    os.remove(os.path.join(elsewhere, "references", "quality-backend.md"))
+    code, out, err = council(repo, "context", "build", "task-2", env={"CLAUDE_PLUGIN_ROOT": slash(elsewhere)})
+    check("context build: a Ref naming no file of the plugin's is printed as the plan writes it",
+          code == 0 and "Ref: references/quality-backend.md — read it there" in out, out + err)
+
+    big = "- " + "x" * 120
+    plan = os.path.join(repo, ".council", "plans", "charge.md")
+    write(plan, read(plan).replace("## Summary", pack_task(4, "A heavy task", [
+        ("Serves", '"Keep the receipt email."'), ("Owner", "src/pay/ — Charge a card"), ("Rests on", "—"),
+        ("Touches", "`src/pay/charge.py`"), ("Constraints", " ".join([big] * 60)),
+        ("Done when", "it holds")]) + pack_task(5, "A huge task", [
+        ("Serves", '"Keep the receipt email."'), ("Owner", "src/pay/ — Charge a card"),
+        ("Done when", "y" * 9000)]) + "## Summary"))
+    code, out, err = council(repo, "context", "build", "4")
+    size, last = len(out.encode("utf-8")), out.splitlines()[-1]
+    dropped = "Hard constraints and memory, Rulings and standing rules, Earlier changes to these files"
+    check("context build: over the ceiling, whole parts go from the end, each named under Left out, and the printed "
+          "pack stays within 8,000 bytes",
+          code == 0 and size <= 8000 and last == "pack: %d bytes of 8000; left out: %s" % (size, dropped)
+          and "## The task" in out and "## Owner" in out and "## Hard constraints" not in out
+          and "- Hard constraints and memory (part 3): over the 8000-byte ceiling, dropped whole" in out
+          and "- Earlier changes to these files (part 5): over the 8000-byte ceiling" in out, last + err)
+    code, out, err = council(repo, "context", "build", "T5")
+    size, last = len(out.encode("utf-8")), out.splitlines()[-1]
+    check("context build: a task whose own part is over the ceiling leaves the heading and Left out, naming all five",
+          code == 0 and size <= 8000 and "## The task" not in out and "## Left out" in out
+          and last == "pack: %d bytes of 8000; left out: The task, Owner, %s" % (size, dropped), last + err)
+
+    for words, want in ((("context",), "usage: council context build task-<n>"),
+                        (("context", "show", "task-2"), "usage: council context build task-<n>"),
+                        (("context", "build"), "usage: council context build task-<n>"),
+                        (("context", "build", "x"), "context build takes task-<n> (task-3, T3 or 3), not 'x' — "
+                                                    "council context build task-<n>"),
+                        (("context", "build", "task-2", "--json"), "context doesn't take --json"),
+                        (("context", "build", "task-9"), ".council/plans/charge.md has no task 9 — its tasks: task-1, "
+                                                         "task-2, task-3, task-4, task-5; council context build <one")):
+        code, out, err = council(repo, *words)
+        check("%s: refused — %s" % (" ".join(words), want), code == 2 and want in err and not out, out + err)
+    council(repo, "state", "input=.council/plans/gone.md")
+    code, out, err = council(repo, "context", "build", "task-2")
+    check("context build: a plan that can't be read is refused, naming council state input=<plan>",
+          code == 2 and "the plan .council/plans/gone.md (the run's input=) can't be read" in err
+          and "council state input=<plan>" in err and not out, out + err)
+    council(repo, "state", "input=")
+    code, out, err = council(repo, "context", "build", "task-2")
+    check("context build: a run that records no plan is refused, naming council state input=<plan>",
+          code == 2 and "context build reads the build's plan, and this run records none — name it: council state "
+          "input=<plan>" in err and not out, out + err)
+    council(repo, "run", "close", "--status", "abandoned")
+    code, out, err = council(repo, "context", "build", "task-2")
+    check("context build: with no open run, refused naming council run open",
+          code == 2 and "no open run on this working tree — open one with: council run open" in err, out + err)
+
+
+@part("requests")
+def requests_task_tree(tmp):
+    """T3 (docs/design/task-tree.md, section 1): council tree prints the request and the plan's tasks under the Serves
+    quote each gives, with the tasks each depends on, their facts, proof gates, saved rounds, the Converge result and
+    a NEEDS: return, shown as was stopped once the task's after gate passes."""
+    repo, run = pack_run(tmp, "task-tree")
+    write(os.path.join(repo, "src", "pay", "charge.py"), "def run():\n    return 2\n")
+    write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra="")
+          .replace("src/pay.py", "src/pay/charge.py"))
+    council(repo, "patch", "save", "1")
+    council(repo, "gate", "before-1", "--proof", "change", "--", "false")
+    council(repo, "gate", "after-1", "--proof", "change", "--", "true")
+    council(repo, "gate", "before-2", "--proof", "change", "--", "false")
+    council(repo, "seat", "task-2", "running", "agent=a1")
+    council(repo, "seat", "task-2", "done", "agent=a1", "tokens=1000", "agents=1",
+            "note=NEEDS: fix src/pay/webhook.py:2 · does: returns 1 · should: read the event · seen: pytest, 1 failed")
+    write(os.path.join(repo, ".council", "logs", "charge.md"), "# Council Implementation Log — charge\n\n## Converge\n"
+          "| Task | Done when | Result | Evidence | Proof |\n|---|---|---|---|---|\n| 1 | once | partly met → met | v | ok |\n")
+    council(repo, "state", "deliverable=.council/logs/charge.md")
+    before = sorted(os.listdir(run))
+    code, out, err = council(repo, "tree")
+    check("tree: the request in the user's words, then each Serves quote with its tasks in plan order, exit 0",
+          code == 0 and out.startswith("tree: .council/plans/charge.md · run %s · 3 task(s)\n\nRequest (ask.md, in "
+                                       "the user's words):\n  Charge the card once" % os.path.basename(run))
+          and "\n\nServes: \"Charge the card once\"\n  T1 Charge once" in out
+          and "\n\nServes: \"Charge the card once, even when the provider retries the webhook\"\n  T2 Read the" in out
+          and "\n\nServes: \"Keep the receipt email.\"\n  T3 Keep the receipt" in out and "and log each retry" not in out,
+          out + err)
+    check("tree: a task's line has its facts, its before/after gates, its saved rounds and the Converge table's "
+          "result as converge:",
+          "  T1 Charge once · rests on 0 facts · proof: before-1 fail, after-1 pass · rounds: 1 · converge: met\n" in out
+          and "  T3 Keep the receipt · rests on 0 facts · proof: none · rounds: 0 · converge: none yet\n" in out
+          and "verdict:" not in out, out)
+    check("tree: a task with a Depends on row names those tasks after its title; the seat named for it carries its "
+          "NEEDS: return on its line while its after gate has not passed",
+          "  T2 Read the webhook once · depends on T1 · rests on 2 facts · proof: before-2 fail · rounds: 0 · "
+          "converge: none yet · NEEDS: fix src/pay/webhook.py:2 · does: returns 1" in out, out)
+    check("tree: prints only — the run folder is as it was", sorted(os.listdir(run)) == before and not err.strip(), err)
+    council(repo, "gate", "after-2", "--proof", "change", "--", "false")
+    code, out, err = council(repo, "tree")
+    check("tree: a NEEDS: stop whose task's after gate failed still reads NEEDS:",
+          code == 0 and "proof: before-2 fail, after-2 fail · rounds: 0 · converge: none yet · NEEDS: fix" in out
+          and "was stopped" not in out, out + err)
+    council(repo, "gate", "after-2", "--proof", "change", "--", "true")
+    code, out, err = council(repo, "tree")
+    check("tree: once the task's after gate passes, its NEEDS: stop shows as was stopped",
+          code == 0 and "proof: before-2 fail, after-2 pass · rounds: 0 · converge: none yet · was stopped: NEEDS: fix "
+          "src/pay/webhook.py:2" in out, out + err)
+    for words, want in ((("tree", "x"), "tree doesn't take 'x' — see: council help"),
+                        (("tree", "--json"), "tree doesn't take --json")):
+        code, out, err = council(repo, *words)
+        check("%s: refused — %s" % (" ".join(words), want), code == 2 and want in err and not out, out + err)
+    council(repo, "state", "input=.council/plans/gone.md")
+    code, out, err = council(repo, "tree")
+    check("tree: a plan that can't be read is refused, naming council state input=<plan>",
+          code == 2 and "the plan .council/plans/gone.md (the run's input=) can't be read" in err
+          and "council state input=<plan>" in err and not out, out + err)
+    council(repo, "state", "input=")
+    code, out, err = council(repo, "tree")
+    check("tree: a run that records no plan is refused, naming council state input=<plan>",
+          code == 2 and "tree reads the build's plan, and this run records none — name it: council state input=<plan>"
+          in err and not out, out + err)
+    council(repo, "run", "close", "--status", "abandoned")
+    code, out, err = council(repo, "tree")
+    check("tree: with no open run, refused naming council run open",
+          code == 2 and "no open run on this working tree — open one with: council run open" in err, out + err)
 
 
 @part("filing")
@@ -7806,7 +8144,8 @@ def reports_refusals(tmp):
 @part("reports")
 def reports_packs_removed(tmp):
     """Context packs and the impact graph were removed (2026-11-15): an old config's `context packs: on` does
-    nothing, council index writes no impact.tsv, and an old run's contexts/ and impact.tsv stay as they were."""
+    nothing, council index writes no impact.tsv, and an old run's contexts/ and impact.tsv stay as they were. The
+    old seat pack's words (context build <seat>, context show) are refused by T3's task pack, which took the name."""
     repo = new_repo(tmp, "packs")
     write(os.path.join(repo, "src", "a.py"), "def f():\n    return 1\n")
     write(os.path.join(repo, "tests", "test_a.py"), "from src.a import f\n")
@@ -7826,10 +8165,14 @@ def reports_packs_removed(tmp):
     code, out, err = council(repo, "index")
     check("index: the change index alone, no impact graph and no warning",
           code == 0 and "index: 1 files" in out and "impact" not in out + err, out + err)
-    for words in (("context", "build", "x"), ("context", "show", "x"), ("impact",)):
+    code, out, err = council(repo, "impact")
+    check("impact: an unknown command now, and the refusal names council help",
+          code == 2 and "unknown command 'impact' — see: council help" in err and not out, out + err)
+    for words, want in ((("context", "build", "x"), "context build takes task-<n> (task-3, T3 or 3), not 'x'"),
+                        (("context", "show", "x"), "usage: council context build task-<n>")):
         code, out, err = council(repo, *words)
-        check("%s: an unknown command now, and the refusal names council help" % " ".join(words),
-              code == 2 and "unknown command '%s' — see: council help" % words[0] in err and not out, out + err)
+        check("%s: the old pack's words are refused, naming council context build task-<n> (T3's task pack)"
+              % " ".join(words), code == 2 and want in err and "unknown command" not in err and not out, out + err)
     check("an old run's impact.tsv and contexts/ are left as they were",
           all(read(path) == text for path, text in old.items()))
     code, out, err = council(repo, "prior")

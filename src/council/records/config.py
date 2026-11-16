@@ -140,6 +140,33 @@ def gate_time_limit(home: str | Path) -> tuple[int | None, str]:
     return (limit_seconds(raw) if raw else None), raw
 
 
+HARD_RULES = "## Hard rules"
+
+
+def hard_rules(home: str | Path | None) -> list[str]:
+    """The first `## Hard rules` section's lines, word for word, up to the next `## ` heading: blank lines at
+    either end and the template's `- <…>` placeholder (with the indented lines carrying it on) left out."""
+    found: list[str] = []
+    inside, seen, placeholder = False, False, False
+    for line in _lines(home):
+        if line.startswith("## "):
+            seen = seen or inside
+            inside = not seen and line.rstrip() == HARD_RULES
+            continue
+        if not inside:
+            continue
+        if re.match(r"[ \t]*[-*][ \t]+<", line) or (placeholder and re.match(r"[ \t]+[^ \t]", line)):
+            placeholder = True
+            continue
+        placeholder = False
+        found.append(line)
+    while found and not found[-1].strip():
+        found.pop()
+    while found and not found[0].strip():
+        found.pop(0)
+    return found
+
+
 def notifications_off(home: str | Path | None) -> bool:
     """notifications_off: a `- notifications: off` line, a CRLF one included, in a config of any size."""
     rule = re.compile(r"[ \t]*-[ \t]*notifications:[ \t]*off[ \t]*(?:#.*)?", re.IGNORECASE)

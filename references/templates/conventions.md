@@ -61,6 +61,8 @@
 ## Proposed — awaiting the user's yes/no
 <!-- One line per proposal, written the moment it is proposed so it survives the session. Format:
      "- PROPOSED accepted pattern: stop flagging <X> in <paths> — <why it's deliberate> (evidence: <path:line>; from <deliverable>, <date>)"
+     A decision setup found in the project's own records (an ADR, ARCHITECTURE.md, CLAUDE.md):
+     "- PROPOSED decision: <the decision, in the record's words> — <its reason> (evidence: <file:line>; from council-init, <date>)"
      Yes → move it up with the next number. No → move it to Rejected. -->
 
 ## Rejected — proposals the user said no to; never propose these again

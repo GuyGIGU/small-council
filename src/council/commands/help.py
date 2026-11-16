@@ -97,6 +97,12 @@ council — the Small Council's helper (bash + git)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md)
   council patch save <task> [<report>]   a build round: its report's head checked against its diff, then both
                                          saved → <run>/patches/ · patch show <task>: the task's rounds
+  council context build task-<n>         a build task's orders from the run's files, printed (8,000 bytes at
+                                         most): the task, its owner and slice, hard rules and memory, the
+                                         user's decisions, earlier changes to its files, and what was left out
+  council tree                           the build's task tree: the request, the plan's tasks under the Serves
+                                         quote each gives, with what they depend on, facts, proof, rounds,
+                                         Converge result and NEEDS:
   council map status                     how far the map is behind HEAD, by area
   council map touch <dir>="<line>" …     the user's line for each top-level area, under today's
                                          ## Changes in the map; map-commit moves to HEAD once every

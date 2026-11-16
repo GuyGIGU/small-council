@@ -174,13 +174,18 @@
    "longest": 36,
    "longest_name": "one"
   },
+  "src/council/commands/context.py": {
+   "lines": 232,
+   "longest": 20,
+   "longest_name": "owner"
+  },
   "src/council/commands/correct.py": {
    "lines": 109,
    "longest": 31,
    "longest_name": "_fields"
   },
   "src/council/commands/dispatch.py": {
-   "lines": 93,
+   "lines": 95,
    "longest": 15,
    "longest_name": "main"
   },
@@ -270,7 +275,7 @@
    "longest_name": "refusal"
   },
   "src/council/commands/help.py": {
-   "lines": 150,
+   "lines": 156,
    "longest": 8,
    "longest_name": "main"
   },
@@ -350,17 +355,17 @@
    "longest_name": "status_nudge"
   },
   "src/council/commands/patch.py": {
-   "lines": 152,
+   "lines": 150,
    "longest": 35,
    "longest_name": "save"
   },
   "src/council/commands/patch_checks.py": {
-   "lines": 159,
+   "lines": 164,
    "longest": 18,
    "longest_name": "removals"
   },
   "src/council/commands/patch_history.py": {
-   "lines": 69,
+   "lines": 72,
    "longest": 22,
    "longest_name": "_round"
   },
@@ -494,6 +499,16 @@
    "longest": 42,
    "longest_name": "_checked"
   },
+  "src/council/commands/task_slice.py": {
+   "lines": 68,
+   "longest": 13,
+   "longest_name": "cut"
+  },
+  "src/council/commands/tree.py": {
+   "lines": 110,
+   "longest": 20,
+   "longest_name": "lines"
+  },
   "src/council/commands/turn_end.py": {
    "lines": 58,
    "longest": 46,
@@ -505,8 +520,8 @@
    "longest_name": "files"
   },
   "src/council/git.py": {
-   "lines": 81,
-   "longest": 32,
+   "lines": 84,
+   "longest": 35,
    "longest_name": "files_tree"
   },
   "src/council/records/__init__.py": {
@@ -540,7 +555,7 @@
    "longest_name": "undelivered"
   },
   "src/council/records/config.py": {
-   "lines": 244,
+   "lines": 271,
    "longest": 24,
    "longest_name": "roster_table"
   },
@@ -580,7 +595,7 @@
    "longest_name": "results"
   },
   "src/council/records/home.py": {
-   "lines": 107,
+   "lines": 114,
    "longest": 16,
    "longest_name": "worktrees"
   },
@@ -745,7 +760,7 @@
    "longest_name": "named"
   },
   "src/council/records/tasks.py": {
-   "lines": 83,
+   "lines": 90,
    "longest": 16,
    "longest_name": "read"
   },

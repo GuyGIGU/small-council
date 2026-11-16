@@ -120,6 +120,36 @@ class ChecksTest(unittest.TestCase):
             added = [diff.File("a.py", False, False, [], [diff.Line(1, line)])]
             self.assertIn(kind, [s.kind for s in patch_checks.signs(added)], line)
 
+    def kinds(self, path: str, added: list[str], removed: tuple[str, ...] = ()) -> list[str]:
+        lines = [diff.Line(n, text) for n, text in enumerate(added, 1)]
+        gone = [diff.Line(n, text) for n, text in enumerate(removed, 1)]
+        return [s.kind for s in patch_checks.signs([diff.File(path, False, False, gone, lines)])]
+
+    def test_an_added_line_that_says_it_makes_up_for_something_is_a_sign(self) -> None:
+        for line in ("# a workaround for the gateway's double charge", "# Work-around: git 2.30 drops the flag",
+                     "use_hack_path = True", "    # hacky, see below", "return [] # for now",
+                     "# temporarily off", "x = 1  # until the parser is fixed", "TEMPORARY = True"):
+            self.assertEqual(self.kinds("a.py", [line]), ["workaround words"], line)
+
+    def test_ordinary_words_near_a_workaround_word_are_not_signs(self) -> None:
+        for line in ("temporary_dir = tempfile.mkdtemp()", "with tempfile.TemporaryDirectory() as root:",
+                     "# write a temporary file beside it first", "team = 'hackathon'", "shack = network_around()",
+                     "for nowhere in places_seen:", "# loop until the queue is empty", "fixed = until_done()"):
+            self.assertEqual(self.kinds("a.py", [line]), [], line)
+
+    def test_an_added_todo_fixme_or_xxx_is_a_sign_and_a_mask_or_a_word_is_not(self) -> None:
+        for line in ("# TODO: take this out", "// FIXME the order", "# XXX: wrong on Windows"):
+            self.assertEqual(self.kinds("a.js", [line]), ["todo"], line)
+        for line in ("todo_items = load()", "STATUS_TODO = 3", "card = 'XXX-XXXX-1234'", "mask = 'XXXX'"):
+            self.assertEqual(self.kinds("a.js", [line]), [], line)
+        self.assertEqual(self.kinds("a.py", ["# TODO: drop this until the gateway is fixed"]),
+                         ["workaround words", "todo"])
+
+    def test_the_two_new_signs_skip_documents_and_removed_lines(self) -> None:
+        said = ["- TODO: a workaround for now, until the gateway is fixed", "A temporary hack. FIXME"]
+        self.assertEqual(self.kinds("docs/notes.md", said), [])
+        self.assertEqual(self.kinds("a.py", ["return gateway(card)"], ("# TODO: a workaround for now",)), [])
+
     def test_the_slice_and_what_lies_outside_it(self) -> None:
         given = patch_checks.slice_paths(["`src/pay/` — Charge a card", "`tests/test_pay.py:12`, README.md, ./docs"])
         self.assertEqual(given, ["src/pay/", "tests/test_pay.py", "README.md", "docs"])

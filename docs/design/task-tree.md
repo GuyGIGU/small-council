@@ -1,7 +1,7 @@
 # The task tree: context down, evidence up
 
-Status: written 2026-11-13 on the user's request. Steps T1 and T2 are built and on main; T3 and T4
-are not. "A bug underneath stops the branch" (in section 4) and section 6, a fresh builder per task,
+Status: written 2026-11-13 on the user's request. Steps T1 and T2 are built and on main; T3 is built on
+`claude/t3-task-pack`; T4 and T5 are not. "A bug underneath stops the branch" (in section 4) and section 6, a fresh builder per task,
 were added 2026-11-15 and are proposals.
 Each part becomes a decision in [`../decisions.md`](../decisions.md) in the branch that builds it.
 
@@ -60,7 +60,7 @@ verdict. After a compaction the Chair resumes from that view, not from memory.
 
 ### 2. Context goes down as a generated pack
 
-`council context build task-<n>` writes a builder's orders from files, in this order:
+`council context build task-<n>` prints a builder's orders from files, in this order:
 
 1. the request line it serves, verbatim, and the task's `Done when`;
 2. the owner: the files in its slice, the one way this job is done here, and what it must not touch;
@@ -75,6 +75,15 @@ package, on the records owners. The Chair adds judgement (where to
 start, what worries it) and nothing else. A pack is smaller than a hand-written brief plus the
 whole plan, and the part that was lost on the day above (the state of the tree the work is judged
 against) is in it by construction. Seats get doctrine by surface the same way (#67).
+
+The pack is printed, never written, and is at most 8,000 bytes: UTF-8, the whole printed text, its
+last line included (`CEILING` in `src/council/commands/context.py`). Left out's bytes come first.
+While the pack is over the ceiling, the last of parts 1-5 still in it is dropped whole and named
+under Left out, never cut midway. The last line is `pack: <bytes> bytes of 8000; left out: <parts> |
+nothing`. Measured in T3: 2,238 bytes for the eval's build task and 1,614 for the plan-check
+fixture's task, against 1,650 for the seat brief block in 04-brief.md alone; in the first real build
+(2026-11-16, three tasks, a config with hard rules, a map table and memory) 3,971 to 4,385 bytes. The
+standing builder rules (2,234 bytes) are linked, not inlined. The ceiling is a guard, not a target.
 
 ### 3. Evidence comes up as an account the helper checks
 

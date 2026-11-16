@@ -9,13 +9,12 @@ files with no redesign. Otherwise it saves the patch, its record and the task's 
 outside the task's slice and the lines that look like a workaround, as questions for the verifier."""
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from council import clock, diff, git
-from council.commands import cli, gate_output, patch_checks, patch_history, resolve
+from council.commands import cli, gate_output, patch_checks, patch_history, resolve, task_slice
 from council.records import home as where
-from council.records import map_file, paths, patches, report_head, tasks
+from council.records import patches, report_head, tasks
 
 USAGE = "usage: council patch save <task> [<report>] [--base <rev>] | patch show <task> [--run <folder>]"
 
@@ -24,10 +23,10 @@ def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "patch", "base")
     if len(words) < 2 or words[0] not in ("save", "show") or len(words) > (3 if words[0] == "save" else 2):
         raise cli.Refusal(USAGE)
-    found = re.fullmatch(r"(?:[Tt](?:ask-?)?)?([0-9]+)", words[1])
-    if not found:
+    task = tasks.number(words[1])
+    if task is None:
         raise cli.Refusal("patch %s takes a task number (3 or T3), not '%s'" % (words[0], words[1]))
-    task, run = int(found.group(1)), resolve.run_folder(args)
+    run = resolve.run_folder(args)
     if words[0] == "show":
         cli.say_all(patch_history.lines(run, task) or ["patch: task %d has no saved rounds — council patch save %d "
                                                        "once its report is written" % (task, task)])
@@ -90,13 +89,21 @@ def _refuse(task: int, problems: list[str]) -> None:
                       "council patch save %d" % (len(problems), task))
 
 
+def since(run: Path, every: list[patches.Round]) -> tuple[patches.Round | None, str]:
+    """What a round is diffed from with no --base: the run's last saved round and its tree; else no round and the
+    commit the run opened on (start-head; '' when it records none). council context build names it in a pack."""
+    if every:
+        return every[-1], every[-1].tree
+    return None, resolve.field(run, "start-head")
+
+
 def _start(run: Path, top: str, base: str, every: list[patches.Round]) -> str:
     """The tree the round starts from: --base; else the run's last saved round; else the commit it opened on."""
     if base:
         return base
-    if every:
-        return every[-1].tree
-    opened = resolve.field(run, "start-head")
+    last, opened = since(run, every)
+    if last:
+        return opened
     found = git.text(top, "rev-parse", "-q", "--verify", opened + "^{tree}") if opened else None
     if not found:
         raise cli.Refusal("this run has no commit it opened on (start-head), so the first round has no start — "
@@ -131,22 +138,13 @@ def _problems(run: Path, task: int, head: report_head.Head, earlier: list[patche
 
 
 def _slice(run: Path, task: int, files: list[str]) -> tuple[list[str], str]:
-    """The changed files outside the task's slice, and where the slice came from (or why it was skipped): the
-    plan the build records as input=, its task's Owner and Touches, and the map row its Owner names."""
-    named = resolve.field(run, "input")
-    if not named:
+    """The changed files outside the task's slice (task_slice), and where the slice came from or why it was
+    skipped."""
+    found = task_slice.of(run, task)
+    if not found.named:
         return [], "skipped — the run records no input= plan (council state input=<plan>)"
-    plan = Path(where.native(named)) if where.absolute(named) else Path(run).parent.parent.parent / named
-    entry = next((t for t in tasks.read(paths.text_of(plan)) if t.number == task), None)
-    if entry is None:
-        return [], "skipped — %s has no task %d" % (named, task)
-    owner = entry.rows.get("owner", "")
-    cells = [owner, entry.rows.get("touches", "")]
-    from council.commands import plan_tasks     # the plan check's own match of an Owner to a row
-    for way in map_file.read(Path(run).parent.parent) or []:
-        if plan_tasks.names_a_job(owner, [way.job]):
-            cells += [way.owner, way.anchor]
-    given = patch_checks.slice_paths(cells)
-    if not given:
+    if found.task is None:
+        return [], "skipped — %s has no task %d" % (found.named, task)
+    if not found.paths:
         return [], "skipped — task %d's Owner and Touches name no path" % task
-    return patch_checks.outside(files, given), "%s, task %d: %s" % (named, task, ", ".join(given))
+    return patch_checks.outside(files, found.paths), "%s, task %d: %s" % (found.named, task, ", ".join(found.paths))
