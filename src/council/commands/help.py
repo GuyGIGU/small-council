@@ -101,7 +101,8 @@ council — the Small Council's helper (bash + git)
                                          most): the task, its owner and slice, hard rules and memory, the
                                          user's decisions, earlier changes to its files, and what was left out
   council tree                           the build's task tree: the request, the plan's tasks under the Serves
-                                         quote each gives, with their facts, proof, rounds, verdict and NEEDS:
+                                         quote each gives, with what they depend on, facts, proof, rounds,
+                                         Converge result and NEEDS:
   council map status                     how far the map is behind HEAD, by area
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
   council memory [index|check]           memory's one-line index · stale anchors and failure evidence

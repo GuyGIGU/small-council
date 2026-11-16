@@ -6975,7 +6975,8 @@ def requests_task_pack(tmp):
 @part("requests")
 def requests_task_tree(tmp):
     """T3 (docs/design/task-tree.md, section 1): council tree prints the request and the plan's tasks under the Serves
-    quote each gives, with their facts, proof gates, saved rounds, the Converge verdict and a NEEDS: return."""
+    quote each gives, with the tasks each depends on, their facts, proof gates, saved rounds, the Converge result and
+    a NEEDS: return, shown as was stopped once the task's after gate passes."""
     repo, run = pack_run(tmp, "task-tree")
     write(os.path.join(repo, "src", "pay", "charge.py"), "def run():\n    return 2\n")
     write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra="")
@@ -6999,13 +7000,26 @@ def requests_task_tree(tmp):
           and "\n\nServes: \"Charge the card once, even when the provider retries the webhook\"\n  T2 Read the" in out
           and "\n\nServes: \"Keep the receipt email.\"\n  T3 Keep the receipt" in out and "and log each retry" not in out,
           out + err)
-    check("tree: a task's line has its facts, its before/after gates, its saved rounds and the Converge verdict",
-          "  T1 Charge once · rests on 0 facts · proof: before-1 fail, after-1 pass · rounds: 1 · verdict: met\n" in out
-          and "  T3 Keep the receipt · rests on 0 facts · proof: none · rounds: 0 · verdict: none yet\n" in out, out)
-    check("tree: the seat named for a task carries its NEEDS: return on that task's line",
-          "  T2 Read the webhook once · rests on 2 facts · proof: before-2 fail · rounds: 0 · verdict: none yet · "
-          "NEEDS: fix src/pay/webhook.py:2 · does: returns 1" in out, out)
+    check("tree: a task's line has its facts, its before/after gates, its saved rounds and the Converge table's "
+          "result as converge:",
+          "  T1 Charge once · rests on 0 facts · proof: before-1 fail, after-1 pass · rounds: 1 · converge: met\n" in out
+          and "  T3 Keep the receipt · rests on 0 facts · proof: none · rounds: 0 · converge: none yet\n" in out
+          and "verdict:" not in out, out)
+    check("tree: a task with a Depends on row names those tasks after its title; the seat named for it carries its "
+          "NEEDS: return on its line while its after gate has not passed",
+          "  T2 Read the webhook once · depends on T1 · rests on 2 facts · proof: before-2 fail · rounds: 0 · "
+          "converge: none yet · NEEDS: fix src/pay/webhook.py:2 · does: returns 1" in out, out)
     check("tree: prints only — the run folder is as it was", sorted(os.listdir(run)) == before and not err.strip(), err)
+    council(repo, "gate", "after-2", "--proof", "change", "--", "false")
+    code, out, err = council(repo, "tree")
+    check("tree: a NEEDS: stop whose task's after gate failed still reads NEEDS:",
+          code == 0 and "proof: before-2 fail, after-2 fail · rounds: 0 · converge: none yet · NEEDS: fix" in out
+          and "was stopped" not in out, out + err)
+    council(repo, "gate", "after-2", "--proof", "change", "--", "true")
+    code, out, err = council(repo, "tree")
+    check("tree: once the task's after gate passes, its NEEDS: stop shows as was stopped",
+          code == 0 and "proof: before-2 fail, after-2 pass · rounds: 0 · converge: none yet · was stopped: NEEDS: fix "
+          "src/pay/webhook.py:2" in out, out + err)
     for words, want in ((("tree", "x"), "tree doesn't take 'x' — see: council help"),
                         (("tree", "--json"), "tree doesn't take --json")):
         code, out, err = council(repo, *words)

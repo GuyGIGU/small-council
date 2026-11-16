@@ -1,7 +1,8 @@
 """council tree: the build's task tree, printed from its files and nothing else (docs/design/task-tree.md, section 1).
 The request in the user's words (ask.md), then the plan's tasks grouped by the Serves quote each gives, in plan
-order, each with what it rests on, its proof gates, its saved rounds, the Converge table's verdict and a seat's
-NEEDS: return. After a compaction the Chair resumes from this view, not from memory."""
+order, each with the tasks it depends on, what it rests on, its proof gates, its saved rounds, the Converge table's
+result and a seat's NEEDS: return (a stop its after-<n> gate has since passed shows as was stopped). After a
+compaction the Chair resumes from this view, not from memory."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,12 +13,12 @@ from council.records import converge, gates, patches, paths, request, seats, tas
 
 
 class Records(NamedTuple):
-    """What the run's files say of each task: its proof gates' verdicts (by gate name), its saved rounds, the
+    """What the run's files say of each task: its proof gates' results (by gate name), its saved rounds, the
     Converge table's result and its seats' NEEDS: returns."""
 
     proofs: dict
     rounds: dict
-    verdicts: dict
+    converge: dict
     needs: dict
 
 
@@ -37,7 +38,7 @@ def lines(run: Path, named: str, found: list[tasks.Task]) -> list[str]:
     rounds: dict[int, int] = {}
     for one in patches.rounds(run):
         rounds[one.task] = rounds.get(one.task, 0) + 1
-    records = Records(_proofs(run), rounds, _verdicts(run), needs)
+    records = Records(_proofs(run), rounds, _converge(run), needs)
     groups: dict[str, list[tasks.Task]] = {}
     for task in found:
         groups.setdefault(task.rows.get("serves", "(no Serves row)"), []).append(task)
@@ -66,10 +67,13 @@ def _line(task: tasks.Task, records: Records) -> str:
     facts = tasks.facts(task.rows.get("rests on")) or []
     names = ["%s-%d" % (side, task.number) for side in ("before", "after")]
     proof = ", ".join("%s %s" % (name, records.proofs[name]) for name in names if name in records.proofs)
-    said = "T%d %s · rests on %d fact%s · proof: %s · rounds: %d · verdict: %s" % (
-        task.number, task.title, len(facts), "" if len(facts) == 1 else "s", proof or "none",
-        records.rounds.get(task.number, 0), records.verdicts.get(task.number, "none yet"))
-    return said + "".join(" · " + note for note in records.needs.get(task.number, []))
+    depends = ", ".join("T%d" % number for number in tasks.depends(task.rows.get("depends on")))
+    said = "T%d %s%s · rests on %d fact%s · proof: %s · rounds: %d · converge: %s" % (
+        task.number, task.title, " · depends on " + depends if depends else "", len(facts),
+        "" if len(facts) == 1 else "s", proof or "none", records.rounds.get(task.number, 0),
+        records.converge.get(task.number, "none yet"))
+    stopped = "was stopped: " if records.proofs.get(names[1]) == "pass" else ""
+    return said + "".join(" · " + stopped + note for note in records.needs.get(task.number, []))
 
 
 def _proofs(run: Path) -> dict[str, str]:
@@ -77,7 +81,7 @@ def _proofs(run: Path) -> dict[str, str]:
     return {gate["name"]: "pass" if gate["exit"] == 0 else "fail" for gate in gates.results(run)}
 
 
-def _verdicts(run: Path) -> dict[int, str]:
+def _converge(run: Path) -> dict[int, str]:
     """The Converge table's result for each task its Task cell names."""
     table = converge.read(run, resolve.field(run, "deliverable"))
     words = {"met": "met", "partly": "partly met", "not_met": "not met", "blocked": "blocked"}
