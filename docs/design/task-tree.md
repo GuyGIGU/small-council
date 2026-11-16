@@ -1,7 +1,9 @@
 # The task tree: context down, evidence up
 
 Status: written 2026-11-13 on the user's request. Steps T1, T2 and T3 are built and on main; T5 is built on
-`claude/t5-fresh-builder`; T4 is not. "A bug underneath stops the branch" (in section 4) and section 6, a fresh
+`claude/t5-fresh-builder`, all but one refusal of section 6 (a task that rests on a `NEEDS: fix` stop: the helper
+does not refuse it yet, because a seat's old note outlives its stop in `records/seat_write.py`, and that fault is
+the owner's to rule on first); T4 is not. "A bug underneath stops the branch" (in section 4) and section 6, a fresh
 builder per task, were added 2026-11-15; section 6 is built by T5 and settled as D42.
 Each part becomes a decision in [`../decisions.md`](../decisions.md) in the branch that builds it.
 

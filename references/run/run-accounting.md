@@ -165,8 +165,7 @@ is refused when no run is open for it (in progress on this tree, or driven by th
 run folder its message names is closed or paused, when the seat it names — a `Seat: <slug>` line, else
 the `seats/<slug>.md`, `verify-<n>.md` or `report-<n>.md` (seat `task-<n>`) it writes — has no
 selected row in that run's plan, or when it would be a build task's third check (see
-council-implement). A builder is also refused while another build seat is running, and for a task
-that is or rests on a `NEEDS: fix` stop until the user's decision is on record. A verifier that names
+council-implement). A builder is also refused while another build seat is running. A verifier that names
 no run folder (test-architect's own check) is not held to a run. Ordinary agents, Workflows and input
 the hook can't read are never refused for this.
 
