@@ -8,12 +8,22 @@ on:
 
 jobs:
   evals:
-    name: evals (${{ matrix.os }})
+    name: evals (${{ matrix.os }}${{ matrix.part && format(', part {0} of 3', matrix.part) || '' }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Windows starts a process five times slower than Linux, so its leg is split across three
+        # machines (evals/run_all.py --shard); the job "evals (windows-latest)" below waits for all three.
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+          - os: windows-latest
+            part: 1
+          - os: windows-latest
+            part: 2
+          - os: windows-latest
+            part: 3
     defaults:
       run:
         # Git Bash on Windows — the same shell Claude Code uses to run the plugin's hooks and the
@@ -23,6 +33,9 @@ jobs:
       # macOS ships bash 3.2 at /bin/bash and BSD sed/awk/grep. The helper and hooks promise to run
       # there, so the macOS leg runs them with that bash — not a newer one found on PATH.
       COUNCIL_EVAL_BASH: ${{ matrix.os == 'macos-latest' && '/bin/bash' || '' }}
+      # The linters, the ratchet and the fast tier judge the tree, not the OS's processes: on Windows
+      # part 1 runs them, and parts 2 and 3 go straight to their share of the suites.
+      FIRST_LOOK: ${{ (matrix.part || 1) == 1 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -49,7 +62,7 @@ jobs:
       # never fails on the code it found; on every OS each is proved to fail on a planted fault and to
       # pass once it is gone — a linter that can only pass is worse than none.
       - name: Linters on the changed files (ShellCheck errors, ruff's broken-Python rules)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.FIRST_LOOK == 'true' }}
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
@@ -72,7 +85,7 @@ jobs:
       # ruff.toml's rule set on every Python file. Proved live on a planted fault in each of its two
       # sets: an undefined name anywhere, and a missing annotation where the library's stricter set holds.
       - name: ruff on the whole tree (ruff.toml)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.FIRST_LOOK == 'true' }}
         run: |
           python -m ruff check .
           mkdir -p src/council
@@ -89,12 +102,12 @@ jobs:
       # Sizes and structure that may only go down (evals/ratchet.json): one line per regression. Its
       # self-test, which plants each kind of regression and catches it, runs in the fast tier below.
       - name: Ratchet (evals/run_ratchet.py)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.FIRST_LOOK == 'true' }}
         run: python evals/run_ratchet.py
 
       # A first look in about a minute, so a broken change fails before the half-hour run starts.
       - name: Fast tier (python evals/run_all.py --fast)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.FIRST_LOOK == 'true' }}
         run: python evals/run_all.py --fast
 
       # One step runs every suite: several at a time (the helper and hook suites split into their
@@ -104,7 +117,24 @@ jobs:
       # and the run's summary page.
       - name: Evals (every suite, several at a time; see evals/run_all.py)
         if: ${{ !cancelled() }}
-        run: python evals/run_all.py
+        env:
+          PART: ${{ matrix.part }}
+        run: python evals/run_all.py ${PART:+--shard "$PART/3"}
+
+  # The name the branch's required checks know for the Windows leg. It waits for every evals leg and
+  # passes only when all of them passed, the three Windows parts among them.
+  windows:
+    name: evals (windows-latest)
+    needs: evals
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every part of the Windows leg passed
+        env:
+          RESULT: ${{ needs.evals.result }}
+        run: |
+          echo "the evals legs: $RESULT"
+          test "$RESULT" = success
 
   # The council pane is a Claude Code mod (hooks/council-view.tsx): Claude Code's own test kit runs its
   # tests against the engine, with every file, process and clock call answered by the test. No model

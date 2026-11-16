@@ -2756,7 +2756,7 @@ def collect_one_bad_seat(tmp):
     check("collect: a first-round seat marked skipped with no file is still a hole",
           code == 1 and re.search(r"^ghost\s+missing", out, re.MULTILINE) is not None, out)
 
-@part("runs")
+@part("lifecycle")
 def runs_found_by_session(tmp):
     # A run whose code root is a worktree is found from the main checkout by the session that drives it
     # (in run 2 every command needed --run) — never another session's run, and never one of several.
@@ -2782,7 +2782,7 @@ def runs_found_by_session(tmp):
     check("state: a session driving two runs on other trees is told to pass --run, and nothing is written",
           code == 2 and "--run" in err and "which one" not in read(os.path.join(run, "session-state.md")), out + err)
 
-@part("runs")
+@part("lifecycle")
 def runs_reminders_last(tmp):
     # A reminder the Chair must act on is the last line a command prints: in run 2 the Chair cut helper
     # output with `2>&1 | tail -1` 26 times, and a reminder printed before the status line was lost.
@@ -2818,7 +2818,7 @@ def runs_reminders_last(tmp):
     check("seat: past the cap on a plan with tool budgets, the cap note is still the last line, after the tool-call line",
           code == 0 and "over its cap" in last and "57 tool calls" in whole, whole)
 
-@part("runs")
+@part("lifecycle")
 def runs_records_all_or_nothing(tmp):
     # A damaged event stream refuses a write before anything changes, and the repair keeps a copy and drops
     # only the torn tail (helper-runs-6: the state was written, its event refused, and close skipped the ledger).
@@ -2889,7 +2889,7 @@ def runs_records_all_or_nothing(tmp):
           code == 0 and "status: complete" in read(lst) and "closed " in out and os.path.basename(lrun) in lledger
           and "could not be recorded" in err, out + err)
 
-@part("runs")
+@part("lifecycle")
 def runs_closed_run_stays_closed(tmp):
     # A closed run keeps the record its ledger counted (helper-runs-8: a complete run could be re-closed as
     # abandoned and its seats changed) — but the writes its own close and the audit ask for still work, and
@@ -2982,7 +2982,7 @@ def runs_closed_run_stays_closed(tmp):
           code == 0 and re.search(r"^closed: \S", read(os.path.join(hrun, "session-state.md")), re.MULTILINE) is not None
           and hname in read(os.path.join(hand, ".council", "ledger.tsv")) and any(e[3] == "run.closed" for e in events(hrun)), out + err)
 
-@part("runs")
+@part("lifecycle")
 def runs_lost_hints(tmp):
     # Two hints the method lost when it shrank to pointers (run 2's follow-up): how a recorded wait is cleared,
     # and what to do when the status card fails to render. The helper says them where they apply.
@@ -3010,7 +3010,7 @@ def runs_lost_hints(tmp):
     check("state waiting=: with alerts off, the reminder still says how the wait is cleared, and asks for no alert",
           code == 0 and "council state waiting=" in err and "clears" in err and "PushNotification" not in err, err)
 
-@part("runs")
+@part("lifecycle")
 def runs_closed_seat_guard_fields(tmp):
     # The closed-run seat guard joined its fields with ":", which an agent id may hold (run 2's verify-3c:
     # `seat verify-1 failed agent=:running` passed for "a seat left running, no agent" on a done verifier,
@@ -3037,7 +3037,7 @@ def runs_closed_seat_guard_fields(tmp):
           not refused and read(os.path.join(run, "seats.tsv")) == seats
           and read(os.path.join(sg, ".council", "ledger.tsv")) == ledger, "\n".join(refused))
 
-@part("runs")
+@part("lifecycle")
 def runs_close_stamp_from_header(tmp):
     # The close stamp is a header key (run 2's latent finding: the reader took the first "closed:" line anywhere
     # in session-state.md, so a line in the notes below the header made a run set complete by hand read as
@@ -3066,7 +3066,7 @@ def runs_close_stamp_from_header(tmp):
     check("seat: an open run whose notes hold 'closed:' and 'status: complete' still takes seat changes",
           code == 0, out + err)
 
-@part("runs")
+@part("lifecycle")
 def runs_closed_index_refused(tmp):
     # A closed run's change index is on its record (run 2's latent finding: council index rewrote index.md, then
     # the state's refusal came last, so the refused call had already changed the record).
@@ -3095,7 +3095,7 @@ def runs_closed_index_refused(tmp):
     check("index: the refused call leaves no scratch files in the run folder",
           not [f for f in os.listdir(run) if f.startswith(".index-")], str(os.listdir(run)))
 
-@part("runs")
+@part("lifecycle")
 def runs_decision_quotes(tmp):
     # The user's words keep their quote marks and backslashes, and the record still reads back exactly (run 2's
     # follow-up: a decision holding "…" wrote - <time>: "say "go" now", which no reader can take apart).
@@ -3126,7 +3126,7 @@ def runs_decision_quotes(tmp):
     check("status: an older line whose backslashes only look like escapes (C:\\temp\\new) is shown as it was written",
           any(d.endswith('"save to C:\\temp\\new"') for d in said), str(said) + err)
 
-@part("runs")
+@part("lifecycle")
 def runs_seat_files(tmp):
     # A seat is done only with its file (sessions-seats-1: a verifier out of turns was recorded done with
     # nothing written), and every verify file in the run folder is checked, a Workflow's too (sessions-seats-4).
@@ -3172,7 +3172,7 @@ def runs_seat_files(tmp):
           code == 0 and "verify-2-a.md is out of shape" in err and "verify-self.md" not in err and "council collect" not in line_of(err, "verify-2-a.md"),
           err)
 
-@part("runs")
+@part("lifecycle")
 def runs_tool_calls(tmp):
     # Tool-call budgets are measured, not only planned (sessions-seats-6: in run 2 a seat used 57 tool calls
     # against 40 and nothing noticed). A resumed agent's later figure is its running total, counted once.
@@ -3204,7 +3204,7 @@ def runs_tool_calls(tmp):
     code, out, err = council(tc, "collect")
     check("collect: shows a seat's tool calls against its budget", "tools 70/15" in out, out + err)
 
-@part("runs")
+@part("lifecycle")
 def runs_push_freeze(tmp):
     # The push freeze (issue 49): `- pushes: on | off | off until <date>`. council pushes shows how it reads
     # today and says where an unreadable value came from; council pushes check is the bash gate's decision;
@@ -3257,7 +3257,7 @@ def runs_push_freeze(tmp):
     code, out, err = council(frozen, "status", "--run", review)
     check("status: a review's closing card says nothing about the freeze", code == 0 and "held by the freeze" not in out, out + err)
 
-@part("runs")
+@part("lifecycle")
 def runs_helper_carries_next_steps(tmp):
     # What the status board shows is the helper's to keep (method-vs-helper-9: the card read "size the run
     # and ask for the go-ahead" to the end, and no command recorded a decision; promised-6: no stage ever
@@ -3335,7 +3335,7 @@ def runs_helper_carries_next_steps(tmp):
     else:
         print("note: python sits beside bash or git here, so the no-Python close is not checked on this system")
 
-@part("runs")
+@part("lifecycle")
 def runs_card_says_what_is_known(tmp):
     # The card says what the records support, from runs the helper made (run 2's setup card read "no checks
     # run yet" after ten probes and "usage not known yet against estimated 0k" with no agent at all; its plan
@@ -3393,7 +3393,7 @@ def runs_card_says_what_is_known(tmp):
     check("status: a run whose only recorded seats are skipped says so, not 'no seats recorded yet'",
           code == 0 and "2 skipped" in out and "no seats recorded yet" not in out, out + err)
 
-@part("runs")
+@part("lifecycle")
 def runs_cost_like_with_like(tmp):
     # Run 1's real record, the owner's complaint (tests-real-7): the plan's 120k was ~40k for the Chair and
     # ~80k for the one verifier, which spent 94,152 — over its share, though under the whole estimate. The
@@ -3811,7 +3811,7 @@ def runs_worktrees_close_and_find(tmp):
     code, _, err = council(fresh, "state")
     check("state: with only a paused run left, asks for --run", code == 2 and "paused" in err and "--run" in err, err)
 
-@part("runs")
+@part("lifecycle")
 def runs_init_plan(tmp):
     """A setup run opens with a plan that fits setup; doctor judges only open runs' plans."""
     ip = new_repo(tmp, "initplan")
@@ -6118,7 +6118,7 @@ def check_just_me_hygiene(tmp):
           code == 0 and "hygiene  " not in out and "in shared text" not in out, out + err)
 
 
-@part("runs")
+@part("lifecycle")
 def runs_close_keeps_audit(tmp):
     # Issue 53: the close printed the audit's FAILs and kept nothing, so a later session could not see how a run
     # closed. It now keeps the whole report as <run>/audit.md, names it on the close line, the closing card and
@@ -7007,7 +7007,7 @@ def close_claim_index(tmp):
     code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
     check("close: a deleted synthesis source warns", code == 0 and warning in err, err)
 
-@part("runs")
+@part("lifecycle")
 def runs_full_size_needs_go(tmp):
     # A real run went Full (13 tasks, ~2.15M tokens) 47 s after reading that Full needs the user's explicit
     # size-and-cost go, without asking. The plan check now refuses Full until a decision of the user's is
@@ -7047,7 +7047,7 @@ def runs_full_size_needs_go(tmp):
     check("run plan check: a closed run's plan is read as it was, not refused for today's rule", code == 0, out + err)
 
 
-@part("runs")
+@part("lifecycle")
 def runs_one_checker_per_batch(tmp):
     # One checker per build, at converge (references/build-proof.md, Checking): a real job spent about 9-10M
     # tokens on checking agents against 3.5M on builders, while the rule lived only in a user's own notes.
@@ -7104,7 +7104,7 @@ def runs_one_checker_per_batch(tmp):
     check("seat: an unknown checking word reads as one per batch", code == 2 and "one per batch" in err, out + err)
 
 
-@part("runs")
+@part("lifecycle")
 def runs_third_check_needs_diagnosis(tmp):
     # After a second failed verification the build loop allows one clean-context diagnosis and one more
     # attempt, else a stop and a report. A real build gave a task a new lock and a third check instead.
@@ -7199,7 +7199,7 @@ def runs_third_check_needs_diagnosis(tmp):
     check("seat: the rule is the build loop's — a review's verifier seat started a third time is not refused", code == 0, out + err)
 
 
-@part("runs")
+@part("lifecycle")
 def runs_dispatch_record(tmp):
     # The agent gate's dispatch record (council cap check type= seat= run=): a real run sent a verifier 9 s
     # before its plan row existed, and an 11th agent after the run had closed.
@@ -7289,7 +7289,7 @@ def runs_dispatch_record(tmp):
           out + err)
 
 
-@part("runs")
+@part("lifecycle")
 def runs_status_card_owed_once(tmp):
     # The run's first status card is owed once per run, at its first dispatch: the helper marks it due, any
     # council status call for the run clears it, and the turn-end hook sends the Chair back once while it is due.
