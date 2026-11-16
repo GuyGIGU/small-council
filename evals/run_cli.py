@@ -294,6 +294,35 @@ def line_of(out, text):
     return next((line for line in out.splitlines() if text in line), "")
 
 
+def revert_build(tmp, name):
+    """A council-implement run with a configured gate, green at its baseline, for a build whose rounds are saved."""
+    repo = small_council_repo(tmp, name, "| unit | `echo '1 passed'` | grounding, verify | yes | ok | `true` | none "
+                                         "| - |\n")
+    write(os.path.join(repo, "src", "calc.sh"), "echo broken\n")
+    write(os.path.join(repo, "src", "two.sh"), "echo old\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "code")
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build")
+    council(repo, "gate", "--all", "--at", "grounding")
+    return repo, run
+
+
+def built(repo, run, task, files, test, cause="none"):
+    """Task <task>, proved and saved: its test red (before-<n>), the files written, the test green (after-<n>),
+    then its round saved."""
+    command = "bash " + test
+    council(repo, "gate", "before-%d" % task, "--", command)
+    for path, text in files.items():
+        write(os.path.join(repo, path), text)
+    council(repo, "gate", "after-%d" % task, "--", command)
+    write(os.path.join(run, "report-%d.md" % task), PATCH_HEAD.format(cause=cause, removed="none", extra=""))
+    return council(repo, "patch", "save", str(task))
+
+
 VERDICT_FILE = "# Verification — x\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n| 1 | a | INCOMPLETE | a.py:1 |\n"
 
 
@@ -6293,6 +6322,152 @@ def gates_patch_rounds(tmp):
 
 
 @part("gates")
+def gates_revert_check(tmp):
+    """T5: council check on a build reruns each ok change proof with the task's saved rounds taken off, in a scratch
+    copy outside the project (its tests kept), and expects it to fail; a rerun that still passes is REVERT-PASSED,
+    exit 1; one that can't be made is said and never counts. Then the receipt's two lines, from the records, just
+    before the closing line and in check.md; and each round's history names the gates that went red before it."""
+    repo, run = revert_build(tmp, "revert")
+    write(os.path.join(repo, "tests", "test_calc.sh"), '[ "$(bash src/calc.sh)" = fixed ] && echo "1 passed"\n')
+    council(repo, "gate", "lint", "--", "echo bad; exit 1")
+    council(repo, "gate", "lint", "--", "echo bad; exit 1")
+    code, out, err = built(repo, run, 1, {"src/calc.sh": "echo fixed\n"}, "tests/test_calc.sh")
+    check("revert check fixture: task 1 is saved as round 1", code == 0 and "task 1 round 1 saved" in out, out + err)
+    write(os.path.join(repo, "tests", "test_two.sh"), "exit 1\n")         # red for a reason no code change touches
+    code, out, err = built(repo, run, 2, {"src/two.sh": "echo new\n", "tests/test_two.sh": "echo '1 passed'\n"},
+                           "tests/test_two.sh")
+    check("revert check fixture: task 2 is saved", code == 0 and "task 2 round 1 saved" in out, out + err)
+    code, out, err = council(repo, "patch", "show", "1")
+    check("patch show: a round's history names the gates that went red since the save before it, with how often "
+          "(a before-proof meant to fail first is no red gate)",
+          code == 0 and "- gates red since the save before: lint ×2" in out and "before-1" not in line_of(out, "red"),
+          out + err)
+    code, out, err = council(repo, "patch", "show", "2")
+    check("patch show: a round with no gate red since the save before says none", code == 0
+          and "- gates red since the save before: none" in out, out + err)
+    council(repo, "gate", "lint", "--", "echo '1 passed'")
+    council(repo, "gate", "--all", "--at", "verify")
+    disk = {path: read(os.path.join(repo, path)) for path in ("src/calc.sh", "src/two.sh", "tests/test_two.sh")}
+    code, out, err = council(repo, "check")
+    lines = out.splitlines()
+    check("check: a change proof that passes in the copy with the change on (the control) and fails with its task's "
+          "rounds taken off stands, and says so in its row",
+          "task 1  proof  ok · test saved: tests/test_calc.sh · revert check: passes in a scratch copy with the change "
+          "on, fails with task 1's rounds taken off (exit 1), so the test shows the change" in out, out)
+    check("check: a change proof that still passes with its task's rounds taken off is REVERT-PASSED, a problem "
+          "naming the next step, and the check exits 1",
+          code == 1 and "task 2  proof  REVERT-PASSED" in out and "after-2 still passes with task 2's rounds taken "
+          "off (its tests kept)" in out and "run before-2 and after-2 again, then council check" in out
+          and "| task 2 | proof | REVERT-PASSED |" in read(os.path.join(run, "check.md")), out + err)
+    check("check: the control's and the rerun's outputs are kept under gates/reverted/, and the project's files are "
+          "as they were",
+          os.path.isfile(os.path.join(run, "gates", "reverted", "after-1.txt"))
+          and os.path.isfile(os.path.join(run, "gates", "reverted", "after-1-with-change.txt"))
+          and all(read(os.path.join(repo, path)) == text for path, text in disk.items())
+          and not os.path.exists(os.path.join(run, "gates", "reverted", "after-1.json")), out)
+    check("check: a build's receipt lines come just before the closing check: line, from the gate records",
+          len(lines) > 2 and lines[-3] == "Checked by machine: lint: no baseline → pass · unit: pass → pass"
+          and lines[-2] == "Not proved: nothing" and lines[-1].startswith("check: "), out)
+    check("check: check.md holds the two receipt lines too",
+          "\n\nChecked by machine: lint: no baseline → pass · unit: pass → pass\nNot proved: nothing\n"
+          in read(os.path.join(run, "check.md")), read(os.path.join(run, "check.md")))
+
+    write(os.path.join(repo, "tests", "test_three.sh"), '[ "$(bash src/three.sh)" = two ] && echo "1 passed"\n')
+    write(os.path.join(repo, "src", "three.sh"), "echo one\n")
+    built(repo, run, 3, {"src/three.sh": "echo two\n"}, "tests/test_three.sh")
+    write(os.path.join(repo, "src", "three.sh"), "echo two  # since\n")    # changed after its round was saved
+    write(os.path.join(repo, ".gitignore"), "build/\n")
+    write(os.path.join(repo, "build", "value.txt"), "fixed\n")             # git ignores it: the copy leaves it out
+    write(os.path.join(repo, "tests", "test_five.sh"),
+          'grep -q fixed build/value.txt && grep -q five src/five.sh && echo "1 passed"\n')
+    built(repo, run, 5, {"src/five.sh": "echo five\n"}, "tests/test_five.sh")
+    write(os.path.join(run, "gates", "before-4.json"), '{"gate": "before-4", "command": "bash tests/test_calc.sh", '
+          '"exit": 1, "seconds": 1, "when": "2026-09-16 10:00:00"}\n')
+    write(os.path.join(run, "gates", "after-4.json"), '{"gate": "after-4", "command": "bash tests/test_calc.sh", '
+          '"exit": 0, "seconds": 1, "when": "2026-09-16 10:00:01"}\n')
+    code, out, err = council(repo, "check")
+    check("check: a round that won't come off the files on disk is no revert check — said in the row, never a pass "
+          "or a problem",
+          "task 3  proof  ok · test saved: tests/test_three.sh · revert check not made: round 1 does not come off the "
+          "files on disk cleanly: src/three.sh" in out, out)
+    check("check: a task with no saved round is not rerun, and its row reads as before",
+          "task 4  proof  ok · test saved: tests/test_calc.sh\n" in out, out)
+    check("check: a check that reads a file git ignores passes in the project, but not in the copy with the change "
+          "on (the control), so the revert check is not made and no round comes off",
+          "task 5  proof  ok · test saved: tests/test_five.sh · revert check not made: the check doesn't pass in a "
+          "scratch copy even with the change on (exit 2) — it needs files the copy leaves out" in out
+          and not os.path.exists(os.path.join(run, "gates", "reverted", "after-5.txt")), out)
+    check("check: Not proved names the revert checks that couldn't be made and the gates run on other files",
+          "task 3's revert check: round 1 does not come off the files on disk cleanly: src/three.sh"
+          in line_of(out, "Not proved:")
+          and "task 5's revert check: the check doesn't pass in a scratch copy even with the change on (exit 2)"
+          in line_of(out, "Not proved:")
+          and "gate unit: ran on other files than those on disk now (tree " in line_of(out, "Not proved:"), out)
+    review = small_council_repo(tmp, "revert-review", "")
+    council(review, "run", "open", "council-review")
+    code, out, err = council(review, "check")
+    check("check: a run that is not a build prints neither receipt line",
+          "Checked by machine" not in out and "Not proved" not in out, out + err)
+    bare = small_council_repo(tmp, "revert-bare", "")
+    council(bare, "run", "open", "council-implement")
+    code, out, err = council(bare, "check")
+    check("check: a build with no gate record quotes the helper's own NOTHING WAS CHECKED words",
+          "Checked by machine: NOTHING WAS CHECKED — this project has no automated check configured (no Gates row in "
+          in out and "Not proved: nothing" in out, out + err)
+
+
+@part("gates")
+def gates_patch_apply_revert(tmp):
+    """T5 (#59): council patch revert takes a saved round off the code root's files and patch apply puts it back,
+    the task's last round unless --round names another; each is refused, changing nothing, when the patch won't go
+    cleanly, and no record changes."""
+    repo, run = revert_build(tmp, "apply")
+    write(os.path.join(repo, "tests", "test_calc.sh"), '[ "$(bash src/calc.sh)" = fixed ] && echo "1 passed"\n')
+    built(repo, run, 1, {"src/calc.sh": "echo fixed\n"}, "tests/test_calc.sh")
+    records = {name: read(os.path.join(run, "patches", name)) for name in os.listdir(os.path.join(run, "patches"))}
+    code, out, err = council(repo, "patch", "revert", "1")
+    check("patch revert: the task's last round comes off the code root's files, and no record changes",
+          code == 0 and read(os.path.join(repo, "src", "calc.sh")) == "echo broken\n"
+          and not os.path.exists(os.path.join(repo, "tests", "test_calc.sh")) and "task 1 round 1 taken off" in out
+          and {name: read(os.path.join(run, "patches", name)) for name in os.listdir(os.path.join(run, "patches"))}
+          == records, out + err)
+    code, out, err = council(repo, "patch", "revert", "1")
+    check("patch revert: a round already off is refused, naming its files and the next step, nothing changed",
+          code == 2 and "patch revert refused, nothing changed: task 1 round 1 doesn't come off" in err
+          and "src/calc.sh" in err and "council patch show 1" in err
+          and read(os.path.join(repo, "src", "calc.sh")) == "echo broken\n", out + err)
+    code, out, err = council(repo, "patch", "apply", "1")
+    check("patch apply: the task's last round goes back on the files",
+          code == 0 and read(os.path.join(repo, "src", "calc.sh")) == "echo fixed\n"
+          and "task 1 round 1 put back on" in out, out + err)
+    code, out, err = council(repo, "patch", "apply", "1")
+    check("patch apply: a round the files already hold is refused, naming them, nothing changed",
+          code == 2 and "patch apply refused, nothing changed" in err and "src/calc.sh" in err
+          and "tests/test_calc.sh" in err and read(os.path.join(repo, "src", "calc.sh")) == "echo fixed\n", out + err)
+    code, out, err = council(repo, "patch", "revert", "1", "--round", "1")
+    first = read(os.path.join(repo, "src", "calc.sh"))
+    council(repo, "patch", "apply", "1", "--round", "1")
+    check("patch revert|apply --round: the round named comes off, and goes back on",
+          code == 0 and first == "echo broken\n" and read(os.path.join(repo, "src", "calc.sh")) == "echo fixed\n",
+          out + err)
+    write(os.path.join(repo, "src", "calc.sh"), "echo fixed, then changed\n")
+    write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="it was not fixed enough · state: OBSERVED",
+                                                              removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "1")
+    check("patch save: after a revert and an apply, the next round diffs from the last saved round as before",
+          code == 0 and "task 1 round 2 saved" in out and "1 file(s), +1 −1" in out, out + err)
+    for words, want in ((("patch", "revert", "2"), "task 2 has no saved rounds — council patch save 2"),
+                        (("patch", "revert", "1", "--round", "5"), "task 1 has no round '5' — its saved rounds are 1, 2"),
+                        (("patch", "apply", "1", "--base", "HEAD"), "patch apply doesn't take --base"),
+                        (("patch", "show", "1", "--round", "1"), "patch show doesn't take --round"),
+                        (("patch", "undo", "1"), "patch apply|revert <task> [--round <r>]"),
+                        (("check", "--round", "1"), "check doesn't take --round — see: council help"),
+                        (("gate", "x", "--round", "1"), "gate doesn't take --round — see: council help")):
+        code, out, err = council(repo, *words)
+        check("%s: refused, naming the next step" % " ".join(words), code == 2 and want in err, out + err)
+
+
+@part("gates")
 def gates_just_me_tree(tmp):
     """F1: council sharing just-me puts /.council/ in .git/info/exclude, and the files' tree was taken with a git add
     whose pathspec named that ignored folder: git refused, so no gate kept a tree and patch save could not run. On a
@@ -7149,7 +7324,15 @@ def requests_task_pack(tmp):
           and os.path.samefile(whole("Standing builder rules:"), plugin("run", "builder-rules.md"))
           and out.count("references/run/builder-rules.md") == 1, out)
     check("context build: part 5 names task 1's saved round on the same file, with its cause",
-          "- task 1 round 1 (T1-1.patch): src/pay/charge.py · Cause: none, a first build" in out, out)
+          "- task 1 round 1 (T1-1.patch): src/pay/charge.py · Cause: none, a first build" in out
+          and "own history" not in out, out)
+    code, own, err = council(repo, "context", "build", "task-1")
+    check("context build: for a fix round, part 5 first links the task's own history, patches/T<n>.md, by its path — "
+          "the file's text is not copied",
+          code == 0 and "## Earlier changes to these files\n- task 1's own history, 1 saved round(s): %s/patches/T1.md "
+          "— read it before the fix; it is not copied here\n- none: no other task's saved round touched these paths\n"
+          % slash(run) in own and "Why, in prose" not in own and os.path.isfile(os.path.join(run, "patches", "T1.md")),
+          own + err)
     last = out.splitlines()[-1]
     size = len(out.encode("utf-8"))
     check("context build: part 6 says what a pack never carries, and the last line counts the printed bytes",
@@ -7864,6 +8047,248 @@ def runs_dispatch_record(tmp):
 
 
 @part("lifecycle")
+def runs_build_seat(tmp):
+    # T5 (D42): a builder agent per task, on build seat task-<n>. One builder at a time edits project code, its done
+    # needs report-<n>.md unless it stopped with NEEDS:, and its start names the files changed outside a round.
+    builder = "type=small-council:council-builder"
+    bs = new_repo(tmp, "build-seat")
+    write(os.path.join(bs, "a.txt"), "a\n")
+    write(os.path.join(bs, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    git(bs, "add", "-A")
+    git(bs, "commit", "-q", "-m", "init")
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1")
+    check("cap check: a council-builder with no council run open is refused like a worker — it always works for a run",
+          code == 2 and "so a council-builder has no run to work for" in out and "council run open" in out, out + err)
+    _, out, _ = council(bs, "run", "open", "council-implement", env=session("sB"))
+    brun = out.strip().splitlines()[-1]
+    bname = os.path.basename(brun)
+    opened = re.search(r"^start-head: (\S+)$", read(os.path.join(brun, "session-state.md")), re.MULTILINE)
+    write_plan(brun, selected=("task-1", "task-2"))
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
+                             "run=" + bname)
+    check("cap check: a council-builder for a selected build seat whose seat isn't queued is refused — it would be "
+          "held to an empty record — naming the next step",
+          code == 2 and out.startswith("Small Council: cannot start a builder for task-1 — its seat isn't queued")
+          and "Queue it first: council seat task-1 queued, then dispatch again" in out, out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "file=report-9",
+                             "run=" + bname)
+    check("cap check: a builder's file word report-9 reads as seat task-9 — unplanned, so refused by that slug",
+          code == 2 and "seat task-9 has no selected row in the run plan of " + bname in out
+          and "this council-builder would work off the record" in out, out + err)
+    code, out, err = council(bs, "seat", "task-1", "queued")
+    check("seat: a build seat starts with no line about files when nothing changed since the commit the run opened on",
+          code == 0 and "outside any round" not in err, out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
+                             "run=" + bname)
+    check("cap check: once its seat is queued, the council-builder for it starts", code == 0 and not out, out + err)
+    code, out, err = council(bs, "seat", "task-2", "queued")
+    check("seat: a queued build seat is taken — task-2 is refused while task-1 is queued, before its builder is "
+          "recorded running", code == 2 and "cannot start task-2 — task-1 is queued, and one builder at a time edits "
+          "project code (D42)" in err and "\ntask-2\t" not in read(os.path.join(brun, "seats.tsv")), out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-2", "file=report-2",
+                             "run=" + bname)
+    check("cap check: two dispatches sent together — the second builder is refused while the first is only queued",
+          code == 2 and out.startswith("Small Council: cannot start task-2 — task-1 is queued"), out + err)
+    council(bs, "seat", "task-1", "running", "agent=b1")
+    code, out, err = council(bs, "seat", "task-2", "queued")
+    check("seat: one builder at a time — task-2 is refused while task-1 runs, naming it and both next steps",
+          code == 2 and "cannot start task-2 — task-1 is running, and one builder at a time edits project code (D42)"
+          in err and "council seat task-1 done tokens=<n> tools=<n>" in err
+          and 'council seat task-1 failed note="…"' in err and "\ntask-2\t" not in read(os.path.join(brun, "seats.tsv")),
+          out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-2", "file=report-2",
+                             "run=" + bname)
+    check("cap check: the agent gate refuses that second builder before it starts, for the same reason",
+          code == 2 and out.startswith("Small Council: cannot start task-2 — task-1 is running"), out + err)
+    code, out, err = council(bs, "seat", "task-1", "running", "agent=b1")
+    check("seat: the same build seat recorded running again while it runs is no second builder", code == 0, out + err)
+    code, out, err = council(bs, "seat", "task-1", "done", "tokens=20000")
+    check("seat: a build seat's done with no report-<n>.md is refused as a verifier's missing file is",
+          code == 2 and "seat task-1 has no file yet (%s/report-1.md), so it isn't done" % slash(brun) in err, out + err)
+    code, out, err = council(bs, "seat", "task-1", "done", "tokens=20000", "note=NEEDS: which table holds the key?")
+    check("seat: ... except a NEEDS: return, which writes no round", code == 0, out + err)
+    write(os.path.join(bs, "a.txt"), "b\n")
+    write(os.path.join(bs, "new.txt"), "n\n")
+    code, out, err = council(bs, "seat", "task-1", "running", "agent=b2")
+    check("seat: a build seat's start names, file by file, what changed since the commit the run opened on — a notice, "
+          "exit 0", code == 0 and "council: 2 file(s) changed since the commit the run opened on (%s), outside any round "
+          "— an edit made outside a round, or a file a gate left. council patch save puts them in task 1's round:\n"
+          "council:   a.txt\ncouncil:   new.txt\n" % (opened.group(1)[:12] if opened else "?") in err, out + err)
+    write(os.path.join(brun, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra="")
+          .replace("src/pay.py", "a.txt"))
+    council(bs, "patch", "save", "1")
+    code, out, err = council(bs, "seat", "task-1", "done", "tokens=20000")
+    check("seat: with report-1.md written, the build seat's done is recorded", code == 0, out + err)
+    code, out, err = council(bs, "seat", "task-2", "queued")
+    check("seat: a start with the files as the last saved round left them says nothing about files",
+          code == 0 and "outside any round" not in err, out + err)
+    council(bs, "seat", "task-2", "skipped")
+    write(os.path.join(bs, "gate.log"), "left by a gate\n")
+    code, out, err = council(bs, "seat", "task-2", "running", "agent=b3")
+    check("seat: after a saved round, a start names what changed since that round",
+          code == 0 and "council: 1 file(s) changed since the last saved round (task 1 round 1), outside any round" in err
+          and "council:   gate.log\n" in err and "a.txt" not in err, out + err)
+    _, out, _ = council(bs, "run", "open", "council-review", "--alongside", env=session("sB"))
+    rrun = out.strip().splitlines()[-1]
+    write_plan(rrun, selected=("task-1", "task-3"))
+    council(bs, "seat", "task-1", "running", "agent=r1", "--run", rrun)
+    code, out, err = council(bs, "seat", "task-3", "running", "agent=r3", "--run", rrun)
+    code2, out2, err2 = council(bs, "seat", "task-3", "done", "tokens=20000", "--run", rrun)
+    check("seat: outside a build, task-3 is an ordinary seat — it starts beside a running task-1, needs no report and "
+          "names no files", code == 0 and code2 == 0 and "outside any round" not in err, out + err + out2 + err2)
+
+
+@part("lifecycle")
+def runs_needs_note_ends(tmp):
+    # A NEEDS: note on a seat ends when the seat has run again and is recorded done with no note: before, the note
+    # outlived its rerun, so seats.tsv, council tree and the pack showed a stop the builder had since got past.
+    nn = new_repo(tmp, "needs-note")
+    write(os.path.join(nn, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    _, out, _ = council(nn, "run", "open", "council-implement", env=session("sQ"))
+    nrun = out.strip().splitlines()[-1]
+    write_plan(nrun, selected=("task-1", "task-2", "task-3", "task-4"))
+    note = lambda slug: (row(read(os.path.join(nrun, "seats.tsv")), slug).split("\t") + [""] * 6)[5]  # noqa: E731
+    ask = "NEEDS: which table holds the key?"
+    council(nn, "seat", "task-1", "running", "agent=e1")
+    council(nn, "seat", "task-1", "done", "tokens=20000", "note=" + ask)
+    code, out, err = council(nn, "seat", "task-1", "done", "agent=e1", "tokens=21000")
+    check("seat: a late usage report on a NEEDS: stop (done, then done with no note) is taken with no report file, "
+          "and keeps the note", code == 0 and note("task-1") == ask, out + err)
+    council(nn, "seat", "task-1", "queued")
+    queued = note("task-1")
+    council(nn, "seat", "task-1", "running", "agent=e2")
+    check("seat: the note stays through the restart itself (done, then queued, then running), so the builder sent "
+          "again still sees its stop", queued == ask and note("task-1") == ask, queued + " / " + note("task-1"))
+    write(os.path.join(nrun, "report-1.md"), "Cause: none\n")
+    code, out, err = council(nn, "seat", "task-1", "done", "agent=e2", "tokens=20000")
+    check("seat: the seat that ran again, recorded done with no note, drops its NEEDS: note — read back from seats.tsv",
+          code == 0 and note("task-1") == "" and row(read(os.path.join(nrun, "seats.tsv")), "task-1")
+          .startswith("task-1\tdone\te2\t"), out + err + read(os.path.join(nrun, "seats.tsv")))
+    council(nn, "seat", "task-2", "running", "agent=e3")
+    council(nn, "seat", "task-2", "done", "tokens=20000", "note=NEEDS: first?")
+    council(nn, "seat", "task-2", "running", "agent=e4")
+    council(nn, "seat", "task-2", "done", "tokens=20000", "note=NEEDS: second?")
+    check("seat: a new note= replaces a NEEDS: note, as before", note("task-2") == "NEEDS: second?", note("task-2"))
+    write(os.path.join(nrun, "report-3.md"), "Cause: none\n")
+    council(nn, "seat", "task-3", "running", "agent=e5", "note=slow start")
+    council(nn, "seat", "task-3", "done", "tokens=20000")
+    check("seat: a note that doesn't start NEEDS: is kept through done, as before", note("task-3") == "slow start",
+          note("task-3"))
+    council(nn, "seat", "task-4", "running", "agent=e6")
+    council(nn, "seat", "task-4", "done", "tokens=20000", "note=NEEDS: which cache?")
+    council(nn, "seat", "task-4", "running", "agent=e7")
+    council(nn, "seat", "task-4", "blocked", "tokens=20000")
+    check("seat: a seat that ran again and ends blocked keeps its NEEDS: note, as before",
+          note("task-4") == "NEEDS: which cache?", note("task-4"))
+
+
+FIX_STOP = "NEEDS: fix src/pay/webhook.py:2 · does: returns 1 · should: read the event · seen: pytest, 1 failed"
+
+
+@part("lifecycle")
+def runs_build_seat_fix_stop(tmp):
+    # T5 (D42): a NEEDS: fix stop holds its task and every task that depends on it until the user's decision is on
+    # record — the helper refuses the start, where the skill only asked it in prose. One reader of a stop
+    # (build_seat.stop_of) answers stands, released or resolved for council seat, the agent gate and council tree.
+    builder = "type=small-council:council-builder"
+
+    def fix_stop_run(repo, sid):
+        """An implement run on a three-task plan (2 depends on 1, 3 on nothing), its input= recorded."""
+        _, out, _ = council(repo, "run", "open", "council-implement", env=session(sid))
+        run = out.strip().splitlines()[-1]
+        write_plan(run, selected=("task-1", "task-2", "task-3"))
+        council(repo, "state", "phase=prepare")
+        council(repo, "state", "phase=build", "input=.council/plans/stop.md")
+        return run
+
+    fs = new_repo(tmp, "fix-stop")
+    write(os.path.join(fs, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    write(os.path.join(fs, ".council", "plans", "stop.md"), "# Council Plan: stop\n## Task Sequence\n"
+          + pack_task(1, "Read the event", [("Depends on", "—")]) + pack_task(2, "Charge once", [("Depends on", "1")])
+          + pack_task(3, "Keep the receipt", [("Depends on", "—")]) + "## Summary\nx\n")
+    git(fs, "add", "-A")
+    git(fs, "commit", "-q", "-m", "plan")
+    frun = fix_stop_run(fs, "sX")
+    council(fs, "seat", "task-1", "running", "agent=f1")
+    council(fs, "seat", "task-1", "done", "tokens=20000", "note=" + FIX_STOP)
+    refused = [council(fs, "seat", *words) for words in (("task-1", "queued"), ("task-1", "running", "agent=f2"),
+                                                         ("task-2", "queued"))]
+    next_step = ("Tell the user what is wrong and what is stopped, record their decision in their words with council "
+                 "state decision=\"…\", and build the fix as its own task above the stopped one")
+    check("seat: a standing NEEDS: fix stop refuses its own task, queued or running, and a task that depends on it — "
+          "naming the task, the file:line and the next step",
+          [code for code, _, _ in refused] == [2, 2, 2]
+          and "cannot start task-1 — task 1 stopped with NEEDS: fix at src/pay/webhook.py:2 (seat task-1), and this is "
+          "that task: the code under it is wrong. " + next_step in refused[0][2]
+          and "cannot start task-2 — task 1 stopped with NEEDS: fix at src/pay/webhook.py:2 (seat task-1), and task 2 "
+          "depends on it" in refused[2][2] and next_step in refused[2][2] and "does: returns 1" not in refused[2][2]
+          and "\ntask-2\t" not in read(os.path.join(frun, "seats.tsv")), repr(refused))
+    code, out, err = council(fs, "seat", "task-3", "queued")
+    check("seat: a task that neither is nor depends on the stopped task starts", code == 0, out + err)
+    council(fs, "seat", "task-3", "skipped")
+    code, out, err = council(fs, "cap", "check", "--session", "sX", "Agent", builder, "seat=task-2", "file=report-2",
+                             "run=" + os.path.basename(frun))
+    check("cap check: the agent gate refuses a builder for that dependant before it starts, for the same reason",
+          code == 2 and out.startswith("Small Council: cannot start task-2 — task 1 stopped with NEEDS: fix at "
+                                       "src/pay/webhook.py:2"), out + err)
+    council(fs, "state", "decision=fix the webhook reader first, as its own task")
+    code, out, err = council(fs, "seat", "task-1", "done", "agent=f1", "tokens=21000")
+    starts = []
+    for slug in ("task-1", "task-2", "task-3"):                # one at a time: each is queued, then set aside
+        starts.append(council(fs, "seat", slug, "queued"))
+        council(fs, "seat", slug, "skipped")
+    check("seat: once the user's decision is on record, the stop is released and all three start — a late usage "
+          "report on the stop after the decision does not bring the refusal back",
+          code == 0 and [c for c, _, _ in starts] == [0, 0, 0], out + err + repr(starts))
+    council(fs, "run", "close", "--status", "abandoned")
+
+    frun = fix_stop_run(fs, "sY")
+    council(fs, "seat", "task-1", "running", "agent=g1")
+    council(fs, "seat", "task-1", "done", "tokens=20000", "note=NEEDS: which cache owns the key?")
+    code, out, err = council(fs, "seat", "task-2", "queued")
+    check("seat: a plain NEEDS: <question> stop refuses nothing", code == 0, out + err)
+    council(fs, "seat", "task-2", "skipped")
+    council(fs, "seat", "task-1", "running", "agent=g2")
+    council(fs, "seat", "task-1", "done", "tokens=20000", "note=" + FIX_STOP)
+    council(fs, "state", "input=")
+    code1, out1, err1 = council(fs, "seat", "task-1", "queued")
+    code, out, err = council(fs, "seat", "task-2", "queued")
+    check("seat: with no input= plan only the task itself is judged — its dependant starts, it is refused",
+          code == 0 and code1 == 2 and "cannot start task-1 — task 1 stopped" in err1, out + err + out1 + err1)
+    council(fs, "seat", "task-2", "skipped")
+    council(fs, "gate", "after-1", "--proof", "change", "--", "true")
+    code, out, err = council(fs, "seat", "task-1", "queued")
+    check("seat: a stop whose after-<n> gate has passed is resolved — it refuses nothing, with no decision on record",
+          code == 0, out + err)
+    council(fs, "run", "close", "--status", "abandoned")
+
+    # A fix round: task 1 was built and its after gate passed; a fresh builder on the same seat then stops with
+    # NEEDS: fix. The old pass is older than the stop, so the stop stands until after-1 passes again.
+    frun = fix_stop_run(fs, "sZ")
+    write(os.path.join(frun, "report-1.md"), "Cause: none\n")
+    council(fs, "seat", "task-1", "running", "agent=h1")
+    council(fs, "seat", "task-1", "done", "tokens=20000")
+    council(fs, "gate", "after-1", "--proof", "change", "--", "true")
+    council(fs, "seat", "task-1", "running", "agent=h2")
+    council(fs, "seat", "task-1", "done", "tokens=20000", "note=" + FIX_STOP)
+    code1, _, err1 = council(fs, "seat", "task-1", "queued")
+    code2, _, err2 = council(fs, "seat", "task-2", "queued")
+    code, tree, err = council(fs, "tree")
+    check("seat and tree: a stop recorded after the task's after gate already passed stands — the task and a "
+          "dependant are refused, and council tree prints the live NEEDS:, not was stopped:",
+          code1 == 2 and "cannot start task-1 — task 1 stopped" in err1 and code2 == 2
+          and "and task 2 depends on it" in err2 and code == 0
+          and "proof: after-1 pass · rounds: 0 · converge: none yet · " + FIX_STOP in tree and "was stopped" not in tree,
+          err1 + err2 + tree + err)
+    council(fs, "gate", "after-1", "--proof", "change", "--", "true")
+    code1, _, err1 = council(fs, "seat", "task-1", "queued")
+    code, tree, err = council(fs, "tree")
+    check("seat and tree: once the after gate passes again, after the stop, the stop is resolved — the task starts and "
+          "council tree prints was stopped:", code1 == 0 and code == 0 and "· was stopped: " + FIX_STOP in tree,
+          err1 + tree + err)
+
+
+@part("lifecycle")
 def runs_status_card_owed_once(tmp):
     # The run's first status card is owed once per run, at its first dispatch: the helper marks it due, any
     # council status call for the run clears it, and the turn-end hook sends the Chair back once while it is due.
@@ -7986,7 +8411,13 @@ def models_per_role(tmp):
     check("models: a verifier weaker than its builder is refused, and the refusal names the fix",
           code == 1 and "verifier verify-plan on sonnet is weaker than builder build on opus — put the verifier on "
           "opus or stronger (seat/verify-plan/model, and verifier= in council.config.md's - models:)" in out, out)
-    check("models: a build's verifier is also judged against the Chair, which builds on the session's model",
+    check("models: with a builder seat selected, a build's verifier is judged against that seat, not the Chair (D42)",
+          code == 1 and "than the Chair" not in out, out)
+    write(plan_path, "".join(line + "\n" for line in plain.splitlines() if "\tbuild\t" not in line)
+          + "seat\tverify-plan\tmodel\tsonnet\tthis test's model\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: a Solo build selects no builder seat, so its verifier is judged against the Chair, which builds on "
+          "the session's model",
           code == 1 and "verifier verify-plan on sonnet is weaker than the Chair, which builds, on inherit — put the "
           "verifier on inherit, as its builder is" in out, out)
     models_line("- models: verifier=opus\n")

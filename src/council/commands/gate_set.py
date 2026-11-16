@@ -46,10 +46,9 @@ def run_all(call: gate_run.Call, at: str, mode: str, wait: tuple[bool, str]) -> 
     rows = gate_table.gates(call.home)
     if not rows:
         if gate_table.gates_listed(call.home):
-            cli.say("NOTHING WAS CHECKED — the Gates section of %s is in an older layout (a list, not a table), so no "
-                    "gate could be read; a council-init refresh migrates it" % cfg)
+            cli.say(gates.OLDER_LAYOUT % cfg)
         else:
-            cli.say("NOTHING WAS CHECKED — this project has no automated check configured (no Gates row in %s)" % cfg)
+            cli.say(gates.NO_GATE_ROW % cfg)
         return 4
     tally = _Tally()
     for row in rows:

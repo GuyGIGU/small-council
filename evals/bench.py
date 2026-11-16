@@ -13,8 +13,14 @@ project:
 - whether the final report claimed more than was true.
 Nothing here calls a model. `score` runs the kept project's code, so run it where the eval ran.
 
+A second pair of arms compares two builds, both with the plugin: `builder` (a builder agent per task,
+the default) against `chair` (the Chair builds every task itself). The arm is the live case's prompt:
+`arm chair` writes CHAIR_LINE into the bench prompts, `arm builder` takes it out again. `score` also
+records tokens by role from the kept project's build runs.
+
     python evals/bench.py score --case bench-refund-sign --arm with --repo KEPT [--trace TRACE.jsonl] [--run ID]
-    python evals/bench.py compare RESULTS.jsonl [--json] [--min-pairs 10]
+    python evals/bench.py compare RESULTS.jsonl [--json] [--min-pairs 10] [--pair plugin|build]
+    python evals/bench.py arm chair|builder      the build arm the live bench prompts ask for
     python evals/bench.py self-test [--case NAME]
     python evals/bench.py show NAME             a case's hidden checks and example outcomes, decoded
     python evals/bench.py pack NAME DIR          (maintainers) encode DIR/hidden and DIR/variants
@@ -46,7 +52,20 @@ ROOT = Path(__file__).resolve().parent.parent
 SUITE = ROOT / "evals" / "suite"
 BENCH = ROOT / "evals" / "bench"
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
+sys.path.insert(0, str(ROOT / "src"))
+from council.commands import build_seat  # noqa: E402
+from council.records import home as council_homes, runs as council_runs, usage as council_usage  # noqa: E402
 RUN_SCHEMA = "council.bench-run/1"
+ARMS = ("with", "without", "builder", "chair")
+# The pairs compare sets side by side: first arm, second arm, who "met more" names, the table's title.
+PAIRS = {"plugin": ("with", "without", "Small Council", "Small Council (with) vs baseline (without)"),
+         "build": ("builder", "chair", "The builder agents",
+                   "a builder agent per task (builder) vs the Chair building (chair)")}
+# The chair arm's one difference from the committed prompt, put after its first sentence by `arm chair`.
+CHAIR_LINE = ("Build every task yourself, in this session: start no builder agent for it. "
+              "Check the work as you otherwise would.")
+FIRST_SENTENCE = re.compile(r"Build the plan in \S+\.md\.")
+MAX_RUNS = 200                                   # build runs read in one kept project
 HIDDEN_SCHEMA = "council.bench-hidden/1"
 BOOKKEEPING = (".git/**", ".council/**", "**/__pycache__/**", "**/*.pyc", ".pytest_cache/**")
 MAX_FILES = 5000
@@ -126,8 +145,13 @@ class BenchError(Exception):
 
 
 # --- cases and hidden bundles ------------------------------------------------------------------------
+def spec_cases():
+    """The scoring specs of evals/bench/cases.json, by case."""
+    return json.loads((BENCH / "cases.json").read_text(encoding="utf-8"))["cases"]
+
+
 def spec(case):
-    specs = json.loads((BENCH / "cases.json").read_text(encoding="utf-8"))["cases"]
+    specs = spec_cases()
     if case not in specs:
         raise BenchError("no benchmark case named {!r} (known: {})".format(case, ", ".join(sorted(specs))))
     if not (SUITE / case / "scaffold.sh").is_file():
@@ -198,6 +222,24 @@ def unpack(case, dest):
 def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def set_arm(arm, suite=SUITE):
+    """Point the live bench cases at a build arm: chair puts CHAIR_LINE after each prompt's first sentence,
+    builder takes it out, which leaves the prompt as committed. Either is safe to repeat."""
+    done = []
+    for case in sorted(spec_cases()):
+        path = suite / case / "prompt.md"
+        text = path.read_bytes().decode("utf-8").replace(" " + CHAIR_LINE, "")
+        if arm == "chair":
+            first = FIRST_SENTENCE.search(text)
+            if not first:
+                raise BenchError("{} has no 'Build the plan in <plan>.md.' sentence to put the chair line after: "
+                                 "restore it with git checkout -- {}".format(path, path))
+            text = text[:first.end()] + " " + CHAIR_LINE + text[first.end():]
+        path.write_bytes(text.encode("utf-8"))
+        done.append(case)
+    return done
 
 
 # --- trees, globs and scaffolds --------------------------------------------------------------------------
@@ -378,6 +420,32 @@ def trace_facts(path):
     return facts
 
 
+def role_tokens(repo):
+    """Tokens by role from the kept project's build runs, under records/usage.py's per-seat rule: a build
+    seat (task-<n>) is the builder, verify-… and diagnose-… seats the verifiers, any other seat another
+    agent. Each figure is blank (None) when no build run is there or the runs' usage is not complete
+    (`basis` says why): unknown, never zero (D26). builder_seats and verifier_seats (verify-… only) count
+    the seats that ran, so a reader can see each run built its arm's way, with the same verifiers."""
+    home = council_homes.council_home(repo)
+    folders = [Path(run.folder) for run in council_runs.listing(home, MAX_RUNS, "all")
+               if run.mode == "council-implement"]
+    roles = {"runs": len(folders), "basis": None, "builder_tokens": None, "verifier_tokens": None,
+             "other_tokens": None, "builder_seats": None, "verifier_seats": None}
+    if not folders:
+        return roles
+    seats = [seat for folder in folders for seat in council_usage.seat_list(folder)]
+    ran = [seat for seat in seats if seat["executed"]]
+    builders = [seat for seat in ran if build_seat.SEAT.fullmatch(seat["slug"])]
+    totals = council_usage.usage_totals(seats)["tokens"]
+    roles.update(basis=totals["basis"], builder_seats=len(builders),
+                 verifier_seats=sum(seat["slug"].startswith("verify-") for seat in ran))
+    if totals["total"] is not None:
+        builder = sum(seat["tokens"] for seat in builders if seat["tokens"] is not None)
+        roles.update(builder_tokens=builder, verifier_tokens=totals["verifiers"],
+                     other_tokens=totals["workers"] - builder)
+    return roles
+
+
 def report_claims(text, met):
     """claims_blocked: the report discloses unfinished work. false_completion: it claims success with no
     such disclosure while the task is not met."""
@@ -439,7 +507,7 @@ def score(case, arm, repo, trace=None, run_id="", fresh=None, message=None):
                       "protected_changed": protected},
             "tests": {"assertions_removed": removed, "test_added": test_added, "test_required": rules["test_required"]},
             "report": dict(report_claims(text, met), text=text[:2000]),
-            "cost": facts}
+            "cost": facts, "roles": role_tokens(repo)}
 
 
 # --- comparing arms ---------------------------------------------------------------------------------------
@@ -476,7 +544,24 @@ def summarise(runs):
             "usd_per_met": round(sum(known) / met, 2) if met and runs and not unknown else None}
 
 
-def compare(records, min_pairs=10):
+def role_summary(runs, arm):
+    """The build pair's tokens by role, medians over the runs whose figure is known; old records have none.
+    off_arm: runs whose seats contradict their arm (a chair run with a build seat, a builder run without)."""
+    roles = [r.get("roles") or {} for r in runs]
+
+    def tokens(key):                    # a whole number of tokens, as the records hold them
+        value = median([x.get(key) for x in roles])
+        return None if value is None else int(round(value))
+    return {"median_builder_tokens": tokens("builder_tokens"), "median_verifier_tokens": tokens("verifier_tokens"),
+            "median_other_tokens": tokens("other_tokens"),
+            "median_verifier_seats": median([x.get("verifier_seats") for x in roles]),
+            "roles_unknown": sum(x.get("builder_tokens") is None for x in roles),
+            "off_arm": sum(isinstance(x.get("builder_seats"), int) and (x["builder_seats"] > 0) != (arm == "builder")
+                           for x in roles)}
+
+
+def compare(records, min_pairs=10, pair="plugin"):
+    first, second, subject, _ = PAIRS[pair]
     records = [r for r in records if r.get("schema") == RUN_SCHEMA]
     seen = set()
     for r in records:
@@ -486,16 +571,20 @@ def compare(records, min_pairs=10):
         if key in seen:
             raise BenchError("{} ({}) run {} appears twice in the results — score each run once".format(*key))
         seen.add(key)
+    records = [r for r in records if r["arm"] in (first, second)]
     cases = sorted({r["case"] for r in records})
-    arms = {arm: summarise([r for r in records if r["arm"] == arm]) for arm in ("with", "without")}
+    arms = {arm: summarise([r for r in records if r["arm"] == arm]) for arm in (first, second)}
+    if pair == "build":
+        for arm, summary in arms.items():
+            summary.update(role_summary([r for r in records if r["arm"] == arm], arm))
     per_case, wins, losses, ties, unpaired = {}, 0, 0, 0, 0
     for case in cases:
         runs = {arm: sorted((r for r in records if r["case"] == case and r["arm"] == arm), key=lambda r: str(r["run"]))
-                for arm in ("with", "without")}
+                for arm in (first, second)}
         per_case[case] = {arm: summarise(runs[arm]) for arm in runs}
-        per_case[case]["unpaired"] = abs(len(runs["with"]) - len(runs["without"]))
+        per_case[case]["unpaired"] = abs(len(runs[first]) - len(runs[second]))
         unpaired += per_case[case]["unpaired"]
-        for w, b in zip(runs["with"], runs["without"]):
+        for w, b in zip(runs[first], runs[second]):
             wins += w["met"] and not b["met"]
             losses += b["met"] and not w["met"]
             ties += w["met"] == b["met"]
@@ -507,8 +596,8 @@ def compare(records, min_pairs=10):
     elif not wins + losses:
         verdict = "No difference in tasks met across {} pairs.".format(pairs)
     elif p < 0.05:
-        verdict = "Small Council met {} tasks: {} wins, {} losses, {} ties (sign test p = {:.3f}).".format(
-            "more" if wins > losses else "fewer", wins, losses, ties, p)
+        verdict = "{} met {} tasks: {} wins, {} losses, {} ties (sign test p = {:.3f}).".format(
+            subject, "more" if wins > losses else "fewer", wins, losses, ties, p)
     else:
         verdict = "No reliable difference in tasks met: {} wins, {} losses, {} ties (p = {:.2f}).".format(
             wins, losses, ties, p)
@@ -519,6 +608,11 @@ def compare(records, min_pairs=10):
             "min_pairs": min_pairs, "verdict": verdict}
 
 
+def read_results(path):
+    """The records of a results.jsonl, one JSON object per line, old ones (without roles) as they are."""
+    return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 def render(result):
     def cell(v):
         return "-" if v is None else (("{:.2f}".format(v)) if isinstance(v, float) else str(v))
@@ -527,19 +621,24 @@ def render(result):
             ("test assertions removed", "assertions_removed"), ("asked for input", "asked_for_input"),
             ("median cost (USD)", "median_usd"), ("median tokens", "median_tokens"), ("median turns", "median_turns"),
             ("median agents", "median_agents"), ("USD per task met", "usd_per_met")]
-    a, b = result["arms"]["with"], result["arms"]["without"]
-    lines = ["# Benchmark: Small Council (with) vs baseline (without)", "",
-             "Runs: {} with, {} without, over {} case(s).".format(a["runs"], b["runs"], len(result["cases"])), "",
-             "| | with | without |", "|---|---|---|"]
+    first, second, _, title = next(p for p in PAIRS.values() if p[0] in result["arms"])
+    if first == "builder":
+        rows += [("median builder tokens", "median_builder_tokens"), ("median verifier tokens", "median_verifier_tokens"),
+                 ("median other-agent tokens", "median_other_tokens"), ("median verifier seats", "median_verifier_seats"),
+                 ("runs with tokens by role unknown", "roles_unknown"), ("runs not built their arm's way", "off_arm")]
+    a, b = result["arms"][first], result["arms"][second]
+    lines = ["# Benchmark: " + title, "",
+             "Runs: {} {}, {} {}, over {} case(s).".format(a["runs"], first, b["runs"], second, len(result["cases"])),
+             "", "| | {} | {} |".format(first, second), "|---|---|---|"]
     lines += ["| {} | {} | {} |".format(label, cell(a[key]), cell(b[key])) for label, key in rows]
     lines += ["", "Per case (tasks met / runs):", ""]
     for case, arms in result["cases"].items():
-        lines.append("- {}: with {}/{}, without {}/{}{}".format(
-            case, arms["with"]["met"], arms["with"]["runs"], arms["without"]["met"], arms["without"]["runs"],
+        lines.append("- {}: {} {}/{}, {} {}/{}{}".format(
+            case, first, arms[first]["met"], arms[first]["runs"], second, arms[second]["met"], arms[second]["runs"],
             " · {} unpaired".format(arms["unpaired"]) if arms["unpaired"] else ""))
     if a["cost_unknown"] or b["cost_unknown"]:
-        lines += ["", "Cost unknown for {} with-arm and {} without-arm run(s): USD per task met is left out.".format(
-            a["cost_unknown"], b["cost_unknown"])]
+        lines += ["", "Cost unknown for {} {}-arm and {} {}-arm run(s): USD per task met is left out.".format(
+            a["cost_unknown"], first, b["cost_unknown"], second)]
     lines += ["", "**Verdict:** " + result["verdict"],
               "", "Counts, not rates, on purpose: until the pairs clear the bar, read every difference as anecdote."]
     return "\n".join(lines)
@@ -618,13 +717,127 @@ def tampering(check):
                   got["hidden"])
 
 
+SEATS_HEAD = "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported"
+# Fixture build runs: (slug, tokens, agents, reported). The Chair's own seat ran no agent.
+BUILDER_RUN = (("chair", "0", "0", "0"), ("task-1", "90000", "2", "2"), ("task-2", "60000", "1", "1"),
+               ("verify-1", "40000", "1", "1"), ("diagnose-1", "15000", "1", "1"), ("map-1", "20000", "1", "1"))
+CHAIR_RUN = (("chair", "0", "0", "0"), ("verify-1", "40000", "1", "1"))
+MISSING_RUN = (("chair", "0", "0", "0"), ("task-1", "", "1", "0"))     # a builder whose usage never came back
+# What compare printed (render, a newline, then --json) for old-shape records before the build pair:
+# the plugin pair's output stays byte for byte.
+PLUGIN_PAIR_SHA = {"one": "08bc546515c24853e6edbe013e00a927e7c95d179a58b0d7edf6d5ea62abb2ae",
+                   "many": "3b58b3e19affea38f9a57e93680cb5f92dfb8d129e044f33a668db449ebec6bc",
+                   "lopsided": "716abddecbee7e1db89e86cf6f5c1294704961a635d315b8023ffeb4220b2fb4"}
+
+
+def fixture_run(project, seats, name="2026-11-16-build"):
+    """A build run folder in the project's council home, with seats.tsv as `council seat` writes it."""
+    run = Path(council_homes.council_home(project)) / "runs" / name
+    write(run / "session-state.md", "mode: council-implement\nstatus: complete\n\n## Log\n")
+    write(run / "seats.tsv", "\n".join([SEATS_HEAD] + ["\t".join((slug, "done", "a" + slug, tokens, "", "", agents,
+                                                                  reported)) for slug, tokens, agents, reported in seats])
+          + "\n")
+    return run
+
+
+def arms_scored(check):
+    """Each build arm scored from a fixture trace and a fixture run folder, and tokens by role with a
+    complete run, an incomplete one and none."""
+    case = "bench-refund-sign"
+    ideal = bundle(case)["variants"]["ideal"]
+    got = {}
+    with tempfile.TemporaryDirectory(prefix="council-bench-arms-") as temporary:
+        temporary = Path(temporary)
+        fresh = scaffold(case, temporary / "fresh")
+        for arm, seats in (("builder", BUILDER_RUN), ("chair", CHAIR_RUN)):
+            work = copy_project(fresh, temporary / arm)
+            for rel, text in ideal["files"].items():
+                write(work / rel, text)
+            fixture_run(work, seats)
+            trace = synthetic_trace(temporary / (arm + ".jsonl"), ideal["message"])
+            got[arm] = score(case, arm, work, trace=trace, run_id="1", fresh=fresh)
+        none = role_tokens(fresh)
+        missing = copy_project(fresh, temporary / "missing")
+        fixture_run(missing, MISSING_RUN)
+        partial = role_tokens(missing)
+    builder, chair = got["builder"]["roles"], got["chair"]["roles"]
+    check("build arms: a builder-arm run scores as met, its run folder read by role (task-<n> builder; "
+          "verify- and diagnose- verifier; the rest other)",
+          got["builder"]["met"] and got["builder"]["arm"] == "builder" and got["builder"]["cost"]["usd"] == 1.0
+          and builder == {"runs": 1, "basis": "complete", "builder_tokens": 150000, "verifier_tokens": 55000,
+                          "other_tokens": 20000, "builder_seats": 2, "verifier_seats": 1}, got["builder"]["roles"])
+    check("build arms: a chair-arm run scores as met, with no builder seat and builder tokens a known 0",
+          got["chair"]["met"] and got["chair"]["arm"] == "chair"
+          and chair == {"runs": 1, "basis": "complete", "builder_tokens": 0, "verifier_tokens": 40000,
+                        "other_tokens": 0, "builder_seats": 0, "verifier_seats": 1}, chair)
+    check("build arms: no build run in the kept project leaves every role blank, never 0",
+          none["runs"] == 0 and all(none[k] is None for k in none if k != "runs"), none)
+    check("build arms: a builder whose usage never came back leaves the role tokens blank and says why",
+          partial["basis"] == "partial" and partial["builder_tokens"] is None and partial["builder_seats"] == 1, partial)
+    return got
+
+
+def arms_compared(check, got, one):
+    """The pairing of the build arms, an old results.jsonl still read, the plugin pair's output unchanged,
+    and the prompt swap."""
+    builds = [dict(got[arm], run=str(i), case="c{}".format(i % 3), met=arm == "builder")
+              for i in range(12) for arm in ("builder", "chair")]
+    result = compare(builds + [dict(r, run=str(i)) for i in range(3) for r in one], pair="build")
+    check("build arms: compare --pair build pairs builder against chair on the same cases and says which met more",
+          result["pairs"]["wins"] == 12 and result["verdict"].startswith("The builder agents met more tasks")
+          and set(result["arms"]) == {"builder", "chair"}, result["verdict"])
+    arms = result["arms"]
+    check("build arms: compare shows the medians of tokens by role per arm, and no run built the other arm's way",
+          (arms["builder"]["median_builder_tokens"], arms["chair"]["median_builder_tokens"],
+           arms["builder"]["median_verifier_tokens"], arms["chair"]["median_verifier_seats"],
+           arms["builder"]["off_arm"], arms["chair"]["off_arm"]) == (150000, 0, 55000, 1, 0, 0)
+          and "| median builder tokens | 150000 | 0 |" in render(result), render(result))
+    off = [dict(got["builder"], arm="chair", run="9")]
+    check("build arms: a chair run that dispatched a builder is counted as not built its arm's way",
+          compare(off, pair="build")["arms"]["chair"]["off_arm"] == 1, compare(off, pair="build")["arms"]["chair"])
+    with tempfile.TemporaryDirectory(prefix="council-bench-old-") as temporary:
+        old = Path(temporary) / "results.jsonl"
+        lopsided = ([dict(one[0], run=str(i), cost={"usd": None if i == 2 else 4.0}) for i in range(12)]
+                    + [dict(one[1], run=str(i)) for i in range(3)])
+        many = [dict(r, run=str(i), case="c{}".format(i % 3)) for i in range(12) for r in one]
+        for name, records in (("one", one), ("many", many), ("lopsided", lopsided)):
+            old.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+            for extra in ([], builds):
+                result = compare(read_results(old) + extra)
+                out = render(result) + "\n" + json.dumps(result, indent=2, sort_keys=True)
+                check("plugin pair: an old results.jsonl ({}{}) compares byte for byte as before".format(
+                      name, ", build records beside it" if extra else ""),
+                      hashlib.sha256(out.encode()).hexdigest() == PLUGIN_PAIR_SHA[name], out[:900])
+        check("build arms: old records with no roles compare with tokens by role unknown",
+              compare([dict(r, arm=a) for r, a in zip(one, ("builder", "chair"))], pair="build")
+              ["arms"]["builder"]["roles_unknown"] == 1)
+        prompts_swap(check, Path(temporary) / "suite")
+
+
+def prompts_swap(check, suite):
+    """`arm chair` adds the one line to every bench prompt; `arm builder` gives back the committed bytes."""
+    cases = sorted(spec_cases())
+    for case in cases:
+        write(suite / case / "prompt.md", "")
+        (suite / case / "prompt.md").write_bytes((SUITE / case / "prompt.md").read_bytes())
+    set_arm("chair", suite)
+    set_arm("chair", suite)
+    chair = {case: (suite / case / "prompt.md").read_text(encoding="utf-8") for case in cases}
+    check("arm chair: every bench prompt carries the chair line once, after its first sentence, and stays plain",
+          all(text.count(CHAIR_LINE) == 1 and FIRST_SENTENCE.search(text).end() + 1 == text.index(CHAIR_LINE)
+              and "/council" not in text for text in chair.values()), chair)
+    set_arm("builder", suite)
+    check("arm builder: the prompts are byte for byte as committed",
+          all((suite / c / "prompt.md").read_bytes() == (SUITE / c / "prompt.md").read_bytes() for c in cases))
+
+
 def self_test(only=None):
     checks = []
 
     def check(name, good, detail=""):
         checks.append((name, bool(good), detail))
 
-    specs = json.loads((BENCH / "cases.json").read_text(encoding="utf-8"))["cases"]
+    specs = spec_cases()
     for case in sorted(specs):
         if only and case != only:
             continue
@@ -659,6 +872,8 @@ def self_test(only=None):
             "scope": {"outside_scope": [], "frozen_changed": [], "protected_changed": []},
             "tests": {"assertions_removed": []}, "report": {"false_completion": False, "asked_for_input": False},
             "cost": {"usd": usd}} for arm, met, usd in (("with", True, 4.0), ("without", False, 1.0))]
+    if not only or only == "bench-refund-sign":
+        arms_compared(check, arms_scored(check), one)
     result = compare(one)
     check("compare: one pair is a pilot, never a result", "Too few paired runs (1" in result["verdict"], result["verdict"])
     many = [dict(r, run=str(i), case="c{}".format(i % 3)) for i in range(12) for r in one]
@@ -702,7 +917,7 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     s = sub.add_parser("score")
     s.add_argument("--case", required=True)
-    s.add_argument("--arm", required=True, choices=("with", "without"))
+    s.add_argument("--arm", required=True, choices=ARMS)
     s.add_argument("--repo", required=True, type=Path)
     s.add_argument("--trace", type=Path)
     s.add_argument("--run", required=True, help="a run id unique within the case and arm, e.g. 1, 2, 3")
@@ -710,6 +925,9 @@ def main():
     c.add_argument("results", type=Path)
     c.add_argument("--json", action="store_true")
     c.add_argument("--min-pairs", type=int, default=10)
+    c.add_argument("--pair", choices=tuple(PAIRS), default="plugin",
+                   help="plugin: with against without; build: builder against chair")
+    sub.add_parser("arm").add_argument("arm", choices=("chair", "builder"))
     t = sub.add_parser("self-test")
     t.add_argument("--case")
     for name in ("show",):
@@ -722,9 +940,13 @@ def main():
     if args.action == "score":
         print(json.dumps(score(args.case, args.arm, args.repo, args.trace, args.run), sort_keys=True))
     elif args.action == "compare":
-        records = [json.loads(line) for line in args.results.read_text(encoding="utf-8").splitlines() if line.strip()]
-        result = compare(records, args.min_pairs)
+        result = compare(read_results(args.results), args.min_pairs, args.pair)
         print(json.dumps(result, indent=2, sort_keys=True) if args.json else render(result))
+    elif args.action == "arm":
+        for case in set_arm(args.arm):
+            print("{}: {}".format(case, args.arm))
+        if args.arm == "chair":
+            print("Score these runs with --arm chair; put the prompts back with: python evals/bench.py arm builder")
     elif args.action == "self-test":
         return self_test(args.case)
     elif args.action == "show":

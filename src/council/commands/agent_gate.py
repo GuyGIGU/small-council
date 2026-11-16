@@ -25,7 +25,9 @@ from council.records import home as where
 from council.records import hook_marks, paths, plan, runs, seats, usage
 
 SLUG = re.compile(r"[A-Za-z0-9._-]+")
-KINDS = {"small-council:council-worker": "council-worker", "small-council:council-verifier": "council-verifier"}
+KINDS = {"small-council:council-worker": "council-worker", "small-council:council-verifier": "council-verifier",
+         "small-council:council-builder": "council-builder"}
+REPORT = re.compile(r"report-([0-9]+)")            # a builder's file word: report-3 is seat task-3
 
 
 class Call(NamedTuple):
@@ -218,22 +220,25 @@ def _slug(value: str) -> str:
 
 def dispatch_refusal(call: Call, here: Where) -> str | None:
     """A Small Council agent goes out only for an open run, and only for a seat that run's plan selects
-    (dispatch_refusal). A worker always works for a run; a verifier naming no run may be test-architect's
-    own check outside any run. A paused or closed run named is refused only while no run is open for it:
-    a re-review or a post-game cites an earlier run's files. Nothing is judged on what the hook couldn't
-    read; a display name ("Security") is never refused as a seat."""
+    (dispatch_refusal). A worker and a builder always work for a run; a verifier naming no run may be
+    test-architect's own check outside any run. A builder's file word report-<n> names seat task-<n>, held to
+    build_seat's rules as a verifier is to rounds'. A paused or closed run named is refused only while no run is
+    open for it: a re-review or a post-game cites an earlier run's files. Nothing is judged on what the hook
+    couldn't read; a display name ("Security") is never refused as a seat."""
     kind = KINDS.get(call.agent_type)
     if kind is None or not os.path.isdir(here.home):
         return None
     named = _slug(call.run) if not call.run.startswith(".") else ""
     seat, file = _slug(call.seat), _slug(call.file)
+    if kind == "council-builder" and REPORT.fullmatch(file):
+        file = "task-" + REPORT.fullmatch(file).group(1)
     status, candidates = "", []
     if named and resolve.is_run(here.home + "/runs/" + named):
         status = resolve.field(Path(here.home + "/runs/" + named), "status").split(" ")[0] or "no status"
     if status == "in-progress":
         candidates = [here.home + "/runs/" + named]
     else:
-        if not status and kind != "council-worker":
+        if not status and kind == "council-verifier":
             return None
         candidates = cap.open_here(here.home, here.tree, here.session)
         if not candidates:
@@ -251,8 +256,9 @@ def dispatch_refusal(call: Call, here: Where) -> str | None:
         return None if found.legacy else _unplanned(kind, seat, file, candidates)
     if found.count != 1:
         return None                                    # which run it is for is unknown: the seat record judges
-    from council.commands import rounds
-    why = rounds.batch_check(Path(found.run), pick, here.home) or rounds.check_round(Path(found.run), pick)
+    from council.commands import build_seat, rounds
+    why = rounds.batch_check(Path(found.run), pick, here.home) or rounds.check_round(Path(found.run), pick) \
+        or build_seat.dispatch_refusal(Path(found.run), pick)
     return "Small Council: " + why if why else None
 
 
@@ -266,10 +272,10 @@ def _no_run(kind: str, named: str, status: str, session: str) -> str | None:
                 "a new run (council run open <mode>), plan the seat there, then dispatch." % (kind, named, status))
     if not session:
         return None                                    # no session: its runs on other trees can't be seen
-    return ("Small Council: no council run is open on this working tree or for this session, so a council-worker has "
+    return ("Small Council: no council run is open on this working tree or for this session, so a %s has "
             "no run to work for. Open the run first (council run open <mode>), or carry on with a paused one if the "
             "user wants it (council run resume --run <folder>); plan the seat, then dispatch. For work outside the "
-            "council, use another agent type.")
+            "council, use another agent type." % kind)
 
 
 def _unplanned(kind: str, seat: str, file: str, candidates: list[str]) -> str | None:

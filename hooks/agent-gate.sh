@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Agent, Task, Workflow) — the Small Council's agent stop.
 #
-# While a council run this session may be driving is at its agent cap or past its token ceiling, and no go
-# of the user's covers the next agent (council cap allow), the call is refused: exit 2, the reason on stderr,
-# which Claude Code hands to Claude. A Small Council agent (subagent_type council-worker or council-verifier)
-# is also held to the record: refused when the council home or the run it names can't be written from this
-# session (issue 51), when no council run is open for it, or when its dispatch names a seat the run's plan
-# doesn't select. Anything else lets the call through, silently: no council, no in-progress run, a run within
-# its limits, an ordinary agent, input it can't read, or any fault of the helper's. The decision is the
-# helper's (council cap check); this script only reads the input. A call it lets through is counted as an
-# agent start of the run this session drives (a Workflow as one, however many agents it starts), so agents
-# started together, or recorded late, still count. Nothing goes to stdout, which Claude Code may read as JSON.
+# While a council run this session may be driving is at its agent cap or past its token ceiling, and no go of the
+# user's covers the next agent (council cap allow), the call is refused: exit 2, the reason on stderr, which Claude
+# Code hands to Claude. A Small Council agent (subagent_type council-worker, council-verifier or council-builder) is
+# also held to the record: refused when the council home or the run it names can't be written from this session
+# (issue 51), when no council run is open for it, when its dispatch names a seat the run's plan doesn't select, or,
+# for a builder, out of its turn (D42). Anything else lets the call through, silently: no council, no in-progress run,
+# a run within its limits, an ordinary agent, input it can't read, or any fault of the helper's. The decision is the
+# helper's (council cap check); this script only reads the input. A call it lets through is counted as an agent
+# start of the run this session drives (a Workflow as one, however many agents it starts), so agents started
+# together, or recorded late, still count. Nothing goes to stdout, which Claude Code may read as JSON.
 #
 # Portability: bash 3.2 (macOS), Git Bash on Windows, Linux — no jq, no Python.
 
@@ -21,14 +21,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
 # Escaped backslashes and quotes are set aside first, so every " left bounds a string: a key quoted inside
 # a value (a prompt that says "cwd": …) stays inside that value, and only the outer object's keys count.
 # Only the short stretches between strings are walked character by character.
-# Then, for a Small Council agent only (tool_input's own subagent_type), what its dispatch message names:
-# the seat on a "Seat: <slug>" line, when the slug stands alone there ("Seat: the security seat" names
-# none); the file it writes (seats/<slug>.md for a worker, verify-<n>.md for a verifier) when one name
-# stands out, preferring those on a line that says write; and the run folder (runs/<date-time>-<mode>)
-# that file is in — as the line that says write gives it, else its last mention, as a re-review cites
-# the earlier run's file first — else the one run folder the message names. What it can't pick out
-# stays empty, and the helper judges nothing on it. For a verifier, also the first words that send it
-# hunting past its Done-when ("however narrow", "any route", "find anything else"), which the helper refuses.
+# Then, for a Small Council agent only (tool_input's own subagent_type), what its dispatch message names: the
+# seat on a "Seat: <slug>" line, when the slug stands alone there ("Seat: the security seat" names none); the
+# file it writes (seats/<slug>.md for a worker, verify-<n>.md for a verifier, report-<n>.md for a builder) when
+# one name stands out, preferring those on a line that says write; and the run folder (runs/<date-time>-<mode>)
+# that file is in — as the line that says write gives it, else its last mention, as a re-review cites the
+# earlier run's file first — else the one run folder the message names. What it can't pick out stays empty, and
+# the helper judges nothing on it. For a verifier, also the first words that send it hunting past its Done-when
+# ("however narrow", "any route", "find anything else"), which the helper refuses.
 # For a Workflow, whether its script (inline, or the file at scriptPath) starts council verifiers, and the same
 # hunting words in it: the helper holds it to one checker per build.
 fields="$(LC_ALL=C awk '
@@ -59,12 +59,12 @@ fields="$(LC_ALL=C awk '
     gsub("\003", "\n", got["prompt"])
     print got["session_id"]; print got["cwd"]; print got["tool_name"]
     ty = got["subagent_type"]; seat = ""; run = ""
-    if (ty != "small-council:council-worker" && ty != "small-council:council-verifier") ty = ""
+    if (ty !~ /^small-council:council-(worker|verifier|builder)$/) ty = ""
     for (i = 1; i <= n; i += 2) { t = p[i]; bal += gsub(/[{[]/, "", t) - gsub(/[]}]/, "", t) }
     if (n % 2 == 0 || bal != 0) ty = ""                         # a cut-off input: nothing judged on its message
     if (ty != "") {
       runre = "runs/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-[a-z][a-z0-9-]*"
-      fre = (ty ~ /worker$/) ? "seats/[A-Za-z0-9_-]+[.]md" : "verify-[A-Za-z0-9_-]+[.]md"
+      fre = (ty ~ /worker$/) ? "seats/[A-Za-z0-9_-]+[.]md" : ((ty ~ /builder$/) ? "report-[0-9]+[.]md" : "verify-[A-Za-z0-9_-]+[.]md")
       P = got["prompt"]; gsub(/\\/, "/", P)                     # a Windows path reads as one with /
       nl = split(P, L, "\n")
       for (j = 1; j <= nl && !sl; j++)

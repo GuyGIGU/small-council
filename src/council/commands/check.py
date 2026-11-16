@@ -1,8 +1,9 @@
 """council check [<file> …] [--base <rev>]: every item's citation in the run's synthesis (or its seat files, or the
-files named), each request part's quote of the user's words, a post-game's next tasks, a build's proofs and, on a
-just-me council, the council ids a build left in shared text — into check.md, with a verdict line and exit 1 when
-anything is broken. The user's words are redacted before anything is compared with them, and a quote that holds a
-secret-looking string fails unless it is found as filed."""
+files named), each request part's quote of the user's words, a post-game's next tasks, a build's proofs (each with
+its revert check) and, on a just-me council, the council ids a build left in shared text — into check.md, with a
+build's two receipt lines (receipt), a verdict line and exit 1 when anything is broken. The user's words are
+redacted before anything is compared with them, and a quote that holds a secret-looking string fails unless it is
+found as filed."""
 from __future__ import annotations
 
 import os
@@ -80,6 +81,7 @@ class Check:
         self.said = said(run)
         self.n: Counter = Counter()
         self.extra = ""
+        self.tally: check_proofs.Tally | None = None
         self.table = ["# Citation check — " + clock.now_sec(),
                       "base: " + (self.base or "unknown — origin not checked"), "",
                       "| item | cite | status | origin |", "|---|---|---|---|"]
@@ -175,7 +177,7 @@ class Check:
 
     def proofs(self) -> None:
         """council-implement: every fix's own proof, checked rather than taken on trust."""
-        tally = check_proofs.proofs(self.run, self.top)
+        tally = self.tally = check_proofs.proofs(self.run, self.top)
         self.n["proofs"] = len(tally.rows)
         self.n["rows"] += len(tally.rows)
         self.n["bad"] += tally.broke + (not tally.rows)
@@ -223,6 +225,11 @@ class Check:
             ("noline", "name a path but no line"), ("unchecked", "not checked (a command, a link, an area or no path)"),
             ("unread", "item line(s) check can't read"), ("empty", "section(s) with nothing to check")) if n[key])
         out = self.run.as_posix() + "/" + run_files.CHECK
+        if self.tally is not None:                      # a build: the receipt's two lines from the records
+            from council.commands import receipt
+            said = receipt.lines(self.run, self.top, where.council_home(), self.tally)
+            cli.say_all(said)
+            self.table += [""] + said
         _write(self.run / run_files.CHECK, self.table)
         found = " · %d of %d quotes found in the request" % (n["found"], n["quotes"]) if n["quotes"] else ""
         cli.say("check: %d items, %d broken %s%s%s → %s" % (n["rows"], n["bad"], what, extra, found, out))

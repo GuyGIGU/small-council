@@ -1,5 +1,6 @@
 """council patch save <task> [<report>] [--base <rev>] · council patch show <task>: a build round's report and its
-diff, checked against each other before the verifier sees either (references/run/builder-report.md).
+diff, checked against each other before the verifier sees either (references/run/builder-report.md). council patch
+apply|revert <task> [--round <r>] puts a saved round on or takes it off the code root (patch_apply).
 
 save reads the round's report head (`<run>/report-<n>.md` unless another file is named), takes the round's diff
 (from the run's last saved round, else the commit the run opened on, to the files on disk now) and refuses the
@@ -16,17 +17,24 @@ from council.commands import cli, gate_output, patch_checks, patch_history, reso
 from council.records import home as where
 from council.records import patches, report_head, tasks
 
-USAGE = "usage: council patch save <task> [<report>] [--base <rev>] | patch show <task> [--run <folder>]"
+USAGE = ("usage: council patch save <task> [<report>] [--base <rev>] | patch show <task> | patch apply|revert <task> "
+         "[--round <r>] [--run <folder>]")
+WORDS = {"save": 3, "show": 2, "apply": 2, "revert": 2}     # each verb's most words, its own included
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    cli.takes_flags(args, "patch", "base")
-    if len(words) < 2 or words[0] not in ("save", "show") or len(words) > (3 if words[0] == "save" else 2):
+    cli.takes_flags(args, "patch", "base", "round")
+    if len(words) < 2 or words[0] not in WORDS or len(words) > WORDS[words[0]]:
         raise cli.Refusal(USAGE)
     task = tasks.number(words[1])
     if task is None:
         raise cli.Refusal("patch %s takes a task number (3 or T3), not '%s'" % (words[0], words[1]))
+    if args.value("round") and words[0] in ("save", "show"):
+        raise cli.Refusal("patch %s doesn't take --round — patch apply|revert <task> --round <r> does" % words[0])
     run = resolve.run_folder(args)
+    if words[0] in ("apply", "revert"):
+        from council.commands import patch_apply
+        return patch_apply.main(args, run, words[0], task)
     if words[0] == "show":
         cli.say_all(patch_history.lines(run, task) or ["patch: task %d has no saved rounds — council patch save %d "
                                                        "once its report is written" % (task, task)])

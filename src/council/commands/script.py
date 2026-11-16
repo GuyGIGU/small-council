@@ -19,8 +19,9 @@ from pathlib import Path
 from types import ModuleType
 from typing import Callable
 
-TOOLS = {"audit": "commands.audit", "chair_usage": "commands.chair_usage", "evidence": "commands.evidence",
-         "memory": "commands.memory_draft", "repair": "commands.repair_trail", "status": "views.status"}
+TOOLS = {"audit": "commands.audit", "builder_stop": "commands.builder_stop", "chair_usage": "commands.chair_usage",
+         "evidence": "commands.evidence", "memory": "commands.memory_draft", "repair": "commands.repair_trail",
+         "status": "views.status"}
 FAULTS = {  # what a tool says as '<tool>: <fault>' and exits 2 on, as its own process did; names in its module
     "evidence": "EvidenceError paths.RecordError UnicodeError OSError ValueError",
     "memory": "MemoryError_ evidence.EvidenceError repair.RepairError evidence.paths.RecordError OSError UnicodeError "

@@ -19,10 +19,10 @@ records everything in a **run folder** inside the project's **council home** (`.
 | Standalone skills | `skills/spec-writer/`, `skills/test-architect/` | Skills that use the council's agents and formats without being council modes. |
 | Stage doctrine | `references/doctrine/NN-<stage>.md` | One file per stage, read by the Chair when it enters that stage. |
 | References | `references/` | By who reads it: the seat docs, `guardrails.md` and `build-proof.md` at the root, `doctrine/`, `run/` (the run's contracts), `roster/`, `templates/`, `spec-writer/`, `test-architect/`. `references/README.md` is the map. |
-| Agents | `agents/council-worker.md`, `agents/council-verifier.md` | The seat worker's and the blind verifier's contracts. |
+| Agents | `agents/council-worker.md`, `agents/council-verifier.md`, `agents/council-builder.md` | The seat worker's, the blind verifier's and the builder's contracts. The builder builds one task of a build in a clean window (D42). |
 | Helper | `bin/council`, `src/council/` | The CLI for the mechanical steps: runs, state, seats, gates, the change index, checks, memory, the agent stop. `bin/council` only starts Python; every command is in `src/council/commands/` (§10). |
 | Scripts | `scripts/quick_validate.py` | The repo's own validator. The tools (audit, evidence, repair, memory, seat advice, the Chair's tokens) are modules in `src/council/commands/`, the views (status and the card, over the run's snapshot) in `src/council/views/`, run through the helper. |
-| Hooks | `hooks/*.sh`, `hooks/hooks.json` | Enforce what prose can't: SessionStart orientation and the session mark, the agent stop (PreToolUse on Agent, Task and Workflow), the Bash pipe guard and push freeze, the seat-file check (SubagentStop), the turn-end nudges (Stop). |
+| Hooks | `hooks/*.sh`, `hooks/hooks.json` | Enforce what prose can't: SessionStart orientation and the session mark, the agent stop (PreToolUse on Agent, Task and Workflow), the Bash pipe guard and push freeze, the seat-file check and the builder's stop check (SubagentStop), the turn-end nudges (Stop). |
 | Mod | `hooks/council-view.tsx`, `hooks/council-scene.ts` | The council pane and the line above the prompt. It reads `python src/council/commands/script.py status … --json` and never writes a council file. |
 | Evals | `evals/` | Machine checks: structural pins, helper and hook scenarios, per-script suites, judgment fixtures (`evals/suite/`), the benchmark harness. `evals/run_all.py` runs them all. |
 | Docs | `docs/` | This page, the decisions index, ADRs and design notes (`design/`), validation records (`validation/`), roadmap status. |
@@ -37,7 +37,8 @@ user ── Chair (main session)
           ├─ bin/council ──► src/council ──► run files (.council/)
           │                    └─ src/council/views, the views (in the same process)
           │ dispatches
-          └─ agents (worker, verifier) ── read brief + references, write one seat/verify file
+          ├─ agents (worker, verifier) ── read brief + references, write one seat/verify file
+          └─ agent (builder), one at a time ── runs council context build, writes one task's code + report-<n>.md
 hooks ──► bin/council          mod ──► commands/script.py status
 ```
 
@@ -51,6 +52,9 @@ Rules:
   or in the helper lets the call through: a hook must never block work because of its own bug (D20).
 - **Agents write only their own file.** A seat writes `seats/<slug>.md`, a verifier writes
   `verify-<n>.md`, and neither edits project code (D4).
+- **One builder at a time edits project code** (D42): a builder agent on seat `task-<n>`, which
+  writes the code of its one task and `report-<n>.md`, or the Chair itself in a Solo build. Outside a
+  Solo build the Chair edits no project code.
 - **Nothing calls the CLI back.** The mod reads the status as its own process through
   `commands/script.py`; the views print `council …` commands for the reader to run, and none runs
   `bin/council` (§10, WS1).
@@ -66,10 +70,10 @@ Rules:
 | `references/templates/` | The files `council init` writes into a project | Project-specific values |
 | `references/roster/` | The seat catalogue | Seat principles (those are in the seat's doc) |
 | `references/spec-writer/`, `references/test-architect/` | The two standalone skills' own templates, guides and formats | Anything a council mode reads |
-| `agents/` | The worker and verifier contracts | Mode logic |
+| `agents/` | The worker, verifier and builder contracts | Mode logic; the build loop's steps (`references/run/builder-loop.md`) |
 | `bin/council` | Finding a Python and starting `src/council/__main__.py` with the words as typed; the one refusal when there is none (D24) | A command's own logic; anything but the launch |
 | `src/council/` | The Python library. `records/` reads and writes run files, one module per file (paths, locks, config, state, events, seats, plan, gates, ledger), with `home` (where the council lives, and the plugin's own folder: `plugin_root`), `runs` (the run listing), `sharing` (the sharing line), `pushes` (the push freeze line), `owners` (who holds a lock), `writable` (whether a folder takes a new file) and `usage` (the per-seat usage rule and the agent stop's standing), `usage_gaps` (the seats that were agent runs with no token figure, read from it), `audit_file` (audit.md and the audit's report text), `request` (the user's words from ask.md and the filed request, and the quote match), `tasks` (a plan deliverable's tasks and their rows, and the task word: 3, T3, task-3), `map_file` (map.md's one-way-per-job table, its stamp, the top-level areas changed since a commit, and its one writer), `converge` (the build log's Converge table), `report_head` (a build round's report and its head), `patches` (a build's saved rounds), `estimates` (the `- estimates:` line, one token figure per role), `stages` (the stage table: rank, next step, required and skipped stages), `state_write` (the one writer of session-state.md), `closing` (what a close checks and says: undelivered runs, the usage words, the warnings), `synthesis_counts` (each seat's kept, cut and refuted items for the ledger), `seat_write` (seats.tsv's rows and the usage trail), `repairs` (the repair trail and the user's go past it), `hook_marks` (which hooks ran in a session), `memory` (the memory file, what is wrong with how it reads, and its one writer) with `memory_entries` (its entries, and the section each sits under), `memory_anchors` (what each **Anchor:** names) and `memory_audit` (each observed failure's support), `scope` (how a scope or an areas: list matches), `earlier` (earlier council work on some paths), `redact` (secret-looking strings out of the user's words), `ignores` (the home's .gitignore) and `bytewise` (text as the C-locale awk read it); `git.py`, `clock.py`, `diff.py` (a unified diff's files and lines) | Printing, argument parsing, a command's own logic |
-| `src/council/commands/` | Every helper command (D24), one module per area, behind `src/council/__main__.py`: `dispatch.py` maps the words to a module, `cli.py` reads the command line and holds the refusal, `help.py` the help text and the version. The tools live here as modules of their own: `audit` (with `audit_checks`, the run's records, and `audit_calls`, how the helper was called), `chair_usage`, `evidence`, `memory_draft`, `repair_trail` and `seat_advice`. `script.py` runs a tool's `main(words)` in process, says its faults as the tool's own process did, and is the one way in by path for a caller outside the helper (the seat-gate hook, the mod, the evals: `python src/council/commands/script.py <tool> <words>`); `script_cmds.py` runs the commands that hand over to a tool or a view; `session_start.py` is the SessionStart hook's body (`council run session-start`); `context.py` prints a build task's orders and `tree.py` the task tree, with `task_slice.py` (a task's plan and slice, and the refusal when the run has no readable plan, shared with `patch`) | A run file's parser (that is `records/`) |
+| `src/council/commands/` | Every helper command (D24), one module per area, behind `src/council/__main__.py`: `dispatch.py` maps the words to a module, `cli.py` reads the command line and holds the refusal, `help.py` the help text and the version. The tools live here as modules of their own: `audit` (with `audit_checks`, the run's records, and `audit_calls`, how the helper was called), `chair_usage`, `evidence`, `memory_draft`, `repair_trail` and `seat_advice`. `script.py` runs a tool's `main(words)` in process, says its faults as the tool's own process did, and is the one way in by path for a caller outside the helper (the seat-gate hook, the mod, the evals: `python src/council/commands/script.py <tool> <words>`); `script_cmds.py` runs the commands that hand over to a tool or a view; `session_start.py` is the SessionStart hook's body (`council run session-start`); `context.py` prints a build task's orders and `tree.py` the task tree, with `task_slice.py` (a task's plan and slice, and the refusal when the run has no readable plan, shared with `patch`); `build_seat.py` holds the build seat's rules (the slug `task-<n>`, one at a time, no start past a standing `NEEDS: fix` stop, the report a finished seat owes, the files changed outside a saved round) for `council seat` and the agent gate, and the one reader of a task's stop, which `council tree` asks too, and `builder_stop.py` is the tool that judges a builder's stop for the seat gate; `patch_apply.py` takes a saved round off a folder's files or puts it back on (`council patch apply|revert`), `revert_check.py` is `council check`'s revert check, and `receipt.py` writes the receipt's two machine lines | A run file's parser (that is `records/`) |
 | `src/council/views/` | The views over `src/council/records`: `status`, a module with a `main(words)` named in `script.TOOLS` (the plain reading, with `status_card` the card and widget, `status_usage` the usage and the stop, `status_closing` the close, `status_names` the seat names, `words` the shared wording), and `snapshot` (the run's records read once, for the status and its parts) | Their own copy of a run-file parser |
 | `scripts/` | `quick_validate.py`, the repo's own validator | Council logic |
 | `hooks/` | Enforcement at Claude Code events, the mod; `session-mark.sh`, the one bash writer of the session mark, sourced by the bash and seat gates | Decisions: the helper makes them |
@@ -105,12 +109,12 @@ Inside a run folder:
 | `agent-starts.tsv` | the agent gate (`council cap check`) | the helper, `council run audit`, `council status` |
 | `ask.md` | the Chair (the user's words) | `council check`, `council ask save`, `council status` |
 | `brief.md`, `seats/`, `verify-<n>.md`, `synthesis.md` | the Chair and its agents | `council collect`, `council check`, `council run audit`, `council evidence` |
-| `gates/` | `council gate` | `council check`, `council evidence` |
-| `check.md` | `council check` | the Chair (the receipt), the audit |
+| `gates/` | `council gate`; `council check` writes `gates/reverted/after-<n>-with-change.txt` and `after-<n>.txt`, its revert check's two outputs, which no gate reader reads | `council check`, `council evidence` |
+| `check.md` | `council check`; in a build it ends with the receipt's `Checked by machine:` and `Not proved:` lines | the Chair (the receipt, those two lines copied word for word), the audit |
 | `audit.md` | `council run close` (the audit with `--at-close --save`, through `records/audit_file`); a close again rewrites it | `council status` (the closing card), `council run status`, a later session |
 | `repairs.jsonl` | `council gate` / `council repair` (`repair_trail`) | `council repair`, `council memory propose`, `council status` |
-| `report-<n>.md` | the builder, at each round of task n (its head: `references/run/builder-report.md`) | `council patch save` |
-| `patches/` | `council patch save` (`T<n>-<r>.patch`, `.json`, and the task's history `T<n>.md`) | the verifier, a fix round's brief, `council patch show` |
+| `report-<n>.md` | the builder (a builder agent on seat `task-<n>`, or the Chair in a Solo build), at each round of task n (its head: `references/run/builder-report.md`) | `council patch save`, the seat gate (`builder_stop`), `council seat task-<n> done` |
+| `patches/` | `council patch save` (`T<n>-<r>.patch`, `.json`, and the task's history `T<n>.md`) | the verifier, a fix round's builder (its orders link `T<n>.md`), `council patch show`, `council patch apply|revert`, `council check`'s revert check, the seat gate (`builder_stop`) |
 | `index.md` | `council index` | seats |
 
 ## 5. Entry points
@@ -118,16 +122,17 @@ Inside a run folder:
 - **Skills** (what the user invokes): `council-init`, `council-review`, `council-plan`,
   `council-implement`, `council-research`, `council-postgame`, `spec-writer`, `test-architect`, and
   `context-core`, which only modes invoke.
-- **Agents**: `small-council:council-worker`, `small-council:council-verifier`.
+- **Agents**: `small-council:council-worker`, `small-council:council-verifier`,
+  `small-council:council-builder`.
 - **Helper commands** (`council help` gives exact syntax; `references/run/helper-commands.md` gives the
   purpose of each): `home`, `sharing`, `pushes`,
   `run open|close|status|resume|plan|events|audit|turn-end`, `state`, `seat`, `cap show|allow|check`,
   `route recommend`, `index`,
-  `evidence`, `repair`, `gate`, `gates`, `changed`, `collect`, `check`, `patch`, `context build`, `tree`, `map status|touch`, `fingerprint`,
+  `evidence`, `repair`, `gate`, `gates`, `changed`, `collect`, `check`, `patch save|show|apply|revert`, `context build`, `tree`, `map status|touch`, `fingerprint`,
   `memory`, `prior`, `ask`, `ledger`, `status`,
   `correct`, `doctor`, `version`, `help`.
 - **Hooks**: SessionStart → `session-start.sh`; PreToolUse Agent, Task, Workflow → `agent-gate.sh`;
-  PreToolUse Bash → `bash-gate.sh`; Stop → `turn-end.sh`; SubagentStop worker and verifier →
+  PreToolUse Bash → `bash-gate.sh`; Stop → `turn-end.sh`; SubagentStop worker, verifier and builder →
   `seat-gate.sh`; the mod module → `council-view.tsx`.
 
 ## 6. Contracts: names a cleanup never renames
@@ -143,7 +148,9 @@ never part of a cleanup or refactor branch (D23).
   CHECKED); 124 a gate stopped at its time limit (TIMED OUT); 97 a gate whose code root is
   unreachable. A gate otherwise returns its own command's exit code.
 - **Output lines other code or the Chair reads**: lines starting `Small Council:` (hook refusals),
-  `check:`, `audit:`, `NOTHING WAS CHECKED`, `TIMED OUT`, `UNWRITTEN <path>`, `Wrote <path> — …`.
+  `check:`, `audit:`, `NOTHING WAS CHECKED`, `TIMED OUT`, `UNWRITTEN <path>`, `Wrote <path> — …`; on a
+  build, `council check`'s two receipt lines, `Checked by machine: …` and `Not proved: …`, which the
+  Chair copies word for word.
 - **The council home's file and folder names** (§4), the run folder's naming
   (`runs/<YYYY-MM-DD-HHMMSS>-<mode>`), and every TSV's columns and their order.
 - **Event types, subjects and detail keys**, as `references/run/event-stream.md` lists them.
@@ -159,7 +166,17 @@ never part of a cleanup or refactor branch (D23).
   (`- <area>: <line>`), `ref:` proof of reading, `quote:`,
   verdict words (CONFIRMED / REFUTED / UNCERTAIN / MISCITED; OK / INCOMPLETE / REGRESSION /
   SCOPE-CREEP / CANNOT VERIFY; MET / PARTLY MET / NOT MET / CAN'T TELL), memory entry ids (AP, EC,
-  D, F), `Principle N` numbering in seat docs.
+  D, F), `Principle N` numbering in seat docs; `council check`'s proof word `REVERT-PASSED`.
+- **The build seat** (D42): the agent `small-council:council-builder`; the seat slug `task-<n>`
+  (`task-` and digits, a build seat only in a council-implement run; role `worker` in the run plan);
+  the file word `report-<n>` the agent gate reads from its dispatch; the dispatch block's lines
+  (`Seat: task-<n>`, `Run: <run folder>`, `Start: …`, `Write <run folder>/report-<n>.md`); its
+  one-line returns (`Wrote <run folder>/report-<n>.md — task <n>, round <r> saved`, `NEEDS: <question>`,
+  `NEEDS: fix <file:line> · does: … · should: … · seen: …`, `BLOCKED: <reason>`); the tool word
+  `builder_stop`; the path `references/run/builder-loop.md`, which the builder's contract and
+  council-implement both name.
+- **Saved rounds on and off the files**: `council patch apply|revert <task> [--round <r>]`, the flag
+  `--round`, and `gates/reverted/` in the run folder.
 - **Environment variables**: `COUNCIL_ALLOW_NO_HOOKS`, `COUNCIL_ALLOW_PUSH`, `COUNCIL_ARG_CONV_EXCL`,
   `COUNCIL_BASE`, `COUNCIL_BASH` (the bash running `bin/council`, for the commands that
   print or start it), `COUNCIL_INDEX_CAP`, `COUNCIL_INDEX_NAMECAP`, `COUNCIL_PLUGIN_ROOT`,
@@ -244,7 +261,13 @@ folds them, and new code uses the named way.
 | Read a task word | `council.records.tasks.number`: 3, T3 or task-3, the whole word | For `council patch`, `council context build`, and `council tree`'s match of a Converge row and a seat slug |
 | Find a build task's slice | `council.commands.task_slice` (`of`, `cut`): the `input=` plan's Owner and Touches and the map row its Owner names; `plan` refuses with no `input=` or an unreadable plan | For `patch save`, `context build` and `tree` |
 | List a round's workaround signs | `council.commands.patch_checks.SIGNS`: one `(kind, pattern)` per sign, matched by `signs()` on added lines of code only (documents skipped), for `council patch save` | Questions for the verifier, never verdicts |
-| Build a task's orders | `council context build task-<n>` (`src/council/commands/context.py`): printed, never written; `CEILING` 8,000 bytes; whole parts dropped from the end and named under Left out | Reads only through `records/`; doctrine is linked by path, never copied |
+| Build a task's orders | `council context build task-<n>` (`src/council/commands/context.py`): printed, never written; `CEILING` 8,000 bytes; whole parts dropped from the end and named under Left out. The builder runs it itself, as its first command; a fix round's orders link the task's own history, `patches/T<n>.md` | Reads only through `records/`; doctrine is linked by path, never copied; the Chair's dispatch never pastes the orders (D3) |
+| Build one round of a task | `references/run/builder-loop.md`, followed by the builder agent (`agents/council-builder.md`) or by the Chair in a Solo build | council-implement keeps the Chair's part: the dispatch, the verifier, the log, the state, the commit |
+| Hold a build to one builder | `council.commands.build_seat` (`SEAT`, `start_refusal`, `dispatch_refusal`, `missing_report`, `outside_round`), asked by `council seat task-<n> queued|running|done` and by the agent gate for a council-builder: one build seat at a time (taken from its `queued`, not only while `running`; the agent gate lets a builder out only once its seat is queued), no start of a task that is or depends on a standing `NEEDS: fix` stop, a finished seat owes its `report-<n>.md`, and `council seat` names each file changed outside a saved round (D42) | The one home of the `task-<n>` pattern: `evals/bench.py` reads it from here. `Depends on` is followed at every level, and is the stop's one list |
+| Read a task's stop | `council.commands.build_seat.stop_of`: a seat's `NEEDS:` note is `resolved` once the task's own `after-<n>` gate passed after the stop (by the event stream's order), `released` once a decision of the user's is on record from the stop's minute on, else it `stands`; `resolved_tasks` gives `council tree` its `was stopped:` | The stop's moment is the seat's first `done` after its last start, never the row's `updated` cell. The note itself ends in `records/seat_write.py` when the seat has run again and is recorded `done` with no note. With no event stream nothing is refused |
+| Judge an agent's stop | `hooks/seat-gate.sh` (SubagentStop): a worker's and a verifier's in bash; a builder's through `council.commands.builder_stop` (`script.py builder_stop`, exit 1 and one line to send it back once) | **(debt)** BLOCKED is read in both, since the hook is frozen at its size; a fault lets the stop through (D20) |
+| Take a saved round off the files, or put it back | `council.commands.patch_apply` (`undo`, `redo`: `git apply`, all or nothing, the files named when it won't go), for `council patch apply|revert` and the revert check | No record changes; `git apply` is called nowhere else |
+| Write the receipt's machine lines | `council.commands.receipt.lines`, printed by `council check` on a build and filed in `check.md`: `Checked by machine:` from the gate records, `Not proved:` from the proofs, the gates and the revert checks | The Chair copies them; it may add to `Not proved:`, never cut |
 | Find the plugin's own files | `council.records.home.plugin_root`: `CLAUDE_PLUGIN_ROOT` when set, else the package's own folder; for `context build` and the SessionStart banner | `doctor.py` and `run_open.py` still find it from `__file__` themselves: folding them is its own task |
 | Give a builder its standing rules | `references/run/builder-rules.md`, linked from a task's orders | Never copied into a brief |
 | Print the task tree | `council tree` (`src/council/commands/tree.py`): the request, then the plan's tasks under each Serves quote | Reads only through `records/` |
@@ -253,7 +276,7 @@ folds them, and new code uses the named way.
 | Stamp a time | `council.clock`: `now_date` (the one date-only stamp), `now_min` and `now_sec` (local), `now_utc`; `local_moment`, `utc_moment` and `iso_moment` read a stamp back | |
 | Read a diff's files and lines | `council.diff` (`files`, for `council patch`; `header`, the one reader of a hunk header, for `cite_origin.hunks`, `hygiene` and `index.hunks`) | |
 | Check a run plan | `council run plan check` (`src/council/commands/plan_check.py`; a delivered plan's tasks in `plan_tasks.py`, `references/run/run-plan.md`, Plan tasks). `council state` (each phase from Brief on), `council seat … queued/running` and `council doctor` reach the same check through `council.commands.plan.check` | A closed run's plan is judged by the settings of its day; Full needs a decision of the user's since the run opened (D7) |
-| Prove a build task | `council gate before-<id>` / `after-<id>`, checked by `council check` (`references/build-proof.md`) | |
+| Prove a build task | `council gate before-<id>` / `after-<id>`, checked by `council check` (`references/build-proof.md`). For an `ok` change proof of a task with saved rounds, `council check` runs the after check in a scratch copy written from the tree's own blobs, first with the change on (the control, which must pass), then with the task's rounds taken off (`council.commands.revert_check`): it must then fail, or the proof reads `REVERT-PASSED` | A revert check that can't be made is said, and listed under `Not proved:`; never a pass |
 | Check a document's contract | A structural pin in `evals/run_structural.py` | Only for documents; behaviour is proved by running it (D25) |
 | Hold a limit (a size, a count, a lint warning) | A number in `evals/ratchet.json`, measured by `evals/run_ratchet.py`; it may only go down, and `--update` keeps a gain | Never a hand-kept list of files or exceptions |
 

@@ -141,6 +141,13 @@ the stop, `NEEDS: fix …` (`references/run/repair-loop.md`, Unknowns). The hist
 `workaround words` and `todo` signs point at such lines; like every sign, they are questions, not
 verdicts.
 
+**Exists, not a stub, wired in.** For each thing the Done-when names (a function, a command, a
+route, a setting), the checker also asks three things: it is in the tree; its body does the work (no
+placeholder return, no empty or TODO body, no answer hard-coded to fit the test); and a path from an
+entry point that ships reaches it, the chain cited (`path:line` to `path:line`). Missing or a stub is
+INCOMPLETE; present but called by nothing is INCOMPLETE, naming where it should be wired in. Like the
+other questions it asks only of what the Done-when names, never wider.
+
 ## Read the result
 
 `council check` checks the saved before/after gates against their declared proof mode and names the
@@ -161,6 +168,29 @@ Proof cell; a saved test note establishes its file exists, not that its assertio
 | `NOTHING-RAN` | Preservation output is blank or says no tests ran or no files matched. |
 | `NO-BEFORE` / `NO-AFTER` | One side of the pair is missing. |
 | `NO-PROOF-YET` | The before-check's red proves nothing: marked invalid, stopped at its time limit, or never ran (exit 127). Run it again. |
+| `REVERT-PASSED` | The change check still passes with the task's saved rounds taken off: it does not show the change. Make it fail without the change, then run the pair and `council check` again. |
+
+**The revert check.** For each change proof that reads `ok`, of a task with saved rounds
+(`council patch save`), `council check` runs the check once more without the change. It writes the
+files on disk (what `git` tracks or could, as git holds them; `.council/` and ignored files left out)
+to a scratch folder outside the project and the run folder, and runs the after-check's recorded
+command there under the gate time limit, first with the change still on: the control. It must pass
+there; if it doesn't, the check needs files the copy leaves out, and nothing more is tried. Then the
+task's rounds come off, newest first, with the same reverse-apply as `council patch revert`, and the
+command runs again. The task's test files stay as they are when its rounds come off: the round that
+added or extended the test is the same round as the fix, and taking the test off with it would run an
+older test, or none, instead of the one that proved the change. The scratch folder is removed
+afterwards; the project's files never change. The outputs are kept as
+`gates/reverted/after-<n>-with-change.txt` (the control) and `gates/reverted/after-<n>.txt`.
+
+- It fails with the rounds off: the proof stands, and the row says so.
+- It still passes: `REVERT-PASSED`, a broken proof, and `council check` exits 1.
+- It can't be made: the control doesn't pass in the copy, a round doesn't come off the files on disk
+  cleanly, the files can't be copied, the command runs files under `.council/`, or a run timed out,
+  never ran or ran no test. The row says why, and it is neither a pass nor a problem: it goes under
+  `Not proved:`.
+
+A preservation proof, a proof that is not `ok` and a task with no saved round are not rerun.
 
 The verifier never takes a helper verdict or a saved test path as semantic proof: it traces the named
 invariants through the changed path, inspects test assertion changes and reads the actual
@@ -168,8 +198,29 @@ before-failure. Preservation alone never earns OK for a fix or new behaviour.
 For preservation the verifier also traces the affected path, checks that the tests cover the named
 invariants and inspects assertion changes. A passing pair establishes only those checked invariants;
 it is not proof that every possible behaviour was preserved. Report any uncovered requirement.
-The helper compares recorded modes, commands, exits and outputs; it cannot tell whether a red
-change check failed for the intended reason, a test exercises the path, or assertions were weakened.
-The independent verifier must inspect those facts before a task counts as built. Missing-tool,
+The helper compares recorded modes, commands, exits and outputs, and the revert check shows whether
+a change check needs the task's change to pass: one that still passes without it is `REVERT-PASSED`.
+It still cannot tell whether a red failed for the intended reason, whether the test exercises the path
+the Done-when names, or whether assertions were weakened; a revert check not made shows nothing. The
+independent verifier must inspect those facts before a task counts as built. Missing-tool,
 collection or test-syntax failures earn CANNOT VERIFY, not proof of changed product behaviour.
 Missing proof earns CANNOT VERIFY; code that establishes an unmet Done-when earns INCOMPLETE.
+
+## The receipt lines
+
+On a build, `council check` prints two lines just before its closing `check:` line and writes them into
+`check.md`, composed only from the records: the gate records (`gates/`, and the baseline under
+`gates/baseline/`), the proofs and the revert checks. The Chair copies them into the receipt as they
+are; it writes neither.
+
+```
+Checked by machine: <each gate: its baseline result → its result now> | <the helper's NOTHING WAS CHECKED words>
+Not proved: <what the records show nobody checked> | nothing
+```
+
+`Checked by machine:` names each gate that checks the work (the proof pairs and probes are not gates
+here): `unit: FAIL → pass · lint: no baseline → pass`. With no gate on record it quotes the helper's
+NOTHING WAS CHECKED words. `Not proved:` lists a task of the plan with no proof pair, or a pair missing a
+side or reading `NO-PROOF-YET`; a configured gate never run; a gate that timed out, never ran, was marked
+invalid or passed with nothing run; a gate whose recorded tree is not the files on disk now; and a revert
+check that could not be made. Same records, same lines. A run that is not a build prints neither.

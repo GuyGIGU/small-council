@@ -61,13 +61,14 @@ DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 
 # 1. Layout
 for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.json"), ("bin", "council"),
-             ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
+             ("agents", "council-worker.md"), ("agents", "council-verifier.md"), ("agents", "council-builder.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"), ("hooks", "agent-gate.sh"),
              ("hooks", "bash-gate.sh"),
              ("references", "templates", "run-plan.tsv"),
              ("references", "run", "helper-commands.md"),
              ("references", "run", "evidence-model.md"),
              ("references", "run", "repair-loop.md"),
+             ("references", "run", "builder-loop.md"),
              ("src", "council", "commands", "evidence.py"),
              ("src", "council", "commands", "repair_trail.py")]:
     check(f"layout: {'/'.join(path)} exists", os.path.isfile(os.path.join(ROOT, *path)))
@@ -108,6 +109,7 @@ core = skill["context-core"]
 helper_reference = read("references", "run", "helper-commands.md")
 doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
+builder = read("agents", "council-builder.md")           # the build task's one hand (D42)
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
 command = {f[:-3]: read("src", "council", "commands", f)        # the helper's commands, by module (bin/council
            for f in os.listdir(os.path.join(ROOT, "src", "council", "commands")) if f.endswith(".py")}   # starts them)
@@ -119,6 +121,7 @@ agent_gate = read("hooks", "agent-gate.sh")
 bash_gate = read("hooks", "bash-gate.sh")
 warroom = read("references", "run", "war-room.md")
 guardrails = read("references", "guardrails.md")
+builder_loop = read("references", "run", "builder-loop.md")   # the build loop's steps 1-6, moved out of council-implement
 
 # 2. Kernel
 LAWS = ["One head", "Parallel readers, one writer", "Gather once, share with everyone", "The disk is the memory",
@@ -174,15 +177,15 @@ check("evidence: support states stay distinct from verifier verdicts",
 check("worker and verifier: declared support is blind to independent verification",
       "Evidence state:" in worker and "which you do not receive" in verifier and "refute the claim" in verifier)
 check("modes: evidence states reach review, research, plan, build and post-game",
-      all("evidence-model.md" in skill[mode] for mode in MODES))
+      all("evidence-model.md" in (builder_loop if mode == "council-implement" else skill[mode]) for mode in MODES))
 repair_contract = read("references", "run", "repair-loop.md")
 check("repair: build mode records bounded same-gate failures",
-      "council repair record" in skill["council-implement"] and "repair-loop.md" in skill["council-implement"] and
+      "council repair record" in builder_loop and "repair-loop.md" in builder_loop and
       "same" in repair_contract and "Third" in repair_contract and "stop product-code mutation" in repair_contract.lower())
 check("repair: terminal gate stop cannot fall through to another fix or success commit",
       "third failure stops the build" in repair_contract and
       "do not attempt steps 6–7 as a fix path" in skill["council-implement"] and
-      "only if the task is not blocked" in skill["council-implement"] and
+      "only if the task is not blocked" in builder_loop and
       "commit only a task whose mandatory gates pass" in skill["council-implement"])
 check("repair: blocked work is excluded from the built count and helper cost is labelled",
       "A task stopped" in skill["council-implement"] and
@@ -306,9 +309,9 @@ check("helper: usage lists its commands", {"run", "state", "seat", "index", "gat
 for c in sorted(known):
     check(f"helper: '{c}' is dispatched", c in dispatch.TOP)
 texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
-         "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
+         "agents/worker": worker, "agents/verifier": verifier, "agents/builder": builder, "hooks/session-start.sh": hook,
          "references/run/war-room.md": warroom, "references/guardrails.md": guardrails,
-         "references/run/helper-commands.md": helper_reference}
+         "references/run/helper-commands.md": helper_reference, "references/run/builder-loop.md": builder_loop}
 flags = {"--" + f for f in helper_cli.VALUED + helper_cli.GATE_VALUED + helper_cli.SWITCHES + ("glob", "each")}
 bad, bad_flags = [], []
 for label, t in texts.items():
@@ -403,7 +406,7 @@ for label, text, needles in [
     ("review", review, ["merge-base", "council index --base", "Origin:", "Basis:", "Refuted if:", "Not a finding", "council-implement"]),
     ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research", "war-room.md",
                     "## How the council decided", "ask.md"]),   # debate.md: war-room.md's list; ask save: 09-deliver's check
-    ("implement", impl, ["fix mode", "Before-evidence", "After-evidence", "clean-context diagnosis", "converge", "council gate --all",
+    ("implement", impl, ["fix mode", "clean-context diagnosis", "converge", "council gate --all",
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
                          "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input",
                          "NOTHING WAS CHECKED", "## Shortcuts and concessions", "Shortcuts I took:", "Not proved:",
@@ -412,6 +415,7 @@ for label, text, needles in [
                          "Checked by machine:", "Works?:", "guardrails.md", "council check", "gates/baseline/",
                          "older Gates layout",
                          "Draft any PR text as `<run>/pr-body.md`; the PR is opened from it at Deliver, after the user's OK."]),
+    ("builder-loop", builder_loop, ["Before-evidence", "After-evidence"]),
     ("research", research, ["scout", "Strength:"]),
     ("postgame", skill["council-postgame"], ["ask.md", "council run open council-postgame", "Ruled out",   # ask save: 09-deliver's check
                                              "council-implement", "council-plan", "never the plan", "quote:",
@@ -480,7 +484,7 @@ check("build tier: build-proof.md states both tiers with light as the default, t
       "and the verifier batches, the config template carries the line, and a build ends at a stated finish line",
       "## Tiers" in build_proof and "build tier: light" in build_proof and "A missing line reads as light" in build_proof and
       "light: gates only" in build_proof and
-      "light tier" in skill["council-implement"] and "Ruling:" in skill["council-implement"] and
+      "light tier" in builder_loop and "Ruling:" in skill["council-implement"] and
       "risk class" in skill["council-implement"].split("Dispatch `small-council:council-verifier` with:", 1)[-1] and
       "finish line" in skill["council-implement"] and "never a hunt inside the build" in skill["council-implement"] and
       "- build tier: light" in read("references", "templates", "council.config.md"))
@@ -499,7 +503,8 @@ check("a bug underneath: repair-loop.md and builder-report.md give the builder o
       needs_fix in repair_contract and needs_fix in builder_report and 'note="NEEDS: fix …"' in repair_contract
       and "carry on with the tasks that do not rest on it" in skill["council-implement"]
       and all(p in flat(skill["council-implement"]) for p in (
-          "stop that task and every task that depends on it or rests on the same code",
+          "stop that task and every task that depends on it (`Depends on`; the helper refuses them)",
+          "A task that only shares the code is not stopped: its builder is held to the same rule.",
           "the Serves line of the task it unblocks", "it starts only on the user's yes")))
 check("a bug underneath: the verifier asks on every round whether an added line only makes up for other code, naming "
       "it; build-proof.md, Checking, holds the rule, with the user's ruling as its one exception",
@@ -509,6 +514,7 @@ check("a bug underneath: the verifier asks on every round whether an added line 
 check("the task's orders: the build loop takes them from council context build and resumes from council tree after a "
       "compaction; the standing builder rules are one reference, which the orders link and never copy",
       "`council context build task-<n>`" in skill["council-implement"]
+      and "`council context build task-<n> --run <run folder>`" in builder_loop
       and "resume from `council tree`" in skill["council-implement"]
       and "never copy it" in flat(read("references", "run", "builder-rules.md")))
 cfg_template = read("references", "templates", "council.config.md")
@@ -569,7 +575,7 @@ start_cmds = [h.get("command", "") for g in hooks_json.get("SessionStart", []) f
 stop_groups = hooks_json.get("SubagentStop", [])
 check("hook: SessionStart runs session-start.sh", any("hooks/session-start.sh" in c for c in start_cmds))
 check("hook: SubagentStop runs seat-gate.sh for council agents only",
-      any(g.get("matcher") == "^small-council:council-(worker|verifier)$" and any("hooks/seat-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
+      any(g.get("matcher") == "^small-council:council-(worker|verifier|builder)$" and any("hooks/seat-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in stop_groups))
 check("hook: session-start always exits 0", hook.rstrip().endswith("exit 0"))
 gate_code = "\n".join(l for l in gate.split("\n") if not l.lstrip().startswith("#"))
@@ -707,7 +713,7 @@ def reference_docs():
 
 
 prose = {**{f"skills/{s}": flat(skill[s]) for s in SKILLS}, **{f"doctrine/{d}": flat(doctrine[d]) for d in DOCTRINE},
-         "agents/worker": flat(worker), "agents/verifier": flat(verifier),
+         "agents/worker": flat(worker), "agents/verifier": flat(verifier), "agents/builder": flat(builder),
          **{path: flat(read(*path.split("/"))) for path in reference_docs()}}
 ONE_HOME = [  # (the wording, its one home)
     ("concurrency or ordering, public contracts", "skills/context-core"),          # protected subjects
@@ -746,8 +752,8 @@ for s in SKILLS:
     check(f"{s}: description ≤ 600 chars", len(description(skill[s])) <= 600, str(len(description(skill[s]))))
 check("kernel: ≤ 14,000 chars (read on every run)", len(core) <= 14000, str(len(core)))
 check("kernel: ≤ 11,000 chars after moving command reference", len(core) <= 11000, str(len(core)))
-for label, t in [("worker", worker), ("verifier", verifier)]:
-    check(f"{label}: ≤ 8,000 chars", len(t) <= 8000, str(len(t)))
+for label, t in [("worker", worker), ("verifier", verifier), ("builder", builder)]:
+    check(f"{label}: ≤ 8,000 chars", bool(t) and len(t) <= 8000, str(len(t)))
 
 # 11. Bash portability (macOS ships bash 3.2)
 for label, t in [("bin/council", cli), ("hooks/session-start.sh", hook), ("hooks/seat-gate.sh", gate),
@@ -774,7 +780,7 @@ check("bin/council: the launcher never expands an empty \"$@\" or $* (unbound in
 
 # 12. Rename, and no project leakage in anything that ships as behaviour
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
-           "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
+           "agents/worker": worker, "agents/verifier": verifier, "agents/builder": builder, "hooks/session-start.sh": hook,
            "hooks/seat-gate.sh": gate, "hooks/agent-gate.sh": agent_gate, "hooks/bash-gate.sh": bash_gate, "bin/council": cli}
 for path in reference_docs():
     shipped[path] = read(*path.split("/"))

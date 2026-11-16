@@ -1,8 +1,9 @@
 # Repair loop — Phase 7
 
-This is a bounded aid for `council-implement`, not an automatic coding agent. The Chair remains the
-only code writer. `council repair` reads a gate that **already ran**; it never runs a command,
-dispatches a worker, changes code, or claims that the current edit caused a failure.
+This is a bounded aid for `council-implement`, not an automatic coding agent. One builder at a time
+writes code: a builder agent per task, or the Chair in a Solo build (D42). `council repair` reads a
+gate that **already ran**; it never runs a command, dispatches a worker, changes code, or claims that
+the current edit caused a failure.
 
 ## One task, one gate, at most three failed attempts
 
@@ -73,8 +74,8 @@ record the failure and retry limit manually in the log instead of claiming the h
   how a fix lands on a fix.
 - **A builder may return `NEEDS: <question>` and stop.** That is a correct outcome, not a failed
   seat: record it `council seat <slug> done note="NEEDS: <question>"`, never `failed` or `blocked`.
-  The Chair building a task stops the same way: the question, not a guess. It records the stop on the
-  task's seat with `agents=0` (`council seat task-<n> done agents=0 note="NEEDS: …"`), as for its own
+  The Chair building a task in a Solo build stops the same way: the question, not a guess. It records
+  the stop on the task's seat with `agents=0` (`council seat task-<n> done agents=0 note="NEEDS: …"`), as for its own
   seat (context-core): no agent ran, so the audit asks no token figure of it.
 - **A bug underneath stops the task.** A builder that finds the code under its task wrong stops and
   returns `NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <the command or test, and its output>`.
@@ -82,10 +83,13 @@ record the failure and retry limit manually in the log instead of claiming the h
   tests or its own documentation say. It is the `NEEDS:` stop with a second kind of content, recorded
   the same way (`note="NEEDS: fix …"`), and a correct outcome. `seen:` is OBSERVED or REPRODUCED; a
   suspicion is a `NEEDS: <question>` and gets the probe. Never make up for the bug inside the task's
-  slice: the verifier names such a line (`build-proof.md`, Checking). The Chair building a task stops
-  the same way; what it stops and asks: council-implement, Edge cases. The stop is resolved when the
-  fix task's `after-<n>` gate passes and then the stopped task's own `after-<n>` gate passes;
-  `council tree` then shows its note as `was stopped: NEEDS: …`.
+  slice: the verifier names such a line (`build-proof.md`, Checking). The Chair building a task in a
+  Solo build stops the same way; what it stops and asks: council-implement, Edge cases. The stop is
+  released when a decision of the user's is on record from its minute on: until then the helper refuses
+  to start the stopped task and every task that depends on it. It is resolved when the stopped task's
+  own `after-<n>` gate passes after the stop (an older pass, from before a fix round, does not count);
+  `council tree` then shows its note as `was stopped: NEEDS: …`. The note
+  ends when the seat has run again and is recorded `done` with no `note=`.
 - **The answer.** The Chair may run one probe or research seat a run for it inside the approved budget,
   without asking; before a second, it asks the user. A question only the user can answer joins the
   rulings. A plan does the same ahead of time: a task resting on an unchecked fact outside the repo
@@ -117,7 +121,7 @@ environment/configuration/build the operability lens; type/runtime the backend l
 its own lens. `UNKNOWN` falls back to the task's governing reference. These are starting points,
 not automatic seat selection—for example, a frontend type error may belong with the frontend seat.
 An environment or credential failure does not justify changing product code. A side-effectful gate:
-council-implement, step 5.
+`builder-loop.md`, step 5.
 
 Verifier `INCOMPLETE` and `REGRESSION` verdicts keep the build loop's own protocol (council-implement,
 step 7). Do not

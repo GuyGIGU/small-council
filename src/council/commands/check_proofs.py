@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from council.commands import cli, gate_output, proof_reach
-from council.records import bytewise, config, seat_files, verdicts
+from council.records import bytewise, config, patches, seat_files, verdicts
 
 KINDS = ("change", "preserve")
 FALSE_GREEN = '"note": "exit 0, but'
@@ -22,11 +22,13 @@ class Row(NamedTuple):
 
 
 class Tally:
-    """The proofs counted: rows, broken, preserved, tests left behind, proved only through run-folder scripts."""
+    """The proofs counted: rows, broken, preserved, tests left behind, proved only through run-folder scripts, and
+    the revert checks that could not be made (whose, and why)."""
 
     def __init__(self) -> None:
         self.rows: list[Row] = []
         self.broke = self.saved = self.preserved = self.run_folder = 0
+        self.unmade: list[str] = []
 
 
 def _named(gates: Path, pattern: str) -> list[Path]:
@@ -57,13 +59,15 @@ def _output(verdict: Path) -> Path:
 
 
 def _ran_nothing(before: Path, after: Path) -> bool:
-    """A preserve proof whose before or after ran no test: a false green, no files matched, no output, 0 tests."""
-    outputs = (_output(before), _output(after))
+    """A preserve proof whose before or after ran no test: a false green, or an output that shows nothing ran."""
     return verdicts.holds(before, FALSE_GREEN) or verdicts.holds(after, FALSE_GREEN) \
-        or any(line.startswith("changed: no files matched")
-               for out in outputs for line in bytewise.file_lines(out, fold=False)) \
-        or any(gate_output.blank(gate_output.text(out)) for out in outputs) \
-        or any(gate_output.zero_tests(gate_output.text(out)) for out in outputs)
+        or any(nothing_ran(out) for out in (_output(before), _output(after)))
+
+
+def nothing_ran(out: Path) -> bool:
+    """A gate's saved output that shows it ran no test: no files matched, no output at all, or 0 tests."""
+    return any(line.startswith("changed: no files matched") for line in bytewise.file_lines(out, fold=False)) \
+        or gate_output.blank(gate_output.text(out)) or bool(gate_output.zero_tests(gate_output.text(out)))
 
 
 def status(before: Path, after: Path, number: str) -> str:
@@ -108,6 +112,11 @@ def _one(run: Path, top: str, before: Path, tally: Tally) -> None:
         state = status(before, after, number)
         found = proof_reach.test_path(top, verdicts.command(after) or verdicts.command(before))
         note = "test saved: " + found if found else "couldn't confirm a saved test"
+    if state == "ok" and number.isdigit() and patches.rounds(run, int(number)):
+        from council.commands import revert_check     # gate_run and tempfile, only when a rerun is due (D34)
+        state, said, unmade = revert_check.check(run, top, number, verdicts.command(after) or verdicts.command(before))
+        note += " · " + said
+        tally.unmade += ["%s's revert check: %s" % (who, unmade)] if unmade else []
     if state in ("ok", "preserved"):
         tally.saved += bool(found)          # only a proof that held counts as a test kept
         tally.preserved += state == "preserved"

@@ -29,7 +29,9 @@ SubagentStop (hooks/seat-gate.sh):
   - lets a valid worker or verifier file through, including list-style index lines and prose;
   - blocks once (exit 2, reason on stderr) on a missing, malformed, oversized or empty file, an index
     line it can't read, a verifier table the claim index can't read, or a reply with no "Wrote" line;
-  - never blocks when stop_hook_active is set, on a line that starts with BLOCKED, or for other agents.
+  - never blocks when stop_hook_active is set, on a line that starts with BLOCKED, or for other agents;
+  - hands a council-builder's stop to the helper (builder_stop): sent back once for each reason it names, let
+    through on BLOCKED, a one-line NEEDS: and the Wrote line of a saved round, and on any fault of the hand-over.
 PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and matcher:
   - silent (exit 0) with no council, no open run, a run under its cap, a paused run, another session's
     run, or input it can't read;
@@ -45,7 +47,7 @@ PreToolUse (hooks/agent-gate.sh), fed through hooks.json's own command and match
     open run, an agent for a closed run, a seat the plan doesn't select, a build task's third check — read
     from the Seat: line or the file the dispatch writes; never an ordinary agent, a Workflow, a verifier
     outside any run, or a cut-off input; never a re-review or post-game for citing an earlier run's file,
-    nor a display name on the Seat: line;
+    nor a display name on the Seat: line; a council-builder by its report-<n>.md, one builder at a time;
   - refuses a council-worker or council-verifier while the council home, or the run folder the dispatch
     names, is not writable from the session (found by trying to make a file, issue 51) — from a linked
     worktree too, where the home is the main checkout's — and lets an ordinary agent through.
@@ -611,6 +613,96 @@ def seat_gate_replies(tmp):
     check("seat check: a relative name it can't find is sent back once for the full path", code == 2 and "full path" in err, err)
     code, err = run_gate(worker, "Wrote %s — 1 item (1 P2)" % good)
     check("seat check: a good file and a one-line reply pass", code == 0 and not err, err)
+
+@part("main")
+def seat_gate_builder(tmp):
+    # A builder's stop is judged by the helper (builder_stop), and the hook only hands it over: a send-back goes
+    # out through the hook's own block, once; any fault of the hand-over lets the builder stop; nothing on stdout.
+    builder = "small-council:council-builder"
+
+    def stop(reply, active=False, payload=None, root=ROOT, path=None):
+        if payload is None:
+            payload = json.dumps({"session_id": "sB", "hook_event_name": "SubagentStop", "agent_type": builder,
+                                  "agent_id": "b1", "last_assistant_message": reply, "stop_hook_active": active,
+                                  "cwd": repo}, separators=(",", ":"))
+        env = dict(GIT_ENV, PATH=path + os.pathsep + GIT_ENV["PATH"]) if path else GIT_ENV
+        p = subprocess.run([BASH, os.path.join(root, "hooks", "seat-gate.sh")], input=payload, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=60, env=env)
+        return p.returncode, p.stdout, p.stderr
+
+    def sent_back(code, out, err, *words):
+        return code == 2 and not out and err.startswith("Small Council seat check: ") and all(w in err for w in words)
+
+    repo = new_repo(tmp, "builder-stop")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    report = os.path.join(run, "report-1.md")
+    wrote = "Wrote %s — task 1, round 1 saved" % report
+    head = "Cause: none\nOwner: app.txt\nRemoved: none\nAssumed: nothing\n\nThe change, in prose.\n"
+    code, out, err = stop(wrote)
+    check("builder stop: a Wrote line naming a report that isn't there is sent back to write it, its head first",
+          sent_back(code, out, err, "isn't there or is empty", "Cause:", "council patch save 1"), err)
+    write(report, "Cause: none\nOwner: app.txt\n\nThe change.\n")
+    code, out, err = stop(wrote)
+    check("builder stop: a head the helper can't read is sent back with what records.report_head says",
+          sent_back(code, out, err, "the report has no Removed: line in its head", "Fix the head"), err)
+    write(report, head)
+    code, out, err = stop(wrote)
+    check("builder stop: a report with no saved round of its task is sent back to run council patch save",
+          sent_back(code, out, err, "task 1 has no saved round", "council patch save 1"), err)
+    write(os.path.join(repo, "app.txt"), "v2\n")
+    code, saved, said = council(repo, "patch", "save", "1")
+    code, out, err = stop(wrote)
+    check("builder stop: the Wrote line of a report whose round was saved from its head lets the builder stop, "
+          "silently", code == 0 and not out and not err, f"{saved} {said} {err}")
+    code, out, err = stop(wrote + "\nThe gates pass.")
+    check("builder stop: all in order but more than one line is sent back once for the one line",
+          sent_back(code, out, err, "is in order and task 1 round 1 is saved", "exactly one line"), err)
+    write(report, head.replace("Owner: app.txt", "Owner: app.txt and its tests"))
+    code, out, err = stop(wrote)
+    check("builder stop: a report changed after its round was saved is sent back to save it again",
+          sent_back(code, out, err, "the report changed after that save", "council patch save 1"), err)
+    for label, reply, words in (("an empty reply", "", ("you stopped without a reply",)),
+                                ("a reply that names no report", "Done — the change is in app.txt.",
+                                 ("Wrote <absolute run folder>/report-<n>.md", "NEEDS:", "BLOCKED:")),
+                                ("a NEEDS: of more than one line", "NEEDS: which cache owns it?\nI read both.",
+                                 ("exactly one line",)),
+                                ("a NEEDS: fix with no file:line, does:, should: or seen:", "NEEDS: fix the parser",
+                                 ("NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <…>",))):
+        code, out, err = stop(reply)
+        check(f"builder stop: {label} is sent back once, naming the next step", sent_back(code, out, err, *words), err)
+    fix = "NEEDS: fix src/parse.py:40 · does: drops the last field · should: keep it · seen: pytest -k parse: 1 failed"
+    for label, reply in (("BLOCKED", "BLOCKED: task 1 — after-1 failed three times: the import"),
+                         ("BLOCKED after other text", "Tried twice.\n**BLOCKED:** the gate can't run"),
+                         ("a one-line NEEDS:", "NEEDS: which of the two caches owns the key?"),
+                         ("a NEEDS: fix with its four parts", fix)):
+        code, out, err = stop(reply)
+        check(f"builder stop: {label} lets the builder stop", code == 0 and not out and not err, err)
+    code, out, err = stop("", payload=json.dumps({"agent_type": builder, "agent_id": "b1", "cwd": repo}))
+    check("builder stop: no reply field at all (an older host) lets it stop", code == 0 and not out and not err, err)
+    code, out, err = stop("I looked at some things", active=True)
+    check("builder stop: the second stop always passes (stop_hook_active)", code == 0 and not out and not err, err)
+    code, out, err = stop("", payload='{"agent_type":"%s","last_assistant_message":"Wrote x' % builder)
+    check("builder stop: input it can't read lets it stop", code == 0 and not out and not err, err)
+    shims = os.path.join(tmp, "no-python")
+    for name in ("python3", "python"):
+        write(os.path.join(shims, name), "#!/bin/sh\nexit 127\n")
+        os.chmod(os.path.join(shims, name), 0o755)
+    code, out, err = stop("I looked at some things", path=shims)
+    check("builder stop: with no Python to hand it to, the builder stops (D20)", code == 0 and not out and not err, err)
+    bare = os.path.join(tmp, "plugin-no-helper")
+    shutil.copytree(os.path.join(ROOT, "hooks"), os.path.join(bare, "hooks"))
+    code, out, err = stop("I looked at some things", root=bare)
+    check("builder stop: with no helper file beside the hook, the builder stops (D20)",
+          code == 0 and not out and not err, err)
+    shutil.copytree(os.path.join(ROOT, "src"), os.path.join(bare, "src"), ignore=shutil.ignore_patterns("__pycache__"))
+    os.remove(os.path.join(bare, "src", "council", "commands", "builder_stop.py"))
+    code, out, err = stop("I looked at some things", root=bare)
+    check("builder stop: a helper that fails (its tool missing: a traceback, exit 1, nothing on stdout) lets the "
+          "builder stop (D20)", code == 0 and not out and not err, err)
+    sid_mark = os.path.join(marks(), "sB.seat-gate")
+    check("builder stop: the hook marks the session as for a worker and a verifier (council doctor reads it)",
+          os.path.isfile(sid_mark), sid_mark)
 
 @part("main")
 def memory_file_and_seat_check(tmp):
@@ -1432,6 +1524,69 @@ def agent_gate_dispatch_record(tmp):
     code, out, err = workflow(bg, {"script": wf_verify.replace("Check task 2", "Name any route, however narrow")})
     check("dispatch: a Workflow of verifiers whose prompts send them hunting is refused",
           code == 2 and "hunting past the Done-when" in err, said(code, out, err))
+
+
+@part("main")
+def agent_gate_builder(tmp):
+    # A council-builder is held to the record through hooks.json's own command: the hook hands the helper its
+    # type, its Seat: line and its file word report-<n>, read from the dispatch's Write line, which the helper
+    # reads as build seat task-<n>; one builder at a time.
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        wired = json.load(f)["hooks"]
+    gate_cmd = next(h["command"] for g in wired["PreToolUse"] for h in g["hooks"] if "hooks/agent-gate.sh" in h["command"])
+    builder = "small-council:council-builder"
+    orders = "Seat: task-{1}\nRun: {0}\nStart: src/pay.py, the retry loop worries me\nWrite {0}/report-{1}.md"
+
+    def gate(prompt):
+        code, out, err, _ = run_agent_gate(gate_cmd, dispatch_input("sK", bg, builder, prompt), bg)
+        return code, out, err, f"exit {code} · stdout {out.strip()[:80]!r} · stderr {err.strip()[:300]}"
+
+    bg = new_repo(tmp, "dispatch-gate-builder")
+    write(os.path.join(bg, ".council", "council.config.md"), "# Council config\n")
+    code, out, err, said = gate(orders.format(os.path.join(bg, ".council", "runs", "2026-09-15-100000-council-implement"),
+                                              1))
+    check("dispatch: a council-builder with no council run open is refused — exit 2, the reason on stderr, nothing on "
+          "stdout", code == 2 and not out and "so a council-builder has no run to work for" in err, said)
+    _, run, _ = council(bg, "run", "open", "council-implement", session="sK")
+    valid_plan(run, seats=("chair", "task-1", "task-2"), mode="council-implement")
+    code, out, err, said = gate(orders.format(run, 9))
+    check("dispatch: a council-builder for a task the plan doesn't select is refused, by its build seat task-<n>",
+          code == 2 and not out and "seat task-9 has no selected row in the run plan of " + os.path.basename(run) in err,
+          said)
+    code, out, err, said = gate("Build the next task.\nWrite {0}/report-9.md".format(run))
+    check("dispatch: with no Seat: line, the build seat is read from the report-<n>.md it writes",
+          code == 2 and "seat task-9 has no selected row" in err, said)
+    code, out, err, said = gate(orders.format(run, 1))
+    check("dispatch: a council-builder whose build seat isn't queued is refused before it starts, naming the queue",
+          code == 2 and not out and "cannot start a builder for task-1 — its seat isn't queued" in err
+          and "council seat task-1 queued" in err, said)
+    council(bg, "seat", "task-1", "queued", session="sK")
+    code, out, err, said = gate(orders.format(run, 1))
+    check("dispatch: a council-builder for a queued, selected build seat of the open run starts, silently",
+          code == 0 and not out and not err, said)
+    council(bg, "seat", "task-1", "running", "agent=k1", session="sK")
+    code, out, err, said = gate(orders.format(run, 2))
+    check("dispatch: a second builder while task-1 runs is refused before it starts — one builder at a time",
+          code == 2 and not out and "cannot start task-2 — task-1 is running" in err, said)
+    council(bg, "seat", "task-1", "done", "note=NEEDS: which cache owns the key?", session="sK")
+    council(bg, "seat", "task-2", "queued", session="sK")
+    code, out, err, said = gate(orders.format(run, 2))
+    check("dispatch: ... and starts once task-1's line is recorded", code == 0 and not out and not err, said)
+    council(bg, "seat", "task-2", "skipped", session="sK")
+    write(os.path.join(bg, ".council", "plans", "b.md"), "# Council Plan: b\n## Task Sequence\n### 1. Read\n| | |\n"
+          "|---|---|\n| **Depends on** | — |\n\n### 2. Charge\n| | |\n|---|---|\n| **Depends on** | 1 |\n\n## Summary\n")
+    council(bg, "state", "input=.council/plans/b.md", session="sK")
+    council(bg, "seat", "task-1", "running", "agent=k2", session="sK")
+    council(bg, "seat", "task-1", "done", "note=NEEDS: fix src/pay.py:4 · does: a · should: b · seen: c", session="sK")
+    code, out, err, said = gate(orders.format(run, 2))
+    check("dispatch: a builder for a task that depends on a standing NEEDS: fix stop is refused before it starts, "
+          "naming the stop and the user's decision", code == 2 and not out
+          and "cannot start task-2 — task 1 stopped with NEEDS: fix at src/pay.py:4 (seat task-1), and task 2 depends "
+          "on it" in err and 'council state decision="…"' in err, said)
+    council(bg, "state", "decision=fix the pay module first", session="sK")
+    council(bg, "seat", "task-2", "queued", session="sK")
+    code, out, err, said = gate(orders.format(run, 2))
+    check("dispatch: ... and starts once the user's decision is on record", code == 0 and not out and not err, said)
 
 
 @part("main")

@@ -339,6 +339,9 @@ both arms: the same prompt, model, tools and project, with and without the plugi
 scored afterwards by `evals/bench.py score` on hidden checks (encoded in `evals/bench/*.hidden`),
 restored original tests, frozen and protected files, scope, removed assertions and false completion
 claims; `compare` reports the arms side by side and refuses to call fewer than ten pairs a result.
+A second pair, `compare --pair build`, sets two plugin builds side by side: a builder agent per task
+(`builder`, the prompt as committed) against the Chair building every task (`chair`, one sentence
+added by `python evals/bench.py arm chair`), with tokens by role read from the kept runs' own seats.
 A pilot is paid — see `evals/bench/README.md` for the protocol and the cost.
 
 ## 10. Behavioral drills — run in Claude Code
