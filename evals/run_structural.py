@@ -384,10 +384,17 @@ check("init: never offers a blanket council allowlist (gate and changed run arbi
 check("init: the permission offer covers the helper commands the modes run without asking",
       all(f'"Bash(council {c}:*)"' in skill["council-init"] for c in [
           "run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
-          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version"]))
+          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version", "context", "tree"]))
 check("init: cap and correct keep asking (cap allow records the user's go past the agent stop)",
       not any(f'"Bash(council {c}' in skill["council-init"] for c in ["cap", "correct"])
       and "`council cap` stays off" in skill["council-init"])
+check("init: setup fills the map's One way per job table and proposes the project's recorded decisions in the "
+      "PROPOSED format, citing file:line, and says no command accepts one (task-tree.md, decided 4)",
+      "references/roster/decision-records.md" in skill["council-init"]
+      and "Setup fills it" in read("references", "templates", "map.md")
+      and "- PROPOSED decision:" in read("references", "templates", "conventions.md")
+      and all(p in flat(read("references", "roster", "decision-records.md")) for p in (
+          "- PROPOSED decision:", "(evidence: <file:line>;", "`council memory accept` takes only", "## One way per job")))
 check("init: a refresh offers an earlier, shorter permission list the rules it lacks",
       "offer to add the rules it lacks" in " ".join(skill["council-init"].split())
       and "**Permission rules:**" in skill["council-init"].split("## Refresh (re-runs)")[1])

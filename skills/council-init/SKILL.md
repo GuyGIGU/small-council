@@ -38,7 +38,7 @@ One installed plugin gives each repo a bespoke council, built to fit it.
 - **Fingerprint:** `council fingerprint` prints the stack's line (its manifests and code languages).
   It goes in the config, so Prepare can tell when the stack moves.
 
-Cap your reads at config and skeleton files.
+Cap your reads at config and skeleton files; the decision records are read in Phase D.
 
 ## Phase B — Recruit, recast, drop
 
@@ -142,6 +142,8 @@ Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`
   - hot spots, from git history (`git log --since=12.months --name-only --format= | sort | uniq -c | sort -rn | head`);
   - the vocabulary;
   - the conventions new code must match.
+- **Fill its `## One way per job` table, and find the project's recorded decisions:**
+  `${CLAUDE_PLUGIN_ROOT}/references/roster/decision-records.md`.
 - **A small repo** → do it yourself, then `council run close`.
 - **A large repo** → a mapping squad of at most 4 workers, run like any council run:
   1. Phase C's run (`council run open council-init` if none is open yet). One run, not two.
@@ -190,7 +192,8 @@ Adjust on request. On confirmation, write:
   to see their requests says so: write `!asks/` in place of the `asks/` line, and nothing adds it back.
 - **Memory:** keep an existing `conventions.md` wherever it is, and record its path in the config's
   Memory section. Otherwise create `.council/conventions.md` from the template. Obvious accepted
-  patterns seen during detection go under `## Proposed`, never straight into the confirmed sections.
+  patterns seen during detection go under `## Proposed`, never straight into the confirmed sections;
+  so does each decision Phase D found, citing its `file:line`.
 
 ## Phase F — Wire it up
 
@@ -219,7 +222,8 @@ Adjust on request. On confirmation, write:
      "Bash(council memory:*)", "Bash(council ledger:*)", "Bash(council gates:*)", "Bash(council map:*)",
      "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)",
      "Bash(council status:*)", "Bash(council evidence:*)", "Bash(council repair:*)",
-     "Bash(council route:*)", "Bash(council version:*)"
+     "Bash(council route:*)", "Bash(council version:*)", "Bash(council context:*)",
+     "Bash(council tree:*)"
    ] } }
    ```
 

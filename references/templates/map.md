@@ -30,7 +30,8 @@ updated: <YYYY-MM-DD>
 
 ## One way per job
 <Each recurring job (errors, config, data access, logging …), the module that owns it and the one way it is
-done here. A plan task's Owner names a row by its job; empty, the plan check skips the owner check.>
+done here. Setup fills it from the project's decision records and its code. A plan task's Owner names a row
+by its job; empty, the plan check skips the owner check.>
 | Job | Owner | The one way | Anchor path |
 |---|---|---|---|
 
