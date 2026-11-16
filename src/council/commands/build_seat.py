@@ -46,6 +46,17 @@ def start_refusal(run: Path, slug: str) -> str | None:
     return _fix_refusal(run, slug, task)
 
 
+def dispatch_refusal(run: Path, slug: str) -> str | None:
+    """Why a council-builder for build seat <slug> can't go out: start_refusal, or its seat isn't on record queued
+    or running. The rules above read the seat records, so a builder sent before its seat is queued would be held
+    to an empty record; None when it may go, or when <slug> is no build seat."""
+    why = start_refusal(run, slug)
+    if why or task_of(run, slug) is None or seat_rows.cell(run, slug, "state") in STARTED:
+        return why
+    return ("cannot start a builder for %s — its seat isn't queued, so the helper can't hold it to one builder at a "
+            "time (D42). Queue it first: council seat %s queued, then dispatch again" % (slug, slug))
+
+
 def _fix_refusal(run: Path, slug: str, task: int) -> str | None:
     """A NEEDS: fix stop that stands on task <task> or on a task it depends on, all the way down."""
     under = depends_on(run, task)

@@ -1557,15 +1557,22 @@ def agent_gate_builder(tmp):
     check("dispatch: with no Seat: line, the build seat is read from the report-<n>.md it writes",
           code == 2 and "seat task-9 has no selected row" in err, said)
     code, out, err, said = gate(orders.format(run, 1))
-    check("dispatch: a council-builder for a selected build seat of the open run starts, silently",
+    check("dispatch: a council-builder whose build seat isn't queued is refused before it starts, naming the queue",
+          code == 2 and not out and "cannot start a builder for task-1 — its seat isn't queued" in err
+          and "council seat task-1 queued" in err, said)
+    council(bg, "seat", "task-1", "queued", session="sK")
+    code, out, err, said = gate(orders.format(run, 1))
+    check("dispatch: a council-builder for a queued, selected build seat of the open run starts, silently",
           code == 0 and not out and not err, said)
     council(bg, "seat", "task-1", "running", "agent=k1", session="sK")
     code, out, err, said = gate(orders.format(run, 2))
     check("dispatch: a second builder while task-1 runs is refused before it starts — one builder at a time",
           code == 2 and not out and "cannot start task-2 — task-1 is running" in err, said)
     council(bg, "seat", "task-1", "done", "note=NEEDS: which cache owns the key?", session="sK")
+    council(bg, "seat", "task-2", "queued", session="sK")
     code, out, err, said = gate(orders.format(run, 2))
     check("dispatch: ... and starts once task-1's line is recorded", code == 0 and not out and not err, said)
+    council(bg, "seat", "task-2", "skipped", session="sK")
     write(os.path.join(bg, ".council", "plans", "b.md"), "# Council Plan: b\n## Task Sequence\n### 1. Read\n| | |\n"
           "|---|---|\n| **Depends on** | — |\n\n### 2. Charge\n| | |\n|---|---|\n| **Depends on** | 1 |\n\n## Summary\n")
     council(bg, "state", "input=.council/plans/b.md", session="sK")
@@ -1577,6 +1584,7 @@ def agent_gate_builder(tmp):
           and "cannot start task-2 — task 1 stopped with NEEDS: fix at src/pay.py:4 (seat task-1), and task 2 depends "
           "on it" in err and 'council state decision="…"' in err, said)
     council(bg, "state", "decision=fix the pay module first", session="sK")
+    council(bg, "seat", "task-2", "queued", session="sK")
     code, out, err, said = gate(orders.format(run, 2))
     check("dispatch: ... and starts once the user's decision is on record", code == 0 and not out and not err, said)
 

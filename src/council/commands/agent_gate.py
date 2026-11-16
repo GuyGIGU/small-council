@@ -258,7 +258,7 @@ def dispatch_refusal(call: Call, here: Where) -> str | None:
         return None                                    # which run it is for is unknown: the seat record judges
     from council.commands import build_seat, rounds
     why = rounds.batch_check(Path(found.run), pick, here.home) or rounds.check_round(Path(found.run), pick) \
-        or build_seat.start_refusal(Path(found.run), pick)
+        or build_seat.dispatch_refusal(Path(found.run), pick)
     return "Small Council: " + why if why else None
 
 

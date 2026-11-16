@@ -8066,8 +8066,10 @@ def runs_build_seat(tmp):
     write_plan(brun, selected=("task-1", "task-2"))
     code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
                              "run=" + bname)
-    check("cap check: a council-builder for a selected build seat of the open run starts", code == 0 and not out,
-          out + err)
+    check("cap check: a council-builder for a selected build seat whose seat isn't queued is refused — it would be "
+          "held to an empty record — naming the next step",
+          code == 2 and out.startswith("Small Council: cannot start a builder for task-1 — its seat isn't queued")
+          and "Queue it first: council seat task-1 queued, then dispatch again" in out, out + err)
     code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "file=report-9",
                              "run=" + bname)
     check("cap check: a builder's file word report-9 reads as seat task-9 — unplanned, so refused by that slug",
@@ -8076,6 +8078,9 @@ def runs_build_seat(tmp):
     code, out, err = council(bs, "seat", "task-1", "queued")
     check("seat: a build seat starts with no line about files when nothing changed since the commit the run opened on",
           code == 0 and "outside any round" not in err, out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
+                             "run=" + bname)
+    check("cap check: once its seat is queued, the council-builder for it starts", code == 0 and not out, out + err)
     code, out, err = council(bs, "seat", "task-2", "queued")
     check("seat: a queued build seat is taken — task-2 is refused while task-1 is queued, before its builder is "
           "recorded running", code == 2 and "cannot start task-2 — task-1 is queued, and one builder at a time edits "

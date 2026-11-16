@@ -99,8 +99,9 @@ steps 7 and 8 are yours.
 1–6. **Build the task.** Solo: follow builder-loop.md yourself, to its return line. Otherwise:
    - **Queue it:** `council seat task-<n> queued`. The helper names each file changed outside a saved
      round: log each; one you edited yourself is a shortcut, and goes on the receipt. It refuses a
-     second build seat while one is queued or running, and a task that is or depends on a `NEEDS: fix` stop until
-     the user's decision is on record (Edge cases).
+     second build seat while one is queued or running, and a task that is or depends on a
+     `NEEDS: fix` stop until the user's decision is on record (Edge cases). A builder whose seat
+     isn't queued is refused at dispatch.
    - **Dispatch** `small-council:council-builder`, `model` from the plan row, with this message and
      nothing else. `Start:` is your only judgement; its orders come from `council context build task-<n>`,
      which it runs itself, so never paste them.
