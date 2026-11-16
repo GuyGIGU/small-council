@@ -145,7 +145,7 @@
    "longest_name": "status"
   },
   "src/council/commands/cite_check.py": {
-   "lines": 177,
+   "lines": 173,
    "longest": 27,
    "longest_name": "place"
   },
@@ -210,7 +210,7 @@
    "longest_name": "locked"
   },
   "src/council/commands/evidence.py": {
-   "lines": 466,
+   "lines": 467,
    "longest": 57,
    "longest_name": "main"
   },
@@ -315,7 +315,7 @@
    "longest_name": "checked"
   },
   "src/council/commands/memory_draft.py": {
-   "lines": 386,
+   "lines": 387,
    "longest": 43,
    "longest_name": "draft_claim"
   },
@@ -400,7 +400,7 @@
    "longest_name": "record"
   },
   "src/council/commands/resolve.py": {
-   "lines": 102,
+   "lines": 101,
    "longest": 32,
    "longest_name": "run_folder"
   },
@@ -430,8 +430,8 @@
    "longest_name": "main"
   },
   "src/council/commands/run_resume.py": {
-   "lines": 72,
-   "longest": 46,
+   "lines": 75,
+   "longest": 49,
    "longest_name": "main"
   },
   "src/council/commands/runs.py": {
@@ -465,7 +465,7 @@
    "longest_name": "progress_line"
   },
   "src/council/commands/session_start.py": {
-   "lines": 277,
+   "lines": 275,
    "longest": 34,
    "longest_name": "_runs"
   },
@@ -480,7 +480,7 @@
    "longest_name": "_quoted"
   },
   "src/council/commands/state.py": {
-   "lines": 80,
+   "lines": 84,
    "longest": 42,
    "longest_name": "_checked"
   },
@@ -535,7 +535,7 @@
    "longest_name": "roster_table"
   },
   "src/council/records/converge.py": {
-   "lines": 89,
+   "lines": 90,
    "longest": 34,
    "longest_name": "table"
   },
@@ -550,7 +550,7 @@
    "longest_name": "figures"
   },
   "src/council/records/events.py": {
-   "lines": 247,
+   "lines": 243,
    "longest": 29,
    "longest_name": "check"
   },
@@ -570,7 +570,7 @@
    "longest_name": "results"
   },
   "src/council/records/home.py": {
-   "lines": 99,
+   "lines": 107,
    "longest": 16,
    "longest_name": "worktrees"
   },
@@ -690,7 +690,7 @@
    "longest_name": "glob_re"
   },
   "src/council/records/seat_files.py": {
-   "lines": 239,
+   "lines": 240,
    "longest": 40,
    "longest_name": "shape"
   },
@@ -720,7 +720,7 @@
    "longest_name": "required"
   },
   "src/council/records/state.py": {
-   "lines": 74,
+   "lines": 84,
    "longest": 14,
    "longest_name": "header"
   },
