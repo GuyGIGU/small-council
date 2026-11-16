@@ -175,7 +175,7 @@
    "longest_name": "one"
   },
   "src/council/commands/context.py": {
-   "lines": 199,
+   "lines": 232,
    "longest": 20,
    "longest_name": "owner"
   },
@@ -275,7 +275,7 @@
    "longest_name": "refusal"
   },
   "src/council/commands/help.py": {
-   "lines": 151,
+   "lines": 152,
    "longest": 8,
    "longest_name": "main"
   },
@@ -345,7 +345,7 @@
    "longest_name": "status_nudge"
   },
   "src/council/commands/patch.py": {
-   "lines": 142,
+   "lines": 150,
    "longest": 35,
    "longest_name": "save"
   },
@@ -355,7 +355,7 @@
    "longest_name": "removals"
   },
   "src/council/commands/patch_history.py": {
-   "lines": 69,
+   "lines": 72,
    "longest": 22,
    "longest_name": "_round"
   },
@@ -495,7 +495,7 @@
    "longest_name": "cut"
   },
   "src/council/commands/tree.py": {
-   "lines": 105,
+   "lines": 110,
    "longest": 20,
    "longest_name": "lines"
   },
@@ -510,8 +510,8 @@
    "longest_name": "files"
   },
   "src/council/git.py": {
-   "lines": 81,
-   "longest": 32,
+   "lines": 84,
+   "longest": 35,
    "longest_name": "files_tree"
   },
   "src/council/records/__init__.py": {
@@ -585,7 +585,7 @@
    "longest_name": "results"
   },
   "src/council/records/home.py": {
-   "lines": 107,
+   "lines": 114,
    "longest": 16,
    "longest_name": "worktrees"
   },
