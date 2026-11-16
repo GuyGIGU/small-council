@@ -59,6 +59,8 @@ rewritten at each save.
 code root's files and `council patch apply <n> [--round <r>]` puts it back (the task's last round unless
 `--round` names one): all or nothing, refused with nothing changed when it won't go cleanly. They change
 files only; no record goes, and the next `council patch save` diffs from the last saved round as before.
+`council check`'s revert check takes a task's rounds off the same way, in a scratch copy
+(`references/build-proof.md`, Read the result).
 
 - **The verifier** gets the round's patch and the history, never the report's prose: they hold the
   head and the checks, not the reasoning. For a fix it asks one more question (`build-proof.md`,

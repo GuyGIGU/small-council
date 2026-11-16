@@ -6322,6 +6322,55 @@ def gates_patch_rounds(tmp):
 
 
 @part("gates")
+def gates_revert_check(tmp):
+    """T5: council check on a build reruns each ok change proof with the task's saved rounds taken off, in a scratch
+    copy outside the project (its tests kept), and expects it to fail; a rerun that still passes is REVERT-PASSED,
+    exit 1; one that can't be made is said and never counts."""
+    repo, run = revert_build(tmp, "revert")
+    write(os.path.join(repo, "tests", "test_calc.sh"), '[ "$(bash src/calc.sh)" = fixed ] && echo "1 passed"\n')
+    council(repo, "gate", "lint", "--", "echo bad; exit 1")
+    council(repo, "gate", "lint", "--", "echo bad; exit 1")
+    code, out, err = built(repo, run, 1, {"src/calc.sh": "echo fixed\n"}, "tests/test_calc.sh")
+    check("revert check fixture: task 1 is saved as round 1", code == 0 and "task 1 round 1 saved" in out, out + err)
+    write(os.path.join(repo, "tests", "test_two.sh"), "exit 1\n")         # red for a reason no code change touches
+    code, out, err = built(repo, run, 2, {"src/two.sh": "echo new\n", "tests/test_two.sh": "echo '1 passed'\n"},
+                           "tests/test_two.sh")
+    check("revert check fixture: task 2 is saved", code == 0 and "task 2 round 1 saved" in out, out + err)
+    council(repo, "gate", "lint", "--", "echo '1 passed'")
+    council(repo, "gate", "--all", "--at", "verify")
+    disk = {path: read(os.path.join(repo, path)) for path in ("src/calc.sh", "src/two.sh", "tests/test_two.sh")}
+    code, out, err = council(repo, "check")
+    check("check: a change proof that fails with its task's rounds taken off stands, and says so in its row",
+          "task 1  proof  ok · test saved: tests/test_calc.sh · revert check: fails with task 1's rounds taken off "
+          "(exit 1), so the test shows the change" in out, out)
+    check("check: a change proof that still passes with its task's rounds taken off is REVERT-PASSED, a problem "
+          "naming the next step, and the check exits 1",
+          code == 1 and "task 2  proof  REVERT-PASSED" in out and "after-2 still passes with task 2's rounds taken "
+          "off (its tests kept)" in out and "run before-2 and after-2 again, then council check" in out
+          and "| task 2 | proof | REVERT-PASSED |" in read(os.path.join(run, "check.md")), out + err)
+    check("check: the rerun's output is kept under gates/reverted/, and the project's files are as they were",
+          os.path.isfile(os.path.join(run, "gates", "reverted", "after-1.txt"))
+          and all(read(os.path.join(repo, path)) == text for path, text in disk.items())
+          and not os.path.exists(os.path.join(run, "gates", "reverted", "after-1.json")), out)
+
+    write(os.path.join(repo, "tests", "test_three.sh"), '[ "$(bash src/three.sh)" = two ] && echo "1 passed"\n')
+    write(os.path.join(repo, "src", "three.sh"), "echo one\n")
+    built(repo, run, 3, {"src/three.sh": "echo two\n"}, "tests/test_three.sh")
+    write(os.path.join(repo, "src", "three.sh"), "echo 3\n")                # changed after its round was saved
+    write(os.path.join(run, "gates", "before-4.json"), '{"gate": "before-4", "command": "bash tests/test_calc.sh", '
+          '"exit": 1, "seconds": 1, "when": "2026-09-16 10:00:00"}\n')
+    write(os.path.join(run, "gates", "after-4.json"), '{"gate": "after-4", "command": "bash tests/test_calc.sh", '
+          '"exit": 0, "seconds": 1, "when": "2026-09-16 10:00:01"}\n')
+    code, out, err = council(repo, "check")
+    check("check: a round that won't come off the files on disk is no revert check — said in the row, never a pass "
+          "or a problem",
+          "task 3  proof  ok · test saved: tests/test_three.sh · revert check not made: round 1 does not come off the "
+          "files on disk cleanly: src/three.sh" in out, out)
+    check("check: a task with no saved round is not rerun, and its row reads as before",
+          "task 4  proof  ok · test saved: tests/test_calc.sh\n" in out, out)
+
+
+@part("gates")
 def gates_patch_apply_revert(tmp):
     """T5 (#59): council patch revert takes a saved round off the code root's files and patch apply puts it back,
     the task's last round unless --round names another; each is refused, changing nothing, when the patch won't go
