@@ -375,7 +375,7 @@
    "longest_name": "main"
   },
   "src/council/commands/patch_checks.py": {
-   "lines": 164,
+   "lines": 165,
    "longest": 18,
    "longest_name": "removals"
   },

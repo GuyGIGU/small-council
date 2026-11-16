@@ -134,7 +134,7 @@ def owner(found: task_slice.Slice) -> list[str]:
     else:
         out.append("The one way: %s" % ("none — the task adds a New way, a ruling for the user"
                                         if tasks.kind(rows.get("owner")) == "new" else "the Owner names no map row"))
-    out.append("Slice: %s" % (", ".join(dict.fromkeys(found.paths)) or "the Owner and Touches name no path"))
+    out.append("Slice: %s" % (", ".join(found.paths) or "the Owner and Touches name no path"))
     called = _called(found)
     out += (["Other map rows inside Touches:"] + ["- " + _way(way) for way in called]) if called else []
     out.append("Must not touch: anything outside the slice — a change outside these paths is named at council "
