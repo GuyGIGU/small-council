@@ -6460,7 +6460,9 @@ def gates_patch_apply_revert(tmp):
                         (("patch", "revert", "1", "--round", "5"), "task 1 has no round '5' — its saved rounds are 1, 2"),
                         (("patch", "apply", "1", "--base", "HEAD"), "patch apply doesn't take --base"),
                         (("patch", "show", "1", "--round", "1"), "patch show doesn't take --round"),
-                        (("patch", "undo", "1"), "patch apply|revert <task> [--round <r>]")):
+                        (("patch", "undo", "1"), "patch apply|revert <task> [--round <r>]"),
+                        (("check", "--round", "1"), "check doesn't take --round — see: council help"),
+                        (("gate", "x", "--round", "1"), "gate doesn't take --round — see: council help")):
         code, out, err = council(repo, *words)
         check("%s: refused, naming the next step" % " ".join(words), code == 2 and want in err, out + err)
 
