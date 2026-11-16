@@ -3883,6 +3883,13 @@ def requests_and_proofs(tmp):
     check("check: a request part with no quote, or a one-word one, is broken",
           "synthesis#4  quote  NO-QUOTE" in out and "synthesis#5  quote  TOO-SHORT" in out
           and "2 of 5 quotes found in the request" in out, out)
+    elsewhere = os.path.join(tmp, "request-outside-asks.md")
+    write(elsewhere, read(os.path.join(asks, filed[0])))
+    council(req, "state", "ask=" + slash(elsewhere))
+    code, out, _ = council(req, "check")
+    council(req, "state", f"ask=.council/asks/{filed[0]}")
+    check("check: a request file outside .council/asks/ is no filed request, even when the state's ask: names it",
+          code == 1 and "synthesis#1  quote  NOT-IN-THE-REQUEST" in out and "synthesis#2  quote  ok" in out, out)
     qrepo = new_repo(tmp, "quotes")
     write(os.path.join(qrepo, "x.txt"), "x\n")
     git(qrepo, "add", "-A")
@@ -6391,6 +6398,14 @@ def requests_plan_tasks(tmp):
     code, out, _ = judged(task(1, serves='"charge it twice please"'))
     check("run plan check: a Serves quote the request never said is refused",
           code == 1 and "task 1's Serves quotes words the request never said" in out, out)
+    elsewhere = os.path.join(tmp, "plan-request-outside-asks.md")
+    write(elsewhere, "# Ask — fax\n## In your words\nSend every invoice by fax.\n")
+    council(pt, "state", "ask=" + slash(elsewhere))
+    code, out, _ = judged(task(1, serves='"Send every invoice by fax."'))
+    code2, _, err2 = council(pt, "state", "ask=")
+    check("run plan check: a request file outside .council/asks/ is not the user's words, even when the state's ask: "
+          "names it", code == 1 and "task 1's Serves quotes words the request never said" in out and code2 == 0,
+          out + err2)
     code, out, _ = judged(task(1, owner="src/pay/"))
     check("run plan check: an Owner naming no row of the map's one-way-per-job table, and no New way:, is refused",
           code == 1 and "task 1's Owner names no row" in out and "Charge a card" in out, out)

@@ -290,6 +290,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         "ask: .council/asks/filed.md", "ask: ../../outside.md"))
     check("closing card: unfiled paths never read arbitrary files", reading(closed)["closing"]["request"] ==
           "No filed request recorded.")
+    unasked = read(closed / "session-state.md")
+    write(closed / "session-state.md", unasked.replace("ask: ../../outside.md\n", ""))
+    write(closed / "ask.md", "# Ask — More\ncontinues: `.council/asks/filed.md`\n## In your words\n(no new words)\n")
+    code, out, err = council(closing_base, "status", "--json", "--run", str(closed)) if BASH else (2, "", "no bash")
+    shown = json.loads(out)["closing"]["request"] if code == 0 else err
+    check("closing card: a run that names its filed request only by ask.md's continues: shows that request",
+          shown == "Ask — Review the parser — Find the unsafe <script>alert(1)</script> path.", shown)
+    (closed / "ask.md").unlink()
+    write(closed / "session-state.md", unasked)
 
     original_claims = read(closed / "claims.jsonl")             # put back below
 
@@ -1328,11 +1337,11 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
 with tempfile.TemporaryDirectory(prefix="council-request-cut-") as temporary:
     root = Path(temporary)
     asked_run = root / ".council" / "runs" / "asked"
-    asked_run.mkdir(parents=True)
+    write(asked_run / "session-state.md", "status: complete\nask: .council/asks/a.md\n")
 
     def asked(title, said):
         write(root / ".council" / "asks" / "a.md", "# {}\n\n## In your words\n{}\n".format(title, said))
-        return status_closing.filed_request(asked_run, ".council/asks/a.md")
+        return status_closing.filed_request(asked_run)
 
     def whole(got, original, limit):           # the longest run of whole words that fits, then "…"
         return (got.endswith("…") and len(got) <= limit and original.startswith(got[:-1])
@@ -1349,6 +1358,10 @@ with tempfile.TemporaryDirectory(prefix="council-request-cut-") as temporary:
     got = asked(title, "Fix it.")
     check("request: a title past its limit ends on a whole word, then '…'",
           whole(got.split(" — ")[0], title, 160) and got.endswith(" — Fix it."), got)
+    write(root / ".council" / "asks" / "a.md", "# Ask\x0cFix the cache\r\n## In your words\r\nGo\u2028fast.\rNow.\r\n")
+    got = status_closing.filed_request(asked_run)
+    check("request: only a newline ends a line of the filed request (a form feed, a lone CR or a Unicode break is "
+          "a space), and a CRLF reads as a newline", got == "Ask Fix the cache — Go fast. Now.", got)
 
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:

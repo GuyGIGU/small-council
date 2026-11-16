@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from council.records import audit_file, paths, pushes
+from council.records import audit_file, paths, pushes, request
 from council.records import converge as final_check
-from council.records.cells import clean
+from council.records.cells import clean, lines_of
 from council.views.words import cut
 
 VERDICT_NAMES = (("confirmed", "CONFIRMED", "confirmed"), ("refuted", "REFUTED", "refuted"),
@@ -19,23 +19,14 @@ CONVERGE_WORDS = (("partly", "partly met"), ("not_met", "not met"), ("blocked", 
 NO_REQUEST = "No filed request recorded."
 
 
-def filed_request(run_path: str | Path, filed: str) -> str:
-    """Read only the filed, redacted request under this project's asks folder."""
-    run = Path(run_path)
-    if run.parent.name != "runs" or not filed:
-        return NO_REQUEST
-    root = run.parent.parent.parent
-    asks = root / ".council" / "asks"
-    path = Path(filed)
-    if not path.is_absolute():
-        path = root / path
-    if paths.linked(asks) or not paths.contained(path, asks):
-        return NO_REQUEST
-    content = paths.text_of(path, asks, limit=65536)
+def filed_request(run_path: str | Path) -> str:
+    """The filed, redacted request request.filed finds, as one line: its title and its first words."""
+    path = request.filed(Path(run_path))
+    content = "" if path is None else paths.text_of(path, limit=65536)
     if not content:
         return NO_REQUEST
-    lines = content.splitlines()
-    title = cut(clean(lines[0].lstrip("# ")), 160) if lines else ""
+    lines = lines_of(content)
+    title = cut(clean(lines[0].lstrip("# ")), 160)
     in_words = False
     for line in lines[1:]:
         if line.startswith("## "):
@@ -117,7 +108,7 @@ def closing_of(snap: dict[str, Any], run_path: Path, usage: dict[str, Any], chec
         verified, counts = converge_text(converge), None
     else:
         verified, counts = verified_of(claims)
-    return {"request": filed_request(run_path, run.get("ask", "")),
+    return {"request": filed_request(run_path),
             "deliverable": clean(run.get("deliverable") or "")[:240] or "No deliverable path recorded.",
             "verification": verified, "verdict_counts": counts, "converge": converge_counts(converge),
             "checks": check_text,
