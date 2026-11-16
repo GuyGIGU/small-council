@@ -36,7 +36,9 @@ The required run rows are:
 
 Every considered seat has `seat/<slug>/disposition` (`selected` or `skipped`) and
 `seat/<slug>/role` (`chair`, `worker`, `verifier`, or `diagnosis` — a read-only worker on a stuck
-build task, counted as a worker's agent run). Every selected seat has a context level
+build task, counted as a worker's agent run). In a council-implement run each task's builder is a
+build seat, `task-<n>`, role `worker`; a Solo build selects none, and the Chair builds
+(`references/run/builder-loop.md`). Every selected seat has a context level
 (`minimal`, `focused`, or `full`) and a positive tool-call budget. The selected Chair is budgeted but
 does not count as an agent. Skipped seats receive neither context nor budget.
 
@@ -53,7 +55,7 @@ agent until the user's go is recorded with `council cap allow` (`references/run/
 An optional `seat/<slug>/model` row is `inherit`, `fable`, `opus`, `sonnet`, or `haiku`. Missing
 means `inherit`. A builder, review or verifier seat may take its role's model from the config's
 `- models:` line (`references/run/models.md`); the Chair stays on `inherit`, and the check refuses a
-verifier on a weaker model than a builder it checks — in a build, the Chair too.
+verifier on a weaker model than a builder it checks — in a Solo build, the Chair too.
 Otherwise overrides require `- seat models: on` in `council.config.md`, and only selected worker seats
 may use `sonnet` or `haiku`. A worker requesting an override must
 also declare `seat/<slug>/purpose = mapping` or `survey`. `other` cannot receive an override.

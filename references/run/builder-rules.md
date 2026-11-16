@@ -1,6 +1,7 @@
 # Standing builder rules
 
-The rules every build task carries, whoever builds it: the Chair, or a builder seat. A task's orders
+The rules every build task carries, whoever builds it: a builder agent on the task's build seat
+(`task-<n>`), or the Chair in a Solo build (D42). A task's orders
 (`council context build task-<n>`) link this file and never copy it. Where a rule is owned elsewhere,
 this list names the place; read it there.
 
@@ -10,7 +11,7 @@ this list names the place; read it there.
 2. **No commit, branch or stash.** Nor a reset or a checkout that moves the tree. The Chair commits a
    finished task when the user allowed commits (council-implement, step 8).
 3. **The smallest change that meets the Done-when.** Carmack's filter and step 4 of
-   council-implement's build loop.
+   `builder-loop.md`.
 4. **Match the code around you.** Step 4 again, the map's conventions, and the One way per job row
    your Owner names: extend that way, never add a second beside it (`build-proof.md`, Checking).
 5. **No council ids in code, comments or commit messages.** Say the reason in plain words. What
@@ -24,8 +25,8 @@ this list names the place; read it there.
 9. **Read the project's gates as the helper reports them.** `council gates` lists them and their side
    effects; a gate is judged by its exit code, and `NOTHING WAS CHECKED`, `TIMED OUT` and 97 are no
    pass (`helper-commands.md`). A gate with cost, hardware, deploy or credential side effects runs
-   only on the user's go (council-implement, step 5).
+   only on the user's go (`builder-loop.md`, step 5).
 10. **Start no agent.** One hand writes code: a builder dispatches no agent and invokes no council
     skill.
-11. **End with the report head, or a `NEEDS:` line.** `builder-report.md`, The head and When the
-    builder stops instead.
+11. **End with the report head, or a `NEEDS:` or `BLOCKED:` line.** `builder-report.md`, The head
+    and When the builder stops instead; the one line it returns: `builder-loop.md`, The return.
