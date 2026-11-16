@@ -105,11 +105,29 @@ class StopTest(support.Scratch):
         self.assertEqual(build_seat.stop_of(run, "task-1"), build_seat.RELEASED)
         self.assertIsNone(build_seat.start_refusal(run, "task-2"))
 
-    def test_a_passed_after_gate_resolves_it(self) -> None:
+    def test_only_an_after_gate_passed_after_the_stop_resolves_it(self) -> None:
         run = self.stopped()
         self.write(".council/runs/%s/gates/after-1.json" % run.name, '{"gate": "after-1", "exit": 0, "when": "w"}')
+        stream = (run / "events.tsv").read_bytes().decode()
+        before = stream.replace("1\t2\t", "1\t0\t2026-01-02T09:00:00Z\tgate.finished\tafter-1\tpassed\t\n1\t2\t", 1)
+        (run / "events.tsv").write_bytes(before.encode())
+        self.assertEqual(build_seat.stop_of(run, "task-1"), build_seat.STANDS)     # an older pass: a fix round's stop
+        self.assertEqual(build_seat.resolved_tasks(run, build_seat.verdicts(run)), set())
+        self.assertIsNotNone(build_seat.start_refusal(run, "task-2"))
+        (run / "events.tsv").write_bytes((before + "1\t4\t2026-01-02T11:30:00Z\tgate.finished\tafter-1\tfailed\t\n"
+                                          "1\t5\t2026-01-02T11:40:00Z\tgate.finished\tafter-2\tpassed\t\n").encode())
+        self.assertEqual(build_seat.stop_of(run, "task-1"), build_seat.STANDS)     # a red, or another task's pass
+        (run / "events.tsv").write_bytes((before + "1\t4\t2026-01-02T11:30:00Z\tgate.finished\tafter-1\tpassed\t\n")
+                                         .encode())
         self.assertEqual(build_seat.stop_of(run, "task-1"), build_seat.RESOLVED)
+        self.assertEqual(build_seat.resolved_tasks(run, build_seat.verdicts(run)), {1})
         self.assertIsNone(build_seat.start_refusal(run, "task-2"))
+
+    def test_with_no_stream_the_after_gates_last_verdict_resolves_it(self) -> None:
+        run = self.stopped(stream=False)
+        self.write(".council/runs/%s/gates/after-1.json" % run.name, '{"gate": "after-1", "exit": 0, "when": "w"}')
+        self.assertEqual(build_seat.stop_of(run, "task-1"), build_seat.RESOLVED)
+        self.assertEqual(build_seat.resolved_tasks(run, build_seat.verdicts(run)), {1})
 
     def test_a_question_reads_as_a_stop_but_refuses_nothing(self) -> None:
         run = self.stopped(note="NEEDS: which table?")

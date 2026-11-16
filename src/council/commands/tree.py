@@ -14,12 +14,13 @@ from council.records import converge, patches, paths, request, seats, tasks
 
 class Records(NamedTuple):
     """What the run's files say of each task: its proof gates' results (by gate name), its saved rounds, the
-    Converge table's result and its seats' NEEDS: returns."""
+    Converge table's result, its seats' NEEDS: returns and the tasks whose stops are resolved."""
 
     proofs: dict
     rounds: dict
     converge: dict
     needs: dict
+    resolved: set
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -38,7 +39,8 @@ def lines(run: Path, named: str, found: list[tasks.Task]) -> list[str]:
     rounds: dict[int, int] = {}
     for one in patches.rounds(run):
         rounds[one.task] = rounds.get(one.task, 0) + 1
-    records = Records(build_seat.verdicts(run), rounds, _converge(run), needs)
+    proofs = build_seat.verdicts(run)
+    records = Records(proofs, rounds, _converge(run), needs, build_seat.resolved_tasks(run, proofs))
     groups: dict[str, list[tasks.Task]] = {}
     for task in found:
         groups.setdefault(task.rows.get("serves", "(no Serves row)"), []).append(task)
@@ -72,7 +74,7 @@ def _line(task: tasks.Task, records: Records) -> str:
         task.number, task.title, " · depends on " + depends if depends else "", len(facts),
         "" if len(facts) == 1 else "s", proof or "none", records.rounds.get(task.number, 0),
         records.converge.get(task.number, "none yet"))
-    stopped = "was stopped: " if build_seat.resolved(records.proofs, task.number) else ""
+    stopped = "was stopped: " if task.number in records.resolved else ""
     return said + "".join(" · " + stopped + note for note in records.needs.get(task.number, []))
 
 

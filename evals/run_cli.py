@@ -8243,6 +8243,32 @@ def runs_build_seat_fix_stop(tmp):
     code, out, err = council(fs, "seat", "task-1", "queued")
     check("seat: a stop whose after-<n> gate has passed is resolved — it refuses nothing, with no decision on record",
           code == 0, out + err)
+    council(fs, "run", "close", "--status", "abandoned")
+
+    # A fix round: task 1 was built and its after gate passed; a fresh builder on the same seat then stops with
+    # NEEDS: fix. The old pass is older than the stop, so the stop stands until after-1 passes again.
+    frun = fix_stop_run(fs, "sZ")
+    write(os.path.join(frun, "report-1.md"), "Cause: none\n")
+    council(fs, "seat", "task-1", "running", "agent=h1")
+    council(fs, "seat", "task-1", "done", "tokens=20000")
+    council(fs, "gate", "after-1", "--proof", "change", "--", "true")
+    council(fs, "seat", "task-1", "running", "agent=h2")
+    council(fs, "seat", "task-1", "done", "tokens=20000", "note=" + FIX_STOP)
+    code1, _, err1 = council(fs, "seat", "task-1", "queued")
+    code2, _, err2 = council(fs, "seat", "task-2", "queued")
+    code, tree, err = council(fs, "tree")
+    check("seat and tree: a stop recorded after the task's after gate already passed stands — the task and a "
+          "dependant are refused, and council tree prints the live NEEDS:, not was stopped:",
+          code1 == 2 and "cannot start task-1 — task 1 stopped" in err1 and code2 == 2
+          and "and task 2 depends on it" in err2 and code == 0
+          and "proof: after-1 pass · rounds: 0 · converge: none yet · " + FIX_STOP in tree and "was stopped" not in tree,
+          err1 + err2 + tree + err)
+    council(fs, "gate", "after-1", "--proof", "change", "--", "true")
+    code1, _, err1 = council(fs, "seat", "task-1", "queued")
+    code, tree, err = council(fs, "tree")
+    check("seat and tree: once the after gate passes again, after the stop, the stop is resolved — the task starts and "
+          "council tree prints was stopped:", code1 == 0 and code == 0 and "· was stopped: " + FIX_STOP in tree,
+          err1 + tree + err)
 
 
 @part("lifecycle")

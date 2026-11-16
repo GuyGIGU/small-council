@@ -87,7 +87,8 @@ record the failure and retry limit manually in the log instead of claiming the h
   Solo build stops the same way; what it stops and asks: council-implement, Edge cases. The stop is
   released when a decision of the user's is on record from its minute on: until then the helper refuses
   to start the stopped task and every task that depends on it. It is resolved when the stopped task's
-  own `after-<n>` gate passes; `council tree` then shows its note as `was stopped: NEEDS: …`. The note
+  own `after-<n>` gate passes after the stop (an older pass, from before a fix round, does not count);
+  `council tree` then shows its note as `was stopped: NEEDS: …`. The note
   ends when the seat has run again and is recorded `done` with no `note=`.
 - **The answer.** The Chair may run one probe or research seat a run for it inside the approved budget,
   without asking; before a second, it asks the user. A question only the user can answer joins the

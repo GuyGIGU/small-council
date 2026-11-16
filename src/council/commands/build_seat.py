@@ -11,7 +11,7 @@ from pathlib import Path
 
 from council import git
 from council.commands import cli, resolve, task_slice
-from council.records import events, gates, patches, paths, report_head, seat_rows, seats, tasks
+from council.records import cells, events, gates, patches, paths, report_head, seat_rows, seats, tasks
 from council.records import home as where
 
 SEAT = re.compile(r"task-([0-9]+)")
@@ -81,43 +81,69 @@ def verdicts(run: Path) -> dict[str, str]:
     return {gate["name"]: "pass" if gate["exit"] == 0 else "fail" for gate in gates.results(run)}
 
 
-def resolved(proofs: dict, task: int) -> bool:
-    """A task's stop is resolved once its own after-<n> gate's last verdict is a pass."""
-    return proofs.get("after-%d" % task) == "pass"
+def resolved(run: Path, slug: str, task: int, proofs: dict) -> bool:
+    """Seat <slug>'s stop on task <task> is resolved once the task's own after-<n> gate passed after the stop: a
+    gate.finished `passed` event for after-<n> later in the stream (by seq) than the stop's own done. With no stream,
+    or no stop in it, the gate's last verdict (proofs, as verdicts reads them) answers: what can't be read never
+    refuses."""
+    rows, at = _stop(run, slug)
+    return _resolved(rows, at, task, proofs)
+
+
+def resolved_tasks(run: Path, proofs: dict) -> set:
+    """The tasks whose seats' NEEDS: stops are all resolved (council tree's `was stopped:`)."""
+    found: dict = {}
+    for row in seats.rows(run):
+        slug, number = row.get("slug", ""), tasks.number(row.get("slug", ""))
+        if number is not None and row.get("note", "").startswith("NEEDS:"):
+            found[number] = found.get(number, True) and resolved(run, slug, number, proofs)
+    return {number for number, done in found.items() if done}
+
+
+def _resolved(rows: list[list[str]], at: int, task: int, proofs: dict) -> bool:
+    gate = "after-%d" % task
+    if at < 0:
+        return proofs.get(gate) == "pass"
+    stop = cells.leading(rows[at][1])
+    return any(row[3] == "gate.finished" and row[4] == gate and row[5] == "passed" and cells.leading(row[1]) > stop
+               for row in rows)
 
 
 def stop_of(run: Path, slug: str) -> str:
     """The one reader of a stop: '' when seat <slug>'s row carries no NEEDS: note; else RESOLVED when the task its
-    slug names (task-3, T3) has its after-<n> gate passed; RELEASED when a decision of the user's is on record from
-    the stop's minute on (rounds.decisions_since, >=: a decision in that same minute counts); else STANDS. The
-    stop's moment is the seat's first done in the event stream after its last start; a run with no stream, or no
-    such done, has no moment, and the stop reads RELEASED: what the helper can't read never refuses."""
+    slug names (task-3, T3) has its after-<n> gate passed after the stop (resolved); RELEASED when a decision of the
+    user's is on record from the stop's minute on (rounds.decisions_since, >=: a decision in that same minute
+    counts); else STANDS. The stop's moment is the seat's first done in the event stream after its last start; a
+    run with no stream, or no such done, has no moment, and the stop reads RELEASED unless the after gate's last
+    verdict is a pass: what the helper can't read never refuses."""
     if not seat_rows.cell(run, slug, "note").startswith("NEEDS:"):
         return ""
+    rows, at = _stop(run, slug)
     number = tasks.number(slug)
-    if number is not None and resolved(verdicts(run), number):
+    if number is not None and _resolved(rows, at, number, verdicts(run) if at < 0 else {}):
         return RESOLVED
     from council.commands import rounds      # datetime, only once a stop is read (D34)
-    at = _stopped_at(run, slug)
-    if not at or rounds.decisions_since(run, rounds.local_minute(at)) > 0:
+    when = rows[at][2] if at >= 0 else ""
+    if not when or rounds.decisions_since(run, rounds.local_minute(when)) > 0:
         return RELEASED
     return STANDS
 
 
-def _stopped_at(run: Path, slug: str) -> str:
-    """The UTC time of the seat's first done after its last start (queued or running); '' when none is read."""
+def _stop(run: Path, slug: str) -> tuple[list[list[str]], int]:
+    """The event stream's rows (each padded to seven cells) and the index of the seat's first done after its last
+    start (queued or running); -1 when there is no stream or no such done."""
     if not events.path(run).is_file():
-        return ""
-    at, stopped = "", False
-    for row in events.table(run).rows:
-        cells = row + [""] * 6
-        if cells[3] != "seat.updated" or cells[4] != slug:
+        return [], -1
+    rows = [row + [""] * 7 for row in events.table(run).rows]
+    at = -1
+    for n, row in enumerate(rows):
+        if row[3] != "seat.updated" or row[4] != slug:
             continue
-        if cells[5] in STARTED:
-            at, stopped = "", False
-        elif cells[5] == "done" and not stopped:
-            at, stopped = cells[2], True
-    return at
+        if row[5] in STARTED:
+            at = -1
+        elif row[5] == "done" and at < 0:
+            at = n
+    return rows, at
 
 
 def missing_report(run: Path, slug: str, note: str) -> str:
