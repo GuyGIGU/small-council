@@ -139,6 +139,30 @@ swapping `-review` and `-review-2`; the `old`/`new` folder names in `council sta
 The builders were stopped early because the Windows machine was shut down for the night. All four reports
 are in `handover/reports/`. None of them has been checked against its diff yet: each is a claim.
 
+### A trial merge, done on Windows before the shutdown (thrown away, not pushed)
+
+The four branches are NOT fully file-disjoint. Files touched by two branches: `commands/agent_gate.py`
+(read, write), `commands/doctor.py` (memory, write), `commands/hygiene.py` (commands, write),
+`tests/py/test_check_parts.py` (commands, write), `tests/py/test_earlier_scope.py` and
+`tests/py/test_gate_command.py` (read, commands), plus `evals/run_cli.py` and `evals/ratchet.json` (all four).
+Read each shared file's merged result line by line: two builders changed it without seeing each other.
+
+Merged in the order write, read, commands, memory from `a47fb43`, there were two real conflicts, both one
+import line each, resolved by taking both imports:
+
+- `src/council/commands/hygiene.py`: `from council import clock, diff, git`
+- `tests/py/test_check_parts.py`: `from council import clock`, then
+  `from council.commands import check, check_proofs, cite_origin, event_note, hygiene, index, index_symbols, proof_reach`
+
+On that merged tree (before memory items 6 and 7 and before the final step): the ratchet rebuilt with
+`--update` (ShellCheck measured), `ruff check .` clean, `quick_validate` OK, the fast tier 11 jobs with 0
+failed (448 unit tests), `src/council/` 20,286 to 20,025 lines. Nothing else was run on it: no `run_cli`
+group, no hooks, no old against new. This says the four fit together; it does not say they are right.
+
+One thing to look at in the write branch: `skills/council-init/SKILL.md` no longer lists `active-run` in
+the `.council/.gitignore` it writes. Check what a project that still has an old `active-run` file and a
+`.gitignore` without that line sees in `git status` after the change, and say so in the PR.
+
 Open point for the owner, from `reports/read.md` (needs_user): `repair_trail.classify` was NOT changed.
 `council repair check` and `council memory propose repair` re-derive a trail's recorded signal and refuse
 when it differs, so a trail the old code recorded for a gate output holding a bare CR or a form feed
