@@ -129,7 +129,7 @@ swapping `-review` and `-review-2`; the `old`/`new` folder names in `council sta
 | `claude/clean-commands` | `441616b` | 7 of 7 | `reports/commands.md` | everything in its report, old against new included |
 | `claude/clean-write` | `5f28de9` | 5 of 5 | `reports/write.md` | suites yes (`src/council/` 20,286 to 20,095); old against new NOT run; its `harness/cases_write.py` is written but never run |
 | `claude/clean-read` | `b0d4a28` | 6 of 6 committed | see `reports/read.md` if present, else none | unknown without the report: run its groups and old against new yourself |
-| `claude/clean-memory` | see `git log` | items 1 to 5 committed at the time of writing; 6 (`request.filed`) and 7 (`latest_of`) NOT done unless its report says so | see `reports/memory.md` if present, else none | unknown without the report |
+| `claude/clean-memory` | `3bd11de` | 5 of 7: items 6 (`request.filed`) and 7 (`latest_of`) NOT started | `reports/memory.md` | its new eval checks and the 20,000-file comparison only; NOT run: quick_validate, the fast tier, the plain ratchet, the full run_cli groups, run_memory, hooks, old against new |
 
 The builders were stopped early because the Windows machine was shut down for the night. If a report is
 missing from `handover/reports/`, that builder did not get to write it: treat every claim about that branch
