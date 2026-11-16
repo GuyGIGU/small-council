@@ -263,7 +263,7 @@ def interpret(snap: Snap, now: datetime | None = None, quiet_minutes: int = QUIE
         "state": state,
         "attention": attention,
         "progress": progress,
-        "latest_check": latest_of(snap, now),
+        "latest_check": latest_of(checks, now),
         "recent": items, "recent_source": source,
         "freshness": {"last_activity": iso(moment), "last_activity_clock": clock(moment, now) if moment else None,
                       "quiet_minutes": None if quiet is None else int(quiet),
@@ -384,13 +384,13 @@ def progress_of(snap: Snap, checks: list[dict[str, Any]]) -> dict[str, Any]:
             "working": [seat_name(snap, s["slug"]) for s in seats if s["state"] == "running"]}
 
 
-def latest_of(snap: Snap, now: datetime) -> dict[str, Any] | None:
-    real = [g for g in snap["gates"] if gate_kind(g["name"]) == "check"]
-    if not real:
+def latest_of(checks: list[dict[str, Any]], now: datetime) -> dict[str, Any] | None:
+    """The check that ran last (checks_of's last row), with its time as the card shows it."""
+    if not checks:
         return None
-    g = real[-1]
-    return {"name": check_name(g["name"]), "result": result_of(g), "at": iso(local_moment(g["when"])),
-            "clock": clock(local_moment(g["when"]), now)}
+    last = checks[-1]
+    return {"name": check_name(last["name"]), "result": last["result"], "at": iso(local_moment(last["when"])),
+            "clock": clock(local_moment(last["when"]), now)}
 
 
 # --- entry ----------------------------------------------------------------------------------------------------

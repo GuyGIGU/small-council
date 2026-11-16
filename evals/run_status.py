@@ -237,6 +237,13 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           "latest check shown is a real one",
           r["latest_check"]["name"] == "tests" and all(c["name"] not in ("before-1", "regress-1") for c in r["checks"]),
           r["latest_check"])
+    tied = make_run(base, "tied", gates=[("tests", 1, 30), ("lint", 0, 20), ("tests", 0, 20)])  # two names, one time
+    code, out, err = council(base, "status", "--json", "--run", str(tied)) if BASH else (2, "", "no bash")
+    shown = json.loads(out) if code == 0 else {}
+    latest = shown.get("latest_check") or {}
+    check("checks: the latest check is the checks list's last row, also when two checks share a time",
+          latest.get("name") == "lint" and latest.get("result") == "passed"
+          and [c["name"] for c in shown["checks"]] == ["tests", "lint"], (latest, err))
 
     stop = rec + [{"task": "T2", "gate": "tests", "attempt": 2, "result": "failed", "action": "independent-diagnosis"},
                   {"task": "T2", "gate": "tests", "attempt": 3, "result": "failed", "action": "stop"}]
