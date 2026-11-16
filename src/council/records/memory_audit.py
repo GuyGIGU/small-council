@@ -154,7 +154,7 @@ def place(p: str, home: str, top: str, mem: str, roots: tuple[str, str]) -> tupl
         return f, why
     if "/../" in "/" + shown + "/":
         return "", "climbs out of the project"
-    if shown.startswith("/") or re.match(r"[A-Za-z]:", shown):
+    if where.absolute(shown):
         if not (shown.startswith(top + "/") or shown.startswith(home + "/")):
             return "", "is outside this project"
         f = shown if os.path.isfile(where.native(shown)) else ""

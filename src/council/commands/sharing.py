@@ -262,7 +262,7 @@ def exclude_path(root: str) -> str:
     """git's own ignore list for this clone (info/exclude, one for every worktree): never committed, never
     pushed. '' outside git."""
     found = git.text(root, "rev-parse", "--git-path", "info/exclude") or ""
-    if found and not (found.startswith("/") or re.match(r"[A-Za-z]:", found)):
+    if found and not where.absolute(found):
         found = root + "/" + found
     return found
 

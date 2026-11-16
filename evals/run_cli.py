@@ -427,9 +427,50 @@ def runs_open(tmp):
     code, _, err = council(configured_memory, "run", "open", "council-review")
     check("run open: the configured memory file, not only the default, is measured",
           code == 0 and "project-memory.md is 66 KB" in err, err)
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- conventions: /docs/project-memory.md\n")
+    code, out, err = council(configured_memory, "status")
+    check("status: sizes the memory file council memory and run open read — a configured /docs/… is the repo's own",
+          code == 0 and "project-memory.md is 66 KB" in out, out + err)
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- Conventions: docs/project-memory.md\n")
+    code, out, err = council(configured_memory, "status")
+    check("status: a `Conventions:` key in capitals is no conventions key, so no configured file is sized",
+          code == 0 and "project-memory.md" not in out, out + err)
+    lesson = ("# Memory\n## Proposed — awaiting the user's yes/no\n### F-1: a lesson\n**Failure:** f\n"
+              "### Notes about it\n<!-- ### F-8: commented -->\n```\n### F-9: an example\n```\n")
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- conventions: docs/small-memory.md\n")
+    write(os.path.join(configured_memory, "docs", "small-memory.md"), lesson)
+    code, out, err = council(configured_memory, "status")
+    check("status: drafted lessons are counted in the configured memory file, as the memory parser reads them — "
+          "a note, a commented heading and a fenced example are none",
+          code == 0 and "1 drafted lesson waits for your yes or no." in out, out + err)
     plan_path = os.path.join(run, "run-plan.tsv")
     check("run open: creates and stamps a versioned run plan",
           os.path.isfile(plan_path) and "plan-schema: 1" in st and "\t{{MODE}}\t" not in read(plan_path), read(plan_path) + st)
+    # The plan template is written with LF line ends on every OS, even from a plugin copy whose template has CRLF
+    # (before, only Windows dropped the CRs; Linux and macOS wrote them into run-plan.tsv).
+    copy = os.path.join(tmp, "plugin-crlf")
+    for folder in ("bin", "src", "references"):
+        shutil.copytree(os.path.join(ROOT, folder), os.path.join(copy, folder), ignore=shutil.ignore_patterns("__pycache__"))
+    template = os.path.join(copy, "references", "templates", "run-plan.tsv")
+    with open(template, "rb") as f:
+        lf = f.read().replace(b"\r\n", b"\n")
+    with open(template, "wb") as f:
+        f.write(lf.replace(b"\n", b"\r\n"))
+    crlf_repo = new_repo(tmp, "plan-template-crlf")
+    write(os.path.join(crlf_repo, ".council", "council.config.md"), "# Council config\n")
+    opened = subprocess.run([BASH, os.path.join(copy, "bin", "council"), "run", "open", "council-review"], cwd=crlf_repo,
+                            capture_output=True, env=GIT_ENV, timeout=120)
+    written_path = os.path.join(opened.stdout.decode("utf-8").strip(), "run-plan.tsv")
+    written = b""
+    if os.path.isfile(written_path):
+        with open(written_path, "rb") as f:
+            written = f.read()
+    check("run open: a CRLF plan template is written with LF line ends, on every OS",
+          opened.returncode == 0 and b"\r" not in written and written.count(b"\n") == lf.count(b"\n"),
+          opened.stderr.decode("utf-8", "replace") + repr(written[:200]))
     first_events = events(run)
     check("run open: stamps and writes the first structured event",
           "events-schema: 1" in st and len(first_events) == 1 and
@@ -440,6 +481,19 @@ def runs_open(tmp):
     code, out, err = council(repo, "run", "events", "show")
     check("run events show: renders the first event and its detail",
           code == 0 and "run.opened  run → council-review  (phase=convene)" in out, out + err)
+    # One rule on every OS (bytewise.records): a CR right before a newline is dropped, so a CRLF stream prints
+    # without CRs on Linux and macOS too (before, only Windows dropped them).
+    stream = os.path.join(run, "events.tsv")
+    with open(stream, "rb") as f:
+        lf_stream = f.read()
+    with open(stream, "wb") as f:
+        f.write(lf_stream.replace(b"\n", b"\r\n"))
+    shown = subprocess.run([BASH, CLI, "run", "events", "show"], cwd=repo, capture_output=True, env=GIT_ENV, timeout=120)
+    with open(stream, "wb") as f:
+        f.write(lf_stream)
+    check("run events show: a CRLF events.tsv is shown with no CR in its lines, on every OS",
+          shown.returncode == 0 and "run.opened  run → council-review  (phase=convene)\n".encode("utf-8") in shown.stdout
+          and b"\r" not in shown.stdout, repr(shown.stdout) + shown.stderr.decode("utf-8", "replace"))
     code, out, _ = council(repo, "run", "plan", "check")
     check("run plan check: the starter plan is intentionally incomplete", code == 1 and "replace the placeholder" in out, out)
     code, out, err = council(repo, "state", "phase=brief")
@@ -508,6 +562,11 @@ def runs_open(tmp):
         code, out, _ = council(repo, "run", "plan", "check")
         check("run plan check: refuses invalid token ceiling " + bad,
               code == 1 and "token-ceiling must be a positive integer" in out, out)
+    # A figure is 1 to 12 plain digits (cells.optional_number): 13 digits is no number (before, it was valid).
+    write(plan_path, good_plan.replace("\testimated-tokens\t100000\t", "\testimated-tokens\t" + "1" * 13 + "\t"))
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("run plan check: a 13-digit estimated-tokens is refused as no integer",
+          code == 1 and "estimated-tokens must be a non-negative integer" in out, out)
     write(plan_path, good_plan)
 
     # Advisory routing is deterministic policy output, never a run mutation or agent dispatch.
@@ -670,6 +729,27 @@ def runs_open(tmp):
     code, out, err = council(repo, "seat", "outsider", "running", "agent=nope")
     check("seat: refuses to start an identity the valid plan did not select",
           code == 2 and "does not mark it selected" in err, out + err)
+    # A plan value is read as written, only spaces and tabs trimmed (plan.keyed), never lower-cased: a padded
+    # ' selected ' (which the plan check takes) starts its seat, and a level of SELF does not make the run self-checked.
+    kv = new_repo(tmp, "plan-values-as-written")
+    write(os.path.join(kv, ".council", "council.config.md"), "# Council config\n")
+    _, kv_run, _ = council(kv, "run", "open", "council-review")
+    kv_run = kv_run.strip()
+    write_plan(kv_run, selected=("hunt",), verification="self")
+    kv_plan = os.path.join(kv_run, "run-plan.tsv")
+    write(kv_plan, read(kv_plan).replace("seat\thunt\tdisposition\tselected\t", "seat\thunt\tdisposition\t selected \t"))
+    code, out, err = council(kv, "seat", "hunt", "running", "agent=h1")
+    check("seat: a padded ' selected ' disposition is selected, so the seat starts", code == 0, out + err)
+    write(kv_plan, read(kv_plan).replace("verification\trun\tlevel\tself\t", "verification\trun\tlevel\tSELF\t"))
+    write(os.path.join(kv_run, "seats", "hunt.md"), "# Hunt\n## Index\n3 · P1 · Principle 1 · a.txt:1 · Expiry\n")
+    write(os.path.join(kv_run, "synthesis.md"), "# Synthesis\n## Kept\n1 · P1 · Principle 1 · a.txt:1 · Expiry · state: "
+          "OBSERVED · from: hunt#3\n## Cut\n(none)\n")
+    write(os.path.join(kv_run, "verify-self.md"), "# Self-check\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | Expiry | CONFIRMED | a.txt:1 |\n")
+    council(kv, "evidence", "build", "--run", kv_run)
+    code, out, err = council(kv, "evidence", "check", "--run", kv_run)
+    check("evidence check: a plan's verification level of SELF is not self, so the Chair's own check stands alone",
+          code == 1 and "only the Chair's own check" in out, out + err)
 
     budget_repo = new_repo(tmp, "spend-ceiling")
     write(os.path.join(budget_repo, ".council", "council.config.md"), "# Council config\n")
@@ -731,6 +811,34 @@ def runs_open(tmp):
     code, out, err = council(legacy, "seat", "old-worker", "running", "agent=old")
     check("legacy run: a pre-contract run without a plan still works", code == 0 and "old-worker" in out, out + err)
     council(legacy, "run", "close", "--status", "abandoned")
+    # The stamp is read by the state's one guarded read: a state over 4 MB (or a link) is not read, and says so.
+    huge = new_repo(tmp, "huge-state")
+    write(os.path.join(huge, ".council", "council.config.md"), "# Council config\n")
+    _, huge_run, _ = council(huge, "run", "open", "council-review")
+    huge_run = huge_run.strip()
+    append(os.path.join(huge_run, "session-state.md"), "x" * (4 * 1024 * 1024) + "\n")
+    code, _, err = council(huge, "run", "events", "check", "--run", os.path.basename(huge_run))
+    check("run events check: a state over 4 MB is named, with the next step, not called unstamped",
+          code == 1 and "session-state.md is a link, lies outside the run or is over 4 MB" in err
+          and "put a plain copy of it, under that size, in its place" in err and "without an events-schema" not in err, err)
+    # council state and run resume read the state by the same guarded read, and refuse the same way.
+    code, out, err = council(huge, "state", "--run", os.path.basename(huge_run))
+    check("state: a state over 4 MB is not printed; the refusal names it and the next step",
+          code == 2 and not out and "session-state.md is a link, lies outside the run or is over 4 MB, so council state "
+          "does not print it — put a plain copy of it, under that size, in its place" in err, out[:200] + err)
+    os.remove(os.path.join(huge_run, "events.tsv"))
+    before = read(os.path.join(huge_run, "session-state.md"))
+    code, out, err = council(huge, "run", "resume", "--run", os.path.basename(huge_run))
+    check("run resume: a state over 4 MB is not resumed, even with no event stream; the refusal names the next step",
+          code == 2 and "is over 4 MB, so it is not resumed — put a plain copy of it" in err
+          and read(os.path.join(huge_run, "session-state.md")) == before, out + err)
+    with open(os.path.join(huge_run, "session-state.md"), "wb") as f:
+        f.write(b"\xef\xbb\xbfnote: caf\xe9\n" + before.replace("x" * (4 * 1024 * 1024) + "\n", "").encode("utf-8"))
+    shown = subprocess.run([BASH, CLI, "state", "--run", os.path.basename(huge_run)], cwd=huge, capture_output=True,
+                           env=GIT_ENV, timeout=120)
+    check("state: a state the guard lets through prints from its own bytes, a byte-order mark and a stray byte kept",
+          shown.returncode == 0 and shown.stdout.startswith(b"\xef\xbb\xbfnote: caf\xe9\nstatus: in-progress\n"),
+          repr(shown.stdout[:80]) + shown.stderr.decode("utf-8", "replace"))
 
     # A relative --code-root is stored absolute: in a real build every gate exited 97 ("cd" failed) once
     # the Chair's cwd was a worktree, because session-state.md kept the path as typed.
@@ -1103,6 +1211,10 @@ def runs_change_index(tmp):
               [("scripts/deploy.sh", 2), ("scripts/ai/role_def.gd", 4), ("webapp/backend/main.py", 5), ("core/x.py", 6)]), out)
     code, out, _ = council(pr, "prior", "api.py")
     check("prior: a path inside a longer name (api.py.bak) is not a mention", "no earlier council work" in out, out)
+    write(os.path.join(prv, "2026-09-05-tab.md"), "# t\n6 · P3 · tabbed.py:2\tthen\tmore words\n")
+    code, out, _ = council(pr, "prior", "tabbed.py")
+    check("prior: a mentioned line that holds a tab is shown whole",
+          "tabbed.py — reviews/2026-09-05-tab.md:2 — 6 · P3 · tabbed.py:2\tthen\tmore words\n" in out, out)
     for i in range(45):
         write(os.path.join(prv, f"2026-07-{i:02d}-many.md"), "---\nareas: src/**\n---\n# many\n")
     code, out, _ = council(pr, "prior", "src/a.py")
@@ -1172,6 +1284,24 @@ def index_limits(tmp):
     check("index: a nested worktree's folder is not a changed file", ".claude/worktrees" not in uidx and "index: 4 files" in out, out + uidx)
     code, out, err = council(os.path.join(uni, "sub"), "index", "--run", "../.council/runs/" + os.path.basename(urun))
     check("index --run: a relative run path works from a subfolder", code == 0 and out.startswith("index: 4 files"), out + err)
+    # An untracked file's lines are read as every other reader reads them (bytewise.records): a CR before a newline
+    # goes on every OS; a last line with no newline keeps its CR, so `last_one()<CR>` defines no name.
+    crl = new_repo(tmp, "crlast")
+    write(os.path.join(crl, "a.txt"), "x\n")
+    git(crl, "add", "-A")
+    git(crl, "commit", "-q", "-m", "init")
+    write(os.path.join(crl, ".council", "council.config.md"), "# Council config\n")
+    with open(os.path.join(crl, "tools.sh"), "wb") as f:
+        f.write(b"first() {\r\n  :\r\n}\r\nlast_one()\r")
+    with open(os.path.join(crl, "braces.sh"), "wb") as f:
+        f.write(b"next_line()\r\n{\r\n  :\r\n}\r\n")
+    code, crun, _ = council(crl, "run", "open", "council-review")
+    code, out, err = council(crl, "index")
+    cidx = read(os.path.join(crun.strip(), "index.md"))
+    check("index: an untracked file's unterminated last line keeps its CR, on every OS",
+          code == 0 and "- symbols: first\n" in cidx and "last_one" not in cidx, out + err + cidx)
+    check("index: a CRLF line `name()` with its brace on the next line names the function, on every OS (Linux and "
+          "macOS kept the CR, and named nothing)", code == 0 and "- symbols: next_line\n" in cidx, out + err + cidx)
     staged = new_repo(tmp, "staged")
     write(os.path.join(staged, "a.py"), "a = 1\n")
     git(staged, "add", "-A")
@@ -1219,6 +1349,13 @@ def runs_gates_and_seats(tmp):
     verdict = json.loads(read(os.path.join(gates, "quoted.json")) or "{}")
     check("gate: one quoted command keeps its quotes and &&", code == 5 and read(os.path.join(gates, "quoted.txt")) == "a  b\n", out)
     check("gate: the verdict records the command as written", verdict.get("command") == 'echo "a  b" && exit 5', str(verdict))
+    code, out, _ = council(repo, "gate", "controls", "--", "echo 'a\x1bb\x0cc\td'")
+    try:
+        verdict = json.loads(read(os.path.join(gates, "controls.json")) or "{}")
+    except ValueError as failure:
+        verdict = {"unreadable": str(failure)}
+    check("gate: a command holding control characters still leaves a verdict of valid JSON, each one a space",
+          code == 0 and verdict.get("command") == "echo 'a b c d'", str(verdict))
     code, out, _ = council(repo, "gate", "words", "--", "printf", "(%s)", "two words")
     check("gate: separate words stay separate arguments", code == 0 and read(os.path.join(gates, "words.txt")) == "(two words)",
           out + read(os.path.join(gates, "words.txt")))
@@ -1557,6 +1694,13 @@ def agent_stop(tmp):
           and not os.path.exists(os.path.join(old_stop, "events.tsv")), "\n".join(rows) + out + err)
     code, out, err = council(stop, "cap", "check", "--session", "s1")
     check("cap check: with both runs covered — exit 0", code == 0 and not out, out + err)
+    # A count is plain digits (cells.leading): an older row's token cell of 5abc is no count, so a report of
+    # 1000 writes 1000 (it wrote 1005, the 5 read off the front).
+    write(old_seats, "slug\tstate\tagent\ttokens\tupdated\tnote\nhunt\tdone\ta1\t5abc\t10:05\t\nbeck\tdone\ta2\t50000\t10:07\t\n")
+    code, out, err = council(stop, "seat", "hunt", "done", "tokens=1000", "--run", "2026-09-01-100000-review")
+    hunt = [line.split("\t") for line in read(old_seats).splitlines() if line.startswith("hunt\t")]
+    check("seat: an older row's token cell that is not plain digits (5abc) counts as nothing — a report of 1000 "
+          "writes 1000", code == 0 and len(hunt) == 1 and hunt[0][3] == "1000", read(old_seats) + out + err)
     # A usage report repeated with no agent id (to add a note, say) is the same agent run, not a second one:
     # counted twice, it inflated the agent count the stop reads, the cost line and the ledger.
     rep = new_repo(tmp, "agent-stop-repeat")
@@ -1574,13 +1718,30 @@ def agent_stop(tmp):
     code, out, err = council(rep, "seat", "beck", "done", "tokens=60000")
     check("seat: a different figure with no agent id is another agent run, and adds", "~140k tokens so far" in out
           and "not counted again" not in err, out + err)
-    absurd = new_repo(tmp, "agent-stop-absurd")        # a cap bash can't compare: the gate never fails closed
-    write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n")
+    absurd = new_repo(tmp, "agent-stop-absurd")        # a cap past 12 digits is no number: the configured cap holds
+    write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n- agent cap: 3\n")
     _, absurd_run, _ = council(absurd, "run", "open", "council-review")
-    append(os.path.join(absurd_run.strip(), "run-plan.tsv"), "budget\trun\tagent-cap\t99999999999999999999999\tunreadable\n")
+    absurd_plan = os.path.join(absurd_run.strip(), "run-plan.tsv")
+    write(absurd_plan, read(absurd_plan).replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t99999999999999999999999"))
     council(absurd, "seat", "w1", "done", "agent=a1", "tokens=5000")
     code, out, err = council(absurd, "cap", "check")
-    check("cap check: a cap too large to compare never stops an agent — exit 0", code == 0 and not out, out + err)
+    code2, out2, err2 = council(absurd, "cap")
+    check("cap check: a plan cap past 12 digits is not a number, so the configured cap (3) holds — exit 0 at 1 of 3",
+          code == 0 and not out and "1 of 3 agent runs used" in out2, out + err + out2 + err2)
+    # One way to read a plan row: lines end at LF (CRs before it cut), a value is trimmed of blanks at its ends
+    # only, and the first row of a repeated key wins, in every reader (the cap, the seat's tool budget).
+    rowsr = new_repo(tmp, "plan-row-rule")
+    write(os.path.join(rowsr, ".council", "council.config.md"), "# Council config\n- agent cap: 9\n")
+    _, rows_run, _ = council(rowsr, "run", "open", "council-review")
+    with open(os.path.join(rows_run.strip(), "run-plan.tsv"), "wb") as f:
+        f.write(b"kind\tid\tfield\tvalue\treason\r\nbudget\trun\tagent-cap\t 2 \tfirst\r\n"
+                b"budget\trun\tagent-cap\t7\tlater\r\nbudget\trun\testimated-tokens\t1 000\tan inner blank\r\n"
+                b"budget\thunt\ttool-calls\t3\tfirst\r\nbudget\thunt\ttool-calls\t30\tlater\r\n")
+    code, out, err = council(rowsr, "seat", "hunt", "done", "agent=a1", "tokens=5000")
+    code2, out2, err2 = council(rowsr, "cap")
+    check("plan rows: a CRLF plan's first agent-cap and tool budget win, trimmed; '1 000' is no estimate",
+          code == 0 and "tool budget of 3\n" in err and "1 of 2 agent runs used" in out2
+          and "run.estimate_passed" not in read(os.path.join(rows_run.strip(), "events.tsv")), out + err + out2 + err2)
 
 @part("runs")
 def runs_memory(tmp):
@@ -1705,6 +1866,46 @@ def runs_memory(tmp):
     check("memory check: a name after the listed lines is an anchor of its own",
           "STALE  EC-3 — nothing in the code is named robust_mean any more" in out, out)
 
+    # Memory check's one search: a whole word in one of the tree's files, the same in git and outside it
+    mw = new_repo(tmp, "memwords")
+    write(os.path.join(mw, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(mw, "src", "a.py"), "x = cfg.a.b.c\nkept_name = 1\n")
+    write(os.path.join(mw, ".gitignore"), "build/\n")
+    write(os.path.join(mw, "build", "out.py"), "ignored_name = 1\n")
+    with open(os.path.join(mw, "data.bin"), "wb") as f:
+        f.write(b"\0binary_only_name\n")
+    write(os.path.join(mw, ".council", "conventions.md"), "# m\n## Enforced Conventions\n"
+          "### EC-1: a dotted name inside a longer one\n**Anchor:** a.b\n### EC-2: a plain name\n**Anchor:** kept_name\n"
+          "### EC-3: only in an ignored file\n**Anchor:** ignored_name\n### EC-4: only in a binary file\n**Anchor:** binary_only_name\n"
+          "### EC-5: part of a word\n**Anchor:** ept_nam\n### EC-6: a name in its file\n**Anchor:** src/a.py::a.b\n")
+    git(mw, "add", "-A")
+    git(mw, "commit", "-q", "-m", "i")
+    code, out, _ = council(mw, "memory", "check")
+    want = ["STALE  EC-3 — nothing in the code is named ignored_name any more",
+            "STALE  EC-4 — nothing in the code is named binary_only_name any more",
+            "STALE  EC-5 — nothing in the code is named ept_nam any more", "3 stale anchor(s) across 6 entries"]
+    check("memory check: a name is found as a whole word in a tracked or untracked file — a.b inside a.b.c too — and "
+          "not in an ignored or a binary file, or inside a longer word",
+          code == 1 and all(w in out for w in want) and "EC-1" not in out and "EC-2" not in out and "EC-6" not in out, out)
+    mwn = os.path.join(tmp, "memwords-nogit")                # the same files, with no git and nothing ignored
+    shutil.copytree(mw, mwn, ignore=shutil.ignore_patterns(".git", ".gitignore", "build"))
+    code, out2, _ = council(mwn, "memory", "check")
+    check("memory check: outside git the same search gives the same answer", out2 == out, out + "\n---\n" + out2)
+    # A file over paths.MAX_FILE (4 MiB) is not searched, as no other council reader takes one: a name found only in
+    # it reads as stale (before, the search read every byte of it).
+    mbig = new_repo(tmp, "memwords-big")
+    write(os.path.join(mbig, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(mbig, "bundle.js"), "function loadBundleZq(){}\n" + "var x = 1;\n" * (550 * 1024))
+    write(os.path.join(mbig, ".council", "conventions.md"), "# m\n## Enforced Conventions\n"
+          "### EC-1: a name in a big file\n**Anchor:** loadBundleZq\n"
+          "### EC-2: the same name, its file named\n**Anchor:** bundle.js:loadBundleZq\n")
+    git(mbig, "add", "-A")
+    git(mbig, "commit", "-q", "-m", "i")
+    code, out, _ = council(mbig, "memory", "check")
+    check("memory check: a file over 4 MB is not searched: a name only there reads as stale",
+          os.path.getsize(os.path.join(mbig, "bundle.js")) > 4 * 1024 * 1024 and code == 1
+          and "STALE  EC-1" in out and "STALE  EC-2" in out and "2 stale anchor(s) across 2 entries" in out, out)
+
     # Memory: the entry shapes real projects write
     ms = new_repo(tmp, "memshapes")
     write(os.path.join(ms, ".council", "council.config.md"), "# c\n")
@@ -1818,6 +2019,33 @@ def runs_memory(tmp):
     code, out, _ = council(msc, "memory")
     check("memory: flags a scope item that matches no file, seat or mode",
           '"webapp/fronted/**" (EC-13) matches no file, seat or mode' in out and not any(f"({e})" in out for e in ["EC-1", "EC-3", "EC-5", "EC-6"]), out)
+
+@part("runs")
+def memory_moves_by_the_parsers_rules(tmp):
+    """council memory accept and reject find the entry they move by the memory parser's own rules: a heading of
+    seven #s is a heading (it ends the entry above it), and a file that is not valid UTF-8 keeps every byte."""
+    repo = new_repo(tmp, "memparser")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    mem = os.path.join(repo, ".council", "conventions.md")
+    head = (b"# Conventions\n## Accepted Patterns (AP)\n### AP-1: caf\xc3\xa9 stays\n**Pattern:** x\n"
+            b"## Proposed \xe2\x80\x94 awaiting the user's yes/no\n### F-1: a lesson\n**Failure:** f\n**Evidence:** a.md:1\n")
+    with open(mem, "wb") as f:
+        f.write(head + b"####### F-2: seven hashes\nkept\n")
+    code, out, err = council(repo, "memory", "reject", "F-1", "--user-said", "no")
+    with open(mem, "rb") as f:
+        after = f.read()
+    check("memory reject: a heading of seven #s ends the entry above it and stays, named as not read",
+          code == 0 and b"### F-1" not in after and b"####### F-2: seven hashes\nkept\n" in after
+          and b"was F-1, evidence a.md:1" in after, out + err + after.decode("utf-8", "replace"))
+    with open(mem, "wb") as f:
+        f.write(head.replace(b"caf\xc3\xa9", b"caf\xe9"))         # saved as Latin-1 by hand
+    code, out, err = council(repo, "memory", "reject", "F-1", "--user-said", "no")
+    with open(mem, "rb") as f:
+        after = f.read()
+    check("memory reject: a memory file that is not valid UTF-8 is moved in, every other byte kept",
+          code == 0 and after.startswith(b"# Conventions\n## Accepted Patterns (AP)\n### AP-1: caf\xe9 stays\n")
+          and b"### F-1" not in after and b"was F-1, evidence a.md:1" in after and "codec" not in err,
+          out + err + after.decode("utf-8", "replace"))
 
 @part("timing")
 def memory_speed(tmp):
@@ -3126,7 +3354,8 @@ def runs_card_says_what_is_known(tmp):
     sk = new_repo(tmp, "card-skipped")
     write(os.path.join(sk, ".council", "council.config.md"),
           "# Council config\n## Roster\n| Seat | Slug | Lens | Surface | Reference | Recast note |\n|---|---|---|---|---|---|\n"
-          "| Troy Hunt | s1 | Security | `hooks/**` | references/security.md | kept |\n")
+          "| Troy Hunt | s1 | Security | `hooks/**` | references/security.md | kept |\n"
+          "| **Kent Beck** | s2 | *Tests* | `tests/**` | - | kept |\n| Docs Seat | s3 |  | `docs/**` | - | kept |\n")
     _, out, _ = council(sk, "run", "open", "council-plan")
     krun = out.strip().splitlines()[-1]
     write_plan(krun, selected=("chair", "w1", "w2", "w3", "w4", "w5"), skipped=tuple("s%d" % i for i in range(1, 9)),
@@ -3143,6 +3372,8 @@ def runs_card_says_what_is_known(tmp):
         names = {}
     check("status: a skipped seat no brief names is named from the roster — what it checks, then who",
           names.get("s1") == "Security (Troy Hunt)", str(names))
+    check("status: a roster seat's name loses its bold and italic marks, and one with no Lens is named by its Seat",
+          names.get("s2") == "Tests (Kent Beck)" and names.get("s3") == "Docs Seat", str(names))
     rows = read(os.path.join(krun, "run-plan.tsv")).splitlines(True)
     write(os.path.join(krun, "run-plan.tsv"), "".join(r for r in rows if not r.startswith("seat\ts8\trole\t")))
     code, out, err = council(sk, "run", "plan", "check")
@@ -3218,6 +3449,22 @@ def runs_worktrees_close_and_find(tmp):
     check("home: a linked worktree uses the main checkout's council", slash(out).lower().endswith("/repo/.council"), out)
     code, out, _ = council(wt, "run", "status")
     check("run status: runs from the main checkout show as elsewhere in a worktree", "elsewhere:" in out, out)
+    # One test of "this run is on this tree": its code-root is this tree, blank or '-' (runs.here), everywhere.
+    dash = new_repo(tmp, "code-root-dash")
+    write(os.path.join(dash, ".council", "council.config.md"), "# Council config\n")
+    _, dash_run, _ = council(dash, "run", "open", "council-review")
+    dash_state = os.path.join(dash_run.strip(), "session-state.md")
+    write(dash_state, re.sub(r"(?m)^code-root: .*$", "code-root: -", read(dash_state)))
+    code, out, _ = council(dash, "run", "status")
+    code2, out2, err2 = council(dash, "run", "open", "council-plan")
+    check("run status: a run whose code-root is '-' is here, as every other reader takes it",
+          code == 0 and " · here" in out and "elsewhere" not in out and code2 == 2 and "already in progress" in err2,
+          out + out2 + err2)
+    # A run's fields are its state's header: a status line under a heading never opens a run.
+    write(dash_state, read(dash_state).replace("status: in-progress", "status: complete") + "## Notes\nstatus: paused\n")
+    code, out, _ = council(dash, "run", "status")
+    check("run status: a status line below the state's first heading does not make a run open",
+          code == 0 and "no open council runs" in out, out)
 
     # A bare repository with worktrees: the council lives in the worktree that holds the config
     bsrc = new_repo(tmp, "bare-src")
@@ -3329,7 +3576,8 @@ def runs_worktrees_close_and_find(tmp):
     write(os.path.join(repo, ".council", "active-run"), run2 + "\n")
     code, out, _ = council(repo, "run", "close", "--run", run2, "--status", "abandoned")
     check("run close: abandons a run", code == 0 and "abandoned" in out, out)
-    check("run close: empties the old active-run pointer when it names the run", read(os.path.join(repo, ".council", "active-run")).strip() == "")
+    check("run close: an old active-run pointer naming the run is read by nothing and left as it is",
+          read(os.path.join(repo, ".council", "active-run")) == run2 + "\n")
     to_deliver(repo)
     code, out, _ = council(repo, "run", "close")
     st = read(os.path.join(run, "session-state.md"))
@@ -3393,6 +3641,14 @@ def runs_worktrees_close_and_find(tmp):
     check("ledger: 'from: a#1, #2', 'b#1,2', 'a#3 and b#3', a title holding 'from:', and verdicts as written all count",
           re.search(r"^hunt\s+1\s+4\s+4\s+0\s+4\s+30\s+0%", out, re.MULTILINE) is not None
           and re.search(r"^beck\s+1\s+3\s+3\s+0\s+3\s+20\s+0%", out, re.MULTILINE) is not None, out)
+    # A count is plain ASCII digits, 12 at most: a hand-edited cell such as 1e3, 5abc, +2 or -1 is no number.
+    led_file = os.path.join(led, ".council", "ledger.tsv")
+    led_before = read(led_file)
+    append(led_file, "2026-01-01\thand-edit\tcouncil-review\thunt\t1e3\t5abc\t+2\t-1\t-\t2\n")
+    code, out, _ = council(led, "ledger")
+    check("ledger: a cell that is not plain digits counts as nothing (1e3, 5abc, +2, -1)",
+          re.search(r"^hunt\s+2\s+4\s+4\s+0\s+4\s", out, re.MULTILINE) is not None, out)
+    write(led_file, led_before)
 
     # Provenance as models write it: "hunt #1" with a blank, "beck 1, 3", a slash between two seats,
     # a bracketed note that names another seat, and a "from:" introduced by a dash or a bracket. Each
@@ -3505,6 +3761,16 @@ def runs_worktrees_close_and_find(tmp):
           code == 0 and "phase prepare · paused" in out and os.path.basename(bomrun.strip()) in out
           and not body.startswith("﻿") and body.count("status:") == 1 and "status: paused" in body,
           out + err + body)
+    # A CR right before a newline is dropped as the file is read, on every OS: a CRLF state comes back all LF.
+    with open(bom_state, "rb") as f:
+        crlf = f.read().replace(b"\n", b"\r\n")
+    with open(bom_state, "wb") as f:
+        f.write(crlf)
+    code, out, err = council(bom, "state", "focus=one rule for line ends", "--run", bomrun)
+    with open(bom_state, "rb") as f:
+        body = f.read()
+    check("state: a CRLF state file is rewritten with LF line ends, on every OS",
+          code == 0 and b"\r" not in body and b"focus: one rule for line ends\n" in body, out + err + repr(body))
 
     # --run as a Windows path (backslashes, a trailing one) names the same run as its folder name
     wp = new_repo(tmp, "winpath")
@@ -3634,6 +3900,13 @@ def resume(tmp):
           "sess-old" in out + err and "still working: hunt" in out, out + err)
     code, out, err = council(rs, "state", "phase=assign")
     check("run resume: plain commands act on the run again", code == 0 and "phase assign · in-progress" in out, out + err)
+    if os.name != "nt":
+        os.chmod(rstate, 0o640)
+    council(rs, "state", "phase=assign")
+    left = [n for n in os.listdir(rrun) if n.startswith(".state.") or ".tmp" in n]
+    check("state: the state file is swapped in whole — no temporary file left, and a mode the user set is kept",
+          not left and (os.name == "nt" or os.stat(rstate).st_mode & 0o7777 == 0o640),
+          f"{left} · {oct(os.stat(rstate).st_mode)}")
     to_deliver(rs)
     council(rs, "run", "close")
     code, _, err = council(rs, "run", "resume", "--run", rname)
@@ -3668,6 +3941,9 @@ def resume(tmp):
           code == 0 and "mode: council-plan" in out, out + err)
     code, _, err = council(rwt, "state", "--run", ".council/runs/2020-01-01-000000-review")
     check("--run: a relative path that names no run is still refused", code == 2 and "not a run folder" in err, err)
+    code, _, err = council(rwt, "state", "--run", "c:.council/runs/" + os.path.basename(p1.strip()))
+    check("--run: a drive path (c:…, no slash after the drive) is absolute, never a name looked up under runs/",
+          code == 2 and "not a run folder" in err, err)
 
 @part("runs")
 def runs_fingerprint_and_ledger(tmp):
@@ -3834,6 +4110,13 @@ def requests_and_proofs(tmp):
     check("check: a request part with no quote, or a one-word one, is broken",
           "synthesis#4  quote  NO-QUOTE" in out and "synthesis#5  quote  TOO-SHORT" in out
           and "2 of 5 quotes found in the request" in out, out)
+    elsewhere = os.path.join(tmp, "request-outside-asks.md")
+    write(elsewhere, read(os.path.join(asks, filed[0])))
+    council(req, "state", "ask=" + slash(elsewhere))
+    code, out, _ = council(req, "check")
+    council(req, "state", f"ask=.council/asks/{filed[0]}")
+    check("check: a request file outside .council/asks/ is no filed request, even when the state's ask: names it",
+          code == 1 and "synthesis#1  quote  NOT-IN-THE-REQUEST" in out and "synthesis#2  quote  ok" in out, out)
     qrepo = new_repo(tmp, "quotes")
     write(os.path.join(qrepo, "x.txt"), "x\n")
     git(qrepo, "add", "-A")
@@ -4173,6 +4456,14 @@ def requests_and_proofs(tmp):
     code, out, err = council(chg, "changed", "--base", "no-such-ref", "--glob", "*.py")
     check("changed: a --base that isn't a ref is an error, never a quietly smaller file list",
           code == 2 and "not a ref in this repository" in err, err)
+    said = [council(chg, *argv)[::2] for argv in (("changed", "--glob"), ("changed", "--glob=", "--", "true"),
+                                                   ("changed", "--glob", "a.py", "extra"), ("changed", "--each=1"),
+                                                   ("version", "--each"))]
+    check("changed: --glob and --each are ordinary flags, refused as every flag is",
+          said == [(2, "council: --glob needs a value\n"), (2, "council: --glob needs a value\n"),
+                   (2, "council: changed doesn't take 'extra' — see: council help\n"),
+                   (2, "council: --each takes no value\n"),
+                   (2, "council: version doesn't take --each — see: council help\n")], str(said))
     code, out, err = council(chg, "changed", "--glob", "*.py", "--", "wc", "-l")
     check("changed: says how many files the check actually looked at", "file(s) to check" in (out + err), out + err)
     os.remove(os.path.join(chg, "src", "branch.py"))
@@ -5814,6 +6105,13 @@ def check_just_me_hygiene(tmp):
     places = [l.split("  ")[1] for l in out.splitlines() if l.startswith("hygiene  ") and "  " in l[9:]]
     check("check (just me): a build with no recorded start reads only uncommitted work and the PR body, and says so",
           code == 1 and "no recorded start" in out and sorted(places) == ["NOTES.md:2", "PR body pr-body.md:2"], out)
+    write(state, re.sub(r"(?m)^(opened: \S+ \d\d:\d\d):\d\d$", r"\1", read(state)))     # an older helper's stamp
+    code, out, err = council(repo, "check")
+    places = [l.split("  ")[1] for l in out.splitlines() if l.startswith("hygiene  ") and "  " in l[9:]]
+    check("check (just me): a run whose opened: has no seconds still counts only the untracked files newer than "
+          "the run — the hour-old note is not the build's",
+          code == 1 and sorted(places) == ["NOTES.md:2", "PR body pr-body.md:2"] and "opened: " in read(state)
+          and not re.search(r"(?m)^opened: .*:\d\d:\d\d$", read(state)), out)
     write(cfg, "# Council config — hygiene\n\n## Run preferences\n- sharing: team\n")
     code, out, err = council(repo, "check")
     check("check (team): a team council may cite its files, so nothing is scanned and the check passes",
@@ -5911,10 +6209,32 @@ def runs_gitignore(tmp):
     lg_run = council(legacy, "run", "open", "council-implement")[1].strip()
     write(os.path.join(lg_run, "ask.md"), "# Ask — deploy\n## In your words\nuse my key and ship it\n")
     gi_lines = read(os.path.join(legacy, ".council", ".gitignore")).split()
-    check("run open: a home with no .gitignore gets one that ignores runs/, asks/ and active-run before any words are written",
-          {"runs/", "asks/", "active-run"} <= set(gi_lines)
+    check("run open: a home with no .gitignore gets one that ignores runs/ and asks/ before any words are written",
+          sorted(gi_lines) == ["asks/", "runs/"]
           and not [l for l in status_lines(legacy) if "runs/" in l], " · ".join(status_lines(legacy)))
     council(legacy, "run", "close", "--status", "abandoned")
+    # A 0.1/0.2 home's active-run pointer, naming a run left open outside runs/: nothing reads or writes it now
+    pointed = new_repo(tmp, "old-pointer-home")
+    write(os.path.join(pointed, ".council", "council.config.md"), "# Council config\n")
+    old_rel = ".council/review-output/2026-09-07-1200"
+    write(os.path.join(pointed, old_rel, "session-state.md"), "# Session state\nphase: 5 — awaiting worker returns\n")
+    pointer = os.path.join(pointed, ".council", "active-run")
+    with open(pointer, "wb") as f:
+        f.write(old_rel.encode() + b"\r\n")
+    p_run = council(pointed, "run", "open", "council-review")[1].strip()
+    with open(pointer, "rb") as f:
+        opened_with = f.read()
+    with open(pointer, "wb") as f:                            # now naming the run the close closes
+        f.write(b".council/runs/" + os.path.basename(p_run).encode() + b"\r\n")
+    _, doc_out, _ = council(pointed, "doctor")
+    code, close_out, _ = council(pointed, "run", "close", "--status", "abandoned")
+    with open(pointer, "rb") as f:
+        kept = f.read()
+    check("run open, doctor and close: an old active-run file is left byte for byte, its line is not added to "
+          ".gitignore, and doctor says nothing of it",
+          bool(p_run) and code == 0 and opened_with == old_rel.encode() + b"\r\n" and kept == b".council/runs/" + os.path.basename(p_run).encode() + b"\r\n"
+          and "active-run" not in read(os.path.join(pointed, ".council", ".gitignore"))
+          and "active-run" not in doc_out and "older run" not in doc_out, repr(kept) + doc_out + close_out)
     old = new_repo(tmp, "home-0-6")
     write(os.path.join(old, ".council", "council.config.md"), "# Council config\n")
     write(os.path.join(old, ".council", "asks", "2026-09-10-old.md"), "# Ask — old\n")
@@ -5967,7 +6287,7 @@ def runs_gitignore(tmp):
     loose_gi = read(os.path.join(loose, ".council", ".gitignore")).split()
     code, out, _ = council(loose, "doctor")
     check("run open outside git: writes each ignore line once, and doctor finds them",
-          sorted(loose_gi) == ["active-run", "asks/", "runs/"]
+          sorted(loose_gi) == ["asks/", "runs/"]
           and not [l for l in out.splitlines() if "runs/" in l or "asks/" in l], " ".join(loose_gi) + " · " + out)
 
 @part("runs")
@@ -6339,9 +6659,32 @@ def requests_plan_tasks(tmp):
     check("run plan check: once a plan is delivered, a task with no Serves row is refused, and so is the next stage",
           code == 1 and "task 1 has no Serves row" in out and "tasks: 1 error(s) · " in out
           and code2 == 2 and "fix what it names" in err2, out + err + out2 + err2)
+    # One test of "this path is absolute" on every OS (records/home.absolute): rooted (/ or \\) or with a drive is taken
+    # as written, never joined to the project; Windows opens a Git Bash /c/... form as C:/....
+    for given, shown in (("C:/plans/charge.md", "C:/plans/charge.md"),
+                         ("\\plans\\charge.md", "/plans/charge.md" if os.name == "nt" else "\\plans\\charge.md")):
+        council(pt, "state", "deliverable=" + given)
+        code, out, _ = council(pt, "run", "plan", "check")
+        check("run plan check: a deliverable of %s is the path as written, not one under the project" % given,
+              code == 1 and "the recorded deliverable %s can't be read" % shown in out, out)
+    if os.name == "nt":                                  # Windows only: a /c/... path is a Git Bash path there
+        drive = slash(planf)
+        council(pt, "state", "deliverable=/%s%s" % (drive[0].lower(), drive[2:]))
+        code, out, _ = council(pt, "run", "plan", "check")
+        check("run plan check: on Windows a deliverable written /c/... is read as C:/...",
+              "task 1 has no Serves row" in out and "can't be read" not in out, out)
+    council(pt, "state", "deliverable=.council/plans/charge.md")
     code, out, _ = judged(task(1, serves='"charge it twice please"'))
     check("run plan check: a Serves quote the request never said is refused",
           code == 1 and "task 1's Serves quotes words the request never said" in out, out)
+    elsewhere = os.path.join(tmp, "plan-request-outside-asks.md")
+    write(elsewhere, "# Ask — fax\n## In your words\nSend every invoice by fax.\n")
+    council(pt, "state", "ask=" + slash(elsewhere))
+    code, out, _ = judged(task(1, serves='"Send every invoice by fax."'))
+    code2, _, err2 = council(pt, "state", "ask=")
+    check("run plan check: a request file outside .council/asks/ is not the user's words, even when the state's ask: "
+          "names it", code == 1 and "task 1's Serves quotes words the request never said" in out and code2 == 0,
+          out + err2)
     code, out, _ = judged(task(1, owner="src/pay/"))
     check("run plan check: an Owner naming no row of the map's one-way-per-job table, and no New way:, is refused",
           code == 1 and "task 1's Owner names no row" in out and "Charge a card" in out, out)
@@ -6591,6 +6934,25 @@ def requests_war_room(tmp):
 
 @part("filing")
 def close_claim_index(tmp):
+    # Only LF ends a line of synthesis.md and a verify file: a bare CR or a form feed inside a claim is text.
+    lf = new_repo(tmp, "lf-only-claims")
+    write(os.path.join(lf, ".council", "council.config.md"), "# Council config\n")
+    _, lf_run, _ = council(lf, "run", "open", "council-review")
+    lf_run = lf_run.strip()
+    write(os.path.join(lf_run, "seats", "hunt.md"), "# Hunt\n## Index\n3 · P1 · Principle 1 · a.txt:1 · Expiry\n")
+    with open(os.path.join(lf_run, "synthesis.md"), "wb") as f:
+        f.write("# Synthesis\n## Kept\n1 · P1 · Principle 1 · a.txt:1 · Expiry\rskipped · state: OBSERVED · "
+                "from: hunt#3\n## Cut\n(none)\n".encode())
+    with open(os.path.join(lf_run, "verify-1.md"), "wb") as f:
+        f.write("# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+                "| 1 | Expiry | CONFIRMED | a.txt:1\x0cmore |\r\n".encode())
+    code, out, err = council(lf, "evidence", "build", "--run", lf_run)
+    index = [json.loads(line) for line in read(os.path.join(lf_run, "claims.jsonl")).split("\n") if line]
+    check("evidence build: a bare CR or a form feed does not end a line — one claim, its verdict linked",
+          code == 0 and len(index) == 1 and index[0]["claim"] == "Expiry\rskipped"
+          and index[0]["verification"][0]["evidence"] == "a.txt:1\x0cmore"
+          and index[0]["verification"][0]["ref"] == "verify-1.md:4", out + err + str(index))
+    council(lf, "run", "close", "--status", "abandoned")
     # Closing a synthesis run warns about an absent or outdated claim index without rebuilding it.
     stale_repo = new_repo(tmp, "stale-claims")
     write(os.path.join(stale_repo, ".council", "council.config.md"), "# Council config\n")

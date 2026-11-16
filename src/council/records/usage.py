@@ -7,7 +7,6 @@ agent stop count alike.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any, Dict, NamedTuple
 
@@ -181,20 +180,16 @@ def agents_share(run: Path) -> int | None:
 
 
 def budget_value(run: Path, field: str) -> int | None:
-    """A run-wide budget as a whole number (run_budget_value), or None: missing, not a number, too large
-    for bash, or a zero ceiling (an estimate may be 0)."""
-    value = plan.budget(run, field)
-    if not re.fullmatch(r"[0-9]+", value) or int(value) > INTMAX:
-        return None
-    return int(value) if field == "estimated-tokens" or int(value) > 0 else None
+    """A run-wide budget as a whole number (run_budget_value), or None: missing, not a number (cells.optional_number:
+    12 digits at most), or a zero ceiling (an estimate may be 0)."""
+    value = cells.optional_number(plan.budget(run, field))
+    return value if value is not None and (field == "estimated-tokens" or value > 0) else None
 
 
 def agent_cap(run: Path, home: str | Path | None) -> int:
     """The run's agent ceiling (run_agent_cap): its plan's budget/run/agent-cap, else the configured cap."""
-    value = plan.budget(run, "agent-cap")
-    if value in ("", "0") or not re.fullmatch(r"[0-9]+", value):
-        return config.agent_cap(home)
-    return int(value)
+    value = cells.optional_number(plan.budget(run, "agent-cap"))
+    return value or config.agent_cap(home)
 
 
 class Standing(NamedTuple):

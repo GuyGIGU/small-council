@@ -59,7 +59,7 @@ def files_tree(top: str | Path) -> str:
     index = text(top, "rev-parse", "--git-path", "index")
     if not index:
         return ""
-    real = index if os.path.isabs(index) else os.path.join(str(top), index)
+    real = os.path.join(str(top), index)              # git prints it relative to top, or whole: join keeps a whole one
     handle, copy = tempfile.mkstemp(prefix="council-tree-", suffix=".index")
     os.close(handle)
     try:

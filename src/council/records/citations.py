@@ -18,7 +18,7 @@ from typing import Tuple
 
 from council.records.bytewise import lower
 from council.records.cells import INTMAX
-from council.records.home import native
+from council.records.home import absolute, native
 
 Row = Tuple[str, ...]
 
@@ -208,7 +208,7 @@ def rows(top: str, field: str) -> list[Row]:
     if not found[0][0].startswith("W") or len(found) == 1:
         return found
     place = found[0][1]
-    if not (place.startswith("/") or re.match(r"[A-Za-z]:", place)):
+    if not absolute(place):
         place = top + "/" + place
     return [(found[0][0][1:],) + found[0][1:]] if os.path.exists(native(place)) else found[1:]
 

@@ -136,7 +136,7 @@ def _slice(run: Path, task: int, files: list[str]) -> tuple[list[str], str]:
     named = resolve.field(run, "input")
     if not named:
         return [], "skipped — the run records no input= plan (council state input=<plan>)"
-    plan = Path(named) if Path(named).is_absolute() else Path(run).parent.parent.parent / named
+    plan = Path(where.native(named)) if where.absolute(named) else Path(run).parent.parent.parent / named
     entry = next((t for t in tasks.read(paths.text_of(plan)) if t.number == task), None)
     if entry is None:
         return [], "skipped — %s has no task %d" % (named, task)

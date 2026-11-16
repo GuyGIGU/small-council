@@ -29,7 +29,11 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 
 def _header(run: Path) -> None:
-    """The lines above the first heading, as awk prints them (a BOM kept; on Windows a line's CR dropped)."""
+    """The lines above the first heading, from the file's own bytes (a BOM and a stray byte kept, a CR before a
+    newline dropped); a state the guarded read leaves out (state.unread) is refused, never printed."""
+    why = state.unread(run, "council state does not print it")
+    if why:
+        raise cli.Refusal(why)
     for line in bytewise.records(state.path(run).read_bytes().decode("utf-8", "surrogateescape")):
         if line.startswith("## "):
             return

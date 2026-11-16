@@ -1,20 +1,22 @@
 """The code tree as `council memory` searches it: the files under a root (tracked and untracked, outside .council/;
 outside git, every file), an anchor's path as it is there, the names the code still has, and the scope items that
-match no file, seat or mode. Paths and names are C-locale text (records/bytewise.py), as the helper's awk read them;
-the searches are the helper's own git grep and grep, so a whole word means what it meant there."""
+match no file, seat or mode. Paths and names are C-locale text (records/bytewise.py), as the helper's awk read them.
+A name is in the code when it is a whole word (no [A-Za-z0-9_] just before or after it) in one of the tree's files;
+a file with a NUL byte or over paths.MAX_FILE is not searched."""
 from __future__ import annotations
 
-import contextlib
 import os
 import re
-import shutil
-import subprocess
+from typing import Iterable, Iterator
 
 from council import git
 from council.records import bytewise, paths, scope
 from council.records import home as where
 from council.records.closing import MODES
 from council.records.memory_entries import cells
+
+WORD = re.compile(r"[A-Za-z0-9_]+")
+WORD_IN = re.compile(rb"[A-Za-z0-9_]+")
 
 
 class Tree:
@@ -36,7 +38,7 @@ class Tree:
         ("x.py", "services/risk.py" written short); '' when there is none."""
         if p == "":
             return ""
-        if p.startswith("/") or re.match(r"[A-Za-z]:", p):
+        if where.absolute(p):
             if os.path.exists(where.native(bytewise.shown(p))):
                 return p
             top = bytewise.text(self.top) + "/"
@@ -56,33 +58,32 @@ class Tree:
 
     def find(self, names: set[str]) -> set[str]:
         """The names (one search for all of them) that are in the code as whole words."""
-        if not names:
-            return set()
-        with _patterns(names) as pat:
-            tail = ["--untracked", "--", ".", ":(exclude).council"] if self.git else \
-                ["--no-index", "--", ".", ":(exclude).council", ":(exclude).git"]
-            code, out = git.run(where.native(self.top), "grep", "-h", "-o", "-w", "-F", "-f", pat, *tail)
-            if code > 1:
-                out += _grep(["-r", "-h", "-o", "-w", "-F", "-f", pat, "--exclude-dir=.git", "--exclude-dir=.council",
-                              "."], self.top)
-        return set(bytewise.records(bytewise.read(out)))
+        found: set[str] = set()
+        for _, hits in self._search(names, self.files):
+            found |= hits
+            if found == names:
+                break
+        return found
 
     def find_in(self, names: set[str], files: set[str]) -> set[tuple[str, str]]:
         """(file, name) for every name that is in that file."""
-        if not names or not files:
-            return set()
-        out = b""
-        with _patterns(names) as pat:
-            listed = sorted(files)
-            for at in range(0, len(listed), 100):
-                out += _grep(["-H", "-o", "-w", "-F", "-f", pat, "--"]
-                             + [bytewise.shown(f) for f in listed[at:at + 100]], self.top)
-        found = set()
-        for line in bytewise.records(bytewise.read(out)):
-            if ":" in line:
-                head, _, name = line.rpartition(":")
-                found.add((head, name))
-        return found
+        return {(f, name) for f, hits in self._search(names, sorted(files)) for name in hits}
+
+    def _search(self, names: set[str], files: Iterable[str]) -> Iterator[tuple[str, set[str]]]:
+        """Each file searched, with the names that are whole words in it. A name made of word characters only
+        is one of the file's words; any other is matched with the whole-word rule itself."""
+        words = {bytewise.bytes_of(n): n for n in names if WORD.fullmatch(n)}
+        others = [(bytewise.bytes_of(n), n) for n in names if n and not WORD.fullmatch(n)]
+        rules = [(b, n, re.compile(rb"(?<![A-Za-z0-9_])" + re.escape(b) + rb"(?![A-Za-z0-9_])")) for b, n in others]
+        top = where.native(self.top)
+        for f in files if names else ():
+            full = os.path.join(top, where.native(bytewise.shown(f)))
+            data = None if paths.too_large(full) else paths.contents(full)
+            if data is None or b"\0" in data:
+                continue
+            hits = {words[w] for w in words.keys() & set(WORD_IN.findall(data))} if words else set()
+            hits.update(n for b, n, rule in rules if b in data and rule.search(data))
+            yield f, hits
 
     def orphans(self, found: list[str], slugs: list[str]) -> list[str]:
         """The lines for every scope item that matches no file, seat slug or mode."""
@@ -127,47 +128,11 @@ def line_counts(top: str, files: set[str]) -> dict[str, int]:
     out = {}
     for f in files:
         name = bytewise.shown(f)
-        full = name if name.startswith("/") or re.match(r"[A-Za-z]:", name) else top + "/" + name
+        full = name if where.absolute(name) else top + "/" + name
         count = len(bytewise.records(bytewise.read(paths.contents(where.native(full)) or b"")))
         if count:
             out[f] = count
     return out
-
-
-def _run(words: list[str], cwd: str | None = None) -> tuple[int, bytes]:
-    try:
-        done = subprocess.run(words, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    except OSError:
-        return 127, b""
-    return done.returncode, done.stdout
-
-
-def _grep(words: list[str], top: str) -> bytes:
-    """grep as the helper ran it; without one on PATH, the same whole-word search done here."""
-    if shutil.which("grep"):
-        return _run(["grep"] + words, cwd=where.native(top))[1]
-    return _search(words, top)
-
-
-def _search(words: list[str], top: str) -> bytes:
-    pat = words[words.index("-f") + 1]
-    with open(pat, "rb") as stream:
-        names = [n for n in stream.read().split(b"\n") if n]
-    named = "-H" in words
-    files = words[words.index("--") + 1:] if named else _walk(where.native(top))
-    out = []
-    for f in files:
-        try:
-            with open(os.path.join(where.native(top), f), "rb") as stream:
-                data = stream.read()
-        except OSError:
-            continue
-        if b"\0" in data:
-            continue
-        for name in names:
-            if re.search(rb"(?<![A-Za-z0-9_])" + re.escape(name) + rb"(?![A-Za-z0-9_])", data):
-                out.append((f.encode("utf-8", "surrogateescape") + b":" if named else b"") + name)
-    return b"".join(line + b"\n" for line in out)
 
 
 def _walk(top: str) -> list[str]:
@@ -182,22 +147,3 @@ def _walk(top: str) -> list[str]:
             p = name if rel == "." else rel + "/" + name
             out.append(bytewise.text(p))
     return out
-
-
-class _patterns:
-    """A pattern file for grep -f, one name a line, removed after."""
-
-    def __init__(self, names: set[str]) -> None:
-        self.names = names
-        self.path = ""
-
-    def __enter__(self) -> str:
-        import tempfile                                 # only a search with names needs it (D34)
-        handle, self.path = tempfile.mkstemp(prefix="council-names-")
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(b"".join(bytewise.bytes_of(n) + b"\n" for n in sorted(self.names)))
-        return self.path
-
-    def __exit__(self, *_: object) -> None:
-        with contextlib.suppress(OSError):
-            os.remove(self.path)

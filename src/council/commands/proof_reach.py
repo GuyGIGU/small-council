@@ -84,11 +84,11 @@ def _named(token: str, state: _Words) -> str | None:
     if CONFIG.fullmatch(base) or state.away:          # a config, a log or a report is never the test that was saved
         return None
     path = token
-    if not (token.startswith("/") or re.match(r"[A-Za-z]:", token)) and state.sub:
+    if not where.absolute(token) and state.sub:
         path = state.sub + "/" + token
     if not TEST_NAME.fullmatch(base):                 # a test folder, by the path as it lands, inside the project
         landed = _up(path)
-        if landed.startswith(("/", "../")) or re.match(r"[A-Za-z]:", landed):
+        if where.absolute(landed) or landed.startswith("../"):
             return None
         if not TEST_FOLDER.fullmatch("/" + (landed[2:] if landed.startswith("./") else landed)):
             return None

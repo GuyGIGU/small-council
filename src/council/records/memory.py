@@ -71,11 +71,30 @@ def locate(home: str) -> Located:
 def size_note(home: str) -> str:
     """run open's note (after 'council: ') when the memory file is over the ~25 KB every run reads; else ''."""
     path = locate(home).path
-    size = os.path.getsize(where.native(path)) if os.path.isfile(where.native(path)) else 0
-    if size <= COUNCIL_MEMORY_SIZE_LIMIT:
+    size = oversized(path)
+    if not size:
         return ""
     return ("%s is %d KB, over the ~25 KB the council expects — every run reads it; at Learn, propose a consolidation"
             % (path.rsplit("/", 1)[-1], (size + 500) // 1000))
+
+
+def oversized(path: str) -> int:
+    """The memory file's size in bytes when it is over the ~25 KB every run reads; 0 when it is not, or is no file."""
+    try:
+        size = os.path.getsize(where.native(path)) if os.path.isfile(where.native(path)) else 0
+    except OSError:
+        size = 0
+    return size if size > COUNCIL_MEMORY_SIZE_LIMIT else 0
+
+
+def proposals(home: str) -> int | None:
+    """How many proposals in the memory file await the user's yes/no (memory_entries.pending); None when there is
+    no memory file to read, or it is empty."""
+    data = paths.contents(where.native(locate(home).path))
+    if not data:
+        return None
+    text = bytewise.read(data)
+    return parsed.pending(text, parsed.parse(text).rows)
 
 
 def _rel(path: str, root: str) -> str:
@@ -178,7 +197,7 @@ def replace(mem: str, before: str, after: str, entry: str, want: str, home: str,
     mine = [parsed.cells(row) for row in after_rows if parsed.cells(row)[0] == entry]
     if want == "gone" and mine:
         return "%s is still in the memory file — nothing written" % shown
-    proposed = [c for c in mine if c[4] == "off" and re.match(r"[#* ]*propos", bytewise.lower(c[5]))]
+    proposed = [c for c in mine if c[4] == "off" and parsed.section(c[5]) == "proposed"]
     if want == "proposed" and len(proposed) != 1:
         return "%s did not land under ## Proposed — nothing written" % shown
     if want == "observed":

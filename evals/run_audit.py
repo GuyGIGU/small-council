@@ -686,6 +686,10 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     verdict, words = item(council(base, "run", "audit", "--run", str(skipped))[1], "Stages")
     check("a stage skipped through council state skip= still fails Stages, and names the reason given",
           verdict == "FAIL" and "never entered: judge" in words and "judge skipped on purpose: the user ruled it" in words, words)
+    write(skipped / "events.tsv", rows.replace(";reason=the user ruled it\n", ";reason=ruled;skipped=all of it\n"))
+    verdict, words = item(council(base, "run", "audit", "--run", str(skipped))[1], "Stages")
+    check("a skip reason that itself holds ;skipped= never replaces the helper's own list of skipped stages",
+          "judge skipped on purpose: ruled" in words and "all of it skipped" not in words, words)
     paused = run1_copy("paused")
     state = (paused / "session-state.md").read_text(encoding="utf-8")
     write(paused / "session-state.md", state.replace("status: complete", "status: paused"))

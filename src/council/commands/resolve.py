@@ -5,7 +5,6 @@ on its own (D6)."""
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 from council.commands import cli
@@ -60,7 +59,7 @@ def run_path(value: str, home: str) -> str:
     folder = value.replace("\\", "/")
     while folder.endswith("/") and folder.rstrip("/"):
         folder = folder[:-1]
-    absolute = folder.startswith("/") or re.match(r"[A-Za-z]:/", folder) is not None
+    absolute = where.absolute(folder)
     if is_run(folder):
         if not absolute:
             folder = where.here(where.native(folder)) if os.path.isdir(where.native(folder)) else value
@@ -81,12 +80,12 @@ def is_run(folder: str) -> bool:
 def open_runs(home: str, tree: str, status: str = "") -> list[str]:
     """The open runs on this working tree (runs_here), of this status when given; no code-root counts as here."""
     return [run.folder for run in runs.listing(home, 1000000, "open")
-            if run.code_root in (tree, "", "-") and status in ("", run.status)]
+            if runs.here(run.code_root, tree) and status in ("", run.status)]
 
 
 def newest_run(home: str, tree: str) -> str:
     """The newest run of any status on this working tree ('' when none): run audit's run when none is open."""
-    return next((run.folder for run in runs.listing(home, 1000000, "all") if run.code_root in (tree, "", "-")), "")
+    return next((run.folder for run in runs.listing(home, 1000000, "all") if runs.here(run.code_root, tree)), "")
 
 
 def session_runs(home: str, session: str) -> list[str]:

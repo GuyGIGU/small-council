@@ -9,7 +9,6 @@ the same parser that serves memory, and that no other entry changed, before it r
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from pathlib import Path
@@ -17,11 +16,13 @@ from typing import Any, Iterator
 
 from council.commands import evidence                # the claim ledger's parser
 from council.commands import repair_trail as repair  # the repair trail's integrity check
-from council.records import state as run_state
+from council.records import bytewise, state as run_state
+from council.records.home import absolute, native
+from council.records import memory_entries as parsed
+from council.records.cells import lines_of
 
 MAX_MEMORY = 1024 * 1024
 FAILURE_VERDICTS = ("REFUTED", "MISCITED")
-HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*$")
 TABLE_CELL = re.compile(r"^[ \t]*\|[ \t]*([^|]*?)[ \t]*\|")      # a table row's first cell
 # Every spelling of an F id the parser reads — "F-4", "f4", "F4" — so a new number is never a reused one.
 FID = re.compile(r"(?<![A-Za-z0-9_])[Ff]-?([0-9]+)(?![0-9])")
@@ -71,7 +72,7 @@ def citation_places(citation: str, top: Path) -> list[tuple[str, str]]:
     for piece in re.split(r"[,;]", citation or ""):
         piece = piece.strip().strip("`\"'").replace("\\", "/")
         path = re.sub(r"(:[0-9][0-9 -]*|#L?[0-9]+(-L?[0-9]+)?)$", "", piece).strip()
-        if (not path or re.search(r"[*?<>|\"`:]", path) or path.startswith("/") or
+        if (not path or re.search(r"[*?<>|\"`:]", path) or absolute(path) or
                 ".." in path.split("/") or not (top / path).is_file()):
             continue
         if path not in [known for known, _ in places]:
@@ -83,7 +84,7 @@ def verifier_reason(run: Path, ref: str, verdict: str) -> str:
     """The verdict cell of the verifier row a claim links to ("REFUTED — revoke runs first"), or ''."""
     name, _, number = ref.rpartition(":")
     body = evidence.read_file(run / name, required=False) or ""
-    lines = body.splitlines()
+    lines = lines_of(body)
     if not number.isdigit() or not 1 <= int(number) <= len(lines):
         return ""
     cells = [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", lines[int(number) - 1])[1:-1]]
@@ -121,7 +122,7 @@ def draft_claim(run: Path, top: Path, claim_id: str, scope: str, today: str) -> 
     sources = [rel(top, run) + "/" + link["ref"]]
     deliverable = run_value(run, "deliverable")
     if deliverable:
-        candidate = Path(deliverable) if os.path.isabs(deliverable) else top / deliverable
+        candidate = Path(native(deliverable)) if absolute(deliverable) else top / deliverable
         if candidate.is_file():
             sources.append(rel(top, candidate))
     failure = '{} claimed "{}" at {}; a blind verifier returned {} (its evidence: {})'.format(
@@ -180,12 +181,14 @@ def draft_repair(run: Path, top: Path, task: str, scope: str, today: str) -> str
 # The memory file: read it whole, and keep every byte of the lines this command does not touch.
 
 def load_memory(path: Path) -> tuple[list[str], str]:
+    """The memory file's lines, each with its newline: UTF-8 with a stray byte kept, so that write() puts back the
+    bytes of every line this command leaves alone. Then the newline most of its lines end with."""
     if path.is_symlink():
         raise MemoryError_("the memory file is a symlink — edit it by hand")
     data = path.read_bytes()
     if len(data) > MAX_MEMORY:
         raise MemoryError_("the memory file is over 1 MB — consolidate it first")
-    lines = [piece + "\n" for piece in data.decode("utf-8").split("\n")]
+    lines = [piece + "\n" for piece in data.decode("utf-8", "surrogateescape").split("\n")]
     lines[-1] = lines[-1][:-1]
     if lines[-1] == "":
         lines.pop()
@@ -193,81 +196,26 @@ def load_memory(path: Path) -> tuple[list[str], str]:
     return lines, ("\r\n" if crlf and crlf * 2 >= len(lines) else "\n")
 
 
-def visible(lines: list[str]) -> Iterator[tuple[int, str]]:
-    """(index, text) for the lines the memory parser reads: outside HTML comments and code fences."""
-    incom = fence = False
-    for index, raw in enumerate(lines):
-        text = raw.rstrip("\r\n")
-        if index == 0:
-            text = text.lstrip("\ufeff")
-        if incom:
-            incom = "-->" not in text
-            continue
-        if re.match(r"^[ \t]*<!--", text):
-            incom = "-->" not in text
-            continue
-        if re.match(r"^[ \t]*(```|~~~)", text):
-            fence = not fence
-            continue
-        if not fence:
-            yield index, text
-
-
-def entry_id(heading_text: str) -> str:
-    """The id of a heading entry, as bin/council's memory parser reads one, or ''."""
-    lower = heading_text.lower()
-    bold = len(lower) - len(lower.lstrip("*_~"))
-    match = re.match(r"(ap|ec|d|f)-?[0-9]+", lower[bold:])
-    if not match:
-        return ""
-    rest = heading_text[bold + match.end():]
-    dashed = "-" in match.group(0)
-    if re.match(r"[A-Za-z0-9_]|-[A-Za-z0-9]", rest):
-        return ""
-    if not dashed and not re.match(r"([*_~]|[:.)]|[ \t]+(—|–|-|:)|[ \t]*$)", rest):
-        return ""
-    ident = match.group(0).upper()
-    return ident if dashed else re.sub(r"([0-9]+)$", r"-\1", ident)
-
-
-def cand_id(text: str) -> str:
-    """The id of a line that opens like an entry, as bin/council's cand() reads one — an id, then a
-    separator or nothing (`F-6 — …`, `F-6:`; never `F-6 follow up`) — or ''."""
-    lower = text.lower().lstrip("*_~`")
-    match = re.match(r"(ap|ec|d|f)-?[0-9]+", lower)
-    if not match or not re.match(r"[*_~`]*([ \t]*([:.)]|—|–|-[ \t])|[ \t]*$)", lower[match.end():]):
-        return ""
-    ident = match.group(0).upper()
-    return ident if "-" in ident else re.sub(r"([0-9]+)$", r"-\1", ident)
+def read(lines: list[str]) -> list[str]:
+    """The lines as the memory parser reads them (C-locale text, records/bytewise.py), one for one."""
+    return bytewise.lines(bytewise.text("".join(lines)))
 
 
 def headings(lines: list[str]) -> Iterator[tuple[int, int, str, str]]:
-    for index, text in visible(lines):
-        match = HEADING.match(text)
-        if match:
-            level = len(match.group(1))
-            yield index, level, match.group(2), (entry_id(match.group(2)) if 2 <= level <= 4 else "")
-
-
-def section_kind(text: str) -> str:
-    words = re.sub(r"[*_~`#]", "", text.lower())
-    words = re.sub(r"^[^a-z0-9]+", "", words)
-    name = re.split(r"[ \t]*(?:—|–|-[ \t]|\(|\[|;|:|,)", words, maxsplit=1)[0].strip()
-    if name.startswith("propos"):
-        return "proposed"
-    if re.match(r"^(observed failures|failure history|failures)(\s|$)", name):
-        return "observed"
-    if name.startswith("reject"):
-        return "rejected"
-    return "other"
+    """(index, level, text, entry id or '') of each heading the memory parser reads."""
+    for index, text in parsed.visible(read(lines)):
+        found = parsed.heading_of(text)
+        if found:
+            level, title = found
+            yield index, level, title, (parsed.entry_id(title) if 2 <= level <= 4 else "")
 
 
 def sections(lines: list[str]) -> list[tuple[int, str]]:
-    """Level-1/2 section headings as (index, kind); a first level-1 heading is the file's title."""
+    """Level-1/2 section headings as (index, what they file); a first level-1 heading is the file's title."""
     found, seen = [], False
     for index, level, text, ident in headings(lines):
         if level <= 2 and not ident and (level == 2 or seen):
-            found.append((index, section_kind(text)))
+            found.append((index, parsed.section(text)))
         seen = True
     return found
 
@@ -295,8 +243,8 @@ def place(lines: list[str], at: int, new_lines: list[str], newline: str) -> list
 
 
 def cited(lines: list[str], key: str) -> bool:
-    pattern = re.compile(re.escape(key) + r"(?![0-9A-Za-z_./-])")
-    return any(pattern.search(text.replace("\\", "/")) for _, text in visible(lines))
+    pattern = re.compile(re.escape(bytewise.text(key)) + r"(?![0-9A-Za-z_./-])")
+    return any(pattern.search(text.replace("\\", "/")) for _, text in parsed.visible(read(lines)))
 
 
 def first_evidence(entry_lines: list[str]) -> str:
@@ -310,8 +258,8 @@ def first_evidence(entry_lines: list[str]) -> str:
 def insert(memory: Path, block_path: Path, out: Path) -> int:
     lines, newline = load_memory(memory)
     new = [line.rstrip("\r") for line in block_path.read_text(encoding="utf-8").strip("\n").split("\n")]
-    head = HEADING.match(new[0]) if new else None
-    if not head or entry_id(head.group(2)) != "F-0":
+    head = parsed.heading_of(bytewise.text(new[0])) if new else None
+    if not head or parsed.entry_id(head[1]) != "F-0":
         raise MemoryError_("the draft does not open with its F-0 heading")
     key = first_evidence(new)
     if not key:
@@ -319,7 +267,8 @@ def insert(memory: Path, block_path: Path, out: Path) -> int:
     if cited(lines, key):
         raise MemoryError_("memory already cites {} (an entry, a proposal or a rejected line) — "
                            "nothing drafted".format(key))
-    number = 1 + max([0] + [int(m.group(1)) for _, text in visible(lines) for m in FID.finditer(text)])
+    number = 1 + max([0] + [int(m.group(1)) for _, text in parsed.visible(read(lines))
+                            for m in FID.finditer(text)])
     new[0] = re.sub(r"F-0\b", "F-{}".format(number), new[0], count=1)
     proposed = [index for index, kind in sections(lines) if kind == "proposed"]
     if proposed:
@@ -337,9 +286,9 @@ def find_entry(lines: list[str], wanted: str) -> tuple[int, int]:
     hits = [(index, level) for index, level, _, ident in headings(lines) if ident == wanted]
     unread = [] if hits else (
         ["line {}: a heading deeper than ####".format(index + 1) for index, level, text, _ in headings(lines)
-         if level > 4 and cand_id(text) == wanted]
-        + ["line {}: a table row".format(index + 1) for index, text in visible(lines)
-           if TABLE_CELL.match(text) and cand_id(TABLE_CELL.match(text).group(1)) == wanted])
+         if level > 4 and parsed.cand_id(text) == wanted]
+        + ["line {}: a table row".format(index + 1) for index, text in parsed.visible(read(lines))
+           if TABLE_CELL.match(text) and parsed.cand_id(TABLE_CELL.match(text).group(1)) == wanted])
     if unread:
         raise MemoryError_("{} opens like an entry where the memory parser reads none ({}) — write it as a "
                            "heading (### {}) first".format(wanted, "; ".join(unread), wanted))
@@ -348,7 +297,7 @@ def find_entry(lines: list[str], wanted: str) -> tuple[int, int]:
                            "hand-written proposal by hand".format(wanted, len(hits)))
     start, level = hits[0]
     end = next((index for index, lvl, text, ident in headings(lines)
-                if index > start and (lvl <= level or ident or (lvl > 4 and cand_id(text)))), len(lines))
+                if index > start and (lvl <= level or ident or (lvl > 4 and parsed.cand_id(text)))), len(lines))
     while end > start + 1 and lines[end - 1].strip() == "":
         end -= 1
     return start, end
@@ -374,7 +323,7 @@ def move(memory: Path, wanted: str, target: str, said_path: Path, today: str, ou
             head = ["## Observed Failures (F) — historical evidence, never a rule", ""]
             rest = place(rest, proposed[0] if proposed else len(rest), head + entry, newline)
     else:
-        title = HEADING.match(entry[0]).group(2)
+        title = bytewise.shown(parsed.heading_of(read(lines)[start])[1])
         title = re.sub(r"^[*_~]*F-[0-9]+[*_~]*[ \t]*[:.—–-]?[ \t]*", "", title)
         line = '- {} · {} · the user said: "{}" · was {}, evidence {}'.format(
             one_line(title, 90) or "observed failure", today, said, wanted, first_evidence(entry) or "none")
@@ -391,7 +340,7 @@ def move(memory: Path, wanted: str, target: str, said_path: Path, today: str, ou
 def write(out: Path, lines: list[str]) -> None:
     if out.exists() or out.is_symlink():
         raise MemoryError_("refusing to overwrite " + str(out))
-    with open(out, "w", encoding="utf-8", newline="") as stream:
+    with open(out, "w", encoding="utf-8", errors="surrogateescape", newline="") as stream:
         stream.write("".join(lines))
 
 

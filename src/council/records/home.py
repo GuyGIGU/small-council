@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -81,6 +82,13 @@ def here(cwd: str | Path = ".") -> str:
 def this_tree(cwd: str | Path = ".") -> str:
     """The working tree a run's code-root is compared with: git's top level, else the folder itself."""
     return git.text(cwd, "rev-parse", "--show-toplevel") or here(cwd)
+
+
+def absolute(p: str) -> bool:
+    """A path given as text (a state file, a config, a user, git) that is rooted or has a drive: /x, \\x, C:x,
+    C:/x, C:\\x. Not joined to a folder; the same answer on every OS, so a path written on one reads alike on
+    another. ~ is not one: nothing expands it. A caller that opens it goes through native first."""
+    return bool(re.match(r"[/\\]|[A-Za-z]:", p))
 
 
 def native(value: str) -> str:

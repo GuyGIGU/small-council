@@ -62,7 +62,7 @@ class SeatRowsTest(support.Scratch):
         self.assertEqual(seat_rows.cell(run, "nobody", "note"), "")
         self.assertEqual(seat_rows.tool_calls(run, "beck"), "11")        # a1's latest total, and the one with no id
         self.assertEqual(seat_rows.tool_calls(run, "nobody"), "")
-        self.assertEqual(seat_rows.tool_budget(run, "beck"), "40")
+        self.assertEqual(seat_rows.tool_budget(run, "beck"), "30")        # the first row of a key wins
         self.assertTrue(seat_rows.is_verifier(run, "v1"))
         self.assertFalse(seat_rows.is_verifier(run, "beck"))
 

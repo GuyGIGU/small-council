@@ -85,6 +85,16 @@ class StateTest(support.Scratch):
         self.assertEqual(state.text(home / "runs" / "empty", read=lambda path: "x: " + path.name),
                          "x: session-state.md")
 
+    def test_unread_names_a_state_the_guarded_read_leaves_out(self) -> None:
+        run = self.tmp / ".council" / "runs" / "2026-01-01-000000-a"
+        self.write(".council/runs/2026-01-01-000000-a/session-state.md", "status: in-progress\n")
+        self.assertEqual(state.unread(run, "it is not read"), "")
+        self.write(".council/runs/2026-01-01-000000-a/session-state.md", "x" * (4 * 1024 * 1024 + 1))
+        self.assertRegex(state.unread(run, "it is not read"), r"^the run's session-state\.md is a link, lies "
+                         r"outside the run or is over 4 MB, so it is not read — put a plain copy of it, under that "
+                         r"size, in its place: .*/session-state\.md$")
+        self.assertEqual(state.text(run), "")
+
 
 if __name__ == "__main__":
     unittest.main()

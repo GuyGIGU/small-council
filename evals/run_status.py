@@ -237,6 +237,13 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           "latest check shown is a real one",
           r["latest_check"]["name"] == "tests" and all(c["name"] not in ("before-1", "regress-1") for c in r["checks"]),
           r["latest_check"])
+    tied = make_run(base, "tied", gates=[("tests", 1, 30), ("lint", 0, 20), ("tests", 0, 20)])  # two names, one time
+    code, out, err = council(base, "status", "--json", "--run", str(tied)) if BASH else (2, "", "no bash")
+    shown = json.loads(out) if code == 0 else {}
+    latest = shown.get("latest_check") or {}
+    check("checks: the latest check is the checks list's last row, also when two checks share a time",
+          latest.get("name") == "lint" and latest.get("result") == "passed"
+          and [c["name"] for c in shown["checks"]] == ["tests", "lint"], (latest, err))
 
     stop = rec + [{"task": "T2", "gate": "tests", "attempt": 2, "result": "failed", "action": "independent-diagnosis"},
                   {"task": "T2", "gate": "tests", "attempt": 3, "result": "failed", "action": "stop"}]
@@ -290,6 +297,15 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         "ask: .council/asks/filed.md", "ask: ../../outside.md"))
     check("closing card: unfiled paths never read arbitrary files", reading(closed)["closing"]["request"] ==
           "No filed request recorded.")
+    unasked = read(closed / "session-state.md")
+    write(closed / "session-state.md", unasked.replace("ask: ../../outside.md\n", ""))
+    write(closed / "ask.md", "# Ask — More\ncontinues: `.council/asks/filed.md`\n## In your words\n(no new words)\n")
+    code, out, err = council(closing_base, "status", "--json", "--run", str(closed)) if BASH else (2, "", "no bash")
+    shown = json.loads(out)["closing"]["request"] if code == 0 else err
+    check("closing card: a run that names its filed request only by ask.md's continues: shows that request",
+          shown == "Ask — Review the parser — Find the unsafe <script>alert(1)</script> path.", shown)
+    (closed / "ask.md").unlink()
+    write(closed / "session-state.md", unasked)
 
     original_claims = read(closed / "claims.jsonl")             # put back below
 
@@ -363,6 +379,12 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
     write(memorybase / "docs" / "project-memory.md", "x" * 65864)
     r = reading(memoryrun)
     check("memory size: the card follows the configured memory path",
+          any(a["kind"] == "memory-size" and "project-memory.md is 66 KB" in a["text"]
+              for a in r["attention"]), r["attention"])
+    write(memorybase / ".council" / "council.config.md",
+          "# Council config\n## Memory\n- conventions: /docs/project-memory.md\n")
+    r = reading(memoryrun)
+    check("memory size: a configured /docs/… is the repo's own file, as council memory and run open read it",
           any(a["kind"] == "memory-size" and "project-memory.md is 66 KB" in a["text"]
               for a in r["attention"]), r["attention"])
 
@@ -539,8 +561,10 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
           and shown["ceiling, go"] == (True, False, 3, "Your go allows up to 3 agent runs."), shown)
     check("stop: a closed run over its cap is over, but nothing is stopped and no go is asked for",
           shown["closed over"] == (True, False, None, ""), shown)
-    check("stop: a cap or ceiling too large for bash to compare stops nothing, as in the helper",
-          shown["unreadable cap"] == (False, False, None, "") and shown["unreadable ceiling"] == (False, False, None, ""), shown)
+    check("stop: a 20-digit plan agent-cap is no number, so the configured cap (4) stands and 12 runs are stopped; "
+          "a 20-digit ceiling is no ceiling and stops nothing",
+          shown["unreadable cap"] == (True, True, None, STOPPED) and shown["unreadable ceiling"] == (False, False, None, ""),
+          shown)
     items = {name: [(a["kind"], a["severity"]) for a in r["attention"] if a["kind"] in ("cap", "ceiling", "stop")]
              for name, r in lim.items()}
     check("stop: over the cap or ceiling needs the user only while stopped; on the user's go it is a note, and "
@@ -1322,11 +1346,11 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
 with tempfile.TemporaryDirectory(prefix="council-request-cut-") as temporary:
     root = Path(temporary)
     asked_run = root / ".council" / "runs" / "asked"
-    asked_run.mkdir(parents=True)
+    write(asked_run / "session-state.md", "status: complete\nask: .council/asks/a.md\n")
 
     def asked(title, said):
         write(root / ".council" / "asks" / "a.md", "# {}\n\n## In your words\n{}\n".format(title, said))
-        return status_closing.filed_request(asked_run, ".council/asks/a.md")
+        return status_closing.filed_request(asked_run)
 
     def whole(got, original, limit):           # the longest run of whole words that fits, then "…"
         return (got.endswith("…") and len(got) <= limit and original.startswith(got[:-1])
@@ -1343,6 +1367,10 @@ with tempfile.TemporaryDirectory(prefix="council-request-cut-") as temporary:
     got = asked(title, "Fix it.")
     check("request: a title past its limit ends on a whole word, then '…'",
           whole(got.split(" — ")[0], title, 160) and got.endswith(" — Fix it."), got)
+    write(root / ".council" / "asks" / "a.md", "# Ask\x0cFix the cache\r\n## In your words\r\nGo\u2028fast.\rNow.\r\n")
+    got = status_closing.filed_request(asked_run)
+    check("request: only a newline ends a line of the filed request (a form feed, a lone CR or a Unicode break is "
+          "a space), and a CRLF reads as a newline", got == "Ask Fix the cache — Go fast. Now.", got)
 
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:

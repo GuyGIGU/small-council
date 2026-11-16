@@ -6,6 +6,10 @@ import time
 from datetime import datetime, timezone
 
 
+def now_date() -> str:
+    return time.strftime("%Y-%m-%d")
+
+
 def now_min() -> str:
     return time.strftime("%Y-%m-%d %H:%M")
 

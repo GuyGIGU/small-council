@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import os
 import re
-import time
 from pathlib import Path
 from typing import NamedTuple
 
-from council import git
+from council import clock, diff, git
 from council.commands import resolve
+from council.records import bytewise
 from council.records import home as where
 
 MIB = 1048576
@@ -64,23 +64,20 @@ def base(run: Path, top: str, given: str) -> str:
 
 
 def _records(data: bytes) -> list[bytes]:
-    found = data.split(b"\n")
-    return found[:-1] if found and found[-1] == b"" else found
+    """git's output as lines, each CR kept (bytewise.records)."""
+    return [bytewise.bytes_of(line) for line in bytewise.records(bytewise.read(data), fold=False)]
 
 
 def _file_lines(path: str) -> list[bytes]:
-    try:
-        data = Path(path).read_bytes()
-    except OSError:
-        return []
-    return [line[:-1] if os.name == "nt" and line.endswith(b"\r") else line for line in _records(data)]
+    """A file's lines as bytes (bytewise.file_lines); [] when it can't be read."""
+    return [line.encode("utf-8", "surrogateescape") for line in bytewise.file_lines(path)]
 
 
 def added(top: str, since: str) -> list[Line]:
     """The lines a diff from `since` (HEAD when none) adds, numbered as they now stand."""
     found, place, head, number = [], b"", False, 0
-    diff = git.run(top, "diff", "-M", "-U0", "--no-color", "--no-ext-diff", since, "--", ".", EXCLUDE, names=True)[1]
-    for line in _records(diff):
+    output = git.run(top, "diff", "-M", "-U0", "--no-color", "--no-ext-diff", since, "--", ".", EXCLUDE, names=True)[1]
+    for line in _records(output):
         if line.startswith(b"diff --git "):
             head, place = True, b""
         elif head and line.startswith(b"+++ "):
@@ -88,34 +85,14 @@ def added(top: str, since: str) -> list[Line]:
             place = place[2:] if place.startswith(b"b/") else place
             place = b"" if place == b"/dev/null" else place
         elif line.startswith(b"@@"):
-            head = False
-            mark = re.search(rb"\+[0-9]+", line)
-            number = int(mark.group(0)[1:]) if mark else number
+            hunk = diff.header(line.decode("latin-1"))
+            if hunk:
+                head, number = False, hunk.new
         elif not head and line.startswith(b"+"):
             if place:
                 found.append(Line(place, number, line[1:]))
             number += 1
     return found
-
-
-def stamp(opened: str) -> float | None:
-    """The run's opened: time as `touch -t` read it ([[CC]YY]MMDDhhmm[.SS], local time); None when it can't."""
-    digits = re.sub(r"[ :-]", "", opened)
-    if len(digits) < 2:
-        return None
-    digits = digits[:-2] + "." + digits[-2:]
-    found = re.fullmatch(r"([0-9]{8}|[0-9]{10}|[0-9]{12})(\.[0-9]{2})?", digits)
-    if not found:
-        return None
-    main, seconds = found.group(1), (found.group(2) or ".00")[1:]
-    if len(main) == 8:
-        main = time.strftime("%Y") + main
-    elif len(main) == 10:
-        main = ("19" if int(main[:2]) >= 69 else "20") + main
-    try:
-        return time.mktime(time.strptime(main + seconds, "%Y%m%d%H%M%S"))
-    except (ValueError, OverflowError):
-        return None
 
 
 def _text_file(path: str) -> bool:
@@ -186,7 +163,8 @@ def _read(run: Path, top: str, since: str, opened: str) -> list[Line]:
         since = since if _commit(top, since) else ""
         if _commit(top, since or "HEAD"):
             found += added(top, since or "HEAD")
-        found += untracked(top, stamp(opened) if opened else None)
+        moment = clock.local_moment(opened)                  # the helper's local stamp, seconds or not
+        found += untracked(top, moment.timestamp() if moment else None)
         if since:
             found += unpushed(top, since)
     return found + _bodies(run)

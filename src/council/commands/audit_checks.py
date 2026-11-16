@@ -4,8 +4,6 @@ agent seat with a token figure, the agent limit. Each check says pass, warn or F
 words)."""
 from __future__ import annotations
 
-import json
-import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -13,11 +11,12 @@ from typing import Any, Callable, Dict
 
 from council.clock import iso_moment
 from council.records import events as event_stream
-from council.records import paths, usage, usage_gaps
+from council.records import cells, paths, usage, usage_gaps
 from council.records import plan as run_plan
 from council.records import seats as seat_files
 from council.records import state as run_state
 from council.records.audit_file import FAIL, PASS, WARN
+from council.records.home import absolute, native
 
 Say = Callable[[str, str, str], None]
 Event = Dict[str, Any]
@@ -34,13 +33,6 @@ VERDICTS = ("CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED")
 
 def clock(when: datetime | None) -> str:
     return when.astimezone().strftime("%H:%M:%S") if when else "?"
-
-
-def number(value: Any) -> int | None:
-    try:
-        return int(str(value).strip())
-    except (TypeError, ValueError):
-        return None
 
 
 def listed(names: Any, most: int = 4) -> str:
@@ -152,11 +144,12 @@ def closing(run: Run, say: Say) -> None:
             say(PASS, label, "closed complete at %s (%s has no Deliver stage)" % (clock(closed["t"]),
                                                                                   run.mode or "this mode"))
             return
-        deliver = [e for e in run.of_type("run.phase_changed") if e.get("value") == "deliver"
-                   and number(e.get("seq")) is not None and number(e.get("seq")) < number(closed.get("seq"))]
+        end = cells.optional_number(closed.get("seq"))
+        moves = [e for e in run.of_type("run.phase_changed") if cells.optional_number(e.get("seq")) is not None
+                 and cells.optional_number(e.get("seq")) < end]
+        deliver = [e for e in moves if e.get("value") == "deliver"]
         if not deliver:
-            last = [e.get("value") for e in run.of_type("run.phase_changed")
-                    if number(e.get("seq")) is not None and number(e.get("seq")) < number(closed.get("seq"))]
+            last = [e.get("value") for e in moves]
             say(FAIL, label, "closed as complete at %s without entering Deliver (its last stage: %s)"
                 % (clock(closed["t"]), last[-1] if last else "convene"))
         else:
@@ -212,7 +205,7 @@ def agents_on_record(run: Run, say: Say) -> None:
 def gates(run: Run, say: Say) -> None:
     runs = []
     for event in run.of_type("gate.finished"):
-        seconds = number(event_stream.details(event.get("detail")).get("seconds")) or 0
+        seconds = cells.optional_number(event_stream.details(event.get("detail")).get("seconds")) or 0
         if event["t"]:
             runs.append({"name": event.get("subject", "?"), "end": event["t"],
                          "start": event["t"] - timedelta(seconds=seconds)})
@@ -262,8 +255,8 @@ def deliverable(run: Run, say: Say) -> None:
     home = run.folder.parent.parent            # <home>/runs/<run>; a copied run elsewhere is not looked up
     if home.name != ".council" or run.folder.parent.name != "runs":
         where = None
-    elif os.path.isabs(recorded):
-        where = Path(recorded)
+    elif absolute(recorded):
+        where = Path(native(recorded))
     elif recorded.replace("\\", "/").startswith(".council/"):
         where = home.parent / recorded
     else:
@@ -287,14 +280,7 @@ def claim_index(run: Run, say: Say) -> None:
         return
     newer = [p.name for p in [run.folder / "synthesis.md"] + sorted(run.folder.glob("verify-*.md"))
              if p.is_file() and p.stat().st_mtime > index.stat().st_mtime + 1]
-    claims = []
-    for line in paths.text_of(index, limit=MAX_FILE).splitlines():
-        try:
-            claim = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(claim, dict):
-            claims.append(claim)
+    claims = cells.jsonl_rows(paths.text_of(index, limit=MAX_FILE))
     kept = [c for c in claims if c.get("disposition") == "kept"]
     open_claims = [str(c.get("id", "?")) for c in kept if str(c.get("verdict", "")).upper() not in VERDICTS]
     # A cut claim a verifier CONFIRMED is a lone dissenter that was right — unless synthesis.md says why it
@@ -346,17 +332,17 @@ def seats_on_record(run: Run, say: Say) -> None:
 
 def agent_limit(run: Run, say: Say) -> None:
     label = "Agent limit"
-    cap = next((number(r.get("value")) for r in run.plan
+    cap = next((cells.optional_number(r.get("value")) for r in run.plan
                 if r.get("kind") == "budget" and r.get("id") == "run" and r.get("field") == "agent-cap"), None)
     closed = run.of_type("run.closed")
-    used = number(event_stream.details(closed[-1].get("detail")).get("agent_runs")) if closed else None
+    used = cells.optional_number(event_stream.details(closed[-1].get("detail")).get("agent_runs")) if closed else None
     if used is None:
-        used = sum(number(r.get("agents")) or 0 for r in run.seats)
+        used = sum(cells.optional_number(r.get("agents")) or 0 for r in run.seats)
     if not cap:
         say(WARN, label, "%d agent run(s); the plan names no cap to hold them to" % used)
         return
-    allowed = [number(r.get("until")) for r in seat_files.allowance_rows(run.folder,
-                                                                         MAX_FILE) if number(r.get("until"))]
+    allowed = [cells.optional_number(r.get("until")) for r in seat_files.allowance_rows(run.folder, MAX_FILE)
+               if cells.optional_number(r.get("until"))]
     if used <= cap:
         say(PASS, label, "%d of %d agent runs" % (used, cap))
     elif allowed and allowed[-1] >= used:

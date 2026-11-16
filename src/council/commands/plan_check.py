@@ -10,8 +10,6 @@ from council.commands import plan_models
 from council.records import cells, models
 
 HEADER = "kind\tid\tfield\tvalue\treason"
-NUMBER = re.compile(r"[ \t\n\r\f\v]*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][-+]?[0-9]+)?")
-DIGITS = re.compile(r"[0-9]+")
 LEVELS = ("low", "medium", "high")
 Key = tuple  # (kind, id, field)
 
@@ -28,15 +26,9 @@ class Settings(NamedTuple):
     models: models.Models = models.Models()   # the config's `- models:` line (D37): all inherit without it
 
 
-def number(text: str) -> float:
-    """A value as awk reads it in arithmetic: its leading number, else 0."""
-    found = NUMBER.match(text)
-    return float(found.group(0)) if found else 0.0
-
-
 def number_text(value: float) -> str:
     """A number as awk writes it into text: whole as an integer, else six significant digits."""
-    return "%d" % value if value.is_integer() else "%.6g" % value
+    return "%d" % value if value == int(value) else "%.6g" % value
 
 
 class Value(NamedTuple):
@@ -46,13 +38,13 @@ class Value(NamedTuple):
     padded: bool
 
     def below(self, n: float) -> bool:
-        return self.text < number_text(n) if self.padded else number(self.text) < n
+        return self.text < number_text(n) if self.padded else cells.leading(self.text) < n
 
     def above(self, n: float) -> bool:
-        return self.text > number_text(n) if self.padded else number(self.text) > n
+        return self.text > number_text(n) if self.padded else cells.leading(self.text) > n
 
     def whole(self) -> bool:
-        return DIGITS.fullmatch(self.text) is not None
+        return cells.optional_number(self.text) is not None
 
 
 class Verdict(NamedTuple):
@@ -209,7 +201,7 @@ class Check:
         elif field == "agent-runs":                  # a Workflow seat starts several agents
             if not value.whole() or value.below(1) or value.above(1000):
                 self.problem(n, "agent-runs must be an integer from 1 to 1000")
-            self.aruns[ident] = number(v)
+            self.aruns[ident] = cells.leading(v)
         else:
             if field != "tool-calls":
                 self.problem(n, "unknown seat budget field: " + field)
@@ -222,9 +214,9 @@ class Check:
         if field == "agent-cap":
             if not value.whole() or value.below(1):
                 self.problem(n, "agent-cap must be a positive integer")
-            elif value.above(self.given.cap) and not self.under_go(number(v)):
+            elif value.above(self.given.cap) and not self.under_go(cells.leading(v)):
                 self.problem(n, "agent-cap %s exceeds the configured cap %d%s" % (v, self.given.cap, self.go_words()))
-            self.plan_cap = number(v)
+            self.plan_cap = cells.leading(v)
         elif field == "estimated-tokens":
             if not value.whole():
                 self.problem(n, "estimated-tokens must be a non-negative integer")
@@ -236,7 +228,7 @@ class Check:
                 self.problem(n, "chair-tokens must be a non-negative integer — the Chair's own share of "
                                 "estimated-tokens")
             else:
-                self.chair = (number(v), n)
+                self.chair = (cells.leading(v), n)
         else:
             self.problem(n, "unknown run budget field: " + field)
 
@@ -249,7 +241,7 @@ class Check:
                 self.problem(0, "missing %s row (%s)" % (label, "/".join(key)))
         tally = self.seat_rules()
         estimate = self.val.get(("budget", "run", "estimated-tokens"))
-        if self.chair and estimate is not None and DIGITS.fullmatch(estimate) and self.chair[0] > number(estimate):
+        if self.chair and cells.optional_number(estimate) is not None and self.chair[0] > cells.leading(estimate):
             self.problem(self.chair[1], "chair-tokens %s is more than the whole estimate (%s)"
                          % (number_text(self.chair[0]), estimate))
         if tally.selected + tally.skipped == 0:

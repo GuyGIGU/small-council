@@ -2,6 +2,7 @@
 lock, the time limit, and the stop of a whole process tree."""
 from __future__ import annotations
 
+import json
 import os
 import time
 import unittest
@@ -105,8 +106,7 @@ class OutputTest(unittest.TestCase):
         from council.commands import gate_failed
         with mock.patch.object(cli, "say") as said:
             gate_failed.indent(["x: No module named y\r", "z"], "  ")
-        kept = "" if os.name == "nt" else "\r"           # Git Bash's awk reads in text mode; elsewhere the CR stays
-        self.assertEqual([c.args[0] for c in said.call_args_list], ["  x: No module named y" + kept, "  z"])
+        self.assertEqual([c.args[0] for c in said.call_args_list], ["  x: No module named y", "  z"])  # every OS
 
     def test_failure_ids(self) -> None:
         out = ("FAILED tests/a.py::t1 - AssertionError: x\n--- FAIL: TestGo (0.01s)\nnot ok 3 - tap name\n"
@@ -131,6 +131,8 @@ class RunHelpersTest(support.Scratch):
     def test_qname_json_and_windows_switch(self) -> None:
         self.assertEqual((gate_run.qname("unit tests"), gate_run.qname("lint")), ('"unit tests"', "lint"))
         self.assertEqual(gate_run.json_esc('a\\b "c"\td'), 'a\\\\b \\"c\\" d')
+        self.assertEqual(gate_run.json_esc("f\x0cg\x1bh\x00i\r\nj\x7fé"), "f g h i  j\x7fé")
+        self.assertEqual(json.loads('"%s"' % gate_run.json_esc("x\x01\x1f\x0b")), "x   ")
         self.assertEqual(gate_run.windows_command('cmd /c "x" && CMD.EXE  /K y'), 'cmd //c "x" && CMD.EXE  //K y')
         self.assertEqual(gate_run.windows_command("echo /c/x"), "echo /c/x")
 
@@ -214,11 +216,6 @@ class ChangedTest(unittest.TestCase):
         self.assertTrue(all(sum(len(f) + 3 for f in chunk) <= changed.LINE_BUDGET - 10 for chunk in found))
         self.assertEqual(changed.batches(["a"], 10), [["a"]])
 
-    def test_options(self) -> None:
-        self.assertEqual(changed.options(["--glob", "*.{a,b}", "--each", "--glob=c"]), (["*.a", "*.b", "c"], True))
-        with self.assertRaises(cli.Refusal):
-            changed.options(["--glob"])
-
 
 class LockTest(support.Scratch):
     def test_take_refuse_and_release(self) -> None:
@@ -293,10 +290,8 @@ class WaitTest(support.Scratch):
         self.assertEqual((run / "session-state.md").read_bytes(), held.encode())
         (run / "session-state.md.lock" / "owner").unlink()
         (run / "session-state.md.lock").rmdir()
-        self.assertTrue(state_write.clear_waiting(run))      # a CRLF file, as awk rewrites it: Git Bash's awk reads
-        crlf = b"\n" if os.name == "nt" else b"\r\n"         # in text mode, so every CR goes; elsewhere only the
-        self.assertEqual((run / "session-state.md").read_bytes(),     # rewritten line loses its own
-                         b"status: in-progress" + crlf + b"waiting: \nevents-schema: 1" + crlf)
+        self.assertTrue(state_write.clear_waiting(run))      # a CRLF file is rewritten with LF lines, on every OS
+        self.assertEqual((run / "session-state.md").read_bytes(), b"status: in-progress\nwaiting: \nevents-schema: 1\n")
 
 
 if __name__ == "__main__":

@@ -18,7 +18,6 @@ from council.records import home as where
 from council.records import plan as plan_file
 
 PLUGIN = Path(__file__).resolve().parents[3].as_posix()
-ACTIVE = "active-run"       # the 0.2 pointer to the open run; doctor only says it is left behind
 CARD_LIMIT = 8192
 STALE_DAYS = 2              # find -mtime +2: open for three whole days or more
 
@@ -71,7 +70,6 @@ def main(args: cli.Args, words: list[str]) -> int:
         doctor_gates.gates(doc)
     open_runs(doc)
     run_plans(doc)
-    active_run(doc)
     from council.commands import doctor_memory
     doctor_memory.memory_file(doc)
     map_stamp(doc)
@@ -88,7 +86,7 @@ def ref_path(ref: str, root: str) -> str:
     """A roster or card reference as a file path: references/… is in the plugin, anything else in the repo."""
     if ref.startswith("references/"):
         return PLUGIN + "/" + ref
-    return ref if ref.startswith("/") or re.match(r"[A-Za-z]:", ref) else root + "/" + ref
+    return ref if where.absolute(ref) else root + "/" + ref
 
 
 def _isfile(path: str) -> bool:
@@ -96,7 +94,8 @@ def _isfile(path: str) -> bool:
 
 
 def roster(doc: Doctor) -> None:
-    rows = [tuple(bytewise.shown(c) for c in row) for row in config.roster_rows(where.native(doc.home))]
+    rows = [tuple(bytewise.shown(c) for c in (row.slug or "-", row.seat, row.reference or "-"))
+            for row in config.roster_table(where.native(doc.home))]
     if not rows:
         doc.warn("couldn't read a Roster table in %s" % config.NAME,
                  "run council-init refresh (older configs list seats instead of a table)")
@@ -212,26 +211,6 @@ def _plan_check(folder: str) -> tuple[int, list[str]]:
     with contextlib.redirect_stdout(said), contextlib.redirect_stderr(said):
         code = plan.check(Path(where.native(folder)), True)
     return code, said.getvalue().splitlines()
-
-
-def active_run(doc: Doctor) -> None:
-    pointer = where.native(doc.home + "/" + ACTIVE)
-    try:
-        data = Path(pointer).read_bytes()
-    except OSError:
-        return
-    if not data:
-        return
-    p = data.split(b"\n")[0].replace(b"\r", b"").decode("utf-8", "surrogateescape")
-    p = p if p.startswith("/") or re.match(r"[A-Za-z]:", p) else doc.root + "/" + p
-    if _isfile(p + "/" + paths.STATE):
-        if _field(p, "status").startswith(("complete", "abandoned")):
-            doc.warn("active-run still points at a closed run", "empty .council/active-run (0.3 doesn't use it)")
-        else:
-            doc.warn("an older run is still marked open: %s" % p,
-                     "resume it, or: council run close --run \"%s\" --status abandoned" % p)
-    else:
-        doc.warn("active-run points at a folder that no longer exists: %s" % p, "empty .council/active-run")
 
 
 def map_stamp(doc: Doctor) -> None:

@@ -153,5 +153,5 @@ def open_here(home: str, tree: str, session: str) -> list[str]:
     """The in-progress runs this session may drive: this tree's (a run with no code-root counts as this
     tree's) and, with a session id, the ones it drives on any tree."""
     return [run.folder for run in runs.listing(home, 1000000, "open")
-            if run.status == "in-progress" and (run.code_root in (tree, "", "-")
+            if run.status == "in-progress" and (runs.here(run.code_root, tree)
                                                  or (session != "" and (run.session or "-") == session))]

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from council.commands import cli, event_note, resolve
-from council.records import runs, state, state_write
+from council.records import paths, runs, state, state_write
 from council.records import home as where
 
 
@@ -23,6 +23,9 @@ def main(args: cli.Args, words: list[str]) -> int:
             raise cli.Refusal("several runs are open on this working tree — pass --run <folder>: "
                               + resolve.names(mine))
         run = Path(mine[0])
+    why = state.unread(run, "it is not resumed")
+    if why:
+        raise cli.Refusal(why)
     status, old = resolve.field(run, "status").split(" ")[0], resolve.field(run, "session")
     if status in ("complete", "abandoned"):
         raise cli.Refusal("%s is closed (%s) — open a new run instead: council run open %s"
@@ -67,6 +70,6 @@ def _unclose(run: Path) -> None:
             for line in state_write.raw_lines(file):
                 body = body or line.startswith("## ")
                 kept += line + "\n" if body or not line.startswith(("closed:", "actual:")) else ""
-            state_write.replace(file, kept)
+            paths.atomic_write(file, kept.encode("utf-8", "surrogateescape"), ".state.", keep_mode=True)
         except OSError:
             raise cli.Refusal("cannot update " + file.as_posix()) from None

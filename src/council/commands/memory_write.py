@@ -10,14 +10,14 @@ import os
 import re
 import shutil
 import tempfile
-import time
 from pathlib import Path
 
+from council import clock
 from council.commands import cli, resolve, script
 from council.commands.memory import Memory
 from council.records import bytewise, events, memory, redact
 from council.records import home as where
-from council.records.memory_entries import cells
+from council.records.memory_entries import cells, section
 
 
 def main(args: cli.Args, found: Memory, sub: str, words: list[str]) -> int:
@@ -63,7 +63,7 @@ def propose(args: cli.Args, found: Memory, kind: str, source: str) -> int:
         with open(tmp + "/scope", "w", encoding="utf-8", errors="surrogateescape", newline="\n") as stream:
             stream.write(args.value("scope") + "\n")
         code, raw = _script(["draft", kind, source, "--run", run.as_posix(), "--top", found.top, "--scope-file",
-                             tmp + "/scope", "--today", time.strftime("%Y-%m-%d")])
+                             tmp + "/scope", "--today", clock.now_date()])
         if code:
             return 2
         red = _redacted(raw.encode("utf-8", "surrogateescape"), tmp + "/draft")
@@ -117,7 +117,7 @@ def answer(args: cli.Args, found: Memory, sub: str, entry: str) -> int:
         raise cli.Refusal("the memory file is a link — move the entry in the file it points to by hand")
     want = bytewise.text(entry)
     mine = [cells(row) for row in found.entries if cells(row)[0] == want]
-    waiting = [c for c in mine if c[4] == "off" and re.match(r"[#* ]*propos", bytewise.lower(c[5]))]
+    waiting = [c for c in mine if c[4] == "off" and section(c[5]) == "proposed"]
     if len(mine) != 1 or len(waiting) != 1:
         raise cli.Refusal("%s is not one proposal awaiting the user's answer (none, or its id is shared) — council "
                           "memory shows where it is" % entry)
@@ -127,7 +127,7 @@ def answer(args: cli.Args, found: Memory, sub: str, entry: str) -> int:
         _redacted(said.encode("utf-8", "surrogateescape"), tmp + "/said")
         target, state = ("observed", "observed") if sub == "accept" else ("rejected", "gone")
         code, _ = _script(["move", entry, "--to", target, "--memory", tmp + "/before", "--said", tmp + "/said",
-                           "--today", time.strftime("%Y-%m-%d"), "--out", tmp + "/after"])
+                           "--today", clock.now_date(), "--out", tmp + "/after"])
         if code:
             return 2
         refused = memory.replace(found.mem, tmp + "/before", tmp + "/after", want, state, found.home, found.top)

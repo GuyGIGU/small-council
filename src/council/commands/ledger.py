@@ -11,12 +11,10 @@ from pathlib import Path
 from council.commands import cli, script
 from council.records import home as where
 from council.records import ledger
+from council.records.cells import leading
 
 USAGE = "usage: council ledger [how many recent runs, default 10]"
 ADVICE = "usage: council ledger advice [how many recent runs, default 20] [--json]"
-_NUMBER = r"[+-]?([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][+-]?[0-9]+)?"
-_PREFIX = re.compile(r"[ \t\n\v\f\r]*(" + _NUMBER + ")")
-_STRNUM = re.compile(r"[ \t\n]*" + _NUMBER + r"[ \t\n]*\Z")
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -58,17 +56,6 @@ def advice(args: cli.Args, last: str) -> int:
     return script.guarded("ledger", said, (ledger.LedgerError, OSError, ValueError))
 
 
-def number(cell: str) -> float:
-    """awk's reading of a cell as a number: its leading number, else 0."""
-    found = _PREFIX.match(cell)
-    return float(found.group(1)) if found else 0.0
-
-
-def above_zero(cell: str) -> bool:
-    """awk's `cell > 0`: a number compared as one, any other text against "0" as a string."""
-    return number(cell) > 0 if _STRNUM.match(cell) else cell > "0"
-
-
 def _d(value: float) -> int:
     return int(value)                                    # printf %d: toward zero
 
@@ -83,7 +70,7 @@ class Table:
         for cells in self.rows:
             if cells[1] not in self.order:
                 self.order.append(cells[1])
-            if cells[3] != ledger.VERIFIERS and number(cells[5]) + number(cells[6]) > 0:
+            if cells[3] != ledger.VERIFIERS and leading(cells[5]) + leading(cells[6]) > 0:
                 judged.add(cells[1])
         self.judged, self.first = judged, max(len(self.order) - last + 1, 1)
 
@@ -101,15 +88,15 @@ class Table:
                 counted.add((cells[1], seat))
                 s["runs"] += 1
             for key, at in (("raised", 4), ("kept", 5), ("cut", 6), ("refd", 7)):
-                s[key] += number(cells[at])
+                s[key] += leading(cells[at])
             if cells[9] == ledger.CHECKED and re.fullmatch(r"[0-9]+", cells[8]) and len(cells[8]) <= 12:
-                s["tok"] += number(cells[8])
+                s["tok"] += leading(cells[8])
                 if (cells[1], seat) not in priced:
                     priced.add((cells[1], seat))
                     s["truns"] += 1
             if cells[1] in self.judged:
-                s["jraised"] += number(cells[4])
-            elif above_zero(cells[4]):
+                s["jraised"] += leading(cells[4])
+            elif leading(cells[4]) > 0:              # a cell that is not a number is not above 0
                 unjudged = True
         return self.shown(seats, unjudged)
 

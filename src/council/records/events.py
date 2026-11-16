@@ -64,8 +64,14 @@ def strict_rows(run: Path, read: paths.Reader) -> list[dict[str, object]]:
 
 
 def details(cell: str) -> dict[str, str]:
-    """A detail cell's key=value pairs ("exit=1;seconds=57")."""
-    return dict(part.split("=", 1) for part in (cell or "").split(";") if "=" in part)
+    """A detail cell's key=value pairs ("exit=1;seconds=57"), the first of a repeated key winning (the helper's
+    own keys come before any text a person gave)."""
+    found: dict[str, str] = {}
+    for part in (cell or "").split(";"):
+        if "=" in part:
+            key, value = part.split("=", 1)
+            found.setdefault(key, value)
+    return found
 
 
 # --- writing ------------------------------------------------------------------------------------------------
@@ -91,11 +97,14 @@ def _next_seq(data: bytes) -> int | None:
 
 
 def _schema(run: Path) -> str:
-    try:
-        content = state.path(run).read_bytes().decode("utf-8", "replace").lstrip(paths.BOM)
-    except OSError:
-        return ""
-    return state.header(content, exact_keys=True).get("events-schema", "")
+    return state.field(state.text(run), "events-schema")
+
+
+def _unstamped(run: Path, file: str) -> str:
+    """Why a run with an event file has no stamp to read: its state is not read (a link, a file outside the run or
+    one over the size limit), or it has none. `file` is the event file as the message names it."""
+    return (state.unread(run, "its events-schema stamp is not read and no event can be recorded")
+            or "event file exists without an events-schema stamp: %s" % file)
 
 
 def _recorded(data: bytes, kind: str) -> bool:
@@ -133,7 +142,7 @@ def append(run: Path, kind: str, subject: str, value: str, detail: str, once: bo
     schema = _schema(run)
     if schema == "":
         if file.is_file():
-            raise EventError("event file exists without an events-schema stamp: {}".format(file.as_posix()))
+            raise EventError(_unstamped(run, file.as_posix()))
         return False
     if schema != "1":
         raise EventError("unsupported events schema: {}".format(schema))
@@ -197,7 +206,7 @@ def check(run: str) -> tuple[int, list[str]]:
     if schema == "" and not path(folder).is_file():
         return 0, ["events: legacy run · no event stream · %s" % run.rsplit("/", 1)[-1]]
     if schema == "":
-        return 1, ["council: event file exists without an events-schema stamp: %s" % file]
+        return 1, ["council: " + _unstamped(folder, file)]
     lock = Path(file + ".lock")
     if not locks.acquire(lock):
         return 1, ["council: " + busy(lock)]

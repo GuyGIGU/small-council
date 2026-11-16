@@ -2,7 +2,6 @@
 text both read (records/bytewise.py)."""
 from __future__ import annotations
 
-import os
 import unittest
 
 import support
@@ -27,7 +26,8 @@ class BytewiseTest(unittest.TestCase):
     def test_records_split_as_awk_reads_a_file(self) -> None:
         self.assertEqual(bytewise.records("a\nb"), ["a", "b"])
         self.assertEqual(bytewise.records("a\nb\n"), ["a", "b"])
-        self.assertEqual(bytewise.records("a\r\nb\r\n"), ["a", "b"] if os.name == "nt" else ["a\r", "b\r"])
+        self.assertEqual(bytewise.records("a\r\nb\r\n"), ["a", "b"])           # on every OS
+        self.assertEqual(bytewise.records("a\r\nb\r"), ["a", "b\r"])            # an unterminated last line keeps its CR
         self.assertEqual(bytewise.records(""), [])
         self.assertEqual(bytewise.records("\n"), [""])
 
@@ -45,8 +45,7 @@ class BytewiseTest(unittest.TestCase):
 class FileLinesTest(support.Scratch):
     def test_a_file_reads_as_utf8_with_a_stray_byte_kept_and_its_bom_kept(self) -> None:
         file = self.write("f.txt", b"\xef\xbb\xbfcaf\xc3\xa9\r\n\xff\n", binary=True)
-        crlf = ["﻿café", "\udcff"] if os.name == "nt" else ["﻿café\r", "\udcff"]
-        self.assertEqual(bytewise.file_lines(file), crlf)
+        self.assertEqual(bytewise.file_lines(file), ["﻿café", "\udcff"])
         self.assertEqual(bytewise.file_lines(file, fold=False), ["﻿café\r", "\udcff"])
 
     def test_an_unreadable_file_has_no_lines(self) -> None:
@@ -86,13 +85,20 @@ class EarlierTest(support.Scratch):
 
     def test_a_line_that_names_a_path_or_areas_that_cover_it(self) -> None:
         hits = earlier.hits(self.home, ["src/cache/x.py", "src/auth/session.py", "nothing.py"])
-        self.assertEqual(hits[0], "src/cache/x.py\treviews/2026-01-01-a.md:5\tsee src/cache/x.py:4 for it")
-        self.assertEqual(hits[1], "src/auth/session.py\treviews/2026-01-01-a.md\t(its areas cover src/auth/**)")
-        self.assertTrue(hits[2].startswith("src/cache/x.py\tplans/p.md:2\tword word") and
-                        hits[2].endswith(bytewise.ELLIPSIS))
+        self.assertEqual(hits[0], ("src/cache/x.py", "reviews/2026-01-01-a.md:5", "see src/cache/x.py:4 for it"))
+        self.assertEqual(hits[1], ("src/auth/session.py", "reviews/2026-01-01-a.md", "(its areas cover src/auth/**)"))
+        self.assertEqual(hits[2][:2], ("src/cache/x.py", "plans/p.md:2"))
+        self.assertTrue(hits[2].text.startswith("word word") and hits[2].text.endswith(bytewise.ELLIPSIS))
         self.assertEqual(len(hits), 3)
-        self.assertEqual(earlier.line(hits[1]), bytewise.EM.join(hits[1].split("\t")).replace(
-            bytewise.EM, " " + bytewise.EM + " "))
+        self.assertEqual(earlier.line(hits[1]), (" %s " % bytewise.EM).join(
+            ["src/auth/session.py", "reviews/2026-01-01-a.md", "(its areas cover src/auth/**)"]))
+
+    def test_a_mentioned_line_with_a_tab_is_shown_whole_and_a_path_is_taken_as_given(self) -> None:
+        self.write(".council/logs/t.md", "# L\nsee src/t.py\tand then\tmore\n")
+        found = [hit for hit in earlier.hits(self.home, ["src/t.py"]) if hit.where.startswith("logs/")]
+        self.assertEqual(found, [("src/t.py", "logs/t.md:2", "see src/t.py\tand then\tmore")])
+        self.assertEqual(earlier.hits(self.home, ["src/t.py\nsrc/cache/x.py"]), [])
+        self.assertEqual(earlier.hits(self.home, ["", ""]), [])
 
     def test_clip_cuts_at_a_space(self) -> None:
         clipped = bytewise.clip("a " * 80, 120)

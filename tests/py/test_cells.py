@@ -20,18 +20,18 @@ class CellsTest(unittest.TestCase):
         self.assertIsNone(cells.integer(10 ** 12))
         self.assertIsNone(cells.integer("1.5"))
 
-    def test_leading_reads_a_cell_as_awk_adds_zero_to_it(self) -> None:
-        self.assertEqual(cells.leading(" \t+12abc"), 12)
-        self.assertEqual(cells.leading("-3,4"), -3)
-        self.assertEqual(cells.leading("1e3"), 1)
-        self.assertEqual(cells.leading(" x7"), 0)
-        self.assertEqual(cells.leading(""), 0)
-        self.assertEqual(cells.leading("\r5"), 0)
+    def test_leading_is_a_cells_number_or_zero_in_a_sum(self) -> None:
+        self.assertEqual(cells.leading(" 12\t"), 12)
+        for text in (" \t+12abc", "-3,4", "1e3", " x7", "", "5.5", "1234567890123"):
+            self.assertEqual(cells.leading(text), 0, text)
 
     def test_optional_number(self) -> None:
         self.assertIsNone(cells.optional_number(""))
         self.assertIsNone(cells.optional_number(None))
         self.assertEqual(cells.optional_number("0"), 0)
+        self.assertEqual(cells.optional_number("123456789012"), 123456789012)
+        for text in ("+5", "-5", "5.5", "1e3", ".5", "5abc", "\u0663", "1_000", "0x10", "1234567890123"):
+            self.assertIsNone(cells.optional_number(text), text)       # plain ASCII digits, 1 to 12, only
 
     def test_token_count_reads_the_helpers_forms(self) -> None:
         for text, want in (("74300", 74300), ("74,300", 74300), ("74 300", 74300), ("74.3k", 74300),

@@ -24,10 +24,9 @@ from pathlib import Path
 from typing import Any, Dict
 
 from council.clock import local_moment, utc_moment as utc_time
-from council.records import config, paths
+from council.records import config, memory, paths
 from council.records.cells import clean
 from council.records.gates import kind as gate_kind    # one rule for every view: a proof fails first, a probe dry-runs
-from council.records.memory import COUNCIL_MEMORY_SIZE_LIMIT
 from council.views import snapshot
 from council.views.status_card import notification_line, text, widget
 from council.views.status_closing import closing_of
@@ -182,28 +181,12 @@ def recent_of(snap: Snap, ref: datetime, limit: int) -> tuple[list[dict[str, Any
 
 
 def oversized_memory(run_path: Path) -> dict[str, Any] | None:
-    """Size the file council memory reads: configured path first, then the usual fallbacks."""
+    """The memory file every council command reads (records/memory.locate), when it is too large."""
     if run_path.parent.name != "runs":
         return None
-    home = run_path.parent.parent
-    root = home.parent
-    configured = config.memory_path(home)
-    choices = []
-    if configured:
-        for raw in (configured, configured.split()[0]):
-            path = Path(raw)
-            choices.append(path if path.is_absolute() else root / path)
-    choices.extend((home / "conventions.md", root / "conventions.md"))
-    for path in choices:
-        try:
-            if path.is_file():
-                size = path.stat().st_size
-                if size > COUNCIL_MEMORY_SIZE_LIMIT:
-                    return {"name": clean(path.name)[:80], "bytes": size, "kb": (size + 500) // 1000}
-                return None
-        except OSError:
-            continue
-    return None
+    path = memory.locate(run_path.parent.parent.as_posix()).path
+    size = memory.oversized(path)
+    return {"name": clean(path.rsplit("/", 1)[-1])[:80], "bytes": size, "kb": (size + 500) // 1000} if size else None
 
 
 def evidence_of(snap: Snap, run_path: Path) -> list[dict[str, str]]:
@@ -280,7 +263,7 @@ def interpret(snap: Snap, now: datetime | None = None, quiet_minutes: int = QUIE
         "state": state,
         "attention": attention,
         "progress": progress,
-        "latest_check": latest_of(snap, now),
+        "latest_check": latest_of(checks, now),
         "recent": items, "recent_source": source,
         "freshness": {"last_activity": iso(moment), "last_activity_clock": clock(moment, now) if moment else None,
                       "quiet_minutes": None if quiet is None else int(quiet),
@@ -401,13 +384,13 @@ def progress_of(snap: Snap, checks: list[dict[str, Any]]) -> dict[str, Any]:
             "working": [seat_name(snap, s["slug"]) for s in seats if s["state"] == "running"]}
 
 
-def latest_of(snap: Snap, now: datetime) -> dict[str, Any] | None:
-    real = [g for g in snap["gates"] if gate_kind(g["name"]) == "check"]
-    if not real:
+def latest_of(checks: list[dict[str, Any]], now: datetime) -> dict[str, Any] | None:
+    """The check that ran last (checks_of's last row), with its time as the card shows it."""
+    if not checks:
         return None
-    g = real[-1]
-    return {"name": check_name(g["name"]), "result": result_of(g), "at": iso(local_moment(g["when"])),
-            "clock": clock(local_moment(g["when"]), now)}
+    last = checks[-1]
+    return {"name": check_name(last["name"]), "result": last["result"], "at": iso(local_moment(last["when"])),
+            "clock": clock(local_moment(last["when"]), now)}
 
 
 # --- entry ----------------------------------------------------------------------------------------------------
