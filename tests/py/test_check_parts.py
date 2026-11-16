@@ -11,6 +11,7 @@ from unittest import mock
 
 import support
 
+from council import clock
 from council.commands import check, check_proofs, event_note, hygiene, index, index_symbols, proof_reach
 from council.records import events
 
@@ -111,10 +112,12 @@ class HygieneTest(unittest.TestCase):
         self.assertEqual(hygiene.kind(b"commit abc", b"see verify-3"), "a council verifier file")
         self.assertEqual(hygiene.kind(b"src/a.py", b"print('fine')"), "")
 
-    def test_the_opened_time_as_touch_reads_it(self) -> None:
-        self.assertEqual(hygiene.stamp("2026-01-02 03:04:05"),
+    def test_the_opened_time_is_the_helpers_local_stamp(self) -> None:
+        self.assertEqual(clock.local_moment("2026-01-02 03:04:05").timestamp(),
                          time.mktime(time.strptime("20260102030405", "%Y%m%d%H%M%S")))
-        self.assertIsNone(hygiene.stamp("not a time"))
+        self.assertEqual(clock.local_moment("2026-01-02 03:04").timestamp(),     # an older helper's: no seconds
+                         time.mktime(time.strptime("20260102030400", "%Y%m%d%H%M%S")))
+        self.assertIsNone(clock.local_moment("not a time"))
 
 
 class IndexTest(unittest.TestCase):

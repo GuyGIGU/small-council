@@ -7,11 +7,10 @@ from __future__ import annotations
 
 import os
 import re
-import time
 from pathlib import Path
 from typing import NamedTuple
 
-from council import git
+from council import clock, git
 from council.commands import resolve
 from council.records import home as where
 
@@ -98,26 +97,6 @@ def added(top: str, since: str) -> list[Line]:
     return found
 
 
-def stamp(opened: str) -> float | None:
-    """The run's opened: time as `touch -t` read it ([[CC]YY]MMDDhhmm[.SS], local time); None when it can't."""
-    digits = re.sub(r"[ :-]", "", opened)
-    if len(digits) < 2:
-        return None
-    digits = digits[:-2] + "." + digits[-2:]
-    found = re.fullmatch(r"([0-9]{8}|[0-9]{10}|[0-9]{12})(\.[0-9]{2})?", digits)
-    if not found:
-        return None
-    main, seconds = found.group(1), (found.group(2) or ".00")[1:]
-    if len(main) == 8:
-        main = time.strftime("%Y") + main
-    elif len(main) == 10:
-        main = ("19" if int(main[:2]) >= 69 else "20") + main
-    try:
-        return time.mktime(time.strptime(main + seconds, "%Y%m%d%H%M%S"))
-    except (ValueError, OverflowError):
-        return None
-
-
 def _text_file(path: str) -> bool:
     """grep -qI -e '': a file with something in it, up to 1 MiB, with no NUL in its first 32 KiB."""
     try:
@@ -186,7 +165,8 @@ def _read(run: Path, top: str, since: str, opened: str) -> list[Line]:
         since = since if _commit(top, since) else ""
         if _commit(top, since or "HEAD"):
             found += added(top, since or "HEAD")
-        found += untracked(top, stamp(opened) if opened else None)
+        moment = clock.local_moment(opened)                  # the helper's local stamp, seconds or not
+        found += untracked(top, moment.timestamp() if moment else None)
         if since:
             found += unpushed(top, since)
     return found + _bodies(run)

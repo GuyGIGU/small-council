@@ -1705,6 +1705,32 @@ def runs_memory(tmp):
     check("memory check: a name after the listed lines is an anchor of its own",
           "STALE  EC-3 — nothing in the code is named robust_mean any more" in out, out)
 
+    # Memory check's one search: a whole word in one of the tree's files, the same in git and outside it
+    mw = new_repo(tmp, "memwords")
+    write(os.path.join(mw, ".council", "council.config.md"), "# c\n")
+    write(os.path.join(mw, "src", "a.py"), "x = cfg.a.b.c\nkept_name = 1\n")
+    write(os.path.join(mw, ".gitignore"), "build/\n")
+    write(os.path.join(mw, "build", "out.py"), "ignored_name = 1\n")
+    with open(os.path.join(mw, "data.bin"), "wb") as f:
+        f.write(b"\0binary_only_name\n")
+    write(os.path.join(mw, ".council", "conventions.md"), "# m\n## Enforced Conventions\n"
+          "### EC-1: a dotted name inside a longer one\n**Anchor:** a.b\n### EC-2: a plain name\n**Anchor:** kept_name\n"
+          "### EC-3: only in an ignored file\n**Anchor:** ignored_name\n### EC-4: only in a binary file\n**Anchor:** binary_only_name\n"
+          "### EC-5: part of a word\n**Anchor:** ept_nam\n### EC-6: a name in its file\n**Anchor:** src/a.py::a.b\n")
+    git(mw, "add", "-A")
+    git(mw, "commit", "-q", "-m", "i")
+    code, out, _ = council(mw, "memory", "check")
+    want = ["STALE  EC-3 — nothing in the code is named ignored_name any more",
+            "STALE  EC-4 — nothing in the code is named binary_only_name any more",
+            "STALE  EC-5 — nothing in the code is named ept_nam any more", "3 stale anchor(s) across 6 entries"]
+    check("memory check: a name is found as a whole word in a tracked or untracked file — a.b inside a.b.c too — and "
+          "not in an ignored or a binary file, or inside a longer word",
+          code == 1 and all(w in out for w in want) and "EC-1" not in out and "EC-2" not in out and "EC-6" not in out, out)
+    mwn = os.path.join(tmp, "memwords-nogit")                # the same files, with no git and nothing ignored
+    shutil.copytree(mw, mwn, ignore=shutil.ignore_patterns(".git", ".gitignore", "build"))
+    code, out2, _ = council(mwn, "memory", "check")
+    check("memory check: outside git the same search gives the same answer", out2 == out, out + "\n---\n" + out2)
+
     # Memory: the entry shapes real projects write
     ms = new_repo(tmp, "memshapes")
     write(os.path.join(ms, ".council", "council.config.md"), "# c\n")
@@ -3329,7 +3355,8 @@ def runs_worktrees_close_and_find(tmp):
     write(os.path.join(repo, ".council", "active-run"), run2 + "\n")
     code, out, _ = council(repo, "run", "close", "--run", run2, "--status", "abandoned")
     check("run close: abandons a run", code == 0 and "abandoned" in out, out)
-    check("run close: empties the old active-run pointer when it names the run", read(os.path.join(repo, ".council", "active-run")).strip() == "")
+    check("run close: an old active-run pointer naming the run is read by nothing and left as it is",
+          read(os.path.join(repo, ".council", "active-run")) == run2 + "\n")
     to_deliver(repo)
     code, out, _ = council(repo, "run", "close")
     st = read(os.path.join(run, "session-state.md"))
@@ -3634,6 +3661,13 @@ def resume(tmp):
           "sess-old" in out + err and "still working: hunt" in out, out + err)
     code, out, err = council(rs, "state", "phase=assign")
     check("run resume: plain commands act on the run again", code == 0 and "phase assign · in-progress" in out, out + err)
+    if os.name != "nt":
+        os.chmod(rstate, 0o640)
+    council(rs, "state", "phase=assign")
+    left = [n for n in os.listdir(rrun) if n.startswith(".state.") or ".tmp" in n]
+    check("state: the state file is swapped in whole — no temporary file left, and a mode the user set is kept",
+          not left and (os.name == "nt" or os.stat(rstate).st_mode & 0o7777 == 0o640),
+          f"{left} · {oct(os.stat(rstate).st_mode)}")
     to_deliver(rs)
     council(rs, "run", "close")
     code, _, err = council(rs, "run", "resume", "--run", rname)
@@ -5814,6 +5848,13 @@ def check_just_me_hygiene(tmp):
     places = [l.split("  ")[1] for l in out.splitlines() if l.startswith("hygiene  ") and "  " in l[9:]]
     check("check (just me): a build with no recorded start reads only uncommitted work and the PR body, and says so",
           code == 1 and "no recorded start" in out and sorted(places) == ["NOTES.md:2", "PR body pr-body.md:2"], out)
+    write(state, re.sub(r"(?m)^(opened: \S+ \d\d:\d\d):\d\d$", r"\1", read(state)))     # an older helper's stamp
+    code, out, err = council(repo, "check")
+    places = [l.split("  ")[1] for l in out.splitlines() if l.startswith("hygiene  ") and "  " in l[9:]]
+    check("check (just me): a run whose opened: has no seconds still counts only the untracked files newer than "
+          "the run — the hour-old note is not the build's",
+          code == 1 and sorted(places) == ["NOTES.md:2", "PR body pr-body.md:2"] and "opened: " in read(state)
+          and not re.search(r"(?m)^opened: .*:\d\d:\d\d$", read(state)), out)
     write(cfg, "# Council config — hygiene\n\n## Run preferences\n- sharing: team\n")
     code, out, err = council(repo, "check")
     check("check (team): a team council may cite its files, so nothing is scanned and the check passes",
@@ -5911,10 +5952,32 @@ def runs_gitignore(tmp):
     lg_run = council(legacy, "run", "open", "council-implement")[1].strip()
     write(os.path.join(lg_run, "ask.md"), "# Ask — deploy\n## In your words\nuse my key and ship it\n")
     gi_lines = read(os.path.join(legacy, ".council", ".gitignore")).split()
-    check("run open: a home with no .gitignore gets one that ignores runs/, asks/ and active-run before any words are written",
-          {"runs/", "asks/", "active-run"} <= set(gi_lines)
+    check("run open: a home with no .gitignore gets one that ignores runs/ and asks/ before any words are written",
+          sorted(gi_lines) == ["asks/", "runs/"]
           and not [l for l in status_lines(legacy) if "runs/" in l], " · ".join(status_lines(legacy)))
     council(legacy, "run", "close", "--status", "abandoned")
+    # A 0.1/0.2 home's active-run pointer, naming a run left open outside runs/: nothing reads or writes it now
+    pointed = new_repo(tmp, "old-pointer-home")
+    write(os.path.join(pointed, ".council", "council.config.md"), "# Council config\n")
+    old_rel = ".council/review-output/2026-09-07-1200"
+    write(os.path.join(pointed, old_rel, "session-state.md"), "# Session state\nphase: 5 — awaiting worker returns\n")
+    pointer = os.path.join(pointed, ".council", "active-run")
+    with open(pointer, "wb") as f:
+        f.write(old_rel.encode() + b"\r\n")
+    p_run = council(pointed, "run", "open", "council-review")[1].strip()
+    with open(pointer, "rb") as f:
+        opened_with = f.read()
+    with open(pointer, "wb") as f:                            # now naming the run the close closes
+        f.write(b".council/runs/" + os.path.basename(p_run).encode() + b"\r\n")
+    _, doc_out, _ = council(pointed, "doctor")
+    code, close_out, _ = council(pointed, "run", "close", "--status", "abandoned")
+    with open(pointer, "rb") as f:
+        kept = f.read()
+    check("run open, doctor and close: an old active-run file is left byte for byte, its line is not added to "
+          ".gitignore, and doctor says nothing of it",
+          bool(p_run) and code == 0 and opened_with == old_rel.encode() + b"\r\n" and kept == b".council/runs/" + os.path.basename(p_run).encode() + b"\r\n"
+          and "active-run" not in read(os.path.join(pointed, ".council", ".gitignore"))
+          and "active-run" not in doc_out and "older run" not in doc_out, repr(kept) + doc_out + close_out)
     old = new_repo(tmp, "home-0-6")
     write(os.path.join(old, ".council", "council.config.md"), "# Council config\n")
     write(os.path.join(old, ".council", "asks", "2026-09-10-old.md"), "# Ask — old\n")
@@ -5967,7 +6030,7 @@ def runs_gitignore(tmp):
     loose_gi = read(os.path.join(loose, ".council", ".gitignore")).split()
     code, out, _ = council(loose, "doctor")
     check("run open outside git: writes each ignore line once, and doctor finds them",
-          sorted(loose_gi) == ["active-run", "asks/", "runs/"]
+          sorted(loose_gi) == ["asks/", "runs/"]
           and not [l for l in out.splitlines() if "runs/" in l or "asks/" in l], " ".join(loose_gi) + " · " + out)
 
 @part("runs")
