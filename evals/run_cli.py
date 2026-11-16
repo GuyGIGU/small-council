@@ -3883,6 +3883,51 @@ def runs_map_touch(tmp):
     code, out, _ = council(repo, "map", "status")
     check("map touch: map status reads the touched map as up to date", "map: up to date" in out, out)
 
+    # At close: the areas a run changed (tracked files, since the commit it opened on) that the map has no line for
+    repo = new_repo(tmp, "mapclose")
+    for name in ("src/a.py", "docs/x.md"):
+        write(os.path.join(repo, name), "a\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    write(os.path.join(repo, ".council", "map.md"), "# Codebase map — x\nmap-commit: %s\n\n%s"
+          % (git(repo, "rev-parse", "HEAD"), table))
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config — map\n")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write_plan(run)
+    write(os.path.join(run, "verify-1.md"), "# Verification — x\n| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    to_deliver(repo)
+    council(repo, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
+    for name in ("src/a.py", "docs/x.md", "lib/new.py"):          # lib/ is new and untracked: not the map's business
+        write(os.path.join(repo, name), "c\n")
+    council(repo, "map", "touch", "docs/=the guide moved")
+    code, out, err = council(repo, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("run close: a run that changed tracked files names the areas with no map line yet, and the next step",
+          code == 0 and ('council: the run changed src/ since it opened, with no line in the map yet — say what '
+                         'changed in each, in the user\'s words: council map touch <dir>="<line>" …') in err
+          and "docs/" not in line_of(err, "with no line in the map") and "lib/" not in err, err)
+    check("run close: the map warning is in the close event's warnings=, and the run closes complete",
+          closed and closed[-1][6].endswith("warnings=map-touched")
+          and "status: complete" in read(os.path.join(run, "session-state.md")), str(closed))
+    git(repo, "commit", "-q", "-am", "three")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write_plan(run)
+    write(os.path.join(run, "verify-1.md"), "# Verification — x\n| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    to_deliver(repo)
+    council(repo, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
+    code, out, err = council(repo, "run", "close")
+    closed = [e for e in events(run) if e[3] == "run.closed"]
+    check("run close: a review that changed no file says nothing about the map",
+          code == 0 and "map" not in err and closed and "warnings=" not in closed[-1][6], err + str(closed))
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write(os.path.join(repo, "src", "a.py"), "d\n")
+    code, out, err = council(repo, "run", "close", "--status", "abandoned")
+    check("run close --status abandoned: a run that changed files is never asked for map lines",
+          code == 0 and "map" not in err, err)
+
 
 @part("lifecycle")
 def runs_init_plan(tmp):
