@@ -73,7 +73,9 @@ record the failure and retry limit manually in the log instead of claiming the h
   how a fix lands on a fix.
 - **A builder may return `NEEDS: <question>` and stop.** That is a correct outcome, not a failed
   seat: record it `council seat <slug> done note="NEEDS: <question>"`, never `failed` or `blocked`.
-  The Chair building a task stops the same way: the question, not a guess.
+  The Chair building a task stops the same way: the question, not a guess. It records the stop on the
+  task's seat with `agents=0` (`council seat task-<n> done agents=0 note="NEEDS: …"`), as for its own
+  seat (context-core): no agent ran, so the audit asks no token figure of it.
 - **A bug underneath stops the task.** A builder that finds the code under its task wrong stops and
   returns `NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <the command or test, and its output>`.
   Wrong means a `Rests on` fact that is false, or code that does not do what its owner's row, its
@@ -81,7 +83,9 @@ record the failure and retry limit manually in the log instead of claiming the h
   the same way (`note="NEEDS: fix …"`), and a correct outcome. `seen:` is OBSERVED or REPRODUCED; a
   suspicion is a `NEEDS: <question>` and gets the probe. Never make up for the bug inside the task's
   slice: the verifier names such a line (`build-proof.md`, Checking). The Chair building a task stops
-  the same way; what it stops and asks: council-implement, Edge cases.
+  the same way; what it stops and asks: council-implement, Edge cases. The stop is resolved when the
+  fix task's `after-<n>` gate passes and then the stopped task's own `after-<n>` gate passes;
+  `council tree` then shows its note as `was stopped: NEEDS: …`.
 - **The answer.** The Chair may run one probe or research seat a run for it inside the approved budget,
   without asking; before a second, it asks the user. A question only the user can answer joins the
   rulings. A plan does the same ahead of time: a task resting on an unchecked fact outside the repo
