@@ -76,9 +76,13 @@ It was told not to touch the `Path.is_absolute` tests (they belong to the final 
 4. **The final step, after the merge, one writer:** one absolute-path test, `records/home.absolute(p)`
    (`bool(re.match(r"[/\\]|[A-Za-z]:", p))`), at the 27 sites listed in `maps/writes-platform.md` (four
    shapes). The `Path.is_absolute` sites must also go through `where.native`. `records/memory.py:41-43`
-   keeps its own meaning. Plus every `needs_integration` item from the reports (known so far: the
-   code-root "here" test at `session_start.py:78/167`; the unguarded state reads at `commands/state.py:33`
-   and `commands/run_resume.py:62`).
+   keeps its own meaning. Plus every `needs_integration` item from the four reports (section 6 of each).
+   From `reports/read.md`: `runs.here` at `commands/session_start.py:95` and `:167`; the `raw_lines`
+   docstring at `records/state_write.py:152-154`; `cells.lines_of` in place of `splitlines()` at
+   `commands/memory_draft.py:86`; the `os.name` CRLF fold at `commands/run_open.py:107`. From
+   `reports/commands.md`: the unguarded state reads at `commands/state.py:33` and
+   `commands/run_resume.py:62`. From `reports/memory.md`: a one-line change in `commands/memory_write.py`
+   and a possible one in `session_start.py`.
 5. **CHANGELOG** lines under `## [Unreleased]`, one per visible difference, from the reports; architecture
    §8 wording where a report proposes it. Also one line: `council ledger advice` prints LF line endings on
    Windows where the old helper printed CRLF.
@@ -128,12 +132,21 @@ swapping `-review` and `-review-2`; the `old`/`new` folder names in `council sta
 |---|---|---|---|---|
 | `claude/clean-commands` | `441616b` | 7 of 7 | `reports/commands.md` | everything in its report, old against new included |
 | `claude/clean-write` | `5f28de9` | 5 of 5 | `reports/write.md` | suites yes (`src/council/` 20,286 to 20,095); old against new NOT run; its `harness/cases_write.py` is written but never run |
-| `claude/clean-read` | `b0d4a28` | 6 of 6 committed | see `reports/read.md` if present, else none | unknown without the report: run its groups and old against new yourself |
+| `claude/clean-read` | `b0d4a28` | 6 of 6, except `repair_trail.classify` (left for the owner, see below) | `reports/read.md` | quick_validate, fast tier, ruff, ratchet, unit tests, `run_cli` group runs (540/540), two blocks, run_evidence, run_repair, its own `harness/cases_read.py` (`src/council/` 20,286 to 20,220); NOT run: run_cli groups collect, citations, gates, requests, filing, reports, models in full; run_hook main; run_status; run_audit; run_memory; old against new |
 | `claude/clean-memory` | `3bd11de` | 5 of 7: items 6 (`request.filed`) and 7 (`latest_of`) NOT started | `reports/memory.md` | its new eval checks and the 20,000-file comparison only; NOT run: quick_validate, the fast tier, the plain ratchet, the full run_cli groups, run_memory, hooks, old against new |
 
-The builders were stopped early because the Windows machine was shut down for the night. If a report is
-missing from `handover/reports/`, that builder did not get to write it: treat every claim about that branch
-as unchecked.
+The builders were stopped early because the Windows machine was shut down for the night. All four reports
+are in `handover/reports/`. None of them has been checked against its diff yet: each is a claim.
+
+Open point for the owner, from `reports/read.md` (needs_user): `repair_trail.classify` was NOT changed.
+`council repair check` and `council memory propose repair` re-derive a trail's recorded signal and refuse
+when it differs, so a trail the old code recorded for a gate output holding a bare CR or a form feed
+(`output:3:` against the new `output:1:`) would newly fail. Leave it as it is; raise it in the PR text.
+
+Visible differences from `reports/read.md` that change a WRITTEN file or a count, so check each has its
+scenario: a CRLF `session-state.md` rewritten by the helper on Linux or macOS comes back all LF; a
+`seats.tsv` tokens cell such as `5abc` now counts as nothing when a report is added; ledger cells such as
+`1e3`, `+2` or `-1` count 0; a plan value past 12 digits fails the plan check.
 
 Open point for the owner, from `reports/commands.md` (needs_user): with no `events.tsv`, an unreadable
 state file still reads as "a run from before the stream", so an append writes nothing, silently. The
