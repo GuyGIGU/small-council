@@ -1,20 +1,23 @@
 """The build seat (D42): `task-<n>` in a council-implement run, where a builder agent edits the project code of task
-n. One builder at a time: a build seat does not start while another runs. Its `done` needs `report-<n>.md`, unless
-it stopped with a `NEEDS:` line. When one starts, the files changed since the run's last saved round are named.
-`council seat` and the agent gate ask it, as they ask `rounds` for a verifier. A Solo build records no build seat,
-so nothing here fires for it."""
+n. One builder at a time: a build seat does not start while another runs, nor while a `NEEDS: fix` stop stands on
+its task or a task it depends on. Its `done` needs `report-<n>.md`, unless it stopped with a `NEEDS:` line. When
+one starts, the files changed since the run's last saved round are named. It also holds the one reader of a task's
+stop (stop_of), which council tree asks too. `council seat` and the agent gate ask it, as they ask `rounds` for a
+verifier. A Solo build records no build seat, so nothing here fires for it."""
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
 from council import git
-from council.commands import cli, resolve
+from council.commands import cli, resolve, rounds, task_slice
+from council.records import events, gates, patches, paths, report_head, seat_rows, seats, tasks
 from council.records import home as where
-from council.records import patches, report_head, seat_rows, seats
 
 SEAT = re.compile(r"task-([0-9]+)")
 STARTED = ("queued", "running")
+STANDS, RELEASED, RESOLVED = "stands", "released", "resolved"
+FIX = re.compile(r"NEEDS:\s*fix\s+(\S+)")
 
 
 def task_of(run: Path, slug: str) -> int | None:
@@ -26,17 +29,94 @@ def task_of(run: Path, slug: str) -> int | None:
 
 
 def start_refusal(run: Path, slug: str) -> str | None:
-    """Why build seat <slug> can't start now: another build seat is running (one builder at a time); None when it
-    may, or when <slug> is no build seat."""
-    if task_of(run, slug) is None:
+    """Why build seat <slug> can't start now: another build seat is running (one builder at a time), or a NEEDS: fix
+    stop stands on its task or on a task it depends on; None when it may, or when <slug> is no build seat."""
+    task = task_of(run, slug)
+    if task is None:
         return None
     other = next((row.get("slug", "") for row in seats.rows(run) if row.get("state") == "running"
                   and row.get("slug") != slug and SEAT.fullmatch(row.get("slug", ""))), "")
-    if not other:
-        return None
-    return ("cannot start %s — %s is running, and one builder at a time edits project code (D42). Wait for its line "
-            "and record it (council seat %s done tokens=<n> tools=<n>, or done note=\"NEEDS: …\"); if its agent is "
-            "gone, record it: council seat %s failed note=\"…\"" % (slug, other, other, other))
+    if other:
+        return ("cannot start %s — %s is running, and one builder at a time edits project code (D42). Wait for its "
+                "line and record it (council seat %s done tokens=<n> tools=<n>, or done note=\"NEEDS: …\"); if its "
+                "agent is gone, record it: council seat %s failed note=\"…\"" % (slug, other, other, other))
+    return _fix_refusal(run, slug, task)
+
+
+def _fix_refusal(run: Path, slug: str, task: int) -> str | None:
+    """A NEEDS: fix stop that stands on task <task> or on a task it depends on, all the way down."""
+    under = depends_on(run, task)
+    for row in seats.rows(run):
+        number, note = tasks.number(row.get("slug", "")), row.get("note", "")
+        if number not in under or row.get("state") != "done" or not FIX.match(note):
+            continue
+        if stop_of(run, row.get("slug", "")) != STANDS:
+            continue
+        where_ = FIX.match(note).group(1)
+        how = "this is that task" if number == task else "task %d depends on it" % task
+        return ("cannot start %s — task %d stopped with NEEDS: fix at %s (seat %s), and %s: the code under it is "
+                "wrong. Tell the user what is wrong and what is stopped, record their decision in their words with "
+                "council state decision=\"…\", and build the fix as its own task above the stopped one"
+                % (slug, number, where_, row.get("slug", ""), how))
+    return None
+
+
+def depends_on(run: Path, task: int) -> set:
+    """Task <task> and every task it depends on, through the input= plan's Depends on rows at every level; the task
+    alone when the run names no plan, the plan can't be read or doesn't hold the task."""
+    _, plan = task_slice.plan_of(run)
+    found = {one.number: tasks.depends(one.rows.get("depends on")) for one in
+             (tasks.read(paths.text_of(plan)) if plan else [])}
+    seen, todo = {task}, list(found.get(task, []))
+    while todo:
+        number = todo.pop()
+        if number not in seen:
+            seen.add(number)
+            todo += found.get(number, [])
+    return seen
+
+
+def verdicts(run: Path) -> dict[str, str]:
+    """Each saved gate's last verdict: pass (exit 0) or fail."""
+    return {gate["name"]: "pass" if gate["exit"] == 0 else "fail" for gate in gates.results(run)}
+
+
+def resolved(proofs: dict, task: int) -> bool:
+    """A task's stop is resolved once its own after-<n> gate's last verdict is a pass."""
+    return proofs.get("after-%d" % task) == "pass"
+
+
+def stop_of(run: Path, slug: str) -> str:
+    """The one reader of a stop: '' when seat <slug>'s row carries no NEEDS: note; else RESOLVED when the task its
+    slug names (task-3, T3) has its after-<n> gate passed; RELEASED when a decision of the user's is on record from
+    the stop's minute on (rounds.decisions_since, >=: a decision in that same minute counts); else STANDS. The
+    stop's moment is the seat's first done in the event stream after its last start; a run with no stream, or no
+    such done, has no moment, and the stop reads RELEASED: what the helper can't read never refuses."""
+    if not seat_rows.cell(run, slug, "note").startswith("NEEDS:"):
+        return ""
+    number = tasks.number(slug)
+    if number is not None and resolved(verdicts(run), number):
+        return RESOLVED
+    at = _stopped_at(run, slug)
+    if not at or rounds.decisions_since(run, rounds.local_minute(at)) > 0:
+        return RELEASED
+    return STANDS
+
+
+def _stopped_at(run: Path, slug: str) -> str:
+    """The UTC time of the seat's first done after its last start (queued or running); '' when none is read."""
+    if not events.path(run).is_file():
+        return ""
+    at, stopped = "", False
+    for row in events.table(run).rows:
+        cells = row + [""] * 6
+        if cells[3] != "seat.updated" or cells[4] != slug:
+            continue
+        if cells[5] in STARTED:
+            at, stopped = "", False
+        elif cells[5] == "done" and not stopped:
+            at, stopped = cells[2], True
+    return at
 
 
 def missing_report(run: Path, slug: str, note: str) -> str:
