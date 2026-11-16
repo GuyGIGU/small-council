@@ -1,8 +1,8 @@
 # The task tree: context down, evidence up
 
-Status: written 2026-11-13 on the user's request. Steps T1 and T2 are built and on main; T3 is built on
-`claude/t3-task-pack`; T4 and T5 are not. "A bug underneath stops the branch" (in section 4) and section 6, a fresh builder per task,
-were added 2026-11-15 and are proposals.
+Status: written 2026-11-13 on the user's request. Steps T1, T2 and T3 are built and on main; T5 is built on
+`claude/t5-fresh-builder`; T4 is not. "A bug underneath stops the branch" (in section 4) and section 6, a fresh
+builder per task, were added 2026-11-15; section 6 is built by T5 and settled as D42.
 Each part becomes a decision in [`../decisions.md`](../decisions.md) in the branch that builds it.
 
 ## The question
@@ -25,7 +25,8 @@ Today the answer is "partly, and partly by luck". Two things from the day this w
 
 Both have the same two causes. **A report is a claim, and nothing checked it against the diff.**
 **Context was written by hand, and the part that mattered was left out.** This design is about
-those two causes. It adds no agents: machine checks over checker agents stays the rule.
+those two causes. It adds no checker agents: machine checks over checker agents stays the rule. The one
+agent it adds is the builder of section 6 (D42).
 
 ## What the council already has
 
@@ -194,9 +195,10 @@ and cost proposal before anything starts.
 
 **In code, not in prose.**
 
-- A build seat (`build-<n>`) is a seat like any other: `council seat build-<n> running` is refused
+- A build seat (`task-<n>`) is a seat like any other: `council seat task-<n> running` is refused
   while another build seat is running, and for a task that depends on a task stopped by
-  `NEEDS: fix` until the user's ruling is on record.
+  `NEEDS: fix` until the user's ruling is on record. The proposal called the seat `build-<n>`; the
+  user chose `task-<n>` on 2026-11-16, the word `council tree` and the task-word reader already match.
 - The helper already keeps the tree at the end of each saved round. When a build seat starts, a
   tree that differs from the last saved round is named, file by file: someone edited outside a
   round. That is how a Chair that "just fixes it" shows, with no new hook on every edit.
@@ -209,7 +211,7 @@ and cost proposal before anything starts.
 it needs again. The gain is elsewhere: the Chair's window stays small through a long build, the
 builders and the verifier can run on a cheaper model than the session, and the builder's report is
 checked by someone who did not write it. So the estimate of a build is measured again from the
-ledger before the default changes (D39).
+ledger before the default changes (the `- estimates:` line, edited by hand since D40).
 
 **How we would know.** Scenarios for each refusal above, and the planted cases of T4. Then the
 build benchmark (`evals/bench.py`) run both ways on the same cases, the Chair building against a
@@ -219,9 +221,9 @@ never been run for a result; this is the first question it should answer.
 **Not in this step.** Parallel builders and a lead seat to merge them (#63) stay held. One builder
 at a time has nothing to merge.
 
-**The decision it changes.** D4 says only the Chair of council-implement edits project code. The
-branch that builds this adds an entry that supersedes that clause: one builder at a time edits
-project code, a builder agent or, for a Solo build, the Chair.
+**The decision it changes.** D4 said only the Chair of council-implement edits project code. D42
+supersedes that clause: one builder at a time edits project code, a builder agent or, for a Solo
+build, the Chair. The same entry changes D37: the Chair counts as a builder only in a Solo build.
 
 ## How we would know it works
 
@@ -246,7 +248,7 @@ hand-written brief, and post-game findings per run before and after.
 ## What this does not do
 
 - It does not judge taste. Whether a design is good stays with the plan's experts and the user.
-- It adds no agents and no verdict words.
+- It adds no checker agents and no verdict words for the verifier. T5 adds one agent, the builder.
 - The workaround signs are a list of patterns. They miss what they don't name, and the verifier's
   question is the real check.
 
@@ -257,7 +259,7 @@ hand-written brief, and post-game findings per run before and after.
 | T1 | Task fields (`Serves`, `Owner`, `Rests on`), the plan check for them, `NEEDS:` and the unknown-becomes-a-leaf rules (#64); the owner row or `New way:`, and the verifier's decision question (#93) | S5 (the plan check in Python) | ~700–900k |
 | T2 | The report head with `Cause` and `Removed`, the saved diff and the checks on it (#58, #59), the third-round refusal (#50), the task history (#60) | S7 (`check` in Python) | ~1M |
 | T3 | The generated task pack (#57, #61, #67), `council tree`; setup proposes the project's recorded decisions and fills the map's one-way-per-job table (#93); the `NEEDS: fix` stop, the Chair's rule for it, the verifier's question on every round and the two signs | T1, S8 and S11 | ~0.9–1.1M |
-| T5 | A fresh builder per task (section 6): the builder's contract, the build seat and its refusals, the tree check, the implement skill's loop moved to a reference, the entry that supersedes D4's last clause | T3 (it needs the pack) | ~1–1.5M |
+| T5 | A fresh builder per task (section 6): the builder's contract, the build seat and its refusals, the tree check, the implement skill's loop moved to a reference, the entry that supersedes D4's last clause (D42). Built with it: the revert check, the receipt lines the helper writes, the verifier's "exists, not a stub, wired in" question, `council patch apply` and `revert`, and the benchmark's Chair-against-builder arms | T3 (it needs the pack) | ~1–1.5M |
 | T4 | The planted drill cases, with the two for a bug underneath and the builder's | S10 (#70) | part of S10 |
 
 ## Decided by the user (2026-11-13)
@@ -287,7 +289,8 @@ hand-written brief, and post-game findings per run before and after.
    Solo build stays with the Chair (the user, 2026-11-15): one small task fills no window, so a
    builder agent would cost a pack and a start for nothing. One part is still a proposal: a fix
    round gets a fresh builder, not the same agent continued. T5 measures both ways before it is
-   settled.
+   settled. On 2026-11-16 the user approved D42 as the entry, chose `task-<n>` for the build seat, and
+   set the benchmark as a pilot after T5 merges, on their go.
 
 ## Until it is built: the cleanup's own sessions
 
