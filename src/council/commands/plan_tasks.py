@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from council.records import map_file, paths, request, state, tasks
+from council.records.home import absolute, native
 
 SERVES_WHY = {"NO-QUOTE": "quotes nothing", "TOO-SHORT": "quotes under three words",
               "NOT-IN-THE-REQUEST": "quotes words the request never said"}
@@ -30,8 +31,7 @@ def deliverable(run: Path) -> Path | None:
     name = header.get("deliverable", "")
     if not name:
         return None
-    where = Path(name)
-    return where if where.is_absolute() else Path(run).parent.parent.parent / where
+    return Path(native(name)) if absolute(name) else Path(run).parent.parent.parent / name
 
 
 def judge_run(run: Path) -> Verdict:

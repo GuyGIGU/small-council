@@ -9,7 +9,6 @@ the same parser that serves memory, and that no other entry changed, before it r
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from pathlib import Path
@@ -18,6 +17,7 @@ from typing import Any, Iterator
 from council.commands import evidence                # the claim ledger's parser
 from council.commands import repair_trail as repair  # the repair trail's integrity check
 from council.records import bytewise, state as run_state
+from council.records.home import absolute, native
 from council.records import memory_entries as parsed
 
 MAX_MEMORY = 1024 * 1024
@@ -71,7 +71,7 @@ def citation_places(citation: str, top: Path) -> list[tuple[str, str]]:
     for piece in re.split(r"[,;]", citation or ""):
         piece = piece.strip().strip("`\"'").replace("\\", "/")
         path = re.sub(r"(:[0-9][0-9 -]*|#L?[0-9]+(-L?[0-9]+)?)$", "", piece).strip()
-        if (not path or re.search(r"[*?<>|\"`:]", path) or path.startswith("/") or
+        if (not path or re.search(r"[*?<>|\"`:]", path) or absolute(path) or
                 ".." in path.split("/") or not (top / path).is_file()):
             continue
         if path not in [known for known, _ in places]:
@@ -121,7 +121,7 @@ def draft_claim(run: Path, top: Path, claim_id: str, scope: str, today: str) -> 
     sources = [rel(top, run) + "/" + link["ref"]]
     deliverable = run_value(run, "deliverable")
     if deliverable:
-        candidate = Path(deliverable) if os.path.isabs(deliverable) else top / deliverable
+        candidate = Path(native(deliverable)) if absolute(deliverable) else top / deliverable
         if candidate.is_file():
             sources.append(rel(top, candidate))
     failure = '{} claimed "{}" at {}; a blind verifier returned {} (its evidence: {})'.format(

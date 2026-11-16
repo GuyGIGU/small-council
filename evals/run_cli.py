@@ -3837,6 +3837,9 @@ def resume(tmp):
           code == 0 and "mode: council-plan" in out, out + err)
     code, _, err = council(rwt, "state", "--run", ".council/runs/2020-01-01-000000-review")
     check("--run: a relative path that names no run is still refused", code == 2 and "not a run folder" in err, err)
+    code, _, err = council(rwt, "state", "--run", "c:.council/runs/" + os.path.basename(p1.strip()))
+    check("--run: a drive path (c:…, no slash after the drive) is absolute, never a name looked up under runs/",
+          code == 2 and "not a run folder" in err, err)
 
 @part("runs")
 def runs_fingerprint_and_ledger(tmp):
@@ -6552,6 +6555,21 @@ def requests_plan_tasks(tmp):
     check("run plan check: once a plan is delivered, a task with no Serves row is refused, and so is the next stage",
           code == 1 and "task 1 has no Serves row" in out and "tasks: 1 error(s) · " in out
           and code2 == 2 and "fix what it names" in err2, out + err + out2 + err2)
+    # One test of "this path is absolute" on every OS (records/home.absolute): rooted (/ or \\) or with a drive is taken
+    # as written, never joined to the project; Windows opens a Git Bash /c/... form as C:/....
+    for given, shown in (("C:/plans/charge.md", "C:/plans/charge.md"),
+                         ("\\plans\\charge.md", "/plans/charge.md" if os.name == "nt" else "\\plans\\charge.md")):
+        council(pt, "state", "deliverable=" + given)
+        code, out, _ = council(pt, "run", "plan", "check")
+        check("run plan check: a deliverable of %s is the path as written, not one under the project" % given,
+              code == 1 and "the recorded deliverable %s can't be read" % shown in out, out)
+    if os.name == "nt":                                  # Windows only: a /c/... path is a Git Bash path there
+        drive = slash(planf)
+        council(pt, "state", "deliverable=/%s%s" % (drive[0].lower(), drive[2:]))
+        code, out, _ = council(pt, "run", "plan", "check")
+        check("run plan check: on Windows a deliverable written /c/... is read as C:/...",
+              "task 1 has no Serves row" in out and "can't be read" not in out, out)
+    council(pt, "state", "deliverable=.council/plans/charge.md")
     code, out, _ = judged(task(1, serves='"charge it twice please"'))
     check("run plan check: a Serves quote the request never said is refused",
           code == 1 and "task 1's Serves quotes words the request never said" in out, out)

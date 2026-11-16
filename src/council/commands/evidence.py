@@ -17,6 +17,7 @@ from council.records import paths
 from council.records import plan as run_plan
 from council.records import state as run_state
 from council.records.cells import lines_of
+from council.records.home import absolute
 
 Claim = Dict[str, Any]
 
@@ -57,7 +58,7 @@ def within(parent: Path, candidate: Path) -> bool:
 def proof_link(run: Path, value: str) -> bool:
     """A reproduction must point to an existing, local run artifact."""
     name = Path(value.replace("\\", "/"))
-    if (name.is_absolute() or re.match(r"^[A-Za-z]:", value) or not name.parts or
+    if (absolute(value) or not name.parts or
             any(part in (".", "..") for part in name.parts)):
         return False
     target = run / name

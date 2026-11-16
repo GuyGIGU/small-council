@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from council.records import bytewise, paths
+from council.records.home import absolute
 
 ITEM = re.compile(r"[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) ")
 HEADED_ITEM = re.compile(r"#+ *[*_]*C?[0-9]+[a-z]?[*_]* +(·|\|) ")
@@ -82,7 +83,7 @@ def out_path(run: Path, slug: str, out: str | None = None) -> str:
     if out is None:
         out = next((seat.out for seat in brief_seats(Path(run) / "brief.md") if seat.slug == slug), None)
         out = out or "seats/" + slug + ".md"
-    return out if re.match("/|[A-Za-z]:", out) else "%s/%s" % (Path(run).as_posix(), out)
+    return out if absolute(out) else "%s/%s" % (Path(run).as_posix(), out)
 
 
 def norm(text: str) -> str:

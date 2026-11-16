@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from council.records import cells, paths, state
+from council.records.home import absolute, native
 
 ASK = "ask.md"
 # Curly quotes, odd and invisible spaces fold to what a person typing a quote would write.
@@ -55,8 +56,7 @@ def filed(run: Path) -> Path | None:
         return None
     root = run.parent.parent.parent
     asks = root / ".council" / "asks"
-    where = Path(name)
-    where = where if where.is_absolute() or re.match(r"[A-Za-z]:", name) else root / where
+    where = Path(native(name)) if absolute(name) else root / name
     return None if paths.linked(asks) or not paths.contained(where, asks) else where
 
 

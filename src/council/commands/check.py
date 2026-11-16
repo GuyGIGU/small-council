@@ -156,7 +156,7 @@ class Check:
     def next_tasks(self) -> None:
         """A post-game's next tasks, once its deliverable is recorded: each closes a gap against the request."""
         named = resolve.field(self.run, "deliverable")
-        if named and not (named.startswith("/") or re.match(r"[A-Za-z]:", named)):
+        if named and not where.absolute(named):
             named = os.path.dirname(where.council_home()) + "/" + named
         if not named or not os.path.isfile(where.native(named)):
             return

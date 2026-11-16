@@ -4,7 +4,6 @@ agent seat with a token figure, the agent limit. Each check says pass, warn or F
 words)."""
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,6 +16,7 @@ from council.records import plan as run_plan
 from council.records import seats as seat_files
 from council.records import state as run_state
 from council.records.audit_file import FAIL, PASS, WARN
+from council.records.home import absolute, native
 
 Say = Callable[[str, str, str], None]
 Event = Dict[str, Any]
@@ -255,8 +255,8 @@ def deliverable(run: Run, say: Say) -> None:
     home = run.folder.parent.parent            # <home>/runs/<run>; a copied run elsewhere is not looked up
     if home.name != ".council" or run.folder.parent.name != "runs":
         where = None
-    elif os.path.isabs(recorded):
-        where = Path(recorded)
+    elif absolute(recorded):
+        where = Path(native(recorded))
     elif recorded.replace("\\", "/").startswith(".council/"):
         where = home.parent / recorded
     else:

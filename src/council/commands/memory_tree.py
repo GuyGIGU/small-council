@@ -38,7 +38,7 @@ class Tree:
         ("x.py", "services/risk.py" written short); '' when there is none."""
         if p == "":
             return ""
-        if p.startswith("/") or re.match(r"[A-Za-z]:", p):
+        if where.absolute(p):
             if os.path.exists(where.native(bytewise.shown(p))):
                 return p
             top = bytewise.text(self.top) + "/"
@@ -128,7 +128,7 @@ def line_counts(top: str, files: set[str]) -> dict[str, int]:
     out = {}
     for f in files:
         name = bytewise.shown(f)
-        full = name if name.startswith("/") or re.match(r"[A-Za-z]:", name) else top + "/" + name
+        full = name if where.absolute(name) else top + "/" + name
         count = len(bytewise.records(bytewise.read(paths.contents(where.native(full)) or b"")))
         if count:
             out[f] = count

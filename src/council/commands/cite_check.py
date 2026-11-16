@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 from council import git
 from council.records import bytewise, citations
-from council.records.home import native
+from council.records.home import absolute, native
 
 AREA_MODES = ("council-plan", "council-research", "council-postgame")
 
@@ -39,10 +39,6 @@ def git_ok(top: str, *args: str) -> bool:
 def git_out(top: str, *args: str) -> bytes:
     """git -C top <args>'s stdout, whatever its exit code; b'' when git can't start."""
     return git.run(native(top), *args)[1]
-
-
-def absolute(path: str) -> bool:
-    return path.startswith("/") or re.match(r"[A-Za-z]:", path) is not None
 
 
 def rel(top: str, path: str) -> str:

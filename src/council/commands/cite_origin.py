@@ -7,9 +7,9 @@ import os
 import re
 
 from council import diff
-from council.commands.cite_check import Scope, absolute, git_ok, git_out, rel, run_cited
+from council.commands.cite_check import Scope, git_ok, git_out, rel, run_cited
 from council.records import citations
-from council.records.home import native
+from council.records.home import absolute, native
 
 SHA = re.compile(r"[0-9a-f]+")
 

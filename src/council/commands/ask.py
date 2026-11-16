@@ -84,7 +84,7 @@ class Filing:
         """The filed request this run continues: only a real file inside asks/ — no ".." step, no link, and the
         folder it resolves to is asks/ (or below it), compared after resolving both."""
         cur = self.current.replace("\\", "/")
-        target = cur if cur.startswith("/") or re.match(r"[A-Za-z]:", cur) else self.root + "/" + cur
+        target = cur if where.absolute(cur) else self.root + "/" + cur
         elsewhere = "a request is filed under %s/asks/, not %s — copy the words into ask.md instead" % (self.home, cur)
         if "/../" in "/" + cur + "/":
             raise cli.Refusal(elsewhere)

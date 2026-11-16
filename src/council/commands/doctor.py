@@ -86,7 +86,7 @@ def ref_path(ref: str, root: str) -> str:
     """A roster or card reference as a file path: references/… is in the plugin, anything else in the repo."""
     if ref.startswith("references/"):
         return PLUGIN + "/" + ref
-    return ref if ref.startswith("/") or re.match(r"[A-Za-z]:", ref) else root + "/" + ref
+    return ref if where.absolute(ref) else root + "/" + ref
 
 
 def _isfile(path: str) -> bool:

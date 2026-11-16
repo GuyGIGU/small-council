@@ -119,6 +119,12 @@ class HomeTest(support.Scratch):
         configured = {"/b/.council/council.config.md", "/b/.council", "/a/.council"}
         self.assertEqual(home.home_from("/a", "", bare, configured.__contains__), "/b/.council")
 
+    def test_absolute_is_rooted_or_has_a_drive_on_every_os(self) -> None:
+        for given in ("/x", "/c/x", "//srv/x", "\\x", "\\\\srv\\x", "C:/x", "C:\\x", "c:x"):
+            self.assertTrue(home.absolute(given), given)
+        for given in ("", "x", "./x", "../x", "~", "~/x", "ab:x", "1:x"):
+            self.assertFalse(home.absolute(given), given)
+
 
 if __name__ == "__main__":
     unittest.main()

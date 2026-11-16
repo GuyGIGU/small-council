@@ -8,6 +8,7 @@ from typing import Any
 
 from council.records import cells
 from council.records.cells import clean
+from council.records.home import absolute, native
 from council.records.paths import contained, linked, text_of
 
 RESULT = re.compile(r"(not met|partly met|partly|blocked|met)\b")
@@ -40,8 +41,8 @@ def read(run: str | Path, deliverable: str) -> dict[str, Any]:
     if not deliverable:
         return {"missing": "no build log recorded"}
     home = run.parent.parent
-    logs, path = home / "logs", Path(deliverable)
-    path = path if path.is_absolute() else home.parent / path
+    logs = home / "logs"
+    path = Path(native(deliverable)) if absolute(deliverable) else home.parent / deliverable
     if run.parent.name != "runs" or linked(logs) or not contained(path, logs):
         return {"missing": "the build log isn't in the council's logs folder"}
     content = text_of(path, logs)
