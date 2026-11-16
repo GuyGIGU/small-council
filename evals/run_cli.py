@@ -6337,6 +6337,14 @@ def gates_revert_check(tmp):
     code, out, err = built(repo, run, 2, {"src/two.sh": "echo new\n", "tests/test_two.sh": "echo '1 passed'\n"},
                            "tests/test_two.sh")
     check("revert check fixture: task 2 is saved", code == 0 and "task 2 round 1 saved" in out, out + err)
+    code, out, err = council(repo, "patch", "show", "1")
+    check("patch show: a round's history names the gates that went red since the save before it, with how often "
+          "(a before-proof meant to fail first is no red gate)",
+          code == 0 and "- gates red since the save before: lint ×2" in out and "before-1" not in line_of(out, "red"),
+          out + err)
+    code, out, err = council(repo, "patch", "show", "2")
+    check("patch show: a round with no gate red since the save before says none", code == 0
+          and "- gates red since the save before: none" in out, out + err)
     council(repo, "gate", "lint", "--", "echo '1 passed'")
     council(repo, "gate", "--all", "--at", "verify")
     disk = {path: read(os.path.join(repo, path)) for path in ("src/calc.sh", "src/two.sh", "tests/test_two.sh")}

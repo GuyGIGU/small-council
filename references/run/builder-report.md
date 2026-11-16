@@ -54,7 +54,7 @@ don't name, and the verifier's question below is the real check.
 
 Under `<run>/patches/`: `T<n>-<r>.patch` (the round's diff), `T<n>-<r>.json` (its record: the head,
 the two trees, the files, what the checks found) and `T<n>.md`, the task's history across its rounds,
-rewritten at each save.
+rewritten at each save, each round with the gates that went red since the save before it.
 `council patch show <n>` prints it. `council patch revert <n> [--round <r>]` takes a saved round off the
 code root's files and `council patch apply <n> [--round <r>]` puts it back (the task's last round unless
 `--round` names one): all or nothing, refused with nothing changed when it won't go cleanly. They change
