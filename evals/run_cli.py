@@ -836,8 +836,8 @@ def runs_open(tmp):
         f.write(b"\xef\xbb\xbfnote: caf\xe9\n" + before.replace("x" * (4 * 1024 * 1024) + "\n", "").encode("utf-8"))
     shown = subprocess.run([BASH, CLI, "state", "--run", os.path.basename(huge_run)], cwd=huge, capture_output=True,
                            env=GIT_ENV, timeout=120)
-    check("state: the header is printed as the guarded read gives it: no byte-order mark, a stray byte as U+FFFD",
-          shown.returncode == 0 and shown.stdout.startswith(b"note: caf\xef\xbf\xbd\nstatus: in-progress\n"),
+    check("state: a state the guard lets through prints from its own bytes, a byte-order mark and a stray byte kept",
+          shown.returncode == 0 and shown.stdout.startswith(b"\xef\xbb\xbfnote: caf\xe9\nstatus: in-progress\n"),
           repr(shown.stdout[:80]) + shown.stderr.decode("utf-8", "replace"))
 
     # A relative --code-root is stored absolute: in a real build every gate exited 97 ("cd" failed) once
