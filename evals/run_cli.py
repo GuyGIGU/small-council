@@ -729,6 +729,27 @@ def runs_open(tmp):
     code, out, err = council(repo, "seat", "outsider", "running", "agent=nope")
     check("seat: refuses to start an identity the valid plan did not select",
           code == 2 and "does not mark it selected" in err, out + err)
+    # A plan value is read as written, only spaces and tabs trimmed (plan.keyed), never lower-cased: a padded
+    # ' selected ' (which the plan check takes) starts its seat, and a level of SELF does not make the run self-checked.
+    kv = new_repo(tmp, "plan-values-as-written")
+    write(os.path.join(kv, ".council", "council.config.md"), "# Council config\n")
+    _, kv_run, _ = council(kv, "run", "open", "council-review")
+    kv_run = kv_run.strip()
+    write_plan(kv_run, selected=("hunt",), verification="self")
+    kv_plan = os.path.join(kv_run, "run-plan.tsv")
+    write(kv_plan, read(kv_plan).replace("seat\thunt\tdisposition\tselected\t", "seat\thunt\tdisposition\t selected \t"))
+    code, out, err = council(kv, "seat", "hunt", "running", "agent=h1")
+    check("seat: a padded ' selected ' disposition is selected, so the seat starts", code == 0, out + err)
+    write(kv_plan, read(kv_plan).replace("verification\trun\tlevel\tself\t", "verification\trun\tlevel\tSELF\t"))
+    write(os.path.join(kv_run, "seats", "hunt.md"), "# Hunt\n## Index\n3 · P1 · Principle 1 · a.txt:1 · Expiry\n")
+    write(os.path.join(kv_run, "synthesis.md"), "# Synthesis\n## Kept\n1 · P1 · Principle 1 · a.txt:1 · Expiry · state: "
+          "OBSERVED · from: hunt#3\n## Cut\n(none)\n")
+    write(os.path.join(kv_run, "verify-self.md"), "# Self-check\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | Expiry | CONFIRMED | a.txt:1 |\n")
+    council(kv, "evidence", "build", "--run", kv_run)
+    code, out, err = council(kv, "evidence", "check", "--run", kv_run)
+    check("evidence check: a plan's verification level of SELF is not self, so the Chair's own check stands alone",
+          code == 1 and "only the Chair's own check" in out, out + err)
 
     budget_repo = new_repo(tmp, "spend-ceiling")
     write(os.path.join(budget_repo, ".council", "council.config.md"), "# Council config\n")
