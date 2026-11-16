@@ -1,8 +1,8 @@
 """The runs of a council home as the helper lists them (list_runs), a mode's skill (mode_skill), and the
 one-line seat summary a listing shows beside a run (seat_summary).
 
-list_runs reads every `key: value` line of a run's state, below the header too (state.header reads the
-header only), so its rule lives here, apart from the header's.
+A run's fields are its state's header (state.header): a `key: value` line below the first `## ` heading is
+not a field, so a status line there never opens a run.
 """
 from __future__ import annotations
 
@@ -11,10 +11,9 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.records import bytewise, paths
+from council.records import bytewise, paths, state
 
-OPEN = re.compile(rb"^(\xef\xbb\xbf)?status:[ \t\r\f\v]*(in-progress|paused)", re.MULTILINE)
-KEY = re.compile(r"^[a-z][a-z0-9-]*:")
+OPEN = re.compile(r"[ \t\r\f\v]*(in-progress|paused)")       # an open run's status value
 
 
 class Listed(NamedTuple):
@@ -31,16 +30,20 @@ class Listed(NamedTuple):
 
 
 def listing(home: str, limit: int = 30, which: str = "open") -> list[Listed]:
-    """Runs, newest first: which='open' takes every run whose state has an in-progress or paused status
-    line anywhere, however old; 'all' the newest by name. At most limit. Folders are home + /runs/<name>."""
-    listed = []
-    for state in _states(home + "/runs", which)[:limit]:
-        fields = listed_fields((paths.contents(state) or b"").decode("utf-8", "surrogateescape"))
-        if fields is not None:
-            get = fields.get
-            listed.append(Listed(state[:-len(paths.STATE) - 1], get("mode", ""), get("phase", ""),
-                                 get("code-root", ""), get("updated", ""), get("status", "").split(" ")[0],
-                                 get("actual", ""), get("session", "")))
+    """Runs, newest first: which='open' takes every run whose header's status is in-progress or paused,
+    however old; 'all' the newest by name. At most limit. Folders are home + /runs/<name>."""
+    listed: list[Listed] = []
+    states = _states(home + "/runs", which)
+    for file in states if which == "open" else states[:limit]:
+        fields = listed_fields((paths.contents(file) or b"").decode("utf-8", "surrogateescape"))
+        if fields is None or (which == "open" and not OPEN.match(fields.get("status", ""))):
+            continue
+        get = fields.get
+        listed.append(Listed(file[:-len(paths.STATE) - 1], get("mode", ""), get("phase", ""),
+                             get("code-root", ""), get("updated", ""), get("status", "").split(" ")[0],
+                             get("actual", ""), get("session", "")))
+        if len(listed) == limit:
+            break
     return listed
 
 
@@ -52,28 +55,14 @@ def _states(runs: str, which: str) -> list[str]:
     except OSError:
         return []
     if which == "open":
-        states = sorted((runs + "/" + name + "/" + paths.STATE for name in names), reverse=True)
-        return [state for state in states if OPEN.search(paths.contents(state) or b"")]
+        return sorted((runs + "/" + name + "/" + paths.STATE for name in names), reverse=True)
     states = [runs + "/" + name + "/" + paths.STATE for name in sorted(names, reverse=True)]
-    return [state for state in states if os.path.isfile(state)]
+    return [file for file in states if os.path.isfile(file)]
 
 
 def listed_fields(content: str) -> dict[str, str] | None:
-    """Every `key: value` line of the file, the first of a key winning: carriage returns dropped, a
-    trailing '  # comment' cut, tabs made spaces. None for an empty file."""
-    if not content:
-        return None
-    fields: dict[str, str] = {}
-    for number, line in enumerate(bytewise.records(content)):
-        if number == 0 and line.startswith(paths.BOM):
-            line = line[1:]
-        line = line.replace("\r", "")
-        key = KEY.match(line)
-        if not key or line[:key.end() - 1] in fields:
-            continue
-        value = re.sub(r"[ \t][ \t]+#.*$", "", line[key.end():].lstrip(" \t"))
-        fields[line[:key.end() - 1]] = value.replace("\t", " ")
-    return fields
+    """The state's header fields as state.header reads them (exact keys); None for an empty file."""
+    return state.header(content, exact_keys=True) if content else None
 
 
 def here(code_root: str, tree: str) -> bool:

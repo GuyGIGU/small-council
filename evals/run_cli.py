@@ -3246,6 +3246,11 @@ def runs_worktrees_close_and_find(tmp):
     check("run status: a run whose code-root is '-' is here, as every other reader takes it",
           code == 0 and " · here" in out and "elsewhere" not in out and code2 == 2 and "already in progress" in err2,
           out + out2 + err2)
+    # A run's fields are its state's header: a status line under a heading never opens a run.
+    write(dash_state, read(dash_state).replace("status: in-progress", "status: complete") + "## Notes\nstatus: paused\n")
+    code, out, _ = council(dash, "run", "status")
+    check("run status: a status line below the state's first heading does not make a run open",
+          code == 0 and "no open council runs" in out, out)
 
     # A bare repository with worktrees: the council lives in the worktree that holds the config
     bsrc = new_repo(tmp, "bare-src")

@@ -33,10 +33,11 @@ class ListingTest(support.Scratch):
         self.assertEqual([run.folder.split("/")[-1] for run in listed],
                          ["2026-01-03-000000-review", "2026-01-02-000000-plan"])
 
-    def test_a_status_line_anywhere_opens_the_run_and_the_first_status_is_shown(self) -> None:
+    def test_only_the_headers_status_opens_a_run(self) -> None:
         self.state("r", "status: complete\n## Notes\nstatus: in-progress\n")
-        listed = runs.listing(self.home(), 30, "open")
-        self.assertEqual([run.status for run in listed], ["complete"])
+        self.assertEqual(runs.listing(self.home(), 30, "open"), [])
+        self.state("r", "status: paused  # note\n## Notes\nstatus: complete\n")
+        self.assertEqual([run.status for run in runs.listing(self.home(), 30, "open")], ["paused"])
 
     def test_a_run_is_here_when_its_code_root_is_this_tree_blank_or_a_dash(self) -> None:
         self.assertEqual([runs.here(root, "/t") for root in ("/t", "", "-", "/elsewhere")], [True, True, True, False])
@@ -46,9 +47,8 @@ class ListingTest(support.Scratch):
                                      "Mode: x\nmode: a\tb  # cut\nmode: second\n## Body\nactual: 1 agent\n")
         self.assertEqual(fields["status"], "in-progress")
         self.assertEqual(fields["phase"], "convene")              # leading space and tab dropped
-        self.assertEqual(fields["mode"], "a b")                    # tabs made spaces, comment cut, first wins
-        self.assertNotIn("Mode", fields)                           # keys are lower case
-        self.assertEqual(fields["actual"], "1 agent")              # below the header too
+        self.assertEqual(fields["mode"], "a\tb")                   # comment cut, first wins (state.header)
+        self.assertNotIn("actual", fields)                         # below the header: not a field
         self.assertIsNone(runs.listed_fields(""))
         self.assertEqual(runs.listed_fields("\n"), {})
 
