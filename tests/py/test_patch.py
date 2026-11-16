@@ -155,6 +155,7 @@ class ChecksTest(unittest.TestCase):
         self.assertEqual(given, ["src/pay/", "tests/test_pay.py", "README.md", "docs"])
         self.assertEqual(patch_checks.outside(["src/pay/a.py", "docs/x.md", "README.md", "src/mail.py"], given),
                          ["src/mail.py"])
+        self.assertEqual(patch_checks.slice_paths(["`a/b.py`", "`a/b.py`, `c.md`", "a/b.py:3"]), ["a/b.py", "c.md"])
 
 
 class ThirdRoundTest(support.Scratch):

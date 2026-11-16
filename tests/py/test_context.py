@@ -38,7 +38,7 @@ class SliceTest(support.Scratch):
     def test_the_slice_is_owner_touches_and_the_map_row_the_owner_names(self) -> None:
         found = self.cut(task(1).replace("| **Done when**", "| **Touches** | `src/pay/webhook.py` |\n| **Done when**"))
         self.assertEqual([way.job for way in found.owned], ["Charge a card"])
-        self.assertEqual(found.paths, ["src/pay/", "src/pay/webhook.py", "src/pay/", "src/pay/charge.py"])
+        self.assertEqual(found.paths, ["src/pay/", "src/pay/webhook.py", "src/pay/charge.py"])   # each once
 
     def test_no_such_task_and_no_plan_give_no_task(self) -> None:
         self.assertIsNone(self.cut(task(1), number=2).task)

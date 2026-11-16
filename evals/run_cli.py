@@ -6229,6 +6229,8 @@ def gates_patch_rounds(tmp):
     outside = line_of(out, "outside task 1's slice")
     check("patch save: a file outside the task's Owner and Touches is flagged for the verifier, not refused",
           "a.txt" in outside and "possible scope creep" in outside, out)
+    check("patch save: the slice names each path once — src/pay.py is both the Owner and a Touches path",
+          "slice (.council/plans/pay.md, task 1: src/pay.py, tests/test_pay.py, docs/)" in outside, outside)
     check("patch save: an added sleep on a first build (Cause: none) is a question for the verifier, not a verdict: "
           "does it make up for other code instead of doing the task",
           "sign — sleep · src/pay.py:5 · time.sleep(1) — for the verifier: does it make up for other code instead of "
