@@ -8126,6 +8126,152 @@ def runs_build_seat(tmp):
 
 
 @part("lifecycle")
+def runs_needs_note_ends(tmp):
+    # A NEEDS: note on a seat ends when the seat has run again and is recorded done with no note: before, the note
+    # outlived its rerun, so seats.tsv, council tree and the pack showed a stop the builder had since got past.
+    nn = new_repo(tmp, "needs-note")
+    write(os.path.join(nn, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    _, out, _ = council(nn, "run", "open", "council-implement", env=session("sQ"))
+    nrun = out.strip().splitlines()[-1]
+    write_plan(nrun, selected=("task-1", "task-2", "task-3", "task-4"))
+    note = lambda slug: (row(read(os.path.join(nrun, "seats.tsv")), slug).split("\t") + [""] * 6)[5]  # noqa: E731
+    ask = "NEEDS: which table holds the key?"
+    council(nn, "seat", "task-1", "running", "agent=e1")
+    council(nn, "seat", "task-1", "done", "tokens=20000", "note=" + ask)
+    code, out, err = council(nn, "seat", "task-1", "done", "agent=e1", "tokens=21000")
+    check("seat: a late usage report on a NEEDS: stop (done, then done with no note) is taken with no report file, "
+          "and keeps the note", code == 0 and note("task-1") == ask, out + err)
+    council(nn, "seat", "task-1", "queued")
+    queued = note("task-1")
+    council(nn, "seat", "task-1", "running", "agent=e2")
+    check("seat: the note stays through the restart itself (done, then queued, then running), so the builder sent "
+          "again still sees its stop", queued == ask and note("task-1") == ask, queued + " / " + note("task-1"))
+    write(os.path.join(nrun, "report-1.md"), "Cause: none\n")
+    code, out, err = council(nn, "seat", "task-1", "done", "agent=e2", "tokens=20000")
+    check("seat: the seat that ran again, recorded done with no note, drops its NEEDS: note — read back from seats.tsv",
+          code == 0 and note("task-1") == "" and row(read(os.path.join(nrun, "seats.tsv")), "task-1")
+          .startswith("task-1\tdone\te2\t"), out + err + read(os.path.join(nrun, "seats.tsv")))
+    council(nn, "seat", "task-2", "running", "agent=e3")
+    council(nn, "seat", "task-2", "done", "tokens=20000", "note=NEEDS: first?")
+    council(nn, "seat", "task-2", "running", "agent=e4")
+    council(nn, "seat", "task-2", "done", "tokens=20000", "note=NEEDS: second?")
+    check("seat: a new note= replaces a NEEDS: note, as before", note("task-2") == "NEEDS: second?", note("task-2"))
+    write(os.path.join(nrun, "report-3.md"), "Cause: none\n")
+    council(nn, "seat", "task-3", "running", "agent=e5", "note=slow start")
+    council(nn, "seat", "task-3", "done", "tokens=20000")
+    check("seat: a note that doesn't start NEEDS: is kept through done, as before", note("task-3") == "slow start",
+          note("task-3"))
+    council(nn, "seat", "task-4", "running", "agent=e6")
+    council(nn, "seat", "task-4", "done", "tokens=20000", "note=NEEDS: which cache?")
+    council(nn, "seat", "task-4", "running", "agent=e7")
+    council(nn, "seat", "task-4", "blocked", "tokens=20000")
+    check("seat: a seat that ran again and ends blocked keeps its NEEDS: note, as before",
+          note("task-4") == "NEEDS: which cache?", note("task-4"))
+
+
+FIX_STOP = "NEEDS: fix src/pay/webhook.py:2 · does: returns 1 · should: read the event · seen: pytest, 1 failed"
+
+
+@part("lifecycle")
+def runs_build_seat_fix_stop(tmp):
+    # T5 (D42): a NEEDS: fix stop holds its task and every task that depends on it until the user's decision is on
+    # record — the helper refuses the start, where the skill only asked it in prose. One reader of a stop
+    # (build_seat.stop_of) answers stands, released or resolved for council seat, the agent gate and council tree.
+    builder = "type=small-council:council-builder"
+
+    def fix_stop_run(repo, sid):
+        """An implement run on a three-task plan (2 depends on 1, 3 on nothing), its input= recorded."""
+        _, out, _ = council(repo, "run", "open", "council-implement", env=session(sid))
+        run = out.strip().splitlines()[-1]
+        write_plan(run, selected=("task-1", "task-2", "task-3"))
+        council(repo, "state", "phase=prepare")
+        council(repo, "state", "phase=build", "input=.council/plans/stop.md")
+        return run
+
+    fs = new_repo(tmp, "fix-stop")
+    write(os.path.join(fs, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    write(os.path.join(fs, ".council", "plans", "stop.md"), "# Council Plan: stop\n## Task Sequence\n"
+          + pack_task(1, "Read the event", [("Depends on", "—")]) + pack_task(2, "Charge once", [("Depends on", "1")])
+          + pack_task(3, "Keep the receipt", [("Depends on", "—")]) + "## Summary\nx\n")
+    git(fs, "add", "-A")
+    git(fs, "commit", "-q", "-m", "plan")
+    frun = fix_stop_run(fs, "sX")
+    council(fs, "seat", "task-1", "running", "agent=f1")
+    council(fs, "seat", "task-1", "done", "tokens=20000", "note=" + FIX_STOP)
+    refused = [council(fs, "seat", *words) for words in (("task-1", "queued"), ("task-1", "running", "agent=f2"),
+                                                         ("task-2", "queued"))]
+    next_step = ("Tell the user what is wrong and what is stopped, record their decision in their words with council "
+                 "state decision=\"…\", and build the fix as its own task above the stopped one")
+    check("seat: a standing NEEDS: fix stop refuses its own task, queued or running, and a task that depends on it — "
+          "naming the task, the file:line and the next step",
+          [code for code, _, _ in refused] == [2, 2, 2]
+          and "cannot start task-1 — task 1 stopped with NEEDS: fix at src/pay/webhook.py:2 (seat task-1), and this is "
+          "that task: the code under it is wrong. " + next_step in refused[0][2]
+          and "cannot start task-2 — task 1 stopped with NEEDS: fix at src/pay/webhook.py:2 (seat task-1), and task 2 "
+          "depends on it" in refused[2][2] and next_step in refused[2][2] and "does: returns 1" not in refused[2][2]
+          and "\ntask-2\t" not in read(os.path.join(frun, "seats.tsv")), repr(refused))
+    code, out, err = council(fs, "seat", "task-3", "queued")
+    check("seat: a task that neither is nor depends on the stopped task starts", code == 0, out + err)
+    code, out, err = council(fs, "cap", "check", "--session", "sX", "Agent", builder, "seat=task-2", "file=report-2",
+                             "run=" + os.path.basename(frun))
+    check("cap check: the agent gate refuses a builder for that dependant before it starts, for the same reason",
+          code == 2 and out.startswith("Small Council: cannot start task-2 — task 1 stopped with NEEDS: fix at "
+                                       "src/pay/webhook.py:2"), out + err)
+    council(fs, "state", "decision=fix the webhook reader first, as its own task")
+    code, out, err = council(fs, "seat", "task-1", "done", "agent=f1", "tokens=21000")
+    starts = [council(fs, "seat", slug, "queued") for slug in ("task-1", "task-2", "task-3")]
+    check("seat: once the user's decision is on record, the stop is released and all three start — a late usage "
+          "report on the stop after the decision does not bring the refusal back",
+          code == 0 and [c for c, _, _ in starts] == [0, 0, 0], out + err + repr(starts))
+    council(fs, "run", "close", "--status", "abandoned")
+
+    frun = fix_stop_run(fs, "sY")
+    council(fs, "seat", "task-1", "running", "agent=g1")
+    council(fs, "seat", "task-1", "done", "tokens=20000", "note=NEEDS: which cache owns the key?")
+    code, out, err = council(fs, "seat", "task-2", "queued")
+    check("seat: a plain NEEDS: <question> stop refuses nothing", code == 0, out + err)
+    council(fs, "seat", "task-2", "skipped")
+    council(fs, "seat", "task-1", "running", "agent=g2")
+    council(fs, "seat", "task-1", "done", "tokens=20000", "note=" + FIX_STOP)
+    council(fs, "state", "input=")
+    code, out, err = council(fs, "seat", "task-2", "queued")
+    code1, out1, err1 = council(fs, "seat", "task-1", "queued")
+    check("seat: with no input= plan only the task itself is judged — its dependant starts, it is refused",
+          code == 0 and code1 == 2 and "cannot start task-1 — task 1 stopped" in err1, out + err + out1 + err1)
+    council(fs, "seat", "task-2", "skipped")
+    council(fs, "gate", "after-1", "--proof", "change", "--", "true")
+    code, out, err = council(fs, "seat", "task-1", "queued")
+    check("seat: a stop whose after-<n> gate has passed is resolved — it refuses nothing, with no decision on record",
+          code == 0, out + err)
+    council(fs, "run", "close", "--status", "abandoned")
+
+    # A fix round: task 1 was built and its after gate passed; a fresh builder on the same seat then stops with
+    # NEEDS: fix. The old pass is older than the stop, so the stop stands until after-1 passes again.
+    frun = fix_stop_run(fs, "sZ")
+    write(os.path.join(frun, "report-1.md"), "Cause: none\n")
+    council(fs, "seat", "task-1", "running", "agent=h1")
+    council(fs, "seat", "task-1", "done", "tokens=20000")
+    council(fs, "gate", "after-1", "--proof", "change", "--", "true")
+    council(fs, "seat", "task-1", "running", "agent=h2")
+    council(fs, "seat", "task-1", "done", "tokens=20000", "note=" + FIX_STOP)
+    code1, _, err1 = council(fs, "seat", "task-1", "queued")
+    code2, _, err2 = council(fs, "seat", "task-2", "queued")
+    code, tree, err = council(fs, "tree")
+    check("seat and tree: a stop recorded after the task's after gate already passed stands — the task and a "
+          "dependant are refused, and council tree prints the live NEEDS:, not was stopped:",
+          code1 == 2 and "cannot start task-1 — task 1 stopped" in err1 and code2 == 2
+          and "and task 2 depends on it" in err2 and code == 0
+          and "proof: after-1 pass · rounds: 0 · converge: none yet · " + FIX_STOP in tree and "was stopped" not in tree,
+          err1 + err2 + tree + err)
+    council(fs, "gate", "after-1", "--proof", "change", "--", "true")
+    code1, _, err1 = council(fs, "seat", "task-1", "queued")
+    code, tree, err = council(fs, "tree")
+    check("seat and tree: once the after gate passes again, after the stop, the stop is resolved — the task starts and "
+          "council tree prints was stopped:", code1 == 0 and code == 0 and "· was stopped: " + FIX_STOP in tree,
+          err1 + tree + err)
+
+
+@part("lifecycle")
 def runs_status_card_owed_once(tmp):
     # The run's first status card is owed once per run, at its first dispatch: the helper marks it due, any
     # council status call for the run clears it, and the turn-end hook sends the Chair back once while it is due.

@@ -1566,6 +1566,19 @@ def agent_gate_builder(tmp):
     council(bg, "seat", "task-1", "done", "note=NEEDS: which cache owns the key?", session="sK")
     code, out, err, said = gate(orders.format(run, 2))
     check("dispatch: ... and starts once task-1's line is recorded", code == 0 and not out and not err, said)
+    write(os.path.join(bg, ".council", "plans", "b.md"), "# Council Plan: b\n## Task Sequence\n### 1. Read\n| | |\n"
+          "|---|---|\n| **Depends on** | — |\n\n### 2. Charge\n| | |\n|---|---|\n| **Depends on** | 1 |\n\n## Summary\n")
+    council(bg, "state", "input=.council/plans/b.md", session="sK")
+    council(bg, "seat", "task-1", "running", "agent=k2", session="sK")
+    council(bg, "seat", "task-1", "done", "note=NEEDS: fix src/pay.py:4 · does: a · should: b · seen: c", session="sK")
+    code, out, err, said = gate(orders.format(run, 2))
+    check("dispatch: a builder for a task that depends on a standing NEEDS: fix stop is refused before it starts, "
+          "naming the stop and the user's decision", code == 2 and not out
+          and "cannot start task-2 — task 1 stopped with NEEDS: fix at src/pay.py:4 (seat task-1), and task 2 depends "
+          "on it" in err and 'council state decision="…"' in err, said)
+    council(bg, "state", "decision=fix the pay module first", session="sK")
+    code, out, err, said = gate(orders.format(run, 2))
+    check("dispatch: ... and starts once the user's decision is on record", code == 0 and not out and not err, said)
 
 
 @part("main")
