@@ -46,11 +46,11 @@ def judge(check: Check) -> None:
 
 
 def verifiers(check: Check) -> None:
-    """Each selected verifier against each builder: a build's builder agents, and the Chair, which builds in its
-    own window on the session's model (council-implement), whatever its row says."""
+    """Each selected verifier against each builder: a build's builder seats; in a build that selects none (a Solo
+    build, D42), the Chair, which builds in its own window on the session's model, whatever its row says."""
     selected = [i for i in check.disp if check.disp[i] == "selected"]
     builders = [(i, check.model.get(i, models.INHERIT)) for i in selected if role_of(check, i) == "builder"]
-    if check.given.mode == BUILD:
+    if check.given.mode == BUILD and not builders:
         builders += [(i, models.INHERIT) for i in selected if check.role.get(i) == "chair"]
     for ident in (i for i in selected if role_of(check, i) == "verifier"):
         mine = check.model.get(ident, models.INHERIT)

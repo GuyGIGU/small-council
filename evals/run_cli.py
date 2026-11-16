@@ -7986,7 +7986,13 @@ def models_per_role(tmp):
     check("models: a verifier weaker than its builder is refused, and the refusal names the fix",
           code == 1 and "verifier verify-plan on sonnet is weaker than builder build on opus — put the verifier on "
           "opus or stronger (seat/verify-plan/model, and verifier= in council.config.md's - models:)" in out, out)
-    check("models: a build's verifier is also judged against the Chair, which builds on the session's model",
+    check("models: with a builder seat selected, a build's verifier is judged against that seat, not the Chair (D42)",
+          code == 1 and "than the Chair" not in out, out)
+    write(plan_path, "".join(line + "\n" for line in plain.splitlines() if "\tbuild\t" not in line)
+          + "seat\tverify-plan\tmodel\tsonnet\tthis test's model\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: a Solo build selects no builder seat, so its verifier is judged against the Chair, which builds on "
+          "the session's model",
           code == 1 and "verifier verify-plan on sonnet is weaker than the Chair, which builds, on inherit — put the "
           "verifier on inherit, as its builder is" in out, out)
     models_line("- models: verifier=opus\n")
