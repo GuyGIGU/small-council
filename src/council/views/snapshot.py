@@ -20,14 +20,12 @@ from typing import Any, Dict
 from council.records import cells, events as event_stream, gates as gate_files, plan as run_plan, state as run_state
 from council.records import memory, usage
 from council.records.cells import clean, integer
-from council.records.paths import contained, linked, text_of
+from council.records.paths import linked, text_of
 from council.records.seats import corrections as corrections_of
 from council.records.stages import COUNCIL_NEXT_AT_OPEN as NEXT_AT_OPEN
 
 Snap = Dict[str, Any]
 CLAIM_MODES = ("council-review", "council-plan", "council-research")   # the modes that keep a claim index
-CONVERGE_RESULT = re.compile(r"(not met|partly met|partly|blocked|met)\b")
-CONVERGE_KEYS = {"not met": "not_met", "partly met": "partly", "partly": "partly", "blocked": "blocked", "met": "met"}
 
 
 def header(run: Path) -> dict[str, str]:
@@ -137,81 +135,6 @@ def claims_of(run: str | Path, mode: str | None = None) -> dict[str, Any]:
             own += 1
     return {"total": len(rows), "by_verdict": dict(sorted(verdicts.items())), "stale": False,
             "shipped": dict(sorted(shipped.items())), "self_checked": own, "expected": True}
-
-
-def converge_result(cell: str) -> str:
-    """A Converge Result cell's verdict, read after its last arrow ("partly met → met" is met) by its first words:
-    met, partly, not_met, blocked or other."""
-    words = re.sub(r"[`*_]", "", re.split("→|->", cell)[-1]).strip().lower()
-    found = CONVERGE_RESULT.match(words)
-    return CONVERGE_KEYS[found.group(1)] if found else "other"
-
-
-def converge_fixed(cell: str) -> bool:
-    """A met result that records the check finding it short first: an earlier verdict before an arrow ("partly met →
-    met"), or one named after the leading "met" ("met (after 8cbfc45; verify-5 partly met)")."""
-    parts = re.split("→|->", cell)
-    if len(parts) > 1:
-        return converge_result(parts[0]) != "met"
-    words = re.sub(r"[`*_]", "", cell).strip().lower()
-    return re.search(r"\b(not met|partly met|partly|blocked)\b", words[3:]) is not None
-
-
-def converge_of(run: str | Path, deliverable: str) -> dict[str, Any]:
-    """A build's final check, from its log's '## Converge' table (council-implement writes it at Challenge): each
-    task's final result, and whether a fix came after the check found it short. {"missing": why} when no such
-    table can be read: no deliverable, one outside the council home's logs folder, unreadable, or without one."""
-    run = Path(run)
-    if not deliverable:
-        return {"missing": "no build log recorded"}
-    home = run.parent.parent
-    logs, path = home / "logs", Path(deliverable)
-    path = path if path.is_absolute() else home.parent / path
-    if run.parent.name != "runs" or linked(logs) or not contained(path, logs):
-        return {"missing": "the build log isn't in the council's logs folder"}
-    content = text_of(path, logs)
-    if not content:
-        return {"missing": "the build log can't be read"}
-    rows = converge_rows(content)
-    if not rows:
-        return {"missing": "the build log has no Converge table"}
-    return {"rows": rows}
-
-
-def converge_rows(content: str) -> list[dict[str, Any]]:
-    """The rows of the table under the log's '## Converge' heading, keyed by its Task, Done when and Result."""
-    rows: list[dict[str, Any]] = []
-    inside, columns = False, None
-    for line in cells.lines_of(content):
-        if line.startswith("## "):
-            if inside:
-                break
-            inside = line[3:].strip().lower() == "converge"
-            continue
-        if not inside:
-            continue
-        if not line.lstrip().startswith("|"):
-            if columns is not None:
-                break                               # the table ended
-            continue
-        row = [clean(c) for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
-        if columns is None:
-            names = [c.lower() for c in row]
-            if "result" not in names:
-                break
-            columns = {name: names.index(name) for name in ("task", "done when", "result") if name in names}
-            continue
-        if all(re.fullmatch(r":?-{3,}:?", c) for c in row if c):
-            continue                                # the header's rule
-        cell = {name: row[at] if at < len(row) else "" for name, at in columns.items()}
-        result = cell.get("result", "")
-        final = converge_result(result)
-        rows.append({"task": cell.get("task", "").replace("`", "")[:40] or str(len(rows) + 1),
-                     "done_when": cell.get("done when", "").replace("`", "")[:200], "result": final,
-                     "fixed_after": final == "met" and converge_fixed(result)})
-        if len(rows) >= 500:
-            break
-    return rows
 
 
 def events_of(run: Path, last: int) -> dict[str, Any]:

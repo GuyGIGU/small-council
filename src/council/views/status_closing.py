@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from council.records import audit_file, paths, pushes
+from council.records import converge as final_check
 from council.records.cells import clean
-from council.views import snapshot
 from council.views.words import cut
 
 VERDICT_NAMES = (("confirmed", "CONFIRMED", "confirmed"), ("refuted", "REFUTED", "refuted"),
@@ -113,7 +113,7 @@ def closing_of(snap: dict[str, Any], run_path: Path, usage: dict[str, Any], chec
     held = pushes.pushes(Path(run_path).parent.parent)[0] if build else ""
     if build and not claims.get("expected", True):
         # A build checks tasks, not claims: its final check is the log's Converge table.
-        converge = snapshot.converge_of(run_path, run.get("deliverable", ""))
+        converge = final_check.read(run_path, run.get("deliverable", ""))
         verified, counts = converge_text(converge), None
     else:
         verified, counts = verified_of(claims)
