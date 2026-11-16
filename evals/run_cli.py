@@ -437,6 +437,15 @@ def runs_open(tmp):
     code, out, err = council(configured_memory, "status")
     check("status: a `Conventions:` key in capitals is no conventions key, so no configured file is sized",
           code == 0 and "project-memory.md" not in out, out + err)
+    lesson = ("# Memory\n## Proposed — awaiting the user's yes/no\n### F-1: a lesson\n**Failure:** f\n"
+              "### Notes about it\n<!-- ### F-8: commented -->\n```\n### F-9: an example\n```\n")
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- conventions: docs/small-memory.md\n")
+    write(os.path.join(configured_memory, "docs", "small-memory.md"), lesson)
+    code, out, err = council(configured_memory, "status")
+    check("status: drafted lessons are counted in the configured memory file, as the memory parser reads them — "
+          "a note, a commented heading and a fenced example are none",
+          code == 0 and "1 drafted lesson waits for your yes or no." in out, out + err)
     plan_path = os.path.join(run, "run-plan.tsv")
     check("run open: creates and stamps a versioned run plan",
           os.path.isfile(plan_path) and "plan-schema: 1" in st and "\t{{MODE}}\t" not in read(plan_path), read(plan_path) + st)

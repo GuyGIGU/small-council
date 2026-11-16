@@ -87,6 +87,16 @@ def oversized(path: str) -> int:
     return size if size > COUNCIL_MEMORY_SIZE_LIMIT else 0
 
 
+def proposals(home: str) -> int | None:
+    """How many proposals in the memory file await the user's yes/no (memory_entries.pending); None when there is
+    no memory file to read, or it is empty."""
+    data = paths.contents(where.native(locate(home).path))
+    if not data:
+        return None
+    text = bytewise.read(data)
+    return parsed.pending(text, parsed.parse(text).rows)
+
+
 def _rel(path: str, root: str) -> str:
     return path[len(root) + 1:] if path.startswith(root + "/") else path
 

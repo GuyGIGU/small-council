@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from council.records import cells, events as event_stream, gates as gate_files, plan as run_plan, state as run_state
-from council.records import usage
+from council.records import memory, usage
 from council.records.cells import clean, integer
 from council.records.paths import contained, linked, text_of
 from council.records.seats import corrections as corrections_of
@@ -255,22 +255,6 @@ def brief_names(snap: Snap) -> dict[str, str]:
     return cached
 
 
-def proposals_in(home: str | Path | None) -> int | None:
-    """How many entries wait under memory's ## Proposed section (### headings or - PROPOSED lines)."""
-    if not home:
-        return None
-    content = text_of(Path(home) / "conventions.md", home)
-    if not content:
-        return None
-    count, inside = 0, False
-    for line in content.splitlines():
-        if line.startswith("## "):
-            inside = line[3:].strip().lower().startswith("propos")
-        elif inside and (line.startswith("### ") or re.match(r"\s*-\s+PROPOSED\b", line)):
-            count += 1
-    return count
-
-
 def snapshot(run: str | Path, home: str | Path | None = None, last_events: int = 8) -> Snap:
     run = Path(run)
     state = header(run)
@@ -291,5 +275,5 @@ def snapshot(run: str | Path, home: str | Path | None = None, last_events: int =
         "repairs": repairs_of(run),
         "claims": claims_of(run, state.get("mode", "")),
         "events": events_of(run, last_events),
-        "memory": {"proposed": proposals_in(home)},
+        "memory": {"proposed": memory.proposals(Path(home).as_posix()) if home else None},
     }
