@@ -33,6 +33,10 @@ SIGNS = (
                               re.IGNORECASE)),
     ("looser expectation", re.compile(r"\b(?:approx|assertAlmostEqual|toBeCloseTo|isclose|allclose)\b|"
                                       r"\b(?:rtol|atol|tolerance|epsilon|places|delta)\s*=")),
+    ("workaround words", re.compile(r"(?<![a-z])work[-_ ]?arounds?(?![a-z])|(?<![a-z])hack(?:s|y)?(?![a-z])|"
+                                    r"\btemporar(?:y|ily)\b(?!\s+(?:files?|dir(?:ectory|ectories|s)?|folders?|copy))|"
+                                    r"\bfor\s+now\b|\buntil\b.*?\b(?:is|are|gets?|been)\s+fixed\b", re.IGNORECASE)),
+    ("todo", re.compile(r"\b(?:TODO|FIXME)\b|(?<![\w-])XXX(?![\w-])")),
 )
 
 
@@ -119,7 +123,8 @@ def _names(words: str, name: str) -> bool:
 
 def signs(found: list[diff.File]) -> list[Sign]:
     """Each added line of code (not a document) that retries, sleeps, catches everything, skips a test, sets a
-    time limit or loosens an expected value; and an assertion changed in place, which may have been loosened."""
+    time limit, loosens an expected value, says it is a workaround or for now, or leaves a TODO; and an assertion
+    changed in place, which may have been loosened."""
     out = []
     for file in found:
         if _doc(file.path):
