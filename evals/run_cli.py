@@ -481,6 +481,19 @@ def runs_open(tmp):
     code, out, err = council(repo, "run", "events", "show")
     check("run events show: renders the first event and its detail",
           code == 0 and "run.opened  run → council-review  (phase=convene)" in out, out + err)
+    # One rule on every OS (bytewise.records): a CR right before a newline is dropped, so a CRLF stream prints
+    # without CRs on Linux and macOS too (before, only Windows dropped them).
+    stream = os.path.join(run, "events.tsv")
+    with open(stream, "rb") as f:
+        lf_stream = f.read()
+    with open(stream, "wb") as f:
+        f.write(lf_stream.replace(b"\n", b"\r\n"))
+    shown = subprocess.run([BASH, CLI, "run", "events", "show"], cwd=repo, capture_output=True, env=GIT_ENV, timeout=120)
+    with open(stream, "wb") as f:
+        f.write(lf_stream)
+    check("run events show: a CRLF events.tsv is shown with no CR in its lines, on every OS",
+          shown.returncode == 0 and "run.opened  run → council-review  (phase=convene)\n".encode("utf-8") in shown.stdout
+          and b"\r" not in shown.stdout, repr(shown.stdout) + shown.stderr.decode("utf-8", "replace"))
     code, out, _ = council(repo, "run", "plan", "check")
     check("run plan check: the starter plan is intentionally incomplete", code == 1 and "replace the placeholder" in out, out)
     code, out, err = council(repo, "state", "phase=brief")
