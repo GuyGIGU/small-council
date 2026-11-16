@@ -1,7 +1,8 @@
 # Handover: the clean-behaviours step, from a Windows session to the cloud
 
 This branch (`claude/clean-handover`) is never merged and gets no PR. It carries what the next session
-needs. Delete it once the clean-behaviours PR has merged.
+needs. Do not delete it: the owner removes it after reading the night's plans. What comes after this
+step is in `handover/NIGHT-PLAN.md`.
 
 ## What the step is
 
