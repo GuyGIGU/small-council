@@ -6350,16 +6350,19 @@ def gates_revert_check(tmp):
     disk = {path: read(os.path.join(repo, path)) for path in ("src/calc.sh", "src/two.sh", "tests/test_two.sh")}
     code, out, err = council(repo, "check")
     lines = out.splitlines()
-    check("check: a change proof that fails with its task's rounds taken off stands, and says so in its row",
-          "task 1  proof  ok · test saved: tests/test_calc.sh · revert check: fails with task 1's rounds taken off "
-          "(exit 1), so the test shows the change" in out, out)
+    check("check: a change proof that passes in the copy with the change on (the control) and fails with its task's "
+          "rounds taken off stands, and says so in its row",
+          "task 1  proof  ok · test saved: tests/test_calc.sh · revert check: passes in a scratch copy with the change "
+          "on, fails with task 1's rounds taken off (exit 1), so the test shows the change" in out, out)
     check("check: a change proof that still passes with its task's rounds taken off is REVERT-PASSED, a problem "
           "naming the next step, and the check exits 1",
           code == 1 and "task 2  proof  REVERT-PASSED" in out and "after-2 still passes with task 2's rounds taken "
           "off (its tests kept)" in out and "run before-2 and after-2 again, then council check" in out
           and "| task 2 | proof | REVERT-PASSED |" in read(os.path.join(run, "check.md")), out + err)
-    check("check: the rerun's output is kept under gates/reverted/, and the project's files are as they were",
+    check("check: the control's and the rerun's outputs are kept under gates/reverted/, and the project's files are "
+          "as they were",
           os.path.isfile(os.path.join(run, "gates", "reverted", "after-1.txt"))
+          and os.path.isfile(os.path.join(run, "gates", "reverted", "after-1-with-change.txt"))
           and all(read(os.path.join(repo, path)) == text for path, text in disk.items())
           and not os.path.exists(os.path.join(run, "gates", "reverted", "after-1.json")), out)
     check("check: a build's receipt lines come just before the closing check: line, from the gate records",
@@ -6372,7 +6375,12 @@ def gates_revert_check(tmp):
     write(os.path.join(repo, "tests", "test_three.sh"), '[ "$(bash src/three.sh)" = two ] && echo "1 passed"\n')
     write(os.path.join(repo, "src", "three.sh"), "echo one\n")
     built(repo, run, 3, {"src/three.sh": "echo two\n"}, "tests/test_three.sh")
-    write(os.path.join(repo, "src", "three.sh"), "echo 3\n")                # changed after its round was saved
+    write(os.path.join(repo, "src", "three.sh"), "echo two  # since\n")    # changed after its round was saved
+    write(os.path.join(repo, ".gitignore"), "build/\n")
+    write(os.path.join(repo, "build", "value.txt"), "fixed\n")             # git ignores it: the copy leaves it out
+    write(os.path.join(repo, "tests", "test_five.sh"),
+          'grep -q fixed build/value.txt && grep -q five src/five.sh && echo "1 passed"\n')
+    built(repo, run, 5, {"src/five.sh": "echo five\n"}, "tests/test_five.sh")
     write(os.path.join(run, "gates", "before-4.json"), '{"gate": "before-4", "command": "bash tests/test_calc.sh", '
           '"exit": 1, "seconds": 1, "when": "2026-09-16 10:00:00"}\n')
     write(os.path.join(run, "gates", "after-4.json"), '{"gate": "after-4", "command": "bash tests/test_calc.sh", '
@@ -6384,8 +6392,15 @@ def gates_revert_check(tmp):
           "files on disk cleanly: src/three.sh" in out, out)
     check("check: a task with no saved round is not rerun, and its row reads as before",
           "task 4  proof  ok · test saved: tests/test_calc.sh\n" in out, out)
-    check("check: Not proved names the revert check that couldn't be made and the gates run on other files",
+    check("check: a check that reads a file git ignores passes in the project, but not in the copy with the change "
+          "on (the control), so the revert check is not made and no round comes off",
+          "task 5  proof  ok · test saved: tests/test_five.sh · revert check not made: the check doesn't pass in a "
+          "scratch copy even with the change on (exit 2) — it needs files the copy leaves out" in out
+          and not os.path.exists(os.path.join(run, "gates", "reverted", "after-5.txt")), out)
+    check("check: Not proved names the revert checks that couldn't be made and the gates run on other files",
           "task 3's revert check: round 1 does not come off the files on disk cleanly: src/three.sh"
+          in line_of(out, "Not proved:")
+          and "task 5's revert check: the check doesn't pass in a scratch copy even with the change on (exit 2)"
           in line_of(out, "Not proved:")
           and "gate unit: ran on other files than those on disk now (tree " in line_of(out, "Not proved:"), out)
     review = small_council_repo(tmp, "revert-review", "")

@@ -171,19 +171,24 @@ Proof cell; a saved test note establishes its file exists, not that its assertio
 | `REVERT-PASSED` | The change check still passes with the task's saved rounds taken off: it does not show the change. Make it fail without the change, then run the pair and `council check` again. |
 
 **The revert check.** For each change proof that reads `ok`, of a task with saved rounds
-(`council patch save`), `council check` runs the check once more without the change. It copies the
-files on disk (what `git` tracks or could, `.council/` and ignored files left out) to a scratch folder
-outside the project and the run folder, takes the task's rounds off there, newest first, with the same
-reverse-apply as `council patch revert`, and runs the after-check's recorded command there under the
-gate time limit. The task's test files stay as they are, so the test that proved the change is the
-one that runs. The scratch folder is removed afterwards; the project's files never change. The rerun's
-output is kept as `gates/reverted/after-<n>.txt`.
+(`council patch save`), `council check` runs the check once more without the change. It writes the
+files on disk (what `git` tracks or could, as git holds them; `.council/` and ignored files left out)
+to a scratch folder outside the project and the run folder, and runs the after-check's recorded
+command there under the gate time limit, first with the change still on: the control. It must pass
+there; if it doesn't, the check needs files the copy leaves out, and nothing more is tried. Then the
+task's rounds come off, newest first, with the same reverse-apply as `council patch revert`, and the
+command runs again. The task's test files stay as they are when its rounds come off: the round that
+added or extended the test is the same round as the fix, and taking the test off with it would run an
+older test, or none, instead of the one that proved the change. The scratch folder is removed
+afterwards; the project's files never change. The outputs are kept as
+`gates/reverted/after-<n>-with-change.txt` (the control) and `gates/reverted/after-<n>.txt`.
 
-- It fails: the proof stands, and the row says so.
+- It fails with the rounds off: the proof stands, and the row says so.
 - It still passes: `REVERT-PASSED`, a broken proof, and `council check` exits 1.
-- It can't be made: a round doesn't come off the files on disk cleanly, the files can't be copied,
-  the command runs files under `.council/`, or the rerun timed out, never ran or ran no test. The row
-  says why, and it is neither a pass nor a problem: it goes under `Not proved:`.
+- It can't be made: the control doesn't pass in the copy, a round doesn't come off the files on disk
+  cleanly, the files can't be copied, the command runs files under `.council/`, or a run timed out,
+  never ran or ran no test. The row says why, and it is neither a pass nor a problem: it goes under
+  `Not proved:`.
 
 A preservation proof, a proof that is not `ok` and a task with no saved round are not rerun.
 
