@@ -3993,7 +3993,10 @@ def runs_map_touch(tmp):
                         (("map", "touch", "src/=", "docs/=x"),
                          "the line for src/ is empty — give one line, in the user's words: council map touch "
                          "src/=\"<line>\""),
+                        # On Windows Git Bash hands the helper a native command line, where a newline separates
+                        # words: the helper gets src/=a and b, and refuses b as no pair (the map is unchanged either way)
                         (("map", "touch", "src/=a\nb"),
+                         "map touch takes <dir>=\"<line>\" pairs, and 'b' isn't one" if os.name == "nt" else
                          "the line for src/ spans more than one line — give it as one: council map touch src/=\"<line>\""),
                         (("map", "touch", "nope/=x"), "nope/ is not a top-level area of this repo — name a top-level "
                                                       "folder (src/) or a root file, as council map status lists them: "
