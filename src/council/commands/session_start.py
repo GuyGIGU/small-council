@@ -10,9 +10,8 @@ import time
 
 from council import git
 from council.commands import cli, doctor_hooks
-from council.records import hook_marks, memory, memory_entries, paths, runs, sharing, state
+from council.records import hook_marks, memory, paths, runs, sharing, state
 from council.records import home as where
-from council.records.bytewise import text as bytewise
 
 MORE = "were running when that session ended (they are gone — re-dispatch each once if you resume)"
 RUN_LINES = {   # one open run of this tree's or this session's, by what it is to this session
@@ -152,8 +151,7 @@ def _memory(home: str) -> None:
         cli.say("- A second memory file, %s, holds %d entries the council never reads: tell the user, and merge them "
                 "or point the '- conventions:' line under ## Memory in council.config.md at the one to keep."
                 % (found.alt, found.alt_n))
-    text = bytewise(_text(found.path) or "")             # C-locale text, as the hook's grep and awk read it
-    pending = memory_entries.pending(text, memory_entries.parse(text).rows)
+    pending = memory.proposals(home)
     if pending:
         cli.say("- %d memory proposal(s) in that file await the user's yes/no. Raise them at a natural pause."
                 % pending)
