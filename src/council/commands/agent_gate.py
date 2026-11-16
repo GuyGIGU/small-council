@@ -137,7 +137,7 @@ def stops(tool: str, here: Where) -> list[tuple[str, str]]:
         session = run.session or "-"
         if here.session and session == here.session:
             own = True
-        elif (not here.session or session == "-") and run.code_root in (here.tree, "", "-"):
+        elif (not here.session or session == "-") and runs.here(run.code_root, here.tree):
             own = False
         else:
             continue

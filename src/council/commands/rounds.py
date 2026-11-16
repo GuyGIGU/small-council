@@ -10,7 +10,7 @@ from pathlib import Path
 
 from council import clock
 from council.commands import resolve
-from council.records import config, events, seats, state
+from council.records import cells, config, events, seats, state
 
 RECHECK = re.compile(r"verify-.+[b-z]")
 
@@ -24,12 +24,6 @@ def _stream(run: Path) -> list[list[str]] | None:
 
 def _cell(row: list[str], n: int) -> str:
     return row[n] if len(row) > n else ""
-
-
-def _number(text: str) -> float:
-    """A cell as awk reads it in arithmetic: its leading number, else 0."""
-    found = re.match(r"[ \t]*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)", text)
-    return float(found.group(0)) if found else 0.0
 
 
 def local_minute(at: str) -> str:
@@ -74,7 +68,8 @@ def check_round(run: Path, slug: str) -> str | None:
     if verdicts < 2:
         return None
     if verdicts == 2 and any(_cell(row, 3) == "seat.updated" and _cell(row, 4).startswith("diagnose-")
-                             and _number(_cell(row, 1)) > _number(seq) and _cell(row, 5) not in ("queued", "skipped")
+                             and cells.leading(_cell(row, 1)) > cells.leading(seq)
+                             and _cell(row, 5) not in ("queued", "skipped")
                              for row in stream):
         return None
     if decisions_since(run, local_minute(at)) != 0:

@@ -39,15 +39,10 @@ def tool_calls(run: Path, slug: str) -> str:
 
 
 def tool_budget(run: Path, slug: str) -> str:
-    """The plan's tool-call budget for the seat (its last `budget <slug> tool-calls <n>` row), or ''."""
-    found = ""
-    for row in _lines(plan.path(run), Path(run)):
-        if len(row) > 3 and row[:3] == ["budget", slug, "tool-calls"] and re.fullmatch(r"[0-9]+", row[3]):
-            found = row[3]
-    return found
+    """The plan's tool-call budget for the seat (its first `budget <slug> tool-calls <n>` row), or ''."""
+    return plan.budget(Path(run), "tool-calls", slug)
 
 
 def is_verifier(run: Path, slug: str) -> bool:
     """The plan names the seat a verifier (`seat <slug> role verifier`): a Challenge verifier writes no seat file."""
-    return any(len(row) > 3 and row[:4] == ["seat", slug, "role", "verifier"]
-               for row in _lines(plan.path(run), Path(run)))
+    return plan.keyed(plan.text(Path(run))).get(("seat", slug, "role")) == "verifier"

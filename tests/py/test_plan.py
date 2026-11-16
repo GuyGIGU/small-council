@@ -35,15 +35,15 @@ class PlanTest(support.Scratch):
         self.assertEqual(summary["seats"]["hunt"], {"role": "worker", "disposition": "selected",
                                                     "reason": "it owns the change", "context": "focused"})
 
-    def test_budget_takes_the_last_row_without_spaces(self) -> None:
-        self.assertEqual(plan.budget(self.run, "agent-cap"), "6")
+    def test_budget_takes_the_first_row_trimmed(self) -> None:
+        self.assertEqual(plan.budget(self.run, "agent-cap"), "8")
         self.assertEqual(plan.budget(self.run, "token-ceiling"), "")
         self.assertEqual(plan.budget(self.tmp, "agent-cap"), "")
 
     def test_keyed(self) -> None:
         keyed = plan.keyed(plan.text(self.run))
-        self.assertEqual(keyed[("verification", "run", "level")], "self")
-        self.assertEqual(keyed[("budget", "run", "agent-cap")], "6")
+        self.assertEqual(keyed[("verification", "run", "level")], "SELF")     # as written: never lower-cased
+        self.assertEqual(keyed[("budget", "run", "agent-cap")], "8")          # the first row wins
         self.assertEqual(plan.text(self.run, read=lambda path: None), "")
 
     def test_keyed_reads_lines_as_summary_does(self) -> None:
@@ -51,6 +51,17 @@ class PlanTest(support.Scratch):
         content = "seat\thunt\tnote\tw\tfirst\u2028budget\trun\tagent-cap\t3\t-\n"
         self.assertNotIn(("budget", "run", "agent-cap"), plan.keyed(content))
         self.assertEqual(plan.keyed(content)[("seat", "hunt", "note")], "w")
+
+    def test_one_rule_for_every_reader(self) -> None:
+        # A value is trimmed of spaces and tabs only, the first row of a key wins, and a budget is plain digits.
+        (self.run / "run-plan.tsv").write_bytes(b"budget\trun\tagent-cap\t1 0\t-\r\nbudget\trun\tagent-cap\t5\n"
+                                                b"seat\tHunt\tdisposition\t selected \t-\n"
+                                                b"seat\tHunt\tdisposition\tskipped\n"
+                                                b"seat\tv\trole\t\xc2\xa0verifier\n")
+        self.assertEqual(plan.budget(self.run, "agent-cap"), "")
+        self.assertTrue(plan.selected(self.run, "Hunt"))
+        self.assertFalse(plan.selected(self.run, "hunt"))
+        self.assertEqual(plan.keyed(plan.text(self.run))[("seat", "v", "role")], " verifier")
 
 
 if __name__ == "__main__":

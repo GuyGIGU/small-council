@@ -99,6 +99,9 @@ class StagesTest(Spine):
         self.assertEqual(stages.skipped(self.run, "prepare", "judge"), ["assign", "brief", "work", "collect"])
         self.plan("seat\thunt\trole\tworker", "seat\thunt\tdisposition\tselected", "run\trun\tsize\tsolo")
         self.assertEqual(stages.skipped(self.run, "prepare", "deliver"), ["judge", "challenge"])
+        self.plan("seat\thunt\trole\tworker", "seat\thunt\tdisposition\tselected", "run\trun\tsize\tsolo",
+                  "run\trun\tsize\tfull")                                           # the first row of a key wins
+        self.assertEqual(stages.required(self.run), stages.SHORT.split())  # noqa: SIM905
         self.assertEqual(stages.skipped(self.run, "deliver", "prepare"), [])
         self.assertEqual(stages.skipped(self.run, "my-step", "learn"), [])
         self.assertEqual((stages.rank("build"), stages.next_text("build"), stages.rank("x")),

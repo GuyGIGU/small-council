@@ -143,11 +143,6 @@ def artifact(path: Path, limit: int, required: bool = True) -> bytes | None:
     return path.read_bytes()
 
 
-def universal(text: str) -> str:
-    """Text with every line ending made a newline, as Python's text mode reads a file."""
-    return text.replace("\r\n", "\n").replace("\r", "\n")
-
-
 # --- writing ----------------------------------------------------------------------------------------------
 def current_umask() -> int:
     """This process's umask (read by setting it and putting it back)."""

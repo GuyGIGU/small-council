@@ -1574,13 +1574,30 @@ def agent_stop(tmp):
     code, out, err = council(rep, "seat", "beck", "done", "tokens=60000")
     check("seat: a different figure with no agent id is another agent run, and adds", "~140k tokens so far" in out
           and "not counted again" not in err, out + err)
-    absurd = new_repo(tmp, "agent-stop-absurd")        # a cap bash can't compare: the gate never fails closed
-    write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n")
+    absurd = new_repo(tmp, "agent-stop-absurd")        # a cap past 12 digits is no number: the configured cap holds
+    write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n- agent cap: 3\n")
     _, absurd_run, _ = council(absurd, "run", "open", "council-review")
-    append(os.path.join(absurd_run.strip(), "run-plan.tsv"), "budget\trun\tagent-cap\t99999999999999999999999\tunreadable\n")
+    absurd_plan = os.path.join(absurd_run.strip(), "run-plan.tsv")
+    write(absurd_plan, read(absurd_plan).replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t99999999999999999999999"))
     council(absurd, "seat", "w1", "done", "agent=a1", "tokens=5000")
     code, out, err = council(absurd, "cap", "check")
-    check("cap check: a cap too large to compare never stops an agent — exit 0", code == 0 and not out, out + err)
+    code2, out2, err2 = council(absurd, "cap")
+    check("cap check: a plan cap past 12 digits is not a number, so the configured cap (3) holds — exit 0 at 1 of 3",
+          code == 0 and not out and "1 of 3 agent runs used" in out2, out + err + out2 + err2)
+    # One way to read a plan row: lines end at LF (CRs before it cut), a value is trimmed of blanks at its ends
+    # only, and the first row of a repeated key wins, in every reader (the cap, the seat's tool budget).
+    rowsr = new_repo(tmp, "plan-row-rule")
+    write(os.path.join(rowsr, ".council", "council.config.md"), "# Council config\n- agent cap: 9\n")
+    _, rows_run, _ = council(rowsr, "run", "open", "council-review")
+    with open(os.path.join(rows_run.strip(), "run-plan.tsv"), "wb") as f:
+        f.write(b"kind\tid\tfield\tvalue\treason\r\nbudget\trun\tagent-cap\t 2 \tfirst\r\n"
+                b"budget\trun\tagent-cap\t7\tlater\r\nbudget\trun\testimated-tokens\t1 000\tan inner blank\r\n"
+                b"budget\thunt\ttool-calls\t3\tfirst\r\nbudget\thunt\ttool-calls\t30\tlater\r\n")
+    code, out, err = council(rowsr, "seat", "hunt", "done", "agent=a1", "tokens=5000")
+    code2, out2, err2 = council(rowsr, "cap")
+    check("plan rows: a CRLF plan's first agent-cap and tool budget win, trimmed; '1 000' is no estimate",
+          code == 0 and "tool budget of 3\n" in err and "1 of 2 agent runs used" in out2
+          and "run.estimate_passed" not in read(os.path.join(rows_run.strip(), "events.tsv")), out + err + out2 + err2)
 
 @part("runs")
 def runs_memory(tmp):
@@ -3244,6 +3261,22 @@ def runs_worktrees_close_and_find(tmp):
     check("home: a linked worktree uses the main checkout's council", slash(out).lower().endswith("/repo/.council"), out)
     code, out, _ = council(wt, "run", "status")
     check("run status: runs from the main checkout show as elsewhere in a worktree", "elsewhere:" in out, out)
+    # One test of "this run is on this tree": its code-root is this tree, blank or '-' (runs.here), everywhere.
+    dash = new_repo(tmp, "code-root-dash")
+    write(os.path.join(dash, ".council", "council.config.md"), "# Council config\n")
+    _, dash_run, _ = council(dash, "run", "open", "council-review")
+    dash_state = os.path.join(dash_run.strip(), "session-state.md")
+    write(dash_state, re.sub(r"(?m)^code-root: .*$", "code-root: -", read(dash_state)))
+    code, out, _ = council(dash, "run", "status")
+    code2, out2, err2 = council(dash, "run", "open", "council-plan")
+    check("run status: a run whose code-root is '-' is here, as every other reader takes it",
+          code == 0 and " · here" in out and "elsewhere" not in out and code2 == 2 and "already in progress" in err2,
+          out + out2 + err2)
+    # A run's fields are its state's header: a status line under a heading never opens a run.
+    write(dash_state, read(dash_state).replace("status: in-progress", "status: complete") + "## Notes\nstatus: paused\n")
+    code, out, _ = council(dash, "run", "status")
+    check("run status: a status line below the state's first heading does not make a run open",
+          code == 0 and "no open council runs" in out, out)
 
     # A bare repository with worktrees: the council lives in the worktree that holds the config
     bsrc = new_repo(tmp, "bare-src")
@@ -3420,6 +3453,14 @@ def runs_worktrees_close_and_find(tmp):
     check("ledger: 'from: a#1, #2', 'b#1,2', 'a#3 and b#3', a title holding 'from:', and verdicts as written all count",
           re.search(r"^hunt\s+1\s+4\s+4\s+0\s+4\s+30\s+0%", out, re.MULTILINE) is not None
           and re.search(r"^beck\s+1\s+3\s+3\s+0\s+3\s+20\s+0%", out, re.MULTILINE) is not None, out)
+    # A count is plain ASCII digits, 12 at most: a hand-edited cell such as 1e3, 5abc, +2 or -1 is no number.
+    led_file = os.path.join(led, ".council", "ledger.tsv")
+    led_before = read(led_file)
+    append(led_file, "2026-01-01\thand-edit\tcouncil-review\thunt\t1e3\t5abc\t+2\t-1\t-\t2\n")
+    code, out, _ = council(led, "ledger")
+    check("ledger: a cell that is not plain digits counts as nothing (1e3, 5abc, +2, -1)",
+          re.search(r"^hunt\s+2\s+4\s+4\s+0\s+4\s", out, re.MULTILINE) is not None, out)
+    write(led_file, led_before)
 
     # Provenance as models write it: "hunt #1" with a blank, "beck 1, 3", a slash between two seats,
     # a bracketed note that names another seat, and a "from:" introduced by a dash or a bracket. Each
@@ -3532,6 +3573,16 @@ def runs_worktrees_close_and_find(tmp):
           code == 0 and "phase prepare · paused" in out and os.path.basename(bomrun.strip()) in out
           and not body.startswith("﻿") and body.count("status:") == 1 and "status: paused" in body,
           out + err + body)
+    # A CR right before a newline is dropped as the file is read, on every OS: a CRLF state comes back all LF.
+    with open(bom_state, "rb") as f:
+        crlf = f.read().replace(b"\n", b"\r\n")
+    with open(bom_state, "wb") as f:
+        f.write(crlf)
+    code, out, err = council(bom, "state", "focus=one rule for line ends", "--run", bomrun)
+    with open(bom_state, "rb") as f:
+        body = f.read()
+    check("state: a CRLF state file is rewritten with LF line ends, on every OS",
+          code == 0 and b"\r" not in body and b"focus: one rule for line ends\n" in body, out + err + repr(body))
 
     # --run as a Windows path (backslashes, a trailing one) names the same run as its folder name
     wp = new_repo(tmp, "winpath")
@@ -6654,6 +6705,25 @@ def requests_war_room(tmp):
 
 @part("filing")
 def close_claim_index(tmp):
+    # Only LF ends a line of synthesis.md and a verify file: a bare CR or a form feed inside a claim is text.
+    lf = new_repo(tmp, "lf-only-claims")
+    write(os.path.join(lf, ".council", "council.config.md"), "# Council config\n")
+    _, lf_run, _ = council(lf, "run", "open", "council-review")
+    lf_run = lf_run.strip()
+    write(os.path.join(lf_run, "seats", "hunt.md"), "# Hunt\n## Index\n3 · P1 · Principle 1 · a.txt:1 · Expiry\n")
+    with open(os.path.join(lf_run, "synthesis.md"), "wb") as f:
+        f.write("# Synthesis\n## Kept\n1 · P1 · Principle 1 · a.txt:1 · Expiry\rskipped · state: OBSERVED · "
+                "from: hunt#3\n## Cut\n(none)\n".encode())
+    with open(os.path.join(lf_run, "verify-1.md"), "wb") as f:
+        f.write("# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+                "| 1 | Expiry | CONFIRMED | a.txt:1\x0cmore |\r\n".encode())
+    code, out, err = council(lf, "evidence", "build", "--run", lf_run)
+    index = [json.loads(line) for line in read(os.path.join(lf_run, "claims.jsonl")).split("\n") if line]
+    check("evidence build: a bare CR or a form feed does not end a line — one claim, its verdict linked",
+          code == 0 and len(index) == 1 and index[0]["claim"] == "Expiry\rskipped"
+          and index[0]["verification"][0]["evidence"] == "a.txt:1\x0cmore"
+          and index[0]["verification"][0]["ref"] == "verify-1.md:4", out + err + str(index))
+    council(lf, "run", "close", "--status", "abandoned")
     # Closing a synthesis run warns about an absent or outdated claim index without rebuilding it.
     stale_repo = new_repo(tmp, "stale-claims")
     write(os.path.join(stale_repo, ".council", "council.config.md"), "# Council config\n")

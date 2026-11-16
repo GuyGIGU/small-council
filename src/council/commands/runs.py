@@ -31,7 +31,7 @@ def status(every: bool) -> int:
     tree = where.this_tree()
     others, shown = [], 0
     for run in listed:
-        here = run.code_root in (tree, "")
+        here = runs.here(run.code_root, tree)
         line = "%s · %s · phase %s · %s · updated %s · %s" % (
             run.folder.split("/")[-1], *(value or "-" for value in (run.mode, run.phase, run.status, run.updated)),
             "here" if here else "elsewhere: " + run.code_root)

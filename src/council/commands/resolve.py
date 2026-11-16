@@ -81,12 +81,12 @@ def is_run(folder: str) -> bool:
 def open_runs(home: str, tree: str, status: str = "") -> list[str]:
     """The open runs on this working tree (runs_here), of this status when given; no code-root counts as here."""
     return [run.folder for run in runs.listing(home, 1000000, "open")
-            if run.code_root in (tree, "", "-") and status in ("", run.status)]
+            if runs.here(run.code_root, tree) and status in ("", run.status)]
 
 
 def newest_run(home: str, tree: str) -> str:
     """The newest run of any status on this working tree ('' when none): run audit's run when none is open."""
-    return next((run.folder for run in runs.listing(home, 1000000, "all") if run.code_root in (tree, "", "-")), "")
+    return next((run.folder for run in runs.listing(home, 1000000, "all") if runs.here(run.code_root, tree)), "")
 
 
 def session_runs(home: str, session: str) -> list[str]:

@@ -2,7 +2,6 @@
 stamp and areas, the ledger's cells as awk read them, a filed request's sections, and the one-line fields."""
 from __future__ import annotations
 
-import os
 import unittest
 
 import support
@@ -42,17 +41,18 @@ class MapTest(support.Scratch):
 
 
 class LedgerTest(support.Scratch):
-    def test_cells_as_awk_reads_them(self) -> None:
-        self.assertEqual([ledger_command.number(c) for c in ("12abc", "-3.5", "x", "")], [12.0, -3.5, 0.0, 0.0])
-        self.assertEqual([ledger_command.above_zero(c) for c in ("1", "0", "x", "-1", "")],
-                         [True, False, True, False, False])
+    def test_a_cell_that_is_not_a_number_adds_nothing(self) -> None:
+        rows = [["date", "run", "mode", "seat", "raised", "kept", "cut", "refuted", "tokens", "basis"],
+                ["d", "r1", "m", "hunt", "12abc", "1e3", "", "", "", ""],
+                ["d", "r1", "m", "beck", "x", "2", "", "", "", ""]]
+        lines = ledger_command.Table(rows, 10).lines()
+        self.assertEqual(lines[1].split(), ["hunt", "1", "0", "0", "0", "0", "-", "-"])
+        self.assertFalse(any(line.startswith("raised counts every run") for line in lines))  # "x" is not above 0
 
     def test_raw_rows_keep_the_header_and_every_line(self) -> None:
         self.assertIsNone(ledger.raw_rows(self.tmp))
         self.write("ledger.tsv", b"date\trun\tseat\r\n2026\tr1\thunt\r\n\r\nx\n", binary=True)
-        cr = "" if os.name == "nt" else "\r"           # Git Bash's awk read a CR LF as LF
-        self.assertEqual(ledger.raw_rows(self.tmp), [["date", "run", "seat" + cr], ["2026", "r1", "hunt" + cr],
-                                                     [cr], ["x"]])
+        self.assertEqual(ledger.raw_rows(self.tmp), [["date", "run", "seat"], ["2026", "r1", "hunt"], [""], ["x"]])
 
 
 class RequestTest(support.Scratch):

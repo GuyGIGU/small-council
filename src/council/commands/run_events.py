@@ -47,9 +47,8 @@ def show(run: Path) -> int:
         content = file.read_bytes().decode("utf-8", "surrogateescape")
     finally:
         released = locks.release(lock)
-    if os.name == "nt":                                   # Git Bash's awk reads in text mode
-        content = content.replace("\r\n", "\n")
-    rows = content.split("\n")[1:]                         # a checked stream ends in a newline: no row after it
+    rows = content.replace("\r\n", "\n").split("\n")[1:]   # a CR before a newline goes, on every OS; a checked
+                                                           # stream ends in a newline: no row after it
     for line in rows[:-1]:
         c = (line.split("\t") + [""] * 7)[:7]
         cli.say("%s  %s  %s  %s → %s  (%s)" % tuple(c[1:]))

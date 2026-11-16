@@ -15,7 +15,7 @@ from typing import Any
 
 from council.records import events as event_stream
 from council.records import gates as gate_files
-from council.records import paths
+from council.records import bytewise, cells, paths
 from council.records import state as run_state
 
 SCHEMA = 1
@@ -123,7 +123,7 @@ def load_ledger(run: Path) -> list[dict[str, Any]]:
     if data is None:
         return []
     rows = []
-    for number, line in enumerate(decode(data, "repairs.jsonl").splitlines(), 1):
+    for number, line in enumerate(bytewise.records(decode(data, "repairs.jsonl")), 1):    # only LF ends a line
         try:
             row = json.loads(line)
         except ValueError as exc:
@@ -307,7 +307,7 @@ def allowances(run: Path) -> set[tuple[str, str]]:
     data = artifact(run / "repair-allowances.tsv", required=False)
     if data is None:
         return set()
-    rows = [line.split("\t") for line in decode(data, "repair-allowances.tsv").splitlines()[1:]]
+    rows = cells.tab_rows(decode(data, "repair-allowances.tsv"))[1:]
     return {(cells[1], cells[3]) for cells in rows if len(cells) >= 5}
 
 
