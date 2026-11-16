@@ -41,9 +41,11 @@ def start_refusal(run: Path, slug: str) -> str | None:
 
 def missing_report(run: Path, slug: str, note: str) -> str:
     """The report a done build seat still lacks (report-<n>.md, empty or not there); '' when it is there, when the
-    builder stopped with a NEEDS: line (it writes no round), or when <slug> is no build seat."""
+    builder stopped with a NEEDS: line (it writes no round) — given now, or kept on a seat already done with it, so a
+    late usage report on the stop needs no report — or when <slug> is no build seat."""
     task = task_of(run, slug)
-    if task is None or note.startswith("NEEDS:"):
+    kept = seat_rows.cell(run, slug, "note") if seat_rows.cell(run, slug, "state") == "done" else ""
+    if task is None or (note or kept).startswith("NEEDS:"):
         return ""
     file = report_head.report(run, task)
     return "" if file.is_file() and file.stat().st_size > 0 else file.as_posix()

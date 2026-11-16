@@ -8126,6 +8126,50 @@ def runs_build_seat(tmp):
 
 
 @part("lifecycle")
+def runs_needs_note_ends(tmp):
+    # A NEEDS: note on a seat ends when the seat has run again and is recorded done with no note: before, the note
+    # outlived its rerun, so seats.tsv, council tree and the pack showed a stop the builder had since got past.
+    nn = new_repo(tmp, "needs-note")
+    write(os.path.join(nn, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    _, out, _ = council(nn, "run", "open", "council-implement", env=session("sQ"))
+    nrun = out.strip().splitlines()[-1]
+    write_plan(nrun, selected=("task-1", "task-2", "task-3", "task-4"))
+    note = lambda slug: (row(read(os.path.join(nrun, "seats.tsv")), slug).split("\t") + [""] * 6)[5]  # noqa: E731
+    ask = "NEEDS: which table holds the key?"
+    council(nn, "seat", "task-1", "running", "agent=e1")
+    council(nn, "seat", "task-1", "done", "tokens=20000", "note=" + ask)
+    code, out, err = council(nn, "seat", "task-1", "done", "agent=e1", "tokens=21000")
+    check("seat: a late usage report on a NEEDS: stop (done, then done with no note) is taken with no report file, "
+          "and keeps the note", code == 0 and note("task-1") == ask, out + err)
+    council(nn, "seat", "task-1", "queued")
+    queued = note("task-1")
+    council(nn, "seat", "task-1", "running", "agent=e2")
+    check("seat: the note stays through the restart itself (done, then queued, then running), so the builder sent "
+          "again still sees its stop", queued == ask and note("task-1") == ask, queued + " / " + note("task-1"))
+    write(os.path.join(nrun, "report-1.md"), "Cause: none\n")
+    code, out, err = council(nn, "seat", "task-1", "done", "agent=e2", "tokens=20000")
+    check("seat: the seat that ran again, recorded done with no note, drops its NEEDS: note — read back from seats.tsv",
+          code == 0 and note("task-1") == "" and row(read(os.path.join(nrun, "seats.tsv")), "task-1")
+          .startswith("task-1\tdone\te2\t"), out + err + read(os.path.join(nrun, "seats.tsv")))
+    council(nn, "seat", "task-2", "running", "agent=e3")
+    council(nn, "seat", "task-2", "done", "tokens=20000", "note=NEEDS: first?")
+    council(nn, "seat", "task-2", "running", "agent=e4")
+    council(nn, "seat", "task-2", "done", "tokens=20000", "note=NEEDS: second?")
+    check("seat: a new note= replaces a NEEDS: note, as before", note("task-2") == "NEEDS: second?", note("task-2"))
+    write(os.path.join(nrun, "report-3.md"), "Cause: none\n")
+    council(nn, "seat", "task-3", "running", "agent=e5", "note=slow start")
+    council(nn, "seat", "task-3", "done", "tokens=20000")
+    check("seat: a note that doesn't start NEEDS: is kept through done, as before", note("task-3") == "slow start",
+          note("task-3"))
+    council(nn, "seat", "task-4", "running", "agent=e6")
+    council(nn, "seat", "task-4", "done", "tokens=20000", "note=NEEDS: which cache?")
+    council(nn, "seat", "task-4", "running", "agent=e7")
+    council(nn, "seat", "task-4", "blocked", "tokens=20000")
+    check("seat: a seat that ran again and ends blocked keeps its NEEDS: note, as before",
+          note("task-4") == "NEEDS: which cache?", note("task-4"))
+
+
+@part("lifecycle")
 def runs_status_card_owed_once(tmp):
     # The run's first status card is owed once per run, at its first dispatch: the helper marks it due, any
     # council status call for the run clears it, and the turn-end hook sends the Chair back once while it is due.

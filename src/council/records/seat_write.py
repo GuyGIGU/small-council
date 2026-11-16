@@ -93,8 +93,15 @@ def rewrite(run: Path, slug: str, new: dict[str, str]) -> None:
 def _row(cells: list[str], new: dict[str, str]) -> list[str]:
     c = cells + [""] * 8
     head = [c[0], new["state"], new["agent"] or c[2]]
+    note = new["note"] or ("" if _rerun_done(c, new) else c[5])
     if len(cells) >= 8 and c[7] != "":
-        return head + [new["total"], new["updated"], new["note"] or c[5], new["agents"], new["reported"]]
+        return head + [new["total"], new["updated"], note, new["agents"], new["reported"]]
     agents = (1 if c[6] == "" else leading(c[6])) + bool(new["agent"] and c[2] and new["agent"] != c[2])
     tokens = str(leading(c[3]) + int(new["tokens"])) if new["tokens"] else c[3]
-    return head + [tokens, new["updated"], new["note"] or c[5], str(agents)]
+    return head + [tokens, new["updated"], note, str(agents)]
+
+
+def _rerun_done(c: list[str], new: dict[str, str]) -> bool:
+    """A NEEDS: note ends when its seat, started again (queued or running), is recorded done with no note: the
+    stop it named was the earlier run's. A late usage report on the stop itself (done to done) keeps it."""
+    return new["state"] == "done" and c[1] in ("queued", "running") and c[5].startswith("NEEDS:")
