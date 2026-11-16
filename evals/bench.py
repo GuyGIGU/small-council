@@ -53,6 +53,7 @@ SUITE = ROOT / "evals" / "suite"
 BENCH = ROOT / "evals" / "bench"
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 sys.path.insert(0, str(ROOT / "src"))
+from council.commands import build_seat  # noqa: E402
 from council.records import home as council_homes, runs as council_runs, usage as council_usage  # noqa: E402
 RUN_SCHEMA = "council.bench-run/1"
 ARMS = ("with", "without", "builder", "chair")
@@ -64,7 +65,6 @@ PAIRS = {"plugin": ("with", "without", "Small Council", "Small Council (with) vs
 CHAIR_LINE = ("Build every task yourself, in this session: start no builder agent for it. "
               "Check the work as you otherwise would.")
 FIRST_SENTENCE = re.compile(r"Build the plan in \S+\.md\.")
-BUILD_SEAT = re.compile(r"task-[0-9]+")          # a build seat's slug (D42: task-<n>, council-implement runs)
 MAX_RUNS = 200                                   # build runs read in one kept project
 HIDDEN_SCHEMA = "council.bench-hidden/1"
 BOOKKEEPING = (".git/**", ".council/**", "**/__pycache__/**", "**/*.pyc", ".pytest_cache/**")
@@ -435,7 +435,7 @@ def role_tokens(repo):
         return roles
     seats = [seat for folder in folders for seat in council_usage.seat_list(folder)]
     ran = [seat for seat in seats if seat["executed"]]
-    builders = [seat for seat in ran if BUILD_SEAT.fullmatch(seat["slug"])]
+    builders = [seat for seat in ran if build_seat.SEAT.fullmatch(seat["slug"])]
     totals = council_usage.usage_totals(seats)["tokens"]
     roles.update(basis=totals["basis"], builder_seats=len(builders),
                  verifier_seats=sum(seat["slug"].startswith("verify-") for seat in ran))

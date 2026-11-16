@@ -61,7 +61,7 @@ DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 
 # 1. Layout
 for path in [(".claude-plugin", "plugin.json"), (".claude-plugin", "marketplace.json"), ("bin", "council"),
-             ("agents", "council-worker.md"), ("agents", "council-verifier.md"),
+             ("agents", "council-worker.md"), ("agents", "council-verifier.md"), ("agents", "council-builder.md"),
              ("hooks", "hooks.json"), ("hooks", "session-start.sh"), ("hooks", "seat-gate.sh"), ("hooks", "agent-gate.sh"),
              ("hooks", "bash-gate.sh"),
              ("references", "templates", "run-plan.tsv"),
@@ -109,6 +109,7 @@ core = skill["context-core"]
 helper_reference = read("references", "run", "helper-commands.md")
 doctrine = {d: read("references", "doctrine", d) for d in DOCTRINE}
 worker, verifier = read("agents", "council-worker.md"), read("agents", "council-verifier.md")
+builder = read("agents", "council-builder.md")           # the build task's one hand (D42)
 hook, gate, cli = read("hooks", "session-start.sh"), read("hooks", "seat-gate.sh"), read("bin", "council")
 command = {f[:-3]: read("src", "council", "commands", f)        # the helper's commands, by module (bin/council
            for f in os.listdir(os.path.join(ROOT, "src", "council", "commands")) if f.endswith(".py")}   # starts them)
@@ -308,7 +309,7 @@ check("helper: usage lists its commands", {"run", "state", "seat", "index", "gat
 for c in sorted(known):
     check(f"helper: '{c}' is dispatched", c in dispatch.TOP)
 texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
-         "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
+         "agents/worker": worker, "agents/verifier": verifier, "agents/builder": builder, "hooks/session-start.sh": hook,
          "references/run/war-room.md": warroom, "references/guardrails.md": guardrails,
          "references/run/helper-commands.md": helper_reference, "references/run/builder-loop.md": builder_loop}
 flags = {"--" + f for f in helper_cli.VALUED + helper_cli.GATE_VALUED + helper_cli.SWITCHES + ("glob", "each")}
@@ -573,7 +574,7 @@ start_cmds = [h.get("command", "") for g in hooks_json.get("SessionStart", []) f
 stop_groups = hooks_json.get("SubagentStop", [])
 check("hook: SessionStart runs session-start.sh", any("hooks/session-start.sh" in c for c in start_cmds))
 check("hook: SubagentStop runs seat-gate.sh for council agents only",
-      any(g.get("matcher") == "^small-council:council-(worker|verifier)$" and any("hooks/seat-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
+      any(g.get("matcher") == "^small-council:council-(worker|verifier|builder)$" and any("hooks/seat-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in stop_groups))
 check("hook: session-start always exits 0", hook.rstrip().endswith("exit 0"))
 gate_code = "\n".join(l for l in gate.split("\n") if not l.lstrip().startswith("#"))
@@ -711,7 +712,7 @@ def reference_docs():
 
 
 prose = {**{f"skills/{s}": flat(skill[s]) for s in SKILLS}, **{f"doctrine/{d}": flat(doctrine[d]) for d in DOCTRINE},
-         "agents/worker": flat(worker), "agents/verifier": flat(verifier),
+         "agents/worker": flat(worker), "agents/verifier": flat(verifier), "agents/builder": flat(builder),
          **{path: flat(read(*path.split("/"))) for path in reference_docs()}}
 ONE_HOME = [  # (the wording, its one home)
     ("concurrency or ordering, public contracts", "skills/context-core"),          # protected subjects
@@ -750,7 +751,7 @@ for s in SKILLS:
     check(f"{s}: description ≤ 600 chars", len(description(skill[s])) <= 600, str(len(description(skill[s]))))
 check("kernel: ≤ 14,000 chars (read on every run)", len(core) <= 14000, str(len(core)))
 check("kernel: ≤ 11,000 chars after moving command reference", len(core) <= 11000, str(len(core)))
-for label, t in [("worker", worker), ("verifier", verifier), ("builder", read("agents", "council-builder.md"))]:
+for label, t in [("worker", worker), ("verifier", verifier), ("builder", builder)]:
     check(f"{label}: ≤ 8,000 chars", bool(t) and len(t) <= 8000, str(len(t)))
 
 # 11. Bash portability (macOS ships bash 3.2)
@@ -778,7 +779,7 @@ check("bin/council: the launcher never expands an empty \"$@\" or $* (unbound in
 
 # 12. Rename, and no project leakage in anything that ships as behaviour
 shipped = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
-           "agents/worker": worker, "agents/verifier": verifier, "hooks/session-start.sh": hook,
+           "agents/worker": worker, "agents/verifier": verifier, "agents/builder": builder, "hooks/session-start.sh": hook,
            "hooks/seat-gate.sh": gate, "hooks/agent-gate.sh": agent_gate, "hooks/bash-gate.sh": bash_gate, "bin/council": cli}
 for path in reference_docs():
     shipped[path] = read(*path.split("/"))
