@@ -6939,6 +6939,11 @@ def requests_task_tree(tmp):
                         (("tree", "--json"), "tree doesn't take --json")):
         code, out, err = council(repo, *words)
         check("%s: refused — %s" % (" ".join(words), want), code == 2 and want in err and not out, out + err)
+    council(repo, "state", "input=.council/plans/gone.md")
+    code, out, err = council(repo, "tree")
+    check("tree: a plan that can't be read is refused, naming council state input=<plan>",
+          code == 2 and "the plan .council/plans/gone.md (the run's input=) can't be read" in err
+          and "council state input=<plan>" in err and not out, out + err)
     council(repo, "state", "input=")
     code, out, err = council(repo, "tree")
     check("tree: a run that records no plan is refused, naming council state input=<plan>",
