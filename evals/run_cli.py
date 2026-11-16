@@ -5964,8 +5964,10 @@ def gates_patch_rounds(tmp):
     outside = line_of(out, "outside task 1's slice")
     check("patch save: a file outside the task's Owner and Touches is flagged for the verifier, not refused",
           "a.txt" in outside and "possible scope creep" in outside, out)
-    check("patch save: an added sleep is listed as a question for the verifier, not a verdict",
-          "sign — sleep · src/pay.py:5" in out and "remove the cause, or hide the symptom" in out, out)
+    check("patch save: an added sleep on a first build (Cause: none) is a question for the verifier, not a verdict: "
+          "does it make up for other code instead of doing the task",
+          "sign — sleep · src/pay.py:5 · time.sleep(1) — for the verifier: does it make up for other code instead of "
+          "doing the task? (build-proof.md, Making up for other code)" in out and "hide the symptom" not in out, out)
 
     write(os.path.join(repo, "tests", "test_pay.py"), "def test_receipt():\n    assert True\n")
     code, out, err = save(cause="charge ran twice on a retried webhook · state: REPRODUCED")
@@ -6039,6 +6041,14 @@ def gates_patch_rounds(tmp):
     check("patch save: an identifier, a word that only holds one, a mask and a document file are not signs",
           len(signs) == 4 and "stopgap.py:8" not in out and "stopgap.py:9" not in out and "notes.md" not in
           "\n".join(signs), out + err)
+    write(os.path.join(repo, "src", "stopgap.py"), read(os.path.join(repo, "src", "stopgap.py"))
+          + "\n\ndef settle():\n    time.sleep(2)\n")
+    write(os.path.join(run, "report-2.md"), PATCH_HEAD.format(cause="the guard raced the gateway · state: REPRODUCED",
+                                                               removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "2")
+    check("patch save: a sign on a fix round asks whether it removes the cause or hides the symptom",
+          code == 0 and "sign — sleep · src/stopgap.py:13 · time.sleep(2) — for the verifier: does it remove the cause, "
+          "or hide the symptom?" in out and "make up for other code" not in out, out + err)
     review = small_council_repo(tmp, "patch-review", "")
     council(review, "run", "open", "council-review")
     code, out, err = council(review, "patch", "save", "1")
