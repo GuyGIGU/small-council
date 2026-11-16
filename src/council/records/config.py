@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import NamedTuple
+from typing import Iterator, NamedTuple
 
 from council.records import bytewise, cells, paths
 from council.records.cells import INTMAX
@@ -151,22 +151,50 @@ def field(home: str | Path, key: str) -> str:
     return cells.field((paths.contents(path(home)) or b"").decode("utf-8", "surrogateescape"), key)
 
 
-def memory_line(home: str | Path) -> tuple[str, str] | None:
-    """The `- conventions:` path under ## Memory as the helper's memory_file reads it: the value with CRs, quotes,
-    a trailing (note) and a " — aside" taken off, and its first word (a path may hold a blank; a note may follow
-    one); None when there is no such line."""
+def _memory_section(home: str | Path) -> Iterator[str]:
+    """The config's lines under its ## Memory section, as the helper's memory_file reads them."""
     under = False
     for line in bytewise.file_lines(path(home), fold=False):
         if re.match(r"##[ \t]", line):
             under = bool(re.match(r"##[ \t]+[Mm][Ee][Mm][Oo][Rr][Yy]([^A-Za-z]|\Z)", line))
-            continue
-        if under and re.match(r"[ \t]*[-*][ \t]*conventions:", line):
+        elif under:
+            yield line
+
+
+def memory_line(home: str | Path) -> tuple[str, str] | None:
+    """The `- conventions:` path under ## Memory as the helper's memory_file reads it: the value with CRs, quotes,
+    a trailing (note) and a " — aside" taken off, and its first word (a path may hold a blank; a note may follow
+    one); None when there is no such line."""
+    for line in _memory_section(home):
+        if re.match(r"[ \t]*[-*][ \t]*conventions:", line):
             v = re.sub(r"[\r`\"']", "", re.sub(r"\A[ \t]*[-*][ \t]*conventions:[ \t]*", "", line, count=1))
             v = re.sub(r"[ \t]+\([^()]*\)[ \t]*\Z", "", v, count=1)
             v = re.sub(r"[ \t]+(—|–|-)[ \t].*\Z", "", v, count=1, flags=re.S)
             v = re.sub(r"[ \t]+\Z", "", v, count=1)
             return v, re.sub(r"[ \t].*\Z", "", v, count=1, flags=re.S)
     return None
+
+
+def memory_kb(raw: str) -> int | None:
+    """A memory budget as written ("40 KB", "40kb", "40"): a whole number of KB from 1 to 1024; None for any
+    other words."""
+    found = re.fullmatch(r"([0-9]+)[ \t]*(?:[Kk][Bb])?", raw)
+    kb = cells.optional_number(found.group(1)) if found else None
+    return kb if kb is not None and 1 <= kb <= 1024 else None
+
+
+def memory_budget(home: str | Path) -> tuple[int, str]:
+    """The first `- memory budget: <n> KB` under ## Memory as (bytes, the words written, an HTML comment after
+    them dropped): n × 1024 bytes, or memory.COUNCIL_MEMORY_SIZE_LIMIT (25 KB) with no such line or with words
+    memory_kb can't read."""
+    from council.records.memory import COUNCIL_MEMORY_SIZE_LIMIT   # memory.py reads this module, so not at the top
+    for line in _memory_section(home):
+        found = re.match(r"[ \t]*[-*][ \t]*memory budget:[ \t]*(.*)", line, re.S)
+        if found:
+            raw = re.sub(r"[ \t]*(<!--.*)?\Z", "", found.group(1).replace("\r", ""), count=1, flags=re.S)
+            kb = memory_kb(raw)
+            return (kb * 1024 if kb else COUNCIL_MEMORY_SIZE_LIMIT), raw
+    return COUNCIL_MEMORY_SIZE_LIMIT, ""
 
 
 class Seat(NamedTuple):
