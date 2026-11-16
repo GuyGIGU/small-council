@@ -104,7 +104,7 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
            "deliverable:\nnext: %s\n%s\n" % (mode, clock.now_min(), clock.now_sec(), top, session, head, INIT_NEXT
                                              if init else state_write.COUNCIL_NEXT_AT_OPEN, state_write.DECISIONS))
     plan = template.read_bytes().decode("utf-8", "surrogateescape")
-    plan = plan.replace("\r\n", "\n") if os.name == "nt" else plan      # Git Bash's awk reads in text mode
+    plan = plan.replace("\r\n", "\n")         # a CR right before a newline is dropped on every OS, as bytewise.records
     for key, value in (("RUN", run.rsplit("/", 1)[1]), ("MODE", mode), ("AGENT_CAP", str(config.agent_cap(home)))):
         plan = plan.replace("{{%s}}" % key, value)
     try:

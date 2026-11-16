@@ -449,6 +449,28 @@ def runs_open(tmp):
     plan_path = os.path.join(run, "run-plan.tsv")
     check("run open: creates and stamps a versioned run plan",
           os.path.isfile(plan_path) and "plan-schema: 1" in st and "\t{{MODE}}\t" not in read(plan_path), read(plan_path) + st)
+    # The plan template is written with LF line ends on every OS, even from a plugin copy whose template has CRLF
+    # (before, only Windows dropped the CRs; Linux and macOS wrote them into run-plan.tsv).
+    copy = os.path.join(tmp, "plugin-crlf")
+    for folder in ("bin", "src", "references"):
+        shutil.copytree(os.path.join(ROOT, folder), os.path.join(copy, folder), ignore=shutil.ignore_patterns("__pycache__"))
+    template = os.path.join(copy, "references", "templates", "run-plan.tsv")
+    with open(template, "rb") as f:
+        lf = f.read().replace(b"\r\n", b"\n")
+    with open(template, "wb") as f:
+        f.write(lf.replace(b"\n", b"\r\n"))
+    crlf_repo = new_repo(tmp, "plan-template-crlf")
+    write(os.path.join(crlf_repo, ".council", "council.config.md"), "# Council config\n")
+    opened = subprocess.run([BASH, os.path.join(copy, "bin", "council"), "run", "open", "council-review"], cwd=crlf_repo,
+                            capture_output=True, env=GIT_ENV, timeout=120)
+    written_path = os.path.join(opened.stdout.decode("utf-8").strip(), "run-plan.tsv")
+    written = b""
+    if os.path.isfile(written_path):
+        with open(written_path, "rb") as f:
+            written = f.read()
+    check("run open: a CRLF plan template is written with LF line ends, on every OS",
+          opened.returncode == 0 and b"\r" not in written and written.count(b"\n") == lf.count(b"\n"),
+          opened.stderr.decode("utf-8", "replace") + repr(written[:200]))
     first_events = events(run)
     check("run open: stamps and writes the first structured event",
           "events-schema: 1" in st and len(first_events) == 1 and
