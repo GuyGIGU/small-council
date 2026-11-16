@@ -85,7 +85,7 @@
    "longest_name": ""
   },
   "src/council/clock.py": {
-   "lines": 45,
+   "lines": 49,
    "longest": 9,
    "longest_name": "local_moment"
   },
@@ -100,7 +100,7 @@
    "longest_name": "dispatch_refusal"
   },
   "src/council/commands/ask.py": {
-   "lines": 178,
+   "lines": 179,
    "longest": 31,
    "longest_name": "save"
   },
@@ -130,8 +130,8 @@
    "longest_name": "main"
   },
   "src/council/commands/changed.py": {
-   "lines": 154,
-   "longest": 28,
+   "lines": 136,
+   "longest": 29,
    "longest_name": "main"
   },
   "src/council/commands/check.py": {
@@ -150,14 +150,14 @@
    "longest_name": "place"
   },
   "src/council/commands/cite_origin.py": {
-   "lines": 126,
+   "lines": 124,
    "longest": 34,
    "longest_name": "_one"
   },
   "src/council/commands/cli.py": {
-   "lines": 131,
-   "longest": 28,
-   "longest_name": "_flag"
+   "lines": 126,
+   "longest": 24,
+   "longest_name": "parse"
   },
   "src/council/commands/close_report.py": {
    "lines": 53,
@@ -255,7 +255,7 @@
    "longest_name": "record"
   },
   "src/council/commands/gate_run.py": {
-   "lines": 179,
+   "lines": 180,
    "longest": 37,
    "longest_name": "run_gate"
   },
@@ -280,12 +280,12 @@
    "longest_name": "main"
   },
   "src/council/commands/hygiene.py": {
-   "lines": 232,
+   "lines": 230,
    "longest": 20,
    "longest_name": "added"
   },
   "src/council/commands/index.py": {
-   "lines": 241,
+   "lines": 235,
    "longest": 42,
    "longest_name": "main"
   },
@@ -490,7 +490,7 @@
    "longest_name": "main"
   },
   "src/council/diff.py": {
-   "lines": 81,
+   "lines": 96,
    "longest": 26,
    "longest_name": "files"
   },
@@ -535,9 +535,9 @@
    "longest_name": "roster_rows"
   },
   "src/council/records/earlier.py": {
-   "lines": 149,
-   "longest": 15,
-   "longest_name": "hits"
+   "lines": 159,
+   "longest": 14,
+   "longest_name": "deliverables"
   },
   "src/council/records/estimates.py": {
    "lines": 39,
@@ -545,7 +545,7 @@
    "longest_name": "figures"
   },
   "src/council/records/events.py": {
-   "lines": 234,
+   "lines": 247,
    "longest": 29,
    "longest_name": "check"
   },
