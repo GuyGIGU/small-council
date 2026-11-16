@@ -120,7 +120,7 @@
    "longest_name": "agents_on_record"
   },
   "src/council/commands/build_seat.py": {
-   "lines": 199,
+   "lines": 210,
    "longest": 20,
    "longest_name": "outside_round"
   },
