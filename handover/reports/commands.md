@@ -13,7 +13,7 @@ Worktree `SP\wt\clean-commands`, branch `claude/clean-commands`, from main a47fb
 | 4cdd701 | 5. `council changed`: `--glob` and `--each` are ordinary cli flags |
 | fa93f5c | 6. Dates through `clock`: `clock.now_date` is the one date-only stamp |
 | 09230e4 | 7. `json_esc`: every control character below 0x20 becomes a space |
-| (last) | `evals/ratchet.json` rebuilt with `--update` |
+| 441616b | `evals/ratchet.json` rebuilt with `--update` |
 
 ## 2. Lines
 
@@ -165,7 +165,37 @@ a hunk header" and "`clock.now_date`/`now_min`/`now_sec`/`now_utc` are the stamp
 is read through `state.text`. I did not open §8 to check its wording (not my file).
 
 ## 5. Proof
-FILLED BELOW
+All in the worktree, Windows, Git Bash, `PYTHONIOENCODING=utf-8`.
+
+| Command | Result |
+|---|---|
+| `python scripts/quick_validate.py` | validation OK: 0 warning(s) |
+| `python evals/run_all.py --fast` | 11 jobs, 0 failed (structural 711/711, ratchet 308/308, self-test 26/26, unit tests 444/444, routing 17/17, evidence 47/47, repair 39/39, seat learning 33/33, bench 46/46, drill 41/41) |
+| `ruff check .` (devtools) | All checks passed |
+| `run_ratchet.py --update` / `run_ratchet.py` | wrote 152 files, 0 numbers went down; 315/315, ShellCheck measured |
+| `run_cli.py --group runs` | 539/539 |
+| `--group gates` | 170/170 |
+| `--group citations` | 30/30 |
+| `--group collect` | 66/66 |
+| `--group reports` | 48/48 |
+| `--group requests` | 215/216: the judgment fixture (python3 is the Store stub, exit 49), as on main (main 214/215; +1 is my changed-flags check) |
+| `--group filing` | 27/27 |
+| `run_hook.py --group main` | 290/290 |
+| `run_audit.py` | 79/79 |
+| `run_memory.py` | 61/61 |
+
+Old (`SP\main-cut`, a47fb43) against new (this worktree), folders under `SP\scratch\commands\oldnew\`:
+
+| Set | calls | same | diff | every difference |
+|---|---|---|---|---|
+| cases_spine_a | 150 | 150 | 0 | |
+| cases_seat | 217 | 217 | 0 | |
+| cases_runs | 119 | 108 | 11 | `refusals` (9) and `memory` (1): two runs opened in the same second swapping `-review`/`-review-2` (`-plan`/`-plan-2`) with the session line following (known artifact); `resume_none` (1): the two open runs listed in the other order, the same timing artifact: run again alone (`resume2`) both cases give 7/7 same |
+| cases_close | 85 | 82 | 3 | the pid in `close.lock/owner` (known artifact) |
+| cases_scripts_port | 112 | 112 | 0 | |
+| cases_launcher | 162 | 160 | 2 | `council changed x`: item 5 (USAGE -> `changed doesn't take 'x' — see: council help`); `status --json` in `unported`: the harness's old/new folder names (known artifact) |
+| hooks (hookcmp) | 77 | 77 | 0 | |
+| mine (`SP\scratch\commands\cases_commands.py`) | 18 | 4 | 14 | each a stated difference: index CR last line (1), prior/index tab line (2 + 2 repeats of the index.md change; the newline and CR words never reach the helper through the harness's process launch, see item 3), huge state (1), changed flags (6), control-character gate verdict and `status --json` now listing that gate (2). `skip_reason`: same on both, because `council state skip=` writes `;` as `,` (item 4) |
 
 ## 6. needs_integration
 - `src/council/commands/state.py:33` and `src/council/commands/run_resume.py:62` read `state.path(run)` without the
