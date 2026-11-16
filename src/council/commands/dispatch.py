@@ -38,6 +38,8 @@ COMMANDS = {  # each module's main takes (args, the words after the command's ow
     "doctor": "doctor",
     "pushes": "pushes",
     "patch": "patch",
+    "context": "context",
+    "tree": "tree",
     "evidence": "script_cmds",
     "status": "script_cmds",
     "repair": "repair",
