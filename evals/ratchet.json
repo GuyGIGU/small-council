@@ -670,7 +670,7 @@
    "longest_name": "read"
   },
   "src/council/records/request.py": {
-   "lines": 155,
+   "lines": 159,
    "longest": 20,
    "longest_name": "verdict"
   },
@@ -780,9 +780,9 @@
    "longest_name": "text"
   },
   "src/council/views/status_closing.py": {
-   "lines": 130,
+   "lines": 121,
    "longest": 26,
-   "longest_name": "filed_request"
+   "longest_name": "closing_of"
   },
   "src/council/views/status_names.py": {
    "lines": 45,
