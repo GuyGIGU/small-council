@@ -8,7 +8,7 @@ reader needs.
 |---|---|
 | `*.md` at this level | Seat workers, and the Chair and builders at two points: the 14 seat docs, `guardrails.md` and `build-proof.md`. These paths are frozen: project files carry them (a roster's doc column, a card's `source:`, a plan's `Ref:`, comments in the config), so a move would break every installed project |
 | `doctrine/` | The Chair, one file per stage, when it enters that stage |
-| `run/` | The Chair, the helper and the scripts: the run's contracts, records and procedures |
+| `run/` | The Chair, builders, the helper and the scripts: the run's contracts, records and procedures |
 | `roster/` | `council-init`: the seat catalogue, and how setup reads a project's own decisions |
 | `templates/` | `council init`, which copies them into a project's `.council/` |
 | `spec-writer/` | The `spec-writer` skill: its tier templates and guides |
@@ -35,7 +35,8 @@ append-only record of CLI-observable actions.
 `run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.
 `evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
 `builder-report.md` defines a build round's report head and the checks of it against the saved diff;
-`builder-rules.md` lists the standing rules every build task carries, which its orders link.
+`builder-rules.md` lists the standing rules every build task carries, which its orders link;
+`builder-loop.md` gives the steps that build one task and the one line its builder returns.
 `war-room.md` defines the second round; `sharing.md` defines the team-or-just-me choice;
 `models.md` defines the model per role.
 

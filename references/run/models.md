@@ -1,6 +1,6 @@
 # A model per role
 
-Which model each role's agents run on (D37). The run plan check enforces it
+Which model each role's agents run on (D37, as D42 amends it). The run plan check enforces it
 (`references/run/run-plan.md`); council-init proposes it; the Chair passes it at dispatch
 (`references/doctrine/05-work.md`).
 
@@ -19,7 +19,7 @@ what to write.
 
 | Role | Whose agents | Notes |
 |---|---|---|
-| `builder` | A build's builder agents (council-implement workers) | A build's builder today is the Chair, in its own window: the line names the model of builder agents a build dispatches (#63) |
+| `builder` | A build's builder agents (council-implement workers) | One per task, on its build seat `task-<n>`; in a Solo build the Chair builds instead, on the session's model (D42) |
 | `review` | A review's seat workers (council-review) | Mapping and survey workers keep `- seat models:` |
 | `verifier` | Every verifier seat, in every mode | Never weaker than the builder it checks |
 
@@ -31,16 +31,18 @@ mapping or survey workers are not roles of this line: they inherit, or take `- s
 
 The order is haiku < sonnet < opus < fable. The helper can't see the session's model, so `inherit`
 is judged as the session's: a verifier on `inherit` passes against any builder, and a named verifier
-below `fable` is refused against a builder on `inherit`. In a build the Chair builds, on the
-session's model, so a build's verifier is `inherit` or `fable`. A review has no builder: its verifier
-may be cheaper than its seats.
+below `fable` is refused against a builder on `inherit`. The Chair counts as a builder only in a Solo
+build, which the helper reads as a run plan that selects no build seat: the Chair builds on the
+session's model, so that build's verifier is `inherit` or `fable`. Otherwise a build's verifier is
+judged against its builder agents' model. A review has no builder: its verifier may be cheaper than
+its seats.
 
 ## Proposing a split (council-init)
 
 Propose from the model you are running on, in one line, and write it only on the user's yes:
 - the review seats one step below your model, never below `sonnet` (`fable` → `opus`, `opus` →
   `sonnet`; on `sonnet` or `haiku`, `inherit`);
-- the verifier on `inherit`; `sonnet` only when the user wants cheaper review checks (a build's
+- the verifier on `inherit`; `sonnet` only when the user wants cheaper review checks (a Solo build's
   verifier row stays `inherit` or `fable` whatever the line says);
 - the builder on `inherit`.
 
