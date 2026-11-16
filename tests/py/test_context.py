@@ -117,7 +117,24 @@ class PartsTest(support.Scratch):
             patches.write(run, patches.Round(number, 1, number, "t", "a", "b", files, 1, 0, head, [], [], ""), b"")
         self.assertEqual(context.earlier(run, found), [
             "## Earlier changes to these files",
+            "- task 1's own history, 1 saved round(s): %s/patches/T1.md — read it before the fix; it is not copied "
+            "here" % run.as_posix(),
             "- task 2 round 1 (T2-1.patch): src/pay/charge.py · Cause: it ran twice (REPRODUCED)", ""])
+
+    def test_part_five_names_the_tasks_own_history_only_once_it_has_a_round(self) -> None:
+        run = self.tmp / ".council" / "runs" / "2026-01-02-030405-implement"
+        found = self.slice_of(task(1))
+        self.assertEqual(context.earlier(run, found), ["## Earlier changes to these files",
+                                                       "- none: no other task's saved round touched these paths", ""])
+        head = {"cause": "none", "state": ""}
+        for number in (1, 2):
+            patches.write(run, patches.Round(1, number, number, "t", "a", "b", ["src/pay/charge.py"], 1, 0, head, [],
+                                             [], ""), b"")
+        self.assertEqual(context.earlier(run, found), [
+            "## Earlier changes to these files",
+            "- task 1's own history, 2 saved round(s): %s/patches/T1.md — read it before the fix; it is not copied "
+            "here" % run.as_posix(),
+            "- none: no other task's saved round touched these paths", ""])
 
 
 class HardRulesTest(support.Scratch):

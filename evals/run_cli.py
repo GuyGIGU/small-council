@@ -7149,7 +7149,15 @@ def requests_task_pack(tmp):
           and os.path.samefile(whole("Standing builder rules:"), plugin("run", "builder-rules.md"))
           and out.count("references/run/builder-rules.md") == 1, out)
     check("context build: part 5 names task 1's saved round on the same file, with its cause",
-          "- task 1 round 1 (T1-1.patch): src/pay/charge.py · Cause: none, a first build" in out, out)
+          "- task 1 round 1 (T1-1.patch): src/pay/charge.py · Cause: none, a first build" in out
+          and "own history" not in out, out)
+    code, own, err = council(repo, "context", "build", "task-1")
+    check("context build: for a fix round, part 5 first links the task's own history, patches/T<n>.md, by its path — "
+          "the file's text is not copied",
+          code == 0 and "## Earlier changes to these files\n- task 1's own history, 1 saved round(s): %s/patches/T1.md "
+          "— read it before the fix; it is not copied here\n- none: no other task's saved round touched these paths\n"
+          % slash(run) in own and "Why, in prose" not in own and os.path.isfile(os.path.join(run, "patches", "T1.md")),
+          own + err)
     last = out.splitlines()[-1]
     size = len(out.encode("utf-8"))
     check("context build: part 6 says what a pack never carries, and the last line counts the printed bytes",
