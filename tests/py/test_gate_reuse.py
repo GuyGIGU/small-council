@@ -102,6 +102,20 @@ class FilesTreeTest(support.Scratch):
         self.git("commit", "-q", "-m", "council files")
         self.assertEqual(git.files_tree(self.tmp), before)
 
+    def test_a_just_me_council_gives_the_team_tree(self) -> None:
+        """council sharing just-me puts /.council/ in .git/info/exclude: the tree is still taken, and is the same."""
+        team = git.files_tree(self.tmp)
+        self.write(".council/logs/x.md", "a log line\n")
+        exclude = self.tmp / ".git" / "info" / "exclude"
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        with exclude.open("a", encoding="utf-8") as listed:
+            listed.write("/.council/\n")
+        self.assertRegex(team, "^[0-9a-f]{40,64}$")
+        self.assertEqual(git.files_tree(self.tmp), team)
+        self.git("rm", "-r", "-q", "--cached", ".council")
+        self.git("commit", "-q", "-m", "the council stays on this machine")
+        self.assertEqual(git.files_tree(self.tmp), team)
+
     def test_the_real_index_is_never_touched(self) -> None:
         self.write("a.txt", "b\n")
         self.write("new.py", "x = 1\n")

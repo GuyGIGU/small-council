@@ -6046,6 +6046,45 @@ def gates_patch_rounds(tmp):
           code == 2 and "council-implement" in err, out + err)
 
 
+@part("gates")
+def gates_just_me_tree(tmp):
+    """F1: council sharing just-me puts /.council/ in .git/info/exclude, and the files' tree was taken with a git add
+    whose pathspec named that ignored folder: git refused, so no gate kept a tree and patch save could not run. On a
+    just-me council a gate keeps the same tree a team council's gives, a green on it is not run again, and a build
+    round is saved."""
+    repo = small_council_repo(tmp, "just-me-tree",
+        "| tests | `echo run >> ../just-me-tests.log && echo '3 passed'` | grounding, verify | yes | ok | `true` | none "
+        "| - |\n")
+    write(os.path.join(repo, ".council", "plans", "a.md"), "# Plan\n\n## Task Sequence\n### 1. Edit a\n| | |\n"
+          "|---|---|\n| **Owner** | `a.txt` |\n| **Touches** | `a.txt` |\n")
+    git(repo, "rm", "-r", "-q", "--cached", ".council")
+    git(repo, "commit", "-q", "-m", "the council is no project file")
+    count = lambda: read(os.path.join(tmp, "just-me-tests.log")).count("run")      # noqa: E731 — how often tests ran
+    run = council(repo, "run", "open", "council-implement")[1].strip()
+    write_plan(run)
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build", "input=.council/plans/a.md")
+    tree = lambda: json.loads(read(os.path.join(run, "gates", "tests.json")) or "{}").get("tree", "")   # noqa: E731
+    council(repo, "gate", "tests")
+    team = tree()
+    code, out, err = council(repo, "sharing", "just-me")
+    ignored = subprocess.run([GIT, "-C", repo, "check-ignore", "-q", ".council/council.config.md"]).returncode == 0
+    check("sharing just-me: git ignores .council/ from here on", code == 0 and ignored, out + err)
+    code, out, err = council(repo, "gate", "tests")
+    check("gate on a just-me council: the verdict keeps the files' tree, the very one a team council's gives",
+          code == 0 and re.fullmatch("[0-9a-f]{40,64}", tree()) and tree() == team and count() == 2,
+          "team %r, just me %r · %s" % (team, tree(), out + err))
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all on a just-me council: a green on the same tree is not run again, as on a team council",
+          code == 0 and count() == 2 and "gate tests: green on this tree already — chair ran it" in out, out + err)
+    write(os.path.join(repo, "a.txt"), "a, edited\n")
+    write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "1")
+    patch = read(os.path.join(run, "patches", "T1-1.patch"))
+    check("patch save on a just-me council: the round is saved, its patch holding the change and no council file",
+          code == 0 and "task 1 round 1 saved" in out and "+a, edited" in patch and ".council" not in patch, out + err)
+
+
 @part("requests")
 def check_just_me_hygiene(tmp):
     """On a just-me council nothing teammates read may cite the council (references/run/sharing.md). A real build

@@ -68,9 +68,12 @@ def files_tree(top: str | Path) -> str:
         else:
             os.remove(copy)                 # a repo with nothing staged yet: git starts a new index
         given = {"GIT_INDEX_FILE": copy}
-        if text(top, "add", "-A", "--", ":(top)", ":(top,exclude).council", extra=given, timeout=600) is None \
+        # No exclude pathspec for .council on the add: on a just-me council .council/ is in .git/info/exclude, and
+        # git add exits 1 on a pathspec that names an ignored path. The rm that follows takes the council files out
+        # (committed ones too: a log or memory line is no code), so the tree is the same either way.
+        if text(top, "add", "-A", "--", ":(top)", extra=given, timeout=600) is None \
                 or text(top, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", ":(top).council",
-                        extra=given) is None:     # committed council files too: a log or memory line is no code
+                        extra=given) is None:
             return ""
         return text(top, "write-tree", extra=given) or ""
     except OSError:
