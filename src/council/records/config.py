@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 from council.records import bytewise, cells, paths
 from council.records.cells import INTMAX
@@ -184,30 +185,19 @@ def memory_path(home: str | Path) -> str:
     return ""
 
 
-def roster(home: str | Path) -> list[tuple[str, str, str]]:
-    """The Roster table's (seat, slug, lens) rows, in order, from the first table whose header names
-    Seat, Slug and Lens; a row missing any of the three is left out."""
-    found, columns = [], None
-    for line in cells.lines_of(paths.text_of(path(home), home)):
-        if not line.lstrip().startswith("|"):
-            columns = None
-            continue
-        row = [c.strip() for c in line.strip().strip("|").split("|")]
-        lower = [c.lower() for c in row]
-        if {"seat", "slug", "lens"} <= set(lower):
-            columns = (lower.index("seat"), lower.index("slug"), lower.index("lens"))
-        elif columns and len(row) > max(columns) and not set(row[0]) <= set("-: "):
-            seat, slug, lens = (cells.clean(row[i]).strip("`") for i in columns)
-            if slug and lens and seat:
-                found.append((seat, slug, lens))
-    return found
+class Seat(NamedTuple):
+    """One row of the config's Roster table, C-locale text (records/bytewise.py); '' for an empty cell."""
+
+    seat: str
+    slug: str
+    lens: str
+    reference: str
 
 
-def roster_rows(home: str | Path) -> list[tuple[str, str, str]]:
-    """The Roster table under ## Roster as the helper's awk read it, for memory and doctor: (slug, seat,
-    reference), "-" for an empty value, its columns found by their header names (Seat, else the first; Slug;
-    Reference), each cell trimmed of blanks, CRs, backticks and asterisks; a row with no seat, a rule row or a
-    <placeholder> left out. C-locale text (records/bytewise.py). roster() is the older reading that needs a Lens."""
+def roster_table(home: str | Path) -> list[Seat]:
+    """The Roster table under ## Roster as the helper's awk read it: its columns found by their header names (Seat,
+    else the first; Slug; Lens; Reference), each cell trimmed of blanks, CRs, backticks and asterisks; a row with no
+    seat, a rule row or a <placeholder> seat left out, and a <placeholder> slug or reference read as empty."""
     found, inside, columns = [], False, None
     for line in bytewise.records(bytewise.read(paths.contents(path(home)) or b"")):
         if line.startswith("## "):
@@ -219,14 +209,14 @@ def roster_rows(home: str | Path) -> list[tuple[str, str, str]]:
         if columns is None:
             names = [bytewise.lower(_cell(c)) for c in cut]
             columns = tuple(max([i for i in range(1, len(cut) - 1) if names[i] == h] or [d])
-                            for h, d in (("seat", 1), ("slug", 0), ("reference", 0)))
+                            for h, d in (("seat", 1), ("slug", 0), ("lens", 0), ("reference", 0)))
             continue
-        seat, slug, ref = (_cell(cut[i]) if i and i < len(cut) else "" for i in columns)
+        seat, slug, lens, ref = (_cell(cut[i]) if i and i < len(cut) else "" for i in columns)
         if seat == "" or re.fullmatch(r":?-+:?", seat) or seat.startswith("<"):
             continue
         slug = "" if slug.startswith("<") else slug
         ref = "" if ref.startswith("<") or re.fullmatch(r":?-+:?", ref) else ref
-        found.append((slug or "-", seat, ref or "-"))
+        found.append(Seat(seat, slug, lens, ref))
     return found
 
 

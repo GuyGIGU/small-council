@@ -3153,7 +3153,8 @@ def runs_card_says_what_is_known(tmp):
     sk = new_repo(tmp, "card-skipped")
     write(os.path.join(sk, ".council", "council.config.md"),
           "# Council config\n## Roster\n| Seat | Slug | Lens | Surface | Reference | Recast note |\n|---|---|---|---|---|---|\n"
-          "| Troy Hunt | s1 | Security | `hooks/**` | references/security.md | kept |\n")
+          "| Troy Hunt | s1 | Security | `hooks/**` | references/security.md | kept |\n"
+          "| **Kent Beck** | s2 | *Tests* | `tests/**` | - | kept |\n| Docs Seat | s3 |  | `docs/**` | - | kept |\n")
     _, out, _ = council(sk, "run", "open", "council-plan")
     krun = out.strip().splitlines()[-1]
     write_plan(krun, selected=("chair", "w1", "w2", "w3", "w4", "w5"), skipped=tuple("s%d" % i for i in range(1, 9)),
@@ -3170,6 +3171,8 @@ def runs_card_says_what_is_known(tmp):
         names = {}
     check("status: a skipped seat no brief names is named from the roster — what it checks, then who",
           names.get("s1") == "Security (Troy Hunt)", str(names))
+    check("status: a roster seat's name loses its bold and italic marks, and one with no Lens is named by its Seat",
+          names.get("s2") == "Tests (Kent Beck)" and names.get("s3") == "Docs Seat", str(names))
     rows = read(os.path.join(krun, "run-plan.tsv")).splitlines(True)
     write(os.path.join(krun, "run-plan.tsv"), "".join(r for r in rows if not r.startswith("seat\ts8\trole\t")))
     code, out, err = council(sk, "run", "plan", "check")

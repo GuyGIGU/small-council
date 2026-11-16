@@ -25,14 +25,15 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.gate_time_limit(home), (None, ""))
         self.assertFalse(config.notifications_off(home))
         self.assertEqual(config.memory_path(home), "")
-        self.assertEqual(config.roster(home), [])
+        self.assertEqual(config.roster_table(home), [])
 
     def test_an_old_context_packs_line_changes_nothing(self) -> None:
         """Context packs were removed on 2026-11-15: a config that still says `context packs: on` reads as one
         without the line."""
         prefs = "## Run preferences\n- agent cap: 6\n- build tier: full\n- seat models: on\n- sharing: just me\n"
         readers = (config.agent_cap, config.build_tier, config.checking, config.worker_estimate, config.seat_models,
-                   sharing.sharing, config.gate_time_limit, config.notifications_off, config.memory_path, config.roster)
+                   sharing.sharing, config.gate_time_limit, config.notifications_off, config.memory_path,
+                   config.roster_table)
         without = [reader(self.home(prefs)) for reader in readers]
         self.assertEqual([reader(self.home(prefs + "- context packs: on\n")) for reader in readers], without)
 
@@ -121,8 +122,11 @@ class StatusReadingTest(support.Scratch):
         self.assertEqual(config.memory_path(self.home("- conventions: elsewhere.md\n")), "")
 
     def test_roster(self) -> None:
-        home = self.home("| Seat | Slug | Lens |\n|---|---|---|\n| Security | `sec` | auth |\n| | x | y |\n\n| a |\n")
-        self.assertEqual(config.roster(home), [("Security", "sec", "auth")])
+        table = ("| Seat | Slug | Lens |\n|---|---|---|\n| **Security** | `sec` | *auth* |\n| | x | y |\n"
+                 "| Docs | doc | |\n")
+        self.assertEqual(config.roster_table(self.home("## Roster\n" + table)),
+                         [("Security", "sec", "auth", ""), ("Docs", "doc", "", "")])
+        self.assertEqual(config.roster_table(self.home("## Seats\n" + table)), [])     # only under ## Roster
 
 
 class EstimateTokensTest(unittest.TestCase):
@@ -142,14 +146,14 @@ class RosterRowsTest(support.Scratch):
                    "| **Martin Fowler** | `fowler` | Structure | references/refactoring.md | kept |\r\n"
                    "| No Slug |  | x |  | x |\r\n| <placeholder> | x | x | x | x |\r\n"
                    "| Café Seat | café | x | - | x |\r\n|  | ghost | x | x | x |\r\n## Gates\r\n| Gate | x |\r\n")
-        self.assertEqual(config.roster_rows(self.tmp / ".council"),
-                         [("fowler", "Martin Fowler", "references/refactoring.md"), ("-", "No Slug", "-"),
-                          ("caf\xc3\xa9", "Caf\xc3\xa9 Seat", "-")])
+        self.assertEqual(config.roster_table(self.tmp / ".council"),
+                         [("Martin Fowler", "fowler", "Structure", "references/refactoring.md"),
+                          ("No Slug", "", "x", ""), ("Caf\xc3\xa9 Seat", "caf\xc3\xa9", "x", "")])
 
     def test_no_roster_and_no_config(self) -> None:
-        self.assertEqual(config.roster_rows(self.tmp / ".council"), [])
+        self.assertEqual(config.roster_table(self.tmp / ".council"), [])
         self.write(".council/council.config.md", "# c\n## Roster\nnone\n")
-        self.assertEqual(config.roster_rows(self.tmp / ".council"), [])
+        self.assertEqual(config.roster_table(self.tmp / ".council"), [])
 
 
 if __name__ == "__main__":

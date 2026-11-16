@@ -5,19 +5,23 @@ import re
 from pathlib import Path
 from typing import Any
 
-from council.records import config
+from council.records import bytewise, config
+from council.records.cells import clean
 from council.views.snapshot import brief_names
 
 
 def roster_names(snap: dict[str, Any]) -> dict[str, str]:
-    """Seat names from the council config's roster table (| Seat | Slug | Lens | …): "Lens (Seat)" per slug —
-    for a seat no brief names, a skipped one most often. Read once per snapshot."""
+    """Seat names from the council config's roster table (| Seat | Slug | Lens | …): "Lens (Seat)" per slug, or the
+    seat alone when its Lens is empty — for a seat no brief names, a skipped one most often. Read once per
+    snapshot."""
     cached = snap.get("_roster")
     if cached is None:
         cached = {}
         home = Path(snap["run"].get("path") or ".").parent.parent
-        for seat, slug, lens in config.roster(home):
-            cached[slug] = "{} ({})".format(lens, seat)[:40]
+        for row in config.roster_table(home):
+            seat, lens = clean(bytewise.shown(row.seat)), clean(bytewise.shown(row.lens))
+            if row.slug:
+                cached[bytewise.shown(row.slug)] = ("{} ({})".format(lens, seat) if lens else seat)[:40]
         snap["_roster"] = cached
     return cached
 
