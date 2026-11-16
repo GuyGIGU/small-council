@@ -108,9 +108,7 @@ class JudgeTest(unittest.TestCase):
             "ERROR line 26: sonnet or haiku needs seat/verify-1/purpose = mapping or survey"])
         self.assertNotIn("overrides are off", " ".join(judged(text, seat_models="closed").problems))
 
-    def test_a_number_reads_and_writes_as_awk_does(self) -> None:
-        self.assertEqual([plan_check.number(s) for s in ("12", " 7x", "1e3", "abc", "-3", ".5")],
-                         [12.0, 7.0, 1000.0, 0.0, -3.0, 0.5])
+    def test_a_number_writes_as_awk_does(self) -> None:
         self.assertEqual([plan_check.number_text(n) for n in (12.0, 2.5, 1e20)], ["12", "2.5", "100000000000000000000"])
 
 

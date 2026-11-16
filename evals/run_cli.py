@@ -1574,13 +1574,16 @@ def agent_stop(tmp):
     code, out, err = council(rep, "seat", "beck", "done", "tokens=60000")
     check("seat: a different figure with no agent id is another agent run, and adds", "~140k tokens so far" in out
           and "not counted again" not in err, out + err)
-    absurd = new_repo(tmp, "agent-stop-absurd")        # a cap bash can't compare: the gate never fails closed
-    write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n")
+    absurd = new_repo(tmp, "agent-stop-absurd")        # a cap past 12 digits is no number: the configured cap holds
+    write(os.path.join(absurd, ".council", "council.config.md"), "# Council config\n- agent cap: 3\n")
     _, absurd_run, _ = council(absurd, "run", "open", "council-review")
-    append(os.path.join(absurd_run.strip(), "run-plan.tsv"), "budget\trun\tagent-cap\t99999999999999999999999\tunreadable\n")
+    absurd_plan = os.path.join(absurd_run.strip(), "run-plan.tsv")
+    write(absurd_plan, read(absurd_plan).replace("budget\trun\tagent-cap\t3", "budget\trun\tagent-cap\t99999999999999999999999"))
     council(absurd, "seat", "w1", "done", "agent=a1", "tokens=5000")
     code, out, err = council(absurd, "cap", "check")
-    check("cap check: a cap too large to compare never stops an agent — exit 0", code == 0 and not out, out + err)
+    code2, out2, err2 = council(absurd, "cap")
+    check("cap check: a plan cap past 12 digits is not a number, so the configured cap (3) holds — exit 0 at 1 of 3",
+          code == 0 and not out and "1 of 3 agent runs used" in out2, out + err + out2 + err2)
     # One way to read a plan row: lines end at LF (CRs before it cut), a value is trimmed of blanks at its ends
     # only, and the first row of a repeated key wins, in every reader (the cap, the seat's tool budget).
     rowsr = new_repo(tmp, "plan-row-rule")
@@ -3407,6 +3410,14 @@ def runs_worktrees_close_and_find(tmp):
     check("ledger: 'from: a#1, #2', 'b#1,2', 'a#3 and b#3', a title holding 'from:', and verdicts as written all count",
           re.search(r"^hunt\s+1\s+4\s+4\s+0\s+4\s+30\s+0%", out, re.MULTILINE) is not None
           and re.search(r"^beck\s+1\s+3\s+3\s+0\s+3\s+20\s+0%", out, re.MULTILINE) is not None, out)
+    # A count is plain ASCII digits, 12 at most: a hand-edited cell such as 1e3, 5abc, +2 or -1 is no number.
+    led_file = os.path.join(led, ".council", "ledger.tsv")
+    led_before = read(led_file)
+    append(led_file, "2026-01-01\thand-edit\tcouncil-review\thunt\t1e3\t5abc\t+2\t-1\t-\t2\n")
+    code, out, _ = council(led, "ledger")
+    check("ledger: a cell that is not plain digits counts as nothing (1e3, 5abc, +2, -1)",
+          re.search(r"^hunt\s+2\s+4\s+4\s+0\s+4\s", out, re.MULTILINE) is not None, out)
+    write(led_file, led_before)
 
     # Provenance as models write it: "hunt #1" with a blank, "beck 1, 3", a slash between two seats,
     # a bracketed note that names another seat, and a "from:" introduced by a dash or a bracket. Each

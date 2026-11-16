@@ -35,13 +35,6 @@ def clock(when: datetime | None) -> str:
     return when.astimezone().strftime("%H:%M:%S") if when else "?"
 
 
-def number(value: Any) -> int | None:
-    try:
-        return int(str(value).strip())
-    except (TypeError, ValueError):
-        return None
-
-
 def listed(names: Any, most: int = 4) -> str:
     names = list(names)
     return ", ".join(names[:most]) + (" and %d more" % (len(names) - most) if len(names) > most else "")
@@ -151,11 +144,12 @@ def closing(run: Run, say: Say) -> None:
             say(PASS, label, "closed complete at %s (%s has no Deliver stage)" % (clock(closed["t"]),
                                                                                   run.mode or "this mode"))
             return
-        deliver = [e for e in run.of_type("run.phase_changed") if e.get("value") == "deliver"
-                   and number(e.get("seq")) is not None and number(e.get("seq")) < number(closed.get("seq"))]
+        end = cells.optional_number(closed.get("seq"))
+        moves = [e for e in run.of_type("run.phase_changed") if cells.optional_number(e.get("seq")) is not None
+                 and cells.optional_number(e.get("seq")) < end]
+        deliver = [e for e in moves if e.get("value") == "deliver"]
         if not deliver:
-            last = [e.get("value") for e in run.of_type("run.phase_changed")
-                    if number(e.get("seq")) is not None and number(e.get("seq")) < number(closed.get("seq"))]
+            last = [e.get("value") for e in moves]
             say(FAIL, label, "closed as complete at %s without entering Deliver (its last stage: %s)"
                 % (clock(closed["t"]), last[-1] if last else "convene"))
         else:
@@ -211,7 +205,7 @@ def agents_on_record(run: Run, say: Say) -> None:
 def gates(run: Run, say: Say) -> None:
     runs = []
     for event in run.of_type("gate.finished"):
-        seconds = number(event_stream.details(event.get("detail")).get("seconds")) or 0
+        seconds = cells.optional_number(event_stream.details(event.get("detail")).get("seconds")) or 0
         if event["t"]:
             runs.append({"name": event.get("subject", "?"), "end": event["t"],
                          "start": event["t"] - timedelta(seconds=seconds)})
@@ -338,17 +332,17 @@ def seats_on_record(run: Run, say: Say) -> None:
 
 def agent_limit(run: Run, say: Say) -> None:
     label = "Agent limit"
-    cap = next((number(r.get("value")) for r in run.plan
+    cap = next((cells.optional_number(r.get("value")) for r in run.plan
                 if r.get("kind") == "budget" and r.get("id") == "run" and r.get("field") == "agent-cap"), None)
     closed = run.of_type("run.closed")
-    used = number(event_stream.details(closed[-1].get("detail")).get("agent_runs")) if closed else None
+    used = cells.optional_number(event_stream.details(closed[-1].get("detail")).get("agent_runs")) if closed else None
     if used is None:
-        used = sum(number(r.get("agents")) or 0 for r in run.seats)
+        used = sum(cells.optional_number(r.get("agents")) or 0 for r in run.seats)
     if not cap:
         say(WARN, label, "%d agent run(s); the plan names no cap to hold them to" % used)
         return
-    allowed = [number(r.get("until")) for r in seat_files.allowance_rows(run.folder,
-                                                                         MAX_FILE) if number(r.get("until"))]
+    allowed = [cells.optional_number(r.get("until")) for r in seat_files.allowance_rows(run.folder, MAX_FILE)
+               if cells.optional_number(r.get("until"))]
     if used <= cap:
         say(PASS, label, "%d of %d agent runs" % (used, cap))
     elif allowed and allowed[-1] >= used:

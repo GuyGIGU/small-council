@@ -53,13 +53,14 @@ def integer(value: Any) -> int | None:
 
 
 def leading(cell: str) -> int:
-    """A cell as awk reads `$n + 0`: its leading whole number (blanks and a sign may come first), else 0."""
-    found = re.match(r"[ \t]*([+-]?[0-9]+)", cell)
-    return int(found.group(1)) if found else 0
+    """A cell a sum adds: its number (optional_number), else 0."""
+    found = optional_number(cell)
+    return found if found is not None else 0
 
 
 def optional_number(value: Any) -> int | None:
-    """A recorded count, or None when the cell is blank or not a plain number (never guessed as 0)."""
+    """A count or figure: plain ASCII digits, 1 to 12 of them (no sign, exponent or decimal point), blanks at
+    its ends aside. None for anything else, a blank cell too: unknown, never guessed as 0 (D26)."""
     value = str(value if value is not None else "").strip()
     return int(value) if re.fullmatch(r"[0-9]{1,12}", value) else None
 
