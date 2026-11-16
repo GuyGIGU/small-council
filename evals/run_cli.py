@@ -7149,7 +7149,15 @@ def requests_task_pack(tmp):
           and os.path.samefile(whole("Standing builder rules:"), plugin("run", "builder-rules.md"))
           and out.count("references/run/builder-rules.md") == 1, out)
     check("context build: part 5 names task 1's saved round on the same file, with its cause",
-          "- task 1 round 1 (T1-1.patch): src/pay/charge.py · Cause: none, a first build" in out, out)
+          "- task 1 round 1 (T1-1.patch): src/pay/charge.py · Cause: none, a first build" in out
+          and "own history" not in out, out)
+    code, own, err = council(repo, "context", "build", "task-1")
+    check("context build: for a fix round, part 5 first links the task's own history, patches/T<n>.md, by its path — "
+          "the file's text is not copied",
+          code == 0 and "## Earlier changes to these files\n- task 1's own history, 1 saved round(s): %s/patches/T1.md "
+          "— read it before the fix; it is not copied here\n- none: no other task's saved round touched these paths\n"
+          % slash(run) in own and "Why, in prose" not in own and os.path.isfile(os.path.join(run, "patches", "T1.md")),
+          own + err)
     last = out.splitlines()[-1]
     size = len(out.encode("utf-8"))
     check("context build: part 6 says what a pack never carries, and the last line counts the printed bytes",
@@ -7864,6 +7872,85 @@ def runs_dispatch_record(tmp):
 
 
 @part("lifecycle")
+def runs_build_seat(tmp):
+    # T5 (D42): a builder agent per task, on build seat task-<n>. One builder at a time edits project code, its done
+    # needs report-<n>.md unless it stopped with NEEDS:, and its start names the files changed outside a round.
+    builder = "type=small-council:council-builder"
+    bs = new_repo(tmp, "build-seat")
+    write(os.path.join(bs, "a.txt"), "a\n")
+    write(os.path.join(bs, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    git(bs, "add", "-A")
+    git(bs, "commit", "-q", "-m", "init")
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1")
+    check("cap check: a council-builder with no council run open is refused like a worker — it always works for a run",
+          code == 2 and "so a council-builder has no run to work for" in out and "council run open" in out, out + err)
+    _, out, _ = council(bs, "run", "open", "council-implement", env=session("sB"))
+    brun = out.strip().splitlines()[-1]
+    bname = os.path.basename(brun)
+    opened = re.search(r"^start-head: (\S+)$", read(os.path.join(brun, "session-state.md")), re.MULTILINE)
+    write_plan(brun, selected=("task-1", "task-2"))
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
+                             "run=" + bname)
+    check("cap check: a council-builder for a selected build seat of the open run starts", code == 0 and not out,
+          out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "file=report-9",
+                             "run=" + bname)
+    check("cap check: a builder's file word report-9 reads as seat task-9 — unplanned, so refused by that slug",
+          code == 2 and "seat task-9 has no selected row in the run plan of " + bname in out
+          and "this council-builder would work off the record" in out, out + err)
+    code, out, err = council(bs, "seat", "task-1", "queued")
+    check("seat: a build seat starts with no line about files when nothing changed since the commit the run opened on",
+          code == 0 and "outside any round" not in err, out + err)
+    council(bs, "seat", "task-1", "running", "agent=b1")
+    code, out, err = council(bs, "seat", "task-2", "queued")
+    check("seat: one builder at a time — task-2 is refused while task-1 runs, naming it and both next steps",
+          code == 2 and "cannot start task-2 — task-1 is running, and one builder at a time edits project code (D42)"
+          in err and "council seat task-1 done tokens=<n> tools=<n>" in err
+          and 'council seat task-1 failed note="…"' in err and "\ntask-2\t" not in read(os.path.join(brun, "seats.tsv")),
+          out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-2", "file=report-2",
+                             "run=" + bname)
+    check("cap check: the agent gate refuses that second builder before it starts, for the same reason",
+          code == 2 and out.startswith("Small Council: cannot start task-2 — task-1 is running"), out + err)
+    code, out, err = council(bs, "seat", "task-1", "running", "agent=b1")
+    check("seat: the same build seat recorded running again while it runs is no second builder", code == 0, out + err)
+    code, out, err = council(bs, "seat", "task-1", "done", "tokens=20000")
+    check("seat: a build seat's done with no report-<n>.md is refused as a verifier's missing file is",
+          code == 2 and "seat task-1 has no file yet (%s/report-1.md), so it isn't done" % slash(brun) in err, out + err)
+    code, out, err = council(bs, "seat", "task-1", "done", "tokens=20000", "note=NEEDS: which table holds the key?")
+    check("seat: ... except a NEEDS: return, which writes no round", code == 0, out + err)
+    write(os.path.join(bs, "a.txt"), "b\n")
+    write(os.path.join(bs, "new.txt"), "n\n")
+    code, out, err = council(bs, "seat", "task-1", "running", "agent=b2")
+    check("seat: a build seat's start names, file by file, what changed since the commit the run opened on — a notice, "
+          "exit 0", code == 0 and "council: 2 file(s) changed since the commit the run opened on (%s), outside any round "
+          "— an edit made outside a round, or a file a gate left. council patch save puts them in task 1's round:\n"
+          "council:   a.txt\ncouncil:   new.txt\n" % (opened.group(1)[:12] if opened else "?") in err, out + err)
+    write(os.path.join(brun, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra="")
+          .replace("src/pay.py", "a.txt"))
+    council(bs, "patch", "save", "1")
+    code, out, err = council(bs, "seat", "task-1", "done", "tokens=20000")
+    check("seat: with report-1.md written, the build seat's done is recorded", code == 0, out + err)
+    code, out, err = council(bs, "seat", "task-2", "queued")
+    check("seat: a start with the files as the last saved round left them says nothing about files",
+          code == 0 and "outside any round" not in err, out + err)
+    council(bs, "seat", "task-2", "skipped")
+    write(os.path.join(bs, "gate.log"), "left by a gate\n")
+    code, out, err = council(bs, "seat", "task-2", "running", "agent=b3")
+    check("seat: after a saved round, a start names what changed since that round",
+          code == 0 and "council: 1 file(s) changed since the last saved round (task 1 round 1), outside any round" in err
+          and "council:   gate.log\n" in err and "a.txt" not in err, out + err)
+    _, out, _ = council(bs, "run", "open", "council-review", "--alongside", env=session("sB"))
+    rrun = out.strip().splitlines()[-1]
+    write_plan(rrun, selected=("task-1", "task-3"))
+    council(bs, "seat", "task-1", "running", "agent=r1", "--run", rrun)
+    code, out, err = council(bs, "seat", "task-3", "running", "agent=r3", "--run", rrun)
+    code2, out2, err2 = council(bs, "seat", "task-3", "done", "tokens=20000", "--run", rrun)
+    check("seat: outside a build, task-3 is an ordinary seat — it starts beside a running task-1, needs no report and "
+          "names no files", code == 0 and code2 == 0 and "outside any round" not in err, out + err + out2 + err2)
+
+
+@part("lifecycle")
 def runs_status_card_owed_once(tmp):
     # The run's first status card is owed once per run, at its first dispatch: the helper marks it due, any
     # council status call for the run clears it, and the turn-end hook sends the Chair back once while it is due.
@@ -7986,7 +8073,13 @@ def models_per_role(tmp):
     check("models: a verifier weaker than its builder is refused, and the refusal names the fix",
           code == 1 and "verifier verify-plan on sonnet is weaker than builder build on opus — put the verifier on "
           "opus or stronger (seat/verify-plan/model, and verifier= in council.config.md's - models:)" in out, out)
-    check("models: a build's verifier is also judged against the Chair, which builds on the session's model",
+    check("models: with a builder seat selected, a build's verifier is judged against that seat, not the Chair (D42)",
+          code == 1 and "than the Chair" not in out, out)
+    write(plan_path, "".join(line + "\n" for line in plain.splitlines() if "\tbuild\t" not in line)
+          + "seat\tverify-plan\tmodel\tsonnet\tthis test's model\n")
+    code, out, _ = council(repo, "run", "plan", "check")
+    check("models: a Solo build selects no builder seat, so its verifier is judged against the Chair, which builds on "
+          "the session's model",
           code == 1 and "verifier verify-plan on sonnet is weaker than the Chair, which builds, on inherit — put the "
           "verifier on inherit, as its builder is" in out, out)
     models_line("- models: verifier=opus\n")

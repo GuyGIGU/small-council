@@ -218,15 +218,22 @@ def _ask(run: Path) -> bytes:
 
 
 def earlier(run: Path, found: task_slice.Slice) -> list[str]:
-    out = ["## " + NAMES[4]]
+    """Other tasks' saved rounds on the slice's files, with their causes; first, on a fix round, where the task's own
+    rounds are told (patches/T<n>.md) — a path, never the file's text."""
+    every, number = patches.rounds(run), found.task.number
+    own = sum(one.task == number for one in every)
+    history = (patches.folder(run) / ("T%d.md" % number)).as_posix()
+    out = ["## " + NAMES[4]] + ["- task %d's own history, %d saved round(s): %s — read it before the fix; it is not "
+                                "copied here" % (number, own, history)] * bool(own)
     if not found.paths:
         return out + ["- none to compare: the slice names no path", ""]
-    for one in patches.rounds(run):
+    others = len(out)
+    for one in every:
         met = [path for path in one.files if path not in patch_checks.outside(one.files, found.paths)]
-        if one.task == found.task.number or not met:
+        if one.task == number or not met:
             continue
         cause = one.head.get("cause", "")
         out.append("- task %d round %d (%s.patch): %s · Cause: %s" % (
             one.task, one.round, patches.name(one.task, one.round), ", ".join(met),
             "%s (%s)" % (cause, one.head["state"]) if one.head.get("state") else "none, a first build"))
-    return out + ([] if len(out) > 1 else ["- none: no other task's saved round touched these paths"]) + [""]
+    return out + ([] if len(out) > others else ["- none: no other task's saved round touched these paths"]) + [""]

@@ -8,8 +8,9 @@ from council.records import writable
 
 
 def refusal(kind: str | None, home: str, run: str) -> str | None:
-    """The reason a council-worker or council-verifier (kind) can't go out: the council home, or the run
-    folder the dispatch names, is not writable from this session. None for any other agent (kind is None)."""
+    """The reason a council-worker, council-verifier or council-builder (kind) can't go out: the council home, or
+    the run folder the dispatch names, is not writable from this session. None for any other agent (kind is
+    None)."""
     if kind is None:
         return None
     folders = [("the council folder", home)]

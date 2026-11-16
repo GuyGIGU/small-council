@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Small Council — SubagentStop hook for council-worker and council-verifier.
+# Small Council — SubagentStop hook for council-worker, council-verifier and council-builder.
 #
 # A council agent may not finish without the file its contract requires. When that file is missing or
 # malformed, the hook blocks the stop once: exit 2, and the reason on stderr goes back to the agent so
@@ -39,6 +39,18 @@ block() {
   exit 2
 }
 
+engine="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/src/council/commands/script.py"
+# Python 3.8+, as the helper finds it; without it the claim index isn't built either.
+pick_python() {
+  local c
+  for c in python3 python; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+      printf '%s' "$c"; return 0
+    fi
+  done
+  return 1
+}
+
 # Any spacing JSON allows ("stop_hook_active" : true, a line break) — whitespace inside the reply's own
 # text can't fake it, because a quote in a JSON string is escaped (\").
 case "$(printf '%s' "$input" | tr -d ' \t\r\n')" in *'"stop_hook_active":true'*) exit 0 ;; esac
@@ -46,30 +58,31 @@ case "$(printf '%s' "$input" | tr -d ' \t\r\n')" in *'"stop_hook_active":true'*)
 case "$(json_str agent_type)" in
   *council-worker) kind=worker ;;
   *council-verifier) kind=verifier ;;
+  *council-builder) kind=builder ;;
   *) exit 0 ;;
 esac
 sid="$(json_str session_id)"; . "${BASH_SOURCE[0]%[/\\\\]*}/session-mark.sh" 2>/dev/null && mark_session "$sid" seat-gate   # council doctor reads it
+if [ "$kind" = builder ]; then        # judged in Python (builder_stop): exit 1 and its one line send it back once
+  [ -f "$engine" ] && py="$(pick_python)" || exit 0
+  why="$(printf '%s' "$input" | "$py" "$engine" builder_stop 2>/dev/null)" || [ "$?" -ne 1 ] || [ -z "$why" ] || block "$why"
+  exit 0
+fi
 
 msg="$(json_str last_assistant_message)"
-empty=0
 if [ -z "$msg" ]; then
   # No reply field (an older host, input it can't read) is the host's affair: let it through. A reply that
   # is there but empty is an agent that stopped before answering — a turn limit: send it back once.
   printf '%s' "$input" | grep -q '"last_assistant_message"[[:space:]]*:[[:space:]]*""' || exit 0
-  empty=1
 fi
 # BLOCKED at a line's start, after spaces, a quote mark or markdown (**BLOCKED:**): in capitals on any line,
 # or "Blocked:" in any case as the reply's first line — so a finding like "* Blocked users can …" is no reply.
 if printf '%s\n' "$msg" | grep -q -E '^[[:space:]>*_]*BLOCKED([^[:alpha:]]|$)'; then exit 0; fi
 if printf '%s\n' "$msg" | awk 'NF { print; exit }' | grep -q -i -E '^[[:space:]>*_]*blocked[*_]*[[:space:]]*:'; then exit 0; fi
 
-if [ "$kind" = worker ]; then
-  finish="finish by writing your output file, then reply with exactly one line: Wrote <output path> — <N> items (<counts>). If you couldn't do the work, reply BLOCKED: <reason> instead."
-else
-  finish="finish by writing your verdicts to the file your dispatch named (<run>/verify-<n>.md), then reply with exactly one line: Wrote <path> — <count of each verdict>. If you couldn't do the check, reply BLOCKED: <reason> instead."
-fi
+finish="finish by writing your output file, then reply with exactly one line: Wrote <output path> — <N> items (<counts>). If you couldn't do the work, reply BLOCKED: <reason> instead."
+[ "$kind" = worker ] || finish="finish by writing your verdicts to the file your dispatch named (<run>/verify-<n>.md), then reply with exactly one line: Wrote <path> — <count of each verdict>. If you couldn't do the check, reply BLOCKED: <reason> instead."
 
-[ "$empty" = 0 ] || block "you stopped without a reply — $finish"
+[ -n "$msg" ] || block "you stopped without a reply — $finish"
 
 # The line that names the file: "Wrote <path>" anywhere, or at a line's start "Wrote:", "**Wrote**", "wrote".
 line="$(printf '%s\n' "$msg" | grep -m 1 -i -E '^[[:space:]>*_]*wrote[*_:]*[[:space:]].*\.md' || true)"
@@ -130,17 +143,6 @@ fi
 
 problems=""
 add() { problems="${problems}${problems:+; }$1"; }
-engine="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/src/council/commands/script.py"
-# Python 3.8+, as the helper finds it; without it the claim index isn't built either.
-pick_python() {
-  local c
-  for c in python3 python; do
-    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
-      printf '%s' "$c"; return 0
-    fi
-  done
-  return 1
-}
 
 if [ ! -s "$path" ]; then
   add "the file you named ($path) doesn't exist or is empty"
@@ -210,11 +212,9 @@ else
   size="$(wc -c < "$path" | tr -d ' ')"
   if [ "$size" -gt 16384 ]; then
     kb=$(( (size * 10 + 1023) / 1024 )); kb="$((kb / 10)).$((kb % 10))"     # rounded up: 16.0 would read as fine
-    if [ "$kind" = worker ]; then
-      add "the file is $kb KB (limit 16 KB) — cut it to your item cap and keep items short"
-    else
-      add "the file is $kb KB (limit 16 KB) — shorten the paragraphs, and keep every row of the verdict table"
-    fi
+    cut="cut it to your item cap and keep items short"
+    [ "$kind" = worker ] || cut="shorten the paragraphs, and keep every row of the verdict table"
+    add "the file is $kb KB (limit 16 KB) — $cut"
   fi
 fi
 

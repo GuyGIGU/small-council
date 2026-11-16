@@ -109,15 +109,18 @@ class VerifierTest(unittest.TestCase):
         inverted = models.Models("opus", "inherit", "sonnet", True)
         self.assertEqual(problems(rows(build_1="opus", verify_1="sonnet"), models=inverted), [
             "ERROR line 25: verifier verify-1 on sonnet is weaker than builder build-1 on opus — put the verifier "
-            "on opus or stronger (seat/verify-1/model, and verifier= in council.config.md's - models:)",
-            "ERROR line 25: verifier verify-1 on sonnet is weaker than " + self.CHAIR])
+            "on opus or stronger (seat/verify-1/model, and verifier= in council.config.md's - models:)"])
 
-    def test_a_builds_verifier_is_judged_against_the_chair_on_the_sessions_model(self) -> None:
+    def test_with_a_builder_seat_a_builds_verifier_is_judged_against_that_seat_only(self) -> None:
         cheap = models.Models(verifier="opus", written=True)
         self.assertEqual(problems(rows(verify_1="opus"), models=cheap), [
             "ERROR line 24: verifier verify-1 on opus is weaker than builder build-1 on inherit — put the verifier on "
-            "inherit, as its builder is (seat/verify-1/model, and verifier= in council.config.md's - models:)",
-            "ERROR line 24: verifier verify-1 on opus is weaker than " + self.CHAIR])
+            "inherit, as its builder is (seat/verify-1/model, and verifier= in council.config.md's - models:)"])
+        given = models.Models("sonnet", "inherit", "sonnet", True)
+        self.assertEqual(problems(rows(build_1="sonnet", verify_1="sonnet"), models=given), [])
+
+    def test_a_solo_build_selects_no_builder_seat_so_its_verifier_is_judged_against_the_chair(self) -> None:
+        cheap = models.Models(verifier="opus", written=True)
         alone = "".join(line + "\n" for line in PLAN.splitlines() if "build-1" not in line)
         self.assertEqual(plan_check.judge(alone + rows(verify_1="opus"), GIVEN._replace(models=cheap)).problems, [
             "ERROR line 20: verifier verify-1 on opus is weaker than " + self.CHAIR])

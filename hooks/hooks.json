@@ -47,7 +47,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "^small-council:council-(worker|verifier)$",
+        "matcher": "^small-council:council-(worker|verifier|builder)$",
         "hooks": [
           {
             "type": "command",
