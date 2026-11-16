@@ -185,7 +185,7 @@
    "longest_name": "main"
   },
   "src/council/commands/doctor.py": {
-   "lines": 280,
+   "lines": 281,
    "longest": 38,
    "longest_name": "main"
   },
@@ -315,7 +315,7 @@
    "longest_name": "checked"
   },
   "src/council/commands/memory_draft.py": {
-   "lines": 438,
+   "lines": 386,
    "longest": 43,
    "longest_name": "draft_claim"
   },
@@ -530,9 +530,14 @@
    "longest_name": "undelivered"
   },
   "src/council/records/config.py": {
-   "lines": 242,
-   "longest": 25,
-   "longest_name": "roster_rows"
+   "lines": 216,
+   "longest": 24,
+   "longest_name": "roster_table"
+  },
+  "src/council/records/converge.py": {
+   "lines": 89,
+   "longest": 34,
+   "longest_name": "table"
   },
   "src/council/records/earlier.py": {
    "lines": 159,
@@ -595,7 +600,7 @@
    "longest_name": "ways"
   },
   "src/council/records/memory.py": {
-   "lines": 205,
+   "lines": 224,
    "longest": 25,
    "longest_name": "replace"
   },
@@ -610,8 +615,8 @@
    "longest_name": "verdicts"
   },
   "src/council/records/memory_entries.py": {
-   "lines": 427,
-   "longest": 44,
+   "lines": 487,
+   "longest": 37,
    "longest_name": "line"
   },
   "src/council/records/models.py": {
@@ -665,7 +670,7 @@
    "longest_name": "read"
   },
   "src/council/records/request.py": {
-   "lines": 155,
+   "lines": 159,
    "longest": 20,
    "longest_name": "verdict"
   },
@@ -760,12 +765,12 @@
    "longest_name": ""
   },
   "src/council/views/snapshot.py": {
-   "lines": 295,
-   "longest": 34,
-   "longest_name": "converge_rows"
+   "lines": 202,
+   "longest": 31,
+   "longest_name": "claim_index_stale"
   },
   "src/council/views/status.py": {
-   "lines": 442,
+   "lines": 425,
    "longest": 46,
    "longest_name": "interpret"
   },
@@ -775,13 +780,13 @@
    "longest_name": "text"
   },
   "src/council/views/status_closing.py": {
-   "lines": 130,
+   "lines": 121,
    "longest": 26,
-   "longest_name": "filed_request"
+   "longest_name": "closing_of"
   },
   "src/council/views/status_names.py": {
-   "lines": 41,
-   "longest": 11,
+   "lines": 45,
+   "longest": 14,
    "longest_name": "roster_names"
   },
   "src/council/views/status_usage.py": {

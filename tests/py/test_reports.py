@@ -73,6 +73,28 @@ class RequestTest(support.Scratch):
         (run / "session-state.md").write_text("status: in-progress\nask: .council/asks/x.md\n")
         self.assertEqual(request.continued(run), ".council/asks/x.md")
 
+    def test_filed_only_inside_the_projects_asks_folder(self) -> None:
+        run = self.run_folder()
+        inside = self.write(".council/asks/x.md", "# Ask\n")
+        self.write("out.md", "# Ask\n")
+        (run / "session-state.md").write_text("status: in-progress\n")
+        (run / "ask.md").write_text("# Ask\ncontinues: .council/asks/x.md\n")
+        self.assertEqual(request.filed(run), inside)
+        for named in ("out.md", ".council/asks/../../out.md", str(self.tmp / "out.md")):
+            (run / "session-state.md").write_text("status: in-progress\nask: %s\n" % named)
+            self.assertIsNone(request.filed(run), named)
+        elsewhere = self.tmp / "a" / "b" / "c"
+        elsewhere.mkdir(parents=True)
+        (elsewhere / "session-state.md").write_text("status: in-progress\nask: .council/asks/x.md\n")
+        self.assertIsNone(request.filed(elsewhere))      # a run in no runs/ folder belongs to no project
+
+    def test_filed_never_through_an_asks_folder_that_is_a_link(self) -> None:
+        run = self.run_folder()
+        self.write("real/x.md", "# Ask\n")
+        support.symlink_or_skip(self, self.tmp / ".council" / "asks", self.tmp / "real", directory=True)
+        (run / "session-state.md").write_text("status: in-progress\nask: .council/asks/x.md\n")
+        self.assertIsNone(request.filed(run))
+
     def test_field_reads_the_first_key_line(self) -> None:
         self.assertEqual(cells.field("title: x\nmode:  review  \nmode: other\n", "mode"), "review  ")
         self.assertEqual(cells.field("a\n", "mode"), "")

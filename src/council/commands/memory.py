@@ -102,7 +102,7 @@ def load() -> Memory:
 
 def slugs(home: str) -> list[str]:
     """The roster's slugs (C-locale text), as the scope matcher compares them."""
-    return [slug for slug, _, _ in config.roster_rows(where.native(home)) if slug != "-"]
+    return [row.slug for row in config.roster_table(where.native(home)) if row.slug not in ("", "-")]
 
 
 def indexed(found: Memory) -> list[str]:

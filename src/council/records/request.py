@@ -47,13 +47,17 @@ def continued(run: Path) -> str:
 
 def filed(run: Path) -> Path | None:
     """The filed request this run's words belong to (continued); a relative path is the project's (the council
-    home's parent)."""
+    home's parent). None for a new request, and for one that is not inside the project's .council/asks, with
+    asks/ itself no link: the helper files requests only there, so nothing else is read as the user's words."""
     run = Path(run)
-    name = continued(run)
+    name = continued(run) if run.parent.name == "runs" else ""
     if not name:
         return None
+    root = run.parent.parent.parent
+    asks = root / ".council" / "asks"
     where = Path(name)
-    return where if where.is_absolute() or re.match(r"[A-Za-z]:", name) else run.parent.parent.parent / where
+    where = where if where.is_absolute() or re.match(r"[A-Za-z]:", name) else root / where
+    return None if paths.linked(asks) or not paths.contained(where, asks) else where
 
 
 def lines_kept(data: bytes) -> list[bytes]:

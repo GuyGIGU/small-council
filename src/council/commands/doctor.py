@@ -94,7 +94,8 @@ def _isfile(path: str) -> bool:
 
 
 def roster(doc: Doctor) -> None:
-    rows = [tuple(bytewise.shown(c) for c in row) for row in config.roster_rows(where.native(doc.home))]
+    rows = [tuple(bytewise.shown(c) for c in (row.slug or "-", row.seat, row.reference or "-"))
+            for row in config.roster_table(where.native(doc.home))]
     if not rows:
         doc.warn("couldn't read a Roster table in %s" % config.NAME,
                  "run council-init refresh (older configs list seats instead of a table)")

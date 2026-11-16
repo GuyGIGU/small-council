@@ -427,6 +427,25 @@ def runs_open(tmp):
     code, _, err = council(configured_memory, "run", "open", "council-review")
     check("run open: the configured memory file, not only the default, is measured",
           code == 0 and "project-memory.md is 66 KB" in err, err)
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- conventions: /docs/project-memory.md\n")
+    code, out, err = council(configured_memory, "status")
+    check("status: sizes the memory file council memory and run open read — a configured /docs/… is the repo's own",
+          code == 0 and "project-memory.md is 66 KB" in out, out + err)
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- Conventions: docs/project-memory.md\n")
+    code, out, err = council(configured_memory, "status")
+    check("status: a `Conventions:` key in capitals is no conventions key, so no configured file is sized",
+          code == 0 and "project-memory.md" not in out, out + err)
+    lesson = ("# Memory\n## Proposed — awaiting the user's yes/no\n### F-1: a lesson\n**Failure:** f\n"
+              "### Notes about it\n<!-- ### F-8: commented -->\n```\n### F-9: an example\n```\n")
+    write(os.path.join(configured_memory, ".council", "council.config.md"),
+          "# Council config\n## Memory\n- conventions: docs/small-memory.md\n")
+    write(os.path.join(configured_memory, "docs", "small-memory.md"), lesson)
+    code, out, err = council(configured_memory, "status")
+    check("status: drafted lessons are counted in the configured memory file, as the memory parser reads them — "
+          "a note, a commented heading and a fenced example are none",
+          code == 0 and "1 drafted lesson waits for your yes or no." in out, out + err)
     plan_path = os.path.join(run, "run-plan.tsv")
     check("run open: creates and stamps a versioned run plan",
           os.path.isfile(plan_path) and "plan-schema: 1" in st and "\t{{MODE}}\t" not in read(plan_path), read(plan_path) + st)
@@ -1897,6 +1916,33 @@ def runs_memory(tmp):
     check("memory: flags a scope item that matches no file, seat or mode",
           '"webapp/fronted/**" (EC-13) matches no file, seat or mode' in out and not any(f"({e})" in out for e in ["EC-1", "EC-3", "EC-5", "EC-6"]), out)
 
+@part("runs")
+def memory_moves_by_the_parsers_rules(tmp):
+    """council memory accept and reject find the entry they move by the memory parser's own rules: a heading of
+    seven #s is a heading (it ends the entry above it), and a file that is not valid UTF-8 keeps every byte."""
+    repo = new_repo(tmp, "memparser")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    mem = os.path.join(repo, ".council", "conventions.md")
+    head = (b"# Conventions\n## Accepted Patterns (AP)\n### AP-1: caf\xc3\xa9 stays\n**Pattern:** x\n"
+            b"## Proposed \xe2\x80\x94 awaiting the user's yes/no\n### F-1: a lesson\n**Failure:** f\n**Evidence:** a.md:1\n")
+    with open(mem, "wb") as f:
+        f.write(head + b"####### F-2: seven hashes\nkept\n")
+    code, out, err = council(repo, "memory", "reject", "F-1", "--user-said", "no")
+    with open(mem, "rb") as f:
+        after = f.read()
+    check("memory reject: a heading of seven #s ends the entry above it and stays, named as not read",
+          code == 0 and b"### F-1" not in after and b"####### F-2: seven hashes\nkept\n" in after
+          and b"was F-1, evidence a.md:1" in after, out + err + after.decode("utf-8", "replace"))
+    with open(mem, "wb") as f:
+        f.write(head.replace(b"caf\xc3\xa9", b"caf\xe9"))         # saved as Latin-1 by hand
+    code, out, err = council(repo, "memory", "reject", "F-1", "--user-said", "no")
+    with open(mem, "rb") as f:
+        after = f.read()
+    check("memory reject: a memory file that is not valid UTF-8 is moved in, every other byte kept",
+          code == 0 and after.startswith(b"# Conventions\n## Accepted Patterns (AP)\n### AP-1: caf\xe9 stays\n")
+          and b"### F-1" not in after and b"was F-1, evidence a.md:1" in after and "codec" not in err,
+          out + err + after.decode("utf-8", "replace"))
+
 @part("timing")
 def memory_speed(tmp):
     # Scopes and keys as projects really write them: a folder with a blank in its name, a Godot
@@ -3204,7 +3250,8 @@ def runs_card_says_what_is_known(tmp):
     sk = new_repo(tmp, "card-skipped")
     write(os.path.join(sk, ".council", "council.config.md"),
           "# Council config\n## Roster\n| Seat | Slug | Lens | Surface | Reference | Recast note |\n|---|---|---|---|---|---|\n"
-          "| Troy Hunt | s1 | Security | `hooks/**` | references/security.md | kept |\n")
+          "| Troy Hunt | s1 | Security | `hooks/**` | references/security.md | kept |\n"
+          "| **Kent Beck** | s2 | *Tests* | `tests/**` | - | kept |\n| Docs Seat | s3 |  | `docs/**` | - | kept |\n")
     _, out, _ = council(sk, "run", "open", "council-plan")
     krun = out.strip().splitlines()[-1]
     write_plan(krun, selected=("chair", "w1", "w2", "w3", "w4", "w5"), skipped=tuple("s%d" % i for i in range(1, 9)),
@@ -3221,6 +3268,8 @@ def runs_card_says_what_is_known(tmp):
         names = {}
     check("status: a skipped seat no brief names is named from the roster — what it checks, then who",
           names.get("s1") == "Security (Troy Hunt)", str(names))
+    check("status: a roster seat's name loses its bold and italic marks, and one with no Lens is named by its Seat",
+          names.get("s2") == "Tests (Kent Beck)" and names.get("s3") == "Docs Seat", str(names))
     rows = read(os.path.join(krun, "run-plan.tsv")).splitlines(True)
     write(os.path.join(krun, "run-plan.tsv"), "".join(r for r in rows if not r.startswith("seat\ts8\trole\t")))
     code, out, err = council(sk, "run", "plan", "check")
@@ -3954,6 +4003,13 @@ def requests_and_proofs(tmp):
     check("check: a request part with no quote, or a one-word one, is broken",
           "synthesis#4  quote  NO-QUOTE" in out and "synthesis#5  quote  TOO-SHORT" in out
           and "2 of 5 quotes found in the request" in out, out)
+    elsewhere = os.path.join(tmp, "request-outside-asks.md")
+    write(elsewhere, read(os.path.join(asks, filed[0])))
+    council(req, "state", "ask=" + slash(elsewhere))
+    code, out, _ = council(req, "check")
+    council(req, "state", f"ask=.council/asks/{filed[0]}")
+    check("check: a request file outside .council/asks/ is no filed request, even when the state's ask: names it",
+          code == 1 and "synthesis#1  quote  NOT-IN-THE-REQUEST" in out and "synthesis#2  quote  ok" in out, out)
     qrepo = new_repo(tmp, "quotes")
     write(os.path.join(qrepo, "x.txt"), "x\n")
     git(qrepo, "add", "-A")
@@ -6499,6 +6555,14 @@ def requests_plan_tasks(tmp):
     code, out, _ = judged(task(1, serves='"charge it twice please"'))
     check("run plan check: a Serves quote the request never said is refused",
           code == 1 and "task 1's Serves quotes words the request never said" in out, out)
+    elsewhere = os.path.join(tmp, "plan-request-outside-asks.md")
+    write(elsewhere, "# Ask — fax\n## In your words\nSend every invoice by fax.\n")
+    council(pt, "state", "ask=" + slash(elsewhere))
+    code, out, _ = judged(task(1, serves='"Send every invoice by fax."'))
+    code2, _, err2 = council(pt, "state", "ask=")
+    check("run plan check: a request file outside .council/asks/ is not the user's words, even when the state's ask: "
+          "names it", code == 1 and "task 1's Serves quotes words the request never said" in out and code2 == 0,
+          out + err2)
     code, out, _ = judged(task(1, owner="src/pay/"))
     check("run plan check: an Owner naming no row of the map's one-way-per-job table, and no New way:, is refused",
           code == 1 and "task 1's Owner names no row" in out and "Charge a card" in out, out)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 from council.records import bytewise, cells, paths
 from council.records.cells import INTMAX
@@ -153,7 +154,7 @@ def field(home: str | Path, key: str) -> str:
 def memory_line(home: str | Path) -> tuple[str, str] | None:
     """The `- conventions:` path under ## Memory as the helper's memory_file reads it: the value with CRs, quotes,
     a trailing (note) and a " — aside" taken off, and its first word (a path may hold a blank; a note may follow
-    one); None when there is no such line. memory_path() is status.py's older reading of the same line."""
+    one); None when there is no such line."""
     under = False
     for line in bytewise.file_lines(path(home), fold=False):
         if re.match(r"##[ \t]", line):
@@ -168,46 +169,19 @@ def memory_line(home: str | Path) -> tuple[str, str] | None:
     return None
 
 
-def memory_path(home: str | Path) -> str:
-    """The `- conventions:` path under the ## Memory heading, quotes and a trailing note taken off;
-    '' when none is set (status.py's reading of what the helper's memory_file reads)."""
-    in_memory = False
-    for line in paths.text_of(path(home), home).splitlines():
-        if re.match(r"^##[ \t]+", line):
-            in_memory = bool(re.match(r"^##[ \t]+Memory(?:\W|$)", line, re.I))
-        elif in_memory:
-            match = re.match(r"^[ \t]*[-*][ \t]*conventions:[ \t]*(.*)$", line, re.I)
-            if match:
-                configured = match.group(1).strip().strip('`"\'')
-                configured = re.sub(r"[ \t]+\([^()]*\)[ \t]*$", "", configured)
-                return re.sub(r"[ \t]+[—–-][ \t].*$", "", configured).strip()
-    return ""
+class Seat(NamedTuple):
+    """One row of the config's Roster table, C-locale text (records/bytewise.py); '' for an empty cell."""
+
+    seat: str
+    slug: str
+    lens: str
+    reference: str
 
 
-def roster(home: str | Path) -> list[tuple[str, str, str]]:
-    """The Roster table's (seat, slug, lens) rows, in order, from the first table whose header names
-    Seat, Slug and Lens; a row missing any of the three is left out."""
-    found, columns = [], None
-    for line in cells.lines_of(paths.text_of(path(home), home)):
-        if not line.lstrip().startswith("|"):
-            columns = None
-            continue
-        row = [c.strip() for c in line.strip().strip("|").split("|")]
-        lower = [c.lower() for c in row]
-        if {"seat", "slug", "lens"} <= set(lower):
-            columns = (lower.index("seat"), lower.index("slug"), lower.index("lens"))
-        elif columns and len(row) > max(columns) and not set(row[0]) <= set("-: "):
-            seat, slug, lens = (cells.clean(row[i]).strip("`") for i in columns)
-            if slug and lens and seat:
-                found.append((seat, slug, lens))
-    return found
-
-
-def roster_rows(home: str | Path) -> list[tuple[str, str, str]]:
-    """The Roster table under ## Roster as the helper's awk read it, for memory and doctor: (slug, seat,
-    reference), "-" for an empty value, its columns found by their header names (Seat, else the first; Slug;
-    Reference), each cell trimmed of blanks, CRs, backticks and asterisks; a row with no seat, a rule row or a
-    <placeholder> left out. C-locale text (records/bytewise.py). roster() is the older reading that needs a Lens."""
+def roster_table(home: str | Path) -> list[Seat]:
+    """The Roster table under ## Roster as the helper's awk read it: its columns found by their header names (Seat,
+    else the first; Slug; Lens; Reference), each cell trimmed of blanks, CRs, backticks and asterisks; a row with no
+    seat, a rule row or a <placeholder> seat left out, and a <placeholder> slug or reference read as empty."""
     found, inside, columns = [], False, None
     for line in bytewise.records(bytewise.read(paths.contents(path(home)) or b"")):
         if line.startswith("## "):
@@ -219,14 +193,14 @@ def roster_rows(home: str | Path) -> list[tuple[str, str, str]]:
         if columns is None:
             names = [bytewise.lower(_cell(c)) for c in cut]
             columns = tuple(max([i for i in range(1, len(cut) - 1) if names[i] == h] or [d])
-                            for h, d in (("seat", 1), ("slug", 0), ("reference", 0)))
+                            for h, d in (("seat", 1), ("slug", 0), ("lens", 0), ("reference", 0)))
             continue
-        seat, slug, ref = (_cell(cut[i]) if i and i < len(cut) else "" for i in columns)
+        seat, slug, lens, ref = (_cell(cut[i]) if i and i < len(cut) else "" for i in columns)
         if seat == "" or re.fullmatch(r":?-+:?", seat) or seat.startswith("<"):
             continue
         slug = "" if slug.startswith("<") else slug
         ref = "" if ref.startswith("<") or re.fullmatch(r":?-+:?", ref) else ref
-        found.append((slug or "-", seat, ref or "-"))
+        found.append(Seat(seat, slug, lens, ref))
     return found
 
 

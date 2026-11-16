@@ -13,6 +13,7 @@ too. skipped() names the lines that open like an entry but are not read."""
 from __future__ import annotations
 
 import re
+from typing import Iterator
 
 from council.records import bytewise, paths
 from council.records.bytewise import EM, EN, lower, trim, upper
@@ -39,6 +40,7 @@ _REST_OPEN = re.compile(r"[ \t]*(" + EM + "|" + EN + r"|-|:|\.|\))?[ \t]*")
 _UNDASHED = re.compile(r"([*_~]|[:.)]|[ \t]+(" + EM + "|" + EN + r"|-|:)|[ \t]*\Z)")
 _RULE = re.compile(r"[ \t]*(([-*_][ \t]*)([-*_][ \t]*)([-*_][ \t]*)+|=+[ \t]*)\Z")
 _FIELD_OPENS = re.compile(r"[ \t]*(" + _DOT + r"[ \t]*)?\*\*[A-Za-z][^*]*(:\*\*|\*\*:)")
+_FILES = (("proposed", re.compile(r"[#* ]*propos")), ("rejected", re.compile(r"[#* ]*reject")))
 
 
 def kind(t: str, strict: bool = False) -> str:
@@ -65,6 +67,79 @@ def kind(t: str, strict: bool = False) -> str:
     if any(off in lo for off in OFF):
         return "off"
     return "settled" if any(s in lo for s in SET) else ""
+
+
+def section(name: str) -> str:
+    """What a section heading files, by kind(): proposed or rejected (off, and named Proposed… or Rejected…),
+    observed, or '' (any other section)."""
+    found = kind(name)
+    if found != "off":
+        return "observed" if found == "observed" else ""
+    return next((word for word, rule in _FILES if rule.match(lower(name))), "")
+
+
+class Shade:
+    """The lines the parser never reads: an HTML comment's and a code fence's, their markers included."""
+
+    def __init__(self) -> None:
+        self.incom = self.fence = False
+
+    def hides(self, line: str) -> bool:
+        if self.incom:
+            self.incom = "-->" not in line
+            return True
+        if re.match(r"[ \t]*<!--", line):
+            self.incom = "-->" not in line
+            return True
+        if re.match(r"[ \t]*(```|~~~)", line):
+            self.fence = not self.fence
+            return True
+        return self.fence
+
+
+def visible(lines: list[str]) -> Iterator[tuple[int, str]]:
+    """(index, line) for the lines the parser reads, of lines as bytewise.lines gives them."""
+    shade = Shade()
+    return ((at, line) for at, line in enumerate(lines) if not shade.hides(line))
+
+
+def heading_of(line: str) -> tuple[int, str] | None:
+    """A heading line's level (its count of #) and its text, blanks trimmed; None for any other line."""
+    if not re.match(r"#+[ \t]", line):
+        return None
+    level = len(line) - len(line.lstrip("#"))
+    return level, trim(line[level:])
+
+
+def _opening(s: str) -> tuple[int, str, str] | None:
+    """The id an entry's text opens with, after the marks before it, as (their length, the id, the rest); None
+    when the text is no entry: a letter or digit runs on from the id, or an id without its dash has no separator."""
+    lo, b = lower(s), 0
+    while b < len(lo) and lo[b] in "*_~":
+        b += 1
+    found = _ID.match(lo[b:])
+    if not found:
+        return None
+    idt, rest = found.group(0), s[b + found.end():]
+    if re.match(r"[A-Za-z0-9_]|-[A-Za-z0-9]", rest) or ("-" not in idt and not _UNDASHED.match(rest)):
+        return None
+    return b, idt, rest
+
+
+def entry_id(s: str) -> str:
+    """The id of a heading entry's text ("AP-3: title" is AP-3), or ''."""
+    found = _opening(s)
+    return idnorm(found[1]) if found else ""
+
+
+def cand_id(txt: str) -> str:
+    """The id of text that opens like an entry (an id, then a separator or nothing: "F-6 — …", "F-6:", never
+    "F-6 follow up"), or ''."""
+    lo2 = re.sub(r"\A[*_~`]+", "", lower(txt), count=1)
+    found = _ID.match(lo2)
+    if not found or not _CAND_REST.match(lo2[found.end():]):
+        return ""
+    return idnorm(found.group(0))
 
 
 def idnorm(s: str) -> str:
@@ -124,18 +199,18 @@ class Parser:
         self.id = self.title = self.scope = self.anchor = self.est = self.ewhere = ""
         self.meaning = self.failure = self.origin = self.evidence = self.verdict = self.para = self.fbefore = ""
         self.ptitle = self.after = ""
-        self.bul = self.pend = self.incom = self.fence = self.anyhead = self.bodyline = False
+        self.bul = self.pend = self.anyhead = self.bodyline = False
+        self.shade = Shade()
         self.pn = 0
         self.n = 0
 
     # -- the awk's functions -------------------------------------------------------------------------------
     def cand(self, txt: str) -> bool:
         """A line that opens like an entry: recorded, so that it can be named if it is not read as one."""
-        lo2 = re.sub(r"\A[*_~`]+", "", lower(txt), count=1)
-        found = _ID.match(lo2)
-        if not found or not _CAND_REST.match(lo2[found.end():]):
+        found = cand_id(txt)
+        if not found:
             return False
-        self.cands.append((idnorm(found.group(0)), self.n))
+        self.cands.append((found, self.n))
         return True
 
     def flush(self) -> None:
@@ -215,17 +290,11 @@ class Parser:
 
     def entry(self, s: str, bullet: bool) -> bool:
         """Is s (a heading's text, or a bullet after its dash) an entry? Sets its id, title and state."""
-        lo, b = lower(s), 0
-        while b < len(lo) and lo[b] in "*_~":
-            b += 1
-        found = _ID.match(lo[b:])
+        found = _opening(s)
         if not found:
             return False
-        idt, rest = found.group(0), s[b + found.end():]
-        dashed = "-" in idt
-        if re.match(r"[A-Za-z0-9_]|-[A-Za-z0-9]", rest) or (not dashed and not _UNDASHED.match(rest)):
-            return False
-        mark = lo[:b]
+        b, idt, rest = found
+        mark = s[:b]
         bold = "**" in mark or "__" in mark
         if bullet and not bold:                              # a bullet entry has its id in bold
             return False
@@ -257,19 +326,12 @@ class Parser:
 
     # -- the awk's rules, one line at a time ---------------------------------------------------------------
     def line(self, line: str) -> None:
-        if self.incom:
-            self.incom = "-->" not in line
+        if self.shade.hides(line):
+            self.para = ""                    # a marker line ends a paragraph, and none runs on inside
             return
-        if re.match(r"[ \t]*<!--", line):
-            self.incom, self.para = "-->" not in line, ""
-            return
-        if re.match(r"[ \t]*(```|~~~)", line):
-            self.fence, self.para = not self.fence, ""
-            return
-        if self.fence:
-            return
-        if re.match(r"#+[ \t]", line):
-            self.heading(line)
+        found = heading_of(line)
+        if found:
+            self.heading(line, *found)
             return
         if re.match(r"[-*+][ \t]", line):
             self.bullet(line)
@@ -301,9 +363,7 @@ class Parser:
             if re.search(r"[^ \t]", line):
                 self.bodyline = True
 
-    def heading(self, line: str) -> None:
-        lvl = len(line) - len(line.lstrip("#"))
-        txt = trim(line[lvl:])
+    def heading(self, line: str, lvl: int, txt: str) -> None:
         if 2 <= lvl <= 4 and self.entry(txt, False):
             self.elvl, self.anyhead = lvl, True
             return
@@ -418,7 +478,7 @@ def skipped(path: str) -> str:
 def pending(text: str, found: list[str]) -> int:
     """The proposals awaiting the user's yes/no: '- PROPOSED' lines and entries under a Proposed heading."""
     return sum(1 for line in bytewise.records(text) if line.startswith("- PROPOSED")) + \
-        sum(1 for row in found if cells(row)[4] == "off" and re.match(r"[#* ]*propos", lower(cells(row)[5])))
+        sum(1 for row in found if cells(row)[4] == "off" and section(cells(row)[5]) == "proposed")
 
 
 def cells(row: str) -> list[str]:
