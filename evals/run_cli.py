@@ -1819,6 +1819,33 @@ def runs_memory(tmp):
     check("memory: flags a scope item that matches no file, seat or mode",
           '"webapp/fronted/**" (EC-13) matches no file, seat or mode' in out and not any(f"({e})" in out for e in ["EC-1", "EC-3", "EC-5", "EC-6"]), out)
 
+@part("runs")
+def memory_moves_by_the_parsers_rules(tmp):
+    """council memory accept and reject find the entry they move by the memory parser's own rules: a heading of
+    seven #s is a heading (it ends the entry above it), and a file that is not valid UTF-8 keeps every byte."""
+    repo = new_repo(tmp, "memparser")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    mem = os.path.join(repo, ".council", "conventions.md")
+    head = (b"# Conventions\n## Accepted Patterns (AP)\n### AP-1: caf\xc3\xa9 stays\n**Pattern:** x\n"
+            b"## Proposed \xe2\x80\x94 awaiting the user's yes/no\n### F-1: a lesson\n**Failure:** f\n**Evidence:** a.md:1\n")
+    with open(mem, "wb") as f:
+        f.write(head + b"####### F-2: seven hashes\nkept\n")
+    code, out, err = council(repo, "memory", "reject", "F-1", "--user-said", "no")
+    with open(mem, "rb") as f:
+        after = f.read()
+    check("memory reject: a heading of seven #s ends the entry above it and stays, named as not read",
+          code == 0 and b"### F-1" not in after and b"####### F-2: seven hashes\nkept\n" in after
+          and b"was F-1, evidence a.md:1" in after, out + err + after.decode("utf-8", "replace"))
+    with open(mem, "wb") as f:
+        f.write(head.replace(b"caf\xc3\xa9", b"caf\xe9"))         # saved as Latin-1 by hand
+    code, out, err = council(repo, "memory", "reject", "F-1", "--user-said", "no")
+    with open(mem, "rb") as f:
+        after = f.read()
+    check("memory reject: a memory file that is not valid UTF-8 is moved in, every other byte kept",
+          code == 0 and after.startswith(b"# Conventions\n## Accepted Patterns (AP)\n### AP-1: caf\xe9 stays\n")
+          and b"### F-1" not in after and b"was F-1, evidence a.md:1" in after and "codec" not in err,
+          out + err + after.decode("utf-8", "replace"))
+
 @part("timing")
 def memory_speed(tmp):
     # Scopes and keys as projects really write them: a folder with a blank in its name, a Godot

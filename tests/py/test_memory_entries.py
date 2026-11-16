@@ -85,6 +85,27 @@ class StatesTest(support.Scratch):
         self.assertEqual(states["F-3"][0], "unknown")
         self.assertIn("failure entry", states["F-3"][1])
 
+    def test_a_section_files_by_the_parsers_words(self) -> None:
+        said = {name: memory_entries.section(name) for name in (
+            "Proposed " + bytewise.EM + " awaiting", "Proposals", "Pending proposals", "Draft", "Declined ideas",
+            "Retired", "Decisions (proposed)", "_Proposed_", "Rejected " + bytewise.EM + " never again",
+            "Observed Failures (F)", "Observed failures pending review", "Accepted Patterns")}
+        self.assertEqual([name for name, word in said.items() if word == "proposed"],
+                         ["Proposed " + bytewise.EM + " awaiting", "Proposals"])
+        self.assertEqual([name for name, word in said.items() if word == "rejected"],
+                         ["Rejected " + bytewise.EM + " never again"])
+        self.assertEqual([name for name, word in said.items() if word == "observed"], ["Observed Failures (F)"])
+
+    def test_the_line_tests_an_editor_shares(self) -> None:
+        lines = ["# M", "<!-- ### F-1: hidden", "-->", "```", "### F-2: fenced", "```", "####### F-3: seven", "x"]
+        self.assertEqual([at for at, _ in memory_entries.visible(lines)], [0, 6, 7])
+        self.assertEqual(memory_entries.heading_of("####### F-3: seven "), (7, "F-3: seven"))
+        self.assertIsNone(memory_entries.heading_of("#F-3"))
+        self.assertEqual([memory_entries.entry_id(t) for t in ("**ap3**: x", "F-6 follow up", "F-6x", "D-15")],
+                         ["AP-3", "F-6", "", "D-15"])
+        self.assertEqual([memory_entries.cand_id(t) for t in ("F-6 " + bytewise.EM + " x", "F-6 follow up", "f6:")],
+                         ["F-6", "", "F-6"])
+
 
 class LocateTest(support.Scratch):
     """memory.locate: the MEM, MEM_CONF, MEM_NOTE, MEM_ALT and MEM_ALT_N bin/council's memory_file set ({t}: the

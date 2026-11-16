@@ -178,7 +178,7 @@ def replace(mem: str, before: str, after: str, entry: str, want: str, home: str,
     mine = [parsed.cells(row) for row in after_rows if parsed.cells(row)[0] == entry]
     if want == "gone" and mine:
         return "%s is still in the memory file — nothing written" % shown
-    proposed = [c for c in mine if c[4] == "off" and re.match(r"[#* ]*propos", bytewise.lower(c[5]))]
+    proposed = [c for c in mine if c[4] == "off" and parsed.section(c[5]) == "proposed"]
     if want == "proposed" and len(proposed) != 1:
         return "%s did not land under ## Proposed — nothing written" % shown
     if want == "observed":
