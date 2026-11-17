@@ -2,6 +2,8 @@
 the build loop's verifier rules, and the run a command acts on."""
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import unittest
 from pathlib import Path
@@ -144,6 +146,37 @@ class GateTest(support.Scratch):
         call = agent_gate.Call("Agent", "small-council:council-worker", "hunt", name, "", "", False)
         refusal = agent_gate.dispatch_refusal(call, agent_gate.Where(self.home, "/no/tree", "s1")) or ""
         self.assertIn("which is closed (complete)", refusal)
+
+    def test_a_builder_whose_seat_another_takes_after_its_reading_is_refused_with_exit_2(self) -> None:
+        # EVALS-1 (M15): a builder for a queued seat of a run no session drives (so no start is counted, and the seat
+        # is taken last, by _take). Another builder's dispatch takes the seat between this one's reading and its
+        # take: the seam runs that take inside the reading, so the order is fixed, not raced. The gate's answer is
+        # exit 2 and the refusal, which the hook passes on (stderr), never exit 0, which lets a second builder go.
+        from council.commands import build_seat, seat
+        name = "2026-01-02-030405-council-implement"
+        run = Path(self.planned(name, "seat\ttask-1\tdisposition\tselected\t-\n",
+                                state="mode: council-implement\nstatus: in-progress\nphase: build\nplan-schema: 1\n"))
+        (run / "seats.tsv").write_text("slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
+                                       "task-1\tqueued\t\t\tT\t\t\t\n", encoding="utf-8")
+        read, other = build_seat.dispatch_refusal, []
+
+        def reading(at: Path, slug: str) -> str | None:
+            why = read(at, slug)
+            if not other:
+                other.append("taking")
+                other[0] = seat.taken(at, slug)                   # the other builder takes the seat first
+            return why
+
+        words = ["Agent", "type=small-council:council-builder", "seat=task-1", "run=" + name]
+        with mock.patch.object(build_seat, "dispatch_refusal", side_effect=reading), \
+                mock.patch.object(agent_gate.where, "council_home", return_value=self.home), \
+                mock.patch.object(agent_gate.where, "this_tree", return_value="/no/tree"), \
+                contextlib.redirect_stdout(io.StringIO()) as said:
+            code = agent_gate.check("", words)
+        self.assertEqual(other, [None])
+        self.assertEqual((code, said.getvalue().split(" — ")[0]),
+                         (2, "Small Council: cannot start a builder for task-1"))
+        self.assertIn("a builder went out for it already", said.getvalue())
 
     def test_a_start_is_counted_once_with_a_seed_and_never_joins_a_torn_line(self) -> None:
         run = self.run_folder()
