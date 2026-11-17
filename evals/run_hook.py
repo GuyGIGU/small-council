@@ -1281,8 +1281,14 @@ def push_freeze(tmp):
         return [row[5] for row in rows if len(row) == 7 and row[3] == "run.push_allowed"]
 
     def files_of(repo):
-        return sorted((os.path.join(root, name), os.path.getsize(os.path.join(root, name)))
-                      for root, _, files in os.walk(repo) for name in files)
+        """The project's files and the council home's, each with its size. Not .git: git's own housekeeping after
+        the fixture's commit (a detached `git maintenance run --auto`, and its lock file) can still be at work."""
+        found = []
+        for root, folders, files in os.walk(repo):
+            if root == repo and ".git" in folders:
+                folders.remove(".git")
+            found += [(os.path.join(root, name), os.path.getsize(os.path.join(root, name))) for name in files]
+        return sorted(found)
 
     for n, (label, line, command, env, want) in enumerate((
             ("a prefix override", "- pushes: off until 2999-12-31\n", "COUNCIL_ALLOW_PUSH=1 git push -u origin HEAD",
@@ -1310,8 +1316,10 @@ def push_freeze(tmp):
     repo = frozen_repo("freeze-allowed-no-run", "- pushes: off\n")
     before = files_of(repo)
     code, out, err, _ = gate(repo, "COUNCIL_ALLOW_PUSH=1 git push")
-    check("push freeze: an override while frozen with no open run goes ahead silently and writes nothing anywhere",
-          code == 0 and not out and not err and files_of(repo) == before, said(code, out, err))
+    after = files_of(repo)
+    check("push freeze: an override while frozen with no open run goes ahead silently and writes nothing in the "
+          "project or the council home", code == 0 and not out and not err and after == before,
+          said(code, out, err) + f" · changed: {sorted(set(before) ^ set(after))}")
 
 
 @part("main")
