@@ -12,6 +12,7 @@ from council.records import home as where
 def main(args: cli.Args, words: list[str]) -> int:
     cli.takes_flags(args, "run resume", "session")
     cli.no_words("run resume", words)
+    session = resolve.session_id(args)
     home, tree = where.council_home(), where.this_tree()
     if args.value("run"):
         run = resolve.run_folder(args)
@@ -30,7 +31,6 @@ def main(args: cli.Args, words: list[str]) -> int:
     if status in ("complete", "abandoned"):
         raise cli.Refusal("%s is closed (%s) — open a new run instead: council run open %s"
                           % (run.name, status, runs.skill(resolve.field(run, "mode"))))
-    session = args.value("session") or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     try:
         state_write.change(run, ["status=in-progress", "session=" + session])
     except state_write.StateError as failure:
@@ -71,5 +71,7 @@ def _unclose(run: Path) -> None:
                 body = body or line.startswith("## ")
                 kept += line + "\n" if body or not line.startswith(("closed:", "actual:")) else ""
             paths.atomic_write(file, kept.encode("utf-8", "surrogateescape"), ".state.", keep_mode=True)
-        except OSError:
-            raise cli.Refusal("cannot update " + file.as_posix()) from None
+        except OSError as failure:
+            raise cli.Refusal("cannot update %s (%s) — the run is in progress again, but its closed: line stays; "
+                              "close what has the file open, then resume again"
+                              % (file.as_posix(), failure.strerror or failure)) from None

@@ -768,7 +768,7 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         refusals = [(council(repo, "status", *w), want) for w, want in (
             (("--widget", "--json"), "not together"), (("--line", "--json"), "not together"),
             (("--preview",), "use it with --widget"), (("now",), "doesn't take"),
-            (("--watch",), "doesn't take --watch"))]
+            (("--json", "--all"), "doesn't take --all"))]
         check("status: flag mistakes are refused, each saying why", all(c == 2 and want in e for (c, _, e), want in refusals),
               [(c, e) for (c, _, e), _ in refusals])
 
@@ -1356,6 +1356,48 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
           "of date (fail closed)",
           (build_reading(review)["closing"] or {}).get("verification") == "Claim index out of date; verifier counts unknown."
           and snapshot.claims_of(nomode)["stale"], build_reading(review)["closing"])
+
+# A post-game keeps no claim index: its verifier judges the work against the request, MET / PARTLY MET / NOT MET /
+# CAN'T TELL, and its closing card counts those rows (first-run review, FR-1). The card names an event stream the next
+# state change would refuse, and reads the state's header by the helper's one rule (CODE-RECORDS-6 and -10).
+with tempfile.TemporaryDirectory(prefix="council-postgame-closing-") as temporary:
+    root = Path(temporary)
+
+    def plain_reading(run):
+        return status.interpret(snapshot.snapshot(run, None, 40), NOW)
+
+    post = make_run(root, "post", status_value="complete", phase="learn", extra_state="closed: {}\n".format(local(20)))
+    write(post / "session-state.md", read(post / "session-state.md").replace("council-review", "council-postgame"))
+    write(post / "synthesis.md", "# Synthesis\nThe work against the request.\n")
+    write(post / "verify-1.md", "# Verification — the request\n| # | Part | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | export CSV | MET | cli.py:4 → csv.py:9, tested: no |\n")
+    got = (plain_reading(post)["closing"] or {}).get("verification", "")
+    check("closing card, post-game: its verifier's MET rows are counted, not a claim index",
+          got == "1 of 1 part of the request met (verify-1.md)." and not snapshot.claims_of(post)["expected"], got)
+    write(post / "verify-2.md", "# Verification — again\n| # | Part | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | export CSV | **MET** | x |\n| 2 | the --tier flag | PARTLY MET — no default | y |\n"
+          "| M1 | log each retry | NOT MET | none |\n| 3 | fast | CAN'T TELL | no benchmark |\n")
+    os.utime(post / "verify-2.md", (os.stat(post / "verify-1.md").st_mtime + 5,) * 2)
+    got = (plain_reading(post)["closing"] or {}).get("verification", "")
+    check("closing card, post-game: the newest verifier file stands, each verdict named",
+          got == "1 of 4 parts of the request met; 1 partly met, 1 not met, 1 can't tell (verify-2.md).", got)
+
+    torn = make_run(root, "torn", events=[(local(5), "run.opened", "run", "council-review", "phase=convene")])
+    write(torn / "session-state.md", read(torn / "session-state.md").replace("plan-schema: 1\n",
+                                                                            "plan-schema: 1\nevents-schema: 1\n"))
+    with open(torn / "events.tsv", "ab") as stream:
+        stream.write(b"1\t2\t2026-09-27")
+    said = [a for a in plain_reading(torn)["attention"] if a["kind"] == "events"]
+    check("status: a torn event stream is named on the card with its repair",
+          len(said) == 1 and "council run events repair --run torn" in said[0]["text"]
+          and "council run events repair" in status.text(plain_reading(torn)), said)
+
+    loose = make_run(root, "loose", status_value="in-progress")
+    write(loose / "session-state.md", "  status: paused\nmode: council-review\nphase: work\nstatus: in-progress\n"
+          "## Decisions so far\n")
+    check("status: the card reads the header as the helper does — an indented key is no key",
+          snapshot.header(loose)["status"] == helper_state.field(read(loose / "session-state.md"), "status")
+          == "in-progress", snapshot.header(loose))
 
 # "What you asked" was cut mid-word on the real closing card of 2026-10-01 ("…if you get my intention this skill is
 # to be the ma"): a filed request past its limit ends on a whole word, then "…".

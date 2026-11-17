@@ -8,7 +8,7 @@ from council.commands import cli
 COUNCIL_VERSION = "0.23.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
 
 USAGE = """\
-council — the Small Council's helper (bash + git)
+council — the Small Council's helper (Python 3.8+ and git)
 
   council home                           where the council lives (.council/ of the main checkout)
   council home rule                      the Edit permission rule for that folder, in the form Claude Code
@@ -17,8 +17,10 @@ council — the Small Council's helper (bash + git)
                                          CLAUDE.md points at it) or just me (git ignores it through its own
                                          exclude list, and the CLAUDE.md note goes); no word shows what's left
   council pushes [check git push|gh pr create]  the push freeze · check: the bash gate's decision (exit 2 while held)
-  council run open <mode> [--alongside] [--session=ID]
-                                         open a run for a mode, e.g. council-review; prints its folder
+  council run open <mode> [--alongside] [--session=ID] [--code-root=DIR]
+                                         open a run for a mode, e.g. council-review (or review); prints its
+                                         folder; --code-root: the worktree the code is in, opened from the
+                                         main checkout
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
   council run close [--status complete|abandoned|paused]
                                          close the run (complete only once it came through Deliver);
@@ -33,7 +35,7 @@ council — the Small Council's helper (bash + git)
                                          after close: check the run against the method from its
                                          records, and with the session transcript what the Chair
                                          showed and ran — pass, warn or FAIL per item, exit 1 on a
-                                         FAIL; reads only (optional Python 3.8+)
+                                         FAIL; reads only
   council run export --anon <run> <dest> [--transcript <session .jsonl>]
                                          copy what the audit reads of a run into a new folder,
                                          anonymised: paths as placeholders, the user's words as
@@ -43,10 +45,11 @@ council — the Small Council's helper (bash + git)
                                          a stage the mode must enter); waiting="<question>" prints
                                          the alert reminder; decision="<the user's words>" goes under
                                          Decisions so far, with task=<n> for that build task alone
-  council seat <slug> <state> [agent=ID] [tokens=N] [agents=N] [note=TEXT]
+  council seat <slug> <state> [agent=ID] [tokens=N] [tools=N] [agents=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped;
-                                         tokens= and agents= (a Workflow's agent count) come with the
-                                         finished run's usage report, once per agent run; the run's first
+                                         tokens=, tools= (its tool calls) and agents= (a Workflow's agent
+                                         count) come with the finished run's usage report, once per agent
+                                         run; the run's first
                                          dispatch also prints a reminder to show the user the run's status;
                                          in a build, a task's third check (verify-<n>c, or verify-<n>
                                          again) starts only after a diagnose-<n> seat or the user's go
@@ -103,7 +106,8 @@ council — the Small Council's helper (bash + git)
                                          proof (an ok change proof with saved rounds is rerun with them taken
                                          off, and must fail) and the receipt's Checked by machine and Not
                                          proved lines, from the records
-  council patch save <task> [<report>]   a build round: its report's head checked against its diff, then both
+  council patch save <task> [<report>] [--base <rev>]
+                                         a build round: its report's head checked against its diff, then both
                                          saved → <run>/patches/ · patch show <task>: the task's rounds
   council patch apply|revert <task> [--round <r>]
                                          put a saved round (the task's last unless --round) back on the code
@@ -137,7 +141,7 @@ council — the Small Council's helper (bash + git)
                                          secret-looking strings are redacted; records ask= in the state
   council ledger [N]                     each seat's record over the last N completed runs (default 10)
   council ledger advice [N] [--json]     how much each seat's record can support over the last N runs
-                                         (default 20), and advice only past the bar (optional Python 3.8+)
+                                         (default 20), and advice only past the bar
   council route recommend --task TEXT [--risk low|medium|high] [--complexity 1..10]
                          [--uncertainty low|medium|high] [--surface NAME ...]
                          [--agent-cap N] [--budget-tokens N] [--classic] [--mode review|plan|implement|research|postgame]
@@ -146,11 +150,13 @@ council — the Small Council's helper (bash + git)
                                          the run in plain words: what is happening, whether it moves,
                                          what needs the user, where the evidence is; --widget prints
                                          a snapshot card for a chat widget host; --line gives a short
-                                         notification sentence (optional Python 3.8+)
+                                         notification sentence
   council doctor                         drift scan; every finding comes with a fix
+  council doctor hooks [--line]          which of the plugin's hooks are live in this session
 
-Run-scoped commands act on the one in-progress run on this working tree; otherwise pass --run <folder>
-(a path, or a folder name under runs/). Every flag also takes the --flag=value form. A command refuses
+Run-scoped commands act on the one in-progress run on this working tree (one another session drives
+only for a command that reads); otherwise pass --run <folder> (a path, or a folder name under runs/).
+Every command needs Python 3.8+ and git. Every flag also takes the --flag=value form. A command refuses
 any word or flag it doesn't take.
 """  # noqa: E501
 

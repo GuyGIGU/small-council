@@ -92,8 +92,9 @@ def read(args: cli.Args, project_cap: int) -> Asked:
         cap, cap_reason = args.value("agent-cap"), "explicit cap within project's configured cap"
     if args.value("budget-tokens"):
         positive("budget-tokens", args.value("budget-tokens"))
-    if args.value("mode") and args.value("mode") not in MODES:
-        raise cli.Refusal("--mode must be one of: %s" % ", ".join(MODES))
+    mode = re.sub(r"^council-", "", args.value("mode"))       # the skill's name, as run open takes it, is the same mode
+    if mode and mode not in MODES:
+        raise cli.Refusal("--mode must be one of: %s (or the skill's name: council-review, …)" % ", ".join(MODES))
     if args.value("risk") not in ("", "low", "medium", "high"):
         raise cli.Refusal("--risk must be low, medium or high")
     if args.value("uncertainty") not in ("", "low", "medium", "high"):
@@ -107,7 +108,7 @@ def read(args: cli.Args, project_cap: int) -> Asked:
             raise cli.Refusal("--surface needs a non-empty name")
     return Asked(cell(args.value("task")), args.value("risk"), args.value("complexity"), args.value("uncertainty"),
                  [cell(surface) for surface in args.lists["surface"]], cap, cap_reason, args.value("budget-tokens"),
-                 bool(args.value("classic")), args.value("mode"))
+                 bool(args.value("classic")), mode)
 
 
 def signals(asked: Asked) -> dict[str, bool]:

@@ -4,10 +4,11 @@ round's files to it; council context build, council tree, the build seat and the
 refuse the same way when there are none."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.commands import cli, patch_checks, resolve
+from council.commands import cli, resolve
 from council.records import home as where
 from council.records import map_file, paths, tasks
 
@@ -78,7 +79,48 @@ def cut(run: Path, named: str, content: str, number: int) -> Slice:
     owned = [way for way in ways or [] if plan_tasks.names_a_job(owner, [way.job])]
     for way in owned:
         cells += [way.owner, way.anchor]
-    return Slice(named, entry, ways, owned, patch_checks.slice_paths(cells))
+    return Slice(named, entry, ways, owned, paths_in(cells))
+
+
+def paths_in(cells: list[str]) -> list[str]:
+    """The paths Owner and Touches cells (and the map row they name) give, each once, in the order first named. A
+    span in backticks is one path, spaces and all. Outside them a cell is split at commas and semicolons, never at
+    spaces: a part is one path when it reads as one ('src/my calc.py'); a part of prose gives only its words that
+    are plainly paths (src/pay/, ./docs, a/b.py, b.py), so a job name such as 'file I/O' is none. A trailing :line,
+    quotes, brackets and end punctuation are dropped."""
+    found = []
+    for cell in cells:
+        spans = re.split(r"`([^`]*)`", cell or "")
+        found += [word for word in map(_bare, spans[1::2]) if _loose(word)]
+        for part in re.split(r"[,;]", " ".join(spans[0::2])):
+            words = [word for word in map(_bare, part.split()) if word]
+            plain = [word for word in words if _plain(word)]
+            whole = _bare(" ".join(words))
+            if len(words) == 1 and _loose(whole) or len(plain) < 2 and _loose(whole) and _plain(whole, spaced=True):
+                found.append(whole)
+            else:
+                found += plain
+    return list(dict.fromkeys(word[2:] if word.startswith("./") else word for word in found))
+
+
+def _bare(word: str) -> str:
+    word = re.sub(r":[0-9]+(?:-[0-9]+)?$", "", word.strip().strip("`'\"()[]*,;:").rstrip("."))
+    return word.strip()
+
+
+def _loose(word: str) -> bool:
+    """A word that may be a path where a path is expected: it holds a '/', or is a file name with an extension."""
+    return bool(word) and ("/" in word or re.fullmatch(r"[\w.*-]+\.[A-Za-z0-9]+", word) is not None)
+
+
+def _plain(word: str, spaced: bool = False) -> bool:
+    """A word that is plainly a path even in prose: a folder ending in '/', one starting './', or a file with an
+    extension (a/b.py, b.py). With spaced, a run of words read whole: its first word holds a '/' and it ends so."""
+    if " " in word and not spaced or not word:
+        return False
+    if spaced:
+        return "/" in word.split(" ", 1)[0] and (word.endswith("/") or re.search(r"\.[A-Za-z0-9]+$", word) is not None)
+    return word.endswith("/") or word.startswith("./") or re.fullmatch(r"[\w.*/-]+\.[A-Za-z0-9]+", word) is not None
 
 
 def plan(run: Path, label: str) -> tuple[str, str]:

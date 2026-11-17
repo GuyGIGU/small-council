@@ -7,12 +7,11 @@ from typing import Iterable, NamedTuple
 
 # Flags that take a value, with what the refusal says is missing.
 VALUED = ("run", "code-root", "status", "base", "at", "proof", "session", "task", "risk", "complexity",
-          "uncertainty", "surface", "agent-cap", "budget-tokens", "expand", "scope", "user-said", "pose",
-          "exit-after", "transcript", "glob", "round")
+          "uncertainty", "surface", "agent-cap", "budget-tokens", "scope", "user-said", "transcript", "glob", "round")
 GATE_VALUED = ("timeout", "invalid", "seat", "mode")   # gate's and route's own: "needs a value" whatever the flag
-SWITCHES = ("alongside", "all", "classic", "json", "watch", "widget", "line", "preview", "stop", "demo",
-            "still", "wait", "rerun", "each", "anon", "held")
-REPEATED = ("surface", "expand", "glob")
+SWITCHES = ("alongside", "all", "classic", "json", "widget", "line", "preview", "wait", "rerun", "each", "anon",
+            "held")
+REPEATED = ("surface", "glob")
 MISSING = {"run": "a folder", "code-root": "a folder", "base": "a ref", "at": "grounding or verify"}
 
 

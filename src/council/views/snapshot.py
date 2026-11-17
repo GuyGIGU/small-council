@@ -29,7 +29,7 @@ CLAIM_MODES = ("council-review", "council-plan", "council-research")   # the mod
 
 
 def header(run: Path) -> dict[str, str]:
-    """The run's session-state header, read by records.state.header's rule, each value cleaned."""
+    """The run's session-state header, read by records.state.header — the helper's one rule — each value cleaned."""
     return {key: clean(value) for key, value in run_state.header(run_state.text(run)).items()}
 
 
@@ -101,10 +101,13 @@ def claim_index_stale(run: Path) -> bool:
 
 def claims_expected(run: Path, mode: str) -> bool:
     """A review, plan or research run keeps a claim index (the helper's close warns when it is missing), and a run
-    with no recorded mode is read as one. Another mode keeps none — a build checks tasks, not claims — unless its
-    folder holds a synthesis or an index all the same."""
+    with no recorded mode is read as one. A post-game never does: its verifier's MET rows are read from verify-*.md.
+    Another mode keeps none — a build checks tasks, not claims — unless its folder holds a synthesis or an index all
+    the same."""
     if mode in CLAIM_MODES or not mode:
         return True
+    if mode == "council-postgame":
+        return False
     try:
         return (run / "synthesis.md").exists() or (run / "claims.jsonl").exists()
     except OSError:

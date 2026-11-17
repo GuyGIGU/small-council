@@ -13,6 +13,16 @@ from council.records.state import field, path, text
 COUNCIL_NEXT_AT_OPEN = stages.COUNCIL_NEXT_AT_OPEN    # frozen name (architecture section 6)
 AFTER_CLOSE = ("deliverable", "ask", "ask-saved", "decision", "task")   # a ruling after the close is still the user's
 DECISIONS = "## Decisions so far"
+OPEN_ONCE = "is written once, by council run open, and never changed"
+OWNED = {  # the header keys `council state` never writes, and what writes each: every other key is the Chair's
+    "mode": OPEN_ONCE + " — for another mode, open a new run: council run open <mode>",
+    "opened": OPEN_ONCE, "plan-schema": OPEN_ONCE, "events-schema": OPEN_ONCE, "start-head": OPEN_ONCE,
+    "code-root": OPEN_ONCE + " — for another tree, open a new run there: council run open <mode> --code-root <dir>",
+    "session": "is written by council run open and council run resume — for this session to drive the run, ask the "
+               "user, then: council run resume --run <folder>",
+    "closed": "is the close's own stamp — close the run with: council run close",
+    "actual": "is the close's own record of the spend — close the run with: council run close",
+}
 
 
 class StateError(paths.RecordError):
@@ -78,8 +88,10 @@ def _locked(run: Path, words: list, closing: bool, events_lost: bool, phase_note
         _rewrite(lines, words, field(before, "phase"))
         data = "".join(line + "\n" for line in lines).encode("utf-8", "surrogateescape")
         paths.atomic_write(path(run), data, ".state.", keep_mode=True)
-    except OSError:
-        raise StateError("cannot update " + path(run).as_posix()) from None
+    except OSError as failure:
+        raise StateError("cannot update %s (%s) — nothing was written; close what has it open (an editor, an indexer, "
+                         "a script), then run this again" % (path(run).as_posix(), failure.strerror or failure)
+                         ) from None
     after = text(run)
     old, new = (field(before, "phase"), field(before, "status")), (field(after, "phase"), field(after, "status"))
     said = []

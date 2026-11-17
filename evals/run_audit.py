@@ -687,6 +687,12 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("a cut claim a verifier CONFIRMED passes the claim index once synthesis.md says why it stays cut (still_cut on record), "
           "as council evidence check already does (a real plan run was failed by one reader and passed by the other)",
           item(out, "Claim index")[0] == "pass", item(out, "Claim index")[1])
+    refuted = run1_copy("kept-refuted", claims=[{"id": "1", "disposition": "kept", "verdict": "REFUTED", "citation": "notes.md:5"},
+                                                {"id": "2", "disposition": "kept", "verdict": "UNCERTAIN", "citation": "notes.md:7"}])
+    code, out, err = council(base, "run", "audit", "--run", str(refuted), "--transcript", str(log1))
+    check("a kept claim a verifier REFUTED fails the claim index, as council evidence check does; an UNCERTAIN one does not",
+          item(out, "Claim index")[0] == "FAIL" and "kept, but a verifier REFUTED it: 1 " in item(out, "Claim index")[1] + " "
+          and "2" not in item(out, "Claim index")[1].split("—")[0], item(out, "Claim index")[1])
     # MISCITED is a true verdict too (the claim holds, somewhere else): evidence check's TRUE_VERDICTS. The audit must read it the same way.
     miscited = run1_copy("cut-miscited", claims=[{"id": "1", "disposition": "kept", "verdict": "CONFIRMED", "citation": "notes.md:5"},
                                                  {"id": "C1", "disposition": "cut", "verdict": "MISCITED", "citation": "notes.md:9"}])
