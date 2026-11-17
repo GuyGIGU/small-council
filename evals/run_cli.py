@@ -8130,9 +8130,6 @@ def runs_build_seat(tmp):
     code, out, err = council(bs, "seat", "task-1", "queued")
     check("seat: a build seat starts with no line about files when nothing changed since the commit the run opened on",
           code == 0 and "outside any round" not in err, out + err)
-    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
-                             "run=" + bname)
-    check("cap check: once its seat is queued, the council-builder for it starts", code == 0 and not out, out + err)
     code, out, err = council(bs, "seat", "task-2", "queued")
     check("seat: a queued build seat is taken — task-2 is refused while task-1 is queued, before its builder is "
           "recorded running", code == 2 and "cannot start task-2 — task-1 is queued, and one builder at a time edits "
@@ -8141,6 +8138,19 @@ def runs_build_seat(tmp):
                              "run=" + bname)
     check("cap check: two dispatches sent together — the second builder is refused while the first is only queued",
           code == 2 and out.startswith("Small Council: cannot start task-2 — task-1 is queued"), out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
+                             "run=" + bname)
+    check("cap check: once its seat is queued, the council-builder for it starts, and takes the seat: running, no "
+          "agent id yet", code == 0 and not out and row(read(os.path.join(brun, "seats.tsv")), "task-1")
+          .startswith("task-1\trunning\t\t"), out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
+                             "run=" + bname)
+    check("cap check: a second builder for task-1 before its agent is recorded is refused, naming both next steps",
+          code == 2 and out.startswith("Small Council: cannot start a builder for task-1 — a builder went out for it "
+                                       "already (its seat is running since ")
+          and "no agent on record yet" in out and "council seat task-1 done tokens=<n> tools=<n>" in out
+          and 'council seat task-1 failed note="dispatch failed", then council seat task-1 queued, and dispatch again'
+          in out, out + err)
     council(bs, "seat", "task-1", "running", "agent=b1")
     code, out, err = council(bs, "seat", "task-2", "queued")
     check("seat: one builder at a time — task-2 is refused while task-1 runs, naming it and both next steps",

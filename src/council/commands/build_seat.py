@@ -47,12 +47,22 @@ def start_refusal(run: Path, slug: str) -> str | None:
 
 
 def dispatch_refusal(run: Path, slug: str) -> str | None:
-    """Why a council-builder for build seat <slug> can't go out: start_refusal, or its seat isn't on record queued
-    or running. The rules above read the seat records, so a builder sent before its seat is queued would be held
-    to an empty record; None when it may go, or when <slug> is no build seat."""
+    """Why a council-builder for build seat <slug> can't go out: start_refusal, or its seat isn't on record queued.
+    The rules above read the seat records, so a builder sent before its seat is queued would be held to an empty
+    record; and the dispatch that goes out takes the seat (council seat's taken: queued to running), so a seat
+    already running has its builder. None when it may go, or when <slug> is no build seat."""
     why = start_refusal(run, slug)
-    if why or task_of(run, slug) is None or seat_rows.cell(run, slug, "state") in STARTED:
+    state = seat_rows.cell(run, slug, "state")
+    if why or task_of(run, slug) is None or state == "queued":
         return why
+    if state == "running":
+        agent = seat_rows.cell(run, slug, "agent")
+        return ("cannot start a builder for %s — a builder went out for it already (its seat is running since %s, %s),"
+                " and one builder at a time edits project code (D42). Wait for its line and record it (council seat %s"
+                " done tokens=<n> tools=<n>). If that dispatch started no agent, record it: council seat %s failed "
+                "note=\"dispatch failed\", then council seat %s queued, and dispatch again"
+                % (slug, seat_rows.cell(run, slug, "updated") or "?",
+                   "agent " + agent if agent else "no agent on record yet", slug, slug, slug))
     return ("cannot start a builder for %s — its seat isn't queued, so the helper can't hold it to one builder at a "
             "time (D42). Queue it first: council seat %s queued, then dispatch again" % (slug, slug))
 

@@ -1564,7 +1564,30 @@ def agent_gate_builder(tmp):
     code, out, err, said = gate(orders.format(run, 1))
     check("dispatch: a council-builder for a queued, selected build seat of the open run starts, silently",
           code == 0 and not out and not err, said)
+    seats_tsv = open(os.path.join(run, "seats.tsv"), encoding="utf-8").read()
+    check("dispatch: the builder that goes out takes its seat — recorded running, with no agent id yet",
+          re.search(r"^task-1\trunning\t\t", seats_tsv, re.MULTILINE) is not None, seats_tsv)
+    code, out, err, said = gate(orders.format(run, 1))
+    check("dispatch: a second builder for the same seat, before the Chair records the first one's agent, is refused, "
+          "naming how to clear a dispatch that started no agent", code == 2 and not out
+          and "cannot start a builder for task-1 — a builder went out for it already" in err
+          and "no agent on record yet" in err and 'council seat task-1 failed note="dispatch failed"' in err
+          and "council seat task-1 queued" in err, said)
+    council(bg, "seat", "task-1", "failed", "note=dispatch failed", session="sK")
+    council(bg, "seat", "task-1", "queued", session="sK")
+    together = [subprocess.Popen([BASH, "-c", gate_cmd], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", cwd=bg,
+                                 env=dict(GIT_ENV, CLAUDE_PLUGIN_ROOT=ROOT)) for _ in range(2)]
+    ended = [p.communicate(dispatch_input("sK", bg, builder, orders.format(run, 1)), timeout=60) for p in together]
+    codes = sorted(p.returncode for p in together)
+    check("dispatch: two builders sent together for one queued seat — the seat recorded failed and queued again — "
+          "one starts and the other is refused", codes == [0, 2]
+          and sum("a builder went out for it already" in err for _, err in ended) == 1,
+          "exits %s · %s" % (codes, " | ".join(err.strip()[:200] for _, err in ended)))
     council(bg, "seat", "task-1", "running", "agent=k1", session="sK")
+    code, out, err, said = gate(orders.format(run, 1))
+    check("dispatch: ... and once its agent is on record, another builder for the seat is refused, naming that agent",
+          code == 2 and "a builder went out for it already" in err and "agent k1" in err, said)
     code, out, err, said = gate(orders.format(run, 2))
     check("dispatch: a second builder while task-1 runs is refused before it starts — one builder at a time",
           code == 2 and not out and "cannot start task-2 — task-1 is running" in err, said)

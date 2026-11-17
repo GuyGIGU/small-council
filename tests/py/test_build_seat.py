@@ -43,6 +43,22 @@ class BuildSeatTest(support.Scratch):
         done = self.build(seats=b"task-1\tdone\ta1\t\tT\t\t\t\ntask-3\tskipped\t\t\tT\t\t\t\n")
         self.assertIsNone(build_seat.start_refusal(done, "task-2"))
 
+    def test_a_builder_goes_out_only_from_a_queued_seat_and_takes_it(self) -> None:
+        from council.commands import seat
+        run = self.build(seats=b"task-1\tqueued\t\t\tT\t\t\t\n")
+        self.assertIsNone(build_seat.dispatch_refusal(run, "task-1"))
+        self.assertIsNone(seat.taken(run, "task-1"))
+        row = (run / "seats.tsv").read_text(encoding="utf-8").splitlines()[1]
+        self.assertTrue(row.startswith("task-1\trunning\t\t"), row)
+        why = seat.taken(run, "task-1")
+        self.assertIn("a builder went out for it already", why or "")
+        self.assertIn("no agent on record yet", why or "")
+        self.assertIn('council seat task-1 failed note="dispatch failed", then council seat task-1 queued', why or "")
+        named = self.build(seats=b"task-1\trunning\tb1\t\tT\t\t\t\n")
+        self.assertIn("agent b1", build_seat.dispatch_refusal(named, "task-1") or "")
+        self.assertIn("its seat isn't queued", build_seat.dispatch_refusal(self.build(), "task-1") or "")
+        self.assertIsNone(seat.taken(self.build("council-review", b"task-1\tqueued\t\t\tT\t\t\t\n"), "task-1"))
+
     def test_done_needs_the_report_unless_the_builder_stopped_with_needs(self) -> None:
         run = self.build()
         self.assertEqual(build_seat.missing_report(run, "task-2", ""), (run / "report-2.md").as_posix())
