@@ -95,9 +95,9 @@
    "longest_name": ""
   },
   "src/council/commands/agent_gate.py": {
-   "lines": 296,
-   "longest": 42,
-   "longest_name": "dispatch_refusal"
+   "lines": 319,
+   "longest": 40,
+   "longest_name": "held_to_record"
   },
   "src/council/commands/ask.py": {
    "lines": 179,
@@ -120,12 +120,12 @@
    "longest_name": "agents_on_record"
   },
   "src/council/commands/build_seat.py": {
-   "lines": 210,
+   "lines": 220,
    "longest": 20,
    "longest_name": "outside_round"
   },
   "src/council/commands/builder_stop.py": {
-   "lines": 135,
+   "lines": 133,
    "longest": 28,
    "longest_name": "_wrote"
   },
@@ -315,7 +315,7 @@
    "longest_name": "lines"
   },
   "src/council/commands/map_status.py": {
-   "lines": 44,
+   "lines": 42,
    "longest": 13,
    "longest_name": "status"
   },
@@ -490,7 +490,7 @@
    "longest_name": "main"
   },
   "src/council/commands/seat.py": {
-   "lines": 205,
+   "lines": 224,
    "longest": 40,
    "longest_name": "main"
   },
@@ -505,7 +505,7 @@
    "longest_name": "progress_line"
   },
   "src/council/commands/session_start.py": {
-   "lines": 276,
+   "lines": 272,
    "longest": 34,
    "longest_name": "_runs"
   },
@@ -545,7 +545,7 @@
    "longest_name": "files"
   },
   "src/council/git.py": {
-   "lines": 86,
+   "lines": 91,
    "longest": 35,
    "longest_name": "files_tree"
   },
@@ -645,7 +645,7 @@
    "longest_name": "stale"
   },
   "src/council/records/map_file.py": {
-   "lines": 142,
+   "lines": 164,
    "longest": 21,
    "longest_name": "touch"
   },
@@ -740,7 +740,7 @@
    "longest_name": "glob_re"
   },
   "src/council/records/seat_files.py": {
-   "lines": 240,
+   "lines": 254,
    "longest": 40,
    "longest_name": "shape"
   },
