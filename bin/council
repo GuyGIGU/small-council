@@ -26,7 +26,7 @@ for word in ${1+"$@"}; do
   if [ "$skip" = 1 ]; then skip=0; continue; fi
   case "$word" in
     --) break ;;
-    --run|--code-root|--status|--base|--at|--proof|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said|--pose|--exit-after|--transcript|--timeout|--invalid|--seat|--mode) skip=1 ;;
+    --run|--code-root|--status|--base|--at|--proof|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--scope|--user-said|--transcript|--glob|--round|--timeout|--invalid|--seat|--mode) skip=1 ;;
     -?*) ;;
     *) label="$label $word"
        case "$label" in "council run"|"council cap") ;; *) break ;; esac ;;
