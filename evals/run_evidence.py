@@ -119,8 +119,21 @@ with tempfile.TemporaryDirectory() as folder:
     check("changed verifier makes ledger stale", invoke(run, "check").returncode == 1)
     check("show refuses a stale ledger", invoke(run, "show").returncode == 2)
     invoke(run, "build")
-    check("refuted verdict remains visible", claims(run)[0]["verdict"] == "REFUTED" and
-          invoke(run, "check").returncode == 0)
+    kept_refuted = invoke(run, "check")
+    check("a kept claim its verifier REFUTED fails the check, naming the two ways out",
+          claims(run)[0]["verdict"] == "REFUTED" and kept_refuted.returncode == 1 and
+          "claim 1: kept, but its verifier REFUTED it" in kept_refuted.stdout and "## Cut" in kept_refuted.stdout and
+          "new verdict" in kept_refuted.stdout, kept_refuted.stdout)
+    write(run, "synthesis.md", "# Synthesis\n## Kept\n(none) — all cut\n## Cut\n"
+          "1 · P1 · Principle 1 · src/auth.py:4 · Expiry skipped · why: refuted · state: OBSERVED · from: hunt#3\n"
+          "C1 · P2 · Principle 2 · src/auth.py:8 · Intentional guard · why: already handled · state: INFERRED · "
+          "from: hunt#3\n")
+    invoke(run, "build")
+    check("moved under Cut, the refuted claim passes", invoke(run, "check").returncode == 0)
+    write(run, "synthesis.md", "# Synthesis\n## Kept\n"
+          "1 · P1 · Principle 1 · src/auth.py:4 · Expiry skipped · state: OBSERVED · from: hunt#3\n"
+          "## Cut\nC1 · P2 · Principle 2 · src/auth.py:8 · Intentional guard · why: already handled · state: INFERRED · "
+          "from: hunt#3\n")
 
     write(run, "verify-2.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | Expiry skipped | CONFIRMED | opposite trace |\n")
@@ -168,7 +181,7 @@ with tempfile.TemporaryDirectory() as folder:
           "and passes what it can", sent_back.returncode == 1 and "unknown claim 1a" in sent_back.stdout and
           passed.returncode == 0 and passed.stdout == "", (sent_back.stdout, passed.stdout))
     write(run, "verify-1.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
-          "| 1 | Expiry skipped | REFUTED | guarded |\n")
+          "| 1 | Expiry skipped | CONFIRMED | guarded |\n")
 
     write(run, "synthesis.md", "# Synthesis\n## Kept\n"
           "1 · P1 · Principle 1 · src/auth.py:4 · Expiry skipped · state: REPRODUCED · proof: gates/before-1.json · from: hunt#3\n"
@@ -254,10 +267,13 @@ with tempfile.TemporaryDirectory() as folder:
                 "2 · P2 · P · q.py · A queue · state: INFERRED · from: chair\n## Cut\n(none)\n")
     planned = fresh(folder, "plan", "council-plan", plan_syn, {"verify-1.md": plan_rows})
     built = invoke(planned, "build")
-    check("plan: several verifier rows per recommendation build, and the worst verdict stands",
+    worst = invoke(planned, "check")
+    check("plan: several verifier rows per recommendation build, and the worst verdict stands: a kept one REFUTED "
+          "fails the check, one UNCERTAIN does not",
           built.returncode == 0 and [c["verdict"] for c in claims(planned)] == ["REFUTED", "UNCERTAIN"] and
-          [len(c["verification"]) for c in claims(planned)] == [2, 2] and invoke(planned, "check").returncode == 0,
-          built.stdout + built.stderr)
+          [len(c["verification"]) for c in claims(planned)] == [2, 2] and worst.returncode == 1 and
+          "claim 1: kept, but its verifier REFUTED it" in worst.stdout and "claim 2" not in worst.stdout,
+          built.stdout + built.stderr + worst.stdout)
     sys.path.insert(0, str(ROOT / "src"))
     from council.commands import evidence  # noqa: E402  (memory propose reads the index through it)
     again, _ = evidence.synthesis(planned)
@@ -272,7 +288,7 @@ with tempfile.TemporaryDirectory() as folder:
           invoke(reviewed, "build").returncode == 2)
 
     # Solo: the Chair checks its own items into verify-self.md, labelled self-checked, never as independent.
-    own = head + "| 1 | One table | CONFIRMED | db.sql:4 read |\n| 2 | A queue | REFUTED | q.py:7 drains |\n"
+    own = head + "| 1 | One table | CONFIRMED | db.sql:4 read |\n| 2 | A queue | UNCERTAIN | q.py:7 drains |\n"
     solo = fresh(folder, "solo", "council-review", plan_syn, {"verify-self.md": own}, level="self", size="solo")
     built = invoke(solo, "build")
     check("solo: the Chair's own check is a recorded verdict the index labels self-checked, and the check passes",
@@ -284,11 +300,24 @@ with tempfile.TemporaryDirectory() as folder:
     alone = invoke(squad, "check")
     check("squad: a self-check alone does not stand in for the independent verifier the plan calls for",
           alone.returncode == 1 and "only the Chair's own check" in alone.stdout, alone.stdout)
-    write(squad, "verify-1.md", head + "| 1 | One table | REFUTED | no join |\n| 2 | A queue | REFUTED | q.py:7 |\n")
+    write(squad, "verify-1.md", head + "| 1 | One table | UNCERTAIN | no join |\n| 2 | A queue | CONFIRMED | q.py:7 |\n")
     both = invoke(squad, "build")
     check("squad: the independent verifier's verdict outranks the Chair's own, with no conflict",
-          both.returncode == 0 and claims(squad)[0]["verdict"] == "REFUTED" and
+          both.returncode == 0 and claims(squad)[0]["verdict"] == "UNCERTAIN" and
           invoke(squad, "check").returncode == 0, both.stdout + both.stderr)
+
+    solo_from = fresh(folder, "solo-from", "council-review", plan_syn.replace("from: chair\n", "from: chair#1\n", 1),
+                      {"verify-self.md": own}, level="self", size="solo")
+    invoke(solo_from, "build")
+    told = invoke(solo_from, "check")
+    check("solo: from: chair#1 is refused, saying a Solo judgment's from: is chair",
+          told.returncode == 1 and "source item is missing: chair#1" in told.stdout and "from: chair (no item number)"
+          in told.stdout, told.stdout)
+    post = fresh(folder, "postgame", "council-postgame", plan_syn, {"verify-1.md": head + "| 1 | Part | MET | x.py:1 |\n"})
+    refused = [invoke(post, action) for action in ("build", "check")]
+    check("post-game: evidence build and check refuse, saying a post-game keeps no claim index and what to do",
+          all(r.returncode == 2 and "a post-game keeps no claim index" in r.stderr and "council status" in r.stderr
+              for r in refused) and not (post / "claims.jsonl").exists(), [r.stderr for r in refused])
 
     (run / "verify-1.md").unlink()
     write(run, "synthesis.md", "# Synthesis\n## Kept\n(none) — no findings\n## Cut\n"
