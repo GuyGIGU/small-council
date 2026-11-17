@@ -6597,6 +6597,29 @@ def gates_patch_no_bytecode(tmp):
     code, out, err = council(repo, "seat", "task-2", "queued")
     check("seat task-2 queued: bytecode a test run left after the last round is not a file changed outside a round",
           code == 0 and "outside any round" not in err and ".pyc" not in err, out + err)
+    # A round saved by a helper from before git.CACHES kept the bytecode in its tree: what is diffed against it leaves
+    # the caches out on both sides, so none of them reads as deleted.
+    old = os.path.join(tmp, "patch-bytecode-old.index")
+    kept = dict(GIT_ENV, GIT_INDEX_FILE=old)
+    for words in (("add", "-A"), ("rm", "-r", "-q", "--cached", "--ignore-unmatch", ".council")):
+        subprocess.run([GIT, *words], cwd=repo, env=kept, check=True, capture_output=True)
+    older = subprocess.run([GIT, "write-tree"], cwd=repo, env=kept, check=True, capture_output=True, text=True)
+    saved = os.path.join(run, "patches", "T1-1.json")
+    write(saved, read(saved).replace(record.get("tree", "?"), older.stdout.strip()))
+    council(repo, "seat", "task-2", "skipped")
+    code, out, err = council(repo, "seat", "task-2", "queued")
+    check("seat task-2 queued: against a round whose tree still holds bytecode, the caches are no file changed outside "
+          "a round", code == 0 and "outside any round" not in err and ".pyc" not in err, out + err)
+    write(os.path.join(repo, "tally", "parse.py"), "def parse(text):\n    return text.split(',')\n")
+    write(os.path.join(run, "report-2.md"), PATCH_HEAD.format(cause="none", removed="none", extra="")
+          .replace("src/pay.py", "tally/parse.py"))
+    code, out, err = council(repo, "patch", "save", "2")
+    second = json.loads(read(os.path.join(run, "patches", "T2-1.json")) or "{}")
+    shown = council(repo, "patch", "show", "2")
+    check("patch save: a round diffed from an older round's tree that holds bytecode lists no cache as deleted, in its "
+          "files, its patch or patch show", code == 0 and second.get("files") == ["tally/parse.py"]
+          and ".pyc" not in read(os.path.join(run, "patches", "T2-1.patch")) and ".pyc" not in shown[1] + shown[2],
+          out + err + json.dumps(second) + shown[1])
 
 
 @part("gates")
