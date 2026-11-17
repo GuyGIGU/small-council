@@ -93,6 +93,19 @@ class FilesTreeTest(support.Scratch):
         self.write("new.py", "x = 1\n")
         self.assertNotEqual(git.files_tree(self.tmp), before)
 
+    def test_python_bytecode_is_left_out_ignored_or_not(self) -> None:
+        self.write("kept.pyc", "committed\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "a committed pyc")
+        before = git.files_tree(self.tmp)
+        self.write("tests/__pycache__/t.cpython-314.pyc", "x")
+        self.write("__pycache__/top.cpython-314.pyc", "x")
+        self.write("old.pyc", "x")
+        self.write("kept.pyc", "rewritten\n")
+        self.assertEqual(git.files_tree(self.tmp), before, "untracked bytecode stays out, a committed one as it was")
+        self.write(".gitignore", "__pycache__/\n")
+        self.assertRegex(git.files_tree(self.tmp), "^[0-9a-f]{40,64}$", "an ignore rule naming it too is no fault")
+
     def test_the_council_home_is_left_out_committed_or_not(self) -> None:
         before = git.files_tree(self.tmp)
         self.write(".council/logs/x.md", "a log line\n")

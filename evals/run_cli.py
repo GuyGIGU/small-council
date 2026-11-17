@@ -6324,6 +6324,41 @@ def gates_patch_rounds(tmp):
 
 
 @part("gates")
+def gates_patch_no_bytecode(tmp):
+    """A project with no .gitignore: running its tests leaves Python bytecode (__pycache__/, *.pyc) on disk, untracked
+    and not ignored. A round, and the seat's files changed outside a round, never name it; a committed .pyc stays."""
+    repo = small_council_repo(tmp, "patch-bytecode", "")
+    write(os.path.join(repo, "tally", "parse.py"), "def parse(text):\n    return text\n")
+    write(os.path.join(repo, "kept.pyc"), "committed on purpose\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "tally")
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run, selected=("task-1", "task-2"))
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build")
+    council(repo, "seat", "task-1", "queued")
+    write(os.path.join(repo, "tally", "parse.py"), "def parse(text):\n    return text.split()\n")
+    write(os.path.join(repo, "tests", "__pycache__", "test_parse.cpython-314.pyc"), "\x00bytecode\n")
+    write(os.path.join(repo, "__pycache__", "top.cpython-314.pyc"), "\x00bytecode\n")
+    write(os.path.join(repo, "legacy.pyc"), "\x00python 2 bytecode\n")
+    write(os.path.join(repo, "kept.pyc"), "rewritten by a test run\n")
+    write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "1")
+    record = json.loads(read(os.path.join(run, "patches", "T1-1.json")) or "{}")
+    patch = read(os.path.join(run, "patches", "T1-1.patch"))
+    check("patch save: a round's diff leaves out interpreter caches — __pycache__/ and *.pyc, untracked, are not in "
+          "its files or its patch; a committed .pyc rewritten on disk stays as committed",
+          code == 0 and record.get("files") == ["tally/parse.py"] and ".pyc" not in patch and ".pyc" not in out,
+          out + err + json.dumps(record))
+    council(repo, "seat", "task-1", "done")
+    write(os.path.join(repo, "tests", "__pycache__", "test_more.cpython-314.pyc"), "\x00more bytecode\n")
+    code, out, err = council(repo, "seat", "task-2", "queued")
+    check("seat task-2 queued: bytecode a test run left after the last round is not a file changed outside a round",
+          code == 0 and "outside any round" not in err and ".pyc" not in err, out + err)
+
+
+@part("gates")
 def gates_revert_check(tmp):
     """T5: council check on a build reruns each ok change proof with the task's saved rounds taken off, in a scratch
     copy outside the project (its tests kept), and expects it to fail; a rerun that still passes is REVERT-PASSED,
