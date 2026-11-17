@@ -215,22 +215,24 @@ Follow-ups, never into a task.
 
 ## At Deliver — the receipt
 
-The same seven lines after every build, in this order, whatever happened, so after three builds the
+The same eight lines after every build, in this order, whatever happened, so after three builds the
 user reads it at a glance and notices the moment a line changes:
 
 ```
 Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>] [· push and PR held by the freeze[ until <date>]]
 Works?: <what proved it — "ran <command> and <what happened>", or honestly "nobody ran it; proved by the tests and by reading the code">
 Checked by machine: <council check's line, word for word: the gates' verdict line, baseline → now | the helper's own NOTHING WAS CHECKED line> [· <the standing red-baseline clause>]
+Your decisions: <council check's line, word for word>
 Shortcuts I took: <one line each> | none
 Not proved: <council check's line, word for word>[ · <what else nobody actually checked>] | nothing
 Left open: <each pre-existing hazard, follow-up, verifier note not taken, known hazard from a handoff> | nothing
 Cost: helpers ~<k>k tokens across <n> agents; Chair usage <actual total or "unavailable"> · <the proof line from council check> · log: <path>
 ```
 
-`Checked by machine:` and `Not proved:` are the two lines `council check` prints on a build, copied
-word for word: add to `Not proved:`, never cut from either. The standing red-baseline clause is yours
-to append. Its revert check (build-proof.md) shows in those lines and in its `check:` line.
+`Checked by machine:`, `Your decisions:` and `Not proved:` are the three lines `council check` prints on
+a build, copied word for word: add to `Not proved:`, never cut from any. The standing red-baseline
+clause is yours to append. Its revert check (build-proof.md) shows in those lines and in its `check:`
+line.
 
 The first `Built:` number counts only fully met tasks with required proof, passing mandatory gates,
 and no unresolved verifier regression. A partly met or blocked task is named after the count but

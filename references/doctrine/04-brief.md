@@ -40,6 +40,7 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 - <the config's hard rules, word for word>
 - Settled, never a finding: <applicable AP/EC/D entries from `council memory select`, one line each>
 - Current overrides: <the user's exact words and affected memory ids, or none; Convene's rule>
+- The user's decisions: <each `council state decision=` entry of the run, its words word for word, or none>
 - Observed failures, not rules: <the scoped F entries it printed, including verdict and evidence>
 - Not a finding: <your mode's list, from its `## At Brief`>
 ```
@@ -65,6 +66,8 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   tell the user.
 - **Hard rules go in word for word** — workers also load the project's CLAUDE.md, but the brief is
   the orders they must not miss.
+- **So do the user's decisions**: every one on record when you write the brief. `council collect`
+  warns about one the brief leaves out; then hold the findings to it at Judge and tell the user.
 
 ## Done when
 

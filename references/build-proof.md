@@ -208,14 +208,15 @@ Missing proof earns CANNOT VERIFY; code that establishes an unmet Done-when earn
 
 ## The receipt lines
 
-On a build, `council check` prints two lines just before its closing `check:` line and writes them into
+On a build, `council check` prints three lines just before its closing `check:` line and writes them into
 `check.md`, composed only from the records: the gate records (`gates/`, and the baseline under
-`gates/baseline/`), the proofs and the revert checks. The Chair copies them into the receipt as they
-are; it writes neither.
+`gates/baseline/`), the proofs, the revert checks and the user's decisions in the run's state. The
+Chair copies them into the receipt as they are; it writes none of them.
 
 ```
 Checked by machine: <each gate: its baseline result → its result now> | <the helper's NOTHING WAS CHECKED words>
 Not proved: <what the records show nobody checked> | nothing
+Your decisions: <each `council state decision=` entry, oldest first, a task's after `task <n>: `> | none
 ```
 
 `Checked by machine:` names each gate that checks the work (the proof pairs and probes are not gates
@@ -223,7 +224,8 @@ here): `unit: FAIL → pass · lint: no baseline → pass`. With no gate on reco
 NOTHING WAS CHECKED words. `Not proved:` lists a task of the plan with no proof pair, or a pair missing a
 side or reading `NO-PROOF-YET`; a configured gate never run; a gate that timed out, never ran, was marked
 invalid or passed with nothing run; a gate whose recorded tree is not the files on disk now; and a revert
-check that could not be made. Same records, same lines. A run that is not a build prints neither.
+check that could not be made. `Your decisions:` is the user's words on record, never the Chair's
+`Ruling:` lines. Same records, same lines. A run that is not a build prints none of them.
 A gate `gate --all` did not run because nothing under its `Covers` paths changed since its green is
 never a fresh pass: it reads `pass → pass (not rerun)`, and `Not proved:` gives the reason. A PR body
 drafted for the run carries that `Not proved:` line as it is.
