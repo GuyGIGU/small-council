@@ -98,8 +98,7 @@ def covers(doc: Doctor, gate: gate_table.Gate) -> None:
     root = where.native(doc.root)
     if not gate.covers or git.text(root, "rev-parse", "--git-dir") is None:
         return
-    empty = [path for path in gate.covers
-             if not git.text(root, "ls-files", "--cached", "--others", "--exclude-standard", "--", path, timeout=60)]
+    empty = git.unmatched(root, gate.covers)
     if empty:
         doc.warn("gate '%s' has a Covers path that matches no file here: %s — nothing under it ever changes, so "
                  "council gate --all would keep taking the gate's last green instead of running it"

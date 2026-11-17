@@ -5,8 +5,9 @@ apart from one the untouched code already had. Exit 0 with nothing behind it (no
 test gate that printed nothing) is said, never a plain pass; a hang stopped at its time limit is no pass and no
 proof.
 
-A configured gate's verdict also names the tree it ran on (git.files_tree) and the seat that ran it, so `gate --all`
-can take a green on the same tree instead of running it again (gate_set)."""
+Every gate's verdict also names the tree it ran on (git.disk_tree: the files' bytes) and the seat that ran it, so
+`gate --all` can take a configured gate's green on the same files instead of running it again (gate_set), and council
+check and the receipt can tell a proof or a gate that ran on other files than those on disk now."""
 from __future__ import annotations
 
 import os
@@ -95,13 +96,13 @@ def event(run: str, name: str, value: str, detail: str, said: str) -> None:
 
 
 def run_gate(call: Call, name: str, command: str, configured: bool = False) -> Result:
-    """Run one gate and say its result; Result.code is its exit code. A configured gate (the Gates table's row,
-    its own command) records the tree it ran on and the seat that ran it."""
+    """Run one gate and say its result; Result.code is its exit code. Its verdict records the tree it ran on and
+    the seat that ran it; configured: the Gates table's row with its own command, which gate --all may reuse."""
     stem = gates.slug(name)
     verdict, out = (path.as_posix() for path in gates.files(Path(call.run), stem))
     os.makedirs(str(Path(out).parent), exist_ok=True)
     most, why = limit(call, name)
-    tree = git.files_tree(call.top) if configured else ""
+    tree = git.disk_tree(call.top)
     started = int(time.time())
     code, timed_out = gate_exec.execute(call.top, resolve.field(Path(call.run), "base"),
                                         windows_command(command) if WINDOWS_BASH else command, out, most)
@@ -120,8 +121,7 @@ def run_gate(call: Call, name: str, command: str, configured: bool = False) -> R
         empty, zero, note = _nothing(name, command, content)
     if call.proof:
         note += ', "proof": "%s"' % call.proof
-    if configured:
-        note = _tree(call, name, tree, code == 0 and not note) + note
+    note = _tree(call, name, tree, code == 0 and not note, configured) + note
     line = ('{"gate": "%s", "command": "%s", "exit": %d, "seconds": %d, "when": "%s", "limit": %d%s}\n'
             % (json_esc(name), json_esc(command), code, secs, clock.now_sec(), most, note))
     Path(verdict).write_bytes(line.encode("utf-8", "surrogateescape"))
@@ -133,14 +133,15 @@ def run_gate(call: Call, name: str, command: str, configured: bool = False) -> R
     return Result(code, 0, same)
 
 
-def _tree(call: Call, name: str, tree: str, green: bool) -> str:
+def _tree(call: Call, name: str, tree: str, green: bool, configured: bool) -> str:
     """The verdict's tree (the one it started on) and seat. A green counts for its tree only if the files are the
     same once it has run: a gate that changed files git doesn't ignore, or an edit made while it ran, leaves no
     tree on its record. A red keeps its tree; it is never reused (verdicts.green)."""
-    if tree and green and git.files_tree(call.top) != tree:
+    if tree and green and git.disk_tree(call.top) != tree:
         tree = ""
         cli.say("note: gate %s — the files changed while it ran (it writes files git doesn't ignore, or something "
-                "else edited them), so a later gate --all runs it again" % name)
+                "else edited them), so %s" % (name, "a later gate --all runs it again" if configured else
+                                              "its record names no files it ran on"))
     return ', "tree": "%s", "seat": "%s"' % (tree, call.seat)
 
 
