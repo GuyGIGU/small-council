@@ -40,6 +40,15 @@ class SliceTest(support.Scratch):
         self.assertEqual([way.job for way in found.owned], ["Charge a card"])
         self.assertEqual(found.paths, ["src/pay/", "src/pay/webhook.py", "src/pay/charge.py"])   # each once
 
+    def test_a_path_with_a_space_is_one_path_and_a_job_name_is_none(self) -> None:
+        self.assertEqual(task_slice.paths_in(["`src/my calc.py`, `tests/test calc.py`"]),
+                         ["src/my calc.py", "tests/test calc.py"])
+        self.assertEqual(task_slice.paths_in(["src/my calc.py, the file I/O", "`a/csv_io.py` — file I/O"]),
+                         ["src/my calc.py", "a/csv_io.py"])
+        self.assertEqual(task_slice.paths_in(["`src/pay/` — Charge a card", "`tests/test_pay.py:12`, README.md, ./docs",
+                                              "src/a.py and src/b.py"]),
+                         ["src/pay/", "tests/test_pay.py", "README.md", "docs", "src/a.py", "src/b.py"])
+
     def test_no_such_task_and_no_plan_give_no_task(self) -> None:
         self.assertIsNone(self.cut(task(1), number=2).task)
         run = self.run_folder("2026-01-02-030406-implement")
