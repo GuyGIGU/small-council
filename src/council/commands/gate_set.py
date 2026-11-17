@@ -139,9 +139,10 @@ def _reused(call: gate_run.Call, row: gate_table.Gate, tally: _Tally) -> bool:
     saves = "; saves %s" % gate_reuse.span(took.seconds) if took.seconds else ""
     if took.same:
         tally.reused.append(row.name)
-        cli.say("gate %s: green on this tree already — %s ran it on tree %s (%s), so it is not run again%s; council "
-                "gate --all --rerun runs it anyway" % (row.name, took.green.seat, took.green.tree[:12],
-                                                       took.green.when, saves))
+        cli.say("gate %s: green on the same files already — %s ran it on tree %s (%s), and every file git tracks or "
+                "would track is byte for byte the same (ignored files are not compared), so it is not run again%s; "
+                "council gate --all --rerun runs it anyway" % (row.name, took.green.seat, took.green.tree[:12],
+                                                               took.green.when, saves))
     else:
         tally.unchanged.append(row.name)
         cli.say("gate %s: %s%s; council gate --all --rerun runs it anyway"
@@ -204,7 +205,8 @@ def _summary(tally: _Tally, cfg: str, label: str) -> int:
     if tally.unrun:
         tail += " · %d passed with nothing run (%s — see above)" % (len(tally.unrun), ", ".join(tally.unrun))
     if tally.reused:
-        tail += " · %d green on this tree already, not run again (%s)" % (len(tally.reused), ", ".join(tally.reused))
+        tail += " · %d green on the same files already, not run again (%s)" % (len(tally.reused),
+                                                                             ", ".join(tally.reused))
     if tally.unchanged:
         tail += " · %d not rerun, nothing under its paths changed since its green run (%s)" % (
             len(tally.unchanged), ", ".join(tally.unchanged))
@@ -212,7 +214,7 @@ def _summary(tally: _Tally, cfg: str, label: str) -> int:
         tail += " · %s saved" % gate_reuse.span(tally.saved)
     failing = tally.ran - tally.passed
     if tally.ran == 0:
-        cli.say("gates: none ran — every one that could run here was green on this tree already%s%s"
+        cli.say("gates: none ran — every one that could run here was green on the same files already%s%s"
                 % (" or had nothing changed under its paths" if tally.unchanged else "", tail))
     elif failing == 0:
         cli.say("gates: %d ran — all pass%s" % (tally.ran, tail))

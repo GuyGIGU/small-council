@@ -46,7 +46,7 @@ def _seat(args: cli.Args) -> None:
         return
     if not SEAT.fullmatch(seat) or not seat.isascii():
         raise cli.Refusal("--seat takes the seat's slug — letters, digits, dots, dashes and underscores, as the run "
-                          "plan names it: council gate <name> --seat builder-1 (got '%s')" % seat)
+                          "plan names it: council gate <name> --seat task-1 (got '%s')" % seat)
     if args.value("invalid"):
         raise cli.Refusal('--invalid marks a record and runs nothing, so it takes no --seat: council gate <name> '
                           '--invalid "<why>"')

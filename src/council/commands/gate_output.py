@@ -16,6 +16,9 @@ NONE_RAN = re.compile(r"collected 0 items|no tests ran|ran 0 tests|no tests foun
                       r"|(^|[^0-9.])0 passing")
 ZERO_TESTS = re.compile(r"(^|[^0-9.])0 tests?([ \t]+(ran|run|found|collected|executed|in)([^a-z]|$)"
                         r"|[ \t]*[.,;]|[ \t]*$)")
+ALL_SKIPPED = re.compile(r"(^|[^0-9.])[1-9][0-9]*[ \t]+skipped([,;)]|[ \t]+in[ \t]|[ \t]*$|[ \t]*=)")
+UNITTEST_RAN = re.compile(r"ran[ \t]+([0-9]+)[ \t]+tests?[ \t]+in[ \t]")
+UNITTEST_SKIPS = re.compile(r"^ok[ \t]+\((?:[a-z_]+=[0-9]+,[ \t]*)*skipped=([0-9]+)")
 TEST_RUNNERS = ("pytest", "jest", "mocha", "vitest", "rspec", "phpunit", "unittest", "ctest ", " go test", "cargo test",
                 "npm test", "npm run test", "yarn test", "pnpm test", "dotnet test", "mvn test", "gradle test")
 ANSI = re.compile("\033\\[[0-9;]*[A-Za-z]")
@@ -44,20 +47,29 @@ def clip(line: str, width: int) -> str:
 
 def zero_tests(content: str) -> str:
     """The line of a passing gate's output that says no test ran, clipped to 120 — unless another line shows
-    tests did run (go's "ok <package>", cargo's "running 5 tests", maven's "Tests run: 5", "5 passed")."""
-    ran, hit = False, None
+    tests did run (go's "ok <package>", cargo's "running 5 tests", maven's "Tests run: 5", "5 passed"). Every test
+    skipped is none ran: pytest's "12 skipped in 0.03s" or jest's "4 skipped, 4 total" with no passed count, and
+    unittest's "OK (skipped=3)" after "Ran 3 tests"; some skipped and some passed is a run."""
+    ran, hit, skipped, unit = False, None, None, [0, -1]
     for line in bytewise.records(content, fold=False):
         line = line.replace("\r", "")
         lower = line.lower()
         if re.match(r"ok[ \t]+[^ \t]+\t", lower) and "[no test" not in lower:
             ran = True
-        if RAN.search(lower):
+        counted, skips = UNITTEST_RAN.match(lower), UNITTEST_SKIPS.search(lower)
+        unit[0] = int(counted.group(1)) if counted else unit[0]
+        if skips:
+            unit[1], skipped = int(skips.group(1)), line
+        if RAN.search(lower) and not counted:
             ran = True
         if NONE_SKIPPED.search(lower):               # none skipped is not none ran
             continue
         if hit is None and (NONE_RAN.search(lower) or ZERO_TESTS.search(lower)):
             hit = line
-    return clip(hit, 120) if hit and not ran else ""
+        if skipped is None and ALL_SKIPPED.search(lower):
+            skipped = line
+    found = (skipped if unit[1] == unit[0] else "") if unit[0] else hit or skipped   # unittest counted its tests
+    return clip(found, 120) if found and not ran else ""
 
 
 def _norm(name: str) -> str:

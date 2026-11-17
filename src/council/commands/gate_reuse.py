@@ -1,6 +1,8 @@
 """Whether `gate --all` takes a gate's last green in the run instead of running it again, and the words for it: a
-green on the very files on disk now (#68), or one on other files when nothing under the paths its Covers cell names
-has changed since (#47). One rule, asked by `gate --all` (gate_set) and the receipt (receipt). A green taken on
+green on the same files as on disk now, byte for byte (git.disk_tree: what git tracks or would track; ignored files
+are not compared) (#68), or one on other files when nothing under the paths its Covers cell names has changed since
+(#47), and every one of those paths matches a file. It may run a gate again needlessly; it never takes a green
+wrongly. One rule, asked by `gate --all` (gate_set) and the receipt (receipt). A green taken on
 other files is never a fresh pass: the receipt names it `not rerun`, with this reason."""
 from __future__ import annotations
 
@@ -22,20 +24,20 @@ class Taken(NamedTuple):
 
 def taken(run: str | Path, row: gate_table.Gate, top: str, now: str | None = None) -> Taken | None:
     """The gate's last green, with the config's command, when it stands for the files on disk: `now`, top's
-    git.files_tree (taken here when not given, only once there is a green). The same tree, or, for a row with a
-    Covers cell, one whose files under those paths are the same. None (it runs) for anything else, and whenever
-    git can't read either tree: never skipped on a guess."""
+    git.disk_tree (taken here when not given, only once there is a green). The same tree, or, for a row with a
+    Covers cell whose every path matches a file, one whose files under those paths are the same. None (it runs) for
+    anything else, and whenever git can't read either tree: never skipped on a guess."""
     verdict = gates.files(Path(run), gates.slug(row.name))[0].as_posix()
     green = verdicts.green(verdict, gate_run.json_esc(row.command))
     if green is None:
         return None
-    now = git.files_tree(top) if now is None else now
+    now = git.disk_tree(top) if now is None else now
     if not now:
         return None
     seconds = int(verdicts.number(verdict, "seconds") or 0)
     if green.tree == now:
         return Taken(green, True, seconds)
-    if row.covers and git.unchanged_under(top, green.tree, now, row.covers):
+    if row.covers and not git.unmatched(top, row.covers) and git.unchanged_under(top, green.tree, now, row.covers):
         return Taken(green, False, seconds)
     return None
 
