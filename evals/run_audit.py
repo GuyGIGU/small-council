@@ -960,6 +960,8 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     capped = minimal_run(base, "2026-10-10-130000-review", [(stamp(10), "run.opened", "run", "council-review",
                                                              "phase=convene"),
                                                             (stamp(400), "run.closed", "run", "complete", "agent_runs=4")])
+    write(capped / "run-plan.tsv", "kind\tid\tfield\tvalue\treason\nbudget\trun\tagent-cap\t3\t-\n")
+    write(capped / "cap-allowances.tsv", "at\tused\tn\tuntil\tsaid\n2026-10-10T13:03:00Z\t3\t2\t5\tyes, two more\n")
     for name, asked in (("go-asked", True), ("go-assumed", False)):
         log = Transcript("session-multi", t0)
         log.prompt("review it")
@@ -974,12 +976,16 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
         log.bash('council cap allow 2 --user-said "yes, two more"', "cap: the user's go is on record")
         log.at(t0 + timedelta(seconds=399)).bash("council run close", "closed %s — complete" % capped.name)
         log.save(base / "multi" / (name + ".jsonl"))
-        verdict, words = item(council(base, "run", "audit", "--run", str(capped), "--transcript",
-                                      str(base / "multi" / (name + ".jsonl")))[1], "The user's go past the cap")
+        out = council(base, "run", "audit", "--run", str(capped), "--transcript", str(base / "multi" / (name + ".jsonl")))[1]
+        verdict, words = item(out, "The user's go past the cap")
         check("cap go: a go %s" % ("after the user's own message passes" if asked else
                                    "with no message from the user after the stop warns that it is the Chair's only"),
               (verdict, "on the Chair's record only" in words) == (("pass", False) if asked else ("warn", True)),
               [verdict, words])
+        limit = item(out, "Agent limit")
+        check("cap go: the agent limit passes the runs past the cap on the go on record, and never says it was the "
+              "user's — the step check above judges that (%s)" % name,
+              limit[0] == "pass" and "4 agent runs, past the cap of 3" in limit[1] and "on the user's go" not in limit[1], limit)
 
 sys.path.insert(0, str(ROOT / "src"))
 from council.commands import audit                                   # noqa: E402

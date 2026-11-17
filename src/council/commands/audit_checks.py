@@ -352,7 +352,8 @@ def agent_limit(run: Run, say: Say) -> None:
     if used <= cap:
         say(PASS, label, "%d of %d agent runs" % (used, cap))
     elif allowed and allowed[-1] >= used:
-        say(PASS, label, "%d agent runs, past the cap of %d on the user's go (up to %d)" % (used, cap, allowed[-1]))
+        say(PASS, label, "%d agent runs, past the cap of %d on the go recorded with council cap allow (up to %d); "
+            "whether the user gave it, the transcript's step check says" % (used, cap, allowed[-1]))
     else:
         say(FAIL, label, "%d agent runs against a cap of %d, with no go from the user on record for them" % (used, cap))
 
