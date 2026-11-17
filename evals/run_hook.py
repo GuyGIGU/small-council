@@ -1263,6 +1263,31 @@ def push_freeze(tmp):
 
 
 @part("main")
+def agent_gate_helper_fault(tmp):
+    # EVALS-2 (D20): the agent gate refuses only on the helper's own refusal, exit 2 with "Small Council:" on its
+    # stdout. A helper that fails for its own reasons (exit 2 with no such line, exit 1, a crash) lets the agent go,
+    # with nothing on stdout or stderr. The hook is run beside a stub helper, as the push freeze's fault case is.
+    plugin = os.path.join(tmp, "agent-gate-plugin")
+    os.makedirs(os.path.join(plugin, "hooks"))
+    shutil.copy(os.path.join(ROOT, "hooks", "agent-gate.sh"), os.path.join(plugin, "hooks", "agent-gate.sh"))
+    hook = os.path.join(plugin, "hooks", "agent-gate.sh")
+    here = new_repo(tmp, "agent-gate-fault")
+    payload = dispatch_input("sF", here, "small-council:council-builder",
+                             "Seat: task-1\nWrite %s/report-1.md" % os.path.join(here, ".council", "runs", "r"))
+    for label, body, want in (("a helper that fails with exit 2 and no reason", "echo oops >&2; exit 2", 0),
+                              ("a helper that fails with exit 1", "echo 'Small Council: not this way'; exit 1", 0),
+                              ("a helper that crashes", "exit 139", 0),
+                              ("the helper's own refusal", "echo 'Small Council: held'; exit 2", 2)):
+        write(os.path.join(plugin, "bin", "council"), "#!/usr/bin/env bash\n" + body + "\n")
+        p = subprocess.run([BASH, hook], input=payload, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60, cwd=here, env=GIT_ENV)
+        check(f"agent gate: {label} — exit {want}, nothing on stdout"
+              + (", the refusal on stderr" if want else ", nothing on stderr"),
+              p.returncode == want and not p.stdout
+              and p.stderr.strip() == ("Small Council: held" if want else ""), f"exit {p.returncode} · stdout {p.stdout.strip()[:80]!r} · stderr {p.stderr.strip()[:200]!r}")
+
+
+@part("main")
 def hooks_running(tmp):
     # --- A session whose hooks don't run (the plugin was enabled after it started) can't open a run: a whole
     # night ran with no agent stop and no seat check, and Claude was told to reload once, in a sub-bullet ---
