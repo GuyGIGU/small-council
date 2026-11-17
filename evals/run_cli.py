@@ -7901,7 +7901,8 @@ def requests_task_pack(tmp):
     council(repo, "run", "close", "--status", "abandoned")
     code, out, err = council(repo, "context", "build", "task-2")
     check("context build: with no open run, refused naming council run open",
-          code == 2 and "no open run on this working tree — open one with: council run open" in err, out + err)
+          code == 2 and "no open run on this working tree" in err and "council run open <mode>" in err
+          and "is closed: to read it, pass --run" in err, out + err)
 
 
 @part("requests")
@@ -8025,7 +8026,8 @@ def requests_task_tree(tmp):
     council(repo, "run", "close", "--status", "abandoned")
     code, out, err = council(repo, "tree")
     check("tree: with no open run, refused naming council run open",
-          code == 2 and "no open run on this working tree — open one with: council run open" in err, out + err)
+          code == 2 and "no open run on this working tree" in err and "council run open <mode>" in err
+          and "is closed: to read it, pass --run" in err, out + err)
 
 
 @part("filing")
