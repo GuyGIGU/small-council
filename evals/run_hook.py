@@ -62,8 +62,9 @@ PreToolUse (hooks/bash-gate.sh), fed through hooks.json's own command and matche
     finds one (after /reload-plugins too);
   - push freeze: while `- pushes: off` (or `off until` a later date) holds, refuses git push and gh pr
     create (plain, compound, in a group or a substitution, after git -C or gh -R), naming the freeze,
-    its date and COUNCIL_ALLOW_PUSH=1; lets through that escape, push in quoted text or a heredoc, a
-    past date, pushes on, no council, and a missing or faulty helper.
+    its date and COUNCIL_ALLOW_PUSH=1, and refuses too while the value can't be read (it fails safe);
+    lets through that escape, push in quoted text or a heredoc, a past date, pushes on, no council, and a
+    missing or faulty helper.
 """
 import argparse
 import json
@@ -1169,12 +1170,15 @@ def push_freeze(tmp):
           code == 2 and err.startswith("Small Council: Push and PR held by the freeze (`- pushes: off`")
           and "COUNCIL_ALLOW_PUSH=1 git push" in err, said(code, out, err))
     for label, line in (("a freeze whose date has passed", "- pushes: off until 2000-01-01\n"),
-                        ("pushes on", "- pushes: on\n"), ("no pushes line", ""),
-                        ("a value it can't read", "- pushes: frozen-ish\n")):
+                        ("pushes on", "- pushes: on\n"), ("no pushes line", "")):
         repo = frozen_repo("freeze-" + re.sub(r"[^a-z]+", "-", label), line)
         code, out, err, _ = gate(repo, "git push && gh pr create --fill")
         check(f"push freeze: {label} — git push and gh pr create go ahead, nothing said",
               code == 0 and not out and not err, said(code, out, err))
+    code, out, err, _ = gate(frozen_repo("freeze-unread", "- pushes: frozen-ish\n"), "git push")
+    check("push freeze: a value it can't read holds, as off does (it fails safe), naming the config line",
+          code == 2 and err.startswith("Small Council: Push and PR held by the freeze") and "council.config.md line" in err,
+          said(code, out, err))
     code, out, err, _ = gate(new_repo(tmp, "freeze-no-council"), "git push")
     check("push freeze: no council here — the push goes ahead, nothing said", code == 0 and not out and not err,
           said(code, out, err))

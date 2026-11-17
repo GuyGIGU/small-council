@@ -12,7 +12,7 @@ HELD = "push and PR held by the freeze"
 
 
 class PushesTest(support.Scratch):
-    """The `- pushes:` reader: on, off, off until a date; anything else is on, and the reading says why."""
+    """The `- pushes:` reader: on, off, off until a date; anything else holds, as off does, and says why."""
 
     def read(self, text: str) -> tuple[str, str]:
         self.write(".council/council.config.md", text)
@@ -35,10 +35,18 @@ class PushesTest(support.Scratch):
                          ("", "on (config: the freeze ended 2026-11-13)"))
         self.assertEqual(self.read("- pushes: off until 2026-01-05\n")[0], "")
 
-    def test_a_value_it_cannot_read_is_on_and_says_so(self) -> None:
-        for value in ("of", "off until next week", "off until 2026-02-30", "off until 2026-12-1", "Maybe"):
-            unread = "on (default; '{}' is not a setting — on, off or off until <YYYY-MM-DD>)".format(value.lower())
-            self.assertEqual(self.read("- pushes: {}\n".format(value)), ("", unread), value)
+    def test_a_value_it_cannot_read_holds_and_names_the_line(self) -> None:
+        for value in ("of", "off until next week", "off until 2026-02-30", "off until 2026-12-1", "Maybe",
+                      "off — release week"):
+            held = HELD + " — council.config.md line 2 isn't on, off or off until <YYYY-MM-DD>, so it counts as off"
+            reading = "{} (read as off; '{}' is not a setting — on, off or off until <YYYY-MM-DD>)".format(
+                value.lower(), value)
+            self.assertEqual(self.read("# c\n- pushes: {}\n".format(value)), (held, reading), value)
+
+    def test_a_note_or_capitals_still_hold(self) -> None:
+        """CODE-RECORDS-1: a freeze written with a note or in capitals is a freeze."""
+        for line in ("- pushes: off  # release freeze", "- Pushes: off", "- pushes: off (release)", "* PUSHES: Off"):
+            self.assertEqual(self.read(line + "\n")[0], HELD, line)
 
     def test_only_the_first_list_item_counts(self) -> None:
         self.assertEqual(self.read("- pushes:\n- pushes: off\n"), ("", "on (default)"))
