@@ -115,11 +115,12 @@ NOTHING WAS CHECKED, because `council gate --all` has nothing to run. Then one q
 
 > Fit the ones you want? Nothing is installed until you say so.
 
-On a yes, write `<home>/plans/guardrails.md` in council-plan's **full** task format — all six rows,
-`Domain` (Guardrails × Carmack — verify by machine, not by feel), `Ref: references/guardrails.md`,
-`Depends on`, `Touches`, `Constraints` and `Done when` — one task per check, cheapest first, and offer
-council-implement. **council-init installs nothing itself**, so every install gets before-and-after
-evidence, a blind verifier and a log row. The reference has the task template.
+On a yes, write `<home>/plans/guardrails.md` from the reference's template, in council-plan's task
+format (`${CLAUDE_PLUGIN_ROOT}/references/run/run-plan.md`, Plan tasks: `## Task Sequence`, then
+`### <n>. <title>` and its rows, `Ref: references/guardrails.md`) — one task per check, cheapest
+first — and offer council-implement. **council-init installs nothing itself**, so every install gets
+before-and-after evidence, a blind verifier and a log row. A task names nothing under `.council/`:
+the Gates row is added after the build, as the reference says.
 
 Two things every guardrails task needs, or it fits a gate that can only pass:
 - **A two-sided Done-when** — the gate exits non-zero on a deliberate violation and 0 once it's

@@ -117,20 +117,33 @@ be a before-check that never failed — `council check` calls that broken proof)
 ## Fitting them — a plan, not a side effect
 
 council-init never installs anything itself: it writes `<home>/plans/guardrails.md` in council-plan's
-task format — one task per missing check — and offers council-implement. Each install then gets
-before-and-after evidence, a blind verifier and a log row, like any other build.
+task format (`references/run/run-plan.md`, Plan tasks): a `## Task Sequence` heading, then one
+`### <n>. <title>` and its nine rows per missing check. The helper reads only that form, so a task
+written any other way can't be built. council-implement then gives each install before-and-after
+evidence, a blind verifier and a log row, like any other build.
 
 ```
-#### 1. Fit the linter (ruff)
+## Task Sequence
+### 1. Fit the linter (ruff)
 | | |
 |---|---|
 | **Domain** | Guardrails (the project's own tools) × Carmack — verify by machine, not by feel |
 | **Ref** | `references/guardrails.md` |
 | **Depends on** | — |
-| **Touches** | `pyproject.toml`, `.council/council.config.md` (Gates) |
+| **Serves** | "<the user's words when they said yes to fitting the checks, quoted exactly>" |
+| **Owner** | `pyproject.toml` — the project's checks (or New way: <why>, when it has no check of this kind yet) |
+| **Rests on** | `ruff --version` runs on this machine (OBSERVED) |
+| **Touches** | `pyproject.toml` |
 | **Constraints** | "<any hard rule that binds this — a dependency policy, a pinned toolchain — quoted with its source>"; or — |
-| **Done when** | `council changed --glob '*.py' -- ruff check` exits non-zero on a file with an unused import, and 0 once it's removed; the Gates row records **Run at** (grounding, verify), **Mandatory**, Probe, Needs and Side effects |
+| **Done when** | `council changed --glob '*.py' -- ruff check` exits non-zero on a file with an unused import, and 0 once it's removed |
+
+<What the check catches and why, in at most 3 sentences.>
 ```
+
+A task's Touches and Done-when name nothing under `.council/`: a builder writes only project code
+and its report, and `council patch save` leaves `.council/` out of the round. The Gates row is the
+Chair's: after converge, it adds each fitted gate to `council.config.md` (Run at, Mandatory, Probe,
+Needs, Side effects) and probes it both ways, as council-init's dry run does.
 
 Order them cheapest-first: formatter, linter, type check, dependency audit, and the test runner last.
 

@@ -403,6 +403,25 @@ check("init: setup fills the map's One way per job table and proposes the projec
       and "- PROPOSED decision:" in read("references", "templates", "conventions.md")
       and all(p in flat(read("references", "roster", "decision-records.md")) for p in (
           "- PROPOSED decision:", "(evidence: <file:line>;", "`council memory accept` takes only", "## One way per job")))
+# A plan template is copied into a project as a plan the helper must read: council-init's guardrails plan was once
+# written as `#### 1.` with no `## Task Sequence`, so its build never started, and its Touches named the config, which
+# a builder may not write and patch save leaves out. Every template's tasks parse, carry the nine rows, and touch
+# nothing under the council home.
+from council.records import tasks as helper_tasks  # noqa: E402
+TASK_ROWS = {"domain", "ref", "depends on", "serves", "owner", "rests on", "touches", "constraints", "done when"}
+template_bad = []
+for label, text in (("references/guardrails.md", guardrails), ("skills/council-plan", skill["council-plan"])):
+    blocks = [b for b in re.findall(r"```[a-z]*\n(.*?)```", text, re.DOTALL) if "| **Touches** |" in b]
+    found = [t for b in blocks for t in helper_tasks.read(b)]
+    if not blocks or not found:
+        template_bad.append(f"{label}: no task under ## Task Sequence the helper reads")
+    template_bad += [f"{label}: task {t.number} lacks {sorted(TASK_ROWS - set(t.rows))}" for t in found
+                     if TASK_ROWS - set(t.rows)]
+    template_bad += [f"{label}: task {t.number}'s {k} names .council/" for t in found
+                     for k in ("touches", "done when") if ".council/" in t.rows.get(k, "")]
+check("plan templates: every task a template shows is read by the helper (## Task Sequence, ### <n>.), has the nine "
+      "rows, and names nothing under .council/ in its Touches or Done when (a builder never writes there)",
+      not template_bad, "; ".join(template_bad))
 check("init: a refresh offers an earlier, shorter permission list the rules it lacks",
       "offer to add the rules it lacks" in " ".join(skill["council-init"].split())
       and "**Permission rules:**" in skill["council-init"].split("## Refresh (re-runs)")[1])
