@@ -81,7 +81,7 @@ BLOCKED: <reason>
 ```
 
 `Wrote` comes only after `council patch save <n>` accepted the report you name. If you change a file
-after saving, save again before you reply. A `NEEDS:` line writes no round: before a `NEEDS:` or
+after saving, save again before you reply: your second save replaces the round, it is no fix round. A `NEEDS:` line writes no round: before a `NEEDS:` or
 `NEEDS: fix` reply with unsaved edits on the files, run `council patch hold <n>`, so nothing half-done
 stays on them. At a gate's third failure
 (`${CLAUDE_PLUGIN_ROOT}/references/run/repair-loop.md`, its first section) the reason is

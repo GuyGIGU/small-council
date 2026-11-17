@@ -30,8 +30,12 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
   - "done" means the consequence can no longer happen.
 
   Default: introduced or touched P1/P2s, including unknown origin. Use the user's existing selection.
+  The helper reads tasks, not findings: once the run is open, write the selected findings to
+  `<run>/tasks.md` as tasks in the plan's format under `## Task Sequence`
+  (`${CLAUDE_PLUGIN_ROOT}/references/run/run-plan.md`, Plan tasks). `input=` stays the review's path.
+  Until that file is there, `council seat task-<n> queued`, `context build` and `tree` refuse.
 - **A post-game:** `<home>/postgames/<date>-<slug>.md`. Each Next task is a task in the plan's
-  format; its Done-when quotes the user's request.
+  format; its Done-when quotes the user's request. The helper reads `### Next tasks` as it stands.
 
 ## At Convene
 

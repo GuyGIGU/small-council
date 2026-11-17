@@ -47,7 +47,8 @@ or `--base <rev>`) to the files on disk now, `.council/` and what git ignores le
 | Owner | a changed file outside the task's slice: the paths in its plan task's Owner and Touches, and the map row its Owner names (the plan is the run's `input=`) | flagged for the verifier as possible scope creep; skipped, in one line, with no plan or no path |
 | Workaround signs | an added line of code that retries, sleeps, catches everything, skips a test, sets a time limit or loosens an expected value; says workaround, hack, temporary, "for now" or "until … is fixed"; or adds a `TODO`, `FIXME` or `XXX`; or an assertion changed in place | listed for the verifier as questions, never verdicts: some are right |
 
-A refused round saves nothing, so it keeps its number. The signs are patterns: they miss what they
+A refused round saves nothing, so it keeps its number. A second save by the builder still at work (its seat
+not yet recorded done) replaces the round it saved: same number, no fix round. The signs are patterns: they miss what they
 don't name, and the verifier's question below is the real check.
 
 ## What it saves

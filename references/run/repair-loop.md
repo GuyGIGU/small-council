@@ -7,7 +7,7 @@ the current edit caused a failure.
 
 ## One task, one gate, at most three failed attempts
 
-In a build, `council gate <name>` records each failure itself as an attempt on the task `next:` names
+In a build, `council gate <name>` records each failure itself as an attempt on the task whose build seat `task-<n>` is running, else the task `next:` names
 (`task <n>: …` — `phase=build` sets task 1, the Chair the next one after each receipt); with no task id
 it says the attempt was not counted, and why. A pass closes the trail. `council repair record
 <task-id> <gate-name>` is for a result recorded any other way; for one the gate recorded it says so
