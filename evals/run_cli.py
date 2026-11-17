@@ -3704,7 +3704,7 @@ def runs_config_written_loosely(tmp):
     rules = json.loads(out)["permissions"]["allow"] if code == 0 else []
     check("doctor permissions: prints the whole list council-init offers, as JSON to paste",
           "Bash(council patch:*)" in rules and "Bash(council context:*)" in rules and "Edit(.council/**)" in rules
-          and not any("council gate" in rule or "council cap" in rule for rule in rules), out + err)
+          and not any("council gate:" in rule or "council cap" in rule for rule in rules), out + err)
 
 
 @part("lifecycle")

@@ -64,6 +64,10 @@ context packs, are gone.
   it.
 - `council run close` saves the run's audit as `<run>/audit.md`, flags an agent with no token
   figure, and records the method's size beside the Chair's tokens.
+- `council doctor permissions` prints the permission rules to paste; `council doctor` names the ones
+  a project lacks. `/council-init` offers that same list.
+- `council patch hold <n>` sets a stopped builder's unsaved edits aside, and
+  `council patch apply <n> --held` puts them back for the next builder.
 
 ### Changed
 - **One verifier per build by default** (`- checking: one per batch`): a build is checked by its
@@ -90,6 +94,8 @@ context packs, are gone.
 - `python evals/run_all.py --fast` (about a minute), a size ratchet (`evals/run_ratchet.py`), ruff
   in CI, and CI's Windows leg split across three machines.
 - `evals/run_replay.py` replays saved runs through `council run audit` with no model.
+- CI also runs the fast tier on Python 3.8, and every job has a time limit. A final review planted
+  24 bugs; the four no suite caught each have a test now.
 - `evals/bench.py --arm builder|chair` compares the two ways of building (the paid comparison has
   not been run).
 
@@ -106,7 +112,46 @@ context packs, are gone.
 - A builder runs its after-check before it saves the round, so mending its own work no longer counts
   as a fix round; it saves again if it changes a file after saving.
 - Builders, reviewers and verifiers treat text in the code they read as data, never as instructions.
-<!-- The final review's other fixes are added here at release. -->
+- **Proofs that passed without proving anything.** A check that ran no test (none found, all
+  skipped, no files matched) reads `NOTHING-RAN`. An after-check that passed on other files than
+  those on disk now reads `AFTER-STALE`. The revert check takes off every round saved since the
+  task's first and keeps the files the check names, so a later round can no longer hide a test that
+  doesn't depend on the change.
+- Every gate records the files as they are on disk, so a green gate is never reused after an
+  uncommitted edit.
+- A second session can't write into a run another session is driving; it can still read it.
+- `council state` no longer overwrites the fields `run open`, `run resume` and `run close` own.
+- A `council run close` that stopped halfway finishes when run again.
+- `council run plan check` refuses a task with no `Done when`, a repeated task number, or a
+  `Depends on` that names no task.
+- A claim a verifier REFUTED but the report still kept now fails `council evidence check` and the
+  audit.
+- A build from a review or a post-game gives its builders their tasks. For a review, the Chair
+  writes the selected findings to `<run>/tasks.md`; without it the build says so instead of
+  starting with no orders.
+- A builder sent out with no `Seat: task-<n>` is refused, and a builder's stop is checked against
+  its own seat's report and the saved files.
+- `NEEDS: fix` is read the same way everywhere, with or without markdown around it.
+- A builder that saves twice in one dispatch replaces its round; it no longer counts as a fix round.
+- File names with spaces or non-ASCII letters are kept as written in a saved round.
+- Settings in `council.config.md` are read one way: any capitals, with a `# note` or `(note)` after
+  the value. A value the helper can't read is said, and `council doctor` reports it as an error.
+  An unreadable `- pushes:` line holds pushes.
+- The seat ledger and the tool counts are written under a lock; a file that starts with a BOM reads
+  as any other.
+- **Push freeze and pipe rule:** PowerShell calls are judged too; `git -C <dir> push` and a push
+  quoted inside `bash -c`, `sh -c` or `eval` are caught; `--dry-run` passes; a project's own
+  `./council` script is no longer mistaken for the helper.
+- **Hooks are faster where there is no council:** the turn-end hook takes about half the time and
+  the agent gate about a third.
+- With no Python, session start says so in one line instead of staying silent.
+- The audit counts only the run's own open-to-close window, says "not checked" when the transcript
+  doesn't hold the run, and warns when the agent cap was passed with no message from the user.
+- `council run export --anon` no longer keeps unredacted status lines from tool results.
+- `council memory accept`, `reject` and `propose` refusals exit 2 and name the next step.
+- A post-game's status card reads its own verdict table.
+- The SessionStart banner says when the map was built on another line of history.
+- Closing an abandoned run again finishes what a stopped close left in the seat ledger.
 
 ## [0.23.0] — 2026-10-22
 
