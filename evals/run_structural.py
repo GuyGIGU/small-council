@@ -123,6 +123,8 @@ bash_gate = read("hooks", "bash-gate.sh")
 warroom = read("references", "run", "war-room.md")
 guardrails = read("references", "guardrails.md")
 builder_loop = read("references", "run", "builder-loop.md")   # the build loop's steps 1-6, moved out of council-implement
+build_receipt = read("references", "run", "build-receipt.md")  # council-implement's Deliver, read at Deliver
+build_log = read("references", "templates", "build-log.md")    # council-implement's log template
 
 # 2. Kernel
 LAWS = ["One head", "Parallel readers, one writer", "Gather once, share with everyone", "The disk is the memory",
@@ -192,9 +194,9 @@ check("repair: terminal gate stop cannot fall through to another fix or success 
       "only if the task is not blocked" in builder_loop and
       "commit only a task whose mandatory gates pass" in skill["council-implement"])
 check("repair: blocked work is excluded from the built count and helper cost is labelled",
-      "A task stopped" in skill["council-implement"] and
-      "is not counted as built" in skill["council-implement"] and
-      "helper-only usage" in skill["council-implement"])
+      "A task stopped" in build_receipt and
+      "is not counted as built" in build_receipt and
+      "helper-only usage" in build_receipt)
 check("repair: helper and kernel expose inspectable repair trail",
       "repair" in command and "council repair record" in helper_help.USAGE and "council repair record" in core and
       "repairs.jsonl" in core)
@@ -315,7 +317,8 @@ for c in sorted(known):
 texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctrine[d] for d in DOCTRINE},
          "agents/worker": worker, "agents/verifier": verifier, "agents/builder": builder, "hooks/session-start.sh": hook,
          "references/run/war-room.md": warroom, "references/guardrails.md": guardrails,
-         "references/run/helper-commands.md": helper_reference, "references/run/builder-loop.md": builder_loop}
+         "references/run/helper-commands.md": helper_reference, "references/run/builder-loop.md": builder_loop,
+         "references/run/build-receipt.md": build_receipt, "references/templates/build-log.md": build_log}
 flags = {"--" + f for f in helper_cli.VALUED + helper_cli.GATE_VALUED + helper_cli.SWITCHES + ("glob", "each")}
 run_subs = {key.split(" ", 1)[1] for key in dispatch.COMMANDS if key.startswith("run ")}   # the helper's own table
 bad, bad_flags = [], []
@@ -432,14 +435,18 @@ for label, text, needles in [
                     "## How the council decided", "ask.md"]),   # debate.md: war-room.md's list; ask save: 09-deliver's check
     ("implement", impl, ["fix mode", "clean-context diagnosis", "converge", "council gate --all",
                          "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
-                         "council-postgame", "Start:", "## Converge", "Post-game:", "Three kinds of input",
+                         "Start:", "## Converge", "Post-game:", "Three kinds of input",
                          "NOTHING WAS CHECKED", "## Shortcuts and concessions", "Shortcuts I took:", "Not proved:",
-                         "Left open:", "No commit, push or PR question while anything is left open", "data-loss hazard defaults to fix now",
-                         "left on the user's ruling", 'council state phase=deliver skip="blocked: task <n>"',
+                         "Left open:", "left on the user's ruling", "build-receipt.md", "build-log.md", 'council state phase=deliver skip="blocked: task <n>"',
                          "Checked by machine:", "Works?:", "guardrails.md", "council check", "gates/baseline/",
                          "older Gates layout",
                          "Draft any PR text as `<run>/pr-body.md`; the PR is opened from it at Deliver, after the user's OK."]),
     ("builder-loop", builder_loop, ["Before-evidence", "After-evidence"]),
+    ("build-receipt", build_receipt, ["council-postgame", "No commit, push or PR question while anything is left open",
+                                      "data-loss hazard defaults to fix now", "Shortcuts I took:", "Not proved:",
+                                      "Left open:", "Works?:", "Checked by machine:", "guardrails.md"]),
+    ("build-log", build_log, ["Notes for later tasks", "## Shortcuts and concessions", "## Converge", "Post-game:",
+                              "Ruling:", "left on the user's ruling"]),
     ("research", research, ["scout", "Strength:"]),
     ("postgame", skill["council-postgame"], ["ask.md", "council run open council-postgame", "Ruled out",   # ask save: 09-deliver's check
                                              "council-implement", "council-plan", "never the plan", "quote:",
@@ -508,7 +515,7 @@ check("build tier: build-proof.md states both tiers with light as the default, t
       "and the verifier batches, the config template carries the line, and a build ends at a stated finish line",
       "## Tiers" in build_proof and "build tier: light" in build_proof and "A missing line reads as light" in build_proof and
       "light: gates only" in build_proof and
-      "light tier" in builder_loop and "Ruling:" in skill["council-implement"] and
+      "light tier" in builder_loop and "Ruling:" in build_log and
       "risk class" in skill["council-implement"].split("Dispatch `small-council:council-verifier` with:", 1)[-1] and
       "finish line" in skill["council-implement"] and "never a hunt inside the build" in skill["council-implement"] and
       "- build tier: light" in read("references", "templates", "council.config.md"))
@@ -516,7 +523,7 @@ check("checking: build-proof.md states one per batch as the default and per task
       "runs step 7 per task only, and the config template carries the line",
       "## Checking" in build_proof and "A missing line reads as one per batch" in build_proof and
       "**Per task**" in build_proof and "Checking" in skill["council-implement"] and
-      "per task only" in skill["council-implement"] and
+      "only under `- checking: per task`" in skill["council-implement"] and
       "- checking: one per batch" in read("references", "templates", "council.config.md"))
 # A bug underneath stops the branch (docs/design/task-tree.md, section 4, and T3): the builder's stop, the Chair's
 # rule for it, the verifier's question on every round, and the orders a task is built from.
@@ -542,7 +549,7 @@ check("the task's orders: the build loop takes them from council context build a
       and "resume from `council tree`" in skill["council-implement"]
       and "never copy it" in flat(read("references", "run", "builder-rules.md")))
 cfg_template = read("references", "templates", "council.config.md")
-impl_deliver = flat(skill["council-implement"].split("## At Deliver", 1)[-1])
+impl_deliver = flat(build_receipt)
 deliver_doc = flat(doctrine["09-deliver.md"])
 check("open items: the config template carries `- open items: ask` and fix now; the build's Deliver reads the line "
       "(missing means ask), fix now is one receipt line each with time and tokens and no per-item question, commit, "
@@ -573,7 +580,7 @@ check("pushes: the config template carries `- pushes: on` with off and off until
       "- pushes: on" in cfg_template and '"pushes": on | off | off until <YYYY-MM-DD>' in cfg_template and
       "`- pushes:` line (missing means `on`)" in impl_deliver and "`off until <date>` before that date" in impl_deliver and
       "the freeze holds push and PR only" in impl_deliver and "record the commit in the log, and stop" in impl_deliver and
-      re.search(r"^Built: .*\[· push and PR held by the freeze\[ until <date>\]\]$", skill["council-implement"], re.MULTILINE)
+      re.search(r"^Built: .*\[· push and PR held by the freeze\[ until <date>\]\]$", build_receipt, re.MULTILINE)
       is not None)
 check("verifier: judges the Done-when, never hunts past it, and notes the rest under ## Noticed — never as a verdict "
       "(a real batch's checks ran ten hours finding a narrower gap each round)",
