@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] — 2026-11-17
 
 **In short:** a build now hands each task to a fresh builder agent and checks its work against its
 diff; the helper is Python, and Python 3.8 or newer is now required; five views nobody used, and
@@ -142,6 +142,9 @@ context packs, are gone.
 - **Push freeze and pipe rule:** PowerShell calls are judged too; `git -C <dir> push` and a push
   quoted inside `bash -c`, `sh -c` or `eval` are caught; `--dry-run` passes; a project's own
   `./council` script is no longer mistaken for the helper.
+- **Push freeze override on record:** a push or PR let through with `COUNCIL_ALLOW_PUSH=1` while the
+  freeze holds leaves a `run.push_allowed` event in the open run, and `council run audit` shows it
+  as a warning. Before, nothing recorded that the override was used.
 - **Hooks are faster where there is no council:** the turn-end hook takes about half the time and
   the agent gate about a third.
 - With no Python, session start says so in one line instead of staying silent.
