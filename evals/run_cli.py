@@ -7022,6 +7022,7 @@ def runs_export_anon(tmp):
     # nothing else: no path of this machine, no word of the user's, the times kept.
     r = new_repo(tmp, "export-anon")
     write(os.path.join(r, ".council", "council.config.md"), "# Council config\n")
+    opened_at = datetime.now(timezone.utc)
     rn = council(r, "run", "open", "council-review", env=session("sX-export"))[1].strip().splitlines()[-1]
     name = os.path.basename(rn)
     write_plan(rn, selected=("chair", "w1"))
@@ -7036,8 +7037,9 @@ def runs_export_anon(tmp):
     to_deliver(r, env=session("sX-export"))
     council(r, "seat", "chair", "done", "agents=0")
     council(r, "run", "close")
-    t0 = datetime.now(timezone.utc) - timedelta(minutes=1)
-    stamp = lambda s: (t0 + timedelta(seconds=s)).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # noqa: E731
+    # the session's calls fall inside the run's open..close (FR-5: only that window is the run's)
+    t0, step = opened_at, (datetime.now(timezone.utc) - opened_at) / 5
+    stamp = lambda s: (t0 + step * (s + 1)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"  # noqa: E731
     lines = [{"type": "user", "timestamp": stamp(0), "sessionId": "sX-export", "message": {"content": "review the zebra"}},
              {"type": "assistant", "timestamp": stamp(1), "sessionId": "sX-export", "message": {"content": [
                  {"type": "tool_use", "id": "t1", "name": "Bash", "input": {
