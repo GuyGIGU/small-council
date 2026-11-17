@@ -79,7 +79,8 @@ council — the Small Council's helper (bash + git)
                                          build proof: a failing then passing check, or an invariant
                                          passing on both versions (declare preserve before the edit)
   council gate --all [--at grounding|verify] [--rerun]   the configured gates, one call per run at a time
-                                         (a second: exit 2); one green on this same tree runs only with --rerun
+                                         (a second: exit 2); one green on this same tree runs only with --rerun,
+                                         and so does one with nothing changed under its Covers paths since
   council gate … --seat <slug>           a seat's own run (a builder's), in the working tree it calls from
   council gate … --timeout <time>        this call's time limit per gate (900, 15m). Without it: the
                                          largest of 3× the gate's green baseline, the config's

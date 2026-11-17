@@ -5,10 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from council import git
-from council.commands import cli, gate_lock, gate_repair, gate_run
+from council.commands import cli, gate_lock, gate_repair, gate_reuse, gate_run
 from council.commands.gate import safe
-from council.records import bytewise, config, gate_notes, gate_table, gates, verdicts
+from council.records import bytewise, config, gate_notes, gate_table, gates
 
 STAGES = {"grounding": ("g", "grounding"), "verify": ("v", "verify"), "verification": ("v", "verify")}
 
@@ -24,6 +23,8 @@ class _Tally:
         self.none: list[str] = []
         self.unrun: list[str] = []
         self.reused: list[str] = []
+        self.unchanged: list[str] = []      # not rerun: nothing under its Covers paths changed since its green
+        self.saved = 0                      # seconds: the taken greens' own run times
         self.files: dict[str, str] = {}
 
     def skip(self, name: str, mandatory: bool, why: str) -> None:
@@ -55,8 +56,7 @@ def run_all(call: gate_run.Call, at: str, mode: str, wait: tuple[bool, str]) -> 
         trail = _runnable(call, row, stage, mode, tally)
         if trail is None:
             continue
-        if not call.rerun and _reused(call, row):
-            tally.reused.append(row.name)
+        if not call.rerun and _reused(call, row, tally):
             continue
         tally.ran += 1
         result = gate_run.run_gate(call, row.name, row.command, configured=True)
@@ -124,19 +124,29 @@ def _runnable(call: gate_run.Call, row: gate_table.Gate, stage: str, mode: str, 
     return trail
 
 
-def _reused(call: gate_run.Call, row: gate_table.Gate) -> bool:
+def _reused(call: gate_run.Call, row: gate_table.Gate, tally: _Tally) -> bool:
     """A gate whose last run in this run was green, with the config's command, on the very files the code root
-    holds now: said in one line (the gate, the seat, the tree) and not run again. Its record stays as it is; in a
-    baseline set it becomes the baseline if the gate has none yet."""
-    stem = gates.slug(row.name)
-    verdict, out = (path.as_posix() for path in gates.files(Path(call.run), stem))
-    green = verdicts.green(verdict, gate_run.json_esc(row.command))
-    if green is None or git.files_tree(call.top) != green.tree:
+    holds now, or (a row with a Covers cell) on files the same under its paths (gate_reuse): said in one line (the
+    gate, the seat, the tree, the time it saves) and not run again. Its record stays as it is; in a baseline set
+    it becomes the baseline if the gate has none yet."""
+    took = gate_reuse.taken(call.run, row, call.top)
+    if took is None:
         return False
     if call.baseline:
+        stem = gates.slug(row.name)
+        verdict, out = (path.as_posix() for path in gates.files(Path(call.run), stem))
         gate_run.keep_baseline(call.run, stem, out, verdict)
-    cli.say("gate %s: green on this tree already — %s ran it on tree %s (%s), so it is not run again; council gate "
-            "--all --rerun runs it anyway" % (row.name, green.seat, green.tree[:12], green.when))
+    saves = "; saves %s" % gate_reuse.span(took.seconds) if took.seconds else ""
+    if took.same:
+        tally.reused.append(row.name)
+        cli.say("gate %s: green on this tree already — %s ran it on tree %s (%s), so it is not run again%s; council "
+                "gate --all --rerun runs it anyway" % (row.name, took.green.seat, took.green.tree[:12],
+                                                       took.green.when, saves))
+    else:
+        tally.unchanged.append(row.name)
+        cli.say("gate %s: %s%s; council gate --all --rerun runs it anyway"
+                % (row.name, gate_reuse.not_rerun(row, took), saves))
+    tally.saved += took.seconds
     return True
 
 
@@ -172,7 +182,7 @@ def _own_file(row: gate_table.Gate, call: gate_run.Call, tally: _Tally) -> bool:
 
 def _summary(tally: _Tally, cfg: str, label: str) -> int:
     at = " at '%s'" % label if label else ""
-    if tally.ran == 0 and not tally.reused:
+    if tally.ran == 0 and not tally.reused and not tally.unchanged:
         if tally.old:
             cli.say("NOTHING WAS CHECKED — the Gates table in %s has no Side effects column (an older layout), so no "
                     "gate runs unasked; a council-init refresh adds it, or run a gate by name once the user agrees"
@@ -195,9 +205,15 @@ def _summary(tally: _Tally, cfg: str, label: str) -> int:
         tail += " · %d passed with nothing run (%s — see above)" % (len(tally.unrun), ", ".join(tally.unrun))
     if tally.reused:
         tail += " · %d green on this tree already, not run again (%s)" % (len(tally.reused), ", ".join(tally.reused))
+    if tally.unchanged:
+        tail += " · %d not rerun, nothing under its paths changed since its green run (%s)" % (
+            len(tally.unchanged), ", ".join(tally.unchanged))
+    if tally.saved:
+        tail += " · %s saved" % gate_reuse.span(tally.saved)
     failing = tally.ran - tally.passed
     if tally.ran == 0:
-        cli.say("gates: none ran — every one that could run here was green on this tree already%s" % tail)
+        cli.say("gates: none ran — every one that could run here was green on this tree already%s%s"
+                % (" or had nothing changed under its paths" if tally.unchanged else "", tail))
     elif failing == 0:
         cli.say("gates: %d ran — all pass%s" % (tally.ran, tail))
     else:

@@ -6196,6 +6196,79 @@ def gates_reuse_green_tree(tmp):
           first + out + err)
 
 
+@part("gates")
+def gates_covers_paths(tmp):
+    """#47: a gate whose Covers cell names its paths is not run again by gate --all when nothing under them changed
+    since its green run on other files: one line with the reason and the time it saves, `not rerun` in the receipt,
+    never a fresh pass. A change under its paths (a move out from under them too), --rerun, an empty cell or a green
+    tree git can't read means it runs; council doctor names a Covers path that matches no file."""
+    repo = new_repo(tmp, "covers")
+    write(os.path.join(repo, "app", "ui", "view.kt"), "view\n")
+    write(os.path.join(repo, "app", "core", "model.kt"), "model\n")
+    write(os.path.join(repo, ".council", "council.config.md"),
+          "# Council config — x\nlast-verified: 2026-09-15 @ x\n\n## Gates\n"
+          "| Gate | Command | Run at | Mandatory | Checked | Probe | Side effects | Needs | Covers |\n"
+          "|---|---|---|---|---|---|---|---|---|\n"
+          "| ui | `echo run >> ../covers-ui.log && sleep 2 && echo '19 passed'` | grounding, verify | yes | ok | `true` "
+          "| none | - | `app/ui/**`, tests/ui/ |\n"
+          "| unit | `echo run >> ../covers-unit.log && echo '3 passed'` | grounding, verify | yes | ok | `true` | none "
+          "| - | |\n"
+          "| ghost | `true` | manual | no | ok | `true` | none | - | app/ui/, app/nothere/** |\n\n## Hard rules\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    ui = lambda: read(os.path.join(tmp, "covers-ui.log")).count("run")        # noqa: E731 — how often ui ran
+    unit = lambda: read(os.path.join(tmp, "covers-unit.log")).count("run")    # noqa: E731
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run)
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build")
+    council(repo, "gate", "--all", "--at", "grounding")
+    tree = json.loads(read(os.path.join(run, "gates", "ui.json")) or "{}").get("tree", "")
+    write(os.path.join(repo, "app", "core", "model.kt"), "model, edited\n")          # outside ui's paths
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a gate with nothing changed under its Covers paths since its green run is not rerun, in one "
+          "line naming the paths, the seat, the tree and the time it saves",
+          code == 0 and ui() == 1 and "gate ui: not rerun — nothing under app/ui/**, tests/ui/ changed since its green "
+          "run (chair, tree %s, " % tree[:12] in out and "); saves " in line_of(out, "gate ui: not rerun")
+          and "council gate --all --rerun runs it anyway" in line_of(out, "gate ui: not rerun"), out + err)
+    check("gate --all: an empty Covers cell is the whole tree, so a change anywhere runs the gate, as before",
+          unit() == 2 and "gate unit: pass (exit 0" in out, out)
+    check("gate --all: the summary counts the gate not rerun and the time saved",
+          "gates: 1 ran — all pass" in out and "1 not rerun, nothing under its paths changed since its green run (ui)"
+          in out and " saved" in line_of(out, "gates: 1 ran"), out)
+    code, out, err = council(repo, "check")
+    check("check: the receipt names a gate not rerun as such, never a fresh pass, and says why under Not proved",
+          "ui: pass → pass (not rerun)" in line_of(out, "Checked by machine:")
+          and "unit: pass → pass (not rerun)" not in out
+          and "gate ui: not rerun — nothing under app/ui/**, tests/ui/ changed since its green run (chair, tree %s, "
+          % tree[:12] in line_of(out, "Not proved:") and "gate unit" not in line_of(out, "Not proved:")
+          and "ui: pass → pass (not rerun)" in read(os.path.join(run, "check.md")), out + err)
+    code, out, err = council(repo, "gate", "--all", "--at", "verify", "--rerun")
+    check("gate --all --rerun: runs a gate with nothing changed under its paths",
+          ui() == 2 and "gate ui: pass (exit 0" in out and "not rerun" not in out, out + err)
+    write(os.path.join(repo, "tests", "ui", "test_view.kt"), "test\n")              # a new file under its paths
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a new file under a gate's Covers paths runs it", ui() == 3 and "gate ui: pass (exit 0" in out,
+          out + err)
+    os.replace(os.path.join(repo, "app", "ui", "view.kt"), os.path.join(repo, "app", "view.kt"))
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a file moved out from under a gate's paths is a change under them, so it runs",
+          ui() == 4 and "gate ui: pass (exit 0" in out, out + err)
+    os.replace(os.path.join(repo, "app", "view.kt"), os.path.join(repo, "app", "ui", "view.kt"))
+    council(repo, "gate", "--all", "--at", "verify")
+    verdict = os.path.join(run, "gates", "ui.json")
+    record = read(verdict)
+    write(verdict, re.sub(r'"tree": "[0-9a-f]+"', '"tree": "%s"' % ("0" * 40), record))   # a tree git can't read
+    write(os.path.join(repo, "app", "core", "model.kt"), "model, edited again\n")
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a green whose tree git can't read is never taken; the gate runs",
+          ui() == 6 and "gate ui: pass (exit 0" in out and "not rerun" not in out, out + err)
+    code, out, err = council(repo, "doctor")
+    check("doctor: a Covers path that matches no file is a warning naming the gate and the path",
+          "WARN  gate 'ghost' has a Covers path that matches no file here: app/nothere/** —" in out
+          and "gate 'ui' has a Covers path" not in out, out + err)
+
 PATCH_HEAD = "Cause: {cause}\nOwner: src/pay.py\nRemoved: {removed}\nAssumed: nothing\n{extra}\nWhy, in prose.\n"
 
 
