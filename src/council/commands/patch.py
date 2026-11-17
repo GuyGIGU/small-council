@@ -1,13 +1,16 @@
 """council patch save <task> [<report>] [--base <rev>] · council patch show <task>: a build round's report and its
 diff, checked against each other before the verifier sees either (references/run/builder-report.md). council patch
-apply|revert <task> [--round <r>] puts a saved round on or takes it off the code root (patch_apply).
+apply|revert <task> [--round <r>] puts a saved round on or takes it off the code root; council patch hold <task> takes
+the edits no round holds off it into patches/T<n>-held.patch, and patch apply <task> --held puts them back
+(patch_apply).
 
 save reads the round's report head (`<run>/report-<n>.md` unless another file is named), takes the round's diff
 (from the run's last saved round, else the commit the run opened on, to the files on disk now) and refuses the
 round — saving nothing — when the head can't be read, a fix gives no cause or one that hasn't earned a code
 change, a test, assertion or document rule went with no word in Removed, or it is a third fix round in the same
 files with no redesign. Otherwise it saves the patch, its record and the task's history, and names the files
-outside the task's slice and the lines that look like a workaround, as questions for the verifier."""
+outside the task's slice and the lines that look like a workaround, as questions for the verifier. A second save by
+the builder now at work (rounds.same_dispatch) replaces the round it saved: same number, diffed from where it was."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,21 +21,24 @@ from council.records import home as where
 from council.records import patches, report_head, tasks
 
 USAGE = ("usage: council patch save <task> [<report>] [--base <rev>] | patch show <task> | patch apply|revert <task> "
-         "[--round <r>] [--run <folder>]")
-WORDS = {"save": 3, "show": 2, "apply": 2, "revert": 2}     # each verb's most words, its own included
+         "[--round <r>] | patch hold <task> | patch apply <task> --held [--run <folder>]")
+WORDS = {"save": 3, "show": 2, "apply": 2, "revert": 2, "hold": 2}     # each verb's most words, its own included
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    cli.takes_flags(args, "patch", "base", "round")
+    cli.takes_flags(args, "patch", "base", "round", "held")
     if len(words) < 2 or words[0] not in WORDS or len(words) > WORDS[words[0]]:
         raise cli.Refusal(USAGE)
     task = tasks.number(words[1])
     if task is None:
         raise cli.Refusal("patch %s takes a task number (3 or T3), not '%s'" % (words[0], words[1]))
-    if args.value("round") and words[0] in ("save", "show"):
+    if args.value("round") and words[0] in ("save", "show", "hold"):
         raise cli.Refusal("patch %s doesn't take --round — patch apply|revert <task> --round <r> does" % words[0])
+    if args.value("held") and words[0] != "apply":
+        raise cli.Refusal("patch %s doesn't take --held — patch apply <task> --held puts a task's held edits back"
+                          % words[0])
     run = resolve.run_folder(args)
-    if words[0] in ("apply", "revert"):
+    if words[0] in ("apply", "revert", "hold"):
         from council.commands import patch_apply
         return patch_apply.main(args, run, words[0], task)
     if words[0] == "show":
@@ -60,16 +66,14 @@ def save(run: Path, task: int, report: Path, base: str) -> int:
         _refuse(task, ["the head of %s can't be read: %s" % (report.as_posix(), problem) for problem in wrong])
     top = resolve.field(run, "code-root") or where.this_tree()
     every, earlier = patches.rounds(run), patches.rounds(run, task)
-    start = _start(run, top, base, every)
+    again = _again(run, task, every, earlier)
+    if again:
+        every, earlier = every[:-1], earlier[:-1]
+    start = start_of(run, top, base, every)
     tree = git.files_tree(top)
     if not tree:
         raise cli.Refusal("can't read the files in %s as a git tree — patch save needs the code root in git" % top)
-    try:
-        data = git.output(top, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", "-M",
-                          "--src-prefix=a/", "--dst-prefix=b/", start, tree, *git.between())
-    except git.GitError as failure:
-        raise cli.Refusal("git can't diff %s against the files now (%s) — name a base: council patch save %d "
-                          "--base <rev>" % (start[:12], failure, task)) from None
+    data = round_diff(top, start, tree, "council patch save %d --base <rev>" % task)
     found = diff.files(data.decode("utf-8", "surrogateescape"))
     files = [file.path for file in found]
     problems = _problems(run, task, head, earlier, found, files)
@@ -86,8 +90,31 @@ def save(run: Path, task: int, report: Path, base: str) -> int:
     except OSError as failure:
         raise cli.Refusal("can't write the round into %s (%s) — make the run folder writable, then save again"
                           % (patches.folder(run).as_posix(), failure)) from None
+    if again:
+        cli.say("patch: round %d replaces the round %d this builder saved before (%s) — its seat has not been recorded "
+                "done since, so this is no fix round" % (one.round, again.round, again.at))
     patch_history.said(one, saved, story)
     return 0
+
+
+def _again(run: Path, task: int, every: list[patches.Round], earlier: list[patches.Round]) -> patches.Round | None:
+    """The round this save replaces: the task's last, when it is the run's last and was saved by the builder now at
+    work (rounds.same_dispatch); None when this save is a new round."""
+    if not earlier or every[-1] != earlier[-1]:
+        return None
+    from council.commands import rounds    # datetime, only once a task has a round (D34)
+    return earlier[-1] if rounds.same_dispatch(run, task, earlier[-1].at) else None
+
+
+def round_diff(top: str, start: str, tree: str, base_step: str) -> bytes:
+    """The diff from start to tree as a round saves it: binary, renames found, file names as they are (git's path
+    quoting off, so a name like tést.py is recorded as written); refused, naming the base step, when git can't."""
+    try:
+        return git.output(top, "-c", "core.quotePath=false", "diff", "--binary", "--no-color", "--no-ext-diff",
+                          "--no-textconv", "-M", "--src-prefix=a/", "--dst-prefix=b/", start, tree, *git.between())
+    except git.GitError as failure:
+        raise cli.Refusal("git can't diff %s against the files now (%s) — name a base: %s"
+                          % (start[:12], failure, base_step)) from None
 
 
 def _refuse(task: int, problems: list[str]) -> None:
@@ -105,7 +132,7 @@ def since(run: Path, every: list[patches.Round]) -> tuple[patches.Round | None, 
     return None, resolve.field(run, "start-head")
 
 
-def _start(run: Path, top: str, base: str, every: list[patches.Round]) -> str:
+def start_of(run: Path, top: str, base: str, every: list[patches.Round]) -> str:
     """The tree the round starts from: --base; else the run's last saved round; else the commit it opened on."""
     if base:
         return base

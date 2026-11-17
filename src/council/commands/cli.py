@@ -9,7 +9,8 @@ from typing import Iterable, NamedTuple
 VALUED = ("run", "code-root", "status", "base", "at", "proof", "session", "task", "risk", "complexity",
           "uncertainty", "surface", "agent-cap", "budget-tokens", "scope", "user-said", "transcript", "glob", "round")
 GATE_VALUED = ("timeout", "invalid", "seat", "mode")   # gate's and route's own: "needs a value" whatever the flag
-SWITCHES = ("alongside", "all", "classic", "json", "widget", "line", "preview", "wait", "rerun", "each", "anon")
+SWITCHES = ("alongside", "all", "classic", "json", "widget", "line", "preview", "wait", "rerun", "each", "anon",
+            "held")
 REPEATED = ("surface", "glob")
 MISSING = {"run": "a folder", "code-root": "a folder", "base": "a ref", "at": "grounding or verify"}
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from council.commands import build_seat, cli, resolve, task_slice
-from council.records import converge, patches, paths, request, seats, tasks
+from council.records import converge, patches, request, seats, tasks
 
 
 class Records(NamedTuple):
@@ -56,13 +56,12 @@ def lines(run: Path, named: str, found: list[tasks.Task]) -> list[str]:
 
 
 def _request(run: Path) -> list[str]:
-    data = paths.contents(Path(run) / request.ASK)
-    if data is None:
+    """The request's words (records.request.asked): the filed request the run continues, then its own ask.md."""
+    asked = request.asked(run)
+    if asked is None:
         return ["  (no %s in the run yet — the Chair writes the user's words there)" % request.ASK]
-    words = request.ask_words(data).decode("utf-8", "surrogateescape").splitlines()
-    while words and not words[-1].strip():
-        words.pop()
-    return ["  " + line for line in words] or ["  (nothing under ## In your words)"]
+    said = ["  (from the request it continues, %s)" % asked.filed.name] if asked.filed else []
+    return said + (["  " + line for line in asked.words] or ["  (nothing under ## In your words)"])
 
 
 def _line(task: tasks.Task, records: Records) -> str:
@@ -97,7 +96,7 @@ def seat_needs(run: Path, numbers: set) -> tuple[dict[int, list[str]], list[tupl
     unclaimed = []
     for row in seats.rows(run):
         note = row.get("note", "")
-        if not note.startswith("NEEDS:"):
+        if not build_seat.needs(note):
             continue
         number = tasks.number(row.get("slug", ""))
         if number in numbers:

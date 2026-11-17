@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 from council.commands import cli, gate_list, patch_checks, resolve, task_slice
-from council.records import config, gate_table, map_file, patches, paths, request, state, tasks
+from council.records import config, gate_table, map_file, patches, request, state, tasks
 from council.records import home as where
 
 CEILING = 8000     # bytes of the whole printed pack, UTF-8, its last line included
@@ -40,7 +40,10 @@ def main(args: cli.Args, words: list[str]) -> int:
         raise cli.Refusal("%s has no task %d — %s" % (
             named, number, "its tasks: %s; council context build <one of them>" % listed if listed else
             "its ## Task Sequence lists none; write the plan's tasks first"))
-    heading = ["# Task pack — task %d · %s" % (number, named)] + _where(run) + [""]
+    held = patches.held(run, number)
+    heading = ["# Task pack — task %d · %s" % (number, named)] + _where(run) + [""] + [
+        "Held: %s — the edits task %d's last builder left in no round, taken off the files; put them back before the "
+        "first edit: council patch apply %d --held" % (held.as_posix(), number, number), ""] * held.is_file()
     cli.say_all(fit(heading, parts(run, found)))
     return 0
 
@@ -157,11 +160,11 @@ def plugin_paths(cell: str) -> str:
 
 def _called(found: task_slice.Slice) -> list:
     """The map's other rows whose owner or anchor path lies inside the task's Touches."""
-    touches = patch_checks.slice_paths([found.task.rows.get("touches", "")])
+    touches = task_slice.paths_in([found.task.rows.get("touches", "")])
     if not touches:
         return []
     def inside(way: map_file.Way) -> bool:
-        given = patch_checks.slice_paths([way.owner, way.anchor])
+        given = task_slice.paths_in([way.owner, way.anchor])
         return len(patch_checks.outside(given, touches)) < len(given)
     return [way for way in found.ways or [] if way not in found.owned and inside(way)]
 
@@ -198,8 +201,10 @@ def rulings(run: Path, number: int) -> list[str]:
     out = ["## " + NAMES[3], "The user's decisions in this run (council state decision=), the whole run's and task "
            "%d's own:" % number]
     out += ["- " + entry for entry in state.decisions_for(state.text(run), number)] or ["- none yet"]
-    later = request.ask_later(_ask(run)).decode("utf-8", "surrogateescape").splitlines()
-    out += ["Later, in the user's words (%s, ## Later):" % request.ASK] + (later or ["- none"])
+    asked = request.asked(run)
+    later = asked.later if asked else []
+    source = request.ASK + (" and the request it continues, %s" % asked.filed.name if asked and asked.filed else "")
+    out += ["Later, in the user's words (%s, ## Later):" % source] + (later or ["- none"])
     rows = gate_table.gates(home)
     out += ["Gates (the config's Gates table):"] + (["- " + gate_list.line(row) for row in rows] or ["- none"])
     seconds, raw = config.gate_time_limit(home)
@@ -212,10 +217,6 @@ def rulings(run: Path, number: int) -> list[str]:
         number, number, root, BUILD_PROOF))
     out.append("Standing builder rules: %s/%s — read it before the first edit" % (root, BUILDER_RULES))
     return out + [""]
-
-
-def _ask(run: Path) -> bytes:
-    return paths.contents(Path(run) / request.ASK) or b""
 
 
 def earlier(run: Path, found: task_slice.Slice) -> list[str]:

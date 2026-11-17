@@ -1,6 +1,7 @@
-"""A build task's slice: the plan the run records as input=, the task in it, and the paths its Owner and Touches
-cells and the map row its Owner names give. council patch save holds a round's files to it; council context build
-and council tree read the same plan, and refuse the same way when there is none."""
+"""A build task's slice: where the build's tasks come from (plan_of: the run's tasks.md, else its input=), the task
+in it, and the paths its Owner and Touches cells and the map row its Owner names give. council patch save holds a
+round's files to it; council context build, council tree, the build seat and the receipt read the same tasks, and
+refuse the same way when there are none."""
 from __future__ import annotations
 
 import re
@@ -10,6 +11,8 @@ from typing import NamedTuple
 from council.commands import cli, resolve
 from council.records import home as where
 from council.records import map_file, paths, tasks
+
+TASKS = "tasks.md"         # <run>/tasks.md: a review's selected findings, written as tasks by the Chair
 
 
 class Slice(NamedTuple):
@@ -24,12 +27,37 @@ class Slice(NamedTuple):
 
 
 def plan_of(run: Path) -> tuple[str, Path | None]:
-    """The plan the build records as input= (as written) and where it is: an absolute path as written, else the
-    project's; ('', None) when the run records none."""
+    """Where a build's tasks come from — the one answer every reader on the build path takes: the run's own
+    tasks.md when it is there (the Chair writes a review's selected findings there as tasks; input= stays the
+    review's path), else the file the run records as input= (a plan's Task Sequence, a post-game's Next tasks).
+    Its name as shown (input= as written) and where it is: an absolute path as written, else the project's;
+    ('', None) when the run records neither."""
+    own = Path(run) / TASKS
+    if own.is_file():
+        return own.as_posix(), own
     named = resolve.field(run, "input")
     if not named:
         return "", None
     return named, Path(where.native(named)) if where.absolute(named) else Path(run).parent.parent.parent / named
+
+
+def no_tasks(run: Path, named: str, then: str) -> str:
+    """The refusal for a build whose input lists no tasks: a review lists findings, and which are fixed is the
+    user's selection, so the Chair writes them as tasks to <run>/tasks.md."""
+    return ("the build's input %s lists no tasks — a review lists findings, and which are fixed is the user's "
+            "selection: write the selected findings as tasks, in the plan's task format under ## Task Sequence (one "
+            "'### <n>.' each, with Touches, Done when, Depends on and Ref), to %s (references/run/run-plan.md, Plan "
+            "tasks), then %s again" % (named, (Path(run) / TASKS).as_posix(), then))
+
+
+def missing(run: Path) -> str | None:
+    """Why a build seat can't start for want of tasks: the run names an input whose file reads but lists none, and
+    has no tasks.md (no_tasks); None otherwise — no input at all, or one that can't be read, judges nothing."""
+    named, found = plan_of(run)
+    content = paths.text_of(found) if found else ""
+    if not content.strip() or tasks.read(content):
+        return None
+    return no_tasks(run, named, "council seat task-<n> queued")
 
 
 def of(run: Path, number: int) -> Slice:
@@ -107,4 +135,6 @@ def plan(run: Path, label: str) -> tuple[str, str]:
         raise cli.Refusal("the plan %s (the run's input=) can't be read: it is missing, empty, a link or over %s — "
                           "fix it, or name the right one: council state input=<plan>"
                           % (named, paths.megabytes(paths.MAX_FILE)))
+    if not tasks.read(content):
+        raise cli.Refusal(no_tasks(run, named, "council " + label))
     return named, content

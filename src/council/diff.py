@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
+ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13}     # git's one-letter C escapes
 HUNK = re.compile(r"@@ -([0-9]+)(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@")
 
 
@@ -41,12 +42,28 @@ class File(NamedTuple):
     added: list
 
 
+def unquote(name: str) -> str:
+    """A path as git C-quotes it (core.quotePath on, or a name holding a quote, a backslash or a control character:
+    "a/t\\303\\251st.py") read back as written, a/tést.py; any other name as it is."""
+    if len(name) < 2 or name[0] != '"' or name[-1] != '"':
+        return name
+    body, out, at = name[1:-1], bytearray(), 0
+    while at < len(body):
+        if body[at] == "\\" and re.fullmatch(r"[0-7]{3}", body[at + 1:at + 4]):
+            out.append(int(body[at + 1:at + 4], 8) & 0xFF)
+            at += 4
+        elif body[at] == "\\" and at + 1 < len(body):
+            out += bytes([ESCAPES.get(body[at + 1], ord(body[at + 1]) if body[at + 1].isascii() else 63)])
+            at += 2
+        else:
+            out += body[at].encode("utf-8", "surrogateescape")
+            at += 1
+    return out.decode("utf-8", "surrogateescape")
+
+
 def _path(header: str) -> str:
-    """The path of a ---/+++ line: a/ or b/ dropped, /dev/null kept, a quoted path unquoted (git's octal escapes
-    are left as they are)."""
-    name = header[4:].rstrip("\t")
-    if name.startswith('"') and name.endswith('"'):
-        name = name[1:-1]
+    """The path of a ---/+++ line: a/ or b/ dropped, /dev/null kept, a quoted path unquoted."""
+    name = unquote(header[4:].rstrip("\t"))
     return name[2:] if name[:2] in ("a/", "b/") else name
 
 
@@ -91,6 +108,8 @@ def _header(file: File, line: str) -> File:
 
 def _git_path(line: str) -> str:
     """The path a 'diff --git a/x b/x' line names, for a file with no ---/+++ lines (a binary one, a mode
-    change): what follows its last ' b/'."""
+    change): what follows its last ' b/', or its last ' "b/' read back from git's quoting."""
+    if line.endswith('"') and ' "b/' in line:
+        return unquote(line[line.rfind(' "b/') + 1:])[2:]
     at = line.rfind(" b/")
     return line[at + 3:] if at >= 0 else ""

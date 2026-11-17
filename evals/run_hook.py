@@ -1788,6 +1788,84 @@ def agent_gate_builder(tmp):
 
 
 @part("main")
+def seat_gate_builder_seat(tmp):
+    # CODE-RUN-7, CODE-PROOF-8, FR-3: a builder's stop is held to the build seat running for its session — a report
+    # of another task is sent back naming the seat's own; a round saved and then edited past is sent back to save
+    # again, and that save replaces the round; a NEEDS: return that leaves edits in no round is sent back once,
+    # naming council patch hold, and passes once they are held.
+    builder = "small-council:council-builder"
+    repo = new_repo(tmp, "builder-seat-stop")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    _, run, _ = council(repo, "run", "open", "council-implement", session="sS")
+    valid_plan(run, seats=("chair", "task-1", "task-3"), mode="council-implement")
+
+    def stop(reply):
+        payload = json.dumps({"session_id": "sS", "hook_event_name": "SubagentStop", "agent_type": builder,
+                              "agent_id": "b3", "last_assistant_message": reply, "stop_hook_active": False,
+                              "cwd": repo}, separators=(",", ":"))
+        p = subprocess.run([BASH, os.path.join(ROOT, "hooks", "seat-gate.sh")], input=payload, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=60, env=GIT_ENV)
+        return p.returncode, p.stdout, p.stderr
+
+    def sent_back(code, out, err, *words):
+        return code == 2 and not out and err.startswith("Small Council seat check: ") and all(w in err for w in words)
+
+    head = "Cause: none\nOwner: app.txt\nRemoved: none\nAssumed: nothing\n\nThe change, in prose.\n"
+    report = lambda n: os.path.join(run, "report-%d.md" % n).replace("\\", "/")    # noqa: E731
+    write(os.path.join(repo, "app.txt"), "v2\n")
+    write(report(1), head)
+    council(repo, "patch", "save", "1", session="sS")
+    council(repo, "seat", "task-3", "queued", session="sS")
+    council(repo, "seat", "task-3", "running", "agent=b3", session="sS")
+    code, out, err = stop("Wrote %s — task 1, round 1 saved" % report(1))
+    check("builder stop: a report of another task, while task-3's seat runs, is sent back naming report-3.md",
+          sent_back(code, out, err, "you were sent for task 3", report(3), "council patch save 3"), err)
+    write(os.path.join(repo, "app.txt"), "v3\n")
+    write(report(3), head)
+    council(repo, "patch", "save", "3", session="sS")
+    write(os.path.join(repo, "app.txt"), "v4\n")
+    code, out, err = stop("Wrote %s — task 3, round 1 saved" % report(3))
+    check("builder stop: files edited after the round was saved are sent back to save again",
+          sent_back(code, out, err, "the files changed after task 3 round 1 was saved", "council patch save 3"), err)
+    code2, said, err2 = council(repo, "patch", "save", "3", session="sS")
+    code, out, err = stop("Wrote %s — task 3, round 1 saved" % report(3))
+    check("builder stop: ... and once saved again — the save replacing round 1, its seat still running — it stops",
+          code2 == 0 and "replaces the round 1" in said and code == 0 and not out and not err, said + err2 + err)
+    write(os.path.join(repo, "app.txt"), "v5\n")
+    write(os.path.join(repo, "tests", "t.txt"), "a new test\n")
+    fix = "NEEDS: Fix app.txt:1 · does: drops the field · should: keep it · seen: 1 failed"
+    code, out, err = stop(fix)
+    check("builder stop: a NEEDS: return that leaves edits in no saved round is sent back, naming council patch hold",
+          sent_back(code, out, err, "edits in no saved round", "app.txt", "tests/t.txt", "council patch hold 3"), err)
+    code2, said, err2 = council(repo, "patch", "hold", "3", session="sS")
+    code, out, err = stop(fix)
+    check("builder stop: ... and once they are held, the NEEDS: return stops",
+          code2 == 0 and code == 0 and not out and not err
+          and os.path.isfile(os.path.join(run, "patches", "T3-held.patch")), said + err2 + err)
+
+
+@part("main")
+def agent_gate_builder_no_seat(tmp):
+    # HS-10: a council-builder whose dispatch names no build seat (no Seat: line, no report-<n>.md) is refused through
+    # hooks.json's own command, naming how to dispatch one — it would go out held to no seat, beside another builder.
+    with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
+        wired = json.load(f)["hooks"]
+    gate_cmd = next(h["command"] for g in wired["PreToolUse"] for h in g["hooks"] if "hooks/agent-gate.sh" in h["command"])
+    builder = "small-council:council-builder"
+    repo = new_repo(tmp, "dispatch-builder-no-seat")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    _, run, _ = council(repo, "run", "open", "council-implement", session="sN")
+    valid_plan(run, seats=("chair", "task-3"), mode="council-implement")
+    council(repo, "seat", "task-3", "queued", session="sN")
+    code, out, err, _ = run_agent_gate(gate_cmd, dispatch_input("sN", repo, builder, "Build task 3 of the plan."), repo)
+    seats_tsv = open(os.path.join(run, "seats.tsv"), encoding="utf-8").read()
+    check("dispatch: a council-builder whose dispatch names no seat and no report file is refused, naming the Seat: "
+          "line to add — and takes no seat", code == 2 and not out and "names no build seat" in err
+          and "Seat: task-<n>" in err and re.search(r"^task-3\tqueued\t", seats_tsv, re.MULTILINE) is not None,
+          f"exit {code} · {err.strip()[:300]} · {seats_tsv}")
+
+
+@part("main")
 def agent_gate_reads_the_dispatch(tmp):
     # A re-review or a post-game check cites an earlier run's file before its own output path, and a Seat:
     # line may carry a display name: the gate refused both, and told the Chair to open a new run while one

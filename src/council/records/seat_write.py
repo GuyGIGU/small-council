@@ -10,6 +10,22 @@ from council.records.cells import leading
 
 HEADER = ["slug", "state", "agent", "tokens", "updated", "note", "agents", "reported"]
 COUNT = re.compile("[0-9]*")
+LEAD = " \t>*_"                                   # what may stand before a NEEDS: line's first word
+NEEDS_FIX = re.compile(r"NEEDS:[*_]*\s*[*_`]*(?i:fix)\b[*_`:]*\s*(\S*)")
+
+
+def needs(note: str) -> bool:
+    """A NEEDS: line, as a builder writes it or the Chair records it: markdown marks before the word are allowed.
+    The one reader of a seat's NEEDS: note: here, where the note ends, and build_seat, the builder's stop, the tree
+    and the pack through it."""
+    return note.lstrip(LEAD).startswith("NEEDS:")
+
+
+def fix_at(note: str) -> str | None:
+    """Where a NEEDS: fix line says the fault is (its file:line, '?' when it names none); None for any other note.
+    Fix in any case, markdown marks allowed: the one pattern the builder's stop holds to the four-part form too."""
+    found = NEEDS_FIX.match(note.lstrip(LEAD))
+    return (found.group(1).strip("`*_") or "?") if found else None
 
 
 def table(file: Path) -> list[list[str]]:
@@ -119,4 +135,4 @@ def _row(cells: list[str], new: dict[str, str]) -> list[str]:
 def _rerun_done(c: list[str], new: dict[str, str]) -> bool:
     """A NEEDS: note ends when its seat, started again (queued or running), is recorded done with no note: the
     stop it named was the earlier run's. A late usage report on the stop itself (done to done) keeps it."""
-    return new["state"] == "done" and c[1] in ("queued", "running") and c[5].startswith("NEEDS:")
+    return new["state"] == "done" and c[1] in ("queued", "running") and needs(c[5])
