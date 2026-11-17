@@ -2820,6 +2820,44 @@ def runs_second_run(tmp):
     code, out, _ = council(repo, "collect", "--run", run2)
     check("collect: a paired seat missing one ref: line is a mismatch", "MISMATCH" in row(out, "pair"), out)
 
+
+@part("collect")
+def collect_unbriefed_decisions(tmp):
+    """#61: council collect warns, on stderr and without changing its rows or exit, about each of the user's
+    decisions recorded before brief.md was last written that the brief does not carry, word for word (line breaks,
+    blanks and case aside); a brief written before the decision owes nothing."""
+    repo = new_repo(tmp, "unbriefed")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    _, out, _ = council(repo, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    write_plan(run, selected=("chair", "w1"))
+    council(repo, "state", "decision=Go ahead with the Squad, four seats")
+    seats = "## Seats\n### w1 — tests (Beck)\n- ref: none\n- out: seats/w1.md\n- cap: 8\n"
+    brief = os.path.join(run, "brief.md")
+    write(brief, "# Brief\n" + seats)
+    write(os.path.join(run, "seats", "w1.md"), "# Tests — tests (review)\nref: none\n## Index\n(none) — nothing\n")
+    council(repo, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    code, out, err = council(repo, "collect")
+    check("collect: a brief written after the user's decision that leaves it out is warned about on stderr, naming "
+          "the words and the next step; the rows and the exit are as before",
+          code == 0 and "collect: all 1 seats in order" in out and "WARNING brief.md (written " in err
+          and "does not carry the user's decision of " in err and '"Go ahead with the Squad, four seats"' in err
+          and "hold their findings to it at Judge, tell the user" in err and "WARNING" not in out, out + err)
+    write(brief, "# Brief\n- The user's decisions: \u201cgo ahead with the\n  Squad, four seats\u201d\n" + seats)
+    code, out, err = council(repo, "collect")
+    check("collect: a brief that carries the words, wrapped across a line, in curly quotes and another case, is "
+          "not warned about", code == 0 and "WARNING" not in err, out + err)
+    write(brief, "# Brief\n- The user's decisions: go ahead with the Squad\n" + seats)
+    code, out, err = council(repo, "collect")
+    check("collect: a brief that carries only part of the words is warned about",
+          code == 0 and "does not carry the user's decision" in err, out + err)
+    write(brief, "# Brief\n" + seats)
+    os.utime(brief, (946684800, 946684800))                               # 2000-01-01: before the decision
+    code, out, err = council(repo, "collect")
+    check("collect: a brief written before the decision owes it nothing", code == 0 and "WARNING" not in err,
+          out + err)
+
+
 @part("collect")
 def collect_one_bad_seat(tmp):
     # One bad seat on its own fails collect: each problem alone, exit code included
@@ -6490,12 +6528,14 @@ def gates_revert_check(tmp):
           and os.path.isfile(os.path.join(run, "gates", "reverted", "after-1-with-change.txt"))
           and all(read(os.path.join(repo, path)) == text for path, text in disk.items())
           and not os.path.exists(os.path.join(run, "gates", "reverted", "after-1.json")), out)
-    check("check: a build's receipt lines come just before the closing check: line, from the gate records",
-          len(lines) > 2 and lines[-3] == "Checked by machine: lint: no baseline → pass · unit: pass → pass"
-          and lines[-2] == "Not proved: nothing" and lines[-1].startswith("check: "), out)
-    check("check: check.md holds the two receipt lines too",
+    check("check: a build's receipt lines come just before the closing check: line, from the gate records and the "
+          "state (a build with no decision of the user's says none)",
+          len(lines) > 3 and lines[-4] == "Checked by machine: lint: no baseline → pass · unit: pass → pass"
+          and lines[-3] == "Not proved: nothing" and lines[-2] == "Your decisions: none"
+          and lines[-1].startswith("check: "), out)
+    check("check: check.md holds the three receipt lines too",
           "\n\nChecked by machine: lint: no baseline → pass · unit: pass → pass\nNot proved: nothing\n"
-          in read(os.path.join(run, "check.md")), read(os.path.join(run, "check.md")))
+          "Your decisions: none\n" in read(os.path.join(run, "check.md")), read(os.path.join(run, "check.md")))
 
     write(os.path.join(repo, "tests", "test_three.sh"), '[ "$(bash src/three.sh)" = two ] && echo "1 passed"\n')
     write(os.path.join(repo, "src", "three.sh"), "echo one\n")
@@ -6531,8 +6571,8 @@ def gates_revert_check(tmp):
     review = small_council_repo(tmp, "revert-review", "")
     council(review, "run", "open", "council-review")
     code, out, err = council(review, "check")
-    check("check: a run that is not a build prints neither receipt line",
-          "Checked by machine" not in out and "Not proved" not in out, out + err)
+    check("check: a run that is not a build prints no receipt line",
+          "Checked by machine" not in out and "Not proved" not in out and "Your decisions" not in out, out + err)
     bare = small_council_repo(tmp, "revert-bare", "")
     council(bare, "run", "open", "council-implement")
     code, out, err = council(bare, "check")
@@ -7524,6 +7564,62 @@ def requests_task_pack(tmp):
     code, out, err = council(repo, "context", "build", "task-2")
     check("context build: with no open run, refused naming council run open",
           code == 2 and "no open run on this working tree — open one with: council run open" in err, out + err)
+
+
+@part("requests")
+def requests_task_decisions(tmp):
+    """#61: council state decision="…" task=<n> records the user's words for one task of the build's plan; a task's
+    orders carry the whole run's decisions (an older record with no task among them) and its own, never another
+    task's; the receipt lists every one, a task's marked with it."""
+    repo, run = pack_run(tmp, "task-decisions")
+    st = os.path.join(run, "session-state.md")
+    code, out, err = council(repo, "state", "decision=keep the webhook's 200 reply", "task=T2")
+    code3, out3, err3 = council(repo, "state", "decision=mail it as plain text", "task=task-3")
+    body = read(st).split("## Decisions so far", 1)[-1]
+    check("state decision= task=: the user's words go under Decisions so far after task <n>:, the task's word read "
+          "as its number, and task= is no header key",
+          code == 0 and code3 == 0
+          and re.search(r'^- \d{4}-\d\d-\d\d \d\d:\d\d: task 2: "keep the webhook\'s 200 reply"$', body, re.M)
+          and re.search(r'^- \d{4}-\d\d-\d\d \d\d:\d\d: task 3: "mail it as plain text"$', body, re.M)
+          and re.search(r'^- \d{4}-\d\d-\d\d \d\d:\d\d: "charge by the idempotency key"$', body, re.M)
+          and "\ntask:" not in read(st), read(st) + err + err3)
+    code, out, err = council(repo, "context", "build", "task-2")
+    check("context build: the pack carries the whole run's decisions and the task's own, and not another task's",
+          code == 0 and "The user's decisions in this run (council state decision=), the whole run's and task 2's own:"
+          in out and '"charge by the idempotency key"' in out and 'task 2: "keep the webhook\'s 200 reply"' in out
+          and "plain text" not in out, out + err)
+    code, out, err = council(repo, "context", "build", "3")
+    check("context build: another task's pack carries its own decision and the whole run's, not task 2's",
+          code == 0 and 'task 3: "mail it as plain text"' in out and '"charge by the idempotency key"' in out
+          and "200 reply" not in out, out + err)
+    code, out, err = council(repo, "context", "build", "task-1")
+    check("context build: a task with no decision of its own gets only the whole run's",
+          code == 0 and '"charge by the idempotency key"' in out and "200 reply" not in out
+          and "plain text" not in out, out + err)
+    before = read(st)
+    for words, want in ((("task=2",), "task= scopes the user's decision to one task, so it goes with decision=: "
+                                      "council state decision=\"<the user's words>\" task=<n>"),
+                        (("decision=x", "task=9"), ".council/plans/charge.md has no task 9 — its tasks: task-1, "
+                                                   "task-2, task-3; record it for one of them, or for the whole run"),
+                        (("decision=x", "task=soon"), "task= takes a task of the build's plan (task-3, T3 or 3), not "
+                                                      "'soon'"),
+                        (("decision=x", "task=1", "task=2"), "one task= per call")):
+        code, out, err = council(repo, "state", *words)
+        check("state %s: refused, nothing written — %s" % (" ".join(words), want),
+              code == 2 and want in err and read(st) == before, out + err)
+    code, out, err = council(repo, "check")
+    said = line_of(out, "Your decisions: ")
+    check("check: a build's receipt lists the user's decisions in order, a task's marked with it, as its last "
+          "line before the closing one, and in check.md",
+          re.fullmatch(r'Your decisions: \d{4}-\d\d-\d\d \d\d:\d\d: "charge by the idempotency key" · '
+                       r'\d{4}-\d\d-\d\d \d\d:\d\d: task 2: "keep the webhook\'s 200 reply" · '
+                       r'\d{4}-\d\d-\d\d \d\d:\d\d: task 3: "mail it as plain text"', said) is not None
+          and out.splitlines()[-2] == said and said + "\n" in read(os.path.join(run, "check.md")), out + err)
+    council(repo, "run", "close", "--status", "abandoned")
+    code, out, err = council(repo, "state", "decision=leave task 1 for next week", "task=1",
+                             "--run", os.path.basename(run))
+    check("state decision= task=: a task's decision given after the close is still recorded",
+          code == 0 and 'task 1: "leave task 1 for next week"' in read(st), out + err)
 
 
 @part("requests")

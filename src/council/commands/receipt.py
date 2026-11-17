@@ -1,6 +1,6 @@
-"""The two lines of a build's receipt that come from the records, not from the Chair (references/build-proof.md,
+"""The three lines of a build's receipt that come from the records, not from the Chair (references/build-proof.md,
 The receipt lines). council check prints them just before its closing line and writes them into check.md; the
-Chair copies them into its receipt and writes neither. Same records, same lines.
+Chair copies them into its receipt and writes none of them. Same records, same lines.
 
 - `Checked by machine:` each gate's baseline result (gates/baseline/) and its result now (gates/); the proof pairs
   are council check's own rows, not gates here. With no gate on record, the helper's own NOTHING WAS CHECKED words.
@@ -8,7 +8,9 @@ Chair copies them into its receipt and writes neither. Same records, same lines.
   pair that reads NO-PROOF-YET; a configured gate never run; a gate that timed out, never ran, was marked invalid or
   passed with nothing run; a gate whose recorded tree is not the files on disk now — `not rerun`, with its reason,
   when gate --all took that green because nothing under the gate's Covers paths changed since (gate_reuse); a revert
-  check that could not be made. Else `nothing`."""
+  check that could not be made. Else `nothing`.
+- `Your decisions:` the user's words on record (council state decision=), oldest first, as the state holds them: a
+  task's own after `task <n>: `. Else `none`. Never the Chair's Ruling: lines."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,19 +18,20 @@ from typing import Any
 
 from council import git
 from council.commands import check_proofs, task_slice
-from council.records import config, gate_table, gates, patches, paths, tasks
+from council.records import config, gate_table, gates, patches, paths, state, tasks
 
 NONE_RAN = "NOTHING WAS CHECKED — no gate ran in this run (council gate --all runs the configured ones)"
 NO_PAIR = ("NO-PROOF-YET", "NO-BEFORE", "NO-AFTER")
 
 
 def lines(run: Path, top: str, home: str, tally: check_proofs.Tally) -> list[str]:
-    """The two lines, in the receipt's order."""
+    """The three lines, in council check's order; the Chair puts each in its own place in the receipt."""
     found = [gate for gate in gates.results(run) if _of_the_work(gate["name"])]
     gate_lines, unrun = _gates(run, top, home, found)
     unproved = _tasks(run, tally) + gate_lines + tally.unmade
     return ["Checked by machine: " + _checked(run, home, found, unrun),
-            "Not proved: " + (" · ".join(unproved) or "nothing")]
+            "Not proved: " + (" · ".join(unproved) or "nothing"),
+            "Your decisions: " + (" · ".join(state.decisions(state.text(run))) or "none")]
 
 
 def _of_the_work(name: str) -> bool:

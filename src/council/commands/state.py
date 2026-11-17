@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from council.commands import cli, nudges, plan, resolve
-from council.records import bytewise, stages, state, state_write
+from council.records import bytewise, stages, state, state_write, tasks
 
 STATUSES = ("in-progress", "paused", "complete", "abandoned")
 PLANNED = ("brief", "build", "work", "collect", "judge", "challenge", "deliver", "learn")   # need a valid plan
@@ -19,7 +19,8 @@ def main(args: cli.Args, words: list[str]) -> int:
         _header(run)
         return 0
     try:
-        changed = state_write.change(run, words, phase_note=_checked(run, words))
+        note = _checked(run, words)
+        changed = state_write.change(run, _scoped(run, words), phase_note=note)
     except state_write.StateError as failure:
         raise cli.Refusal(str(failure)) from None
     cli.say("state: phase %s · %s · %s" % (changed.phase, changed.status, run.name))
@@ -38,6 +39,30 @@ def _header(run: Path) -> None:
         if line.startswith("## "):
             return
         cli.say(line)
+
+
+def _scoped(run: Path, words: list[str]) -> list[str]:
+    """The words with a decision's task= as its number (task-3, T3 or 3), once it names a task of the build's plan;
+    task= with no decision=, or more than once, is refused."""
+    given = [word for word in words if word.startswith("task=")]
+    if not given:
+        return words
+    how = "council state decision=\"<the user's words>\" task=<n>"
+    if not any(word.startswith("decision=") for word in words):
+        raise cli.Refusal("task= scopes the user's decision to one task, so it goes with decision=: " + how)
+    if len(given) > 1:
+        raise cli.Refusal("one task= per call: a decision is the whole run's or one task's — " + how)
+    number = tasks.number(given[0][len("task="):])
+    if number is None:
+        raise cli.Refusal("task= takes a task of the build's plan (task-3, T3 or 3), not '%s': %s" % (
+            given[0][len("task="):], how))
+    from council.commands import task_slice      # the plan, only when a decision names a task
+    named, content = task_slice.plan(run, "state decision= task=")
+    listed = [entry.number for entry in tasks.read(content)]
+    if number not in listed:
+        raise cli.Refusal("%s has no task %d — its tasks: %s; record it for one of them, or for the whole run with no "
+                          "task=" % (named, number, ", ".join("task-%d" % n for n in listed) or "none"))
+    return [word for word in words if not word.startswith("task=")] + ["task=%d" % number]
 
 
 def _checked(run: Path, words: list[str]) -> str:
