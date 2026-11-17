@@ -3460,6 +3460,22 @@ def runs_tool_calls(tmp):
     check("seat tools=: a count that isn't digits, or tools= on a start, is refused", not bad, str(bad))
     code, out, err = council(tc, "collect")
     check("collect: shows a seat's tool calls against its budget", "tools 70/15" in out, out + err)
+    # Four seats reporting at once (CODE-RECORDS-8): tools.tsv is appended under the seat lock, so no row is lost.
+    before = len(read(os.path.join(run, "tools.tsv")).splitlines())
+    finished = council_together(tc, *(("seat", "p%d" % n, "done", "agent=b%d" % n, "tokens=20000", "tools=3")
+                                      for n in range(4)))
+    rows = read(os.path.join(run, "tools.tsv")).splitlines()
+    check("seat tools=: four seats reporting at once each keep their row", [c for c, _ in finished] == [0] * 4
+          and len(rows) == before + 4 and all(len(r.split("\t")) == 4 for r in rows), workers_detail(finished), full=True)
+    # seats.tsv saved once with a BOM (PowerShell 5.1) keeps one header (CODE-RECORDS-5).
+    seats_file = os.path.join(run, "seats.tsv")
+    with open(seats_file, "rb") as f:
+        data = f.read()
+    with open(seats_file, "wb") as f:
+        f.write(b"\xef\xbb\xbf" + data)
+    code, out, err = council(tc, "seat", "p0", "done")
+    check("seat: a BOM on seats.tsv's header leaves one header, not a seat called slug",
+          code == 0 and read(seats_file).count("slug\tstate") == 1 and "\nslug\t" not in read(seats_file), read(seats_file))
 
 @part("lifecycle")
 def runs_push_freeze(tmp):
@@ -3479,9 +3495,19 @@ def runs_push_freeze(tmp):
                        (config("push-freeze-ended", "- pushes: off until 2000-01-01\n"),
                         "pushes: on (config: the freeze ended 2000-01-01)"),
                        (config("push-freeze-unread", "- pushes: off until Friday\n"),
-                        "pushes: on (default; 'off until friday' is not a setting — on, off or off until <YYYY-MM-DD>)")):
+                        "pushes: off until friday (read as off; 'off until Friday' is not a setting — on, off or off "
+                        "until <YYYY-MM-DD>) — push and PR held by the freeze — council.config.md line 4 isn't on, off "
+                        "or off until <YYYY-MM-DD>, so it counts as off")):
         code, out, err = council(repo, "pushes")
         check(f"pushes: shows {want!r}", code == 0 and out == want + "\n" and not err, out + err)
+    # A freeze written a little differently is a freeze (CODE-RECORDS-1): a note after it, capitals, an aside the
+    # reader can't take (that one fails safe, and the refusal names the line).
+    for name, line in (("note", "- pushes: off  # release freeze"), ("paren", "- pushes: off (release)"),
+                       ("caps", "- Pushes: OFF"), ("aside", "- pushes: off — release week")):
+        code, out, err = council(config("push-freeze-" + name, line + "\n"), "pushes", "check", "git push")
+        check(f"pushes check: {line!r} holds the push, exit 2", code == 2 and out.startswith(
+            "Small Council: Push and PR held by the freeze") and (name != "aside" or "council.config.md line 4" in out),
+              out + err)
     code, out, err = council(frozen, "pushes", "check", "git push")
     check("pushes check: while the freeze holds, exit 2 and the refusal on stdout, naming the freeze, its date and "
           "the escape", code == 2 and out.startswith("Small Council: Push and PR held by the freeze until 2999-12-31")
@@ -3513,6 +3539,61 @@ def runs_push_freeze(tmp):
     council(frozen, "run", "close", "--status", "paused")
     code, out, err = council(frozen, "status", "--run", review)
     check("status: a review's closing card says nothing about the freeze", code == 0 and "held by the freeze" not in out, out + err)
+
+@part("lifecycle")
+def runs_config_written_loosely(tmp):
+    # One reader for every `- key: value` line (CODE-RECORDS-3): a key in any capitals and a note after the value
+    # read as written plainly; a value still unreadable is never a silent default — the command says on stderr which
+    # line it read and what it used, and council doctor lists the line as an error with the values allowed.
+    def config(name, text):
+        repo = new_repo(tmp, name)
+        write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n" + text)
+        return repo
+
+    capped = config("cfg-capped", "- Agent cap: 3  # tight this sprint\n")
+    council(capped, "run", "open", "council-review")
+    code, out, err = council(capped, "cap")
+    check("cap: `- Agent cap: 3  # note` caps the run at 3", code == 0 and "of 3 agent runs used" in out and not err,
+          out + err)
+    unread = config("cfg-unread", "- agent cap: three\n- build tier: heavy\n- open items: later\n"
+                                  "- context packs: on\n- agent caps: 4\n- agent cap: 5\n- sharing = team\n")
+    _, _, opened = council(unread, "run", "open", "council-review")
+    code, out, err = council(unread, "cap")
+    check("run open: an agent cap it can't read is 10, and stderr names the line and what it used; cap shows the 10",
+          code == 0 and "of 10 agent runs used" in out and "council.config.md line 4, `- agent cap: three`, isn't a "
+          "whole number of agents, such as 10 — 10 is used" in opened, out + opened)
+    code, out, err = council(unread, "doctor")
+    check("doctor: each setting it can't read is an ERROR naming the line and the values allowed",
+          code == 1 and "ERROR  council.config.md line 4, `- agent cap: three`: agent cap takes a whole number of "
+          "agents, such as 10" in out and "line 5, `- build tier: heavy`: build tier takes light or full" in out
+          and "line 6, `- open items: later`: open items takes ask or fix now" in out, out + err)
+    check("doctor: a line no longer read, a key no setting has, a repeat and a line that isn't key: value are WARNs",
+          "line 7, `- context packs:`, is no longer read: context packs were removed" in out
+          and "line 8, `- agent caps:`, is not a setting the council reads" in out
+          and "line 9 writes `- agent cap:` again; only the first line counts" in out
+          and "line 10, `- sharing = team`, isn't a `- key: value` line" in out and not err, out + err)
+    old = config("cfg-old", "- build tier: full\n")
+    write(os.path.join(old, ".council", "map.md"), "# Codebase map\nmap-commit: 0123456\n")
+    write(os.path.join(old, ".claude", "settings.local.json"),
+          '{"permissions": {"allow": ["Edit(.council/**)", "Bash(council run:*)", "Bash(council state:*)"]}}')
+    code, out, err = council(old, "doctor")
+    check("doctor: `build tier: full` with no `checking:` line says a verifier per task is now `checking: per task`",
+          "says `- build tier: full` and has no `- checking:` line" in out and "add `- checking: per task`" in out,
+          out + err)
+    check("doctor: a map with no One way per job table says what it is for and that a council-init refresh adds it",
+          "map.md has no `## One way per job` table" in out and "a council-init refresh adds it" in out, out + err)
+    check("doctor: permission rules from an older setup are named, as lines to paste, patch save and tree among them",
+          '"Bash(council patch save:*)"' in line_of(out, "Fix: add to permissions.allow")
+          and '"Bash(council tree:*)"' in out and '"Bash(council run:*)"' not in line_of(out, "Fix: add to"), out)
+    code, out, err = council(config("cfg-new", "- build tier: full\n- checking: one per batch\n"), "doctor")
+    check("doctor: a current config and no permission rules at all say none of it",
+          "checking:" not in out and "permission rules" not in out and "ERROR  council.config.md" not in out, out)
+    code, out, err = council(old, "doctor", "permissions")
+    rules = json.loads(out)["permissions"]["allow"] if code == 0 else []
+    check("doctor permissions: prints the whole list council-init offers, as JSON to paste",
+          "Bash(council patch save:*)" in rules and "Bash(council context:*)" in rules and "Edit(.council/**)" in rules
+          and "Bash(council patch apply:*)" not in rules, out + err)
+
 
 @part("lifecycle")
 def runs_helper_carries_next_steps(tmp):
@@ -3741,7 +3822,8 @@ def runs_worktrees_close_and_find(tmp):
 
     # Map and doctor
     code, out, _ = council(repo, "map", "status")
-    check("map status: no map yet", code == 0 and "no map yet" in out, out)
+    check("map status: no map yet, naming the template Prepare writes it from and council-init",
+          code == 0 and "no map yet" in out and "references/templates/map.md" in out and "council-init" in out, out)
     prev = git(repo, "rev-parse", "HEAD~1")
     write(os.path.join(repo, ".council", "map.md"), f"# Codebase map\nmap-commit: {prev}\nupdated: 2026-09-15\n")
     code, out, _ = council(repo, "map", "status")
@@ -4080,8 +4162,10 @@ def runs_map_touch(tmp):
     git(repo, "commit", "-q", "-m", "init")
     built, mapf = git(repo, "rev-parse", "HEAD"), os.path.join(repo, ".council", "map.md")
     code, out, err = council(repo, "map", "touch", "src/=x")
-    check("map touch: with no map, refused, naming council-init",
-          code == 2 and "council: no map yet — council-init builds .council/map.md, and map touch adds to it" in err
+    check("map touch: with no map, refused, naming both ways to make one: the template, as Prepare says, or "
+          "council-init (PROSE-15)",
+          code == 2 and "council: no map yet — write .council/map.md from the plugin's references/templates/map.md, "
+          "as Prepare says, or run council-init, which builds it; map touch adds to it" in err
           and not os.path.exists(mapf), out + err)
     table = ("## One way per job\n| Job | Owner | The one way | Anchor path |\n|---|---|---|---|\n"
              "| Parse | src/ | the reader | src/a.py |\n")
@@ -4145,6 +4229,14 @@ def runs_map_touch(tmp):
           and "map-commit now at %s (HEAD): every area changed since the stamp has a line" % head[:9] in out, out + err)
     code, out, _ = council(repo, "map", "status")
     check("map touch: map status reads the touched map as up to date", "map: up to date" in out, out)
+    git(repo, "checkout", "-q", built)                 # HEAD behind the map's commit (CODE-PROOF-11)
+    code, out, _ = council(repo, "map", "status")
+    check("map status: with HEAD behind the map's commit, the map is from another line of history, not up to date",
+          code == 0 and "map: from another line of history — map-commit %s has 1 commit(s) HEAD doesn't" % head[:9]
+          in out and "map: up to date" not in out, out)
+    code, out, _ = council(repo, "doctor")
+    check("doctor: ... and doctor says the same", "the map is from another line of history" in out, out)
+    git(repo, "checkout", "-q", "main")
 
     # At close: the areas a run changed (tracked files, since the commit it opened on) that the map has no line for
     repo = new_repo(tmp, "mapclose")
@@ -4190,6 +4282,30 @@ def runs_map_touch(tmp):
     code, out, err = council(repo, "run", "close", "--status", "abandoned")
     check("run close --status abandoned: a run that changed files is never asked for map lines",
           code == 0 and "map" not in err, err)
+    # The close asks what map status asks (map_file.stale): a line under today's ## Changes written before the run
+    # opened doesn't cover what the run then changed and committed — map status calls src/ stale, and so does the close.
+    repo = new_repo(tmp, "mapclose-same-day")
+    for name in ("src/a.py", "docs/x.md"):
+        write(os.path.join(repo, name), "a\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    write(os.path.join(repo, ".council", "map.md"), "# Codebase map — x\nmap-commit: %s\n\n%s"
+          % (git(repo, "rev-parse", "HEAD"), table))
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config — map\n")
+    council(repo, "map", "touch", "src/=the reader, as it was this morning")
+    code, run, _ = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write_plan(run)
+    write(os.path.join(run, "verify-1.md"), "# Verification — x\n| # | Verdict |\n|---|---|\n| 1 | CONFIRMED |\n")
+    to_deliver(repo)
+    council(repo, "state", "phase=learn", "deliverable=.council/reviews/2026-10-01-x.md")
+    write(os.path.join(repo, "src", "a.py"), "changed by the run\n")
+    git(repo, "commit", "-q", "-am", "the run's change")
+    _, status, _ = council(repo, "map", "status")
+    code, out, err = council(repo, "run", "close")
+    check("run close: an area touched the same day before the run opened, then changed by the run, is named — as "
+          "map status names it",
+          code == 0 and "src/" in status and "council: the run changed src/ since it opened" in err, status + err)
 
 
 @part("lifecycle")
@@ -7618,7 +7734,8 @@ def requests_plan_tasks(tmp):
 
 PACK_CONFIG = ("# Council config — pack\n\n## Gates\n| Gate | Command | Run at | Mandatory | Checked | Side effects | Needs |\n"
                "|---|---|---|---|---|---|---|\n| unit | `true` | verify | yes | ok | none | — |\n\n"
-               "## Run preferences\n- gate time limit: 20m\n\n## Hard rules\n- never write to the production database\n"
+               "## Run preferences\n- gate time limit: 20m\n\n## Hard Rules (non-negotiable)\n"
+               "- never write to the production database\n"
                "- engine output stays byte-identical unless a task says otherwise\n\n## Memory\n"
                "- conventions: .council/conventions.md\n")
 PACK_MAP = ("# Codebase map — pack\n## One way per job\n| Job | Owner | The one way | Anchor path |\n|---|---|---|---|\n"
