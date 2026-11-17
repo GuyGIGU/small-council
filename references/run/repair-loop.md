@@ -55,8 +55,7 @@ artifacts, not a substitute for the tracked implementation log. Add the classifi
 attempt count, actual cause found, and any human ruling to the log. Include each failed gate
 attempt's category, suggested lens, actual cause (or uncertainty), snapshot paths and next action.
 `council repair check T<n>` checks saved snapshots when used. At converge, a broken saved repair
-trail is reported, never folded into a green receipt. Without Python, audit the log's attempts and
-saved gate outputs by hand.
+trail is reported, never folded into a green receipt.
 
 Never infer that a baseline-red failure was introduced by the task; the record says `baseline: red`,
 `empty`, or `unknown`, not “regression.” An exit-zero baseline that checked zero files is `empty`, not
@@ -138,6 +137,3 @@ attempts (both saved gate outputs, or both verdict files), the baseline, the dif
 (`council run plan check`), then `council seat diagnose-<n> …`. The Chair chooses the fix.
 A third check is refused (by `council seat` and the agent gate) until a `diagnose-…` seat is on
 record after the second verdict, or the user's go is (`council state decision="…"`).
-
-Python 3.8+ is optional. Without it, keep the same three-attempt bound and save the gate paths and
-diagnosis in the implementation log manually. Existing runs need no migration.

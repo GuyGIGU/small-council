@@ -184,7 +184,7 @@ the hook can't read are never refused for this.
 
 ## Status JSON contract
 
-`council status --json [--run <name>]` needs optional Python 3.8+ and returns
+`council status --json [--run <name>]` returns
 `schema: "council.run-status/1"`. Reading writes nothing. Its main fields are:
 
 - `snapshot_at`: UTC time of this reading.
@@ -204,6 +204,6 @@ the hook can't read are never refused for this.
 - `evidence`: labels and paths to supporting records. An absent or older claim index is labelled
   "Claims index out of date" instead of showing obsolete verdicts.
 
-This is a snapshot, not a subscription. Without Python, relay `council run status` for phase and cost.
+This is a snapshot, not a subscription.
 `council status --line` is a separate, under-200-character plain sentence for an owner notification.
 It prints nothing when `.council/council.config.md` has `- notifications: off`.

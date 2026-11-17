@@ -169,8 +169,8 @@ check("kernel: new runs require a validated run plan before Brief or dispatch",
       "council run plan check" in core and "before Brief, Build or any worker starts" in core)
 check("kernel: adaptive routing is advisory before a run opens",
       "council route recommend" in core and "advisory" in core)
-check("kernel: evidence ledger is optional and does not replace synthesis", "council evidence build" in core and
-      "optional Python 3.8+" in core and "synthesis.md" in core)
+check("kernel: the evidence ledger does not replace synthesis, and no step is left for a helper without Python (every "
+      "command needs it)", "council evidence build" in core and "optional Python" not in core and "synthesis.md" in core)
 check("challenge: refreshed evidence links are checked", "council evidence build" in doctrine["08-challenge.md"] and
       "council evidence check" in doctrine["08-challenge.md"])
 evidence_contract = read("references", "run", "evidence-model.md")
@@ -241,11 +241,11 @@ for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
     t = doctrine[d]
     check(f"{d}: titled '# Stage {i} — …'", t.startswith(f"# Stage {i} — "))
     if i < len(STAGES):
-        check(f"{d}: hands off to {STAGES[i]}", f"council state phase={STAGES[i]}" in t)
+        check(f"{d}: hands off to {STAGES[i]}", re.search(r"`council state [^`]*phase=%s`" % STAGES[i], t) is not None)
     check(f"{d}: ≤ 6,000 chars", len(t) <= 6000, str(len(t)))
 check("01-convene: opens the run with the helper", "council run open" in doctrine["01-convene.md"])
 check("01-convene: weighs route advice before opening the run",
-      0 <= doctrine["01-convene.md"].find("council route recommend") < doctrine["01-convene.md"].find("**Open the run.**"))
+      0 <= doctrine["01-convene.md"].find("council route recommend") < doctrine["01-convene.md"].find("**Open the run"))
 check("01-convene: a route needing rescope does not silently waive verification",
       "needs-rescope" in doctrine["01-convene.md"] and "before opening or" in doctrine["01-convene.md"])
 check("01-convene: asks whether a run is needed before its steps — never for a protected subject, a review or a post-game",

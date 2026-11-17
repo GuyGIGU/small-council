@@ -53,7 +53,7 @@ your mode's `## At <Stage>` section, if it has one. Each stage ends by recording
 | 4 | brief | `04-brief.md` | brief.md, with the memory in scope |
 | 5 | work | `05-work.md` | seats/<slug>.md, one per worker |
 | 6 | collect | `06-collect.md` | a clean `council collect` |
-| 7 | judge | `07-judge.md` | synthesis.md, provisional claims.jsonl when Python is available |
+| 7 | judge | `07-judge.md` | synthesis.md, provisional claims.jsonl |
 | 8 | challenge | `08-challenge.md` | check.md, verify-<n>.md, refreshed claims.jsonl |
 | 9 | deliver | `09-deliver.md` | the tracked deliverable |
 | 10 | learn | `10-learn.md` | memory proposals, a closed run |
@@ -77,8 +77,9 @@ Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.m
 says when to run each command. Rules for every run:
 
 - `council route recommend` is advisory before a run opens; record final choices in the plan.
+- Every command needs Python 3.8 or newer; with none, each refuses and says how to get it.
 - `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
-  It needs optional Python 3.8+. `council repair record` leaves a bounded trail in `repairs.jsonl`.
+  `council repair record` leaves a bounded trail in `repairs.jsonl`.
 - Never pipe a council command through head, tail or grep (a hook
   refuses it); redirect it to a file and read that.
   `council gate --all` exit 4 means NOTHING WAS CHECKED: never report that as a pass. A single
