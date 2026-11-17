@@ -43,6 +43,15 @@ class SeatFilesTest(support.Scratch):
             "verify-2.md", "# Verification — r\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
                            "| 1 | x | CONFIRMED | a.py:1 |\n")), "")
 
+    def test_a_blocked_line_in_a_reply_or_a_seat_files_head(self) -> None:
+        for lines, said in ((["Tried.", "  **BLOCKED:** no gate"], "**BLOCKED:** no gate"),
+                            (["> BLOCKED"], "> BLOCKED"), (["", "Blocked: no plan"], "Blocked: no plan"),
+                            (["BLOCKED: x\r"], "BLOCKED: x")):
+            self.assertEqual(seat_files.blocked(lines), said, lines)
+        for lines in (["I was not BLOCKED, I stopped"], ["Done.", "Blocked: 0 of 3"], ["BLOCKEDNESS"], ["Unblocked"],
+                      []):
+            self.assertEqual(seat_files.blocked(lines), "", lines)
+
     def test_listed_is_a_bash_glob(self) -> None:
         for name in ("b.md", "A.md", ".h.md", "c.txt"):
             self.write("seats/" + name, "")

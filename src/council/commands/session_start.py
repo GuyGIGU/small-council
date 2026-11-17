@@ -13,6 +13,7 @@ from council.commands import cli, doctor_hooks
 from council.records import hook_marks, map_file, memory, paths, runs, sharing, state
 from council.records import home as where
 
+AREAS = 5            # the stale areas the banner names; council map status lists them all
 MORE = "were running when that session ended (they are gone — re-dispatch each once if you resume)"
 RUN_LINES = {   # one open run of this tree's or this session's, by what it is to this session
     "paused": ("- PAUSED COUNCIL RUN: {seen}. Resume it only when the user asks: council run resume --run {name}, then "
@@ -122,30 +123,25 @@ def _banner(home: str, sid: str) -> None:
 
 
 def _map(home: str) -> None:
+    """The map's line, with its staleness by top-level area (map_file.stale, as council map status reads it): the
+    areas with files changed since its map-commit, the busiest first, AREAS of them at most. A fault drops the note
+    and keeps the line (D20)."""
     if paths.contents(map_file.path(where.native(home))) is None:
         return
-    sha = map_file.commit(where.native(home))
-    behind, lost = "", sha and git.text(".", "cat-file", "-e", sha + "^{commit}") is None
-    if sha and not lost:
-        behind = git.text(".", "rev-list", "--count", sha + "..HEAD") or ""
-    lost = lost and git.text(".", "rev-parse", "--git-dir") is not None
+    found = map_file.Stale("", True, 0, [])
+    with contextlib.suppress(Exception):
+        found = map_file.stale(where.native(home))
     said = ("- Orientation: %s/%s lists where things live, hot spots and vocabulary — check it before exploring "
             "unfamiliar code" % (home, map_file.NAME))
-    if lost:
+    if found.sha and not found.known and git.text(".", "rev-parse", "--git-dir") is not None:
         said += (" (it was built on a commit that is no longer in this repo's history: trust its structure, verify "
                  "details)")
-    elif behind.isdigit() and int(behind) > 0:
-        said += " (%s commits behind HEAD%s: trust its structure, verify details)" % (behind, _busiest(sha))
+    elif found.areas:
+        shown = ", ".join("%s %d" % pair for pair in found.areas[:AREAS])
+        more = len(found.areas) - AREAS
+        said += (" (stale by top-level area, files changed since its map-commit: %s%s: trust its structure, verify "
+                 "details there)" % (shown, ", and %d more — council map status lists them" % more if more > 0 else ""))
     cli.say(said + ".")
-
-
-def _busiest(sha: str) -> str:
-    """'; most changed since: src/ 41, docs/ 9', the three areas with the most files changed since the map's
-    commit; '' when none changed, or on any fault, which drops the areas and keeps the line (D20)."""
-    top: list[tuple[str, int]] = []
-    with contextlib.suppress(Exception):
-        top = map_file.areas(map_file.changed(".", sha, "HEAD"))[:3]
-    return "; most changed since: " + ", ".join("%s %d" % pair for pair in top) if top else ""
 
 
 def _memory(home: str) -> None:

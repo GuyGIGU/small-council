@@ -2927,6 +2927,21 @@ def collect_one_bad_seat(tmp):
                              lambda r: sat_out(r, ghost=True))
     check("collect: a first-round seat marked skipped with no file is still a hole",
           code == 1 and re.search(r"^ghost\s+missing", out, re.MULTILINE) is not None, out)
+    # A seat file's BLOCKED: line is read as the seat gate and the builder's stop read a reply (seat_files.blocked).
+    blocked_cases = [
+        ("BLOCKED: in capitals on line 3, as the worker's contract writes it", "# S\nref: none\nBLOCKED: no brief\n",
+         True),
+        ("**BLOCKED:** in markdown", "# S\nref: none\n**BLOCKED:** the brief is missing\n", True),
+        ("Blocked: as the first line after the heading", "# S\nBlocked: the brief is missing\n", True),
+        ("a word that only starts with BLOCKED", "# S\nref: none\nBLOCKEDNESS of the queue\n## Index\n" + one, False),
+        ("BLOCKED mid-sentence", "# S\nref: none\nI was not BLOCKED\n## Index\n" + one, False),
+    ]
+    for what, seat, stopped in blocked_cases:
+        code, out = lone_collect("- ref: none", seat)
+        shown = re.search(r"^s1\s+blocked\s+\S", row(out, "s1")) is not None
+        check(f"collect: a seat file with {what} {'is' if stopped else 'is not'} a blocked seat",
+              shown == stopped and code == (1 if stopped else 0), out)
+
 
 @part("lifecycle")
 def runs_found_by_session(tmp):
@@ -6324,6 +6339,41 @@ def gates_patch_rounds(tmp):
 
 
 @part("gates")
+def gates_patch_no_bytecode(tmp):
+    """A project with no .gitignore: running its tests leaves Python bytecode (__pycache__/, *.pyc) on disk, untracked
+    and not ignored. A round, and the seat's files changed outside a round, never name it; a committed .pyc stays."""
+    repo = small_council_repo(tmp, "patch-bytecode", "")
+    write(os.path.join(repo, "tally", "parse.py"), "def parse(text):\n    return text\n")
+    write(os.path.join(repo, "kept.pyc"), "committed on purpose\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "tally")
+    _, run, _ = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    write_plan(run, selected=("task-1", "task-2"))
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build")
+    council(repo, "seat", "task-1", "queued")
+    write(os.path.join(repo, "tally", "parse.py"), "def parse(text):\n    return text.split()\n")
+    write(os.path.join(repo, "tests", "__pycache__", "test_parse.cpython-314.pyc"), "\x00bytecode\n")
+    write(os.path.join(repo, "__pycache__", "top.cpython-314.pyc"), "\x00bytecode\n")
+    write(os.path.join(repo, "legacy.pyc"), "\x00python 2 bytecode\n")
+    write(os.path.join(repo, "kept.pyc"), "rewritten by a test run\n")
+    write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "1")
+    record = json.loads(read(os.path.join(run, "patches", "T1-1.json")) or "{}")
+    patch = read(os.path.join(run, "patches", "T1-1.patch"))
+    check("patch save: a round's diff leaves out interpreter caches — __pycache__/ and *.pyc, untracked, are not in "
+          "its files or its patch; a committed .pyc rewritten on disk stays as committed",
+          code == 0 and record.get("files") == ["tally/parse.py"] and ".pyc" not in patch and ".pyc" not in out,
+          out + err + json.dumps(record))
+    council(repo, "seat", "task-1", "done")
+    write(os.path.join(repo, "tests", "__pycache__", "test_more.cpython-314.pyc"), "\x00more bytecode\n")
+    code, out, err = council(repo, "seat", "task-2", "queued")
+    check("seat task-2 queued: bytecode a test run left after the last round is not a file changed outside a round",
+          code == 0 and "outside any round" not in err and ".pyc" not in err, out + err)
+
+
+@part("gates")
 def gates_revert_check(tmp):
     """T5: council check on a build reruns each ok change proof with the task's saved rounds taken off, in a scratch
     copy outside the project (its tests kept), and expects it to fail; a rerun that still passes is REVERT-PASSED,
@@ -8080,9 +8130,6 @@ def runs_build_seat(tmp):
     code, out, err = council(bs, "seat", "task-1", "queued")
     check("seat: a build seat starts with no line about files when nothing changed since the commit the run opened on",
           code == 0 and "outside any round" not in err, out + err)
-    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
-                             "run=" + bname)
-    check("cap check: once its seat is queued, the council-builder for it starts", code == 0 and not out, out + err)
     code, out, err = council(bs, "seat", "task-2", "queued")
     check("seat: a queued build seat is taken — task-2 is refused while task-1 is queued, before its builder is "
           "recorded running", code == 2 and "cannot start task-2 — task-1 is queued, and one builder at a time edits "
@@ -8091,6 +8138,19 @@ def runs_build_seat(tmp):
                              "run=" + bname)
     check("cap check: two dispatches sent together — the second builder is refused while the first is only queued",
           code == 2 and out.startswith("Small Council: cannot start task-2 — task-1 is queued"), out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
+                             "run=" + bname)
+    check("cap check: once its seat is queued, the council-builder for it starts, and takes the seat: running, no "
+          "agent id yet", code == 0 and not out and row(read(os.path.join(brun, "seats.tsv")), "task-1")
+          .startswith("task-1\trunning\t\t"), out + err)
+    code, out, err = council(bs, "cap", "check", "--session", "sB", "Agent", builder, "seat=task-1", "file=report-1",
+                             "run=" + bname)
+    check("cap check: a second builder for task-1 before its agent is recorded is refused, naming both next steps",
+          code == 2 and out.startswith("Small Council: cannot start a builder for task-1 — a builder went out for it "
+                                       "already (its seat is running since ")
+          and "no agent on record yet" in out and "council seat task-1 done tokens=<n> tools=<n>" in out
+          and 'council seat task-1 failed note="dispatch failed", then council seat task-1 queued, and dispatch again'
+          in out, out + err)
     council(bs, "seat", "task-1", "running", "agent=b1")
     code, out, err = council(bs, "seat", "task-2", "queued")
     check("seat: one builder at a time — task-2 is refused while task-1 runs, naming it and both next steps",

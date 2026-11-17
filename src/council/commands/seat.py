@@ -203,3 +203,22 @@ def _record(run: Path, slug: str, state: str, got: dict[str, str]) -> tuple[bool
         seat_rows.cell(run, slug, column) for column in ("tokens", "agents", "reported")),
         "seat changed, but its event could not be recorded")
     return first, dup
+
+
+def taken(run: Path, slug: str) -> str | None:
+    """The agent gate's record of a council-builder going out for build seat <slug>: under the seat lock,
+    build_seat.dispatch_refusal is asked again and, with none, the queued seat is recorded running with no agent
+    yet. So of two builders sent for one seat, together or before the Chair records the first one's agent, the
+    second is refused. That refusal; None once the seat is taken, for any other seat, and when the record can't be
+    taken (the gate lets the call through on its own fault, D20)."""
+    if build_seat.task_of(run, slug) is None:
+        return None
+    lock = Path(str(seats.path(run)) + ".lock")
+    try:
+        with event_note.locked(lock, "seat lock unavailable: " + lock.as_posix()):
+            why = build_seat.dispatch_refusal(run, slug)
+            if why is None:
+                _record(run, slug, "running", dict.fromkeys(CHECKS, ""))
+    except (cli.Refusal, OSError):
+        return None
+    return why

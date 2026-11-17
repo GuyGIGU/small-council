@@ -49,11 +49,16 @@ def text(repo: str | Path, *args: str, extra: dict[str, str] | None = None, time
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+# Python's bytecode, which running a project's tests writes beside its code: never a change, ignored or not. The add
+# skips it, so an untracked one never enters the tree and a committed one stays as committed.
+CACHES = (":(top,exclude,glob)**/__pycache__/**", ":(top,exclude,glob)**/*.py[co]")
+
+
 def files_tree(top: str | Path) -> str:
     """The tree id of a working tree's files as they are on disk: committed, staged, unstaged and untracked
     alike (what .gitignore ignores is left out, and so is the council home, .council/, committed or not,
-    which the council writes as it works). Taken with `git add -A` into a copy of the index, then
-    `git write-tree`, so the real index is never touched; the blobs of changed files land in the object
+    which the council writes as it works, and Python's bytecode, CACHES). Taken with `git add -A` into a copy of
+    the index, then `git write-tree`, so the real index is never touched; the blobs of changed files land in the object
     store as loose objects, which git's own gc prunes. Two trees with the same files have the same id,
     whatever was committed or staged. '' outside git, or when git fails."""
     import shutil      # only council gate takes a tree: never loaded by the commands that don't (D34)
@@ -73,7 +78,7 @@ def files_tree(top: str | Path) -> str:
         # No exclude pathspec for .council on the add: on a just-me council .council/ is in .git/info/exclude, and
         # git add exits 1 on a pathspec that names an ignored path. The rm that follows takes the council files out
         # (committed ones too: a log or memory line is no code), so the tree is the same either way.
-        if text(top, "add", "-A", "--", ":(top)", extra=given, timeout=600) is None \
+        if text(top, "add", "-A", "--", ":(top)", *CACHES, extra=given, timeout=600) is None \
                 or text(top, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", ":(top).council",
                         extra=given) is None:
             return ""

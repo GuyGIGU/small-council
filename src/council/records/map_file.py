@@ -1,6 +1,7 @@
 """map.md, the project's codebase map in the council home: its one-way-per-job table (job · owner · the one way ·
-anchor path), which a plan task's Owner row names; its map-commit stamp; the top-level areas changed since a commit;
-and its one writer, which adds the user's lines under a dated ## Changes section."""
+anchor path), which a plan task's Owner row names; its map-commit stamp; the top-level areas changed since a
+commit, and how far the map is behind HEAD by area (stale); and its one writer, which adds the user's lines under a
+dated ## Changes section."""
 from __future__ import annotations
 
 import re
@@ -78,6 +79,27 @@ def _stamp(lines: list[str]) -> tuple[int, re.Match] | None:
         if found:
             return n, found
     return None
+
+
+class Stale(NamedTuple):
+    """How far map.md is behind HEAD: its map-commit stamp ('' with none), whether that commit is in this repo's
+    history, the commits from it to HEAD, and the files changed since it by top-level area (areas), the busiest
+    first: the staleness of each area."""
+    sha: str
+    known: bool
+    behind: int
+    areas: list[tuple[str, int]]
+
+
+def stale(home: str | Path, top: str | Path = ".") -> Stale:
+    """The one reader of the map's staleness, for council map status and the SessionStart banner: from top, the
+    whole repository whatever folder top is."""
+    sha = commit(home)
+    if not sha or git.run(top, "cat-file", "-e", sha + "^{commit}")[0] != 0:
+        return Stale(sha, False, 0, [])
+    count = git.run(top, "rev-list", "--count", sha + "..HEAD")[1].decode("ascii", "replace").strip()
+    behind = int(count) if count.isdigit() else 0
+    return Stale(sha, True, behind, areas(changed(top, sha, "HEAD")) if behind else [])
 
 
 def areas(names: list[str]) -> list[tuple[str, int]]:

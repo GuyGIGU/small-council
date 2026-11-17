@@ -129,9 +129,9 @@ def one(run: Path, scope: cite_check.Scope, seat: seat_files.Seat, seats: list[s
         flags.flag(stray, live)
         return
     head = bytewise.file_lines(file, fold=False)[:9]
-    blocked = [line for line in head[1:] if line.startswith("BLOCKED")]
+    blocked = seat_files.blocked(head[1:])
     if blocked:
-        said = gate_output.clip(blocked[0].replace("\r", ""), 140)
+        said = gate_output.clip(blocked, 140)
         cli.say("%s %s %s" % (pad(seat.slug, 16), pad("blocked", 8), said))
         flags.flag(stray, live)
         return

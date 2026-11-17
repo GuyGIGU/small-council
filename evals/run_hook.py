@@ -743,24 +743,32 @@ def memory_file_and_seat_check(tmp):
         write(os.path.join(full, "app.txt"), f"v{n}\n")
         git(full, "commit", "-q", "-am", f"change {n}")
     code, out = run_hook(full, "startup")
-    check("stale map: reports commits behind, and the areas most changed since",
-          "(2 commits behind HEAD; most changed since: app.txt 1: trust its structure, verify details)."
-          in line_with(out, "Orientation"), out)
-    for n, area in enumerate(("src/", "docs/", "lib/", "tests/", "src/", "docs/", "src/")):
+    check("stale map: its staleness by top-level area — the files changed since its map-commit, not one count of "
+          "commits", "(stale by top-level area, files changed since its map-commit: app.txt 1: trust its structure, "
+          "verify details there)." in line_with(out, "Orientation") and "commits behind" not in out, out)
+    for n, area in enumerate(("src/", "docs/", "lib/", "tests/", "src/", "docs/", "src/", "web/")):
         write(os.path.join(full, area, "f%d.txt" % n), "x\n")
     git(full, "add", "-A")
     git(full, "commit", "-q", "-m", "areas")
     code, out = run_hook(full, "startup")
-    check("stale map: at most three areas, the busiest first (a tie in reverse byte order, as map status sorts)",
-          "(3 commits behind HEAD; most changed since: src/ 3, docs/ 2, tests/ 1: trust its structure, verify details)."
+    check("stale map: five areas named, the busiest first (a tie in reverse byte order, as map status sorts), and the "
+          "rest counted", "(stale by top-level area, files changed since its map-commit: src/ 3, docs/ 2, web/ 1, "
+          "tests/ 1, lib/ 1, and 1 more — council map status lists them: trust its structure, verify details there)."
           in line_with(out, "Orientation"), out)
+    write(os.path.join(full, "ops", "deploy.txt"), "x\n")
+    git(full, "add", "-A")
+    git(full, "commit", "-q", "-m", "ops")
+    code, out = run_hook(full, "startup")
+    check("stale map: past five areas, the rest counted and map status named for them",
+          "src/ 3, docs/ 2, web/ 1, tests/ 1, ops/ 1, and 2 more — council map status lists them: trust its "
+          "structure, verify details there)." in line_with(out, "Orientation"), out)
     write(os.path.join(full, ".council", "map.md"), "# Codebase map\nmap-commit: %s\n" % git(full, "rev-parse", "HEAD"))
     write(os.path.join(full, ".council", "notes.md"), "x\n")
     git(full, "add", "-A")
     git(full, "commit", "-q", "-m", "council only")
     code, out = run_hook(full, "startup")
-    check("stale map: commits that changed only .council/ name no area, and the line stays as it was",
-          "(1 commits behind HEAD: trust its structure, verify details)." in line_with(out, "Orientation"), out)
+    check("stale map: commits that changed only .council/ leave no area stale, so the line carries no note",
+          line_with(out, "Orientation").endswith("check it before exploring unfamiliar code."), out)
     write(os.path.join(full, ".council", "map.md"), "# Codebase map\nmap-commit: 0123456789abcdef0123456789abcdef01234567\n")
     code, out = run_hook(full, "startup")
     check("map built on a commit no longer in history: said so, not presented as current",
@@ -1564,7 +1572,30 @@ def agent_gate_builder(tmp):
     code, out, err, said = gate(orders.format(run, 1))
     check("dispatch: a council-builder for a queued, selected build seat of the open run starts, silently",
           code == 0 and not out and not err, said)
+    seats_tsv = open(os.path.join(run, "seats.tsv"), encoding="utf-8").read()
+    check("dispatch: the builder that goes out takes its seat — recorded running, with no agent id yet",
+          re.search(r"^task-1\trunning\t\t", seats_tsv, re.MULTILINE) is not None, seats_tsv)
+    code, out, err, said = gate(orders.format(run, 1))
+    check("dispatch: a second builder for the same seat, before the Chair records the first one's agent, is refused, "
+          "naming how to clear a dispatch that started no agent", code == 2 and not out
+          and "cannot start a builder for task-1 — a builder went out for it already" in err
+          and "no agent on record yet" in err and 'council seat task-1 failed note="dispatch failed"' in err
+          and "council seat task-1 queued" in err, said)
+    council(bg, "seat", "task-1", "failed", "note=dispatch failed", session="sK")
+    council(bg, "seat", "task-1", "queued", session="sK")
+    together = [subprocess.Popen([BASH, "-c", gate_cmd], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", cwd=bg,
+                                 env=dict(GIT_ENV, CLAUDE_PLUGIN_ROOT=ROOT)) for _ in range(2)]
+    ended = [p.communicate(dispatch_input("sK", bg, builder, orders.format(run, 1)), timeout=60) for p in together]
+    codes = sorted(p.returncode for p in together)
+    check("dispatch: two builders sent together for one queued seat — the seat recorded failed and queued again — "
+          "one starts and the other is refused", codes == [0, 2]
+          and sum("a builder went out for it already" in err for _, err in ended) == 1,
+          "exits %s · %s" % (codes, " | ".join(err.strip()[:200] for _, err in ended)))
     council(bg, "seat", "task-1", "running", "agent=k1", session="sK")
+    code, out, err, said = gate(orders.format(run, 1))
+    check("dispatch: ... and once its agent is on record, another builder for the seat is refused, naming that agent",
+          code == 2 and "a builder went out for it already" in err and "agent k1" in err, said)
     code, out, err, said = gate(orders.format(run, 2))
     check("dispatch: a second builder while task-1 runs is refused before it starts — one builder at a time",
           code == 2 and not out and "cannot start task-2 — task-1 is running" in err, said)

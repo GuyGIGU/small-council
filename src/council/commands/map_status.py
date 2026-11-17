@@ -3,8 +3,6 @@ history — and, when it is behind, the files changed since by top-level area (t
 first). council map touch is in map_touch."""
 from __future__ import annotations
 
-
-from council import git
 from council.commands import cli
 from council.records import home as where
 from council.records import map_file
@@ -27,18 +25,18 @@ def main(args: cli.Args, words: list[str]) -> int:
 def status(home: str) -> list[str]:
     if not map_file.path(where.native(home)).is_file():
         return ["no map yet — council-init builds .council/" + map_file.NAME]
-    sha = map_file.commit(where.native(home))
-    if not sha:
+    found = map_file.stale(where.native(home))          # the whole repository, from any folder
+    if not found.sha:
         return ["map.md has no map-commit stamp — refresh the map and stamp it"]
-    if git.run(".", "cat-file", "-e", sha + "^{commit}")[0] != 0:
-        return ["map-commit %s isn't in this repo's history — rebuild the map" % sha]
-    behind = git.run(".", "rev-list", "--count", sha + "..HEAD")[1].decode().strip()
-    if not behind or int(behind) == 0:
-        return ["map: up to date (map-commit %s)" % sha[:9]]
-    lines = ["map: %s commits behind HEAD (map-commit %s). Files changed since, by area:" % (behind, sha[:9])]
-    return lines + by_area(map_file.changed(".", sha, "HEAD"))     # the whole repository, from any folder
+    if not found.known:
+        return ["map-commit %s isn't in this repo's history — rebuild the map" % found.sha]
+    if not found.behind:
+        return ["map: up to date (map-commit %s)" % found.sha[:9]]
+    lines = ["map: %d commits behind HEAD (map-commit %s). Files changed since, by area:" % (found.behind,
+                                                                                           found.sha[:9])]
+    return lines + by_area(found.areas)
 
 
-def by_area(names: list[str]) -> list[str]:
+def by_area(areas: list[tuple[str, int]]) -> list[str]:
     """'  <count>  <area>' per top-level area (map_file.areas), twelve at most."""
-    return ["  %4d  %s" % (n, area) for area, n in map_file.areas(names)][:AREAS]
+    return ["  %4d  %s" % (n, area) for area, n in areas][:AREAS]

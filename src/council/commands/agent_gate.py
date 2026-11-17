@@ -8,9 +8,9 @@ plans and agent limits (no plan-schema) is never stopped. Given the tool about t
 counts one agent start for the run this session drives, when it drives exactly one — under that run's
 lock, so agents started together cannot all take its last place. With type=, seat=, run= and file=, a
 Small Council agent is first refused while the council home or the run is not writable from this session
-(gate_writable), then held to the record (dispatch_refusal); with hunt=, a build's verifier sent past its
-Done-when is refused; with workflow=verifier, a Workflow that starts council verifiers is held to the
-hunt words and, as one more verifier, to the one-checker rule.
+(gate_writable), then held to the record (dispatch_refusal), and a builder that goes out takes its queued build
+seat (seat.taken); with hunt=, a build's verifier sent past its Done-when is refused; with workflow=verifier, a
+Workflow that starts council verifiers is held to the hunt words and, as one more verifier, to the one-checker rule.
 """
 from __future__ import annotations
 
@@ -71,16 +71,17 @@ def check(session: str, words: list[str]) -> int:
     has_runs = os.path.isdir(home + "/runs")
     here = Where(home, where.this_tree() if has_runs or call.agent_type else "", session)
     open_runs = cap.open_here(home, here.tree, session) if (call.hunt or call.workflow) and has_runs else []
+    held = held_to_record(call, here) if call.agent_type else None
+    seat = held if isinstance(held, tuple) else None
     refusal = gate_writable.refusal(KINDS.get(call.agent_type), home, call.run) \
-        or (hunting(call, here, open_runs) if has_runs else None) \
-        or (dispatch_refusal(call, here) if call.agent_type else None) \
+        or (hunting(call, here, open_runs) if has_runs else None) or (None if seat else held) \
         or (workflow_refusal(open_runs, home) if call.workflow else None)
     if refusal:
         cli.say(refusal)
         return 2
     stopped = stops(call.tool, here) if has_runs else []
     if not stopped:
-        return 0
+        return _take(seat)
     if len(stopped) == 1:
         name = stopped[0][0]
         cli.say("Small Council: %s. No new agents until the user says go. Tell them what it has used, and ask whether "
@@ -225,6 +226,13 @@ def dispatch_refusal(call: Call, here: Where) -> str | None:
     build_seat's rules as a verifier is to rounds'. A paused or closed run named is refused only while no run is
     open for it: a re-review or a post-game cites an earlier run's files. Nothing is judged on what the hook
     couldn't read; a display name ("Security") is never refused as a seat."""
+    held = held_to_record(call, here)
+    return held if isinstance(held, str) else None
+
+
+def held_to_record(call: Call, here: Where) -> str | tuple[Path, str] | None:
+    """dispatch_refusal's reading: its refusal; for a builder that may go out, the run and the build seat it takes
+    (_take); else None."""
     kind = KINDS.get(call.agent_type)
     if kind is None or not os.path.isdir(here.home):
         return None
@@ -259,7 +267,22 @@ def dispatch_refusal(call: Call, here: Where) -> str | None:
     from council.commands import build_seat, rounds
     why = rounds.batch_check(Path(found.run), pick, here.home) or rounds.check_round(Path(found.run), pick) \
         or build_seat.dispatch_refusal(Path(found.run), pick)
-    return "Small Council: " + why if why else None
+    if why:
+        return "Small Council: " + why
+    return (Path(found.run), pick) if kind == "council-builder" else None
+
+
+def _take(seat: tuple[Path, str] | None) -> int:
+    """A builder that may go out takes its build seat (council seat's taken), last, once no limit stops it: 0, or 2
+    with the refusal when another dispatch took the seat first."""
+    if not seat:
+        return 0
+    from council.commands import seat as seat_record
+    why = seat_record.taken(*seat)
+    if why:
+        cli.say("Small Council: " + why)
+        return 2
+    return 0
 
 
 def _no_run(kind: str, named: str, status: str, session: str) -> str | None:
