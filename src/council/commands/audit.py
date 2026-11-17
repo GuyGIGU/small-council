@@ -136,8 +136,11 @@ def window(entries: list[Entry], opened_spans: list[Span]) -> list[Entry]:
             continue                               # a span from before this session: none of it is here
         opening = _opening(entries, start)
         opened = opening < len(entries) and lifecycle(entries[opening], ("run open", "run resume"))
-        if not opened and not _held(entries, start, end):
-            continue
+        if not opened:
+            if not _held(entries, start, end):
+                continue
+            opening = next((n for n, (t, _, _) in enumerate(entries) if t and t >= start - timedelta(seconds=2)),
+                           len(entries))            # no open here: the span starts at its own time, not a call near it
         lo = opening
         for n in range(opening - 1, -1, -1) if opened else ():
             t, kind, _ = entries[n]
