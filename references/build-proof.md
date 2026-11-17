@@ -224,3 +224,6 @@ NOTHING WAS CHECKED words. `Not proved:` lists a task of the plan with no proof 
 side or reading `NO-PROOF-YET`; a configured gate never run; a gate that timed out, never ran, was marked
 invalid or passed with nothing run; a gate whose recorded tree is not the files on disk now; and a revert
 check that could not be made. Same records, same lines. A run that is not a build prints neither.
+A gate `gate --all` did not run because nothing under its `Covers` paths changed since its green is
+never a fresh pass: it reads `pass → pass (not rerun)`, and `Not proved:` gives the reason. A PR body
+drafted for the run carries that `Not proved:` line as it is.
