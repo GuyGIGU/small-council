@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 from council.commands import cli, resolve
-from council.records import config, repairs
+from council.records import config, repairs, seats
 
 
 def run_quietly(action: str, task: str, gate: str | None, run: str) -> tuple[int, str]:
@@ -35,7 +35,12 @@ def trail(run: str, name: str) -> str:
 
 
 def current_task(run: str) -> str:
-    """The build task an attempt counts under: "task <n>" at the start of next:, as T<n>; '' when none."""
+    """The build task an attempt counts under, as T<n>: the task of the one build seat running (task-<n>), so an
+    inserted fix task's failures are its own; else "task <n>" at the start of next:; '' when neither names one."""
+    running = [found.group(1) for found in (re.fullmatch(r"task-([0-9]+)", row.get("slug", ""))
+                                            for row in seats.rows(Path(run)) if row.get("state") == "running") if found]
+    if len(running) == 1:
+        return "T" + running[0]
     found = re.match(r"[Tt]ask[ \t\n\v\f\r]*([0-9]+)", resolve.field(Path(run), "next"))
     return "T" + found.group(1) if found else ""
 

@@ -5,8 +5,8 @@ own never stops an agent: the hook lets through anything that is not exit 2 with
 Only in-progress runs count: with a session id, the runs that session drives on any working tree, and
 this tree's runs that recorded none; without one, every in-progress run on this tree. A run opened before
 plans and agent limits (no plan-schema) is never stopped. Given the tool about to start, a pass also
-counts one agent start for the run this session drives, when it drives exactly one — under that run's
-lock, so agents started together cannot all take its last place. With type=, seat=, run= and file=, a
+counts one agent start for a run this session drives: the one the dispatch names, else its newest (counted_run) —
+under that run's lock, so agents started together cannot all take its last place. With type=, seat=, run= and file=, a
 Small Council agent is first refused while the council home or the run is not writable from this session
 (gate_writable), then held to the record (dispatch_refusal), and a builder that goes out takes its queued build
 seat (seat.taken); with hunt=, a build's verifier sent past its Done-when is refused; with workflow=verifier, a
@@ -80,7 +80,7 @@ def check(session: str, words: list[str]) -> int:
         cli.say(refusal)
         return 2
     took = Took()
-    stopped = stops(call.tool, here, seat, took) if has_runs else []
+    stopped = stops(call.tool, here, seat, took, call.run) if has_runs else []
     if took.refusal:
         cli.say("Small Council: " + took.refusal)
         return 2
@@ -144,9 +144,9 @@ class Took:
 
 
 def stops(tool: str, here: Where, seat: tuple[Path, str] | None = None,
-          took: Took | None = None) -> list[tuple[str, str]]:
-    """Each stopped run's name and words. The run a start counts for is judged under its lock, last; a builder's
-    seat is taken there too (count_start)."""
+          took: Took | None = None, named: str = "") -> list[tuple[str, str]]:
+    """Each stopped run's name and words. The run a start counts for (counted_run) is judged under its lock, last;
+    a builder's seat is taken there too (count_start)."""
     kept, mine = [], []
     for run in runs.listing(here.home, 1000000, "open"):
         if run.status != "in-progress":
@@ -162,7 +162,7 @@ def stops(tool: str, here: Where, seat: tuple[Path, str] | None = None,
             kept.append(run.folder)
             if own:
                 mine.append(run.folder)
-    counted = mine[0] if tool and len(mine) == 1 else ""
+    counted = counted_run(mine, seat[0].name if seat else named) if tool else ""
     stopped = []
     for run in kept:
         if run != counted:
@@ -175,6 +175,16 @@ def stops(tool: str, here: Where, seat: tuple[Path, str] | None = None,
             stopped.append((counted.split("/")[-1], stand))
     said = [cap.words(name, stand) for name, stand in stopped]
     return [(name, line if n == 0 else "R" + line[1:]) for n, ((name, _), line) in enumerate(zip(stopped, said))]
+
+
+def counted_run(mine: list[str], named: str) -> str:
+    """The run an agent start counts for, among the runs this session drives: the one the dispatch names (a builder's
+    seat's run, else run=), else the newest (by its folder's date and time), so a session driving two runs still
+    counts every start once; '' when it drives none."""
+    if not mine:
+        return ""
+    return next((run for run in mine if named and run.split("/")[-1] == named), "") \
+        or max(mine, key=lambda run: run.split("/")[-1])
 
 
 def count_start(run: Path, tool: str, here: Where, refused: bool, seat: tuple[Path, str] | None = None,
@@ -272,8 +282,9 @@ def held_to_record(call: Call, here: Where) -> str | tuple[Path, str] | None:
         candidates = cap.open_here(here.home, here.tree, here.session)
         if not candidates:
             return _no_run(kind, named, status, here.session)
+    builder = kind == "council-builder"
     if not seat and not file:
-        return None
+        return _unheld(candidates, "") if builder else None
     pick, found = "", Planned(0, "", False)
     if seat:
         found = seat_runs(candidates, seat, kind)
@@ -282,9 +293,10 @@ def held_to_record(call: Call, here: Where) -> str | tuple[Path, str] | None:
         found = seat_runs(candidates, file, kind)
         pick = file if found.count else ""
     if not pick:
-        return None if found.legacy else _unplanned(kind, seat, file, candidates)
-    if found.count != 1:
-        return None                                    # which run it is for is unknown: the seat record judges
+        return None if found.legacy else _unplanned(kind, seat, file, candidates) \
+            or (_unheld(candidates, "") if builder else None)
+    if found.count != 1:                               # which run it is for is unknown: the seat record judges,
+        return _unheld(candidates, pick) if builder else None     # and a builder must be held before it goes
     from council.commands import build_seat, rounds
     why = rounds.batch_check(Path(found.run), pick, here.home) or rounds.check_round(Path(found.run), pick) \
         or build_seat.dispatch_refusal(Path(found.run), pick)
@@ -321,6 +333,20 @@ def _no_run(kind: str, named: str, status: str, session: str) -> str | None:
             "no run to work for. Open the run first (council run open <mode>), or carry on with a paused one if the "
             "user wants it (council run resume --run <folder>); plan the seat, then dispatch. For work outside the "
             "council, use another agent type." % kind)
+
+
+def _unheld(candidates: list[str], seat: str) -> str | None:
+    """A council-builder the hook can't tie to one queued build seat: its dispatch names none (no Seat: task-<n> line,
+    no one report-<n>.md), or a seat more than one open run selects. Refused, naming how to dispatch one (D42: the one
+    builder at a time is held by its seat); None when every open run predates run plans."""
+    if all(not resolve.field(Path(run), "plan-schema") for run in candidates):
+        return None
+    runs_here = resolve.names(candidates) if len(candidates) > 1 else candidates[0].split("/")[-1]
+    why = ("names %s in more than one open run here (%s)" % (seat, runs_here) if seat else
+           "names no build seat (no Seat: task-<n> line, and no one report-<n>.md it writes)")
+    return ("Small Council: this council-builder %s, so the helper can't hold it to one builder at a time (D42). "
+            "Queue its seat (council seat task-<n> queued --run <folder>), then dispatch it with the line "
+            "Seat: task-<n> and its report, <run folder>/report-<n>.md, on its Write line." % why)
 
 
 def _unplanned(kind: str, seat: str, file: str, candidates: list[str]) -> str | None:
