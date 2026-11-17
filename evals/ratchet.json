@@ -46,7 +46,7 @@
    "shellcheck": 0
   },
   "hooks/seat-gate.sh": {
-   "lines": 226,
+   "lines": 224,
    "longest": 21,
    "longest_name": "json_str",
    "shellcheck": 0
@@ -95,9 +95,9 @@
    "longest_name": ""
   },
   "src/council/commands/agent_gate.py": {
-   "lines": 319,
+   "lines": 341,
    "longest": 40,
-   "longest_name": "held_to_record"
+   "longest_name": "check"
   },
   "src/council/commands/ask.py": {
    "lines": 179,
@@ -115,7 +115,7 @@
    "longest_name": "invocations"
   },
   "src/council/commands/audit_checks.py": {
-   "lines": 368,
+   "lines": 371,
    "longest": 38,
    "longest_name": "agents_on_record"
   },
@@ -130,7 +130,7 @@
    "longest_name": "outside_round"
   },
   "src/council/commands/builder_stop.py": {
-   "lines": 133,
+   "lines": 148,
    "longest": 28,
    "longest_name": "_wrote"
   },
@@ -185,7 +185,7 @@
    "longest_name": "refuse"
   },
   "src/council/commands/collect.py": {
-   "lines": 274,
+   "lines": 280,
    "longest": 36,
    "longest_name": "one"
   },
@@ -255,7 +255,7 @@
    "longest_name": "said"
   },
   "src/council/commands/gate_list.py": {
-   "lines": 37,
+   "lines": 40,
    "longest": 16,
    "longest_name": "main"
   },
@@ -325,8 +325,8 @@
    "longest_name": "lines"
   },
   "src/council/commands/map_status.py": {
-   "lines": 42,
-   "longest": 13,
+   "lines": 45,
+   "longest": 16,
    "longest_name": "status"
   },
   "src/council/commands/map_touch.py": {
@@ -540,7 +540,7 @@
    "longest_name": "_quoted"
   },
   "src/council/commands/state.py": {
-   "lines": 109,
+   "lines": 125,
    "longest": 42,
    "longest_name": "_checked"
   },
@@ -565,7 +565,7 @@
    "longest_name": "files"
   },
   "src/council/git.py": {
-   "lines": 102,
+   "lines": 110,
    "longest": 35,
    "longest_name": "files_tree"
   },
@@ -670,8 +670,8 @@
    "longest_name": "stale"
   },
   "src/council/records/map_file.py": {
-   "lines": 164,
-   "longest": 21,
+   "lines": 200,
+   "longest": 22,
    "longest_name": "touch"
   },
   "src/council/records/memory.py": {

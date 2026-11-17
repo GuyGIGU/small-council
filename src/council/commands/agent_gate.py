@@ -295,7 +295,8 @@ def held_to_record(call: Call, here: Where) -> str | tuple[Path, str] | None:
 
 def _take(seat: tuple[Path, str] | None) -> int:
     """A builder that may go out takes its build seat (council seat's taken), last, once no limit stops it, when no
-    start was counted (count_start takes it then): 0, or 2 with the refusal when another dispatch took the seat first."""
+    start was counted (count_start takes it then): 0, or 2 with the refusal when another dispatch took the seat
+    first."""
     if not seat:
         return 0
     from council.commands import seat as seat_record

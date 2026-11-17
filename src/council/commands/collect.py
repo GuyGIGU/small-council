@@ -76,8 +76,8 @@ def main(args: cli.Args, words: list[str]) -> int:
     return verdict(run, flags, tally)
 
 
-AFTER = ("collect", "the seats were briefed without it: hold their findings to it at Judge, tell the user, and quote it "
-         "word for word in any later brief")
+AFTER = ("collect", "the seats were briefed without it: hold their findings to it at Judge, tell the user, and "
+         "quote it word for word in any later brief")
 BEFORE = ("state", "the seats would be briefed without it: quote it word for word in the brief before you dispatch")
 
 
