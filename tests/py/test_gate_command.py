@@ -138,6 +138,20 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(gate_output.tail("a\nb\nc\n\n", 2), ["c"])
 
 
+class RanMarkerTest(support.Scratch):
+    def test_the_marker_is_made_new_never_written_through_a_file_already_there(self) -> None:
+        marker = self.tmp / "council-ran.1"
+        with mock.patch.dict(os.environ, {"COUNCIL_RAN": str(marker)}):
+            self.assertEqual(shell.ran(127), 127)
+            self.assertTrue(marker.is_file())
+            marker.write_text("another user's file")          # planted under a shared /tmp, or a link to one
+            self.assertEqual(shell.ran(127), 127)
+            self.assertEqual(marker.read_text(), "another user's file")
+            marker.unlink()
+            self.assertEqual(shell.ran(0), 0)
+            self.assertFalse(marker.exists())
+
+
 class RunHelpersTest(support.Scratch):
     def test_qname_json_and_windows_switch(self) -> None:
         self.assertEqual((gate_run.qname("unit tests"), gate_run.qname("lint")), ('"unit tests"', "lint"))

@@ -39,17 +39,9 @@ block() {
   exit 2
 }
 
-engine="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/src/council/commands/script.py"
-# Python 3.8+, as the helper finds it; without it the claim index isn't built either.
-pick_python() {
-  local c
-  for c in python3 python; do
-    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
-      printf '%s' "$c"; return 0
-    fi
-  done
-  return 1
-}
+helper="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/bin/council"
+# A tool of the helper's (commands/script.py) on the Python bin/council picks (D34); with none, exit 2 lets the stop pass.
+tool() { COUNCIL_SCRIPT=script "${BASH:-bash}" "$helper" "$@"; }
 
 # Any spacing JSON allows ("stop_hook_active" : true, a line break) — whitespace inside the reply's own
 # text can't fake it, because a quote in a JSON string is escaped (\").
@@ -62,9 +54,9 @@ case "$(json_str agent_type)" in
   *) exit 0 ;;
 esac
 sid="$(json_str session_id)"; . "${BASH_SOURCE[0]%[/\\\\]*}/session-mark.sh" 2>/dev/null && mark_session "$sid" seat-gate   # council doctor reads it
-[ -f "$engine" ] && py="$(pick_python)" || exit 0
+[ -f "$helper" ] || exit 0
 if [ "$kind" = builder ]; then        # judged in Python (builder_stop): exit 1 and its one line send it back once
-  why="$(printf '%s' "$input" | "$py" "$engine" builder_stop 2>/dev/null)" || [ "$?" -ne 1 ] || [ -z "$why" ] || block "$why"
+  why="$(printf '%s' "$input" | tool builder_stop 2>/dev/null)" || [ "$?" -ne 1 ] || [ -z "$why" ] || block "$why"
   exit 0
 fi
 
@@ -75,7 +67,7 @@ if [ -z "$msg" ]; then
   printf '%s' "$input" | grep -q '"last_assistant_message"[[:space:]]*:[[:space:]]*""' || exit 0
 fi
 # A BLOCKED reply, as the helper's one reader (seat_files.blocked) reads it, passes; exit 1 is no BLOCKED reply.
-printf '%s' "$input" | "$py" "$engine" builder_stop blocked >/dev/null 2>&1; [ "$?" -eq 1 ] || exit 0
+printf '%s' "$input" | tool builder_stop blocked >/dev/null 2>&1; [ "$?" -eq 1 ] || exit 0
 
 finish="finish by writing your output file, then reply with exactly one line: Wrote <output path> — <N> items (<counts>). If you couldn't do the work, reply BLOCKED: <reason> instead."
 [ "$kind" = worker ] || finish="finish by writing your verdicts to the file your dispatch named (<run>/verify-<n>.md), then reply with exactly one line: Wrote <path> — <count of each verdict>. If you couldn't do the check, reply BLOCKED: <reason> instead."
@@ -198,7 +190,8 @@ else
     else
       # The claim index's own reading of the table (evidence table): what the index could not read,
       # the verifier fixes now — not the Chair, by hand, after it. 1 is "problems"; anything else passes.
-      table="$("$py" "$engine" evidence table --file "$path" 2>/dev/null)"; rc=$?
+      fp="$path"; case "$path" in /*) fp="$(cd "${path%/*}" 2>/dev/null && { pwd -W 2>/dev/null || pwd; })/${path##*/}" ;; esac
+      table="$(tool evidence table --file "$fp" 2>/dev/null)"; rc=$?   # /c/x as Python opens it: bin/council passes words as typed
       if [ "$rc" -eq 1 ] && [ -n "$table" ]; then
         n="$(printf '%s\n' "$table" | grep -c .)"
         table="$(printf '%s\n' "$table" | head -n 3 | awk 'NR > 1 { printf "; " } { printf "%s", $0 }')"

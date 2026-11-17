@@ -690,6 +690,15 @@ def seat_gate_builder(tmp):
         os.chmod(os.path.join(shims, name), 0o755)
     code, out, err = stop("I looked at some things", path=shims)
     check("builder stop: with no Python to hand it to, the builder stops (D20)", code == 0 and not out and not err, err)
+    # HS-11: the seat gate starts Python as bin/council does (D34), never by a probe of its own: the launcher's second
+    # candidate (python3 under Git Bash, MSYS2 and Cygwin; python elsewhere), first on PATH, is never run.
+    second = os.path.join(tmp, "second-python")
+    write(os.path.join(second, "python3" if os.name == "nt" else "python"),
+          '#!/bin/sh\necho "$0" >> "%s"\nexit 49\n' % os.path.join(tmp, "second-python.log").replace("\\", "/"))
+    os.chmod(os.path.join(second, "python3" if os.name == "nt" else "python"), 0o755)
+    code, out, err = stop("I looked at some things", path=second)
+    check("builder stop: the hook's Python is the launcher's first candidate; the second is never run (D34)",
+          sent_back(code, out, err) and not os.path.exists(os.path.join(tmp, "second-python.log")), err)
     bare = os.path.join(tmp, "plugin-no-helper")
     shutil.copytree(os.path.join(ROOT, "hooks"), os.path.join(bare, "hooks"))
     code, out, err = stop("I looked at some things", root=bare)
