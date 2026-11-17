@@ -205,8 +205,8 @@
    "longest_name": "main"
   },
   "src/council/commands/doctor_gates.py": {
-   "lines": 105,
-   "longest": 40,
+   "lines": 124,
+   "longest": 41,
    "longest_name": "row"
   },
   "src/council/commands/doctor_hooks.py": {
@@ -269,13 +269,18 @@
    "longest": 26,
    "longest_name": "record"
   },
+  "src/council/commands/gate_reuse.py": {
+   "lines": 55,
+   "longest": 18,
+   "longest_name": "taken"
+  },
   "src/council/commands/gate_run.py": {
    "lines": 180,
    "longest": 37,
    "longest_name": "run_gate"
   },
   "src/council/commands/gate_set.py": {
-   "lines": 208,
+   "lines": 224,
    "longest": 48,
    "longest_name": "_runnable"
   },
@@ -285,7 +290,7 @@
    "longest_name": "refusal"
   },
   "src/council/commands/help.py": {
-   "lines": 163,
+   "lines": 164,
    "longest": 8,
    "longest_name": "main"
   },
@@ -420,9 +425,9 @@
    "longest_name": "main"
   },
   "src/council/commands/receipt.py": {
-   "lines": 80,
-   "longest": 12,
-   "longest_name": "_tasks"
+   "lines": 96,
+   "longest": 16,
+   "longest_name": "_gates"
   },
   "src/council/commands/repair.py": {
    "lines": 66,
@@ -545,7 +550,7 @@
    "longest_name": "files"
   },
   "src/council/git.py": {
-   "lines": 91,
+   "lines": 102,
    "longest": 35,
    "longest_name": "files_tree"
   },
@@ -610,7 +615,7 @@
    "longest_name": "operator"
   },
   "src/council/records/gate_table.py": {
-   "lines": 195,
+   "lines": 205,
    "longest": 27,
    "longest_name": "gates_listed"
   },
