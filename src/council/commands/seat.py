@@ -147,6 +147,9 @@ def _may_record(run: Path, slug: str, state: str, got: dict[str, str]) -> None:
                           "(\"write your file now with what you have, then finish\"), or record it: council seat %s "
                           "failed note=\"…\"" % (slug, missing, slug))
     event_note.writable(run)
+    lifted = build_seat.note_refusal(run, slug, got["note"]) if state not in build_seat.STARTED else None
+    if lifted:
+        raise cli.Refusal(lifted)
     if got["agents"] == "0" and (got["agent"] or seat_rows.cell(run, slug, "agent")):
         raise cli.Refusal("agents=0 says no agent ran for %s, but an agent id is on record for it — report that "
                           "agent's usage instead" % slug)

@@ -2,8 +2,9 @@
 n. One builder at a time: a build seat does not start while another is queued or runs, nor while a `NEEDS: fix`
 stop stands on its task or a task it depends on. Its `done` needs `report-<n>.md`, unless it stopped with a `NEEDS:`
 line. When one starts, the files changed since the run's last saved round are named. It also holds the one reader
-of a task's stop (stop_of), which council tree asks too. `council seat` and the agent gate ask it, as they ask
-`rounds` for a verifier. A Solo build records no build seat, so nothing here fires for it."""
+of a task's stop (stop_of) and of a NEEDS: line (needs, fix_at), which council tree, the pack and the builder's stop
+ask too. `council seat` and the agent gate ask it, as they ask `rounds` for a verifier. A Solo build records no
+build seat, so nothing here fires for it."""
 from __future__ import annotations
 
 import re
@@ -17,7 +18,21 @@ from council.records import home as where
 SEAT = re.compile(r"task-([0-9]+)")
 STARTED = ("queued", "running")
 STANDS, RELEASED, RESOLVED = "stands", "released", "resolved"
-FIX = re.compile(r"NEEDS:\s*fix\s+(\S+)")
+FINISHED = ("done", "failed", "blocked", "skipped")
+LEAD = " \t>*_"                                   # what may stand before a NEEDS: line's first word
+NEEDS_FIX = re.compile(r"NEEDS:[*_]*\s*[*_`]*(?i:fix)\b[*_`:]*\s*(\S*)")
+
+
+def needs(note: str) -> bool:
+    """A NEEDS: line, as a builder writes it or the Chair records it: markdown marks before the word are allowed."""
+    return note.lstrip(LEAD).startswith("NEEDS:")
+
+
+def fix_at(note: str) -> str | None:
+    """Where a NEEDS: fix line says the fault is (its file:line, '?' when it names none); None for any other note.
+    Fix in any case, markdown marks allowed: the one pattern the builder's stop holds to the four-part form too."""
+    found = NEEDS_FIX.match(note.lstrip(LEAD))
+    return (found.group(1).strip("`*_") or "?") if found else None
 
 
 def task_of(run: Path, slug: str) -> int | None:
@@ -68,21 +83,34 @@ def dispatch_refusal(run: Path, slug: str) -> str | None:
 
 
 def _fix_refusal(run: Path, slug: str, task: int) -> str | None:
-    """A NEEDS: fix stop that stands on task <task> or on a task it depends on, all the way down."""
+    """A NEEDS: fix stop that stands on task <task> or on a task it depends on, all the way down: read from the
+    seat's note whatever its row's state, so recording the stopped seat failed or skipped does not lift it."""
     under = depends_on(run, task)
     for row in seats.rows(run):
-        number, note = tasks.number(row.get("slug", "")), row.get("note", "")
-        if number not in under or row.get("state") != "done" or not FIX.match(note):
+        number, where_ = tasks.number(row.get("slug", "")), fix_at(row.get("note", ""))
+        if number not in under or where_ is None:
             continue
         if stop_of(run, row.get("slug", "")) != STANDS:
             continue
-        where_ = FIX.match(note).group(1)
         how = "this is that task" if number == task else "task %d depends on it" % task
         return ("cannot start %s — task %d stopped with NEEDS: fix at %s (seat %s), and %s: the code under it is "
                 "wrong. Tell the user what is wrong and what is stopped, record their decision in their words with "
                 "council state decision=\"…\", and build the fix as its own task above the stopped one"
                 % (slug, number, where_, row.get("slug", ""), how))
     return None
+
+
+def note_refusal(run: Path, slug: str, note: str) -> str | None:
+    """Why build seat <slug> can't take a new note=: its note is a NEEDS: fix stop that stands, and a new note would
+    lift the stop with no decision on record. None when it may, or when <slug> is no build seat."""
+    held = seat_rows.cell(run, slug, "note")
+    if not note or note == held or task_of(run, slug) is None or fix_at(held) is None \
+            or stop_of(run, slug) != STANDS:
+        return None
+    return ("seat %s's note is its NEEDS: fix stop, which stands — a new note= would lift it with no decision on "
+            "record. Record the seat without note= (council seat %s <state>); the stop ends once the user's "
+            "decision is on record (council state decision=\"…\") or the task's after-%d gate passes, and the note "
+            "once the seat has run again and is recorded done" % (slug, slug, task_of(run, slug)))
 
 
 def depends_on(run: Path, task: int) -> set:
@@ -119,7 +147,7 @@ def resolved_tasks(run: Path, proofs: dict) -> set:
     found: dict = {}
     for row in seats.rows(run):
         slug, number = row.get("slug", ""), tasks.number(row.get("slug", ""))
-        if number is not None and row.get("note", "").startswith("NEEDS:"):
+        if number is not None and needs(row.get("note", "")):
             found[number] = found.get(number, True) and resolved(run, slug, number, proofs)
     return {number for number, done in found.items() if done}
 
@@ -137,10 +165,10 @@ def stop_of(run: Path, slug: str) -> str:
     """The one reader of a stop: '' when seat <slug>'s row carries no NEEDS: note; else RESOLVED when the task its
     slug names (task-3, T3) has its after-<n> gate passed after the stop (resolved); RELEASED when a decision of the
     user's, the whole run's or that task's own, is on record from the stop's minute on (rounds.decisions_since, >=:
-    a decision in that same minute counts); else STANDS. The stop's moment is the seat's first done in the event
-    stream after its last start; a run with no stream, or no such done, has no moment, and the stop reads RELEASED
+    a decision in that same minute counts); else STANDS. The stop's moment is the seat's first finish in the event
+    stream after its last start (_stop); a run with no stream, or no such finish, has no moment, and it reads RELEASED
     unless the after gate's last verdict is a pass: what the helper can't read never refuses."""
-    if not seat_rows.cell(run, slug, "note").startswith("NEEDS:"):
+    if not needs(seat_rows.cell(run, slug, "note")):
         return ""
     rows, at = _stop(run, slug)
     number = tasks.number(slug)
@@ -154,8 +182,9 @@ def stop_of(run: Path, slug: str) -> str:
 
 
 def _stop(run: Path, slug: str) -> tuple[list[list[str]], int]:
-    """The event stream's rows (each padded to seven cells) and the index of the seat's first done after its last
-    start (queued or running); -1 when there is no stream or no such done."""
+    """The event stream's rows (each padded to seven cells) and the index of the seat's first finish after its last
+    start (queued or running): done, or failed, blocked or skipped when the stop was recorded so; -1 when there is
+    no stream or no such finish."""
     if not events.path(run).is_file():
         return [], -1
     rows = [row + [""] * 7 for row in events.table(run).rows]
@@ -165,7 +194,7 @@ def _stop(run: Path, slug: str) -> tuple[list[list[str]], int]:
             continue
         if row[5] in STARTED:
             at = -1
-        elif row[5] == "done" and at < 0:
+        elif row[5] in FINISHED and at < 0:
             at = n
     return rows, at
 
@@ -176,7 +205,7 @@ def missing_report(run: Path, slug: str, note: str) -> str:
     late usage report on the stop needs no report — or when <slug> is no build seat."""
     task = task_of(run, slug)
     kept = seat_rows.cell(run, slug, "note") if seat_rows.cell(run, slug, "state") == "done" else ""
-    if task is None or (note or kept).startswith("NEEDS:"):
+    if task is None or needs(note or kept):
         return ""
     file = report_head.report(run, task)
     return "" if file.is_file() and file.stat().st_size > 0 else file.as_posix()
@@ -188,19 +217,27 @@ def starts(run: Path, slug: str, state: str) -> bool:
         and seat_rows.cell(run, slug, "state") not in STARTED
 
 
-def outside_round(run: Path, slug: str) -> list[str]:
-    """The files on disk that differ from what the next round is diffed from (the run's last saved round, else the
-    commit it opened on), .council/ left out, each named: an edit outside a round, or a file a gate left. Nothing
-    when there is no difference, or when either side can't be read."""
+def unsaved(run: Path) -> tuple[patches.Round | None, str, list[str]]:
+    """What the next round is diffed from (the run's last saved round, None before the first, and its tree; else the
+    commit the run opened on) and the files on disk that differ from it, .council/ left out: [] when none do, or when
+    either side can't be read."""
     from council.commands import patch       # patch save's own start
     last, start = patch.since(run, patches.rounds(run))
     top = resolve.field(run, "code-root") or where.this_tree()
     now = git.files_tree(top) if start else ""
-    if not now:
-        return []
+    if not now or now == start:
+        return last, start, []
     code, data = git.run(top, "diff", "--name-only", "--no-renames", "--no-ext-diff", start, now, *git.between(),
                          names=True)
-    files = [name for name in data.decode("utf-8", "surrogateescape").split("\n") if name] if code == 0 else []
+    if code != 0:
+        return last, start, []
+    return last, start, [name for name in data.decode("utf-8", "surrogateescape").split("\n") if name]
+
+
+def outside_round(run: Path, slug: str) -> list[str]:
+    """The files unsaved names, each on its line under one that says since when: an edit outside a round, or a file
+    a gate left. Nothing when there is no difference, or when either side can't be read."""
+    last, start, files = unsaved(run)
     if not files:
         return []
     since = ("the last saved round (task %d round %d)" % (last.task, last.round) if last else
