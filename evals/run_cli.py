@@ -9871,7 +9871,7 @@ def reports_refusals(tmp):
         check("%s: refused — %s" % (" ".join(words), want), code == 2 and want in err and not out, out + err)
     check("memory: no refusal touched the memory file", read(os.path.join(repo, ".council", "conventions.md")) == before)
     for words, want in ((("ledger",), "no ledger yet — every completed run adds its seats to"),
-                        (("ledger", "advice"), "no ledger yet"), (("map", "status"), "no map yet — council-init builds")):
+                        (("ledger", "advice"), "no ledger yet"), (("map", "status"), "no map yet — write .council/map.md from the plugin's references/templates/map.md")):
         code, out, err = council(repo, *words)
         check("%s: says what is missing, exit 0" % " ".join(words), code == 0 and want in out, out + err)
 
