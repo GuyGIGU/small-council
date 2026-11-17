@@ -75,10 +75,13 @@ class Run:
         found = self.of_type("run.closed", "run.paused")
         return found[-1] if found else None
 
-    def phase_at(self, when: datetime | None) -> str:
+    def phase_before(self, index: int) -> str:
+        """The stage the run was in at its index-th event: the last run.opened or run.phase_changed before it in the
+        stream. By the records' order, never their times: a stamp has one-second resolution, so a gate run in the
+        second its stage began read as run in the stage before."""
         phase = "convene"
-        for event in self.events:
-            if event["type"] in ("run.opened", "run.phase_changed") and event["t"] and when and event["t"] <= when:
+        for event in self.events[:index]:
+            if event["type"] in ("run.opened", "run.phase_changed"):
                 phase = "convene" if event["type"] == "run.opened" else event.get("value", "")
         return phase
 
@@ -204,10 +207,10 @@ def agents_on_record(run: Run, say: Say) -> None:
 
 def gates(run: Run, say: Say) -> None:
     runs = []
-    for event in run.of_type("gate.finished"):
-        seconds = cells.optional_number(event_stream.details(event.get("detail")).get("seconds")) or 0
-        if event["t"]:
-            runs.append({"name": event.get("subject", "?"), "end": event["t"],
+    for at, event in enumerate(run.events):
+        if event["type"] == "gate.finished" and event["t"]:
+            seconds = cells.optional_number(event_stream.details(event.get("detail")).get("seconds")) or 0
+            runs.append({"name": event.get("subject", "?"), "end": event["t"], "stage": run.phase_before(at),
                          "start": event["t"] - timedelta(seconds=seconds)})
     if not runs:
         say(WARN, "Checks one at a time", "no check (gate) ran in this run")
@@ -230,7 +233,7 @@ def gates(run: Run, say: Say) -> None:
         return
     counts = {}
     for gate_run in runs:
-        key = (gate_run["name"], run.phase_at(gate_run["start"]))
+        key = (gate_run["name"], gate_run["stage"])
         counts[key] = counts.get(key, 0) + 1
     repeats = ["%s %d times in %s" % (name, n, stage) for (name, stage), n in sorted(counts.items()) if n > 1]
     if repeats:

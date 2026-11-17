@@ -492,6 +492,13 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
         write(log3, "".join(json.dumps(line) + "\n" for line in silent))
     write(far, json.dumps({"type": "user", "timestamp": "2026-01-01T00:00:00Z", "sessionId": "another",
                            "message": {"role": "user", "content": "hello"}}) + "\n")
+    same_second = minimal_run(base, "2026-10-09-120000-review", [       # a gate in the second its stage began
+        ("2026-10-09T12:00:11Z", "run.opened", "run", "council-review", "phase=convene"),
+        ("2026-10-09T12:00:12Z", "run.phase_changed", "run", "prepare", "from=convene"),
+        ("2026-10-09T12:00:15Z", "gate.finished", "lint", "passed", "exit=0;seconds=0;empty=0"),
+        ("2026-10-09T12:00:20Z", "run.phase_changed", "run", "challenge", "from=prepare"),
+        ("2026-10-09T12:00:20Z", "gate.finished", "lint", "passed", "exit=0;seconds=1;empty=0"),
+        ("2026-10-09T12:01:00Z", "run.closed", "run", "complete", "agent_runs=0")])
     before = fingerprint(base)
 
     # The first real run's pattern: every known problem is named, and the rest passes.
@@ -510,6 +517,10 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     verdict, words = item(out, "Each check once per stage")
     check("run 1's pattern: a check run twice in one stage is a warning", verdict == "warn"
           and "lint 2 times in challenge" in words, words)
+    verdict, words = item(council(base, "run", "audit", "--run", str(same_second))[1], "Each check once per stage")
+    check("each check once per stage: a gate run in the same second as a phase change, after it in the records, is "
+          "placed in the later stage (by the records' order, not the one-second times)",
+          verdict == "pass" and "lint in prepare" in words and "lint in challenge" in words, words)
     verdict, words = item(out, "Every seat on record")
     check("run 1's pattern: no record of the Chair's own seat, with the command that makes one",
           verdict == "FAIL" and "council seat chair done agents=0" in words, words)
