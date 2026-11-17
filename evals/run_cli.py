@@ -4118,18 +4118,21 @@ def runs_map_touch(tmp):
     check("map touch: the line goes under a dated ## Changes section at the end, and the rest of the map stays byte "
           "for byte",
           code == 0 and section is not None and read(mapf) == original + section.group(0)[1:] +
-          "- src/: the reader moved to src/a.py\n" and out.startswith("Wrote ") and "map.md — 1 line(s) under ## "
+          "- src/: the reader moved to src/a.py (at %s)\n" % head[:12] and out.startswith("Wrote ") and "map.md — 1 line(s) under ## "
           "Changes " in out, out + err + read(mapf))
     check("map touch: map-commit stays while an area changed since it (docs/) has no line, and it says which",
           ("map-commit stays at %s: no line here yet for docs/, changed since it — give each a line too (%s), or "
            "refresh the map" % (built[:9], shape)) in out and "map-commit: %s (built)" % built in read(mapf), out)
+    code, out, _ = council(repo, "map", "status")
+    check("map status: an area touched since map-commit, with nothing changed under it after the touch, is not stale; "
+          "an area with no line is", code == 0 and "docs/" in out and "src/" not in out, out)
     code, out, err = council(os.path.join(repo, "src"), "map", "touch", "docs=the guide grew", "src=the reader too",
                              "README.md=a root file is an area")
     check("map touch: from a subfolder, docs is read as docs/; a touch covering every area changed since the stamp "
           "moves map-commit to HEAD, and joins today's section",
           code == 0 and read(mapf).count("## Changes") == 1 and read(mapf).endswith(
-              "- src/: the reader moved to src/a.py\n- docs/: the guide grew\n- src/: the reader too\n"
-              "- README.md: a root file is an area\n")
+              "- src/: the reader moved to src/a.py (at {0})\n- docs/: the guide grew (at {0})\n"
+              "- src/: the reader too (at {0})\n- README.md: a root file is an area (at {0})\n".format(head[:12]))
           and "map-commit: %s (built)" % head in read(mapf)
           and "map-commit now at %s (HEAD): every area changed since the stamp has a line" % head[:9] in out, out + err)
     code, out, _ = council(repo, "map", "status")

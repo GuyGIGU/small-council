@@ -762,6 +762,23 @@ def memory_file_and_seat_check(tmp):
     check("stale map: past five areas, the rest counted and map status named for them",
           "src/ 3, docs/ 2, web/ 1, tests/ 1, ops/ 1, and 2 more — council map status lists them: trust its "
           "structure, verify details there)." in line_with(out, "Orientation"), out)
+    mapped = os.path.join(full, ".council", "map.md")
+    with open(mapped, encoding="utf-8") as f:
+        before = f.read()
+    write(mapped, before.rstrip("\n") + "\n\n## Changes 2026-09-16\n- src/: the f files grew (at %s)\n"
+          "- docs/: a line written before a touch named its commit\n" % git(full, "rev-parse", "HEAD")[:12])
+    code, out = run_hook(full, "startup")
+    check("stale map: an area touched since its map-commit, at a commit with nothing changed under it since, is not "
+          "stale; a touch line with no commit (written before touches named one) changes nothing",
+          "files changed since its map-commit: docs/ 2, web/ 1, tests/ 1, ops/ 1, lib/ 1, and 1 more" in
+          line_with(out, "Orientation") and "src/" not in line_with(out, "Orientation"), out)
+    write(os.path.join(full, "src", "after.txt"), "x\n")
+    git(full, "add", "-A")
+    git(full, "commit", "-q", "-m", "src after the touch")
+    code, out = run_hook(full, "startup")
+    check("stale map: a touched area is stale again by the files changed under it after the touch alone",
+          "files changed since its map-commit: docs/ 2, web/ 1, tests/ 1, src/ 1, ops/ 1, and 2 more" in
+          line_with(out, "Orientation"), out)
     write(os.path.join(full, ".council", "map.md"), "# Codebase map\nmap-commit: %s\n" % git(full, "rev-parse", "HEAD"))
     write(os.path.join(full, ".council", "notes.md"), "x\n")
     git(full, "add", "-A")

@@ -24,7 +24,7 @@ def main(words: list[str]) -> int:
     if not head or git.run(".", "cat-file", "-e", sha + "^{commit}")[0] != 0:
         raise cli.Refusal("map-commit %s isn't in this repo's history — rebuild the map (council-init's Refresh), "
                           "then %s" % (sha, SHAPE))
-    behind = [area for area, _ in map_file.areas(map_file.changed(".", sha, "HEAD"))]
+    behind = [area for area, _ in map_file.stale(home, ".").areas]          # an area touched since is not behind
     lines = _named(pairs, set(behind) | set(_tracked()))
     day = clock.now_date()
     try:

@@ -92,14 +92,49 @@ class Stale(NamedTuple):
 
 
 def stale(home: str | Path, top: str | Path = ".") -> Stale:
-    """The one reader of the map's staleness, for council map status and the SessionStart banner: from top, the
-    whole repository whatever folder top is."""
+    """The one reader of the map's staleness, for council map status, map touch and the SessionStart banner: from
+    top, the whole repository whatever folder top is. An area is stale when files under it changed after the later of
+    map-commit and the area's last touch (touches)."""
     sha = commit(home)
     if not sha or git.run(top, "cat-file", "-e", sha + "^{commit}")[0] != 0:
         return Stale(sha, False, 0, [])
     count = git.run(top, "rev-list", "--count", sha + "..HEAD")[1].decode("ascii", "replace").strip()
     behind = int(count) if count.isdigit() else 0
-    return Stale(sha, True, behind, areas(changed(top, sha, "HEAD")) if behind else [])
+    return Stale(sha, True, behind, areas(_since_touch(home, top, sha, changed(top, sha, "HEAD"))) if behind else [])
+
+
+def _since_touch(home: str | Path, top: str | Path, sha: str, names: list[str]) -> list[str]:
+    """The names changed since map-commit, less those in an area whose last touch is later than it (map-commit is
+    its ancestor) and that haven't changed since that touch."""
+    later: dict[str, set[str]] = {}
+    for where, at in touches(home).items():
+        if git.run(top, "merge-base", "--is-ancestor", sha, at)[0] == 0:
+            later[where] = set(changed(top, at, "HEAD"))
+    return [name for name in names if area_of(name) not in later or name in later[area_of(name)]]
+
+
+_AT = re.compile(r" \(at ([0-9a-fA-F]{7,40})\)$")
+
+
+def touches(home: str | Path) -> dict[str, str]:
+    """Each area's last touch: the commit that ends its last `- <area>: <line> (at <commit>)` under a ## Changes
+    section. A line written before touches named their commit has none, and is passed over."""
+    found: dict[str, str] = {}
+    inside = False
+    for line in paths.text_of(path(home), home).split("\n"):
+        line = line.rstrip("\r")
+        if line.startswith("## "):
+            inside = line.startswith(CHANGES)
+        elif inside and line.startswith("- ") and ": " in line:
+            at = _AT.search(line)
+            if at:
+                found[line[2:].split(": ", 1)[0]] = at.group(1)
+    return found
+
+
+def area_of(name: str) -> str:
+    """A file's top-level area: its top folder with the slash, or the root file itself."""
+    return name.split("/", 1)[0] + "/" if "/" in name else name
 
 
 def areas(names: list[str]) -> list[tuple[str, int]]:
@@ -109,7 +144,7 @@ def areas(names: list[str]) -> list[tuple[str, int]]:
     for name in names:
         if name.startswith(".council/"):
             continue
-        area = name.split("/", 1)[0] + "/" if "/" in name else name
+        area = area_of(name)
         counts[area] = counts.get(area, 0) + 1
     return sorted(counts.items(), key=lambda pair: (pair[1], pair[0].encode("utf-8", "surrogateescape")),
                   reverse=True)
@@ -142,9 +177,10 @@ class Touched(NamedTuple):
 
 
 def touch(home: str | Path, lines: list[tuple[str, str]], head: str, behind: list[str], day: str) -> Touched:
-    """Add `- <area>: <line>` for each pair under ## Changes <day> at the end of the map (to that section when it
-    is already the last one), through the one atomic write. map-commit moves to head only when the pairs cover every
-    area in behind (the areas changed since the stamp); no other line or section changes. Raises OSError."""
+    """Add `- <area>: <line> (at <head>)` for each pair under ## Changes <day> at the end of the map (to that section
+    when it is already the last one), through the one atomic write; the commit is what stale reads the area from.
+    map-commit moves to head only when the pairs cover every area in behind (the stale areas); no other line or
+    section changes. Raises OSError."""
     data = path(home).read_bytes().decode("utf-8", "surrogateescape")
     nl = "\r\n" if "\r\n" in data else "\n"
     rows = data.split("\n")
@@ -159,6 +195,6 @@ def touch(home: str | Path, lines: list[tuple[str, str]], head: str, behind: lis
     heads = [row.rstrip("\r") for row in text.split("\n") if row.startswith("## ")]
     if heads[-1:] != [CHANGES + day]:
         text += (nl if text and not text.endswith(nl + nl) else "") + CHANGES + day + nl
-    text += "".join("- %s: %s%s" % (area, said, nl) for area, said in lines)
+    text += "".join("- %s: %s (at %s)%s" % (area, said, head[:12], nl) for area, said in lines)
     paths.atomic_write(path(home), text.encode("utf-8", "surrogateescape"), ".map.", keep_mode=True)
     return Touched(bool(stamp) and not left, left)

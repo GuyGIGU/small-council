@@ -32,6 +32,9 @@ def status(home: str) -> list[str]:
         return ["map-commit %s isn't in this repo's history — rebuild the map" % found.sha]
     if not found.behind:
         return ["map: up to date (map-commit %s)" % found.sha[:9]]
+    if not found.areas:
+        return ["map: up to date by area (map-commit %s, %d commits behind HEAD: no area's files changed since it, or "
+                "since the area's last touch)" % (found.sha[:9], found.behind)]
     lines = ["map: %d commits behind HEAD (map-commit %s). Files changed since, by area:" % (found.behind,
                                                                                            found.sha[:9])]
     return lines + by_area(found.areas)
