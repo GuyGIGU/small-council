@@ -24,7 +24,7 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 
 ## Seats
 ### <slug> — <what it checks> (<Seat name>)
-- ref: <absolute path to the seat's card, else its reference doc, else none; a paired seat has one - ref: line each>
+- ref: <absolute path to the seat's card, else its roster row's Reference doc, else none; a paired seat has one - ref: line each>
 - doc: <absolute path of the full doc behind each card>
 - out: seats/<slug>.md
 - slice: <paths and globs — this seat's only>
@@ -57,7 +57,9 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   principles translated to this project. Its `- doc:` line gives the full doc's absolute path (the
   card's `source:` line names it relative to the plugin or repo). A worker that covers several roster
   seats — a pair, or a split `hunt-a` — gets each seat's card and doc. A block links only its own
-  seats' cards and docs: never another seat's, and never the whole set.
+  seats' cards and docs: never another seat's, and never the whole set. The roster is the one place
+  a surface maps to its doc: a seat's doc is its row's Reference cell, so a frontend seat gets the
+  frontend doc alone.
 - **Memory in scope, never the whole file.** Before writing, `council memory select`: it reads the
   run's index, the seats Assign recorded and the mode; a run without a diff also passes its target
   paths, which add to those. Apply Convene's changed-instructions rule before quoting entries in
