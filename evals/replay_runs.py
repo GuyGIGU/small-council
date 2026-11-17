@@ -70,7 +70,8 @@ class Chair:
                                   "input": {"command": " ".join(["council"] + [typed(w) for w in words]),
                                             "description": "council " + words[0]}}])
         code, out, err = self.helper(*words)
-        self._line("user", [{"type": "tool_result", "tool_use_id": ident, "content": (out + err).strip(),
+        lead = "Exit code %d\n" % code if code else ""          # as Claude Code writes a failed call's result
+        self._line("user", [{"type": "tool_result", "tool_use_id": ident, "content": lead + (out + err).strip(),
                              "is_error": code != 0}])
         return out
 
