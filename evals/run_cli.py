@@ -273,12 +273,13 @@ def new_repo(base, name):
 
 
 def scaffold_case(tmp, name, label="judgment fixture"):
-    """A suite case's scaffold.sh run in a new folder under tmp: the case's repo, as a model run would get it."""
+    """A suite case's scaffold.sh run in a new folder under tmp: the case's repo, as a model run would get it. A
+    scaffold whose gates run Python is handed this one (COUNCIL_EVAL_PYTHON): python3 can be the Store's stub."""
     repo = os.path.join(tmp, name)
     os.makedirs(repo)
     script = os.path.join(ROOT, "evals", "suite", name, "scaffold.sh")
-    proc = subprocess.run([BASH, script], cwd=repo, env=GIT_ENV, capture_output=True,
-                          text=True, encoding="utf-8", errors="replace", timeout=120)
+    proc = subprocess.run([BASH, script], cwd=repo, env=dict(GIT_ENV, COUNCIL_EVAL_PYTHON=slash(sys.executable)),
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     check(label + ": " + name + " scaffolds successfully", proc.returncode == 0, proc.stdout + proc.stderr)
     if proc.returncode != 0:
         raise RuntimeError("cannot check an unscaffolded " + label)

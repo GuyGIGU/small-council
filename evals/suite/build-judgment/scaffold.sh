@@ -123,6 +123,11 @@ run: fixture-plan
 | **Touches** | billing/legacy_stats.py, tests/test_stats.py |
 | **Done when** | average([]) returns None, nonempty averages retain their results, and the tests gate passes. |
 EOF
+# run_cli.py hands over the Python that runs it: python3 can be the Microsoft Store's stand-in on Windows.
+if [ -n "${COUNCIL_EVAL_PYTHON:-}" ]; then
+  sed "s#\`python3 #\`'$COUNCIL_EVAL_PYTHON' #g" .council/council.config.md > .council/config.tmp
+  mv .council/config.tmp .council/council.config.md
+fi
 printf 'runs/\nasks/\n' > .council/.gitignore
 git add -A
 git commit -q -m "statistics baseline and plan"
