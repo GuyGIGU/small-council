@@ -1,9 +1,13 @@
+import contextlib
+import io
 import unittest
 from pathlib import Path
 
 import support
 
 from council.records import config, sharing
+
+config.hush()          # a reader's note on stderr is one test's business (test_a_reader_says_once_what_it_used)
 
 
 class ConfiguredTest(support.Scratch):
@@ -42,7 +46,7 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.agent_cap(lower), 7)
         self.assertEqual(config.agent_cap(self.home("- agent cap: 0\n")), 10)
         self.assertEqual(config.agent_cap(self.home("- agent cap: 99999999999999999999\n")), 10)
-        self.assertEqual(config.agent_cap(self.home("- agent cap: many\n- agent cap: 4\n")), 4)
+        self.assertEqual(config.agent_cap(self.home("- agent cap: many\n- agent cap: 4\n")), 10)   # the first counts
         self.assertEqual(config.agent_cap(self.home("- agent cap: " + "9" * 5000 + "\n")), 10)   # past int()'s limit
 
     def test_build_tier(self) -> None:
@@ -77,8 +81,9 @@ class ConfiguredTest(support.Scratch):
 
     def test_seat_models_and_sharing(self) -> None:
         self.assertEqual(config.seat_models(self.home("- seat models: on\r\n")), "on")
-        self.assertEqual(config.seat_models(self.home("- seat models: on # yes\n")), "off")
-        self.assertEqual(config.seat_models(self.home("- seat models: On\n")), "off")
+        self.assertEqual(config.seat_models(self.home("- seat models: on # yes\n")), "on")
+        self.assertEqual(config.seat_models(self.home("- seat models: On\n")), "on")
+        self.assertEqual(config.seat_models(self.home("- seat models: yes\n")), "off")
         for line, want in (("Just Me", "just me"), ("just-me (this laptop)", "just me"), ("private", "just me"),
                            ("team", "team"), ("just meh", "team"), ("", "team")):
             self.assertEqual(sharing.sharing(self.home("- sharing: {}\r\n".format(line))), want, line)
@@ -90,6 +95,52 @@ class ConfiguredTest(support.Scratch):
         self.assertIsNone(config.limit_seconds("0"))
         self.assertIsNone(config.limit_seconds("12345678"))
         self.assertEqual(config.limit_seconds("2 Hours"), 7200)
+
+
+class OneLineReaderTest(support.Scratch):
+    """Every setting through one `- key: value` reader (CODE-RECORDS-1, -2, -3): the key in any capitals, a `# note`
+    or `(note)` after the value left out, the value in any capitals; a value it still can't read is named."""
+
+    def home(self, text: str) -> Path:
+        self.write(".council/council.config.md", text)
+        return self.tmp / ".council"
+
+    def test_capitals_and_notes(self) -> None:
+        self.assertEqual(config.agent_cap(self.home("- Agent cap: 3\n")), 3)
+        self.assertEqual(config.agent_cap(self.home("* agent CAP: 3  # tight\n")), 3)
+        self.assertEqual(config.build_tier(self.home("- Build tier: full\n")), "full (config)")
+        self.assertEqual(config.checking(self.home("- checking: per task  # risky\n")), "per task (config)")
+        self.assertEqual(config.seat_models(self.home("- Seat Models: On (yes)\n")), "on")
+        self.assertEqual(sharing.sharing(self.home("- Sharing: just me\n")), "just me")
+        self.assertTrue(config.notifications_off(self.home("- NOTIFICATIONS: off (phone)\n")))
+        self.assertEqual(config.gate_time_limit(self.home("- Gate time limit: 15m  # ci is slow\n")), (900, "15m"))
+        self.assertEqual(config.worker_estimate(self.home("- Estimate per worker: 150k (measured)\n")), 150000)
+
+    def test_headings_in_any_capitals_with_a_note(self) -> None:
+        for head in ("## Hard rules", "## Hard Rules", "## HARD RULES", "## Hard rules (non-negotiable)"):
+            self.assertEqual(config.hard_rules(self.home(head + "\n- never write to prod\n## Notes\n")),
+                             ["- never write to prod"], head)
+        roster = "## ROSTER (twelve)\n| Seat | Slug |\n|---|---|\n| Docs | doc |\n"
+        self.assertEqual(config.roster_table(self.home(roster)), [("Docs", "doc", "", "")])
+
+    def test_a_value_it_cannot_read_is_named(self) -> None:
+        home = self.home("# c\n## Run preferences\n- agent cap: three\n- build tier: heavy\n- sharing: everyone\n"
+                         "- pushes: on\n- open items: later\n- models: builder=gpt\n")
+        self.assertEqual([(p.key, p.said, p.line) for p in config.problems(home)],
+                         [("agent cap", "three", 3), ("build tier", "heavy", 4), ("sharing", "everyone", 5),
+                          ("open items", "later", 7), ("models", "builder=gpt", 8)])
+        template = (support.SRC.parent / "references" / "templates" / config.NAME).read_text(encoding="utf-8")
+        self.assertEqual(config.problems(self.home(template)), [])
+
+    def test_a_reader_says_once_what_it_used(self) -> None:
+        config.speak()
+        said = io.StringIO()
+        with contextlib.redirect_stderr(said):
+            self.assertEqual(config.agent_cap(self.home("- agent cap: three\n")), 10)
+            config.agent_cap(self.tmp / ".council")
+        config.hush()
+        self.assertEqual(said.getvalue(), "council: council.config.md line 1, `- agent cap: three`, isn't a whole "
+                         "number of agents, such as 10 — 10 is used; council doctor lists such lines\n")
 
 
 class StatusReadingTest(support.Scratch):

@@ -32,6 +32,18 @@ class Scratch(unittest.TestCase):
         folder.mkdir(parents=True)
         return folder
 
+    def together(self, script: str, *each: str) -> list[str]:
+        """Run the Python script once per word in each, all at the same moment, each its own process with src/ on its
+        path and its word as sys.argv[1]; every process's stderr (all '' when each one finished cleanly)."""
+        import subprocess
+        procs = [subprocess.Popen([sys.executable, "-c", "import sys; sys.path.insert(0, %r)\n" % str(SRC) + script,
+                                   word], cwd=str(self.tmp), stderr=subprocess.PIPE) for word in each]
+        said = []
+        for proc in procs:
+            err = proc.communicate(timeout=120)[1].decode("utf-8", "replace")
+            said.append(err if proc.returncode == 0 else "exit %d: %s" % (proc.returncode, err))
+        return said
+
 
 
 def symlink_or_skip(test: unittest.TestCase, link: Path, target: Path, directory: bool = False) -> None:
