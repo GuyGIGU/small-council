@@ -4,9 +4,11 @@ Read through the audit's own reader (audit.read_transcript, audit.window), so th
 main thread and nothing else: no agent's own lines, no lines before the run opened or after the turn that closed it.
 Each line keeps its time and what the audit reads of it. A prompt is a stand-in of the same shape (a slash
 command's tags kept). A Bash or PowerShell command keeps its helper calls word for word and stands in for every other
-word (anon.command), checked to read as the same calls. A tool's result keeps only the helper's lines (`council: …`,
-`Status: …`, `closed <run> …`) and an `Exit code` lead, paths as placeholders; the Chair's text is a stand-in, but
-for a status line it passed on, which is kept as the line itself. Other tools keep their name; an agent its type.
+word (anon.command), checked to read as the same calls. The result of a call that ran the helper keeps only its lines
+(`council: …`, `Status: …`, `closed <run> …`), redacted (redact.said) with paths as placeholders, and an `Exit code`
+lead; any other result keeps that lead alone, as a project's own output may say `Status:` with a host or a token in it.
+The Chair's text is a stand-in, but for a helper's status line it passed on, which is kept as that line. Other tools
+keep their name; an agent its type.
 """
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ from council.commands.audit_steps import AGENTS, block_text
 from council.commands.audit_calls import heredoc_free, invocations
 from council.commands.audit_checks import Run
 from council.records import anon as anonymous
+from council.records import redact
 
 NAME = "transcript.jsonl"
 KEPT = re.compile(r"^(?:council: |Status: |closed \S+ )")
@@ -32,7 +35,11 @@ def lines(source: Path, run: Run, anon: anonymous.Anon, keep: Collection[str]) -
     entries, sessions = audit.read_transcript(source)
     part = audit.window(entries, audit.spans(run))
     session = anon.session(run.field("session") or next(iter(sorted(sessions)), ""))
-    statuses = [line[len("Status:"):].strip() for _, kind, block in part if kind == "result"
+    helper = {block.get("id") for _, kind, block in part if kind == "use" and block.get("name") in SHELLS
+              and isinstance(block.get("input"), dict) and invocations(str(block["input"].get("command", "")))}
+    helper.discard(None)
+    statuses = [redact.said(line[len("Status:"):].strip()) for _, kind, block in part
+                if kind == "result" and block.get("tool_use_id") in helper
                 for line in block_text(block.get("content")).splitlines() if line.startswith("Status:")]
     out = []
     for when, kind, payload in part:
@@ -41,21 +48,25 @@ def lines(source: Path, run: Run, anon: anonymous.Anon, keep: Collection[str]) -
         if when is not None:
             line["timestamp"] = when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + \
                 "%03dZ" % (when.microsecond // 1000)
-        line["message"] = {"role": line["type"], "content": _content(kind, payload, anon, keep, statuses)}
+        line["message"] = {"role": line["type"], "content": _content(kind, payload, anon, keep, statuses, helper)}
         out.append(line)
     return out
 
 
-def _content(kind: str, payload: Any, anon: anonymous.Anon, keep: Collection[str], statuses: list[str]) -> Any:
+def _content(kind: str, payload: Any, anon: anonymous.Anon, keep: Collection[str], statuses: list[str],
+             helper: Collection[str]) -> Any:
     if kind == "prompt":
         return anonymous.shape(payload)
     if kind == "text":
         relayed = [s for s in statuses if s and s[:40] in " ".join(payload.split())]
-        return [{"type": "text", "text": "Status: " + relayed[0] if relayed else anonymous.shape(payload[:TEXT_MOST])}]
+        return [{"type": "text", "text": "Status: " + anon.paths(relayed[0]) if relayed
+                 else anonymous.shape(payload[:TEXT_MOST])}]
     if kind == "use":
         return [{"type": "tool_use", "id": payload.get("id", ""), "name": payload.get("name", ""),
                  "input": _input(payload, anon, keep)}]
-    kept = [anon.paths(line) for line in block_text(payload.get("content")).splitlines() if KEPT.match(line)]
+    ran = payload.get("tool_use_id") in helper
+    kept = [anon.paths(redact.said(line)) for line in block_text(payload.get("content")).splitlines()
+            if ran and KEPT.match(line)]
     lead = block_text(payload.get("content")).split("\n", 1)[0]
     if lead.startswith("Exit code "):
         kept.insert(0, lead)
