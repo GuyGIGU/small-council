@@ -170,9 +170,9 @@
    "longest_name": "parse"
   },
   "src/council/commands/close_report.py": {
-   "lines": 53,
-   "longest": 16,
-   "longest_name": "audit"
+   "lines": 60,
+   "longest": 22,
+   "longest_name": "chair"
   },
   "src/council/commands/closed.py": {
    "lines": 14,
@@ -770,7 +770,7 @@
    "longest_name": "with_sharing"
   },
   "src/council/records/stages.py": {
-   "lines": 61,
+   "lines": 85,
    "longest": 12,
    "longest_name": "required"
   },
@@ -820,7 +820,7 @@
    "longest_name": ""
   },
   "src/council/views/snapshot.py": {
-   "lines": 202,
+   "lines": 204,
    "longest": 31,
    "longest_name": "claim_index_stale"
   },
@@ -845,7 +845,7 @@
    "longest_name": "roster_names"
   },
   "src/council/views/status_usage.py": {
-   "lines": 164,
+   "lines": 165,
    "longest": 39,
    "longest_name": "usage_of"
   },
