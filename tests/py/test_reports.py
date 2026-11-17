@@ -78,15 +78,17 @@ class MapTest(support.Scratch):
         touched = map_file.touch(self.tmp, [("src/", "moved")], head, ["src/", "docs/"], "2026-11-16")
         self.assertEqual(touched, map_file.Touched(False, ["docs/"]))
         after = (self.tmp / "map.md").read_text(encoding="utf-8")
-        self.assertEqual(after, before + "\n\n## Changes 2026-11-16\n- src/: moved\n")
+        self.assertEqual(after, before + "\n\n## Changes 2026-11-16\n- src/: moved (at %s)\n" % head[:12])
         self.assertEqual(map_file.ways(after), [map_file.Way("Parse", "src/", "the reader", "src/a.py")])
         touched = map_file.touch(self.tmp, [("docs/", "grew")], head, ["docs/"], "2026-11-16")
         self.assertEqual(touched, map_file.Touched(True, []))
         self.assertEqual((self.tmp / "map.md").read_text(encoding="utf-8"),
-                         before.replace(built, head) + "\n\n## Changes 2026-11-16\n- src/: moved\n- docs/: grew\n")
+                         before.replace(built, head) + "\n\n## Changes 2026-11-16\n- src/: moved (at {0})\n"
+                         "- docs/: grew (at {0})\n".format(head[:12]))
         map_file.touch(self.tmp, [("src/", "again")], head, [], "2026-11-17")
         self.assertTrue((self.tmp / "map.md").read_text(encoding="utf-8").endswith(
-            "- docs/: grew\n\n## Changes 2026-11-17\n- src/: again\n"))
+            "- docs/: grew (at {0})\n\n## Changes 2026-11-17\n- src/: again (at {0})\n".format(head[:12])))
+        self.assertEqual(map_file.touches(self.tmp), {"src/": head[:12], "docs/": head[:12]})
         self.assertEqual(map_file.noted(self.tmp, "2026-11-17"), {"src/"})
         self.assertEqual(map_file.noted(self.tmp, "2026-11-16"), {"src/", "docs/"})
 
@@ -95,7 +97,7 @@ class MapTest(support.Scratch):
         map_file.touch(self.tmp, [("README.md", "said")], "e" * 40, [], "2026-11-16")
         self.assertEqual((self.tmp / "map.md").read_bytes(),
                          b"# Map\r\nmap-commit: " + b"e" * 40 + b" (built)\r\n\r\n## Changes 2026-11-16\r\n"
-                         b"- README.md: said\r\n")
+                         b"- README.md: said (at " + b"e" * 12 + b")\r\n")
 
 
 class LedgerTest(support.Scratch):
