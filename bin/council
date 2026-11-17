@@ -39,14 +39,14 @@ done
 # path (decision=/x reached Python as decision=C:/Program Files/Git/x), so MSYS2_ARG_CONV_EXCL='*' stops
 # that; COUNCIL_ARG_CONV_EXCL hands Python the caller's own ("set:<value>", empty when unset), which a
 # project's command gets back. COUNCIL_BASH is this bash, for the commands that print or start it. COUNCIL_SCRIPT=script
-# runs a tool (commands/script.py, for the seat gate) instead of a command; it is not passed on.
+# runs a tool (commands/script.py, for the seat gate) instead of a command; script.py drops it.
 ran="${TMPDIR:-/tmp}/council-ran.$$"
 for candidate in $candidates; do
   command -v "$candidate" >/dev/null 2>&1 || continue
   rc=0
   [ ! -e "$ran" ] || rm -f "$ran"
   COUNCIL_ARG_CONV_EXCL="${MSYS2_ARG_CONV_EXCL+set:$MSYS2_ARG_CONV_EXCL}" COUNCIL_RAN="$ran" COUNCIL_BASH="$BASH" \
-    COUNCIL_SCRIPT= MSYS2_ARG_CONV_EXCL='*' "$candidate" -E -s "$entry/${COUNCIL_SCRIPT:+commands/}${COUNCIL_SCRIPT:-__main__}.py" ${1+"$@"} || rc=$?
+    MSYS2_ARG_CONV_EXCL='*' "$candidate" -E -s "$entry/${COUNCIL_SCRIPT:+commands/}${COUNCIL_SCRIPT:-__main__}.py" ${1+"$@"} || rc=$?
   case "$rc" in 85|126|127|49) [ ! -e "$ran" ] || { rm -f "$ran"; exit "$rc"; } ;; *) exit "$rc" ;; esac
 done
 printf 'council: %s\n' "$label needs Python 3.8 or newer, and none is on PATH — install it (python.org), check that python3 --version or python --version says 3.8 or later, then run this again" >&2

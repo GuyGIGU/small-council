@@ -77,6 +77,8 @@ def captured(name: str, words: list[str]) -> tuple[int, str, str]:
 
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
+    import os
+    os.environ.pop("COUNCIL_SCRIPT", None)                      # bin/council's switch to here: not a tool's command's
     sys.path[0] = str(Path(__file__).resolve().parents[2])      # the package's folder, not this file's
     for stream in (sys.stdout, sys.stderr):
         if stream is not None:                                  # a windowless Python (pythonw) may have none
