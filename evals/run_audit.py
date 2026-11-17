@@ -270,6 +270,7 @@ def build_clean(base):
     run = Path(out.strip().splitlines()[-1]) if code == 0 and out.strip() else None
     if run is None:
         return repo, None, steps
+    OPENED[run.name] = out + err                  # run open's whole output, its advisory lines on stderr included
     write(run / "run-plan.tsv", plan_text([(k, i, f, v) for k, i, f, v in PLAN2] + [("run", "run", "id", run.name)]))
     step("run", "plan", "check")
     step("state", "size=" + SIZE)
@@ -300,17 +301,20 @@ def build_clean(base):
 
 
 SIZE = "squad — 1 seat + 1 verifier, est. ~260k tokens"
+OPENED = {}
 
 
-def transcript_clean(path, run, sized="first", questions=1):
+def transcript_clean(path, run, sized="first", questions=1, as_opened=False):
     """The Chair who does what the method says: the size and cost recorded before the first dispatch (sized="late":
     after it), the card at that dispatch and after close, and `questions` AskUserQuestion calls at Deliver (one:
-    the rulings as one question)."""
+    the rulings as one question). as_opened: run open's result is its real output, advisory lines and all, and
+    the helper refuses nothing else."""
     events = [line.split("\t") for line in (run / "events.tsv").read_text(encoding="utf-8").splitlines()[1:]]
     opened, closed = utc(events[0][2]), utc(events[-1][2])
     log = Transcript("session-clean", opened - timedelta(seconds=30))
     log.prompt("/council-review the change on this branch")
-    log.at(opened - timedelta(seconds=2)).bash("council run open council-review", str(run))
+    log.at(opened - timedelta(seconds=2)).bash("council run open council-review",
+                                               OPENED[run.name] if as_opened else str(run))
     if sized == "first":
         log.bash('council state size="%s"' % SIZE, "state: size recorded")
     log.bash("council gate tests -- true", "gate tests: pass (exit 0, 0s)")
@@ -323,8 +327,9 @@ def transcript_clean(path, run, sized="first", questions=1):
     log.call("mcp__visualize__show_widget", {"widget_code": "<div>status card</div>"}, "shown")
     if sized == "late":
         log.bash('council state size="%s"' % SIZE, "state: size recorded")
-    log.bash("council seat hunt done tokens=58k",
-             "council: tokens=58k is a rounded figure — pass the exact count the usage report gives (like 159812)")
+    if not as_opened:
+        log.bash("council seat hunt done tokens=58k",
+                 "council: tokens=58k is a rounded figure — pass the exact count the usage report gives (like 159812)")
     log.bash("council seat hunt done tokens=58000", "seats: 1 of 3 done · ~58k tokens so far")
     log.call("Agent", {"subagent_type": "small-council:council-verifier", "description": "Verify", "prompt": "claims",
                        "run_in_background": True}, "Async agent launched. agentId: v9f8e7d6c5b4a3f2e")
@@ -458,6 +463,7 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
         transcript_clean(log2, run2)
         for name, sized, questions in (("late", "late", 1), ("asked-twice", "first", 2), ("silent", "first", 0)):
             transcript_clean(steps_log / (name + ".jsonl"), run2, sized=sized, questions=questions)
+        transcript_clean(steps_log / "as-opened.jsonl", run2, as_opened=True)
         silent = [json.loads(line) for line in log2.read_text(encoding="utf-8").splitlines()]
         for line in silent:                             # the same Chair, who passes on none of the status text
             for block in line["message"]["content"] if isinstance(line["message"]["content"], list) else []:
@@ -543,6 +549,12 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
                               "Rulings as one question")
         check("rulings: no question at Deliver passes (no rulings to ask)", verdict == "pass"
               and "no rulings were asked" in words, words)
+        advisory = [line for line in OPENED.get(run2.name, "").splitlines() if line.startswith("council: ")]
+        verdict, words = item(council(repo, "run", "audit", "--transcript", str(steps_log / "as-opened.jsonl"))[1],
+                              "Helper refusals tried again")
+        check("refusals: run open's advisory lines (how the run is going, save the request) are notes, not refusals",
+              any("if the user asks how the run is going" in line for line in advisory)
+              and verdict == "pass" and words == "the helper refused nothing", [verdict, words, advisory])
     code, out, err = council(repo, "run", "audit")
     check("clean run: without a transcript it says how to add one, and which session drove the run",
           code == 0 and "No transcript given: pass --transcript" in out, out + err)

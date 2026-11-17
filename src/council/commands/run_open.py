@@ -16,6 +16,7 @@ ASKED = closing.MODES                              # the modes that save the use
 MODES = ASKED + ("council-init", "test-architect", "context-core")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
+STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead; the audit reads it as a note
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -60,8 +61,8 @@ def main(args: cli.Args, words: list[str]) -> int:
     if paused:
         cli.warn("council: a paused run is also open here (%s) — it stays paused" % paused)
     cli.say(run)
-    cli.warn("council: if the user asks how the run is going: council status --run %s (with a show_widget tool, call "
-             "its read_me, then pass it council status --widget --run %s)" % (name, name))
+    cli.warn("council: %s: council status --run %s (with a show_widget tool, call its read_me, then pass it "
+             "council status --widget --run %s)" % (STATUS_HINT, name, name))
     if mode in ASKED:
         cli.warn("council: save the user's request word for word in %s/%s before anything else" % (run, request.ASK))
     return 0

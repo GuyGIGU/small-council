@@ -34,6 +34,7 @@ from council.commands.audit_checks import (Run, Say, agent_limit, agents_on_reco
                                            deliverable, gates, listed, seats_on_record, stages, token_figures)
 from council.commands.audit_steps import (Entry, ToolCall, block_text, closing_card, first_card, rulings_once,
                                           size_first)
+from council.commands.run_open import STATUS_HINT
 from council.records import audit_file, paths
 from council.records.audit_file import FAIL, LATER, PASS, WARN
 
@@ -41,8 +42,9 @@ Span = Tuple[datetime, Optional[datetime]]
 # The helper's advisory lines on stderr ("council: ..." without a refusal): everything else on a
 # "council:" line is a refusal (die, exit 2) or a record that failed to write. A lock refusal is
 # answered by waiting, not by a second call, so it is listed here too. evals/run_audit.py checks that
-# each lead is still the helper's wording.
-NOTE_LEADS = ("save the user's request", "another run is in progress", "a paused run is also open", "its code root is ",
+# each lead is still the helper's wording; run open's status hint is taken from where run open writes it.
+NOTE_LEADS = (STATUS_HINT, "save the user's request", "another run is in progress", "a paused run is also open",
+              "its code root is ",
               "first dispatch of this run", "run closed \u2014 show the user", "this run has used",
               "seats still marked", "the claim index is missing", "no request was filed", "no build log names",
               "the log has no", "cleared a gate lock", "WARNING",
