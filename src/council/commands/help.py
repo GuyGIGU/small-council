@@ -5,7 +5,7 @@ import sys
 
 from council.commands import cli
 
-COUNCIL_VERSION = "0.23.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
+COUNCIL_VERSION = "1.0.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
 
 USAGE = """\
 council — the Small Council's helper (Python 3.8+ and git)

@@ -9437,7 +9437,9 @@ def runs_build_seat_fix_stop(tmp):
     council(fs, "state", "decision=fix the webhook reader first, as its own task")
     code, out, err = council(fs, "seat", "task-1", "done", "agent=f1", "tokens=21000")
     starts = []
-    for slug in ("task-1", "task-2", "task-3"):                # one at a time: each is queued, then set aside
+    # One at a time: each is queued, then set aside. The stopped seat goes last: started again and set aside, its
+    # stop's moment is that later one, which the decision covers only within the same minute of the clock.
+    for slug in ("task-2", "task-3", "task-1"):
         starts.append(council(fs, "seat", slug, "queued"))
         council(fs, "seat", slug, "skipped")
     check("seat: once the user's decision is on record, the stop is released and all three start — a late usage "

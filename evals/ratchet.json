@@ -105,7 +105,7 @@
    "longest_name": "save"
   },
   "src/council/commands/audit.py": {
-   "lines": 357,
+   "lines": 359,
    "longest": 44,
    "longest_name": "main"
   },
@@ -115,7 +115,7 @@
    "longest_name": "invocations"
   },
   "src/council/commands/audit_checks.py": {
-   "lines": 375,
+   "lines": 387,
    "longest": 38,
    "longest_name": "agents_on_record"
   },
@@ -435,7 +435,7 @@
    "longest_name": "run_folder_only"
   },
   "src/council/commands/pushes.py": {
-   "lines": 43,
+   "lines": 63,
    "longest": 13,
    "longest_name": "main"
   },

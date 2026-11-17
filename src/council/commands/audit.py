@@ -8,7 +8,8 @@ every stage entered in order; closed complete only after Deliver; every agent on
 before it finished; one check (gate) at a time, each once per stage; a deliverable; for a review,
 plan or research run the claim index, with a verifier's verdict on every kept claim; every seat the
 plan selected on record, the Chair's own included; every agent seat with a token figure; the agent
-limit. With a Claude Code session transcript it reads the main thread from the turn that opened the
+limit; a push let past the freeze, as a warning.
+With a Claude Code session transcript it reads the main thread from the turn that opened the
 run to the end of the turn that closed it. The Chair's steps (audit_steps.py): the size and cost recorded before
 the first dispatch, the status card at the first dispatch, the rulings as one question at Deliver, a message from
 the user before each go past the cap, the closing card after close. How it called the helper: by its plain name
@@ -32,7 +33,8 @@ from typing import Any, Iterator, Optional, Tuple
 from council.clock import iso_moment
 from council.commands.audit_calls import invocations
 from council.commands.audit_checks import (Run, Say, agent_limit, agents_on_record, claim_index, clock, closing,
-                                           deliverable, gates, listed, seats_on_record, stages, token_figures)
+                                           deliverable, gates, listed, pushes_allowed, seats_on_record, stages,
+                                           token_figures)
 from council.commands.audit_steps import (Entry, ToolCall, block_text, cap_goes, closing_card, exit_of, first_card,
                                           rulings_once, size_first)
 from council.records import audit_file, paths
@@ -337,7 +339,7 @@ def main(argv: list[str]) -> int:
         items.append((verdict, label, words))
 
     for check in (stages, closing, agents_on_record, gates, deliverable, claim_index, seats_on_record, token_figures,
-                  agent_limit):
+                  agent_limit, pushes_allowed):
         check(run, say)
     split, span = len(items), ""
     if args.transcript is not None:

@@ -414,7 +414,7 @@ SETTINGS: dict[str, tuple[str, Callable[[str], bool]]] = {
     "memory budget": ("a size from 1 to 1024 KB, such as 25 KB", lambda value: memory_kb(value) is not None),
 }
 # Settings an older plugin read that this one doesn't: the key, and what became of it.
-RETIRED = {"context packs": "context packs were removed (0.24); nothing replaced them, so the line does nothing"}
+RETIRED = {"context packs": "context packs were removed (1.0); nothing replaced them, so the line does nothing"}
 
 
 def problems(home: str | Path | None) -> list[Pref]:

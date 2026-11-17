@@ -1,7 +1,7 @@
 """The run's own records read back for council run audit: every stage entered in order, closed after Deliver,
 agents on record while they ran, one check at a time, a deliverable, the claim index, every seat on record, every
-agent seat with a token figure, the agent limit. Each check says pass, warn or FAIL through say(verdict, label,
-words)."""
+agent seat with a token figure, the agent limit, and any push let past the freeze. Each check says pass, warn or FAIL
+through say(verdict, label, words)."""
 from __future__ import annotations
 
 import re
@@ -373,3 +373,15 @@ def token_figures(run: Run, say: Say) -> None:
     fix = 'council correct <seat> tokens=<exact> agents=<exact> evidence="<source>" --run ' + run.name
     lead = "%d seat(s) ran as agents with no token figure, so the run total and the ledger leave them out"
     say(FAIL, label, "%s: %s; put one right with %s" % (lead % len(gaps), usage_gaps.words(gaps), fix))
+
+
+def pushes_allowed(run: Run, say: Say) -> None:
+    """A push or PR let past the push freeze with COUNCIL_ALLOW_PUSH=1 (run.push_allowed): a warning, never a FAIL —
+    the escape is the user's to give — so a reader can check that each rested on their word. Nothing when there
+    were none, so the report of every other run reads as before."""
+    found = [e.get("value", "") for e in run.of_type("run.push_allowed")]
+    if not found:
+        return
+    counts = ", ".join("%s %d" % (what, found.count(what)) for what in sorted(set(found)))
+    say(WARN, "Pushes past the freeze", "%d went ahead with COUNCIL_ALLOW_PUSH=1 while the push freeze held (%s); "
+        "each should rest on the user's word" % (len(found), counts))
