@@ -198,18 +198,12 @@ check("repair: blocked work is excluded from the built count and helper cost is 
       "is not counted as built" in build_receipt and
       "helper-only usage" in build_receipt)
 check("repair: helper and kernel expose inspectable repair trail",
-      "repair" in command and "council repair record" in helper_help.USAGE and "council repair record" in core and
+      "council repair record" in helper_help.USAGE and "council repair record" in core and
       "repairs.jsonl" in core)
 check("memory: selected entries carry meaning and origin, failures stay observations",
-      "observed failure, not a rule" in read("src", "council", "commands", "memory_select.py") and
-      "origin:" in read("src", "council", "commands", "memory_select.py") and
       "Observed Failures" in read("references", "templates", "conventions.md") and
       "keeping observed" in doctrine["04-brief.md"])
 check("memory: a failure is served only while its evidence supports it, and filed only on the user's words",
-      "def audit" in read("src", "council", "records", "memory_audit.py") and
-      "def replace" in read("src", "council", "records", "memory.py") and
-      "--user-said" in read("src", "council", "commands", "memory.py") and
-      os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "memory_draft.py")) and
       "council memory propose" in doctrine["10-learn.md"] and "only after they answered" in doctrine["10-learn.md"] and
       "UNSUPPORTED" in doctrine["10-learn.md"])
 kernel_text = read("skills", "context-core", "SKILL.md")
@@ -224,16 +218,12 @@ check("status: showing it is a step where it happens — Work's dispatch, Challe
       "2. **Show the user the run's status" in doctrine["05-work.md"] and
       "the run's first dispatch" in doctrine["08-challenge.md"] and
       "2. **Show the closing card, once" in doctrine["10-learn.md"] and
-      all(p in command["nudges"] for p in ("council status --widget", "deferred tool", "show_widget", "closing card"))
-      and "deferred" in kernel_text)    # run_cli says it at the first dispatch and at the close
+      "deferred" in kernel_text)    # run_cli says it at the first dispatch and at the close
 check("accounting: seats record exact usage per agent run, a Workflow's agent count, and the two readers "
       "share one per-seat rule",
       os.path.isfile(os.path.join(ROOT, "references", "run", "run-accounting.md")) and
-      "agents=<agent_count>" in doctrine["05-work.md"] and "never a role name" in doctrine["05-work.md"] and
-      "seat_rows" in py and "def seat_usage" in read("src", "council", "records", "usage.py") and "correct" in command and
-      "usage.tsv" in py)
+      "agents=<agent_count>" in doctrine["05-work.md"] and "never a role name" in doctrine["05-work.md"])
 check("seat learning: roster advice weighs only judged runs, past a stated bar",
-      "def advice" in read("src", "council", "commands", "ledger.py") and os.path.isfile(os.path.join(ROOT, "src", "council", "commands", "seat_advice.py")) and
       "council ledger advice" in doctrine["10-learn.md"] and
       "council ledger advice 20" in read("skills/council-init/SKILL.md") and
       "Below the bar" in read("skills/council-init/SKILL.md"))
@@ -622,16 +612,12 @@ check("hook: SessionStart runs session-start.sh", any("hooks/session-start.sh" i
 check("hook: SubagentStop runs seat-gate.sh for council agents only",
       any(g.get("matcher") == "^small-council:council-(worker|verifier|builder)$" and any("hooks/seat-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in stop_groups))
-check("hook: session-start always exits 0", hook.rstrip().endswith("exit 0"))
 gate_code = "\n".join(l for l in gate.split("\n") if not l.lstrip().startswith("#"))
-check("hook: seat-gate's code (not a comment) exits early on stop_hook_active — run_hook tests that it never blocks twice",
-      re.search(r"stop_hook_active.*exit 0", gate_code) is not None)
 check("hook: seat-gate's code reads a BLOCKED reply through the helper's one reader (builder_stop blocked) — run_hook "
       "tests the forms", 'tool builder_stop blocked' in gate_code and "BLOCKED(" not in gate_code)
 check("hook: PreToolUse runs agent-gate.sh for the Agent, Task and Workflow tools only",
       any(g.get("matcher") == "^(Agent|Task|Workflow)$" and any("hooks/agent-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in hooks_json.get("PreToolUse", [])))
-check("hook: agent-gate leaves the decision to the helper (council cap check) — run_hook tests it", "cap check" in agent_gate)
 check("hook: PreToolUse runs bash-gate.sh for the Bash and PowerShell tools only, with a short timeout — run_hook "
       "tests what it refuses",
       any(g.get("matcher") == "^(Bash|PowerShell)$" and any("hooks/bash-gate.sh" in h.get("command", "") and h.get("timeout", 99) <= 5

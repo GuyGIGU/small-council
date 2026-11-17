@@ -3353,8 +3353,10 @@ def runs_lost_hints(tmp):
     run = out.strip().splitlines()[-1]
     write_plan(run, selected=("chair", "w1"))
     code, out, err = council(lh, "seat", "w1", "running", "agent=a1")
-    check("seat (first dispatch): the reminder to show the card says to give the text if the card fails to render",
-          code == 0 and "fails to render" in err and "council status" in err, err)
+    check("seat (first dispatch): the reminder to show the card hands `council status --widget` to a show_widget tool, "
+          "which may be a deferred tool, and says to give the text if the card fails to render",
+          code == 0 and "fails to render" in err and "council status --widget" in err and "show_widget" in err
+          and "deferred tool" in err, err)
     code, out, err = council(lh, "state", "waiting=which of the two plans?")
     check("state waiting=: the alert reminder says how the wait is cleared — a stage change, or council state waiting=",
           code == 0 and "council state waiting=" in err and "clears" in err, err)
@@ -3363,7 +3365,7 @@ def runs_lost_hints(tmp):
     to_deliver(lh)
     code, out, err = council(lh, "run", "close")
     check("run close: the closing card's reminder says the same about a card that fails to render",
-          code == 0 and "fails to render" in err, err)
+          code == 0 and "fails to render" in err and "closing card" in err and "show_widget" in err, err)
     off = new_repo(tmp, "lost-hints-off")
     write(os.path.join(off, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- notifications: off\n")
     council(off, "run", "open", "council-review")
