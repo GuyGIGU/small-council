@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, Sequence
 
-from council.records import bytewise, home, paths, seat_files, state, synthesis_counts, usage
+from council.records import bytewise, home, locks, owners, paths, seat_files, state, synthesis_counts, usage
 from council.records.cells import lines_of
 
 NAME = "ledger.tsv"
@@ -100,23 +100,33 @@ def raw_rows(home: str | Path) -> list[list[str]] | None:
     if not where.is_file():
         return None
     try:
-        text = where.read_bytes().decode("utf-8", "surrogateescape")
+        text = where.read_bytes().decode("utf-8", "surrogateescape").lstrip("﻿")      # a BOM is no cell
     except OSError:
         return []
     return [line.split("\t") for line in bytewise.records(text)]
 
 
 def _rewrite(ledger: Path, name: str, new: bytes, failed: str) -> bool:
-    """The ledger less the run's rows, then the new rows; no lock, as the helper took none (the last write wins)."""
+    """The ledger less the run's rows, then the new rows, read and swapped in under `ledger.tsv.lock` (locks.py), so
+    two runs closing in one council home at once keep each other's rows."""
+    lock = Path(str(ledger) + ".lock")
+    if not locks.acquire(lock):
+        sys.stdout.flush()
+        sys.stderr.write("council: could not write %s — %s: %s\n"
+                         % (ledger.as_posix(), failed, owners.unavailable(lock).replace(str(lock), lock.as_posix())))
+        return False
     try:
         old = bytewise.records(bytewise.read(ledger.read_bytes()) if ledger.is_file() else HEADER)
         kept = "".join(line + "\n" for line in old if (line.split("\t") + [""])[1] != bytewise.text(name))
         paths.atomic_write(ledger, bytewise.bytes_of(kept) + new, ".ledger.", keep_mode=True)
         return True
-    except OSError:
+    except OSError as error:
         sys.stdout.flush()
-        sys.stderr.write("council: could not write %s — %s\n" % (ledger.as_posix(), failed))
+        sys.stderr.write("council: could not write %s (%s) — %s; close what has it open, then run this again\n"
+                         % (ledger.as_posix(), error.strerror or error, failed))
         return False
+    finally:
+        locks.release(lock)
 
 
 def record(run: Path) -> int:

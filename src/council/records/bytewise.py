@@ -55,9 +55,10 @@ def lines(text: str) -> list[str]:
 
 
 def file_lines(path: str | Path, fold: bool = True) -> list[str]:
-    """A file's records (above), read as UTF-8 with a stray byte kept (surrogateescape); [] when it can't be read."""
+    """A file's records (above), read as UTF-8 with a stray byte kept (surrogateescape) and a BOM off its first line, as
+    paths.text_of reads one (a header written by PowerShell 5.1 is still the header); [] when it can't be read."""
     try:
-        return records(Path(path).read_bytes().decode("utf-8", "surrogateescape"), fold)
+        return records(Path(path).read_bytes().decode("utf-8", "surrogateescape").lstrip("﻿"), fold)
     except OSError:
         return []
 
