@@ -450,7 +450,7 @@
    "longest_name": "write_copy"
   },
   "src/council/commands/rounds.py": {
-   "lines": 147,
+   "lines": 149,
    "longest": 35,
    "longest_name": "check_round"
   },
@@ -775,7 +775,7 @@
    "longest_name": "required"
   },
   "src/council/records/state.py": {
-   "lines": 114,
+   "lines": 115,
    "longest": 14,
    "longest_name": "header"
   },
