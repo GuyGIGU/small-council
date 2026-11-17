@@ -45,7 +45,7 @@ def write_plan(run, model_rows=""):
             ("budget", slug, "tool-calls", "15", "test"),
         ])
     content = "\n".join("\t".join(row) for row in rows) + "\n" + model_rows
-    (run / "run-plan.tsv").write_text(content, encoding="utf-8", newline="\n")
+    (run / "run-plan.tsv").write_bytes((content).encode("utf-8"))
 
 
 def main():
@@ -64,7 +64,7 @@ def main():
         home = repo / ".council"
         home.mkdir()
         config = home / "council.config.md"
-        config.write_text("# Test council config\n", encoding="utf-8", newline="\n")
+        config.write_bytes(("# Test council config\n").encode("utf-8"))
         code, out, err = call(repo, "run", "open", "council-review")
         check("run opens for the plan fixture", code == 0, out + err)
         run = Path(out.strip())
@@ -73,7 +73,7 @@ def main():
         code, out, err = call(repo, "run", "plan", "check")
         check("non-inherit choice is refused by default", code == 1 and "seat model overrides are off" in out,
               out + err)
-        config.write_text("# Test council config\n- seat models: on\n", encoding="utf-8", newline="\n")
+        config.write_bytes(("# Test council config\n- seat models: on\n").encode("utf-8"))
         code, out, err = call(repo, "run", "plan", "check")
         check("enabled worker model choice passes", code == 0, out + err)
         code, out, err = call(repo, "run", "plan", "show")
@@ -98,7 +98,7 @@ def main():
         check("unsupported model alias is refused", code == 1 and "must be inherit, fable, opus, sonnet or haiku" in out,
               out + err)
 
-        config.write_text("# Test council config\n- seat models: off\n", encoding="utf-8", newline="\n")
+        config.write_bytes(("# Test council config\n- seat models: off\n").encode("utf-8"))
         write_plan(run, "seat\tmapper\tpurpose\tsurvey\troutine survey\n"
                    "seat\tmapper\tmodel\thaiku\troutine survey\n")
         code, out, err = call(repo, "run", "plan", "check")
@@ -113,7 +113,7 @@ def main():
         # A finished run is not judged by today's setting: turning seat models back off must not make
         # doctor call a closed run's plan invalid. An open run with the same plan is still flagged.
         routed = "seat\tmapper\tpurpose\tmapping\tcodebase map\nseat\tmapper\tmodel\thaiku\tcodebase map\n"
-        config.write_text("# Test council config\n- seat models: on\n", encoding="utf-8", newline="\n")
+        config.write_bytes(("# Test council config\n- seat models: on\n").encode("utf-8"))
         write_plan(run, routed)
         code, out, err = call(repo, "state", "phase=deliver", "skip=this test is about what comes after Deliver")
         closed_ok = code == 0
@@ -124,7 +124,7 @@ def main():
         write_plan(second, routed)
         code, out, err = call(repo, "state", "phase=deliver", "skip=this test is about what comes after Deliver")
         check("a second routed run is open at Deliver", code == 0, out + err)
-        config.write_text("# Test council config\n- seat models: off\n", encoding="utf-8", newline="\n")
+        config.write_bytes(("# Test council config\n- seat models: off\n").encode("utf-8"))
         code, out, err = call(repo, "doctor")
         check("doctor: a closed run's plan stays valid after seat models go back off",
               "run {} has".format(run.name) not in out + err, out + err)

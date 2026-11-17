@@ -50,7 +50,8 @@ Catch what's wrong before the user sees it.
 3. **Apply the verdicts** — in the deliverable. Never renumber or delete synthesis.md's lines; the
    ledger counts them at close.
    - CONFIRMED ships.
-   - REFUTED drops. Keep it for memory: deliberate design is a candidate accepted pattern.
+   - REFUTED drops: move its line under `## Cut`, id unchanged (`council evidence check` holds the
+     run while it is kept). Keep it for memory: deliberate design is a candidate accepted pattern.
    - UNCERTAIN ships labelled, and is never dropped if its subject is protected.
    - MISCITED ships with the corrected location.
    - Any cut claim a verifier CONFIRMED (or MISCITED) is restored: move its line under `## Kept`,
@@ -63,8 +64,8 @@ Catch what's wrong before the user sees it.
    Fix missing provenance, evidence-state declarations, proof artifacts, verifier rows or conflicting
    rows.
    `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
-   If optional Python is unavailable, check the same links by hand. This applies to synthesis
-   claims in review, plan and research; build and post-game keep their own proof contracts.
+   This step is for synthesis claims in review, plan and research; build and post-game keep their
+   own proof contracts.
 6. **Verification gates**, for modes that changed code: `council gate --all --at verify`. A gate
    already green on this very tree is not run again; its line names who ran it (`--rerun` runs it).
 

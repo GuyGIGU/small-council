@@ -116,11 +116,13 @@ RETRIED = (85, 126, 127, 49)     # bin/council's python_run tries its next Pytho
 def ran(code: int) -> int:
     """The exit code of a command that ran a project's own command. One of the codes bin/council's python_run
     takes for "this Python could not start" (a gate whose tool was not found exits 127) is marked as this
-    Python's own, in the file COUNCIL_RAN names, so the command is not run again under the next Python."""
+    Python's own, in the file COUNCIL_RAN names, so the command is not run again under the next Python. The file is
+    made new (bin/council removed it): a name under a shared /tmp that is already there, a link planted there
+    included, is never opened, so no other file is written through it."""
     marker = os.environ.get("COUNCIL_RAN", "")
     if code in RETRIED and marker:
         try:
-            open(marker, "w").close()
+            os.close(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600))
         except OSError:                     # bash then tries the next Python, as it did before the marker
             return code
     return code

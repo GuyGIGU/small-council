@@ -2,6 +2,11 @@
 the run's code root (the task's last saved round unless --round names another). Files change and no record does:
 the round stays saved, and the next council patch save diffs from the last saved round's tree as before.
 
+council patch hold <task>: the edits no round holds (what the next patch save would put in task n's round) written to
+patches/T<n>-held.patch and taken off the files, all or nothing — a builder that stopped with NEEDS: leaves its
+unfinished edits out of the next task's gates and round. council patch apply <task> --held puts them back and removes
+the file, or refuses with nothing changed.
+
 `undo` and `redo` are the one way a saved round's patch comes off or goes on the files of a folder: `git apply`,
 all or nothing, naming the files that would not apply. Their callers are the two commands here and council check's
 revert check (revert_check), which undoes a task's rounds in a scratch copy of the project."""
@@ -11,7 +16,7 @@ import os
 import re
 from pathlib import Path
 
-from council import git
+from council import diff, git
 from council.commands import cli, resolve
 from council.records import home as where
 from council.records import patches
@@ -40,8 +45,8 @@ def _apply(folder: str | Path, patch: Path, reverse: bool, keep: tuple[str, ...]
     args = (["-c", "core.autocrlf=false"] if raw else []) + ["apply", "--whitespace=nowarn"] \
         + (["-R"] if reverse else []) + ["--exclude=" + GLOB.sub(r"\\\1", path) for path in keep] + [str(patch)]
     ceiling = os.path.dirname(os.path.abspath(str(folder)))
-    try:
-        git.output(folder, *args, extra={"GIT_CEILING_DIRECTORIES": ceiling})
+    try:      # git's own English words: files_named reads them, whatever the user's locale
+        git.output(folder, *args, extra={"GIT_CEILING_DIRECTORIES": ceiling, "LC_ALL": "C", "LANGUAGE": "C"})
     except git.GitError as failure:
         return files_named(str(failure))
     return []
@@ -58,7 +63,15 @@ def files_named(said: str) -> list[str]:
 
 
 def main(args: cli.Args, run: Path, verb: str, task: int) -> int:
-    """patch apply|revert: the round chosen, put on or taken off the code root, or refused with nothing changed."""
+    """patch apply|revert: the round chosen, put on or taken off the code root, or refused with nothing changed;
+    patch hold, and apply --held."""
+    if verb == "hold":
+        return hold(run, task)
+    if args.value("held"):
+        if args.value("round") or args.value("base"):
+            raise cli.Refusal("patch apply --held puts a task's held edits back as they were held — it takes no "
+                              "--round or --base")
+        return put_back(run, task)
     if args.value("base"):
         raise cli.Refusal("patch %s doesn't take --base — it puts a saved round on or off as it was saved; --round "
                           "<r> names which round" % verb)
@@ -99,3 +112,71 @@ def round_of(run: Path, task: int, wanted: str, verb: str) -> patches.Round:
         raise cli.Refusal("task %d has no round '%s' — its saved rounds are %s (council patch show %d)"
                           % (task, wanted, ", ".join(str(each.round) for each in found), task))
     return one
+
+
+def _named(patch: Path) -> list[str]:
+    try:
+        return [file.path for file in diff.files(patch.read_bytes().decode("utf-8", "surrogateescape"))]
+    except OSError:
+        return []
+
+
+def hold(run: Path, task: int) -> int:
+    """patch hold: the files' edits since the run's last saved round (else the commit it opened on) written to
+    patches/T<n>-held.patch, then taken off the files through undo, all or nothing; nothing to hold says so."""
+    from council.commands import patch     # patch save's own start and diff
+    held = patches.held(run, task)
+    top = resolve.field(run, "code-root") or where.this_tree()
+    start = patch.start_of(run, top, "", patches.rounds(run))
+    tree = git.files_tree(top)
+    if not tree:
+        raise cli.Refusal("can't read the files in %s as a git tree — patch hold needs the code root in git" % top)
+    data = patch.round_diff(top, start, tree, "save the round first (council patch save %d --base <rev>)" % task)
+    if not data.strip():
+        cli.say("patch: nothing to hold for task %d — the files are as the last saved round left them%s" % (
+            task, "; its held edits are in %s (council patch apply %d --held)" % (held.as_posix(), task)
+            if held.is_file() else ""))
+        return 0
+    if held.exists():
+        raise cli.Refusal("task %d already has held edits in %s — put them back first (council patch apply %d --held), "
+                          "or move that file aside, then hold again" % (task, held.as_posix(), task))
+    try:
+        held.parent.mkdir(exist_ok=True)
+        held.write_bytes(data)
+    except OSError as failure:
+        raise cli.Refusal("can't write %s (%s) — make the run folder writable, then hold again"
+                          % (held.as_posix(), failure)) from None
+    wrong = undo(top, held)
+    if wrong:
+        held.unlink()
+        raise cli.Refusal("patch hold refused, nothing changed: the edits don't come off the files in %s cleanly: %s — "
+                          "council patch save %d puts them in the task's round instead" % (top, ", ".join(wrong), task))
+    files = _named(held)
+    cli.say("patch: held task %d's edits in no round → %s · %d file(s): %s — taken off the files; council patch apply "
+            "%d --held puts them back" % (task, held.as_posix(), len(files), ", ".join(files) or "none", task))
+    return 0
+
+
+def put_back(run: Path, task: int) -> int:
+    """patch apply --held: the held edits put back on the files through redo, all or nothing, and their file removed;
+    refused, nothing changed, when they don't go on cleanly."""
+    held = patches.held(run, task)
+    if not held.is_file():
+        raise cli.Refusal("task %d has no held edits (%s isn't there) — council patch hold %d takes a stopped "
+                          "builder's edits off the files into it" % (task, held.as_posix(), task))
+    top = resolve.field(run, "code-root") or where.this_tree()
+    wrong = redo(top, held)
+    if wrong:
+        raise cli.Refusal("patch apply --held refused, nothing changed: task %d's held edits don't go on the files in "
+                          "%s cleanly: %s — those files changed since they were held. The edits stay in %s: put them "
+                          "on by hand (git apply %s), or move the file aside to drop them"
+                          % (task, top, ", ".join(wrong), held.as_posix(), held.as_posix()))
+    files = _named(held)
+    try:
+        held.unlink()
+    except OSError:
+        cli.warn("council: the held edits are back on the files, but %s could not be removed — remove it by hand"
+                 % held.as_posix())
+    cli.say("patch: task %d's held edits put back on the files in %s · %d file(s): %s — the next council patch save %d "
+            "puts them in the task's round" % (task, top, len(files), ", ".join(files) or "none", task))
+    return 0

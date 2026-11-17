@@ -10,7 +10,7 @@ reader needs.
 | `doctrine/` | The Chair, one file per stage, when it enters that stage |
 | `run/` | The Chair, builders, the helper and the scripts: the run's contracts, records and procedures |
 | `roster/` | `council-init`: the seat catalogue, and how setup reads a project's own decisions |
-| `templates/` | `council init`, which copies them into a project's `.council/` |
+| `templates/` | council-init (the skill), which copies them into a project's `.council/`; and the modes, for a deliverable's form (`build-log.md`) |
 | `spec-writer/` | The `spec-writer` skill: its tier templates and guides |
 | `test-architect/` | The `test-architect` skill: its report and specification formats |
 
@@ -36,7 +36,9 @@ append-only record of CLI-observable actions.
 `evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
 `builder-report.md` defines a build round's report head and the checks of it against the saved diff;
 `builder-rules.md` lists the standing rules every build task carries, which its orders link;
-`builder-loop.md` gives the steps that build one task and the one line its builder returns.
+`builder-loop.md` gives the steps that build one task; the one line its builder returns is the builder
+contract's (`agents/council-builder.md`). `build-receipt.md` gives a build's receipt and what follows it,
+read at Deliver.
 `war-room.md` defines the second round; `sharing.md` defines the team-or-just-me choice;
 `models.md` defines the model per role.
 

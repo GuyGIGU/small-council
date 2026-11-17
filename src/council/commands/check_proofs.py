@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import NamedTuple
 
+from council import git
 from council.commands import cli, gate_output, proof_reach
 from council.records import bytewise, config, patches, seat_files, verdicts
 
@@ -22,13 +23,21 @@ class Row(NamedTuple):
 
 
 class Tally:
-    """The proofs counted: rows, broken, preserved, tests left behind, proved only through run-folder scripts, and
-    the revert checks that could not be made (whose, and why)."""
+    """The proofs counted: rows, broken, preserved, tests left behind, proved only through run-folder scripts, the
+    revert checks that could not be made (whose, and why) and the proofs whose after-check ran on other files than
+    those on disk now; with the tree of those files (git.disk_tree), taken once, when a proof first asks."""
 
-    def __init__(self) -> None:
+    def __init__(self, top: str = "") -> None:
         self.rows: list[Row] = []
         self.broke = self.saved = self.preserved = self.run_folder = 0
         self.unmade: list[str] = []
+        self.other: list[str] = []
+        self.top, self.tree = top, None
+
+    def now(self) -> str:
+        if self.tree is None:
+            self.tree = git.disk_tree(self.top)
+        return self.tree
 
 
 def _named(gates: Path, pattern: str) -> list[Path]:
@@ -56,6 +65,14 @@ def void(verdict: Path) -> str:
 
 def _output(verdict: Path) -> Path:
     return verdict.with_name(verdict.name[:-len(".json")] + ".txt")
+
+
+def _said_nothing(after: Path) -> bool:
+    """A change proof's after that ran no test: its verdict's note, or an output with no file matched or 0 tests.
+    An after that printed nothing is not read so here: `grep -q`, or a script that asserts, prints nothing when it
+    passes (a test gate that printed nothing carries the note)."""
+    return verdicts.holds(after, FALSE_GREEN) or bool(gate_output.zero_tests(gate_output.text(_output(after)))) or \
+        any(line.startswith("changed: no files matched") for line in bytewise.file_lines(_output(after), fold=False))
 
 
 def _ran_nothing(before: Path, after: Path) -> bool:
@@ -95,6 +112,8 @@ def status(before: Path, after: Path, number: str) -> str:
         return "MISSING-OUTPUT"
     if keep and _ran_nothing(before, after):
         return "NOTHING-RAN"
+    if not keep and _said_nothing(after):
+        return "NOTHING-RAN"
     return "preserved" if keep else "ok"
 
 
@@ -114,9 +133,12 @@ def _one(run: Path, top: str, before: Path, tally: Tally) -> None:
         note = "test saved: " + found if found else "couldn't confirm a saved test"
     if state == "ok" and number.isdigit() and patches.rounds(run, int(number)):
         from council.commands import revert_check     # gate_run and tempfile, only when a rerun is due (D34)
-        state, said, unmade = revert_check.check(run, top, number, verdicts.command(after) or verdicts.command(before))
+        state, said, unmade = revert_check.check(run, top, number, verdicts.command(after) or verdicts.command(before),
+                                                 (verdicts.text(after, "tree"), tally.now()))
         note += " · " + said
         tally.unmade += ["%s's revert check: %s" % (who, unmade)] if unmade else []
+    elif state in ("ok", "preserved"):
+        tally.other += _elsewhere(who, number, verdicts.text(after, "tree"), tally.now())
     if state in ("ok", "preserved"):
         tally.saved += bool(found)          # only a proof that held counts as a test kept
         tally.preserved += state == "preserved"
@@ -130,9 +152,21 @@ def _one(run: Path, top: str, before: Path, tally: Tally) -> None:
     cli.say("%s  proof  %s · %s" % (who, state, note))
 
 
+def _elsewhere(who: str, number: str, tree: str, now: str) -> list[str]:
+    """A proof with no revert check: its after-check's tree against the files on disk now, as the receipt says of a
+    gate. [] when they are the same."""
+    if not now:
+        return ["%s: after-%s was not compared with the files on disk now — they can't be read as one git tree"
+                % (who, number)]
+    if tree == now:
+        return []
+    return ["%s: after-%s ran on other files than those on disk now (%s) — run council gate after-%s again"
+            % (who, number, "tree " + tree[:12] if tree else "its record names none", number)]
+
+
 def proofs(run: Path, top: str) -> Tally:
     """Each before-<n> and regress-<n> proof, then each after-<n> with nothing before it (NO-BEFORE)."""
-    gates, tally = Path(run) / "gates", Tally()
+    gates, tally = Path(run) / "gates", Tally(top)
     for before in _named(gates, "before-*.json") + _named(gates, "regress-*.json"):
         number = before.name[:-len(".json")].split("-", 1)[1]
         if before.name.startswith("regress-") and (gates / ("before-%s.json" % number)).is_file():

@@ -10,9 +10,9 @@
 # a run within its limits, an ordinary agent, input it can't read, or any fault of the helper's. The decision is the
 # helper's (council cap check); this script only reads the input. A call it lets through is counted as an agent
 # start of the run this session drives (a Workflow as one, however many agents it starts), so agents started
-# together, or recorded late, still count. Nothing goes to stdout, which Claude Code may read as JSON.
-#
-# Portability: bash 3.2 (macOS), Git Bash on Windows, Linux — no jq, no Python.
+# together, or recorded late, still count. Nothing goes to stdout, which Claude Code may read as JSON. An ordinary
+# agent where no council home can be (session-mark.sh's no_council) leaves the mark alone: no Python, no git.
+# Portability: bash 3.2 (macOS), Git Bash on Windows, Linux — no jq.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
 [ -f "$ROOT/bin/council" ] || exit 0
@@ -29,8 +29,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
 # earlier run's file first — else the one run folder the message names. What it can't pick out stays empty, and
 # the helper judges nothing on it. For a verifier, also the first words that send it hunting past its Done-when
 # ("however narrow", "any route", "find anything else"), which the helper refuses.
-# For a Workflow, whether its script (inline, or the file at scriptPath) starts council verifiers, and the same
-# hunting words in it: the helper holds it to one checker per build.
+# For a Workflow, whether its script (inline, or the file at scriptPath) starts council verifiers, and the same hunting words.
 fields="$(LC_ALL=C awk '
   function undo(v, c, r,   q, m, j, out) { m = split(v, q, c); out = q[1]; for (j = 2; j <= m; j++) out = out r q[j]; return out }
   { s = s $0 "\n" }
@@ -129,6 +128,7 @@ if [ "$tool" = Workflow ] && [ -z "$awfv" ] && [ -n "$aspath" ] && [ -f "$aspath
     else if (match(s, /[^a-z0-9]any (other )?routes?[^a-z0-9]/)) print substr(s, RSTART + 1, RLENGTH - 2)
     else if (match(s, /[^a-z0-9](find|name|report|flag|list|look for|hunt for|search for) anything else[^a-z0-9]/)) print substr(s, RSTART + 1, RLENGTH - 2) }' "$aspath" 2>/dev/null)"
 fi
+[ -n "$atype$awfv" ] || ! . "${BASH_SOURCE[0]%[/\\\\]*}/session-mark.sh" 2>/dev/null || ! no_council || { mark_session "$sid" agent-gate; exit 0; }
 
 if [ -n "$sid" ]; then set -- cap check --session "$sid"; else set -- cap check; fi
 case "$tool" in

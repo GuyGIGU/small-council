@@ -43,10 +43,10 @@ class BytewiseTest(unittest.TestCase):
 
 
 class FileLinesTest(support.Scratch):
-    def test_a_file_reads_as_utf8_with_a_stray_byte_kept_and_its_bom_kept(self) -> None:
+    def test_a_file_reads_as_utf8_with_a_stray_byte_kept_and_its_bom_off(self) -> None:
         file = self.write("f.txt", b"\xef\xbb\xbfcaf\xc3\xa9\r\n\xff\n", binary=True)
-        self.assertEqual(bytewise.file_lines(file), ["﻿café", "\udcff"])
-        self.assertEqual(bytewise.file_lines(file, fold=False), ["﻿café\r", "\udcff"])
+        self.assertEqual(bytewise.file_lines(file), ["café", "\udcff"])
+        self.assertEqual(bytewise.file_lines(file, fold=False), ["café\r", "\udcff"])
 
     def test_an_unreadable_file_has_no_lines(self) -> None:
         self.assertEqual(bytewise.file_lines(self.tmp / "missing"), [])

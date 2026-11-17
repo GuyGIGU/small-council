@@ -69,8 +69,8 @@ def transcript(folder):
 
 
 def save_transcript(folder, lines):
-    (folder / "transcript.jsonl").write_text("".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines),
-                                             encoding="utf-8", newline="\n")
+    text = "".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines)
+    (folder / "transcript.jsonl").write_bytes(text.encode("utf-8"))
 
 
 def blocks(line):
@@ -99,9 +99,8 @@ def close_before_deliver(folder):
     rest = [r for r in body if r not in deliver]
     end = next(n for n, r in enumerate(rest) if r[3] == "run.closed")
     moved = rest[:end + 1] + [r[:2] + [rest[end][2]] + r[3:] for r in deliver] + rest[end + 1:]
-    (folder / "events.tsv").write_text("\n".join([head] + ["\t".join(r[:1] + [str(n)] + r[2:])
-                                                           for n, r in enumerate(moved, 1)]) + "\n",
-                                       encoding="utf-8", newline="\n")
+    (folder / "events.tsv").write_bytes(("\n".join([head] + ["\t".join(r[:1] + [str(n)] + r[2:])
+                                                           for n, r in enumerate(moved, 1)]) + "\n").encode("utf-8"))
 
 
 def dispatch_before_size(folder):

@@ -48,9 +48,13 @@ def main(args: cli.Args, words: list[str]) -> int:
     if words[:1] == ["hooks"]:
         from council.commands import doctor_hooks
         return doctor_hooks.main(args, words[1:])
+    if words[:1] == ["permissions"]:
+        from council.commands import doctor_rules
+        return doctor_rules.main(args, words[1:])
     cli.no_words("doctor", words)
     if args.value("line"):
         raise cli.Refusal("doctor takes --line only as: council doctor hooks --line")
+    config.hush()                                    # doctor names each setting line it can't read itself
     home = where.council_home()
     doc = Doctor(home)
     if not os.path.isdir(where.native(home)):
@@ -65,9 +69,13 @@ def main(args: cli.Args, words: list[str]) -> int:
         if config.first(native, "last-verified:") is None:
             doc.warn("the config has no last-verified stamp (an older layout)",
                      "run council-init refresh to migrate it to the current template")
+        from council.commands import doctor_config
+        doctor_config.settings(doc)
         roster(doc)
         from council.commands import doctor_gates
         doctor_gates.gates(doc)
+    from council.commands import doctor_rules
+    doctor_rules.report(doc)
     open_runs(doc)
     run_plans(doc)
     from council.commands import doctor_memory
@@ -215,21 +223,27 @@ def _plan_check(folder: str) -> tuple[int, list[str]]:
 
 def map_stamp(doc: Doctor) -> None:
     if not _isfile(doc.home + "/" + map_file.NAME):
-        doc.warn("no %s" % map_file.NAME, "council-init builds it")
+        from council.commands.map_status import NO_MAP
+        doc.warn("no %s" % map_file.NAME, NO_MAP[len("no map yet — "):])
         return
-    sha = map_file.commit(where.native(doc.home))
-    if not sha:
-        doc.warn("%s has no map-commit stamp" % map_file.NAME, "refresh the map and stamp map-commit")
-    elif git.run(".", "rev-parse", "--git-dir")[0] == 0 and git.run(".", "cat-file", "-e", sha + "^{commit}")[0] != 0:
-        doc.warn("map-commit %s isn't in this repo's history (a rebase or squash removed it), so nobody can tell "
-                 "what changed since" % sha[:9],
-                 "rebuild the map with a council-init refresh, and stamp the new map-commit")
+    if git.run(".", "rev-parse", "--git-dir")[0] != 0:
+        found = map_file.Stale(map_file.commit(where.native(doc.home)), True, 0, [])
     else:
-        code, out = git.run(".", "rev-list", "--count", sha + "..HEAD")
-        behind = out.decode("utf-8", "surrogateescape").strip()
-        if code == 0 and re.fullmatch("[0-9]+", behind) and int(behind) > 50:
-            doc.warn("the map is %s commits behind HEAD" % behind,
-                     "refresh the changed areas (council map status lists them)")
+        found = map_file.stale(where.native(doc.home))            # the one reader, as council map status reads it
+    if not found.sha:
+        doc.warn("%s has no map-commit stamp" % map_file.NAME, "refresh the map and stamp map-commit")
+    elif not found.known:
+        doc.warn("map-commit %s isn't in this repo's history (a rebase or squash removed it), so nobody can tell "
+                 "what changed since" % found.sha[:9],
+                 "rebuild the map with a council-init refresh, and stamp the new map-commit")
+    elif found.aside:
+        doc.warn("the map is from another line of history: map-commit %s has %d commit(s) HEAD doesn't"
+                 % (found.sha[:9], found.aside), "refresh the map on this branch (council map status lists the areas)")
+    elif found.behind > 50:
+        doc.warn("the map is %d commits behind HEAD" % found.behind,
+                 "refresh the changed areas (council map status lists them)")
+    from council.commands import doctor_config
+    doctor_config.map_table(doc)
 
 
 def stack(doc: Doctor) -> None:

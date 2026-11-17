@@ -47,10 +47,14 @@ COMMANDS = {  # each module's main takes (args, the words after the command's ow
     "help": "help",
     "version": "help",
 }
-USAGES = {  # a sub of `run` or `cap` with no row
-    "run": "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] "
-           "| run plan [check|show] | run events [show|check] | run audit [--transcript <file>] "
-           "| run export --anon <run> <dest>",
+RUN_WORDS = {  # what each `run` sub takes, for its usage line; a sub of COMMANDS with no entry is shown bare
+    "open": "<mode>", "status": "[--all]", "close": "[--status …]", "resume": "[--run <folder>]",
+    "plan": "[check|show]", "events": "[show|check|repair]", "audit": "[--transcript <file>]",
+    "export": "--anon <run> <dest>", "turn-end": "--session ID",
+}
+USAGES = {  # a sub of `run` or `cap` with no row; run's is built from COMMANDS, so no sub is left out of it
+    "run": "usage: council " + " | ".join(" ".join(["run", key[4:]] + [RUN_WORDS.get(key[4:], "")]).strip()
+                                         for key in COMMANDS if key.startswith("run ")),
     "cap": 'usage: council cap [--run <folder>] | cap allow <n> --user-said "…" | cap check [--session ID] '
            "[<tool> [type=… seat=… run=… file=…]]",
 }

@@ -76,8 +76,7 @@ proof paths, source item ids, the synthesis line, the verifier table line(s), th
 evidence and the final recorded verdict — plus `restored`, `still_cut` and a link's `self` only
 where they apply. Rows are regenerated deterministically from Markdown;
 never edit them by hand. Existing runs remain readable without migration; auditing one with
-`evidence check` may flag fields it predates. If Python 3.8+ is unavailable, use the
-same Markdown fields and inspect each link manually; do not present a ledger as built.
+`evidence check` may flag fields it predates.
 
 ## In the deliverable
 

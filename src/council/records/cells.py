@@ -27,6 +27,38 @@ def tab_rows(text: str) -> list[list[str]]:
     return [line.split("\t") for line in lines_of(text)]
 
 
+def heading(line: str) -> str | None:
+    """A `## ` heading's name as the helper compares it: lower-cased, blanks folded, a trailing `(…)` and colon off
+    (`## Hard Rules (non-negotiable)` is 'hard rules'); None for any other line."""
+    found = re.match(r"##[ \t]+(.*)", line, re.S)
+    if not found:
+        return None
+    name = re.sub(r"[ \t]*\([^()]*\)\Z", "", found.group(1).rstrip(" \t\r"))
+    return _lower(re.sub(r"[ \t]+", " ", name.rstrip(" \t:")))
+
+
+def table_cells(line: str) -> list[str]:
+    """A Markdown table row split at each '|' outside a code span, nothing trimmed (so '| a | b |' is
+    ['', ' a ', ' b ', '']): '\\|' is a literal pipe anywhere, and a '|' between two backticks stays in its cell
+    when the row's backticks pair up (an odd one quotes nothing). The one splitter of a council table row."""
+    out, current, quoted, i = [], "", False, 0
+    paired = line.replace("\\|", "").count("`") % 2 == 0
+    while i < len(line):
+        char = line[i]
+        if char == "\\" and line[i + 1:i + 2] == "|":
+            current, i = current + "|", i + 2
+            continue
+        if char == "`" and paired:
+            quoted = not quoted
+        if char == "|" and not quoted:
+            out.append(current)
+            current = ""
+        else:
+            current += char
+        i += 1
+    return out + [current]
+
+
 def field(text: str, key: str) -> str:
     """A `key:` line of a file that is not a run's state (ask.md, a seat card, the config), as the helper's field
     reads one: the first line anywhere that starts with the key, the blanks after the colon and every carriage
@@ -108,3 +140,8 @@ def jsonl_rows(text: str) -> list[dict[str, Any]]:
         if isinstance(row, dict):
             rows.append(row)
     return rows
+
+
+def _lower(s: str) -> str:
+    """ASCII letters lower-cased, nothing else (awk's tolower in the C locale)."""
+    return s.translate(str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"))

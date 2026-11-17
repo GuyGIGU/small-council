@@ -1,15 +1,22 @@
 """The run a command acts on (the helper's resolve_run): --run (a path, or a folder name under runs/), then
 $COUNCIL_RUN, then the one in-progress run on this working tree, then the one this session drives on any
-tree. It never guesses between several, never picks another session's run, and never picks a paused run
-on its own (D6)."""
+tree. It never guesses between several and never picks a paused run on its own (D6). The one in-progress run
+on this tree, when its session: line names another session than this one, is found only for a command that
+reads (READS); a command that writes is refused, and the user decides whether this session takes it over
+(council run resume --run <folder>). A sub-agent shares its Chair's session id, so its calls are this session's."""
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from council.commands import cli
 from council.records import home as where
 from council.records import paths, runs, state
+
+READS = ("status", "run status", "run audit", "run events", "run events show", "run events check", "tree", "gates",
+         "doctor", "context", "prior", "state", "cap")   # state and cap only with no word after: they print, no more
+SESSION = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def run_folder(args: cli.Args) -> Path:
@@ -27,6 +34,7 @@ def run_folder(args: cli.Args) -> Path:
     tree = where.this_tree()
     found = open_runs(home, tree, "in-progress")
     if len(found) == 1:
+        _ours(Path(found[0]), args)
         return Path(found[0])
     if found:
         raise cli.Refusal("several runs are open on this working tree — pass --run <folder>: %s" % names(found))
@@ -42,13 +50,49 @@ def run_folder(args: cli.Args) -> Path:
         raise cli.Refusal("no in-progress run on this working tree (paused: %s) — to carry on with it: council run "
                           "resume --run %s; to act on it while it stays paused, pass --run <folder>"
                           % (names(paused), one))
+    last = newest_run(home, tree).split("/")[-1]
+    if last:
+        raise cli.Refusal("no open run on this working tree — the newest here, %s, is closed: to read it, pass --run "
+                          "%s; for new work, open a run: council run open <mode>" % (last, last))
     raise cli.Refusal("no open run on this working tree — open one with: council run open <mode>   "
                       "(or pass --run <folder>)")
 
 
+def _ours(run: Path, args: cli.Args) -> None:
+    """Refuse a command that writes when the run names another session than this one; a reading command, a session
+    with no id and a run with none go through."""
+    mine, driver = os.environ.get("CLAUDE_CODE_SESSION_ID", ""), field(run, "session")
+    if not mine or driver in ("", "-", mine) or reads(args.words):
+        return
+    raise cli.Refusal("run %s on this working tree is driven by another session (%s), and this command writes to it — "
+                      "nothing was written. Ask the user whether this session takes it over: council run resume --run "
+                      "%s (then run this again); to read it from here: council status --run %s"
+                      % (run.name, driver, run.name, run.name))
+
+
+def reads(words: list[str]) -> bool:
+    """The command line names a command that only reads its run (READS); state and cap only with no word after."""
+    key = " ".join(words[:3] if words[:2] == ["run", "events"] else words[:2] if words[:1] == ["run"] else words[:1])
+    if key in ("state", "cap"):
+        return len(words) == 1
+    return key in READS
+
+
+def session_id(args: cli.Args) -> str:
+    """The session id a run records as its driver: --session, else this session's; '' when there is none. It goes
+    into the state's header as written, so --session outside letters, digits, '.', '_' and '-' is refused, and such
+    an id from the environment is not recorded (a run is never refused for what Claude Code set)."""
+    given = args.value("session")
+    if given and not SESSION.fullmatch(given):
+        raise cli.Refusal("--session takes letters, digits, '.', '_' and '-' only, not %r — pass the id Claude Code "
+                          "gave this session, or leave --session out" % given)
+    found = given or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    return found if SESSION.fullmatch(found) else ""
+
+
 def field(run: Path, key: str) -> str:
     """A header field of the run's state, as the helper's state_field reads it ('' when it has none)."""
-    return state.header(state.text(run), exact_keys=True).get(key, "")
+    return state.header(state.text(run)).get(key, "")
 
 
 def run_path(value: str, home: str) -> str:

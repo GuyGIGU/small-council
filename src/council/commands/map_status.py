@@ -8,6 +8,8 @@ from council.records import home as where
 from council.records import map_file
 
 AREAS = 12
+NO_MAP = ("no map yet — write .council/%s from the plugin's references/templates/%s, as Prepare says, or run "
+          "council-init, which builds it" % (map_file.NAME, map_file.NAME))
 USAGE = 'usage: council map status | map touch <dir>="<line>" …'
 
 
@@ -24,12 +26,17 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 def status(home: str) -> list[str]:
     if not map_file.path(where.native(home)).is_file():
-        return ["no map yet — council-init builds .council/" + map_file.NAME]
+        return [NO_MAP]
     found = map_file.stale(where.native(home))          # the whole repository, from any folder
     if not found.sha:
         return ["map.md has no map-commit stamp — refresh the map and stamp it"]
     if not found.known:
         return ["map-commit %s isn't in this repo's history — rebuild the map" % found.sha]
+    if found.aside:
+        return ["map: from another line of history — map-commit %s has %d commit(s) HEAD doesn't%s, so it can't say "
+                "what is up to date here; refresh the map on this branch, or check out the one it was built on"
+                % (found.sha[:9], found.aside, " (HEAD has %d of its own)" % found.behind if found.behind else "")
+                ] + (["Files that differ from it, by area:"] + by_area(found.areas) if found.areas else [])
     if not found.behind:
         return ["map: up to date (map-commit %s)" % found.sha[:9]]
     if not found.areas:

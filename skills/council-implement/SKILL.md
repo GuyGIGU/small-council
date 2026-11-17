@@ -1,6 +1,6 @@
 ---
 name: council-implement
-description: Build an approved Small Council plan, fix review findings or complete post-game tasks with one builder, task-appropriate proof and independent verification. Use for "build the plan", "fix these findings" or /council-implement.
+description: Build an approved Small Council plan (one council-plan wrote), fix council review findings or complete post-game tasks with one builder, task-appropriate proof and independent verification. Use for "build the council plan", "fix these council findings" or /council-implement; not for a plan the council did not write.
 ---
 
 # Council Implement (mode)
@@ -30,8 +30,12 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
   - "done" means the consequence can no longer happen.
 
   Default: introduced or touched P1/P2s, including unknown origin. Use the user's existing selection.
+  The helper reads tasks, not findings: once the run is open, write the selected findings to
+  `<run>/tasks.md` as tasks in the plan's format under `## Task Sequence`
+  (`${CLAUDE_PLUGIN_ROOT}/references/run/run-plan.md`, Plan tasks). `input=` stays the review's path.
+  Until that file is there, `council seat task-<n> queued`, `context build` and `tree` refuse.
 - **A post-game:** `<home>/postgames/<date>-<slug>.md`. Each Next task is a task in the plan's
-  format; its Done-when quotes the user's request.
+  format; its Done-when quotes the user's request. The helper reads `### Next tasks` as it stands.
 
 ## At Convene
 
@@ -53,9 +57,10 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
    Use Convene's approval rule; state the order and proceed when authorized. Without commit
    authorization, do not commit. The baseline question below still applies once, before task 1; a
    red mandatory gate you cannot fix stops the affected task.
-5. **Open the run.** `council run open council-implement`, then `council state input=<the input's
-   path>`. Continue the input's request (Convene, step 8). Then write the log header at
-   `<home>/logs/<YYYY-MM-DD>-<slug>.md`.
+5. **Open the run.** `council run open council-implement`, then, in one call,
+   `council state input=<the input's path> ask=<its "Your request" file>`: the build continues the
+   input's request (Convene, step 7). Then write the log header at `<home>/logs/<YYYY-MM-DD>-<slug>.md`
+   (The log, below).
 6. **Rulings, not stalls.** Inside the approved scope, decide ambiguities and plan defects yourself
    and log each as a Ruling; stop only for a destructive action, a push or shared branch, a
    public contract, or scope or budget beyond approval.
@@ -70,7 +75,7 @@ pre-existing failure is never blamed on a task.
 
 **A red baseline is never waved through.** One numbered question before task 1 — one, not a
 conversation — when either:
-- **it exits 4:** quote the helper's own NOTHING WAS CHECKED line, which names the real cause (no check
+- **it exits 4** (context-core, The helper): quote the helper's own NOTHING WAS CHECKED line, which names the real cause (no check
   configured at all, an older Gates layout, none that runs at this stage, or every one skipped), and
   say what it means here: nothing built in this run can be proved by machine. For an older Gates
   layout, offer the council-init refresh that migrates it; otherwise offer to fit the missing ones first
@@ -86,8 +91,8 @@ receipt's `Checked by machine:` line ends with **exactly one clause** about it �
 the moment it passes.
 
 Before changing code, make sure the run plan names the Chair, the build seats (`task-<n>`, role
-`worker`, one per task; none in a Solo build) and the expected verifiers with their context and tool
-budgets; `council run plan check` must pass. Then `council state phase=build`,
+`worker`, one per task) and the expected verifiers with their context and tool budgets. A Solo build
+is planned as Squad: the Chair, no `task-<n>` seats, and the converge verifier; `council run plan check` must pass. Then `council state phase=build`,
 not `assign`: the build loop replaces the stages in between. When
 the converge pass starts, `council state phase=challenge`.
 
@@ -120,7 +125,9 @@ steps 7 and 8 are yours.
    A `BLOCKED:` line (yours, in a Solo build): jump to blocked-task logging and the receipt
    (`council state phase=deliver skip="blocked: task <n>"`); do not attempt steps 6–7 as a fix path.
    A blocked build stops for the user (context-core, Alerts).
-7. **Adversarial check — per task only, if not blocked.**
+7. **Per-task check — only under `- checking: per task`, and only if not blocked.** Under the
+   default, one per batch, skip this step: the converge check (At Challenge) is the build's one
+   verifier, and the agent gate refuses a second without the user's go.
    Dispatch `small-council:council-verifier` with:
    - the task and its Done-when;
    - the proof mode and, for preservation, the invariants and their test paths;
@@ -157,49 +164,25 @@ steps 7 and 8 are yours.
 
 ## The log — `<home>/logs/<YYYY-MM-DD>-<slug>.md`, appended after every task
 
-```
----
-(the doctrine's frontmatter, kind: log)
----
-# Council Implementation Log — <feature or review title>
-**Your request:** `.council/asks/<file>` — "<its first ~12 words>…"
-Input: `<the plan, review or post-game, repo-relative>` · Run: <run folder> · Start: <HEAD sha before task 1> · Baseline: <gate results before any change>
-
-## Notes for later tasks
-- <area>: <a fact a later task needs> (task <n>)        ← at most ~12; read first after a reset
-
-## Task <n>: <title>
-Domain: <what it checks> (<Seat>) × Carmack — <principle> · Ref applied: <principle(s)>
-Files: `path` — <what changed and why, one line each>
-Evidence: change | preserve · before <check> → <expected failure | passes> · after → passes · saved outputs: <paths>
-Gates: ✅ tests ✅ lint ✅ build   (or ❌ + what happened)
-Verifier: OK   (or: fixed after INCOMPLETE — <what>)
-Ruling: <what you decided instead of stopping> — <why> — <cost if wrong>   (omit if none)
-Notes: <judgment calls, watchpoints hit, conventions followed — omit if none>
-```
-
-It closes with these sections:
-- **Watchpoints addressed**
-- **Pre-existing issues** (fixed, or left on the user's ruling — never yours)
-- **Follow-ups**
-- **`## Shortcuts and concessions`** — required, never omitted. One line per shortcut:
-  `- <date> — <what I did instead> — <path> — <why> — <what undoing it would take>`, or the single
-  word `none`. Logs are tracked by git, so this is the one place the pile stays visible months later;
-  `council run close` warns when a build log has no such section.
-- **`## Converge`:** `| Task | Done when | Result | Evidence | Proof |`, written by the converge pass
-- **Ready for review:** every file created or modified, which is the next review's target.
-
-Its last line records the post-game offer: `Post-game: offered <date> — yes | no`, or
-`Post-game: not offered`.
-
-Plain English: what changed and why, never pasted code.
+Its template is `${CLAUDE_PLUGIN_ROOT}/references/templates/build-log.md`: copy its header at
+Convene (step 5) and its task entry after each task. Its sections, in order: the header,
+`## Notes for later tasks` (read first after a reset), one `## Task <n>` entry per task,
+Watchpoints addressed, Pre-existing issues (fixed, or left on the user's ruling — never yours),
+Follow-ups, `## Shortcuts and concessions` (required, never omitted: `none` when there are none),
+`## Converge`, Ready for review, and last the `Post-game:` line. Plain English, never pasted code.
 
 ## At Challenge — converge
 
-After the last task, one council-verifier checks every task's Done-when against the final tree. In
-fix mode, it checks every selected finding's consequence instead. Each gets met, partly met or not
-met, with evidence — written into the log's `## Converge` table; its `## Noticed` lines go under
-Follow-ups, never into a task.
+After the last task, dispatch one `small-council:council-verifier` as seat `verify-<n>`
+(`council seat verify-<n> running agent=<id>`), writing `<run>/verify-<n>.md`. Send each task's
+number and Done-when (fix mode: each finding's consequence), `patches/T<n>.md` and the saved
+patches by path, `gates/`, the brief or plan path and the code root, never the log or the
+builders' reports. It answers with its change verdicts. Write them into the log's
+`## Converge` table as: OK → `met`; INCOMPLETE → `partly met` or `not met`, as its paragraph
+says; REGRESSION → `not met`; SCOPE-CREEP → `met`, with the extra change under Follow-ups;
+CANNOT VERIFY → `not met — cannot verify: <what's missing>`. Its `## Noticed` lines go under
+Follow-ups, never into a task. A guardrails task's Gates row is yours now
+(`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`, Fitting them).
 - Anything not met → one more task, or a logged follow-up. That round is the **finish line**: a
   build ends at its plan's last task plus one fix round after converge; anything beyond is a
   follow-up or a new review run, never a hunt inside the build. One per batch: gates prove the fix round;
@@ -215,84 +198,11 @@ Follow-ups, never into a task.
 
 ## At Deliver — the receipt
 
-The same eight lines after every build, in this order, whatever happened, so after three builds the
-user reads it at a glance and notices the moment a line changes:
-
-```
-Built: <fully verified n> of <total n> tasks — <what you can do now that you couldn't before, or "no verified result"> [· <n> partly met or blocked: <one clause each>] [· push and PR held by the freeze[ until <date>]]
-Works?: <what proved it — "ran <command> and <what happened>", or honestly "nobody ran it; proved by the tests and by reading the code">
-Checked by machine: <council check's line, word for word: the gates' verdict line, baseline → now | the helper's own NOTHING WAS CHECKED line> [· <the standing red-baseline clause>]
-Your decisions: <council check's line, word for word>
-Shortcuts I took: <one line each> | none
-Not proved: <council check's line, word for word>[ · <what else nobody actually checked>] | nothing
-Left open: <each pre-existing hazard, follow-up, verifier note not taken, known hazard from a handoff> | nothing
-Cost: helpers ~<k>k tokens across <n> agents; Chair usage <actual total or "unavailable"> · <the proof line from council check> · log: <path>
-```
-
-`Checked by machine:`, `Your decisions:` and `Not proved:` are the three lines `council check` prints on
-a build, copied word for word: add to `Not proved:`, never cut from any. The standing red-baseline
-clause is yours to append. Its revert check (build-proof.md) shows in those lines and in its `check:`
-line.
-
-The first `Built:` number counts only fully met tasks with required proof, passing mandatory gates,
-and no unresolved verifier regression. A partly met or blocked task is named after the count but
-is not counted as built: "5 of 6 tasks · 1 partly met: exports stop at 5,000 rows". A task stopped
-by the repair limit is **blocked**, not merely partly met, even if some code works. A red mandatory
-gate or known regression cannot be hidden behind a clean count. `Cost:` labels helper-only usage
-as such; never imply it includes the Chair or the whole session when those figures are unavailable.
-**Never omit the last four.** "none" and "nothing" are answers; silence isn't. A shortcut is one of
-these — not a vibe: a hardcoded value, a skipped case, a swallowed error, a loosened or disabled
-check, a test that asserts less than the behaviour, a TODO left behind, or a fix whose only proof was
-a throwaway command. Every one also goes in the log's `## Shortcuts and concessions`.
-
-A **guardrails task**'s both-ways proof (`${CLAUDE_PLUGIN_ROOT}/references/guardrails.md`) is
-evidence, not a shortcut.
-
-Then the rulings as one question (Deliver, step 6), and the memory proposals.
-
-**No commit, push or PR question while anything is left open.** How items close is the config's
-`- open items:` line (missing or unreadable: `ask`, and say so):
-- **`ask`:** offer each `Left open:` item as *fix now* or *later* in that question
-  — a data-loss hazard defaults to fix now — and wait: "later" is the user's ruling, never yours.
-- **`fix now`:** no per-item question. Each item is one `Left open:` line — `<what> — ~<time> —
-  ~<k>k tokens` — and you fix it like the fix round: gates prove it; a re-check or spend past the
-  budget still needs the user's go; one you can't fix goes to the rulings question. A data-loss
-  hazard still gets its own line to the user the moment you find it.
-
-Commit, push and PR stay questions under either setting: ask them last, on their own, once the last
-verifier (a post-game's too) is back, never beside a fix question, and in this order:
-1. **The freeze:** `council pushes` reads the config's `- pushes:` line (missing means `on`). Under
-   `off`, or `off until <date>` before that date, the freeze holds push and PR only: commit as
-   authorized, record the commit in the log, and stop; the receipt's `Built:` line ends with the
-   words it prints after the dash, the date included. The bash gate refuses the push meanwhile.
-   From the date on, or for a word it can't read, it is `on`, and it says which.
-2. **Fetch first:** `git fetch`, then `gh pr list --state all`. Say whether the base moved since
-   `Start:` and whether a related PR merged; no remote or no `gh`, say that instead.
-3. **The PR text:** print `<run>/pr-body.md` for the user's edit or OK. The PR question comes only
-   after that OK.
-
-Then **offer a post-game when the log shows one is worthwhile**
-— at least one of:
-1. converge found a Done-when partly met or not met, or the log has a follow-up;
-2. the build hit trouble: a blocked task, a clean-context diagnosis, a SCOPE-CREEP revert, or a
-   mandatory gate red at the end that was green at baseline;
-3. the build left the plan: a material change of approach, plan-named code that no longer exists,
-   or a task merged, split or skipped;
-4. the request moved: the request file gained words after the plan, or the user ruled on scope
-   mid-build;
-5. it was big or long: 8 or more tasks, a war-room plan, or resumed after a compaction or in a new
-   session;
-6. it's the second fix pass on the same request.
-
-Never after a fix pass that met every finding with no follow-ups, when the user already declined one
-for this request (a log's `Post-game:` line), or when a post-game for this request is newer than this
-log. The offer is one line, and it runs only on a yes: *"Want a post-game? It checks what we built
-against your original request, word for word, and lists anything left to do — about ~<k>k tokens, 1
-checker."* Record the answer as the log's last line. On a yes, finish Learn and close this run first
-(`council run open` refuses a second run on the tree), then start council-postgame.
-
-Then offer a council review of the "Ready for review" files — after the post-game, when both are
-offered; a Squad is usually right.
+**Read `${CLAUDE_PLUGIN_ROOT}/references/run/build-receipt.md` now, before you write anything**: the
+receipt's rules, open items, the commit, push and PR order, and the post-game offer live there. The
+receipt is the same eight lines after every build, in this order, whatever happened: `Built:`,
+`Works?:`, `Checked by machine:`, `Your decisions:`, `Shortcuts I took:`, `Not proved:`,
+`Left open:`, `Cost:`. Then the rulings as one question (Deliver, step 6), and the memory proposals.
 
 ## Edge cases
 
@@ -302,7 +212,9 @@ offered; a Squad is usually right.
   task and every task that depends on it (`Depends on`; the helper refuses them). A task that only
   shares the code is not stopped: its builder is held to the same rule. Tell the user in one line: what
   is wrong, where, and what is stopped. The fix is a new task above the blocked one, with its own
-  Owner and the Serves line of the task it unblocks; it starts only on the user's yes.
+  Owner and the Serves line of the task it unblocks; it starts only on the user's yes. The stopped
+  builder held its unsaved edits (`council patch hold <n>`), and that task's next pack tells its
+  builder to run `council patch apply <n> --held`.
 - **Two tasks share one change** → change once; keep each Done-when, evidence and verdict.
 - **"Also add X" mid-build** → record their words under ask.md's `## Later, in your words`; it is
   authorized. Ask only about scope or cost beyond the approved budget.

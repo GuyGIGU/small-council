@@ -1,44 +1,35 @@
 #!/usr/bin/env bash
-# PreToolUse hook (Bash) — the Small Council's pipe stop and push freeze.
+# PreToolUse hook (Bash and PowerShell: both hand it tool_input.command) — the Small Council's pipe stop and push freeze.
 #
-# A pipe hides the helper's exit status, and head, tail or grep cut off its refusals and reminders; "never pipe it"
-# lived in prose and was broken 133 times across three sessions. So a Bash command whose own unquoted text runs the
-# helper (`council <cmd>`, a path ending in /council, `bash …/bin/council <cmd>`, or a variable the same command set
-# to one of those) and pipes that output into head, tail or grep (`|`, `2>&1 |`, `|&`, through other commands, or a
-# loop or group piped whole) is refused: exit 2, one line on stderr, which Claude Code hands to Claude.
-#
-# The push freeze (issue 49): a command whose own unquoted text runs `git push` or `gh pr create` (alone, compound, in
-# a group, loop or substitution) is put to the helper, `council pushes check`, from the call's own folder as the agent
-# gate does; it refuses (exit 2, its reason on stderr) while `- pushes: off`, or `off until` a later date, holds. A
-# stage with COUNCIL_ALLOW_PUSH=1 (its prefix, or exported earlier in the command) is never put to it.
-#
-# Everything else passes, silently: a redirect to a file, `| tee`, grep or head over files or other commands, council or
-# git push in a quoted string, a comment, a heredoc or a case pattern, a command over 100 KB, anything it can't parse,
-# and any fault of the helper's (only exit 2 with "Small Council:" on its stdout stops a push). Nothing goes to stdout.
-# Before any call that names council it touches this session's mark (bin/council's session_dirs): it runs just before
-# the very `council run open` call, so that call finds proof the hooks run here, after /reload-plugins too.
-#
-# Fast, as it runs before every Bash call: one tr, then shell patterns let through every command that can't match (no
-# "council" with a pipe, no "push", no "create"); only the rest reach one awk pass, which walks tool_input.command once
-# as the shell would: quotes, escapes, $( ), backticks, heredocs, comments, redirects, groups, loops and case patterns.
-# macOS awk re-measures the string at each character, so past 100 KB the walk isn't made. Only a push or a PR starts
-# the helper (Python) and reads a council home. Portability: bash 3.2 (macOS), Git Bash, Linux — no jq, no Python.
+# A pipe hides the helper's exit status, and head, tail or grep cut off its refusals ("never pipe it" lived in prose and
+# was broken 133 times). So a command whose own unquoted text runs the plugin's helper (a bare `council`, an absolute or
+# $VAR-rooted path ending in bin/council, `bash` with one, or a variable set to one — not a project's ./council or
+# bin/council) and pipes its output into head, tail or grep (`|`, `2>&1 |`, `|&`, through other commands, or a loop or
+# group piped whole) is refused: exit 2, one line on stderr, which Claude Code hands to Claude.
+# The push freeze (issue 49): `git push` or `gh pr create` in the command's own unquoted text (alone, compound, grouped,
+# looped or substituted, after git -C <dir>, or quoted whole after bash -c, sh -c or eval), without --dry-run, is put to
+# `council pushes check` from the call's folder (and git -C's), which refuses (exit 2, its reason on stderr) while
+# `- pushes: off`, or `off until` a later date, holds. A stage with COUNCIL_ALLOW_PUSH=1 (its prefix, or exported earlier
+# in the command) never is. An alias, or a push spelled through a variable, can't be seen: the freeze guards accidents.
+# Everything else passes, silently: a redirect, `| tee`, grep or head over other commands, council or git push in quoted
+# text, a comment, a heredoc or a case pattern, a command over 100 KB (macOS awk re-measures the string at each
+# character), anything it can't parse, and any fault of the helper's. Nothing goes to stdout. Before a call that names
+# council it touches this session's mark (session-mark.sh). Fast: shell patterns over the command (not its cwd) let
+# through each one that can't match; the rest get one awk pass that walks it as the shell would. Only a push or a PR
+# starts the helper (Python). bash 3.2 (macOS), Git Bash, Linux — no jq.
 
-# tr drops NUL bytes, which JSON can't hold: bash 4.4+ would warn about them on stderr.
-input="$(tr -d '\000' 2>/dev/null)" || exit 0
-walk=""; case "$input" in *push*) walk=1 ;; *create*) walk=1 ;; esac   # one pattern each: more stars can backtrack
+input="$(tr -d '\000' 2>/dev/null)" || exit 0   # NUL bytes, which JSON can't hold: bash 4.4+ would warn about them
+c="${input:0:1000}"; c="${c%%\"command\"*}"; c="${input:${#c}}"   # tool_input.command on: the cwd can say push
+walk=""; case "$c" in *push*) walk=1 ;; *create*) walk=1 ;; esac   # one pattern each: more stars can backtrack
 case "$input" in *council*) sid="${input:0:1000}" ;; *) [ -n "$walk" ] || exit 0; sid="" ;; esac
-
-# The session's mark, from the id near the start of the input (Claude Code writes it first; a pattern
-# over the whole input could take seconds), written by hooks/session-mark.sh: builtins only, so no
-# process starts once the folder is there; a failure is silent and changes nothing.
+# The session's mark, from the id near the start of the input (a pattern over all of it could take seconds).
 case "$sid" in *'"session_id"'*) sid="${sid#*\"session_id\"}" ;; *) sid="" ;; esac
 case "$sid" in :\"*) sid="${sid#:\"}" ;; ': "'*) sid="${sid#: \"}" ;; *) sid="" ;; esac
 sid="${sid%%\"*}"
 . "${BASH_SOURCE[0]%[/\\\\]*}/session-mark.sh" 2>/dev/null && mark_session "$sid" bash-gate
 
 [ "${#input}" -le 100000 ] || exit 0
-case "$input" in *'|'*) ;; *) [ -n "$walk" ] || exit 0 ;; esac
+case "$c" in *'|'*) ;; *) [ -n "$walk" ] || exit 0 ;; esac
 
 verdict="$(printf '%s' "$input" | LC_ALL=C awk '
   # --- the JSON: tool_input.command, its escapes undone ------------------------------------------
@@ -59,19 +50,20 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
   }
   # --- what the commands do: stages, pipes, groups ------------------------------------------------
   # pos: 0 = before the command word · 1 = its arguments · 2 = bash/sh before its script · 3 = timeout before its
-  # duration · 4 = export and the like · 5 = git before its subcommand · 6 = gh before pr · 7 = gh pr before create.
-  # opt: a git or gh option waits for its value. pal: this stage carries COUNCIL_ALLOW_PUSH=1; gal: the command exported
-  # it. pk: the first push or PR without them. stc: this stage runs the helper. sout: its stdout goes to a file. taint:
-  # an earlier stage of this pipeline runs it. rp: a redirect waits for its target. Frames: ( { if loop case, and $ for
-  # a substitution, which keeps the outer stage apart. cpat, for a case frame: 0 = its word, before "in" · 1 = a
-  # pattern, before its ")" · 2 = a branch, its commands. In 0 and 1, words and | are pattern text.
-  function reset() { pos = 0; stc = 0; rp = 0; sout = 0; pre = ""; opt = 0; pal = 0 }
-  function endstage() { if (stc && !sout && fd > 0) fcn[fd] = 1 }
+  # duration · 4 = export and the like · 5 = git before its subcommand · 6 = gh before pr · 7 = gh pr before create ·
+  # 8 = the string after bash -c. opt: a git or gh option waits for its value (2: the dir of git -C, joined into cdir). pal: this
+  # stage carries COUNCIL_ALLOW_PUSH=1; gal: the command exported it. pend: the push or PR of this stage ("dry" after
+  # --dry-run); pk and pdir: the first one a stage ended with, and its git -C. stc: this stage runs the helper. taint:
+  # an earlier stage of this pipeline runs it. sout: its stdout goes to a file. rp: a redirect waits for its target.
+  # Frames: ( { if loop case, and $ for a substitution, which keeps the outer stage apart. cpat, for a case frame: 0 = its
+  # word, before "in" · 1 = a pattern, before its ")" · 2 = a branch, its commands. In 0 and 1, words and | are pattern text.
+  function reset() { pos = 0; stc = 0; rp = 0; sout = 0; pre = ""; opt = 0; pal = 0; pend = ""; cdir = "" }
+  function endstage() { if (stc && !sout && fd > 0) fcn[fd] = 1; if (pk == "" && pend != "" && pend != "dry") { pk = pend; pdir = cdir } }
   function sep() { endstage(); taint = 0; reset() }
   function pipe(both) { endstage(); taint = taint || (stc && (both || !sout)); reset() }
   function push(k) {
     fd++; fk[fd] = k; fcn[fd] = 0
-    sp[fd] = pos; ss[fd] = stc; st[fd] = taint; sr[fd] = rp; so[fd] = sout; spr[fd] = pre; sop[fd] = opt; spa[fd] = pal
+    sp[fd] = pos; ss[fd] = stc; st[fd] = taint; sr[fd] = rp; so[fd] = sout; spr[fd] = pre; sop[fd] = opt; spa[fd] = pal; spe[fd] = pend; scd[fd] = cdir
     reset(); if (k == "$") taint = 0            # a pipe into a group reaches its first command
     if (k == "case") cpat[fd] = 0
   }
@@ -79,18 +71,23 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
   function pop(k,   c) {
     if (fd < 1 || fk[fd] != k) { bad = 1; return }
     endstage(); c = fcn[fd]
-    if (k == "$") { pos = sp[fd]; stc = ss[fd]; taint = st[fd]; rp = sr[fd]; sout = so[fd]; pre = spr[fd]; opt = sop[fd]; pal = spa[fd]; fd--; return }
+    if (k == "$") { pos = sp[fd]; stc = ss[fd]; taint = st[fd]; rp = sr[fd]; sout = so[fd]; pre = spr[fd]; opt = sop[fd]; pal = spa[fd]; pend = spe[fd]; cdir = scd[fd]; fd--; return }
     taint = st[fd]; fd--; reset(); pos = 1; stc = c   # the group is one stage of the pipeline around it
   }
   function base(x) { sub(/.*[\/\\]/, "", x); return x }
-  function iscouncil(x) {
+  function iscouncil(x) {                       # the helper of the plugin: a bare council, or an absolute or $-rooted bin/council
     if (x ~ /^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$/) { gsub(/[${}]/, "", x); return (x in cvar) }
-    return base(x) == "council"
+    return x == "council" || x ~ /^([\/~$]|[A-Za-z]:).*[\/\\]bin[\/\\]council$/
   }
   function assign(x,   nm, v) {
     nm = x; sub(/\+?=.*$/, "", nm); v = x; sub(/^[^=]*=/, "", v)
     sub(/^[ \t]*(bash|sh)[ \t]+/, "", v); sub(/[ \t].*$/, "", v)
-    if (base(v) == "council") cvar[nm] = 1; else if (nm in cvar) delete cvar[nm]
+    if (iscouncil(v)) cvar[nm] = 1; else if (nm in cvar) delete cvar[nm]
+  }
+  function inner(x) {                            # a whole command quoted after bash -c, sh -c or eval
+    if (pend != "" || pal || gal || x ~ /COUNCIL_ALLOW_PUSH=1|--dry-run/) return
+    if (x ~ /(^|[;&|({ \t\n])git[ \t]+(-C[ \t]+[^ \t;&|]+[ \t]+)*push([ \t;&|)]|$)/) pend = "git push"
+    else if (x ~ /(^|[;&|({ \t\n])gh[ \t]+pr[ \t]+create([ \t;&|)]|$)/) pend = "gh pr create"
   }
   function onword(x,   b) {
     if (inpat()) { if (cpat[fd] == 0) { if (x == "in") cpat[fd] = 1 } else if (x == "esac") pop("case"); return }
@@ -98,11 +95,12 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
     if (pos == 0) {
       if (x ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=/) { if (x == "COUNCIL_ALLOW_PUSH=1") pal = 1; assign(x); return }
       if (x ~ /^-/) { if (pre == "command" && (x == "-v" || x == "-V")) pos = 1; return }
-      if (x == "!" || x == "time" || x == "then" || x == "else" || x == "elif" || x == "do" || x == "env" \
+      if (pre == "eval" && x ~ /[ \t\n;&|]/) { inner(x); pos = 1; return }
+      if (x == "!" || x == "time" || x == "then" || x == "else" || x == "elif" || x == "do" || x == "env" || x == "eval" \
           || x == "command" || x == "builtin" || x == "exec" || x == "nohup" || x == "nice") { pre = x; return }
       if (x == "timeout" || x == "gtimeout") { pos = 3; return }
       if (x == "{" || x == "if" || x == "case") { push(x); return }
-      if (x == "for" || x == "while" || x == "until" || x == "select") { push("loop"); return }
+      if (x == "for" || x == "while" || x == "until" || x == "select") { push("loop"); if (x == "for" || x == "select") pos = 1; return }   # its name is no command
       if (x == "}") { pop("{"); return }
       if (x == "fi") { pop("if"); return }
       if (x == "done") { pop("loop"); return }
@@ -115,14 +113,16 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
       if (b == "export" || b == "declare" || b == "typeset" || b == "local" || b == "readonly") pos = 4
       return
     }
+    if (pos == 8) { inner(x); pos = 1; return }
     if (pos >= 5) {                                   # git -C dir push · gh -R o/r pr create
-      if (opt || x ~ /^-/) { opt = !opt && x ~ /^(-C|-c|-R|--git-dir|--work-tree|--namespace|--repo)$/; return }
-      if (pk == "" && !pal && !gal && (pos == 5 && x == "push" || pos == 7 && x == "create"))
-        pk = (pos == 5) ? "git push" : "gh pr create"
+      if (opt == 2) cdir = (cdir == "" || x ~ /^([\/~]|[A-Za-z]:)/) ? x : cdir "/" x
+      if (opt || x ~ /^-/) { opt = opt ? 0 : (pos == 5 && x == "-C") ? 2 : x ~ /^(-c|-R|--git-dir|--work-tree|--namespace|--repo)$/; return }
+      if (pend == "" && !pal && !gal && (pos == 5 && x == "push" || pos == 7 && x == "create")) pend = (pos == 5) ? "git push" : "gh pr create"
       pos = (pos == 6 && x == "pr") ? 7 : 1; return
     }
+    if (pos == 1 && pend != "dry" && pend != "" && (x == "--dry-run" || x == "-n" && pend == "git push")) pend = "dry"
     if (pos == 2) {
-      if (x ~ /^-/) { if (x == "-c" || x == "-n") pos = 1; return }   # a command string, or a syntax check
+      if (x ~ /^-/) { if (x ~ /^-[a-z]*c[a-z]*$/) pos = 8; else if (x == "-n") pos = 1; return }   # a command string, or a syntax check
       if (iscouncil(x)) stc = 1
       pos = 1; return
     }
@@ -241,7 +241,7 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
       }
       w = w c; inw = 1; i++
     }
-    if (!bad) endword()
+    if (!bad) { endword(); endstage() }
     if (cd != 1 || fd != 0 || rp) bad = 1
   }
   { s = s $0 "\n" }
@@ -257,16 +257,16 @@ verdict="$(printf '%s' "$input" | LC_ALL=C awk '
     }
     if (!found) exit
     scan(cmd)
-    if (!bad) { gsub(/[\t\n]/, " ", cwd); print (hit ? "refuse" : "-") "\t" (pk == "" ? "-" : pk) "\t" cwd }
+    if (!bad) { gsub(/[\t\n]/, " ", cwd); print (hit ? "refuse" : "-") "\t" (pk == "" ? "-" : pk) "\t" (pdir == "" ? "." : pdir) "\t" cwd }
   }' 2>/dev/null)"
-IFS=$'\t' read -r verdict pushed cwd <<<"$verdict"
+IFS=$'\t' read -r verdict pushed pdir cwd <<<"$verdict"
 if [ "$verdict" = refuse ]; then
   printf '%s\n' "Small Council: run council plain — a pipe into head, tail or grep hides its exit status and its refusals. To shorten its output, redirect it to a file (council … > out.txt) and read that." >&2
   exit 2
 fi
 case "$pushed" in 'git push'|'gh pr create') ;; *) exit 0 ;; esac
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
-case "$cwd" in [A-Za-z]:\\*) cwd="$(printf '%s' "$cwd" | tr '\\' '/')" ;; esac   # C:\Users\… as Git Bash takes it
-out="$(cd "$cwd" 2>/dev/null || true; "${BASH:-bash}" "$ROOT/bin/council" pushes check "$pushed" 2>/dev/null)"
+case "$cwd$pdir" in *\\*) cwd="$(printf '%s' "$cwd" | tr '\\' '/')"; pdir="$(printf '%s' "$pdir" | tr '\\' '/')" ;; esac   # C:\Users\…
+out="$(cd "$cwd" 2>/dev/null || true; cd "$pdir" 2>/dev/null || true; "${BASH:-bash}" "$ROOT/bin/council" pushes check "$pushed" 2>/dev/null)"
 [ $? -eq 2 ] && case "$out" in "Small Council:"*) printf '%s\n' "$out" >&2; exit 2 ;; esac
 exit 0

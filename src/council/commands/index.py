@@ -46,8 +46,12 @@ def main(args: cli.Args, words: list[str]) -> int:
     if not base:
         code, found = git.run(".", "rev-parse", "-q", "--verify", ref + "^{commit}", names=True)
         base = _text(found).strip() if code == 0 else ""
+    if not base and git.run(".", "rev-parse", "-q", "--verify", "HEAD^{commit}", names=True)[0] != 0:
+        raise cli.Refusal("the code root has no commit yet, so the change has no base to index against — commit "
+                          "once, then run council index again")
     if not base:
-        raise cli.Refusal("unknown base: %s" % ref)
+        raise cli.Refusal("unknown base: %s — name a branch, tag or commit this repository has: council index --base "
+                          "<ref>" % ref)
     index = Index(base, ref)
     index.every(changes(base))
     out = run / run_files.INDEX

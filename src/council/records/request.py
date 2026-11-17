@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Iterable, NamedTuple
 
 from council.records import cells, paths, state
 from council.records.home import absolute, native
@@ -97,6 +98,44 @@ def ask_later(data: bytes) -> bytes:
         if inside and not bare.startswith(b"## Later") and not re.fullmatch(rb"[ \t\v\f\r]*", bare):
             out.append(line)
     return b"".join(out)
+
+
+class Asked(NamedTuple):
+    """The request a run serves, in the user's words: its In-your-words lines, its Later lines, and the filed
+    request it continues (None for a new one) — what a builder's pack and council tree show."""
+
+    words: list[str]
+    later: list[str]
+    filed: Path | None
+
+
+def asked(run: Path) -> Asked | None:
+    """The one reader of a run's request for a build: the filed request it continues (continues:, filed), then the
+    run's own ask.md; each line once, a "(no new words)" left out. None when the run has no ask.md."""
+    own = paths.contents(Path(run) / ASK)
+    if own is None:
+        return None
+    other = filed(Path(run))
+    theirs = paths.contents(other) if other is not None else None
+    sources = [data for data in (theirs, own) if data]
+    return Asked(_once(ask_words(data) for data in sources), _once(ask_later(data) for data in sources),
+                 other if theirs else None)
+
+
+def _once(parts: Iterable[bytes]) -> list[str]:
+    """The lines of each part in order, a line the earlier parts already hold (this run's own section, filed into the
+    request it continues) and "(no new words)" left out; blank lines at either end dropped."""
+    out: list[str] = []
+    for part in parts:
+        for line in part.decode("utf-8", "surrogateescape").replace("\r", "").split("\n"):
+            if line.strip() == "(no new words)" or (line.strip() and line in out):
+                continue
+            out.append(line)
+    while out and not out[0].strip():
+        out.pop(0)
+    while out and not out[-1].strip():
+        out.pop()
+    return out
 
 
 def ask_sections(data: bytes, run: str = "") -> list[int]:

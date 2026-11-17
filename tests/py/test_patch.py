@@ -151,11 +151,9 @@ class ChecksTest(unittest.TestCase):
         self.assertEqual(self.kinds("a.py", ["return gateway(card)"], ("# TODO: a workaround for now",)), [])
 
     def test_the_slice_and_what_lies_outside_it(self) -> None:
-        given = patch_checks.slice_paths(["`src/pay/` — Charge a card", "`tests/test_pay.py:12`, README.md, ./docs"])
-        self.assertEqual(given, ["src/pay/", "tests/test_pay.py", "README.md", "docs"])
+        given = ["src/pay/", "tests/test_pay.py", "README.md", "docs"]       # task_slice.paths_in's (test_context)
         self.assertEqual(patch_checks.outside(["src/pay/a.py", "docs/x.md", "README.md", "src/mail.py"], given),
                          ["src/mail.py"])
-        self.assertEqual(patch_checks.slice_paths(["`a/b.py`", "`a/b.py`, `c.md`", "a/b.py:3"]), ["a/b.py", "c.md"])
 
 
 class ThirdRoundTest(support.Scratch):

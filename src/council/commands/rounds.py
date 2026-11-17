@@ -110,6 +110,28 @@ def third_fix_round(run: Path, task: int, earlier: list[tuple[list[str], str, st
             "save again" % (task, ", ".join(shared[:5]) + (" …" if len(shared) > 5 else ""), task))
 
 
+def same_dispatch(run: Path, task: int, at: str) -> bool:
+    """Whether task <task>'s round saved at <at> (UTC) was saved by the builder now at work: in a build, its seat
+    task-<n> is queued or running in the event stream, that run of the seat started at or before <at>, and the
+    seat's last finish (done, failed, blocked, skipped) came strictly before <at>. A second save by that builder
+    replaces the round; a save after the seat was recorded finished and run again is a fix round. With no stream, no
+    build seat (a Solo build), or a tie it can't order, False: the save is a new round, as before."""
+    stream = _stream(run)
+    if stream is None or resolve.field(run, "mode") != "council-implement":
+        return False
+    slug, now, started, finished = "task-%d" % task, "", "", ""
+    for row in stream:
+        if _cell(row, 3) != "seat.updated" or _cell(row, 4) != slug:
+            continue
+        value, when = _cell(row, 5), _cell(row, 2)
+        if value in ("queued", "running"):
+            started = started if now in ("queued", "running") else when
+        else:
+            finished = when
+        now = value
+    return now in ("queued", "running") and bool(started) and started <= at and (not finished or finished < at)
+
+
 def _recorded(run: Path, slug: str) -> bool:
     return any(row.get("slug") == slug and row.get("state") for row in seats.rows(run))
 

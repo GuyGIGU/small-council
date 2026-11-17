@@ -1,7 +1,7 @@
 """The Chair's steps in a session transcript, for council run audit: the size and cost recorded before the first
 dispatch, the status card at the first dispatch, the rulings as one question at Deliver, and the closing card after
-the close. Each reads the run's own part of the transcript (audit.window) as tool calls (audit.tool_calls) and says
-pass, warn or FAIL through say(verdict, label, words)."""
+the close, and a message from the user before each go past the cap. Each reads the run's own part of the transcript
+(audit.window) as tool calls (audit.tool_calls) and says pass, warn or FAIL through say(verdict, label, words)."""
 from __future__ import annotations
 
 import re
@@ -19,6 +19,7 @@ ToolCall = Tuple[int, Optional[datetime], Dict[str, Any], List[Call], str]   # p
 AGENTS = ("Agent", "Task", "Workflow")
 SIZED = re.compile(r"(?:^|\s)size=")
 DELIVER = re.compile(r"(?:^|\s)phase=deliver\b")
+STOPS = ("No new agents until the user says go", "agent runs of its cap", "over its cap of", "over its ceiling of")
 
 
 def block_text(content: Any) -> str:
@@ -57,12 +58,14 @@ def shows_status(part: list[Entry], call: ToolCall, found: list[Call]) -> bool:
         and relayed(part, call[0], call[4])
 
 
-def dispatches(calls: list[ToolCall]) -> list[int]:
-    """Where agents went out after the run's open: an Agent, Task or Workflow call, or a seat recorded running or
-    queued."""
+def dispatches(calls: list[ToolCall], run: Run) -> list[int]:
+    """Where agents went out after the run's open (its call here, else its run.opened time): an Agent, Task or
+    Workflow call, or a seat recorded running or queued."""
     opened_at = next((n for n, t, block, found, _ in calls if any(i["sub"] == "run open" for i in found)), 0)
-    return [n for n, t, block, found, _ in calls if n >= opened_at and (block.get("name") in AGENTS or any(
-        i["sub"] == "seat" and re.search(r"\bseat\s+\S+\s+(running|queued)\b", i["text"]) for i in found))]
+    since = next((e["t"] for e in run.of_type("run.opened") if e["t"]), None)
+    return [n for n, t, block, found, _ in calls if n >= opened_at
+            and not (since and t and t < since - timedelta(seconds=2)) and (block.get("name") in AGENTS or any(
+                i["sub"] == "seat" and re.search(r"\bseat\s+\S+\s+(running|queued)\b", i["text"]) for i in found))]
 
 
 def made_elsewhere(run: Run, part: list[Entry], sessions: set[str]) -> tuple[datetime | None, str]:
@@ -89,7 +92,7 @@ def size_first(run: Run, part: list[Entry], calls: list[ToolCall], sessions: set
         say(PASS, label, "not this transcript's to show: the run's first dispatch, at %s, was made in %s"
             % (clock(first_at), elsewhere))
         return
-    sent = dispatches(calls)
+    sent = dispatches(calls, run)
     sized = [n for n, t, block, found, _ in calls
              if any(i["sub"] == "state" and SIZED.search(i["text"]) for i in found)]
     if not sent:
@@ -119,7 +122,7 @@ def first_card(run: Run, part: list[Entry], calls: list[ToolCall], sessions: set
         say(PASS, label, "not this transcript's to show: the run's first dispatch, at %s, was made in %s — the card "
             "is owed once per run" % (clock(first_at), elsewhere))
         return
-    sent = dispatches(calls)
+    sent = dispatches(calls, run)
     if not sent:
         say(PASS, label, "no agent was dispatched, so none was due")
         return
@@ -204,3 +207,25 @@ def rulings_once(run: Run, part: list[Entry], calls: list[ToolCall], say: Say) -
         say(PASS, label, "one question at %s" % clock(part[asked[0]][0]))
     else:
         say(PASS, label, "no question at Deliver: no rulings were asked")
+
+
+def cap_goes(part: list[Entry], calls: list[ToolCall], say: Say) -> None:
+    """Each go past the cap (council cap allow --user-said) after a message from the user that followed the stop: the
+    agent gate's refusal, or the helper's note that the run reached its cap, before it. The words are the Chair's to
+    file, so a go with no message of the user's between is on the Chair's record only (D7: never inferred)."""
+    label = "The user's go past the cap"
+    goes = [(n, t) for n, t, _, found, _ in calls if any(i["sub"] == "cap allow" for i in found)]
+    if not goes:
+        return
+    bare = []
+    for n, t in goes:
+        stop = max((k for k, (_, kind, block) in enumerate(part[:n]) if kind == "result"
+                    and any(s in block_text(block.get("content")) for s in STOPS)), default=-1)
+        if not any(kind == "prompt" for _, kind, _ in part[stop + 1:n]):
+            bare.append(clock(t))
+    if bare:
+        say(WARN, label, "%d of %d go(es) recorded with no message from the user after the stop (%s): the go is on "
+            "the Chair's record only — the user says go, the Chair never infers it (D7)"
+            % (len(bare), len(goes), ", ".join(bare[:3])))
+    else:
+        say(PASS, label, "%d go(es), each after a message from the user" % len(goes))

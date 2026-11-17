@@ -26,7 +26,7 @@
 4. **In chat, your mode's summary**, in plain words (context-core, Talking to the user).
    **A mode that changed code carries one line, as written:** `Checked by machine:` followed by the
    gates' verdict line (`gates: 3 ran — 2 pass, 1 FAIL (lint, not mandatory)`) — or, when the helper
-   exited 4, its own NOTHING WAS CHECKED line quoted, because it names the real cause. A run that
+   exited 4 (context-core, The helper), its own NOTHING WAS CHECKED line quoted, because it names the real cause. A run that
    proved nothing by machine says so; it never reads as a clean pass. A mode that changed nothing
    (plan, research, a review of someone else's work) leaves the line out, and mentions the missing
    checks once, in the offer. council-implement's receipt holds this line.

@@ -19,7 +19,14 @@
      a section is called decides that, not a word further along its heading, so "Accepted Patterns —
      never re-propose these" still holds entries the runs read. Observed Failures are selected as
      historical evidence, explicitly not as instructions. `council memory` lists every entry it
-     does not serve, and every line that looks like an entry but could not be read. -->
+     does not serve, and every line that looks like an entry but could not be read.
+     Upkeep, each as a numbered operation the user says yes to, one at a time — never a wholesale
+     rewrite. Over budget: "merge AP-7 into AP-3", "retire EC-2 — superseded by EC-9". To retire an
+     entry, move it under ## Retired with a **Retired:** <date> — <why> line; no run reads it after
+     that. A stale anchor (`council memory check`): re-anchor the entry to a path or a symbol, or
+     retire it. An observed failure marked UNSUPPORTED (its evidence file is gone, or its cited lines
+     no longer show its verdict; no brief gets it): re-anchor its evidence to a file that still shows
+     it, or retire it — never restore it by editing its verdict. -->
 
 
 ## Accepted Patterns (AP) — intentional; never flag these

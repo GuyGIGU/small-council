@@ -1,6 +1,7 @@
 """A build's saved rounds (`<run>/patches/`), written by council patch save (references/run/builder-report.md):
 for task <n>, round <r>, the round's diff `T<n>-<r>.patch`, its record `T<n>-<r>.json` (the head, the trees it
-runs between, its files and what the checks found) and the task's history `T<n>.md`, rewritten at each save."""
+runs between, its files and what the checks found) and the task's history `T<n>.md`, rewritten at each save; and
+`T<n>-held.patch`, the edits a stopped builder left in no round, while council patch hold keeps them aside."""
 from __future__ import annotations
 
 import json
@@ -37,6 +38,12 @@ def folder(run: str | Path) -> Path:
 def name(task: int, number: int) -> str:
     """A round's file stem, T3-2."""
     return "T%d-%d" % (task, number)
+
+
+def held(run: str | Path, task: int) -> Path:
+    """Where council patch hold keeps the edits task <task>'s builder left in no round: T<n>-held.patch, no round's
+    record (RECORD never reads it)."""
+    return folder(run) / ("T%d-held.patch" % task)
 
 
 def rounds(run: str | Path, task: int | None = None) -> list[Round]:

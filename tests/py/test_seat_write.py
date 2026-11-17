@@ -10,6 +10,36 @@ HEADER = "slug\tstate\tagent\ttokens\tupdated\tnote\tagents\treported\n"
 STOP = "NEEDS: fix a.py:2 · does: x · should: y · seen: z"
 
 
+class AddTest(support.Scratch):
+    def test_appends_at_once_keep_every_row_and_one_header(self) -> None:
+        """CODE-RECORDS-8: four seats reporting tool calls at once, 50 rows each, into one fresh tools.tsv."""
+        run = self.run_folder()
+        script = ("from pathlib import Path\nfrom council.records import seat_write\nfile = Path(%r)\n"
+                  "for n in range(50):\n"
+                  "    seat_write.add(file, [['t', sys.argv[1], 'a%%d' %% n, '3']], 'at\\tseat\\tagent\\ttools')\n"
+                  % str(run / "tools.tsv"))
+        self.assertEqual(self.together(script, "s1", "s2", "s3", "s4"), ["", "", "", ""])
+        lines = (run / "tools.tsv").read_text(encoding="utf-8").split("\n")
+        self.assertEqual((len(lines), lines.count("at\tseat\tagent\ttools"), lines[-1]), (202, 1, ""))
+        self.assertTrue(all(len(line.split("\t")) == 4 for line in lines[:-1]))
+
+    def test_a_torn_last_line_is_never_joined(self) -> None:
+        run = self.run_folder()
+        (run / "tools.tsv").write_bytes(b"at\tseat\tagent\ttools\nt\ts1\ta")
+        seat_write.add(run / "tools.tsv", [["t", "s2", "a2", "4"]], "at\tseat\tagent\ttools")
+        self.assertEqual((run / "tools.tsv").read_bytes(), b"at\tseat\tagent\ttools\nt\ts1\ta\nt\ts2\ta2\t4\n")
+
+    def test_a_bom_on_the_header_stays_the_header(self) -> None:
+        """CODE-RECORDS-5: seats.tsv saved once with a BOM (PowerShell 5.1) keeps one header through a rewrite."""
+        run = self.run_folder()
+        (run / "seats.tsv").write_bytes(b"\xef\xbb\xbf" + HEADER.encode("utf-8") + b"hunt\tdone\ta1\t\tT\t\t1\t0\n")
+        seat_write.rewrite(run, "map", {"state": "queued", "agent": "", "total": "", "updated": "U", "note": "",
+                                        "agents": "", "reported": "0", "tokens": ""})
+        text = (run / "seats.tsv").read_text(encoding="utf-8")
+        self.assertEqual(text.count("slug\tstate"), 1, text)
+        self.assertEqual([row["slug"] for row in seats.rows(run)], ["hunt", "map"])
+
+
 class RowTest(support.Scratch):
     def note_after(self, state: str, note: str, now: str, given: str = "", short: bool = False) -> str:
         """The note task-1's row holds after it was <state> with <note> and is recorded <now> with note=<given>."""

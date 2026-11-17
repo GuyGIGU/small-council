@@ -371,6 +371,9 @@ def assess(run: Path, claims: list[Claim], self_check: bool = False) -> list[str
             elif own and not self_check:
                 issues.append(label + ": only the Chair's own check ({}) — this run's plan calls for an "
                               "independent verifier".format(SELF_CHECK))
+        if claim["disposition"] == "kept" and claim["verdict"] == "REFUTED":
+            issues.append(label + ": kept, but its verifier REFUTED it — move it under ## Cut (id unchanged), or, if "
+                          "the verifier was wrong, send it to a verifier again for a new verdict")
         if claim["disposition"] == "cut" and claim["strength"] == "P1" and not claim["verification"]:
             issues.append(label + ": cut P1 has no verification link")
         if claim["disposition"] == "cut" and claim["verdict"] in TRUE_VERDICTS and not claim.get("still_cut"):
@@ -391,7 +394,9 @@ def assess(run: Path, claims: list[Claim], self_check: bool = False) -> list[str
                 seat_file = run / "seats" / (match.group(1) + ".md")
                 body = read_file(seat_file, required=False)
                 if body is None or match.group(2) not in seat_index_ids(body):
-                    issues.append(label + ": source item is missing: " + source)
+                    issues.append(label + ": source item is missing: " + source + (
+                        " — a Solo run's own judgment is from: chair (no item number)" if match.group(1) == "chair"
+                        else ""))
             elif source != "chair" and not re.fullmatch(r"gate:[A-Za-z0-9][A-Za-z0-9._-]*", source):
                 issues.append(label + ": unknown provenance: " + source)
             elif source.startswith("gate:") and not proof_link(run, "gates/" + source[5:] + ".json"):
@@ -405,6 +410,16 @@ def assess(run: Path, claims: list[Claim], self_check: bool = False) -> list[str
 def render(claims: list[Claim]) -> str:
     return "".join(json.dumps(claim, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
                    for claim in claims)
+
+
+def indexed(run: Path, action: str) -> dict[str, Any]:
+    """The run's fields, for a mode that keeps a claim index; a post-game's refusal, with the reason and the step."""
+    fields = run_fields(run)
+    if fields["mode"] == "council-postgame":
+        raise EvidenceError("a post-game keeps no claim index: its verifier judges the work against the request (MET, "
+                            "PARTLY MET, NOT MET, CAN'T TELL) in verify-*.md, and the closing card counts those rows "
+                            "— nothing to " + action + "; go on with the run: council status --run " + run.name)
+    return fields
 
 
 def main(argv: list[str]) -> int:
@@ -426,7 +441,7 @@ def main(argv: list[str]) -> int:
     if run.is_symlink() or not run.is_dir():
         raise EvidenceError("run must be a real directory: " + str(run))
     output = run / "claims.jsonl"
-    fields = run_fields(run)
+    fields = indexed(run, args.action)
     several = fields["mode"] == "council-plan"
     if args.action == "show":
         body = read_file(output)

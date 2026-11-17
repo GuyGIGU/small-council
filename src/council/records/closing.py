@@ -112,14 +112,15 @@ def _no_verdicts(run: Path) -> str | None:
 
 
 def _unmapped(run: Path) -> str | None:
-    """The top-level areas whose tracked files the run changed since the commit it opened on, less those a map line
-    under ## Changes has named since the day it opened; None with no map or none left."""
+    """The top-level areas whose tracked files the run changed since the commit it opened on (committed or on disk)
+    that the map is stale on, as map status reads it (map_file.stale, the changes on disk counted); None with no map,
+    a map with no stamp in this history, or none left."""
     start, top, council = _field(run, "start-head"), _field(run, "code-root"), home.native(home.run_home(run))
     top = home.native(top) if top not in ("", "-") else "."
     if not start or not map_file.path(council).is_file() or not Path(top).is_dir():
         return None
-    noted = map_file.noted(council, _field(run, "opened")[:10])
-    left = [area for area, _ in map_file.areas(map_file.changed(top, start)) if area not in noted]
+    behind = {area for area, _ in map_file.stale(council, top, disk=True).areas}
+    left = [area for area, _ in map_file.areas(map_file.changed(top, start)) if area in behind]
     return ", ".join(left) or None
 
 

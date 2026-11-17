@@ -3,6 +3,7 @@ unless it stopped with NEEDS:; and a start is a seat neither queued nor running 
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 import support
 
@@ -58,6 +59,41 @@ class BuildSeatTest(support.Scratch):
         self.assertIn("agent b1", build_seat.dispatch_refusal(named, "task-1") or "")
         self.assertIn("its seat isn't queued", build_seat.dispatch_refusal(self.build(), "task-1") or "")
         self.assertIsNone(seat.taken(self.build("council-review", b"task-1\tqueued\t\t\tT\t\t\t\n"), "task-1"))
+
+    def test_a_take_that_comes_while_another_holds_the_seat_lock_waits_for_it_and_is_refused(self) -> None:
+        # EVALS-1 (M13): two builders for one queued seat, the second's take arriving while the first is between its
+        # reading of the seat and its record. The seam fixes that order (no race to win by luck): the first take's
+        # reading starts the second and waits until the second has read the seat or 2 s have passed. Under the seat
+        # lock the second can't read until the first has recorded running, so it is refused; without the lock both
+        # read queued and both go out.
+        import threading
+        from council.commands import seat
+        run = self.build(seats=b"task-1\tqueued\t\t\tT\t\t\t\n")
+        read, second, results = build_seat.dispatch_refusal, threading.Event(), {}
+
+        def reading(at: Path, slug: str) -> str | None:
+            why = read(at, slug)
+            if threading.current_thread() is not first:
+                second.set()                                   # the second take has read the seat
+            elif "second" not in results:
+                results["second"] = None
+                other.start()
+                second.wait(2)
+            return why
+
+        def take(name: str) -> None:
+            results[name] = seat.taken(run, "task-1")
+
+        first = threading.Thread(target=take, args=("first",))
+        other = threading.Thread(target=take, args=("second",))
+        with mock.patch.object(build_seat, "dispatch_refusal", side_effect=reading):
+            first.start()
+            first.join(60)
+            other.join(60)
+        self.assertIsNone(results["first"])
+        self.assertIn("a builder went out for it already", results["second"] or "")
+        rows = (run / "seats.tsv").read_text(encoding="utf-8").splitlines()[1:]
+        self.assertEqual([row.split("\t")[1] for row in rows], ["running"])
 
     def test_done_needs_the_report_unless_the_builder_stopped_with_needs(self) -> None:
         run = self.build()

@@ -82,12 +82,17 @@ def cell(value: str) -> str:
     return bytes(byte for byte in data if byte >= 0x20 and byte != 0x7F).decode("utf-8", "surrogateescape")
 
 
+def _last(data: bytes) -> str:
+    """The stream's last whole line, its CR dropped: '' for an empty stream."""
+    return data[:-1].rsplit(b"\n", 1)[-1].replace(b"\r", b"").decode("utf-8", "replace")
+
+
 def _next_seq(data: bytes) -> int | None:
     """The next sequence number after the stream's last line, or None when the last line is torn,
     missing or not a numbered row."""
     if data and not data.endswith(b"\n"):
         return None                      # a torn final line must not be joined to the next event
-    last = data[:-1].split(b"\n")[-1].replace(b"\r", b"").decode("utf-8", "replace") if data else ""
+    last = _last(data)
     if last == HEADER:
         return 1
     parts = last.split("\t")
@@ -174,7 +179,7 @@ def ready(run: Path) -> tuple[int, str]:
         return 2, "events.tsv is missing"
     if data and not data.endswith(b"\n"):
         return 1, "its last line is torn"
-    if data[:-1].rsplit(b"\n", 1)[-1].replace(b"\r", b"") == HEADER.encode():
+    if _last(data) == HEADER:
         return 2, "it holds no events"
     return (0, "") if _next_seq(data) else (2, "its last row is not a numbered event")
 

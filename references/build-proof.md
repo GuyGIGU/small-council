@@ -57,9 +57,8 @@ council gate after-2 --proof preserve -- 'pytest tests/test_export.py'
 ```
 
 `--proof change` makes the default explicit. The flag takes a `before-<id>` or `after-<id>` gate in
-a council-implement run, where the id is the task's number or a slug of letters, digits, dashes and
-underscores (a builder's name, such as `before-b7-flip`); it does not apply to configured gate sets
-or `regress-<n>` fixes.
+a council-implement run, where the id is the task's number (`before-3`); it does not apply to
+configured gate sets or `regress-<n>` fixes.
 The helper writes the mode in each gate's JSON verdict. Old verdicts without it remain change proof.
 Always quote the whole command after `--`, so pipes, `&&` and nested quotes reach the gate intact.
 The command must be identical in both records. Keep both output files and cite them in the task log.
@@ -165,9 +164,10 @@ Proof cell; a saved test note establishes its file exists, not that its assertio
 | `DIFFERENT-PROOF` | The pair declares different modes; an after-only declaration cannot relabel the before-check. |
 | `INVALID-PROOF` | The recorded mode is unsupported or a regression fix was labelled preservation. |
 | `MISSING-OUTPUT` | Preservation has no saved output for one side of the pair. |
-| `NOTHING-RAN` | Preservation output is blank or says no tests ran or no files matched. |
+| `NOTHING-RAN` | The output says no tests ran, every test was skipped or no files matched; so does a blank preservation output. |
 | `NO-BEFORE` / `NO-AFTER` | One side of the pair is missing. |
 | `NO-PROOF-YET` | The before-check's red proves nothing: marked invalid, stopped at its time limit, or never ran (exit 127). Run it again. |
+| `AFTER-STALE` | The after-check passed on other files than those on disk now, and fails on these. Run `council gate after-<n>` again, then `council check`. |
 | `REVERT-PASSED` | The change check still passes with the task's saved rounds taken off: it does not show the change. Make it fail without the change, then run the pair and `council check` again. |
 
 **The revert check.** For each change proof that reads `ok`, of a task with saved rounds
@@ -175,19 +175,22 @@ Proof cell; a saved test note establishes its file exists, not that its assertio
 files on disk (what `git` tracks or could, as git holds them; `.council/` and ignored files left out)
 to a scratch folder outside the project and the run folder, and runs the after-check's recorded
 command there under the gate time limit, first with the change still on: the control. It must pass
-there; if it doesn't, the check needs files the copy leaves out, and nothing more is tried. Then the
-task's rounds come off, newest first, with the same reverse-apply as `council patch revert`, and the
-command runs again. The task's test files stay as they are when its rounds come off: the round that
-added or extended the test is the same round as the fix, and taking the test off with it would run an
-older test, or none, instead of the one that proved the change. The scratch folder is removed
+there. If it doesn't and the after-check ran on other files than those on disk now, the proof is
+`AFTER-STALE`; if the files are the same, the check needs files the copy leaves out. Either way
+nothing more is tried. Then every round saved since the task's first comes off, newest first (a later
+task's rounds before the task's own), with the same reverse-apply as `council patch revert`, and the
+command runs again. The task's test files and every file the command names stay as they are when the
+rounds come off: the round that added or extended the test is the same round as the fix, and taking
+the test off with it would run an older test, or none, instead of the one that proved the change. The scratch folder is removed
 afterwards; the project's files never change. The outputs are kept as
 `gates/reverted/after-<n>-with-change.txt` (the control) and `gates/reverted/after-<n>.txt`.
 
 - It fails with the rounds off: the proof stands, and the row says so.
-- It still passes: `REVERT-PASSED`, a broken proof, and `council check` exits 1.
+- It still passes: `REVERT-PASSED`, a broken proof, and `council check` exits 1. `AFTER-STALE` is
+  broken the same way.
 - It can't be made: the control doesn't pass in the copy, a round doesn't come off the files on disk
-  cleanly, the files can't be copied, the command runs files under `.council/`, or a run timed out,
-  never ran or ran no test. The row says why, and it is neither a pass nor a problem: it goes under
+  cleanly, a file the command names is not in the copy once the rounds are off, the files can't be
+  copied, the command runs files under `.council/`, or a run timed out, never ran or ran no test. The row says why, and it is neither a pass nor a problem: it goes under
   `Not proved:`.
 
 A preservation proof, a proof that is not `ok` and a task with no saved round are not rerun.

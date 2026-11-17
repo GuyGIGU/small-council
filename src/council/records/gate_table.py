@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.records import bytewise, config
+from council.records import bytewise, cells, config
 
 
 class Gate(NamedTuple):
@@ -42,25 +42,6 @@ RAN_OK = ("yes", "y", "true", "ok", "okay", "pass", "passed", "passes", "passing
 RAN_NOT = ("no", "n", "false", "not", "never", "fails", "failed", "failing", "broken", "blocked", "skip", "skipped",
            "unrunnable", "unprobed")
 HEADS = {"gate": 0, "name": 0, "command": 1, "runat": 2, "mandatory": 3, "checked": 4}
-
-
-def table_cells(line: str) -> list[str]:
-    """A table row split on '|' outside backticks; '\\|' is a literal pipe (config_gates' cells)."""
-    out, current, quoted, i = [], "", False, 0
-    while i < len(line):
-        char = line[i]
-        if char == "\\" and line[i + 1:i + 2] == "|":
-            current, i = current + "|", i + 2
-            continue
-        if char == "`":
-            quoted = not quoted
-        if char == "|" and not quoted:
-            out.append(current)
-            current = ""
-        else:
-            current += char
-        i += 1
-    return out + [current]
 
 
 def _trim(value: str) -> str:
@@ -157,12 +138,13 @@ def gates(home: str | Path) -> list[Gate]:
     found: list[Gate] = []
     inside, columns, header_cells = False, None, 0
     for line in bytewise.file_lines(config.path(home), fold=False):
-        if line.startswith("## "):
-            inside, columns = line.startswith("## Gates"), None
+        heading = cells.heading(line)
+        if heading is not None:
+            inside, columns = heading.startswith("gates"), None
             continue
         if not inside or not line.startswith("|"):
             continue
-        row = table_cells(line)
+        row = cells.table_cells(line)
         if columns is None:                       # the header row names the columns; it is never a gate
             columns, header_cells = _columns(row), len(row)
             continue
@@ -182,8 +164,9 @@ def gates_listed(home: str | Path) -> bool:
     a note, not a gate."""
     inside = item = comment = listed = table = False
     for line in bytewise.file_lines(config.path(home), fold=False):
-        if line.startswith("## "):
-            inside, item = line.startswith("## Gates"), False
+        heading = cells.heading(line)
+        if heading is not None:
+            inside, item = heading.startswith("gates"), False
             continue
         if not inside:
             continue

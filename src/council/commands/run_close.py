@@ -5,7 +5,7 @@ from pathlib import Path
 
 from council import clock
 from council.commands import cli, close_report, closed, event_note, nudges, resolve
-from council.records import closing, events, ledger, locks, seats, state_write, usage
+from council.records import audit_file, closing, events, ledger, locks, seats, state_write, usage
 from council.records import home as where
 
 STATUSES = ("complete", "abandoned", "paused")
@@ -37,11 +37,17 @@ def main(args: cli.Args, words: list[str]) -> int:
     old = (resolve.field(run, "status"), resolve.field(run, "closed"))
     retake = state_write.closed(run) and old[0] == "complete" and status == "abandoned" and closing.stopped_short(run)
     if state_write.closed(run) and not retake:
+        added = _finished(run, lost) if old[0] == status == "complete" else \
+            _forgotten(run) if old[0] == status == "abandoned" else []
         locks.release(lock)
         if old[0] != status:
-            closed.refuse(run, "it stays " + old[0])
+            closed.refuse(run, "it stays %s; for more work, open a new run: council run open %s"
+                          % (old[0], resolve.field(run, "mode") or "<mode>"))
             raise cli.Refusal("run %s changed while it was being closed — run the close again" % run.name)
-        cli.say("%s is already closed — %s at %s; nothing changed" % (run.name, old[0], old[1]))
+        cli.say("%s is already closed — %s at %s; %s" % (run.name, old[0], old[1], "the close stopped before its own "
+                "records, now done: " + ", ".join(added) if added else "nothing changed"))
+        if old[0] == "complete" and not audit_file.present(run):
+            close_report.audit(run)
         close_report.claims_note(run)
         return 0
     _close(run, status, lost, retake, old[0] != status or not old[1])
@@ -74,15 +80,47 @@ def _close(run: Path, status: str, lost: str, retake: bool, real: bool) -> None:
     close_report.claims_note(run)
     codes = _complete(run, home) if status == "complete" else ""
     if real:
-        t = totals["tokens"]
-        detail = "agent_runs=%d;reported=%d;tokens=%d;basis=%s" % (
-            totals["agents"]["at_least"], usage.reported_runs(seat_list), t["known"], BASIS.get(t["basis"], t["basis"]))
+        detail = _detail(seat_list, totals)
         if not lost:
             close_report.chair(run)
             event_note.append(run, "run.paused" if status == "paused" else "run.closed", "run", status,
                               detail + (";warnings=" + codes if codes else ""), "the run is closed, but its close "
                               "event could not be recorded — council run events check --run " + run.name)
         nudges.status_nudge(run, "close", True)
+
+
+def _detail(seat_list: list, totals: dict) -> str:
+    """The close event's detail: the agent runs, how many reported, the tokens and their basis."""
+    t = totals["tokens"]
+    return "agent_runs=%d;reported=%d;tokens=%d;basis=%s" % (
+        totals["agents"]["at_least"], usage.reported_runs(seat_list), t["known"], BASIS.get(t["basis"], t["basis"]))
+
+
+def _finished(run: Path, lost: str) -> list:
+    """A complete close's own records, when the close that set the state stopped before them: the run's ledger rows
+    and its close event, each added once (both are idempotent). What it added, as words."""
+    added = []
+    rows = ledger.raw_rows(where.council_home()) or []
+    if not any(len(row) > 1 and row[1] == run.name for row in rows):
+        counted = ledger.record(run)
+        added += ["%d ledger row(s)" % counted] if counted else []
+    seat_list = usage.seat_list(run)
+    detail = _detail(seat_list, usage.usage_totals(seat_list))
+    if not lost and event_note.append(run, "run.closed", "run", "complete", detail, "its close event could not be "
+                                      "recorded — council run events check --run " + run.name, once=True):
+        added.append("the close event")
+    return added
+
+
+def _forgotten(run: Path) -> list:
+    """An abandoned close's own record, when the close that took a complete run back stopped before it (ledger.forget
+    refused, saying to run this again): the run's ledger rows taken out. What it did, as words."""
+    def listed() -> bool:
+        return any(len(row) > 1 and row[1] == run.name for row in ledger.raw_rows(where.council_home()) or [])
+    if not listed():
+        return []
+    ledger.forget(run)
+    return [] if listed() else ["its ledger rows taken out"]
 
 
 def _complete(run: Path, home: str) -> str:

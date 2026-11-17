@@ -1,3 +1,5 @@
+> Partly history: the TUI, `council history`, `scripts/status.py`, `cockpit.py` and `evals/run_tui.py` named here were removed or moved into `src/council/` by 2026-11-15. The status card's checks are in `evals/run_status.py`.
+
 # Status widget and trustworthy run accounting
 
 ## What changed

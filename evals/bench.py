@@ -200,7 +200,7 @@ def pack(case, source):
                                       "files": files, "delete": delete}
     if not obj["hidden"] or "ideal" not in obj["variants"]:
         raise BenchError("a bundle needs hidden checks and an 'ideal' variant")
-    (BENCH / (case + ".hidden")).write_text(encode(obj), encoding="ascii", newline="\n")
+    (BENCH / (case + ".hidden")).write_bytes((encode(obj)).encode("ascii"))
     return obj
 
 
@@ -221,7 +221,7 @@ def unpack(case, dest):
 
 def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="\n")
+    path.write_bytes((text).encode("utf-8"))
 
 
 def set_arm(arm, suite=SUITE):

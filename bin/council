@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# council — the Small Council's helper. This file only starts Python: src/council/__main__.py reads the
-# words, runs the command and refuses what it must (D24). Portability: bash 3.2+ (macOS), Git Bash on
-# Windows, Linux.
+# council — the Small Council's helper. This file only starts Python: src/council/__main__.py reads the words, runs
+# the command and refuses what it must (D24). Portability: bash 3.2+ (macOS), Git Bash on Windows, Linux.
 #
 # Sourcing this file defines nothing and runs nothing.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
@@ -27,26 +26,27 @@ for word in ${1+"$@"}; do
   if [ "$skip" = 1 ]; then skip=0; continue; fi
   case "$word" in
     --) break ;;
-    --run|--code-root|--status|--base|--at|--proof|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--expand|--scope|--user-said|--pose|--exit-after|--transcript|--timeout|--invalid|--seat|--mode) skip=1 ;;
+    --run|--code-root|--status|--base|--at|--proof|--session|--task|--risk|--complexity|--uncertainty|--surface|--agent-cap|--budget-tokens|--scope|--user-said|--transcript|--glob|--round|--timeout|--invalid|--seat|--mode) skip=1 ;;
     -?*) ;;
     *) label="$label $word"
        case "$label" in "council run"|"council cap") ;; *) break ;; esac ;;
   esac
 done
 
-# One Python start and no probe: exit 85 (the entry's own refusal of a Python older than 3.8), 126, 127 or
-# 49 (the Store's stand-in, its 9009 through MSYS) tries the next candidate, unless the command itself ran
-# and exited so (Python then leaves the file COUNCIL_RAN names). Git Bash rewrites a word that looks like a
+# One Python start and no probe: exit 85 (the entry's own refusal of a Python older than 3.8), 126, 127 or 49 (the
+# Store's stand-in, its 9009 through MSYS) tries the next candidate, unless the command itself ran and exited so
+# (Python then makes the file COUNCIL_RAN names, never through a link). Git Bash rewrites a word that looks like a
 # path (decision=/x reached Python as decision=C:/Program Files/Git/x), so MSYS2_ARG_CONV_EXCL='*' stops
 # that; COUNCIL_ARG_CONV_EXCL hands Python the caller's own ("set:<value>", empty when unset), which a
-# project's command gets back. COUNCIL_BASH is this bash, for the commands that print or start it.
+# project's command gets back. COUNCIL_BASH is this bash, for the commands that print or start it. COUNCIL_SCRIPT=script
+# runs a tool (commands/script.py, for the seat gate) instead of a command; script.py drops it.
 ran="${TMPDIR:-/tmp}/council-ran.$$"
 for candidate in $candidates; do
   command -v "$candidate" >/dev/null 2>&1 || continue
   rc=0
   [ ! -e "$ran" ] || rm -f "$ran"
   COUNCIL_ARG_CONV_EXCL="${MSYS2_ARG_CONV_EXCL+set:$MSYS2_ARG_CONV_EXCL}" COUNCIL_RAN="$ran" COUNCIL_BASH="$BASH" \
-    MSYS2_ARG_CONV_EXCL='*' "$candidate" -E -s "$entry/__main__.py" ${1+"$@"} || rc=$?
+    MSYS2_ARG_CONV_EXCL='*' "$candidate" -E -s "$entry/${COUNCIL_SCRIPT:+commands/}${COUNCIL_SCRIPT:-__main__}.py" ${1+"$@"} || rc=$?
   case "$rc" in 85|126|127|49) [ ! -e "$ran" ] || { rm -f "$ran"; exit "$rc"; } ;; *) exit "$rc" ;; esac
 done
 printf 'council: %s\n' "$label needs Python 3.8 or newer, and none is on PATH — install it (python.org), check that python3 --version or python --version says 3.8 or later, then run this again" >&2

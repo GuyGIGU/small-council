@@ -1,15 +1,31 @@
-"""What `council seat` writes under seats.tsv.lock (references/run/run-accounting.md)."""
+"""What `council seat` writes under seats.tsv.lock (references/run/run-accounting.md); add takes that lock itself."""
 from __future__ import annotations
 
 import os
 import re
 from pathlib import Path
 
-from council.records import bytewise, paths, seat_files, seat_rows, seats
+from council.records import bytewise, locks, owners, paths, seat_files, seat_rows, seats
 from council.records.cells import leading
 
 HEADER = ["slug", "state", "agent", "tokens", "updated", "note", "agents", "reported"]
 COUNT = re.compile("[0-9]*")
+LEAD = " \t>*_"                                   # what may stand before a NEEDS: line's first word
+NEEDS_FIX = re.compile(r"NEEDS:[*_]*\s*[*_`]*(?i:fix)\b[*_`:]*\s*(\S*)")
+
+
+def needs(note: str) -> bool:
+    """A NEEDS: line, as a builder writes it or the Chair records it: markdown marks before the word are allowed.
+    The one reader of a seat's NEEDS: note: here, where the note ends, and build_seat, the builder's stop, the tree
+    and the pack through it."""
+    return note.lstrip(LEAD).startswith("NEEDS:")
+
+
+def fix_at(note: str) -> str | None:
+    """Where a NEEDS: fix line says the fault is (its file:line, '?' when it names none); None for any other note.
+    Fix in any case, markdown marks allowed: the one pattern the builder's stop holds to the four-part form too."""
+    found = NEEDS_FIX.match(note.lstrip(LEAD))
+    return (found.group(1).strip("`*_") or "?") if found else None
 
 
 def table(file: Path) -> list[list[str]]:
@@ -18,11 +34,26 @@ def table(file: Path) -> list[list[str]]:
 
 
 def add(file: Path, rows: list[list[str]], header: str) -> None:
-    """Append rows; a file with nothing in it gets the header first. OSError when it can't be written."""
-    empty = not file.is_file() or file.stat().st_size == 0
-    with open(str(file), "wb" if empty else "ab") as stream:
-        stream.write("".join("\t".join(row) + "\n" for row in ([header.split("\t")] if empty else []) + rows)
-                     .encode("utf-8", "surrogateescape"))
+    """Append rows to a run's seat file (seats.tsv, usage.tsv, tools.tsv) under the run's seat lock, `seats.tsv.lock`
+    beside it, taken here unless this process holds it already: a file with nothing in it gets the header first,
+    and a row is never joined to a torn last line. OSError when it can't be written or the lock can't be taken."""
+    lock = file.parent / (seats.SEATS + ".lock")
+    mine = owners.first_line(lock / "owner") == str(os.getpid())
+    if not mine and not locks.acquire(lock):
+        raise OSError("seat lock unavailable: " + lock.as_posix())
+    try:
+        with open(str(file), "ab+") as stream:
+            stream.seek(0, os.SEEK_END)
+            empty = stream.tell() == 0
+            if not empty:
+                stream.seek(-1, os.SEEK_END)
+            torn = not empty and stream.read(1) != b"\n"
+            out = [header.split("\t")] if empty and header else []
+            text = "".join("\t".join(row) + "\n" for row in out + rows)
+            stream.write((("\n" if torn and text else "") + text).encode("utf-8", "surrogateescape"))
+    finally:
+        if not mine:
+            locks.release(lock)
 
 
 def missing_file(run: Path, slug: str) -> str:
@@ -104,4 +135,4 @@ def _row(cells: list[str], new: dict[str, str]) -> list[str]:
 def _rerun_done(c: list[str], new: dict[str, str]) -> bool:
     """A NEEDS: note ends when its seat, started again (queued or running), is recorded done with no note: the
     stop it named was the earlier run's. A late usage report on the stop itself (done to done) keeps it."""
-    return new["state"] == "done" and c[1] in ("queued", "running") and c[5].startswith("NEEDS:")
+    return new["state"] == "done" and c[1] in ("queued", "running") and needs(c[5])

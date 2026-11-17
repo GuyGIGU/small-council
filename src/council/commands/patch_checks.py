@@ -37,7 +37,14 @@ SIGNS = (
                                     r"\btemporar(?:y|ily)\b(?!\s+(?:files?|dir(?:ectory|ectories|s)?|folders?|copy))|"
                                     r"\bfor\s+now\b|\buntil\b.*?\b(?:is|are|gets?|been)\s+fixed\b", re.IGNORECASE)),
     ("todo", re.compile(r"\b(?:TODO|FIXME)\b|(?<![\w-])XXX(?![\w-])")),
+    ("commented-out check", re.compile(r"^\s*(?:#|//|/\*|\*|--)\s*(?:assert\w*\b|expect\s*\(|self\.assert\w*|"
+                                       r"(?:async\s+)?def\s+test|func\s+Test|(?:it|test|describe)\s*\(|"
+                                       r"t\.(?:Error|Fatal)f?\s*\()")),
 )
+# A comment line in code: #, //, /* and a block comment's *, --. Not an attribute (#[test]), a shebang (#!) or a
+# C preprocessor line.
+COMMENT = re.compile(r"\s*(?:#(?![\[!])(?!\s*(?:include|define|if|ifdef|ifndef|elif|else|endif|pragma|undef)\b)|"
+                     r"//|/\*|\*(?!/)|--\s)")
 
 
 class Removal(NamedTuple):
@@ -73,8 +80,9 @@ def _doc(path: str) -> bool:
 def removals(found: list[diff.File]) -> list[Removal]:
     """The tests, assertions and document rules taken out: a deleted test file as one; else each removed line that
     defines a test, asserts, or (in a document) states a rule, unless the same words were added anywhere in the
-    round (a move, not a removal)."""
-    kept = {_flat(line.text) for file in found for line in file.added}
+    round (a move, not a removal). In code, an added comment is no move: `# assert f() == 2` turned the check off."""
+    kept = {_flat(line.text) for file in found for line in file.added
+            if _doc(file.path) or not COMMENT.match(line.text)}
     out = []
     for file in found:
         if file.deleted and TEST_PATH.search(file.path):
@@ -137,19 +145,6 @@ def signs(found: list[diff.File]) -> list[Sign]:
                 kinds.append("changed expectation")
             out += [Sign(kind, file.path, line.number, line.text.strip()) for kind in kinds]
     return out
-
-
-def slice_paths(cells: list[str]) -> list[str]:
-    """The paths a task's Owner and Touches cells (and the map row they name) give: each word holding a '/' or a
-    file name with an extension, backticks, quotes and a trailing :line or punctuation dropped; each path once, in
-    the order first named."""
-    found = []
-    for cell in cells:
-        for word in re.split(r"[\s,;]+", cell or ""):
-            word = re.sub(r":[0-9]+(?:-[0-9]+)?$", "", word.strip("`'\"()[]*,;:").rstrip("."))
-            if "/" in word or re.fullmatch(r"[\w.*-]+\.[A-Za-z0-9]+", word):
-                found.append(word[2:] if word.startswith("./") else word)
-    return list(dict.fromkeys(found))
 
 
 def outside(files: list[str], paths: list[str]) -> list[str]:

@@ -687,6 +687,12 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("a cut claim a verifier CONFIRMED passes the claim index once synthesis.md says why it stays cut (still_cut on record), "
           "as council evidence check already does (a real plan run was failed by one reader and passed by the other)",
           item(out, "Claim index")[0] == "pass", item(out, "Claim index")[1])
+    refuted = run1_copy("kept-refuted", claims=[{"id": "1", "disposition": "kept", "verdict": "REFUTED", "citation": "notes.md:5"},
+                                                {"id": "2", "disposition": "kept", "verdict": "UNCERTAIN", "citation": "notes.md:7"}])
+    code, out, err = council(base, "run", "audit", "--run", str(refuted), "--transcript", str(log1))
+    check("a kept claim a verifier REFUTED fails the claim index, as council evidence check does; an UNCERTAIN one does not",
+          item(out, "Claim index")[0] == "FAIL" and "kept, but a verifier REFUTED it: 1 " in item(out, "Claim index")[1] + " "
+          and "2" not in item(out, "Claim index")[1].split("—")[0], item(out, "Claim index")[1])
     # MISCITED is a true verdict too (the claim holds, somewhere else): evidence check's TRUE_VERDICTS. The audit must read it the same way.
     miscited = run1_copy("cut-miscited", claims=[{"id": "1", "disposition": "kept", "verdict": "CONFIRMED", "citation": "notes.md:5"},
                                                  {"id": "C1", "disposition": "cut", "verdict": "MISCITED", "citation": "notes.md:9"}])
@@ -904,6 +910,82 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
           "by D21's reason, not judged by its words",
           verdict == "warn" and words.startswith("2 call(s) printed a council: line") and "exit was hidden" in words
           and "D21" in words and "refusal(s)" not in words, [verdict, words])
+
+    # FR-5, PROSE-8: only what happened while the run was open counts. An agent the session sent before the run
+    # opened is not its first dispatch; a transcript that holds none of the run (its helper calls were made from an
+    # agent or another session) says so, and its items read as not checked, never FAIL.
+    t0 = utc("2026-10-10T09:00:00Z")
+    stamp = (lambda s: (t0 + timedelta(seconds=s)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    early = minimal_run(base, "2026-10-10-120500-review", [(stamp(300), "run.opened", "run", "council-review",
+                                                            "phase=convene"),
+                                                           (stamp(400), "run.closed", "run", "complete", "agent_runs=0")])
+    log = Transcript("session-multi", t0)
+    log.prompt("look around first")
+    log.at(t0 + timedelta(seconds=10)).call("Agent", {"subagent_type": "Explore", "description": "Map", "prompt": "x"},
+                                            "mapped")
+    log.text("Mapped. Now the review.")
+    log.at(t0 + timedelta(seconds=290)).prompt("review it")
+    log.at(t0 + timedelta(seconds=299)).bash("council run open council-review", str(early))
+    log.bash("council state size=solo", "state: size solo")
+    log.at(t0 + timedelta(seconds=399)).bash("council run close", "closed %s — complete" % early.name)
+    log.bash("council status", "Status: closed, complete.")
+    log.text("Status: closed, complete.")
+    log.at(t0 + timedelta(minutes=20)).prompt("thanks")
+    log.save(base / "multi" / "early-agent.jsonl")
+    code, out, err = council(base, "run", "audit", "--run", str(early), "--transcript",
+                             str(base / "multi" / "early-agent.jsonl"))
+    check("an agent the session sent before the run opened is not the run's first dispatch: the card and the size "
+          "pass with no agent dispatched",
+          item(out, "Status card at the first dispatch") == ("pass", "no agent was dispatched, so none was due")
+          and item(out, "Size and cost before the first dispatch") == ("pass", "no agent was dispatched")
+          and " FAIL " not in out.split("From the session transcript")[-1], out + err)
+    log = Transcript("session-multi", t0)
+    log.prompt("run the review in an agent")
+    log.at(t0 + timedelta(seconds=10)).call("Agent", {"subagent_type": "general-purpose", "description": "Drive it",
+                                                      "prompt": "run council-review"}, "Async agent launched.")
+    log.at(t0 + timedelta(seconds=350)).call("Agent", {"subagent_type": "Explore", "description": "Other", "prompt": "y"},
+                                             "done")
+    log.save(base / "multi" / "driven-elsewhere.jsonl")
+    code, out, err = council(base, "run", "audit", "--run", str(early), "--transcript",
+                             str(base / "multi" / "driven-elsewhere.jsonl"))
+    told = re.findall(r"^  n/a\s+([^:]+): not checked: this transcript holds none of the run", out, re.MULTILINE)
+    check("a transcript that holds none of the run (driven from an agent) says so, item by item, as not checked — "
+          "no FAIL, and the count says so",
+          "Status card at the first dispatch" in told and "Closing card" in told
+          and "FAIL" not in out.split("From the session transcript")[-1] and "not checked" in out.splitlines()[-1],
+          out + err)
+
+    # HS-9: the go past the cap is filed in the Chair's words (--user-said); the audit looks for a message of the
+    # user's between the stop and the go: with one it passes, without one the go is on the Chair's record only.
+    capped = minimal_run(base, "2026-10-10-130000-review", [(stamp(10), "run.opened", "run", "council-review",
+                                                             "phase=convene"),
+                                                            (stamp(400), "run.closed", "run", "complete", "agent_runs=4")])
+    write(capped / "run-plan.tsv", "kind\tid\tfield\tvalue\treason\nbudget\trun\tagent-cap\t3\t-\n")
+    write(capped / "cap-allowances.tsv", "at\tused\tn\tuntil\tsaid\n2026-10-10T13:03:00Z\t3\t2\t5\tyes, two more\n")
+    for name, asked in (("go-asked", True), ("go-assumed", False)):
+        log = Transcript("session-multi", t0)
+        log.prompt("review it")
+        log.at(t0 + timedelta(seconds=9)).bash("council run open council-review", str(capped))
+        log.bash("council state size=squad", "state: size squad")
+        log.call("Agent", {"subagent_type": "small-council:council-worker", "description": "W", "prompt": "x"},
+                 "PreToolUse:Agent hook error: Small Council: run x has used 3 of its 3 agent runs. No new agents until "
+                 "the user says go.", error=True)
+        log.text("The run is at its cap of 3. Continue, and for how many more?")
+        if asked:
+            log.prompt("yes, two more")
+        log.bash('council cap allow 2 --user-said "yes, two more"', "cap: the user's go is on record")
+        log.at(t0 + timedelta(seconds=399)).bash("council run close", "closed %s — complete" % capped.name)
+        log.save(base / "multi" / (name + ".jsonl"))
+        out = council(base, "run", "audit", "--run", str(capped), "--transcript", str(base / "multi" / (name + ".jsonl")))[1]
+        verdict, words = item(out, "The user's go past the cap")
+        check("cap go: a go %s" % ("after the user's own message passes" if asked else
+                                   "with no message from the user after the stop warns that it is the Chair's only"),
+              (verdict, "on the Chair's record only" in words) == (("pass", False) if asked else ("warn", True)),
+              [verdict, words])
+        limit = item(out, "Agent limit")
+        check("cap go: the agent limit passes the runs past the cap on the go on record, and never says it was the "
+              "user's — the step check above judges that (%s)" % name,
+              limit[0] == "pass" and "4 agent runs, past the cap of 3" in limit[1] and "on the user's go" not in limit[1], limit)
 
 sys.path.insert(0, str(ROOT / "src"))
 from council.commands import audit                                   # noqa: E402

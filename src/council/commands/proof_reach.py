@@ -1,9 +1,12 @@
 """What a build's proof command reached, read from its words (the helper's gate_test_path and run_folder_only):
-the test file it ran that the project keeps, and whether it ran nothing but scripts kept in a run folder."""
+the test file it ran that the project keeps, the files of a round it names (named_files), and whether it ran nothing
+but scripts kept in a run folder. A word is a path as written (`tests/x.py`, `./x.py`, `a/../x.py`, `--file=x.py`, a
+pytest node `tests/x.py::name`) or, after `-m`, a dotted module (`tests.test_cli`, `tests.test_cli.Case.test_a`)."""
 from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterator
 
 from council import git
 from council.records import bytewise
@@ -21,6 +24,7 @@ TOOLS = re.compile(r"(echo|printf|test|true|false|grep|egrep|cat|diff|cmp|head|t
 RUNNER = re.compile(r"(^|/)(ba|z|da|k)?sh$|(^|/)(python[0-9.]*|node|ruby|perl|php|swift|deno|bun|pwsh|powershell|"
                     r"osascript|lua|tclsh)$")
 RUNS = ".council/runs/"
+MODULE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*")
 
 
 def _up(path: str) -> str:
@@ -48,6 +52,7 @@ class _Words:
 
     def __init__(self) -> None:
         self.sub, self.want, self.away = "", False, False
+        self.last = self.module = ""          # the word before; -m once it is followed by its module
 
 
 def _token(word: str) -> str:
@@ -95,31 +100,64 @@ def _named(token: str, state: _Words) -> str | None:
     return path
 
 
-def test_path(top: str, command: str) -> str:
-    """The first test file the command names that the project keeps (tracked, or there and not ignored), its
-    path walked back up; '' when none is, or the command left the project before naming one."""
-    top = where.native(top)
-    if not os.path.isdir(top):
-        return ""
+def _modules(token: str, state: _Words) -> list[str]:
+    """The files a dotted word after -m (or after `-m unittest`, `-m pytest`) can be, longest first:
+    tests.test_cli.Case.test_a is tests/test_cli/Case/test_a.py, …, tests/test_cli.py, tests.py."""
+    named = state.last == "-m" or state.module in ("unittest", "pytest")    # its module, or a test it is given
+    if state.last == "-m":
+        state.module = token
+    if not named or "." not in token or not MODULE.fullmatch(token):
+        return []
+    parts = token.split(".")
+    return ["/".join(parts[:end]) + ".py" for end in range(len(parts), 0, -1)]
+
+
+def _paths(command: str, top: str) -> Iterator[tuple[str, bool]]:
+    """Each path a word of the command names, as it lands from the project, with whether it can be a test the
+    project keeps (test-named or in a test folder), until the command leaves the project."""
     root, state = os.path.realpath(top), _Words()
     for word in re.split(r"[ \t\n]+", command):
-        if not word:
-            continue
-        token = _moved(_token(word), state)
+        token = _moved(_token(word), state) if word else None
         if token is None:
             continue
         if state.sub and not state.away and not _inside(top, state.sub, root):
             state.away = True                         # out of the project: nothing is confirmed, never the wrong file
         if token in ("cd", "pushd") or token.startswith(("--prefix=", "--cwd=", "--dir=")):
             continue
-        path = _named(token, state)
-        if path is None or not os.path.isfile(os.path.join(top, where.native(path))):
+        for said in _modules(token, state) + [token]:
+            test = _named(said, state)
+            if test is not None:
+                yield test, True
+            elif not state.away and not said.startswith("-") and re.search(r"[/.]", said):
+                path = said[:said.index("::")] if "::" in said else said
+                yield (state.sub + "/" + path if state.sub and not where.absolute(path) else path), False
+        state.last = token
+
+
+def _clean(path: str) -> str:
+    hit = _up(path)
+    return hit[2:] if hit.startswith("./") else hit
+
+
+def test_path(top: str, command: str) -> str:
+    """The first test file the command names that the project keeps (tracked, or there and not ignored), its
+    path walked back up; '' when none is, or the command left the project before naming one."""
+    top = where.native(top)
+    if not os.path.isdir(top):
+        return ""
+    for path, test in _paths(command, top):
+        if not test or not os.path.isfile(os.path.join(top, where.native(path))):
             continue
         if git.run(top, "ls-files", "--error-unmatch", "--", where.native(path))[0] == 0 \
                 or git.run(top, "check-ignore", "-q", "--", where.native(path))[0] == 1:
-            hit = _up(path)
-            return hit[2:] if hit.startswith("./") else hit
+            return _clean(path)
     return ""
+
+
+def named_files(top: str, command: str, files: set[str]) -> set[str]:
+    """The files of a round (paths from the code root) that the command's words name, test-named or not: the check
+    a proof runs is kept when its round comes off (revert_check)."""
+    return {_clean(path) for path, _ in _paths(command, where.native(top))} & files
 
 
 def _parts(command: str) -> list[str]:

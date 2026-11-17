@@ -115,11 +115,12 @@ NOTHING WAS CHECKED, because `council gate --all` has nothing to run. Then one q
 
 > Fit the ones you want? Nothing is installed until you say so.
 
-On a yes, write `<home>/plans/guardrails.md` in council-plan's **full** task format — all six rows,
-`Domain` (Guardrails × Carmack — verify by machine, not by feel), `Ref: references/guardrails.md`,
-`Depends on`, `Touches`, `Constraints` and `Done when` — one task per check, cheapest first, and offer
-council-implement. **council-init installs nothing itself**, so every install gets before-and-after
-evidence, a blind verifier and a log row. The reference has the task template.
+On a yes, write `<home>/plans/guardrails.md` from the reference's template, in council-plan's task
+format (`${CLAUDE_PLUGIN_ROOT}/references/run/run-plan.md`, Plan tasks: `## Task Sequence`, then
+`### <n>. <title>` and its rows, `Ref: references/guardrails.md`) — one task per check, cheapest
+first — and offer council-implement. **council-init installs nothing itself**, so every install gets
+before-and-after evidence, a blind verifier and a log row. A task names nothing under `.council/`:
+the Gates row is added after the build, as the reference says.
 
 Two things every guardrails task needs, or it fits a gate that can only pass:
 - **A two-sided Done-when** — the gate exits non-zero on a deliberate violation and 0 once it's
@@ -212,20 +213,8 @@ Adjust on request. On confirmation, write:
 
    **Just me** (refreshes too): no note; run `council sharing just-me` and relay what it says is left.
 2. **Offer permission rules** — written only on a yes — in `.claude/settings.local.json`, so the
-   bookkeeping doesn't prompt at every step:
-
-   ```json
-   { "permissions": { "allow": [
-     "Edit(.council/**)",
-     "Bash(council run:*)", "Bash(council state:*)", "Bash(council seat:*)", "Bash(council index:*)",
-     "Bash(council collect:*)", "Bash(council check:*)", "Bash(council ask:*)", "Bash(council prior:*)",
-     "Bash(council memory:*)", "Bash(council ledger:*)", "Bash(council gates:*)", "Bash(council map:*)",
-     "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)",
-     "Bash(council status:*)", "Bash(council evidence:*)", "Bash(council repair:*)",
-     "Bash(council route:*)", "Bash(council version:*)", "Bash(council context:*)",
-     "Bash(council tree:*)"
-   ] } }
-   ```
+   bookkeeping doesn't prompt at every step. `council doctor permissions` prints the block to paste:
+   `Edit(.council/**)` and one rule for each bookkeeping command (`Bash(council run:*)` and so on).
 
    Edit rules cover Write too. Add the council home's real path as well, exactly as `council home
    rule` prints it — the home belongs to the **main** checkout, so the relative rule misses it from a
@@ -252,7 +241,7 @@ Adjust on request. On confirmation, write:
    `Edit(//C:/…)` rule never matched, so offer the one `council home rule` prints in its place. If
    it holds an earlier, shorter version of this list, offer to add the rules it lacks: name them, use
    the form the file already uses, leave every other rule in the file as it is, and write only on a
-   yes.
+   yes. After a plugin update, `council doctor` names the rules a project's list lacks.
 3. **Nothing else to install.** The plugin's hooks orient council sessions, flag open runs, restore
    the method after a compaction and check every seat file before a worker finishes.
 

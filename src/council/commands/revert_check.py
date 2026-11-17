@@ -1,13 +1,16 @@
 """council check's revert check on a build (references/build-proof.md, Read the result). A change proof that reads ok,
 of a task with saved rounds, is run once more without the change. The tree of the files on disk is written to a
 scratch folder outside the project and the run folder, and the after-check's recorded command runs there under the
-gate time limit, first with the change still on: the control. If it doesn't pass there, the copy can't run this
-check (it needs files the copy leaves out), and nothing more is tried. Then the task's rounds come off, newest
-first (its test files kept, so the test that proved the change is the one that runs), and the command runs again.
-It should fail. A rerun that still passes means the test proves nothing about the change; a check that can't be
-made is said, and never counts as a pass. The outputs are kept as gates/reverted/after-<n>-with-change.txt and
-after-<n>.txt, where no reader takes them for a gate; the scratch folder is removed whatever happened. Nothing in
-the project changes."""
+gate time limit, first with the change still on: the control. If it doesn't pass there, either the after-check ran on
+other files than those on disk now (its tree is not theirs: the proof is AFTER-STALE, broken, until after-<n> runs
+again) or the copy can't run this check (it needs files the copy leaves out), and nothing more is tried. Then every
+round saved since the task's first comes off, newest first — later tasks' rounds before the task's own, so its
+rounds come off the lines they wrote — with the task's test files and every file the command names kept as they are
+now (so the test that proved the change is the one that runs), and the command runs again. It should fail. A rerun
+that still passes means the test proves nothing about the change; a check that can't be made, a file the command
+names missing from the copy among them, is said, and never counts as a pass. The outputs are kept as
+gates/reverted/after-<n>-with-change.txt and after-<n>.txt, where no reader takes them for a gate; the scratch folder
+is removed whatever happened. Nothing in the project changes."""
 from __future__ import annotations
 
 import contextlib
@@ -25,12 +28,14 @@ from council.records import home as where
 from council.records import patches
 
 PASSED = "REVERT-PASSED"
+STALE = "AFTER-STALE"
 FOLDER = "reverted"
 
 
-def check(run: Path, top: str, number: str, command: str) -> tuple[str, str, str]:
+def check(run: Path, top: str, number: str, command: str, trees: tuple[str, str]) -> tuple[str, str, str]:
     """(the proof's state, the row's words on the revert check, why it could not be made or '') for task <number>,
-    whose change proof reads ok and which has saved rounds."""
+    whose change proof reads ok and which has saved rounds; trees: the after-check's recorded tree and the files' on
+    disk now (git.disk_tree)."""
     if proof_reach.RUNS in command or ".council/" in command:
         return _unmade("its command runs files under .council/, which a copy of the project leaves out")
     tree = git.files_tree(top)
@@ -41,7 +46,7 @@ def check(run: Path, top: str, number: str, command: str) -> tuple[str, str, str
         if any(_under(scratch, Path(folder)) for folder in (where.native(top), run)):
             return _unmade("the scratch folder %s is inside the project or the run folder" % scratch.as_posix())
         why = write_copy(top, tree, scratch)
-        return _unmade(why) if why else _decided(run, top, number, command, scratch)
+        return _unmade(why) if why else _decided(run, top, (number, command), scratch, trees)
     finally:
         _remove(scratch)
 
@@ -104,19 +109,39 @@ def _link(text: bytes, target: Path) -> None:
 
 
 def _undo(run: Path, top: str, task: int, command: str, scratch: Path) -> str:
-    """Task <task>'s rounds taken off the copy, newest first, its test files and the test the proof names kept;
-    '' when done, else which round would not come off and its files."""
-    found = patches.rounds(run, task)
-    tests = {path for one in found for path in one.files if patch_checks.TEST_PATH.search(path)}
-    tests |= {proof_reach.test_path(top, command)} - {""}
-    for one in reversed(found):
-        patch = patches.folder(run) / (patches.name(task, one.round) + ".patch")
+    """Every round saved since task <task>'s first taken off the copy, newest first (a later task's rounds before
+    the task's own), with the task's test files, the test the proof names and every round file its command names
+    kept as they are now: left out of the undo, then written back, so a renamed or new one is there under its name
+    now. '' when done, else which round would not come off and its files, or which kept file is missing."""
+    every = patches.rounds(run)
+    own = [one for one in every if one.task == task]
+    off = [one for one in every if one.seq >= own[0].seq]
+    kept = {path for one in own for path in one.files if patch_checks.TEST_PATH.search(path)}
+    kept |= proof_reach.named_files(top, command, {path for one in off for path in one.files})
+    kept |= {proof_reach.test_path(top, command)} - {""}
+    held = {path: _held(scratch / path) for path in kept}
+    for one in reversed(off):
+        patch = patches.folder(run) / (patches.name(one.task, one.round) + ".patch")
         if not patch.is_file():
-            return "the patch of round %d is not in %s" % (one.round, patches.folder(run).as_posix())
-        wrong = patch_apply.undo(scratch, patch, tuple(sorted(tests)), raw=True)
+            return "the patch of task %d round %d is not in %s" % (one.task, one.round, patches.folder(run).as_posix())
+        wrong = patch_apply.undo(scratch, patch, tuple(sorted(kept)), raw=True)
         if wrong:
-            return "round %d does not come off the files on disk cleanly: %s" % (one.round, ", ".join(wrong))
-    return ""
+            return "task %d round %d does not come off the files on disk cleanly: %s" % (one.task, one.round,
+                                                                                         ", ".join(wrong))
+    for path, data in held.items():
+        if data is not None:
+            (scratch / path).parent.mkdir(parents=True, exist_ok=True)
+            (scratch / path).write_bytes(data)
+        elif (scratch / path).is_file():
+            (scratch / path).unlink()             # not there now: not there in the rerun either
+    gone = [path for path, data in held.items() if data is not None and not (scratch / path).is_file()]
+    return "the file its command names is not in the copy once the rounds came off: %s" % ", ".join(gone) if gone \
+        else ""
+
+
+def _held(path: Path) -> bytes | None:
+    """A kept file's bytes as they are now, None when there is none."""
+    return path.read_bytes() if path.is_file() else None
 
 
 class Ran(NamedTuple):
@@ -128,13 +153,19 @@ class Ran(NamedTuple):
     kept: str
 
 
-def _decided(run: Path, top: str, number: str, command: str, scratch: Path) -> tuple[str, str, str]:
-    """The control first: the check must pass in the copy with the change still on, or the copy can't run it.
-    Then the task's rounds come off and the rerun decides: it fails (the proof stands) or passes (REVERT-PASSED)."""
+def _decided(run: Path, top: str, proof: tuple[str, str], scratch: Path,
+             trees: tuple[str, str]) -> tuple[str, str, str]:
+    """The control first: the check must pass in the copy with the change still on. When it fails, the after-check
+    ran on other files (AFTER-STALE) or, on the same ones, the copy can't run it. Then the rounds come off and the
+    rerun decides: it fails (the proof stands) or passes (REVERT-PASSED)."""
+    number, command = proof
     control = _run(run, number, command, scratch, "after-%s-with-change.txt" % number)
     if control.why:
         return _unmade("the check doesn't run in a scratch copy even with the change on — %s (%s)"
                        % (control.why, control.kept))
+    if control.code and trees[0] != trees[1]:
+        return STALE, ("revert check: after-%s passed on other files and fails on the files as they are now (exit "
+                       "%d) — run council gate after-%s again (%s)" % (number, control.code, number, control.kept)), ""
     if control.code:
         return _unmade("the check doesn't pass in a scratch copy even with the change on (exit %d) — it needs files "
                        "the copy leaves out (%s)" % (control.code, control.kept))

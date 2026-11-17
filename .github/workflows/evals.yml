@@ -32,7 +32,7 @@ jobs:
       # Granted Bash runs only inside Claude Code's OS sandbox; on Linux that needs bubblewrap and socat
       - name: Install Claude Code and the Bash sandbox
         run: |
-          npm install -g @anthropic-ai/claude-code@2.1.270
+          npm install -g @anthropic-ai/claude-code@2.1.308
           sudo apt-get update
           sudo apt-get install -y bubblewrap socat
       - name: Run the suite
