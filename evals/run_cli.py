@@ -4373,6 +4373,26 @@ def runs_fingerprint_and_ledger(tmp):
           and not os.path.exists(os.path.join(plain, ".council", "ledger.tsv")) and "ledger: 1 seat row" in out, out + err)
 
 @part("requests")
+def requests_proof_test_modules(tmp):
+    """FR-6: council check finds the test a proof ran when its command names a module (`python -m unittest
+    tests.test_cli`, a test case or method in it) or a pytest node (`tests/test_node.py::test_a`)."""
+    repo, run = revert_build(tmp, "modules")
+    write(os.path.join(repo, "tests", "test_cli.py"), "import unittest\n")
+    write(os.path.join(repo, "tests", "test_node.py"), "def test_a():\n    pass\n")
+    for n, command in ((1, "python -m unittest tests.test_cli"), (2, "python -m pytest -q tests/test_node.py::test_a"),
+                       (3, "python -m unittest -v tests.test_cli.CliTest.test_a")):
+        for side, code in (("before", 1), ("after", 0)):
+            write(os.path.join(run, "gates", "%s-%d.json" % (side, n)), '{"gate": "%s-%d", "command": "%s", '
+                  '"exit": %d, "seconds": 1, "when": "2026-09-16 10:00:0%d"}\n' % (side, n, command, code, code))
+    code, out, err = council(repo, "check")
+    check("check: a unittest module, a test method in one and a pytest node each name the test file they ran",
+          "task 1  proof  ok · test saved: tests/test_cli.py" in out
+          and "task 2  proof  ok · test saved: tests/test_node.py" in out
+          and "task 3  proof  ok · test saved: tests/test_cli.py" in out
+          and "3 left a test behind in the project" in out, out + err)
+
+
+@part("requests")
 def requests_and_proofs(tmp):
     global req, asks, filed   # later "requests" blocks carry on with these
     # 0.6 — the user's request word for word, a war room's round 2, the post-game
@@ -6298,18 +6318,18 @@ def gates_reuse_green_tree(tmp):
           and "runs in %s, the working tree it is called from" % slash(builder) in out, out + err + str(verdict))
     code, out, err = council(repo, "gate", "--all", "--at", "verify")
     check("gate --all: a builder's green on the same files is not run again, and the line names the gate, seat and tree",
-          code == 0 and count() == 1 and "gate tests: green on this tree already — builder-1 ran it on tree %s (" % head[:12]
-          in out and "--rerun runs it anyway" in out and "1 green on this tree already, not run again (tests)" in out,
+          code == 0 and count() == 1 and "gate tests: green on the same files already — builder-1 ran it on tree %s (" % head[:12]
+          in out and "--rerun runs it anyway" in out and "1 green on the same files already, not run again (tests)" in out,
           out + err)
     check("gate --all: a builder's red is never taken as green; the gate runs again",
           "gate flaky: pass (exit 0" in out and "gate flaky: green" not in out, out)
     code, out, err = council(repo, "gate", "--all", "--at", "verify", "--rerun")
-    check("gate --all --rerun: runs a gate that is green on this tree already",
+    check("gate --all --rerun: runs a gate that is green on the same files already",
           code == 0 and count() == 2 and "gate tests: pass (exit 0" in out and "green on this tree" not in out, out + err)
     code, out, err = council(repo, "gate", "--all", "--at", "verify")
     check("gate --all: with every gate green on this tree, none runs, and that is no NOTHING WAS CHECKED",
-          code == 0 and count() == 2 and "gate tests: green on this tree already — chair ran it" in out
-          and "gates: none ran — every one that could run here was green on this tree already" in out
+          code == 0 and count() == 2 and "gate tests: green on the same files already — chair ran it" in out
+          and "gates: none ran — every one that could run here was green on the same files already" in out
           and "NOTHING WAS CHECKED" not in out, out + err)
 
     write(os.path.join(repo, "a.txt"), "a, edited\n")                    # uncommitted, unstaged
@@ -6323,7 +6343,7 @@ def gates_reuse_green_tree(tmp):
     git(repo, "commit", "-q", "-m", "integrated")
     code, out, err = council(repo, "gate", "--all", "--at", "verify")
     check("gate --all: committing the very files it ran on keeps the tree, so the green stands",
-          count() == 4 and "gate tests: green on this tree already — chair ran it" in out, out)
+          count() == 4 and "gate tests: green on the same files already — chair ran it" in out, out)
     write(os.path.join(builder, "b.txt"), "the builder's change\n")
     git(builder, "add", "-A")
     git(builder, "commit", "-q", "-m", "builder change")
@@ -6363,6 +6383,7 @@ def gates_covers_paths(tmp):
     no file."""
     repo = new_repo(tmp, "covers")
     write(os.path.join(repo, "app", "ui", "view.kt"), "view\n")
+    write(os.path.join(repo, "tests", "ui", "test_menu.kt"), "test\n")     # every Covers path matches a file
     write(os.path.join(repo, "app", "core", "model.kt"), "model\n")
     write(os.path.join(repo, ".council", "council.config.md"),
           "# Council config — x\nlast-verified: 2026-09-15 @ x\n\n## Gates\n"
@@ -6689,12 +6710,13 @@ def gates_revert_check(tmp):
     write(os.path.join(repo, "tests", "test_three.sh"), '[ "$(bash src/three.sh)" = two ] && echo "1 passed"\n')
     write(os.path.join(repo, "src", "three.sh"), "echo one\n")
     built(repo, run, 3, {"src/three.sh": "echo two\n"}, "tests/test_three.sh")
-    write(os.path.join(repo, "src", "three.sh"), "echo two  # since\n")    # changed after its round was saved
     write(os.path.join(repo, ".gitignore"), "build/\n")
     write(os.path.join(repo, "build", "value.txt"), "fixed\n")             # git ignores it: the copy leaves it out
     write(os.path.join(repo, "tests", "test_five.sh"),
           'grep -q fixed build/value.txt && grep -q five src/five.sh && echo "1 passed"\n')
     built(repo, run, 5, {"src/five.sh": "echo five\n"}, "tests/test_five.sh")
+    write(os.path.join(repo, "src", "three.sh"), "echo two  # since\n")    # changed after the last round was saved
+    council(repo, "gate", "after-5", "--", "bash tests/test_five.sh")       # task 5's proof, on the files as they are
     write(os.path.join(run, "gates", "before-4.json"), '{"gate": "before-4", "command": "bash tests/test_calc.sh", '
           '"exit": 1, "seconds": 1, "when": "2026-09-16 10:00:00"}\n')
     write(os.path.join(run, "gates", "after-4.json"), '{"gate": "after-4", "command": "bash tests/test_calc.sh", '
@@ -6702,8 +6724,8 @@ def gates_revert_check(tmp):
     code, out, err = council(repo, "check")
     check("check: a round that won't come off the files on disk is no revert check — said in the row, never a pass "
           "or a problem",
-          "task 3  proof  ok · test saved: tests/test_three.sh · revert check not made: round 1 does not come off the "
-          "files on disk cleanly: src/three.sh" in out, out)
+          "task 3  proof  ok · test saved: tests/test_three.sh · revert check not made: task 3 round 1 does not come "
+          "off the files on disk cleanly: src/three.sh" in out, out)
     check("check: a task with no saved round is not rerun, and its row reads as before",
           "task 4  proof  ok · test saved: tests/test_calc.sh\n" in out, out)
     check("check: a check that reads a file git ignores passes in the project, but not in the copy with the change "
@@ -6712,7 +6734,7 @@ def gates_revert_check(tmp):
           "scratch copy even with the change on (exit 2) — it needs files the copy leaves out" in out
           and not os.path.exists(os.path.join(run, "gates", "reverted", "after-5.txt")), out)
     check("check: Not proved names the revert checks that couldn't be made and the gates run on other files",
-          "task 3's revert check: round 1 does not come off the files on disk cleanly: src/three.sh"
+          "task 3's revert check: task 3 round 1 does not come off the files on disk cleanly: src/three.sh"
           in line_of(out, "Not proved:")
           and "task 5's revert check: the check doesn't pass in a scratch copy even with the change on (exit 2)"
           in line_of(out, "Not proved:")
@@ -6811,13 +6833,168 @@ def gates_just_me_tree(tmp):
           "team %r, just me %r · %s" % (team, tree(), out + err))
     code, out, err = council(repo, "gate", "--all", "--at", "verify")
     check("gate --all on a just-me council: a green on the same tree is not run again, as on a team council",
-          code == 0 and count() == 2 and "gate tests: green on this tree already — chair ran it" in out, out + err)
+          code == 0 and count() == 2 and "gate tests: green on the same files already — chair ran it" in out, out + err)
     write(os.path.join(repo, "a.txt"), "a, edited\n")
     write(os.path.join(run, "report-1.md"), PATCH_HEAD.format(cause="none", removed="none", extra=""))
     code, out, err = council(repo, "patch", "save", "1")
     patch = read(os.path.join(run, "patches", "T1-1.patch"))
     check("patch save on a just-me council: the round is saved, its patch holding the change and no council file",
           code == 0 and "task 1 round 1 saved" in out and "+a, edited" in patch and ".council" not in patch, out + err)
+
+
+@part("gates")
+def gates_revert_check_keeps_the_check(tmp):
+    """CODE-PROOF-1, UP-1, CODE-PROOF-2: the revert check keeps every round file its after-command names, test-named
+    or not, a renamed test under its new name, so a rerun never fails for want of the check itself; and a change
+    proof whose after-check ran no test is NOTHING-RAN, never ok."""
+    repo, run = revert_build(tmp, "keeps")
+    write(os.path.join(repo, "tests", "test_old.sh.base"), 'grep -q "echo" src/two.sh && echo "1 passed"\n')
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a test kept under another name")
+    write(os.path.join(repo, "verify_task.sh"), 'nosuch_tool_in_the_script || exit 1\n')    # red: a bug of its own
+    built(repo, run, 1, {"verify_task.sh": 'echo "1 passed"\n', "src/calc.sh": "echo broken  # a comment\n"},
+          "verify_task.sh")
+    council(repo, "gate", "before-2", "--", "cat tests/test_new.sh >/dev/null && bash tests/test_new.sh")
+    write(os.path.join(repo, "tests", "test_new.sh"), read(os.path.join(repo, "tests", "test_old.sh.base")))
+    os.remove(os.path.join(repo, "tests", "test_old.sh.base"))      # renamed by the round
+    write(os.path.join(repo, "src", "two.sh"), "echo old  # a comment\n")
+    council(repo, "gate", "after-2", "--", "cat tests/test_new.sh >/dev/null && bash tests/test_new.sh")
+    write(os.path.join(run, "report-2.md"), PATCH_HEAD.format(cause="none", removed="none", extra=""))
+    code, out, err = council(repo, "patch", "save", "2")
+    check("revert check fixture: task 2's round renames a committed test", code == 0 and "task 2 round 1 saved" in out
+          and "tests/test_new.sh" in read(os.path.join(run, "patches", "T2-1.patch")), out + err)
+    write(os.path.join(repo, "tests", "test_none.sh"), "exit 1\n")
+    built(repo, run, 3, {"src/three.sh": "echo three\n", "tests/test_none.sh": 'echo "ok  pkg 0.01s [no tests to '
+                                                                                'run]"\n'}, "tests/test_none.sh")
+    code, out, err = council(repo, "check")
+    check("check: a proof whose check is a new file not named like a test keeps it in the copy, so a change the check "
+          "doesn't need still passes with the rounds off: REVERT-PASSED, never ok",
+          code == 1 and "task 1  proof  REVERT-PASSED" in out and "task 1  proof  ok" not in out, out + err)
+    check("check: a test the round renamed is kept under its new name, so the rerun runs it: REVERT-PASSED",
+          "task 2  proof  REVERT-PASSED" in out and "can't open" not in read(os.path.join(run, "gates", "reverted",
+                                                                                         "after-2.txt")), out)
+    check("check: a change proof whose after-check ran no test is NOTHING-RAN and counts as broken",
+          "task 3  proof  NOTHING-RAN" in out and "3 broken" in line_of(out, "fix(es) proved"), out)
+
+
+@part("gates")
+def gates_revert_check_stale(tmp):
+    """FR-7, CODE-PROOF-3: an earlier task's rounds come off after the later tasks' on the same lines, so both
+    revert checks are made; code broken after a proof ran reads AFTER-STALE (broken, exit 1) when the control fails
+    on the files now, a later change to other files leaves an earlier proof ok, and a proof with no saved round or
+    an ad-hoc gate that ran on other files is named under Not proved."""
+    repo, run = revert_build(tmp, "stale")
+    write(os.path.join(repo, "tests", "test_one.sh"), 'grep -q fixed src/calc.sh && echo "1 passed"\n')
+    built(repo, run, 1, {"src/calc.sh": "echo fixed\n"}, "tests/test_one.sh")
+    write(os.path.join(repo, "tests", "test_two.sh"), 'grep -q again src/calc.sh && grep -q a a.txt && echo "1 '
+          'passed"\n')
+    built(repo, run, 2, {"src/calc.sh": "echo fixed again\n"}, "tests/test_two.sh")
+    council(repo, "gate", "smoke", "--", 'grep -q again src/calc.sh && echo "1 passed"')
+    code, out, err = council(repo, "check")
+    check("check: two tasks on the same line — the later task's rounds come off first, so both revert checks are "
+          "made and both proofs stand",
+          code == 0 and "task 1  proof  ok" in out and "fails with task 1's rounds taken off" in out
+          and "task 2  proof  ok" in out and "fails with task 2's rounds taken off" in out
+          and "revert check not made" not in out, out + err)
+    write(os.path.join(repo, "tests", "test_three.sh"), 'grep -q three src/three.sh && echo "1 passed"\n')
+    council(repo, "gate", "before-3", "--", "bash tests/test_three.sh")
+    write(os.path.join(repo, "src", "three.sh"), "echo three\n")
+    council(repo, "gate", "after-3", "--", "bash tests/test_three.sh")
+    write(os.path.join(repo, "a.txt"), "b\n")             # after the proofs ran: a file no round touched
+    code, out, err = council(repo, "check")
+    check("check: a proof whose after-check passed on other files and fails on the files now is AFTER-STALE, "
+          "naming the gate to run again, and the check exits 1",
+          code == 1 and "task 2  proof  AFTER-STALE" in out and "after-2 passed on other files and fails on the files "
+          "as they are now" in out and "run council gate after-2 again" in out, out + err)
+    check("check: an earlier proof whose control still passes on the files now stays ok",
+          "task 1  proof  ok" in out and "fails with task 1's rounds taken off" in out, out)
+    unproved = line_of(out, "Not proved:")
+    check("check: Not proved names a proof with no saved round and an ad-hoc gate that ran on other files",
+          "task 3: after-3 ran on other files than those on disk now (tree " in unproved
+          and "gate smoke: ran on other files than those on disk now (tree " in unproved
+          and "needs files the copy leaves out" not in unproved, out)
+
+
+@part("gates")
+def gates_reuse_sees_the_bytes(tmp):
+    """CODE-PROOF-4, UP-2, CODE-PROOF-9, CODE-PROOF-6: gate --all may run a gate again needlessly, never take a
+    green wrongly — a CRLF-only edit under core.autocrlf, a .gitattributes text rule, a submodule with changed or
+    new files, or a Covers path that matches no file means it runs; and a suite whose every test was skipped is a
+    pass with nothing run."""
+    repo = small_council_repo(tmp, "bytes",
+        "| crlf | `echo run >> ../bytes.log && cmp -s src/a.txt lf.txt && echo '1 passed'` | verify | yes | ok "
+        "| `true` | none | - |\n")
+    count = lambda: read(os.path.join(tmp, "bytes.log")).count("run")      # noqa: E731 — how often the gate ran
+    git(repo, "config", "core.autocrlf", "true")
+    write(os.path.join(repo, "src", "a.txt"), "ok\n")
+    write(os.path.join(repo, "lf.txt"), "ok\n")
+    council(repo, "run", "open", "council-review")
+    council(repo, "gate", "--all", "--at", "verify")
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a green on the same bytes is taken, and the line says ignored files are not compared",
+          count() == 1 and "gate crlf: green on the same files already" in out
+          and "ignored files are not compared" in out, out + err)
+    with open(os.path.join(repo, "src", "a.txt"), "wb") as f:
+        f.write(b"ok\r\n")
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a line-end-only edit under core.autocrlf=true runs the gate again (and it fails)",
+          count() == 2 and code == 1 and "gate crlf: FAIL" in out, out + err)
+    write(os.path.join(repo, "src", "a.txt"), "ok\n")
+    write(os.path.join(repo, ".gitattributes"), "* text=auto\n")
+    council(repo, "gate", "--all", "--at", "verify")
+    with open(os.path.join(repo, "src", "a.txt"), "wb") as f:
+        f.write(b"ok\r\n")
+    code, out, err = council(repo, "gate", "--all", "--at", "verify")
+    check("gate --all: a line-end-only edit under a .gitattributes text rule runs the gate again",
+          count() == 4 and "gate crlf: FAIL" in out, out + err)
+
+    sub = new_repo(tmp, "bytes-lib")
+    write(os.path.join(sub, "lib.txt"), "lib\n")
+    git(sub, "add", "-A")
+    git(sub, "commit", "-q", "-m", "lib")
+    outer = small_council_repo(tmp, "bytes-outer",
+        "| sub | `echo run >> ../bytes-sub.log && grep -q lib vendor/lib.txt && echo '1 passed'` | verify | yes | ok "
+        "| `true` | none | - | |\n"
+        "| typo | `echo run >> ../bytes-typo.log && grep -q ok src/b.txt && echo '1 passed'` | verify | no | ok "
+        "| `true` | none | - | scr/ |\n")
+    write(os.path.join(outer, ".council", "council.config.md"), read(os.path.join(outer, ".council",
+          "council.config.md")).replace("| Needs |\n|---|---|---|---|---|---|---|---|\n",
+                                        "| Needs | Covers |\n|---|---|---|---|---|---|---|---|---|\n"))
+    write(os.path.join(outer, "src", "b.txt"), "ok\n")
+    git(outer, "-c", "protocol.file.allow=always", "submodule", "add", "-q", sub.replace("\\", "/"), "vendor")
+    git(outer, "add", "-A")
+    git(outer, "commit", "-q", "-m", "a submodule")
+    subs = lambda: read(os.path.join(tmp, "bytes-sub.log")).count("run")      # noqa: E731
+    typos = lambda: read(os.path.join(tmp, "bytes-typo.log")).count("run")    # noqa: E731
+    council(outer, "run", "open", "council-review")
+    council(outer, "gate", "--all", "--at", "verify")
+    write(os.path.join(outer, "vendor", "lib.txt"), "changed\n")
+    code, out, err = council(outer, "gate", "--all", "--at", "verify")
+    check("gate --all: a submodule with a changed file has no tree, so its gate runs again (and fails)",
+          subs() == 2 and "gate sub: FAIL" in out, out + err)
+    git(os.path.join(outer, "vendor"), "checkout", "-q", "--", ".")
+    council(outer, "gate", "--all", "--at", "verify")
+    write(os.path.join(outer, "vendor", "new.txt"), "new\n")
+    code, out, err = council(outer, "gate", "--all", "--at", "verify")
+    check("gate --all: a submodule with a new file has no tree either, so its gate runs again",
+          subs() == 4 and "gate sub: green" not in out, out + err)
+    os.remove(os.path.join(outer, "vendor", "new.txt"))
+    council(outer, "gate", "--all", "--at", "verify")
+    ran = typos()
+    write(os.path.join(outer, "src", "b.txt"), "bad\n")
+    code, out, err = council(outer, "gate", "--all", "--at", "verify")
+    check("gate --all: a Covers path that matches no file never takes a green: the gate runs (and fails)",
+          typos() == ran + 1 and "gate typo: FAIL" in out and "not rerun" not in line_of(out, "gate typo"), out + err)
+
+    for name, said in (("skip-pytest", 'echo "======= 12 skipped in 0.03s ======="'),
+                       ("skip-unittest", 'printf "Ran 3 tests in 0.000s\\n\\nOK (skipped=3)\\n"'),
+                       ("skip-jest", 'printf "Tests:       4 skipped, 4 total\\n"')):
+        code, out, err = council(repo, "gate", name, "--", said)
+        check("gate: a suite whose every test was skipped is a pass with nothing run (%s)" % name,
+              code == 0 and "gate %s: pass — but nothing ran" % name in out, out + err)
+    code, out, err = council(repo, "gate", "some-skipped", "--", 'echo "== 2 passed, 1 skipped in 0.1s =="')
+    check("gate: some tests skipped and some passed is a plain pass",
+          code == 0 and "gate some-skipped: pass (exit 0" in out, out + err)
 
 
 @part("requests")
