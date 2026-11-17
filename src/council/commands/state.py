@@ -94,8 +94,8 @@ def _checked(run: Path, words: list[str]) -> str:
             raise cli.Refusal("status must be in-progress, paused, complete or abandoned")
         if key == "status" and value == "complete":
             raise cli.Refusal("status=complete is the close's to set — close the run with: council run close")
-        if key == "closed":
-            raise cli.Refusal("closed= is the close's own stamp — close the run with: council run close")
+        if key in state_write.OWNED:
+            raise cli.Refusal("%s= %s" % (key, state_write.OWNED[key].replace("<folder>", run.name)))
         if key == "decision" and not value.strip(BLANK):
             raise cli.Refusal("decision= takes the user's words — their ruling or go-ahead, as they said it")
         if key == "skip" and not value.strip(BLANK):
