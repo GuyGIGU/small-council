@@ -2,6 +2,8 @@
 stamp and areas, the ledger's cells as awk read them, a filed request's sections, and the one-line fields."""
 from __future__ import annotations
 
+import shutil
+import subprocess
 import unittest
 
 import support
@@ -35,12 +37,37 @@ class MapTest(support.Scratch):
         self.assertEqual(map_file.commit(self.tmp), "")
 
     def test_areas_busiest_first_the_home_left_out(self) -> None:
-        self.assertEqual(map_status.by_area(["src/a.py", "src/b.py", "docs/x.md", "README.md", ".council/map.md",
-                                             "tests/t.py", "tests/u.py"]),
+        self.assertEqual(map_status.by_area(map_file.areas(["src/a.py", "src/b.py", "docs/x.md", "README.md",
+                                                            ".council/map.md", "tests/t.py", "tests/u.py"])),
                          ["     2  tests/", "     2  src/", "     1  docs/", "     1  README.md"])
         self.assertEqual(map_file.areas(["src/a.py", "docs/x.md", "src/b.py", ".council/map.md"]),
                          [("src/", 2), ("docs/", 1)])
-        self.assertEqual(len(map_status.by_area(["a%d/x" % n for n in range(20)])), map_status.AREAS)
+        self.assertEqual(len(map_status.by_area(map_file.areas(["a%d/x" % n for n in range(20)]))),
+                         map_status.AREAS)
+
+    @unittest.skipUnless(shutil.which("git"), "git is not on PATH")
+    def test_stale_is_the_files_changed_since_the_stamp_by_area(self) -> None:
+        def git(*args: str) -> str:
+            return subprocess.run(["git", "-C", str(self.tmp)] + list(args), check=True, capture_output=True,
+                                  text=True).stdout.strip()
+        git("init", "-q")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "t")
+        self.write("src/a.py", "a\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "a")
+        stamp = git("rev-parse", "HEAD")
+        self.assertEqual(map_file.stale(self.tmp, self.tmp), map_file.Stale("", False, 0, []))
+        self.write("map.md", "# Map\nmap-commit: %s\n" % stamp)
+        self.assertEqual(map_file.stale(self.tmp, self.tmp), map_file.Stale(stamp, True, 0, []))
+        for name in ("src/b.py", "src/c.py", "docs/x.md", "README.md"):
+            self.write(name, "x\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "more")
+        self.assertEqual(map_file.stale(self.tmp, self.tmp),
+                         map_file.Stale(stamp, True, 1, [("src/", 2), ("map.md", 1), ("docs/", 1), ("README.md", 1)]))
+        self.write("map.md", "# Map\nmap-commit: %s\n" % ("0" * 40))
+        self.assertEqual(map_file.stale(self.tmp, self.tmp), map_file.Stale("0" * 40, False, 0, []))
 
     def test_touch_adds_a_dated_section_and_leaves_the_rest(self) -> None:
         head, built = "f" * 40, "0" * 40
