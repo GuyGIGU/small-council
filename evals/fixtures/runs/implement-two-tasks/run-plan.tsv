@@ -1,0 +1,28 @@
+# Small Council run plan v1.
+kind	id	field	value	reason
+schema	plan	version	1	xxxxxx xxx xxxx xxx
+run	run	id	2026-11-17-164207-implement	xxxxxx xxx xxxx xxx
+run	run	mode	council-implement	xxxxxx xxx xxxx xxx
+run	run	size	squad	xxxxxx xxx xxxx xxx
+assessment	run	risk	medium	xxxxxx xxx xxxx xxx
+assessment	run	complexity	medium	xxxxxx xxx xxxx xxx
+assessment	run	uncertainty	low	xxxxxx xxx xxxx xxx
+budget	run	agent-cap	10	xxxxxx xxx xxxx xxx
+budget	run	estimated-tokens	520000	xxxxxx xxx xxxx xxx
+verification	run	level	independent	xxxxxx xxx xxxx xxx
+seat	chair	disposition	selected	xxxxxx xxx xxxx xxx
+seat	chair	role	chair	xxxxxx xxx xxxx xxx
+context	chair	level	full	xxxxxx xxx xxxx xxx
+budget	chair	tool-calls	40	xxxxxx xxx xxxx xxx
+seat	task-1	disposition	selected	xxxxxx xxx xxxx xxx
+seat	task-1	role	worker	xxxxxx xxx xxxx xxx
+context	task-1	level	focused	xxxxxx xxx xxxx xxx
+budget	task-1	tool-calls	40	xxxxxx xxx xxxx xxx
+seat	task-2	disposition	selected	xxxxxx xxx xxxx xxx
+seat	task-2	role	worker	xxxxxx xxx xxxx xxx
+context	task-2	level	focused	xxxxxx xxx xxxx xxx
+budget	task-2	tool-calls	40	xxxxxx xxx xxxx xxx
+seat	verify-1	disposition	selected	xxxxxx xxx xxxx xxx
+seat	verify-1	role	verifier	xxxxxx xxx xxxx xxx
+context	verify-1	level	focused	xxxxxx xxx xxxx xxx
+budget	verify-1	tool-calls	40	xxxxxx xxx xxxx xxx

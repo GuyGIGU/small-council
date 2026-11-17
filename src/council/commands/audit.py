@@ -9,12 +9,13 @@ before it finished; one check (gate) at a time, each once per stage; a deliverab
 plan or research run the claim index, with a verifier's verdict on every kept claim; every seat the
 plan selected on record, the Chair's own included; every agent seat with a token figure; the agent
 limit. With a Claude Code session transcript it reads the main thread from the turn that opened the
-run to the end of the turn that closed it: the status card at the first dispatch and after close; the
-helper called as a plain
-`council`; no helper output cut short by `| tail` or `| head`; every refusal of the helper tried
-again. Each item says pass, warn or FAIL in plain words. It only opens files to read them and writes
-nothing, bytecode included, except with --save (council run close): then it keeps the report as the run's
-audit.md. Exit 0 when nothing failed, 1 when something did, 2 when it cannot read the run or the transcript.
+run to the end of the turn that closed it. The Chair's steps (audit_steps.py): the size and cost recorded before
+the first dispatch, the status card at the first dispatch, the rulings as one question at Deliver, the closing
+card after close. How it called the helper: by its plain name `council`, no output cut short by `| tail` or
+`| head`, every refusal tried again. Each item says pass, warn or FAIL in plain words. It only opens files to
+read them and writes nothing, bytecode included, except with --save (council run close): then it keeps the
+report as the run's audit.md. Exit 0 when nothing failed, 1 when something did, 2 when it cannot read the run or
+the transcript.
 """
 from __future__ import annotations
 
@@ -25,25 +26,25 @@ import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Iterator, Optional, Tuple
 
 from council.clock import iso_moment
-from council.commands.audit_calls import Call, invocations
-from council.commands.audit_checks import (MAX_FILE, Run, Say, agent_limit, agents_on_record, claim_index, clock,
-                                           closing, deliverable, gates, listed, seats_on_record, stages,
-                                           token_figures)
+from council.commands.audit_calls import invocations
+from council.commands.audit_checks import (Run, Say, agent_limit, agents_on_record, claim_index, clock, closing,
+                                           deliverable, gates, listed, seats_on_record, stages, token_figures)
+from council.commands.audit_steps import (Entry, ToolCall, block_text, closing_card, first_card, rulings_once,
+                                          size_first)
+from council.commands.run_open import STATUS_HINT
 from council.records import audit_file, paths
-from council.records import seats as seat_files
 from council.records.audit_file import FAIL, LATER, PASS, WARN
 
-Entry = Tuple[Optional[datetime], str, Any]
 Span = Tuple[datetime, Optional[datetime]]
-ToolCall = Tuple[int, Optional[datetime], Dict[str, Any], List[Call], str]   # position, time, block, calls, output
 # The helper's advisory lines on stderr ("council: ..." without a refusal): everything else on a
 # "council:" line is a refusal (die, exit 2) or a record that failed to write. A lock refusal is
 # answered by waiting, not by a second call, so it is listed here too. evals/run_audit.py checks that
-# each lead is still the helper's wording.
-NOTE_LEADS = ("save the user's request", "another run is in progress", "a paused run is also open", "its code root is ",
+# each lead is still the helper's wording; run open's status hint is taken from where run open writes it.
+NOTE_LEADS = (STATUS_HINT, "save the user's request", "another run is in progress", "a paused run is also open",
+              "its code root is ",
               "first dispatch of this run", "run closed \u2014 show the user", "this run has used",
               "seats still marked", "the claim index is missing", "no request was filed", "no build log names",
               "the log has no", "cleared a gate lock", "WARNING",
@@ -53,14 +54,6 @@ NOTE_LEADS = ("save the user's request", "another run is in progress", "a paused
 NOTES = re.compile(r"council: (?:%s|\S+ now ignores asks/|\S+ is \d+ KB, over)"
                    % "|".join(re.escape(lead) for lead in NOTE_LEADS[:-2]))
 
-
-
-def block_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
-    return ""
 
 
 def is_prompt(line: dict[str, Any], content: Any) -> bool:
@@ -207,7 +200,9 @@ def transcript(run: Run, path: Path, say: Say) -> str:
     times = [t for t, _, _ in part if t]
     span = "%s to %s" % (clock(times[0]), clock(times[-1])) if times else "the whole file: it carries no times"
     calls = tool_calls(part)
+    size_first(run, part, calls, sessions, say)
     first_card(run, part, calls, sessions, say)
+    rulings_once(run, part, calls, say)
     closing_card(run, part, calls, closed, say)
     helper_calls(calls, say)
     return span
@@ -226,103 +221,6 @@ def tool_calls(part: list[Entry]) -> list[ToolCall]:
         result = results.get(block.get("id"))
         calls.append((n, t, block, found, block_text(result.get("content")) if result else ""))
     return calls
-
-
-def relayed(part: list[Entry], position: int, output: str) -> bool:
-    """council status's Status: line passed on to the user in the text after it, before the next prompt."""
-    status = next((line.split(":", 1)[1].strip() for line in output.splitlines() if line.startswith("Status:")), "")
-    if not status:
-        return False
-    for _, kind, words in part[position + 1:]:
-        if kind == "prompt":
-            return False
-        if kind == "text" and status[:40] in " ".join(words.split()):
-            return True
-    return False
-
-
-def shows_status(part: list[Entry], call: ToolCall, found: list[Call]) -> bool:
-    """A council status (not --line or --json) among found, relayed to the user after this call."""
-    return any(i["sub"] == "status" and not {"--line", "--json"} & set(i["flags"]) for i in found) \
-        and relayed(part, call[0], call[4])
-
-
-def first_card(run: Run, part: list[Entry], calls: list[ToolCall], sessions: set[str], say: Say) -> None:
-    """The status card at the first dispatch: between the first agent sent (or recorded) and its first result.
-    It is owed once per run, at the run's first dispatch (context-core, "Talking to the user"): a run carried
-    on in a later session made that dispatch in an earlier one, so a transcript that didn't make it owes none."""
-    label = "Status card at the first dispatch"
-    opened_at = next((n for n, t, block, found, _ in calls if any(i["sub"] == "run open" for i in found)), 0)
-    sent = [n for n, t, block, found, _ in calls if n >= opened_at and (block.get("name") in ("Agent", "Task",
-                                                                                              "Workflow")
-            or any(i["sub"] == "seat" and re.search(r"\bseat\s+\S+\s+(running|queued)\b", i["text"]) for i in found))]
-    starts = [(iso_moment(r.get("at")), r.get("session", "")) for r in seat_files.start_rows(run.folder, MAX_FILE)
-              if not r.get("tool", "").startswith("before:")]          # the gate's starts name their session
-    starts += [(iso_moment(r.get("at")), "") for r in run.usage if r.get("kind") == "dispatched"]
-    first_at, first_by = min([s for s in starts if s[0]], key=lambda s: (s[0], s[1] in ("", "-")), default=(None, ""))
-    began = next((t for t, _, _ in part if t), None)
-    if first_by not in ("", "-") and sessions and first_by not in sessions:
-        elsewhere = "session " + first_by
-    elif first_at and began and first_at < began:
-        elsewhere = "an earlier session"
-    else:
-        elsewhere = ""
-    if elsewhere:
-        say(PASS, label, "not this transcript's to show: the run's first dispatch, at %s, was made in %s — the card "
-            "is owed once per run" % (clock(first_at), elsewhere))
-        return
-    if not sent:
-        say(PASS, label, "no agent was dispatched, so none was due")
-        return
-    done = [n for n, t, block, found, _ in calls if n > sent[0]
-            and any(i["sub"] == "seat" and re.search(r"\bseat\s+\S+\s+(done|failed|blocked)\b",
-                                                     i["text"]) for i in found)]
-    end = done[0] if done else len(part)
-    shown = any(sent[0] <= call[0] <= end and ("show_widget" in str(call[2].get("name", "")) or
-                                               shows_status(part, call, call[3])) for call in calls)
-    if shown:
-        say(PASS, label, "shown after the first agent went out at %s" % clock(part[sent[0]][0]))
-    else:
-        say(FAIL, label, "not shown: the first agent went out at %s, and no show_widget call or relayed "
-            "council status followed%s" % (clock(part[sent[0]][0]), " before its result was recorded at %s"
-                                           % clock(part[end][0]) if done else ""))
-
-
-def closing_card(run: Run, part: list[Entry], calls: list[ToolCall], closed: datetime | None, say: Say) -> None:
-    """The closing card: after this run's own close, to the end of that turn. A close the helper refused
-    (is_error, "Exit code …", and no "closed <this run>" line) is no close, and another run's close in the
-    same window is not this one's: this run's last close that printed its line is — a pause before it is
-    not — else the last one that went through."""
-    label = "Closing card"
-    mine = r"\bclosed %s\b" % re.escape(run.name)
-    refused = set(b.get("tool_use_id") for _, kind, b in part if kind == "result"
-                  and (b.get("is_error") or block_text(b.get("content")).startswith("Exit code ")))
-    closes = [(n, k, output) for n, t, block, found,
-              output in calls if block.get("id") not in refused or re.search(mine, output)
-              for k, i in enumerate(found) if i["sub"] == "run close"]
-    named = [c for c in closes if re.search(mine, c[2])]
-    close_at = (named[-1:] or closes[-1:] or [None])[0]
-    if close_at is None:
-        tried = any(i["sub"] == "run close" for c in calls for i in c[3])
-        if closed or tried:
-            say(WARN, label, "every council run close call in the window was refused, so the close can't be found"
-                if tried else "no council run close call in the transcript's window, so it can't be checked")
-        return
-    n0, k0, _ = close_at
-    shown = False
-    for call in calls:
-        n, _, block, found, _ = call
-        if n < n0:
-            continue
-        if "show_widget" in str(block.get("name", "")) and n > n0:
-            shown = True
-        if shows_status(part, call, found[k0 + 1:] if n == n0 else found):
-            shown = True
-    if shown:
-        say(PASS, label, "shown after the close at %s" % clock(part[n0][0]))
-    else:
-        say(FAIL, label, "not shown after the close at %s: no show_widget call, and no council status "
-            "output passed on to the user" % clock(part[n0][0]))
 
 
 def helper_calls(calls: list[ToolCall], say: Say) -> None:

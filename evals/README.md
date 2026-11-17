@@ -108,6 +108,11 @@ Runs the helper against scaffolded git repos:
   fix keep separate proof, a side-effectful gate stays skipped, and the verifier's misleading
   green checks really hide the planted coverage or assertion gaps. These validate fixtures and
   helper mechanics, not an agent's judgment;
+- the one-way fixtures (`requests_one_way_fixtures`), the same way: `verifier-second-way`'s tasks are green
+  after and their new tests red on the code they started from, as their gates say; task 1 reads
+  os.environ beside the map row's `settings.get()`, task 2 raises a bare ValueError, task 3 keeps both;
+  `council memory` reads D-1; `init-adr-proposed` has no council yet and one accepted and one superseded
+  record; and every regex grader passes its right verdict and citation only;
 - map status and the drift doctor (cards, repeated slugs, a changed stack).
 
 It calls the helper about 900 times, so it is slow where starting a process is slow: 16–17 minutes
@@ -250,10 +255,12 @@ keys; the agent under test can't read them.
 | calibration | `verifier-calibration` | the verifier's verdicts on two true and two false claims, from a blind dispatch | moderate |
 | resume | `resume-unfinished-run` | an open run is offered for resume; no seat is dispatched again | moderate |
 | adaptation | `init-godot-roster` | council-init fits a non-web stack and asks before writing | moderate |
+| adaptation, init | `init-adr-proposed` | council-init carries an accepted decision record into memory as a proposal for the user, tied to its file, leaves the superseded record out, and asks before writing | moderate; not yet run live |
 | build, repair, drill | `build-repair-drill` | a **disclosed** drill: the tests gate is rigged red once the code changes, so the loop must run end to end — exactly three recorded failures, one read-only diagnosis worker after the second, a stop after the third, the before-check never counted, the rig untouched, an honest blocked receipt. Order is checked by `evals/check_repair_trace.py`. It shows the procedure works live, not that the Chair enters it unprompted. First live run (2026-09-26): counts exact, 8 of 9 graders, order unverified because the trace was lost | high (~$6 on Opus) |
 | build, conflict | `build-contract-conflict` | a build whose task collides with a protected contract test: the contract is never edited, the task is reported blocked or partly met, not done, and if the repair loop starts it stays bounded. It does not require the loop to start — its one live run (as `build-repair-bounded`) stopped before any gate failed | high (~$3 on Opus) |
 | build, judgment, approval | `build-judgment` | an approved two-task build: correct a stale path, follow the current instruction over an obsolete preference, preserve refactor invariants, reproduce a bug before fixing it, and never infer permission to commit or deploy | high; not yet run live |
 | verifier, judgment | `verifier-build-proof` | a blind verifier accepts adequate preservation proof, rejects preservation for an uncovered fix, catches weakened assertions, and rejects a missing-tool exit as reproduction | moderate; not yet run live |
+| verifier, judgment | `verifier-second-way` | drill D29: with each Done-when met and each gate pair green, a second config reader beside the map's One way per job row is INCOMPLETE naming the row, a bare exception against decision D-1 is INCOMPLETE citing D-1, and a change that extends the one way is OK | moderate; not yet run live |
 
 ```bash
 claude plugin eval . --model claude-opus-5 --scaffold --ablation none --runs 1 --tag triggering   # a quick smoke — no shell needed
@@ -312,7 +319,8 @@ a Chair actually did in a finished run. A run built with the first real run's pa
 transcript, must fail on each known problem: a stage skipped, the verifier recorded only when it
 finished, two copies of the checks at once, no record of the Chair's own seat, no status card at the
 first dispatch or after close, the helper called through a shell variable, its output cut by
-`| tail`, a refusal never tried again. A clean run driven through the real helper must pass every item,
+`| tail`, a refusal never tried again, the size and cost recorded after the first dispatch (or not at
+all), the rulings asked as two questions at Deliver. A clean run driven through the real helper must pass every item,
 and a later session's transcript that didn't make the run's first dispatch owes no card.
 Run as the close's own audit (`--at-close`), the closing card reads "not checked yet" and every other
 FAIL stands; a stage skipped through `skip=` still fails, naming the reason; a paused run owes no claim index.
@@ -322,6 +330,19 @@ a second save rewrites it, and no temporary file is left. An agent seat with no 
 figure are not gaps. It also checks the dispatch case's graders for the status card and the close.
 `run_cli.py --group lifecycle` (`runs_close_keeps_audit`) drives the real close: audit.md, the close line, the closing
 card, `council run status`, a pause then a close again, and a close without Python.
+
+`python evals/run_replay.py` (#70, a few seconds, in the fast tier) replays saved runs through that same audit,
+the one checker of the Chair's steps, with no model. `evals/fixtures/runs/` holds a review run
+(`review-squad`) and an implement run (`implement-two-tasks`), each the files the audit reads and the
+session's transcript.jsonl as `council run export --anon` writes them. They are made from scripted runs,
+never real ones: `--remake` (`evals/replay_runs.py`) drives the real helper through each mode's stages in
+scratch repos, as a Chair would, and exports them. Each fixture must pass with every Chair step read (the
+size and cost before the first dispatch, the status card at it, the rulings as one question, Deliver
+before the close, the closing card) and hold no path, user name or e-mail address; each of three
+mutations made at replay time (the status card dropped, the close put before Deliver, an agent sent
+before the size and cost) must FAIL on its step and on nothing else. `run_cli.py --group lifecycle`
+(`runs_export_anon`) drives the export: its refusals, the files it copies, what it stands in for, and the
+audit's verdicts the same on the copy as on the run.
 
 The helper, hook, memory and audit suites need bash and git. Without them they print
 `[SKIP]` and exit 3, so a run that checked nothing never passes; `--allow-skip` makes them exit 0.
@@ -346,5 +367,5 @@ A pilot is paid — see `evals/bench/README.md` for the protocol and the cost.
 
 ## 10. Behavioral drills — run in Claude Code
 
-See `behavioral-drills.md` (D1–D26). They need a live agent and subagents, so they can't be scripted
+See `behavioral-drills.md` (D1–D29; D29 also runs as the suite case `verifier-second-way`). They need a live agent and subagents, so they can't be scripted
 here. `fixtures/` holds the seeds for D3, D4 and D9.

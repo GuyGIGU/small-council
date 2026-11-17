@@ -272,6 +272,30 @@ def new_repo(base, name):
     return repo
 
 
+def scaffold_case(tmp, name, label="judgment fixture"):
+    """A suite case's scaffold.sh run in a new folder under tmp: the case's repo, as a model run would get it."""
+    repo = os.path.join(tmp, name)
+    os.makedirs(repo)
+    script = os.path.join(ROOT, "evals", "suite", name, "scaffold.sh")
+    proc = subprocess.run([BASH, script], cwd=repo, env=GIT_ENV, capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", timeout=120)
+    check(label + ": " + name + " scaffolds successfully", proc.returncode == 0, proc.stdout + proc.stderr)
+    if proc.returncode != 0:
+        raise RuntimeError("cannot check an unscaffolded " + label)
+    return repo
+
+
+def grader_pattern(case, grader, key="pattern"):
+    """A suite grader's regex (pattern: or input_match:), as the eval runner reads it."""
+    text = read(os.path.join(ROOT, "evals", "suite", case, "graders", grader + ".md"))
+    return re.search(r"^%s: '(.+)'$" % key, text, re.MULTILINE).group(1).replace("''", "'")
+
+
+def unittests(root, *args):
+    return subprocess.run([sys.executable, "-B", "-m", "unittest", *args], cwd=root, capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", timeout=60)
+
+
 def small_council_repo(tmp, name, gate_rows):
     """A committed repo whose config holds only a Gates table (with Side effects, so gate --all runs them)."""
     repo = new_repo(tmp, name)
@@ -5021,20 +5045,12 @@ def requests_judgment_authorization(tmp):
             "rejects" if command in forbidden else "accepts", command),
             bool(failed) == (command in forbidden), str(failed))
 
+
 @part("requests")
 def requests_judgment_fixtures(tmp):
     # Validate the raw fixtures, not a model's decisions: live judgment still needs a separate run.
     def scaffold(name):
-        repo = os.path.join(tmp, name)
-        os.makedirs(repo)
-        script = os.path.join(ROOT, "evals", "suite", name, "scaffold.sh")
-        proc = subprocess.run([BASH, script], cwd=repo, env=GIT_ENV, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace", timeout=120)
-        check("judgment fixture: " + name + " scaffolds successfully", proc.returncode == 0,
-              proc.stdout + proc.stderr)
-        if proc.returncode != 0:
-            raise RuntimeError("cannot check an unscaffolded judgment fixture")
-        return repo
+        return scaffold_case(tmp, name)
 
     repo = scaffold("build-judgment")
     baseline = git(repo, "rev-parse", "HEAD")
@@ -5112,6 +5128,74 @@ def requests_judgment_fixtures(tmp):
               re.search(pattern, "| %d | task | %s | cited path |" % (n, verdict)) is not None
               and re.search(pattern, "| %d | task | UNVERIFIED | not %s |" % (n, verdict)) is None
               and re.search(pattern, "| %d | task | %s | cited path |" % (n + 1, verdict)) is None)
+
+
+@part("requests")
+def requests_one_way_fixtures(tmp):
+    # #93's drill cases, checked without a model: the plants hold, the gates they record are honest, the helper
+    # serves the decision, and each grader passes the right verdict and only that one.
+    case = "verifier-second-way"
+    repo = scaffold_case(tmp, case, "one-way fixture")
+    for n in (1, 2, 3):
+        proc = unittests(os.path.join(repo, str(n)), "discover", "-s", "tests", "-t", ".")
+        check("one-way fixture: task %d's tests are green after its build" % n, proc.returncode == 0,
+              proc.stdout + proc.stderr)
+        before = os.path.join(tmp, "before-%d" % n)
+        shutil.copytree(os.path.join(repo, "base"), before)
+        shutil.rmtree(os.path.join(before, "tests"))
+        shutil.copytree(os.path.join(repo, str(n), "tests"), os.path.join(before, "tests"))
+        proc = unittests(before, "discover", "-s", "tests", "-t", ".")
+        check("one-way fixture: task %d's new test fails on the code it started from, as its gate says" % n,
+              proc.returncode == 1 and "Ran 2 tests" in proc.stderr and "FAILED (failures=1)" in proc.stderr
+              and "FAILED (failures=1)" in read(os.path.join(repo, str(n), "gates", "before-%d.txt" % n)),
+              proc.stderr)
+    patch = [read(os.path.join(repo, str(n), "product.patch")) for n in (1, 2, 3)]
+    row = re.search(r"^\| Read a config setting \| src/config/ \| `settings\.get\(\)` \| (\S+) \|$",
+                    read(os.path.join(repo, ".council", "map.md")), re.MULTILINE)
+    check("one-way fixture: the map's One way per job row names settings.get(), and task 1 reads os.environ beside it",
+          row is not None and "def get(name)" in read(os.path.join(repo, "1", row.group(1)))
+          and re.search(r"^\+.*os\.environ\.get\(\"APP_PAGE_SIZE\"", patch[0], re.MULTILINE)
+          and "settings" not in "".join(re.findall(r"^\+.*$", patch[0], re.MULTILINE)), patch[0])
+    check("one-way fixture: task 2 lets a bare ValueError out, task 3 reads settings.get() and raises AppError",
+          re.search(r"^\+\s+raise ValueError\(", patch[1], re.MULTILINE)
+          and re.search(r"^\+.*settings\.get\(\"max_quantity\"\)", patch[2], re.MULTILINE)
+          and re.search(r"^\+\s+raise AppError\(400", patch[2], re.MULTILINE)
+          and not re.search(r"^\+.*(?:os\.environ|ValueError)", patch[2], re.MULTILINE), patch[1] + patch[2])
+    code, out, err = council(repo, "memory")
+    check("one-way fixture: the helper reads D-1 in conventions.md as the user's decision, for every run",
+          code == 0 and "D-1 · Errors cross the API as AppError · every run · origin: the user" in out, out + err)
+    for grader, n, verdict, cite in (("second-config-reader", 1, "INCOMPLETE", 'the "Read a config setting" row'),
+                                     ("undone-decision", 2, "INCOMPLETE", "D-1"), ("one-way-kept", 3, "OK", "")):
+        pattern = grader_pattern(case, grader)
+        right = "| %d | task | %s | a second way, %s |" % (n, verdict, cite)
+        check("one-way grader: %s matches its verdict and citation only" % grader,
+              re.search(pattern, right) is not None
+              and re.search(pattern, right.replace(verdict, "OK" if verdict != "OK" else "INCOMPLETE")) is None
+              and re.search(pattern, right.replace("| %d |" % n, "| %d |" % (n + 1))) is None
+              and (not cite or re.search(pattern, "| %d | task | %s | tests green |" % (n, verdict)) is None), right)
+    check("one-way grader: D-1 is not matched inside D-10",
+          re.search(grader_pattern(case, "undone-decision"), "| 2 | task | INCOMPLETE | D-10 |") is None)
+
+    case = "init-adr-proposed"
+    repo = scaffold_case(tmp, case, "one-way fixture")
+    adr = os.path.join(repo, "docs", "adr")
+    lines = read(os.path.join(adr, "0002-money-as-integer-cents.md")).splitlines()
+    check("one-way fixture: no council yet, and the project's tests are green",
+          not os.path.exists(os.path.join(repo, ".council"))
+          and unittests(repo, "discover", "-s", "tests", "-t", ".").returncode == 0)
+    check("one-way fixture: 0002 is accepted and states the decision on its own line; 0001 is superseded by it",
+          "Status: Accepted (2026-09-14)" in lines
+          and any(line.startswith("Every amount is an integer number of cents, never a float.") for line in lines)
+          and "Status: Superseded by 0002" in read(os.path.join(adr, "0001-money-as-float-dollars.md")))
+    pattern = grader_pattern(case, "record-read", "input_match")
+    check("one-way grader: record-read counts a Read of 0002 and not of 0001",
+          re.search(pattern, json.dumps({"file_path": os.path.join(adr, "0002-money-as-integer-cents.md")}))
+          and not re.search(pattern, json.dumps({"file_path": os.path.join(adr, "0001-money-as-float-dollars.md")})))
+    config = re.search(r'^path: "([^"]+)"$', read(os.path.join(ROOT, "evals", "suite", case, "graders",
+                                                              "asks-before-writing.md")), re.MULTILINE).group(1)
+    check("one-way grader: asks-before-writing names the config setup writes, absent from the scaffold",
+          config == ".council/council.config.md" and not os.path.exists(os.path.join(repo, config)))
+
 
 @part("requests")
 def requests_review_fix_proofs(tmp):
@@ -6890,6 +6974,90 @@ def runs_close_keeps_audit(tmp):
               and "council run open needs Python 3.8 or newer, and none is on PATH" in err, err)
     else:
         print("note: python sits beside bash or git here, so the no-Python open is not checked on this system")
+
+
+@part("lifecycle")
+def runs_export_anon(tmp):
+    # Issue 70: a run's records and its transcript copied for a replay elsewhere, with what the audit reads and
+    # nothing else: no path of this machine, no word of the user's, the times kept.
+    r = new_repo(tmp, "export-anon")
+    write(os.path.join(r, ".council", "council.config.md"), "# Council config\n")
+    rn = council(r, "run", "open", "council-review", env=session("sX-export"))[1].strip().splitlines()[-1]
+    name = os.path.basename(rn)
+    write_plan(rn, selected=("chair", "w1"))
+    council(r, "state", 'size=squad — 1 seat, est. ~90k tokens')
+    council(r, "cap", "check", "--session", "sX-export", "Agent", "type=small-council:council-worker", "seat=w1",
+            "run=" + name)
+    council(r, "seat", "w1", "running", "agent=a7e1")
+    council(r, "seat", "w1", "done", "tokens=20000", "note=NEEDS: which zebra table holds the key?")
+    council(r, "state", "decision=ship the zebra fix tonight")
+    write(os.path.join(rn, "ask.md"), "# Ask\n## In your words\nthe zebra fix\n")
+    write(os.path.join(rn, "seats", "w1.md"), "# W1\nzebra findings\n")
+    to_deliver(r, env=session("sX-export"))
+    council(r, "seat", "chair", "done", "agents=0")
+    council(r, "run", "close")
+    t0 = datetime.now(timezone.utc) - timedelta(minutes=1)
+    stamp = lambda s: (t0 + timedelta(seconds=s)).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # noqa: E731
+    lines = [{"type": "user", "timestamp": stamp(0), "sessionId": "sX-export", "message": {"content": "review the zebra"}},
+             {"type": "assistant", "timestamp": stamp(1), "sessionId": "sX-export", "message": {"content": [
+                 {"type": "tool_use", "id": "t1", "name": "Bash", "input": {
+                     "command": 'council state decision="ship the zebra fix" && cat %s/zebra.txt; council status | tail -2'
+                     % slash(r)}},
+                 {"type": "tool_use", "id": "t2", "name": "Write", "input": {"content": "zebra secrets"}}]}},
+             {"type": "user", "timestamp": stamp(1), "sessionId": "sX-export", "message": {"content": [
+                 {"type": "tool_result", "tool_use_id": "t1", "content": "zebra line\ncouncil: saved in %s/.council" % r}]}},
+             {"type": "assistant", "timestamp": stamp(2), "sessionId": "sX-export", "isSidechain": True,
+              "message": {"content": [{"type": "text", "text": "an agent's zebra notes"}]}},
+             {"type": "assistant", "timestamp": stamp(3), "sessionId": "sX-export",
+              "message": {"content": [{"type": "text", "text": "Zebra done, owner@example.com"}]}}]
+    log = os.path.join(tmp, "export-session.jsonl")
+    write(log, "".join(json.dumps(line) + "\n" for line in lines))
+    dest = os.path.join(tmp, "export-copy")
+    usage = "usage: council run export --anon <run> <dest> [--transcript <session .jsonl>]"
+    for words, said in ((("run", "export", name, dest), "run export copies a run only anonymised — pass --anon"),
+                        (("run", "export", "--anon", name), usage),
+                        (("run", "export", "--anon", "no-such-run", dest), "not a run folder: no-such-run — name a run"),
+                        (("run", "export", "--anon", name, os.path.join(rn, "copy")),
+                         "the copy can't go inside the run it copies"),
+                        (("run", "export", "--anon", name, r), "is not an empty folder — name a new or empty one"),
+                        (("run", "export", "--anon", name, dest, "--transcript", log + ".gone"), "no such transcript")):
+        code, out, err = council(r, *words)
+        check("run export: refused, naming the next step: %s" % said, code == 2 and said in err and not os.path.exists(dest),
+              out + err)
+    code, out, err = council(r, "run", "export", "--anon", name, dest, "--transcript", log)
+    copied = sorted(os.listdir(dest)) if os.path.isdir(dest) else []
+    check("run export: what the audit reads is copied and nothing else (no ask.md, no seat file)",
+          code == 0 and "exported %s to " % name in out and "transcript.jsonl: 5 line(s)" in out
+          and copied == ["agent-starts.tsv", "audit.md", "events.tsv", "run-plan.tsv", "seats.tsv", "session-state.md",
+                         "transcript.jsonl", "usage.tsv"], out + err + str(copied))
+    every = "".join(read(os.path.join(dest, f)) for f in copied)
+    check("run export: no path of this machine, no word of the user's, no e-mail address is left in any file",
+          slash(r) not in every and slash(tmp) not in every and "zebra" not in every.lower()
+          and "example.com" not in every and "<project>" in every, every[:2000])
+    state, events = read(os.path.join(dest, "session-state.md")), read(os.path.join(dest, "events.tsv"))
+    check("run export: the state keeps the helper's fields, the session a stand-in, a decision its time and shape",
+          "status: complete" in state and "code-root: <project>" in state and "session: session-1" in state
+          and re.search(r'^- \d{4}-\d\d-\d\d \d\d:\d\d: "xxxx xxx xxxxx xxx xxxxxxx"$', state, re.MULTILINE),
+          state)
+    check("run export: the events are the run's own, time for time; a note keeps its NEEDS: and loses its words",
+          [line.split("\t")[:5] for line in events.splitlines()]
+          == [line.split("\t")[:5] for line in read(os.path.join(rn, "events.tsv")).splitlines()]
+          and "\tNEEDS: xxxxx xxxxx xxxxx xxxxx xxx xxx?\t" in read(os.path.join(dest, "seats.tsv")), events)
+    log_lines = [json.loads(line) for line in read(os.path.join(dest, "transcript.jsonl")).splitlines()]
+    calls = [b for line in log_lines for b in line["message"]["content"] if isinstance(b, dict) and b["type"] == "tool_use"]
+    check("run export: the transcript keeps the helper's call word for word but the user's quoted words, drops a "
+          "tool's input and an agent's own lines, and keeps only the helper's lines of a result",
+          len(log_lines) == 5 and calls[0]["input"]["command"].startswith('council state decision="xxxx xxx xxxxx xxx"')
+          and "| tail -2" in calls[0]["input"]["command"] and calls[1] == {"type": "tool_use", "id": "t2", "name": "Write",
+                                                                           "input": {}}
+          and "council: saved in <project>/.council" in json.dumps(log_lines), json.dumps(log_lines)[:1500])
+    verdicts = [re.findall(r"^  (pass|warn|FAIL)\s+([^:]+):", council(r, "run", "audit", "--run", run, "--transcript",
+                                                                    given)[1], re.MULTILINE)
+                for run, given in ((rn, log), (dest, os.path.join(dest, "transcript.jsonl")))]
+    check("run export: the audit gives the copy the verdict it gives the run, item for item, records and transcript",
+          len(verdicts[0]) >= 12 and verdicts[0] == verdicts[1]
+          and ("FAIL", "Helper output shown whole") in verdicts[1],
+          str(verdicts))
 
 
 @part("runs")

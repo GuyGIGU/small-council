@@ -34,7 +34,11 @@ council — the Small Council's helper (bash + git)
                                          records, and with the session transcript what the Chair
                                          showed and ran — pass, warn or FAIL per item, exit 1 on a
                                          FAIL; reads only (optional Python 3.8+)
-  council state [key=value …]            show or update the run's session-state header; phase= takes a
+  council run export --anon <run> <dest> [--transcript <session .jsonl>]
+                                         copy what the audit reads of a run into a new folder,
+                                         anonymised: paths as placeholders, the user's words as
+                                         stand-ins of the same shape, times kept (a replay fixture)
+  council state [key=value …]           show or update the run's session-state header; phase= takes a
                                          stage name and records its next step (skip="<why>" to pass over
                                          a stage the mode must enter); waiting="<question>" prints
                                          the alert reminder; decision="<the user's words>" goes under

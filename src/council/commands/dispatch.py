@@ -18,6 +18,7 @@ COMMANDS = {  # each module's main takes (args, the words after the command's ow
     "run close": "run_close",
     "run session-start": "session_start",
     "run audit": "script_cmds",
+    "run export": "run_export",
     "state": "state",
     "seat": "seat",
     "correct": "correct",
@@ -48,7 +49,8 @@ COMMANDS = {  # each module's main takes (args, the words after the command's ow
 }
 USAGES = {  # a sub of `run` or `cap` with no row
     "run": "usage: council run open <mode> | run status [--all] | run close [--status …] | run resume [--run <folder>] "
-           "| run plan [check|show] | run events [show|check] | run audit [--transcript <file>]",
+           "| run plan [check|show] | run events [show|check] | run audit [--transcript <file>] "
+           "| run export --anon <run> <dest>",
     "cap": 'usage: council cap [--run <folder>] | cap allow <n> --user-said "…" | cap check [--session ID] '
            "[<tool> [type=… seat=… run=… file=…]]",
 }
