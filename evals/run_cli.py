@@ -8657,6 +8657,36 @@ def runs_task_decisions_unlock_their_task(tmp):
 
 
 @part("lifecycle")
+def runs_builders_together(tmp):
+    """Two builders sent for one queued build seat at the same instant: one goes out and takes the seat, the other is
+    refused, and only the one that went out is counted in agent-starts.tsv (the refused one was counted too, so the
+    agent count ran one high)."""
+    builder = "type=small-council:council-builder"
+    bt = new_repo(tmp, "builders-together")
+    write(os.path.join(bt, "a.txt"), "a\n")
+    write(os.path.join(bt, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    git(bt, "add", "-A")
+    git(bt, "commit", "-q", "-m", "init")
+    _, out, _ = council(bt, "run", "open", "council-implement", env=session("sW"))
+    brun = out.strip().splitlines()[-1]
+    write_plan(brun, selected=("task-1",))
+    call = ("cap", "check", "--session", "sW", "Agent", builder, "seat=task-1", "file=report-1",
+            "run=" + os.path.basename(brun))
+    bad, went = [], 0
+    for rnd in range(3):
+        council(bt, "seat", "task-1", "queued")
+        workers = council_together(bt, call, call)
+        went += sum(1 for code, _ in workers if code == 0)
+        starts = read(os.path.join(brun, "agent-starts.tsv")).count("\tAgent\t")
+        if sorted(code for code, _ in workers) != [0, 2] or starts != went:
+            bad.append("round %d: %d start(s) counted for %d builder(s) let out; %s"
+                       % (rnd, starts, went, workers_detail(workers)))
+        council(bt, "seat", "task-1", "failed", "note=dispatch failed")
+    check("cap check: two builders for one seat at once — one goes out, the other is refused, and only the one that "
+          "went out is counted", not bad, "\n".join(bad), full=True)
+
+
+@part("lifecycle")
 def runs_build_seat_fix_stop(tmp):
     # T5 (D42): a NEEDS: fix stop holds its task and every task that depends on it until the user's decision is on
     # record — the helper refuses the start, where the skill only asked it in prose. One reader of a stop

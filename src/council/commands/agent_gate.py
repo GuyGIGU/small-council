@@ -79,9 +79,13 @@ def check(session: str, words: list[str]) -> int:
     if refusal:
         cli.say(refusal)
         return 2
-    stopped = stops(call.tool, here) if has_runs else []
+    took = Took()
+    stopped = stops(call.tool, here, seat, took) if has_runs else []
+    if took.refusal:
+        cli.say("Small Council: " + took.refusal)
+        return 2
     if not stopped:
-        return _take(seat)
+        return 0 if took.done else _take(seat)
     if len(stopped) == 1:
         name = stopped[0][0]
         cli.say("Small Council: %s. No new agents until the user says go. Tell them what it has used, and ask whether "
@@ -131,8 +135,18 @@ def workflow_refusal(open_runs: list[str], home: str) -> str | None:
     return None
 
 
-def stops(tool: str, here: Where) -> list[tuple[str, str]]:
-    """Each stopped run's name and words. The run a start counts for is judged under its lock, last."""
+class Took:
+    """Whether count_start asked for the builder's seat under the starts lock, and the refusal it met doing so."""
+
+    def __init__(self) -> None:
+        self.done: bool = False
+        self.refusal: str | None = None
+
+
+def stops(tool: str, here: Where, seat: tuple[Path, str] | None = None,
+          took: Took | None = None) -> list[tuple[str, str]]:
+    """Each stopped run's name and words. The run a start counts for is judged under its lock, last; a builder's
+    seat is taken there too (count_start)."""
     kept, mine = [], []
     for run in runs.listing(here.home, 1000000, "open"):
         if run.status != "in-progress":
@@ -156,16 +170,19 @@ def stops(tool: str, here: Where) -> list[tuple[str, str]]:
             if stand.stopped:
                 stopped.append((run.split("/")[-1], stand))
     if counted:
-        stand = count_start(Path(counted), tool, here, bool(stopped))
+        stand = count_start(Path(counted), tool, here, bool(stopped), seat, took)
         if stand.stopped:
             stopped.append((counted.split("/")[-1], stand))
     said = [cap.words(name, stand) for name, stand in stopped]
     return [(name, line if n == 0 else "R" + line[1:]) for n, ((name, _), line) in enumerate(zip(stopped, said))]
 
 
-def count_start(run: Path, tool: str, here: Where, refused: bool) -> usage.Standing:
+def count_start(run: Path, tool: str, here: Where, refused: bool, seat: tuple[Path, str] | None = None,
+                took: Took | None = None) -> usage.Standing:
     """The run's standing before this start, which is counted in agent-starts.tsv unless the run is
-    stopped or another run refuses the start; without the lock it is judged, not counted."""
+    stopped or another run refuses the start; without the lock it is judged, not counted. A builder takes its
+    seat first, under this lock (seat.taken): two sent together were both counted and one refused after, so the
+    count ran one high. Refused, it is not counted and the refusal is left in the Took."""
     if refused:
         return usage.standing(run, here.home)
     from council.records import locks              # only a start that may be counted takes a lock
@@ -175,7 +192,11 @@ def count_start(run: Path, tool: str, here: Where, refused: bool) -> usage.Stand
         return usage.standing(run, here.home)
     try:
         stand = usage.standing(run, here.home)
-        if not stand.stopped:
+        took = took or Took()
+        if not stand.stopped and seat:
+            from council.commands import seat as seat_record
+            took.refusal, took.done = seat_record.taken(*seat), True
+        if not stand.stopped and not took.refusal:
             seed, stamp, head = stand.used - seats.workflow_extra(run), clock.now_utc(), "at\ttool\tsession\n"
             try:
                 if seed > 0 and not (file.is_file() and file.stat().st_size):   # new: the agents before any start
@@ -273,8 +294,8 @@ def held_to_record(call: Call, here: Where) -> str | tuple[Path, str] | None:
 
 
 def _take(seat: tuple[Path, str] | None) -> int:
-    """A builder that may go out takes its build seat (council seat's taken), last, once no limit stops it: 0, or 2
-    with the refusal when another dispatch took the seat first."""
+    """A builder that may go out takes its build seat (council seat's taken), last, once no limit stops it, when no
+    start was counted (count_start takes it then): 0, or 2 with the refusal when another dispatch took the seat first."""
     if not seat:
         return 0
     from council.commands import seat as seat_record
