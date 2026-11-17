@@ -35,16 +35,16 @@ def unread(run: Path, so: str) -> str:
             "size, in its place: %s" % (NAME, paths.megabytes(paths.MAX_FILE), so, found.as_posix()))
 
 
-def header(content: str, exact_keys: bool = False, comments: bool = True) -> dict[str, str]:
+def header(content: str, comments: bool = True) -> dict[str, str]:
     """The header's fields, the first of a repeated key winning, with the value's leading space dropped
-    and, with comments, a trailing '  # comment'. exact_keys takes only a key at the start of its line,
-    as the helper's state_field does; otherwise space around the key is allowed (the snapshot's rule)."""
+    and, with comments, a trailing '  # comment'. A key counts only at the start of its line, with no space
+    before its colon, as the helper's state_field and the writer (state_write) read it: every reader, the
+    status views too, sees one header."""
     fields = {}
     for line in cells.lines_of(content.lstrip(paths.BOM)):    # the helper drops the BOM from line 1
         if line.startswith("## "):
             break
-        key, sep, value = line.partition(":")
-        name = key if exact_keys else key.strip()
+        name, sep, value = line.partition(":")
         if sep and KEY.fullmatch(name) and name not in fields:
             value = value.lstrip(" \t")
             fields[name] = re.sub(r"[ \t]{2,}#.*$", "", value) if comments else value
@@ -55,7 +55,7 @@ def field(content: str, key: str) -> str:
     """One header field as the helper's state_field reads it: the first `key:` line above the first `## `
     heading, a trailing '  # comment' taken off; '' when the header has none. A line below a heading that
     starts with the key (a decision or note beginning `mode:`) is never the field."""
-    return header(content, exact_keys=True).get(key, "")
+    return header(content).get(key, "")
 
 
 def is_build_run(content: str) -> bool:

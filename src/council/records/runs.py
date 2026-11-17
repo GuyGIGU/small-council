@@ -62,7 +62,7 @@ def _states(runs: str, which: str) -> list[str]:
 
 def listed_fields(content: str) -> dict[str, str] | None:
     """The state's header fields as state.header reads them (exact keys); None for an empty file."""
-    return state.header(content, exact_keys=True) if content else None
+    return state.header(content) if content else None
 
 
 def here(code_root: str, tree: str) -> bool:

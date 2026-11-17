@@ -25,6 +25,7 @@ from typing import Any, Dict
 
 from council.clock import local_moment, utc_moment as utc_time
 from council.records import config, memory, paths
+from council.records import events as event_stream
 from council.records.cells import clean
 from council.records.gates import kind as gate_kind    # one rule for every view: a proof fails first, a probe dry-runs
 from council.views import snapshot
@@ -307,7 +308,8 @@ def flow_attention(flow: dict[str, Any], now: datetime) -> list[dict[str, Any]]:
 
 
 def notes_of(snap: Snap, run_path: Path, status: str, open_run: bool) -> list[dict[str, Any]]:
-    """Drafted lessons waiting, a memory file grown too large, and a status file that can't be read."""
+    """Drafted lessons waiting, a memory file grown too large, a status file that can't be read, and an event stream
+    that refuses the run's next state change."""
     attention = []
     if snap["memory"].get("proposed"):
         attention.append({"kind": "memory", "severity": 1, "text": "{} for your yes or no.".format(
@@ -317,6 +319,12 @@ def notes_of(snap: Snap, run_path: Path, status: str, open_run: bool) -> list[di
         attention.append({"kind": "memory-size", "severity": 1, "text": clean(large) + "."})
     if not status:
         attention.append({"kind": "data", "severity": 2, "text": "The run's status file is missing or can't be read."})
+    code, why = event_stream.ready(run_path) if status in ("in-progress", "paused") else (0, "")
+    if code:                                 # the stream the next state write checks (records.events.writable)
+        step = ("repair it: council run events repair --run {}" if code == 1 else
+                "it can't be rebuilt; close the run: council run close --run {}").format(run_path.name)
+        attention.append({"kind": "events", "severity": 2, "text": "The run's event history is {} ({}), so it can't "
+                          "move to another stage — {}.".format("damaged" if code == 1 else "lost", clean(why), step)})
     return attention
 
 

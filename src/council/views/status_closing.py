@@ -2,6 +2,7 @@
 left for the user. Missing or stale evidence is named, never counted as zero."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,9 @@ VERDICT_NAMES = (("confirmed", "CONFIRMED", "confirmed"), ("refuted", "REFUTED",
                  ("not_sent", "UNVERIFIED", "not sent to a verifier"))
 CONVERGE_WORDS = (("partly", "partly met"), ("not_met", "not met"), ("blocked", "blocked"),   # a build's final check
                   ("other", "with an unclear result"))
+POSTGAME_WORDS = (("partly", "partly met"), ("not_met", "not met"), ("cant_tell", "can't tell"))   # a post-game's
+MET = re.compile(r"(PARTLY MET|NOT MET|CAN[’']?T TELL|MET)\b", re.IGNORECASE)                    # verifier rows
+MET_KEYS = {"partly met": "partly", "not met": "not_met", "met": "met"}
 NO_REQUEST = "No filed request recorded."
 
 
@@ -71,6 +75,51 @@ def converge_open(converge: dict[str, Any] | None) -> list[str]:
             for row in (converge or {}).get("rows", []) if row["result"] != "met"]
 
 
+def postgame_counts(run_path: str | Path) -> dict[str, Any] | None:
+    """A post-game's verdicts on the request's parts, from the newest verify-*.md whose table has a Verdict column
+    and rows: MET, PARTLY MET, NOT MET and CAN'T TELL each counted; None when no verifier file holds one."""
+    run = Path(run_path)
+    try:
+        files = sorted(run.glob("verify-*.md"), key=lambda found: found.stat().st_mtime_ns, reverse=True)
+    except OSError:
+        return None
+    for file in files:
+        counts = {"met": 0, "partly": 0, "not_met": 0, "cant_tell": 0}
+        for verdict in met_verdicts(paths.text_of(file, run)):
+            counts[MET_KEYS.get(verdict, "cant_tell")] += 1
+        if sum(counts.values()):
+            return dict(counts, total=sum(counts.values()), file=file.name)
+    return None
+
+
+def met_verdicts(content: str) -> list[str]:
+    """The Verdict cell of each row of a table headed with a Verdict column, as 'met', 'partly met', 'not met' or
+    "can't tell"; a row whose cell begins with none of them is left out."""
+    found, column = [], None
+    for line in lines_of(content):
+        if not line.lstrip().startswith("|"):
+            column = None
+            continue
+        cells = [re.sub(r"[`*_]", "", cell).strip() for cell in line.strip().strip("|").split("|")]
+        if "verdict" in [cell.lower() for cell in cells]:
+            column = [cell.lower() for cell in cells].index("verdict")
+            continue
+        said = MET.match(cells[column]) if column is not None and column < len(cells) else None
+        if said:
+            found.append(said.group(1).lower().replace("’", "'"))
+    return found
+
+
+def postgame_text(counts: dict[str, Any] | None) -> str:
+    """A post-game's Verified line: how many parts of the request its verifier found met, and the rest by name."""
+    if counts is None:
+        return "No verifier verdicts on the request recorded (verify-*.md)."
+    rest = ["{} {}".format(counts[key], words) for key, words in POSTGAME_WORDS if counts[key]]
+    return "{} of {} part{} of the request met{} ({}).".format(counts["met"], counts["total"],
+                                                              "" if counts["total"] == 1 else "s",
+                                                              "; " + ", ".join(rest) if rest else "", counts["file"])
+
+
 def verified_of(claims: dict[str, Any]) -> tuple[str, dict[str, int] | None]:
     """The Verified line from the claim index: kept claims, and cut ones a verifier saw (an item the Chair set
     aside is no unverified finding), each verdict by its own name — a wrong place or an unsure verdict is
@@ -106,6 +155,8 @@ def closing_of(snap: dict[str, Any], run_path: Path, usage: dict[str, Any], chec
         # A build checks tasks, not claims: its final check is the log's Converge table.
         converge = final_check.read(run_path, run.get("deliverable", ""))
         verified, counts = converge_text(converge), None
+    elif run.get("mode") == "council-postgame":
+        verified, counts = postgame_text(postgame_counts(run_path)), None
     else:
         verified, counts = verified_of(claims)
     return {"request": filed_request(run_path),
