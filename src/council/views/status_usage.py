@@ -95,13 +95,14 @@ def spend_of(usage: dict[str, Any], run_path: Path) -> dict[str, Any]:
 
 
 def chair_text(snap: Snap) -> str | None:
-    """The Chair's own tokens, once a close has read them."""
+    """The Chair's own tokens, once a close has read them, and the method load recorded beside them."""
     chair = (snap.get("events") or {}).get("chair")
     if not chair:
         return None
-    return "{}{} tokens{} (its context's growth, from the session transcript)".format(
+    return "{}{} tokens{} (its context's growth, from the session transcript){}".format(
         "at least " if chair.get("partial") else "", tokens_text(chair["tokens"]),
-        " over " + plural(chair["calls"], "model call") if chair.get("calls") is not None else "")
+        " over " + plural(chair["calls"], "model call") if chair.get("calls") is not None else "",
+        " · method load: {:,} bytes".format(chair["method"]) if chair.get("method") is not None else "")
 
 
 def used(snap: Snap, run_path: Path, home: str | Path | None, open_run: bool) -> tuple[dict[str, Any], list[Any]]:

@@ -151,8 +151,10 @@ def events_of(run: Path, last: int) -> dict[str, Any]:
         if r[3] == "run.chair_usage" and clean(r[5]).isdigit():
             calls = re.search(r"(?:^|;)calls=([0-9]+)(?:;|$)", clean(r[6]))
             basis = re.search(r"(?:^|;)basis=([a-z]+)(?:;|$)", clean(r[6]))
+            method = re.search(r"(?:^|;)method_bytes=([0-9]+)(?:;|$)", clean(r[6]))
             chair = {"tokens": int(clean(r[5])), "calls": int(calls.group(1)) if calls else None, "at": clean(r[2]),
-                     "partial": bool(basis) and basis.group(1) == "partial"}
+                     "partial": bool(basis) and basis.group(1) == "partial",
+                     "method": int(method.group(1)) if method else None}
         if r[3] == "gate.finished":
             seen = gates.setdefault(clean(r[4]), {"passed": 0, "failed": 0, "last": ""})
             result = clean(r[5])

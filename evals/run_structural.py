@@ -117,6 +117,7 @@ py = "".join(read(os.path.relpath(os.path.join(d, f), ROOT)) for d, _, fs in os.
              for f in sorted(fs) if f.endswith(".py"))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 from council.commands import cli as helper_cli, dispatch, help as helper_help  # noqa: E402
+from council.records import stages as helper_stages  # noqa: E402
 agent_gate = read("hooks", "agent-gate.sh")
 bash_gate = read("hooks", "bash-gate.sh")
 warroom = read("references", "run", "war-room.md")
@@ -156,8 +157,11 @@ check("kernel: the steps every run needs — the Chair's own seat record, the ow
 check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
 # The method a review run reads before it touches the project (method-vs-helper-10: 59,407 bytes before
 # stage 2, 61,746 after it): a rule the helper now says keeps one pointer here, not its whole text.
-load = sum(len(read(*p).encode("utf-8")) for p in [("skills", "context-core", "SKILL.md"), ("skills", "council-review", "SKILL.md")]
-           + [("references", "doctrine", name) for name in sorted(doctrine)])
+# The files counted are the helper's one definition (council.records.stages.method_files), which run close records too.
+load = helper_stages.method_bytes("council-review", root=ROOT)
+check("method: the method load counts context-core, council-review and the ten doctrine files, each once",
+      helper_stages.method_files("council-review") == ["skills/context-core/SKILL.md", "skills/council-review/SKILL.md"]
+      + ["references/doctrine/" + name for name in DOCTRINE], repr(helper_stages.method_files("council-review")))
 check("method: what a review run reads (context-core, doctrine 01-10, council-review) is under 59,407 bytes", load < 59407, str(load))
 check("kernel: resuming a run records this session as its driver (council run resume)",
       "council run resume" in core[core.find("## Resume"):])

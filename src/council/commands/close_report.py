@@ -4,8 +4,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from council.commands import cli, script
-from council.records import audit_file, closing, events, usage
+from council.commands import cli, resolve, script
+from council.records import audit_file, closing, events, stages, usage
 
 
 def claims_note(run: Path) -> None:
@@ -37,17 +37,24 @@ def audit(run: Path) -> None:
 
 
 def chair(run: Path) -> None:
-    """The Chair's own tokens from the session transcript, as a run.chair_usage event and one line; else nothing."""
+    """The Chair's own tokens from the session transcript, and beside them the method its mode loads through the
+    stages the run enters (D13), as a run.chair_usage event and one line; else nothing."""
     code, out, _ = script.captured("chair_usage", ["--run", run.as_posix()])
     said = re.fullmatch("tokens=([0-9]+);calls=([0-9]+);basis=(complete|partial)", out.rstrip("\n"))
     if code or not said:
         return
     tokens, calls, basis = said.groups()
+    mode, entered = resolve.field(run, "mode"), stages.required(run)
+    method = stages.method_bytes(mode, entered)
     try:
-        events.append(run, "run.chair_usage", "chair", tokens, "calls=%s;basis=%s" % (calls, basis))
+        events.append(run, "run.chair_usage", "chair", tokens,
+                      "calls=%s;basis=%s;method_bytes=%d" % (calls, basis, method))
     except events.EventError as failure:
         cli.warn("council: %s" % failure)
         return
+    doctrine = sum(name.startswith("references/doctrine/") for name in stages.method_files(mode, entered))
     cli.say("the Chair's own work: %s%s tokens over %s model call%s (its context's growth, from the session "
-            "transcript; not in the agents' figures)"
-            % ("at least " * (basis == "partial"), usage.token_text(int(tokens)), calls, "s" * (calls != "1")))
+            "transcript; not in the agents' figures) · method load: %s bytes (context-core, %s and the doctrine of "
+            "the %d stage%s it enters)"
+            % ("at least " * (basis == "partial"), usage.token_text(int(tokens)), calls, "s" * (calls != "1"),
+               format(method, ","), mode, doctrine, "s" * (doctrine != 1)))
