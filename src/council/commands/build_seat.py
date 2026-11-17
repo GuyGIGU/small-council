@@ -136,10 +136,10 @@ def _resolved(rows: list[list[str]], at: int, task: int, proofs: dict) -> bool:
 def stop_of(run: Path, slug: str) -> str:
     """The one reader of a stop: '' when seat <slug>'s row carries no NEEDS: note; else RESOLVED when the task its
     slug names (task-3, T3) has its after-<n> gate passed after the stop (resolved); RELEASED when a decision of the
-    user's is on record from the stop's minute on (rounds.decisions_since, >=: a decision in that same minute
-    counts); else STANDS. The stop's moment is the seat's first done in the event stream after its last start; a
-    run with no stream, or no such done, has no moment, and the stop reads RELEASED unless the after gate's last
-    verdict is a pass: what the helper can't read never refuses."""
+    user's, the whole run's or that task's own, is on record from the stop's minute on (rounds.decisions_since, >=:
+    a decision in that same minute counts); else STANDS. The stop's moment is the seat's first done in the event
+    stream after its last start; a run with no stream, or no such done, has no moment, and the stop reads RELEASED
+    unless the after gate's last verdict is a pass: what the helper can't read never refuses."""
     if not seat_rows.cell(run, slug, "note").startswith("NEEDS:"):
         return ""
     rows, at = _stop(run, slug)
@@ -148,7 +148,7 @@ def stop_of(run: Path, slug: str) -> str:
         return RESOLVED
     from council.commands import rounds      # datetime, only once a stop is read (D34)
     when = rows[at][2] if at >= 0 else ""
-    if not when or rounds.decisions_since(run, rounds.local_minute(when)) > 0:
+    if not when or rounds.decisions_since(run, rounds.local_minute(when), number) > 0:
         return RELEASED
     return STANDS
 

@@ -8417,6 +8417,47 @@ FIX_STOP = "NEEDS: fix src/pay/webhook.py:2 · does: returns 1 · should: read t
 
 
 @part("lifecycle")
+def runs_task_decisions_unlock_their_task(tmp):
+    """#61: a decision the user gave for one task (council state decision="…" task=<n>) unlocks that task's gates and
+    no other's: it releases that task's NEEDS: fix stop and starts that task's third check; one for another task
+    does neither."""
+    repo = new_repo(tmp, "task-unlock")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n- agent cap: 20\n"
+          "- checking: per task\n")
+    write(os.path.join(repo, ".council", "plans", "stop.md"), "# Council Plan: stop\n## Task Sequence\n"
+          + pack_task(1, "Read the event", [("Depends on", "—")]) + pack_task(2, "Charge once", [("Depends on", "—")])
+          + pack_task(3, "Keep the receipt", [("Depends on", "—")]) + "## Summary\nx\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "plan")
+    _, out, _ = council(repo, "run", "open", "council-implement", env=session("sU"))
+    run = out.strip().splitlines()[-1]
+    write_plan(run, selected=("task-2", "verify-1", "verify-1b", "verify-1c"))
+    council(repo, "state", "phase=prepare")
+    council(repo, "state", "phase=build", "input=.council/plans/stop.md")
+    council(repo, "seat", "task-2", "running", "agent=b1")
+    council(repo, "seat", "task-2", "done", "tokens=20000", "note=" + FIX_STOP)
+    council(repo, "state", "decision=the receipt can wait", "task=3")
+    code, out, err = council(repo, "seat", "task-2", "queued")
+    check("seat: a decision the user gave for task 3 does not release task 2's NEEDS: fix stop",
+          code == 2 and "cannot start task-2 — task 2 stopped with NEEDS: fix" in err, out + err)
+    council(repo, "state", "decision=fix the webhook reader first", "task=2")
+    code, out, err = council(repo, "seat", "task-2", "queued")
+    check("seat: a decision the user gave for task 2 releases task 2's stop", code == 0, out + err)
+    council(repo, "seat", "task-2", "skipped")
+    for slug, agent in (("verify-1", "v1"), ("verify-1b", "v2")):
+        write(os.path.join(run, slug + ".md"), VERDICT_FILE)
+        council(repo, "seat", slug, "running", "agent=" + agent)
+        council(repo, "seat", slug, "done", "tokens=20000")
+    council(repo, "state", "decision=check the receipt again", "task=3")
+    code, out, err = council(repo, "seat", "verify-1c", "running", "agent=v3")
+    check("seat: decisions for tasks 2 and 3 do not start task 1's third check",
+          code == 2 and "third check of task 1" in err, out + err)
+    council(repo, "state", "decision=check task 1 once more, then stop", "task=1")
+    code, out, err = council(repo, "seat", "verify-1c", "running", "agent=v3")
+    check("seat: a decision for task 1 starts its third check", code == 0, out + err)
+
+
+@part("lifecycle")
 def runs_build_seat_fix_stop(tmp):
     # T5 (D42): a NEEDS: fix stop holds its task and every task that depends on it until the user's decision is on
     # record — the helper refuses the start, where the skill only asked it in prose. One reader of a stop

@@ -91,6 +91,7 @@ class StateTest(support.Scratch):
         self.assertEqual(state.decisions_for(content, 2),
                          ['2026-01-02 10:00: "run-wide"', '2026-01-02 10:01: task 2: "for two"'])
         self.assertEqual(state.decisions_for(content, 7), ['2026-01-02 10:00: "run-wide"'])
+        self.assertEqual(state.decisions_for(content, None), ['2026-01-02 10:00: "run-wide"'])   # a run-wide gate
 
     def test_text(self) -> None:
         home = self.tmp / ".council"

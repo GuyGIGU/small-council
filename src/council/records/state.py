@@ -109,6 +109,7 @@ def decision(entry: str) -> Decision:
                     quoted.group(1) if quoted else words)
 
 
-def decisions_for(content: str, task: int) -> list[str]:
-    """The entries a task's orders carry: the whole run's and that task's own, never another task's."""
+def decisions_for(content: str, task: int | None) -> list[str]:
+    """The entries a task's orders carry: the whole run's and that task's own, never another task's; with no task,
+    the whole run's alone."""
     return [entry for entry in decisions(content) if decision(entry).task in (None, task)]

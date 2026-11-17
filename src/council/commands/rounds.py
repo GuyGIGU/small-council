@@ -10,7 +10,7 @@ from pathlib import Path
 
 from council import clock
 from council.commands import resolve
-from council.records import cells, config, events, seats, state
+from council.records import cells, config, events, seats, state, tasks
 
 RECHECK = re.compile(r"verify-.+[b-z]")
 
@@ -36,10 +36,12 @@ def local_minute(at: str) -> str:
         return ""
 
 
-def decisions_since(run: Path, since: str) -> int:
-    """The user's decisions on record from a local minute on ('' counts them all) (decisions_since)."""
-    stamped = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}: ")
-    return sum(1 for entry in state.decisions(state.text(run)) if stamped.match(entry) and entry[:16] >= since)
+def decisions_since(run: Path, since: str, task: int | None = None) -> int:
+    """The user's decisions on record from a local minute on ('' counts them all) (decisions_since): with a task,
+    the whole run's and that task's own (state.decisions_for); with none, the whole run's only, so a decision the
+    user gave for one task never unlocks another's gate or a run-wide one."""
+    minutes = (state.decision(entry).minute for entry in state.decisions_for(state.text(run), task))
+    return sum(1 for minute in minutes if minute and minute >= since)
 
 
 def _building(run: Path, slug: str) -> list[list[str]] | None:
@@ -72,9 +74,9 @@ def check_round(run: Path, slug: str) -> str | None:
                              and _cell(row, 5) not in ("queued", "skipped")
                              for row in stream):
         return None
-    if decisions_since(run, local_minute(at)) != 0:
-        return None
     task = base[len("verify-"):]
+    if decisions_since(run, local_minute(at), tasks.number(task)) != 0:      # no task number: the whole run's only
+        return None
     if verdicts == 2:
         return ("cannot start %s — it would be the third check of task %s, after two verdicts. After a second failed "
                 "verification the build loop allows one clean-context diagnosis, then one more attempt: "
@@ -99,7 +101,7 @@ def third_fix_round(run: Path, task: int, earlier: list[tuple[list[str], str, st
     shared = sorted(set(files).intersection(*fixes[-2:])) if len(fixes) >= 2 else []
     if not shared:
         return None
-    if redesign and decisions_since(run, local_minute(earlier[-1][2])) != 0:
+    if redesign and decisions_since(run, local_minute(earlier[-1][2]), task) != 0:
         return None
     return ("task %d's third fix round touches the same files as the two before it (%s): stop patching — the task "
             "goes back to the plan as a redesign. Ask the user, with what the patches tried and what each regressed "
