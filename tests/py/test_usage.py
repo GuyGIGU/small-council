@@ -118,6 +118,15 @@ class StandingTest(support.Scratch):
         got = usage.standing(older, self.tmp / ".council")
         self.assertEqual((got.over, got.stopped), (True, False))
 
+    def test_at_the_ceiling_is_within_it_and_one_token_past_is_over(self) -> None:
+        # EVALS-5 (M12): the token ceiling is the most a run may use — exactly at it is not over, one token more is.
+        plan = "budget\trun\tagent-cap\t9\t-\nbudget\trun\ttoken-ceiling\t50000\t-\n"
+        for tokens, over in ((50000, False), (50001, True)):
+            run = self.run_with(plan, rows=b"a\tdone\tx\t%d\tT\t\t1\t1\n" % tokens,
+                                name="2026-01-02-03040%d-council-review" % (tokens % 2))
+            got = usage.standing(run, self.tmp / ".council")
+            self.assertEqual((got.tokens, got.ceiling, got.over, got.stopped), (tokens, 50000, over, over))
+
     def test_the_configured_cap_without_a_plan_cap(self) -> None:
         run = self.run_with()
         (self.tmp / ".council" / "council.config.md").write_text("- agent cap: 3\n", encoding="utf-8")
