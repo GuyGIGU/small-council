@@ -50,7 +50,8 @@ Catch what's wrong before the user sees it.
 3. **Apply the verdicts** — in the deliverable. Never renumber or delete synthesis.md's lines; the
    ledger counts them at close.
    - CONFIRMED ships.
-   - REFUTED drops. Keep it for memory: deliberate design is a candidate accepted pattern.
+   - REFUTED drops: move its line under `## Cut`, id unchanged (`council evidence check` holds the
+     run while it is kept). Keep it for memory: deliberate design is a candidate accepted pattern.
    - UNCERTAIN ships labelled, and is never dropped if its subject is protected.
    - MISCITED ships with the corrected location.
    - Any cut claim a verifier CONFIRMED (or MISCITED) is restored: move its line under `## Kept`,

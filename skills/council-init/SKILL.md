@@ -213,20 +213,8 @@ Adjust on request. On confirmation, write:
 
    **Just me** (refreshes too): no note; run `council sharing just-me` and relay what it says is left.
 2. **Offer permission rules** — written only on a yes — in `.claude/settings.local.json`, so the
-   bookkeeping doesn't prompt at every step:
-
-   ```json
-   { "permissions": { "allow": [
-     "Edit(.council/**)",
-     "Bash(council run:*)", "Bash(council state:*)", "Bash(council seat:*)", "Bash(council index:*)",
-     "Bash(council collect:*)", "Bash(council check:*)", "Bash(council ask:*)", "Bash(council prior:*)",
-     "Bash(council memory:*)", "Bash(council ledger:*)", "Bash(council gates:*)", "Bash(council map:*)",
-     "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)",
-     "Bash(council status:*)", "Bash(council evidence:*)", "Bash(council repair:*)",
-     "Bash(council route:*)", "Bash(council version:*)", "Bash(council context:*)",
-     "Bash(council tree:*)", "Bash(council patch:*)"
-   ] } }
-   ```
+   bookkeeping doesn't prompt at every step. `council doctor permissions` prints the block to paste:
+   `Edit(.council/**)` and one rule for each bookkeeping command (`Bash(council run:*)` and so on).
 
    Edit rules cover Write too. Add the council home's real path as well, exactly as `council home
    rule` prints it — the home belongs to the **main** checkout, so the relative rule misses it from a

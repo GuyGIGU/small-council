@@ -3668,8 +3668,8 @@ def runs_config_written_loosely(tmp):
           out + err)
     check("doctor: a map with no One way per job table says what it is for and that a council-init refresh adds it",
           "map.md has no `## One way per job` table" in out and "a council-init refresh adds it" in out, out + err)
-    check("doctor: permission rules from an older setup are named, as lines to paste, patch save and tree among them",
-          '"Bash(council patch save:*)"' in line_of(out, "Fix: add to permissions.allow")
+    check("doctor: permission rules from an older setup are named, as lines to paste, patch and tree among them",
+          '"Bash(council patch:*)"' in line_of(out, "Fix: add to permissions.allow")
           and '"Bash(council tree:*)"' in out and '"Bash(council run:*)"' not in line_of(out, "Fix: add to"), out)
     code, out, err = council(config("cfg-new", "- build tier: full\n- checking: one per batch\n"), "doctor")
     check("doctor: a current config and no permission rules at all say none of it",
@@ -3677,8 +3677,8 @@ def runs_config_written_loosely(tmp):
     code, out, err = council(old, "doctor", "permissions")
     rules = json.loads(out)["permissions"]["allow"] if code == 0 else []
     check("doctor permissions: prints the whole list council-init offers, as JSON to paste",
-          "Bash(council patch save:*)" in rules and "Bash(council context:*)" in rules and "Edit(.council/**)" in rules
-          and "Bash(council patch apply:*)" not in rules, out + err)
+          "Bash(council patch:*)" in rules and "Bash(council context:*)" in rules and "Edit(.council/**)" in rules
+          and not any("council gate" in rule or "council cap" in rule for rule in rules), out + err)
 
 
 @part("lifecycle")

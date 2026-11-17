@@ -3,8 +3,9 @@ block to paste into `.claude/settings.local.json`, and `council doctor` names th
 council's rules at all is missing (an older setup, before a command joined the list), so each of those stops on a
 prompt no more.
 
-Left off on purpose: `council gate`, `changed`, `cap` and `correct` (their prompts are the user's checkpoints), and
-`council patch apply|revert`, which change the project's files.
+Left off on purpose: `council gate`, `changed`, `cap` and `correct` (their prompts are the user's checkpoints).
+`council patch` is on it whole: a builder saves, holds and takes up rounds in its own window, where a prompt would
+stop the round, and the command moves only the diffs the run itself saved.
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from council.commands.doctor import Doctor
 FILES = (".claude/settings.local.json", ".claude/settings.json")
 COMMANDS = ("run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
             "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version", "context", "tree",
-            "patch save", "patch show")
+            "patch")
 RULES = ("Edit(.council/**)",) + tuple("Bash(council %s:*)" % command for command in COMMANDS)
 EVERY = re.compile(r"Bash\((bash \*bin/)?council(:\*| \*|\*)\)")      # one rule for every council command
 

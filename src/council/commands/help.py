@@ -152,6 +152,7 @@ council — the Small Council's helper (Python 3.8+ and git)
                                          notification sentence
   council doctor                         drift scan; every finding comes with a fix
   council doctor hooks [--line]          which of the plugin's hooks are live in this session
+  council doctor permissions             the permission rules council-init offers, as the block to paste
 
 Run-scoped commands act on the one in-progress run on this working tree (one another session drives
 only for a command that reads); otherwise pass --run <folder> (a path, or a folder name under runs/).

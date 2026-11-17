@@ -116,7 +116,7 @@ command = {f[:-3]: read("src", "council", "commands", f)        # the helper's c
 py = "".join(read(os.path.relpath(os.path.join(d, f), ROOT)) for d, _, fs in os.walk(os.path.join(ROOT, "src", "council"))
              for f in sorted(fs) if f.endswith(".py"))
 sys.path.insert(0, os.path.join(ROOT, "src"))
-from council.commands import cli as helper_cli, dispatch, help as helper_help  # noqa: E402
+from council.commands import cli as helper_cli, dispatch, doctor_rules, help as helper_help  # noqa: E402
 from council.records import stages as helper_stages  # noqa: E402
 agent_gate = read("hooks", "agent-gate.sh")
 bash_gate = read("hooks", "bash-gate.sh")
@@ -393,19 +393,20 @@ check("init: never offers a blanket council allowlist (gate and changed run arbi
       '"Bash(council *)"' not in skill["council-init"] and '"Bash(council gate:' not in skill["council-init"]
       and '"Bash(council changed' not in skill["council-init"]
       and "`Bash(council *)`" in skill["council-init"])   # named only to warn against it
-check("init: the permission offer covers the helper commands the modes run without asking",
-      all(f'"Bash(council {c}:*)"' in skill["council-init"] for c in [
+offered = set(doctor_rules.COMMANDS)      # the one list: council-init offers what `council doctor permissions` prints
+check("init: the permission offer is the helper's own list (council doctor permissions), and it covers the helper "
+      "commands the modes run without asking",
+      "`council doctor permissions` prints the block" in skill["council-init"] and offered >= {
           "run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
           "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version", "context", "tree",
-          "patch"]))
+          "patch"})
 builder_cmds = sorted(set(re.findall(r"`council ([a-z]+)", flat(builder))) - {"seat", "state"})   # it never runs these
 asks_on_purpose = {"gate", "changed"} if "**`council gate` and `council changed` are deliberately not on the list**"     in skill["council-init"] else set()
 check("init: every helper command the builder contract names is on the permission offer, or on its list of commands "
       "that deliberately ask (gate, changed: they run any command) — a builder's round would otherwise stop on a prompt",
-      "gate" in builder_cmds and all(f'"Bash(council {c}:*)"' in skill["council-init"] or c in asks_on_purpose
-                                     for c in builder_cmds), str(builder_cmds))
+      "gate" in builder_cmds and all(c in offered or c in asks_on_purpose for c in builder_cmds), str(builder_cmds))
 check("init: cap and correct keep asking (cap allow records the user's go past the agent stop)",
-      not any(f'"Bash(council {c}' in skill["council-init"] for c in ["cap", "correct"])
+      not offered & {"cap", "correct", "gate", "changed"}
       and "`council cap` stays off" in skill["council-init"])
 check("init: setup fills the map's One way per job table and proposes the project's recorded decisions in the "
       "PROPOSED format, citing file:line, and says no command accepts one (task-tree.md, decided 4)",
