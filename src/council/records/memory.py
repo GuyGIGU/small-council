@@ -30,6 +30,10 @@ class Located(NamedTuple):
     alt_n: int
 
 
+BY_HAND = (" — nothing written; council memory check shows what reads wrong in the file: fix that by hand, then run "
+           "this again")
+
+
 def _isfile(path: str) -> bool:
     return bool(path) and os.path.isfile(where.native(path))
 
@@ -202,20 +206,21 @@ def replace(mem: str, before: str, after: str, entry: str, want: str, home: str,
     if (want, had) not in (("proposed", 0), ("observed", 1), ("gone", 1)):
         return "%s is used by %d entr(ies) before this edit — nothing written; give each its own number" % (shown, had)
     if _others(had_rows, entry) != _others(after_rows, entry):
-        return "the edit would change other memory entries too — nothing written"
+        return "the edit would change other memory entries too" + BY_HAND
     unread_now = [re.sub(r" \(line [0-9]*\)", "", parsed.skipped(where.native(p))) for p in (before, after)]
     if unread_now[0] != unread_now[1]:
-        return "the edit would change which memory lines go unread — nothing written"
+        return "the edit would change which memory lines go unread" + BY_HAND
     mine = [parsed.cells(row) for row in after_rows if parsed.cells(row)[0] == entry]
     if want == "gone" and mine:
-        return "%s is still in the memory file — nothing written" % shown
+        return "%s is still in the memory file%s" % (shown, BY_HAND)
     proposed = [c for c in mine if c[4] == "off" and parsed.section(c[5]) == "proposed"]
     if want == "proposed" and len(proposed) != 1:
-        return "%s did not land under ## Proposed — nothing written" % shown
+        return "%s did not land under ## Proposed%s" % (shown, BY_HAND)
     if want == "observed":
         why = would_serve(after, entry, home, top, mem)
         if why:
-            return "%s would not be served (%s) — nothing written" % (shown, bytewise.shown(why))
+            return ("%s would not be served (%s) — nothing written; fix what it names in the memory file, then run "
+                    "this again" % (shown, bytewise.shown(why)))
     return _swap(mem, before, after)
 
 
@@ -231,6 +236,7 @@ def _swap(mem: str, before: str, after: str) -> str:
     try:
         with open(where.native(after), "rb") as src:
             paths.atomic_write(where.native(mem), src.read(), ".council-new-", keep_mode=True)
-    except OSError:
-        return "could not write %s" % mem
+    except OSError as failure:
+        return "could not write %s (%s) — nothing written; close what has it open, then run this again" % (
+            mem, failure.strerror or failure)
     return ""
