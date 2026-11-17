@@ -105,19 +105,24 @@
    "longest_name": "save"
   },
   "src/council/commands/audit.py": {
-   "lines": 433,
+   "lines": 333,
    "longest": 44,
    "longest_name": "main"
   },
   "src/council/commands/audit_calls.py": {
-   "lines": 159,
-   "longest": 55,
-   "longest_name": "pipelines"
+   "lines": 161,
+   "longest": 57,
+   "longest_name": "invocations"
   },
   "src/council/commands/audit_checks.py": {
    "lines": 368,
    "longest": 38,
    "longest_name": "agents_on_record"
+  },
+  "src/council/commands/audit_steps.py": {
+   "lines": 206,
+   "longest": 27,
+   "longest_name": "size_first"
   },
   "src/council/commands/build_seat.py": {
    "lines": 220,
@@ -195,7 +200,7 @@
    "longest_name": "_fields"
   },
   "src/council/commands/dispatch.py": {
-   "lines": 95,
+   "lines": 97,
    "longest": 15,
    "longest_name": "main"
   },
@@ -290,7 +295,7 @@
    "longest_name": "refusal"
   },
   "src/council/commands/help.py": {
-   "lines": 165,
+   "lines": 169,
    "longest": 8,
    "longest_name": "main"
   },
@@ -469,8 +474,18 @@
    "longest": 33,
    "longest_name": "repair"
   },
+  "src/council/commands/run_export.py": {
+   "lines": 211,
+   "longest": 27,
+   "longest_name": "export"
+  },
+  "src/council/commands/run_export_log.py": {
+   "lines": 93,
+   "longest": 17,
+   "longest_name": "lines"
+  },
   "src/council/commands/run_open.py": {
-   "lines": 128,
+   "lines": 129,
    "longest": 47,
    "longest_name": "main"
   },
@@ -558,6 +573,11 @@
    "lines": 1,
    "longest": 0,
    "longest_name": ""
+  },
+  "src/council/records/anon.py": {
+   "lines": 93,
+   "longest": 15,
+   "longest_name": "command"
   },
   "src/council/records/audit_file.py": {
    "lines": 82,
@@ -730,7 +750,7 @@
    "longest_name": "verdict"
   },
   "src/council/records/run_files.py": {
-   "lines": 9,
+   "lines": 11,
    "longest": 0,
    "longest_name": ""
   },
