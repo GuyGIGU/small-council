@@ -921,6 +921,9 @@ def memory_file_and_seat_check(tmp):
                  "> BLOCKED: the brief is missing"]:
         code, err = run_gate(worker, form)
         check(f"seat check: a BLOCKED reply written as {form.split(' the')[0]!r} passes", code == 0, err)
+    code, err = run_gate(worker, "Read the dispatch.\n BLOCKED: the brief is missing")
+    check("seat check: a BLOCKED line after a non-breaking space passes — the hook reads BLOCKED as the helper's one "
+          "reader (seat_files.blocked) does, not with a copy of its own", code == 0, err)
     code, err = run_gate(worker, "I was not BLOCKED, I just stopped early")
     check("seat check: 'BLOCKED' mid-sentence is not a BLOCKED reply", code == 2, err)
     code, err = run_gate(worker, "Unblocked the queue; nothing else to report")
@@ -932,8 +935,8 @@ def memory_file_and_seat_check(tmp):
         code, err = run_gate(worker, reply)
         check(f"seat check: {label} is not a BLOCKED reply", code == 2 and "Wrote <output path>" in err, err)
     spaced = os.path.join(tmp, "plugin root", "John Smith")          # a user name with a space
-    for d in ("hooks", "bin"):
-        shutil.copytree(os.path.join(ROOT, d), os.path.join(spaced, d))
+    for d in ("hooks", "bin", "src"):          # the hook reads a BLOCKED reply through the helper's Python, in src/
+        shutil.copytree(os.path.join(ROOT, d), os.path.join(spaced, d), ignore=shutil.ignore_patterns("__pycache__"))
     with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
         stop_cmds = [h["command"] for g in json.load(f)["hooks"]["SubagentStop"] for h in g["hooks"]]
     for cmd in stop_cmds:
