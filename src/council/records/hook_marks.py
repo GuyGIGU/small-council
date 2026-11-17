@@ -23,6 +23,7 @@ HOOKS = (("session-start", "SessionStart", "when the session starts, resumes or 
          ("seat-gate", "seat-gate", "when a seat's agent stops"),
          ("agent-gate", "agent-gate", "before an agent is dispatched"))
 SAFE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
+PRUNED = ".pruned"                        # a dot name: no session id can be it
 
 
 def folders() -> list[Path]:
@@ -35,7 +36,7 @@ def folders() -> list[Path]:
 
 
 def put(session: str, hook: str) -> None:
-    """Leave this hook's mark (and the bare one), then clear files over 30 days old; silent when it can't."""
+    """Leave this hook's mark (and the bare one), then trim the folder; silent when it can't."""
     if not SAFE.fullmatch(session or ""):
         return
     for folder in folders():
@@ -45,14 +46,29 @@ def put(session: str, hook: str) -> None:
                 (folder / name).touch()
         except OSError:
             continue
-        old = time.time() - 31 * 86400
-        for top, _, names in os.walk(str(folder)):
-            for file in (os.path.join(top, name) for name in names):
-                try:
-                    if not os.path.islink(file) and os.path.isfile(file) and os.path.getmtime(file) <= old:
-                        os.remove(file)
-                except OSError:
-                    pass
+        trim(folder)
+
+
+def trim(folder: Path, now: float | None = None) -> None:
+    """Clear the files over 30 days old, at most once a day (the PRUNED stamp's time): a walk over thousands of marks
+    on every hook call cost a turn end 270 ms. The bash hooks leave marks without it; the SessionStart hook, which
+    runs Python in every project, keeps the folder trimmed."""
+    now = time.time() if now is None else now
+    stamp = folder / PRUNED
+    try:
+        if stamp.is_file() and stamp.stat().st_mtime > now - 86400:
+            return
+        stamp.touch()
+    except OSError:
+        return
+    old = now - 31 * 86400
+    for top, _, names in os.walk(str(folder)):
+        for file in (os.path.join(top, name) for name in names):
+            try:
+                if not os.path.islink(file) and os.path.isfile(file) and os.path.getmtime(file) <= old:
+                    os.remove(file)
+            except OSError:
+                pass
 
 
 def ran(session: str) -> bool:
