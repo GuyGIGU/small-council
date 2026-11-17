@@ -448,9 +448,11 @@ for label, text, needles in [
     ("build-log", build_log, ["Notes for later tasks", "## Shortcuts and concessions", "## Converge", "Post-game:",
                               "Ruling:", "left on the user's ruling"]),
     ("research", research, ["scout", "Strength:"]),
-    ("postgame", skill["council-postgame"], ["ask.md", "council run open council-postgame", "Ruled out",   # ask save: 09-deliver's check
-                                             "council-implement", "council-plan", "never the plan", "quote:",
-                                             "small-council:council-verifier"]),
+    ("postgame", skill["council-postgame"], ["ask.md", "council run open council-postgame",   # ask save: 09-deliver's check
+                                             "never the plan", "quote:", "small-council:council-verifier",
+                                             "references/templates/postgame.md"]),
+    ("postgame template", read("references", "templates", "postgame.md"), ["Ruled out", "council-implement",
+                                                                            "council-plan", "### Next tasks"]),
     ("war-room", warroom, ["debate.md", "-r2.md", "## How the council decided", "never a third", "Evidence counts, not heads",
                            "SendMessage"]),
     ("guardrails", guardrails, ["Formatter", "Linter", "Type check", "Test runner", "Dependency audit", "ratchet",
