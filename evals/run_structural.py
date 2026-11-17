@@ -833,6 +833,15 @@ for label, text in shipped.items():
     check(f"{label}: no 'Ultra Council' branding", bool(text) and re.search(r"ultra[ -]?council", stale, re.IGNORECASE) is None)
     check(f"{label}: no hard-coded project leakage", bool(text) and "chrollo" not in text.lower())
 
+# 12b. The README's first steps: every command needs Python (D24), so it is named before the install command, and the
+# receipt it shows has the eight lines council-implement gives.
+readme = read("README.md")
+quick = readme.split("## Quick start", 1)[-1].split("\n## ", 1)[0] if "## Quick start" in readme else ""
+check("README: the quick start names Python 3.8 before the install command, and its receipt has the eight lines",
+      0 <= quick.find("Python 3.8") < quick.find("/plugin marketplace add")
+      and all(k in readme for k in ("Built:", "Works?:", "Checked by machine:", "Your decisions:", "Shortcuts I took:",
+                                     "Not proved:", "Left open:", "Cost:")))
+
 # 13. Versions agree: plugin.json, the newest CHANGELOG release, and the helper
 plugin = json.loads(read(".claude-plugin", "plugin.json") or "{}")
 released = re.findall(r"^## \[(\d+\.\d+\.\d+)\]", read("CHANGELOG.md"), re.MULTILINE)
