@@ -32,8 +32,8 @@ there. The `Start:` line is the Chair's judgement on top of them, not a second s
 Each of these is the one place its rules live. Read it there; this file does not restate it.
 
 - **The steps:** `${CLAUDE_PLUGIN_ROOT}/references/run/builder-loop.md`: before-evidence, the plan of
-  the change, the change, the gates and their repair loop, the report and its saved round,
-  after-evidence, and the return.
+  the change, the change, the gates and their repair loop, the after-evidence, and the report and
+  its saved round. The return is this file's, below.
 - **The standing rules:** `${CLAUDE_PLUGIN_ROOT}/references/run/builder-rules.md`, linked from your
   orders.
 - **The report and its round:** `${CLAUDE_PLUGIN_ROOT}/references/run/builder-report.md`: the head of
