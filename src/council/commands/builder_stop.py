@@ -4,11 +4,11 @@ on stdin, as a worker's and a verifier's stops are judged in the hook itself.
     python src/council/commands/script.py builder_stop < <SubagentStop input>
 
 Exit 0 lets it stop. Exit 1 sends it back once, with one line of reasons on stdout that the hook passes on.
-It lets through a BLOCKED reply (read as the seat gate reads a worker's) and a one-line NEEDS: reply whose
-NEEDS: fix form carries all four parts. Any other reply must be the one line naming <run>/report-<n>.md: the
-report is there, records.report_head reads its head, and task n's last saved round was saved from that head
-(council patch save ran on this report). Input it can't read, and any fault of its own, let the builder stop:
-this must never trap an agent on a guess (D20)."""
+It lets through a BLOCKED reply (records.seat_files.blocked, as the seat gate reads a worker's) and a one-line
+NEEDS: reply whose NEEDS: fix form carries all four parts. Any other reply must be the one line naming
+<run>/report-<n>.md: the report is there, records.report_head reads its head, and task n's last saved round was
+saved from that head (council patch save ran on this report). Input it can't read, and any fault of its own, let
+the builder stop: this must never trap an agent on a guess (D20)."""
 from __future__ import annotations
 
 import json
@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from council.records import home as where
-from council.records import patches, report_head
+from council.records import patches, report_head, seat_files
 
 ONE_LINE = "Wrote <absolute run folder>/report-<n>.md — task <n>, round <r> saved"
 FINISH = ("finish by writing your report, <run>/report-<n>.md, its head first, and saving its round with council "
@@ -25,8 +25,6 @@ FINISH = ("finish by writing your report, <run>/report-<n>.md, its head first, a
           "if you couldn't do the task, reply BLOCKED: <reason> instead." % ONE_LINE)
 FIX_FORM = "NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <…>"
 LEAD = " \t>*_"                                       # what may stand before a reply's first word
-BLOCKED = re.compile(r"^[\s>*_]*BLOCKED([^A-Za-z]|$)", re.MULTILINE)
-BLOCKED_FIRST = re.compile(r"^[\s>*_]*blocked[*_]*\s*:", re.IGNORECASE)
 NEEDS_FIX = re.compile(r"NEEDS:[*_]*\s*fix\b", re.IGNORECASE)
 FIX_PARTS = (("file:line", re.compile(r"[^\s:]+:[0-9]+")), ("does:", re.compile(r"\bdoes:\s*\S", re.I)),
              ("should:", re.compile(r"\bshould:\s*\S", re.I)), ("seen:", re.compile(r"\bseen:\s*\S", re.I)))
@@ -47,7 +45,7 @@ def reason(raw: bytes) -> str:
     lines = [line.strip() for line in reply.split("\n") if line.strip()]
     if not lines:
         return "you stopped without a reply — " + FINISH   # a turn limit, before it answered
-    if BLOCKED.search(reply) or BLOCKED_FIRST.match(lines[0]):
+    if seat_files.blocked(lines):
         return ""
     if lines[0].lstrip(LEAD).startswith("NEEDS:"):
         return _needs(lines)

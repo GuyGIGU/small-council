@@ -2927,6 +2927,21 @@ def collect_one_bad_seat(tmp):
                              lambda r: sat_out(r, ghost=True))
     check("collect: a first-round seat marked skipped with no file is still a hole",
           code == 1 and re.search(r"^ghost\s+missing", out, re.MULTILINE) is not None, out)
+    # A seat file's BLOCKED: line is read as the seat gate and the builder's stop read a reply (seat_files.blocked).
+    blocked_cases = [
+        ("BLOCKED: in capitals on line 3, as the worker's contract writes it", "# S\nref: none\nBLOCKED: no brief\n",
+         True),
+        ("**BLOCKED:** in markdown", "# S\nref: none\n**BLOCKED:** the brief is missing\n", True),
+        ("Blocked: as the first line after the heading", "# S\nBlocked: the brief is missing\n", True),
+        ("a word that only starts with BLOCKED", "# S\nref: none\nBLOCKEDNESS of the queue\n## Index\n" + one, False),
+        ("BLOCKED mid-sentence", "# S\nref: none\nI was not BLOCKED\n## Index\n" + one, False),
+    ]
+    for what, seat, stopped in blocked_cases:
+        code, out = lone_collect("- ref: none", seat)
+        shown = re.search(r"^s1\s+blocked\s+\S", row(out, "s1")) is not None
+        check(f"collect: a seat file with {what} {'is' if stopped else 'is not'} a blocked seat",
+              shown == stopped and code == (1 if stopped else 0), out)
+
 
 @part("lifecycle")
 def runs_found_by_session(tmp):
