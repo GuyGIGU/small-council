@@ -108,6 +108,22 @@ class StagesTest(Spine):
                          (5, "task 1 — the first task of the plan", 0))
         self.assertTrue(stages.name_ok("a-b", "test-architect") and not stages.name_ok("a-b", "council-review"))
 
+    def test_the_method_a_mode_loads(self) -> None:
+        build = stages.REQUIRED["council-implement"].split()
+        self.assertEqual(stages.method_files("council-implement", build),   # the build loop has no doctrine file
+                         ["skills/context-core/SKILL.md", "skills/council-implement/SKILL.md"] +
+                         ["references/doctrine/%s.md" % n for n in ("01-convene", "02-prepare", "08-challenge",
+                                                                   "09-deliver", "10-learn")])
+        self.assertEqual(len(stages.method_files("council-review")), 12)                      # none named: all ten
+        self.assertEqual(stages.method_files("council-init", []), ["skills/context-core/SKILL.md",
+                                                                   "skills/council-init/SKILL.md"])
+        self.assertEqual(stages.method_files("context-core", ["learn", "learn", "x"]),
+                         ["skills/context-core/SKILL.md", "references/doctrine/10-learn.md"])
+        root = self.tmp / "plugin"
+        self.write("plugin/skills/context-core/SKILL.md", "a\r\nb\n")                         # CRLF read as LF
+        self.write("plugin/references/doctrine/01-convene.md", "é")                      # bytes, not characters
+        self.assertEqual(stages.method_bytes("council-review", ["convene", "prepare"], root.as_posix()), 4 + 2)
+
 
 CARD = ("show the user its %s now, once: hand the output of `council status --widget%s` to a show_widget tool (it may "
         "be a deferred tool: search the tools for it before deciding there is none), else relay `council status%s` — "

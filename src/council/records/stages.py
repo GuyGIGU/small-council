@@ -1,10 +1,12 @@
-"""The stages of a council run, in order: each one's rank and the next step `council state phase=` records."""
+"""The stages of a council run, in order: each one's rank and the next step `council state phase=` records; and what a
+mode's Chair loads as method through them (method_files, method_bytes: the D13 budget's one definition)."""
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
 from council.records import plan, state
+from council.records.home import native, plugin_root
 
 SYNTHESISED = ("council-review", "council-plan", "council-research")    # the modes whose seats end in a synthesis
 COUNCIL_NEXT_AT_OPEN = "size the run and ask for the go-ahead"   # a new run's next: — Convene's own step
@@ -51,6 +53,28 @@ def required(run: Path) -> list[str]:
     if rows.get(("run", "run", "size")) != "solo" and workers & picked:
         return [stage for stage in STAGES if stage != "build"]
     return SHORT.split()
+
+
+def method_files(mode: str, entered: list[str] | None = None) -> list[str]:
+    """What a mode's Chair loads as method, the one definition of a run's method load (D13): context-core's skill,
+    the mode's own, and the doctrine of each stage it enters (every stage's when none are given; a build's loop
+    has no doctrine file), as paths under the plugin's folder."""
+    named = [stage for stage in (STAGES if entered is None else entered) if stage in STAGES and stage != "build"]
+    skills = ["context-core"] + [mode] * (mode != "context-core")
+    return (["skills/%s/SKILL.md" % name for name in skills] +
+            ["references/doctrine/%02d-%s.md" % (rank(stage), stage) for stage in sorted(set(named), key=rank)])
+
+
+def method_bytes(mode: str, entered: list[str] | None = None, root: str | None = None) -> int:
+    """The bytes of method_files under the plugin's folder (root, else the plugin's own), each file's CRLFs read as
+    LF; a file that is not there adds nothing."""
+    total = 0
+    for name in method_files(mode, entered):
+        try:
+            total += len(Path(native("%s/%s" % (root or plugin_root(), name))).read_bytes().replace(b"\r\n", b"\n"))
+        except OSError:
+            continue
+    return total
 
 
 def skipped(run: Path, frm: str, to: str) -> list[str]:
