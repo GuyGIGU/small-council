@@ -10,9 +10,10 @@ plan or research run the claim index, with a verifier's verdict on every kept cl
 plan selected on record, the Chair's own included; every agent seat with a token figure; the agent
 limit. With a Claude Code session transcript it reads the main thread from the turn that opened the
 run to the end of the turn that closed it. The Chair's steps (audit_steps.py): the size and cost recorded before
-the first dispatch, the status card at the first dispatch, the rulings as one question at Deliver, the closing
-card after close. How it called the helper: by its plain name `council`, no output cut short by `| tail` or
-`| head`, every refusal (told by the call's exit) tried again. Each item says pass, warn or FAIL in plain words.
+the first dispatch, the status card at the first dispatch, the rulings as one question at Deliver, a message from
+the user before each go past the cap, the closing card after close. How it called the helper: by its plain name
+`council`, no output cut short by `| tail` or `| head`, every refusal (told by the call's exit) tried again. Each
+item says pass, warn or FAIL in plain words; one the transcript holds none of the run for, n/a.
 It only opens files to read them and writes nothing, bytecode included, except with --save (council run close):
 then it keeps the report as the run's audit.md. Exit 0 when nothing failed, 1 when something did, 2 when it cannot
 read the run or the transcript.
@@ -32,12 +33,14 @@ from council.clock import iso_moment
 from council.commands.audit_calls import invocations
 from council.commands.audit_checks import (Run, Say, agent_limit, agents_on_record, claim_index, clock, closing,
                                            deliverable, gates, listed, seats_on_record, stages, token_figures)
-from council.commands.audit_steps import (Entry, ToolCall, block_text, closing_card, exit_of, first_card,
+from council.commands.audit_steps import (Entry, ToolCall, block_text, cap_goes, closing_card, exit_of, first_card,
                                           rulings_once, size_first)
 from council.records import audit_file, paths
-from council.records.audit_file import FAIL, LATER, PASS, WARN
+from council.records.audit_file import FAIL, LATER, PASS, UNCHECKED, WARN
 
 Span = Tuple[datetime, Optional[datetime]]
+ELSEWHERE = ("Size and cost before the first dispatch", "Status card at the first dispatch", "Closing card",
+             "Helper called as plain council", "Helper output shown whole")   # the transcript's items
 
 
 def is_prompt(line: dict[str, Any], content: Any) -> bool:
@@ -122,7 +125,9 @@ def window(entries: list[Entry], opened_spans: list[Span]) -> list[Entry]:
     """The run's own part of the session: for each span, from the prompt of the turn that opened (or resumed)
     it — or from that call itself when another run opened or closed earlier in the turn — to the prompt after
     the turn that paused or closed it, stopping at another run's open. So a session that drives several runs
-    gives each its own calls, and a pipe or a card is counted under one run only."""
+    gives each its own calls, and a pipe or a card is counted under one run only. A span whose open this file
+    doesn't hold starts at its own time, and one with no helper call inside it isn't here at all: its calls were
+    made from an agent or another session, and nothing this thread did then is the run's."""
     if not any(t for t, _, _ in entries) or not opened_spans:
         return entries
     keep, first = set(), next(t for t, _, _ in entries if t)
@@ -130,8 +135,11 @@ def window(entries: list[Entry], opened_spans: list[Span]) -> list[Entry]:
         if end is not None and end + timedelta(minutes=30) < first:
             continue                               # a span from before this session: none of it is here
         opening = _opening(entries, start)
+        opened = opening < len(entries) and lifecycle(entries[opening], ("run open", "run resume"))
+        if not opened and not _held(entries, start, end):
+            continue
         lo = opening
-        for n in range(opening - 1, -1, -1):
+        for n in range(opening - 1, -1, -1) if opened else ():
             t, kind, _ = entries[n]
             if lifecycle(entries[n]) or (t and t < start - timedelta(minutes=30)):
                 break
@@ -140,6 +148,13 @@ def window(entries: list[Entry], opened_spans: list[Span]) -> list[Entry]:
                 break
         keep.update(range(lo, len(entries) if end is None else _closing(entries, opening, end)))
     return [entries[n] for n in sorted(keep)]
+
+
+def _held(entries: list[Entry], start: datetime, end: datetime | None) -> bool:
+    """Whether this thread made a helper call while the span was open."""
+    return any(t and start - timedelta(seconds=2) <= t and (end is None or t <= end + timedelta(seconds=1))
+               and kind == "use" and block.get("name") in ("Bash", "PowerShell")
+               and invocations(str((block.get("input") or {}).get("command", ""))) for t, kind, block in entries)
 
 
 def _opening(entries: list[Entry], start: datetime) -> int:
@@ -178,6 +193,11 @@ def transcript(run: Run, path: Path, say: Say) -> str:
     if session and sessions and session not in sessions:
         say(WARN, "Transcript", "this file is session %s; the run was driven by %s" % (listed(sorted(sessions), 2),
                                                                                        session))
+    if not part and spans(run) and any(t for t, _, _ in entries) and (not session or session in sessions):
+        for label in ELSEWHERE:
+            say(UNCHECKED, label, "not checked: this transcript holds none of the run — its helper calls were made "
+                "from an agent or another session; pass that session's transcript to check it")
+        return "none of the run is in it"
     if not part:
         say(WARN, "Transcript", "no lines in the run's window: is it this run's session file?")
         return "nothing in the run's window"
@@ -187,6 +207,7 @@ def transcript(run: Run, path: Path, say: Say) -> str:
     size_first(run, part, calls, sessions, say)
     first_card(run, part, calls, sessions, say)
     rulings_once(run, part, calls, say)
+    cap_goes(part, calls, say)
     closing_card(run, part, calls, closed, say)
     helper_calls(part, calls, say)
     return span
