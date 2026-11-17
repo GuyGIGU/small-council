@@ -44,8 +44,7 @@ class Run:
     def __init__(self, folder: Path) -> None:
         self.folder = folder
         self.name = folder.name
-        self.fields = run_state.header(run_state.text(folder, read=lambda path: paths.text_of(path, limit=MAX_FILE)),
-                                       exact_keys=True)
+        self.fields = run_state.header(run_state.text(folder, read=lambda path: paths.text_of(path, limit=MAX_FILE)))
         self.mode = self.field("mode")
         self.status = self.field("status").split(" ")[0]
         self.events = [e for e in event_stream.records(folder, MAX_FILE) if e.get("type")]
@@ -292,9 +291,13 @@ def claim_index(run: Run, say: Say) -> None:
                      and str(c.get("verdict", "")).upper() in ("CONFIRMED",
                                                                "MISCITED")   # evidence check's TRUE_VERDICTS
                      and not str(c.get("still_cut", "")).strip()]
+    refuted = [str(c.get("id", "?")) for c in kept if str(c.get("verdict", "")).upper() == "REFUTED"]
     if newer:
         say(FAIL, label, "out of date: %s changed after it was built; council evidence build --run %s" % (listed(newer),
                                                                                                           run.name))
+    elif refuted:
+        say(FAIL, label, "kept, but a verifier REFUTED it: %s — move it under ## Cut, or get it a new verdict; then "
+            "council evidence build and evidence check --run %s" % (listed(refuted, 8), run.name))
     elif confirmed_cut:
         say(FAIL, label, "cut, but a verifier CONFIRMED it: %s — ship it, or say in synthesis.md why it stays cut; "
             "then council evidence build and evidence check --run %s" % (listed(confirmed_cut, 8), run.name))

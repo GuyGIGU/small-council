@@ -1,6 +1,7 @@
 """The plan check's task rules (references/run/run-plan.md, Plan tasks): once a council-plan run records its
-deliverable, each task says what it serves (the request's words), who owns it (a row of the map's one-way-per-job
-table, or New way: and why) and what it rests on; a task resting on an unchecked fact about something outside the
+deliverable, each task has its own number, says what it serves (the request's words), who owns it (a row of the
+map's one-way-per-job table, or New way: and why), what it rests on and when it is done, and depends only on other
+tasks of the plan; a task resting on an unchecked fact about something outside the
 repo depends on a probe or research task first. `council run plan check` runs these with the run plan's own."""
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ class Verdict(NamedTuple):
 def deliverable(run: Path) -> Path | None:
     """An open council-plan run's recorded deliverable; None for another mode, a closed run (its record is read
     as it was) or no deliverable yet. A relative path is the project's (the council home's parent)."""
-    header = state.header(state.text(run), exact_keys=True)
+    header = state.header(state.text(run))
     if header.get("mode") != "council-plan" or header.get("status") in ("complete", "abandoned"):
         return None
     name = header.get("deliverable", "")
@@ -61,7 +62,7 @@ def judge(found: list[tasks.Task], words: str, ways: list[map_file.Way] | None, 
     jobs = [way.job for way in ways or []]
     for task in found:
         problems += task_problems(task, words, jobs)
-    problems += probe_problems(found)
+    problems += order_problems(found) + probe_problems(found)
     notes = []
     if not jobs:
         notes.append("tasks: owner check skipped — map.md has no %s table, or it has no rows yet"
@@ -94,6 +95,10 @@ def task_problems(task: tasks.Task, words: str, jobs: list[str]) -> list[str]:
     elif what == "way" and jobs and not names_a_job(owner, jobs):
         out.append("%s's Owner names no row of map.md's One way per job table — name the job it extends (%s), "
                    "or write New way: and why, for the user's ruling" % (say, "; ".join(jobs)))
+    done = task.rows.get("done when")
+    if done is None or done.strip().lower() in tasks.NOTHING:
+        out.append("%s has no Done when — say what the verifier holds the change to: an outcome it can check "
+                   "(references/run/run-plan.md, Plan tasks)" % say)
     facts = tasks.facts(task.rows.get("rests on"))
     if facts is None:
         out.append("%s has no Rests on row — list the facts it assumes, each with its evidence state, or —" % say)
@@ -102,6 +107,28 @@ def task_problems(task: tasks.Task, words: str, jobs: list[str]) -> list[str]:
             if not fact.state:
                 out.append("%s rests on '%s' with no evidence state — end it (OBSERVED), (ASSUMED, outside) …"
                            % (say, fact.text))
+    return out
+
+
+def order_problems(found: list[tasks.Task]) -> list[str]:
+    """Each task number once, and every Depends on naming another task of the plan: a build reads a task by its
+    number and starts it after the tasks it names."""
+    out, first = [], {}
+    for task in found:
+        say = "ERROR line %d: task %d" % (task.line, task.number)
+        if task.number in first:
+            out.append("%s has the number of the task at line %d — give each task its own number (and fix the "
+                       "Depends on rows that name them)" % (say, first[task.number]))
+        first.setdefault(task.number, task.line)
+    numbers = set(first)
+    for task in found:
+        say = "ERROR line %d: task %d" % (task.line, task.number)
+        for named in tasks.depends(task.rows.get("depends on")):
+            if named == task.number:
+                out.append("%s depends on itself — name the tasks it waits for, or — for none" % say)
+            elif named not in numbers:
+                out.append("%s depends on task %d, which the plan doesn't have — name a task of this plan (%s), or "
+                           "— for none" % (say, named, ", ".join(str(n) for n in sorted(numbers))))
     return out
 
 

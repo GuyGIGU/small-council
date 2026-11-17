@@ -88,8 +88,9 @@ class ReplaceTest(MemoryTest):
     def test_an_edit_that_touches_another_entry_writes_nothing(self) -> None:
         before = self.copy("before.md")
         after = self.copy("after.md", MEMORY.replace("**Pattern:** x", "**Pattern:** y") + "### F-4: d\n")
-        self.assertEqual(memory.replace(self.mem, before, after, "F-4", "proposed", self.home, self.top),
-                         "the edit would change other memory entries too — nothing written")
+        said = memory.replace(self.mem, before, after, "F-4", "proposed", self.home, self.top)
+        self.assertTrue(said.startswith("the edit would change other memory entries too — nothing written; ")
+                        and "council memory check" in said, said)       # the next step named (D19)
         self.assertEqual(support.Path(self.mem).read_text(encoding="utf-8"), MEMORY)
 
     def test_an_unsupported_failure_is_never_accepted(self) -> None:

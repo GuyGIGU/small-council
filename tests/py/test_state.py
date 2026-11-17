@@ -22,14 +22,13 @@ class StateTest(support.Scratch):
     def test_header_reads_above_the_first_heading_only(self) -> None:
         fields = state.header(STATE.lstrip("\ufeff"))
         self.assertEqual(fields["status"], "in-progress")
-        self.assertEqual(fields["mode"], "council-review")           # space around the key allowed
+        self.assertNotIn("mode", fields)                             # " mode :" is no key: one rule for every reader
         self.assertEqual(fields["phase"], "work")                    # the first wins, its comment dropped
         self.assertEqual(fields["next"], "")
         self.assertNotIn("closed", fields)
 
-    def test_exact_keys_and_comments(self) -> None:
+    def test_comments(self) -> None:
         content = STATE.lstrip("\ufeff")
-        self.assertNotIn("mode", state.header(content, exact_keys=True))
         self.assertEqual(state.header(content, comments=False)["phase"], "work    # in the middle")
 
     def test_field_reads_the_header_only(self) -> None:
@@ -60,7 +59,7 @@ class StateTest(support.Scratch):
         self.assertTrue(state.planned("﻿plan-schema: 1\nstatus: in-progress\n"))
         self.assertTrue(state.is_build_run("﻿mode: council-implement\nstatus: in-progress\n"))
         self.assertEqual(state.field("﻿mode: council-review\r\n", "mode"), "council-review")
-        self.assertEqual(state.header("﻿status: in-progress\nmode: x\n", exact_keys=True)["status"], "in-progress")
+        self.assertEqual(state.header("﻿status: in-progress\nmode: x\n")["status"], "in-progress")
 
     def test_a_crlf_file_carries_no_carriage_return(self) -> None:
         content = "mode: council-review\r\nstatus: in-progress\r\n## Notes\r\nclosed: never\r\n"

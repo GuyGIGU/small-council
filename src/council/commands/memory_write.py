@@ -82,8 +82,7 @@ def propose(args: cli.Args, found: Memory, kind: str, source: str) -> int:
         entry = bytewise.text(said.rstrip("\n"))
         refused = memory.replace(found.mem, tmp + "/before", tmp + "/after", entry, "proposed", found.home, found.top)
         if refused:
-            cli.warn("council: " + refused)
-            return 1
+            raise cli.Refusal(refused)
     _event(run, bytewise.shown(entry), kind, source)
     if red:
         cli.say("memory: %d secret-looking string(s) in the draft were redacted" % red)
@@ -132,8 +131,7 @@ def answer(args: cli.Args, found: Memory, sub: str, entry: str) -> int:
             return 2
         refused = memory.replace(found.mem, tmp + "/before", tmp + "/after", want, state, found.home, found.top)
         if refused:
-            cli.warn("council: " + refused)
-            return 1
+            raise cli.Refusal(refused)
     if sub == "accept":
         cli.say("memory: %s accepted with the user's words — runs whose files, seats or mode match its scope get it, "
                 "as history to check, never as a rule" % entry)

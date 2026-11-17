@@ -1,4 +1,5 @@
-"""council run open <mode> [--alongside] [--session=ID] [--code-root=DIR]: a new run folder; its path on stdout."""
+"""council run open <mode> [--alongside] [--session=ID] [--code-root=DIR]: a new run folder; its path on stdout. The
+mode is the skill's name (council-review), or the same without council- (review)."""
 from __future__ import annotations
 
 import os
@@ -27,8 +28,10 @@ def main(args: cli.Args, words: list[str]) -> int:
     if not mode:
         raise cli.Refusal("usage: council run open <mode> [--alongside] [--session=ID]   (the skill name, e.g. "
                           "council-review)")
+    mode = "council-" + mode if mode not in MODES and "council-" + mode in MODES else mode   # review = council-review
     if mode not in MODES:
         raise cli.Refusal("unknown mode '%s' — use a skill name: %s" % (mode, ", ".join(MODES)))
+    session = resolve.session_id(args)
     sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if sid and os.environ.get("COUNCIL_ALLOW_NO_HOOKS") != "1" and not hook_marks.ran(sid):
         raise cli.Refusal("no SessionStart mark for this session — the plugin was enabled or updated after it started, "
@@ -48,8 +51,8 @@ def main(args: cli.Args, words: list[str]) -> int:
     if existing and not args.value("alongside"):
         raise cli.Refusal("a run is already in progress on this working tree (%s) — resume it, close it (council run "
                           "close --run <folder> --status abandoned), or open this one with --alongside and pass --run "
-                          "<folder> to every later command" % existing)
-    run = _folder(home, mode, top, args.value("session") or sid)
+                          "<folder> to every later command%s" % (existing, _theirs(home, top, session)))
+    run = _folder(home, mode, top, session)
     event_note.need(run, "run.opened", "run", mode, "phase=convene",
                     "run opened, but its first event could not be recorded: %s/%s" % (run, events.NAME))
     name, note = run.rsplit("/", 1)[1], memory.size_note(home)
@@ -66,6 +69,17 @@ def main(args: cli.Args, words: list[str]) -> int:
     if mode in ASKED:
         cli.warn("council: save the user's request word for word in %s/%s before anything else" % (run, request.ASK))
     return 0
+
+
+def _theirs(home: str, top: str, session: str) -> str:
+    """When an in-progress run here is driven by another session: which, and that resuming or abandoning it is the
+    user's call; else ''."""
+    drivers = sorted({resolve.field(Path(folder), "session") for folder in resolve.open_runs(home, top, "in-progress")}
+                     - {"", "-", session})
+    if not drivers:
+        return ""
+    return (". It is driven by another session (%s), which may still be working on it: ask the user before you resume "
+            "it or abandon it" % ", ".join(drivers))
 
 
 def _code_root(given: str) -> str:
@@ -121,8 +135,10 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
 def _makedirs(folder: str, said: str) -> None:
     try:
         os.makedirs(where.native(folder), exist_ok=True)
-    except OSError:
-        raise cli.Refusal("cannot create " + said) from None
+    except OSError as failure:
+        raise cli.Refusal("cannot create %s (%s) — nothing was opened; free the path (a file in its way, no write "
+                          "permission), or on Windows shorten the project's path or enable long paths, then open the "
+                          "run again" % (said, failure.strerror or failure)) from None
 
 
 def _write(file: Path, text: str) -> None:

@@ -3040,6 +3040,92 @@ def runs_found_by_session(tmp):
           code == 2 and "--run" in err and "which one" not in read(os.path.join(run, "session-state.md")), out + err)
 
 @part("lifecycle")
+def runs_another_sessions_run(tmp):
+    # Two sessions on one tree: a command that writes never acts on the run another session drives, unless --run
+    # names it; a command that reads still finds it. A sub-agent shares its Chair's session id, so its calls are
+    # the Chair's own. The header fields the open writes are never `council state`'s to change.
+    two = new_repo(tmp, "two-sessions")
+    write(os.path.join(two, ".council", "council.config.md"), "# Council config\n")
+    a, b = session("sess-a"), session("sess-b")
+    _, out, _ = council(two, "run", "open", "review", env=a)
+    run = out.strip().splitlines()[-1] if out.strip() else ""
+    st = os.path.join(run, "session-state.md")
+    check("run open: the mode without council- is the same mode", "mode: council-review" in read(st), out)
+    code, out, err = council(two, "state", "status=paused", env=b)
+    check("state: another session's live run on this tree is refused to a command that writes, naming the takeover "
+          "the user decides", code == 2 and "driven by another session (sess-a)" in err and "run resume --run" in err
+          and "status: in-progress" in read(st), out + err)
+    code, out, err = council(two, "status", "--line", env=b)
+    code2, out2, err2 = council(two, "state", env=b)
+    check("status and a bare state still read another session's run", code == 0 and code2 == 0 and
+          "status: in-progress" in out2, out + err + out2 + err2)
+    code, out, err = council(two, "state", "next=by name", "--run", os.path.basename(run), env=b)
+    check("state: --run naming another session's run is honoured", code == 0 and "next: by name" in read(st), out + err)
+    write_plan(run, selected=("chair", "w1"))
+    code, out, err = council(two, "state", "decision=go on", env=a)
+    code2, out2, err2 = council(two, "seat", "w1", "running", "agent=a1", env=a)
+    check("state and seat: a sub-agent's call carries its Chair's session id, so it acts on the Chair's run",
+          code == 0 and code2 == 0 and "go on" in read(st), out + err + out2 + err2)
+    code, out, err = council(two, "run", "open", "council-plan", env=b)
+    check("run open: refused beside another session's run, saying whose it is and to ask the user before resuming "
+          "or abandoning it", code == 2 and "driven by another session (sess-a)" in err and "ask the user" in err,
+          out + err)
+    for word in ("plan-schema=", "mode=council-init", "session=sess-b", "start-head=x", "code-root=/x"):
+        before = read(st)
+        code, out, err = council(two, "state", word, env=a)
+        check("state %s: refused, naming the command that writes it; the state unchanged" % word,
+              code == 2 and "council run" in err and read(st) == before, out + err)
+    code, out, err = council(two, "run", "open", "council-plan", "--alongside", "--session", "abc:plan-schema")
+    check("run open --session: an id with a mark no id holds (a colon, a newline) is refused before any folder is "
+          "made", code == 2 and "--session takes" in err
+          and len(os.listdir(os.path.join(two, ".council", "runs"))) == 1, out + err)
+    code, out, err = council(two, "run", "resume", "--session", "a b")
+    check("run resume --session: an id with a space is refused", code == 2 and "--session takes" in err
+          and "session: sess-a" in read(st), out + err)
+    code, out, err = council(two, "route", "recommend", "--task", "x", "--mode", "council-review")
+    code2, out2, err2 = council(two, "route", "recommend", "--task", "x", "--mode", "review")
+    check("route recommend --mode: the skill's name and the short one are the same mode",
+          code == code2 == 0 and out == out2, out + err + err2)
+    code, out, err = council(two, "run")
+    check("run: its usage line names every run command, repair among them",
+          code == 2 and "run events [show|check|repair]" in err and "run export" in err, err)
+
+
+@part("lifecycle")
+def runs_close_tail_and_closed_hints(tmp):
+    # A close that dies after its state write leaves no ledger rows and no close event; the next close adds them.
+    tail = new_repo(tmp, "close-tail")
+    write(os.path.join(tail, ".council", "council.config.md"), "# Council config\n")
+    run = council(tail, "run", "open", "council-review")[1].strip().splitlines()[-1]
+    write_plan(run, selected=("chair", "w1"))
+    council(tail, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    to_deliver(tail)
+    council(tail, "run", "close")
+    ledger, stream = os.path.join(tail, ".council", "ledger.tsv"), os.path.join(run, "events.tsv")
+    write(ledger, "".join(line for line in read(ledger).splitlines(True) if os.path.basename(run) not in line))
+    write(stream, "".join(line for line in read(stream).splitlines(True) if "\trun.closed\t" not in line))
+    code, out, err = council(tail, "run", "close", "--run", os.path.basename(run))
+    check("run close: on a closed run whose close stopped after its state write, the ledger rows and the close event "
+          "are added, and it says so", code == 0 and "now added: 1 ledger row(s), the close event" in out
+          and os.path.basename(run) in read(ledger) and [e for e in events(run) if e[3] == "run.closed"], out + err)
+    code, out, err = council(tail, "run", "close", "--run", os.path.basename(run))
+    check("run close: once all is on record, a close again changes nothing",
+          code == 0 and "nothing changed" in out and len([e for e in events(run) if e[3] == "run.closed"]) == 1,
+          out + err)
+    code, out, err = council(tail, "run", "close", "--status", "paused", "--run", os.path.basename(run))
+    check("run close --status paused on a closed run: refused, naming a new run as the next step",
+          code == 2 and "council run open council-review" in err, out + err)
+    code, out, err = council(tail, "status", "--line")
+    check("status: with no open run, the refusal names the newest closed run's --run",
+          code == 2 and "--run " + os.path.basename(run) in err, out + err)
+    bare = new_repo(tmp, "index-no-commit")
+    write(os.path.join(bare, ".council", "council.config.md"), "# Council config\n")
+    council(bare, "run", "open", "council-review")
+    code, out, err = council(bare, "index")
+    check("index: in a repo with no commit yet, the refusal says to commit once", code == 2 and "commit" in err
+          and "unknown base" not in err, out + err)
+
+@part("lifecycle")
 def runs_reminders_last(tmp):
     # A reminder the Chair must act on is the last line a command prints: in run 2 the Chair cut helper
     # output with `2>&1 | tail -1` 26 times, and a reminder printed before the status line was lost.
@@ -7837,9 +7923,10 @@ def requests_plan_tasks(tmp):
           code == 0 and re.search(r"^w1\tdone\t.*NEEDS: how long", seats, re.MULTILINE) is not None
           and "failed" not in out + err, out + err + seats)
 
-    def task(n, serves='"Charge the card once"', owner="src/pay/ — Charge a card", rests="—", depends="—"):
+    def task(n, serves='"Charge the card once"', owner="src/pay/ — Charge a card", rests="—", depends="—",
+             done="a retried webhook charges once"):
         rows = [("Depends on", depends), ("Serves", serves), ("Owner", owner), ("Rests on", rests),
-                ("Done when", "a retried webhook charges once")]
+                ("Done when", done)]
         return "### %d. Task %d\n| | |\n|---|---|\n%s\nWhy.\n\n" % (n, n, "".join(
             "| **%s** | %s |\n" % (k, v) for k, v in rows if v is not None))
 
@@ -7901,6 +7988,11 @@ def requests_plan_tasks(tmp):
     check("run plan check: with the probe in Depends on the plan passes, names the New way for the user, and moves on",
           code == 0 and "tasks: 2 checked against the request" in out and "New way in task 2" in out and code2 == 0,
           out + out2 + err2)
+    code, out, _ = judged(task(1, done=None, depends="Task 7"), task(1, done="—", depends="Task 1"))
+    check("run plan check: no Done when, two tasks numbered 1, a Depends on naming no task and one naming itself are "
+          "each an ERROR naming the task and the fix", code == 1 and out.count("has no Done when") == 2
+          and "task 1 has the number of the task at line" in out and "depends on task 7, which the plan doesn't have"
+          in out and "task 1 depends on itself" in out, out)
     council(pt, "run", "close")
     ledger = read(os.path.join(pt, ".council", "ledger.tsv"))
     check("run close: the NEEDS: seat goes into the ledger like any finished seat",
@@ -7946,6 +8038,20 @@ PACK_TASKS = (
                                       ("Rests on", "—"), ("Touches", "`src/mail/receipt.py`"),
                                       ("Done when", "a charge still mails its receipt")]),
 )
+
+
+@part("requests")
+def requests_slice_paths(tmp):
+    """A Touches path with a space is one path in backticks, and one between commas outside them; a map job name
+    holding a '/' (file I/O) is no path."""
+    repo, run = pack_run(tmp, "slice-spaces")
+    planf = os.path.join(repo, ".council", "plans", "charge.md")
+    write(planf, read(planf).replace("| **Touches** | `src/mail/receipt.py` |", "| **Touches** | "
+          "`src/mail/my receipt.py`, src/mail/old notes.md, the file I/O |"))
+    code, out, err = council(repo, "context", "build", "task-3")
+    check("context build: the slice keeps a path with a space whole, in backticks or between commas, and takes no job "
+          "name for a path", code == 0 and "\nSlice: src/mail/, src/mail/my receipt.py, src/mail/old notes.md, "
+          "src/mail/send.py\n" in out, out + err)
 
 
 @part("requests")
@@ -8090,7 +8196,8 @@ def requests_task_pack(tmp):
     council(repo, "run", "close", "--status", "abandoned")
     code, out, err = council(repo, "context", "build", "task-2")
     check("context build: with no open run, refused naming council run open",
-          code == 2 and "no open run on this working tree — open one with: council run open" in err, out + err)
+          code == 2 and "no open run on this working tree" in err and "council run open <mode>" in err
+          and "is closed: to read it, pass --run" in err, out + err)
 
 
 @part("requests")
@@ -8214,7 +8321,8 @@ def requests_task_tree(tmp):
     council(repo, "run", "close", "--status", "abandoned")
     code, out, err = council(repo, "tree")
     check("tree: with no open run, refused naming council run open",
-          code == 2 and "no open run on this working tree — open one with: council run open" in err, out + err)
+          code == 2 and "no open run on this working tree" in err and "council run open <mode>" in err
+          and "is closed: to read it, pass --run" in err, out + err)
 
 
 @part("filing")
@@ -9454,15 +9562,22 @@ def reports_views_removed(tmp):
     check("an old config's estimate lines are read without complaint", code == 0 and "estimate" not in err, err)
     for words in (("history",), ("history", "--json"), ("tune",), ("tune", "propose", "--json"),
                   ("tune", "apply", "budget", "150k", "--user-said", "yes"), ("tune", "revert", "budget"),
-                  ("outcomes",), ("outcomes", "--json"), ("tui",), ("tui", "--watch"), ("tui", "--json"),
-                  ("pet",), ("pet", "--stop"), ("pet", "--demo")):
+                  ("outcomes",), ("outcomes", "--json"), ("tui",), ("tui", "--json"), ("pet",)):
         code, out, err = council(repo, *words)
         check("%s: an unknown command now, and the refusal names council help" % " ".join(words),
               code == 2 and err == "council: unknown command '%s' — see: council help\n" % words[0] and not out,
               out + err)
+    for flag in ("--watch", "--stop", "--demo", "--still", "--expand=x", "--pose=x", "--exit-after=1"):
+        code, out, err = council(repo, "status", flag)
+        check("status %s: the removed views' flag is an unknown option now, naming council help" % flag,
+              code == 2 and err == "council: unknown option '%s' — see: council help\n" % flag, out + err)
     code, out, err = council(repo, "help")
     check("help: names none of the removed commands", code == 0 and not any(
         "council " + word in out for word in ("history", "tune", "outcomes", "tui", "pet")), out)
+    check("help: says every command needs Python 3.8+, and names tools=, run open --code-root, patch save --base and "
+          "doctor hooks", "optional Python" not in out and "bash + git" not in out and "Python 3.8+" in out
+          and "[tools=N]" in out and "--code-root" in out and "patch save <task> [<report>] [--base <rev>]" in out
+          and "council doctor hooks" in out, out)
     code, out, err = council(repo, "status")
     check("status: an open run's card has no live-view line", code == 0 and "Status:" in out
           and "Live view" not in out and "tui" not in out, out + err)
