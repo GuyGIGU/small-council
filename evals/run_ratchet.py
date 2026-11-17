@@ -195,6 +195,11 @@ def shellcheck_warnings(root: Path, path: str, tool: str) -> int:
             path, out.returncode, (out.stderr or str(exc)).strip()[:300])) from None
 
 
+# Standard library modules one OS has and another lacks: Python 3.8 and 3.9 can't find msvcrt on Linux, nor fcntl on
+# Windows, so asking where the module lives would call them foreign there.
+OTHER_OS = {"msvcrt", "winreg", "winsound", "_winapi", "fcntl", "termios", "pwd", "grp", "resource", "posix", "nt"}
+
+
 def standard_library() -> set:
     names = set(getattr(sys, "stdlib_module_names", ())) | set(sys.builtin_module_names)
     return names or set(sys.builtin_module_names)
@@ -205,6 +210,8 @@ def is_standard(module: str, known: set) -> bool:
         return True
     if hasattr(sys, "stdlib_module_names"):
         return False
+    if module in OTHER_OS:
+        return True
     import importlib.util            # Python 3.8 and 3.9 have no list: ask where the module lives
     import sysconfig
     try:

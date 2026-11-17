@@ -42,7 +42,7 @@ def runs_of(seat, n, raised, kept, cut=0, refuted=0, tokens=50000, start=1, mode
 def advise(text, last=20):
     with tempfile.TemporaryDirectory(prefix="council-seats-") as temporary:
         path = Path(temporary) / "ledger.tsv"
-        path.write_text(HEADER + text, encoding="utf-8", newline="\n")
+        path.write_bytes((HEADER + text).encode("utf-8"))
         data = ledger.report(path, last)
     return data, {seat["seat"]: seat for seat in data["seats"]}
 
@@ -198,9 +198,9 @@ else:
         (repo / ".council" / "council.config.md").write_text("# Council config\n", encoding="utf-8")
         code, out, err = council(repo, "ledger", "advice")
         check("helper: no ledger yet", code == 0 and "no ledger yet" in out, out + err)
-        (repo / ".council" / "ledger.tsv").write_text(
+        (repo / ".council" / "ledger.tsv").write_bytes((
             HEADER + row("2026-09-17-113250-init", "engine", 8, 0, 0, 0, 74304, "council-init")
-            + runs_of("beck", 3, 6, 6, start=5), encoding="utf-8", newline="\n")
+            + runs_of("beck", 3, 6, 6, start=5)).encode("utf-8"))
         code, out, err = council(repo, "ledger", "advice")
         check("helper: ledger advice prints the bar, the table and the advice",
               code == 0 and "a seat is weighed after 3 judged runs and 15 items of evidence" in out
@@ -222,9 +222,9 @@ else:
             (("ledger", "--json"), "ledger doesn't take --json"), (("ledger", "advice", "--json=yes"), "--json takes no value"))]
         check("helper: a zero window (0 or 00), an extra word, --json on the plain ledger and --json=… are refused, each saying why",
               all(code == 2 and want in err for (code, _, err), want in refusals), [(c, e) for (c, _, e), _ in refusals])
-        (repo / ".council" / "ledger.tsv").write_text(
+        (repo / ".council" / "ledger.tsv").write_bytes((
             HEADER + row("2026-09-17-113250-init", "mix", 8, 0, 0, 0, 1000, "council-init")
-            + row("2026-09-18-000000-review", "mix", 4, 4, 0, 0, 1000) + "\n", encoding="utf-8", newline="\n")
+            + row("2026-09-18-000000-review", "mix", 4, 4, 0, 0, 1000) + "\n").encode("utf-8"))
         code, out, err = council(repo, "ledger", "1")
         mix = next((line.split() for line in out.splitlines() if line.startswith("mix")), [])
         check("helper: a blank line is no run, and shipped counts only the items a synthesis judged",

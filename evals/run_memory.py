@@ -39,7 +39,7 @@ def council(repo, *args, timeout=60):
 
 def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="\n")
+    path.write_bytes((text).encode("utf-8"))
 
 
 def failure(ident, title, *, failure="a seat claimed tokens stay valid", scope="src/auth/**",

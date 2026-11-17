@@ -67,7 +67,7 @@ def council(repo, *args, timeout=90):
 def write(path, text):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="\n")
+    path.write_bytes((text).encode("utf-8"))
 
 
 def read(path):
