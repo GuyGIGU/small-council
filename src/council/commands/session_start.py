@@ -128,8 +128,8 @@ def _banner(home: str, sid: str) -> None:
 
 def _map(home: str) -> None:
     """The map's line, with its staleness by top-level area (map_file.stale, as council map status reads it): the
-    areas with files changed since its map-commit, the busiest first, AREAS of them at most. A fault drops the note
-    and keeps the line (D20)."""
+    areas with files changed since its map-commit, the busiest first, AREAS of them at most; a map built on another
+    line of history is said to be one, whatever the areas. A fault drops the note and keeps the line (D20)."""
     if paths.contents(map_file.path(where.native(home))) is None:
         return
     found = map_file.Stale("", True, 0, [])
@@ -140,6 +140,10 @@ def _map(home: str) -> None:
     if found.sha and not found.known and git.text(".", "rev-parse", "--git-dir") is not None:
         said += (" (it was built on a commit that is no longer in this repo's history: trust its structure, verify "
                  "details)")
+    elif found.aside:                                   # as council map status says it: never up to date
+        said += (" (built on another line of history: map-commit %s has %d commit(s) HEAD doesn't, so it can't say "
+                 "what is up to date here: trust its structure, verify details; council map status says more)"
+                 % (found.sha[:9], found.aside))
     elif found.areas:
         shown = ", ".join("%s %d" % pair for pair in found.areas[:AREAS])
         more = len(found.areas) - AREAS

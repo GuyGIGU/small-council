@@ -800,6 +800,15 @@ def memory_file_and_seat_check(tmp):
     code, out = run_hook(full, "startup")
     check("map built on a commit no longer in history: said so, not presented as current",
           "no longer in this repo's history" in line_with(out, "Orientation"), out)
+    git(full, "commit", "-q", "--allow-empty", "-m", "a commit HEAD will not have")
+    side = git(full, "rev-parse", "HEAD")
+    git(full, "reset", "-q", "--soft", "HEAD~1")
+    write(os.path.join(full, ".council", "map.md"), "# Codebase map\nmap-commit: %s\n" % side)
+    code, out = run_hook(full, "startup")
+    check("map built on another line of history (HEAD lacks its map-commit, no file differs): said so, as council "
+          "map status says it, not presented as current",
+          "(built on another line of history: map-commit %s has 1 commit(s) HEAD doesn't" % side[:9]
+          in line_with(out, "Orientation"), out)
 
     pgr = new_repo(tmp, "pg")
     ptop = git(pgr, "rev-parse", "--show-toplevel")
