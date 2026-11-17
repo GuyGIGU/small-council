@@ -114,7 +114,7 @@ Inside a run folder:
 | `audit.md` | `council run close` (the audit with `--at-close --save`, through `records/audit_file`); a close again rewrites it | `council status` (the closing card), `council run status`, a later session |
 | `repairs.jsonl` | `council gate` / `council repair` (`repair_trail`) | `council repair`, `council memory propose`, `council status` |
 | `report-<n>.md` | the builder (a builder agent on seat `task-<n>`, or the Chair in a Solo build), at each round of task n (its head: `references/run/builder-report.md`) | `council patch save`, the seat gate (`builder_stop`), `council seat task-<n> done` |
-| `patches/` | `council patch save` (`T<n>-<r>.patch`, `.json`, and the task's history `T<n>.md`) | the verifier, a fix round's builder (its orders link `T<n>.md`), `council patch show`, `council patch apply|revert`, `council check`'s revert check, the seat gate (`builder_stop`) |
+| `patches/` | `council patch save` (`T<n>-<r>.patch`, `.json`, and the task's history `T<n>.md`); `council patch hold` (`T<n>-held.patch`, removed by `council patch apply <n> --held`) | the verifier, a fix round's builder (its orders link `T<n>.md`), `council patch show`, `council patch apply|revert`, `council check`'s revert check, the seat gate (`builder_stop`) |
 | `index.md` | `council index` | seats |
 
 ## 5. Entry points
@@ -176,7 +176,8 @@ never part of a cleanup or refactor branch (D23).
   `builder_stop`; the path `references/run/builder-loop.md`, which the builder's contract and
   council-implement both name.
 - **Saved rounds on and off the files**: `council patch apply|revert <task> [--round <r>]`, the flag
-  `--round`, and `gates/reverted/` in the run folder.
+  `--round`, and `gates/reverted/` in the run folder; `council patch hold <task>`, `council patch apply <task>
+  --held` and `patches/T<n>-held.patch`.
 - **Environment variables**: `COUNCIL_ALLOW_NO_HOOKS`, `COUNCIL_ALLOW_PUSH`, `COUNCIL_ARG_CONV_EXCL`,
   `COUNCIL_BASE`, `COUNCIL_BASH` (the bash running `bin/council`, for the commands that
   print or start it), `COUNCIL_INDEX_CAP`, `COUNCIL_INDEX_NAMECAP`, `COUNCIL_PLUGIN_ROOT`,
@@ -269,7 +270,7 @@ folds them, and new code uses the named way.
 | Hold a build to one builder | `council.commands.build_seat` (`SEAT`, `start_refusal`, `dispatch_refusal`, `missing_report`, `outside_round`), asked by `council seat task-<n> queued|running|done` and by the agent gate for a council-builder: one build seat at a time (taken from its `queued`, not only while `running`; the agent gate lets a builder out only while its seat is queued, and records it `running` as it goes, under the seat lock, so a second builder for the same seat is refused until the Chair records the first one's line, or `failed` and `queued` again for a dispatch that started no agent: `council.commands.seat.taken`), no start of a task that is or depends on a standing `NEEDS: fix` stop, a finished seat owes its `report-<n>.md`, and `council seat` names each file changed outside a saved round (D42) | The one home of the `task-<n>` pattern: `evals/bench.py` reads it from here. `Depends on` is followed at every level, and is the stop's one list |
 | Read a task's stop | `council.commands.build_seat.stop_of`: a seat's `NEEDS:` note is `resolved` once the task's own `after-<n>` gate passed after the stop (by the event stream's order), `released` once a decision of the user's is on record from the stop's minute on, else it `stands`; `resolved_tasks` gives `council tree` its `was stopped:` | The stop's moment is the seat's first `done` after its last start, never the row's `updated` cell. The note itself ends in `records/seat_write.py` when the seat has run again and is recorded `done` with no note. With no event stream nothing is refused |
 | Judge an agent's stop | `hooks/seat-gate.sh` (SubagentStop): a worker's and a verifier's in bash; a builder's through `council.commands.builder_stop` (`script.py builder_stop`, exit 1 and one line to send it back once) | A BLOCKED reply is read only by `seat_files.blocked`: for a worker and a verifier the hook asks `script.py builder_stop blocked` (exit 1: no BLOCKED reply); no Python, or a fault, lets the stop through (D20) |
-| Take a saved round off the files, or put it back | `council.commands.patch_apply` (`undo`, `redo`: `git apply`, all or nothing, the files named when it won't go), for `council patch apply|revert` and the revert check | No record changes; `git apply` is called nowhere else |
+| Take a saved round off the files, or put it back | `council.commands.patch_apply` (`undo`, `redo`: `git apply`, all or nothing, the files named when it won't go), for `council patch apply|revert`, `patch hold` and `apply --held`, and the revert check | No record changes; `git apply` is called nowhere else |
 | Write the receipt's machine lines | `council.commands.receipt.lines`, printed by `council check` on a build and filed in `check.md`: `Checked by machine:` from the gate records, `Not proved:` from the proofs, the gates and the revert checks, `Your decisions:` from the run's state | The Chair copies them; it may add to `Not proved:`, never cut |
 | Find the plugin's own files | `council.records.home.plugin_root`: `CLAUDE_PLUGIN_ROOT` when set, else the package's own folder; for `context build` and the SessionStart banner | `doctor.py` and `run_open.py` still find it from `__file__` themselves: folding them is its own task |
 | Give a builder its standing rules | `references/run/builder-rules.md`, linked from a task's orders | Never copied into a brief |
