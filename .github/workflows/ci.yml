@@ -10,6 +10,7 @@ jobs:
   evals:
     name: evals (${{ matrix.os }}${{ matrix.part && format(', part {0} of 3', matrix.part) || '' }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60     # a hung suite fails the leg in an hour, not GitHub's six
     strategy:
       fail-fast: false
       matrix:
@@ -128,6 +129,7 @@ jobs:
     needs: evals
     if: ${{ always() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Every part of the Windows leg passed
         env:
@@ -136,12 +138,31 @@ jobs:
           echo "the evals legs: $RESULT"
           test "$RESULT" = success
 
+  # The helper promises Python 3.8 or newer (bin/council), and the legs above run the newest: the fast tier on 3.8
+  # catches a call that needs a later Python before a user on 3.8 meets it. setup-python has 3.8 on ubuntu-22.04.
+  python-38:
+    name: fast tier (Python 3.8)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+
+      - name: Fast tier (python evals/run_all.py --fast)
+        run: python evals/run_all.py --fast
+
   # The council pane is a Claude Code mod (hooks/council-view.tsx): Claude Code's own test kit runs its
   # tests against the engine, with every file, process and clock call answered by the test. No model
   # is called, so no sign-in or token is needed. The version is pinned to one that knows the API used.
   council-view:
     name: council view (mod tests)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
