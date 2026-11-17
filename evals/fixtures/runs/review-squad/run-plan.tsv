@@ -1,7 +1,7 @@
 # Small Council run plan v1.
 kind	id	field	value	reason
 schema	plan	version	1	xxxxxx xxx xxxx xxx
-run	run	id	2026-11-17-164154-review	xxxxxx xxx xxxx xxx
+run	run	id	2026-11-17-185139-review	xxxxxx xxx xxxx xxx
 run	run	mode	council-review	xxxxxx xxx xxxx xxx
 run	run	size	squad	xxxxxx xxx xxxx xxx
 assessment	run	risk	medium	xxxxxx xxx xxxx xxx

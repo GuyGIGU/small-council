@@ -128,6 +128,7 @@ def replay(base):
     check("fixtures: at least a review run and an implement run are saved", {"council-review", "council-implement"}
           <= set(re.search(r"^mode: (\S+)", (f / "session-state.md").read_text(encoding="utf-8"), re.MULTILINE)
                  .group(1) for f in fixtures), [f.name for f in fixtures])
+    refusals = {}
     for fixture in fixtures:
         names = [re.escape(n) for n in {Path.home().name, os.environ.get("USERNAME", ""), os.environ.get("USER", "")}
                  if len(n) >= 3]
@@ -142,6 +143,7 @@ def replay(base):
               out)
         check("%s: every one of the Chair's steps is read, and passes" % fixture.name,
               all(items.get(step, ("",))[0] == "pass" for step in STEPS), out)
+        refusals[fixture.name] = items.get("Helper refusals tried again", ("", ""))
         for name, mutate, step, words in MUTATIONS:
             folder = copy(fixture, base, mutate.__name__)
             mutate(folder)
@@ -149,6 +151,9 @@ def replay(base):
             fails = [label for label, (verdict, _) in items.items() if verdict == "FAIL"]
             check("%s, %s: the audit FAILs on %s, naming it, and on nothing else" % (fixture.name, name, step),
                   code == 1 and fails == [step] and words in items[step][1], out)
+    tried = [name for name, (verdict, words) in refusals.items() if verdict == "pass"
+             and re.match(r"[1-9][0-9]* refusal\(s\), each followed by another try", words)]
+    check("fixtures: a saved run holds a helper refusal tried again, and the audit passes it", tried, refusals)
 
 
 def main():
