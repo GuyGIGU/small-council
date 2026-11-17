@@ -2859,6 +2859,14 @@ def collect_unbriefed_decisions(tmp):
     seats = "## Seats\n### w1 — tests (Beck)\n- ref: none\n- out: seats/w1.md\n- cap: 8\n"
     brief = os.path.join(run, "brief.md")
     write(brief, "# Brief\n" + seats)
+    for phase in ("prepare", "assign", "brief"):
+        council(repo, "state", "phase=" + phase)
+    code, out, err = council(repo, "state", "phase=work")
+    check("state phase=work: a brief that leaves out the user's decision is warned about on stderr before any seat "
+          "is dispatched, naming the words and the next step; the state line and the exit are as before",
+          code == 0 and out.startswith("state: phase work · in-progress") and "WARNING brief.md (written " in err
+          and '"Go ahead with the Squad, four seats"' in err and "quote it word for word in the brief before you "
+          "dispatch" in err and "WARNING" not in out, out + err)
     write(os.path.join(run, "seats", "w1.md"), "# Tests — tests (review)\nref: none\n## Index\n(none) — nothing\n")
     council(repo, "seat", "w1", "done", "agent=a1", "tokens=20000")
     code, out, err = council(repo, "collect")

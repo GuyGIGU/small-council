@@ -76,11 +76,18 @@ def main(args: cli.Args, words: list[str]) -> int:
     return verdict(run, flags, tally)
 
 
-def unbriefed(run: Path, brief: Path) -> list[str]:
+AFTER = ("collect", "the seats were briefed without it: hold their findings to it at Judge, tell the user, and quote it "
+         "word for word in any later brief")
+BEFORE = ("state", "the seats would be briefed without it: quote it word for word in the brief before you dispatch")
+
+
+def unbriefed(run: Path, brief: Path, when: tuple[str, str] = AFTER) -> list[str]:
     """A line for each decision of the whole run's (a task's own goes to its task's orders) recorded in or before the
     minute brief.md was last written, whose words the brief does not carry. A decision keeps only its minute, so one
     in the brief's own minute counts: a warning costs a look, a miss a seat briefed without the user's word. Both
-    sides as plain(): a wrapped line, curly quotes or a capital still match; a paraphrase does not (D7)."""
+    sides as plain(): a wrapped line, curly quotes or a capital still match; a paraphrase does not (D7). when: the
+    command that warns and the next step — collect's, after the seats worked (AFTER), or the step into Work's,
+    before any is dispatched (BEFORE, council state)."""
     written = time.strftime("%Y-%m-%d %H:%M", time.localtime(brief.stat().st_mtime))
     carried = plain(redact.said(paths.text_of(brief, run)))      # redacted as the decision's words were
     out = []
@@ -89,10 +96,9 @@ def unbriefed(run: Path, brief: Path) -> list[str]:
         if said.task is not None or not said.minute or said.minute > written or not plain(said.words):
             continue
         if not request.found(carried, plain(said.words)):
-            out.append("collect: WARNING brief.md (written %s) does not carry the user's decision of %s, \"%s\" — "
-                       "the seats were briefed without it: hold their findings to it at Judge, tell the user, and "
-                       "quote it word for word in any later brief (doctrine 04-brief.md)"
-                       % (written, said.minute, gate_output.clip(said.words, 100)))
+            out.append("%s: WARNING brief.md (written %s) does not carry the user's decision of %s, \"%s\" — %s "
+                       "(doctrine 04-brief.md)" % (when[0], written, said.minute, gate_output.clip(said.words, 100),
+                                                   when[1]))
     return out
 
 
