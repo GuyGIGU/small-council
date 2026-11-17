@@ -12,27 +12,14 @@ from pathlib import Path
 
 from council import git
 from council.commands import cli, resolve, task_slice
-from council.records import cells, events, gates, patches, paths, report_head, seat_rows, seats, tasks
+from council.records import cells, events, gates, patches, paths, report_head, seat_rows, seat_write, seats, tasks
 from council.records import home as where
 
 SEAT = re.compile(r"task-([0-9]+)")
 STARTED = ("queued", "running")
 STANDS, RELEASED, RESOLVED = "stands", "released", "resolved"
 FINISHED = ("done", "failed", "blocked", "skipped")
-LEAD = " \t>*_"                                   # what may stand before a NEEDS: line's first word
-NEEDS_FIX = re.compile(r"NEEDS:[*_]*\s*[*_`]*(?i:fix)\b[*_`:]*\s*(\S*)")
-
-
-def needs(note: str) -> bool:
-    """A NEEDS: line, as a builder writes it or the Chair records it: markdown marks before the word are allowed."""
-    return note.lstrip(LEAD).startswith("NEEDS:")
-
-
-def fix_at(note: str) -> str | None:
-    """Where a NEEDS: fix line says the fault is (its file:line, '?' when it names none); None for any other note.
-    Fix in any case, markdown marks allowed: the one pattern the builder's stop holds to the four-part form too."""
-    found = NEEDS_FIX.match(note.lstrip(LEAD))
-    return (found.group(1).strip("`*_") or "?") if found else None
+LEAD, needs, fix_at = seat_write.LEAD, seat_write.needs, seat_write.fix_at     # the one NEEDS: reader (records)
 
 
 def task_of(run: Path, slug: str) -> int | None:
@@ -58,7 +45,7 @@ def start_refusal(run: Path, slug: str) -> str | None:
         return ("cannot start %s — %s is %s, and one builder at a time edits project code (D42). Wait for its "
                 "line and record it (council seat %s done tokens=<n> tools=<n>, or done note=\"NEEDS: …\"); if its "
                 "agent is gone, record it: council seat %s failed note=\"…\"" % (slug, other, state, other, other))
-    return _fix_refusal(run, slug, task)
+    return task_slice.missing(run) or _fix_refusal(run, slug, task)
 
 
 def dispatch_refusal(run: Path, slug: str) -> str | None:

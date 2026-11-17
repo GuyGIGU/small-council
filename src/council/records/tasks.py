@@ -11,6 +11,7 @@ SEQUENCE = "## Task Sequence"
 NOTHING = ("", "-", "—", "none", "nothing")
 FACT_STATE = re.compile(r"\((" + "|".join(STATES) + r")(\s*,\s*outside)?\)\s*$", re.IGNORECASE)
 HEADING = re.compile(r"###\s+([0-9]+)[.)]?\s*(.*)")
+NEXT, NEXT_HEADING = re.compile(r"###\s+Next tasks\b.*"), re.compile(r"####\s+([0-9]+)[.)]?\s*(.*)")
 ROW = re.compile(r"\|\s*\**([^|*]+?)\**\s*\|(.*)\|\s*$")
 NAMED = re.compile(r"(?:[Tt](?:ask-?)?)?([0-9]+)")
 
@@ -34,14 +35,15 @@ class Fact(NamedTuple):
 
 
 def read(content: str) -> list[Task]:
-    """The tasks under `## Task Sequence`, in order; the first row of a repeated field wins."""
-    found, inside = [], False
+    """The tasks under `## Task Sequence` (`### <n>.`), and a post-game's under `### Next tasks` (`#### <n>.`), in
+    order; the first row of a repeated field wins."""
+    found, inside = [], None
     for n, line in enumerate(content.split("\n"), 1):
         line = line.rstrip("\r")
-        if line.startswith("## "):
-            inside = line.rstrip() == SEQUENCE
+        if line.startswith("## ") or (line.startswith("### ") and inside is not HEADING):
+            inside = HEADING if line.rstrip() == SEQUENCE else NEXT_HEADING if NEXT.fullmatch(line.rstrip()) else None
             continue
-        heading = HEADING.fullmatch(line.strip()) if inside else None
+        heading = inside.fullmatch(line.strip()) if inside else None
         if heading:
             found.append(Task(int(heading.group(1)), heading.group(2).strip(), n, {}))
             continue

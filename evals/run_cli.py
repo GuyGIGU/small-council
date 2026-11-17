@@ -8100,6 +8100,63 @@ def requests_continued_request_reaches_builders(tmp):
           code == 0 and "Price orders by tier." in request and "(no new words)" not in request, tree + err)
 
 
+@part("requests")
+def requests_build_from_postgame_or_review(tmp):
+    """A build whose input= is a post-game (its ### Next tasks, #### <n>. headings) or a review (the Chair's
+    <run>/tasks.md, one task per selected finding) gives its builders their orders: context build, tree and the build
+    seat read the tasks from one place (task_slice.source). A review with no tasks.md is refused, naming the file."""
+    repo = new_repo(tmp, "build-inputs")
+    write(os.path.join(repo, "src", "order.py"), "def total():\n    return 1\n")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    write(os.path.join(repo, ".council", "reviews", "postgame.md"), "# Post-game — order\n## Gaps\n- one\n"
+          "### Next tasks\n#### 1. Fix the total\n| | |\n|---|---|\n| **Done when** | the total counts every line |\n"
+          "| **Touches** | `src/order.py` |\n| **Depends on** | — |\n\n#### 2. Log the total\n| | |\n|---|---|\n"
+          "| **Done when** | each total is logged |\n| **Depends on** | 1 |\n\n## Summary\nx\n")
+    write(os.path.join(repo, ".council", "reviews", "review.md"), "# Review — order\n## Index\n"
+          "1 · P1 · Correctness · src/order.py:2 · the total drops the last line\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "inputs")
+
+    def build(sid, given):
+        _, out, _ = council(repo, "run", "open", "council-implement", env=session(sid))
+        run = out.strip().splitlines()[-1]
+        write_plan(run, selected=("task-1", "task-2"))
+        council(repo, "state", "phase=prepare")
+        council(repo, "state", "phase=build", "input=" + given)
+        return run
+
+    build("sPg", ".council/reviews/postgame.md")
+    code, pack, err = council(repo, "context", "build", "task-1")
+    check("context build: a build from a post-game reads its Next tasks — the pack carries task 1's Done when",
+          code == 0 and "Done when: the total counts every line" in pack and "Serves: (the plan gives no Serves row)"
+          in pack and "Slice: src/order.py" in pack, pack + err)
+    code, tree, err = council(repo, "tree")
+    code2, out2, err2 = council(repo, "seat", "task-2", "queued")
+    check("tree and seat: the post-game's tasks are the build's — both listed, and task 2 depends on task 1",
+          code == 0 and "T1 Fix the total" in tree and "T2 Log the total · depends on T1" in tree and code2 == 0,
+          tree + err + out2 + err2)
+    council(repo, "run", "close", "--status", "abandoned")
+
+    run = build("sRv", ".council/reviews/review.md")
+    for words in (("context", "build", "task-1"), ("seat", "task-1", "queued"), ("tree",)):
+        code, out, err = council(repo, *words)
+        check("%s: a review input with no <run>/tasks.md is refused, naming the file to write and where its format "
+              "is" % " ".join(words), code == 2 and "tasks.md" in err and "Plan tasks" in err
+              and "selected findings" in err, out + err)
+    write(os.path.join(run, "tasks.md"), "# Tasks — the review's selected findings\n## Task Sequence\n"
+          "### 1. The total drops the last line\n| | |\n|---|---|\n| **Touches** | `src/order.py` |\n"
+          "| **Done when** | a total over three lines counts all three |\n| **Depends on** | — |\n"
+          "| **Ref** | references/quality-testing.md |\n")
+    code, pack, err = council(repo, "context", "build", "task-1")
+    check("context build: with <run>/tasks.md a review's build gives its builder the task — Done when, no Owner row "
+          "refused", code == 0 and "Done when: a total over three lines counts all three" in pack
+          and "Owner: (the plan gives no Owner row)" in pack, pack + err)
+    code, out, err = council(repo, "seat", "task-1", "queued")
+    state = read(os.path.join(run, "session-state.md"))
+    check("seat: ... and its build seat starts, the input= still the review's path",
+          code == 0 and "input: .council/reviews/review.md" in state, out + err + state)
+
+
 @part("filing")
 def filed_request_paths(tmp):
     # The filed request stays inside asks/, in every legitimate spelling; a re-save replaces only its own run's words
@@ -8787,7 +8844,7 @@ def runs_needs_note_ends(tmp):
     write(os.path.join(nn, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
     _, out, _ = council(nn, "run", "open", "council-implement", env=session("sQ"))
     nrun = out.strip().splitlines()[-1]
-    write_plan(nrun, selected=("task-1", "task-2", "task-3", "task-4"))
+    write_plan(nrun, selected=("task-1", "task-2", "task-3", "task-4", "task-5"))
     note = lambda slug: (row(read(os.path.join(nrun, "seats.tsv")), slug).split("\t") + [""] * 6)[5]  # noqa: E731
     ask = "NEEDS: which table holds the key?"
     council(nn, "seat", "task-1", "running", "agent=e1")
@@ -8821,6 +8878,13 @@ def runs_needs_note_ends(tmp):
     council(nn, "seat", "task-4", "blocked", "tokens=20000")
     check("seat: a seat that ran again and ends blocked keeps its NEEDS: note, as before",
           note("task-4") == "NEEDS: which cache?", note("task-4"))
+    write(os.path.join(nrun, "report-5.md"), "Cause: none\n")
+    council(nn, "seat", "task-5", "running", "agent=e8")
+    council(nn, "seat", "task-5", "done", "tokens=20000", "note=**NEEDS:** which queue?")
+    council(nn, "seat", "task-5", "running", "agent=e9")
+    code, out, err = council(nn, "seat", "task-5", "done", "agent=e9", "tokens=20000")
+    check("seat: a NEEDS: note written with markdown marks (**NEEDS:**) ends on the rerun's done too — the one NEEDS: "
+          "reader, as the tree and the pack read it", code == 0 and note("task-5") == "", out + err + note("task-5"))
 
 
 FIX_STOP = "NEEDS: fix src/pay/webhook.py:2 · does: returns 1 · should: read the event · seen: pytest, 1 failed"
