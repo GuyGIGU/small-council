@@ -12,10 +12,10 @@ limit. With a Claude Code session transcript it reads the main thread from the t
 run to the end of the turn that closed it. The Chair's steps (audit_steps.py): the size and cost recorded before
 the first dispatch, the status card at the first dispatch, the rulings as one question at Deliver, the closing
 card after close. How it called the helper: by its plain name `council`, no output cut short by `| tail` or
-`| head`, every refusal tried again. Each item says pass, warn or FAIL in plain words. It only opens files to
-read them and writes nothing, bytecode included, except with --save (council run close): then it keeps the
-report as the run's audit.md. Exit 0 when nothing failed, 1 when something did, 2 when it cannot read the run or
-the transcript.
+`| head`, every refusal (told by the call's exit) tried again. Each item says pass, warn or FAIL in plain words.
+It only opens files to read them and writes nothing, bytecode included, except with --save (council run close):
+then it keeps the report as the run's audit.md. Exit 0 when nothing failed, 1 when something did, 2 when it cannot
+read the run or the transcript.
 """
 from __future__ import annotations
 
@@ -32,28 +32,12 @@ from council.clock import iso_moment
 from council.commands.audit_calls import invocations
 from council.commands.audit_checks import (Run, Say, agent_limit, agents_on_record, claim_index, clock, closing,
                                            deliverable, gates, listed, seats_on_record, stages, token_figures)
-from council.commands.audit_steps import (Entry, ToolCall, block_text, closing_card, first_card, rulings_once,
-                                          size_first)
-from council.commands.run_open import STATUS_HINT
+from council.commands.audit_steps import (Entry, ToolCall, block_text, closing_card, exit_of, first_card,
+                                          rulings_once, size_first)
 from council.records import audit_file, paths
 from council.records.audit_file import FAIL, LATER, PASS, WARN
 
 Span = Tuple[datetime, Optional[datetime]]
-# The helper's advisory lines on stderr ("council: ..." without a refusal): everything else on a
-# "council:" line is a refusal (die, exit 2) or a record that failed to write. A lock refusal is
-# answered by waiting, not by a second call, so it is listed here too. evals/run_audit.py checks that
-# each lead is still the helper's wording; run open's status hint is taken from where run open writes it.
-NOTE_LEADS = (STATUS_HINT, "save the user's request", "another run is in progress", "a paused run is also open",
-              "its code root is ",
-              "first dispatch of this run", "run closed \u2014 show the user", "this run has used",
-              "seats still marked", "the claim index is missing", "no request was filed", "no build log names",
-              "the log has no", "cleared a gate lock", "WARNING",
-              "several runs are open \u2014 only the paths", "checks are already running", "the run changed ",
-              "now ignores asks/",
-              "KB, over the ~")
-NOTES = re.compile(r"council: (?:%s|\S+ now ignores asks/|\S+ is \d+ KB, over)"
-                   % "|".join(re.escape(lead) for lead in NOTE_LEADS[:-2]))
-
 
 
 def is_prompt(line: dict[str, Any], content: Any) -> bool:
@@ -204,7 +188,7 @@ def transcript(run: Run, path: Path, say: Say) -> str:
     first_card(run, part, calls, sessions, say)
     rulings_once(run, part, calls, say)
     closing_card(run, part, calls, closed, say)
-    helper_calls(calls, say)
+    helper_calls(part, calls, say)
     return span
 
 
@@ -223,7 +207,7 @@ def tool_calls(part: list[Entry]) -> list[ToolCall]:
     return calls
 
 
-def helper_calls(calls: list[ToolCall], say: Say) -> None:
+def helper_calls(part: list[Entry], calls: list[ToolCall], say: Say) -> None:
     """How the helper was called: by its plain name, its output whole, each refusal tried again."""
     helper = [c for c in calls if c[3]]
     label = "Helper called as plain council"
@@ -250,20 +234,38 @@ def helper_calls(calls: list[ToolCall], say: Say) -> None:
     elif every:
         say(PASS, label, "no helper call piped through tail or head")
 
+    if every:
+        refusals(part, helper, say)
+
+
+def refusals(part: list[Entry], helper: list[ToolCall], say: Say) -> None:
+    """Each refusal tried again. A refusal is told by the call's exit, never by its words: a "council:" line in a call
+    that exited 2 (D19), the helper its one and last command. Where the helper was not (chained, piped, or one of
+    several), the call's exit is not its own, so a "council:" line there is named as hidden; any other is a note."""
     label = "Helper refusals tried again"
-    missed, refused = [], 0
-    for index, (_, t, _, found, output) in enumerate(helper):
-        lines = [line.strip() for line in output.splitlines()
-                 if line.strip().startswith("council: ") and not NOTES.match(line.strip())]
+    exits = dict((b.get("tool_use_id"), exit_of(b)) for _, kind, b in part if kind == "result")
+    missed, hidden, refused = [], [], 0
+    for index, (_, t, block, found, output) in enumerate(helper):
+        lines = [line.strip()[9:] for line in output.splitlines() if line.strip().startswith("council: ")]
         if not lines:
             continue
-        refused += 1
-        subs = set(i["sub"] for i in found)
-        if not any(subs & set(i["sub"] for i in c[3]) for c in helper[index + 1:]):
-            missed.append("%s %s: %s" % (clock(t), "/".join(sorted(subs)), lines[0][len("council: "):][:90]))
+        sub = "/".join(sorted(set(i["sub"] for i in found)))
+        if len(found) > 1 or not found[0]["last"]:
+            hidden.append("%s %s: %s" % (clock(t), sub, lines[-1][:90]))
+        elif exits.get(block.get("id")) == 2:
+            refused += 1
+            if not any(sub == i["sub"] for c in helper[index + 1:] for i in c[3]):
+                missed.append("%s %s: %s" % (clock(t), sub, lines[-1][:90]))
+    words = []
     if missed:
-        say(WARN, label, "%d refusal(s) with no later call of the same command: %s" % (len(missed), listed(missed, 2)))
-    elif every:
+        words.append("%d refusal(s) with no later call of the same command: %s" % (len(missed), listed(missed, 2)))
+    if hidden:
+        words.append("%d call(s) printed a council: line where the helper was not the call's only and last command, so "
+                     "its exit was hidden (the exit of a chained or piped call is the last command's, D21) — run each "
+                     "council command as a call of its own: %s" % (len(hidden), listed(hidden, 2)))
+    if words:
+        say(WARN, label, "; ".join(words))
+    else:
         say(PASS, label,
             "%d refusal(s), each followed by another try" % refused if refused else "the helper refused nothing")
 

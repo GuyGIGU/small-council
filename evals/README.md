@@ -319,7 +319,7 @@ a Chair actually did in a finished run. A run built with the first real run's pa
 transcript, must fail on each known problem: a stage skipped, the verifier recorded only when it
 finished, two copies of the checks at once, no record of the Chair's own seat, no status card at the
 first dispatch or after close, the helper called through a shell variable, its output cut by
-`| tail`, a refusal never tried again, the size and cost recorded after the first dispatch (or not at
+`| tail`, a refusal whose exit a chained call hid, the size and cost recorded after the first dispatch (or not at
 all), the rulings asked as two questions at Deliver. A clean run driven through the real helper must pass every item,
 and a later session's transcript that didn't make the run's first dispatch owes no card.
 Run as the close's own audit (`--at-close`), the closing card reads "not checked yet" and every other

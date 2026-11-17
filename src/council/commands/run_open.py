@@ -16,7 +16,7 @@ ASKED = closing.MODES                              # the modes that save the use
 MODES = ASKED + ("council-init", "test-architect", "context-core")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
-STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead; the audit reads it as a note
+STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead
 
 
 def main(args: cli.Args, words: list[str]) -> int:

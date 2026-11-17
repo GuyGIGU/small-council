@@ -106,13 +106,15 @@ def invocations(command: str) -> list[Call]:
     """The helper calls in a Bash or PowerShell command: how each was called (plain, path or variable),
     its subcommand, and the tail/head stage that cut its output, if any — its own, or one on a loop, if,
     { } or ( ) group around it. Calls inside a loop body count, and so does `bash "$C" …` once C was set to
-    the helper earlier in the same command."""
+    the helper earlier in the same command. "last": the call is the command's last, unpiped, so the
+    command's exit is its own."""
     command = heredoc_free(command or "")
     variables = {"C", "COUNCIL"} | set(name for name, value in re.findall(
         r"(?:^|[\s;&(|])([A-Za-z_]\w*)=(\"[^\"]*\"|'[^']*'|\S*)", command) if re.search(r"[/\\]council\b", value))
     variables |= set(re.findall(r"(?:^|[\s;&(|])([A-Za-z_]\w*)=[\"']?\$\((?:command -v|which) council\)", command))
     found, groups = [], []                       # groups: (the word that closes it, where its calls start)
-    for stages in pipelines(command):
+    lines = pipelines(command)
+    for index, stages in enumerate(lines):
         words = words_of(stages[0])
         if words and words[0] in (")", "}", "done", "fi", "esac"):
             if groups and groups[-1][0] == words[0]:
@@ -155,5 +157,5 @@ def invocations(command: str) -> list[Call]:
         if sub in TWO_WORD and len(rest) > 1 and re.match(r"^[a-z]+$", rest[1]):
             sub += " " + rest[1]
         found.append({"form": form, "sub": sub, "flags": [w for w in rest if w.startswith("--")], "cut": cut_of(stages),
-                      "text": stages[0][:120]})
+                      "text": stages[0][:120], "last": index == len(lines) - 1 and len(stages) == 1})
     return found

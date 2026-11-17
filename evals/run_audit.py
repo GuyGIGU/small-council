@@ -111,11 +111,11 @@ class Transcript:
         self._line("assistant", [{"type": "tool_use", "id": ident, "name": name, "input": given}], step)
         self._line("user", [{"type": "tool_result", "tool_use_id": ident, "content": output, "is_error": error}], 0)
 
-    def bash(self, command, output="", step=1, background=False):
+    def bash(self, command, output="", step=1, background=False, error=False):
         given = {"command": command, "description": "x"}
         if background:
             given["run_in_background"] = True
-        self.call("Bash", given, output, step)
+        self.call("Bash", given, output, step, error)
 
     def subagent(self, command):
         """A subagent's own call, in the same file: never the Chair's."""
@@ -328,8 +328,8 @@ def transcript_clean(path, run, sized="first", questions=1, as_opened=False):
     if sized == "late":
         log.bash('council state size="%s"' % SIZE, "state: size recorded")
     if not as_opened:
-        log.bash("council seat hunt done tokens=58k",
-                 "council: tokens=58k is a rounded figure — pass the exact count the usage report gives (like 159812)")
+        log.bash("council seat hunt done tokens=58k", "Exit code 2\ncouncil: tokens=58k is a rounded figure — pass the "
+                 "exact count the usage report gives (like 159812)", error=True)
     log.bash("council seat hunt done tokens=58000", "seats: 1 of 3 done · ~58k tokens so far")
     log.call("Agent", {"subagent_type": "small-council:council-verifier", "description": "Verify", "prompt": "claims",
                        "run_in_background": True}, "Async agent launched. agentId: v9f8e7d6c5b4a3f2e")
@@ -432,6 +432,26 @@ def transcript_two_runs(path, first, second, t0):
 
 
 # --- the paid suite's graders, on synthetic traces ---------------------------------------------------------------
+def refusals_item(base, name, calls):
+    """A closed run whose session makes `calls` — (command, output, error) — between its open and its close, and the
+    audit's "Helper refusals tried again" for it. A failed call is written as a real transcript writes one: is_error,
+    its output starting "Exit code <n>" (or, as some do, no such lead)."""
+    t0 = utc("2026-10-09T10:00:00Z")
+    stamp = (lambda s: (t0 + timedelta(seconds=s)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    run = minimal_run(base, name, [(stamp(11), "run.opened", "run", "council-review", "phase=convene"),
+                                   (stamp(100), "run.closed", "run", "complete", "agent_runs=1")])
+    log = Transcript("session-multi", t0)
+    log.prompt("review the change")
+    log.at(t0 + timedelta(seconds=10)).bash("council run open council-review", str(run))
+    for command, output, error in calls:
+        log.bash(command, output, error=error)
+    log.at(t0 + timedelta(seconds=99)).bash("council run close", "closed %s — complete" % run.name)
+    log.at(t0 + timedelta(minutes=20)).prompt("thanks")
+    log.save(base / "multi" / (name + ".jsonl"))
+    return item(council(base, "run", "audit", "--run", str(run), "--transcript", str(base / "multi" / (name + ".jsonl")))[1],
+                "Helper refusals tried again")
+
+
 def graded(rows):
     sys.path.insert(0, str(ROOT / "evals"))
     import check_repair_trace as trace                       # the suite's own tool_used reading, run locally
@@ -509,8 +529,10 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("run 1's pattern: helper output cut by | tail and | head is named, call by call (the rule was words only)",
           verdict == "FAIL" and "route recommend | head -30" in words and "seat | tail -1" in words, words)
     verdict, words = item(out, "Helper refusals tried again")
-    check("run 1's pattern: the refused status after close was never tried again",
-          verdict == "warn" and "no open run on this working tree" in words, words)
+    check("run 1's pattern: the refused status after close came in a chained call whose exit was sed's, so it is "
+          "named as hidden, by the reason (D21), not judged by its words",
+          verdict == "warn" and "no open run on this working tree" in words and "exit was hidden" in words
+          and "D21" in words and "refusal(s) with no later call" not in words, words)
 
     # The clean run: every item passes, through the helper, with no --run once it is closed.
     code, out, err = council(repo, "run", "audit", "--transcript", str(log2))
@@ -834,26 +856,46 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     check("status card: the session that did make the first dispatch, with no card after it, still fails",
           item(out, "Status card at the first dispatch")[0] == "FAIL", item(out, "Status card at the first dispatch")[1])
 
-# The helper's advisory lines the audit does not count as refusals must still be the helper's words.
+    # A refusal is told by the call's exit (the helper refuses with exit 2, D19), never by its words: a council: line
+    # in a call that exited 0 is a note, whatever it says; one whose exit a later command hid is named as hidden.
+    TOOLS = ("seats: 1 of 1 done\ncouncil: add tools=<the notification's tool_uses> to measure seat hunt against its "
+             "tool budget of 40")
+    ROUNDED = "council: tokens=58k is a rounded figure — pass the exact count the usage report gives (like 159812)"
+    verdict, words = refusals_item(base, "2026-10-09-130001-review", [("council seat hunt done tokens=58211", TOOLS, False)])
+    check("refusals: council seat's tools advisory in a call that exited 0 is a note, with no later seat call",
+          verdict == "pass" and words == "the helper refused nothing", [verdict, words])
+    verdict, words = refusals_item(base, "2026-10-09-130002-review", [
+        ("council seat hunt done tokens=58k", "Exit code 2\n" + ROUNDED, True),
+        ("council seat hunt done tokens=58211", TOOLS, False)])
+    check("refusals: an exit-2 refusal followed by the corrected call is tried again; the advisory after it is no refusal",
+          verdict == "pass" and words == "1 refusal(s), each followed by another try", [verdict, words])
+    verdict, words = refusals_item(base, "2026-10-09-130003-review", [
+        ("council evidence build", "Exit code 2\ncouncil: cannot index the claims — synthesis.md has no Kept section; "
+                                   "write it, then council evidence build", True),
+        ("council seat hunt running agent=a1", "council: cannot record seat hunt — no such seat in the run plan; add it: "
+                                               "council run plan check", True)])
+    check("refusals: an exit-2 refusal, and an is_error result with no Exit code lead, never tried again are named",
+          verdict == "warn" and words.startswith("2 refusal(s) with no later call of the same command")
+          and "evidence build: cannot index" in words and "seat: cannot record" in words, [verdict, words])
+    LOCK = ("Exit code 2\ncouncil: checks are already running for this run (tests, started 10:00:20, process 4242) — "
+            "wait for them")
+    verdict, words = refusals_item(base, "2026-10-09-130004-review", [("council gate tests", LOCK, True)])
+    check("refusals: a lock refusal (exit 2) is a refusal like any other: with no later gate call it is named",
+          verdict == "warn" and "gate: checks are already running" in words, [verdict, words])
+    verdict, words = refusals_item(base, "2026-10-09-130005-review", [
+        ("council gate tests", LOCK, True), ("council gate tests", "gate tests: pass (exit 0, 3s)", False)])
+    check("refusals: a lock refusal is cleared by a later gate call",
+          verdict == "pass" and words == "1 refusal(s), each followed by another try", [verdict, words])
+    verdict, words = refusals_item(base, "2026-10-09-130006-review", [
+        ("council seat hunt done tokens=58k; council status", ROUNDED + "\nProject · Review · Working", False),
+        ("council gate tests 2>&1 | sed -n 1,5p", "council: no such gate: tests", False)])
+    check("refusals: a council: line in a chained or piped call whose exit was another command's is named as hidden, "
+          "by D21's reason, not judged by its words",
+          verdict == "warn" and words.startswith("2 call(s) printed a council: line") and "exit was hidden" in words
+          and "D21" in words and "refusal(s)" not in words, [verdict, words])
+
 sys.path.insert(0, str(ROOT / "src"))
 from council.commands import audit                                   # noqa: E402
-helper = "\n".join(f.read_text(encoding="utf-8") for f in            # the helper is bin/council and src/council
-                   [ROOT / "bin" / "council", *sorted(p for p in (ROOT / "src" / "council").rglob("*.py")
-                                                      if p.name != "audit.py")])   # the audit itself is no helper
-stale = [lead for lead in audit.NOTE_LEADS if lead not in helper]
-check("every advisory line the audit lets pass is still one the helper prints", not stale, stale)
-from council.records import memory as memory_records                 # noqa: E402
-with tempfile.TemporaryDirectory(prefix="council-audit-note-") as folder:   # the note as the helper says it
-    (Path(folder) / "council.config.md").write_text("## Memory\n- memory budget: 40 KB\n", encoding="utf-8")
-    (Path(folder) / "conventions.md").write_text("x" * 50000, encoding="utf-8")
-    size_note = "council: " + memory_records.size_note(Path(folder).as_posix())
-check("the memory size note is an advisory line at any memory budget, not a refusal",
-      "over the ~40 KB" in size_note and audit.NOTES.match(size_note) is not None, size_note)
-from council.records import closing as closing_records               # noqa: E402
-unmapped = "council: " + next(text for code, _, text in closing_records.CHECKS if code == "map-touched").format(
-    value="src/", name="run")
-check("the close's map-touched warning is an advisory line, not a refusal (a build that changed code always says it)",
-      audit.NOTES.match(unmapped) is not None, unmapped)
 
 # How the helper was called, in the forms a real night used: 29 of 124 piped calls were seen before.
 FORMS = [

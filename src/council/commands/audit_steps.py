@@ -29,6 +29,15 @@ def block_text(content: Any) -> str:
     return ""
 
 
+def exit_of(result: dict[str, Any]) -> int:
+    """A Bash or PowerShell call's exit, from its tool_result as Claude Code writes it: a failed call's output starts
+    "Exit code <n>"; is_error with no such lead is counted a refusal's 2; a call that exited 0 has neither."""
+    lead = re.match(r"Exit code (\d+)\b", block_text(result.get("content")))
+    if lead:
+        return int(lead.group(1))
+    return 2 if result.get("is_error") else 0
+
+
 def relayed(part: list[Entry], position: int, output: str) -> bool:
     """council status's Status: line passed on to the user in the text after it, before the next prompt."""
     status = next((line.split(":", 1)[1].strip() for line in output.splitlines() if line.startswith("Status:")), "")
@@ -134,8 +143,7 @@ def close_call(run: Run, part: list[Entry], calls: list[ToolCall]) -> tuple[int,
     the same window is not this one's: this run's last close that printed its line is — a pause before it is not —
     else the last one that went through."""
     mine = r"\bclosed %s\b" % re.escape(run.name)
-    refused = set(b.get("tool_use_id") for _, kind, b in part if kind == "result"
-                  and (b.get("is_error") or block_text(b.get("content")).startswith("Exit code ")))
+    refused = set(b.get("tool_use_id") for _, kind, b in part if kind == "result" and exit_of(b))
     closes = [(n, k, output) for n, t, block, found,
               output in calls if block.get("id") not in refused or re.search(mine, output)
               for k, i in enumerate(found) if i["sub"] == "run close"]
