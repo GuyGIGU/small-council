@@ -1,3 +1,5 @@
+> History: written before D37 (a model per role, `- models:`; a verifier may take fable or opus) and before `council history` was removed on 2026-11-15. The plan check today: `references/run/models.md`.
+
 # Model routing
 
 Optional per-seat model requests are recorded in the run plan and are disabled by default in the
