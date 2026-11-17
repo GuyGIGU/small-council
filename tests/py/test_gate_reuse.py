@@ -1,5 +1,6 @@
 """#68: a configured gate's verdict names the tree it ran on and its seat (git.files_tree), and `gate --all` takes
-a green on the same tree (verdicts.green). These pin the reader and the tree id."""
+a green on the same tree (verdicts.green). #47: or on another tree with nothing changed under its Covers paths
+(git.unchanged_under, gate_reuse). These pin the reader, the tree id and the rule."""
 from __future__ import annotations
 
 import shutil
@@ -11,7 +12,8 @@ from pathlib import Path
 import support
 
 from council import git
-from council.records import verdicts
+from council.commands import gate_reuse
+from council.records import gate_table, verdicts
 
 GREEN = ('{"gate": "tests", "command": "pytest -q", "exit": 0, "seconds": 3, "when": "2026-11-14 10:00:00", '
          '"limit": 120, "tree": "%s", "seat": "builder-1"}\n' % ("a" * 40))
@@ -54,6 +56,12 @@ class GreenTest(support.Scratch):
 
     def test_no_file_is_no_green(self) -> None:
         self.assertIsNone(verdicts.green(str(self.tmp / "gates" / "none.json"), "pytest -q"))
+
+
+class SpanTest(unittest.TestCase):
+    def test_the_time_saved_in_words(self) -> None:
+        self.assertEqual([gate_reuse.span(s) for s in (0, 45, 60, 1170, 3600, 3900)],
+                         ["0s", "45s", "1m 00s", "19m 30s", "1h 00m", "1h 05m"])
 
 
 @unittest.skipUnless(shutil.which("git"), "git is not on PATH")
@@ -135,6 +143,48 @@ class FilesTreeTest(support.Scratch):
         status = self.git("status", "--porcelain")
         git.files_tree(self.tmp)
         self.assertEqual(self.git("status", "--porcelain"), status)
+
+    def test_unchanged_under_reads_only_the_paths_given(self) -> None:
+        self.write("app/ui/view.kt", "v\n")
+        self.write("app/core/model.kt", "m\n")
+        old = git.files_tree(self.tmp)
+        self.write("app/core/model.kt", "m, edited\n")
+        new = git.files_tree(self.tmp)
+        self.assertTrue(git.unchanged_under(self.tmp, old, new, ("app/ui/", "tests/")))
+        self.assertFalse(git.unchanged_under(self.tmp, old, new, ("app/",)))
+        self.assertFalse(git.unchanged_under(self.tmp, old, new, ("*.kt",)), "a bare * crosses folders, as in git")
+
+    def test_a_file_moved_out_from_under_the_paths_is_a_change(self) -> None:
+        self.write("app/ui/view.kt", "v\n")
+        old = git.files_tree(self.tmp)
+        (self.tmp / "app" / "ui" / "view.kt").rename(self.tmp / "app" / "view.kt")
+        self.assertFalse(git.unchanged_under(self.tmp, old, git.files_tree(self.tmp), ("app/ui/",)))
+
+    def test_a_fault_is_never_unchanged(self) -> None:
+        now = git.files_tree(self.tmp)
+        for old, specs in ((("0" * 40), ("a.txt",)), ("", ("a.txt",)), (now, ())):
+            with self.subTest(old=old, specs=specs):
+                self.assertFalse(git.unchanged_under(self.tmp, old, now, specs))
+        self.assertTrue(git.unchanged_under(self.tmp, now, now, ("a.txt",)))
+
+    def test_a_green_is_taken_on_this_tree_or_under_unchanged_paths_only(self) -> None:
+        self.write("app/ui/view.kt", "v\n")
+        old = git.files_tree(self.tmp)
+        run = self.tmp / ".council" / "runs" / "r"      # the council home is never part of the tree
+        line = GREEN.replace("a" * 40, old).replace('"command": "pytest -q"', '"command": "true"')
+        self.write(".council/runs/r/gates/ui.json", line)
+        row = gate_table.Gate("ui", "true", "verify", "yes", 9, "ok", "none", "-", 9, True, "v", "yes", "ok",
+                              ("app/ui/",))
+        same = gate_reuse.taken(run, row, str(self.tmp))
+        self.assertEqual((same.same, same.seconds) if same else None, (True, 3))
+        self.write("a.txt", "edited\n")
+        other = gate_reuse.taken(run, row, str(self.tmp))
+        self.assertEqual(other.same if other else None, False)
+        self.assertIn("not rerun — nothing under app/ui/ changed since its green run (builder-1, tree %s, "
+                      % old[:12], gate_reuse.not_rerun(row, other))
+        self.assertIsNone(gate_reuse.taken(run, row._replace(covers=()), str(self.tmp)), "no Covers: the whole tree")
+        self.write("app/ui/view.kt", "v, edited\n")
+        self.assertIsNone(gate_reuse.taken(run, row, str(self.tmp)), "a change under its paths")
 
     def test_outside_git_there_is_no_tree(self) -> None:
         plain = Path(tempfile.mkdtemp(prefix="council-plain-"))

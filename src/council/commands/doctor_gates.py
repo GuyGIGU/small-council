@@ -1,12 +1,14 @@
 """council doctor's gate findings: no Gates table, or one in the older list layout; and for each row, shifted
 columns, an empty command, the exit-code hazards a gate run names (records/gate_notes.py), Run at, Mandatory and
-Checked values that mean nothing, and a slow gate at grounding that every review waits for."""
+Checked values that mean nothing, a slow gate at grounding that every review waits for, and a Covers path that
+matches no file here."""
 from __future__ import annotations
 
 import glob
 import os
 import re
 
+from council import git
 from council.commands.doctor import Doctor
 from council.records import config, gate_notes, gate_table, paths
 from council.records import gates as gate_files
@@ -69,6 +71,7 @@ def row(doc: Doctor, gate: gate_table.Gate) -> None:
                  "slash")
     if shifted:
         return                                # a shifted row's other cells mean nothing
+    covers(doc, gate)
     if "?" in gate.stages:
         doc.warn("gate '%s' has a Run at value that names no stage: '%s'" % (g, gate.at),
                  "write grounding, verify, both or manual — anything else is left out of council gate --all --at …")
@@ -87,6 +90,22 @@ def row(doc: Doctor, gate: gate_table.Gate) -> None:
     if gate.ran == "?":
         doc.warn("gate '%s' has a Checked value that isn't ✓ or ✗: '%s'" % (g, gate.checked),
                  "write ✓ <date> once it has run cleanly here, or ✗ <date>: <why it can't>")
+
+
+def covers(doc: Doctor, gate: gate_table.Gate) -> None:
+    """Each Covers path that matches no file in the project (tracked, or untracked and not ignored): nothing under it
+    ever changes, so gate --all would keep taking the gate's last green (gate_reuse). Outside git, nothing to say."""
+    root = where.native(doc.root)
+    if not gate.covers or git.text(root, "rev-parse", "--git-dir") is None:
+        return
+    empty = [path for path in gate.covers
+             if not git.text(root, "ls-files", "--cached", "--others", "--exclude-standard", "--", path, timeout=60)]
+    if empty:
+        doc.warn("gate '%s' has a Covers path that matches no file here: %s — nothing under it ever changes, so "
+                 "council gate --all would keep taking the gate's last green instead of running it"
+                 % (gate.name, ", ".join(empty)),
+                 "correct the path in %s (git pathspecs from the code root, comma separated), or empty the cell: an "
+                 "empty Covers cell means the whole tree" % config.NAME)
 
 
 def last_seconds(home: str, name: str) -> int | None:

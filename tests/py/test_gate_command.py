@@ -45,6 +45,17 @@ class ConfigGatesTest(support.Scratch):
         home = self.config("- run `council gate --all`\n")
         self.assertFalse(gate_table.gates_listed(home))
 
+    def test_a_covers_column_reads_as_pathspecs_and_its_absence_as_the_whole_tree(self) -> None:
+        """#47: the optional Covers column, comma separated, backticks dropped; an empty, '-' or '—' cell or no
+        column at all is () — the whole tree, as before."""
+        home = self.config("| Gate | Command | Covers | Run at |\n|---|---|---|---|\n"
+                           "| ui | `true` | `app/ui/**`, tests/ui/ ,, | verify |\n| all | `true` |  | verify |\n"
+                           "| dash | `true` | — | verify |\n")
+        self.assertEqual([(g.name, g.covers, g.stages) for g in gate_table.gates(home)],
+                         [("ui", ("app/ui/**", "tests/ui/"), "v"), ("all", (), "v"), ("dash", (), "v")])
+        older = self.config(HEAD + "| t | `true` | verify | yes | ok | `true` | none | - |\n")
+        self.assertEqual(gate_table.gates(older)[0].covers, ())
+
     def test_one_table_read_as_the_helper_read_it(self) -> None:
         """Each row's cells as bin/council's config_gates gave them, and its notes as the helper's gate_shape,
         gate_backslash and gate_winswitch gave them."""

@@ -89,3 +89,14 @@ def files_tree(top: str | Path) -> str:
         for left in (copy, copy + ".lock"):
             if os.path.exists(left):
                 os.remove(left)
+
+
+def unchanged_under(top: str | Path, old: str, new: str, pathspecs: tuple[str, ...]) -> bool:
+    """Whether no file under these git pathspecs (relative to top) differs between two trees (files_tree's ids).
+    Renames read as a delete and an add, so a file moved out from under them counts as a change. False when git
+    can't read a tree (pruned, or never in this object store) or a pathspec: a fault is never 'unchanged'."""
+    if not old or not new or not pathspecs:
+        return False
+    changed = text(top, "diff", "--no-ext-diff", "--no-renames", "--name-only", old, new, "--", *pathspecs,
+                   timeout=120)
+    return changed == ""

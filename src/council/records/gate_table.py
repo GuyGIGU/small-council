@@ -1,7 +1,7 @@
 """The Gates table of council.config.md: the gates a project has, as bin/council's config_gates and gates_listed
 read it — its header found by the column names, so an older table (no Side effects or Needs) still reads. Read
 by `council gate`, `gate --all`, `council gates` and `council doctor`; bin/council keeps its config_gates awk for
-`run close` until that is ported (S8b)."""
+`run close` until that is ported (S8b). An optional Covers column names the paths a gate checks (#47)."""
 from __future__ import annotations
 
 import re
@@ -27,6 +27,7 @@ class Gate(NamedTuple):
     stages: str           # g, v, gv; m = by name only; - = an empty cell; ? added for a word naming no stage
     must: str             # yes, no, ?
     ran: str              # ok, not, ?
+    covers: tuple[str, ...] = ()    # the Covers cell's git pathspecs; () when empty or absent: the whole tree
 
 
 YES_MARKS, NO_MARKS = re.compile("✓|✔|✅|☑"), re.compile("✗|✘|❌|×")
@@ -115,10 +116,16 @@ def ran(cell: str) -> str:
     return "ok" if dated else "?"
 
 
+def paths(cell: str) -> tuple[str, ...]:
+    """A Covers cell as git pathspecs: comma separated, backticks dropped; empty, '-' or '—' is the whole tree."""
+    found = tuple(part.strip(" `") for part in cell.split(","))
+    return tuple(part for part in found if part not in ("", "-", "—", "–"))
+
+
 def _columns(row: list[str]) -> list[int]:
     """The header row's columns (1-based, as awk counts): gate, command, run at, mandatory, checked,
-    side effects and needs (0 when the table has none)."""
-    found = [2, 3, 4, 5, 6, 0, 0]
+    side effects, needs and covers (0 when the table has none)."""
+    found = [2, 3, 4, 5, 6, 0, 0, 0]
     for i in range(2, len(row)):
         head = re.sub(r"[^a-z]", "", _trim(row[i - 1]).lower())
         if head in HEADS:
@@ -127,6 +134,8 @@ def _columns(row: list[str]) -> list[int]:
             found[5] = i
         elif head.startswith("needs"):
             found[6] = i
+        elif head.startswith("covers"):
+            found[7] = i
     return found
 
 
@@ -138,7 +147,8 @@ def _row(row: list[str], columns: list[int], header_cells: int) -> Gate | None:
         return None
     at, mandatory, checked = cell(columns[2]), cell(columns[3]), cell(columns[4])
     return Gate(name, command or "-", at or "-", mandatory or "-", len(row), checked or "-", cell(columns[5]) or "-",
-                cell(columns[6]) or "-", header_cells, columns[5] > 0, stages(at), must(mandatory), ran(checked))
+                cell(columns[6]) or "-", header_cells, columns[5] > 0, stages(at), must(mandatory), ran(checked),
+                paths(cell(columns[7])))
 
 
 def gates(home: str | Path) -> list[Gate]:

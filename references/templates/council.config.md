@@ -83,6 +83,10 @@ or pattern-matching?"). Not a seat.
      Probe: the exact dry-run council-init ran — for a mandatory gate, also its run with the tool
      deliberately broken, which must fail (a gate that passes without its tool fakes a green).
      Needs: tools, env vars, credentials, hardware.
+     Covers (an optional column): the paths the gate checks, as git pathspecs from the code root,
+     comma separated — e.g. a row `| ui | ... | none | app/ui/, *.kt |` under a `| Covers |` header.
+     Empty means the whole tree. `council gate --all` doesn't rerun a gate when nothing under its paths
+     changed since its last green in the run; the receipt lists it as not rerun.
      Run at: grounding · verify · both · manual (by name only). Mandatory: yes · no.
      Checked: ✓ <date> · ✗ <date>: <why it can't run here> · ✗ not probed: <why> (init didn't dry-run it).
      The helper names any other word in these three cells rather than guessing what it means.
