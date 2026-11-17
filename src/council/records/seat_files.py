@@ -92,8 +92,8 @@ def out_path(run: Path, slug: str, out: str | None = None) -> str:
 def blocked(lines: list[str]) -> str:
     """The BLOCKED: line of an agent's stop, stripped, or '': BLOCKED in capitals at a line's start (after spaces, a
     quote mark or markdown, **BLOCKED:**) and no letter after it, on any line; or `blocked:` in any case as the first
-    line with text. The one reader, for a builder's reply (builder_stop) and a seat file's head (council collect,
-    lines 2 to 9); hooks/seat-gate.sh reads a worker's and a verifier's reply the same way: change both together."""
+    line with text. The one reader, for a builder's reply (builder_stop), a worker's and a verifier's (the seat gate,
+    through builder_stop blocked) and a seat file's head (council collect, lines 2 to 9)."""
     told = [line.strip() for line in lines if line.strip()]
     if told and BLOCKED_FIRST.match(told[0]):
         return told[0]

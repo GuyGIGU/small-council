@@ -66,7 +66,7 @@ def save(run: Path, task: int, report: Path, base: str) -> int:
         raise cli.Refusal("can't read the files in %s as a git tree — patch save needs the code root in git" % top)
     try:
         data = git.output(top, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", "-M",
-                          "--src-prefix=a/", "--dst-prefix=b/", start, tree, "--", ":(top)", ":(top,exclude).council")
+                          "--src-prefix=a/", "--dst-prefix=b/", start, tree, *git.between())
     except git.GitError as failure:
         raise cli.Refusal("git can't diff %s against the files now (%s) — name a base: council patch save %d "
                           "--base <rev>" % (start[:12], failure, task)) from None

@@ -1,5 +1,6 @@
 """council gates: the project's configured gates, one line each — its command, when it runs, whether it is
-mandatory, its side effects, and what its command's text gives away before it runs (gate_notes)."""
+mandatory, its side effects, the paths its Covers cell names, and what its command's text gives away before it runs
+(gate_notes)."""
 from __future__ import annotations
 
 from council.commands import cli
@@ -32,6 +33,8 @@ def line(row: gate_table.Gate) -> str:
     said = "%s · %s · run at: %s · mandatory: %s" % (row.name, row.command, row.at, row.mandatory)
     if row.side != "-":
         said += " · side effects: " + row.side
+    if row.covers:
+        said += " · covers: " + ", ".join(row.covers)
     notes = ([gate_notes.BACKSLASH] if gate_notes.backslash(row.command) else []) \
         + ([gate_notes.WINSWITCH] if gate_notes.winswitch(row.command) else []) + gate_notes.notes(row.command)
     return said + "".join(" · note: the command " + note for note in notes)

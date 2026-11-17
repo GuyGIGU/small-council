@@ -54,6 +54,14 @@ def text(repo: str | Path, *args: str, extra: dict[str, str] | None = None, time
 CACHES = (":(top,exclude,glob)**/__pycache__/**", ":(top,exclude,glob)**/*.py[co]")
 
 
+def between(*under: str) -> tuple[str, ...]:
+    """What follows a diff of two trees (files_tree's ids, a round's or a commit's): `--`, the pathspecs named (else
+    the whole tree), then the council home and CACHES left out on both sides. A round saved by a helper from before
+    CACHES (#121) kept the bytecode in its tree, so without it every cache read as deleted. Every comparison of two
+    trees ends with it."""
+    return ("--",) + (under or (":(top)",)) + (":(top,exclude).council",) + CACHES
+
+
 def files_tree(top: str | Path) -> str:
     """The tree id of a working tree's files as they are on disk: committed, staged, unstaged and untracked
     alike (what .gitignore ignores is left out, and so is the council home, .council/, committed or not,
@@ -97,6 +105,6 @@ def unchanged_under(top: str | Path, old: str, new: str, pathspecs: tuple[str, .
     can't read a tree (pruned, or never in this object store) or a pathspec: a fault is never 'unchanged'."""
     if not old or not new or not pathspecs:
         return False
-    changed = text(top, "diff", "--no-ext-diff", "--no-renames", "--name-only", old, new, "--", *pathspecs,
+    changed = text(top, "diff", "--no-ext-diff", "--no-renames", "--name-only", old, new, *between(*pathspecs),
                    timeout=120)
     return changed == ""

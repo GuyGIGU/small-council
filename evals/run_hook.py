@@ -762,6 +762,23 @@ def memory_file_and_seat_check(tmp):
     check("stale map: past five areas, the rest counted and map status named for them",
           "src/ 3, docs/ 2, web/ 1, tests/ 1, ops/ 1, and 2 more — council map status lists them: trust its "
           "structure, verify details there)." in line_with(out, "Orientation"), out)
+    mapped = os.path.join(full, ".council", "map.md")
+    with open(mapped, encoding="utf-8") as f:
+        before = f.read()
+    write(mapped, before.rstrip("\n") + "\n\n## Changes 2026-09-16\n- src/: the f files grew (at %s)\n"
+          "- docs/: a line written before a touch named its commit\n" % git(full, "rev-parse", "HEAD")[:12])
+    code, out = run_hook(full, "startup")
+    check("stale map: an area touched since its map-commit, at a commit with nothing changed under it since, is not "
+          "stale; a touch line with no commit (written before touches named one) changes nothing",
+          "files changed since its map-commit: docs/ 2, web/ 1, tests/ 1, ops/ 1, lib/ 1, and 1 more" in
+          line_with(out, "Orientation") and "src/" not in line_with(out, "Orientation"), out)
+    write(os.path.join(full, "src", "after.txt"), "x\n")
+    git(full, "add", "-A")
+    git(full, "commit", "-q", "-m", "src after the touch")
+    code, out = run_hook(full, "startup")
+    check("stale map: a touched area is stale again by the files changed under it after the touch alone",
+          "files changed since its map-commit: docs/ 2, web/ 1, tests/ 1, src/ 1, ops/ 1, and 2 more" in
+          line_with(out, "Orientation"), out)
     write(os.path.join(full, ".council", "map.md"), "# Codebase map\nmap-commit: %s\n" % git(full, "rev-parse", "HEAD"))
     write(os.path.join(full, ".council", "notes.md"), "x\n")
     git(full, "add", "-A")
@@ -921,6 +938,9 @@ def memory_file_and_seat_check(tmp):
                  "> BLOCKED: the brief is missing"]:
         code, err = run_gate(worker, form)
         check(f"seat check: a BLOCKED reply written as {form.split(' the')[0]!r} passes", code == 0, err)
+    code, err = run_gate(worker, "Read the dispatch.\n BLOCKED: the brief is missing")
+    check("seat check: a BLOCKED line after a non-breaking space passes — the hook reads BLOCKED as the helper's one "
+          "reader (seat_files.blocked) does, not with a copy of its own", code == 0, err)
     code, err = run_gate(worker, "I was not BLOCKED, I just stopped early")
     check("seat check: 'BLOCKED' mid-sentence is not a BLOCKED reply", code == 2, err)
     code, err = run_gate(worker, "Unblocked the queue; nothing else to report")
@@ -932,8 +952,8 @@ def memory_file_and_seat_check(tmp):
         code, err = run_gate(worker, reply)
         check(f"seat check: {label} is not a BLOCKED reply", code == 2 and "Wrote <output path>" in err, err)
     spaced = os.path.join(tmp, "plugin root", "John Smith")          # a user name with a space
-    for d in ("hooks", "bin"):
-        shutil.copytree(os.path.join(ROOT, d), os.path.join(spaced, d))
+    for d in ("hooks", "bin", "src"):          # the hook reads a BLOCKED reply through the helper's Python, in src/
+        shutil.copytree(os.path.join(ROOT, d), os.path.join(spaced, d), ignore=shutil.ignore_patterns("__pycache__"))
     with open(os.path.join(ROOT, "hooks", "hooks.json"), encoding="utf-8") as f:
         stop_cmds = [h["command"] for g in json.load(f)["hooks"]["SubagentStop"] for h in g["hooks"]]
     for cmd in stop_cmds:

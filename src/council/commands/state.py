@@ -26,7 +26,23 @@ def main(args: cli.Args, words: list[str]) -> int:
     cli.say("state: phase %s · %s · %s" % (changed.phase, changed.status, run.name))
     if changed.waiting and changed.waiting != changed.waited:
         nudges.waiting_nudge(run, bool(args.value("run")))
+    if "phase=work" in words and changed.phase == "work":
+        _unbriefed(run)
     return 0
+
+
+def _unbriefed(run: Path) -> None:
+    """On the step into Work, before any seat is dispatched: collect's warning for each of the user's decisions the
+    brief does not carry (collect.unbriefed), on stderr. A brief it can't read says nothing."""
+    from council.commands import collect          # only the step into Work reads the brief
+    from council.records import run_files
+    brief = run / run_files.BRIEF
+    try:
+        lines = collect.unbriefed(run, brief, collect.BEFORE) if brief.is_file() else []
+    except OSError:
+        lines = []
+    for line in lines:
+        cli.warn(line)
 
 
 def _header(run: Path) -> None:

@@ -198,8 +198,8 @@ def outside_round(run: Path, slug: str) -> list[str]:
     now = git.files_tree(top) if start else ""
     if not now:
         return []
-    code, data = git.run(top, "diff", "--name-only", "--no-renames", "--no-ext-diff", start, now, "--", ":(top)",
-                         ":(top,exclude).council", names=True)
+    code, data = git.run(top, "diff", "--name-only", "--no-renames", "--no-ext-diff", start, now, *git.between(),
+                         names=True)
     files = [name for name in data.decode("utf-8", "surrogateescape").split("\n") if name] if code == 0 else []
     if not files:
         return []

@@ -317,6 +317,7 @@ texts = {**{f"skills/{s}": skill[s] for s in SKILLS}, **{f"doctrine/{d}": doctri
          "references/run/war-room.md": warroom, "references/guardrails.md": guardrails,
          "references/run/helper-commands.md": helper_reference, "references/run/builder-loop.md": builder_loop}
 flags = {"--" + f for f in helper_cli.VALUED + helper_cli.GATE_VALUED + helper_cli.SWITCHES + ("glob", "each")}
+run_subs = {key.split(" ", 1)[1] for key in dispatch.COMMANDS if key.startswith("run ")}   # the helper's own table
 bad, bad_flags = [], []
 for label, t in texts.items():
     for m in re.finditer(r"`council ([a-z]+)([^`]*)`", t):
@@ -325,7 +326,7 @@ for label, t in texts.items():
         bad_flags += [f"{label}: council {c} {f}" for f in re.findall(r"--[a-z][a-z-]*", " ".join(own)) if f not in flags]
         if c not in known:
             bad.append(f"{label}: council {c}")
-        elif c == "run" and (not rest or rest[0] not in {"open", "close", "status", "resume", "plan", "events", "audit", "export", "turn-end"}):
+        elif c == "run" and (not rest or rest[0] not in run_subs):
             bad.append(f"{label}: council run {' '.join(rest[:1])}")
         elif c == "map" and (not rest or rest[0] not in {"status", "touch"}):
             bad.append(f"{label}: council map {' '.join(rest[:1])}")
@@ -585,8 +586,8 @@ check("hook: session-start always exits 0", hook.rstrip().endswith("exit 0"))
 gate_code = "\n".join(l for l in gate.split("\n") if not l.lstrip().startswith("#"))
 check("hook: seat-gate's code (not a comment) exits early on stop_hook_active — run_hook tests that it never blocks twice",
       re.search(r"stop_hook_active.*exit 0", gate_code) is not None)
-check("hook: seat-gate's code looks for BLOCKED at a line's start — run_hook tests the forms",
-      "'^[[:space:]>*_]*blocked" in gate_code)
+check("hook: seat-gate's code reads a BLOCKED reply through the helper's one reader (builder_stop blocked) — run_hook "
+      "tests the forms", '"$engine" builder_stop blocked' in gate_code and "BLOCKED(" not in gate_code)
 check("hook: PreToolUse runs agent-gate.sh for the Agent, Task and Workflow tools only",
       any(g.get("matcher") == "^(Agent|Task|Workflow)$" and any("hooks/agent-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in hooks_json.get("PreToolUse", [])))

@@ -121,9 +121,24 @@ def _wrote(lines: list[str], cwd: str) -> str:
     return ""
 
 
-def main(words: list[str]) -> int:
-    """Read the SubagentStop input on stdin; exit 1 with the reasons on stdout to send the builder back, else 0."""
+def blocked(raw: bytes) -> bool:
+    """Whether the stop's reply is a BLOCKED one (records.seat_files.blocked), for the seat gate's worker and verifier;
+    input it can't read is no BLOCKED reply."""
     try:
+        data = json.loads(raw)
+    except ValueError:
+        return False
+    reply = data.get("last_assistant_message") if isinstance(data, dict) else None
+    return isinstance(reply, str) and bool(seat_files.blocked(reply.split("\n")))
+
+
+def main(words: list[str]) -> int:
+    """Read the SubagentStop input on stdin; exit 1 with the reasons on stdout to send the builder back, else 0.
+    With the word `blocked` (the seat gate, for a worker's or a verifier's stop): exit 1 when the reply is not a
+    BLOCKED line, so the hook goes on to judge its file; 0 when it is, or on any fault."""
+    try:
+        if words[:1] == ["blocked"]:
+            return 0 if blocked(sys.stdin.buffer.read()) else 1
         why = reason(sys.stdin.buffer.read())
     except Exception:  # noqa: BLE001 — any fault of its own lets the builder stop (D20)
         return 0

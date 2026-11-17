@@ -62,8 +62,8 @@ case "$(json_str agent_type)" in
   *) exit 0 ;;
 esac
 sid="$(json_str session_id)"; . "${BASH_SOURCE[0]%[/\\\\]*}/session-mark.sh" 2>/dev/null && mark_session "$sid" seat-gate   # council doctor reads it
+[ -f "$engine" ] && py="$(pick_python)" || exit 0
 if [ "$kind" = builder ]; then        # judged in Python (builder_stop): exit 1 and its one line send it back once
-  [ -f "$engine" ] && py="$(pick_python)" || exit 0
   why="$(printf '%s' "$input" | "$py" "$engine" builder_stop 2>/dev/null)" || [ "$?" -ne 1 ] || [ -z "$why" ] || block "$why"
   exit 0
 fi
@@ -74,10 +74,8 @@ if [ -z "$msg" ]; then
   # is there but empty is an agent that stopped before answering — a turn limit: send it back once.
   printf '%s' "$input" | grep -q '"last_assistant_message"[[:space:]]*:[[:space:]]*""' || exit 0
 fi
-# BLOCKED at a line's start, after spaces, a quote mark or markdown (**BLOCKED:**): in capitals on any line,
-# or "Blocked:" in any case as the reply's first line — so a finding like "* Blocked users can …" is no reply.
-if printf '%s\n' "$msg" | grep -q -E '^[[:space:]>*_]*BLOCKED([^[:alpha:]]|$)'; then exit 0; fi
-if printf '%s\n' "$msg" | awk 'NF { print; exit }' | grep -q -i -E '^[[:space:]>*_]*blocked[*_]*[[:space:]]*:'; then exit 0; fi
+# A BLOCKED reply, as the helper's one reader (seat_files.blocked) reads it, passes; exit 1 is no BLOCKED reply.
+printf '%s' "$input" | "$py" "$engine" builder_stop blocked >/dev/null 2>&1; [ "$?" -eq 1 ] || exit 0
 
 finish="finish by writing your output file, then reply with exactly one line: Wrote <output path> — <N> items (<counts>). If you couldn't do the work, reply BLOCKED: <reason> instead."
 [ "$kind" = worker ] || finish="finish by writing your verdicts to the file your dispatch named (<run>/verify-<n>.md), then reply with exactly one line: Wrote <path> — <count of each verdict>. If you couldn't do the check, reply BLOCKED: <reason> instead."
@@ -197,7 +195,7 @@ else
     case "$l1" in '# Verification'*) ;; *) add "line 1 must be '# Verification — <run title>'" ;; esac
     if ! grep -q '^[[:space:]]*|' "$path"; then
       add "add the verdict table: | # | Item | Verdict | Evidence |"
-    elif [ -f "$engine" ] && py="$(pick_python)"; then
+    else
       # The claim index's own reading of the table (evidence table): what the index could not read,
       # the verifier fixes now — not the Chair, by hand, after it. 1 is "problems"; anything else passes.
       table="$("$py" "$engine" evidence table --file "$path" 2>/dev/null)"; rc=$?

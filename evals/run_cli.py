@@ -2859,6 +2859,14 @@ def collect_unbriefed_decisions(tmp):
     seats = "## Seats\n### w1 — tests (Beck)\n- ref: none\n- out: seats/w1.md\n- cap: 8\n"
     brief = os.path.join(run, "brief.md")
     write(brief, "# Brief\n" + seats)
+    for phase in ("prepare", "assign", "brief"):
+        council(repo, "state", "phase=" + phase)
+    code, out, err = council(repo, "state", "phase=work")
+    check("state phase=work: a brief that leaves out the user's decision is warned about on stderr before any seat "
+          "is dispatched, naming the words and the next step; the state line and the exit are as before",
+          code == 0 and out.startswith("state: phase work · in-progress") and "WARNING brief.md (written " in err
+          and '"Go ahead with the Squad, four seats"' in err and "quote it word for word in the brief before you "
+          "dispatch" in err and "WARNING" not in out, out + err)
     write(os.path.join(run, "seats", "w1.md"), "# Tests — tests (review)\nref: none\n## Index\n(none) — nothing\n")
     council(repo, "seat", "w1", "done", "agent=a1", "tokens=20000")
     code, out, err = council(repo, "collect")
@@ -4118,18 +4126,21 @@ def runs_map_touch(tmp):
     check("map touch: the line goes under a dated ## Changes section at the end, and the rest of the map stays byte "
           "for byte",
           code == 0 and section is not None and read(mapf) == original + section.group(0)[1:] +
-          "- src/: the reader moved to src/a.py\n" and out.startswith("Wrote ") and "map.md — 1 line(s) under ## "
+          "- src/: the reader moved to src/a.py (at %s)\n" % head[:12] and out.startswith("Wrote ") and "map.md — 1 line(s) under ## "
           "Changes " in out, out + err + read(mapf))
     check("map touch: map-commit stays while an area changed since it (docs/) has no line, and it says which",
           ("map-commit stays at %s: no line here yet for docs/, changed since it — give each a line too (%s), or "
            "refresh the map" % (built[:9], shape)) in out and "map-commit: %s (built)" % built in read(mapf), out)
+    code, out, _ = council(repo, "map", "status")
+    check("map status: an area touched since map-commit, with nothing changed under it after the touch, is not stale; "
+          "an area with no line is", code == 0 and "docs/" in out and "src/" not in out, out)
     code, out, err = council(os.path.join(repo, "src"), "map", "touch", "docs=the guide grew", "src=the reader too",
                              "README.md=a root file is an area")
     check("map touch: from a subfolder, docs is read as docs/; a touch covering every area changed since the stamp "
           "moves map-commit to HEAD, and joins today's section",
           code == 0 and read(mapf).count("## Changes") == 1 and read(mapf).endswith(
-              "- src/: the reader moved to src/a.py\n- docs/: the guide grew\n- src/: the reader too\n"
-              "- README.md: a root file is an area\n")
+              "- src/: the reader moved to src/a.py (at {0})\n- docs/: the guide grew (at {0})\n"
+              "- src/: the reader too (at {0})\n- README.md: a root file is an area (at {0})\n".format(head[:12]))
           and "map-commit: %s (built)" % head in read(mapf)
           and "map-commit now at %s (HEAD): every area changed since the stamp has a line" % head[:9] in out, out + err)
     code, out, _ = council(repo, "map", "status")
@@ -6348,7 +6359,8 @@ def gates_covers_paths(tmp):
     """#47: a gate whose Covers cell names its paths is not run again by gate --all when nothing under them changed
     since its green run on other files: one line with the reason and the time it saves, `not rerun` in the receipt,
     never a fresh pass. A change under its paths (a move out from under them too), --rerun, an empty cell or a green
-    tree git can't read means it runs; council doctor names a Covers path that matches no file."""
+    tree git can't read means it runs; council gates lists the paths; council doctor names a Covers path that matches
+    no file."""
     repo = new_repo(tmp, "covers")
     write(os.path.join(repo, "app", "ui", "view.kt"), "view\n")
     write(os.path.join(repo, "app", "core", "model.kt"), "model\n")
@@ -6411,6 +6423,11 @@ def gates_covers_paths(tmp):
     code, out, err = council(repo, "gate", "--all", "--at", "verify")
     check("gate --all: a green whose tree git can't read is never taken; the gate runs",
           ui() == 6 and "gate ui: pass (exit 0" in out and "not rerun" not in out, out + err)
+    code, out, err = council(repo, "gates")
+    check("gates: the listing names a gate's Covers paths, and says nothing of them for a gate with an empty cell",
+          code == 0 and " · covers: app/ui/**, tests/ui/" in line_of(out, "ui · ")
+          and "covers:" not in line_of(out, "unit · ") and "covers: app/ui/, app/nothere/**" in line_of(out, "ghost · "),
+          out + err)
     code, out, err = council(repo, "doctor")
     check("doctor: a Covers path that matches no file is a warning naming the gate and the path",
           "WARN  gate 'ghost' has a Covers path that matches no file here: app/nothere/** —" in out
@@ -6591,6 +6608,29 @@ def gates_patch_no_bytecode(tmp):
     code, out, err = council(repo, "seat", "task-2", "queued")
     check("seat task-2 queued: bytecode a test run left after the last round is not a file changed outside a round",
           code == 0 and "outside any round" not in err and ".pyc" not in err, out + err)
+    # A round saved by a helper from before git.CACHES kept the bytecode in its tree: what is diffed against it leaves
+    # the caches out on both sides, so none of them reads as deleted.
+    old = os.path.join(tmp, "patch-bytecode-old.index")
+    kept = dict(GIT_ENV, GIT_INDEX_FILE=old)
+    for words in (("add", "-A"), ("rm", "-r", "-q", "--cached", "--ignore-unmatch", ".council")):
+        subprocess.run([GIT, *words], cwd=repo, env=kept, check=True, capture_output=True)
+    older = subprocess.run([GIT, "write-tree"], cwd=repo, env=kept, check=True, capture_output=True, text=True)
+    saved = os.path.join(run, "patches", "T1-1.json")
+    write(saved, read(saved).replace(record.get("tree", "?"), older.stdout.strip()))
+    council(repo, "seat", "task-2", "skipped")
+    code, out, err = council(repo, "seat", "task-2", "queued")
+    check("seat task-2 queued: against a round whose tree still holds bytecode, the caches are no file changed outside "
+          "a round", code == 0 and "outside any round" not in err and ".pyc" not in err, out + err)
+    write(os.path.join(repo, "tally", "parse.py"), "def parse(text):\n    return text.split(',')\n")
+    write(os.path.join(run, "report-2.md"), PATCH_HEAD.format(cause="none", removed="none", extra="")
+          .replace("src/pay.py", "tally/parse.py"))
+    code, out, err = council(repo, "patch", "save", "2")
+    second = json.loads(read(os.path.join(run, "patches", "T2-1.json")) or "{}")
+    shown = council(repo, "patch", "show", "2")
+    check("patch save: a round diffed from an older round's tree that holds bytecode lists no cache as deleted, in its "
+          "files, its patch or patch show", code == 0 and second.get("files") == ["tally/parse.py"]
+          and ".pyc" not in read(os.path.join(run, "patches", "T2-1.patch")) and ".pyc" not in shown[1] + shown[2],
+          out + err + json.dumps(second) + shown[1])
 
 
 @part("gates")
@@ -8648,6 +8688,36 @@ def runs_task_decisions_unlock_their_task(tmp):
     council(repo, "state", "decision=check task 1 once more, then stop", "task=1")
     code, out, err = council(repo, "seat", "verify-1c", "running", "agent=v3")
     check("seat: a decision for task 1 starts its third check", code == 0, out + err)
+
+
+@part("lifecycle")
+def runs_builders_together(tmp):
+    """Two builders sent for one queued build seat at the same instant: one goes out and takes the seat, the other is
+    refused, and only the one that went out is counted in agent-starts.tsv (the refused one was counted too, so the
+    agent count ran one high)."""
+    builder = "type=small-council:council-builder"
+    bt = new_repo(tmp, "builders-together")
+    write(os.path.join(bt, "a.txt"), "a\n")
+    write(os.path.join(bt, ".council", "council.config.md"), "# Council config\n- checking: per task\n")
+    git(bt, "add", "-A")
+    git(bt, "commit", "-q", "-m", "init")
+    _, out, _ = council(bt, "run", "open", "council-implement", env=session("sW"))
+    brun = out.strip().splitlines()[-1]
+    write_plan(brun, selected=("task-1",))
+    call = ("cap", "check", "--session", "sW", "Agent", builder, "seat=task-1", "file=report-1",
+            "run=" + os.path.basename(brun))
+    bad, went = [], 0
+    for rnd in range(3):
+        council(bt, "seat", "task-1", "queued")
+        workers = council_together(bt, call, call)
+        went += sum(1 for code, _ in workers if code == 0)
+        starts = read(os.path.join(brun, "agent-starts.tsv")).count("\tAgent\t")
+        if sorted(code for code, _ in workers) != [0, 2] or starts != went:
+            bad.append("round %d: %d start(s) counted for %d builder(s) let out; %s"
+                       % (rnd, starts, went, workers_detail(workers)))
+        council(bt, "seat", "task-1", "failed", "note=dispatch failed")
+    check("cap check: two builders for one seat at once — one goes out, the other is refused, and only the one that "
+          "went out is counted", not bad, "\n".join(bad), full=True)
 
 
 @part("lifecycle")

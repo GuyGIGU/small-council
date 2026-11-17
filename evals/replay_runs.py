@@ -53,23 +53,25 @@ class Chair:
         self._line("assistant", [{"type": "tool_use", "id": ident, "name": name, "input": given}])
         self._line("user", [{"type": "tool_result", "tool_use_id": ident, "content": output, "is_error": error}])
 
-    def helper(self, *words: str) -> tuple[int, str, str]:
-        """A council call outside the Chair's transcript (the agent gate's, a builder's)."""
+    def helper(self, *words: str, expect: tuple[int, ...] = (0, 1)) -> tuple[int, str, str]:
+        """A council call outside the Chair's transcript (the agent gate's, a builder's); an exit the step doesn't
+        expect stops the script (a refusal is exit 2: a step that means one says so)."""
         proc = subprocess.run([BASH, str(ROOT / "bin" / "council"), *words], cwd=str(self.repo), env=self.env,
                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
-        if proc.returncode not in (0, 1):
+        if proc.returncode not in expect:
             raise RuntimeError("council %s: exit %d\n%s%s" % (" ".join(words), proc.returncode, proc.stdout,
                                                             proc.stderr))
         return proc.returncode, proc.stdout, proc.stderr
 
-    def council(self, *words: str) -> str:
-        """A council call the Chair makes, kept in the transcript with what it printed; its stdout."""
+    def council(self, *words: str, expect: tuple[int, ...] = (0, 1)) -> str:
+        """A council call the Chair makes, kept in the transcript with what it printed; its stdout. expect: the exits
+        the step means (helper)."""
         self.n += 1
         ident = "toolu_%03d" % self.n
         self._line("assistant", [{"type": "tool_use", "id": ident, "name": "Bash",
                                   "input": {"command": " ".join(["council"] + [typed(w) for w in words]),
                                             "description": "council " + words[0]}}])
-        code, out, err = self.helper(*words)
+        code, out, err = self.helper(*words, expect=expect)
         lead = "Exit code %d\n" % code if code else ""          # as Claude Code writes a failed call's result
         self._line("user", [{"type": "tool_result", "tool_use_id": ident, "content": lead + (out + err).strip(),
                              "is_error": code != 0}])
@@ -178,6 +180,7 @@ def review(chair: Chair) -> Path:
           "1 · P1 · Principle 1 · app.py:2 · Expiry skipped · state: OBSERVED · from: hunt#1\n")
     chair.council("state", "phase=challenge")
     chair.dispatch(VERIFIER, "verify-1", "v9f8e7d6c5b4a3f2e", run)
+    chair.council("seat", "verify-1", "done", "tokens=39504", expect=(2,))    # refused: its file isn't there yet
     write(run / "verify-1.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | Expiry skipped | CONFIRMED | app.py:2 never reads the expiry |\n")
     chair.council("seat", "verify-1", "done", "tokens=39504")
