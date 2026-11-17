@@ -37,14 +37,14 @@ def main(args: cli.Args, words: list[str]) -> int:
     old = (resolve.field(run, "status"), resolve.field(run, "closed"))
     retake = state_write.closed(run) and old[0] == "complete" and status == "abandoned" and closing.stopped_short(run)
     if state_write.closed(run) and not retake:
-        added = _finished(run, lost) if old[0] == status == "complete" else []
+        added = _finished(run, lost) if old[0] == status == "complete" else             _forgotten(run) if old[0] == status == "abandoned" else []
         locks.release(lock)
         if old[0] != status:
             closed.refuse(run, "it stays %s; for more work, open a new run: council run open %s"
                           % (old[0], resolve.field(run, "mode") or "<mode>"))
             raise cli.Refusal("run %s changed while it was being closed — run the close again" % run.name)
         cli.say("%s is already closed — %s at %s; %s" % (run.name, old[0], old[1], "the close stopped before its own "
-                "records, now added: " + ", ".join(added) if added else "nothing changed"))
+                "records, now done: " + ", ".join(added) if added else "nothing changed"))
         if old[0] == "complete" and not audit_file.present(run):
             close_report.audit(run)
         close_report.claims_note(run)
@@ -109,6 +109,17 @@ def _finished(run: Path, lost: str) -> list:
                                       "recorded — council run events check --run " + run.name, once=True):
         added.append("the close event")
     return added
+
+
+def _forgotten(run: Path) -> list:
+    """An abandoned close's own record, when the close that took a complete run back stopped before it (ledger.forget
+    refused, saying to run this again): the run's ledger rows taken out. What it did, as words."""
+    def listed() -> bool:
+        return any(len(row) > 1 and row[1] == run.name for row in ledger.raw_rows(where.council_home()) or [])
+    if not listed():
+        return []
+    ledger.forget(run)
+    return [] if listed() else ["its ledger rows taken out"]
 
 
 def _complete(run: Path, home: str) -> str:

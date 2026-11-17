@@ -3124,7 +3124,7 @@ def runs_close_tail_and_closed_hints(tmp):
     write(stream, "".join(line for line in read(stream).splitlines(True) if "\trun.closed\t" not in line))
     code, out, err = council(tail, "run", "close", "--run", os.path.basename(run))
     check("run close: on a closed run whose close stopped after its state write, the ledger rows and the close event "
-          "are added, and it says so", code == 0 and "now added: 1 ledger row(s), the close event" in out
+          "are added, and it says so", code == 0 and "now done: 1 ledger row(s), the close event" in out
           and os.path.basename(run) in read(ledger) and [e for e in events(run) if e[3] == "run.closed"], out + err)
     code, out, err = council(tail, "run", "close", "--run", os.path.basename(run))
     check("run close: once all is on record, a close again changes nothing",
@@ -3133,6 +3133,12 @@ def runs_close_tail_and_closed_hints(tmp):
     code, out, err = council(tail, "run", "close", "--status", "paused", "--run", os.path.basename(run))
     check("run close --status paused on a closed run: refused, naming a new run as the next step",
           code == 2 and "council run open council-review" in err, out + err)
+    state_file = os.path.join(run, "session-state.md")      # taken back as abandoned, the ledger's rows left in:
+    write(state_file, read(state_file).replace("status: complete", "status: abandoned", 1))   # forget was refused
+    code, out, err = council(tail, "run", "close", "--status", "abandoned", "--run", os.path.basename(run))
+    check("run close --status abandoned on an abandoned run whose ledger rows are still there (a forget refused, "
+          "whose refusal says to run this again): the rows are taken out, and it says so",
+          code == 0 and "its ledger rows taken out" in out and os.path.basename(run) not in read(ledger), out + err)
     code, out, err = council(tail, "status", "--line")
     check("status: with no open run, the refusal names the newest closed run's --run",
           code == 2 and "--run " + os.path.basename(run) in err, out + err)
