@@ -5390,12 +5390,37 @@ def runs_stage_order_and_close(tmp):
     chair_rows = [e for e in events(cur) if e[3] == "run.chair_usage"]
     check("run close: both sessions' growth is added up, said, and recorded before the close event",
           code == 0 and "the Chair's own work: 33k tokens over 4 model calls (its context's growth" in out
-          and len(chair_rows) == 2 and chair_rows[-1][5] == "33000" and chair_rows[-1][6] == "calls=4;basis=complete"
+          and len(chair_rows) == 2 and chair_rows[-1][5] == "33000" and chair_rows[-1][6].startswith("calls=4;basis=complete;")
           and len(kinds) - 1 - kinds[::-1].index("run.chair_usage") < kinds.index("run.closed"), out + err + repr(chair_rows))
+
+    # Beside the Chair's tokens, the method its mode loads (D13): context-core's skill, the mode's own and the
+    # doctrine of each stage the run must enter, counted here from the files themselves. A review whose plan
+    # selects no worker seat enters six stages; one with a worker seat enters all ten.
+    def method_of(mode, ranks):
+        names = [os.path.join("skills", "context-core", "SKILL.md"), os.path.join("skills", mode, "SKILL.md")]
+        names += [os.path.join("references", "doctrine", f) for f in os.listdir(os.path.join(ROOT, "references", "doctrine"))
+                  if int(f[:2]) in ranks]
+        return sum(len(Path(ROOT, n).read_bytes().replace(b"\r\n", b"\n")) for n in names)
+    short = method_of("council-review", {1, 2, 7, 8, 9, 10})
+    check("run close: the method load is recorded beside the Chair's tokens (method_bytes=) and said on the same line",
+          chair_rows[-1][6] == "calls=4;basis=complete;method_bytes=%d" % short
+          and "· method load: {:,} bytes (context-core, council-review and the doctrine of the 6 stages it enters)".format(short)
+          in out, out + err + repr(chair_rows))
     code, out, err = council(cu, "status", "--run", cname)
-    check("status: the closing card shows the Chair's own work, the latest reading",
-          code == 0 and "The Chair's own work: 33k tokens over 4 model calls (its context's growth, from the session transcript)" in out,
-          out + err)
+    check("status: the closing card shows the Chair's own work, the latest reading, and the method load beside it",
+          code == 0 and "The Chair's own work: 33k tokens over 4 model calls (its context's growth, from the session transcript)"
+          " · method load: {:,} bytes".format(short) in out, out + err)
+    sid_w = "sess-chair-usage-w"
+    wu, wur = fresh("chair-method", "council-review", selected=("chair", "hunt"), env=session(sid_w))
+    write(os.path.join(ccfg, "projects", "eval-project", sid_w + ".jsonl"),
+          call(sid_w, datetime.now(timezone.utc), "w1", 5000, 0, 0))
+    code, out, err = council(wu, "run", "close", "--status", "abandoned", env={"CLAUDE_CONFIG_DIR": ccfg})
+    full = method_of("council-review", set(range(1, 11)))
+    rows = [e[6] for e in events(wur) if e[3] == "run.chair_usage"]
+    check("run close: a review whose plan selects a worker seat records the method of all ten stages, the D13 figure",
+          code == 0 and rows == ["calls=1;basis=complete;method_bytes=%d" % full] and full > short
+          and "· method load: {:,} bytes (context-core, council-review and the doctrine of the 10 stages it enters)".format(full)
+          in out, out + err + repr(rows))
     os.remove(os.path.join(ccfg, "projects", "eval-project", sid_a + ".jsonl"))
     p = subprocess.run([sys.executable, os.path.join(ROOT, "src", "council", "commands", "script.py"), "chair_usage", "--run",
                         cur], capture_output=True,
