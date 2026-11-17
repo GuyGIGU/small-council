@@ -116,7 +116,7 @@ Index line: `<n> · <must|should|could> · <principle> · <path or area> · <tit
 - Risk if skipped: 1 sentence, concrete
 - Touches: <the areas or files it would change, from the map>
 - Assumes: <the design choices it takes as given>
-- Evidence state: OBSERVED | REPRODUCED | INFERRED | ASSUMED | UNVERIFIED (see `references/run/evidence-model.md`)
+- Evidence state: OBSERVED | REPRODUCED | INFERRED | ASSUMED | UNVERIFIED (see `${CLAUDE_PLUGIN_ROOT}/references/run/evidence-model.md`)
 - Depends on: <other recommendations it must follow, or —>
 ```
 
