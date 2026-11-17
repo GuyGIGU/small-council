@@ -20,8 +20,7 @@ Your judgment, written down.
    an inference to observation because several seats agreed. Post-game keeps its request-quote
    format instead. Everything after this stage reads the file, not your memory of it.
 7. **For review, plan and research, build the provisional claim index** with
-   `council evidence build` when Python 3.8+ is available. Missing verifier links at this stage
-   are expected, never a pass.
+   `council evidence build`. Missing verifier links at this stage are expected, never a pass.
 
 ## synthesis.md
 
@@ -41,7 +40,8 @@ C1 · P2 · <principle> · <path:line> · <title> · why: <reason> · state: INF
 ```
 
 Kept and cut lines use the index-line format, so `council check` can read them: one line per item,
-no tables and no headings. With nothing kept, write `(none) — <why>` under `## Kept`.
+no tables and no headings. With nothing kept, write `(none) — <why>` under `## Kept`. `from:` names
+seat items (`hunt#3`); a Solo run writes `from: chair`, and a grounding-gate finding `from: gate:<name>`.
 
 ## Done when
 

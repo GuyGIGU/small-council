@@ -22,7 +22,7 @@ checks that saved snapshots still match it.
 | Failed execution | Next step |
 |---|---|
 | First | Original builder investigates the output and the governing reference. |
-| Second | One independent, read-only diagnosis worker (The diagnosis worker, below). If this task already used its one diagnosis worker for verifier trouble, stop instead. |
+| Second | The builder investigates again, from the saved output and the baseline; it starts no agent. In a Solo build the Chair may dispatch one diagnosis worker (below) first, unless the task already used it for verifier trouble. |
 | Third | Stop product-code mutation and report the blocker and remaining uncertainty. No fourth automatic attempt. |
 
 Once a trail records its third failure, `council gate <that gate>` refuses to run it and says what to
@@ -55,8 +55,7 @@ artifacts, not a substitute for the tracked implementation log. Add the classifi
 attempt count, actual cause found, and any human ruling to the log. Include each failed gate
 attempt's category, suggested lens, actual cause (or uncertainty), snapshot paths and next action.
 `council repair check T<n>` checks saved snapshots when used. At converge, a broken saved repair
-trail is reported, never folded into a green receipt. Without Python, audit the log's attempts and
-saved gate outputs by hand.
+trail is reported, never folded into a green receipt.
 
 Never infer that a baseline-red failure was introduced by the task; the record says `baseline: red`,
 `empty`, or `unknown`, not “regression.” An exit-zero baseline that checked zero files is `empty`, not
@@ -121,7 +120,7 @@ environment/configuration/build the operability lens; type/runtime the backend l
 its own lens. `UNKNOWN` falls back to the task's governing reference. These are starting points,
 not automatic seat selection—for example, a frontend type error may belong with the frontend seat.
 An environment or credential failure does not justify changing product code. A side-effectful gate:
-`builder-loop.md`, step 5.
+`builder-rules.md`, 9.
 
 Verifier `INCOMPLETE` and `REGRESSION` verdicts keep the build loop's own protocol (council-implement,
 step 7). Do not
@@ -130,14 +129,11 @@ belong in the implementation log and final receipt.
 
 ## The diagnosis worker
 
-A task gets one, for a second gate failure or a second failed verification, whichever comes first. It
-is read-only, and its dispatch message is its whole brief: the task and its Done-when, the two failed
+A task gets one diagnosis worker, after a second failed verification (or, in a Solo build, a second
+gate failure), whichever comes first. It is read-only, and its dispatch message is its whole brief: the task and its Done-when, the two failed
 attempts (both saved gate outputs, or both verdict files), the baseline, the diff's path, and
 `ref: none`. It writes `<run>/seats/diagnose-<n>.md`, an index of root-cause candidates
 (`<n> · likely|possible · root cause · <path:line> · <title>`). Plan it as role `diagnosis`
 (`council run plan check`), then `council seat diagnose-<n> …`. The Chair chooses the fix.
 A third check is refused (by `council seat` and the agent gate) until a `diagnose-…` seat is on
 record after the second verdict, or the user's go is (`council state decision="…"`).
-
-Python 3.8+ is optional. Without it, keep the same three-attempt bound and save the gate paths and
-diagnosis in the implementation log manually. Existing runs need no migration.

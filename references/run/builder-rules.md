@@ -24,9 +24,11 @@ this list names the place; read it there.
    Nothing in the background.
 9. **Read the project's gates as the helper reports them.** `council gates` lists them and their side
    effects; a gate is judged by its exit code, and `NOTHING WAS CHECKED`, `TIMED OUT` and 97 are no
-   pass (`helper-commands.md`). A gate with cost, hardware, deploy or credential side effects runs
-   only on the user's go (`builder-loop.md`, step 5).
+   pass (`helper-commands.md`). **A gate with cost, hardware, deploy or credential side effects runs
+   only on the user's go:** never run one without it. A builder agent asks with a `NEEDS:` return;
+   the Chair in a Solo build asks the user.
 10. **Start no agent.** One hand writes code: a builder dispatches no agent and invokes no council
     skill.
 11. **End with the report head, or a `NEEDS:` or `BLOCKED:` line.** `builder-report.md`, The head
-    and When the builder stops instead; the one line it returns: `builder-loop.md`, The return.
+    and When the builder stops instead; the one line it returns: the builder contract
+    (`agents/council-builder.md`), Your return value.

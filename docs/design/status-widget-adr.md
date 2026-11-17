@@ -1,3 +1,5 @@
+> Partly history: `council tui` and the scripts named here were removed on 2026-11-15 (D40). The status card it designs is live; `council status --widget` draws it.
+
 # ADR: a run's status as a chat widget, from records that can be trusted
 
 ## Problem

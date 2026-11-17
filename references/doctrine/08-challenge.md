@@ -63,8 +63,8 @@ Catch what's wrong before the user sees it.
    Fix missing provenance, evidence-state declarations, proof artifacts, verifier rows or conflicting
    rows.
    `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
-   If optional Python is unavailable, check the same links by hand. This applies to synthesis
-   claims in review, plan and research; build and post-game keep their own proof contracts.
+   This step is for synthesis claims in review, plan and research; build and post-game keep their
+   own proof contracts.
 6. **Verification gates**, for modes that changed code: `council gate --all --at verify`. A gate
    already green on this very tree is not run again; its line names who ran it (`--rerun` runs it).
 

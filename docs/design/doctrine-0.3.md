@@ -1,3 +1,5 @@
+> History: 0.3, 0.4 and 0.5 all shipped; the stage doctrine lives in `references/doctrine/`.
+
 # Small Council — stage doctrine and upgrade plan
 
 *Design proposal · 2026-09-15 · targets v0.3–0.5 · status: accepted — 0.3 and 0.4 shipped, 0.5 next*

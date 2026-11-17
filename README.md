@@ -32,15 +32,37 @@ behind each one.
 | **Your project remembers** | Decisions, accepted patterns and observed failures, each with its evidence. A codebase map. A track record per expert. | A conventions file. |
 | **Any stack** | Setup detects your stack and recasts the roster: a Godot game, a Python trading engine and a Swift app each get the experts they need. | One stack, hardcoded. |
 
-## Install
+## Quick start
 
-```
-/plugin marketplace add GuyGIGU/small-council
-/plugin install small-council@small-council
-```
+**Needs:** Claude Code, git, bash (Git Bash on Windows) and **Python 3.8 or newer** on PATH. Every
+`council` command runs in Python; without it each one refuses and says how to get it. On Windows,
+check that `python --version` works in Git Bash (the Microsoft Store stub doesn't count).
 
-Then run **`/council-init`** once in each project. It picks your experts, finds the checks you have,
-offers the ones you lack, maps the code and writes `.council/`. Nothing is installed without your yes.
+1. **Install**, in Claude Code:
+   ```
+   /plugin marketplace add GuyGIGU/small-council
+   /plugin install small-council@small-council
+   ```
+2. **Set up, once per project:** `/council-init`. It detects your stack, picks the experts, dry-runs
+   your test, lint and build commands, maps the code, and shows you all of it before writing
+   `.council/`. It asks three things: which missing checks to fit (or "not now"), whether the council
+   is shared with a team or just you, and the permission rules. Say yes to the rules, or every
+   bookkeeping step asks. The checks themselves still ask each time, on purpose: a check runs any
+   command it names. Expect a few minutes.
+3. **First review:** make a change, then `/council-review`. It proposes the experts and a token
+   estimate; say go. A small change runs Solo (the main session alone, self-checked, about 20k
+   tokens); say "squad" for independent experts and a blind verifier. You get findings with
+   `file:line`, each re-checked before you see it.
+4. **First build:** `/council-plan add CSV export to the report page`, answer its scoping questions,
+   approve the plan, then `/council-implement`. Each task goes to a fresh builder agent, the checks
+   run after each one, one verifier checks the whole build at the end, and you get a receipt that
+   ends with what was checked by machine, the shortcuts taken, and what was not proved. When a
+   builder stops with `NEEDS: fix …`, the code under its task is wrong: say yes and a fix task goes
+   in first.
+5. **Did we build what I asked?** `/council-postgame`.
+6. **Lost?** `council status` says where a run stands; `council run resume --run <folder>` carries a
+   run on in a new session; `council doctor` finds setup drift and says how to fix it. Say "stop,
+   give me what you have" at any time.
 
 ## Use
 
@@ -63,22 +85,26 @@ at any point.
 
 ## What a run gives you
 
-After every build, the same six lines, in the same order, whatever happened:
+After every build, the same eight lines, in the same order, whatever happened:
 
 ```
 Built: 4 of 4 tasks — you can now export a report as CSV
 Works?: ran `npm start` and exported a 12-row file; the 3 new tests pass
 Checked by machine: gates: 3 ran — all pass (baseline: 1 FAIL)
+Your decisions: none
 Shortcuts I took: the export limit is hardcoded at 5,000 rows (src/export.ts) — streaming needs a design call
 Not proved: nothing
+Left open: nothing
 Cost: helpers ~90k tokens across 3 agents; Chair usage unavailable · 2 of 2 fix(es) proved · 0 broken · log: .council/logs/2026-09-16-csv.md
 ```
 
-"Shortcuts" and "Not proved" are never skipped. `none` is an answer; silence isn't.
+"Shortcuts", "Not proved" and "Left open" are never skipped. `none` is an answer; silence isn't.
+`Checked by machine:`, `Your decisions:` and `Not proved:` are printed by the helper from its records,
+never written by the model.
 
 After every review: findings with a file and line, an evidence grade (observed, reproduced, inferred),
 the verifier's verdict, and a fix line the implement mode can take as its task. Ask "council status"
-at any time for a status card in chat, or open the live terminal view.
+at any time for a status card in chat.
 
 While a run is open, a pane beside the chat shows the council hall: each seat a small pixel-art
 critter at its desk, wearing its role's gear (the builder's hard hat, the verifier's glasses),
@@ -127,7 +153,7 @@ is what it became after three months of real runs.
 | Checks on findings | none | blind verifiers, citation check, evidence grades |
 | Records | one output folder per review | runs, ledger, usage, memory, map, every request word for word |
 | Cost control | none | caps, estimates, a hook that stops at the limit |
-| Machinery | none | a helper of about 17,000 lines of Python behind a 53-line bash launcher, 5 hooks, 28 eval jobs on Windows, macOS and Linux |
+| Machinery | none | a helper of about 22,000 lines of Python behind a 53-line bash launcher, 5 hooks, 28 eval jobs on Windows, macOS and Linux |
 | Shared repos | commits conventions.md | a "just me" mode that keeps the council out of git, CLAUDE.md and commit messages |
 
 The principles are the same. The difference is that this one can tell you when it was wrong.
@@ -149,29 +175,37 @@ On **just me**, all of `.council/` stays local.
 
 ## Honest limits
 
-- Whether the council beats plain Claude Code on the same task is not yet measured. The run records
-  show value and friction; they don't prove a margin.
-- Reviews are the strongest mode. Big builds have overrun their estimates, and a light build tier is
-  being added so the process matches how people actually work.
-- The Chair's own token use is not yet recorded, so every cost line is a floor.
-- All verifiers run the same model family as the reviewers. A cross-model check is on the list.
+- Whether the council beats plain Claude Code on the same task is not measured. The comparison
+  harness exists (`evals/bench.py`) and has never been run with a model, and no paid behavioural eval
+  run has been recorded.
+- The builder agent per task, the task tree (a plan's request quotes, `council tree`), the revert
+  check and the helper-printed receipt lines are new in this release and have not yet run on a real
+  project. Reviews are the most-used mode.
+- Builds are expensive: the largest logged build used about 26M tokens across 220 agent runs.
+  Estimates are a starting point you set by hand (`- estimates:` in the config).
+- Verifiers run on the same model family as the reviewers and builders; a cross-model check is not
+  built.
+- The agent stop sees an Agent or Workflow call, not the agents a Workflow starts inside itself.
+- It asks for permission before every check, by design.
 
 ## Good to know
 
 - `council doctor` finds drift (a moved file, a check that can't run) and says how to fix each item.
 - Your requests are saved in `.council/asks/`, which git ignores.
-- The status card and the council pane need Python 3.8+. Everything else
-  is bash 3.2. The pane and the line above the prompt are a Claude Code mod (Claude Code 2.1.287 or
-  later; the desktop app from 2.1.286): they show in the terminal, the desktop app and VS Code, and
-  never in `claude -p`.
+- The pane and the line above the prompt are a Claude Code mod (Claude Code 2.1.287 or later; the
+  desktop app from 2.1.286): they show in the terminal, the desktop app and VS Code, and never in
+  `claude -p`.
 - Update the plugin from `/plugin` → Installed → small-council → Update now, then `/reload-plugins`.
-  Your projects need nothing re-run; `council doctor` tells you when a refresh is due.
+  Your config, memory, map and records are kept. After an update, `council doctor` names the
+  permission rules your project lacks; a `/council-init` refresh adds them and anything else the new
+  version expects. The [CHANGELOG](CHANGELOG.md) says what changed and what to do first.
 
 ## Under the hood
 
-Two agents (an expert worker and a blind verifier), a helper called `council` (Python, started by a 53-line
-bash launcher) that does the bookkeeping, five hooks that enforce limits and pick runs back up after a
-compaction, and fourteen expert seats tailored to each project.
+Three agents (an expert worker, a blind verifier and a builder that writes one task's code), a helper
+called `council` (Python 3.8+, started by a 53-line bash launcher) that does the bookkeeping, five hooks
+that enforce limits and pick runs back up after a compaction, and fourteen expert seats tailored to
+each project.
 
 More: [helper commands](references/run/helper-commands.md) · [reference docs](references/README.md) ·
 [sharing](references/run/sharing.md) · [checks](references/guardrails.md) ·

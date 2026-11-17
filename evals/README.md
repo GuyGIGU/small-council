@@ -291,7 +291,7 @@ python evals/record_eval.py                                                     
   only with `--scaffold`. They're self-contained; read them before trusting them.
 - **History:** raw runs land in `evals/suite/results/` (untracked). `record_eval.py` keeps one small
   summary per recorded run in `evals/history/`, named by the run's start and the plugin version it
-  loaded. It compares with the newest earlier clean entry of the same shape — same `--ablation`, same
+  loaded. No run has been recorded yet, so the folder does not exist until the first one. It compares with the newest earlier clean entry of the same shape — same `--ablation`, same
   `--tag` filters — and exits 1 when a case's score drops by more than 0.1. It refuses partial runs
   and runs that errored; runs that only hit their turn or time cap are recorded and counted as capped.
 - **CI:** `.github/workflows/evals.yml` runs on demand only: Claude Code and both models pinned, the

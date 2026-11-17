@@ -57,9 +57,8 @@ council gate after-2 --proof preserve -- 'pytest tests/test_export.py'
 ```
 
 `--proof change` makes the default explicit. The flag takes a `before-<id>` or `after-<id>` gate in
-a council-implement run, where the id is the task's number or a slug of letters, digits, dashes and
-underscores (a builder's name, such as `before-b7-flip`); it does not apply to configured gate sets
-or `regress-<n>` fixes.
+a council-implement run, where the id is the task's number (`before-3`); it does not apply to
+configured gate sets or `regress-<n>` fixes.
 The helper writes the mode in each gate's JSON verdict. Old verdicts without it remain change proof.
 Always quote the whole command after `--`, so pipes, `&&` and nested quotes reach the gate intact.
 The command must be identical in both records. Keep both output files and cite them in the task log.

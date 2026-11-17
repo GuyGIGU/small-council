@@ -40,18 +40,11 @@
     `council memory reject …` on a no. Run it only after they answered in the chat — it records
     their words and the date, and checks the entry would be served before filing it.
   - **Decisions (D)** are recorded only in the user's own words.
-- **Memory over its budget** (`- memory budget:`, 25 KB by default) → the helper warns at run open
-  and at close; propose a consolidation as numbered operations ("merge AP-7 into AP-3", "retire EC-2 —
-  superseded by EC-9"), applied one by one on the user's yes. `council memory tidy` lists the ones
-  reading alone can find (the same rule under two ids, a retired id still named); it writes nothing. Never rewrite the file wholesale. To retire an entry, move it under `## Retired` with a
-  `**Retired:** <date> — <why>` line; no run reads it after that.
-- **Stale anchors:** `council memory check` lists entries whose anchored file, line or symbol is
-  gone. Propose re-anchoring or retiring each, as operations like the ones above. Anchor new entries
-  to a path or a symbol; a line number drifts unnoticed.
-- **Unsupported failures:** the same check lists each observed failure whose evidence file is gone
-  or whose cited lines no longer show its verdict (`UNSUPPORTED` — no brief gets it). Propose
-  re-anchoring its evidence to a file that still shows it, or retiring it; never restore it by
-  editing its verdict.
+- **When the helper warns about memory** — over its budget (`- memory budget:`, 25 KB by default;
+  `council memory tidy` lists what reading alone can find), or `council memory check` lists a stale
+  anchor or an `UNSUPPORTED` failure — read the upkeep rules in the head of
+  `${CLAUDE_PLUGIN_ROOT}/references/templates/conventions.md` and propose each fix as they say.
+  Anchor new entries to a path or a symbol; a line number drifts unnoticed.
 
 ## Close
 

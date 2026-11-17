@@ -1,8 +1,8 @@
 # The task tree: context down, evidence up
 
-Status: written 2026-11-13 on the user's request. Steps T1, T2 and T3 are built and on main; T5 is built on
-`claude/t5-fresh-builder` (with it, on the user's word of 2026-11-16, a seat's `NEEDS:` note ends once the seat has
-run again, so a stop can be told from an old one); T4 is not. "A bug underneath stops the branch" (in section 4) and section 6, a fresh
+Status: written 2026-11-13 on the user's request. Steps T1, T2, T3 and T5 are built and on main (T5 merged in #119;
+with it, on the user's word of 2026-11-16, a seat's `NEEDS:` note ends once the seat has run again, so a stop can be
+told from an old one); T4's drill eval landed as `evals/run_replay.py` (#125). None has run on a real project yet. "A bug underneath stops the branch" (in section 4) and section 6, a fresh
 builder per task, were added 2026-11-15; section 6 is built by T5 and settled as D42.
 Each part becomes a decision in [`../decisions.md`](../decisions.md) in the branch that builds it.
 
