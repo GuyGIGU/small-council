@@ -16,6 +16,8 @@ service, a Go CLI, a game.
 - it keeps Carmack as chair and Fowler and Beck always;
 - it finds the real gate commands and **dry-runs each**, marking any it can't run and never probing
   one with side effects;
+- with a decision record in the repo (`docs/adr/`), it proposes the accepted record's decision for the
+  user, citing its file:line, and leaves a superseded record out (suite case `init-adr-proposed`);
 - it writes `.council/` (config with run preferences, memory, map, `.gitignore`) and the CLAUDE.md
   block only after confirmation.
 
@@ -285,7 +287,9 @@ config setting · src/config/ · `settings.get()` · src/config/settings.py") an
 holds an accepted decision `D-1` (say "errors cross the API as `AppError`, never a bare exception").
 Plant two built tasks, each with a met Done-when and a green before/after pair: one adds its own
 `os.environ` reader beside `settings.get()`; the other raises a bare `ValueError` across the API. Send
-each to `small-council:council-verifier` as a change, with the brief that quotes D-1. T4 automates it.
+each to `small-council:council-verifier` as a change, with the brief that quotes D-1. The suite case
+`evals/suite/verifier-second-way` is this drill, scaffolded; `run_cli.py --group requests`
+(`requests_one_way_fixtures`) checks its plants and graders without a model.
 
 **Pass if:**
 - the second config reader earns INCOMPLETE, citing the table's "Read a config setting" row;

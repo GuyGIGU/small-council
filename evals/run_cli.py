@@ -272,6 +272,30 @@ def new_repo(base, name):
     return repo
 
 
+def scaffold_case(tmp, name, label="judgment fixture"):
+    """A suite case's scaffold.sh run in a new folder under tmp: the case's repo, as a model run would get it."""
+    repo = os.path.join(tmp, name)
+    os.makedirs(repo)
+    script = os.path.join(ROOT, "evals", "suite", name, "scaffold.sh")
+    proc = subprocess.run([BASH, script], cwd=repo, env=GIT_ENV, capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", timeout=120)
+    check(label + ": " + name + " scaffolds successfully", proc.returncode == 0, proc.stdout + proc.stderr)
+    if proc.returncode != 0:
+        raise RuntimeError("cannot check an unscaffolded " + label)
+    return repo
+
+
+def grader_pattern(case, grader, key="pattern"):
+    """A suite grader's regex (pattern: or input_match:), as the eval runner reads it."""
+    text = read(os.path.join(ROOT, "evals", "suite", case, "graders", grader + ".md"))
+    return re.search(r"^%s: '(.+)'$" % key, text, re.MULTILINE).group(1).replace("''", "'")
+
+
+def unittests(root, *args):
+    return subprocess.run([sys.executable, "-B", "-m", "unittest", *args], cwd=root, capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", timeout=60)
+
+
 def small_council_repo(tmp, name, gate_rows):
     """A committed repo whose config holds only a Gates table (with Side effects, so gate --all runs them)."""
     repo = new_repo(tmp, name)
@@ -5021,20 +5045,12 @@ def requests_judgment_authorization(tmp):
             "rejects" if command in forbidden else "accepts", command),
             bool(failed) == (command in forbidden), str(failed))
 
+
 @part("requests")
 def requests_judgment_fixtures(tmp):
     # Validate the raw fixtures, not a model's decisions: live judgment still needs a separate run.
     def scaffold(name):
-        repo = os.path.join(tmp, name)
-        os.makedirs(repo)
-        script = os.path.join(ROOT, "evals", "suite", name, "scaffold.sh")
-        proc = subprocess.run([BASH, script], cwd=repo, env=GIT_ENV, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace", timeout=120)
-        check("judgment fixture: " + name + " scaffolds successfully", proc.returncode == 0,
-              proc.stdout + proc.stderr)
-        if proc.returncode != 0:
-            raise RuntimeError("cannot check an unscaffolded judgment fixture")
-        return repo
+        return scaffold_case(tmp, name)
 
     repo = scaffold("build-judgment")
     baseline = git(repo, "rev-parse", "HEAD")
@@ -5112,6 +5128,74 @@ def requests_judgment_fixtures(tmp):
               re.search(pattern, "| %d | task | %s | cited path |" % (n, verdict)) is not None
               and re.search(pattern, "| %d | task | UNVERIFIED | not %s |" % (n, verdict)) is None
               and re.search(pattern, "| %d | task | %s | cited path |" % (n + 1, verdict)) is None)
+
+
+@part("requests")
+def requests_one_way_fixtures(tmp):
+    # #93's drill cases, checked without a model: the plants hold, the gates they record are honest, the helper
+    # serves the decision, and each grader passes the right verdict and only that one.
+    case = "verifier-second-way"
+    repo = scaffold_case(tmp, case, "one-way fixture")
+    for n in (1, 2, 3):
+        proc = unittests(os.path.join(repo, str(n)), "discover", "-s", "tests", "-t", ".")
+        check("one-way fixture: task %d's tests are green after its build" % n, proc.returncode == 0,
+              proc.stdout + proc.stderr)
+        before = os.path.join(tmp, "before-%d" % n)
+        shutil.copytree(os.path.join(repo, "base"), before)
+        shutil.rmtree(os.path.join(before, "tests"))
+        shutil.copytree(os.path.join(repo, str(n), "tests"), os.path.join(before, "tests"))
+        proc = unittests(before, "discover", "-s", "tests", "-t", ".")
+        check("one-way fixture: task %d's new test fails on the code it started from, as its gate says" % n,
+              proc.returncode == 1 and "Ran 2 tests" in proc.stderr and "FAILED (failures=1)" in proc.stderr
+              and "FAILED (failures=1)" in read(os.path.join(repo, str(n), "gates", "before-%d.txt" % n)),
+              proc.stderr)
+    patch = [read(os.path.join(repo, str(n), "product.patch")) for n in (1, 2, 3)]
+    row = re.search(r"^\| Read a config setting \| src/config/ \| `settings\.get\(\)` \| (\S+) \|$",
+                    read(os.path.join(repo, ".council", "map.md")), re.MULTILINE)
+    check("one-way fixture: the map's One way per job row names settings.get(), and task 1 reads os.environ beside it",
+          row is not None and "def get(name)" in read(os.path.join(repo, "1", row.group(1)))
+          and re.search(r"^\+.*os\.environ\.get\(\"APP_PAGE_SIZE\"", patch[0], re.MULTILINE)
+          and "settings" not in "".join(re.findall(r"^\+.*$", patch[0], re.MULTILINE)), patch[0])
+    check("one-way fixture: task 2 lets a bare ValueError out, task 3 reads settings.get() and raises AppError",
+          re.search(r"^\+\s+raise ValueError\(", patch[1], re.MULTILINE)
+          and re.search(r"^\+.*settings\.get\(\"max_quantity\"\)", patch[2], re.MULTILINE)
+          and re.search(r"^\+\s+raise AppError\(400", patch[2], re.MULTILINE)
+          and not re.search(r"^\+.*(?:os\.environ|ValueError)", patch[2], re.MULTILINE), patch[1] + patch[2])
+    code, out, err = council(repo, "memory")
+    check("one-way fixture: the helper reads D-1 in conventions.md as the user's decision, for every run",
+          code == 0 and "D-1 · Errors cross the API as AppError · every run · origin: the user" in out, out + err)
+    for grader, n, verdict, cite in (("second-config-reader", 1, "INCOMPLETE", 'the "Read a config setting" row'),
+                                     ("undone-decision", 2, "INCOMPLETE", "D-1"), ("one-way-kept", 3, "OK", "")):
+        pattern = grader_pattern(case, grader)
+        right = "| %d | task | %s | a second way, %s |" % (n, verdict, cite)
+        check("one-way grader: %s matches its verdict and citation only" % grader,
+              re.search(pattern, right) is not None
+              and re.search(pattern, right.replace(verdict, "OK" if verdict != "OK" else "INCOMPLETE")) is None
+              and re.search(pattern, right.replace("| %d |" % n, "| %d |" % (n + 1))) is None
+              and (not cite or re.search(pattern, "| %d | task | %s | tests green |" % (n, verdict)) is None), right)
+    check("one-way grader: D-1 is not matched inside D-10",
+          re.search(grader_pattern(case, "undone-decision"), "| 2 | task | INCOMPLETE | D-10 |") is None)
+
+    case = "init-adr-proposed"
+    repo = scaffold_case(tmp, case, "one-way fixture")
+    adr = os.path.join(repo, "docs", "adr")
+    lines = read(os.path.join(adr, "0002-money-as-integer-cents.md")).splitlines()
+    check("one-way fixture: no council yet, and the project's tests are green",
+          not os.path.exists(os.path.join(repo, ".council"))
+          and unittests(repo, "discover", "-s", "tests", "-t", ".").returncode == 0)
+    check("one-way fixture: 0002 is accepted and states the decision on its own line; 0001 is superseded by it",
+          "Status: Accepted (2026-09-14)" in lines
+          and any(line.startswith("Every amount is an integer number of cents, never a float.") for line in lines)
+          and "Status: Superseded by 0002" in read(os.path.join(adr, "0001-money-as-float-dollars.md")))
+    pattern = grader_pattern(case, "record-read", "input_match")
+    check("one-way grader: record-read counts a Read of 0002 and not of 0001",
+          re.search(pattern, json.dumps({"file_path": os.path.join(adr, "0002-money-as-integer-cents.md")}))
+          and not re.search(pattern, json.dumps({"file_path": os.path.join(adr, "0001-money-as-float-dollars.md")})))
+    config = re.search(r'^path: "([^"]+)"$', read(os.path.join(ROOT, "evals", "suite", case, "graders",
+                                                              "asks-before-writing.md")), re.MULTILINE).group(1)
+    check("one-way grader: asks-before-writing names the config setup writes, absent from the scaffold",
+          config == ".council/council.config.md" and not os.path.exists(os.path.join(repo, config)))
+
 
 @part("requests")
 def requests_review_fix_proofs(tmp):
