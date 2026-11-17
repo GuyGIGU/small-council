@@ -15,7 +15,8 @@ def main(words: list[str]) -> int:
     shown = where.council_home()
     home = where.native(shown)
     if not map_file.path(home).is_file():
-        raise cli.Refusal("no map yet — council-init builds .council/%s, and map touch adds to it" % map_file.NAME)
+        from council.commands.map_status import NO_MAP
+        raise cli.Refusal(NO_MAP + "; map touch adds to it")
     sha = map_file.commit(home)
     if not sha:
         raise cli.Refusal("%s has no map-commit stamp — refresh the map and stamp it (council-init's Refresh), then "

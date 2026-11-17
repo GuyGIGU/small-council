@@ -66,6 +66,17 @@ class MapTest(support.Scratch):
         git("commit", "-q", "-m", "more")
         self.assertEqual(map_file.stale(self.tmp, self.tmp),
                          map_file.Stale(stamp, True, 1, [("src/", 2), ("map.md", 1), ("docs/", 1), ("README.md", 1)]))
+        later = git("rev-parse", "HEAD")
+        git("checkout", "-q", stamp)                 # HEAD behind the map's commit: another line, never up to date
+        self.write("map.md", "# Map\nmap-commit: %s\n" % later)
+        self.assertEqual(map_file.stale(self.tmp, self.tmp),
+                         map_file.Stale(later, True, 0, [("src/", 2), ("map.md", 1), ("docs/", 1), ("README.md", 1)],
+                                        1))
+        self.write("other.py", "x\n")
+        git("add", "other.py")
+        git("commit", "-q", "-m", "beside")          # HEAD beside it: one commit each way
+        found = map_file.stale(self.tmp, self.tmp)
+        self.assertEqual((found.behind, found.aside), (1, 1))
         self.write("map.md", "# Map\nmap-commit: %s\n" % ("0" * 40))
         self.assertEqual(map_file.stale(self.tmp, self.tmp), map_file.Stale("0" * 40, False, 0, []))
 
@@ -89,8 +100,6 @@ class MapTest(support.Scratch):
         self.assertTrue((self.tmp / "map.md").read_text(encoding="utf-8").endswith(
             "- docs/: grew (at {0})\n\n## Changes 2026-11-17\n- src/: again (at {0})\n".format(head[:12])))
         self.assertEqual(map_file.touches(self.tmp), {"src/": head[:12], "docs/": head[:12]})
-        self.assertEqual(map_file.noted(self.tmp, "2026-11-17"), {"src/"})
-        self.assertEqual(map_file.noted(self.tmp, "2026-11-16"), {"src/", "docs/"})
 
     def test_touch_keeps_crlf_and_the_stamps_own_words(self) -> None:
         self.write("map.md", "# Map\r\nmap-commit: abcdef1 (built)\r\n")

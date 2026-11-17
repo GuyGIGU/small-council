@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from council import git
-from council.records import bytewise, paths
+from council.records import bytewise, cells, paths
 
 NAME = "map.md"
 TABLE = "## One way per job"
@@ -28,9 +28,12 @@ def path(home: str | Path) -> Path:
 
 
 def cells_of(line: str) -> list[str]:
-    """A Markdown table row's cells, trimmed, bold and backticks dropped."""
-    inner = line.strip().strip("|")
-    return [re.sub(r"[*`]", "", cell).strip() for cell in inner.split("|")]
+    """A Markdown table row's cells (cells.table_cells: a pipe in a code span, or escaped, stays in its cell),
+    trimmed, bold and backticks dropped."""
+    found = cells.table_cells(line.strip())
+    found = found[1:] if found[:1] == [""] else found
+    found = found[:-1] if len(found) > 1 and found[-1] == "" else found
+    return [re.sub(r"[*`]", "", cell).strip() for cell in found]
 
 
 def ways(content: str) -> list[Way] | None:
@@ -40,16 +43,16 @@ def ways(content: str) -> list[Way] | None:
     for line in content.split("\n"):
         line = line.rstrip("\r")
         if line.startswith("## "):
-            inside = line.rstrip() == TABLE
+            inside = cells.heading(line) == TABLE[3:].lower()
             seen = seen or inside
             continue
         if not inside or not line.lstrip().startswith("|"):
             continue
-        cells = (cells_of(line) + ["", "", "", ""])[:4]
-        if re.fullmatch(r"[-: ]*", "".join(cells)) or cells[0].lower() == "job":
+        row = (cells_of(line) + ["", "", "", ""])[:4]
+        if re.fullmatch(r"[-: ]*", "".join(row)) or row[0].lower() == "job":
             continue
-        if cells[0]:
-            rows.append(Way(*cells))
+        if row[0]:
+            rows.append(Way(*row))
     return rows if seen else None
 
 
@@ -82,25 +85,31 @@ def _stamp(lines: list[str]) -> tuple[int, re.Match] | None:
 
 
 class Stale(NamedTuple):
-    """How far map.md is behind HEAD: its map-commit stamp ('' with none), whether that commit is in this repo's
-    history, the commits from it to HEAD, and the files changed since it by top-level area (areas), the busiest
-    first: the staleness of each area."""
+    """How far map.md is from HEAD: its map-commit stamp ('' with none), whether that commit is in this repo's
+    history, the commits from it to HEAD (behind), the files changed since it by top-level area (areas), the busiest
+    first: the staleness of each area; and the commits of the map's line that HEAD doesn't have (aside): more than
+    none, and the map was built on another line of history, or HEAD is behind it."""
     sha: str
     known: bool
     behind: int
     areas: list[tuple[str, int]]
+    aside: int = 0
 
 
-def stale(home: str | Path, top: str | Path = ".") -> Stale:
-    """The one reader of the map's staleness, for council map status, map touch and the SessionStart banner: from
-    top, the whole repository whatever folder top is. An area is stale when files under it changed after the later of
-    map-commit and the area's last touch (touches)."""
+def stale(home: str | Path, top: str | Path = ".", disk: bool = False) -> Stale:
+    """The one reader of the map's staleness, for council map status, map touch, council doctor, the close's map
+    warning and the SessionStart banner: from top, the whole repository whatever folder top is. An area is stale
+    when files under it changed after the later of map-commit and the area's last touch (touches). With disk, the
+    files changed on disk and not yet committed count too: an area touched at HEAD counts them as covered."""
     sha = commit(home)
     if not sha or git.run(top, "cat-file", "-e", sha + "^{commit}")[0] != 0:
         return Stale(sha, False, 0, [])
-    count = git.run(top, "rev-list", "--count", sha + "..HEAD")[1].decode("ascii", "replace").strip()
-    behind = int(count) if count.isdigit() else 0
-    return Stale(sha, True, behind, areas(_since_touch(home, top, sha, changed(top, sha, "HEAD"))) if behind else [])
+    counts = git.run(top, "rev-list", "--left-right", "--count", sha + "...HEAD")[1].decode("ascii", "replace").split()
+    aside, behind = (int(n) for n in counts) if len(counts) == 2 and all(n.isdigit() for n in counts) else (0, 0)
+    if not (behind or aside or disk):
+        return Stale(sha, True, 0, [], 0)
+    names = changed(top, sha, "" if disk else "HEAD")
+    return Stale(sha, True, behind, areas(_since_touch(home, top, sha, names)), aside)
 
 
 def _since_touch(home: str | Path, top: str | Path, sha: str, names: list[str]) -> list[str]:
@@ -156,19 +165,6 @@ def changed(top: str | Path, since: str, until: str = "") -> list[str]:
     names = git.run(top, "-c", "diff.relative=false", "diff", "--name-only", since, *([until] if until else []),
                     names=True)[1]
     return bytewise.records(names.decode("utf-8", "surrogateescape"), fold=False)
-
-
-def noted(home: str | Path, since: str) -> set[str]:
-    """The areas a `- <area>: <line>` names under a ## Changes <YYYY-MM-DD> section dated on or after since."""
-    found, inside = set(), False
-    for line in paths.text_of(path(home), home).split("\n"):
-        line = line.rstrip("\r")
-        if line.startswith("## "):
-            day = line[len(CHANGES):].strip() if line.startswith(CHANGES) else ""
-            inside = bool(re.fullmatch(r"\d{4}-\d\d-\d\d", day)) and day >= since
-        elif inside and line.startswith("- ") and ": " in line:
-            found.add(line[2:].split(": ", 1)[0])
-    return found
 
 
 class Touched(NamedTuple):
