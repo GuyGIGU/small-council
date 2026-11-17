@@ -127,7 +127,7 @@ Inside a run folder:
 - **Helper commands** (`council help` gives exact syntax; `references/run/helper-commands.md` gives the
   purpose of each): `home`, `sharing`, `pushes`,
   `run open|close|status|resume|plan|events|audit|export|turn-end`, `state`, `seat`,
-  `cap show|allow|check`, `route recommend`, `index`,
+  `cap`, `cap allow|check`, `route recommend`, `index`,
   `evidence`, `repair`, `gate`, `gates`, `changed`, `collect`, `check`, `patch save|show|apply|revert`, `context build`, `tree`, `map status|touch`, `fingerprint`,
   `memory`, `prior`, `ask`, `ledger`, `status`,
   `correct`, `doctor`, `version`, `help`.
@@ -301,15 +301,17 @@ folds them, and new code uses the named way.
 
 ## 10. Known debt and the cleanup
 
-Measured on 2026-11-13:
-- `bin/council` is one 8,156-line bash file with 252 functions, 167 lines that call awk, and
-  functions of up to 297 lines (`cmd_check`; `cmd_memory` and `memory_entries` are about 250).
-- `session-state.md` is named on 89 code lines of `bin/council` and `run-plan.tsv` on 40. No script
-  parses either any more: the scripts read run files through `src/council/records` (S1).
-- Skills and agents sit near their size caps (council-implement is at 19,331 of 20,000 characters after WS6's
-  first pass; it was 19,992).
-- Many structural evals check that a phrase is present, not that behaviour holds. The full suite
-  takes about 30 minutes on Windows and has no fast tier.
+Measured on 2026-11-17:
+- `bin/council` is a 53-line bash launcher: it finds a Python 3.8+ and starts `src/council/`, which
+  holds about 22,500 lines of Python. The bash that stays is the five hooks, frozen by the ratchet.
+- No script parses `session-state.md` or `run-plan.tsv` by hand: every reader goes through
+  `src/council/records` (S1).
+- The skills and agents are under their size caps: council-implement is at 14,480 of 20,000
+  characters (its log template and its Deliver now load at the stage that uses them), council-init at
+  19,875, the verifier contract at 7,980 of 8,000. A review run's method load is 55,023 bytes.
+- `python evals/run_all.py --fast` is the fast tier (about a minute); the full suite still takes about
+  30 minutes on Windows. Many structural evals still check that a phrase is present; new behaviour is
+  proved by a scenario (D25).
 
 The cleanup's workstreams. [`design/cleanup-plan.md`](design/cleanup-plan.md) has the target layout
 (`src/council/`, D32), the rules every session follows, and the sessions in order:
@@ -319,8 +321,8 @@ The cleanup's workstreams. [`design/cleanup-plan.md`](design/cleanup-plan.md) ha
 | 0 | This page, `decisions.md`, the root `CLAUDE.md` |
 | 1 | One Python library for config and run files; every script moves onto it; the copies go |
 | 2 | `bin/council` split into Python modules, one area per branch, with commands, output and exit codes unchanged (the eval suite is the proof). *Started (S3):* `bin/council` hands ported commands to `src/council/__main__.py`; `home`, `sharing` and `run status` live in `src/council/commands/`, and bash and Python writers share run-file locks (D33). *S4:* `cap` and `cap check` (the agent gate) followed; `seat`, `correct` and `cap allow` wait on the ledger and redaction (S8) and the state writer (S8b). *S5:* `run plan check`, `run plan show` and `route recommend`; the bash that stays runs the same plan check through `python_run`. *S6:* `gate` (one gate, `--all`, `--invalid`), `gates` and `changed`, with the repair glue: a gate stopped at its limit takes every process it started on Windows and POSIX, and `python_run` tries no next Python when the command that ran exits 127 itself (`COUNCIL_RAN`). *S7:* `collect`, `check` and `index`, on `records/` readers for seat files, citations, quotes and gate verdicts; `check` hands the user's words to bash's redaction and back (`COUNCIL_REDACT`), and `index` leaves earlier council work and the impact graph to bash. *S8:* `map status`, `fingerprint`, `doctor`, `memory` (index, select, check, propose, accept, reject), `prior`, `impact`, `ask save` and `ledger`, with redaction in `records/redact.py`: `check` is one Python pass and `COUNCIL_REDACT` is gone, `index` finds earlier work and refreshes the impact graph itself, and `bin/council` went from 5,171 lines to 3,541. *S8b + S9:* every remaining command: `state`, `run open|close|resume|events|audit|turn-end`, `seat`, `cap allow`, `correct`, `context`, `evidence`, `repair`, `tune`, `history`, `outcomes`, `tui`, `status`, `pet`, `help` and `version`, and the SessionStart hook's body as `council run session-start`. `bin/council` went from 3,541 lines to 53: it finds a Python and starts it, and no hook sources it. The scripts run in the command's own process. *S11:* `scripts/` moved into the package, the tools into `commands/` and the views into `views/`: nothing is loaded by path, no script runs `bin/council` back, and `council gate` reaches the repair trail through the one runner. The copies went onto one owner each (§8): a file's lines, git, a file's bytes, a run file's lock, the stamps through `clock`, the status card's stop through `records/usage.py`. `src/council/` and `scripts/` together went from 24,629 lines to 23,248, the cut of packs included. Left: the folds whose copies disagree on odd input (each a behaviour choice with its own scenario and CHANGELOG line), `ask.py` and `memory_write.py` reading the date with `time` themselves, and `gate_run.json_esc` |
-| 3 | File layout: `references/` by audience, evals into fast unit and scenario tiers |
+| 3 | File layout: `references/` by audience, evals into fast unit and scenario tiers. *Done (P3):* `references/run/`, `spec-writer/` and `test-architect/`; the fast tier (`run_all.py --fast`) |
 | 4 | Quality gates as ratchets (ShellCheck, ruff, a type check on the library, size and complexity limits frozen at today's worst), and this page's rules as tests. *Started (S2):* `evals/run_ratchet.py` holds sizes, ShellCheck warnings, parsers, config readers and call-backs; `ruff.toml` runs on the whole tree. The type check is still to come |
 | 5 | Slop pass: story comments out, a naming pass, dead code deleted, duplicates folded |
-| 6 | One rule, one place: rules cited by id, doctrine loaded per surface (#67). *Started (P2):* 62 restated rules now live in their owner (§7) with a pointer left behind, a brief links only its own seats' cards and docs, and `evals/run_structural.py` checks that each folded rule's wording is in its owner only. Ten copies that disagreed were settled one way on the user's rulings, and a check keeps the stale wording out. A review run's method load fell from 59,387 to 56,970 bytes, and is 56,019 now; `run close` records each run's figure beside the Chair's tokens (`stages.method_bytes`) |
-| 7 | Tests: a fast tier, behaviour over phrase pins, the Chair drill eval (#70) |
+| 6 | One rule, one place: rules cited by id, doctrine loaded per surface (#67). *P2:* 62 restated rules now live in their owner (§7) with a pointer left behind, a brief links only its own seats' cards and docs, and `evals/run_structural.py` checks that each folded rule's wording is in its owner only. Ten copies that disagreed were settled one way on the user's rulings, and a check keeps the stale wording out. A review run's method load fell from 59,387 to 56,970 bytes, and is 55,023 now; `run close` records each run's figure beside the Chair's tokens (`stages.method_bytes`). *Done (P2),* with the duplicates the final review found folded since, and the build's and post-game's Deliver forms loaded at Deliver |
+| 7 | Tests: a fast tier, behaviour over phrase pins, the Chair drill eval (#70). *Started:* the fast tier, and `evals/run_replay.py`, which replays saved runs through `council run audit` with no model; phrase pins are still being turned into scenarios |
