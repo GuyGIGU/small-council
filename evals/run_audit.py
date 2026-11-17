@@ -786,6 +786,27 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
     (paused / "claims.jsonl").unlink()
     verdict, words = item(council(base, "run", "audit", "--run", str(paused))[1], "Claim index")
     check("a paused run owes no claim index yet (the close now audits a pause too)", verdict == "pass" and "not due" in words, words)
+    # HS-6: a push let past the freeze with COUNCIL_ALLOW_PUSH=1 is on record (run.push_allowed): a warning that
+    # says how many and which commands, never a FAIL; a run with none has no such item.
+    pushed = run1_copy("pushed")
+    pushed_events = list(RUN1_EVENTS)
+    pushed_events[11:11] = [("2026-09-30T10:39:30Z", "run.push_allowed", "run", "git push", "freeze=off"),
+                            ("2026-09-30T10:39:31Z", "run.push_allowed", "run", "gh pr create", "freeze=off"),
+                            ("2026-09-30T10:39:32Z", "run.push_allowed", "run", "git push", "freeze=off")]
+    write(pushed / "events.tsv", "schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n" + "".join(
+        "1\t%d\t%s\n" % (n, "\t".join(row)) for n, row in enumerate(pushed_events, 1)))
+    out = council(base, "run", "audit", "--run", str(pushed))[1]
+    plain = council(base, "run", "audit", "--run", str(run1_copy("unpushed")))[1]
+    verdict, words = item(out, "Pushes past the freeze")
+
+    def verdicts(text):
+        return re.findall(r"^  (pass|warn|FAIL)\s+([^:]+):", text, re.MULTILINE)
+    check("a push let past the freeze is a warning naming how many and which commands; every other item reads as before",
+          verdict == "warn" and "3 " in words and "git push 2" in words and "gh pr create 1" in words
+          and verdicts(out) == verdicts(plain) + [("warn", "Pushes past the freeze")],
+          "%s %s · %s" % (verdict, words, verdicts(out)))
+    check("a run with no push let past the freeze has no such item",
+          item(plain, "Pushes past the freeze")[0] is None and verdicts(plain), plain)
     found_log = base / "more" / "config" / "projects" / "some-project" / "session-run-1.jsonl"
     found_log.parent.mkdir(parents=True)
     shutil.copyfile(str(log1), str(found_log))

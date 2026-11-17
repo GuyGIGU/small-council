@@ -1270,6 +1270,49 @@ def push_freeze(tmp):
         check(f"push freeze: {label} — exit {want}", code == want and not out and (bool(err) == (want == 2)),
               said(code, out, err))
 
+    # HS-6: the escape used while the freeze holds is recorded — one run.push_allowed event in the open run,
+    # naming the command — and the push still goes ahead, silently. No freeze, or no open run: nothing recorded.
+    def allowed_rows(repo):
+        rows = []
+        for root, _, files in os.walk(os.path.join(repo, ".council", "runs")):
+            if "events.tsv" in files:
+                with open(os.path.join(root, "events.tsv"), encoding="utf-8") as f:
+                    rows += [line.split("\t") for line in f.read().splitlines()[1:]]
+        return [row[5] for row in rows if len(row) == 7 and row[3] == "run.push_allowed"]
+
+    def files_of(repo):
+        return sorted((os.path.join(root, name), os.path.getsize(os.path.join(root, name)))
+                      for root, _, files in os.walk(repo) for name in files)
+
+    for n, (label, line, command, env, want) in enumerate((
+            ("a prefix override", "- pushes: off until 2999-12-31\n", "COUNCIL_ALLOW_PUSH=1 git push -u origin HEAD",
+             None, ["git push"]),
+            ("an override exported earlier", "- pushes: off\n", "export COUNCIL_ALLOW_PUSH=1; git fetch && git push",
+             None, ["git push"]),
+            ("the session's environment", "- pushes: off\n", "git push", {"COUNCIL_ALLOW_PUSH": "1"}, ["git push"]),
+            ("an overridden gh pr create", "- pushes: off\n", "COUNCIL_ALLOW_PUSH=1 gh pr create --fill", None,
+             ["gh pr create"]),
+            ("an override with pushes on", "- pushes: on\n", "COUNCIL_ALLOW_PUSH=1 git push", None, []),
+            ("an override after the freeze's date", "- pushes: off until 2000-01-01\n", "COUNCIL_ALLOW_PUSH=1 git push",
+             None, []))):
+        repo = frozen_repo("freeze-allowed-%d" % n, line)
+        opened, _, _ = council(repo, "run", "open", "council-review", session="sP")
+        code, out, err, _ = gate(repo, command, env=env)
+        rows = allowed_rows(repo)
+        check(f"push freeze: {label} goes ahead silently and leaves {len(want)} run.push_allowed event(s) "
+              f"naming {want}", opened == 0 and code == 0 and not out and not err and rows == want,
+              said(code, out, err) + f" · open exit {opened} · rows {rows}")
+    repo = frozen_repo("freeze-allowed-plain", "- pushes: off\n")
+    council(repo, "run", "open", "council-review", session="sP")
+    code, out, err, _ = gate(repo, "git push")
+    check("push freeze: a plain git push while frozen is still refused and leaves no run.push_allowed event",
+          code == 2 and err.startswith("Small Council:") and allowed_rows(repo) == [], said(code, out, err))
+    repo = frozen_repo("freeze-allowed-no-run", "- pushes: off\n")
+    before = files_of(repo)
+    code, out, err, _ = gate(repo, "COUNCIL_ALLOW_PUSH=1 git push")
+    check("push freeze: an override while frozen with no open run goes ahead silently and writes nothing anywhere",
+          code == 0 and not out and not err and files_of(repo) == before, said(code, out, err))
+
 
 @part("main")
 def agent_gate_helper_fault(tmp):
