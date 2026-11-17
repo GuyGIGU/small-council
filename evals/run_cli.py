@@ -6892,6 +6892,90 @@ def runs_close_keeps_audit(tmp):
         print("note: python sits beside bash or git here, so the no-Python open is not checked on this system")
 
 
+@part("lifecycle")
+def runs_export_anon(tmp):
+    # Issue 70: a run's records and its transcript copied for a replay elsewhere, with what the audit reads and
+    # nothing else: no path of this machine, no word of the user's, the times kept.
+    r = new_repo(tmp, "export-anon")
+    write(os.path.join(r, ".council", "council.config.md"), "# Council config\n")
+    rn = council(r, "run", "open", "council-review", env=session("sX-export"))[1].strip().splitlines()[-1]
+    name = os.path.basename(rn)
+    write_plan(rn, selected=("chair", "w1"))
+    council(r, "state", 'size=squad — 1 seat, est. ~90k tokens')
+    council(r, "cap", "check", "--session", "sX-export", "Agent", "type=small-council:council-worker", "seat=w1",
+            "run=" + name)
+    council(r, "seat", "w1", "running", "agent=a7e1")
+    council(r, "seat", "w1", "done", "tokens=20000", "note=NEEDS: which zebra table holds the key?")
+    council(r, "state", "decision=ship the zebra fix tonight")
+    write(os.path.join(rn, "ask.md"), "# Ask\n## In your words\nthe zebra fix\n")
+    write(os.path.join(rn, "seats", "w1.md"), "# W1\nzebra findings\n")
+    to_deliver(r, env=session("sX-export"))
+    council(r, "seat", "chair", "done", "agents=0")
+    council(r, "run", "close")
+    t0 = datetime.now(timezone.utc) - timedelta(minutes=1)
+    stamp = lambda s: (t0 + timedelta(seconds=s)).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # noqa: E731
+    lines = [{"type": "user", "timestamp": stamp(0), "sessionId": "sX-export", "message": {"content": "review the zebra"}},
+             {"type": "assistant", "timestamp": stamp(1), "sessionId": "sX-export", "message": {"content": [
+                 {"type": "tool_use", "id": "t1", "name": "Bash", "input": {
+                     "command": 'council state decision="ship the zebra fix" && cat %s/zebra.txt; council status | tail -2'
+                     % slash(r)}},
+                 {"type": "tool_use", "id": "t2", "name": "Write", "input": {"content": "zebra secrets"}}]}},
+             {"type": "user", "timestamp": stamp(1), "sessionId": "sX-export", "message": {"content": [
+                 {"type": "tool_result", "tool_use_id": "t1", "content": "zebra line\ncouncil: saved in %s/.council" % r}]}},
+             {"type": "assistant", "timestamp": stamp(2), "sessionId": "sX-export", "isSidechain": True,
+              "message": {"content": [{"type": "text", "text": "an agent's zebra notes"}]}},
+             {"type": "assistant", "timestamp": stamp(3), "sessionId": "sX-export",
+              "message": {"content": [{"type": "text", "text": "Zebra done, owner@example.com"}]}}]
+    log = os.path.join(tmp, "export-session.jsonl")
+    write(log, "".join(json.dumps(line) + "\n" for line in lines))
+    dest = os.path.join(tmp, "export-copy")
+    usage = "usage: council run export --anon <run> <dest> [--transcript <session .jsonl>]"
+    for words, said in ((("run", "export", name, dest), "run export copies a run only anonymised — pass --anon"),
+                        (("run", "export", "--anon", name), usage),
+                        (("run", "export", "--anon", "no-such-run", dest), "not a run folder: no-such-run — name a run"),
+                        (("run", "export", "--anon", name, os.path.join(rn, "copy")),
+                         "the copy can't go inside the run it copies"),
+                        (("run", "export", "--anon", name, r), "is not an empty folder — name a new or empty one"),
+                        (("run", "export", "--anon", name, dest, "--transcript", log + ".gone"), "no such transcript")):
+        code, out, err = council(r, *words)
+        check("run export: refused, naming the next step: %s" % said, code == 2 and said in err and not os.path.exists(dest),
+              out + err)
+    code, out, err = council(r, "run", "export", "--anon", name, dest, "--transcript", log)
+    copied = sorted(os.listdir(dest)) if os.path.isdir(dest) else []
+    check("run export: what the audit reads is copied and nothing else (no ask.md, no seat file)",
+          code == 0 and "exported %s to " % name in out and "transcript.jsonl: 5 line(s)" in out
+          and copied == ["agent-starts.tsv", "audit.md", "events.tsv", "run-plan.tsv", "seats.tsv", "session-state.md",
+                         "transcript.jsonl", "usage.tsv"], out + err + str(copied))
+    every = "".join(read(os.path.join(dest, f)) for f in copied)
+    check("run export: no path of this machine, no word of the user's, no e-mail address is left in any file",
+          slash(r) not in every and slash(tmp) not in every and "zebra" not in every.lower()
+          and "example.com" not in every and "<project>" in every, every[:2000])
+    state, events = read(os.path.join(dest, "session-state.md")), read(os.path.join(dest, "events.tsv"))
+    check("run export: the state keeps the helper's fields, the session a stand-in, a decision its time and shape",
+          "status: complete" in state and "code-root: <project>" in state and "session: session-1" in state
+          and re.search(r'^- \d{4}-\d\d-\d\d \d\d:\d\d: "xxxx xxx xxxxx xxx xxxxxxx"$', state, re.MULTILINE),
+          state)
+    check("run export: the events are the run's own, time for time; a note keeps its NEEDS: and loses its words",
+          [line.split("\t")[:5] for line in events.splitlines()]
+          == [line.split("\t")[:5] for line in read(os.path.join(rn, "events.tsv")).splitlines()]
+          and "\tNEEDS: xxxxx xxxxx xxxxx xxxxx xxx xxx?\t" in read(os.path.join(dest, "seats.tsv")), events)
+    log_lines = [json.loads(line) for line in read(os.path.join(dest, "transcript.jsonl")).splitlines()]
+    calls = [b for line in log_lines for b in line["message"]["content"] if isinstance(b, dict) and b["type"] == "tool_use"]
+    check("run export: the transcript keeps the helper's call word for word but the user's quoted words, drops a "
+          "tool's input and an agent's own lines, and keeps only the helper's lines of a result",
+          len(log_lines) == 5 and calls[0]["input"]["command"].startswith('council state decision="xxxx xxx xxxxx xxx"')
+          and "| tail -2" in calls[0]["input"]["command"] and calls[1] == {"type": "tool_use", "id": "t2", "name": "Write",
+                                                                           "input": {}}
+          and "council: saved in <project>/.council" in json.dumps(log_lines), json.dumps(log_lines)[:1500])
+    verdicts = [re.findall(r"^  (pass|warn|FAIL)\s+([^:]+):", council(r, "run", "audit", "--run", run, "--transcript",
+                                                                    given)[1], re.MULTILINE)
+                for run, given in ((rn, log), (dest, os.path.join(dest, "transcript.jsonl")))]
+    check("run export: the audit gives the copy the verdict it gives the run, item for item, records and transcript",
+          len(verdicts[0]) >= 12 and verdicts[0] == verdicts[1]
+          and ("FAIL", "Helper output shown whole") in verdicts[1],
+          str(verdicts))
+
+
 @part("runs")
 def runs_gitignore(tmp):
     # Every run open keeps run scratch and the user's words out of git — in a home with no .gitignore, in a
