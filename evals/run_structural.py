@@ -337,16 +337,17 @@ check("every `council …` command mentioned exists in the helper", not bad, "; 
 # A permission rule such as Bash(council run:*) matches the command's text. A real run reached the helper
 # only as C="bash <path>/bin/council"; $C run status — a form no rule can match — so the call form is pinned.
 CALL_FORM = ("plain `council <command>`", "shell variable", "`command -v council`", "match the command")
-lacking = [f"{label}: {p}" for label, t in (("kernel", core), ("init", skill["council-init"]), ("helper-commands", helper_reference))
+lacking = [f"{label}: {p}" for label, t in (("kernel", core), ("init", skill["council-init"]))
            for p in CALL_FORM if p not in flat(t)]
 check("helper call form: a plain `council <command>` — never a shell variable, an alias or bash <path>/bin/council "
-      "while it is on PATH — with the reason, in the kernel, council-init and the command reference",
-      not lacking, "; ".join(lacking))
+      "while it is on PATH — with the reason, in the kernel and council-init (which loads no kernel); the command "
+      "reference points at the kernel's", not lacking and "context-core's, The helper" in flat(helper_reference),
+      "; ".join(lacking))
 # The hook prints nothing without a council home, so "no SessionStart message" sent council-init (and any
 # council-less project) to a restart whenever PATH missed the helper. Any PATH miss: the full path. A restart:
 # only on `council run open`'s own refusal (no SessionStart mark for this session).
 fallback_bad = []
-for label, t in (("kernel", core), ("init", skill["council-init"]), ("helper-commands", helper_reference)):
+for label, t in (("kernel", core), ("init", skill["council-init"])):
     para = next((flat(p) for p in t.split("\n\n") if "`command -v council`" in p), "")
     restart = [x for x in re.split(r"(?<=[.!?])\s+", para) if "restart" in x.lower()]
     if '`bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>`' not in para:
@@ -356,7 +357,7 @@ for label, t in (("kernel", core), ("init", skill["council-init"]), ("helper-com
     if "SessionStart message" in para:
         fallback_bad.append(f"{label}: a restart tied to a missing SessionStart message")
 check("helper fallback: any PATH miss writes the full path, and only `council run open`'s own refusal calls for a "
-      "restart — the same in the kernel, council-init and the command reference", not fallback_bad, "; ".join(fallback_bad))
+      "restart — the same in the kernel and council-init", not fallback_bad, "; ".join(fallback_bad))
 check("init: the permission offer says its rules match the command text, so only the plain form is covered",
       "**These rules match the command text.**" in skill["council-init"].split("**Offer permission rules**", 1)[-1])
 through_variable = [label for label, t in texts.items()

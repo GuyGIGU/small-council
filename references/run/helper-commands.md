@@ -3,25 +3,20 @@
 The Chair uses `council` for mechanical steps. Run council help for exact syntax;
 the stage doctrine says when each command belongs in a run.
 
-Call it as a plain `council <command>` — never through a shell variable or alias, and never as
-`bash <path>/bin/council` while `command -v council` succeeds. Permission rules match the command
-text, so any other form asks the user every time. If `command -v council` fails, write
-`bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` out in full each time, never via a variable.
-Have the user restart only when `council run open` refuses and says to (no SessionStart mark for
-this session).
+How to call it (a plain `council <command>`) is context-core's, The helper.
 
 Every command takes its input by argument or file path, never by stdin: nothing is piped into
 `council`, and a permission rule that refuses pipes costs nothing.
 
-Build proof uses `council gate before-<id>` and `after-<id>` with the same command, where the id is a
-task number or a builder's slug; `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md` gives the modes
+Build proof uses `council gate before-<id>` and `after-<id>` with the same command, where the id is
+the task's number; `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md` gives the modes
 (`--proof preserve`), limits and verdicts.
 
 | Command | Use it to |
 |---|---|
 | `council run open <mode> [--code-root <worktree>]` · `run status [--all]` · `run close [--status …]` · `run resume` | open a run and its starter plan (prints its folder; refuses a second in-progress run on this tree without `--alongside`; with the code in a worktree, open it from the main checkout with `--code-root`, and later commands find it by this session — never drive a run from a session isolated in a worktree, which can't write the council home) · list runs · close one — `complete` is refused until the run has come through Deliver (after any step back to an earlier stage, again), so a paused one closes `--status paused` — then the Chair's own tokens from the session transcript with the run's method load beside them (`method load: <n> bytes`: context-core, the mode's skill and the doctrine of the stages the run must enter; both recorded as `run.chair_usage`), its audit's FAIL lines, the audit kept whole as `<run>/audit.md` (a close again rewrites it; the closing card and `council run status` name the path) and a reminder to show the user its closing card (`council status --widget --run <folder>`) · carry one on in this session (see Resume) |
 | `council run plan check` · `run plan show` | validate the run's routing, each seat's model (`references/run/models.md`), context, budgets and verification contract — a Full plan only once a decision of the user's since the run opened is on record (`council state decision="…"`) — and, once a plan run records its deliverable, each task's Serves, Owner and Rests on (`references/run/run-plan.md`, Plan tasks) · show those decisions plainly |
-| `council route recommend --task "<summary>" --mode <mode>` | inspect an advisory size, risk, seat archetypes, verification and budget (at the mode's per-role estimates) before opening a run; use `--classic` for the fixed comparison path (see `${CLAUDE_PLUGIN_ROOT}/references/run/adaptive-routing.md`) |
+| `council route recommend --task "<summary>" --mode <mode>` | `<mode>` is the skill's name, as for `run open` (`council-review`); inspect an advisory size, risk, seat archetypes, verification and budget (at the mode's per-role estimates) before opening a run; use `--classic` for the fixed comparison path (see `${CLAUDE_PLUGIN_ROOT}/references/run/adaptive-routing.md`) |
 | `council run events show` · `run events check` · `run events repair` | inspect or validate the run's mechanical event history (`events.tsv`), or mend a torn last line (a byte copy is kept); see `${CLAUDE_PLUGIN_ROOT}/references/run/event-stream.md` |
 | `council run audit [--run <folder>] [--transcript <session .jsonl>]` | after the close, check the run against the method: stages in order, agents on record while they ran, one check at a time, the deliverable, the claim index, every seat, every agent seat's token figure (a FAIL names each seat with none and why), the agent limit — and, from the session transcript (found by the run's session id when `--transcript` isn't given), the size and cost recorded (`council state size=`) before the first dispatch, both status cards, the rulings at Deliver as one question, the plain `council` call, no `\| tail`/`\| head`, refusals (a call that exited 2) tried again, and a `council:` line whose exit a chained or piped call hid. Pass, warn or FAIL per item; exit 1 on a FAIL; reads only (the close alone saves its report, as `<run>/audit.md`) |
 | `council run export --anon <run> <dest> [--transcript <session .jsonl>]` | copy what the audit reads of a run (a run folder, or a run's name) into a new or empty folder outside it, anonymised: absolute paths as `<project>`, `<home>`, `<plugin>` or `<path>`, session ids as `session-<n>`, e-mail addresses and the login name stood in for, and the user's words, the Chair's notes and every free word of a command as stand-ins of the same shape (each letter x, each digit 0); times kept; synthesis.md, verify-*.md and audit.md with their contents left out; the session transcript's part for the run as `transcript.jsonl`. For a replay fixture or a bug report. `--anon` is required, and the copy never writes over a file |
@@ -49,3 +44,15 @@ task number or a builder's slug; `${CLAUDE_PLUGIN_ROOT}/references/build-proof.m
 | `council status [--widget\|--line]` · `council correct <seat> …` | the run in plain words for the user: a widget card, one notification line, or text (each clears the run's card-due mark; `--json` doesn't) · lay an exact, evidenced figure over a seat's record |
 | `council ledger` · `council ledger advice` · `council map status` · `council doctor` | each seat's track record · what that record can support, with advice only past a bar · map freshness · drift scan with a fix per finding, and which of the plugin's hooks are live in this session (`council doctor hooks`) |
 | `council map touch <dir>="<line>" …` | keep the map true without a full refresh: one line per top-level area (`src/`, or a root file), in the user's words, added under today's `## Changes <date>` at the end of `map.md` as `- <area>: <line> (at <commit>)`, the commit HEAD was at; nothing else in the map changes. An area is stale only when files under it changed after the later of `map-commit` and its last touch (a line with no `(at …)` counts for nothing), for `map status`, the SessionStart banner and the touch itself. `map-commit` moves to HEAD only when the touch covers every stale area; otherwise it says which remain. A complete close of a run that changed tracked files names the areas with no line yet (a warning). A refresh folds the `## Changes` sections into the body |
+
+## The council home
+
+The main checkout's `.council/` (`council home` prints it), even from a linked worktree.
+
+| Under the council home | What | Git |
+|---|---|---|
+| `council.config.md` · `conventions.md` · `map.md` | roster, gates, run preferences · memory · codebase map | tracked |
+| `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
+| `plans/` `reviews/` `logs/` `research/` `postgames/` `refs/` | deliverables · project-local seat docs | tracked |
+| `asks/` | the user's requests, word for word — every deliverable points at its own | local — to share them, replace the `asks/` line in `.council/.gitignore` with `!asks/` |
+| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `events.tsv` `ask.md` `log.md` `seats.tsv` `usage.tsv` `gates/` `debate.md`, and what each stage leaves (context-core, The stages) | ignored |

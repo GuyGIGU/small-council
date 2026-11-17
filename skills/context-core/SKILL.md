@@ -94,13 +94,10 @@ in a worktree: `run open --code-root`). With a second one open (`--alongside`), 
 **Council home** = the `.council/` of the *main* checkout (`council home` prints it), even from a
 linked worktree. **Code root** = the working tree you are reviewing or building.
 
-| Under the council home | What | Git |
-|---|---|---|
-| `council.config.md` · `conventions.md` · `map.md` | roster, gates, run preferences · memory · codebase map | tracked |
-| `cards/<slug>.md` · `ledger.tsv` | each seat translated to this project · each seat's record, a row per completed run | tracked |
-| `plans/` `reviews/` `logs/` `research/` `postgames/` `refs/` | deliverables · project-local seat docs | tracked |
-| `asks/` | the user's requests, word for word — every deliverable points at its own | local — to share them, replace the `asks/` line in `.council/.gitignore` with `!asks/` |
-| `runs/<date-time>-<mode>/` | `session-state.md` `run-plan.tsv` `events.tsv` `ask.md` `log.md` `seats.tsv` `usage.tsv` `gates/` `debate.md`, and what each stage leaves (table above) | ignored |
+Under the council home, `council.config.md`, `conventions.md` (memory), `map.md`, `cards/<slug>.md`,
+`ledger.tsv` and the deliverables (`plans/` `reviews/` `logs/` `research/` `postgames/` `refs/`) are
+tracked; `asks/`, the user's requests word for word, stays local; `runs/<date-time>-<mode>/` is
+ignored. What each holds: `${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.md`, The council home.
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
 `.council/refs/<file>.md` → under the council home. Workers always get absolute paths (a seat's card:
