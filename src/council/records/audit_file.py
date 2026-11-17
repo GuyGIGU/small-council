@@ -14,6 +14,7 @@ from council.records import paths
 NAME = "audit.md"
 PASS, WARN, FAIL = "pass", "warn", "FAIL"
 LATER = "later"                                   # at close: an item that can only happen after it
+UNCHECKED = "n/a"                                 # an item the transcript given can't speak to
 READ_ONLY = "Read-only: nothing was written."
 
 
@@ -66,8 +67,10 @@ def render(run: Any, items: list[tuple[str, str, str]], split: int, span: str, t
                      + (" (this run's session: %s)." % session if session else "."))
     counts = {v: sum(1 for item in items if item[0] == v) for v in (FAIL, WARN, PASS)}
     later = sum(1 for item in items if item[0] == LATER)
-    lines.append("\n%d failed, %d warning(s), %d passed%s" % (counts[FAIL], counts[WARN], counts[PASS],
-                                                           ", %d not checked yet" % later if later else ""))
+    unchecked = sum(1 for item in items if item[0] == UNCHECKED)
+    lines.append("\n%d failed, %d warning(s), %d passed%s%s" % (counts[FAIL], counts[WARN], counts[PASS],
+                                                             ", %d not checked yet" % later if later else "",
+                                                             ", %d not checked" % unchecked if unchecked else ""))
     return "\n".join(lines), counts[FAIL]
 
 

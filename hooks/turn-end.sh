@@ -8,9 +8,8 @@
 # hook already sent back (stop_hook_active), input it can't read, or any fault of the helper's. Nothing goes
 # to stdout. In 33 real sessions the doctrine's own alert step was never taken: a hook keeps it instead. The
 # same way, while a run's first status card is still due (its first dispatch, not yet shown), the helper
-# sends the Chair back once to show it.
-#
-# Portability: bash 3.2 (macOS), Git Bash on Windows, Linux — no jq, no Python.
+# sends the Chair back once to show it. Where no council home can be (session-mark.sh's no_council), it leaves
+# its mark and ends before Python or git start. Portability: bash 3.2 (macOS), Git Bash on Windows, Linux — no jq.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
 [ -f "$ROOT/bin/council" ] || exit 0
@@ -51,6 +50,7 @@ if [ -n "$cwd" ]; then
   case "$cwd" in [A-Za-z]:\\*) cwd="$(printf '%s' "$cwd" | tr '\\' '/')" ;; esac   # C:\Users\… as Git Bash takes it
   if [ -d "$cwd" ]; then cd "$cwd" >/dev/null 2>&1 || :; fi
 fi
+. "${BASH_SOURCE[0]%[/\\\\]*}/session-mark.sh" 2>/dev/null && no_council && { mark_session "$sid" turn-end; exit 0; }
 
 out="$("${BASH:-bash}" "$ROOT/bin/council" run turn-end --session "$sid" 2>/dev/null)"; rc=$?
 if [ "$rc" -eq 2 ]; then          # the helper's die exits 2 too, but says nothing on stdout: that ends the turn

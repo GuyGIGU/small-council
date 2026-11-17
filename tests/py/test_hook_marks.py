@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -21,7 +22,7 @@ class MarksTest(support.Scratch):
         self.addCleanup(self.env.stop)
 
     def names(self, folder: Path) -> list:
-        return sorted(p.name for p in folder.iterdir()) if folder.is_dir() else []
+        return sorted(p.name for p in folder.iterdir() if p.name != hook_marks.PRUNED) if folder.is_dir() else []
 
     def test_a_mark_goes_to_both_folders_with_the_bare_one_beside_it(self) -> None:
         hook_marks.put("s1", "agent-gate")
@@ -44,6 +45,22 @@ class MarksTest(support.Scratch):
             hook_marks.put(bad, "turn-end")
             self.assertEqual(hook_marks.seen(bad), [])
         self.assertFalse((self.tmp / "xdg").exists())
+
+    def test_marks_over_30_days_old_are_cleared_at_most_once_a_day(self) -> None:
+        folder = self.tmp / "xdg" / "small-council" / "sessions"
+        folder.mkdir(parents=True)
+        old = time.time() - 40 * 86400
+        for name in ("gone", "gone.turn-end"):
+            (folder / name).touch()
+            os.utime(folder / name, (old, old))
+        hook_marks.put("s7", "turn-end")
+        self.assertEqual(self.names(folder), ["s7", "s7.turn-end"])
+        (folder / "late").touch()
+        os.utime(folder / "late", (old, old))
+        hook_marks.put("s8", "turn-end")                  # trimmed less than a day ago: no walk
+        self.assertIn("late", self.names(folder))
+        hook_marks.trim(folder, now=time.time() + 2 * 86400)
+        self.assertNotIn("late", self.names(folder))
 
     def test_a_folder_that_cannot_be_made_is_skipped_silently(self) -> None:
         (self.tmp / "xdg").write_text("a file where a folder should go")

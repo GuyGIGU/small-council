@@ -627,13 +627,14 @@ gate_code = "\n".join(l for l in gate.split("\n") if not l.lstrip().startswith("
 check("hook: seat-gate's code (not a comment) exits early on stop_hook_active — run_hook tests that it never blocks twice",
       re.search(r"stop_hook_active.*exit 0", gate_code) is not None)
 check("hook: seat-gate's code reads a BLOCKED reply through the helper's one reader (builder_stop blocked) — run_hook "
-      "tests the forms", '"$engine" builder_stop blocked' in gate_code and "BLOCKED(" not in gate_code)
+      "tests the forms", 'tool builder_stop blocked' in gate_code and "BLOCKED(" not in gate_code)
 check("hook: PreToolUse runs agent-gate.sh for the Agent, Task and Workflow tools only",
       any(g.get("matcher") == "^(Agent|Task|Workflow)$" and any("hooks/agent-gate.sh" in h.get("command", "") for h in g.get("hooks", []))
           for g in hooks_json.get("PreToolUse", [])))
 check("hook: agent-gate leaves the decision to the helper (council cap check) — run_hook tests it", "cap check" in agent_gate)
-check("hook: PreToolUse runs bash-gate.sh for the Bash tool only, with a short timeout — run_hook tests what it refuses",
-      any(g.get("matcher") == "^Bash$" and any("hooks/bash-gate.sh" in h.get("command", "") and h.get("timeout", 99) <= 5
+check("hook: PreToolUse runs bash-gate.sh for the Bash and PowerShell tools only, with a short timeout — run_hook "
+      "tests what it refuses",
+      any(g.get("matcher") == "^(Bash|PowerShell)$" and any("hooks/bash-gate.sh" in h.get("command", "") and h.get("timeout", 99) <= 5
                                                for h in g.get("hooks", []))
           for g in hooks_json.get("PreToolUse", [])))
 check("helper: run open records Claude Code's session id", "CLAUDE_CODE_SESSION_ID" in command.get("run_open", ""))

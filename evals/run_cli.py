@@ -7401,6 +7401,7 @@ def runs_export_anon(tmp):
     # nothing else: no path of this machine, no word of the user's, the times kept.
     r = new_repo(tmp, "export-anon")
     write(os.path.join(r, ".council", "council.config.md"), "# Council config\n")
+    opened_at = datetime.now(timezone.utc)
     rn = council(r, "run", "open", "council-review", env=session("sX-export"))[1].strip().splitlines()[-1]
     name = os.path.basename(rn)
     write_plan(rn, selected=("chair", "w1"))
@@ -7415,16 +7416,26 @@ def runs_export_anon(tmp):
     to_deliver(r, env=session("sX-export"))
     council(r, "seat", "chair", "done", "agents=0")
     council(r, "run", "close")
-    t0 = datetime.now(timezone.utc) - timedelta(minutes=1)
-    stamp = lambda s: (t0 + timedelta(seconds=s)).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # noqa: E731
+    # the session's calls fall inside the run's open..close (FR-5: only that window is the run's)
+    t0, step = opened_at, (datetime.now(timezone.utc) - opened_at) / 5
+    stamp = lambda s: (t0 + step * (s + 1)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"  # noqa: E731
     lines = [{"type": "user", "timestamp": stamp(0), "sessionId": "sX-export", "message": {"content": "review the zebra"}},
              {"type": "assistant", "timestamp": stamp(1), "sessionId": "sX-export", "message": {"content": [
                  {"type": "tool_use", "id": "t1", "name": "Bash", "input": {
                      "command": 'council state decision="ship the zebra fix" && cat %s/zebra.txt; council status | tail -2'
                      % slash(r)}},
-                 {"type": "tool_use", "id": "t2", "name": "Write", "input": {"content": "zebra secrets"}}]}},
+                 {"type": "tool_use", "id": "t2", "name": "Write", "input": {"content": "zebra secrets"}},
+                 # HS-2: a project's own output that says Status: or council: is no helper line
+                 {"type": "tool_use", "id": "t3", "name": "Bash",
+                  "input": {"command": "docker pull registry.acme-internal.example/payments/api:v7"}},
+                 {"type": "tool_use", "id": "t4", "name": "Bash", "input": {"command": "council status --line"}}]}},
              {"type": "user", "timestamp": stamp(1), "sessionId": "sX-export", "message": {"content": [
-                 {"type": "tool_result", "tool_use_id": "t1", "content": "zebra line\ncouncil: saved in %s/.council" % r}]}},
+                 {"type": "tool_result", "tool_use_id": "t1", "content": "zebra line\ncouncil: saved in %s/.council" % r},
+                 {"type": "tool_result", "tool_use_id": "t3", "content":
+                  "Status: Downloaded newer image for registry.acme-internal.example/payments/api:v7 "
+                  "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789\ncouncil: the key sk-live-ABCDEFGHIJKLMNOPQRST is set"},
+                 {"type": "tool_result", "tool_use_id": "t4", "content":
+                  "Status: review · 1 seat done · ghp_abcdefghijklmnopqrstuvwxyz0123456789"}]}},
              {"type": "assistant", "timestamp": stamp(2), "sessionId": "sX-export", "isSidechain": True,
               "message": {"content": [{"type": "text", "text": "an agent's zebra notes"}]}},
              {"type": "assistant", "timestamp": stamp(3), "sessionId": "sX-export",
@@ -7446,7 +7457,7 @@ def runs_export_anon(tmp):
     code, out, err = council(r, "run", "export", "--anon", name, dest, "--transcript", log)
     copied = sorted(os.listdir(dest)) if os.path.isdir(dest) else []
     check("run export: what the audit reads is copied and nothing else (no ask.md, no seat file)",
-          code == 0 and "exported %s to " % name in out and "transcript.jsonl: 5 line(s)" in out
+          code == 0 and "exported %s to " % name in out and "transcript.jsonl: 9 line(s)" in out
           and copied == ["agent-starts.tsv", "audit.md", "events.tsv", "run-plan.tsv", "seats.tsv", "session-state.md",
                          "transcript.jsonl", "usage.tsv"], out + err + str(copied))
     every = "".join(read(os.path.join(dest, f)) for f in copied)
@@ -7466,10 +7477,15 @@ def runs_export_anon(tmp):
     calls = [b for line in log_lines for b in line["message"]["content"] if isinstance(b, dict) and b["type"] == "tool_use"]
     check("run export: the transcript keeps the helper's call word for word but the user's quoted words, drops a "
           "tool's input and an agent's own lines, and keeps only the helper's lines of a result",
-          len(log_lines) == 5 and calls[0]["input"]["command"].startswith('council state decision="xxxx xxx xxxxx xxx"')
+          len(log_lines) == 9 and calls[0]["input"]["command"].startswith('council state decision="xxxx xxx xxxxx xxx"')
           and "| tail -2" in calls[0]["input"]["command"] and calls[1] == {"type": "tool_use", "id": "t2", "name": "Write",
                                                                            "input": {}}
           and "council: saved in <project>/.council" in json.dumps(log_lines), json.dumps(log_lines)[:1500])
+    copied_log = read(os.path.join(dest, "transcript.jsonl"))
+    check("run export: a project's own Status: or council: line is not kept, and a helper's Status: line is kept "
+          "with its token redacted",
+          not any(word in copied_log for word in ("ghp_", "acme-internal", "sk-live", "Downloaded"))
+          and "Status: review · 1 seat done · [redacted" in copied_log, copied_log[-1500:])
     verdicts = [re.findall(r"^  (pass|warn|FAIL)\s+([^:]+):", council(r, "run", "audit", "--run", run, "--transcript",
                                                                     given)[1], re.MULTILINE)
                 for run, given in ((rn, log), (dest, os.path.join(dest, "transcript.jsonl")))]

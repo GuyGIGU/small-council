@@ -14,6 +14,8 @@ from council.records import hook_marks, map_file, memory, paths, runs, sharing, 
 from council.records import home as where
 
 AREAS = 5            # the stale areas the banner names; council map status lists them all
+FIELD = 40           # a state field the banner prints is one line of at most this many characters …
+PATH = 300           # … a folder, this many: a run's state can't carry lines that read as the plugin speaking
 MORE = "were running when that session ended (they are gone — re-dispatch each once if you resume)"
 RUN_LINES = {   # one open run of this tree's or this session's, by what it is to this session
     "paused": ("- PAUSED COUNCIL RUN: {seen}. Resume it only when the user asks: council run resume --run {name}, then "
@@ -74,7 +76,9 @@ def _start(raw: str) -> None:
     if not os.path.isdir(where.native(home)):
         return
     root, top = home[:home.rfind("/")], where.this_tree()
-    listed = [runs.Listed(*(cell or "-" for cell in row)) for row in runs.listing(home, 100000, "open")]
+    listed = [runs.Listed(*(cell or "-" for cell in row))._replace(phase=_flat(row.phase, FIELD) or "-",
+                                                                   updated=_flat(row.updated, FIELD) or "-")
+              for row in runs.listing(home, 100000, "open")]
     if listed and scwd and os.path.isdir(where.native(scwd)):
         _worktree(listed, scwd, root)
     _banner(home, sid)
@@ -172,11 +176,12 @@ def _runs(listed: list[runs.Listed], top: str, sid: str, event: str) -> str:
             n_other += 1
             if n_other <= 5:
                 others.append("%s (%s, phase %s, code root %s)" % (_name(r.folder), runs.skill(r.mode),
-                                                                    "?" if r.phase == "-" else r.phase, r.code_root))
+                                                                    "?" if r.phase == "-" else r.phase,
+                                                                    _flat(r.code_root, PATH)))
         else:
             n_gone += 1
             if n_gone <= 5:
-                gone.append("%s (code root %s)" % (_name(r.folder), r.code_root))
+                gone.append("%s (code root %s)" % (_name(r.folder), _flat(r.code_root, PATH)))
     here_n = sum(1 for _, at in mine if at == "-")
     driving = _driving(mine, sid) if event == "compact" else ""
     ordered = sorted(mine, key=lambda m: 0 if m[0].folder == driving else 1 if m[0].status == "in-progress" else 2)
@@ -213,14 +218,15 @@ def _driving(mine: list, sid: str) -> str:
 def _described(r: runs.Listed, at: str, sid: str, event: str, driving: str, here_n: int) -> str:
     """The line for one of this tree's (or this session's) open runs: which of RUN_LINES, filled in."""
     phase, updated, rsid = ("" if v == "-" else v for v in (r.phase, r.updated, r.session))
-    said = {"dir": r.folder, "name": _name(r.folder), "skill": runs.skill(r.mode), "phase": phase or "?",
-            "where": "%s (%s, phase: %s" % (r.folder, runs.skill(r.mode), phase or "unknown"), "seats": ""}
+    folder = _flat(r.folder, PATH)
+    said = {"dir": folder, "name": _name(r.folder), "skill": runs.skill(r.mode), "phase": phase or "?",
+            "where": "%s (%s, phase: %s" % (folder, runs.skill(r.mode), phase or "unknown"), "seats": ""}
     said["seen"] = said["where"] + ", updated: %s)" % (updated or "unknown")
     said["away"] = "" if at == "-" else (" Its code is in another working tree, %s: work there, and pass --run %s to "
-                                         "every council command for it." % (at, said["name"]))
+                                         "every council command for it." % (_flat(at, PATH), said["name"]))
     said["runflag"] = said["away"] or (" Several runs are open on this tree: pass --run %s to every council command "
                                        "for this one." % said["name"] if here_n > 1 else "")
-    said["at"] = "in another working tree (%s)" % at if said["away"] else "on this working tree"
+    said["at"] = "in another working tree (%s)" % _flat(at, PATH) if said["away"] else "on this working tree"
     said["redo"] = ("re-read its build loop and the build log" if phase == "build"
                     else "re-read the doctrine for that phase")
     if r.status == "paused":
@@ -233,7 +239,7 @@ def _described(r: runs.Listed, at: str, sid: str, event: str, driving: str, here
         kind = "unfinished"
     if kind in ("driving", "live after clear", "unfinished"):
         working = MORE if kind == "unfinished" and event != "clear" else "still working"
-        seats = runs.seat_summary(where.native(r.folder), working)
+        seats = _flat(runs.seat_summary(where.native(r.folder), working), PATH)
         said["seats"] = " Seats — %s." % seats if seats else ""
     return RUN_LINES[kind].format(**said)
 
@@ -268,5 +274,11 @@ def _recent(path: str, minutes: int) -> bool:
     return False
 
 
+def _flat(value: str, most: int) -> str:
+    """A state field as the banner prints it: one line, control characters as spaces, at most `most` characters."""
+    value = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", value).split())
+    return value if len(value) <= most else value[:most - 1] + "…"
+
+
 def _name(folder: str) -> str:
-    return folder.rsplit("/", 1)[-1]
+    return _flat(folder.rsplit("/", 1)[-1], FIELD + 20)
