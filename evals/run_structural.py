@@ -396,7 +396,14 @@ check("init: never offers a blanket council allowlist (gate and changed run arbi
 check("init: the permission offer covers the helper commands the modes run without asking",
       all(f'"Bash(council {c}:*)"' in skill["council-init"] for c in [
           "run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
-          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version", "context", "tree"]))
+          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version", "context", "tree",
+          "patch"]))
+builder_cmds = sorted(set(re.findall(r"`council ([a-z]+)", flat(builder))) - {"seat", "state"})   # it never runs these
+asks_on_purpose = {"gate", "changed"} if "**`council gate` and `council changed` are deliberately not on the list**"     in skill["council-init"] else set()
+check("init: every helper command the builder contract names is on the permission offer, or on its list of commands "
+      "that deliberately ask (gate, changed: they run any command) — a builder's round would otherwise stop on a prompt",
+      "gate" in builder_cmds and all(f'"Bash(council {c}:*)"' in skill["council-init"] or c in asks_on_purpose
+                                     for c in builder_cmds), str(builder_cmds))
 check("init: cap and correct keep asking (cap allow records the user's go past the agent stop)",
       not any(f'"Bash(council {c}' in skill["council-init"] for c in ["cap", "correct"])
       and "`council cap` stays off" in skill["council-init"])

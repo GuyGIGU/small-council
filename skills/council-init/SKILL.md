@@ -224,7 +224,7 @@ Adjust on request. On confirmation, write:
      "Bash(council doctor:*)", "Bash(council home:*)", "Bash(council fingerprint:*)",
      "Bash(council status:*)", "Bash(council evidence:*)", "Bash(council repair:*)",
      "Bash(council route:*)", "Bash(council version:*)", "Bash(council context:*)",
-     "Bash(council tree:*)"
+     "Bash(council tree:*)", "Bash(council patch:*)"
    ] } }
    ```
 
@@ -253,7 +253,7 @@ Adjust on request. On confirmation, write:
    `Edit(//C:/…)` rule never matched, so offer the one `council home rule` prints in its place. If
    it holds an earlier, shorter version of this list, offer to add the rules it lacks: name them, use
    the form the file already uses, leave every other rule in the file as it is, and write only on a
-   yes.
+   yes. After a plugin update, `council doctor` names the rules a project's list lacks.
 3. **Nothing else to install.** The plugin's hooks orient council sessions, flag open runs, restore
    the method after a compaction and check every seat file before a worker finishes.
 
