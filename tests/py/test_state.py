@@ -72,6 +72,27 @@ class StateTest(support.Scratch):
                          ['2026-01-02 10:00: "go "full" C:\\temp"', "2026-01-02 11:00: raw words"])
         self.assertEqual(state.unquote('t: "a\\nb"'), 't: "a\\nb"')            # only \" and \\ are the helper's
 
+    def test_a_decision_reads_back_its_minute_task_and_words(self) -> None:
+        """council state decision="…" [task=<n>]: an entry with no task, as every older one, is the whole run's."""
+        self.assertEqual(state.decision('2026-01-02 10:00: "go "full" now"'),
+                         state.Decision("2026-01-02 10:00", None, 'go "full" now'))
+        self.assertEqual(state.decision('2026-01-02 10:05: task 3: "keep the 200 reply"'),
+                         state.Decision("2026-01-02 10:05", 3, "keep the 200 reply"))
+        self.assertEqual(state.decision('2026-01-02 10:06: "task 3: the words say it"').task, None)   # quoted words
+        self.assertEqual(state.decision("2026-01-02 11:00: raw words"), state.Decision("2026-01-02 11:00", None,
+                                                                                         "raw words"))
+        self.assertEqual(state.decision("no stamp at all"), state.Decision("", None, "no stamp at all"))
+
+    def test_a_tasks_decisions_are_the_whole_runs_and_its_own(self) -> None:
+        content = ("status: in-progress\n## Decisions so far\n"
+                   '- 2026-01-02 10:00: "run-wide"\n'
+                   '- 2026-01-02 10:01: task 2: "for two"\n'
+                   '- 2026-01-02 10:02: task 3: "for three"\n')
+        self.assertEqual(state.decisions_for(content, 2),
+                         ['2026-01-02 10:00: "run-wide"', '2026-01-02 10:01: task 2: "for two"'])
+        self.assertEqual(state.decisions_for(content, 7), ['2026-01-02 10:00: "run-wide"'])
+        self.assertEqual(state.decisions_for(content, None), ['2026-01-02 10:00: "run-wide"'])   # a run-wide gate
+
     def test_text(self) -> None:
         home = self.tmp / ".council"
         for name, status in (("2026-01-01-000000-a", "in-progress"), ("2026-01-02-000000-b", "complete"),

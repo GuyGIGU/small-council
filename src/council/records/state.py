@@ -7,10 +7,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import NamedTuple
+
 from council.records import cells, paths
 
 NAME = paths.STATE
 KEY = re.compile(r"[A-Za-z][A-Za-z0-9-]*")
+SCOPED = re.compile(r"(?P<minute>[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}): (?:task (?P<task>[0-9]+): )?"
+                    r"(?P<words>.*)", re.S)
 
 
 def path(run: Path) -> Path:
@@ -82,3 +86,30 @@ def decisions(content: str) -> list[str]:
         if inside and line.startswith("- "):
             found.append(unquote(line[2:]))
     return found
+
+
+class Decision(NamedTuple):
+    """One entry read back: its local minute, the task it is for (None: the whole run) and the user's words."""
+
+    minute: str
+    task: int | None
+    words: str
+
+
+def decision(entry: str) -> Decision:
+    """An unquoted entry as '<minute>: [task <n>: ]"<words>"' (council state decision="…" [task=<n>]); an entry
+    with no task, as every one written before task scope was, is the whole run's. Words not in quotes are taken as
+    they stand."""
+    found = SCOPED.match(entry)
+    if not found:
+        return Decision("", None, entry)
+    words = found.group("words")
+    quoted = re.fullmatch(r'"(.*)"\s*', words, re.S)
+    return Decision(found.group("minute"), int(found.group("task")) if found.group("task") else None,
+                    quoted.group(1) if quoted else words)
+
+
+def decisions_for(content: str, task: int | None) -> list[str]:
+    """The entries a task's orders carry: the whole run's and that task's own, never another task's; with no task,
+    the whole run's alone."""
+    return [entry for entry in decisions(content) if decision(entry).task in (None, task)]

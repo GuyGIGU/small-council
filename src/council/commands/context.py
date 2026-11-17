@@ -195,8 +195,9 @@ def _memory(run: Path, given: list[str]) -> list[str]:
 
 def rulings(run: Path, number: int) -> list[str]:
     home = Path(run).parent.parent
-    out = ["## " + NAMES[3], "The user's decisions in this run (council state decision=):"]
-    out += ["- " + entry for entry in state.decisions(state.text(run))] or ["- none yet"]
+    out = ["## " + NAMES[3], "The user's decisions in this run (council state decision=), the whole run's and task "
+           "%d's own:" % number]
+    out += ["- " + entry for entry in state.decisions_for(state.text(run), number)] or ["- none yet"]
     later = request.ask_later(_ask(run)).decode("utf-8", "surrogateescape").splitlines()
     out += ["Later, in the user's words (%s, ## Later):" % request.ASK] + (later or ["- none"])
     rows = gate_table.gates(home)

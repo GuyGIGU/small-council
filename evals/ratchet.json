@@ -180,12 +180,12 @@
    "longest_name": "refuse"
   },
   "src/council/commands/collect.py": {
-   "lines": 245,
+   "lines": 274,
    "longest": 36,
    "longest_name": "one"
   },
   "src/council/commands/context.py": {
-   "lines": 239,
+   "lines": 240,
    "longest": 20,
    "longest_name": "owner"
   },
@@ -290,7 +290,7 @@
    "longest_name": "refusal"
   },
   "src/council/commands/help.py": {
-   "lines": 164,
+   "lines": 165,
    "longest": 8,
    "longest_name": "main"
   },
@@ -425,7 +425,7 @@
    "longest_name": "main"
   },
   "src/council/commands/receipt.py": {
-   "lines": 96,
+   "lines": 99,
    "longest": 16,
    "longest_name": "_gates"
   },
@@ -450,7 +450,7 @@
    "longest_name": "write_copy"
   },
   "src/council/commands/rounds.py": {
-   "lines": 147,
+   "lines": 149,
    "longest": 35,
    "longest_name": "check_round"
   },
@@ -525,7 +525,7 @@
    "longest_name": "_quoted"
   },
   "src/council/commands/state.py": {
-   "lines": 84,
+   "lines": 109,
    "longest": 42,
    "longest_name": "_checked"
   },
@@ -775,12 +775,12 @@
    "longest_name": "required"
   },
   "src/council/records/state.py": {
-   "lines": 84,
+   "lines": 115,
    "longest": 14,
    "longest_name": "header"
   },
   "src/council/records/state_write.py": {
-   "lines": 171,
+   "lines": 174,
    "longest": 34,
    "longest_name": "_locked"
   },

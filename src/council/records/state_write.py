@@ -11,7 +11,7 @@ from council.records import bytewise, cells, events, locks, paths, redact, stage
 from council.records.state import field, path, text
 
 COUNCIL_NEXT_AT_OPEN = stages.COUNCIL_NEXT_AT_OPEN    # frozen name (architecture section 6)
-AFTER_CLOSE = ("deliverable", "ask", "ask-saved", "decision")     # a ruling given after the close is still the user's
+AFTER_CLOSE = ("deliverable", "ask", "ask-saved", "decision", "task")   # a ruling after the close is still the user's
 DECISIONS = "## Decisions so far"
 
 
@@ -98,11 +98,12 @@ def _locked(run: Path, words: list, closing: bool, events_lost: bool, phase_note
 
 def _rewrite(lines: list, words: list, old_phase: str) -> None:
     """Each word into the lines as cmd_state's awk passes write it, then the next: rules and updated:."""
+    task = next((word.partition("=")[2] for word in words if word.startswith("task=")), "")
     for word in words:
         key, _, value = word.partition("=")
         if key == "decision":
-            _decide(lines, value)
-        elif key != "skip":                               # a skip's reason goes on the phase event, not the header
+            _decide(lines, value, task)
+        elif key not in ("skip", "task"):                 # a skip goes on the phase event, a task on its decision
             flat = value.replace("\r", " ").replace("\n", " ")
             _put(lines, key + ":", key + ": " + flat, header_only=False, add=True)
     phase, named = cells.field("\n".join(lines), "phase"), "next" in [word.split("=", 1)[0] for word in words]
@@ -113,9 +114,11 @@ def _rewrite(lines: list, words: list, old_phase: str) -> None:
     _put(lines, "updated:", "updated: " + clock.now_min(), header_only=False, add=False)
 
 
-def _decide(lines: list, words: str) -> None:
-    """The user's words, redacted, under ## Decisions so far as a JSON string; every line loses its carriage return."""
-    entry = '- %s: "%s"' % (clock.now_min(), redact.said(words).replace("\\", "\\\\").replace('"', '\\"'))
+def _decide(lines: list, words: str, task: str = "") -> None:
+    """The user's words, redacted, under ## Decisions so far as a JSON string, after 'task <n>: ' when they are for one
+    task (state.decision reads it back); every line loses its carriage return."""
+    entry = '- %s: %s"%s"' % (clock.now_min(), "task %s: " % task if task else "",
+                              redact.said(words).replace("\\", "\\\\").replace('"', '\\"'))
     out, inside, done = [], False, False
     for line in (line[:-1] if line.endswith("\r") else line for line in lines):
         if inside and line.startswith("## "):

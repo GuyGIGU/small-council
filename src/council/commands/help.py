@@ -38,7 +38,7 @@ council — the Small Council's helper (bash + git)
                                          stage name and records its next step (skip="<why>" to pass over
                                          a stage the mode must enter); waiting="<question>" prints
                                          the alert reminder; decision="<the user's words>" goes under
-                                         Decisions so far
+                                         Decisions so far, with task=<n> for that build task alone
   council seat <slug> <state> [agent=ID] [tokens=N] [agents=N] [note=TEXT]
                                          record a worker: queued|running|done|failed|blocked|skipped;
                                          tokens= and agents= (a Workflow's agent count) come with the
@@ -107,7 +107,8 @@ council — the Small Council's helper (bash + git)
                                          go cleanly; no record changes
   council context build task-<n>         a build task's orders from the run's files, printed (8,000 bytes at
                                          most): the task, its owner and slice, hard rules and memory, the
-                                         user's decisions, earlier changes to its files, and what was left out
+                                         user's decisions (the run's and the task's own), earlier changes to
+                                         its files, and what was left out
   council tree                           the build's task tree: the request, the plan's tasks under the Serves
                                          quote each gives, with what they depend on, facts, proof, rounds,
                                          Converge result and NEEDS:

@@ -1,7 +1,7 @@
 """council check [<file> …] [--base <rev>]: every item's citation in the run's synthesis (or its seat files, or the
 files named), each request part's quote of the user's words, a post-game's next tasks, a build's proofs (each with
 its revert check) and, on a just-me council, the council ids a build left in shared text — into check.md, with a
-build's two receipt lines (receipt), a verdict line and exit 1 when anything is broken. The user's words are
+build's three receipt lines (receipt), a verdict line and exit 1 when anything is broken. The user's words are
 redacted before anything is compared with them, and a quote that holds a secret-looking string fails unless it is
 found as filed."""
 from __future__ import annotations
@@ -225,7 +225,7 @@ class Check:
             ("noline", "name a path but no line"), ("unchecked", "not checked (a command, a link, an area or no path)"),
             ("unread", "item line(s) check can't read"), ("empty", "section(s) with nothing to check")) if n[key])
         out = self.run.as_posix() + "/" + run_files.CHECK
-        if self.tally is not None:                      # a build: the receipt's two lines from the records
+        if self.tally is not None:                      # a build: the receipt's three lines from the records
             from council.commands import receipt
             said = receipt.lines(self.run, self.top, where.council_home(), self.tally)
             cli.say_all(said)

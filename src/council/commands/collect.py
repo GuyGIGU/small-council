@@ -1,15 +1,17 @@
 """council collect: every seat file the brief names (and every other .md in seats/), held to the seat-file contract —
 line 1, the proof of reading, an index that parses, within its cap and 16 KB, citations that resolve — and every
-verify file to its shape. One row a seat; exit 1 when a row needs fixing, with what to do next."""
+verify file to its shape. One row a seat; exit 1 when a row needs fixing, with what to do next. A warning on stderr,
+never a row, for each of the user's decisions the brief should carry and does not (unbriefed)."""
 from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
 from typing import Callable
 
 from council.commands import cite_check, cli, event_note, gate_output, resolve
-from council.records import bytewise, citations, paths, run_files, seat_files, seat_rows
+from council.records import bytewise, citations, paths, redact, request, run_files, seat_files, seat_rows, state
 from council.records import home as where
 
 LIVE = ("running", "queued")
@@ -69,7 +71,34 @@ def main(args: cli.Args, words: list[str]) -> int:
             cli.say("%s out of shape: %s — the seat-check hook never sees a Workflow's agents"
                     % (pad(name, 16), problems[:-2] if problems.endswith("; ") else problems))
             flags.bad = flags.hard = flags.deep = True
+    for line in unbriefed(run, brief):
+        cli.warn(line)
     return verdict(run, flags, tally)
+
+
+def unbriefed(run: Path, brief: Path) -> list[str]:
+    """A line for each decision of the whole run's (a task's own goes to its task's orders) recorded in or before the
+    minute brief.md was last written, whose words the brief does not carry. A decision keeps only its minute, so one
+    in the brief's own minute counts: a warning costs a look, a miss a seat briefed without the user's word. Both
+    sides as plain(): a wrapped line, curly quotes or a capital still match; a paraphrase does not (D7)."""
+    written = time.strftime("%Y-%m-%d %H:%M", time.localtime(brief.stat().st_mtime))
+    carried = plain(redact.said(paths.text_of(brief, run)))      # redacted as the decision's words were
+    out = []
+    for entry in state.decisions(state.text(run)):
+        said = state.decision(entry)
+        if said.task is not None or not said.minute or said.minute > written or not plain(said.words):
+            continue
+        if not request.found(carried, plain(said.words)):
+            out.append("collect: WARNING brief.md (written %s) does not carry the user's decision of %s, \"%s\" — "
+                       "the seats were briefed without it: hold their findings to it at Judge, tell the user, and "
+                       "quote it word for word in any later brief (doctrine 04-brief.md)"
+                       % (written, said.minute, gate_output.clip(said.words, 100)))
+    return out
+
+
+def plain(text: str) -> str:
+    """Words as the quote check folds them (request.fold), every run of blanks and line breaks one space, lower case."""
+    return re.sub(r"\s+", " ", request.fold(text)).strip().lower()
 
 
 def strays(run: Path, seats: list[seat_files.Seat]) -> list[seat_files.Seat]:
