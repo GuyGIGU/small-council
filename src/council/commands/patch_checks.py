@@ -37,7 +37,14 @@ SIGNS = (
                                     r"\btemporar(?:y|ily)\b(?!\s+(?:files?|dir(?:ectory|ectories|s)?|folders?|copy))|"
                                     r"\bfor\s+now\b|\buntil\b.*?\b(?:is|are|gets?|been)\s+fixed\b", re.IGNORECASE)),
     ("todo", re.compile(r"\b(?:TODO|FIXME)\b|(?<![\w-])XXX(?![\w-])")),
+    ("commented-out check", re.compile(r"^\s*(?:#|//|/\*|\*|--)\s*(?:assert\w*\b|expect\s*\(|self\.assert\w*|"
+                                       r"(?:async\s+)?def\s+test|func\s+Test|(?:it|test|describe)\s*\(|"
+                                       r"t\.(?:Error|Fatal)f?\s*\()")),
 )
+# A comment line in code: #, //, /* and a block comment's *, --. Not an attribute (#[test]), a shebang (#!) or a
+# C preprocessor line.
+COMMENT = re.compile(r"\s*(?:#(?![\[!])(?!\s*(?:include|define|if|ifdef|ifndef|elif|else|endif|pragma|undef)\b)|"
+                     r"//|/\*|\*(?!/)|--\s)")
 
 
 class Removal(NamedTuple):
@@ -73,8 +80,9 @@ def _doc(path: str) -> bool:
 def removals(found: list[diff.File]) -> list[Removal]:
     """The tests, assertions and document rules taken out: a deleted test file as one; else each removed line that
     defines a test, asserts, or (in a document) states a rule, unless the same words were added anywhere in the
-    round (a move, not a removal)."""
-    kept = {_flat(line.text) for file in found for line in file.added}
+    round (a move, not a removal). In code, an added comment is no move: `# assert f() == 2` turned the check off."""
+    kept = {_flat(line.text) for file in found for line in file.added
+            if _doc(file.path) or not COMMENT.match(line.text)}
     out = []
     for file in found:
         if file.deleted and TEST_PATH.search(file.path):

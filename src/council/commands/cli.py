@@ -11,7 +11,7 @@ VALUED = ("run", "code-root", "status", "base", "at", "proof", "session", "task"
           "exit-after", "transcript", "glob", "round")
 GATE_VALUED = ("timeout", "invalid", "seat", "mode")   # gate's and route's own: "needs a value" whatever the flag
 SWITCHES = ("alongside", "all", "classic", "json", "watch", "widget", "line", "preview", "stop", "demo",
-            "still", "wait", "rerun", "each", "anon")
+            "still", "wait", "rerun", "each", "anon", "held")
 REPEATED = ("surface", "expand", "glob")
 MISSING = {"run": "a folder", "code-root": "a folder", "base": "a ref", "at": "grounding or verify"}
 

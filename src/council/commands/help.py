@@ -109,6 +109,7 @@ council — the Small Council's helper (bash + git)
                                          put a saved round (the task's last unless --round) back on the code
                                          root's files, or take it off; refused, nothing changed, when it won't
                                          go cleanly; no record changes
+  council patch hold <task>              edits in no round → patches/T<n>-held.patch, off the files · apply <task> --held
   council context build task-<n>         a build task's orders from the run's files, printed (8,000 bytes at
                                          most): the task, its owner and slice, hard rules and memory, the
                                          user's decisions (the run's and the task's own), earlier changes to
