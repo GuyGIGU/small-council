@@ -37,7 +37,8 @@ def main(args: cli.Args, words: list[str]) -> int:
     old = (resolve.field(run, "status"), resolve.field(run, "closed"))
     retake = state_write.closed(run) and old[0] == "complete" and status == "abandoned" and closing.stopped_short(run)
     if state_write.closed(run) and not retake:
-        added = _finished(run, lost) if old[0] == status == "complete" else             _forgotten(run) if old[0] == status == "abandoned" else []
+        added = _finished(run, lost) if old[0] == status == "complete" else \
+            _forgotten(run) if old[0] == status == "abandoned" else []
         locks.release(lock)
         if old[0] != status:
             closed.refuse(run, "it stays %s; for more work, open a new run: council run open %s"
