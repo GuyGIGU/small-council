@@ -3077,9 +3077,10 @@ def runs_another_sessions_run(tmp):
               code == 2 and "council run" in err and read(st) == before, out + err)
     code, out, err = council(two, "run", "open", "council-plan", "--alongside", "--session", "abc:plan-schema")
     check("run open --session: an id with a mark no id holds (a colon, a newline) is refused before any folder is "
-          "made", code == 2 and "session id" in err and len(os.listdir(os.path.join(two, ".council", "runs"))) == 1, out + err)
+          "made", code == 2 and "--session takes" in err
+          and len(os.listdir(os.path.join(two, ".council", "runs"))) == 1, out + err)
     code, out, err = council(two, "run", "resume", "--session", "a b")
-    check("run resume --session: an id with a space is refused", code == 2 and "session id" in err
+    check("run resume --session: an id with a space is refused", code == 2 and "--session takes" in err
           and "session: sess-a" in read(st), out + err)
     code, out, err = council(two, "route", "recommend", "--task", "x", "--mode", "council-review")
     code2, out2, err2 = council(two, "route", "recommend", "--task", "x", "--mode", "review")

@@ -79,13 +79,15 @@ def reads(words: list[str]) -> bool:
 
 
 def session_id(args: cli.Args) -> str:
-    """The session id a run records as its driver: --session, else this session's; '' when there is none. One
-    outside letters, digits, '.', '_' and '-' is refused: it goes into the state's header as written."""
-    given = args.value("session") or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    """The session id a run records as its driver: --session, else this session's; '' when there is none. It goes
+    into the state's header as written, so --session outside letters, digits, '.', '_' and '-' is refused, and such
+    an id from the environment is not recorded (a run is never refused for what Claude Code set)."""
+    given = args.value("session")
     if given and not SESSION.fullmatch(given):
-        raise cli.Refusal("a session id is letters, digits, '.', '_' and '-' only, not %r — pass the id Claude Code "
-                          "gave this session with --session, or leave --session out" % given)
-    return given
+        raise cli.Refusal("--session takes letters, digits, '.', '_' and '-' only, not %r — pass the id Claude Code "
+                          "gave this session, or leave --session out" % given)
+    found = given or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    return found if SESSION.fullmatch(found) else ""
 
 
 def field(run: Path, key: str) -> str:
