@@ -160,11 +160,11 @@ def plugin_paths(cell: str) -> str:
 
 def _called(found: task_slice.Slice) -> list:
     """The map's other rows whose owner or anchor path lies inside the task's Touches."""
-    touches = patch_checks.slice_paths([found.task.rows.get("touches", "")])
+    touches = task_slice.paths_in([found.task.rows.get("touches", "")])
     if not touches:
         return []
     def inside(way: map_file.Way) -> bool:
-        given = patch_checks.slice_paths([way.owner, way.anchor])
+        given = task_slice.paths_in([way.owner, way.anchor])
         return len(patch_checks.outside(given, touches)) < len(given)
     return [way for way in found.ways or [] if way not in found.owned and inside(way)]
 

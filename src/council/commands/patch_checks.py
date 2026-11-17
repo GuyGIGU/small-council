@@ -147,19 +147,6 @@ def signs(found: list[diff.File]) -> list[Sign]:
     return out
 
 
-def slice_paths(cells: list[str]) -> list[str]:
-    """The paths a task's Owner and Touches cells (and the map row they name) give: each word holding a '/' or a
-    file name with an extension, backticks, quotes and a trailing :line or punctuation dropped; each path once, in
-    the order first named."""
-    found = []
-    for cell in cells:
-        for word in re.split(r"[\s,;]+", cell or ""):
-            word = re.sub(r":[0-9]+(?:-[0-9]+)?$", "", word.strip("`'\"()[]*,;:").rstrip("."))
-            if "/" in word or re.fullmatch(r"[\w.*-]+\.[A-Za-z0-9]+", word):
-                found.append(word[2:] if word.startswith("./") else word)
-    return list(dict.fromkeys(found))
-
-
 def outside(files: list[str], paths: list[str]) -> list[str]:
     """The changed files in none of the slice's paths: not the path itself, under it as a folder, matching it as
     a pattern, or (a bare file name) named by it."""
