@@ -6348,7 +6348,8 @@ def gates_covers_paths(tmp):
     """#47: a gate whose Covers cell names its paths is not run again by gate --all when nothing under them changed
     since its green run on other files: one line with the reason and the time it saves, `not rerun` in the receipt,
     never a fresh pass. A change under its paths (a move out from under them too), --rerun, an empty cell or a green
-    tree git can't read means it runs; council doctor names a Covers path that matches no file."""
+    tree git can't read means it runs; council gates lists the paths; council doctor names a Covers path that matches
+    no file."""
     repo = new_repo(tmp, "covers")
     write(os.path.join(repo, "app", "ui", "view.kt"), "view\n")
     write(os.path.join(repo, "app", "core", "model.kt"), "model\n")
@@ -6411,6 +6412,11 @@ def gates_covers_paths(tmp):
     code, out, err = council(repo, "gate", "--all", "--at", "verify")
     check("gate --all: a green whose tree git can't read is never taken; the gate runs",
           ui() == 6 and "gate ui: pass (exit 0" in out and "not rerun" not in out, out + err)
+    code, out, err = council(repo, "gates")
+    check("gates: the listing names a gate's Covers paths, and says nothing of them for a gate with an empty cell",
+          code == 0 and " · covers: app/ui/**, tests/ui/" in line_of(out, "ui · ")
+          and "covers:" not in line_of(out, "unit · ") and "covers: app/ui/, app/nothere/**" in line_of(out, "ghost · "),
+          out + err)
     code, out, err = council(repo, "doctor")
     check("doctor: a Covers path that matches no file is a warning naming the gate and the path",
           "WARN  gate 'ghost' has a Covers path that matches no file here: app/nothere/** —" in out
