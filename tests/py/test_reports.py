@@ -115,7 +115,7 @@ class LedgerTest(support.Scratch):
                 ["d", "r1", "m", "hunt", "12abc", "1e3", "", "", "", ""],
                 ["d", "r1", "m", "beck", "x", "2", "", "", "", ""]]
         lines = ledger_command.Table(rows, 10).lines()
-        self.assertEqual(lines[1].split(), ["hunt", "1", "0", "0", "0", "0", "-", "-"])
+        self.assertEqual(lines[1].split(), ["hunt", "1", "0", "0", "0", "0", "-", "-", "1", "0"])  # judged, counted
         self.assertFalse(any(line.startswith("raised counts every run") for line in lines))  # "x" is not above 0
 
     def test_raw_rows_keep_the_header_and_every_line(self) -> None:
