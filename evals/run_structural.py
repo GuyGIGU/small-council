@@ -407,7 +407,7 @@ check("init: the permission offer is the helper's own list (council doctor permi
       "commands the modes run without asking",
       "`council doctor permissions` prints the block" in skill["council-init"] and offered >= {
           "run", "state", "seat", "index", "collect", "check", "ask", "prior", "memory", "ledger", "gates", "map",
-          "doctor", "home", "fingerprint", "status", "evidence", "repair", "route", "version", "context", "tree",
+          "doctor", "home", "fingerprint", "status", "evidence", "repair", "version", "context", "tree",
           "patch"})
 builder_cmds = sorted(set(re.findall(r"`council ([a-z]+)", flat(builder))) - {"seat", "state"})   # it never runs these
 asks_on_purpose = {"gate", "changed"} if "**`council gate` and `council changed` are deliberately not on the list**"     in skill["council-init"] else set()
