@@ -72,7 +72,10 @@ Seats live in `references/roster/expert-catalog.md`, not in skills.
 - Add the doc under `references/`:
   - its first line is a single `# Title` (workers echo it as proof of reading);
   - its principles are numbered `Principle 1…N`. P1–P3 are severities, and the two must never look
-    alike.
+    alike;
+  - it has an `## Applying this seat to another stack` section.
+- Add the doc to `SEAT_DOCS` in `scripts/quick_validate.py` and update the seat count in
+  `evals/run_structural.py`.
 - John Carmack chairs; he is never a seat.
 
 ## Running the gates
