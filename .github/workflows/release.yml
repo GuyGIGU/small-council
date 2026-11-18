@@ -1,0 +1,70 @@
+name: release
+
+# At each pushed v* tag: build the runtime tree of the tagged commit (scripts/build_release.py), prove it
+# stands alone (evals/run_release.py), and add it to the release branch as one commit, "Small Council <tag>".
+# main's marketplace entry installs that branch, so this is what users get (D45). It never runs on a pull
+# request and uses no secret but the default token. CONTRIBUTING.md (Releasing) has the same steps by hand.
+on:
+  push:
+    tags: ['v*']
+
+permissions: {}
+
+concurrency:
+  group: release-branch     # two tags pushed together add their commits one after the other
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write       # this job alone: it pushes the release branch
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: The tag is plugin.json's version
+        run: |
+          version="$(python -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')"
+          [ "$TAG" = "v$version" ] || { echo "::error::tag $TAG but plugin.json says $version: tag v$version instead"; exit 1; }
+
+      - name: Build the tree
+        run: python scripts/build_release.py "$RUNNER_TEMP/tree" | tee "$RUNNER_TEMP/build.txt"
+
+      - name: Prove it stands alone
+        run: python evals/run_release.py --tree "$RUNNER_TEMP/tree"
+
+      - name: Commit it to the release branch and push
+        env:
+          GIT_AUTHOR_NAME: Small Council release
+          GIT_COMMITTER_NAME: Small Council release
+          GIT_AUTHOR_EMAIL: ''
+          GIT_COMMITTER_EMAIL: ''
+        run: |
+          set -euo pipefail
+          export GIT_INDEX_FILE="$RUNNER_TEMP/release.index"     # a fresh index: only the tree's files
+          git --work-tree="$RUNNER_TEMP/tree" add -A
+          # shellcheck disable=SC2046  # the paths the build names, split at spaces (none holds one)
+          git update-index --chmod=+x $(sed -n 's/^executable: //p' "$RUNNER_TEMP/build.txt")
+          tree="$(git write-tree)"
+          parent=()
+          if git ls-remote --exit-code --heads origin release >/dev/null; then
+            git fetch --no-tags --depth=1 origin release
+            # Published by hand already (CONTRIBUTING.md, Releasing): the same tree gets no second commit.
+            [ "$(git rev-parse 'FETCH_HEAD^{tree}')" != "$tree" ] || { echo "release already holds this tree"; exit 0; }
+            parent=(-p "$(git rev-parse FETCH_HEAD)")
+          fi
+          commit="$(git commit-tree "$tree" "${parent[@]}" -m "Small Council $TAG")"
+          git push origin "$commit:refs/heads/release"
+          echo "release is now $commit (Small Council $TAG)"

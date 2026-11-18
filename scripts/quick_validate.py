@@ -117,8 +117,8 @@ if market is not None:
     for entry in entries:
         if plugin is not None and entry.get("name") != plugin.get("name"):
             errors.append(f"marketplace.json: entry '{entry.get('name')}' != plugin.json name '{plugin.get('name')}'")
-        if entry.get("source") != "./":
-            errors.append("marketplace.json: this repo is its own plugin — source must be \"./\"")
+        if entry.get("source") != {"source": "github", "repo": "GuyGIGU/small-council", "ref": "release"}:
+            errors.append("marketplace.json: source must be the release branch, github GuyGIGU/small-council ref release (D45)")
         if "version" in entry:
             warnings.append("marketplace.json: version in the entry is shadowed by plugin.json — drop it")
 
