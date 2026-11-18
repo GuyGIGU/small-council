@@ -109,11 +109,7 @@ def roster(doc: Doctor) -> None:
         doc.warn("couldn't read a Roster table in %s" % config.NAME,
                  "run council-init refresh (older configs list seats instead of a table)")
         return
-    cards = doc.home + "/cards"
-    has_cards = os.path.isdir(where.native(cards))
-    if not has_cards:
-        doc.warn("no seat cards yet (.council/cards/ is missing)",
-                 "a council-init refresh writes one per seat — workers read them instead of the generic docs")
+    cards = doc.home + "/cards"          # a seat's card is written the first run that selects it: none is no finding
     for slug, seat, ref in rows:
         if ref not in ("none", "n/a", "-") and not _isfile(ref_path(ref, doc.root)):
             doc.error("seat '%s' points at a reference doc that doesn't exist: %s" % (seat, ref),
@@ -121,7 +117,7 @@ def roster(doc: Doctor) -> None:
         if slug == "-":
             doc.warn("seat '%s' has no slug" % seat,
                      "give it a lowercase slug in the roster — it names the seat's file and card")
-        elif has_cards:
+        else:
             card(doc, seat, slug, cards + "/" + slug + ".md")
     slugs = [slug for slug, _, _ in rows if slug != "-"]
     shared = sorted({s for s in slugs if slugs.count(s) > 1}, key=bytewise.text)
@@ -131,10 +127,9 @@ def roster(doc: Doctor) -> None:
 
 
 def card(doc: Doctor, seat: str, slug: str, path: str) -> None:
+    """A card that exists is checked; a seat with none yet is fine, since its first run writes it."""
     data = paths.contents(where.native(path))
     if data is None:
-        doc.warn("seat '%s' has no card (cards/%s.md)" % (seat, slug),
-                 "council-init refresh writes one from references/templates/seat-card.md")
         return
     source = cells.field(data.decode("utf-8", "surrogateescape"), "source")
     source = re.sub(r"[ \t\n\v\f\r]*·.*\Z", "", source, count=1, flags=re.S).replace("`", "")

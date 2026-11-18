@@ -960,6 +960,36 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
           item(out, "Status card at the first dispatch") == ("pass", "no agent was dispatched, so none was due")
           and item(out, "Size and cost before the first dispatch") == ("pass", "no agent was dispatched")
           and " FAIL " not in out.split("From the session transcript")[-1], out + err)
+    # Only a council agent is a dispatch, by the agent gate's rule: a general agent sent while the run is open
+    # (a one-off web fetch at setup) owes no size and no card; a council worker sent before the size still FAILs.
+    other = minimal_run(base, "2026-10-10-121500-review", [(stamp(300), "run.opened", "run", "council-review",
+                                                            "phase=convene"),
+                                                           (stamp(400), "run.closed", "run", "complete", "agent_runs=0")])
+    for name, council_sent in (("other-agent", False), ("council-agent", True)):
+        log = Transcript("session-multi", t0 + timedelta(seconds=290))
+        log.prompt("set it up")
+        log.at(t0 + timedelta(seconds=299)).bash("council run open council-review", str(other))
+        log.call("Agent", {"subagent_type": "general-purpose", "description": "Fetch", "prompt": "fetch the docs"},
+                 "fetched")
+        log.call("Workflow", {"script": "agent({prompt: 'look around'})"}, "done")
+        if council_sent:
+            log.call("Agent", {"subagent_type": "small-council:council-worker", "description": "W", "prompt": "x"},
+                     "done")
+        log.at(t0 + timedelta(seconds=399)).bash("council run close", "closed %s — complete" % other.name)
+        log.bash("council status", "Status: closed, complete.")
+        log.text("Status: closed, complete.")
+        log.at(t0 + timedelta(minutes=20)).prompt("thanks")
+        log.save(base / "multi" / (name + ".jsonl"))
+    out = council(base, "run", "audit", "--run", str(other), "--transcript", str(base / "multi" / "other-agent.jsonl"))[1]
+    check("an Agent call that is no council agent (and a Workflow that starts none) is no dispatch: the size and the "
+          "card pass with no agent dispatched",
+          item(out, "Status card at the first dispatch") == ("pass", "no agent was dispatched, so none was due")
+          and item(out, "Size and cost before the first dispatch") == ("pass", "no agent was dispatched"),
+          [item(out, "Size and cost before the first dispatch"), item(out, "Status card at the first dispatch")])
+    out = council(base, "run", "audit", "--run", str(other), "--transcript", str(base / "multi" / "council-agent.jsonl"))[1]
+    check("a council worker sent before the size and cost were recorded still FAILs",
+          item(out, "Size and cost before the first dispatch")[0] == "FAIL",
+          item(out, "Size and cost before the first dispatch"))
     log = Transcript("session-multi", t0)
     log.prompt("run the review in an agent")
     log.at(t0 + timedelta(seconds=10)).call("Agent", {"subagent_type": "general-purpose", "description": "Drive it",

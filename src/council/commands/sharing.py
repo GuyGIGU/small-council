@@ -109,12 +109,15 @@ def switch(home: str, want: str) -> None:
                 _take_note_out(root, folder, name)
     settings = config.path(home)
     if settings.is_file():
+        before = tracked_state(root, CONFIG_FILE)
         try:
             data = settings.read_bytes()
-            settings.write_bytes(setting.with_sharing(data, label))
+            changed = setting.with_sharing(data, label)
+            settings.write_bytes(changed)
         except OSError:
             raise cli.Refusal("couldn't write %s/%s" % (home, config.NAME)) from None
-        cli.say("council.config.md: - sharing: " + label)
+        cli.say("council.config.md: - sharing: " + label
+                + (uncommitted(root, CONFIG_FILE, before, "") if changed != data else ""))
     else:
         cli.say("no council.config.md yet: council-init writes '- sharing: %s' under ## Run preferences" % label)
     if want == "just-me":
@@ -176,11 +179,13 @@ def _exclude_council(root: str, exclude: str) -> None:
 def _take_note_out(root: str, folder: str, name: str) -> None:
     """Take council-init's note out of one CLAUDE.md or AGENTS.md, and say what happened."""
     shown = name if folder == root else folder + "/" + name
-    committed = ""
+    seen = ""
     if git.text(folder, "cat-file", "-e", "HEAD:" + name) is not None \
             and has_note(git.output(folder, "show", "HEAD:" + name, allow_error=True)):
-        committed = " — it was committed, so commit this change too (teammates see the note go)"
+        seen = " (teammates see the note go)"
+    before = tracked_state(folder, name)
     answer = drop(folder + "/" + name, NOTE_BEGIN, NOTE_END)
+    committed = uncommitted(folder, name, before, seen) if answer in (REMOVED, EMPTIED) else ""
     if answer == REMOVED:
         cli.say("took the Small Council note out of %s%s" % (shown, committed))
     elif answer == EMPTIED:
@@ -194,6 +199,29 @@ def _take_note_out(root: str, folder: str, name: str) -> None:
                 % shown)
     elif answer == UNREADABLE:
         cli.say("couldn't rewrite %s: take the Small Council note out by hand" % shown)
+
+
+def tracked_state(folder: str, name: str) -> str:
+    """Before a change: 'clean' when git tracks the file and it has no uncommitted edits, 'edited' when it
+    has some (so git checkout would drop them too), '' when git doesn't track it."""
+    if git.text(folder, "ls-files", "--error-unmatch", "--", name) is None:
+        return ""
+    return "clean" if git.text(folder, "diff", "--quiet", "--", name) is not None else "edited"
+
+
+def uncommitted(folder: str, name: str, before: str, why: str) -> str:
+    """What a change to a file git tracks leaves the user: an uncommitted change, with its two next steps
+    (commit it, or put it back); '' for a file git doesn't track."""
+    if not before:
+        return ""
+    back = "git checkout -- " + name
+    if os.path.normcase(os.path.abspath(folder)) != os.path.normcase(os.path.abspath(where.this_tree())):
+        back = "git -C %s checkout -- %s" % (folder, name)
+    if before == "edited":
+        back = "by hand (%s would drop your own uncommitted edits to it too)" % back
+    else:
+        back = "with " + back
+    return " — git tracks it, so this is an uncommitted change: commit it%s, or put it back %s" % (why, back)
 
 
 def drop(file: str, begin: Pattern[bytes], end: Pattern[bytes]) -> int:

@@ -3980,7 +3980,8 @@ def runs_worktrees_close_and_find(tmp):
     check("doctor: a missing reference doc is an error", code == 1 and "does-not-exist.md" in out and "Fix:" in out, out)
     check("doctor: flags a gate row whose columns shifted", "columns have shifted" in out, out)
     check("doctor: flags a repeated slug", "repeats a slug: fowler" in out, out)
-    check("doctor: flags a seat without a card", "seat 'Ghost' has no card" in out, out)
+    check("doctor: a seat with no card yet is no finding (its first run writes it); a card that is there is still "
+          "checked", not [l for l in out.splitlines() if "Ghost" in l and "card" in l] and "the card for 'Martin Fowler'" in out, out)
     check("doctor: flags a card whose source doc is gone", "names a source doc that doesn't exist: references/nope.md" in out, out)
     check("doctor: flags stale memory anchors", "3 memory anchor(s) point at code" in out, out)
     check("doctor: notices a config without a stack fingerprint", "has no stack-fingerprint" in out, out)
@@ -3993,6 +3994,13 @@ def runs_worktrees_close_and_find(tmp):
     write(os.path.join(gone_map, ".council", "map.md"), "# Map\nmap-commit: 0123456789abcdef0123456789abcdef01234567\n")
     code, out, _ = council(gone_map, "doctor")
     check("doctor: a map-commit that isn't in this repo's history is flagged", "isn't in this repo's history" in out, out)
+    no_cards = new_repo(tmp, "nocards")
+    write(os.path.join(no_cards, ".council", "council.config.md"), "# Council config\n\n## Roster\n"
+          "| Seat | Slug | Lens | Surface | Reference | Recast note |\n|---|---|---|---|---|---|\n"
+          "| Martin Fowler | fowler | Structure | `src/**` | references/refactoring.md | kept |\n")
+    code, out, _ = council(no_cards, "doctor")
+    check("doctor: no .council/cards/ folder at all is no finding, and nothing about a card is said",
+          "card" not in out.lower() and "Martin Fowler" not in out, out)
     code, out, _ = council(msec, "doctor")
     check("doctor: counts a proposal written as a heading, and flags entries under a section it can't place",
           "2 memory proposal(s) await" in out and "1 memory entr" in out and "never reach a brief" in out, out)
@@ -7813,17 +7821,22 @@ def runs_sharing(tmp):
           read(os.path.join(sh, "CLAUDE.md")) == "# Project\n\nOur rules.\n\nMore rules.\n", read(os.path.join(sh, "CLAUDE.md")))
     check("sharing just-me: an AGENTS.md that held only the note goes",
           not os.path.exists(os.path.join(sh, "AGENTS.md")) and "removed AGENTS.md" in out, out)
-    check("sharing just-me: says the CLAUDE.md change needs a commit, since the note was committed — and not for the uncommitted AGENTS.md",
-          "it was committed" in line_of(out, "CLAUDE.md") and "committed" not in line_of(out, "AGENTS.md"), out)
+    check("sharing just-me: each file git tracks that it changed is named as an uncommitted change, with commit it or "
+          "put it back — and not the AGENTS.md git doesn't track",
+          "uncommitted" in line_of(out, "CLAUDE.md") and "commit it" in line_of(out, "CLAUDE.md")
+          and "git checkout -- CLAUDE.md" in line_of(out, "CLAUDE.md")
+          and "git checkout -- .council/council.config.md" in line_of(out, "council.config.md")
+          and "committed" not in line_of(out, "AGENTS.md"), out)
     check("sharing just-me: the config says so under Run preferences, in its own CRLF line endings",
           b"## Run preferences\r\n- sharing: just me\r\n- agent cap: 10\r\n" in raw(cfg)
           and raw(cfg).count(b"\n") == raw(cfg).count(b"\r\n"), repr(raw(cfg)))
     check("sharing just-me: council files already in git are named, with the one command that takes them out — not run for the user",
           "1 council file(s) are already in git" in out and "git rm -r --cached .council" in out
           and git(sh, "ls-files", ".council") == ".council/council.config.md", out)
-    council(sh, "sharing", "just-me")
+    _, out, _ = council(sh, "sharing", "just-me")
     check("sharing just-me twice: the exclude list is unchanged, and the config holds one sharing line",
           raw(excl) == after and raw(cfg).count(b"- sharing:") == 1, repr(raw(excl)))
+    check("sharing just-me twice: nothing changed, so no file is named as an uncommitted change", "uncommitted" not in out, out)
 
     code, out, _ = council(sh, "sharing")
     check("sharing: just me shows what is done and what is left, with its fix",
@@ -7890,6 +7903,23 @@ def runs_sharing(tmp):
         f.write(note.replace("\n", "\r\n"))
     _, out, _ = council(loose, "sharing")
     check("sharing: finds the note in a CRLF CLAUDE.md", "still in CLAUDE.md" in line_of(out, "NOT YET"), out)
+
+    # A tracked file the switch changes is named, as an uncommitted change with its two next steps; a file the
+    # user had already edited is put back by hand, since git checkout would drop their edits too.
+    mine = new_repo(tmp, "sharing-tracked")
+    write(os.path.join(mine, "CLAUDE.md"), "# Project\n\n" + note)
+    write(os.path.join(mine, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- sharing: just me\n")
+    git(mine, "add", "-A")
+    git(mine, "commit", "-q", "-m", "a council")
+    append(os.path.join(mine, "CLAUDE.md"), "My own edit.\n")
+    code, out, _ = council(mine, "sharing", "team")
+    check("sharing team: the config git tracks is named as an uncommitted change, commit it or put it back",
+          code == 0 and "uncommitted" in line_of(out, "council.config.md")
+          and "git checkout -- .council/council.config.md" in line_of(out, "council.config.md"), out)
+    code, out, _ = council(mine, "sharing", "just-me")
+    check("sharing just-me: a tracked CLAUDE.md with the user's own edits is put back by hand, not with git checkout",
+          code == 0 and "uncommitted" in line_of(out, "CLAUDE.md") and "by hand" in line_of(out, "CLAUDE.md")
+          and "My own edit." in read(os.path.join(mine, "CLAUDE.md")), out)
 
 @part("requests")
 def requests_postgame_and_redaction(tmp):
