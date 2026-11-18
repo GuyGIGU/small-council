@@ -64,6 +64,8 @@ RETIRED = {  # a command 1.2.0 removed (D44), by its words, and what to do inste
     "route": "size the run from the doctrine's size limits and the config's `- estimates:` line, record it in "
              "run-plan.tsv, then: council run plan check",
     "ledger advice": "council ledger [N] shows each seat's record over the last N runs; weigh it from there",
+    "evidence show": "the claims and their verdicts are in <run>/claims.jsonl, which council evidence check builds "
+                     "and checks; council status counts them",
 }
 
 

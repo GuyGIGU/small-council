@@ -48,7 +48,7 @@ def main(args: cli.Args, words: list[str]) -> int:
                 "records, now done: " + ", ".join(added) if added else "nothing changed"))
         if old[0] == "complete" and not audit_file.present(run):
             close_report.audit(run)
-        close_report.claims_note(run)
+        close_report.claims_note(run, old[0])
         return 0
     _close(run, status, lost, retake, old[0] != status or not old[1])
     locks.release(lock)                                   # once: a second release could free another close's lock
@@ -77,7 +77,7 @@ def _close(run: Path, status: str, lost: str, retake: bool, real: bool) -> None:
     if busy and status != "abandoned":
         cli.warn("council: seats still marked running or queued: %s — their results will not be collected; wait for "
                  "them, or record each (council seat <slug> failed or skipped) before closing" % busy)
-    close_report.claims_note(run)
+    close_report.claims_note(run, status)
     codes = _complete(run, home) if status == "complete" else ""
     if real:
         detail = _detail(seat_list, totals)

@@ -8825,59 +8825,48 @@ def close_claim_index(tmp):
           and index[0]["verification"][0]["evidence"] == "a.txt:1\x0cmore"
           and index[0]["verification"][0]["ref"] == "verify-1.md:4", out + err + str(index))
     council(lf, "run", "close", "--status", "abandoned")
-    # Closing a synthesis run warns about an absent or outdated claim index without rebuilding it.
+    # A complete close of a synthesis run builds its claim index itself (D44): the Chair runs no evidence build
+    # for the audit's sake, and only an index the sources can't give is a warning.
     stale_repo = new_repo(tmp, "stale-claims")
     write(os.path.join(stale_repo, ".council", "council.config.md"), "# Council config\n")
     _, stale_run, _ = council(stale_repo, "run", "open", "council-review")
     stale_run = stale_run.strip()
+    index = os.path.join(stale_run, "claims.jsonl")
     write(os.path.join(stale_run, "synthesis.md"), "# Synthesis\n## Kept\n(none)\n## Cut\n(none)\n")
-    warning = "the claim index is missing or out of date"
+    warning = "the claim index could not be built"
     write_plan(stale_run)
     to_deliver(stale_repo, "--run", stale_run)
+    code, out, err = council(stale_repo, "run", "close", "--run", stale_run)
+    check("close: a missing claim index is built by the close, with no warning, and the audit finds it",
+          code == 0 and warning not in err and os.path.isfile(index) and "Claim index: missing" not in out, out + err)
+    write(os.path.join(stale_run, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P2 · principle · source.py:1 · a later claim · state: OBSERVED · from: chair\n## Cut\n(none)\n")
+    newer = os.stat(index).st_mtime + 5
+    os.utime(os.path.join(stale_run, "synthesis.md"), (newer, newer))
     code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
-    check("close: missing claims warn with an explicit run rebuild command",
-          code == 0 and warning in err and "evidence build --run " + os.path.basename(stale_run) in err
-          and not os.path.exists(os.path.join(stale_run, "claims.jsonl")), err)
-    council(stale_repo, "evidence", "build", "--run", stale_run)
+    check("close again: a synthesis newer than the index is indexed again, with no warning",
+          code == 0 and warning not in err and "a later claim" in read(index), err)
+    write(os.path.join(stale_run, "verify-1.md"), "# Verification\n| # | Item | Verdict | Evidence |\n"
+          "|---|---|---|---|\n| 9 | nothing | CONFIRMED | x |\n")
+    index_before = read(index)
     code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
-    check("close: a current claim index does not warn", code == 0 and warning not in err, err)
-    index_before = read(os.path.join(stale_run, "claims.jsonl"))
-    for source in ("synthesis.md", "verify-1-a.md"):
-        path = os.path.join(stale_run, source)
-        write(path, read(path) or "# Verification\n")
-        newer = os.stat(os.path.join(stale_run, "claims.jsonl")).st_mtime + 5
-        os.utime(path, (newer, newer))
-        code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
-        check("close: newer " + source + " warns without changing the index",
-              code == 0 and warning in err and read(os.path.join(stale_run, "claims.jsonl")) == index_before, err)
-        os.utime(path, (newer - 10, newer - 10))
-
-    # Closing also detects deleted sources, which cannot be caught by comparing
-    # the mtimes of files that remain beside the index.
-    deleted_repo = new_repo(tmp, "deleted-claim-source")
-    write(os.path.join(deleted_repo, ".council", "council.config.md"), "# Council config\n")
-    _, deleted_run, _ = council(deleted_repo, "run", "open", "council-review")
-    deleted_run = deleted_run.strip()
-    write(os.path.join(deleted_run, "synthesis.md"), "# Synthesis\n## Kept\n"
-          "1 · P2 · principle · source.py:1 · indexed claim\n## Cut\n(none)\n")
-    write(os.path.join(deleted_run, "verify-1.md"), "# Verification\n| # | Item | Verdict | Evidence |\n"
-          "|---|---|---|---|\n| 1 | claim | CONFIRMED | checked source.py:1 |\n")
-    council(deleted_repo, "evidence", "build", "--run", deleted_run)
-    write_plan(deleted_run)
-    to_deliver(deleted_repo, "--run", deleted_run)
-    code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
-    check("close: current verifier-backed claim index does not warn",
-          code == 0 and warning not in err, err)
-    os.unlink(os.path.join(deleted_run, "verify-1.md"))
-    code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
-    check("close: a deleted verifier source warns even when remaining sources are older",
-          code == 0 and warning in err, err)
-    write(os.path.join(deleted_run, "verify-1.md"), "# Verification\n| # | Item | Verdict | Evidence |\n"
-          "|---|---|---|---|\n| 1 | claim | CONFIRMED | checked source.py:1 |\n")
-    council(deleted_repo, "evidence", "build", "--run", deleted_run)
-    os.unlink(os.path.join(deleted_run, "synthesis.md"))
-    code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
-    check("close: a deleted synthesis source warns", code == 0 and warning in err, err)
+    check("close: sources the index can't be built from warn, naming evidence check, and leave the index as it was",
+          code == 0 and warning in err and "council evidence check --run " + os.path.basename(stale_run) in err
+          and read(index) == index_before, err)
+    os.unlink(os.path.join(stale_run, "verify-1.md"))
+    os.unlink(os.path.join(stale_run, "synthesis.md"))
+    code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
+    check("close: an index with no synthesis.md beside it warns, naming the file to write",
+          code == 0 and "claims.jsonl has no synthesis.md beside it" in err, err)
+    paused_repo = new_repo(tmp, "paused-claims")
+    write(os.path.join(paused_repo, ".council", "council.config.md"), "# Council config\n")
+    _, paused_run, _ = council(paused_repo, "run", "open", "council-review")
+    paused_run = paused_run.strip()
+    write(os.path.join(paused_run, "synthesis.md"), "# Synthesis\n## Kept\n(none)\n## Cut\n(none)\n")
+    write_plan(paused_run)
+    code, _, err = council(paused_repo, "run", "close", "--status", "paused", "--run", paused_run)
+    check("close --status paused: nothing is built or said about the index — Challenge has not run",
+          code == 0 and "claim index" not in err and not os.path.exists(os.path.join(paused_run, "claims.jsonl")), err)
 
 @part("lifecycle")
 def runs_full_size_needs_go(tmp):

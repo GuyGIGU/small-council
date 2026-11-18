@@ -98,13 +98,14 @@ def block(title: str, fields: list[tuple[str, str]]) -> str:
 
 
 def draft_claim(run: Path, top: Path, claim_id: str, scope: str, today: str) -> str:
-    recorded = evidence.read_file(run / "claims.jsonl", required=False)
-    if recorded is None:
-        raise MemoryError_("no claims.jsonl in this run — run council evidence build after Challenge")
-    claims, _ = evidence.synthesis(run)
-    evidence.verifier_rows(run, claims)
-    if recorded != evidence.render(claims):
-        raise MemoryError_("claims.jsonl is stale — run council evidence build, then propose again")
+    if not (run / "synthesis.md").is_file():
+        raise MemoryError_("no synthesis.md in this run, so no claims to draft from — a claim comes from a review, "
+                           "plan or research run's Judge: pass --run <that run>")
+    try:
+        claims = evidence.build(run)       # the index, built now from its sources (D44)
+    except evidence.EvidenceError as unread:
+        raise MemoryError_("the claim index can't be built: {} — mend that, then propose again"
+                           .format(unread)) from None
     claim = next((item for item in claims if item["id"] == claim_id), None)
     if claim is None:
         raise MemoryError_("no claim {} in this run's claims.jsonl".format(claim_id))

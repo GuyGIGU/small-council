@@ -80,8 +80,9 @@ council — the Small Council's helper (Python 3.8+ and git)
                                          (or add an agent run the record missed); seats.tsv keeps
                                          the original, corrections.jsonl the evidence
   council index [--base REF]             change index → <run>/index.md (hunks, symbols, callers, tests)
-  council evidence build|show|check       index claims, provenance, states and verifier links from
-                                         synthesis.md and verify-*.md into run-local claims.jsonl
+  council evidence build|check           index claims, provenance, states and verifier links from
+                                         synthesis.md and verify-*.md into run-local claims.jsonl; check
+                                         builds the index itself, then checks it
   council repair record <task> <gate>     snapshot one completed gate attempt, classify its failure
   council repair show|check [task]        inspect bounded repair advice or check saved proof
   council repair allow <gate> --user-said "…"
