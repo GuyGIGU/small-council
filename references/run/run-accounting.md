@@ -98,7 +98,7 @@ The `seat.updated` event carries a seat's totals so far, so summing events count
 
 - **The close line** (`actual:` in `session-state.md`) uses the same bases.
 - **The ledger** marks rows it writes with `accounting` 2. Their tokens are a checked figure or "-".
-  Rows without the mark are older, and their tokens are never priced by `council ledger advice`.
+  Rows without the mark are older, and their tokens are never priced by `council ledger`.
 - **The close's audit names each seat that was an agent run with no token figure** (the `Token
   figures` item, a FAIL, from `records/usage_gaps.py` over the per-seat rule above: a basis of
   partial, missing, unrecorded or suspect; the Chair's own seat, a seat declared `agents=0` and a seat

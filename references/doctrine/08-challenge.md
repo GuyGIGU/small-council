@@ -33,7 +33,7 @@ Catch what's wrong before the user sees it.
      the user the run's status now, once (Work, "Right after dispatching", step 2).
    - A Workflow of verifiers: `${CLAUDE_PLUGIN_ROOT}/references/run/workflow.md`, Challenge. Each agent writes
      `<run>/verify-<n>-<letter>.md` in the run folder itself. Never merge, copy or move them:
-     `council evidence build` reads every `verify-*.md` there. After `run close`, pass `--run <name>`.
+     `council evidence check` reads every `verify-*.md` there. After `run close`, pass `--run <name>`.
    - **Over the cap?** P1s and protected items get their own verifiers first; keep one for the
      batch of everything else. If even that doesn't fit, pair P1s two to a verifier. Tell the user
      what shared a verifier.
@@ -50,14 +50,12 @@ Catch what's wrong before the user sees it.
      id unchanged (`C4`), and ship it under that id. If it truly stays cut, add `still-cut: <why>`
      before `from:`. `council evidence check` holds the run until one or the other is done.
 4. **Every shipped item has a verdict** — check before you move on.
-5. **Refresh the claim index.** After verifier files exist, `council evidence build`, then
-   `council evidence check`. Run `evidence build`/`check`, `collect` and `check` on their own
-   (or test their exit status), never through a pipe (context-core, The helper).
+5. **The claim index.** After verifier files exist, `council evidence check`: it builds the index
+   from synthesis.md and the verify files, then judges it. Run `evidence check`, `collect` and
+   `check` on their own (or test their exit status), never through a pipe (context-core, The helper).
    Fix missing provenance, evidence-state declarations, proof artifacts, verifier rows or conflicting
-   rows.
-   `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
-   This step is for synthesis claims in review, plan and research; build and post-game keep their
-   own proof contracts.
+   rows. `UNCERTAIN` remains a disclosed verdict, not a hidden pass. This step is for synthesis
+   claims in review, plan and research; build and post-game keep their own proof contracts.
 
 ## Solo runs
 

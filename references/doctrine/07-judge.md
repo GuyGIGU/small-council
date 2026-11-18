@@ -17,8 +17,6 @@ Your judgment, written down.
    and cut claim carries a declared `state:` and `from:` (`references/run/evidence-model.md`); a
    `REPRODUCED` claim also names saved `proof:`. Several seats agreeing never upgrades an inference
    to an observation. Everything after this stage reads the file, not your memory of it.
-7. **For review, plan and research, build the provisional claim index** with
-   `council evidence build`. Missing verifier links at this stage are expected, never a pass.
 
 ## synthesis.md
 

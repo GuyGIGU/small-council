@@ -174,12 +174,14 @@ check("resume.md: resuming a run records this session as its driver (council run
       "points at it", "council run resume" in resume_doc and "references/run/resume.md" in core[core.find("## Resume"):])
 check("kernel: new runs require a validated run plan before Brief or dispatch",
       "council run plan check" in core and "before Brief, Build or any worker starts" in core)
-check("kernel: adaptive routing is advisory before a run opens",
-      "council route recommend" in core and "advisory" in core)
+check("kernel: no command sizes or prices a run — the Chair does at Convene and records it in the plan (D44)",
+      "No command sizes or prices a run" in core and "Convene (steps 5–6)" in core and "council route" not in core)
 check("kernel: the evidence ledger does not replace synthesis, and no step is left for a helper without Python (every "
-      "command needs it)", "council evidence build" in core and "optional Python" not in core and "synthesis.md" in core)
-check("challenge: refreshed evidence links are checked", "council evidence build" in doctrine["08-challenge.md"] and
-      "council evidence check" in doctrine["08-challenge.md"])
+      "command needs it)", "council evidence check" in core and "optional Python" not in core and "synthesis.md" in core
+      and "council evidence build" not in core)
+check("challenge: the evidence check builds the claim index from the verify files, then judges it",
+      "council evidence check" in doctrine["08-challenge.md"] and "builds the index" in doctrine["08-challenge.md"] and
+      "council evidence build" not in doctrine["08-challenge.md"] and "council evidence build" not in doctrine["07-judge.md"])
 evidence_contract = read("references", "run", "evidence-model.md")
 check("evidence: support states stay distinct from verifier verdicts",
       all(state in evidence_contract for state in ("OBSERVED", "REPRODUCED", "INFERRED", "ASSUMED", "UNVERIFIED")) and
@@ -228,9 +230,10 @@ check("accounting: seats record exact usage per agent run, a Workflow's agent co
       "share one per-seat rule",
       os.path.isfile(os.path.join(ROOT, "references", "run", "run-accounting.md")) and
       "agents=<agent_count>" in doctrine["05-work.md"] and "never a role name" in doctrine["05-work.md"])
-check("seat learning: roster advice weighs only judged runs, past a stated bar",
-      "council ledger advice" in doctrine["10-learn.md"] and
-      "council ledger advice 20" in read("skills/council-init/SKILL.md") and
+check("seat learning: the Chair weighs roster changes on judged runs only, past a stated bar (the ledger weighs nothing)",
+      "council ledger [N]" in doctrine["10-learn.md"] and
+      "council ledger 20" in read("skills/council-init/SKILL.md") and
+      "it weighs nothing, you do" in read("skills/council-init/SKILL.md") and
       "Below the bar" in read("skills/council-init/SKILL.md"))
 
 # 3. Stage doctrine
@@ -241,10 +244,12 @@ for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
         check(f"{d}: hands off to {STAGES[i]}", re.search(r"`council state [^`]*phase=%s`" % STAGES[i], t) is not None)
     check(f"{d}: ≤ 6,000 chars", len(t) <= 6000, str(len(t)))
 check("01-convene: opens the run with the helper", "council run open" in doctrine["01-convene.md"])
-check("01-convene: weighs route advice before opening the run",
-      0 <= doctrine["01-convene.md"].find("council route recommend") < doctrine["01-convene.md"].find("**Open the run"))
-check("01-convene: a route needing rescope does not silently waive verification",
-      "needs-rescope" in doctrine["01-convene.md"] and "before opening or" in doctrine["01-convene.md"])
+check("01-convene: the Chair sizes and prices the run itself before opening it",
+      0 <= doctrine["01-convene.md"].find("**Size it**") < doctrine["01-convene.md"].find("**Open the run") and
+      "no command does" in doctrine["01-convene.md"])
+check("01-convene: a cost past the user's ceiling is the user's to decide, and a Solo label does not waive verification",
+      "is the user's to decide before a run opens" in flat(doctrine["01-convene.md"]) and
+      "never waives a required" in flat(doctrine["01-convene.md"]))
 check("01-convene: asks whether a run is needed before its steps — never for a protected subject, a review or a post-game",
       0 <= doctrine["01-convene.md"].find("**Whether, first.**") < doctrine["01-convene.md"].find("**Open runs first.**") and
       all(p in doctrine["01-convene.md"] for p in ("open none", "protected subject", "review or post-game")))
@@ -256,7 +261,7 @@ check("workflow.md: a Workflow's agents each take a group of small parts, not on
       and all("references/run/workflow.md" in doctrine[d] for d in ("03-assign.md", "05-work.md", "08-challenge.md")))
 check("implement: small tasks of one kind share a verifier (build-proof.md, Checking, per task)",
       "up to five of one kind" in read("references", "build-proof.md").split("## Checking", 1)[-1])
-check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
+check("03-assign: a seat's slice is its Surface markers' match", "the match is the seat's slice" in flat(doctrine["03-assign.md"]))
 check("02-prepare: builds the change index", "council index" in doctrine["02-prepare.md"])
 check("01-convene: checks the stack fingerprint", "council fingerprint check" in doctrine["01-convene.md"])
 check("01-convene: a config with no stack fingerprint is offered a refresh too", "no stack-fingerprint" in doctrine["01-convene.md"])

@@ -64,8 +64,8 @@ only when `council run open` refuses and says to.
 Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.md`; the stage
 doctrine says when to run each command. Rules for every run:
 
-- `council route recommend` is advisory before a run opens; record final choices in the plan.
-- `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
+- No command sizes or prices a run: you do, at Convene (steps 5–6), and record it in the plan.
+- `council evidence check` builds the claim index from `synthesis.md`, then checks it (Challenge, step 5).
 - Never pipe a council command through head, tail or grep (a hook refuses it); redirect it to a
   file and read that. `council gate --all` exit 4 means NOTHING WAS CHECKED: never report that as a
   pass. A single gate's exit 4 is that command's own exit code.

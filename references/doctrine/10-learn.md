@@ -13,7 +13,7 @@
   future check it changes. Which verdicts and scopes get one served: the memory file's
   `## Observed Failures` comment (`references/templates/conventions.md`).
 - **Draft a failure from the run's own record when there is one:** a claim the blind verifier
-  REFUTED or MISCITED (`council memory propose claim <id>`, after `council evidence build`), or a
+  REFUTED or MISCITED (`council memory propose claim <id>`, which builds the claim index itself), or a
   build task's recorded gate failures (`council memory propose repair <task> --scope <paths>`). The
   helper fills the entry from those records, not from your summary, writes it under `## Proposed`,
   and refuses one that could not be served. Otherwise write the proposal by hand.
@@ -46,8 +46,9 @@
 
 `council run close` stamps the status and the actual cost and, for a completed run, adds each
 seat's row to the ledger — counted from the seat files, synthesis.md's `from:` lines and the verify
-tables, so keep those exact. Its warnings are for the user: tell them. `council ledger` shows the record: Convene estimates from it. `council ledger advice` says how much it supports,
-seat by seat; a council-init refresh proposes roster changes only where the advice clears its bar.
+tables, so keep those exact. Its warnings are for the user: tell them. `council ledger [N]` shows
+each seat's record over the last N runs: Convene estimates from it, and a council-init refresh
+weighs roster changes on it.
 - A run stopped for good → `--status abandoned`.
 - A run the user paused, "stop for tonight" too → `--status paused`; to bring it back,
   `council run resume --run <folder>`.

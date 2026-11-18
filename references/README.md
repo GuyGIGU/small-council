@@ -29,7 +29,6 @@ Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is
 ## Run contracts — `run/`
 
 `helper-commands.md` lists the helper commands by purpose without loading that table on every run.
-`adaptive-routing.md` documents the optional pre-run recommendation and its limits.
 `run-plan.md` defines the checked decision state for a run. `event-stream.md` defines the
 append-only record of CLI-observable actions.
 `run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.

@@ -57,15 +57,14 @@ runs the same reading when a verifier stops, so the verifier fixes its own file.
 corrections in the readable deliverable rather than overwriting the verifier's words.
 
 A Solo run's own verdicts (`verify-self.md`, Challenge, Solo runs) are links marked `self`;
-`evidence show` and the closing card say self-checked, and they satisfy `evidence check` only when the run plan's verification level is `self` (or its size `solo`).
+the closing card says self-checked, and they satisfy `evidence check` only when the run plan's verification level is `self` (or its size `solo`).
 An independent verifier's row outranks a self-check.
 
 ## Run-local index
 
-After Judge, `council evidence build` writes `<run>/claims.jsonl` as a provisional snapshot. After
-Challenge and `council check`, rebuild it, run `council evidence check`, then inspect it with
-`council evidence show`. The check rejects stale snapshots, absent evidence-state/provenance/citation
-fields, missing seat item or reproduction artifacts, missing verdicts for kept claims or cut P1s,
+After Challenge and `council check`, `council evidence check` builds `<run>/claims.jsonl` from
+synthesis.md and every `verify-*.md`, then checks it. The check rejects absent
+evidence-state/provenance/citation fields, missing seat item or reproduction artifacts, missing verdicts for kept claims or cut P1s,
 a cut claim a verifier found true and left cut without `still-cut:`, unlinked verifier evidence,
 duplicate verifier rows and unknown claim ids. `UNCERTAIN` is a valid
 verdict but must be labelled in the deliverable. `REFUTED` stays in the audit trail and is dropped

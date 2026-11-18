@@ -4,11 +4,9 @@ Give each seat exactly its slice, and each worker a budget.
 
 ## Steps
 
-1. **Match surfaces.** Use the Convene routing recommendation as a starting point, then map its
-   archetypes to the project's actual roster; a recommendation is never a substitute for the
-   project's Surface markers. For each roster seat, match its Surface markers (the config's roster
-   column: globs and greps in this repo's idioms) against the in-scope files from the index or the
-   scope inventory: the match is the seat's slice. No markers yet → judge by the seat's lens, and
+1. **Match surfaces.** Start from Convene's size, then, for each roster seat, match its Surface
+   markers (the config's roster column: globs and greps in this repo's idioms) against the in-scope
+   files from the index or the scope inventory: the match is the seat's slice. No markers yet → judge by the seat's lens, and
    suggest a council-init refresh (after a quick setup, the review's Deliver line is that
    suggestion). A lens with several roster rows (`dodds-web`, `dodds-admin`) is several seats, each
    with its own surface.
@@ -25,10 +23,9 @@ Give each seat exactly its slice, and each worker a budget.
    it starts (`references/run/workflow.md`, Assign). Over → pair more seats, or ask the user. A
    diagnosis worker counts too.
 7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat, the Chair too, its
-   rows (`references/run/run-plan.md`, Shape), with the reason. Copy the recommendation's compatible
-   risk, complexity band, uncertainty, cap, and verification level only after checking them against
-   what Prepare uncovered. If a recommendation changed, record the evidence and reason in the plan. Run
-   `council run plan check`; fix every error before going on.
+   rows (`references/run/run-plan.md`, Shape), with the reason. Check Convene's risk, complexity,
+   uncertainty, cap and verification level against what Prepare uncovered; a changed one gets its
+   evidence and reason in the plan. Run `council run plan check`; fix every error before going on.
    A seat's model row: a mapping or survey worker under `- seat models: on`, or a builder, review
    or verifier seat under `- models:` (run-plan.md, `references/run/models.md`); otherwise none
    (`inherit`). A model choice is a request for dispatch, not proof of which model ran.
