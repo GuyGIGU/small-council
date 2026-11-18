@@ -61,9 +61,9 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
   doc), so a frontend seat gets the frontend doc alone.
 - **Memory in scope, never the whole file.** Before writing, `council memory select`: it reads the
   run's index, the seats Assign recorded and the mode; a run without a diff also passes its target
-  paths, which add to those. Apply Convene's changed-instructions rule before quoting entries in the bottom block: mark
-  overridden preferences apart from binding rules, keeping observed failures apart from settled
-  rules. If it warns that entries can't be read or are left out, tell the user.
+  paths, which add to those. Apply Convene's changed-instructions rule before quoting entries in
+  the bottom block: mark overridden preferences apart from binding rules, keeping observed failures
+  apart from settled rules. If it warns that entries can't be read or are left out, tell the user.
 - **Hard rules go in word for word** — workers also load the project's CLAUDE.md, but the brief is
   the orders they must not miss.
 - **So do the user's decisions**: every one on record when you write the brief. `council collect`

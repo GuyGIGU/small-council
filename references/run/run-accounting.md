@@ -45,7 +45,7 @@ the run was open, each call once. That is the measure an agent's figure uses (it
 the two compare; a cache rebuilt after an idle gap adds nothing, and agents' calls are left out (their
 seats hold them). The figure is said with the close, recorded as a `run.chair_usage` event and shown on
 the card, with the run's method load beside it: the bytes of context-core's skill, the mode's own and the
-doctrine of each stage the run must enter (`method_bytes=`; D13 holds a review's under 59,407). It is never added to the agents' total or compared with their share of the estimate. A session
+doctrine of each stage the run must enter (`method_bytes=`; D46 holds a review's under 50,000). It is never added to the agents' total or compared with their share of the estimate. A session
 with no transcript to read makes it "at least"; no Python or no transcript at all: nothing is said, and
 nothing is guessed. Two runs open at once in one session each count the calls they share.
 

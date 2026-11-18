@@ -159,14 +159,16 @@ check("kernel: the steps every run needs — the Chair's own seat record, the ow
 check("kernel: cards and the ledger have a home (helper-commands.md, The council home, which the kernel points at)",
       "`cards/<slug>.md`" in helper_reference and "`ledger.tsv`" in helper_reference
       and "references/run/helper-commands.md`, The council home" in flat(core))
-# The method a review run reads before it touches the project (method-vs-helper-10: 59,407 bytes before
-# stage 2, 61,746 after it): a rule the helper now says keeps one pointer here, not its whole text.
+# The method a review run reads before it touches the project: under 50,000 bytes (D46; D13 held it under
+# 59,407): a rule the helper now says keeps one pointer here, not its whole text, and a rule only another mode
+# or a rare case needs lives in the reference that moment reads.
 # The files counted are the helper's one definition (council.records.stages.method_files), which run close records too.
 load = helper_stages.method_bytes("council-review", root=ROOT)
 check("method: the method load counts context-core, council-review and the ten doctrine files, each once",
       helper_stages.method_files("council-review") == ["skills/context-core/SKILL.md", "skills/council-review/SKILL.md"]
       + ["references/doctrine/" + name for name in DOCTRINE], repr(helper_stages.method_files("council-review")))
-check("method: what a review run reads (context-core, doctrine 01-10, council-review) is under 59,407 bytes", load < 59407, str(load))
+check("method: what a review run reads (context-core, doctrine 01-10, council-review) is under 50,000 bytes (D46)",
+      load < 50000, str(load))
 resume_doc = read("references", "run", "resume.md")   # moved out of context-core's Resume, which points at it
 check("resume.md: resuming a run records this session as its driver (council run resume), and the kernel's Resume "
       "points at it", "council run resume" in resume_doc and "references/run/resume.md" in core[core.find("## Resume"):])
