@@ -3949,7 +3949,8 @@ def runs_worktrees_close_and_find(tmp):
     check("doctor: a missing reference doc is an error", code == 1 and "does-not-exist.md" in out and "Fix:" in out, out)
     check("doctor: flags a gate row whose columns shifted", "columns have shifted" in out, out)
     check("doctor: flags a repeated slug", "repeats a slug: fowler" in out, out)
-    check("doctor: flags a seat without a card", "seat 'Ghost' has no card" in out, out)
+    check("doctor: a seat with no card yet is no finding (its first run writes it); a card that is there is still "
+          "checked", "Ghost" not in line_of(out, "card") and "the card for 'Martin Fowler'" in out, out)
     check("doctor: flags a card whose source doc is gone", "names a source doc that doesn't exist: references/nope.md" in out, out)
     check("doctor: flags stale memory anchors", "3 memory anchor(s) point at code" in out, out)
     check("doctor: notices a config without a stack fingerprint", "has no stack-fingerprint" in out, out)
@@ -3962,6 +3963,13 @@ def runs_worktrees_close_and_find(tmp):
     write(os.path.join(gone_map, ".council", "map.md"), "# Map\nmap-commit: 0123456789abcdef0123456789abcdef01234567\n")
     code, out, _ = council(gone_map, "doctor")
     check("doctor: a map-commit that isn't in this repo's history is flagged", "isn't in this repo's history" in out, out)
+    no_cards = new_repo(tmp, "nocards")
+    write(os.path.join(no_cards, ".council", "council.config.md"), "# Council config\n\n## Roster\n"
+          "| Seat | Slug | Lens | Surface | Reference | Recast note |\n|---|---|---|---|---|---|\n"
+          "| Martin Fowler | fowler | Structure | `src/**` | references/refactoring.md | kept |\n")
+    code, out, _ = council(no_cards, "doctor")
+    check("doctor: no .council/cards/ folder at all is no finding, and nothing about a card is said",
+          "card" not in out.lower() and "Martin Fowler" not in out, out)
     code, out, _ = council(msec, "doctor")
     check("doctor: counts a proposal written as a heading, and flags entries under a section it can't place",
           "2 memory proposal(s) await" in out and "1 memory entr" in out and "never reach a brief" in out, out)
