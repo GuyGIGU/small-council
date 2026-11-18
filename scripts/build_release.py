@@ -159,6 +159,7 @@ def build(out: Path) -> tuple:
 
 
 def main(words: list) -> int:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")    # Windows consoles default to cp1252
     if len(words) != 1 or words[0].startswith("-"):
         print(__doc__.strip().splitlines()[2].strip(), file=sys.stderr)
         print("build_release: name the folder to write the tree into, one new or empty folder", file=sys.stderr)
