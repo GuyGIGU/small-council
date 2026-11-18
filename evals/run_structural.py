@@ -167,8 +167,9 @@ check("method: the method load counts context-core, council-review and the ten d
       helper_stages.method_files("council-review") == ["skills/context-core/SKILL.md", "skills/council-review/SKILL.md"]
       + ["references/doctrine/" + name for name in DOCTRINE], repr(helper_stages.method_files("council-review")))
 check("method: what a review run reads (context-core, doctrine 01-10, council-review) is under 59,407 bytes", load < 59407, str(load))
-check("kernel: resuming a run records this session as its driver (council run resume)",
-      "council run resume" in core[core.find("## Resume"):])
+resume_doc = read("references", "run", "resume.md")   # moved out of context-core's Resume, which points at it
+check("resume.md: resuming a run records this session as its driver (council run resume), and the kernel's Resume "
+      "points at it", "council run resume" in resume_doc and "references/run/resume.md" in core[core.find("## Resume"):])
 check("kernel: new runs require a validated run plan before Brief or dispatch",
       "council run plan check" in core and "before Brief, Build or any worker starts" in core)
 check("kernel: adaptive routing is advisory before a run opens",
@@ -313,8 +314,8 @@ check("10-learn: 'stop for tonight' mid-run closes the run paused, never complet
 check("10-learn: the close runs the audit itself, and the Chair tells the user each FAIL",
       "prints each FAIL of `council run audit --run <folder>`" in doctrine["10-learn.md"]
       and "Tell the user each FAIL line" in doctrine["10-learn.md"])   # run_cli runs_stage_order_and_close: the close audits
-check("kernel: a handoff to a new session lists open hazards before any commit or PR, and opens in the main checkout",
-      'under "Ask fix-now/later before\n  any commit or PR"' in core and "never an app-made worktree" in core)
+check("resume.md: a handoff to a new session lists open hazards before any commit or PR, and opens in the main checkout",
+      'under "Ask fix-now/later before any commit or PR"' in flat(resume_doc) and "never an app-made worktree" in resume_doc)
 check("kernel: requests and post-games have a home (helper-commands.md, The council home)",
       "`asks/`" in helper_reference and "`postgames/`" in helper_reference)
 check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])

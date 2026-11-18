@@ -41,7 +41,8 @@ contract's (`agents/council-builder.md`). `build-receipt.md` gives a build's rec
 read at Deliver.
 `war-room.md` defines the second round; `sharing.md` defines the team-or-just-me choice;
 `models.md` defines the model per role; `workflow.md` gives the rules a seat run through the
-Workflow tool adds.
+Workflow tool adds. `resume.md` says how a run carries on after a compaction, a new
+session or `/clear`.
 
 At this level, with the seat docs: `build-proof.md` defines the proof a build records, and
 `guardrails.md` defines the checks a project needs before a green report means anything.

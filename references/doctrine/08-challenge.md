@@ -37,9 +37,8 @@ Catch what's wrong before the user sees it.
    - **Over the cap?** P1s and protected items get their own verifiers first; keep one for the
      batch of everything else. If even that doesn't fit, pair P1s two to a verifier. Tell the user
      what shared a verifier.
-   - A claim whose evidence is a URL (research) goes to a verifier too; it fetches the page.
-   - A war room's claims: war-room.md, Challenge. A post-game's verifiers check its parts against the
-     user's request instead — council-postgame says how.
+   - A post-game's verifiers check its parts against the user's request instead — council-postgame
+     says how.
 3. **Apply the verdicts** — in the deliverable. Never renumber or delete synthesis.md's lines; the
    ledger counts them at close.
    - CONFIRMED ships.
@@ -59,8 +58,6 @@ Catch what's wrong before the user sees it.
    `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
    This step is for synthesis claims in review, plan and research; build and post-game keep their
    own proof contracts.
-6. **Verification gates**, for modes that changed code: `council gate --all --at verify`. A gate
-   already green on this very tree is not run again; its line names who ran it (`--rerun` runs it).
 
 ## Solo runs
 
@@ -71,4 +68,4 @@ self-checked, never independent. A run with any verifier is Squad, not Solo.
 
 ## Done when
 
-Every shipped item has a verdict and the gates are recorded. → `council state phase=deliver`
+Every shipped item has a verdict (a build: its final gates are recorded too). → `council state phase=deliver`

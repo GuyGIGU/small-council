@@ -92,6 +92,7 @@ Index line: `<n> · <strong|moderate|weak> · <line of inquiry> · <path:line or
 ## At Challenge
 
 - The verifier checks every load-bearing claim.
+- A claim whose evidence is a URL (research) goes to a verifier too; it fetches the page.
 - **Answer rests on a REFUTED claim** → revise the answer.
 - **An UNCERTAIN load-bearing claim** → lower the stated confidence.
 - **Cheap measurements** → re-run once.
