@@ -16,13 +16,14 @@ from council.records import home as where
 AREAS = 5            # the stale areas the banner names; council map status lists them all
 FIELD = 40           # a state field the banner prints is one line of at most this many characters …
 PATH = 300           # … a folder, this many: a run's state can't carry lines that read as the plugin speaking
-MORE = "were running when that session ended (they are gone — re-dispatch each once if you resume)"
+MORE = "were running when that session ended (they are gone: resume.md says what to do with them)"
+RESUME = "references/run/resume.md"    # the rules for carrying a run on, named wherever a run is to be gone on with
 RUN_LINES = {   # one open run of this tree's or this session's, by what it is to this session
     "paused": ("- PAUSED COUNCIL RUN: {seen}. Resume it only when the user asks: council run resume --run {name}, then "
-               "re-invoke the {skill} skill and read its session-state.md.{away}"),
+               "re-invoke the {skill} skill and read its session-state.md.{resume}{away}"),
     "driving": ("- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: {where}). Re-invoke the {skill} skill (it loads "
                 "context-core), read {dir}/session-state.md (and ask.md, if present), {redo}, and continue from there."
-                "{seats} Do not restart, do not re-dispatch seats that are running or done (wait for their "
+                "{resume}{seats} Do not restart, do not re-dispatch seats that are running or done (wait for their "
                 "notifications), do not skip the completeness check.{runflag}"),
     "alongside": ("- Also open {at}, opened alongside by this same session: {name} ({skill}, phase {phase}). It is "
                   "yours too — pass --run {name} to every council command meant for it."),
@@ -31,16 +32,16 @@ RUN_LINES = {   # one open run of this tree's or this session's, by what it is t
     "live after clear": (
         "- COUNCIL RUN OPEN, updated in the last 2 hours by another session id: {seen}.{seats} If this window was "
         "driving it before /clear, carry on: council run resume --run {name}, then re-invoke the {skill} skill and "
-        "read its session-state.md; its workers died with the old session, so run council collect to see which files "
-        "exist, mark the rest failed (council seat <slug> failed note=\"interrupted\") and re-dispatch each once. "
-        "Otherwise it may still be live in another session: leave it, and don't resume it, re-dispatch its seats or "
-        "close it unless the user says so.{runflag}"),
+        "read its session-state.md; its workers died with the old session (resume.md says what to do with seats "
+        "marked running).{resume} Otherwise it may still be live in another session: leave it, and don't resume it, "
+        "re-dispatch its seats or close it unless the user says so.{runflag}"),
     "live": ("- COUNCIL RUN OPEN, updated in the last 2 hours by another session: {seen}. It may still be running in "
              "that session: leave it, and don't resume it, re-dispatch its seats or close it. If the user says that "
-             "session has ended: council run resume --run {name}, then re-invoke the {skill} skill.{runflag}"),
+             "session has ended: council run resume --run {name}, then re-invoke the {skill} skill.{resume}{runflag}"),
     "unfinished": ("- UNFINISHED COUNCIL RUN: {seen}.{seats} Before new council work, ask the user whether to resume "
                    "it (council run resume --run {name}, then re-invoke the {skill} skill and read its "
-                   "session-state.md) or close it (council run close --run {name} --status abandoned).{runflag}"),
+                   "session-state.md) or close it (council run close --run {name} --status abandoned)."
+                   "{resume}{runflag}"),
 }
 
 
@@ -224,7 +225,8 @@ def _described(r: runs.Listed, at: str, sid: str, event: str, driving: str, here
     phase, updated, rsid = ("" if v == "-" else v for v in (r.phase, r.updated, r.session))
     folder = _flat(r.folder, PATH)
     said = {"dir": folder, "name": _name(r.folder), "skill": runs.skill(r.mode), "phase": phase or "?",
-            "where": "%s (%s, phase: %s" % (folder, runs.skill(r.mode), phase or "unknown"), "seats": ""}
+            "where": "%s (%s, phase: %s" % (folder, runs.skill(r.mode), phase or "unknown"), "seats": "",
+            "resume": " To go on with it, read %s/%s first." % (where.plugin_root(), RESUME)}
     said["seen"] = said["where"] + ", updated: %s)" % (updated or "unknown")
     said["away"] = "" if at == "-" else (" Its code is in another working tree, %s: work there, and pass --run %s to "
                                          "every council command for it." % (_flat(at, PATH), said["name"]))

@@ -9,8 +9,11 @@ reads one verifier file the same way, for the seat check that runs when a verifi
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -429,22 +432,31 @@ def sourced(run: Path, several: bool) -> tuple[list[Claim], list[str]]:
     return claims, issues + verifier_rows(run, claims, several)
 
 
-def write_index(run: Path, claims: list[Claim]) -> Path:
-    """claims.jsonl written from the claims: its one writer."""
-    output = run / "claims.jsonl"
-    paths.atomic_write(output, render(claims).encode("utf-8"), prefix=".claims-", suffix=".tmp", refuse_link=True)
-    return output
+def write_index(run: Path, claims: list[Claim]) -> str:
+    """claims.jsonl written from the claims, only when it differs: its one writer. '' once the file holds the index,
+    else what couldn't be written and how to mend it; no caller's verdict waits on the write."""
+    output, data = run / "claims.jsonl", render(claims).encode("utf-8")
+    try:
+        if output.is_file() and not output.is_symlink() and output.read_bytes() == data:
+            with contextlib.suppress(OSError):   # dated now, so the audit's "older than a source" stays true
+                os.utime(str(output))            # (a read-only index that already matches has nothing to mend)
+        else:
+            paths.atomic_write(output, data, prefix=".claims-", suffix=".tmp", refuse_link=True)
+        return ""
+    except (OSError, paths.RecordError) as fault:
+        replacing = isinstance(fault, paths.RecordError) or getattr(fault, "filename2", None) is not None
+        where = ("make {} a plain writable file (or move it aside)".format(output) if replacing
+                 else "make the run folder {} writable".format(run))
+        return "the claim index could not be saved ({}): {}".format(getattr(fault, "strerror", None) or fault, where)
 
 
-def build(run: Path) -> list[Claim]:
-    """The run's claim index, built now from its sources, for any command that needs it (D44): the Chair never runs
-    one evidence command to make another work. EvidenceError names each problem when the sources can't be indexed;
-    the index is then left as it was."""
+def build(run: Path) -> tuple[list[Claim], str]:
+    """The run's claim index, built now from its sources for any command that needs it (D44), and write_index's line;
+    EvidenceError names each problem when the sources can't be indexed, and the index is left as it was."""
     claims, issues = sourced(run, indexed(run, "build")["mode"] == "council-plan")
     if issues:
         raise EvidenceError("; ".join(issues))
-    write_index(run, claims)
-    return claims
+    return claims, write_index(run, claims)
 
 
 def main(argv: list[str]) -> int:
@@ -466,20 +478,23 @@ def main(argv: list[str]) -> int:
     if run.is_symlink() or not run.is_dir():
         raise EvidenceError("run must be a real directory: " + str(run))
     if args.action == "build":
-        claims = build(run)
+        claims, unsaved = build(run)
+        if unsaved:
+            raise EvidenceError("{}, then council evidence build --run {}".format(unsaved, run.name))
         print("evidence: {} claim(s) indexed -> {}".format(len(claims), run / "claims.jsonl"))
         return 0
     fields = indexed(run, args.action)
     claims, issues = sourced(run, fields["mode"] == "council-plan")
-    if not issues:
-        write_index(run, claims)       # the check builds the index itself: no stale snapshot can fail it
+    unsaved = "" if issues else write_index(run, claims)   # the check builds the index itself (D44)
     issues += assess(run, claims, fields["self_check"])
+    if unsaved:
+        print("evidence: {} — the verdict comes from the index built now; then council evidence check --run {} "
+              "saves it".format(unsaved, run.name), file=sys.stderr)
     for issue in issues:
         print("evidence: " + issue)
     if issues:
         print("evidence: {} issue(s) across {} claim(s)".format(len(issues), len(claims)))
         return 1
-    print("evidence: {} claim(s), all required links present (truth still requires independent review)".format(
-        len(claims)))
+    print("evidence: %d claim(s), all required links present (truth still requires independent review)" % len(claims))
     return 0
 

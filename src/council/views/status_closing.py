@@ -125,7 +125,7 @@ def verified_of(claims: dict[str, Any]) -> tuple[str, dict[str, int] | None]:
     aside is no unverified finding), each verdict by its own name — a wrong place or an unsure verdict is
     still a verdict."""
     if claims["stale"]:
-        return "Claim index out of date; verifier counts unknown.", None
+        return "Claim index out of date; verifier counts unknown — council evidence check updates it.", None
     if not claims.get("shipped"):
         return ("No kept claims to verify." if claims["total"] else "No claim verdicts recorded."), None
     shipped = dict(claims["shipped"])
