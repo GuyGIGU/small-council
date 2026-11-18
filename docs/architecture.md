@@ -93,7 +93,8 @@ home (`council_home`). Committed or ignored follows the project's sharing settin
 | `conventions.md` (memory) | `council memory` on the user's words | the helper, `council status` |
 | `map.md` | council-init's mapping seats; `council map touch` (the `## Changes <date>` lines) | the SessionStart banner, `council map status`, the plan check, `council context build`, `council run close`, briefs |
 | `ledger.tsv` | `council run close` | `council ledger` (`seat_advice`) |
-| `asks/`, `plans/`, `reviews/`, `logs/`, `postgames/`, `research/`, `cards/` | each mode's Deliver | later runs (`council prior`) |
+| `asks/`, `plans/`, `reviews/`, `logs/`, `postgames/`, `research/` | each mode's Deliver | later runs (`council prior`) |
+| `cards/<slug>.md` | the Chair at Brief, the first time a run selects the seat, by the rules in `references/templates/seat-card.md`; a council-init refresh rewrites a stale one | briefs (`- ref:`), `council collect` (the seat's `ref:` line), `council doctor` |
 | `runs/<date-time>-<mode>/` | one run's working folder, below | |
 
 Scripts read the files in these tables through `src/council/records`, never with a parser of their own.
@@ -279,6 +280,8 @@ folds them, and new code uses the named way.
 | Print the task tree | `council tree` (`src/council/commands/tree.py`): the request, then the plan's tasks under each Serves quote | Reads only through `records/` |
 | Read a project's own decisions at setup | `references/roster/decision-records.md`, read by council-init: each decision a `- PROPOSED decision:` line under conventions.md's `## Proposed`, citing `file:line`; the map's `## One way per job` table filled from the records and the code | No command accepts one: the user's yes is moved by hand |
 | Write a project's setup files | `council init scaffold` (`commands/init.py`, `init_write.py`): from `references/templates/`, never over a file already there; a Gates row is ✓ only from a probe in the setup run, every other candidate `✗ not probed`; the candidate checks come from `init_checks.found` alone | The Chair writes the judgment: the roster rows and their markers, the Stack section, the map's prose |
+| Start a first review with no setup | doctrine `01-convene.md`, step 2: a review in a project with no config runs `council init scaffold --quick` and goes on (D43); every other mode runs council-init first | Never a roster tailored inline: the quick setup takes the catalog's seats as they are |
+| Write a seat's card | The Chair at Brief (doctrine `04-brief.md`, Cards first), before the seat blocks, for each selected seat with none; the rules live in `references/templates/seat-card.md`'s comment alone | Setup writes none; a refresh rewrites only a card that exists |
 | Read the build log's Converge table | `council.records.converge.read`, for the status's closing card | |
 | Stamp a time | `council.clock`: `now_date` (the one date-only stamp), `now_min` and `now_sec` (local), `now_utc`; `local_moment`, `utc_moment` and `iso_moment` read a stamp back | |
 | Read a diff's files and lines | `council.diff` (`files`, for `council patch`; `header`, the one reader of a hunk header, for `cite_origin.hunks`, `hygiene` and `index.hunks`) | |

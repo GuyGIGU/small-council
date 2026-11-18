@@ -255,6 +255,25 @@ check("01-convene: a config with no stack fingerprint is offered a refresh too",
 check("04-brief: a seat gets its card as its ref, and its doc's absolute path",
       "cards/<slug>.md" in doctrine["04-brief.md"] and "- doc:" in doctrine["04-brief.md"])
 check("04-brief: memory in scope comes from council memory select", "council memory select" in doctrine["04-brief.md"])
+# The quick first review (D43): with no config, a review starts on `council init scaffold --quick`; every other mode
+# that needs a roster runs council-init first, and the review's own section says what to tell the user and offer.
+no_config = flat(doctrine["01-convene.md"]).split("**No `council.config.md`?**", 1)[-1].split("3. **Resolve the target.**", 1)[0]
+check("01-convene: with no config, a review starts on the quick setup; plan, implement and research run council-init first; "
+      "a post-game needs no roster",
+      "A **review** starts now on a quick setup, `council init scaffold --quick`" in no_config
+      and "**Plan, implement and research** run council-init first, on a `setup: quick` config too" in no_config
+      and "A **post-game** needs no roster" in no_config)
+check("review: the quick setup states its limits once and offers the full setup once, at Deliver",
+      "**No council yet** (Convene, step 2)" in skill["council-review"]
+      and "`council init scaffold --quick`" in skill["council-review"].split("## At Prepare", 1)[0]
+      and "once per run: `/council-init` does the full setup" in flat(skill["council-review"].split("## At Deliver", 1)[-1]))
+check("init: the mechanical part of setup is council init detect and council init scaffold, and setup writes no card",
+      "`council init detect`" in skill["council-init"] and "`council init scaffold`" in skill["council-init"]
+      and "`.council/cards/<slug>.md`" not in skill["council-init"]
+      and "council-init writes `.council/cards/" not in read("references", "roster", "expert-catalog.md"))
+check("04-brief: before the seat blocks, the Chair writes the missing card of each selected seat from the template",
+      "write the card of each selected seat that has none" in flat(doctrine["04-brief.md"])
+      and "references/templates/seat-card.md" in doctrine["04-brief.md"])
 check("Challenge: Workflow parts stay in the run folder and closed runs need --run",
       all(phrase in doctrine["08-challenge.md"] for phrase in
           ("verify-<n>-<letter>.md", "Never merge, copy or move", "--run <name>")))
@@ -730,6 +749,9 @@ cited = set(re.findall(r"\b(D[0-9]+)\b", arch + read("CLAUDE.md") + read("CONTRI
 check("decisions: every id the architecture, CLAUDE.md and CONTRIBUTING cite is defined", cited <= defined,
       str(sorted(cited - defined)))
 ids = re.findall(r"^\| (D[0-9]+) \|", decisions_doc, re.MULTILINE)
+check("decisions: the quick first review's entry supersedes Convene's \"run council-init first\" for a review",
+      bool(re.search(r"^\| D43 \| A first review needs no setup first\..*\| Convene, step 2's \"No `council\.config\.md`\? "
+                     r"Run council-init first\" \(doctrine, no id\), for a review", decisions_doc, re.MULTILINE)))
 check("decisions: ids are unique and cover D1..Dn with no gaps, in any section (never reused or renumbered)",
       sorted(ids, key=lambda d: int(d[1:])) == [f"D{i}" for i in range(1, len(ids) + 1)], str(ids))
 
@@ -759,6 +781,7 @@ ONE_HOME = [  # (the wording, its one home)
     ("batches of up to 8", "doctrine/08-challenge.md"),                           # how verifiers are counted
     ("riskiest assumption named by 2 or more seats", "references/run/war-room.md"),   # war-room claims to verify
     ("A local correction can proceed within the", "doctrine/01-convene.md"),     # evidence changes the approach
+    ("grep -n '^## Principle' <doc>", "references/templates/seat-card.md"),       # how a seat's card is written
 ]
 GONE = [  # stale or contradicting wording that must not come back anywhere
     "dispatch itself isn't gated",          # the agent gate judges dispatch; only the `model` parameter isn't gated
