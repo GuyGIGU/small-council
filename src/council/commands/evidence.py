@@ -438,10 +438,10 @@ def write_index(run: Path, claims: list[Claim]) -> str:
     output, data = run / "claims.jsonl", render(claims).encode("utf-8")
     try:
         if output.is_file() and not output.is_symlink() and output.read_bytes() == data:
-            with contextlib.suppress(OSError):   # a read-only index that already matches: nothing to mend
-                os.utime(str(output))            # dated now, so the audit's "older than a source" stays true
-            return ""
-        paths.atomic_write(output, data, prefix=".claims-", suffix=".tmp", refuse_link=True)
+            with contextlib.suppress(OSError):   # dated now, so the audit's "older than a source" stays true
+                os.utime(str(output))            # (a read-only index that already matches has nothing to mend)
+        else:
+            paths.atomic_write(output, data, prefix=".claims-", suffix=".tmp", refuse_link=True)
         return ""
     except (OSError, paths.RecordError) as fault:
         replacing = isinstance(fault, paths.RecordError) or getattr(fault, "filename2", None) is not None
@@ -451,9 +451,8 @@ def write_index(run: Path, claims: list[Claim]) -> str:
 
 
 def build(run: Path) -> tuple[list[Claim], str]:
-    """The run's claim index, built now from its sources, for any command that needs it (D44): the Chair never runs
-    one evidence command to make another work. EvidenceError names each problem when the sources can't be indexed;
-    the index is then left as it was. The second value is write_index's line when the index couldn't be saved."""
+    """The run's claim index, built now from its sources for any command that needs it (D44), and write_index's line;
+    EvidenceError names each problem when the sources can't be indexed, and the index is left as it was."""
     claims, issues = sourced(run, indexed(run, "build")["mode"] == "council-plan")
     if issues:
         raise EvidenceError("; ".join(issues))
@@ -496,7 +495,6 @@ def main(argv: list[str]) -> int:
     if issues:
         print("evidence: {} issue(s) across {} claim(s)".format(len(issues), len(claims)))
         return 1
-    print("evidence: {} claim(s), all required links present (truth still requires independent review)".format(
-        len(claims)))
+    print("evidence: %d claim(s), all required links present (truth still requires independent review)" % len(claims))
     return 0
 
