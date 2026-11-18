@@ -131,8 +131,24 @@ def config_text(plugin: str, fill: Config) -> str:
         end = next(i for i in range(at, len(out)) if not out[i].strip() or out[i].startswith("## "))
         out[at:end] = ["Detected by `council init scaffold --quick`, with no judgment: %s. /council-init writes "
                        "this section." % fill.summary]
-    out = _replace_rows(out, "Roster", fill.roster)
+    out = _replace_rows(_unfilled(_unfilled(out, "Hard rules"), "Notes"), "Roster", fill.roster)
     return "\n".join(_replace_rows(out, "Gates", fill.gates))
+
+
+def _unfilled(lines: list[str], heading: str) -> list[str]:
+    """The lines with the template's placeholder under `## <heading>` taken out (a `<…>` or `- <…>` line and the
+    indented lines carrying it on). An empty section is what its readers take for none yet: config.hard_rules for a
+    build's orders, and the Chair copying the hard rules into a brief word for word."""
+    at = lines.index("## " + heading)
+    out, placeholder = lines[:at + 1], False
+    for i in range(at + 1, len(lines)):
+        if lines[i].startswith("## "):
+            return out + lines[i:]
+        placeholder = re.match(r"(- )?<", lines[i]) is not None or (
+            placeholder and re.match(r"[ \t]+[^ \t]", lines[i]) is not None)
+        if not placeholder:
+            out.append(lines[i])
+    return out
 
 
 def roster_rows(plugin: str, files: list[str], quick: bool) -> list[str]:

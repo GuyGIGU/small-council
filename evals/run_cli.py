@@ -10312,6 +10312,37 @@ def setup_small_stack(tmp):
           and "sh 1" not in out, out + err)
 
 
+@part("setup")
+def setup_no_placeholders(tmp):
+    """Both scaffolds write ## Hard rules empty (what its readers take for no rule yet) and ## Notes empty, never
+    the template's <…> placeholders; outside a comment the only placeholders left are the ones named under Left for
+    the Chair (the full setup's <Seat> row and Stack section). The full scaffold names Hard rules there; --quick
+    doesn't."""
+    def placeholders(cfg):
+        return re.findall(r"<[^<>]*>", re.sub(r"<!--.*?-->", "", cfg, flags=re.S))
+
+    def section(cfg, name):
+        return [x for x in cfg.split("\n## " + name, 1)[-1].split("\n## ", 1)[0].split("\n")[1:] if x.strip()]
+
+    quick = setup_repo(tmp, "ph-quick", {"scripts/test.sh": 'echo "1 passed"\n'})
+    code, out, err = council(quick, "init", "scaffold", "--quick")
+    cfg = read(os.path.join(quick, ".council", "council.config.md"))
+    check("init scaffold --quick: Hard rules and Notes are written empty, no placeholder is left, and Hard rules is "
+          "not left for the Chair", code == 0 and "## Hard rules\n" in cfg and section(cfg, "Hard rules") == []
+          and section(cfg, "Notes") == [] and placeholders(cfg) == [] and "Hard rules" not in out, out + err + cfg)
+    full = setup_repo(tmp, "ph-full", {"scripts/test.sh": 'echo "1 passed"\n'})
+    council(full, "run", "open", "council-init")
+    code, out, err = council(full, "init", "scaffold")
+    cfg = read(os.path.join(full, ".council", "council.config.md"))
+    stack = cfg.split("## Stack", 1)[-1].split("\n## ", 1)[0]
+    seat = line_of(cfg, "| <Seat> |")
+    left = [p for p in placeholders(cfg) if p not in stack and p not in seat]
+    check("init scaffold: Hard rules and Notes are written empty, the only placeholders left are the <Seat> row and "
+          "the Stack section, and Hard rules is named under Left for the Chair",
+          code == 0 and section(cfg, "Hard rules") == [] and section(cfg, "Notes") == [] and left == [] and seat
+          and "Left for the Chair: the ## Hard rules section" in out, out + err + str(left))
+
+
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
