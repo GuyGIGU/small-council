@@ -2940,6 +2940,32 @@ def collect_unbriefed_decisions(tmp):
 
 
 @part("collect")
+def collect_relative_ref_from_subfolder(tmp):
+    """A brief block's relative ref: path is read from the project's working tree, as collect reads a citation's
+    path, not from the folder collect was run in: run from a subfolder, a card that is there is no 'no-doc'."""
+    repo = new_repo(tmp, "relref")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(repo, ".council", "cards", "w1.md"), "# Tests card\n")
+    write(os.path.join(repo, "src", "a.txt"), "a\n")
+    _, out, _ = council(repo, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    write_plan(run, selected=("chair", "w1"))
+    write(os.path.join(run, "brief.md"),
+          "# Brief\n## Seats\n### w1 — tests (Beck)\n- ref: .council/cards/w1.md\n- out: seats/w1.md\n- cap: 8\n")
+    write(os.path.join(run, "seats", "w1.md"), "# Tests — tests (review)\nref: Tests card\n## Index\n(none) — nothing\n")
+    council(repo, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    code, out, err = council(os.path.join(repo, "src"), "collect")
+    line = next((x for x in out.splitlines() if x.startswith("w1 ")), "")
+    check("collect from a subfolder: a relative ref: path to a card that exists is read from the working tree — "
+          "the ref column says ok, not no-doc", code == 0 and " ok " in line and "no-doc" not in out, out + err)
+    write(os.path.join(run, "brief.md"),
+          "# Brief\n## Seats\n### w1 — tests (Beck)\n- ref: .council/cards/w2.md\n- out: seats/w1.md\n- cap: 8\n")
+    code, out, err = council(os.path.join(repo, "src"), "collect")
+    check("collect from a subfolder: a relative ref: path to a card that is not there is still no-doc",
+          code == 1 and "no-doc" in out, out + err)
+
+
+@part("collect")
 def collect_one_bad_seat(tmp):
     # One bad seat on its own fails collect: each problem alone, exit code included
     lone = new_repo(tmp, "lone")
@@ -7624,7 +7650,12 @@ def runs_export_anon(tmp):
                  # HS-2: a project's own output that says Status: or council: is no helper line
                  {"type": "tool_use", "id": "t3", "name": "Bash",
                   "input": {"command": "docker pull registry.acme-internal.example/payments/api:v7"}},
-                 {"type": "tool_use", "id": "t4", "name": "Bash", "input": {"command": "council status --line"}}]}},
+                 {"type": "tool_use", "id": "t4", "name": "Bash", "input": {"command": "council status --line"}},
+                 # an agent type is kept only when the agent gate counts it a council agent (agent_gate.KINDS)
+                 {"type": "tool_use", "id": "t5", "name": "Agent", "input": {
+                     "subagent_type": "small-council:council-mapper", "prompt": "x"}},
+                 {"type": "tool_use", "id": "t6", "name": "Agent", "input": {
+                     "subagent_type": "small-council:council-worker", "prompt": "x"}}]}},
              {"type": "user", "timestamp": stamp(1), "sessionId": "sX-export", "message": {"content": [
                  {"type": "tool_result", "tool_use_id": "t1", "content": "zebra line\ncouncil: saved in %s/.council" % r},
                  {"type": "tool_result", "tool_use_id": "t3", "content":
@@ -7653,7 +7684,7 @@ def runs_export_anon(tmp):
     code, out, err = council(r, "run", "export", "--anon", name, dest, "--transcript", log)
     copied = sorted(os.listdir(dest)) if os.path.isdir(dest) else []
     check("run export: what the audit reads is copied and nothing else (no ask.md, no seat file)",
-          code == 0 and "exported %s to " % name in out and "transcript.jsonl: 9 line(s)" in out
+          code == 0 and "exported %s to " % name in out and "transcript.jsonl: 11 line(s)" in out
           and copied == ["agent-starts.tsv", "audit.md", "events.tsv", "run-plan.tsv", "seats.tsv", "session-state.md",
                          "transcript.jsonl", "usage.tsv"], out + err + str(copied))
     every = "".join(read(os.path.join(dest, f)) for f in copied)
@@ -7673,10 +7704,14 @@ def runs_export_anon(tmp):
     calls = [b for line in log_lines for b in line["message"]["content"] if isinstance(b, dict) and b["type"] == "tool_use"]
     check("run export: the transcript keeps the helper's call word for word but the user's quoted words, drops a "
           "tool's input and an agent's own lines, and keeps only the helper's lines of a result",
-          len(log_lines) == 9 and calls[0]["input"]["command"].startswith('council state decision="xxxx xxx xxxxx xxx"')
+          len(log_lines) == 11 and calls[0]["input"]["command"].startswith('council state decision="xxxx xxx xxxxx xxx"')
           and "| tail -2" in calls[0]["input"]["command"] and calls[1] == {"type": "tool_use", "id": "t2", "name": "Write",
                                                                            "input": {}}
           and "council: saved in <project>/.council" in json.dumps(log_lines), json.dumps(log_lines)[:1500])
+    kinds = [c["input"].get("subagent_type") for c in calls if c["name"] == "Agent"]
+    check("run export: an agent's type is kept for a council agent (the agent gate's rule) and is 'agent' for any "
+          "other, a small-council: name the gate doesn't count included", kinds == ["agent", "small-council:council-worker"],
+          str(kinds))
     copied_log = read(os.path.join(dest, "transcript.jsonl"))
     check("run export: a project's own Status: or council: line is not kept, and a helper's Status: line is kept "
           "with its token redacted",
@@ -10244,6 +10279,118 @@ def setup_from_quick(tmp):
     code, out, err = council(full, "init", "scaffold")
     check("init scaffold on a config with no setup: quick line: kept whole, even with probes in the run",
           code == 0 and read(cfg) == kept and "Kept " in out and "Updated " not in out, out + err)
+
+
+@part("setup")
+def setup_small_stack(tmp):
+    """A repo whose languages each have under three files: the fingerprint line lists none, byte for byte as before
+    (the config stores it and fingerprint check compares it), and where a person reads the stack — init detect and a
+    quick setup's Stack section — what was seen is said with its counts."""
+    repo = setup_repo(tmp, "small-stack", {"a.py": "x = 1\n", "b.py": "x = 2\n", "run.sh": "echo\n", "README.md": "hi\n"})
+    summary = "manifests: none · languages: none"
+    hashed = subprocess.run([GIT, "hash-object", "--stdin"], input=summary.encode("utf-8"), capture_output=True,
+                            check=True).stdout.decode().strip()[:12]
+    line = "stack-fingerprint: %s — %s" % (hashed, summary)
+    code, out, err = council(repo, "fingerprint")
+    check("fingerprint of a small repo: the line is byte for byte the one it always was (no language at three files)",
+          code == 0 and out == line + "\n", out + err)
+    code, out, err = council(repo, "init", "detect")
+    check("init detect on a small repo: the fingerprint line is unchanged, and the languages seen are named with "
+          "their counts", code == 0 and line + "\n" in out and "py 2" in out and "sh 1" in out
+          and "py 2" not in line_of(out, "stack-fingerprint:"), out + err)
+    council(repo, "init", "scaffold", "--quick")
+    cfg = read(os.path.join(repo, ".council", "council.config.md"))
+    stack = cfg.split("## Stack", 1)[-1].split("\n## ", 1)[0]
+    check("init scaffold --quick on a small repo: the config keeps the same fingerprint line, and its Stack section "
+          "names the languages seen with their counts", line + "\n" in cfg and "py 2" in stack and "sh 1" in stack,
+          cfg)
+    code, out, err = council(repo, "fingerprint", "check")
+    check("fingerprint check after it: the stack is unchanged", code == 0 and "unchanged" in out, out + err)
+    big = setup_repo(tmp, "big-stack", {"a.py": "1\n", "b.py": "2\n", "c.py": "3\n", "run.sh": "echo\n"})
+    code, out, err = council(big, "init", "detect")
+    check("init detect with a language listed: no seen line", code == 0 and "languages: py" in out
+          and "sh 1" not in out, out + err)
+
+
+@part("setup")
+def setup_no_placeholders(tmp):
+    """Both scaffolds write ## Hard rules empty (what its readers take for no rule yet) and ## Notes empty, never
+    the template's <…> placeholders; outside a comment the only placeholders left are the ones named under Left for
+    the Chair (the full setup's <Seat> row and Stack section). The full scaffold names Hard rules there; --quick
+    doesn't."""
+    def placeholders(cfg):
+        return re.findall(r"<[^<>]*>", re.sub(r"<!--.*?-->", "", cfg, flags=re.S))
+
+    def section(cfg, name):
+        return [x for x in cfg.split("\n## " + name, 1)[-1].split("\n## ", 1)[0].split("\n")[1:] if x.strip()]
+
+    quick = setup_repo(tmp, "ph-quick", {"scripts/test.sh": 'echo "1 passed"\n'})
+    code, out, err = council(quick, "init", "scaffold", "--quick")
+    cfg = read(os.path.join(quick, ".council", "council.config.md"))
+    check("init scaffold --quick: Hard rules and Notes are written empty, no placeholder is left, and Hard rules is "
+          "not left for the Chair", code == 0 and "## Hard rules\n" in cfg and section(cfg, "Hard rules") == []
+          and section(cfg, "Notes") == [] and placeholders(cfg) == [] and "Hard rules" not in out, out + err + cfg)
+    full = setup_repo(tmp, "ph-full", {"scripts/test.sh": 'echo "1 passed"\n'})
+    council(full, "run", "open", "council-init")
+    code, out, err = council(full, "init", "scaffold")
+    cfg = read(os.path.join(full, ".council", "council.config.md"))
+    stack = cfg.split("## Stack", 1)[-1].split("\n## ", 1)[0]
+    seat = line_of(cfg, "| <Seat> |")
+    left = [p for p in placeholders(cfg) if p not in stack and p not in seat]
+    check("init scaffold: Hard rules and Notes are written empty, the only placeholders left are the <Seat> row and "
+          "the Stack section, and Hard rules is named under Left for the Chair",
+          code == 0 and section(cfg, "Hard rules") == [] and section(cfg, "Notes") == [] and left == [] and seat
+          and "Left for the Chair: the ## Hard rules section" in out, out + err + str(left))
+
+
+@part("setup")
+def setup_from_quick_by_header(tmp):
+    """A quick setup made full reads its Gates table by the header's column names: a table with a column of the
+    project's own and two columns swapped is filled in its own layout (gate --all then runs the row), and one whose
+    header names no Checked column is left whole, the output naming the column and the next step."""
+    def quick_repo(name):
+        repo = setup_repo(tmp, name, {"scripts/test.sh": 'echo "1 passed"\n'})
+        council(repo, "init", "scaffold", "--quick")
+        return repo, os.path.join(repo, ".council", "council.config.md")
+
+    def relaid(cfg, order):
+        """The Gates header and rows with their cells in this order (template column names; 'Owner' is new)."""
+        lines = cfg.split("\n")
+        at = lines.index("## Gates")
+        head = [c.strip() for c in lines[at + 1].strip("|").split("|")]
+        for i in range(at + 1, len(lines)):
+            if not lines[i].startswith("|"):
+                break
+            cut = [c.strip() for c in lines[i].strip("|").split("|")]
+            row = dict(zip(head, cut))
+            row["Owner"] = "Owner" if i == at + 1 else ("---" if i == at + 2 else "team-a")
+            lines[i] = "| %s |" % " | ".join(row[name] for name in order)
+        return "\n".join(lines)
+
+    repo, path = quick_repo("by-header")
+    write(path, relaid(read(path), ("Gate", "Command", "Owner", "Run at", "Checked", "Mandatory", "Probe", "Needs",
+                                    "Side effects")))
+    council(repo, "run", "open", "council-init")
+    council(repo, "gate", "probe-scripts-test-sh", "--", "bash scripts/test.sh")
+    code, out, err = council(repo, "init", "scaffold")
+    row = [c.strip() for c in line_of(read(path), "| scripts-test-sh |").strip("|").split("|")]
+    check("init scaffold on a quick config whose Gates table has a column of its own and two swapped: the probed row "
+          "is filled in the table's own layout, the project's column kept",
+          code == 0 and len(row) == 9 and row[2] == "team-a" and row[3] == "verify" and row[4].startswith("✓ ")
+          and row[5] == "no" and row[6] == "`bash scripts/test.sh`" and "Updated " in out, out + err + str(row))
+    code, out, err = council(repo, "gate", "--all")
+    check("gate --all after it: runs the filled row", code == 0 and "gate scripts-test-sh: pass" in out, out + err)
+    repo, path = quick_repo("by-header-lacking")
+    write(path, relaid(read(path), ("Gate", "Command", "Run at", "Mandatory", "Probe", "Needs", "Side effects",
+                                    "Owner")))
+    before = read(path)
+    council(repo, "run", "open", "council-init")
+    council(repo, "gate", "probe-scripts-test-sh", "--", "bash scripts/test.sh")
+    code, out, err = council(repo, "init", "scaffold")
+    check("init scaffold on a quick config whose Gates header names no Checked column: the config is left whole, "
+          "and the output names the column and the next step",
+          code == 0 and read(path) == before and "names no Checked column" in out
+          and "then run council init scaffold again" in out and "Updated " not in out, out + err)
 
 
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")

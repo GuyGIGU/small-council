@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 from council.commands import gate_output, init_seats
 from council.commands.init_checks import Check
-from council.records import cells, config, map_file, memory, paths
+from council.records import cells, config, gate_table, map_file, memory, paths
 from council.records import gates as gate_files
 from council.records import verdicts
 
@@ -54,9 +54,21 @@ def _cell(text: str) -> str:
     return text.replace("|", "\\|")
 
 
+TEMPLATE_COLUMNS = ("gate", "command", "runat", "mandatory", "checked", "probe", "needs", "sideeffects")
+NEEDED = TEMPLATE_COLUMNS[:5]              # what a gate's row must have to be found, run and judged
+SAID = {"gate": "Gate", "command": "Command", "runat": "Run at", "mandatory": "Mandatory", "checked": "Checked"}
+
+
 def gate_row(check: Check, probed: dict[str, Probe], today: str, unprobed: str) -> tuple[str, str]:
-    """(the Gates row, what it says in one line): Checked ✓ only for a probe that passed and counts, Mandatory yes
-    only when its broken twin also failed; a candidate with no probe is ✗ not probed, so gate --all skips it."""
+    """(the Gates row in the template's columns, what it says in one line): gate_cells joined."""
+    values, said = gate_cells(check, probed, today, unprobed)
+    return "| %s |" % " | ".join(values[key] for key in TEMPLATE_COLUMNS), said
+
+
+def gate_cells(check: Check, probed: dict[str, Probe], today: str, unprobed: str) -> tuple[dict[str, str], str]:
+    """(the Gates row's cells by gate_table's column keys, what it says in one line): Checked ✓ only for a probe that
+    passed and counts, Mandatory yes only when its broken twin also failed; a candidate with no probe is ✗ not
+    probed, so gate --all skips it."""
     run, broken = probed.get("probe-" + check.name), probed.get("probe-%s-broken" % check.name)
     at = "grounding, verify" if check.kind in EARLY else "verify"
     must = "no"
@@ -74,9 +86,9 @@ def gate_row(check: Check, probed: dict[str, Probe], today: str, unprobed: str) 
             checked = "✗ %s: passes with its tool broken — fix the command" % today
         else:
             checked, must = "✓ " + today, "yes" if broken is not None else "no"
-    row = "| %s | `%s` | %s | %s | %s | %s | %s | %s |" % (check.name, _cell(check.command), at, must, checked, probe,
-                                                         check.needs, check.side)
-    return row, "%s · %s · mandatory %s" % (check.name, checked, must)
+    values = dict(zip(TEMPLATE_COLUMNS, (check.name, "`%s`" % _cell(check.command), at, must, checked, probe,
+                                         check.needs, check.side)))
+    return values, "%s · %s · mandatory %s" % (check.name, checked, must)
 
 
 def _fails_today(run: Probe, broken: Probe | None) -> bool:
@@ -131,8 +143,24 @@ def config_text(plugin: str, fill: Config) -> str:
         end = next(i for i in range(at, len(out)) if not out[i].strip() or out[i].startswith("## "))
         out[at:end] = ["Detected by `council init scaffold --quick`, with no judgment: %s. /council-init writes "
                        "this section." % fill.summary]
-    out = _replace_rows(out, "Roster", fill.roster)
+    out = _replace_rows(_unfilled(_unfilled(out, "Hard rules"), "Notes"), "Roster", fill.roster)
     return "\n".join(_replace_rows(out, "Gates", fill.gates))
+
+
+def _unfilled(lines: list[str], heading: str) -> list[str]:
+    """The lines with the template's placeholder under `## <heading>` taken out (a `<…>` or `- <…>` line and the
+    indented lines carrying it on). An empty section is what its readers take for none yet: config.hard_rules for a
+    build's orders, and the Chair copying the hard rules into a brief word for word."""
+    at = lines.index("## " + heading)
+    out, placeholder = lines[:at + 1], False
+    for i in range(at + 1, len(lines)):
+        if lines[i].startswith("## "):
+            return out + lines[i:]
+        placeholder = re.match(r"(- )?<", lines[i]) is not None or (
+            placeholder and re.match(r"[ \t]+[^ \t]", lines[i]) is not None)
+        if not placeholder:
+            out.append(lines[i])
+    return out
 
 
 def roster_rows(plugin: str, files: list[str], quick: bool) -> list[str]:
@@ -160,19 +188,44 @@ def map_text(plugin: str, project: str, sha: str, today: str) -> str:
     return re.sub(r"(?m)^updated: <YYYY-MM-DD>$", "updated: " + today, text, count=1)
 
 
-def fill_unprobed(text: str, checks: list[Check], probed: dict[str, Probe], today: str) -> tuple[str, list[str]]:
+class Filled(NamedTuple):
+    """fill_unprobed's result: the config's text, the rows it wrote, and the columns a row needs that the Gates
+    header doesn't name (then nothing was written)."""
+
+    text: str
+    done: list[str]
+    lacking: list[str]
+
+
+def fill_unprobed(text: str, checks: list[Check], probed: dict[str, Probe], today: str) -> Filled:
     """A quick setup's config with each Gates row that still reads `✗ not probed` and has a probe in the setup run
-    written again by gate_row, every other line as it was; and the names of the rows it wrote."""
+    written again with gate_cells, each cell in the column the header names for it (gate_table.named: any order, a
+    column of the project's own kept as it is), every other line as it was. A header that doesn't name a column a
+    row needs (NEEDED) leaves the table whole; a row whose cell count isn't the header's is left as it is."""
     by_name = {check.name: check for check in checks}
-    lines, inside, done = text.split("\n"), False, []
+    lines, inside, columns, width, done = text.split("\n"), False, None, 0, []
     for i, line in enumerate(lines):
-        if line.startswith("## "):
-            inside = cells.heading(line.rstrip("\r")) == "gates"
+        heading = cells.heading(line)
+        if heading is not None:
+            inside, columns = heading.startswith("gates"), None
             continue
-        cut = [cell.strip(" \t\r") for cell in cells.table_cells(line)] if inside and line.startswith("|") else []
-        name = cut[1] if len(cut) > 6 else ""
-        if name not in by_name or "probe-" + name not in probed or not cut[5].startswith("✗ not probed"):
+        if not inside or not line.startswith("|"):
             continue
-        lines[i] = gate_row(by_name[name], probed, today, "")[0] + ("\r" if line.endswith("\r") else "")
+        cut = cells.table_cells(line.rstrip("\r"), raw=True)
+        if columns is None:                       # the header row names the columns
+            columns, width = gate_table.named(cut), len(cut)
+            lacking = [SAID[key] for key in NEEDED if key not in columns]
+            if lacking:
+                return Filled(text, [], lacking)
+            continue
+        name = cut[columns["gate"] - 1].strip(" \t") if len(cut) == width else ""
+        if name not in by_name or "probe-" + name not in probed \
+                or not cut[columns["checked"] - 1].strip(" \t").startswith("✗ not probed"):
+            continue
+        values = gate_cells(by_name[name], probed, today, "")[0]
+        for key, at in columns.items():
+            if key in values:
+                cut[at - 1] = " %s " % values[key]
+        lines[i] = "|".join(cut) + ("\r" if line.endswith("\r") else "")
         done.append(name)
-    return "\n".join(lines), done
+    return Filled("\n".join(lines), done, [])

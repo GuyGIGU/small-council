@@ -37,16 +37,17 @@ def heading(line: str) -> str | None:
     return _lower(re.sub(r"[ \t]+", " ", name.rstrip(" \t:")))
 
 
-def table_cells(line: str) -> list[str]:
+def table_cells(line: str, raw: bool = False) -> list[str]:
     """A Markdown table row split at each '|' outside a code span, nothing trimmed (so '| a | b |' is
     ['', ' a ', ' b ', '']): '\\|' is a literal pipe anywhere, and a '|' between two backticks stays in its cell
-    when the row's backticks pair up (an odd one quotes nothing). The one splitter of a council table row."""
+    when the row's backticks pair up (an odd one quotes nothing). The one splitter of a council table row. raw keeps
+    each cell as written ('\\|' as '\\|'), so '|'.join gives the row back byte for byte."""
     out, current, quoted, i = [], "", False, 0
     paired = line.replace("\\|", "").count("`") % 2 == 0
     while i < len(line):
         char = line[i]
         if char == "\\" and line[i + 1:i + 2] == "|":
-            current, i = current + "|", i + 2
+            current, i = current + ("\\|" if raw else "|"), i + 2
             continue
         if char == "`" and paired:
             quoted = not quoted

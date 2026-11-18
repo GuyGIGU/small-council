@@ -103,20 +103,35 @@ def paths(cell: str) -> tuple[str, ...]:
     return tuple(part for part in found if part not in ("", "-", "—", "–"))
 
 
-def _columns(row: list[str]) -> list[int]:
-    """The header row's columns (1-based, as awk counts): gate, command, run at, mandatory, checked,
-    side effects, needs and covers (0 when the table has none)."""
-    found = [2, 3, 4, 5, 6, 0, 0, 0]
+COLUMNS = ("gate", "command", "runat", "mandatory", "checked", "sideeffects", "needs", "covers", "probe")
+STARTS = (("sideeffect", "sideeffects"), ("needs", "needs"), ("covers", "covers"))
+
+
+def named(row: list[str]) -> dict[str, int]:
+    """The columns the header row names (1-based, as awk counts), by COLUMNS' keys; a later column of the same name
+    wins. 'name' is the Gate column, 'Side effect…', 'Needs…' and 'Covers…' match by their start."""
+    found: dict[str, int] = {}
     for i in range(2, len(row)):
         head = re.sub(r"[^a-z]", "", _trim(row[i - 1]).lower())
         if head in HEADS:
-            found[HEADS[head]] = i
-        elif head.startswith("sideeffect"):
-            found[5] = i
-        elif head.startswith("needs"):
-            found[6] = i
-        elif head.startswith("covers"):
-            found[7] = i
+            found[COLUMNS[HEADS[head]]] = i
+        elif head == "probe":
+            found["probe"] = i
+        else:
+            key = next((k for start, k in STARTS if head.startswith(start)), "")
+            if key:
+                found[key] = i
+    return found
+
+
+def _columns(row: list[str]) -> list[int]:
+    """The header row's columns (1-based, as awk counts): gate, command, run at, mandatory, checked,
+    side effects, needs and covers (0 when the table has none); the first five by place when the header doesn't
+    name them."""
+    found = [2, 3, 4, 5, 6, 0, 0, 0]
+    for key, i in named(row).items():
+        if key != "probe":
+            found[COLUMNS.index(key)] = i
     return found
 
 

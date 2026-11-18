@@ -134,7 +134,9 @@ complete before Deliver may be closed again as abandoned, which takes its rows o
 
 A hook (`hooks/agent-gate.sh`) runs `council cap check` before every Agent, Task or Workflow call.
 Each call it lets through is one agent start of the run this session drives (`agent-starts.tsv`), so
-an agent counts from its start, before the Chair records it. A Workflow is one start, however many
+an agent counts from its start, before the Chair records it. Every agent started while the run is open counts,
+an ordinary one (Explore, general-purpose) as well as the council's own: the cap is the run's spending stop,
+and every agent spends. A Workflow is one start, however many
 agents it runs: once its `agents=N` report is recorded, its other N - 1 are added to the starts. The
 stop counts the larger of the agent runs recorded and those starts, so an agent recorded later is not
 counted twice, and agents started after a Workflow are not hidden by its count. Agents recorded

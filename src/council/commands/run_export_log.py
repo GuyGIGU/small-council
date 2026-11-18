@@ -8,7 +8,8 @@ word (anon.command), checked to read as the same calls. The result of a call tha
 (`council: …`, `Status: …`, `closed <run> …`), redacted (redact.said) with paths as placeholders, and an `Exit code`
 lead; any other result keeps that lead alone, as a project's own output may say `Status:` with a host or a token in it.
 The Chair's text is a stand-in, but for a helper's status line it passed on, which is kept as that line. Other tools
-keep their name; an agent its type.
+keep their name; an agent its type when the agent gate counts it a council agent (agent_gate.KINDS), else
+"agent".
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Any, Collection
 
 from council.commands import audit
+from council.commands.agent_gate import KINDS
 from council.commands.audit_steps import AGENTS, block_text
 from council.commands.audit_calls import heredoc_free, invocations
 from council.commands.audit_checks import Run
@@ -85,7 +87,7 @@ def _input(block: dict[str, Any], anon: anonymous.Anon, keep: Collection[str]) -
         return found
     if name in AGENTS:
         kind = str(given.get("subagent_type", ""))
-        return {"subagent_type": kind if kind.startswith("small-council:") or not kind else "agent"}
+        return {"subagent_type": kind if kind in KINDS or not kind else "agent"}     # the agent gate's rule
     return {}
 
 
