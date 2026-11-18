@@ -2940,6 +2940,32 @@ def collect_unbriefed_decisions(tmp):
 
 
 @part("collect")
+def collect_relative_ref_from_subfolder(tmp):
+    """A brief block's relative ref: path is read from the project's working tree, as collect reads a citation's
+    path, not from the folder collect was run in: run from a subfolder, a card that is there is no 'no-doc'."""
+    repo = new_repo(tmp, "relref")
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n")
+    write(os.path.join(repo, ".council", "cards", "w1.md"), "# Tests card\n")
+    write(os.path.join(repo, "src", "a.txt"), "a\n")
+    _, out, _ = council(repo, "run", "open", "council-review")
+    run = out.strip().splitlines()[-1]
+    write_plan(run, selected=("chair", "w1"))
+    write(os.path.join(run, "brief.md"),
+          "# Brief\n## Seats\n### w1 — tests (Beck)\n- ref: .council/cards/w1.md\n- out: seats/w1.md\n- cap: 8\n")
+    write(os.path.join(run, "seats", "w1.md"), "# Tests — tests (review)\nref: Tests card\n## Index\n(none) — nothing\n")
+    council(repo, "seat", "w1", "done", "agent=a1", "tokens=20000")
+    code, out, err = council(os.path.join(repo, "src"), "collect")
+    line = next((x for x in out.splitlines() if x.startswith("w1 ")), "")
+    check("collect from a subfolder: a relative ref: path to a card that exists is read from the working tree — "
+          "the ref column says ok, not no-doc", code == 0 and " ok " in line and "no-doc" not in out, out + err)
+    write(os.path.join(run, "brief.md"),
+          "# Brief\n## Seats\n### w1 — tests (Beck)\n- ref: .council/cards/w2.md\n- out: seats/w1.md\n- cap: 8\n")
+    code, out, err = council(os.path.join(repo, "src"), "collect")
+    check("collect from a subfolder: a relative ref: path to a card that is not there is still no-doc",
+          code == 1 and "no-doc" in out, out + err)
+
+
+@part("collect")
 def collect_one_bad_seat(tmp):
     # One bad seat on its own fails collect: each problem alone, exit code included
     lone = new_repo(tmp, "lone")

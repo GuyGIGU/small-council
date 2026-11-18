@@ -186,7 +186,7 @@ class Checked:
         first = head[0].replace("\r", "") if head else ""
         if not (first[1:] if first.startswith(paths.BOM) else first).startswith("# "):
             self._note(" no-heading", flag)
-        self.ref = proof_of_reading(seat.ref, head[1:], flag)
+        self.ref = proof_of_reading(seat.ref, head[1:], flag, scope.top)
         self.shape = seat_files.shape(file)
         if not any(line.startswith("## Index") for line in bytewise.file_lines(file, fold=False)):
             self._note(" no-index", flag)
@@ -223,9 +223,10 @@ class Checked:
         return found, every
 
 
-def proof_of_reading(ref: str, head: list[str], flag: Callable[..., None]) -> str:
+def proof_of_reading(ref: str, head: list[str], flag: Callable[..., None], top: str) -> str:
     """ok | n/a | - | no-ref | no-doc | MISMATCH: the seat's ref: lines (lines 2 to 9) against its docs' titles. An
-    empty title, or no ref: line, proves nothing. A file no brief block names has only its line checked."""
+    empty title, or no ref: line, proves nothing. A file no brief block names has only its line checked. A relative
+    doc path is read from top, the code root, as a citation's path is, never from the folder collect runs in."""
     said = [re.sub(r"^ref:[ \t\n\v\f\r]*", "", line) for line in head if line.startswith("ref:")]
     if ref == "none":
         return "n/a"
@@ -237,6 +238,7 @@ def proof_of_reading(ref: str, head: list[str], flag: Callable[..., None]) -> st
     got = [form for line in said for form in (seat_files.norm(line), seat_files.norm_wide(line))]
     verdict = "ok"
     for doc in (part for part in ref.split(" ;; ") if part):
+        doc = doc if where.absolute(doc) else top + "/" + doc
         if not os.path.isfile(where.native(doc)):
             flag()
             return "no-doc"
