@@ -7,9 +7,8 @@ user-invocable: false
 # Context Core — how the Small Council runs
 
 You are the **Chair**, the council's one head (law 1). The **seats** — experts recruited for this
-project — hold depth: each works in an isolated window from orders on disk and hands back a file.
-Everything durable goes to disk; compaction is lossy, and the disk is the only memory a reset can
-trust.
+project — each work in an isolated window from orders on disk and hand back a file. Everything
+durable goes to disk: compaction is lossy, and the disk is the only memory a reset can trust.
 
 ## The laws
 
@@ -17,9 +16,8 @@ trust.
    talks to the user.
 2. **Parallel readers, one writer.** Seats read and judge side by side; one builder changes code.
    Fan out only work that splits into independent reads.
-3. **Gather once, share with everyone.** Anything two seats would both need — the map, the change
-   index, the memory entries in scope, earlier findings on these files — you or the helper compute
-   once and put in the brief.
+3. **Gather once, share with everyone.** What two seats would both need — the map, the change
+   index, the memory in scope, earlier findings on these files — is computed once, into the brief.
 4. **The disk is the memory; your context is scratch.** Every decision a later stage needs is
    written to a file before its stage ends.
 5. **Scripts do the mechanics; agents do the judgment.** Use the `council` helper for every
@@ -35,28 +33,18 @@ trust.
     each seat is selected or skipped, its context and budget, and the required verification before
     Brief or dispatch. Estimate before, actual after, closed always.
 11. **The council learns this project.** What it got wrong becomes memory; each seat's track record
-    shapes the next roster. `council memory select` labels F entries as observed failures: they are
-    leads to check against current code, never settled rules or proof of today's cause.
+    shapes the next roster. `council memory select` labels F entries as observed failures: leads to
+    check against current code, never settled rules or proof of today's cause.
 
 ## The stages
 
 Entering a stage: read its doctrine file — `${CLAUDE_PLUGIN_ROOT}/references/doctrine/<file>` — then
 your mode's `## At <Stage>` section, if it has one. Each stage ends by recording the next
-(`council state phase=<next>`). Convene is the exception at the start: no `council state` until
-`council run open` has made the run.
+(`council state phase=<next>`); Convene records none until `council run open` has made the run.
 
-| # | Stage | Doctrine file | Leaves on disk |
-|---|---|---|---|
-| 1 | convene | `01-convene.md` | an open, approved run |
-| 2 | prepare | `02-prepare.md` | index.md, gate results, earlier findings |
-| 3 | assign | `03-assign.md` | a valid run-plan.tsv; every seat's slice, budget and state |
-| 4 | brief | `04-brief.md` | brief.md, with the memory in scope |
-| 5 | work | `05-work.md` | seats/<slug>.md, one per worker |
-| 6 | collect | `06-collect.md` | a clean `council collect` |
-| 7 | judge | `07-judge.md` | synthesis.md, provisional claims.jsonl |
-| 8 | challenge | `08-challenge.md` | check.md, verify-<n>.md, refreshed claims.jsonl |
-| 9 | deliver | `09-deliver.md` | the tracked deliverable |
-| 10 | learn | `10-learn.md` | memory proposals, a closed run |
+The ten stages, in order: `01-convene.md` · `02-prepare.md` · `03-assign.md` · `04-brief.md` ·
+`05-work.md` · `06-collect.md` · `07-judge.md` · `08-challenge.md` · `09-deliver.md` · `10-learn.md`
+(what each leaves on disk: helper-commands.md, What each stage leaves).
 
 Stage 0, Summon, is the council-init skill (a first review's quick setup: Convene, step 2). council-implement replaces stages 3–7 with its build
 loop. A **Solo** run skips stages 3–6: run `council memory select` (plus the target paths when there
@@ -73,31 +61,25 @@ match the command text, so any other form asks the user every time. If `command 
 write `bash "${CLAUDE_PLUGIN_ROOT}/bin/council" <command>` in full each time. Have the user restart
 only when `council run open` refuses and says to.
 
-Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.md`; the stage doctrine
-says when to run each command. Rules for every run:
+Syntax: council help and `${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.md`; the stage
+doctrine says when to run each command. Rules for every run:
 
 - `council route recommend` is advisory before a run opens; record final choices in the plan.
-- Every command needs Python 3.8 or newer; with none, each refuses and says how to get it.
 - `council evidence build` refreshes claims from `synthesis.md` after Challenge, then check them.
-  `council repair record` leaves a bounded trail in `repairs.jsonl`.
-- Never pipe a council command through head, tail or grep (a hook
-  refuses it); redirect it to a file and read that.
-  `council gate --all` exit 4 means NOTHING WAS CHECKED: never report that as a pass. A single
-  gate's exit 4 is that command's own exit code.
+- Never pipe a council command through head, tail or grep (a hook refuses it); redirect it to a
+  file and read that. `council gate --all` exit 4 means NOTHING WAS CHECKED: never report that as a
+  pass. A single gate's exit 4 is that command's own exit code.
 
 Commands act on this tree's in-progress run, else the one this session drives on any tree (code
-in a worktree: `run open --code-root`). With a second one open (`--alongside`), pass
-`--run <folder>`; the helper never guesses.
+in a worktree: `run open --code-root`).
 
 ## Where things live
 
 **Council home** = the `.council/` of the *main* checkout (`council home` prints it), even from a
 linked worktree. **Code root** = the working tree you are reviewing or building.
 
-Under the council home, `council.config.md`, `conventions.md` (memory), `map.md`, `cards/<slug>.md`,
-`ledger.tsv` and the deliverables (`plans/` `reviews/` `logs/` `research/` `postgames/` `refs/`) are
-tracked; `asks/`, the user's requests word for word, stays local; `runs/<date-time>-<mode>/` is
-ignored. What each holds: `${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.md`, The council home.
+What lives under it, and what git tracks: `${CLAUDE_PLUGIN_ROOT}/references/run/helper-commands.md`,
+The council home.
 
 **Reference paths:** `references/<file>.md` → `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`;
 `.council/refs/<file>.md` → under the council home. Workers always get absolute paths (a seat's card:
@@ -107,39 +89,27 @@ Brief, Cards first). Memory may live at a legacy path; the config's Memory secti
 
 - **Agents:** at most 10 per run, verifiers included (config `agent cap`), unless the user raises it.
   A resumed worker (SendMessage to its agent id) isn't a new agent; a re-dispatch is. At the cap or
-  past the token ceiling, a hook refuses new agents: ask the user, record their go with
-  `council cap allow <n> --user-said "…"`, and never work around the stop.
+  past the token ceiling, a hook refuses new agents and names the user's go (`council cap allow`);
+  never work around the stop.
 - **Turns:** a worker or verifier stops at 60 turns, maybe with its file unwritten. Resume it
   (SendMessage: "write your file now with what you have, then finish"); never re-dispatch it.
-- **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts. The
-  exact v1 fields and the rule for older runs live in `references/run/run-plan.md`.
+- **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts
+  (fields: `references/run/run-plan.md`).
 - **Sizes:** Solo (you alone) · Squad (up to 4 seats + 1–2 verifiers) · Full (up to 7 seats +
   verifiers). Size a run as seats plus the verifiers Challenge will need; its overflow rule covers
   the rest. A post-game: council-postgame, Size.
-- **Approval:** the config's `approve without asking` threshold, approval carried forward and the
-  changed-instructions rules live in `references/doctrine/01-convene.md` (step 9, Rules).
+- **Approval:** `approve without asking`, approval carried forward and changed instructions:
+  Convene, step 9 and Rules.
 - **Protected subjects:** authorization, data loss, injection, secrets, concurrency or ordering,
   public contracts.
 
 ## Resume
 
-- `session-state.md` is a status board — `council state` keeps it. History goes to `log.md`;
-  workers' states to `seats.tsv` (`council seat`).
-- After a compaction or in a new session, the SessionStart hook names the open runs — after a
-  compaction, the one this session was driving. Re-invoke the skill named by the run's `mode:` (it
-  loads this one), read `session-state.md` and `ask.md`, re-read the doctrine for its phase (a build's
-  `build` phase: its build loop), and continue. No hook message? Run `council run status`.
-- **Carrying a run on in a new session, after `/clear`, or when the user says to go on with a paused
-  one:** first `council run resume --run <folder>`. It records this session as the run's driver, so
-  a compaction resumes it here. A run the hook says another session updated recently may still be
-  live there: leave it, and don't re-dispatch its seats or close it, until the user says that
-  session has ended.
-- **Seats marked running:** after a compaction they are still working — wait for their
-  notifications; never re-dispatch them. In a new session they are gone: `council collect` shows
-  which files exist; mark the rest `council seat <slug> failed note="interrupted"` and re-dispatch
-  each once. A seat noted `round 2`: war-room.md, Limits.
-- **Handing work on:** the note lists open hazards under "Ask fix-now/later before
-  any commit or PR" and says: the main checkout, never an app-made worktree.
+After a compaction, in a new session, after `/clear`, or when the user says to go on with a paused
+run or to hand the work on: read `${CLAUDE_PLUGIN_ROOT}/references/run/resume.md` before anything
+else. Re-invoke the skill named by the run's `mode:` (it loads this one). Never re-dispatch a seat
+marked running after a compaction: it is still working (one lost with an old session: re-dispatch
+each once, as resume.md says).
 
 ## Talking to the user
 

@@ -156,17 +156,22 @@ check("kernel: the steps every run needs — the Chair's own seat record, the ow
       "`council seat chair done agents=0`" in core and "council status --line" in flat(core)
       and "PushNotification" in core and "60 turns" in core
       and "never re-dispatch it" in core)
-check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
-# The method a review run reads before it touches the project (method-vs-helper-10: 59,407 bytes before
-# stage 2, 61,746 after it): a rule the helper now says keeps one pointer here, not its whole text.
+check("kernel: cards and the ledger have a home (helper-commands.md, The council home, which the kernel points at)",
+      "`cards/<slug>.md`" in helper_reference and "`ledger.tsv`" in helper_reference
+      and "references/run/helper-commands.md`, The council home" in flat(core))
+# The method a review run reads before it touches the project: under 50,000 bytes (D46; D13 held it under
+# 59,407): a rule the helper now says keeps one pointer here, not its whole text, and a rule only another mode
+# or a rare case needs lives in the reference that moment reads.
 # The files counted are the helper's one definition (council.records.stages.method_files), which run close records too.
 load = helper_stages.method_bytes("council-review", root=ROOT)
 check("method: the method load counts context-core, council-review and the ten doctrine files, each once",
       helper_stages.method_files("council-review") == ["skills/context-core/SKILL.md", "skills/council-review/SKILL.md"]
       + ["references/doctrine/" + name for name in DOCTRINE], repr(helper_stages.method_files("council-review")))
-check("method: what a review run reads (context-core, doctrine 01-10, council-review) is under 59,407 bytes", load < 59407, str(load))
-check("kernel: resuming a run records this session as its driver (council run resume)",
-      "council run resume" in core[core.find("## Resume"):])
+check("method: what a review run reads (context-core, doctrine 01-10, council-review) is under 50,000 bytes (D46)",
+      load < 50000, str(load))
+resume_doc = read("references", "run", "resume.md")   # moved out of context-core's Resume, which points at it
+check("resume.md: resuming a run records this session as its driver (council run resume), and the kernel's Resume "
+      "points at it", "council run resume" in resume_doc and "references/run/resume.md" in core[core.find("## Resume"):])
 check("kernel: new runs require a validated run plan before Brief or dispatch",
       "council run plan check" in core and "before Brief, Build or any worker starts" in core)
 check("kernel: adaptive routing is advisory before a run opens",
@@ -197,9 +202,9 @@ check("repair: blocked work is excluded from the built count and helper cost is 
       "A task stopped" in build_receipt and
       "is not counted as built" in build_receipt and
       "helper-only usage" in build_receipt)
-check("repair: helper and kernel expose inspectable repair trail",
-      "council repair record" in helper_help.USAGE and "council repair record" in core and
-      "repairs.jsonl" in core)
+check("repair: the helper and repair-loop.md expose the inspectable repair trail",
+      "council repair record" in helper_help.USAGE and "council repair record" in repair_contract and
+      "repairs.jsonl" in repair_contract)
 check("memory: selected entries carry meaning and origin, failures stay observations",
       "Observed Failures" in read("references", "templates", "conventions.md") and
       "keeping observed" in doctrine["04-brief.md"])
@@ -243,9 +248,12 @@ check("01-convene: a route needing rescope does not silently waive verification"
 check("01-convene: asks whether a run is needed before its steps — never for a protected subject, a review or a post-game",
       0 <= doctrine["01-convene.md"].find("**Whether, first.**") < doctrine["01-convene.md"].find("**Open runs first.**") and
       all(p in doctrine["01-convene.md"] for p in ("open none", "protected subject", "review or post-game")))
-check("03-assign and 08-challenge: a Workflow's agents each take a group of small parts, not one each",
-      "never one small part each" in doctrine["03-assign.md"] and
-      "batches of up to 8" in doctrine["08-challenge.md"].split("A Workflow of verifiers", 1)[-1])
+workflow_doc = read("references", "run", "workflow.md")   # moved out of 03-assign, 05-work and 08-challenge
+check("workflow.md: a Workflow's agents each take a group of small parts, not one each, and its verifiers take "
+      "items as Challenge's step 2 deals them; 03-assign, 05-work and 08-challenge point at it",
+      "never one small part each" in flat(workflow_doc) and "batches of up to 8" in doctrine["08-challenge.md"]
+      and "takes items the same way a verifier does (Challenge, step 2)" in flat(workflow_doc)
+      and all("references/run/workflow.md" in doctrine[d] for d in ("03-assign.md", "05-work.md", "08-challenge.md")))
 check("implement: small tasks of one kind share a verifier (build-proof.md, Checking, per task)",
       "up to five of one kind" in read("references", "build-proof.md").split("## Checking", 1)[-1])
 check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
@@ -308,9 +316,10 @@ check("10-learn: 'stop for tonight' mid-run closes the run paused, never complet
 check("10-learn: the close runs the audit itself, and the Chair tells the user each FAIL",
       "prints each FAIL of `council run audit --run <folder>`" in doctrine["10-learn.md"]
       and "Tell the user each FAIL line" in doctrine["10-learn.md"])   # run_cli runs_stage_order_and_close: the close audits
-check("kernel: a handoff to a new session lists open hazards before any commit or PR, and opens in the main checkout",
-      'under "Ask fix-now/later before\n  any commit or PR"' in core and "never an app-made worktree" in core)
-check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
+check("resume.md: a handoff to a new session lists open hazards before any commit or PR, and opens in the main checkout",
+      'under "Ask fix-now/later before any commit or PR"' in flat(resume_doc) and "never an app-made worktree" in resume_doc)
+check("kernel: requests and post-games have a home (helper-commands.md, The council home)",
+      "`asks/`" in helper_reference and "`postgames/`" in helper_reference)
 check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])
 check("06-collect: checks a war room's round-2 files", "debate.md" in doctrine["06-collect.md"])
 check("09-deliver: files the request and knows the postgame kind; plan and post-game file first by pointing at it",
@@ -523,8 +532,8 @@ check("verifier: scratch files stay out of the run folder, nothing runs in the b
       "final and one line",
       all(p in flat(verifier) for p in ("never in the project or the run folder", "Nothing in the background",
                                         "never rewrite your file", "nothing before or after it")))
-check("05-work: says the seat-check hook does not cover a Workflow's agents, and that collect checks their files",
-      "workflow-subagent" in doctrine["05-work.md"] and "every file in `seats/`" in flat(doctrine["05-work.md"]))
+check("workflow.md: says the seat-check hook does not cover a Workflow's agents, and that collect checks their files",
+      "workflow-subagent" in workflow_doc and "every file in `seats/`" in flat(workflow_doc))
 check("05-work and the agents: a worker the harness would not let write hands its file back under UNWRITTEN, and the "
       "Chair saves it and says so (a real run on the Mac had the Chair save replies by hand with no rule for it)",
       "UNWRITTEN" in doctrine["05-work.md"] and "saved by the Chair" in doctrine["05-work.md"] and

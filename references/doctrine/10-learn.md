@@ -9,41 +9,37 @@
   Propose the observation and its verdict, not a guessed cause; a future run reads it as law 11 says.
 - **Write each one in plain words, with evidence and effect:**
   `- PROPOSED accepted pattern: stop flagging <X> in <paths> — <why it's deliberate> (evidence: <path:line>; scope: <paths or seat slugs>; from <deliverable path>, <date>)`
-- For a failure proposal, name the observed failure, scope, origin, evidence path, verdict and the
-  future check it changes. The helper serves an F entry only with a verdict that establishes it
-  (OBSERVED, REPRODUCED, or a verifier's CONFIRMED, REFUTED, MISCITED, REGRESSION, INCOMPLETE,
-  SCOPE-CREEP), a scope narrower than every run, and evidence files that still show it.
+- A failure proposal names the observed failure, scope, origin, evidence path, verdict and the
+  future check it changes. Which verdicts and scopes get one served: the memory file's
+  `## Observed Failures` comment (`references/templates/conventions.md`).
 - **Draft a failure from the run's own record when there is one:** a claim the blind verifier
   REFUTED or MISCITED (`council memory propose claim <id>`, after `council evidence build`), or a
   build task's recorded gate failures (`council memory propose repair <task> --scope <paths>`). The
   helper fills the entry from those records, not from your summary, writes it under `## Proposed`,
   and refuses one that could not be served. Otherwise write the proposal by hand.
-- **Preserve the support level.** A proposal derived from a refuted or uncertain claim names that
-  verdict and verifier file. A remembered decision is the user's ruling, not an agent's assumption;
-  retain the dated words and origin. Never turn an `INFERRED` or `ASSUMED` note into settled memory
-  just because it appeared in synthesis.
+- **Preserve the support level.** A proposal from a refuted or uncertain claim names that verdict
+  and verifier file. A remembered decision is the user's ruling, not an agent's assumption: keep the
+  dated words and origin. Never turn an `INFERRED` or `ASSUMED` note into settled memory because it
+  appeared in synthesis.
 - **Admission rule:** propose only what would change a future run if it were missing — never what
   the code, manifests or CI already say.
-- **A lesson about the council's own process** is scoped to its mode (`scope: council-plan`), so only
-  that mode's runs read it — `council memory select` counts the run's mode as in scope.
-- **Check memory first.** Grep the confirmed entries, `## Proposed` and `## Rejected`.
-  - Already covered → skip it.
-  - Already proposed → add "· seen again <date>" to that line.
-  - Rejected → never propose it again.
+- **A lesson about the council's own process** is scoped to its mode (`scope: council-plan`):
+  `council memory select` counts the run's mode as in scope, so only that mode's runs read it.
+- **Check memory first.** Grep the confirmed entries, `## Proposed` and `## Rejected`: already
+  covered → skip it; already proposed → add "· seen again <date>" to that line; rejected → never
+  propose it again.
 - **Write them to memory's `## Proposed` section now**, then list them, numbered, in the chat.
 - **On the user's answer:**
   - Yes → move the entry into its section with the next number, carrying **Scope:** (its scope),
-    **Origin:** and **Anchor:** (if one exists). An F entry also needs **Failure:**, **Evidence:**
-    and **Verdict:** before selection will serve it.
+    **Origin:** and **Anchor:** (if one exists); an F entry also **Failure:**, **Evidence:** and
+    **Verdict:**.
   - No → move it to `## Rejected` as title · date · their reason.
   - A drafted F entry: `council memory accept F-<n> --user-said "<their words>"` on a yes,
-    `council memory reject …` on a no. Run it only after they answered in the chat — it records
-    their words and the date, and checks the entry would be served before filing it.
-  - **Decisions (D)** are recorded only in the user's own words.
-- **When the helper warns about memory** — over its budget (`- memory budget:`, 25 KB by default;
-  `council memory tidy` lists what reading alone can find), or `council memory check` lists a stale
-  anchor or an `UNSUPPORTED` failure — read the upkeep rules in the head of
-  `${CLAUDE_PLUGIN_ROOT}/references/templates/conventions.md` and propose each fix as they say.
+    `council memory reject …` on a no — only after they answered in the chat: it records their
+    words and the date, and checks the entry would be served before filing it.
+- **When the helper warns about memory** — over its budget, or `council memory check` lists a
+  stale anchor or an `UNSUPPORTED` failure — propose each fix as the upkeep rules in the head of
+  `${CLAUDE_PLUGIN_ROOT}/references/templates/conventions.md` say.
   Anchor new entries to a path or a symbol; a line number drifts unnoticed.
 
 ## Close
@@ -53,11 +49,11 @@ seat's row to the ledger — counted from the seat files, synthesis.md's `from:`
 tables, so keep those exact. Its warnings are for the user: tell them. `council ledger` shows the record: Convene estimates from it. `council ledger advice` says how much it supports,
 seat by seat; a council-init refresh proposes roster changes only where the advice clears its bar.
 - A run stopped for good → `--status abandoned`.
-- A run the user paused, "stop for tonight" too → `--status paused`.
-  When they want it back, `council run resume --run <folder>`.
+- A run the user paused, "stop for tonight" too → `--status paused`; to bring it back,
+  `council run resume --run <folder>`.
 
 **Close every run you open** — in order:
-1. `council run close`. With Python it prints each FAIL of `council run audit --run <folder>` and keeps the whole report as `<run>/audit.md`.
+1. `council run close`. It prints each FAIL of `council run audit --run <folder>` and keeps the whole report as `<run>/audit.md`.
 2. **Show the closing card, once,** then send the owner's alert — each as the close's own lines say
    (a closed run needs `--run <folder>`).
 3. Tell the user each FAIL line, in plain words.

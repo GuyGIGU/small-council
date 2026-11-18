@@ -136,6 +136,6 @@ Still disagreeing, on record: <seat — the objection — what would change the 
 - **Two rounds, never a third.** Facts go to the verifier; values go to the user.
 - **No extra agents** — a resumed worker isn't a new one.
 - **Cost:** about 40% more seat tokens than a plain plan run — an estimate until the ledger has numbers.
-- **Resume after a compaction** (context-core, Resume): collect once `war-room=done`. The `war-room:` state line, seats.tsv and debate.md
+- **Resume after a compaction** (`references/run/resume.md`): collect once `war-room=done`. The `war-room:` state line, seats.tsv and debate.md
   say where you were. **In a new session** they're gone: a lost round-2 seat gets a fresh round-2
   worker (above), never a round-1 re-dispatch.
