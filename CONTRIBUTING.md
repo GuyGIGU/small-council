@@ -118,47 +118,49 @@ one, so a limit is never loosened by hand. `--show` prints the files each count 
 versions. `ruff.toml` turns on the widest set today's Python passes, and a stricter one for
 `src/council/` and `tests/py/`. To widen it, fix a rule's last failures and delete it from its list.
 
-**Releasing.** What a user installs is the `release` branch, never this tree (D45):
-`scripts/build_release.py` writes the files that run (its `SHIPPED` list says which, and why) and
-`evals/run_release.py` proves the tree stands alone. main's marketplace entry names that branch.
+**Releasing.** What a user installs is the `release` branch, never this tree (D45).
+`scripts/build_release.py` writes the files that run (its `SHIPPED` list says which, and why);
+`scripts/publish_release.py <remote> <branch>` builds that tree from a clean checkout, runs
+`evals/run_release.py` on it, and only if the eval passes commits it to the branch. It refuses a
+version that is not newer than the branch's (an installed copy updates only when `version` rises)
+and does nothing when the branch already holds the same tree. main's marketplace entry names
+`release`, so the branch must exist before main does.
 1. Bump `version` in `.claude-plugin/plugin.json` — installed users only get an update when it
    changes.
 2. Bump `COUNCIL_VERSION` in `src/council/commands/help.py`.
 3. Add the matching `CHANGELOG.md` entry. An eval checks that all three agree.
 4. Run the behavioral drills and, with the Claude Code CLI, `claude plugin validate <folder> --strict`
    on a tree the script built (on the checkout it fails over the root `CLAUDE.md`, which doesn't ship).
-5. After green CI and owner approval, merge with a merge commit only; do not squash or rebase.
-6. Create an annotated `vX.Y.Z` tag on that merge commit and push it with owner approval.
-   `.github/workflows/release.yml` checks the tag is the version, builds the tree, runs the release
-   eval on it and adds it to `release` as one commit, `Small Council vX.Y.Z`. Check that it passed.
-7. Fast-forward the live main folder only after green CI and owner approval; verify it matches the tested tree.
-8. GitHub Release objects are optional.
+5. Before the merge, check that `release` exists on GitHub and holds the version being released or
+   the one before (`git fetch origin release && git show FETCH_HEAD:.claude-plugin/plugin.json`).
+   If it doesn't (the first release), publish it now, by hand, from the release commit (below).
+6. After green CI and owner approval, merge with a merge commit only; do not squash or rebase.
+7. Create an annotated `vX.Y.Z` tag on that merge commit and push it with owner approval.
+   `.github/workflows/release.yml` checks the tag is the version and runs
+   `python scripts/publish_release.py origin release`. Check that it passed: it says what it
+   published, or that `release` already holds this tree.
+8. Fast-forward the live main folder only after green CI and owner approval; verify it matches the tested tree.
+9. GitHub Release objects are optional.
 
-**Publishing by hand**, when the workflow can't run, from a clean checkout of the tag in Git Bash
-(the workflow's last step does the same; with the same tree on `release` it adds nothing):
+**Publishing by hand** (step 5, or when the workflow can't run), in Git Bash with Python 3.8+ and
+git on PATH, from a checkout of the commit to release whose shipped files have no uncommitted changes
+(the build refuses them):
 
 ```bash
-git checkout vX.Y.Z
-python scripts/build_release.py ../release-tree | tee ../release-build.txt
-python evals/run_release.py --tree ../release-tree
-rm -f ../release.index && export GIT_INDEX_FILE="$PWD/../release.index"   # a fresh index: the tree's files only
-git --work-tree=../release-tree add -A
-git update-index --chmod=+x $(sed -n 's/^executable: //p' ../release-build.txt)   # Windows keeps no file mode
-if git fetch --no-tags origin release; then set -- -p "$(git rev-parse FETCH_HEAD)"; else set --; fi
-commit="$(git commit-tree "$(git write-tree)" "$@" -m "Small Council vX.Y.Z")"
-unset GIT_INDEX_FILE
-git push origin "$commit:refs/heads/release"      # with owner approval
+git checkout <the release commit>      # a normal checkout: the tag, or the PR's last commit
+python scripts/publish_release.py origin release
 ```
 
-The branch must exist before main's entry points at it, or an install finds nothing. The script
-builds the checkout it sits in, so a tag from before it can be published too: copy
-`scripts/build_release.py` into a checkout of that tag and run it there, then the rest as above.
+That one command is the whole publish. It stops at the first step that fails, with nothing pushed:
+a build refused, a release eval that fails, a tree that changed after the build, or a version not
+newer than `release`'s. It writes nothing into this checkout's `.git`; it pushes with your own git
+credentials, never forced. A later tag's workflow, finding the same tree, adds nothing.
 
 **Running the plugin from a clone.** main's marketplace entry installs the published `release`
 branch, so adding a clone as a marketplace gives you the release, not your checkout. Build your
-checkout's tree instead (`python scripts/build_release.py <folder>`): it carries its own
-`marketplace.json` with `"source": "./"`, so `claude plugin marketplace add <folder>`, then
-`claude plugin install small-council@small-council`, installs exactly what a user would get. Its
+checkout's tree instead (`python scripts/build_release.py --worktree <folder>`, edits included): it
+carries its own `marketplace.json` with `"source": "./"`, so `claude plugin marketplace add <folder>`,
+then `claude plugin install small-council@small-council`, installs exactly what a user would get. Its
 marketplace is named `small-council` too: `claude plugin marketplace remove small-council` first.
 An installed copy changes only when `version` does; to try new edits, build a new folder and add
 it again.
