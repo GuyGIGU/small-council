@@ -1,34 +1,37 @@
 #!/usr/bin/env python3
-"""The release tree stands alone (D45): built by scripts/build_release.py, it holds only what runs, and
-what runs finds everything it needs inside it.
+"""The release tree stands alone (D45): built by scripts/build_release.py, it holds only what runs, what
+runs finds everything it needs inside it, and scripts/publish_release.py publishes exactly that tree.
 
-    python evals/run_release.py               # build this checkout's tree into a temp folder, then check it
-    python evals/run_release.py --tree DIR    # check a tree built already (.github/workflows/release.yml)
+    python evals/run_release.py               # build this checkout's tree (--worktree) into a temp folder, check it
+    python evals/run_release.py --tree DIR    # check a tree built already (publish_release.py does, before it commits)
 
-- the build: it exits 0, a second build of the same checkout is byte-identical, and a non-empty folder is
-  refused (exit 2, the next step named);
-- the tree: its top-level entries are SHIPPED's and nothing else, it is under CEILING bytes, the files git
-  marks executable are executable (POSIX only: Windows keeps no mode), plugin.json names nothing in the
-  dev tree, and its marketplace.json lists the tree itself ("./");
+- the build: it exits 0, a second build is byte-identical, a non-empty folder is refused, and in a scratch
+  repo a shipped file with uncommitted changes is refused unless --worktree says to build it as it is;
+- the tree: its top-level entries are exactly REQUIRED (pinned here, not read from the build's list), it is
+  under CEILING bytes, the scripts are executable (POSIX only: Windows keeps no mode), plugin.json names
+  nothing in the dev tree, and its marketplace.json lists the tree itself ("./");
 - every path plugin.json and hooks.json name exists, and every ${CLAUDE_PLUGIN_ROOT}/<path> a shipped
-  skill, agent, reference or hook names;
-- every relative Markdown link between shipped files resolves inside the tree;
-- no shipped Python file imports from evals/, tests/, docs/ or scripts/, and every path shipped code joins
-  to the plugin's own folder is in the tree (bash and TypeScript: $ROOT/…, ${root}/…, a relative import;
-  Python: a constant under a shipped folder, and no dev-tree name joined to the plugin's folder);
-- the checks above are live: a copy of the tree with references/ taken off, and one with a planted
-  dev-tree read, each fail them;
-- a smoke run with the tree's own bin/council in a scratch git repo (help, init scaffold --quick, run open
-  council-review, doctor, run close), and each hook started as hooks.json starts it with CLAUDE_PLUGIN_ROOT
-  set to the tree: exit 0, the SessionStart orientation printed, and a seat-gate and a bash-gate refusal
-  that only a working hook gives.
+  skill, agent, reference or hook names; every relative Markdown link resolves inside the tree;
+- no shipped file reaches a top-level name of this repository that doesn't ship (python_problems and
+  script_problems say what they see: paths written out, not ones built at run time);
+- the checks above are live: a copy with references/ taken off, and planted reads in the forms a review
+  found (os.path.join from __file__, a tuple of parts, importlib, $(dirname "$0")/..), each fail them;
+- a smoke run, on a copy of the tree, with its own bin/council in a scratch git repo (help, init scaffold
+  --quick, run open council-review, doctor, run close), and each hook started as hooks.json starts it:
+  exit 0, the SessionStart orientation printed, and a seat-gate and a bash-gate refusal;
+- publishing, against a scratch bare repository: a first publish (no parent), the same tree again (no
+  commit), a later version (one commit, the first its parent), the five scripts 100755 and no .pyc, the same
+  or an older version with other files refused, a failed eval and a file found beside the build refused,
+  and the token never in the eval's environment, a printed line, a config file or a git argument;
+- and the suite leaves the tree it checks as it found it, byte for byte.
 Mentions of a dev-tree path in shipped text (a docstring, a comment, a doc for a person) are no read;
 they are listed as notes, and fail nothing.
 
-Python 3.8+, standard library only; bash and git for the smoke run.
+Python 3.8+, standard library only; bash and git for the smoke run and the publishing scenarios.
 """
 import argparse
 import ast
+import hashlib
 import json
 import os
 import re
@@ -44,9 +47,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build_release  # noqa: E402  (the one list of what ships)
 
 PY = sys.executable
+BS = chr(92)
 BASH = os.environ.get("COUNCIL_EVAL_BASH") or shutil.which("bash")
 CEILING = 2_600_000                 # bytes: 2,088,506 measured at 1.1.0 (2026-11-18), plus a quarter
 DEV = ("evals", "tests", "docs", "scripts", "examples")
+# What the installed plugin needs at its top level, pinned here and not read from the build's own list,
+# so that taking a needed entry off SHIPPED fails this suite instead of passing it.
+REQUIRED = {".claude-plugin", ".gitattributes", "LICENSE", "NOTICE", "README.md", "agents", "bin", "hooks",
+            "references", "skills", "src", "types"}
 SHIPPED_DIRS = ("agents", "bin", "hooks", "references", "skills", "src", "types")
 ENV = dict(os.environ, GIT_AUTHOR_NAME="eval", GIT_AUTHOR_EMAIL="eval@example.invalid",
            GIT_COMMITTER_NAME="eval", GIT_COMMITTER_EMAIL="eval@example.invalid")
@@ -60,6 +68,11 @@ def check(name, ok, detail=""):
     results.append((bool(ok), name, detail))
 
 
+def snapshot(tree):
+    """Each file of the tree and the sha256 of its bytes."""
+    return {f: hashlib.sha256((tree / f).read_bytes()).hexdigest() for f in files_of(tree)}
+
+
 def files_of(tree):
     return sorted(p.relative_to(tree).as_posix() for p in tree.rglob("*") if p.is_file())
 
@@ -71,7 +84,7 @@ def text_of(tree, rel):
 # ---- what the tree holds -------------------------------------------------------------------------------
 
 def build(dest):
-    p = subprocess.run([PY, str(ROOT / "scripts" / "build_release.py"), str(dest)], capture_output=True,
+    p = subprocess.run([PY, str(ROOT / "scripts" / "build_release.py"), "--worktree", str(dest)], capture_output=True,
                        text=True, encoding="utf-8", errors="replace")
     return p.returncode, p.stdout, p.stderr
 
@@ -92,9 +105,10 @@ def build_checks(scratch):
 
 def tree_checks(tree):
     tops = sorted(p.name for p in tree.iterdir())
-    check("tree: its top-level entries are SHIPPED's, nothing else", tops == build_release.top_entries(),
-          "extra: %s; missing: %s" % (sorted(set(tops) - set(build_release.top_entries())),
-                                      sorted(set(build_release.top_entries()) - set(tops))))
+    check("tree: its top-level entries are exactly REQUIRED, nothing else", tops == sorted(REQUIRED),
+          "extra: %s; missing: %s" % (sorted(set(tops) - REQUIRED), sorted(REQUIRED - set(tops))))
+    check("tree: the build's SHIPPED list names exactly REQUIRED's top-level entries",
+          build_release.top_entries() == sorted(REQUIRED), build_release.top_entries())
     size = sum((tree / f).stat().st_size for f in files_of(tree))
     check("tree: %d files, %d bytes, under the ceiling of %d" % (len(files_of(tree)), size, CEILING), size <= CEILING)
     if os.name == "posix":
@@ -174,6 +188,12 @@ def link_problems(tree):
 
 # ---- what the tree's code reads ------------------------------------------------------------------------
 
+def off_tree():
+    """Every top-level name of this repository that doesn't ship: what no shipped code may reach."""
+    listed = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z"], capture_output=True).stdout.decode("utf-8")
+    return ({path.split("/")[0] for path in listed.split("\0") if path} | set(DEV)) - REQUIRED
+
+
 def docstrings(module):
     found = set()
     for node in ast.walk(module):
@@ -202,26 +222,49 @@ def touches_root(node, names):
 
 
 def first_part(value):
-    return re.split(r"[\\/]", value, maxsplit=1)[0]
+    """A path's first name, past any leading ./, ../ or /: '../../docs/x' is 'docs'."""
+    return re.split(r"[\\/]", re.sub(r"^(?:\.{1,2}[\\/]|[\\/])+", "", value), maxsplit=1)[0]
 
 
-def python_problems(tree, rel):
-    """A shipped Python file's dev-tree imports, its dev-tree names joined to the plugin's folder, and its
-    constants under a shipped folder that match no file in the tree."""
+def str_constants(module):
+    """Module-level names bound to a string, or to a tuple or list of strings: name -> its strings."""
+    found = {}
+    for node in module.body:
+        if isinstance(node, ast.Assign):
+            value = node.value
+            items = [value] if isinstance(value, ast.Constant) else list(getattr(value, "elts", []))
+            words = [i.value for i in items if isinstance(i, ast.Constant) and isinstance(i.value, str)]
+            found.update({t.id: words for t in node.targets if isinstance(t, ast.Name) and words})
+    return found
+
+
+def imported(node):
+    """The module names an import statement, importlib.import_module or __import__ names as literals."""
+    if isinstance(node, ast.Import):
+        return [a.name for a in node.names]
+    if isinstance(node, ast.ImportFrom):
+        return [] if node.level else [node.module or ""]
+    if isinstance(node, ast.Call) and (getattr(node.func, "attr", "") == "import_module" or
+                                       getattr(node.func, "id", "") in ("import_module", "__import__")):
+        return [a.value for a in node.args[:1] if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+    return []
+
+
+def python_problems(tree, rel, off):
+    """A shipped Python file's imports of an unshipped name; its unshipped names joined to the plugin's
+    folder (a literal, or a module-level name bound to a string or a tuple or list of them, anywhere in an
+    expression built from __file__ or plugin_root()); and its constants under a shipped folder that match no
+    file in the tree. It sees only literals: a path built at run time from a variable, a loop or the
+    environment is not seen (the smoke run covers the paths it exercises)."""
     module, problems = ast.parse(text_of(tree, rel)), []
+    skip, bound, consts = docstrings(module), roots(module), str_constants(module)
     for node in ast.walk(module):
-        names = [a.name for a in node.names] if isinstance(node, ast.Import) else \
-            [node.module or ""] if isinstance(node, ast.ImportFrom) and not node.level else []
-        problems += ["%s:%d imports %s" % (rel, node.lineno, n) for n in names if first_part(n.replace(".", "/")) in DEV]
-    skip, bound = docstrings(module), roots(module)
-    consts = {t.id: n.value.value for n in module.body if isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant)
-              and isinstance(n.value.value, str) for t in n.targets if isinstance(t, ast.Name)}
-    for node in ast.walk(module):
+        problems += ["%s:%d imports %s" % (rel, node.lineno, n) for n in imported(node) if n.split(".")[0] in off]
         if isinstance(node, (ast.BinOp, ast.Call, ast.JoinedStr)) and touches_root(node, bound):
             words = [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
-            words += [consts[n.id] for n in ast.walk(node) if isinstance(n, ast.Name) and n.id in consts]
+            words += [w for n in ast.walk(node) if isinstance(n, ast.Name) for w in consts.get(n.id, [])]
             problems += ["%s:%d joins %r to the plugin's folder" % (rel, node.lineno, w)
-                         for w in words if first_part(w.lstrip("/")) in DEV]
+                         for w in words if first_part(w) in off]
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip \
                 and first_part(node.value) in SHIPPED_DIRS and "/" in node.value:
             pattern = re.sub(r"%[0-9]*[sd]|\{[^}]*\}", "*", node.value).rstrip("/") or "."
@@ -230,15 +273,26 @@ def python_problems(tree, rel):
     return problems
 
 
+# A path on the plugin's folder in bash or TypeScript: $ROOT/…, ${CLAUDE_PLUGIN_ROOT}/…, ${root}/…, $(… pwd)/….
+ON_ROOT = re.compile(r"(?:\$\{?[A-Z_]*ROOT\}?|\$\{root\}|pwd\))\"?/([A-Za-z0-9_.\-/]+)")
+# A path on the script's own folder: $(dirname "$0")/…, $(dirname "${BASH_SOURCE[0]}")/…, ${BASH_SOURCE[0]%/*}/….
+ON_SELF = re.compile(r"(?:\$\(dirname\s+\"?\$(?:0|\{?BASH_SOURCE(?:\[0\])?\}?)\"?\)|\$\{BASH_SOURCE\[0\]%[^}]*\})"
+                     r"\"?/([A-Za-z0-9_.\-/]+)")
+
+
 def script_problems(tree, rel):
-    """A shipped bash or TypeScript file's paths on the plugin's folder, and relative imports, not in the tree."""
-    problems = []
+    """A shipped bash or TypeScript file's paths on the plugin's folder or on its own folder, and relative
+    imports, that are not in the tree. Like the Python check it sees paths written out, not ones a variable
+    carries."""
+    problems, top = [], tree.resolve()
     for number, line in enumerate(text_of(tree, rel).splitlines(), 1):
         if re.match(r"\s*(#|//)", line):
             continue
-        for path in re.findall(r"(?:\$\{?[A-Z_]*ROOT\}?|\$\{root\}|pwd\))\"?/([A-Za-z0-9_.\-/]+)", line):
-            if not (tree / path).exists():
-                problems.append("%s:%d reads %s" % (rel, number, path))
+        targets = [tree / p for p in ON_ROOT.findall(line)] + [(tree / rel).parent / p for p in ON_SELF.findall(line)]
+        for target in targets:
+            resolved = Path(os.path.normpath(str(target)))
+            if top not in (resolved, *resolved.parents) or not resolved.exists():
+                problems.append("%s:%d reads %s" % (rel, number, os.path.relpath(str(resolved), str(top)).replace(BS, "/")))
         for spec in re.findall(r"from '(\.\.?/[^']+)'", line):
             base = ((tree / rel).parent / spec).resolve()
             if not any(Path(str(base) + ext).is_file() for ext in ("", ".ts", ".tsx", ".d.ts", "/index.d.ts", "/index.ts")):
@@ -246,11 +300,12 @@ def script_problems(tree, rel):
     return problems
 
 
-def code_problems(tree):
+def code_problems(tree, off=None):
+    off = off_tree() if off is None else off
     problems = []
     for rel in files_of(tree):
         if rel.endswith(".py"):
-            problems += python_problems(tree, rel)
+            problems += python_problems(tree, rel, off)
         elif rel == "bin/council" or rel.startswith("hooks/") and rel.endswith((".sh", ".ts", ".tsx")):
             problems += script_problems(tree, rel)
     return list(dict.fromkeys(problems))     # a call and the sum inside it name the same join once
@@ -279,6 +334,17 @@ def static_checks(tree):
     notes.extend(mention_notes(tree))
 
 
+# The four forms an independent review planted, each a read of a file that doesn't ship.
+PLANTED = (
+    ("src/planted_a.py", "import os\nfrom os.path import dirname\n"
+                         "open(os.path.join(dirname(__file__), '..', '..', '..', 'CHANGELOG.md'))\n"),
+    ("src/planted_b.py", "from pathlib import Path\nPARTS = ('docs', 'decisions.md')\n"
+                         "Path(__file__).parents[3].joinpath(*PARTS).read_text()\n"),
+    ("src/planted_c.py", "import importlib\nimportlib.import_module('evals.run_replay')\n"),
+    ("hooks/planted_d.sh", 'cat "$(dirname "$0")/../docs/architecture.md"\n'),
+)
+
+
 def planted_checks(tree, scratch):
     """The static checks fail on a tree that lacks what runs, and on a planted dev-tree read."""
     cut = scratch / "cut"
@@ -293,9 +359,17 @@ def planted_checks(tree, scratch):
         "open(plugin_root() + '/' + NOTES)\n", encoding="utf-8")
     (planted / "hooks" / "planted.sh").write_text('bash "$ROOT/evals/run_hook.py"\n', encoding="utf-8")
     (planted / "skills" / "planted.md").write_text("See [the decisions](../docs/decisions.md).\n", encoding="utf-8")
+    for rel, text in PLANTED:
+        (planted / rel).write_text(text, encoding="utf-8")
     problems = code_problems(planted)
+    first = [x for x in problems if x.startswith(("src/planted.py:", "hooks/planted.sh:"))]
     check("planted: a dev-tree import, a docs/ path joined to plugin_root() and a hook reading $ROOT/evals all fail",
-          len(problems) == 3, problems)
+          len(first) == 3, first)
+    for rel, text in PLANTED:
+        found = [x for x in problems if x.startswith(rel + ":")]
+        check("planted: %s is caught (%s)" % (rel, text.strip().splitlines()[-1][:70]), found, found)
+    check("planted: nothing but the planted files is reported", all("planted" in x for x in problems),
+          [x for x in problems if "planted" not in x])
     check("planted: a Markdown link out to docs/ fails", link_problems(planted) == ["skills/planted.md: (../docs/decisions.md)"],
           link_problems(planted))
 
@@ -363,15 +437,154 @@ def smoke(tree, scratch):
     if not BASH or not shutil.which("git"):
         check("smoke: bash and git are on PATH", False, "the smoke run needs both")
         return
-    home, repo = scratch / "home", scratch / "repo"
+    home, repo, copy = scratch / "home", scratch / "repo", scratch / "smoke-tree"
     home.mkdir()
     repo.mkdir()
+    shutil.copytree(str(tree), str(copy))     # Python writes __pycache__ beside what it runs: never into the tree
+    tree = copy
     env = dict(ENV, HOME=str(home), XDG_CACHE_HOME=str(home / ".cache"), CLAUDE_PLUGIN_ROOT=str(tree),
                CLAUDE_PROJECT_DIR=str(repo))
     for words in (["init", "-q"], ["add", "-A"], ["commit", "-q", "--allow-empty", "-m", "start"]):
         subprocess.run(["git", *words], cwd=str(repo), env=env, capture_output=True)
     smoke_commands(tree, repo, env)
     smoke_hooks(tree, repo, env)
+
+
+# ---- the build's rule, and publishing ------------------------------------------------------------------
+
+EXECUTABLE = {"bin/council", "hooks/agent-gate.sh", "hooks/bash-gate.sh", "hooks/seat-gate.sh", "hooks/session-start.sh"}
+IDENTITY = {"GIT_AUTHOR_NAME": "eval", "GIT_AUTHOR_EMAIL": "eval@example.invalid", "GIT_COMMITTER_NAME": "eval",
+            "GIT_COMMITTER_EMAIL": "eval@example.invalid"}
+
+
+def git_out(repo, *words):
+    done = subprocess.run(["git", "-C", str(repo), *words], capture_output=True, env=ENV)
+    return done.stdout.decode("utf-8", "replace").strip() if done.returncode == 0 else ""
+
+
+def build_rule_checks(tree, scratch):
+    """The build refuses shipped files with uncommitted changes unless told --worktree: in a scratch repo."""
+    del tree
+    mini = scratch / "mini"
+    for rel in ("scripts/build_release.py", ".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"):
+        (mini / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(str(ROOT / rel), str(mini / rel))
+    skill = mini / "skills" / "a" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_bytes(b"one\n")
+    for words in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "start"]):
+        subprocess.run(["git", *words], cwd=str(mini), env=ENV, capture_output=True)
+    skill.write_bytes(b"two\n")
+
+    def run_build(*words):
+        p = subprocess.run([PY, str(mini / "scripts" / "build_release.py"), *words], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        return p.returncode, p.stdout, p.stderr
+    code, out, err = run_build(str(scratch / "mini-dirty"))
+    check("build: refuses a shipped file with uncommitted changes (exit 2, stderr, names it and --worktree)",
+          code == 2 and not out and "skills/a/SKILL.md" in err and "--worktree" in err
+          and not (scratch / "mini-dirty").exists(), (code, out, err))
+    code, out, err = run_build("--worktree", str(scratch / "mini-worktree"))
+    check("build: --worktree builds the working tree as it is, edits and all",
+          code == 0 and (scratch / "mini-worktree" / "skills" / "a" / "SKILL.md").read_bytes() == b"two\n", (code, err))
+
+
+def variant(scratch, name, source, records, version=None, readme=b""):
+    """A copy of a built tree with its version set or its README grown, and its records to match."""
+    folder = scratch / name
+    shutil.copytree(str(source), str(folder))
+    if version:
+        plugin = json.loads(text_of(folder, ".claude-plugin/plugin.json"))
+        plugin["version"] = version
+        (folder / ".claude-plugin" / "plugin.json").write_bytes(build_release.as_json(plugin))
+    if readme:
+        (folder / "README.md").write_bytes((folder / "README.md").read_bytes() + readme)
+    return folder, [(p, m, hashlib.sha256((folder / p).read_bytes()).hexdigest()) for p, m, _ in records]
+
+
+def published(remote):
+    """The release branch's tip on the scratch remote: (commit, its parents, path -> mode, its message)."""
+    commit = git_out(remote, "rev-parse", "release")
+    parents = git_out(remote, "rev-list", "--parents", "-n", "1", "release").split()[1:]
+    modes = {line.split("\t", 1)[1]: line.split()[0] for line in git_out(remote, "ls-tree", "-r", "release").splitlines()}
+    return commit, parents, modes, git_out(remote, "log", "-1", "--format=%s", "release")
+
+
+def attempt(step, *args, **kwargs):
+    """A publish step's (0, its line) or (2, the refusal)."""
+    try:
+        return 0, step(*args, **kwargs)
+    except build_release.Refusal as why:
+        return 2, str(why)
+
+
+def publish_checks(tree, scratch):
+    """scripts/publish_release.py against a scratch bare repository: a first publish, the same tree again, a
+    later version, the versions it refuses, a failed eval, a file found beside the build, and the token."""
+    del tree
+    import publish_release
+    os.environ.update(IDENTITY)
+    remote = scratch / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], env=ENV, capture_output=True)
+    pub = scratch / "pub"
+    records = build_release.build(pub, worktree=True)
+    major, minor, patch = publish_release.version_of(text_of(pub, ".claude-plugin/plugin.json"))[:3]
+    later, later2 = "%d.%d.%d" % (major, minor, patch + 1), "%d.%d.%d" % (major, minor, patch + 2)
+
+    def publish(folder, recs):
+        return attempt(publish_release.publish_tree, folder, recs, str(remote), "release")
+    code, line = publish(pub, records)
+    first, parents, modes, _ = published(remote)
+    check("publish: a first publish makes the branch, one commit with no parent", code == 0 and first and not parents
+          and "its first commit" in line, (code, line, parents))
+    check("publish: the published tree is the build's records, the five scripts 100755, no .pyc",
+          sorted(modes) == [p for p, _, _ in records] and {p for p, m in modes.items() if m == "100755"} == EXECUTABLE
+          and not [p for p in modes if p.endswith(".pyc")], sorted(p for p, m in modes.items() if m == "100755"))
+    code, line = publish(pub, records)
+    check("publish: the same tree again is nothing to do (exit 0, no new commit)",
+          code == 0 and line.startswith("Nothing to publish") and published(remote)[0] == first, (code, line))
+    newer, newer_records = variant(scratch, "pub-later", pub, records, version=later)
+    code, line = publish(newer, newer_records)
+    second, parents, _, message = published(remote)
+    check("publish: a later version adds one commit, the first as its parent, named for the version",
+          code == 0 and parents == [first] and message == "Small Council v%s" % later, (code, line, parents, message))
+    same, same_records = variant(scratch, "pub-same", newer, newer_records, readme=b"\nmore\n")
+    code, line = publish(same, same_records)
+    check("publish: the same version with other files is refused (exit 2, bump the version), nothing pushed",
+          code == 2 and "bump version" in line and published(remote)[0] == second, (code, line))
+    code, line = publish(pub, records)
+    check("publish: an older version is refused (exit 2), nothing pushed",
+          code == 2 and "bump version" in line and published(remote)[0] == second, (code, line))
+    publish_built_checks(publish_release, scratch, newer, newer_records, remote, later2, second)
+
+
+def publish_built_checks(publish_release, scratch, newer, newer_records, remote, later2, second):
+    """The eval gates the publish, the folder must hold the build alone, and the token stays out of sight."""
+    final, final_records = variant(scratch, "pub-final", newer, newer_records, version=later2)
+    fails = [PY, "-c", "import sys; sys.exit(3)"]
+    code, line = attempt(publish_release.publish_built, final, final_records, str(remote), "release", check=fails)
+    check("publish: a tree the release eval fails is never published (exit 2), nothing pushed",
+          code == 2 and "eval failed" in line and published(remote)[0] == second, (code, line))
+    os.environ["PUBLISH_TOKEN"] = "planted-token-0123456789"  # noqa: S105  (a planted value, never a secret)
+    try:
+        blind = [PY, "-c", "import os, sys; sys.exit(9 if 'PUBLISH_TOKEN' in os.environ else 0)"]
+        beside = final / "src" / "council" / "__pycache__" / "planted.cpython-38.pyc"
+        beside.parent.mkdir(parents=True, exist_ok=True)
+        beside.write_bytes(b"bytecode")
+        code, line = attempt(publish_release.publish_built, final, final_records, str(remote), "release", check=blind)
+        check("publish: the eval never sees the token, and a .pyc found beside the build is refused, nothing pushed",
+              code == 2 and "found beside the build: src/council/__pycache__/planted" in line
+              and published(remote)[0] == second, (code, line))
+        beside.unlink()
+        code, line = attempt(publish_release.publish_built, final, final_records, str(remote), "release", check=blind)
+        env = publish_release.git_env()
+        config = (remote / "config").read_text(encoding="utf-8")
+        check("publish: with the token set it publishes; the token is in no line, no config and no git argument",
+              code == 0 and published(remote)[1] == [second] and "planted-token" not in line + config
+              and "planted-token" not in env.get("GIT_CONFIG_VALUE_0", "planted-token")
+              and env.get("GIT_CONFIG_KEY_0") == "http.extraHeader", (code, line))
+    finally:
+        os.environ.pop("PUBLISH_TOKEN", None)
 
 
 def main():
@@ -384,11 +597,16 @@ def main():
         if not (tree / ".claude-plugin" / "plugin.json").is_file():
             check("tree: %s holds a built release tree" % tree, False)
         else:
-            for phase in (tree_checks, static_checks, planted_checks, smoke):
+            before = snapshot(tree)
+            for phase in (tree_checks, static_checks, planted_checks, smoke, build_rule_checks, publish_checks):
                 try:        # a tree that lacks a file the checks open is one failed check, not a crash
                     phase(*(tree, scratch)[:phase.__code__.co_argcount])
                 except (OSError, ValueError, KeyError, StopIteration, SyntaxError, subprocess.SubprocessError) as why:
                     check("%s: ran to the end" % phase.__name__, False, repr(why))
+            after = snapshot(tree)
+            changed = sorted(f for f in set(before) | set(after) if before.get(f) != after.get(f))
+            check("the suite left the tree it checks as it found it (%d files, byte for byte)" % len(before),
+                  not changed, "%d files differ, e.g. %s" % (len(changed), changed[:5]))
     for ok, name, detail in results:
         print("%s  %s%s" % ("PASS" if ok else "FAIL", name, "" if ok or not detail else "\n      %s" % (detail,)))
     for line in notes:
