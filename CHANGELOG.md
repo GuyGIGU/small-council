@@ -40,9 +40,21 @@ written when a seat is first used.
 - `council run audit` counts only council agents (worker, verifier, builder) as dispatches. A
   one-off general agent no longer fails "size and cost before the first dispatch" or the status
   card step.
+- `council collect` finds a seat's card when it runs from a subfolder. A relative card path in a
+  brief was read from the folder the command ran in; it is now read from the project's root.
+- `council run export` keeps an agent's type only for the council's own agents, by the agent
+  gate's list. It had a rule of its own.
+- A very small project no longer reads as having no language. `council init detect` and a quick
+  setup's Stack section name the languages seen with their file counts. The stored fingerprint
+  line is unchanged, so no project reports a changed stack.
+- The setup files no longer carry the template's placeholder lines under `## Hard rules` and
+  `## Notes`: both are written empty, and the full setup lists Hard rules as left for the Chair.
+- Making a quick setup full fills each check's row by the table's column names. A table with a
+  column of the project's own, or columns in another order, was filled wrong; a table that lacks
+  a needed column is now left as it is, and the command says which column to add.
 
 ### For contributors
-- A new `setup` group in `evals/run_cli.py` (42 scenarios) and unit tests for the detection.
+- A new `setup` group in `evals/run_cli.py` (52 scenarios) and unit tests for the detection.
 
 ## [1.0.0] — 2026-11-17
 

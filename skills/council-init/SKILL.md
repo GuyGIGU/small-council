@@ -172,6 +172,8 @@ first and written only on their yes. Present:
 Adjust on request. On confirmation, write into `.council/council.config.md`:
 - **the roster rows**, in place of the `<Seat>` row, each with its recast note;
 - **`## Stack`**, in place of its placeholder;
+- **`## Hard rules`**, which the scaffold writes empty: a `- ` line for each non-negotiable the
+  user confirms (CLAUDE.md's and AGENTS.md's too); none, and it stays empty;
 - **the run preferences** and models as answered (the defaults are the user's to change: approve
   without asking up to Squad, agent cap 10); sharing: Phase F;
 - **the Gates rows the probes can't write:** a row for each command detect didn't list; `✓ <date>`

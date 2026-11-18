@@ -185,7 +185,7 @@
    "longest_name": "refuse"
   },
   "src/council/commands/collect.py": {
-   "lines": 280,
+   "lines": 282,
    "longest": 36,
    "longest_name": "one"
   },
@@ -245,9 +245,9 @@
    "longest_name": "main"
   },
   "src/council/commands/fingerprint.py": {
-   "lines": 88,
-   "longest": 16,
-   "longest_name": "stack_summary"
+   "lines": 99,
+   "longest": 22,
+   "longest_name": "stack_read"
   },
   "src/council/commands/gate.py": {
    "lines": 247,
@@ -330,7 +330,7 @@
    "longest_name": "definition"
   },
   "src/council/commands/init.py": {
-   "lines": 253,
+   "lines": 264,
    "longest": 33,
    "longest_name": "scaffold"
   },
@@ -345,9 +345,9 @@
    "longest_name": "_file_markers"
   },
   "src/council/commands/init_write.py": {
-   "lines": 178,
-   "longest": 23,
-   "longest_name": "gate_row"
+   "lines": 231,
+   "longest": 32,
+   "longest_name": "fill_unprobed"
   },
   "src/council/commands/ledger.py": {
    "lines": 122,
@@ -510,7 +510,7 @@
    "longest_name": "export"
   },
   "src/council/commands/run_export_log.py": {
-   "lines": 104,
+   "lines": 106,
    "longest": 21,
    "longest_name": "lines"
   },
@@ -620,8 +620,8 @@
    "longest_name": "records"
   },
   "src/council/records/cells.py": {
-   "lines": 147,
-   "longest": 20,
+   "lines": 148,
+   "longest": 21,
    "longest_name": "table_cells"
   },
   "src/council/records/citations.py": {
@@ -665,7 +665,7 @@
    "longest_name": "operator"
   },
   "src/council/records/gate_table.py": {
-   "lines": 188,
+   "lines": 203,
    "longest": 28,
    "longest_name": "gates_listed"
   },

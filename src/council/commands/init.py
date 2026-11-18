@@ -237,7 +237,7 @@ def _config_left(project: Project, probed: dict[str, init_write.Probe], quick: b
     left = [] if quick else ["the roster — a row per seat beyond Fowler and Beck, each with its surface markers, in "
                              "place of the <Seat> row (council-init, Phase B)",
                              "the ## Stack section of council.config.md", HARD_RULES_LEFT]
-    left +=["%s ran, but no detected check is named %s, so it has no Gates row — add its row by hand"
+    left += ["%s ran, but no detected check is named %s, so it has no Gates row — add its row by hand"
              % (name, name[len("probe-"):]) for name in stray]
     return left
 
