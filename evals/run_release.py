@@ -283,7 +283,7 @@ def planted_checks(tree, scratch):
     """The static checks fail on a tree that lacks what runs, and on a planted dev-tree read."""
     cut = scratch / "cut"
     shutil.copytree(str(tree), str(cut))
-    shutil.rmtree(str(cut / "references"))
+    shutil.rmtree(str(cut / "references"), ignore_errors=True)
     check("planted: with references/ off the list, the ${CLAUDE_PLUGIN_ROOT} and code-path checks fail",
           plugin_root_problems(cut) and code_problems(cut))
     planted = scratch / "planted"
@@ -384,10 +384,11 @@ def main():
         if not (tree / ".claude-plugin" / "plugin.json").is_file():
             check("tree: %s holds a built release tree" % tree, False)
         else:
-            tree_checks(tree)
-            static_checks(tree)
-            planted_checks(tree, scratch)
-            smoke(tree, scratch)
+            for phase in (tree_checks, static_checks, planted_checks, smoke):
+                try:        # a tree that lacks a file the checks open is one failed check, not a crash
+                    phase(*(tree, scratch)[:phase.__code__.co_argcount])
+                except (OSError, ValueError, KeyError, StopIteration, SyntaxError, subprocess.SubprocessError) as why:
+                    check("%s: ran to the end" % phase.__name__, False, repr(why))
     for ok, name, detail in results:
         print("%s  %s%s" % ("PASS" if ok else "FAIL", name, "" if ok or not detail else "\n      %s" % (detail,)))
     for line in notes:
