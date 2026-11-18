@@ -253,9 +253,10 @@ Configs drift. On a re-run, or "refresh the council":
   from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`. A seat without one gets it the
   first run that selects it.
 - **Roster changes from the record.** `council ledger 20` shows each seat's runs, items raised,
-  kept, cut and refuted, and the share shipped; it weighs nothing, you do. Count only runs that
-  judged the seat's items, and propose a change only past the bar (3 judged runs, 15 items, at most
-  5 from any run), with the numbers shown — "UX (Friedman): 6 judged runs, 8 of 30 items shipped —
+  kept, cut and refuted, the share shipped, and the bar's two facts: `judged` (runs whose synthesis
+  credited items) and `counted` (the items the seat raised in them, at most 5 from any run);
+  it weighs nothing, you do. Propose a change only past the bar (`judged` 3 or more and `counted` 15
+  or more; `runs` and `raised` don't decide it), with the numbers shown — "UX (Friedman): 6 judged runs, 8 of 30 items shipped —
   narrow its surface to `src/ui/**`?" Below the bar, say the record is too thin and change nothing. A lens the runs keep flagging outside their lanes is a
   separate proposal: name the runs. The user decides; nothing changes without a yes.
 - Re-check **every path and gate** in the config against the repo, dry-running the gates again

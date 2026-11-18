@@ -48,7 +48,7 @@
 seat's row to the ledger — counted from the seat files, synthesis.md's `from:` lines and the verify
 tables, so keep those exact. Its warnings are for the user: tell them. `council ledger [N]` shows
 each seat's record over the last N runs: Convene estimates from it, and a council-init refresh
-weighs roster changes on it.
+weighs roster changes on its `judged` and `counted` columns.
 - A run stopped for good → `--status abandoned`.
 - A run the user paused, "stop for tonight" too → `--status paused`; to bring it back,
   `council run resume --run <folder>`.

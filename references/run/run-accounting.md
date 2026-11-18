@@ -204,7 +204,7 @@ the hook can't read are never refused for this.
   when missing or stale), checks, spend, agent runs against the cap, and owner follow-ups.
 - `seats`: names, states, tokens, token bases, agent-run counts and notes.
 - `evidence`: labels and paths to supporting records. An absent or older claim index is labelled
-  "Claims index out of date" instead of showing obsolete verdicts.
+  "Claims index out of date", with the command that updates it, instead of showing obsolete verdicts.
 
 This is a snapshot, not a subscription.
 `council status --line` is a separate, under-200-character plain sentence for an owner notification.

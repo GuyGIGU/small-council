@@ -342,6 +342,12 @@ before the size and cost) must FAIL on its step and on nothing else. `run_cli.py
 (`runs_export_anon`) drives the export: its refusals, the files it copies, what it stands in for, and the
 audit's verdicts the same on the copy as on the run.
 
+`python evals/run_release.py` (seconds, in the fast tier) builds what a user installs with
+`scripts/build_release.py` and proves it stands alone: only the listed files, under a size ceiling,
+every path a shipped file names present, no read of `evals/`, `tests/`, `docs/` or `scripts/`, and a
+smoke run of the tree's own helper and hooks on a copy. `--tree <folder>` checks a tree already
+built, which is how `scripts/publish_release.py` runs it before it pushes.
+
 The helper, hook, memory and audit suites need bash and git. Without them they print
 `[SKIP]` and exit 3, so a run that checked nothing never passes; `--allow-skip` makes them exit 0.
 `run_all.py` also fails a suite that reports no `N/N checks passed` line, or zero checks.

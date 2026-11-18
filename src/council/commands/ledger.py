@@ -72,9 +72,9 @@ class Table:
                     s["truns"] += 1
             if cells[1] in self.judged:
                 s["jraised"] += leading(cells[4])
-            if cells[1] in self.judged and cells[3] != ledger.VERIFIERS:
-                per_run.setdefault(seat, {}).setdefault(cells[1], 0.0)   # a judged run of the seat's, even at 0 items
-                per_run[seat][cells[1]] += leading(cells[4])
+                if cells[3] != ledger.VERIFIERS:     # a judged run of the seat's, even at 0 items
+                    per_run.setdefault(seat, {}).setdefault(cells[1], 0.0)
+                    per_run[seat][cells[1]] += leading(cells[4])
             elif leading(cells[4]) > 0:              # a cell that is not a number is not above 0
                 unjudged = True
         for seat, s in seats.items():
