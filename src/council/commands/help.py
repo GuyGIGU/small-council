@@ -150,10 +150,6 @@ council — the Small Council's helper (Python 3.8+ and git)
   council ledger [N]                     each seat's record over the last N completed runs (default 10)
   council ledger advice [N] [--json]     how much each seat's record can support over the last N runs
                                          (default 20), and advice only past the bar
-  council route recommend --task TEXT [--risk low|medium|high] [--complexity 1..10]
-                         [--uncertainty low|medium|high] [--surface NAME ...]
-                         [--agent-cap N] [--budget-tokens N] [--classic] [--mode review|plan|implement|research|postgame]
-                                         advisory TSV recommendation; does not open or alter a run
   council status [--widget [--preview] | --json | --line]
                                          the run in plain words: what is happening, whether it moves,
                                          what needs the user, where the evidence is; --widget prints

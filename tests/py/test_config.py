@@ -23,7 +23,6 @@ class ConfiguredTest(support.Scratch):
         self.assertEqual(config.agent_cap(None), 10)
         self.assertEqual(config.build_tier(home), "light (default)")
         self.assertEqual(config.checking(home), "one per batch (default)")
-        self.assertIsNone(config.worker_estimate(home))
         self.assertEqual(config.seat_models(home), "off")
         self.assertEqual(sharing.sharing(home), "team")
         self.assertEqual(config.gate_time_limit(home), (None, ""))
@@ -35,7 +34,7 @@ class ConfiguredTest(support.Scratch):
         """Context packs were removed on 2026-11-15: a config that still says `context packs: on` reads as one
         without the line."""
         prefs = "## Run preferences\n- agent cap: 6\n- build tier: full\n- seat models: on\n- sharing: just me\n"
-        readers = (config.agent_cap, config.build_tier, config.checking, config.worker_estimate, config.seat_models,
+        readers = (config.agent_cap, config.build_tier, config.checking, config.seat_models,
                    sharing.sharing, config.gate_time_limit, config.notifications_off, config.memory_line,
                    config.roster_table)
         without = [reader(self.home(prefs)) for reader in readers]
@@ -64,20 +63,16 @@ class ConfiguredTest(support.Scratch):
                          "one per batch (default; 'twice' is not a setting — one per batch or per task)")
         self.assertEqual(config.checking(self.home("- checking:\n- checking: per task\n")), "one per batch (default)")
 
-    def test_worker_estimate(self) -> None:
-        self.assertEqual(config.worker_estimate(self.home("- estimate per worker: 150k\n")), 150000)
-        self.assertEqual(config.worker_estimate(self.home("- estimate per worker: 120,000 tokens\r\n")), 120000)
-        self.assertIsNone(config.worker_estimate(self.home("- estimate per worker: 500\n")))
-        self.assertIsNone(config.worker_estimate(self.home("- estimate per worker: 2M\n")))
-        self.assertIsNone(config.worker_estimate(self.home("- estimate per worker: 1,50k\n")))
-
-    def test_worker_estimate_in_a_crlf_file_has_no_carriage_return_in_its_figure(self) -> None:
-        """A line's CR is not part of its last cell: 150000 and 150,000 read as the helper reads them."""
-        for figure in ("150000", "150,000", "150k", "0.9M"):
-            lf = config.worker_estimate(self.home("- estimate per worker: {}\n".format(figure)))
-            crlf = config.worker_estimate(self.home("- estimate per worker: {}\r\n".format(figure)))
-            self.assertIsNotNone(crlf, figure)
-            self.assertEqual(crlf, lf, figure)
+    def test_estimate_per_worker(self) -> None:
+        """No command reads the figure since route recommend went (1.2.0): the Chair does, and council doctor names
+        a line it can't read, a CR at the end of the line no part of it."""
+        def unread(line: str):
+            return [p.said for p in config.problems(self.home(line))]
+        for figure in ("150k", "120,000 tokens", "150000", "150,000", "0.9M"):
+            self.assertEqual(unread("- estimate per worker: {}\n".format(figure)), [], figure)
+            self.assertEqual(unread("- estimate per worker: {}\r\n".format(figure)), [], figure)
+        for figure in ("500", "2M", "1,50k"):
+            self.assertEqual(unread("- estimate per worker: {}\n".format(figure)), [figure], figure)
 
     def test_seat_models_and_sharing(self) -> None:
         self.assertEqual(config.seat_models(self.home("- seat models: on\r\n")), "on")
@@ -114,7 +109,7 @@ class OneLineReaderTest(support.Scratch):
         self.assertEqual(sharing.sharing(self.home("- Sharing: just me\n")), "just me")
         self.assertTrue(config.notifications_off(self.home("- NOTIFICATIONS: off (phone)\n")))
         self.assertEqual(config.gate_time_limit(self.home("- Gate time limit: 15m  # ci is slow\n")), (900, "15m"))
-        self.assertEqual(config.worker_estimate(self.home("- Estimate per worker: 150k (measured)\n")), 150000)
+        self.assertEqual(config.problems(self.home("- Estimate per worker: 150k (measured)\n")), [])
 
     def test_headings_in_any_capitals_with_a_note(self) -> None:
         for head in ("## Hard rules", "## Hard Rules", "## HARD RULES", "## Hard rules (non-negotiable)"):
@@ -182,7 +177,7 @@ class StatusReadingTest(support.Scratch):
 
 class EstimateTokensTest(unittest.TestCase):
     def test_estimate_tokens(self) -> None:
-        self.assertIsNone(config.estimate_tokens("1,50k"))              # the route's reading: unset
+        self.assertIsNone(config.estimate_tokens("1,50k"))
         self.assertEqual(config.estimate_tokens("150,000"), 150000)
         self.assertEqual(config.estimate_tokens("1.5k"), 1500)
         self.assertIsNone(config.estimate_tokens("150 000"))
