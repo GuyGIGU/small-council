@@ -245,9 +245,12 @@ check("01-convene: a route needing rescope does not silently waive verification"
 check("01-convene: asks whether a run is needed before its steps — never for a protected subject, a review or a post-game",
       0 <= doctrine["01-convene.md"].find("**Whether, first.**") < doctrine["01-convene.md"].find("**Open runs first.**") and
       all(p in doctrine["01-convene.md"] for p in ("open none", "protected subject", "review or post-game")))
-check("03-assign and 08-challenge: a Workflow's agents each take a group of small parts, not one each",
-      "never one small part each" in doctrine["03-assign.md"] and
-      "batches of up to 8" in doctrine["08-challenge.md"].split("A Workflow of verifiers", 1)[-1])
+workflow_doc = read("references", "run", "workflow.md")   # moved out of 03-assign, 05-work and 08-challenge
+check("workflow.md: a Workflow's agents each take a group of small parts, not one each, and its verifiers take "
+      "items as Challenge's step 2 deals them; 03-assign, 05-work and 08-challenge point at it",
+      "never one small part each" in flat(workflow_doc) and "batches of up to 8" in doctrine["08-challenge.md"]
+      and "takes items the same way a verifier does (Challenge, step 2)" in flat(workflow_doc)
+      and all("references/run/workflow.md" in doctrine[d] for d in ("03-assign.md", "05-work.md", "08-challenge.md")))
 check("implement: small tasks of one kind share a verifier (build-proof.md, Checking, per task)",
       "up to five of one kind" in read("references", "build-proof.md").split("## Checking", 1)[-1])
 check("03-assign: maps archetypes to the real roster", "map its" in doctrine["03-assign.md"] and "actual roster" in doctrine["03-assign.md"])
@@ -526,8 +529,8 @@ check("verifier: scratch files stay out of the run folder, nothing runs in the b
       "final and one line",
       all(p in flat(verifier) for p in ("never in the project or the run folder", "Nothing in the background",
                                         "never rewrite your file", "nothing before or after it")))
-check("05-work: says the seat-check hook does not cover a Workflow's agents, and that collect checks their files",
-      "workflow-subagent" in doctrine["05-work.md"] and "every file in `seats/`" in flat(doctrine["05-work.md"]))
+check("workflow.md: says the seat-check hook does not cover a Workflow's agents, and that collect checks their files",
+      "workflow-subagent" in workflow_doc and "every file in `seats/`" in flat(workflow_doc))
 check("05-work and the agents: a worker the harness would not let write hands its file back under UNWRITTEN, and the "
       "Chair saves it and says so (a real run on the Mac had the Chair save replies by hand with no rule for it)",
       "UNWRITTEN" in doctrine["05-work.md"] and "saved by the Chair" in doctrine["05-work.md"] and

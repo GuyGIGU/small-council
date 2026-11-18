@@ -6,14 +6,13 @@ The seats work in parallel, each in its own window. You dispatch, then wait.
 
 - **All worker Agent calls go in one message**, with `subagent_type: small-council:council-worker`.
   The worker contract lives in that agent. If the type is unavailable, use `general-purpose` and paste
-  the rules from `${CLAUDE_PLUGIN_ROOT}/agents/council-worker.md`.
-- For a selected seat with a `seat/<slug>/model` row — a mapping or survey worker under `- seat
-  models: on`, or a builder, review or verifier seat under `- models:` — pass that value as the
-  Agent call's per-invocation `model` parameter; a verifier's too, wherever it is dispatched. Omit
-  that parameter for `inherit` or when the plan has no model row. If dispatching through Workflow,
-  pass the same value to its `agent()` call. Never put a seat on a model its plan row doesn't name:
-  the run plan check judges the plan, but the `model` parameter isn't gated, so this rule is yours.
-  A configured force-subagent-model environment setting may override the plan; report that if known.
+  the rules from `${CLAUDE_PLUGIN_ROOT}/agents/council-worker.md`. Through the Workflow tool:
+  `${CLAUDE_PLUGIN_ROOT}/references/run/workflow.md` first.
+- A seat with a `seat/<slug>/model` row in the plan — a verifier's too, wherever it is dispatched —
+  gets that value as the Agent call's `model` parameter; omit it for `inherit` or no row. Never put
+  a seat on a model its plan row doesn't name: the plan check judges the plan, but the `model`
+  parameter isn't gated, so this rule is yours. A force-subagent-model setting may override the
+  plan; report that if known.
 - **Never pass `name`** on a council Agent call — with agent teams switched on, a named call becomes
   a teammate instead of a worker.
 - **Keep the dispatch short** — the brief carries everything:
@@ -26,8 +25,6 @@ Doc: <abs path of the full doc behind each card>
 Format: <your mode's per-item format>
 Write <abs run>/seats/<slug>.md
 ```
-
-- The agent gate refuses a council agent with no open run or plan row.
 
 - **Right after dispatching, two steps, in order:**
   1. **Record each worker:** `council seat <slug> running agent=<agentId>` — the id the Agent or
@@ -43,21 +40,12 @@ Write <abs run>/seats/<slug>.md
   or `failed note="…"` (with its tokens if it reported any). Once per finished agent run; a resumed
   worker's later figure is its running total, so record it as given. A Workflow's notification:
   `agents=<agent_count> tokens=<subagent_tokens>`. Seat work you did yourself:
-  `council seat chair done agents=0`. It prints a progress line — relay it to the user as one short
+  `council seat chair done agents=0`. It prints a progress line — relay it as one short
   line: "3 of 5 seats in — Security, Structure, Tests · ~210k tokens so far".
-- **A worker stopped at its turn limit:** context-core, Limits. `council seat … done` refuses
-  without its file and names the resume.
 - **A refused write:** the worker replies with its file under `UNWRITTEN <path>`; save it verbatim,
   `note="saved by the Chair"` on its seat.
-- **The agent cap and the token ceiling:** when `council seat` says the run reached either,
-  context-core, Limits (Agents).
-- **Alerts:** context-core, Alerts.
-- **A worker that died with its session sends nothing:** context-core, Resume.
-- **Whatever dispatches the workers** (Agent tool, Workflow, background agents), the file contract
-  holds: one file per seat in `seats/`. The seat-check hook covers only
-  `council-worker` and `council-verifier` agents, never a Workflow's (their type is
-  `workflow-subagent`), so give a Workflow's agents the worker's file rules in their prompt;
-  `council collect` then checks every file in `seats/`, named in the brief or not.
+- **A turn limit, the agent cap or token ceiling, alerts, a worker that died with its session (it
+  sends nothing):** context-core, Limits, Alerts and Resume.
 
 ## Done when
 
