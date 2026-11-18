@@ -38,6 +38,11 @@ def none(doc: Doctor, home: str) -> None:
         doc.warn("no gates in %s (guardrails declined) — every council report on this project says NOTHING WAS "
                  "CHECKED" % config.NAME,
                  "delete the 'guardrails: declined' line and run a council-init refresh whenever you want them fitted")
+    elif config.quick_setup(home):
+        doc.warn("no gates in %s: the quick setup found no check in the project to offer — every council report on "
+                 "this project says NOTHING WAS CHECKED" % config.NAME,
+                 "run /council-init: the full setup looks for the project's checks with you and offers the ones it is "
+                 "missing")
     elif gate_table.gates_listed(home):
         doc.error("the Gates section is in an older layout (a list, not a table), so no gate can run — every council "
                   "report on this project says NOTHING WAS CHECKED until it is migrated",
