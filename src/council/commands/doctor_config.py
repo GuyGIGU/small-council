@@ -1,5 +1,5 @@
-"""council doctor on the config's lines and its age: a setting whose value can't be read (an error: the helper uses
-a default, or holds the push freeze, until it is fixed), and what a project set up by an older plugin is missing or
+"""council doctor on the config's lines and its age: a setting whose value can't be read (an error: until it is fixed
+the helper uses a default, the Chair can't price a run from an estimate, or the push freeze holds), and what a project set up by an older plugin is missing or
 still carries — a setting no longer read, `build tier: full` without `checking:`, a map with no one-way table."""
 from __future__ import annotations
 
@@ -15,7 +15,8 @@ def settings(doc: Doctor) -> None:
     home = where.native(doc.home)
     for found in config.problems(home):
         then = ("the push freeze holds (it counts as off)" if found.key == "pushes" else
-                "the helper uses the setting's default")
+                "the Chair can't price a run from it at Convene" if found.key in ("estimates", "estimate per worker")
+                else "the helper uses the setting's default")
         doc.error("%s line %d, `- %s: %s`: %s takes %s, so until it is fixed %s"
                   % (config.NAME, found.line, found.key, found.said, found.key, config.SETTINGS[found.key][0], then),
                   "write `- %s:` with one of those values (a `# note` or `(note)` after it is fine)" % found.key)

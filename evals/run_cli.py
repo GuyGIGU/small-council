@@ -9787,6 +9787,19 @@ def doctor_hooks_live(tmp):
           and hook("seat-gate", "not seen in this session (runs when a seat's agent stops)") in out
           and hook("agent-gate", "not seen in this session (runs before an agent is dispatched)") in out
           and "hooks: 3 of 5 live — the rest show as they fire" in out and "WARN" not in out, out + err)
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- agent cap: 1o\n"
+          "- estimates: builder=lots\n- estimate per worker: 5\n")
+    code, out, err = council(repo, "doctor")
+    lines = out.splitlines()
+
+    def said(key):
+        return next((line for line in lines if "`- %s:" % key in line), "")
+    check("doctor: a bad estimates line says the Chair can't price a run from it, never that a helper default stands in; "
+          "other settings keep the default wording",
+          "the Chair can't price a run from it" in said("estimates") and "default" not in said("estimates")
+          and "the Chair can't price a run from it" in said("estimate per worker")
+          and "the helper uses the setting's default" in said("agent cap"), out + err)
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- agent cap: 10\n")
     code, out, err = council(repo, "doctor", "hooks", "--line", "--session", "s-doc")
     check("doctor hooks --line: only the count, the SessionStart banner's line", code == 0 and out.strip().startswith("hooks: 3 of 5 live"), out + err)
     code, out, err = council(repo, "doctor", "hooks", "--session", "s-late")
