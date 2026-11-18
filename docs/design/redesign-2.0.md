@@ -28,6 +28,16 @@ acting on across both changes.
 | A reader alone | 8 | 1 | 407k | 7.5 / 7.8 |
 | A runner alone | 5 | 0 | 532k | 17 / 22 |
 | Reader and runner together | 9 | 1 | 939k | 17 / 22 |
+| Claude Code's built-in `/code-review`, high effort | 4, and 2 that no other review found | 2 | 569k | 10 / 12 |
+
+The built-in review was run on 2026-11-18, each change in its own fresh session, on a copy holding
+the same files and history the other reviewers saw. It found the clearance turn that leans inward,
+the ring drawn over the body, the document over its size limit and the junk re-pin's red test. It
+missed the other six, including both ruling changes on the rules project. It ran nothing on the
+rules project, because its copy had no Python environment. Its two new finds, both judged worth
+acting on: a second test the junk re-pin left red, and a way the named SOS can change overnight on
+the same LPS. An earlier reviewer had called that outside-day case a documented cost, so that
+one is contested.
 
 Where the council's time went:
 
@@ -46,7 +56,8 @@ Limits of this evidence:
 - Council seats ran on a smaller model than the other reviewers.
 - Two runs of the same prompt found different things.
 - Builds have one run on record. Plan, research and post-game have none.
-- Claude Code's built-in `/code-review` was not measured. Stage 1's test adds it.
+- The built-in review's two new finds count outside the ten, so the reviews above them were not
+  asked to find them.
 
 ## 3. The idea
 
@@ -242,16 +253,15 @@ A stage ships only if its test passes. A wrong guess costs one stage.
 
 | Stage | What is built | Its test | Pass bar |
 |---|---|---|---|
-| 1. Reviews | The reader and the runner as the review; the one-page path; the worth bar; the main session's own check of serious findings | The built plugin on the two measured changes and on a third, unseen one, judged blind. Claude Code's built-in `/code-review` runs on the same three changes as a comparison row | At least 7 of the 10 known defects; at most 2 noise items a run; first findings within 10 minutes; a whole review within 25; no more tokens than today's review of the same change; nothing false on the unseen change |
+| 1. Reviews | The reader and the runner as the review; the one-page path; the worth bar; the main session's own check of serious findings | The built plugin on the two measured changes and on a third, unseen one, judged blind | At least 7 of the 10 known defects; at most 2 noise items a run; first findings within 10 minutes; a whole review within 25; no more tokens than today's review of the same change; nothing false on the unseen change |
 | 2. The book | Setup writes or adopts the design page, the stack page, the decisions log and known problems; every agent reads the first three; each rule carries its reason; the reader checks a change against the book; the list of items not to raise again | The same feature given to two builders on one real project, one with the book and one without; the reader and the runner review both blind | Fewer workarounds and second ways with the book, nothing added to the stack without a stop, and no more defects |
 | 3. The build loop | A task and one page for the builder; the reader and the runner at the end; the bug-first rule; the report of section 8 with its pictures and its undo line; the restore point; the runner's proof that each test can fail | One plan built twice from the same commit, by 1.2.0 and by the new loop, reviewed blind | No more defects than 1.2.0, in at most half the time |
 | 4. The design step | The designer; decisions as consequences; a second design for what is hard to undo; plan and research as entry points | The same request through 1.2.0's plan and through the designer. How to judge two plans fairly is not settled | To be set with the owner before this stage starts |
 | 5. The whole loop and health | `/council` and `/council-health` | One real feature from request to report; one health pass on a real project, judged blind for worth | The feature's behaviour lines all shown; at most 2 noise items in the health pass |
 
 **Rough cost.** Stage 1 is planned in detail: about 1 to 1.3M tokens to build and 2 to 2.5M to test.
-The built-in review's comparison row adds to the test; about 0.9M is a guess from what one plain
-reviewer cost. The other stages are expected to cost about the same as stage 1 each. That is a
-guess, not an estimate.
+The other stages are expected to cost about the same as stage 1 each. That is a guess, not an
+estimate.
 
 **Versions.** Stage 1 is 1.3.0. Stages 2 to 4 are minor versions. Stage 5 is 2.0.0.
 
@@ -262,9 +272,9 @@ change lets the main session record its own check of findings on a run that is n
 expert seats leave reviews entirely. The runner records how long the project's checks took, and
 setup records the same when it tries them, so the next estimate uses a measured time.
 
-**If the built-in review does as well.** When the comparison row finds as many of the known
-defects as the reader, with no more noise, the review calls the built-in command for the reading.
-The plugin keeps the runner, the worth bar and the report.
+**The built-in review does not replace the reader.** Measured on the same two changes, it found 4
+of the ten known defects against the reader's 8, with one more noise item, so the plugin keeps
+its own reader (section 2).
 
 ## 13. What is given up, and the risks
 
@@ -287,8 +297,8 @@ The plugin keeps the runner, the worth bar and the report.
 4. The expert catalogue is kept as reading, not deleted.
 5. Every bug found late becomes a check that would have caught it, or a line in the design page.
    This replaces the seats' track records as the way the plugin learns a project.
-6. If Claude Code's built-in review reads as well as the reader, the plugin calls it and does not
-   keep a second reader of its own.
+6. The plugin keeps its own reader. Claude Code's built-in review was measured and found half as
+   much (section 2).
 7. The stack is one page of the book, read by every agent, and not a set of planning documents.
 
 ## 15. Ideas from other tools, checked on 2026-11-18
@@ -305,7 +315,7 @@ The check was five web searches over comparison posts and vendor write-ups, on t
   is the most reported failure of spec-first tools: section 5.
 - Items the owner waves off are not raised again (review tools that learn from dismissals):
   section 8.
-- The built-in review as a comparison: section 12.
+- The built-in review as a comparison, measured: section 2.
 
 **Not taken:**
 
