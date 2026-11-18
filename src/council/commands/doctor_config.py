@@ -1,6 +1,7 @@
 """council doctor on the config's lines and its age: a setting whose value can't be read (an error: until it is fixed
-the helper uses a default, the Chair can't price a run from an estimate, or the push freeze holds), and what a project set up by an older plugin is missing or
-still carries — a setting no longer read, `build tier: full` without `checking:`, a map with no one-way table."""
+the helper uses a default, the Chair can't price a run from an estimate, or the push freeze holds), and what a
+project set up by an older plugin is missing or still carries — a setting no longer read, `build tier: full` without
+`checking:`, a map with no one-way table."""
 from __future__ import annotations
 
 from council.commands.doctor import Doctor
