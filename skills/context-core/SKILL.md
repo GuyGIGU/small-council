@@ -1,6 +1,6 @@
 ---
 name: context-core
-description: Shared engine for Small Council review, plan, implement, research and post-game modes. Load when a council mode invokes it or when resuming an existing council run.
+description: Shared engine for the Small Council's plan, implement, research and post-game modes (a review runs on its own page, council-review). Load when one of those modes invokes it or when resuming one of their runs.
 user-invocable: false
 ---
 
@@ -46,7 +46,7 @@ The ten stages, in order: `01-convene.md` · `02-prepare.md` · `03-assign.md` �
 `05-work.md` · `06-collect.md` · `07-judge.md` · `08-challenge.md` · `09-deliver.md` · `10-learn.md`
 (what each leaves on disk: helper-commands.md, What each stage leaves).
 
-Stage 0, Summon, is the council-init skill (a first review's quick setup: Convene, step 2). council-implement replaces stages 3–7 with its build
+Stage 0, Summon, is the council-init skill (a first review's quick setup: council-review's page). council-implement replaces stages 3–7 with its build
 loop. A **Solo** run skips stages 3–6: run `council memory select` (plus the target paths when there
 is no diff), then do the seat work yourself with the needed reference doc and the entries it printed,
 record it (`council seat chair done agents=0` — without it the ledger has no row for your items),
@@ -91,7 +91,7 @@ Brief, Cards first). Memory may live at a legacy path; the config's Memory secti
   A resumed worker (SendMessage to its agent id) isn't a new agent; a re-dispatch is. At the cap or
   past the token ceiling, a hook refuses new agents and names the user's go (`council cap allow`);
   never work around the stop.
-- **Turns:** a worker or verifier stops at 60 turns, maybe with its file unwritten. Resume it
+- **Turns:** a worker stops at 100 turns and a verifier at 60 turns, maybe with its file unwritten. Resume it
   (SendMessage: "write your file now with what you have, then finish"); never re-dispatch it.
 - **Run plan:** new runs must pass `council run plan check` before Brief, Build or any worker starts
   (fields: `references/run/run-plan.md`).
@@ -107,7 +107,7 @@ Brief, Cards first). Memory may live at a legacy path; the config's Memory secti
 
 After a compaction, in a new session, after `/clear`, or when the user says to go on with a paused
 run or to hand the work on: read `${CLAUDE_PLUGIN_ROOT}/references/run/resume.md` before anything
-else. Re-invoke the skill named by the run's `mode:` (it loads this one). Never re-dispatch a seat
+else. Re-invoke the skill named by the run's `mode:` (it loads this one; a review's page stands alone). Never re-dispatch a seat
 marked running after a compaction: it is still working (one lost with an old session: re-dispatch
 each once, as resume.md says).
 

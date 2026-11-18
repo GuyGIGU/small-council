@@ -1,16 +1,17 @@
 # Small Council
 
-**A council of expert reviewers for Claude Code, where every finding is proved before you see it.**
+**A council for Claude Code that reviews, plans and builds, where every finding is checked before you see it.**
 
 [![CI](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml/badge.svg)](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-1.2.0-black.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![Any stack](https://img.shields.io/badge/stack-any-black.svg)](references/roster/expert-catalog.md)
 
-Fourteen domain experts, each in a clean context, read your change through their own lens. A blind
-checker then tests every claim against the real code. Nothing ships on a reviewer's word: in the last
-three branch reviews, 37 of 38 shipped findings were confirmed blind, one was re-cited, and **none
-were refuted**. Your project keeps a memory and a map, so the tenth run knows what the first one learned.
+A review sends two agents at once: one reads your change against what it claims and traces its
+callers, the other runs the project's checks on the old and the new version in a scratch copy. The
+main session then checks every serious finding against the code before you see it, and a finding on a
+sensitive subject also gets an independent check. Nothing reaches you on an agent's word. Your project
+keeps a memory and a map, so the tenth run knows what the first one learned.
 
 Forked from Sam Hudson's [Carmack Council](https://github.com/SamJHudson01/Carmack-Council), which
 gave Claude Code ten named experts and a philosophy. Small Council keeps the experts and adds the part
@@ -25,7 +26,7 @@ behind each one.
 
 | | Small Council | A typical council skill |
 |---|---|---|
-| **Findings are verified** | A blind verifier re-checks every kept finding against the code, without seeing the reviewer's reasoning. Refuted findings never reach you. | Ten reviewers, merged and ranked. You find out which ones were wrong. |
+| **Findings are verified** | The main session checks every serious finding against the code before you see it; a finding on a sensitive subject also gets an independent check that never saw the reviewer's reasoning. Refuted findings never reach you. | Ten reviewers, merged and ranked. You find out which ones were wrong. |
 | **Nothing fakes a pass** | No checks configured? The report says **NOTHING WAS CHECKED**, in those words. | "Tests pass" with no test runner in sight. |
 | **Every run is sized and billed** | Proposed first with seats and cost. A hook stops new agents at the cap. Estimate before, actual after. | Spawn all ten, every time. |
 | **Builds leave proof** | Each task records a check that failed before the change and passed after, saved to disk. The receipt lists every shortcut taken. | An implementation log. |
@@ -46,10 +47,10 @@ check that `python --version` works in Git Bash (the Microsoft Store stub doesn'
    That installs the `release` branch: only the files the plugin runs (about 2 MB). The evals, tests
    and docs stay in this repository.
 2. **First review:** make a change, then `/council-review`. No setup needed first: in a project
-   with no council it does a quick one (the default experts, nothing probed, kept on your machine)
-   and starts. It proposes the experts and a token estimate; say go. A small change runs Solo (the
-   main session alone, self-checked, about 20k tokens); say "squad" for independent experts and a
-   blind verifier. You get findings with `file:line`, each re-checked before you see it.
+   with no council it does a quick one (nothing probed, kept on your machine)
+   and starts. It proposes the review with what it will cost in tokens and minutes; say go. Two agents
+   review the change at once, whatever its size. You get what happens and what it costs, with a
+   recommendation, and findings with `file:line`, each checked before you see it.
 3. **Full setup, once per project:** `/council-init`, which the first review offers at its end. It
    detects your stack, fits the experts to it, dry-runs your test, lint and build commands, maps the
    code, and shows you all of it before writing `.council/`. It asks three things: which missing
@@ -71,7 +72,7 @@ check that `python --version` works in Git Bash (the Microsoft Store stub doesn'
 
 | Command | What you get |
 |---|---|
-| `/council-review` | Verified findings, ranked P1/P2/P3, handed to implement for fixing. |
+| `/council-review` | Two agents review the change at once; you get checked findings, ranked P1/P2/P3, what it cost and a recommendation, handed to implement for fixing. |
 | `/council-plan` | A plan in small, checkable tasks. Say "debate it" to have the experts argue the hard calls first. |
 | `/council-implement` | Builds a plan or fixes review findings, with proof for each task and a blind check of every result. |
 | `/council-research` | An answer backed by graded evidence, saved for next time. |
@@ -105,8 +106,9 @@ Cost: helpers ~90k tokens across 3 agents; Chair usage unavailable · 2 of 2 fix
 `Checked by machine:`, `Your decisions:` and `Not proved:` are printed by the helper from its records,
 never written by the model.
 
-After every review: findings with a file and line, an evidence grade (observed, reproduced, inferred),
-the verifier's verdict, and a fix line the implement mode can take as its task. Ask "council status"
+After every review: what happened and what it cost, a recommendation, and findings with a file and
+line, an evidence grade (observed, reproduced, inferred), how each was checked, and a fix line the
+implement mode can take as its task. Ask "council status"
 at any time for a status card in chat.
 
 While a run is open, a pane beside the chat shows the council hall: each seat a small pixel-art
@@ -116,8 +118,8 @@ stage, who is working and the spend. `/council-view` opens the pane again if you
 
 ## How the proof works
 
-1. **Parallel readers, one writer.** Experts read side by side in isolated contexts. One builder
-   changes code.
+1. **Parallel readers, one writer.** Agents read side by side in isolated contexts (a review's two
+   agents; a plan's experts). One builder changes code.
 2. **Gather once, share with everyone.** The Chair builds a change index, runs your checks and selects
    the memory in scope. Every expert gets the same brief.
 3. **Aggregate, then judge, then challenge.** The Chair merges by root cause and cuts what doesn't
@@ -138,7 +140,7 @@ Backend (Matteo Collina) · Data integrity (Brandur Leach) · UI (Karri Saarinen
 Accessibility (Heydon Pickering) · Concurrency (Brian Goetz) · Untrusted input (Meredith Patterson) ·
 Operability (Michael Nygard) · LLM pipelines (Simon Willison) · Performance.
 
-Each seat is a reference document of that expert's published principles, with a section on applying
+The experts sit on plans, research and post-games; a review uses its two agents instead. Each seat is a reference document of that expert's published principles, with a section on applying
 it to another stack. Setup recasts seats to your project and drops the ones with nothing to check:
 a trading engine gets a numerical-correctness seat in Willison's chair; a game gets a charter seat.
 John Carmack chairs: simplicity over cleverness, concrete over abstract, economic over aesthetic.

@@ -24,7 +24,9 @@ STAGES = {  # name: (rank, next step); a build stands where council-implement's 
     "learn": (10, "Learn: memory proposals, then close the run (doctrine 10-learn.md)"),
 }
 SHORT = "convene prepare judge challenge deliver learn"
-REQUIRED = {"council-implement": "convene prepare build challenge deliver learn", "council-postgame": SHORT}
+REQUIRED = {"council-implement": "convene prepare build challenge deliver learn", "council-postgame": SHORT,
+            "council-review": "convene prepare work judge challenge deliver learn"}   # the reader and the runner (D50)
+ONE_PAGE = ("council-review",)     # the modes whose method is their own page alone, no context-core or doctrine (D47)
 
 
 def name_ok(stage: str, mode: str) -> bool:
@@ -37,14 +39,29 @@ def rank(stage: str) -> int:
     return STAGES.get(stage, (0, ""))[0]
 
 
-def next_text(stage: str) -> str:
+REVIEW_NEXT = {
+    "prepare": ("Prepare: the change index, memory select, the brief's <…> lines, then the estimate "
+                "(council-review, section 1)"),
+    "work": "Work: both agents in one message, then record each one (council-review, section 2)",
+    "judge": "Judge: weigh both seat files into synthesis.md (council-review, section 4)",
+    "challenge": "Challenge: council check, then council evidence check until clean (council-review, section 4)",
+    "deliver": "Deliver: council ask save, the review file, the report (council-review, section 5)",
+    "learn": "Learn: close the run, delete the scratch clones, the fix hand-off (council-review, section 6)",
+}
+
+
+def next_text(stage: str, mode: str = "") -> str:
+    """A stage's next-step line; a one-page mode's names its page's section, never a doctrine file (D47)."""
+    if mode in ONE_PAGE and stage in REVIEW_NEXT:
+        return REVIEW_NEXT[stage]
     return STAGES.get(stage, (0, ""))[1]
 
 
 def required(run: Path) -> list[str]:
-    """The stages a run must enter: all ten for a review, plan or research run with a worker, not Solo."""
+    """The stages a run must enter: a mode's own list (a review's always, D50); all ten for a plan or research run
+    with a worker, not Solo."""
     mode = state.field(state.text(run), "mode")
-    if mode not in SYNTHESISED:
+    if mode in REQUIRED or mode not in SYNTHESISED:
         return REQUIRED.get(mode, "").split()
     rows = plan.keyed(plan.text(run))                    # (kind, id, field): value, the first row of each
     workers = {key[1] for key, value in rows.items() if key[0] == "seat" and (key[2], value) == ("role", "worker")}
@@ -58,7 +75,9 @@ def required(run: Path) -> list[str]:
 def method_files(mode: str, entered: list[str] | None = None) -> list[str]:
     """What a mode's Chair loads as method, the one definition of a run's method load (D13): context-core's skill,
     the mode's own, and the doctrine of each stage it enters (every stage's when none are given; a build's loop
-    has no doctrine file), as paths under the plugin's folder."""
+    has no doctrine file), as paths under the plugin's folder; a review's own page alone (D47)."""
+    if mode in ONE_PAGE:
+        return ["skills/%s/SKILL.md" % mode]
     named = [stage for stage in (STAGES if entered is None else entered) if stage in STAGES and stage != "build"]
     skills = ["context-core"] + [mode] * (mode != "context-core")
     return (["skills/%s/SKILL.md" % name for name in skills] +

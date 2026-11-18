@@ -1,0 +1,32 @@
+# Small Council run plan v1, as a review opens it (D48). Keep exactly five tab-separated columns.
+# Fixed: the reader and the runner, and the main session's own check of each serious finding (D49).
+# Change estimated-tokens to your estimate and say why. A finding on a protected subject: add the
+# verifier's rows below, add its tokens, and set verification to independent.
+kind	id	field	value	reason
+schema	plan	version	1	versioned run-plan contract
+run	run	id	{{RUN}}	bind this plan to its run folder
+run	run	mode	{{MODE}}	mode chosen when the run opened
+run	run	size	squad	two fixed seats, the reader and the runner (D48)
+assessment	run	risk	medium	a review changes nothing, but what it misses ships
+assessment	run	complexity	medium	two agents on one change at once
+assessment	run	uncertainty	medium	what the change really does is what the review finds out
+budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
+budget	run	estimated-tokens	500000	the pair measured on two real changes (about 470k each), plus the main session's check
+verification	run	level	self	the main session checks each serious finding against the code itself (D49)
+seat	chair	disposition	selected	the main session briefs, checks the findings and writes the review
+seat	chair	role	chair	the one head
+context	chair	level	focused	the findings and the code they cite
+budget	chair	tool-calls	60	the dispatch, each serious finding's check, the review
+seat	reader	disposition	selected	reads the change against its record and traces its callers
+seat	reader	role	worker	one half of the review
+context	reader	level	focused	the brief and the change
+budget	reader	tool-calls	100	a deep read, measured at 15 to 21 minutes of work
+seat	runner	disposition	selected	runs both ends of the change and shows what differs
+seat	runner	role	worker	the other half of the review
+context	runner	level	focused	the brief and the change
+budget	runner	tool-calls	100	clones, the project's checks at both ends, and probes
+# A blind verifier for a finding on a protected subject (D49):
+# seat	verify-1	disposition	selected	a finding on <the protected subject>
+# seat	verify-1	role	verifier	checks it blind
+# context	verify-1	level	focused	the claim and its path:line only
+# budget	verify-1	tool-calls	40	one claim

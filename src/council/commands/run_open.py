@@ -8,7 +8,8 @@ from pathlib import Path
 
 from council import clock, git
 from council.commands import cli, event_note, resolve
-from council.records import config, events, hook_marks, ignores, memory, paths, request, seat_write, seats, state_write
+from council.records import config, events, hook_marks, ignores, memory, paths, request, run_files, seat_write, seats
+from council.records import state_write
 from council.records import plan as plan_file
 from council.records import closing
 from council.records import home as where
@@ -16,6 +17,8 @@ from council.records import home as where
 ASKED = closing.MODES                              # the modes that save the user's request first
 MODES = ASKED + ("council-init", "test-architect", "context-core")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
+PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review.tsv"}   # else run-plan.tsv
+BRIEFS = {"council-review": "review-brief.md"}    # a review's brief, its two seats' role texts in it (D48)
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
 STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead
 
@@ -112,26 +115,35 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
     except OSError:
         raise cli.Refusal("cannot write in " + run) from None
     init = mode == "council-init"
-    template = TEMPLATES / ("run-plan-init.tsv" if init else plan_file.NAME)
-    if not template.is_file():
-        raise cli.Refusal("run plan template is missing: " + template.as_posix())
+    template = TEMPLATES / PLANS.get(mode, plan_file.NAME)
+    brief = TEMPLATES / BRIEFS[mode] if mode in BRIEFS else None
+    for need, what in ((template, "run plan"), (brief, "brief")):
+        if need is not None and not need.is_file():
+            raise cli.Refusal("%s template is missing: %s" % (what, need.as_posix()))
     head = git.text(top, "rev-parse", "-q", "--verify", "HEAD") or ""
     _write(native / paths.STATE, "status: in-progress\nmode: %s\nphase: convene\nupdated: %s\nopened: %s\n"
            "code-root: %s\nsession: %s\nplan-schema: 1\nevents-schema: 1\nsize:\nbase:\nstart-head: %s\n"
            "deliverable:\nnext: %s\n%s\n" % (mode, clock.now_min(), clock.now_sec(), top, session, head, INIT_NEXT
                                              if init else state_write.COUNCIL_NEXT_AT_OPEN, state_write.DECISIONS))
-    plan = template.read_bytes().decode("utf-8", "surrogateescape")
-    plan = plan.replace("\r\n", "\n")         # a CR right before a newline is dropped on every OS, as bytewise.records
-    for key, value in (("RUN", run.rsplit("/", 1)[1]), ("MODE", mode), ("AGENT_CAP", str(config.agent_cap(home)))):
-        plan = plan.replace("{{%s}}" % key, value)
-    try:
-        (native / plan_file.NAME).write_bytes((plan if plan.endswith("\n") or not plan else plan + "\n")
-                                              .encode("utf-8", "surrogateescape"))
-    except OSError:
-        raise cli.Refusal("cannot write %s/%s" % (run, plan_file.NAME)) from None
+    name = run.rsplit("/", 1)[1]
+    _fill(template, native / plan_file.NAME, run, RUN=name, MODE=mode, AGENT_CAP=str(config.agent_cap(home)))
+    if brief is not None:
+        _fill(brief, native / run_files.BRIEF, run, RUN=name, RUN_DIR=run, CODE_ROOT=top, HOME=home)
     _write(native / "log.md", "# Run log — %s · opened %s\n" % (mode, clock.now_sec()))
     _write(native / seats.SEATS, "\t".join(seat_write.HEADER) + "\n")
     return run
+
+
+def _fill(template: Path, file: Path, run: str, **values: str) -> None:
+    """A run file from its template, each {{KEY}} filled, written with LF line ends and a last newline."""
+    text = template.read_bytes().decode("utf-8", "surrogateescape")
+    text = text.replace("\r\n", "\n")         # a CR right before a newline is dropped on every OS, as bytewise.records
+    for key, value in values.items():
+        text = text.replace("{{%s}}" % key, value)
+    try:
+        file.write_bytes((text if text.endswith("\n") or not text else text + "\n").encode("utf-8", "surrogateescape"))
+    except OSError:
+        raise cli.Refusal("cannot write %s/%s" % (run, file.name)) from None
 
 
 def _makedirs(folder: str, said: str) -> None:

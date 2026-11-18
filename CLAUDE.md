@@ -24,7 +24,7 @@ file is the short version. The rest is in:
 ## Hard limits the checks enforce
 
 - Skills: 20,000 characters and 500 lines each. Each agent contract (worker, verifier, builder):
-  8,000 characters. A doctrine file: 6,000. A review run's method load: 50,000 bytes (D46). When you
+  8,000 characters. A doctrine file: 6,000. A review's one page: 16,000 bytes (D47). When you
   add a rule, move detail into the reference the skill points at instead of growing the skill.
 - A helper refusal names the next step (D19). A hook lets the call through on its own fault, and
   never writes to stdout (D20).

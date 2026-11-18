@@ -6,10 +6,73 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-11-18
+
+**In short:** a review is now two agents working at once — one reads the change, one runs it — and
+you see its first checked findings in about 8 minutes, each in terms of what happens and what it
+costs, with a recommendation.
+
+### Before you update
+- **A review now runs a reader and a runner.** The expert roster is not used by a review any more:
+  no seat, card or catalogue page. Plan, research, post-game and build still use the roster.
+- **A review opened on 1.2.0 can be finished on 1.2.0's page only.** Finish it before you update,
+  or close it paused (`council run close --status paused`) and start a new review after updating.
+
+### Changed
+- **One page for a review** (D47, superseding D46). `/council-review` reads only its own page,
+  `skills/council-review/SKILL.md`: the commands in order and the rules they need, under 16,000
+  bytes (the method a review read before was under 50,000). It no longer loads context-core or the
+  stage doctrine.
+- **Two fixed agents** (D48, superseding D14 and D15 for reviews, and D43 in part). The reader traces
+  each changed function to its callers and checks what the change's own record says against what the
+  code does. The runner clones the project into the run's scratch folder, runs its checks on the old
+  and the new version at once, and probes what changed. Their role texts are the ones measured in the
+  redesign's comparison, word for word. A project with no council still gets the quick setup first,
+  only to make its folder; the review reads none of its roster, and still offers `/council-init` at
+  the end.
+- **The main session checks each serious finding itself** (D49, superseding D5 in part). It opens
+  the cited code before showing a finding and records its verdict in `<run>/verify-self.md`, labelled
+  self-checked. A finding on a protected subject (authorization, data loss, injection, secrets,
+  concurrency or ordering, public contracts) also gets a blind verifier, whose verdict wins.
+- **What you see.** The reader's serious findings appear in chat as soon as it returns, the runner's
+  when it does. The report has the same shape every time: Does not work, Your decisions, Not proved,
+  Noted for later (five lines at most), and the cost against the estimate. An item reaches you only
+  if you would act or decide on it; no code, no bare severity labels, no internal ids.
+- **The estimate says time as well as tokens**: about 500k tokens, first findings in about 8 minutes,
+  the whole review in the project's measured checks time plus about 8 (about 20 minutes until the
+  checks have been timed once).
+- **Both agents run on the session's model** (D51, superseding D37 in part): a review's plan gives
+  them no model row, `- models: review=` no longer applies to a review, and council-init no longer
+  proposes a lower model for it.
+- **A review no longer proposes memory entries at its end.** What it finds and you don't act on is
+  under Noted for later; the project's own record of known problems comes with the next stage.
+  Setup does not time the checks yet: the first review's runner does.
+- **A worker may take 100 turns**, up from 60 (finish its file by about turn 75), and may run the
+  project's checks in a `git clone` under the run's scratch folder when its brief allows it — never
+  in the project itself. A verifier stays at 60.
+
+### Helper
+- **`council run open council-review`** writes the review's fixed plan and its brief from
+  `references/templates/run-plan-review.tsv` and `review-brief.md`, filling in the run, its folder,
+  the code root and the council home. A missing template is a refusal.
+- **A review's stages** (D50, superseding D8 in part) are convene, prepare, work, judge, challenge,
+  deliver and learn; assign, brief and collect are no longer required. A review run is still opened,
+  budgeted, reported and closed, and can't close complete before Deliver. Its method load is its one
+  page, and `council run close` says so.
+- **`council evidence check` accepts the main session's own check on a review** at any verification
+  level; a verifier's row still outranks it.
+- **`council gates timed <minutes>`** records how long the project's checks take, as the config line
+  `- checks take: <n> min (measured <date>)`; the next review's estimate uses it. `council gates`
+  prints the line last when there is one.
+
+### Decisions
+- D47 to D51, on the owner's word (redesign 2.0, stage 1). D5, D8, D14, D15, D37, D43 and D46 are
+  marked superseded, in whole or in part, in `docs/decisions.md`.
+
 ### For contributors
 - A proposal for a redesign, built on a measured comparison of the council's review with plain
-  reviewers: [`docs/design/redesign-2.0.md`](docs/design/redesign-2.0.md). Nothing in the plugin
-  changes, and no part of it is decided.
+  reviewers: [`docs/design/redesign-2.0.md`](docs/design/redesign-2.0.md). Its stage 1 is this
+  release; the rest is not decided.
 - The redesign proposal records Claude Code's built-in `/code-review` on the same two changes: it
   found 4 of the 10 known defects against the reader's 8, so the proposal keeps its own reader.
 

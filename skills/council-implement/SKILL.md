@@ -25,7 +25,7 @@ shortcut — dropping data, force-pushing, disabling a gate — to make a task p
 
 - **A plan:** `<home>/plans/<slug>.md`. Each task has Domain, Ref, Depends on, Touches and Done when.
 - **A review (fix mode):** `<home>/reviews/<date>-<slug>.md`. Each selected finding becomes a task:
-  - its seat's reference doc governs it;
+  - what governs it: a post-game or older review item whose seat had a reference doc is governed by that doc; a review's reader or runner finding (no seat doc) is governed by the finding's own recommendation and evidence;
   - its Fix line is the ask;
   - "done" means the consequence can no longer happen.
 

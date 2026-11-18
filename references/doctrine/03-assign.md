@@ -7,8 +7,7 @@ Give each seat exactly its slice, and each worker a budget.
 1. **Match surfaces.** Start from Convene's size, then, for each roster seat, match its Surface
    markers (the config's roster column: globs and greps in this repo's idioms) against the in-scope
    files from the index or the scope inventory: the match is the seat's slice. No markers yet → judge by the seat's lens, and
-   suggest a council-init refresh (after a quick setup, the review's Deliver line is that
-   suggestion). A lens with several roster rows (`dodds-web`, `dodds-admin`) is several seats, each
+   suggest a council-init refresh. A lens with several roster rows (`dodds-web`, `dodds-admin`) is several seats, each
    with its own surface.
 2. **No orphans.** Every in-scope file belongs to at least one seat; an unowned file is a coverage
    gap. That includes the files the index names past the 80-file cap (listed at its end, with no
@@ -26,8 +25,8 @@ Give each seat exactly its slice, and each worker a budget.
    rows (`references/run/run-plan.md`, Shape), with the reason. Check Convene's risk, complexity,
    uncertainty, cap and verification level against what Prepare uncovered; a changed one gets its
    evidence and reason in the plan. Run `council run plan check`; fix every error before going on.
-   A seat's model row: a mapping or survey worker under `- seat models: on`, or a builder, review
-   or verifier seat under `- models:` (run-plan.md, `references/run/models.md`); otherwise none
+   A seat's model row: a mapping or survey worker under `- seat models: on`, or a builder or
+   verifier seat under `- models:` (run-plan.md, `references/run/models.md`); otherwise none
    (`inherit`). A model choice is a request for dispatch, not proof of which model ran.
 8. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
    note="<reason>"` for every seat not called.

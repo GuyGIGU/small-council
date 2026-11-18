@@ -1,7 +1,8 @@
 # Redesign 2.0: a proposal
 
-**Status: a proposal, written 2026-11-18. Nothing here is decided or built.** A part becomes real
-only when the owner says so, and then it gets its entry in [`decisions.md`](../decisions.md). Section
+**Status: a proposal, written 2026-11-18.** A part becomes real only when the owner says so, and
+then it gets its entry in [`decisions.md`](../decisions.md). Stage 1 (section 12) was decided on
+2026-11-18 as D47 to D51 and built in 1.3.0; nothing else here is decided or built. Section
 2 is measured. Everything after it is the planning session's design, built on those measurements and
 on how this repository is run.
 

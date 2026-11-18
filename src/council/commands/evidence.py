@@ -32,7 +32,7 @@ VERDICT_WORD = re.compile(r"\b(CONFIRMED|REFUTED|UNCERTAIN|MISCITED)\b")
 WORST_FIRST = ("REFUTED", "UNCERTAIN", "MISCITED", "CONFIRMED")
 TRUE_VERDICTS = ("CONFIRMED", "MISCITED")      # the claim holds (a miscited one, somewhere else)
 CLAIM_MODES = ("council-review", "council-plan", "council-research")
-SELF_CHECK = "verify-self.md"                  # a Solo run's Chair, checking its own items
+SELF_CHECK = "verify-self.md"                  # the Chair's own check of its items: a Solo run's, a review's
 ITEM = re.compile(r"^(C?[0-9]+)\s+·\s+(.+)$")
 SEAT_SOURCE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)#([0-9]+)$")
 MARKS = re.compile(r"[*_`]")
@@ -84,8 +84,8 @@ def run_fields(run: Path) -> dict[str, Any]:
     mode = (run_state.field(run_state.text(run, read=optional), "mode").split() or [""])[0]
     plan = run_plan.keyed(run_plan.text(run, read=optional))
     return {"mode": mode,
-            "self_check": (plan.get(("verification", "run", "level")) == "self" or
-                           plan.get(("run", "run", "size")) == "solo")}
+            "self_check": (mode == "council-review" or plan.get(("verification", "run", "level")) == "self" or
+                           plan.get(("run", "run", "size")) == "solo")}     # a review at any level (D49)
 
 
 def seat_index_ids(body: str) -> set[str]:

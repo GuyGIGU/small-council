@@ -4,6 +4,7 @@ import unittest
 import support  # noqa: F401  (puts src/ on the path)
 
 from council.commands import cli, home, sharing
+from council.records import config
 from council.records import sharing as setting
 
 
@@ -111,6 +112,28 @@ class WithSharingTest(unittest.TestCase):
     def test_new_section_at_the_end(self) -> None:
         self.assertEqual(setting.with_sharing(b"# C", "team"), b"# C\n\n## Run preferences\n- sharing: team\n")
         self.assertEqual(setting.with_sharing(b"", "team"), b"\n## Run preferences\n- sharing: team\n")
+
+
+class WithPrefTest(unittest.TestCase):
+    """config.with_pref with a place to go: after a named line, else at the end of the Run preferences list."""
+
+    def put(self, data: bytes) -> bytes:
+        return config.with_pref(data, "checks take", "5 min", after="gate time limit", at_end=True)
+
+    def test_after_the_line_it_names(self) -> None:
+        self.assertEqual(self.put(b"## Run preferences\r\n- gate time limit: 20m\r\n- a: b\r\n"),
+                         b"## Run preferences\r\n- gate time limit: 20m\r\n- checks take: 5 min\r\n- a: b\r\n")
+
+    def test_at_the_end_of_the_list_before_its_comment_and_the_next_section(self) -> None:
+        self.assertEqual(self.put(b"## Run preferences\n- a: b\n- c: d\n<!-- - x: y -->\n\n## Roster\n- e: f\n"),
+                         b"## Run preferences\n- a: b\n- c: d\n- checks take: 5 min\n<!-- - x: y -->\n\n"
+                         b"## Roster\n- e: f\n")
+        self.assertEqual(self.put(b"## Run preferences\n\n## Roster\n"),
+                         b"## Run preferences\n- checks take: 5 min\n\n## Roster\n")
+
+    def test_replaced_where_it_is(self) -> None:
+        self.assertEqual(self.put(b"- Checks Take: 9 min (measured 2026-01-01)\n## Run preferences\n- a: b\n"),
+                         b"- checks take: 5 min\n## Run preferences\n- a: b\n")
 
 
 if __name__ == "__main__":
