@@ -3950,7 +3950,7 @@ def runs_worktrees_close_and_find(tmp):
     check("doctor: flags a gate row whose columns shifted", "columns have shifted" in out, out)
     check("doctor: flags a repeated slug", "repeats a slug: fowler" in out, out)
     check("doctor: a seat with no card yet is no finding (its first run writes it); a card that is there is still "
-          "checked", "Ghost" not in line_of(out, "card") and "the card for 'Martin Fowler'" in out, out)
+          "checked", not [l for l in out.splitlines() if "Ghost" in l and "card" in l] and "the card for 'Martin Fowler'" in out, out)
     check("doctor: flags a card whose source doc is gone", "names a source doc that doesn't exist: references/nope.md" in out, out)
     check("doctor: flags stale memory anchors", "3 memory anchor(s) point at code" in out, out)
     check("doctor: notices a config without a stack fingerprint", "has no stack-fingerprint" in out, out)
