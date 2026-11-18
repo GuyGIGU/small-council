@@ -156,7 +156,9 @@ check("kernel: the steps every run needs — the Chair's own seat record, the ow
       "`council seat chair done agents=0`" in core and "council status --line" in flat(core)
       and "PushNotification" in core and "60 turns" in core
       and "never re-dispatch it" in core)
-check("kernel: cards and the ledger have a home", "`cards/<slug>.md`" in core and "`ledger.tsv`" in core)
+check("kernel: cards and the ledger have a home (helper-commands.md, The council home, which the kernel points at)",
+      "`cards/<slug>.md`" in helper_reference and "`ledger.tsv`" in helper_reference
+      and "references/run/helper-commands.md`, The council home" in flat(core))
 # The method a review run reads before it touches the project (method-vs-helper-10: 59,407 bytes before
 # stage 2, 61,746 after it): a rule the helper now says keeps one pointer here, not its whole text.
 # The files counted are the helper's one definition (council.records.stages.method_files), which run close records too.
@@ -197,9 +199,9 @@ check("repair: blocked work is excluded from the built count and helper cost is 
       "A task stopped" in build_receipt and
       "is not counted as built" in build_receipt and
       "helper-only usage" in build_receipt)
-check("repair: helper and kernel expose inspectable repair trail",
-      "council repair record" in helper_help.USAGE and "council repair record" in core and
-      "repairs.jsonl" in core)
+check("repair: the helper and repair-loop.md expose the inspectable repair trail",
+      "council repair record" in helper_help.USAGE and "council repair record" in repair_contract and
+      "repairs.jsonl" in repair_contract)
 check("memory: selected entries carry meaning and origin, failures stay observations",
       "Observed Failures" in read("references", "templates", "conventions.md") and
       "keeping observed" in doctrine["04-brief.md"])
@@ -310,7 +312,8 @@ check("10-learn: the close runs the audit itself, and the Chair tells the user e
       and "Tell the user each FAIL line" in doctrine["10-learn.md"])   # run_cli runs_stage_order_and_close: the close audits
 check("kernel: a handoff to a new session lists open hazards before any commit or PR, and opens in the main checkout",
       'under "Ask fix-now/later before\n  any commit or PR"' in core and "never an app-made worktree" in core)
-check("kernel: requests and post-games have a home", "`asks/`" in core and "`postgames/`" in core)
+check("kernel: requests and post-games have a home (helper-commands.md, The council home)",
+      "`asks/`" in helper_reference and "`postgames/`" in helper_reference)
 check("01-convene: saves the user's request in ask.md", "ask.md" in doctrine["01-convene.md"])
 check("06-collect: checks a war room's round-2 files", "debate.md" in doctrine["06-collect.md"])
 check("09-deliver: files the request and knows the postgame kind; plan and post-game file first by pointing at it",
