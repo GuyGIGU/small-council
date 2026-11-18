@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from council.clock import iso_moment
+from council.commands.agent_gate import KINDS
 from council.commands.audit_calls import Call
 from council.commands.audit_checks import MAX_FILE, Run, Say, clock
 from council.records import seats as seat_files
@@ -58,13 +59,24 @@ def shows_status(part: list[Entry], call: ToolCall, found: list[Call]) -> bool:
         and relayed(part, call[0], call[4])
 
 
+def council_agent(block: dict[str, Any]) -> bool:
+    """A council agent going out, by the agent gate's rule (agent_gate.KINDS): an Agent or Task call whose
+    subagent_type is a council worker's, verifier's or builder's, or a Workflow whose script names one (a script
+    the transcript doesn't hold, from a file or a saved workflow, counts). Any other agent is no dispatch."""
+    given = block.get("input") if isinstance(block.get("input"), dict) else {}
+    if block.get("name") == "Workflow":
+        script = given.get("script")
+        return not isinstance(script, str) or any(kind in script for kind in KINDS.values())
+    return block.get("name") in AGENTS and str(given.get("subagent_type", "")) in KINDS
+
+
 def dispatches(calls: list[ToolCall], run: Run) -> list[int]:
-    """Where agents went out after the run's open (its call here, else its run.opened time): an Agent, Task or
-    Workflow call, or a seat recorded running or queued."""
+    """Where council agents went out after the run's open (its call here, else its run.opened time): a council
+    agent's call (council_agent), or a seat recorded running or queued."""
     opened_at = next((n for n, t, block, found, _ in calls if any(i["sub"] == "run open" for i in found)), 0)
     since = next((e["t"] for e in run.of_type("run.opened") if e["t"]), None)
     return [n for n, t, block, found, _ in calls if n >= opened_at
-            and not (since and t and t < since - timedelta(seconds=2)) and (block.get("name") in AGENTS or any(
+            and not (since and t and t < since - timedelta(seconds=2)) and (council_agent(block) or any(
                 i["sub"] == "seat" and re.search(r"\bseat\s+\S+\s+(running|queued)\b", i["text"]) for i in found))]
 
 
