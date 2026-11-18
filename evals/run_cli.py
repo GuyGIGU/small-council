@@ -9829,9 +9829,8 @@ def reports_refusals(tmp):
                         (("memory", "accept", "F-1", "--user-said", ""), "--user-said needs a value"),
                         (("memory", "select", "--json"), "memory select doesn't take --json"),
                         (("memory", "check", "--user-said", "x"), "memory doesn't take --user-said"),
-                        (("ledger", "advice", "0"), "usage: council ledger advice [how many recent runs"),
-                        (("ledger", "advice", "1", "2"), "usage: council ledger advice [N] [--json]"),
-                        (("ledger", "advice", "9999999"), "keep N under a million runs"),
+                        (("ledger", "advice"), "unknown command 'ledger advice' — removed in 1.2.0"),
+                        (("ledger", "1", "2"), "usage: council ledger [N]"),
                         (("ledger", "x"), "usage: council ledger [how many recent runs, default 10]"),
                         (("ledger", "--json"), "ledger doesn't take --json"),
                         (("map",), 'usage: council map status | map touch <dir>="<line>" …'),
@@ -9842,7 +9841,7 @@ def reports_refusals(tmp):
         check("%s: refused — %s" % (" ".join(words), want), code == 2 and want in err and not out, out + err)
     check("memory: no refusal touched the memory file", read(os.path.join(repo, ".council", "conventions.md")) == before)
     for words, want in ((("ledger",), "no ledger yet — every completed run adds its seats to"),
-                        (("ledger", "advice"), "no ledger yet"), (("map", "status"), "no map yet — write .council/map.md from the plugin's references/templates/map.md")):
+                        (("map", "status"), "no map yet — write .council/map.md from the plugin's references/templates/map.md")):
         code, out, err = council(repo, *words)
         check("%s: says what is missing, exit 0" % " ".join(words), code == 0 and want in out, out + err)
 
