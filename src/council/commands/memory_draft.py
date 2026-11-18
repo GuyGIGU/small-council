@@ -102,10 +102,12 @@ def draft_claim(run: Path, top: Path, claim_id: str, scope: str, today: str) -> 
         raise MemoryError_("no synthesis.md in this run, so no claims to draft from — a claim comes from a review, "
                            "plan or research run's Judge: pass --run <that run>")
     try:
-        claims = evidence.build(run)       # the index, built now from its sources (D44)
+        claims, unsaved = evidence.build(run)       # the index, built now from its sources (D44)
     except evidence.EvidenceError as unread:
         raise MemoryError_("the claim index can't be built: {} — mend that, then propose again"
                            .format(unread)) from None
+    if unsaved:
+        print("council: {} — the draft comes from the index built now".format(unsaved), file=sys.stderr)
     claim = next((item for item in claims if item["id"] == claim_id), None)
     if claim is None:
         raise MemoryError_("no claim {} in this run's claims.jsonl".format(claim_id))
