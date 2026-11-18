@@ -81,7 +81,8 @@ build/compile, and any e2e or regression harness.
 - **Judge each result.** `could not run` is a missing tool or a wrong command: fix it, or leave it
   ✗ with the reason — a gate that can't run here fakes a green, worse than none. A `FAIL` from a tool
   that ran (a linter that found problems, a failing test) is the code's, not the gate's: it is
-  runnable, though the scaffold writes every failed probe ✗ (Phase E sets it right).
+  runnable. Run its `broken:` line too: when the twin could not run, the scaffold writes the row
+  `✓ … runs, and fails today`, not mandatory. With no twin it writes ✗ (Phase E sets it right).
 - **Its run plan opens ready for setup:** `run-plan.tsv` is solo, the Chair only, self-verified, each
   default saying so in its reason. Change a value only where this repo differs, with the reason,
   then `council run plan check`.
@@ -174,8 +175,8 @@ Adjust on request. On confirmation, write into `.council/council.config.md`:
 - **the run preferences** and models as answered (the defaults are the user's to change: approve
   without asking up to Squad, agent cap 10); sharing: Phase F;
 - **the Gates rows the probes can't write:** a row for each command detect didn't list; `✓ <date>`
-  for a `FAIL` from a tool that ran (Phase C), its count of problems in `## Notes`; any Run at or
-  Mandatory cell this repo needs otherwise.
+  for a `FAIL` from a tool that ran with no twin (Phase C); the count of problems of each check that
+  fails today, in `## Notes`; any Run at or Mandatory cell this repo needs otherwise.
 
 Then:
 - **`asks/`** (the user's own words) stays out of git through `.council/.gitignore`. A user who
@@ -242,9 +243,9 @@ Configs drift. On a re-run, or "refresh the council":
 - **Memory:** offer to add Scope and Anchor to entries that lack them — one proposal per entry, as
   numbered operations, applied on the user's yes.
 - **A `setup: quick` line** (the quick setup a first review made) means the full setup is still to
-  do: tailor the roster (Phase B), probe the checks and bring their Gates rows up to date by hand
-  (the scaffold keeps a config that exists), run `council init scaffold` for the map's skeleton and
-  build the map (Phase D), and write `## Stack`. The quick setup chose just me: ask about sharing.
+  do: in the setup run, probe the checks `council init detect` lists; `council init scaffold` then
+  fills the Gates rows that still read `✗ not probed` and writes the map's skeleton. Tailor the
+  roster (Phase B), build the map (Phase D), write `## Stack`. It chose just me: ask about sharing.
   Take the `setup: quick` line out last, after the user's yes.
 - **Cards:** rewrite only a card that exists and whose doc, surface or stack changed (a recast too),
   from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`. A seat without one gets it the

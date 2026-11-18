@@ -4,6 +4,46 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-11-18
+
+**In short:** a first review needs no setup, the full setup is mostly one command, and seat cards are
+written when a seat is first used.
+
+### New
+- **A first review with no setup (D43).** `/council-review` in a project with no council does a quick
+  setup and starts: the catalog's 14 seats as it names them, no map, kept on your machine. It says
+  once that no check was probed, so nothing in that review is checked by machine, and offers
+  `/council-init` in one line at the end. Plan, build and research still ask for the full setup
+  first, because they lean on the map and the probed checks.
+- **`council init detect`** reads the project and prints its stack, the checks its own manifests and
+  scripts show (each with a ready probe command and a broken twin), and the catalog's seats with the
+  surface the file list shows. It writes nothing and invents no command.
+- **`council init scaffold`** writes the config, the memory file, the map's skeleton and
+  `.gitignore` from the templates, with the Gates table filled from the probes that ran in the setup
+  run. It never overwrites a file that exists. `--quick` is the setup a first review uses. On a
+  quick setup being made full, it fills only the Gates rows that still read `✗ not probed`.
+- A check that runs and fails on real problems (a linter that finds a real error) is recorded as a
+  working check that fails today, not as one that can't run.
+
+### Changed
+- **Seat cards on demand.** Setup writes no cards. A run writes the card of each selected seat that
+  has none, before it briefs that seat. `council doctor` no longer warns about a seat with no card.
+- `/council-init` runs on the two commands above, so the Chair writes only the judgment: the roster,
+  the stack section and the map's prose.
+- With no council in a project, `council run status`, `council run open` and `council doctor` name
+  the right next step for each mode. On a quick setup, a missing map is no longer something to write
+  by hand: the full setup builds it.
+
+### Fixed
+- `council sharing just-me` and `sharing team` name each file git tracks that they changed, say the
+  change is uncommitted, and give the two next steps: commit it, or put it back.
+- `council run audit` counts only council agents (worker, verifier, builder) as dispatches. A
+  one-off general agent no longer fails "size and cost before the first dispatch" or the status
+  card step.
+
+### For contributors
+- A new `setup` group in `evals/run_cli.py` (42 scenarios) and unit tests for the detection.
+
 ## [1.0.0] — 2026-11-17
 
 **In short:** a build now hands each task to a fresh builder agent and checks its work against its
