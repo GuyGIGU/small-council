@@ -10343,6 +10343,56 @@ def setup_no_placeholders(tmp):
           and "Left for the Chair: the ## Hard rules section" in out, out + err + str(left))
 
 
+@part("setup")
+def setup_from_quick_by_header(tmp):
+    """A quick setup made full reads its Gates table by the header's column names: a table with a column of the
+    project's own and two columns swapped is filled in its own layout (gate --all then runs the row), and one whose
+    header names no Checked column is left whole, the output naming the column and the next step."""
+    def quick_repo(name):
+        repo = setup_repo(tmp, name, {"scripts/test.sh": 'echo "1 passed"\n'})
+        council(repo, "init", "scaffold", "--quick")
+        return repo, os.path.join(repo, ".council", "council.config.md")
+
+    def relaid(cfg, order):
+        """The Gates header and rows with their cells in this order (template column names; 'Owner' is new)."""
+        lines = cfg.split("\n")
+        at = lines.index("## Gates")
+        head = [c.strip() for c in lines[at + 1].strip("|").split("|")]
+        for i in range(at + 1, len(lines)):
+            if not lines[i].startswith("|"):
+                break
+            cut = [c.strip() for c in lines[i].strip("|").split("|")]
+            row = dict(zip(head, cut))
+            row["Owner"] = "Owner" if i == at + 1 else ("---" if i == at + 2 else "team-a")
+            lines[i] = "| %s |" % " | ".join(row[name] for name in order)
+        return "\n".join(lines)
+
+    repo, path = quick_repo("by-header")
+    write(path, relaid(read(path), ("Gate", "Command", "Owner", "Run at", "Checked", "Mandatory", "Probe", "Needs",
+                                    "Side effects")))
+    council(repo, "run", "open", "council-init")
+    council(repo, "gate", "probe-scripts-test-sh", "--", "bash scripts/test.sh")
+    code, out, err = council(repo, "init", "scaffold")
+    row = [c.strip() for c in line_of(read(path), "| scripts-test-sh |").strip("|").split("|")]
+    check("init scaffold on a quick config whose Gates table has a column of its own and two swapped: the probed row "
+          "is filled in the table's own layout, the project's column kept",
+          code == 0 and len(row) == 9 and row[2] == "team-a" and row[3] == "verify" and row[4].startswith("✓ ")
+          and row[5] == "no" and row[6] == "`bash scripts/test.sh`" and "Updated " in out, out + err + str(row))
+    code, out, err = council(repo, "gate", "--all")
+    check("gate --all after it: runs the filled row", code == 0 and "gate scripts-test-sh: pass" in out, out + err)
+    repo, path = quick_repo("by-header-lacking")
+    write(path, relaid(read(path), ("Gate", "Command", "Run at", "Mandatory", "Probe", "Needs", "Side effects",
+                                    "Owner")))
+    before = read(path)
+    council(repo, "run", "open", "council-init")
+    council(repo, "gate", "probe-scripts-test-sh", "--", "bash scripts/test.sh")
+    code, out, err = council(repo, "init", "scaffold")
+    check("init scaffold on a quick config whose Gates header names no Checked column: the config is left whole, "
+          "and the output names the column and the next step",
+          code == 0 and read(path) == before and "names no Checked column" in out
+          and "then run council init scaffold again" in out and "Updated " not in out, out + err)
+
+
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")

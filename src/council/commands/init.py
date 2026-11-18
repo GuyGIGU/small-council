@@ -154,13 +154,18 @@ def _from_quick(project: Project, run: Path | None) -> list[str]:
                 "open council-init), probe them, then run council init scaffold again" % path)
         return []
     data = paths.contents(where.native(path)) or b""
-    text, done = init_write.fill_unprobed(data.decode("utf-8", "surrogateescape"), project.checks,
-                                          init_write.probes(run), clock.now_date())
-    if done:
-        paths.atomic_write(Path(where.native(path)), text.encode("utf-8", "surrogateescape"), ".config-",
+    filled = init_write.fill_unprobed(data.decode("utf-8", "surrogateescape"), project.checks,
+                                      init_write.probes(run), clock.now_date())
+    if filled.lacking:
+        cli.say("Kept %s — its Gates table's header names no %s column, so no row in it was filled: name the "
+                "column%s in the header as the template does (%s), then run council init scaffold again"
+                % (path, ", ".join(filled.lacking), "s" if len(filled.lacking) > 1 else "",
+                   " | ".join(init_write.SAID.values())))
+    elif filled.done:
+        paths.atomic_write(Path(where.native(path)), filled.text.encode("utf-8", "surrogateescape"), ".config-",
                            keep_mode=True)
         cli.say("Updated %s — the Gates rows the setup run probed: %s; nothing else in it changed"
-                % (path, ", ".join(done)))
+                % (path, ", ".join(filled.done)))
     else:
         cli.say("Kept %s — no `✗ not probed` Gates row has a probe in the setup run, so nothing in it changed" % path)
     return ["the roster — tailor the quick setup's rows: recasts, drops and each seat's surface markers "
