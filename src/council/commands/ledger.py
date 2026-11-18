@@ -1,31 +1,22 @@
-"""council ledger [N] | ledger advice [N] [--json]: each seat's record over the last N completed runs (default 10) —
-runs, items raised, kept, cut and refuted, tokens per run and the share shipped — from the council home's
-ledger.tsv; advice weighs each seat's judged runs with a plausible range and advises only past a stated bar
-(commands/seat_advice.py). Both only read: neither changes a roster, a route or a run."""
+"""council ledger [N]: each seat's record over the last N completed runs (default 10) — runs, items raised, kept, cut
+and refuted, tokens per run and the share shipped — from the council home's ledger.tsv. It only reads: it never
+changes a roster or a run; the Chair weighs the record itself."""
 from __future__ import annotations
 
-import json
 import re
-from pathlib import Path
 
-from council.commands import cli, script
+from council.commands import cli
 from council.records import home as where
 from council.records import ledger
 from council.records.cells import leading
 
 USAGE = "usage: council ledger [how many recent runs, default 10]"
-ADVICE = "usage: council ledger advice [how many recent runs, default 20] [--json]"
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    if words[:1] == ["advice"]:
-        cli.takes_flags(args, "ledger advice", "json")
-        if len(words) > 2:
-            raise cli.Refusal("usage: council ledger advice [N] [--json]")
-        return advice(args, words[1] if len(words) > 1 else "")
     cli.takes_flags(args, "ledger")
     if len(words) > 1:
-        raise cli.Refusal("usage: council ledger [N] | ledger advice [N] [--json]")
+        raise cli.Refusal("usage: council ledger [N]")
     last = (words[0] if words else "") or "10"
     if not re.fullmatch(r"[0-9]+", last):
         raise cli.Refusal(USAGE)
@@ -37,23 +28,6 @@ def main(args: cli.Args, words: list[str]) -> int:
     for line in Table(rows, int(last)).lines():
         cli.say(line)
     return 0
-
-
-def advice(args: cli.Args, last: str) -> int:
-    last = last or "20"
-    if not re.fullmatch(r"[0-9]+", last):
-        raise cli.Refusal(ADVICE)
-    if len(last) > 6:
-        raise cli.Refusal("ledger advice: keep N under a million runs")
-    if int(last) <= 0:
-        raise cli.Refusal(ADVICE)
-
-    def said() -> int:
-        from council.commands import seat_advice     # the advice's own code: only advice loads it
-        data = seat_advice.report(Path(where.council_home() + "/" + ledger.NAME), int(last))
-        cli.say(json.dumps(data, indent=2, sort_keys=True) if "json" in args.flags else seat_advice.render(data))
-        return 0
-    return script.guarded("ledger", said, (ledger.LedgerError, OSError, ValueError))
 
 
 def _d(value: float) -> int:
@@ -118,5 +92,4 @@ class Table:
                        "or a build) · - = never judged")
         if untrusted:
             out.append("~k/run counts only runs whose token figures were checked (0.14+ or corrected) · - = none yet")
-        out.append("what this record can support, seat by seat: council ledger advice")
         return out

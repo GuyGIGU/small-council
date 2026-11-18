@@ -8,14 +8,19 @@ from council.commands import cli, resolve, script
 from council.records import audit_file, closing, events, stages, usage
 
 
-def claims_note(run: Path) -> None:
-    """A synthesis run's claim index missing, or older than a source it was built from: one warning."""
-    def checked() -> bool:
-        _, out, err = script.captured("evidence", ["check", "--run", run.as_posix()])
-        return "claims.jsonl is missing or stale" in out + err
-    if closing.claims_stale(run, checked):
-        cli.warn("council: the claim index is missing or out of date — council evidence build --run %s, then evidence "
-                 "check" % run.name)
+def claims_note(run: Path, status: str) -> None:
+    """A complete close of a synthesis run builds its claim index itself (D44), so the audit reads it current; one
+    that can't be built is one warning, naming the command that says why."""
+    todo = closing.claim_index(run) if status == "complete" else ""
+    if todo == "orphan":
+        cli.warn("council: the claim index has no synthesis beside it to be built from — write the run's synthesis, "
+                 "then council evidence check --run %s" % run.name)
+    if todo != "build":
+        return
+    code, _, _ = script.captured("evidence", ["build", "--run", run.as_posix()])
+    if code:
+        cli.warn("council: the claim index could not be built — council evidence check --run %s names each problem"
+                 % run.name)
 
 
 def audit(run: Path) -> None:

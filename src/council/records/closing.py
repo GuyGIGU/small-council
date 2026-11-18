@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Callable
 
 from council.records import bytewise, events, gate_table, home, map_file, memory, plan, seat_files, stages, state, usage
 
@@ -144,16 +143,14 @@ CHECKS = (  # (code, check: the value its line names, or None when the run passe
 )
 
 
-def claims_stale(run: Path, says_stale: Callable[[], bool]) -> bool:
-    """A synthesis run's claim index missing, or older than a source (a deleted one only says_stale tells)."""
-    synthesis, claims = run / "synthesis.md", run / "claims.jsonl"
-    synthesised = _field(run, "mode") in stages.SYNTHESISED
-    if not synthesised or not (synthesis.is_file() or claims.is_file()):
-        return False
-    if says_stale() or not (synthesis.is_file() and claims.is_file()):
-        return True
-    sources = [synthesis] + [run / name for name in seat_files.listed(run, "verify-*.md")]
-    return any(f.is_file() and f.stat().st_mtime_ns > claims.stat().st_mtime_ns for f in sources)
+def claim_index(run: Path) -> str:
+    """What a complete close does with a synthesis run's claim index (D44): 'build' it, say it is an 'orphan' with no
+    synthesis beside it, or '' when the run has neither."""
+    if _field(run, "mode") not in stages.SYNTHESISED:
+        return ""
+    if (run / "synthesis.md").is_file():
+        return "build"
+    return "orphan" if (run / "claims.jsonl").is_file() else ""
 
 
 def build_log(run: Path, council_home: str) -> str:

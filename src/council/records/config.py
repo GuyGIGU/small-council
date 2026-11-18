@@ -21,6 +21,7 @@ NAME = "council.config.md"
 AGENT_CAP = 10
 SPACE = "[ \t\n\r\f\v]"  # sed's [[:space:]]
 MAX_PER_WORKER = 1000000
+ESTIMATE_ROLES = ("review", "plan", "builder", "verifier", "converge")    # the roles `- estimates:` gives a figure
 BOM = "﻿"
 
 
@@ -201,24 +202,15 @@ def notifications_off(home: str | Path | None) -> bool:
 
 
 def _in_range(raw: str) -> int | None:
-    """An estimate figure as the helper reads it (seat_tokens), kept only inside 1k-1M."""
+    """An estimate figure (`- estimate per worker:`, a role's in `- estimates:`) as tokens, kept only inside 1k-1M;
+    the Chair reads the lines, and council doctor names one it can't read."""
     value = cells.token_count(raw)
     return value if value is not None and 1000 <= value <= MAX_PER_WORKER else None
 
 
-def worker_estimate(home: str | Path) -> int | None:
-    """`- estimate per worker:` in tokens, or None when unset or (said once on stderr) not a figure inside 1k-1M:
-    the route then keeps its no-history default."""
-    found = pref(home, "estimate per worker")
-    value = _in_range(found.said) if found else None
-    if found and value is None:
-        unread(found, "the route's own figure")
-    return value
-
-
 def role_pairs(home: str | Path | None, key: str) -> tuple[bool, list[tuple[str, str, str]]]:
     """The setting's `- key: role=value, ...` line as (written, [(role, equals, value)]): every word lower-cased
-    and trimmed, an empty piece skipped. `- models:` and `- estimates:` read this way."""
+    and trimmed, an empty piece skipped: `- models:` (records/models.py)."""
     found = pref(home, key, empty=True)
     return (True, pairs(found.said)) if found else (False, [])
 
@@ -371,8 +363,8 @@ def _cell(c: str) -> str:
 
 
 def estimate_tokens(text: str) -> int | None:
-    """A figure for the estimate per worker ('150k', '150000', '150,000', '1.2M') as tokens, read by the
-    route's rule (worker_estimate): None when unreadable, such as '1,50k', or outside 1k-1M."""
+    """A role's figure in `- estimates:` ('150k', '150000', '150,000', '1.2M') as tokens: None when unreadable, such
+    as '1,50k', or outside 1k-1M."""
     if not re.fullmatch(r"[0-9][0-9.,]*[ \t]*[kKmM]?", str(text).strip(" \t")):
         return None
     return _in_range(str(text))
@@ -384,8 +376,7 @@ def _models_read(value: str) -> bool:
 
 
 def _estimates_read(value: str) -> bool:
-    from council.records import estimates       # estimates.py reads this module, so not at the top
-    return all(equals and role in estimates.ROLES and estimate_tokens(figure) for role, equals, figure in pairs(value))
+    return all(equals and role in ESTIMATE_ROLES and estimate_tokens(figure) for role, equals, figure in pairs(value))
 
 
 def _pushes_read(value: str) -> bool:

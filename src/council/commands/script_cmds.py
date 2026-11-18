@@ -12,7 +12,7 @@ TABLE = {
     "status": ("status", ("--run", "RUN", "--home", "HOME"), ("widget", "json", "line", "preview")),
     "run audit": ("audit", ("--run", "RUN"), ("transcript",)),
 }
-EVIDENCE = "usage: council evidence build|show|check [--run <folder>]"
+EVIDENCE = "usage: council evidence build|check [--run <folder>]"
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -38,7 +38,7 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 
 def _refuse(command: str, sub: str, args: cli.Args) -> None:
-    if command == "evidence" and sub not in ("build", "show", "check"):
+    if command == "evidence" and sub not in ("build", "check"):
         raise cli.Refusal(EVIDENCE)
     if command == "status" and sum(bool(args.value(f)) for f in ("widget", "json", "line")) > 1:
         raise cli.Refusal("status takes --widget, --json or --line, not together")

@@ -278,7 +278,7 @@ def claim_index(run: Run, say: Say) -> None:
         say(PASS, label, "not due: the run is %s" % run.status)
         return
     if not index.is_file():
-        say(FAIL, label, "missing; build it: council evidence build --run %s, then evidence check" % run.name)
+        say(FAIL, label, "missing: council evidence check --run %s builds it and checks it" % run.name)
         return
     newer = [p.name for p in [run.folder / "synthesis.md"] + sorted(run.folder.glob("verify-*.md"))
              if p.is_file() and p.stat().st_mtime > index.stat().st_mtime + 1]
@@ -293,14 +293,14 @@ def claim_index(run: Run, say: Say) -> None:
                      and not str(c.get("still_cut", "")).strip()]
     refuted = [str(c.get("id", "?")) for c in kept if str(c.get("verdict", "")).upper() == "REFUTED"]
     if newer:
-        say(FAIL, label, "out of date: %s changed after it was built; council evidence build --run %s" % (listed(newer),
-                                                                                                          run.name))
+        say(FAIL, label, "out of date: %s changed after it was built; council evidence check --run %s builds it "
+            "again and checks it" % (listed(newer), run.name))
     elif refuted:
         say(FAIL, label, "kept, but a verifier REFUTED it: %s — move it under ## Cut, or get it a new verdict; then "
-            "council evidence build and evidence check --run %s" % (listed(refuted, 8), run.name))
+            "council evidence check --run %s" % (listed(refuted, 8), run.name))
     elif confirmed_cut:
         say(FAIL, label, "cut, but a verifier CONFIRMED it: %s — ship it, or say in synthesis.md why it stays cut; "
-            "then council evidence build and evidence check --run %s" % (listed(confirmed_cut, 8), run.name))
+            "then council evidence check --run %s" % (listed(confirmed_cut, 8), run.name))
     elif open_claims:
         say(FAIL, label, "kept claim(s) with no verifier's verdict: %s" % listed(open_claims, 8))
     elif not kept:

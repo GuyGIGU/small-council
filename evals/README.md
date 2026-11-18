@@ -208,12 +208,10 @@ runs — a review run's refuted claims and a build run's recorded gate failures,
 and rejected — with its refusals, injection and redaction cases. The larger helper suite also
 covers legacy memory formats and anchor checks.
 
-`python evals/run_seats.py` checks seat learning (`council ledger advice`, `commands/seat_advice.py`)
-without a model: runs that credited no items (council-init, builds) count toward tokens only; a
-seat is weighed only after 3 judged runs and 15 items of evidence, at most five from any one run, so
-one big run is never many runs' worth; each piece of advice (retain, lower, narrow, pair, drop?,
-unclear) is reached only well inside its region; and dropping a seat is only ever a question for the
-user after eight judged runs.
+`python evals/run_seats.py` checks the seat record (`council ledger`, `records/ledger.py`) without a
+model: a split or round-2 worker counts as its seat, a seat no run judged shows `-`, shipped counts only
+the items a synthesis judged, and `council ledger advice`, removed in 1.2.0 (D44), is refused naming
+`council ledger`.
 
 ```bash
 python evals/check_repair_trace.py --self-test --case evals/suite/build-repair-drill
