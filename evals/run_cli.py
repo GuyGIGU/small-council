@@ -431,6 +431,37 @@ last-verified: 2026-09-15 @ eval
 - conventions: .council/conventions.md
 """
 
+def setup_repo(tmp, name, files):
+    """A committed repo holding these files, for council init."""
+    repo = new_repo(tmp, name)
+    for path, text in files.items():
+        write(os.path.join(repo, path), text)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    return repo
+
+
+def init_checks_named(out):
+    """The candidate checks council init detect named, by gate name."""
+    return set(re.findall(r"^check: (\S+) · ", out, re.MULTILINE))
+
+
+def home_files(repo):
+    """Every file under .council/ (runs/ left out) and git's exclude list, with its bytes."""
+    found = {}
+    for top, dirs, names in os.walk(os.path.join(repo, ".council")):
+        dirs[:] = [d for d in dirs if d != "runs"]
+        for name in names:
+            path = os.path.join(top, name)
+            with open(path, "rb") as handle:
+                found[os.path.relpath(path, repo)] = handle.read()
+    exclude = os.path.join(repo, ".git", "info", "exclude")
+    if os.path.isfile(exclude):
+        with open(exclude, "rb") as handle:
+            found["exclude"] = handle.read()
+    return found
+
+
 PARTS = []                   # (group, block), in file order
 ALONE = {"timing"}           # groups that must run with nothing else running (see evals/run_all.py)
 
@@ -9947,6 +9978,134 @@ def reports_views_removed(tmp):
     code, out, err = council(repo, "status")
     check("status: an open run's card has no live-view line", code == 0 and "Status:" in out
           and "Live view" not in out and "tui" not in out, out + err)
+
+
+@part("setup")
+def setup_detect(tmp):
+    """council init detect names the checks each stack's own files show, with their probes, and invents none; it
+    writes nothing, and a project that shows no check says none found."""
+    stacks = {
+        "py": ({"pyproject.toml": "[project]\nname = 'x'\n[tool.pytest.ini_options]\naddopts = '-q'\n[tool.ruff]\n",
+                "Makefile": "test:\n\tpytest\ndeploy:\n\techo\n", "src/app.py": "x = 1\n"},
+               {"pytest", "ruff", "make-test"}),
+        "node": ({"package.json": '{"scripts": {"test": "vitest run", "lint": "eslint .", "lint:fix": "eslint --fix .",'
+                                  ' "dev": "vite", "typecheck": "tsc --noEmit"}}',
+                  "pnpm-lock.yaml": "x\n", "tsconfig.json": "{}\n", "src/App.tsx": "x\n"},
+                 {"pnpm-test", "pnpm-lint", "pnpm-typecheck"}),
+        "go": ({"go.mod": "module x\n", ".golangci.yml": "x: 1\n", "main.go": "package main\n",
+                "scripts/build.ps1": "x\n"}, {"go-test", "go-vet", "golangci-lint", "scripts-build-ps1"}),
+        "none": ({"README.md": "hi\n"}, set()),
+    }
+    said = {}
+    for name, (files, want) in stacks.items():
+        repo = setup_repo(tmp, "detect-" + name, files)
+        code, out, err = council(repo, "init", "detect")
+        said[name] = out
+        check("init detect (%s): names exactly the checks its files show: %s"
+              % (name, ", ".join(sorted(want)) or "none"), code == 0 and init_checks_named(out) == want, out + err)
+        check("init detect (%s): writes nothing" % name, not os.path.exists(os.path.join(repo, ".council"))
+              and not git(repo, "status", "--porcelain"), out)
+    check("init detect: each check comes with its probe and broken twin, ready to run",
+          "  probe: council gate probe-pytest -- 'python -m pytest --collect-only -q'" in said["py"]
+          and "  broken: council gate probe-pytest-broken -- 'python -m pytest_not_installed" in said["py"], said["py"])
+    check("init detect: a project that shows no check says none found, and every catalog seat is listed",
+          "checks: none found" in said["none"] and said["none"].count("\nseat: ") == 14
+          and "stack-fingerprint: " in said["none"], said["none"])
+    for words, want in ((("init",), "usage: council init detect"), (("init", "go"), "usage: council init detect"),
+                        (("init", "detect", "--quick"), "init detect only reads"),
+                        (("init", "scaffold", "x"), "usage: council init detect")):
+        code, out, err = council(repo, *words)
+        check("%s: refused — %s" % (" ".join(words), want), code == 2 and want in err and not out, out + err)
+
+
+@part("setup")
+def setup_scaffold(tmp):
+    """A full scaffold after two probes: the Gates rows say what the probes found, gate --all runs the passing one and
+    skips the failing and the unprobed; without a setup run the full scaffold is refused before it writes."""
+    repo = setup_repo(tmp, "scaffold", {"scripts/test.sh": 'echo "1 passed"\n',
+                                        "scripts/lint.sh": 'echo "lint: 2 problems"; exit 1\n',
+                                        "pyproject.toml": "[tool.mypy]\nstrict = true\n"})
+    code, out, err = council(repo, "init", "scaffold")
+    check("init scaffold: refused with no open council-init run, naming how to open one, the probes and --quick",
+          code == 2 and "council run open council-init" in err and "council init scaffold --quick" in err
+          and not os.path.exists(os.path.join(repo, ".council")), out + err)
+    council(repo, "run", "open", "council-init")
+    council(repo, "gate", "probe-scripts-test-sh", "--", "bash scripts/test.sh")
+    council(repo, "gate", "probe-scripts-test-sh-broken", "--", "bash scripts/no-such-test.sh")
+    council(repo, "gate", "probe-scripts-lint-sh", "--", "bash scripts/lint.sh")
+    code, out, err = council(repo, "init", "scaffold")
+    cfg = read(os.path.join(repo, ".council", "council.config.md"))
+    check("init scaffold: the passing probe with a failing broken twin is ✓ and mandatory, its Probe cell names both",
+          code == 0 and "| scripts-test-sh | `bash scripts/test.sh` | verify | yes | ✓ " in cfg
+          and "| `bash scripts/test.sh` · broken: fail, exit 127 |" in cfg, out + err + cfg)
+    check("init scaffold: the failing probe is ✗ with its exit, the unprobed candidate ✗ not probed",
+          re.search(r"\| scripts-lint-sh \| `bash scripts/lint\.sh` \| [^|]+ \| no \| ✗ [0-9-]+: probe failed, "
+                    r"exit 1 \|", cfg) is not None and "| mypy | `python -m mypy .` |" in cfg
+          and "| ✗ not probed: no probe-mypy in the setup run |" in cfg, cfg)
+    head = git(repo, "rev-parse", "--short", "HEAD")
+    check("init scaffold: the config is stamped (last-verified, the line council fingerprint prints) and keeps the "
+          "roster for the Chair; the map is stamped at HEAD",
+          "last-verified: %s @ %s" % (time.strftime("%Y-%m-%d"), head) in cfg
+          and council(repo, "fingerprint")[1].strip() in cfg and "| <Seat> |" in cfg and "| fowler |" in cfg
+          and "map-commit: " + git(repo, "rev-parse", "HEAD") in read(os.path.join(repo, ".council", "map.md"))
+          and "- sharing: team" in cfg and "setup: quick" not in cfg, cfg)
+    check("init scaffold: what is left for the Chair is said: the roster, the Stack section, the map's prose",
+          "Left for the Chair: the roster" in out and "Left for the Chair: the ## Stack section" in out
+          and "Left for the Chair: the map's prose" in out, out)
+    code, out, err = council(repo, "gate", "--all")
+    check("gate --all after the scaffold: runs the probed check and skips the failing and the unprobed one",
+          code == 0 and "gate scripts-test-sh: pass" in out and "gate mypy: skipped" in out
+          and "gate scripts-lint-sh: skipped" in out and "1 ran" in out, out + err)
+    before = home_files(repo)
+    council(repo, "run", "close", "--status", "abandoned")
+    code, out, err = council(repo, "init", "scaffold")
+    check("init scaffold again (its run closed): changes no file, keeps each and names the refresh",
+          code == 0 and home_files(repo) == before and out.count("Kept ") == 3
+          and "a council-init refresh is the next step" in out, out + err)
+
+
+@part("setup")
+def setup_quick(tmp):
+    """--quick in a fresh repo: git status stays clean, doctor finds no error, a review run opens, and a second run
+    changes nothing; an existing config is never overwritten."""
+    repo = setup_repo(tmp, "quick", {"src/auth/login.py": "x = 1\n", "tests/test_login.py": "x = 1\n",
+                                     "scripts/test.sh": 'echo "1 passed"\n'})
+    code, out, err = council(repo, "init", "scaffold", "--quick")
+    cfg = read(os.path.join(repo, ".council", "council.config.md"))
+    check("init scaffold --quick: says it is a quick setup, that /council-init does the full one, and leaves nothing",
+          code == 0 and "This is a quick setup" in out and "/council-init does the full setup" in out
+          and "Left for the Chair: nothing" in out, out + err)
+    check("init scaffold --quick: git status stays clean (sharing: just me, git's exclude list)",
+          not git(repo, "status", "--porcelain", "--untracked-files=all") and "- sharing: just me" in cfg, cfg)
+    check("init scaffold --quick: every catalog seat as the catalog names it, with the markers the files show, and "
+          "an unprobed check that gate --all will skip",
+          cfg.count("quick setup: as the catalog names it, not recast") == 12 and "| fowler |" in cfg
+          and "`tests/**`" in line_of(cfg, "| Kent Beck | beck | Tests |") and "`src/auth/**`" in cfg
+          and "| scripts-test-sh | `bash scripts/test.sh` |" in cfg and "✗ not probed: quick setup" in cfg
+          and not os.path.exists(os.path.join(repo, ".council", "map.md")), cfg)
+    code, out, err = council(repo, "doctor")
+    check("doctor after a quick setup: no error, and a warning that names it and what the full setup adds",
+          code == 0 and "ERROR" not in out and "comes from a quick setup" in out
+          and "run /council-init for the full setup" in out, out + err)
+    code, out, err = council(repo, "run", "open", "council-review")
+    check("run open council-review after a quick setup: opens", code == 0 and "/runs/" in out, out + err)
+    council(repo, "run", "close", "--status", "abandoned")
+    before = home_files(repo)
+    code, out, err = council(repo, "init", "scaffold", "--quick")
+    check("init scaffold --quick again: changes no file and names the refresh",
+          code == 0 and home_files(repo) == before and "Kept " in out
+          and "a council-init refresh is the next step" in out and not git(repo, "status", "--porcelain"), out + err)
+    mine = setup_repo(tmp, "quick-kept", {"a.py": "x = 1\n"})
+    write(os.path.join(mine, ".council", "council.config.md"), "# my config\n")
+    code, out, err = council(mine, "init", "scaffold", "--quick")
+    check("init scaffold --quick: an existing config is kept as it is, and the output names the refresh",
+          code == 0 and read(os.path.join(mine, ".council", "council.config.md")) == "# my config\n"
+          and "Kept " in out and "council-init refresh" in out and "This is a quick setup" not in out, out + err)
+    empty = setup_repo(tmp, "quick-empty", {"README.md": "hi\n"})
+    council(empty, "init", "scaffold", "--quick")
+    code, out, err = council(empty, "doctor")
+    check("doctor after a quick setup that found no check: a warning naming the full setup, not an error",
+          code == 0 and "ERROR" not in out and "the quick setup found no check" in out, out + err)
 
 
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")

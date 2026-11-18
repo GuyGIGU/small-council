@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 from council.commands import init_seats
 from council.commands.init_checks import Check
-from council.records import config
+from council.records import config, map_file, memory
 from council.records import gates as gate_files
 from council.records import verdicts
 
@@ -97,7 +97,7 @@ class Config(NamedTuple):
 
 
 def config_text(plugin: str, fill: Config) -> str:
-    lines = template(plugin, "council.config.md").split("\n")
+    lines = template(plugin, config.NAME).split("\n")
     out = []
     for line in lines:
         if line.startswith("# Council config — "):
@@ -131,16 +131,16 @@ def roster_rows(plugin: str, files: list[str], quick: bool) -> list[str]:
         elif quick:
             rows.append(init_seats.row(seat, "quick setup: as the catalog names it, not recast"))
     if not quick:
-        rows.append(next(line for line in template(plugin, "council.config.md").split("\n")
+        rows.append(next(line for line in template(plugin, config.NAME).split("\n")
                          if line.startswith("| <Seat> |")))
     return rows
 
 
 def conventions_text(plugin: str, project: str) -> str:
-    return template(plugin, "conventions.md").replace("# Conventions — <project>", "# Conventions — " + project, 1)
+    return template(plugin, memory.NAME).replace("# Conventions — <project>", "# Conventions — " + project, 1)
 
 
 def map_text(plugin: str, project: str, sha: str, today: str) -> str:
-    text = template(plugin, "map.md").replace("# Codebase map — <project>", "# Codebase map — " + project, 1)
+    text = template(plugin, map_file.NAME).replace("# Codebase map — <project>", "# Codebase map — " + project, 1)
     text = re.sub(r"(?m)^map-commit: <full sha>$", ("map-commit: " + sha).rstrip(), text, count=1)
     return re.sub(r"(?m)^updated: <YYYY-MM-DD>$", "updated: " + today, text, count=1)
