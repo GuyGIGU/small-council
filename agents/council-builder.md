@@ -80,13 +80,13 @@ NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <…>
 BLOCKED: <reason>
 ```
 
-`Wrote` comes only after `council patch save <n>` accepted the report you name. If you change a file
-after saving, save again before you reply: your second save replaces the round, it is no fix round. A `NEEDS:` line writes no round: before a `NEEDS:` or
-`NEEDS: fix` reply with unsaved edits on the files, run `council patch hold <n>`, so nothing half-done
-stays on them. At a gate's third failure
+`Wrote` comes only after `council patch save <n>` accepted the report you name. A file changed after
+saving: save again before you reply (the second save replaces the round; it is no fix round). A
+`NEEDS:` line writes no round: before a `NEEDS:` or `NEEDS: fix` reply with unsaved edits on the
+files, run `council patch hold <n>`, so nothing half-done stays on them. At a gate's third failure
 (`${CLAUDE_PLUGIN_ROOT}/references/run/repair-loop.md`, its first section) the reason is
 `task <n> — <gate> failed three times: <what>`.
 
-A hook checks your stop: the report is there, the helper reads its head, and a saved round of task
-<n> was saved from that head; a `NEEDS: fix` line carries all four parts. If it sends you back, fix
-what it names and reply again with your one line.
+A hook checks your stop: the report is there, the helper reads its head, a round of task <n> was
+saved from that head, and a `NEEDS: fix` line carries all four parts. If it sends you back, fix what
+it names and reply again with your one line.
