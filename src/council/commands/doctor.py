@@ -71,6 +71,7 @@ def main(args: cli.Args, words: list[str]) -> int:
                      "run council-init refresh to migrate it to the current template")
         from council.commands import doctor_config
         doctor_config.settings(doc)
+        doctor_config.quick(doc)
         roster(doc)
         from council.commands import doctor_gates
         doctor_gates.gates(doc)

@@ -100,7 +100,7 @@ def switch(home: str, want: str) -> None:
     root = os.path.dirname(home)
     label = "just me" if want == "just-me" else "team"
     if git.text(root, "rev-parse", "--git-dir") is not None:
-        _exclude(root, want == "just-me")
+        git_exclude(root, want == "just-me")
     else:
         cli.say("not a git repository, so nothing here is committed or shared")
     if want == "just-me":
@@ -127,7 +127,7 @@ def switch(home: str, want: str) -> None:
         cli.say("council-init adds the Small Council note to CLAUDE.md again (a refresh does it)")
 
 
-def _exclude(root: str, just_me: bool) -> None:
+def git_exclude(root: str, just_me: bool) -> None:
     """Take the council's block out of git's own exclude list, and for just me write it again."""
     exclude = exclude_path(root)
     if not exclude:
