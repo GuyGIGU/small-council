@@ -364,12 +364,11 @@ with tempfile.TemporaryDirectory() as folder:
           same.stdout + same.stderr)
     write(locked, "verify-1.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | Expiry skipped | REFUTED | src/auth.py:4 checks it |\n")
-    if os.name == "nt" or not os.access(str(locked / "claims.jsonl"), os.W_OK):   # POSIX renames over a read-only file
-        differs = invoke(locked, "check")
-        check("check: an index it can't save still gets its verdict and exit code, plus the step, no raw OS error",
-              differs.returncode == 1 and "REFUTED" in differs.stdout and "could not be saved" in differs.stderr and
-              "evidence check --run unsaved" in differs.stderr and "WinError" not in differs.stderr,
-              differs.stdout + differs.stderr)
+    differs = invoke(locked, "check")       # Windows can't replace a read-only file; POSIX renames over it and saves
+    step = ("could not be saved" in differs.stderr and "evidence check --run unsaved" in differs.stderr and
+            "WinError" not in differs.stderr) if os.name == "nt" else not differs.stderr
+    check("check: an index it can't save still gets its verdict and exit code, plus the step, no raw OS error",
+          differs.returncode == 1 and "REFUTED" in differs.stdout and step, differs.stdout + differs.stderr)
     os.chmod(str(locked / "claims.jsonl"), 0o644)
     (locked / "claims.jsonl").unlink()
     (locked / "claims.jsonl").mkdir()
