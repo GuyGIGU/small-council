@@ -50,7 +50,7 @@ deploy target, domain. Name the one thing that must never break.>
      "estimates": review=, plan=, builder=, verifier=, converge= — tokens (e.g. builder=450k) for one agent
      of each role; converge is a build's verifier. A role left out takes "estimate per worker".
      Both are yours to set by hand; the Chair prices a run with them at Convene: each agent at its
-     role's figure, 80k without one. -->
+     role's figure, 80k without one, plus about 20k for itself. -->
 
 ## Roster
 Chair: John Carmack — always on; the synthesis filter ("a real problem in this codebase at this scale,

@@ -23,10 +23,11 @@ protected subject (context-core, Limits), or a review or post-game, which add a 
    or one builder; independent slices → seats. Match paths against the roster's Surface column.
 5. **Size it** from context-core's size limits and the shape check: the seats the roster's surfaces
    call, plus the verifiers Challenge will need (Challenge, step 2), counted within the agent cap as
-   Assign, step 6 does. A lower-cost Solo label never waives a required independent challenge.
-6. **Estimate the cost** yourself — no command does: agents × the config's figure, each worker and
+   Assign, step 6 does. A lower-cost Solo label never waives a required independent challenge;
+   verifiers the cap can't fit are the user's call before the run opens.
+6. **Estimate the cost** yourself — no command does: agents × the config's figure (each worker and
    each Challenge verifier at its role's figure in `- estimates:`, else `- estimate per worker:`,
-   else 80k. `council ledger` shows each seat's average tokens per run, `council run status --all`
+   else 80k), plus your own share, about 20k. `council ledger` shows each seat's average tokens per run, `council run status --all`
    whole runs. A cost past the user's token ceiling, or a size past `approve without asking`, is
    the user's to decide before a run opens.
 7. **Open the run and save the request.** `council run open <mode>` prints the run folder and
@@ -47,8 +48,8 @@ protected subject (context-core, Limits), or a review or post-game, which add a 
    then the file `continues:` names plus ask.md's new words: read both. Pasted text (a PR, an issue)
    goes in as it is, headings and all.
 8. **Fill the run plan.** `run open` also created `<run>/run-plan.tsv`: fill its run size, risk,
-   complexity, uncertainty, token estimate (step 6), your own share of it as `chair-tokens`, and
-   verification level. Assign completes seat rows; a mode skipping Assign completes them here, then runs
+   complexity, uncertainty, token estimate (step 6's sum), your own share as `chair-tokens`, any
+   token ceiling the user gave (`budget/run/token-ceiling`), and verification level. Assign completes seat rows; a mode skipping Assign completes them here, then runs
    `council run plan check`. The same size goes on the status board:
    `council state size="squad — 3 seats + 1 verifier, est. ~300k tokens"`.
 9. **Get the go-ahead** if still needed. A `/command` or an instruction to proceed without further

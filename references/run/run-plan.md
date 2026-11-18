@@ -40,7 +40,8 @@ The required run rows are:
 
 Every considered seat has `seat/<slug>/disposition` (`selected` or `skipped`) and
 `seat/<slug>/role` (`chair`, `worker`, `verifier`, or `diagnosis` — a read-only worker on a stuck
-build task, counted as a worker's agent run). In a council-implement run each task's builder is a
+build task, counted as a worker's agent run). A Challenge verifier's seat is `verify-<n>`: its rows
+are `seat/verify-<n>/…`, the name `council seat verify-<n>` records it under. In a council-implement run each task's builder is a
 build seat, `task-<n>`, role `worker`; a Solo build selects none, and the Chair builds
 (`references/run/builder-loop.md`). Every selected seat has a context level
 (`minimal`, `focused`, or `full`) and a positive tool-call budget. The selected Chair is budgeted but
