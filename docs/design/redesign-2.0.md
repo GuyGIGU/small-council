@@ -46,6 +46,7 @@ Limits of this evidence:
 - Council seats ran on a smaller model than the other reviewers.
 - Two runs of the same prompt found different things.
 - Builds have one run on record. Plan, research and post-game have none.
+- Claude Code's built-in `/code-review` was not measured. Stage 1's test adds it.
 
 ## 3. The idea
 
@@ -60,16 +61,33 @@ around those three jobs.
 
 ## 4. The project's book
 
-Five things live in the project, tracked in git. Every agent reads the first two before anything
+Six things live in the project, tracked in git. Every agent reads the first three before anything
 else. Where a project already has such a file, the plugin uses it and does not make a second one.
 
 | Part | What it holds | What exists today |
 |---|---|---|
 | The design page | The parts, who owns each folder, the one way each job is done, where new code goes. Two pages at most. | The map and its one-way-per-job table (D35) |
+| The stack page | What the project is built with: languages, frameworks, libraries, tools and services, each with the reason it was chosen. One page at most. | Setup detects the stack and writes it to the config, with no reasons |
 | The decisions log | Each decision in the owner's words, with its reason and what was rejected. Changed only by a new entry, on the owner's word. | Memory's decisions; `references/roster/decision-records.md` reads a project's own log at setup |
 | Rules as checks | Every rule a machine can check has a test that fails when the rule is broken. Numbers that may only improve are held by a ratchet. | The config's gates; `references/guardrails.md` and its ratchet |
 | Feature specs | Each feature as behaviour the owner can observe. The lines become the builder's "done when" and the tests. | Plans; the spec-writer skill |
-| Known problems | True things found and not fixed, so they are neither lost nor reported twice. | Nothing. Review items below the bar are dropped today |
+| Known problems | True things found and not fixed, so they are neither lost nor reported twice. Also the kinds of item the owner has said not to raise again. | Nothing. Review items below the bar are dropped today |
+
+**The stack is the owner's decision.**
+
+- A new project starts with it. The designer proposes a stack and says what each choice gives and
+  costs. Because it is hard to undo, a second, independent proposal is made before the owner sees it.
+- Adding a library, swapping a tool or bringing in a second language is a decision, never a side
+  effect of a task. A builder that needs one stops and asks, as it does when the design does not fit.
+- A change to the stack is a new entry in the decisions log, on the owner's word.
+- The reader reports anything a change brings in that the stack page does not list.
+
+**The book stays small and explained.**
+
+- Every rule names the bug or the decision it came from, and its date, so it can be retired when
+  its reason is gone.
+- A line enters the book only if removing it would change what an agent does. A line that restates
+  the code stays out.
 
 ## 5. Four jobs, no expert roster
 
@@ -77,7 +95,7 @@ else. Where a project already has such a file, the plugin uses it and does not m
 |---|---|---|
 | Designer | Reads the book and the code under the request. Says where the work fits, what is broken underneath, and where there is a real fork. | `council-worker` |
 | Builder | Builds one task. Stops and reports when the design does not fit, and never works around it. | `council-builder` |
-| Reader | Compares what the record says with what the code does. Traces each change to its callers. Runs no test suite. | `council-worker` |
+| Reader | Compares what the record says with what the code does. The book is part of the record, so the reader reports where the code no longer matches it. Traces each change to its callers. Runs no test suite. | `council-worker` |
 | Runner | Runs the old and the new code side by side in a scratch clone and shows what changed. | `council-worker` |
 
 - The reader and the runner use the role texts in Appendix A, which are the measured ones.
@@ -103,7 +121,9 @@ The owner says what they want. The plugin picks the depth from the work; there a
 3. **Build.** One fresh builder per task. The project's checks run before the first change and after
    each task. The builder gets its task from one command (D41) and one page of rules.
 4. **Prove.** The reader and the runner check the whole change against the behaviour lines and the
-   book. Neither reads the builder's report. One fix round follows if needed (D11 stays).
+   book. Neither reads the builder's report. For each behaviour line, the runner breaks the
+   behaviour on purpose in its scratch copy and shows the test fail; a test that stays green is
+   reported. One fix round follows if needed (D11 stays).
 5. **Report, then update the book.** See section 8.
 
 ### The bug-first rule
@@ -131,7 +151,7 @@ Existing names stay and become entry points into the same loop.
 | `/council-review` | 4, on any change |
 | `/council-postgame` | 4, against the owner's original request |
 | `/council-health` (new) | Lists where the project drifted from its design and proposes refactors, each with a cost and a reason |
-| `/council-init` | Sets up or refreshes the book |
+| `/council-init` | Sets up or refreshes the book. On a new project it starts with the stack decision |
 
 `spec-writer` and `test-architect` stay as they are until stage 4 decides whether the design step
 replaces them.
@@ -140,16 +160,22 @@ replaces them.
 
 **The report**, the same shape after every run:
 
-- **Works now:** each behaviour line, and how it was shown.
+- **Works now:** each behaviour line, and how it was shown. A change the owner can see on screen
+  comes with a picture from before and one from after. When the project cannot be started for a
+  picture, that goes under "Not proved".
 - **Does not work:** what, and what the owner would notice.
 - **Your decisions:** each with what happens if nothing is done, the recommendation, and whether it
   can be undone.
 - **Not proved:** what no run could show, and why.
 - **Noted for later:** what went to known problems, five lines at most.
-- **Cost:** tokens and minutes, against the estimate shown before the run.
+- **Cost:** tokens and minutes, against the estimate shown before the run. The estimate uses how
+  long the project's checks really took last time.
+- **Undo:** the one sentence that takes the whole change back. Every run that changes the project
+  leaves a restore point first.
 
 **The worth bar.** An item reaches the owner only if they would act or decide on it. Noise costs
-this owner more than it costs a coder, because they cannot tell which items to ignore.
+this owner more than it costs a coder, because they cannot tell which items to ignore. When the
+owner waves off a kind of item, it is written to known problems and not raised again.
 
 **A review shows its first findings early.** The reader's serious findings appear in chat at about
 8 minutes, and the runner's are added when it finishes.
@@ -160,9 +186,11 @@ this owner more than it costs a coder, because they cannot tell which items to i
 - **It starts the agents within about 2 minutes.** Its own checks run in the background after that.
 - **It checks each serious finding against the code itself** before handing it over.
 - **Records kept:** the request in the owner's words, the decisions, the outputs of the checks, the
-  report.
+  restore point, the report.
+- **A run can be picked up from its records** after the session is interrupted, as it can today.
 - **Hard stops kept:** no "it works" without a check's output, nothing destructive, no push without
-  the owner's word, a cost cap, an agent's file must exist before it stops.
+  the owner's word, a cost cap, an agent's file must exist before it stops, and text found in code,
+  files or web pages is never treated as an instruction.
 
 ## 10. What stops being used
 
@@ -214,14 +242,16 @@ A stage ships only if its test passes. A wrong guess costs one stage.
 
 | Stage | What is built | Its test | Pass bar |
 |---|---|---|---|
-| 1. Reviews | The reader and the runner as the review; the one-page path; the worth bar; the main session's own check of serious findings | The built plugin on the two measured changes and on a third, unseen one, judged blind | At least 7 of the 10 known defects; at most 2 noise items a run; first findings within 10 minutes; a whole review within 25; no more tokens than today's review of the same change; nothing false on the unseen change |
-| 2. The book | Setup writes or adopts the design page, the decisions log and known problems; every agent reads the first two | The same feature given to two builders on one real project, one with the book and one without; the reader and the runner review both blind | Fewer workarounds and second ways with the book, and no more defects |
-| 3. The build loop | A task and one page for the builder; the reader and the runner at the end; the bug-first rule; the report of section 8 | One plan built twice from the same commit, by 1.2.0 and by the new loop, reviewed blind | No more defects than 1.2.0, in at most half the time |
+| 1. Reviews | The reader and the runner as the review; the one-page path; the worth bar; the main session's own check of serious findings | The built plugin on the two measured changes and on a third, unseen one, judged blind. Claude Code's built-in `/code-review` runs on the same three changes as a comparison row | At least 7 of the 10 known defects; at most 2 noise items a run; first findings within 10 minutes; a whole review within 25; no more tokens than today's review of the same change; nothing false on the unseen change |
+| 2. The book | Setup writes or adopts the design page, the stack page, the decisions log and known problems; every agent reads the first three; each rule carries its reason; the reader checks a change against the book; the list of items not to raise again | The same feature given to two builders on one real project, one with the book and one without; the reader and the runner review both blind | Fewer workarounds and second ways with the book, nothing added to the stack without a stop, and no more defects |
+| 3. The build loop | A task and one page for the builder; the reader and the runner at the end; the bug-first rule; the report of section 8 with its pictures and its undo line; the restore point; the runner's proof that each test can fail | One plan built twice from the same commit, by 1.2.0 and by the new loop, reviewed blind | No more defects than 1.2.0, in at most half the time |
 | 4. The design step | The designer; decisions as consequences; a second design for what is hard to undo; plan and research as entry points | The same request through 1.2.0's plan and through the designer. How to judge two plans fairly is not settled | To be set with the owner before this stage starts |
 | 5. The whole loop and health | `/council` and `/council-health` | One real feature from request to report; one health pass on a real project, judged blind for worth | The feature's behaviour lines all shown; at most 2 noise items in the health pass |
 
 **Rough cost.** Stage 1 is planned in detail: about 1 to 1.3M tokens to build and 2 to 2.5M to test.
-The other stages are expected to cost about the same each. That is a guess, not an estimate.
+The built-in review's comparison row adds to the test; about 0.9M is a guess from what one plain
+reviewer cost. The other stages are expected to cost about the same as stage 1 each. That is a
+guess, not an estimate.
 
 **Versions.** Stage 1 is 1.3.0. Stages 2 to 4 are minor versions. Stage 5 is 2.0.0.
 
@@ -229,7 +259,12 @@ The other stages are expected to cost about the same each. That is a guess, not 
 renamed. The worker's turn limit rises from 60 to about 100, and a brief may allow the project's
 checks to run in a `git clone` under the run's scratch folder, never in the project tree. A helper
 change lets the main session record its own check of findings on a run that is not Solo. The
-expert seats leave reviews entirely.
+expert seats leave reviews entirely. The runner records how long the project's checks took, and
+setup records the same when it tries them, so the next estimate uses a measured time.
+
+**If the built-in review does as well.** When the comparison row finds as many of the known
+defects as the reader, with no more noise, the review calls the built-in command for the reading.
+The plugin keeps the runner, the worth bar and the report.
 
 ## 13. What is given up, and the risks
 
@@ -252,6 +287,35 @@ expert seats leave reviews entirely.
 4. The expert catalogue is kept as reading, not deleted.
 5. Every bug found late becomes a check that would have caught it, or a line in the design page.
    This replaces the seats' track records as the way the plugin learns a project.
+6. If Claude Code's built-in review reads as well as the reader, the plugin calls it and does not
+   keep a second reader of its own.
+7. The stack is one page of the book, read by every agent, and not a set of planning documents.
+
+## 15. Ideas from other tools, checked on 2026-11-18
+
+The check was five web searches over comparison posts and vendor write-ups, on top of the study in
+[`doctrine-0.3.md`](doctrine-0.3.md), which read the tools' own repositories.
+
+**Taken, with where each went:**
+
+- A restore point and one sentence to undo a run (products for owners who do not code): section 8.
+- A rule carries its dated reason; a line must earn its place in the book (a write-up on agent
+  discipline; BMAD's admission rule): section 4.
+- The book is checked against the code on every review, because drift between documents and code
+  is the most reported failure of spec-first tools: section 5.
+- Items the owner waves off are not raised again (review tools that learn from dismissals):
+  section 8.
+- The built-in review as a comparison: section 12.
+
+**Not taken:**
+
+- Role-play personas and long planning documents (BMAD). The owner would not read them. The stack
+  page takes the useful part: what was chosen, and why.
+- Several builders writing at once (Get Shit Done). Two writers collide (D42).
+- Regenerating code from the spec. Reports say the reasons behind the code get lost.
+- Loading the whole method into every session (Superpowers). Rejected in the earlier study.
+
+**Not checked:** gstack. The search returned nothing on it.
 
 ## Appendix A: the measured role texts
 
