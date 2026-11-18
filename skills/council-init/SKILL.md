@@ -1,6 +1,6 @@
 ---
 name: council-init
-description: Summon the Small Council for this project — detect the stack and surfaces, recruit and recast the expert roster with surface markers, dry-run the real check commands, build the codebase map, and write .council/ (config, memory, map). Run once per repo, when the stack changes, or to refresh a stale config. Use when a council mode starts in a repo with no .council/council.config.md, or the user says "set up", "init", "summon", or "refresh" the council.
+description: Summon the Small Council for this project — detect the stack and surfaces, recruit and recast the expert roster with surface markers, dry-run the real check commands, build the codebase map, and write .council/ (config, memory, map). Run once per repo, when the stack changes, or to refresh a stale config. Use when a council plan, build or research starts in a repo with no .council/council.config.md or a quick one, when a review offers the full setup, or the user says "set up", "init", "summon", or "refresh" the council.
 ---
 
 # Council Init — summon the council for this project (stage 0)
@@ -17,26 +17,23 @@ One installed plugin gives each repo a bespoke council, built to fit it.
 
 ## Phase A — Detect the stack and surfaces (classify, don't review)
 
-- **Start with an inventory** — it works for any stack:
-  - count tracked files by extension (`git ls-files | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20`);
-  - list config-like files up to two levels deep;
-  - read what CI runs.
-
-  It catches firmware, Xcode projects, notebooks and game engines a manifest list misses.
-- **Then confirm with manifests:** `package.json`, `tsconfig.json`, `pyproject.toml` /
-  `requirements.txt`, `go.mod`, `Cargo.toml`, `pom.xml` / `build.gradle`, `*.csproj` / `*.sln`,
-  `Gemfile`, `composer.json`, `mix.exs`, `pubspec.yaml`, `Package.swift` / `*.xcodeproj`,
-  `project.godot`, Unity `ProjectSettings/`, `*.uproject`, `CMakeLists.txt` / `west.yml`,
-  `Dockerfile` / `compose.yaml`, `*.tf`, `*.ipynb`.
-- **Surfaces** — which of these exist:
+- **Open the setup run first:** `council run open council-init`. It creates `.council/` and its
+  `.gitignore`; the probes and the scaffold need it. Keep it open through Phase D.
+- **`council init detect`** does the inventory and writes nothing: the `stack-fingerprint:` line,
+  each check the manifests and scripts declare (with the `probe:` and `broken:` lines to run, its
+  needs and side effects), and a `seat:` line per catalog seat with the surface the file list shows.
+  It reads the root, `scripts/` and `tools/`.
+- **Then read what it doesn't:** what CI runs, the README's "how to run tests", a second level of
+  folders (`apps/*/package.json`), and the tracked files by extension
+  (`git ls-files | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20`), which catches the
+  Xcode projects, notebooks, game engines and firmware a manifest list misses.
+- **Surfaces are yours to judge** — which of these exist:
   - UI components; a server or API;
   - a relational DB or migrations; other persistent state (files, caches, save data);
   - an LLM or prompt pipeline; a numerical or simulation engine;
   - a game loop; a mobile app; infrastructure as code; a CLI.
-- **Commands:** from `package.json` scripts, `pyproject`/`pytest.ini`, `Makefile`, CI workflows,
-  `*.bat` / `*.ps1`, and the README's "how to run tests".
-- **Fingerprint:** `council fingerprint` prints the stack's line (its manifests and code languages).
-  It goes in the config, so Prepare can tell when the stack moves.
+
+  A `seat:` line whose rule "needs a look" is a question for Phase B, not a drop.
 
 Cap your reads at config and skeleton files; the decision records are read in Phase D.
 
@@ -58,7 +55,8 @@ For each catalog seat, decide **include / recast / drop** by its "applies when" 
     mechanical and every skip evidenced. No `|` inside a marker (the roster is a table): list
     alternatives separately.
   - For a recast seat: it keeps its reference doc, and you record why it was recast.
-  - A **card** (Phase E) that translates its doc to this project.
+
+  No card yet: a seat's card is written the first run that selects it (doctrine Brief, Cards first).
 - **One lens, several areas.** In a monorepo, or a repo with distinct parts (a web app and an admin,
   an app and its firmware), a lens may take several rows — one per area, each with its own slug
   (`dodds-web`, `dodds-admin`) and surface.
@@ -69,37 +67,35 @@ For each catalog seat, decide **include / recast / drop** by its "applies when" 
   `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-doc.md` and the project's real constraints. Cite
   repo evidence for every principle, and leave it `status: draft` until the user accepts it.
 
-## Phase C — Detect and dry-run the gates
+## Phase C — Dry-run the gates
 
-Record the project's **real** commands — never assume `tsc` / `vitest` / `cypress`: tests, lint,
+Keep the project's **real** commands — never assume `tsc` / `vitest` / `cypress`: tests, lint,
 build/compile, and any e2e or regression harness.
-- **Run each once, in its fast form** (`--version`, `--collect-only`, the quick suite). Judge it by
-  exit code, never through a pipe.
-- **Gate commands run under bash** (Git Bash on Windows), so dry-run each one the same way:
-  `council gate probe-<name> -- '<its fast form>'`. That needs an open run, so open it first —
-  `council run open council-init`, which also creates `.council/` and its `.gitignore` — and keep it
-  open through Phase D. Bash drops a `\` outside quotes: write paths with
-  `/`, or quote them. Judge a gate by what `council gate` reports, not by your own shell: a `cmd /c`
-  run straight from a Bash tool exits 0 without running anything.
+- **Probe each check you keep, once, with detect's `probe:` line**
+  (`council gate probe-<name> -- '<fast form>'`). A command detect didn't list (from CI or the
+  README) takes the same form, with a fast form you choose (`--version`, `--collect-only`, the quick
+  suite); the scaffold gives it no row, so you write that row in Phase E.
+- **Gate commands run under bash** (Git Bash on Windows). Bash drops a `\` outside quotes: write
+  paths with `/`, or quote them. Judge a gate by what `council gate` reports, never through a pipe or
+  your own shell: a `cmd /c` run straight from a Bash tool exits 0 without running anything.
+- **Judge each result.** `could not run` is a missing tool or a wrong command: fix it, or leave it
+  ✗ with the reason — a gate that can't run here fakes a green, worse than none. A `FAIL` from a tool
+  that ran (a linter that found problems, a failing test) is the code's, not the gate's: it is
+  runnable, though the scaffold writes every failed probe ✗ (Phase E sets it right).
 - **Its run plan opens ready for setup:** `run-plan.tsv` is solo, the Chair only, self-verified, each
   default saying so in its reason. Change a value only where this repo differs, with the reason,
   then `council run plan check`.
-- **Mark each one** ✓ runnable, or ✗ with the reason. A gate that can't run here fakes a green —
-  worse than none.
 - **Never probe** a gate that deploys, spends money, flashes hardware or needs credentials: ask
-  first. If it stays unprobed, its Checked cell reads `✗ not probed: <why>`, and `council gate --all`
-  skips it.
-- **Mark which gates are mandatory**, and put a slow suite at verify: reviews wait for
-  grounding gates.
+  first. If it stays unprobed, the scaffold writes its Checked cell `✗ not probed: …`, and
+  `council gate --all` skips it.
+- **Mandatory gates, and a slow suite at verify:** reviews wait for grounding gates.
 - **Prove each mandatory gate can fail.** One that only greps its tool's output, or ends in
-  `|| true`, passes with the tool missing — green for ever. Dry-run its own command once more with
-  the tool broken (name misspelt, path pointing nowhere):
-  `council gate probe-<name>-broken -- '<broken command>'` must fail. Record both in its Probe cell
-  (`` `<fast form>` · broken: fail, exit <n> ``); a gate that still passes is ✗ until fixed — for a
-  runner kept in `$( )`, add `|| exit $?` right after it.
-- **Record more than the command** — the config's Gates columns: the **Probe** (the exact dry-run
-  you ran), what it **Needs** (tools, env vars, credentials, hardware) and its **Side effects**
-  (none, writes the tree, network, cost, hardware, deploy, credentials). `council gate --all` never runs one with
+  `|| true`, passes with the tool missing — green for ever. Run detect's `broken:` line (the command
+  with its tool broken): `council gate probe-<name>-broken -- '<broken command>'` must fail. The
+  scaffold makes a gate mandatory only when its probe passed and its twin failed, and writes both
+  into its Probe cell; one that still passes is ✗ until fixed — for a runner kept in `$( )`, add
+  `|| exit $?` right after it.
+- **Needs and Side effects** come from detect: check them. `council gate --all` never runs one with
   cost, hardware, deploy or credential side effects; those run only by name, on the user's go.
 
 ### The checks this project is missing
@@ -115,28 +111,30 @@ NOTHING WAS CHECKED, because `council gate --all` has nothing to run. Then one q
 
 > Fit the ones you want? Nothing is installed until you say so.
 
-On a yes, write `<home>/plans/guardrails.md` from the reference's template, in council-plan's task
-format (`${CLAUDE_PLUGIN_ROOT}/references/run/run-plan.md`, Plan tasks: `## Task Sequence`, then
-`### <n>. <title>` and its rows, `Ref: references/guardrails.md`) — one task per check, cheapest
-first — and offer council-implement. **council-init installs nothing itself**, so every install gets
-before-and-after evidence, a blind verifier and a log row. A task names nothing under `.council/`:
-the Gates row is added after the build, as the reference says.
+On a yes, write `<home>/plans/guardrails.md` from the reference's template (its "Fitting them":
+`## Task Sequence`, then `### <n>. <title>` and its rows, `Ref: references/guardrails.md`) — one
+task per check, cheapest first — and offer council-implement. Each task's **Serves** quotes three or
+more of the user's own words, as they said them; when their yes was a word or two ("Both"), quote
+the question with it — "Fit the ones you want? — Both" — since the plan check refuses a shorter
+quote. **council-init installs nothing itself**, so every install gets before-and-after evidence, a
+blind verifier and a log row. Every task's Done-when is two-sided (it fails on a deliberate
+violation and passes once it's removed), and a new lint, format or type gate is ratcheted
+(`council changed`, `Mandatory: no`): the reference's "proved both ways" and "The ratchet". A task
+names nothing under `.council/`: the Gates row is added after the build.
 
-Two things every guardrails task needs, or it fits a gate that can only pass:
-- **A two-sided Done-when** — the gate exits non-zero on a deliberate violation and 0 once it's
-  removed. "Returns 0" alone is met by a tool that isn't even installed.
-- **The ratchet** for a new lint, format or type gate: `council changed --glob '<pat>' -- <tool>`,
-  entered `Mandatory: no`, with the count of problems already there written once into the
-  config's `## Notes`, never as a task list.
-
-On a no, write `guardrails: declined <date>` into the config and move on. `council doctor` then reports
+On a no, write `guardrails: declined <date>` into the config once the scaffold has written it. `council doctor` then reports
 the project's missing checks as a warning rather than an error, so the decision sticks without being
 asked again; delete that line to have them fitted.
 
-## Phase D — Build the map
+## Phase D — Write the scaffold, then build the map
 
-Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`, and stamp HEAD as
-`map-commit`.
+**`council init scaffold`** writes the mechanical files from the templates, each only where none
+exists: the config (`last-verified: <date> @ <sha>`, the line `council fingerprint` prints, the
+template's run preferences, the Fowler and Beck rows, a Gates row per check from this run's probes),
+`conventions.md` when there is no memory file, and `map.md` stamped with `map-commit`. Its
+`Left for the Chair:` lines name the rest.
+
+Fill the map's prose:
 - **Keep to what the code doesn't say by itself:**
   - where things live;
   - the flows that matter;
@@ -147,7 +145,7 @@ Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`
   `${CLAUDE_PLUGIN_ROOT}/references/roster/decision-records.md`.
 - **A small repo** → do it yourself, then `council run close`.
 - **A large repo** → a mapping squad of at most 4 workers, run like any council run:
-  1. Phase C's run (`council run open council-init` if none is open yet). One run, not two.
+  1. The setup run (Phase A). One run, not two.
   2. Make its plan a squad: `size` squad, and one mapping worker per area from the rows at the foot
      of `run-plan.tsv`, their estimate added to `estimated-tokens`; then `council run plan check`.
      The helper starts no worker the plan doesn't select.
@@ -160,41 +158,32 @@ Build `.council/map.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`
 
 ## Phase E — Propose, then write
 
-Present:
+The order, honestly: the scaffold wrote only facts nobody has to agree to (the probes' results, the
+fingerprint, the template's defaults, the map from the code). What the user decides is proposed
+first and written only on their yes. Present:
 - the roster, with recasts, drops, the reasons, and each seat's surface markers;
-- for each seat, two lines on what its card will say is P1 here and where it will look;
 - the gates (✓/✗) and their side effects;
 - the run preferences, sharing included: team or just me (when to ask:
   `${CLAUDE_PLUGIN_ROOT}/references/run/sharing.md`);
 - a model per role, proposed from yours: `${CLAUDE_PLUGIN_ROOT}/references/run/models.md`;
 - a three-line summary of the map.
 
-Adjust on request. On confirmation, write:
-- **`.council/council.config.md`** from `${CLAUDE_PLUGIN_ROOT}/references/templates/council.config.md`,
-  stamped `last-verified: <date> @ <short sha>`, with the `stack-fingerprint:` line `council
-  fingerprint` printed. Run preferences start at the defaults, which are the user's to change:
-  approve without asking up to Squad, agent cap 10, sharing and models as answered.
-- **`.council/cards/<slug>.md`**, one per seat, from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`.
-  A card translates the seat's doc to this project, in at most ~6 KB:
-  - every principle of the doc, numbered as in the doc, one line each on what it means here — the
-    construct, a path or an idiom — or "not applicable here" with the reason;
-  - the severity rubric in this repo's terms;
-  - where to look, from the map's hot spots and the surface markers;
-  - what is not a finding here.
+Adjust on request. On confirmation, write into `.council/council.config.md`:
+- **the roster rows**, in place of the `<Seat>` row, each with its recast note;
+- **`## Stack`**, in place of its placeholder;
+- **the run preferences** and models as answered (the defaults are the user's to change: approve
+  without asking up to Squad, agent cap 10); sharing: Phase F;
+- **the Gates rows the probes can't write:** a row for each command detect didn't list; `✓ <date>`
+  for a `FAIL` from a tool that ran (Phase C), its count of problems in `## Notes`; any Run at or
+  Mandatory cell this repo needs otherwise.
 
-  Its first line is what workers copy onto their `ref:` line, and its `source:` line names the doc.
-  Write them yourself after the map, one seat at a time: list the doc's principles
-  (`grep -n '^## Principle' <doc>`), read each principle's section only as you write its line, and
-  save the card before starting the next. After a compaction, carry on from the first seat without
-  a card.
-- **`.council/.gitignore`** containing `runs/` and `asks/` (the user's own words stay on their own
-  machine). Config, memory, map, plans, reviews, logs and research stay tracked. `council run open`
-  adds either line that is missing. A user who wants the team
-  to see their requests says so: write `!asks/` in place of the `asks/` line, and nothing adds it back.
+Then:
+- **`asks/`** (the user's own words) stays out of git through `.council/.gitignore`. A user who
+  wants the team to see them says so: write `!asks/` in place of that line; nothing adds it back.
 - **Memory:** keep an existing `conventions.md` wherever it is, and record its path in the config's
-  Memory section. Otherwise create `.council/conventions.md` from the template. Obvious accepted
-  patterns seen during detection go under `## Proposed`, never straight into the confirmed sections;
-  so does each decision Phase D found, citing its `file:line`.
+  Memory section; the scaffold wrote `.council/conventions.md` only when there was none. Obvious
+  accepted patterns seen during detection go under `## Proposed`, never straight into the confirmed
+  sections; so does each decision Phase D found, citing its `file:line`.
 
 ## Phase F — Wire it up
 
@@ -252,23 +241,27 @@ Configs drift. On a re-run, or "refresh the council":
   moved; `council memory check` lists memory entries whose anchored file, line or symbol is gone.
 - **Memory:** offer to add Scope and Anchor to entries that lack them — one proposal per entry, as
   numbered operations, applied on the user's yes.
-- **Cards:** rewrite the card of any seat whose doc, surface or stack changed, and write the missing
-  ones.
+- **A `setup: quick` line** (the quick setup a first review made) means the full setup is still to
+  do: tailor the roster (Phase B), probe the checks and bring their Gates rows up to date by hand
+  (the scaffold keeps a config that exists), run `council init scaffold` for the map's skeleton and
+  build the map (Phase D), and write `## Stack`. The quick setup chose just me: ask about sharing.
+  Take the `setup: quick` line out last, after the user's yes.
+- **Cards:** rewrite only a card that exists and whose doc, surface or stack changed (a recast too),
+  from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`. A seat without one gets it the
+  first run that selects it.
 - **Roster changes from the record.** `council ledger advice 20` weighs each seat only on runs that
-  judged its items, gives a plausible range, and advises only past its bar (3 judged runs, 15 items
-  of evidence, at most 5 from any run). Propose a roster change only where it advises one, with the
-  numbers shown — "UX (Friedman): 6 judged runs, 8 of 30 items useful (plausible 16–41%) — narrow
-  its surface to `src/ui/**`?" Below the bar, say
-  the record is too thin and change nothing. A lens the runs keep flagging outside their lanes is a
+  judged its items and advises only past its bar (3 judged runs, 15 items, at most 5 from any run).
+  Propose a change only where it advises one, with the numbers shown — "UX (Friedman): 6 judged
+  runs, 8 of 30 items useful (plausible 16–41%) — narrow its surface to `src/ui/**`?"
+  Below the bar, say the record is too thin and change nothing. A lens the runs keep flagging outside their lanes is a
   separate proposal: name the runs. The user decides; nothing changes without a yes.
 - Re-check **every path and gate** in the config against the repo, dry-running the gates again
   (`council run open council-init` first — `council gate probe-<name> -- '…'` needs an open run;
   close it when you are done), and update `last-verified`.
 - **A Gates section still written as a list** (backticked commands under `## Gates`, no table): move
-  every command into the Gates table, one row each, dry-run them as in Phase C, and fill Run at,
-  Mandatory, Checked, Probe, Needs and Side effects. Until that is done the helper can read no gate
-  and every report says NOTHING WAS CHECKED, so don't leave it as written: show the diff and say what
-  each row came from.
+  every command into the Gates table, one row each, dry-run them as in Phase C, and fill every cell.
+  Until then the helper reads no gate and every report says NOTHING WAS CHECKED: show the diff and
+  say what each row came from.
 - **Merge, don't overwrite.** Show a diff. Any section the user added or edited — hard rules, a
   pinned gate, a manual recast, Notes — is theirs: merge around it and surface conflicts for them to
   resolve.

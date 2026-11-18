@@ -58,7 +58,7 @@ your mode's `## At <Stage>` section, if it has one. Each stage ends by recording
 | 9 | deliver | `09-deliver.md` | the tracked deliverable |
 | 10 | learn | `10-learn.md` | memory proposals, a closed run |
 
-Stage 0, Summon, is the council-init skill. council-implement replaces stages 3–7 with its build
+Stage 0, Summon, is the council-init skill (a first review's quick setup: Convene, step 2). council-implement replaces stages 3–7 with its build
 loop. A **Solo** run skips stages 3–6: run `council memory select` (plus the target paths when there
 is no diff), then do the seat work yourself with the needed reference doc and the entries it printed,
 record it (`council seat chair done agents=0` — without it the ledger has no row for your items),

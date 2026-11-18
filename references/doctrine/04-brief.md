@@ -24,7 +24,7 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 
 ## Seats
 ### <slug> — <what it checks> (<Seat name>)
-- ref: <absolute path to the seat's card, else its roster row's Reference doc, else none; a paired seat has one - ref: line each>
+- ref: <absolute path to the seat's card (Cards first), else none (a mapping worker); a paired seat has one - ref: line each>
 - doc: <absolute path of the full doc behind each card>
 - out: seats/<slug>.md
 - slice: <paths and globs — this seat's only>
@@ -53,13 +53,16 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 - **Keep the seat blocks exact.** `council collect` reads the `### <slug>` headings and their `ref:`,
   `out:` and `cap:` lines. A paired worker gets one block that names both lenses, with one `- ref:`
   line per reference doc.
-- **Cards first.** A seat with a card (`<home>/cards/<slug>.md`) gets the card as its `ref:`: its
-  principles translated to this project. Its `- doc:` line gives the full doc's absolute path (the
-  card's `source:` line names it relative to the plugin or repo). A worker that covers several roster
-  seats — a pair, or a split `hunt-a` — gets each seat's card and doc. A block links only its own
-  seats' cards and docs: never another seat's, and never the whole set. The roster is the one place
-  a surface maps to its doc: a seat's doc is its row's Reference cell, so a frontend seat gets the
-  frontend doc alone.
+- **Cards first.** Before you write the seat blocks, write the card of each selected seat that has
+  none (`<home>/cards/<slug>.md`) from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`, by
+  the rules in its comment: one seat at a time, each saved before the next. Setup writes none; a
+  seat's first run does (a Solo run briefs no seat, so writes none). The card is then the seat's
+  `ref:`: its principles translated to this project. Its `- doc:` line gives the full doc's absolute
+  path (the card's `source:` line names it relative to the plugin or repo). A worker that covers
+  several roster seats — a pair, or a split `hunt-a` — gets each seat's card and doc. A block links
+  only its own seats' cards and docs: never another seat's, and never the whole set. The roster is
+  the one place a surface maps to its doc: a seat's doc is its row's Reference cell, so a frontend
+  seat gets the frontend doc alone.
 - **Memory in scope, never the whole file.** Before writing, `council memory select`: it reads the
   run's index, the seats Assign recorded and the mode; a run without a diff also passes its target
   paths, which add to those. Apply Convene's changed-instructions rule before quoting entries in

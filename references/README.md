@@ -60,7 +60,7 @@ title is load-bearing. Number the principles `Principle 1…N`; severities are P
 never look alike.
 
 Every seat doc has an **Applying this seat to another stack** section near the top; the ten inherited
-from the origin keep their origin-stack examples in a final section. The principles are stack-agnostic; council-init translates them into a
+from the origin keep their origin-stack examples in a final section. The principles are stack-agnostic; the first run that selects a seat translates them into a
 per-project **seat card** (`.council/cards/<slug>.md`) that workers read first (see
 `roster/expert-catalog.md`).
 
@@ -69,8 +69,10 @@ per-project **seat card** (`.council/cards/<slug>.md`) that workers read first (
 - `roster/expert-catalog.md` — seats, slugs, "applies when", and recast rules (read by `council-init`).
 - `roster/decision-records.md` — how setup turns the project's decision records into memory proposals
   and fills the map's one-way-per-job table (read by `council-init`).
-- `templates/council.config.md` · `templates/conventions.md` · `templates/map.md` · `templates/seat-card.md`
-  — the files `council-init` writes into a project's `.council/`.
+- `templates/council.config.md` · `templates/conventions.md` · `templates/map.md` — the files
+  `council init scaffold` writes into a project's `.council/`.
+- `templates/seat-card.md` — a seat's card, written at Brief the first time a run selects the seat;
+  its comment holds the rules for writing one.
 - `templates/seat-doc.md` — the shape of a project-local seat doc.
 
 ## Spec and test docs
