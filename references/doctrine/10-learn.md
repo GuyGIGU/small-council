@@ -37,10 +37,9 @@
   - A drafted F entry: `council memory accept F-<n> --user-said "<their words>"` on a yes,
     `council memory reject …` on a no — only after they answered in the chat: it records their
     words and the date, and checks the entry would be served before filing it.
-- **When the helper warns about memory** — over its budget (`- memory budget:`, 25 KB by default;
-  `council memory tidy` lists what reading alone can find), or `council memory check` lists a stale
-  anchor or an `UNSUPPORTED` failure — read the upkeep rules in the head of
-  `${CLAUDE_PLUGIN_ROOT}/references/templates/conventions.md` and propose each fix as they say.
+- **When the helper warns about memory** — over its budget, or `council memory check` lists a
+  stale anchor or an `UNSUPPORTED` failure — propose each fix as the upkeep rules in the head of
+  `${CLAUDE_PLUGIN_ROOT}/references/templates/conventions.md` say.
   Anchor new entries to a path or a symbol; a line number drifts unnoticed.
 
 ## Close

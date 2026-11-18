@@ -42,7 +42,7 @@ read at Deliver.
 `war-room.md` defines the second round; `sharing.md` defines the team-or-just-me choice;
 `models.md` defines the model per role; `workflow.md` gives the rules a seat run through the
 Workflow tool adds. `resume.md` says how a run carries on after a compaction, a new
-session or `/clear`.
+session or `/clear`. `quick-setup.md` is what a first review with no setup tells the user.
 
 At this level, with the seat docs: `build-proof.md` defines the proof a build records, and
 `guardrails.md` defines the checks a project needs before a green report means anything.
