@@ -288,7 +288,7 @@ def script_problems(tree, rel):
     for number, line in enumerate(text_of(tree, rel).splitlines(), 1):
         if re.match(r"\s*(#|//)", line):
             continue
-        targets = [tree / p for p in ON_ROOT.findall(line)] + [(tree / rel).parent / p for p in ON_SELF.findall(line)]
+        targets = [top / p for p in ON_ROOT.findall(line)] + [(top / rel).parent / p for p in ON_SELF.findall(line)]
         for target in targets:
             resolved = Path(os.path.normpath(str(target)))
             if top not in (resolved, *resolved.parents) or not resolved.exists():
@@ -592,7 +592,7 @@ def main():
     parser.add_argument("--tree", help="check this tree, built already, instead of building one")
     opts = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="council-release-") as tmp:
-        scratch = Path(tmp)
+        scratch = Path(tmp).resolve()    # a temp folder behind a link or a short name is one path from here on
         tree = Path(opts.tree).resolve() if opts.tree else build_checks(scratch)
         if not (tree / ".claude-plugin" / "plugin.json").is_file():
             check("tree: %s holds a built release tree" % tree, False)
