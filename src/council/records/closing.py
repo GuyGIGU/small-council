@@ -143,6 +143,16 @@ CHECKS = (  # (code, check: the value its line names, or None when the run passe
 )
 
 
+def claim_index(run: Path) -> str:
+    """What a complete close does with a synthesis run's claim index (D44): 'build' it, say it is an 'orphan' with no
+    synthesis beside it, or '' when the run has neither."""
+    if _field(run, "mode") not in stages.SYNTHESISED:
+        return ""
+    if (run / "synthesis.md").is_file():
+        return "build"
+    return "orphan" if (run / "claims.jsonl").is_file() else ""
+
+
 def build_log(run: Path, council_home: str) -> str:
     """A build run's log: '' when one names the run and has its Shortcuts section, else the line to say."""
     folder, name = Path(home.native(council_home)) / "logs", re.escape(run.name)

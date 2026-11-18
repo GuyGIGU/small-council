@@ -5,18 +5,17 @@ import re
 from pathlib import Path
 
 from council.commands import cli, resolve, script
-from council.records import audit_file, events, stages, usage
+from council.records import audit_file, closing, events, stages, usage
 
 
 def claims_note(run: Path, status: str) -> None:
     """A complete close of a synthesis run builds its claim index itself (D44), so the audit reads it current; one
     that can't be built is one warning, naming the command that says why."""
-    if status != "complete" or resolve.field(run, "mode") not in stages.SYNTHESISED:
-        return
-    if not (run / "synthesis.md").is_file():
-        if (run / "claims.jsonl").is_file():
-            cli.warn("council: claims.jsonl has no synthesis.md beside it to be built from — write %s/synthesis.md, "
-                     "then council evidence check --run %s" % (run.as_posix(), run.name))
+    todo = closing.claim_index(run) if status == "complete" else ""
+    if todo == "orphan":
+        cli.warn("council: the claim index has no synthesis beside it to be built from — write the run's synthesis, "
+                 "then council evidence check --run %s" % run.name)
+    if todo != "build":
         return
     code, _, _ = script.captured("evidence", ["build", "--run", run.as_posix()])
     if code:

@@ -8856,8 +8856,8 @@ def close_claim_index(tmp):
     os.unlink(os.path.join(stale_run, "verify-1.md"))
     os.unlink(os.path.join(stale_run, "synthesis.md"))
     code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
-    check("close: an index with no synthesis.md beside it warns, naming the file to write",
-          code == 0 and "claims.jsonl has no synthesis.md beside it" in err, err)
+    check("close: an index with no synthesis beside it warns, naming the next step",
+          code == 0 and "claim index has no synthesis beside it" in err and "evidence check" in err, err)
     paused_repo = new_repo(tmp, "paused-claims")
     write(os.path.join(paused_repo, ".council", "council.config.md"), "# Council config\n")
     _, paused_run, _ = council(paused_repo, "run", "open", "council-review")
