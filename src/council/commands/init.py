@@ -30,6 +30,7 @@ class Project(NamedTuple):
     checks: list[init_checks.Check]
     summary: str
     fingerprint: str
+    seen: str                   # the languages seen under three files each, when the summary lists none; else ''
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -51,9 +52,9 @@ def read_project() -> Project:
     listed = git.run(where.native(tree), "ls-files", "-co", "--exclude-standard", names=True)[1]
     files = [f for f in listed.decode("utf-8", "surrogateescape").split("\n")
              if f and not f.startswith(".council/")]
-    summary = fingerprint.stack_summary()
+    summary, seen = fingerprint.stack_read()
     return Project(tree, where.council_home(), files, init_checks.found(Path(where.native(tree)), files), summary,
-                   "stack-fingerprint: %s — %s" % (fingerprint.digest(summary), summary))
+                   "stack-fingerprint: %s — %s" % (fingerprint.digest(summary), summary), seen)
 
 
 def _quoted(word: str) -> str:
@@ -66,6 +67,8 @@ def detect(project: Project) -> int:
     cli.say("project: " + project.tree)
     cli.say("council home: %s — %s" % (project.home, "council.config.md exists" if has_config else "no config yet"))
     cli.say(project.fingerprint)
+    if project.seen:
+        cli.say(project.seen)
     for check in project.checks:
         cli.say("check: %s · %s · from %s" % (check.name, check.kind, check.source))
         cli.say("  command: " + check.command)
@@ -201,7 +204,8 @@ def _config(project: Project, plugin: str, probed: dict[str, init_write.Probe], 
     mem = found[len(root) + 1:] if os.path.isfile(where.native(found)) and found.startswith(root + "/") \
         else ".council/" + memory.NAME
     fill = init_write.Config(os.path.basename(root), today, git.text(project.tree, "rev-parse", "--short", "HEAD")
-                             or "no commit yet", project.fingerprint, project.summary,
+                             or "no commit yet", project.fingerprint,
+                             project.summary + (" (%s)" % project.seen if project.seen else ""),
                              init_write.roster_rows(plugin, project.files, quick), rows, mem, quick)
     text = init_write.config_text(plugin, fill)
     if quick:

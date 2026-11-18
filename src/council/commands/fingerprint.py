@@ -44,6 +44,13 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 def stack_summary() -> str:
     """'manifests: <names> · languages: <extensions>' (none for an empty list), each list in byte order."""
+    return stack_read()[0]
+
+
+def stack_read() -> tuple[str, str]:
+    """(the summary, what a person reads beside it): the note is '' unless the summary lists no language while
+    language files are there, each under three, and then names them with their counts. The note is never part of
+    the summary, so the fingerprint and its hash stay as they were for every repo."""
     top = git.run(".", "rev-parse", "--show-toplevel")[1].decode("utf-8", "surrogateescape").rstrip("\n")
     out = git.run(where.native(top) if top else ".", "ls-files", names=True)[1]   # the whole repo
     files = out.decode("utf-8", "surrogateescape").rstrip("\n").split("\n")
@@ -56,8 +63,11 @@ def stack_summary() -> str:
         if word in LANGUAGES:
             seen[word] = seen.get(word, 0) + 1
     langs = sorted((w for w, n in seen.items() if n >= 3), key=bytewise.text)
-    return "manifests: %s · languages: %s" % (", ".join(sorted(names, key=bytewise.text)) or "none",
-                                              ", ".join(langs) or "none")
+    summary = "manifests: %s · languages: %s" % (", ".join(sorted(names, key=bytewise.text)) or "none",
+                                                 ", ".join(langs) or "none")
+    note = "" if langs or not seen else "languages seen: %s — each under three files, so not in the fingerprint" % ", ".join(
+        "%s %d" % (word, seen[word]) for word in sorted(seen, key=bytewise.text))
+    return summary, note
 
 
 def digest(summary: str) -> str:

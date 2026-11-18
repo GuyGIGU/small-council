@@ -10281,6 +10281,37 @@ def setup_from_quick(tmp):
           code == 0 and read(cfg) == kept and "Kept " in out and "Updated " not in out, out + err)
 
 
+@part("setup")
+def setup_small_stack(tmp):
+    """A repo whose languages each have under three files: the fingerprint line lists none, byte for byte as before
+    (the config stores it and fingerprint check compares it), and where a person reads the stack — init detect and a
+    quick setup's Stack section — what was seen is said with its counts."""
+    repo = setup_repo(tmp, "small-stack", {"a.py": "x = 1\n", "b.py": "x = 2\n", "run.sh": "echo\n", "README.md": "hi\n"})
+    summary = "manifests: none · languages: none"
+    hashed = subprocess.run([GIT, "hash-object", "--stdin"], input=summary.encode("utf-8"), capture_output=True,
+                            check=True).stdout.decode().strip()[:12]
+    line = "stack-fingerprint: %s — %s" % (hashed, summary)
+    code, out, err = council(repo, "fingerprint")
+    check("fingerprint of a small repo: the line is byte for byte the one it always was (no language at three files)",
+          code == 0 and out == line + "\n", out + err)
+    code, out, err = council(repo, "init", "detect")
+    check("init detect on a small repo: the fingerprint line is unchanged, and the languages seen are named with "
+          "their counts", code == 0 and line + "\n" in out and "py 2" in out and "sh 1" in out
+          and "py 2" not in line_of(out, "stack-fingerprint:"), out + err)
+    council(repo, "init", "scaffold", "--quick")
+    cfg = read(os.path.join(repo, ".council", "council.config.md"))
+    stack = cfg.split("## Stack", 1)[-1].split("\n## ", 1)[0]
+    check("init scaffold --quick on a small repo: the config keeps the same fingerprint line, and its Stack section "
+          "names the languages seen with their counts", line + "\n" in cfg and "py 2" in stack and "sh 1" in stack,
+          cfg)
+    code, out, err = council(repo, "fingerprint", "check")
+    check("fingerprint check after it: the stack is unchanged", code == 0 and "unchanged" in out, out + err)
+    big = setup_repo(tmp, "big-stack", {"a.py": "1\n", "b.py": "2\n", "c.py": "3\n", "run.sh": "echo\n"})
+    code, out, err = council(big, "init", "detect")
+    check("init detect with a language listed: no seen line", code == 0 and "languages: py" in out
+          and "sh 1" not in out, out + err)
+
+
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
