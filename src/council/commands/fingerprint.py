@@ -65,8 +65,9 @@ def stack_read() -> tuple[str, str]:
     langs = sorted((w for w, n in seen.items() if n >= 3), key=bytewise.text)
     summary = "manifests: %s · languages: %s" % (", ".join(sorted(names, key=bytewise.text)) or "none",
                                                  ", ".join(langs) or "none")
-    note = "" if langs or not seen else "languages seen: %s — each under three files, so not in the fingerprint" % ", ".join(
-        "%s %d" % (word, seen[word]) for word in sorted(seen, key=bytewise.text))
+    counted = ", ".join("%s %d" % (word, seen[word]) for word in sorted(seen, key=bytewise.text))
+    note = "" if langs or not seen else "languages seen: %s — each under three files, so not in the fingerprint" % (
+        counted)
     return summary, note
 
 
