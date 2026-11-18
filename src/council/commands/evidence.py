@@ -9,6 +9,7 @@ reads one verifier file the same way, for the seat check that runs when a verifi
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -437,10 +438,8 @@ def write_index(run: Path, claims: list[Claim]) -> str:
     output, data = run / "claims.jsonl", render(claims).encode("utf-8")
     try:
         if output.is_file() and not output.is_symlink() and output.read_bytes() == data:
-            try:
-                os.utime(str(output))      # current as of now, so the audit's "older than a source" stays true
-            except OSError:
-                pass                       # a read-only index that already matches: nothing to mend
+            with contextlib.suppress(OSError):   # a read-only index that already matches: nothing to mend
+                os.utime(str(output))            # dated now, so the audit's "older than a source" stays true
             return ""
         paths.atomic_write(output, data, prefix=".claims-", suffix=".tmp", refuse_link=True)
         return ""

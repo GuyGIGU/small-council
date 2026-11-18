@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Focused, no-model checks for the seat record: `council ledger` and records/ledger.py.
 
-The record counts each seat over the runs that judged its items; the Chair weighs it (`council ledger advice`
+The record counts each seat over the runs that judged its items, with the roster bar's two facts (judged runs,
+items counted at most 5 a run); the Chair weighs it (`council ledger advice`
 was removed in 1.2.0, D44).
 """
 
@@ -81,7 +82,7 @@ else:
                   and "council ledger [N]" in err, out + err)
         code, out, err = council(repo, "ledger")
         check("helper: the plain ledger shows '-' for a seat no run judged, and points to no advice",
-              code == 0 and any(line.split()[:1] == ["engine"] and line.split()[-1] == "-" for line in out.splitlines())
+              code == 0 and any(line.split()[:1] == ["engine"] and line.split()[7:8] == ["-"] for line in out.splitlines())
               and "advice" not in out, out)
         refusals = [(council(repo, *words), want) for words, want in (
             (("ledger", "3", "x"), "usage: council ledger [N]"), (("ledger", "--json"), "ledger doesn't take --json"))]
@@ -93,7 +94,23 @@ else:
         code, out, err = council(repo, "ledger", "1")
         mix = next((line.split() for line in out.splitlines() if line.startswith("mix")), [])
         check("helper: a blank line is no run, and shipped counts only the items a synthesis judged",
-              code == 0 and mix[-1:] == ["100%"] and not any(line.startswith(" ") and "%" in line for line in out.splitlines()), out)
+              code == 0 and mix[7:8] == ["100%"] and not any(line.startswith(" ") and "%" in line for line in out.splitlines()), out)
+        # The roster bar's two facts (3 judged runs, 15 items, at most 5 from any one run): totals can't give them.
+        (repo / ".council" / "ledger.tsv").write_bytes((
+            HEADER + row("2026-09-20-000001-review", "ux", 12, 10, 2, 0) + row("2026-09-21-000002-review", "ux", 2, 2, 0, 0)
+            + row("2026-09-22-000003-review", "ux", 1, 1, 0, 0)
+            + row("2026-09-20-000001-review", "lens", 3, 2, 1, 0) + row("2026-09-23-000004-init", "lens", 4, 0, 0, 0,
+                                                                         mode="council-init")).encode("utf-8"))
+        code, out, err = council(repo, "ledger", "20")
+        table = {line.split()[0]: line.split() for line in out.splitlines() if line.split()[:1] in (["ux"], ["lens"])}
+        header = out.splitlines()[0].split() if out else []
+        check("helper: 12, 2 and 1 items in three judged runs show 3 judged runs and 8 counted (at most 5 a run), "
+              "beside the unchanged columns", code == 0 and header[-2:] == ["judged", "counted"]
+              and header[:8] == ["seat", "runs", "raised", "kept", "cut", "refuted", "~k/run", "shipped"]
+              and table.get("ux", [])[1:3] == ["3", "15"] and table.get("ux", [])[-2:] == ["3", "8"], out + err)
+        check("helper: a seat with a run that judged nothing shows fewer judged runs than runs, and counts only the "
+              "judged one", table.get("lens", [])[1:3] == ["2", "7"] and table.get("lens", [])[-2:] == ["1", "3"]
+              and "at most 5 from any one run" in out, out + err)
 
 passed = sum(good for _, good, _ in checks)
 for name, good, detail in checks:

@@ -1,5 +1,6 @@
 """council ledger [N]: each seat's record over the last N completed runs (default 10) — runs, items raised, kept, cut
-and refuted, tokens per run and the share shipped — from the council home's ledger.tsv. It only reads: it never
+and refuted, tokens per run, the share shipped, and the roster bar's two facts (judged runs, and items counted at most
+PER_RUN from any one) — from the council home's ledger.tsv. It only reads: it never
 changes a roster or a run; the Chair weighs the record itself."""
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from council.records import ledger
 from council.records.cells import leading
 
 USAGE = "usage: council ledger [how many recent runs, default 10]"
+PER_RUN = 5     # items of one run counted toward the roster bar, as the removed seat advice counted them
 
 
 def main(args: cli.Args, words: list[str]) -> int:
@@ -53,7 +55,7 @@ class Table:
             return ["the ledger has no runs yet"]
         kept_runs = set(self.order[self.first - 1:])
         seats: dict[str, dict[str, float]] = {}
-        counted, priced, unjudged = set(), set(), False
+        counted, priced, unjudged, per_run = set(), set(), False, {}
         for cells in (c for c in self.rows if c[1] in kept_runs):
             seat = ledger.seat_of(cells[3])
             s = seats.setdefault(seat, dict.fromkeys(("runs", "raised", "kept", "cut", "refd", "tok", "truns",
@@ -70,23 +72,32 @@ class Table:
                     s["truns"] += 1
             if cells[1] in self.judged:
                 s["jraised"] += leading(cells[4])
+            if cells[1] in self.judged and cells[3] != ledger.VERIFIERS:
+                per_run.setdefault(seat, {}).setdefault(cells[1], 0.0)   # a judged run of the seat's, even at 0 items
+                per_run[seat][cells[1]] += leading(cells[4])
             elif leading(cells[4]) > 0:              # a cell that is not a number is not above 0
                 unjudged = True
+        for seat, s in seats.items():
+            runs = per_run.get(seat, {})
+            s["judged"], s["counted"] = len(runs), sum(min(raised, PER_RUN) for raised in runs.values())
         return self.shown(seats, unjudged)
 
     def shown(self, seats: dict[str, dict[str, float]], unjudged: bool) -> list[str]:
-        out = ["%-16s %4s %6s %5s %4s %7s %8s %9s" % ("seat", "runs", "raised", "kept", "cut", "refuted", "~k/run",
-                                                       "shipped")]
+        out = ["%-16s %4s %6s %5s %4s %7s %8s %9s %6s %7s" % ("seat", "runs", "raised", "kept", "cut", "refuted",
+                                                               "~k/run", "shipped", "judged", "counted")]
         untrusted = False
         for seat, s in seats.items():
             ship = s["kept"] - s["refd"]
             pct = "%d%%" % _d(100 * ship / s["jraised"] + 0.5) if s["jraised"] > 0 else "-"
             per_run = "%d" % _d(s["tok"] / s["truns"] / 1000 + 0.5) if s["truns"] > 0 else "-"
             untrusted = untrusted or s["truns"] == 0
-            out.append("%-16s %4d %6d %5d %4d %7d %8s %9s" % (seat, _d(s["runs"]), _d(s["raised"]), _d(s["kept"]),
-                                                              _d(s["cut"]), _d(s["refd"]), per_run, pct))
+            out.append("%-16s %4d %6d %5d %4d %7d %8s %9s %6d %7d" % (
+                seat, _d(s["runs"]), _d(s["raised"]), _d(s["kept"]), _d(s["cut"]), _d(s["refd"]), per_run, pct,
+                s["judged"], _d(s["counted"])))
         out.append("over the last %d completed run(s) · shipped = kept and not refuted, as a share of items raised"
                    % (len(self.order) - self.first + 1))
+        out.append("judged = runs whose synthesis credited items, counted = their items raised, at most %d from any "
+                   "one run" % PER_RUN)
         if unjudged:
             out.append("raised counts every run; shipped only runs whose synthesis credited items (not council-init "
                        "or a build) · - = never judged")

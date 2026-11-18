@@ -148,7 +148,9 @@ council — the Small Council's helper (Python 3.8+ and git)
   council prior [path …]                 earlier council work on these paths (default: the index)
   council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
                                          secret-looking strings are redacted; records ask= in the state
-  council ledger [N]                     each seat's record over the last N completed runs (default 10)
+  council ledger [N]                     each seat's record over the last N completed runs (default 10),
+                                         with the roster bar's facts: judged runs, and items counted
+                                         at most 5 from any one run; it weighs nothing
   council status [--widget [--preview] | --json | --line]
                                          the run in plain words: what is happening, whether it moves,
                                          what needs the user, where the evidence is; --widget prints
