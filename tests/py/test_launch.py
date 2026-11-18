@@ -70,7 +70,7 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(started("map", "touch", "src/=x"),
                          sorted(base + ["council.commands.map_status", "council.commands.map_touch"]))
         self.assertEqual(started("fingerprint"), sorted(base + ["council.commands.fingerprint"]))
-        self.assertEqual(started("ledger"), sorted(base + ["council.commands.ledger", "council.commands.script"]))
+        self.assertEqual(started("ledger"), sorted(base + ["council.commands.ledger"]))
         self.assertEqual(started("ask", "save"), sorted(base + ["council.commands.ask", "council.commands.resolve"]))
         for words in (("memory",), ("memory", "check"), ("memory", "tidy"), ("memory", "accept", "F-1")):   # on use
             self.assertEqual(started(*words), sorted(base + ["council.commands.memory"]))
