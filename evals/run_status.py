@@ -1242,7 +1242,8 @@ with tempfile.TemporaryDirectory(prefix="council-stale-status-") as temporary:
         labels = [item["label"] for item in reading["evidence"]]
         check("status: newer " + source + " hides stale verdicts and labels the index",
               snap["claims"]["stale"] and not snap["claims"]["by_verdict"] and
-              "Claims index out of date" in labels, labels)
+              "Claims index out of date — council evidence check --run {} updates it".format(stale_run.name) in labels,
+              labels)
         check("status: stale " + source + " read writes nothing", before == fingerprint(stale_run))
         os.utime(stale_run / source, (index_at - 5, index_at - 5))
     check("status: a current index keeps its verdicts", snapshot.claims_of(stale_run)["by_verdict"] == {"CONFIRMED": 1})
@@ -1354,7 +1355,7 @@ with tempfile.TemporaryDirectory(prefix="council-build-closing-") as temporary:
     write(nomode / "verify-1.md", "# Verification\n")
     check("claims: a review, or a run with no recorded mode, with verifier reports and no index still reads as out "
           "of date (fail closed)",
-          (build_reading(review)["closing"] or {}).get("verification") == "Claim index out of date; verifier counts unknown."
+          (build_reading(review)["closing"] or {}).get("verification") == "Claim index out of date; verifier counts unknown — council evidence check updates it."
           and snapshot.claims_of(nomode)["stale"], build_reading(review)["closing"])
 
 # A post-game keeps no claim index: its verifier judges the work against the request, MET / PARTLY MET / NOT MET /

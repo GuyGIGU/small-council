@@ -1,31 +1,24 @@
-"""council ledger [N] | ledger advice [N] [--json]: each seat's record over the last N completed runs (default 10) —
-runs, items raised, kept, cut and refuted, tokens per run and the share shipped — from the council home's
-ledger.tsv; advice weighs each seat's judged runs with a plausible range and advises only past a stated bar
-(commands/seat_advice.py). Both only read: neither changes a roster, a route or a run."""
+"""council ledger [N]: each seat's record over the last N completed runs (default 10) — runs, items raised, kept, cut
+and refuted, tokens per run, the share shipped, and the roster bar's two facts (judged runs, and items counted at most
+PER_RUN from any one) — from the council home's ledger.tsv. It only reads: it never
+changes a roster or a run; the Chair weighs the record itself."""
 from __future__ import annotations
 
-import json
 import re
-from pathlib import Path
 
-from council.commands import cli, script
+from council.commands import cli
 from council.records import home as where
 from council.records import ledger
 from council.records.cells import leading
 
 USAGE = "usage: council ledger [how many recent runs, default 10]"
-ADVICE = "usage: council ledger advice [how many recent runs, default 20] [--json]"
+PER_RUN = 5     # items of one run counted toward the roster bar, as the removed seat advice counted them
 
 
 def main(args: cli.Args, words: list[str]) -> int:
-    if words[:1] == ["advice"]:
-        cli.takes_flags(args, "ledger advice", "json")
-        if len(words) > 2:
-            raise cli.Refusal("usage: council ledger advice [N] [--json]")
-        return advice(args, words[1] if len(words) > 1 else "")
     cli.takes_flags(args, "ledger")
     if len(words) > 1:
-        raise cli.Refusal("usage: council ledger [N] | ledger advice [N] [--json]")
+        raise cli.Refusal("usage: council ledger [N]")
     last = (words[0] if words else "") or "10"
     if not re.fullmatch(r"[0-9]+", last):
         raise cli.Refusal(USAGE)
@@ -37,23 +30,6 @@ def main(args: cli.Args, words: list[str]) -> int:
     for line in Table(rows, int(last)).lines():
         cli.say(line)
     return 0
-
-
-def advice(args: cli.Args, last: str) -> int:
-    last = last or "20"
-    if not re.fullmatch(r"[0-9]+", last):
-        raise cli.Refusal(ADVICE)
-    if len(last) > 6:
-        raise cli.Refusal("ledger advice: keep N under a million runs")
-    if int(last) <= 0:
-        raise cli.Refusal(ADVICE)
-
-    def said() -> int:
-        from council.commands import seat_advice     # the advice's own code: only advice loads it
-        data = seat_advice.report(Path(where.council_home() + "/" + ledger.NAME), int(last))
-        cli.say(json.dumps(data, indent=2, sort_keys=True) if "json" in args.flags else seat_advice.render(data))
-        return 0
-    return script.guarded("ledger", said, (ledger.LedgerError, OSError, ValueError))
 
 
 def _d(value: float) -> int:
@@ -79,7 +55,7 @@ class Table:
             return ["the ledger has no runs yet"]
         kept_runs = set(self.order[self.first - 1:])
         seats: dict[str, dict[str, float]] = {}
-        counted, priced, unjudged = set(), set(), False
+        counted, priced, unjudged, per_run = set(), set(), False, {}
         for cells in (c for c in self.rows if c[1] in kept_runs):
             seat = ledger.seat_of(cells[3])
             s = seats.setdefault(seat, dict.fromkeys(("runs", "raised", "kept", "cut", "refd", "tok", "truns",
@@ -96,27 +72,35 @@ class Table:
                     s["truns"] += 1
             if cells[1] in self.judged:
                 s["jraised"] += leading(cells[4])
+                if cells[3] != ledger.VERIFIERS:     # a judged run of the seat's, even at 0 items
+                    per_run.setdefault(seat, {}).setdefault(cells[1], 0.0)
+                    per_run[seat][cells[1]] += leading(cells[4])
             elif leading(cells[4]) > 0:              # a cell that is not a number is not above 0
                 unjudged = True
+        for seat, s in seats.items():
+            runs = per_run.get(seat, {})
+            s["judged"], s["counted"] = len(runs), sum(min(raised, PER_RUN) for raised in runs.values())
         return self.shown(seats, unjudged)
 
     def shown(self, seats: dict[str, dict[str, float]], unjudged: bool) -> list[str]:
-        out = ["%-16s %4s %6s %5s %4s %7s %8s %9s" % ("seat", "runs", "raised", "kept", "cut", "refuted", "~k/run",
-                                                       "shipped")]
+        out = ["%-16s %4s %6s %5s %4s %7s %8s %9s %6s %7s" % ("seat", "runs", "raised", "kept", "cut", "refuted",
+                                                               "~k/run", "shipped", "judged", "counted")]
         untrusted = False
         for seat, s in seats.items():
             ship = s["kept"] - s["refd"]
             pct = "%d%%" % _d(100 * ship / s["jraised"] + 0.5) if s["jraised"] > 0 else "-"
             per_run = "%d" % _d(s["tok"] / s["truns"] / 1000 + 0.5) if s["truns"] > 0 else "-"
             untrusted = untrusted or s["truns"] == 0
-            out.append("%-16s %4d %6d %5d %4d %7d %8s %9s" % (seat, _d(s["runs"]), _d(s["raised"]), _d(s["kept"]),
-                                                              _d(s["cut"]), _d(s["refd"]), per_run, pct))
+            out.append("%-16s %4d %6d %5d %4d %7d %8s %9s %6d %7d" % (
+                seat, _d(s["runs"]), _d(s["raised"]), _d(s["kept"]), _d(s["cut"]), _d(s["refd"]), per_run, pct,
+                s["judged"], _d(s["counted"])))
         out.append("over the last %d completed run(s) · shipped = kept and not refuted, as a share of items raised"
                    % (len(self.order) - self.first + 1))
+        out.append("judged = runs whose synthesis credited items, counted = their items raised, at most %d from any "
+                   "one run" % PER_RUN)
         if unjudged:
             out.append("raised counts every run; shipped only runs whose synthesis credited items (not council-init "
                        "or a build) · - = never judged")
         if untrusted:
             out.append("~k/run counts only runs whose token figures were checked (0.14+ or corrected) · - = none yet")
-        out.append("what this record can support, seat by seat: council ledger advice")
         return out

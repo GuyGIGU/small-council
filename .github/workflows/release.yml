@@ -1,0 +1,54 @@
+name: release
+
+# At each pushed v* tag: scripts/publish_release.py builds the runtime tree of the tagged commit, runs the
+# release eval on it and adds it to the release branch as one commit, "Small Council v<version>". main's
+# marketplace entry installs that branch, so this is what users get (D45). It never runs on a pull request
+# and uses no secret but the default token, which only the publish step gets. A person publishes with the
+# same script (CONTRIBUTING.md, Releasing).
+on:
+  push:
+    tags: ['v*']
+
+permissions: {}
+
+concurrency:
+  group: release-branch     # two tags pushed together publish one after the other
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write       # this job alone: it pushes the release branch
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false    # no token in .git/config: the publish step gets it through its env
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.x'
+
+      - name: The tag is plugin.json's version
+        run: |
+          version="$(python -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')"
+          [ "$TAG" = "v$version" ] || { echo "::error::tag $TAG but plugin.json says $version: tag v$version instead"; exit 1; }
+
+      # Builds, runs evals/run_release.py on the tree, refuses a version not newer than release's, commits,
+      # pushes. The token reaches git only as an http header in git's environment (never argv, never a file).
+      - name: Build, check and publish the tree
+        env:
+          PUBLISH_TOKEN: ${{ github.token }}
+          GIT_AUTHOR_NAME: Small Council release
+          GIT_COMMITTER_NAME: Small Council release
+          GIT_AUTHOR_EMAIL: ''
+          GIT_COMMITTER_EMAIL: ''
+        run: python scripts/publish_release.py origin release

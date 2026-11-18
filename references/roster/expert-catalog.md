@@ -115,10 +115,3 @@ keep only if it runs goroutines. Nygard: drop unless it runs unattended.
   framework; Nygard unless the game ships crash reporting or live services.
 - **Add:** a project-local engine seat (`.council/refs/<engine>.md`) for the engine's lifecycle,
   scene/node rules, and signal/event traps.
-
-## Adding a seat to the catalog
-
-Add a row with its "applies when" and recast rules and a reference doc under `references/`: first
-line a single `# Title`, principles numbered "Principle N", an "Applying this seat to another stack"
-section. Then add the doc to `SEAT_DOCS` in `scripts/quick_validate.py` and update the seat count in
-`evals/run_structural.py`.

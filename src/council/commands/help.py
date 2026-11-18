@@ -5,7 +5,7 @@ import sys
 
 from council.commands import cli
 
-COUNCIL_VERSION = "1.1.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
+COUNCIL_VERSION = "1.2.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
 
 USAGE = """\
 council — the Small Council's helper (Python 3.8+ and git)
@@ -80,8 +80,9 @@ council — the Small Council's helper (Python 3.8+ and git)
                                          (or add an agent run the record missed); seats.tsv keeps
                                          the original, corrections.jsonl the evidence
   council index [--base REF]             change index → <run>/index.md (hunks, symbols, callers, tests)
-  council evidence build|show|check       index claims, provenance, states and verifier links from
-                                         synthesis.md and verify-*.md into run-local claims.jsonl
+  council evidence build|check           index claims, provenance, states and verifier links from
+                                         synthesis.md and verify-*.md into run-local claims.jsonl; check
+                                         builds the index itself, then checks it
   council repair record <task> <gate>     snapshot one completed gate attempt, classify its failure
   council repair show|check [task]        inspect bounded repair advice or check saved proof
   council repair allow <gate> --user-said "…"
@@ -147,13 +148,9 @@ council — the Small Council's helper (Python 3.8+ and git)
   council prior [path …]                 earlier council work on these paths (default: the index)
   council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
                                          secret-looking strings are redacted; records ask= in the state
-  council ledger [N]                     each seat's record over the last N completed runs (default 10)
-  council ledger advice [N] [--json]     how much each seat's record can support over the last N runs
-                                         (default 20), and advice only past the bar
-  council route recommend --task TEXT [--risk low|medium|high] [--complexity 1..10]
-                         [--uncertainty low|medium|high] [--surface NAME ...]
-                         [--agent-cap N] [--budget-tokens N] [--classic] [--mode review|plan|implement|research|postgame]
-                                         advisory TSV recommendation; does not open or alter a run
+  council ledger [N]                     each seat's record over the last N completed runs (default 10),
+                                         with the roster bar's facts: judged runs, and items counted
+                                         at most 5 from any one run; it weighs nothing
   council status [--widget [--preview] | --json | --line]
                                          the run in plain words: what is happening, whether it moves,
                                          what needs the user, where the evidence is; --widget prints

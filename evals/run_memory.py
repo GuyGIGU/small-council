@@ -273,13 +273,25 @@ with tempfile.TemporaryDirectory(prefix="council-memory-") as temporary:
     check("a confirmed finding is not a council failure: nothing drafted",
           code == 2 and "CONFIRMED" in err and pmem.read_bytes() == untouched, out + err)
     write(review / "verify-1.md", verify.replace("| src/auth/session.py:1-4 |", "| src/auth/session.py:1-3 |"))
-    code, out, err = council(proj, "memory", "propose", "claim", "C1")
-    check("a claim ledger older than its verifier table is refused", code == 2 and "stale" in err and
-          pmem.read_bytes() == untouched, out + err)
-    write(review / "verify-1.md", verify)
     code, out, err = council(proj, "memory", "propose", "claim", "C1", "--scope", "all")
     check("a draft that would reach every run is refused before it is written", code == 2 and
           "would not be served: its scope reaches every run" in err and pmem.read_bytes() == untouched, out + err)
+    check("a verifier table changed after the index was built is read now: propose builds the index itself (D44), "
+          "with no stale-index refusal", "stale" not in err and
+          "src/auth/session.py:1-3" in (review / "claims.jsonl").read_text(encoding="utf-8"), err)
+    write(review / "verify-1.md", verify.replace("| 1 | Expiry skipped | CONFIRMED |", "| 9 | Expiry skipped | CONFIRMED |"))
+    code, out, err = council(proj, "memory", "propose", "claim", "C1")
+    check("sources the index can't be built from are refused, naming the problem and the next step",
+          code == 2 and "the claim index can't be built" in err and "unknown claim 9" in err
+          and "propose again" in err and pmem.read_bytes() == untouched, out + err)
+    write(review / "verify-1.md", verify)
+    (review / "claims.jsonl").unlink()
+    (review / "claims.jsonl").mkdir()          # an index that can't be saved: propose answers from the one built now
+    code, out, err = council(proj, "memory", "propose", "claim", "1")
+    (review / "claims.jsonl").rmdir()
+    check("an index propose can't save is no raw OS error: it answers from the index built now and names the step",
+          code == 2 and "CONFIRMED" in err and "could not be saved" in err and "plain writable file" in err
+          and "Errno" not in err and pmem.read_bytes() == untouched, out + err)
     code, out, err = council(proj, "memory", "propose", "claim", "C1")
     text = pmem.read_text(encoding="utf-8")
     check("a refuted claim becomes a proposal, not memory the runs read",

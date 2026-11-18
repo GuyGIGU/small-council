@@ -45,7 +45,7 @@ the run was open, each call once. That is the measure an agent's figure uses (it
 the two compare; a cache rebuilt after an idle gap adds nothing, and agents' calls are left out (their
 seats hold them). The figure is said with the close, recorded as a `run.chair_usage` event and shown on
 the card, with the run's method load beside it: the bytes of context-core's skill, the mode's own and the
-doctrine of each stage the run must enter (`method_bytes=`; D13 holds a review's under 59,407). It is never added to the agents' total or compared with their share of the estimate. A session
+doctrine of each stage the run must enter (`method_bytes=`; D46 holds a review's under 50,000). It is never added to the agents' total or compared with their share of the estimate. A session
 with no transcript to read makes it "at least"; no Python or no transcript at all: nothing is said, and
 nothing is guessed. Two runs open at once in one session each count the calls they share.
 
@@ -98,7 +98,7 @@ The `seat.updated` event carries a seat's totals so far, so summing events count
 
 - **The close line** (`actual:` in `session-state.md`) uses the same bases.
 - **The ledger** marks rows it writes with `accounting` 2. Their tokens are a checked figure or "-".
-  Rows without the mark are older, and their tokens are never priced by `council ledger advice`.
+  Rows without the mark are older, and their tokens are never priced by `council ledger`.
 - **The close's audit names each seat that was an agent run with no token figure** (the `Token
   figures` item, a FAIL, from `records/usage_gaps.py` over the per-seat rule above: a basis of
   partial, missing, unrecorded or suspect; the Chair's own seat, a seat declared `agents=0` and a seat
@@ -204,7 +204,7 @@ the hook can't read are never refused for this.
   when missing or stale), checks, spend, agent runs against the cap, and owner follow-ups.
 - `seats`: names, states, tokens, token bases, agent-run counts and notes.
 - `evidence`: labels and paths to supporting records. An absent or older claim index is labelled
-  "Claims index out of date" instead of showing obsolete verdicts.
+  "Claims index out of date", with the command that updates it, instead of showing obsolete verdicts.
 
 This is a snapshot, not a subscription.
 `council status --line` is a separate, under-200-character plain sentence for an owner notification.

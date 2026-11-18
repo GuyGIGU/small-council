@@ -14,12 +14,12 @@ class ParseTest(unittest.TestCase):
         return str(caught.exception)
 
     def test_flags_and_words_in_any_order(self) -> None:
-        args = cli.parse(["--run", "r1", "run", "status", "--all", "--surface=a", "--surface", "b"])
+        args = cli.parse(["--run", "r1", "run", "status", "--all", "--glob=a", "--glob", "b"])
         self.assertEqual(args.words, ["run", "status"])
-        self.assertEqual(args.flags, ["run", "all", "surface", "surface"])
+        self.assertEqual(args.flags, ["run", "all", "glob", "glob"])
         self.assertEqual(args.value("run"), "r1")
         self.assertEqual(args.value("all"), "1")
-        self.assertEqual(args.lists["surface"], ["a", "b"])
+        self.assertEqual(args.lists["glob"], ["a", "b"])
 
     def test_after_the_double_dash(self) -> None:
         args = cli.parse(["gate", "x", "--", "echo", "--run"])
@@ -38,7 +38,7 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(self.refusal("home", "--run"), "--run needs a folder")
         self.assertEqual(self.refusal("x", "--base"), "--base needs a ref")
         self.assertEqual(self.refusal("x", "--at"), "--at needs grounding or verify")
-        self.assertEqual(self.refusal("x", "--task"), "--task needs a value")
+        self.assertEqual(self.refusal("x", "--scope"), "--scope needs a value")
         self.assertEqual(self.refusal("x", "--timeout"), "--timeout needs a value")
         self.assertEqual(self.refusal("x", "--run="), "--run needs a value")
         self.assertEqual(self.refusal("x", "--wait="), "--wait needs a value")

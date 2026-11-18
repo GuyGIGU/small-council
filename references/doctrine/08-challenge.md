@@ -8,17 +8,15 @@ Catch what's wrong before the user sees it.
    and each item's origin comes from `git blame` and the change's own hunks against the base —
    introduced, touched (the change edited or removed lines in or next to it) or pre-existing. Write
    each origin into its item. Then, by verdict:
-   - `missing-file` or `bad-line`: fix the citation if the intended line is obvious; otherwise drop
-     the item.
+   - `missing-file` or `bad-line`: fix the citation if the intended line is obvious; else drop the item.
    - unreadable: rewrite the citation as `path:line`.
-   - `deleted`: the change removed that file. The item stands; its lines were checked against the base.
-   - `no-line`: the path exists. Add the line when the item is about code.
+   - `deleted`: the change removed that file; the item stands, checked against the base.
+   - `no-line`: the path exists; add the line when the item is about code.
    - not checked (a command, a link, an area or no path): fine for research evidence or a plan's
-     area — including a file the plan would still write ("nothing on disk by that name"). A review
-     item needs a `path:line`, and `no-citation` says it has none: add one, or drop the item.
-   - origin `origin unknown`: the helper could not tell whether the change made the line (a citation
-     outside the repository, a file blame can't read, a line-ending rewrite). Treat it as the
-     change's own unless you check it yourself — never drop it for the label.
+     area, even a file the plan would still write ("nothing on disk by that name"). A review item
+     needs a `path:line`: on `no-citation`, add one or drop the item.
+   - `origin unknown` (a citation outside the repository, a file blame can't read, a line-ending
+     rewrite): treat it as the change's own unless you check it yourself — never drop it for the label.
    - Item lines it can't read, or a Kept section with no items and no `(none)` line: rewrite them in
      the index-line format and run the check again.
 2. **Blind verification.** Dispatch `small-council:council-verifier`:
@@ -32,21 +30,15 @@ Catch what's wrong before the user sees it.
      (`council seat verify-<n> running agent=<id>`, then `done tokens=…`). One stopped at its turn
      limit: context-core, Limits.
    - **If these verifiers are the run's first dispatch** (a Chair-only Squad, a post-game), show
-     the user the run's status now, once — Work, "Right after dispatching", step 2. The helper's
-     reminder says when.
-   - A Workflow of verifiers is one seat `verify-<n>` recorded with `agents=N`, and planned with
-     `budget/verify-<n>/agent-runs` — each of its agents counts against the cap, and takes items the
-     same way: a P1 or protected item alone, the rest in batches of up to 8. Each agent writes
+     the user the run's status now, once (Work, "Right after dispatching", step 2).
+   - A Workflow of verifiers: `${CLAUDE_PLUGIN_ROOT}/references/run/workflow.md`, Challenge. Each agent writes
      `<run>/verify-<n>-<letter>.md` in the run folder itself. Never merge, copy or move them:
-     `council evidence build` reads every `verify-*.md` there. After `run close`, pass `--run <name>`.
-     The seat-check hook never sees a Workflow's agents: give them the file rules in their prompt
-     (line 1 `# Verification — <run title>`, the verdict table, under 16 KB; write the file first).
+     `council evidence check` reads every `verify-*.md` there. After `run close`, pass `--run <name>`.
    - **Over the cap?** P1s and protected items get their own verifiers first; keep one for the
      batch of everything else. If even that doesn't fit, pair P1s two to a verifier. Tell the user
      what shared a verifier.
-   - A claim whose evidence is a URL (research) goes to a verifier too; it fetches the page.
-   - A war room's claims: war-room.md, Challenge. A post-game's verifiers check its parts against the
-     user's request instead — council-postgame says how.
+   - A post-game's verifiers check its parts against the user's request instead — council-postgame
+     says how.
 3. **Apply the verdicts** — in the deliverable. Never renumber or delete synthesis.md's lines; the
    ledger counts them at close.
    - CONFIRMED ships.
@@ -58,16 +50,12 @@ Catch what's wrong before the user sees it.
      id unchanged (`C4`), and ship it under that id. If it truly stays cut, add `still-cut: <why>`
      before `from:`. `council evidence check` holds the run until one or the other is done.
 4. **Every shipped item has a verdict** — check before you move on.
-5. **Refresh the claim index.** After verifier files exist, `council evidence build`, then
-   `council evidence check`. Run `evidence build`/`check`, `collect` and `check` on their own
-   (or test their exit status), never through a pipe (context-core, The helper).
+5. **The claim index.** After verifier files exist, `council evidence check`: it builds the index
+   from synthesis.md and the verify files, then judges it. Run `evidence check`, `collect` and
+   `check` on their own (or test their exit status), never through a pipe (context-core, The helper).
    Fix missing provenance, evidence-state declarations, proof artifacts, verifier rows or conflicting
-   rows.
-   `UNCERTAIN` remains a disclosed verdict, not a hidden pass.
-   This step is for synthesis claims in review, plan and research; build and post-game keep their
-   own proof contracts.
-6. **Verification gates**, for modes that changed code: `council gate --all --at verify`. A gate
-   already green on this very tree is not run again; its line names who ran it (`--rerun` runs it).
+   rows. `UNCERTAIN` remains a disclosed verdict, not a hidden pass. This step is for synthesis
+   claims in review, plan and research; build and post-game keep their own proof contracts.
 
 ## Solo runs
 
@@ -78,4 +66,4 @@ self-checked, never independent. A run with any verifier is Squad, not Solo.
 
 ## Done when
 
-Every shipped item has a verdict and the gates are recorded. → `council state phase=deliver`
+Every shipped item has a verdict (a build: its final gates are recorded too). → `council state phase=deliver`

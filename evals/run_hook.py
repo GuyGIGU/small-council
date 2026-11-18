@@ -256,6 +256,12 @@ def state(status, mode="council-review", phase="work", code_root=None, session=N
     return "\n".join(lines) + "\n"
 
 
+def resume_named(line):
+    """A run line that is to be gone on with names the resume rules by a path that exists: '' when it does."""
+    found = re.search(r"read (\S+/references/run/resume\.md) first", line)
+    return "" if found and os.path.isfile(found.group(1)) else "no existing resume.md path in: " + line
+
+
 def compacted(out):
     return [line for line in out.splitlines() if "COMPACTED DURING A COUNCIL RUN" in line]
 
@@ -363,6 +369,8 @@ def session_start(tmp):
     check("open run: status text, widget and read_me instructions", "council status --run <name>" in out and
           "council status --widget" in out and "call its read_me first" in out, out)
     check("open run: shows the mode and phase", "council-review" in out and "phase: work" in out, out)
+    said = resume_named(line_with(out, "UNFINISHED COUNCIL RUN"))
+    check("new session: the unfinished run's line names resume.md by a path that exists", not said, said)
     check("open run, new session: running seats are gone, done ones listed",
           "were running when that session ended" in out and "hunt" in out and "done: beck" in out, out)
     check("open run: a seat lost mid war-room says which round", "hunt (war-room round 2)" in out, out)
@@ -370,6 +378,8 @@ def session_start(tmp):
     check("after /clear: running seats aren't declared gone", "still working: hunt" in out and "gone" not in out, out)
     code, out = run_hook(full, "compact")
     check("after compaction: says resume", "COMPACTED DURING A COUNCIL RUN" in out and "Do not restart" in out, out)
+    said = resume_named(line_with(out, "COMPACTED DURING A COUNCIL RUN"))
+    check("after compaction: the driving run's line names resume.md by a path that exists", not said, said)
     check("after compaction: re-invoke the run's own mode", "Re-invoke the council-review skill" in out, out)
     check("after compaction: don't re-dispatch running seats", "do not re-dispatch seats that are running" in out, out)
     code, out = run_hook(full, payload='{"session_id":"eval","source":"compact"}')
@@ -383,6 +393,8 @@ def session_start(tmp):
     write(os.path.join(run_a, "session-state.md"), state("paused", code_root=top))
     code, out = run_hook(full, "startup")
     check("paused run: reported as paused, not unfinished", "PAUSED COUNCIL RUN" in out and "UNFINISHED" not in out, out)
+    said = resume_named(line_with(out, "PAUSED COUNCIL RUN"))
+    check("paused run: its line names resume.md by a path that exists", not said, said)
     code, out = run_hook(full, "compact")
     check("paused run: stays paused right after a compaction", "PAUSED COUNCIL RUN" in out and not compacted(out), out)
 
@@ -512,6 +524,8 @@ def session_start(tmp):
     check("a run another session updated recently: may still be live there — no re-dispatch, no close offered",
           "another session" in line and "gone" not in line and "re-dispatch each once" not in line
           and "--status abandoned" not in line, out)
+    said = resume_named(line)
+    check("a run that may be live elsewhere: its line names resume.md for when the user says to go on", not said, said)
     code, out = run_hook(live, "clear", session="another-session")
     line = line_with(out, "2026-09-15-130000-review")
     check("after /clear, a recent run with another session id: resume it if this window drove it, else leave it",
@@ -519,13 +533,15 @@ def session_start(tmp):
           and "--status abandoned" not in line, out)
     check("after /clear: workers of the cleared session are never something to wait for",
           "wait for their notifications" not in line and "died with the old session" in line
-          and "re-dispatch each once" in line, out)
+          and "resume.md says what to do with seats marked running" in line and "interrupted" not in line
+          and not resume_named(line), out)
     for f in ("session-state.md", "seats.tsv"):
         age(os.path.join(lrun, f), 3 * 3600)
     code, out = run_hook(live, "startup", session="another-session")
     line = line_with(out, "2026-09-15-130000-review")
     check("a run another session left hours ago: unfinished, its running seats gone, resume or close offered",
           "UNFINISHED COUNCIL RUN" in line and "were running when that session ended" in line
+          and "resume.md says what to do with them" in line and not resume_named(line)
           and "council run resume --run 2026-09-15-130000-review" in line and "--status abandoned" in line, out)
 
     private = new_repo(tmp, "just-me")

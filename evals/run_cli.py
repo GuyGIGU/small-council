@@ -191,19 +191,6 @@ def events(run):
     return [line.split("\t") for line in read(os.path.join(run, "events.tsv")).splitlines()[1:]]
 
 
-def route_table(output):
-    """Parse the advisory route's stable five-column TSV contract."""
-    lines = output.splitlines()
-    valid = bool(lines) and lines[0] == "kind\tid\tfield\tvalue\treason"
-    rows = [line.split("\t") for line in lines[1:]]
-    valid = valid and all(len(row) == 5 for row in rows)
-    return valid, {(row[0], row[1], row[2]): row[3:] for row in rows if len(row) == 5}
-
-
-def route_value(rows, kind, ident, field):
-    return rows.get((kind, ident, field), [""])[0]
-
-
 def write_plan(run, selected=("chair",), skipped=(), size="squad", risk="medium", complexity="medium",
                uncertainty="medium", verification="independent", estimated_tokens=100000):
     """Complete a run-plan v1 for tests whose subject is later than routing."""
@@ -699,116 +686,21 @@ def runs_open(tmp):
           code == 1 and "estimated-tokens must be a non-negative integer" in out, out)
     write(plan_path, good_plan)
 
-    # Advisory routing is deterministic policy output, never a run mutation or agent dispatch.
+    # route recommend was removed in 1.2.0 (D44): refused as an unknown command, naming what to do instead.
     route_before = {os.path.relpath(os.path.join(folder, name), run):
                     Path(folder, name).read_bytes()
                     for folder, _, names in os.walk(run) for name in names}
-    tiny_args = ("route", "recommend", "--task", "Fix a typo in README", "--risk", "low",
-                 "--complexity", "1", "--uncertainty", "low")
-    code, tiny, err = council(repo, *tiny_args)
-    table_ok, tiny_rows = route_table(tiny)
-    tiny_seats = [(key, value) for key, value in tiny_rows.items() if key[0] == "seat" and key[2] == "disposition"]
-    check("route recommend: tiny low-risk work gets a compatible solo plan",
-          code == 0 and table_ok and route_value(tiny_rows, "schema", "route", "version") == "1" and
-          route_value(tiny_rows, "run", "route", "policy") == "adaptive" and
-          route_value(tiny_rows, "run", "route", "size") == "solo" and
-          route_value(tiny_rows, "assessment", "route", "risk") == "low" and
-          route_value(tiny_rows, "assessment", "route", "complexity") == "1" and
-          route_value(tiny_rows, "assessment", "route", "complexity-band") == "low" and
-          route_value(tiny_rows, "assessment", "route", "uncertainty") == "low" and
-          route_value(tiny_rows, "verification", "route", "level") == "self" and
-          sum(value[0] == "selected" for _, value in tiny_seats) == 1 and
-          all(value[0] in ("selected", "skipped") and value[1] for _, value in tiny_seats), tiny + err)
-    code, tiny_again, err = council(repo, *tiny_args)
-    check("route recommend: identical inputs give byte-identical advice", code == 0 and tiny_again == tiny, tiny_again + err)
-    for wording in ("Author a README", "Build docs", "Fix a rapid typo", "Reduce token usage"):
-        code, advice, err = council(repo, "route", "recommend", "--task", wording)
-        table_ok, advice_rows = route_table(advice)
-        check("route recommend: incidental keyword letters do not inflate " + wording,
-              code == 0 and table_ok and route_value(advice_rows, "assessment", "route", "risk") == "low" and
-              route_value(advice_rows, "run", "route", "size") == "solo", advice + err)
-    code, auth_advice, err = council(repo, "route", "recommend", "--task", "Fix refresh token authorization")
-    table_ok, auth_rows = route_table(auth_advice)
-    check("route recommend: actual authorization work still activates security routing",
-          code == 0 and table_ok and route_value(auth_rows, "assessment", "route", "risk") == "high" and
-          route_value(auth_rows, "seat", "security", "disposition") == "selected", auth_advice + err)
-    code, refresh_advice, err = council(repo, "route", "recommend", "--task", "Rotate refresh tokens")
-    table_ok, refresh_rows = route_table(refresh_advice)
-    check("route recommend: refresh tokens infer security and adversarial verification without overrides",
-          code == 0 and table_ok and route_value(refresh_rows, "assessment", "route", "risk") == "high" and
-          route_value(refresh_rows, "seat", "security", "disposition") == "selected" and
-          route_value(refresh_rows, "verification", "route", "level") == "adversarial", refresh_advice + err)
-
-    code, high, err = council(repo, "route", "recommend", "--task", "Change authentication and persistent user records",
-                              "--risk", "high", "--complexity", "8", "--uncertainty", "high",
-                              "--surface", "security", "--surface", "data")
-    table_ok, high_rows = route_table(high)
-    high_seats = [(key, value) for key, value in high_rows.items() if key[0] == "seat" and key[2] == "disposition"]
-    check("route recommend: high-risk persistent security work escalates and explains seats",
-          code == 0 and table_ok and route_value(high_rows, "assessment", "route", "risk") == "high" and
-          route_value(high_rows, "run", "route", "size") == "full" and
-          route_value(high_rows, "assessment", "route", "complexity") == "8" and
-          route_value(high_rows, "assessment", "route", "complexity-band") == "high" and
-          route_value(high_rows, "assessment", "route", "uncertainty") == "high" and
-          route_value(high_rows, "verification", "route", "level") == "adversarial" and
-          route_value(high_rows, "seat", "security", "disposition") == "selected" and
-          route_value(high_rows, "seat", "data", "disposition") == "selected" and
-          sum(value[0] == "selected" for _, value in high_seats) > 1 and
-          all(value[1] for _, value in high_seats), high + err)
-    code, data_advice, err = council(repo, "route", "recommend", "--task", "Database migration", "--agent-cap", "4")
-    table_ok, data_rows = route_table(data_advice)
-    check("route recommend: a capped migration keeps its data specialist",
-          code == 0 and table_ok and route_value(data_rows, "assessment", "route", "risk") == "high" and
-          route_value(data_rows, "seat", "data", "disposition") == "selected" and
-          route_value(data_rows, "budget", "route", "selected-agents") == "4", data_advice + err)
-    code, mixed_advice, err = council(repo, "route", "recommend", "--task", "Auth database migration", "--agent-cap", "4")
-    table_ok, mixed_rows = route_table(mixed_advice)
-    check("route recommend: a cap-omitted relevant lens is called out as constrained",
-          code == 0 and table_ok and route_value(mixed_rows, "seat", "security", "disposition") == "selected" and
-          route_value(mixed_rows, "seat", "data", "disposition") == "skipped" and
-          route_value(mixed_rows, "run", "route", "status") == "constrained", mixed_advice + err)
-
-    code, capped, err = council(repo, "route", "recommend", "--task", "Change authentication and persistent user records",
-                                "--risk", "high", "--complexity", "8", "--uncertainty", "high",
-                                "--surface", "security", "--surface", "data", "--agent-cap", "1",
-                                "--budget-tokens", "1000")
-    table_ok, cap_rows = route_table(capped)
-    selected = sum(value[0] == "selected" for key, value in cap_rows.items()
-                   if key[0] == "seat" and key[1] != "chair" and key[2] == "disposition")
-    estimated = route_value(cap_rows, "budget", "route", "estimated-tokens")
-    check("route recommend: a small cap is honored without pretending high-risk work fits its token ceiling",
-          code == 0 and table_ok and route_value(cap_rows, "budget", "route", "agent-cap") == "1" and
-          selected <= 1 and route_value(cap_rows, "budget", "route", "selected-agents") == str(selected) and
-          route_value(cap_rows, "budget", "route", "ceiling-tokens") == "1000" and
-          route_value(cap_rows, "budget", "run", "token-ceiling") == "1000" and
-          estimated.isdigit() and int(estimated) > 1000 and
-          route_value(cap_rows, "verification", "route", "level") == "adversarial" and
-          route_value(cap_rows, "run", "route", "status") == "needs-rescope" and
-          route_value(cap_rows, "verification", "route", "status") == "unavailable",
-          capped + err)
-
-    code, classic, err = council(repo, "route", "recommend", "--task", "Fix a typo in README", "--classic")
-    table_ok, classic_rows = route_table(classic)
-    check("route recommend: classic static routing remains available",
-          code == 0 and table_ok and route_value(classic_rows, "run", "route", "policy") == "classic" and
-          route_value(classic_rows, "run", "route", "size") == "squad", classic + err)
-
-    for bad_args in (("route", "recommend"),
-                     ("route", "recommend", "--task", "x", "--risk", "urgent"),
-                     ("route", "recommend", "--task", "x", "--complexity", "0"),
-                     ("route", "recommend", "--task", "x", "--complexity", "11"),
-                     ("route", "recommend", "--task", "x", "--uncertainty", "unknown"),
-                     ("route", "recommend", "--task", "x", "--agent-cap", "0"),
-                     ("route", "recommend", "--task", "x", "--agent-cap", "11"),
-                     ("route", "recommend", "--task", "x", "--budget-tokens", "0"),
-                     ("route", "recommend", "--task", "x", "--run", run)):
-        code, _, err = council(repo, *bad_args)
-        check("route recommend: rejects invalid " + " ".join(bad_args[2:]), code == 2 and bool(err.strip()), err)
+    for words in (("route",), ("route", "recommend", "--task", "Fix a typo in README"),
+                  ("route", "recommend", "--task", "x", "--mode", "council-review", "--budget-tokens", "1000")):
+        code, out, err = council(repo, *words)
+        check("%s: refused as removed, naming the run plan and its check instead" % " ".join(words[:2]),
+              code == 2 and not out and err.startswith("council: unknown command 'route' — removed in 1.2.0") and
+              "council run plan check" in err and "- estimates:" in err, out + err)
     route_after = {os.path.relpath(os.path.join(folder, name), run):
                    Path(folder, name).read_bytes()
                    for folder, _, names in os.walk(run) for name in names}
-    check("route recommend: advice does not alter an existing run or dispatch seats",
-          route_after == route_before and read(plan_path) == good_plan, str(set(route_after) ^ set(route_before)))
+    check("route: the refusal leaves the run as it was", route_after == route_before and read(plan_path) == good_plan,
+          str(set(route_after) ^ set(route_before)))
 
     append(plan_path, "schema\tplan\tversion\t1\tduplicate for the drill\n")
     code, out, _ = council(repo, "run", "plan", "check")
@@ -3157,10 +3049,6 @@ def runs_another_sessions_run(tmp):
     code, out, err = council(two, "run", "resume", "--session", "a b")
     check("run resume --session: an id with a space is refused", code == 2 and "--session takes" in err
           and "session: sess-a" in read(st), out + err)
-    code, out, err = council(two, "route", "recommend", "--task", "x", "--mode", "council-review")
-    code2, out2, err2 = council(two, "route", "recommend", "--task", "x", "--mode", "review")
-    check("route recommend --mode: the skill's name and the short one are the same mode",
-          code == code2 == 0 and out == out2, out + err + err2)
     code, out, err = council(two, "run")
     check("run: its usage line names every run command, repair among them",
           code == 2 and "run events [show|check|repair]" in err and "run export" in err, err)
@@ -3930,9 +3818,6 @@ def runs_cost_like_with_like(tmp):
     check("status: the closing card says the same, and its note is about the agents' share",
           code == 0 and want in out and "over the agents' share of the estimate" in out and "over the run's estimate" not in out,
           out + err)
-    code, out, err = council(cr, "route", "recommend", "--task", "review the auth change")
-    check("route recommend: the Chair's share comes as a plan row to copy (budget run chair-tokens)",
-          code == 0 and "budget\trun\tchair-tokens\t" in out and "copy to run-plan.tsv" in line_of(out, "chair-tokens"), out + err)
     write(os.path.join(run, "run-plan.tsv"), read(os.path.join(run, "run-plan.tsv")).replace("chair-tokens\t40000", "chair-tokens\t130000"))
     code, out, err = council(cr, "run", "plan", "check", "--run", name)
     check("run plan: a Chair share larger than the whole estimate is refused", code == 1 and "more than the whole estimate" in out, out + err)
@@ -7724,6 +7609,21 @@ def runs_export_anon(tmp):
           len(verdicts[0]) >= 12 and verdicts[0] == verdicts[1]
           and ("FAIL", "Helper output shown whole") in verdicts[1],
           str(verdicts))
+    # A session from before 1.2.0 called the three commands it removed (D44): the audit and the export read it
+    # without a fault, and none of them is a helper call now.
+    old = [{"type": "assistant", "timestamp": stamp(1), "sessionId": "sX-export", "message": {"content": [
+        {"type": "tool_use", "id": "o%d" % n, "name": "Bash", "input": {"command": command}}
+        for n, command in enumerate(('council route recommend --task "review it" --mode council-review | head -30',
+                                     "council ledger advice 20 --json", "council evidence show --run " + name))]}}]
+    old_log, old_dest = os.path.join(tmp, "export-old-session.jsonl"), os.path.join(tmp, "export-old-copy")
+    write(old_log, "".join(json.dumps(line) + "\n" for line in old))
+    code, out, err = council(r, "run", "audit", "--run", rn, "--transcript", old_log)
+    code2, out2, err2 = council(r, "run", "export", "--anon", name, old_dest, "--transcript", old_log)
+    check("run audit and run export: a transcript calling route recommend, ledger advice and evidence show (removed "
+          "in 1.2.0) is read without a fault, and no helper item names them",
+          code in (0, 1) and "Traceback" not in err + err2 and code2 == 0 and "transcript.jsonl: 3 line(s)" in out2
+          and not re.search(r"route recommend|ledger advice|evidence show", out),
+          "\n".join([str(code), str(code2), out2, err, err2] + re.findall(r".*(?:route|ledger|evidence).*", out)))
 
 
 @part("runs")
@@ -8925,59 +8825,58 @@ def close_claim_index(tmp):
           and index[0]["verification"][0]["evidence"] == "a.txt:1\x0cmore"
           and index[0]["verification"][0]["ref"] == "verify-1.md:4", out + err + str(index))
     council(lf, "run", "close", "--status", "abandoned")
-    # Closing a synthesis run warns about an absent or outdated claim index without rebuilding it.
+    # A complete close of a synthesis run builds its claim index itself (D44): the Chair runs no evidence build
+    # for the audit's sake, and only an index the sources can't give is a warning.
     stale_repo = new_repo(tmp, "stale-claims")
     write(os.path.join(stale_repo, ".council", "council.config.md"), "# Council config\n")
     _, stale_run, _ = council(stale_repo, "run", "open", "council-review")
     stale_run = stale_run.strip()
+    index = os.path.join(stale_run, "claims.jsonl")
     write(os.path.join(stale_run, "synthesis.md"), "# Synthesis\n## Kept\n(none)\n## Cut\n(none)\n")
-    warning = "the claim index is missing or out of date"
+    warning = "the claim index could not be built"
     write_plan(stale_run)
     to_deliver(stale_repo, "--run", stale_run)
+    code, out, err = council(stale_repo, "run", "close", "--run", stale_run)
+    check("close: a missing claim index is built by the close, with no warning, and the audit finds it",
+          code == 0 and warning not in err and os.path.isfile(index) and "Claim index: missing" not in out, out + err)
+    write(os.path.join(stale_run, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P2 · principle · source.py:1 · a later claim · state: OBSERVED · from: chair\n## Cut\n(none)\n")
+    newer = os.stat(index).st_mtime + 5
+    os.utime(os.path.join(stale_run, "synthesis.md"), (newer, newer))
     code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
-    check("close: missing claims warn with an explicit run rebuild command",
-          code == 0 and warning in err and "evidence build --run " + os.path.basename(stale_run) in err
-          and not os.path.exists(os.path.join(stale_run, "claims.jsonl")), err)
-    council(stale_repo, "evidence", "build", "--run", stale_run)
+    check("close again: a synthesis newer than the index is indexed again, with no warning",
+          code == 0 and warning not in err and "a later claim" in read(index), err)
+    os.unlink(os.path.join(stale_run, "audit.md"))
+    write(os.path.join(stale_run, "synthesis.md"), "# Synthesis\n## Kept\n"
+          "1 · P2 · principle · source.py:1 · a third claim · state: OBSERVED · from: chair\n## Cut\n(none)\n")
+    older = os.stat(os.path.join(stale_run, "synthesis.md")).st_mtime - 10
+    os.utime(index, (older, older))
     code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
-    check("close: a current claim index does not warn", code == 0 and warning not in err, err)
-    index_before = read(os.path.join(stale_run, "claims.jsonl"))
-    for source in ("synthesis.md", "verify-1-a.md"):
-        path = os.path.join(stale_run, source)
-        write(path, read(path) or "# Verification\n")
-        newer = os.stat(os.path.join(stale_run, "claims.jsonl")).st_mtime + 5
-        os.utime(path, (newer, newer))
-        code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
-        check("close: newer " + source + " warns without changing the index",
-              code == 0 and warning in err and read(os.path.join(stale_run, "claims.jsonl")) == index_before, err)
-        os.utime(path, (newer - 10, newer - 10))
-
-    # Closing also detects deleted sources, which cannot be caught by comparing
-    # the mtimes of files that remain beside the index.
-    deleted_repo = new_repo(tmp, "deleted-claim-source")
-    write(os.path.join(deleted_repo, ".council", "council.config.md"), "# Council config\n")
-    _, deleted_run, _ = council(deleted_repo, "run", "open", "council-review")
-    deleted_run = deleted_run.strip()
-    write(os.path.join(deleted_run, "synthesis.md"), "# Synthesis\n## Kept\n"
-          "1 · P2 · principle · source.py:1 · indexed claim\n## Cut\n(none)\n")
-    write(os.path.join(deleted_run, "verify-1.md"), "# Verification\n| # | Item | Verdict | Evidence |\n"
-          "|---|---|---|---|\n| 1 | claim | CONFIRMED | checked source.py:1 |\n")
-    council(deleted_repo, "evidence", "build", "--run", deleted_run)
-    write_plan(deleted_run)
-    to_deliver(deleted_repo, "--run", deleted_run)
-    code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
-    check("close: current verifier-backed claim index does not warn",
-          code == 0 and warning not in err, err)
-    os.unlink(os.path.join(deleted_run, "verify-1.md"))
-    code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
-    check("close: a deleted verifier source warns even when remaining sources are older",
-          code == 0 and warning in err, err)
-    write(os.path.join(deleted_run, "verify-1.md"), "# Verification\n| # | Item | Verdict | Evidence |\n"
-          "|---|---|---|---|\n| 1 | claim | CONFIRMED | checked source.py:1 |\n")
-    council(deleted_repo, "evidence", "build", "--run", deleted_run)
-    os.unlink(os.path.join(deleted_run, "synthesis.md"))
-    code, _, err = council(deleted_repo, "run", "close", "--run", deleted_run)
-    check("close: a deleted synthesis source warns", code == 0 and warning in err, err)
+    saved = read(os.path.join(stale_run, "audit.md")) if os.path.isfile(os.path.join(stale_run, "audit.md")) else ""
+    check("close again with no audit.md: the index is built before the audit, so the saved audit has no out-of-date FAIL",
+          code == 0 and "a third claim" in read(index) and saved and "out of date" not in saved,
+          "\n".join([line for line in saved.splitlines() if "out of date" in line or "Claim" in line] + [err]))
+    write(os.path.join(stale_run, "verify-1.md"), "# Verification\n| # | Item | Verdict | Evidence |\n"
+          "|---|---|---|---|\n| 9 | nothing | CONFIRMED | x |\n")
+    index_before = read(index)
+    code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
+    check("close: sources the index can't be built from warn, naming evidence check, and leave the index as it was",
+          code == 0 and warning in err and "council evidence check --run " + os.path.basename(stale_run) in err
+          and read(index) == index_before, err)
+    os.unlink(os.path.join(stale_run, "verify-1.md"))
+    os.unlink(os.path.join(stale_run, "synthesis.md"))
+    code, _, err = council(stale_repo, "run", "close", "--run", stale_run)
+    check("close: an index with no synthesis beside it warns, naming the next step",
+          code == 0 and "claim index has no synthesis beside it" in err and "evidence check" in err, err)
+    paused_repo = new_repo(tmp, "paused-claims")
+    write(os.path.join(paused_repo, ".council", "council.config.md"), "# Council config\n")
+    _, paused_run, _ = council(paused_repo, "run", "open", "council-review")
+    paused_run = paused_run.strip()
+    write(os.path.join(paused_run, "synthesis.md"), "# Synthesis\n## Kept\n(none)\n## Cut\n(none)\n")
+    write_plan(paused_run)
+    code, _, err = council(paused_repo, "run", "close", "--status", "paused", "--run", paused_run)
+    check("close --status paused: nothing is built or said about the index — Challenge has not run",
+          code == 0 and "claim index" not in err and not os.path.exists(os.path.join(paused_run, "claims.jsonl")), err)
 
 @part("lifecycle")
 def runs_full_size_needs_go(tmp):
@@ -9869,41 +9768,10 @@ def models_per_role(tmp):
 
 
 @part("models")
-def estimates_per_role(tmp):
-    """`- estimates:` (issue 44): `route recommend --mode` budgets a mode's workers and verifiers at their roles'
-    estimates, each falling back to `- estimate per worker:`; and `council doctor` says which hooks are live (issue 69)."""
+def doctor_hooks_live(tmp):
+    """`council doctor` says which hooks are live (issue 69)."""
     repo = new_repo(tmp, "estimates")
-    config = os.path.join(repo, ".council", "council.config.md")
-    task = ("route", "recommend", "--task", "Change authentication and persistent user records")
-
-    def tokens(*extra, line=""):
-        write(config, "# Council config\n\n## Run preferences\n- agent cap: 10\n" + line)
-        code, out, err = council(repo, *task, *extra)
-        rows = {tuple(r.split("\t")[:3]): r.split("\t")[3:] for r in out.splitlines() if r.count("\t") >= 4}
-        return code, rows, err
-
-    code, rows, err = tokens("--mode", "implement", line="- estimates: builder=450k, converge=50k\n- estimate per worker: 100k\n")
-    workers = int(rows[("budget", "route", "selected-agents")][0]) - 1
-    reason = rows[("budget", "route", "estimated-tokens")][1]
-    check("route --mode implement: builders at the builder estimate, the verification at the converge check's, and the size line says so",
-          code == 0 and rows[("budget", "workers", "estimated-tokens")][0] == str(workers * 450000)
-          and rows[("budget", "verification", "estimated-tokens")][0] == "50000"
-          and "configured builder estimate" in reason and "450k per selected worker" in reason
-          and "configured converge estimate" in reason and "50k for verification" in reason, str(rows) + err)
-    code, rows, err = tokens("--mode", "review", line="- estimates: builder=450k\n- estimate per worker: 100k\n")
-    check("route --mode review: a role with no figure of its own takes the estimate per worker (the config's builder figure is not its)",
-          code == 0 and rows[("budget", "verification", "estimated-tokens")][0] == "100000"
-          and rows[("budget", "workers", "estimated-tokens")][0] == str(100000 * (int(rows[("budget", "route", "selected-agents")][0]) - 1))
-          and "configured estimate per worker" in rows[("budget", "route", "estimated-tokens")][1], str(rows) + err)
-    code, rows, err = tokens("--mode", "implement", line="- estimates: chair=900k, builder=3000k, converge=lots\n")
-    check("route --mode implement: a role or figure the line can't give is ignored, so the route's no-history 80k stands",
-          code == 0 and rows[("budget", "verification", "estimated-tokens")][0] == "80000", str(rows) + err)
-    code, rows, err = tokens(line="- estimates: builder=450k, converge=50k\n")
-    check("route with no --mode: the estimates line is not read, as before — every agent at the 80k default",
-          code == 0 and rows[("budget", "verification", "estimated-tokens")][0] == "80000", str(rows) + err)
-    code, out, err = council(repo, *task, "--mode", "build")
-    check("route --mode: a mode that is none of the five is refused, naming them",
-          code == 2 and "--mode must be one of: review, plan, implement, research, postgame" in err, out + err)
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- agent cap: 10\n")
 
     # Which hooks are live (issue 69): a hook that has fired in this session left a mark named after it.
     def hook(event, what):
@@ -9919,6 +9787,19 @@ def estimates_per_role(tmp):
           and hook("seat-gate", "not seen in this session (runs when a seat's agent stops)") in out
           and hook("agent-gate", "not seen in this session (runs before an agent is dispatched)") in out
           and "hooks: 3 of 5 live — the rest show as they fire" in out and "WARN" not in out, out + err)
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- agent cap: 1o\n"
+          "- estimates: builder=lots\n- estimate per worker: 5\n")
+    code, out, err = council(repo, "doctor")
+    lines = out.splitlines()
+
+    def said(key):
+        return next((line for line in lines if "`- %s:" % key in line), "")
+    check("doctor: a bad estimates line says the Chair can't price a run from it, never that a helper default stands in; "
+          "other settings keep the default wording",
+          "the Chair can't price a run from it" in said("estimates") and "default" not in said("estimates")
+          and "the Chair can't price a run from it" in said("estimate per worker")
+          and "the helper uses the setting's default" in said("agent cap"), out + err)
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- agent cap: 10\n")
     code, out, err = council(repo, "doctor", "hooks", "--line", "--session", "s-doc")
     check("doctor hooks --line: only the count, the SessionStart banner's line", code == 0 and out.strip().startswith("hooks: 3 of 5 live"), out + err)
     code, out, err = council(repo, "doctor", "hooks", "--session", "s-late")
@@ -9960,9 +9841,8 @@ def reports_refusals(tmp):
                         (("memory", "accept", "F-1", "--user-said", ""), "--user-said needs a value"),
                         (("memory", "select", "--json"), "memory select doesn't take --json"),
                         (("memory", "check", "--user-said", "x"), "memory doesn't take --user-said"),
-                        (("ledger", "advice", "0"), "usage: council ledger advice [how many recent runs"),
-                        (("ledger", "advice", "1", "2"), "usage: council ledger advice [N] [--json]"),
-                        (("ledger", "advice", "9999999"), "keep N under a million runs"),
+                        (("ledger", "advice"), "unknown command 'ledger advice' — removed in 1.2.0"),
+                        (("ledger", "1", "2"), "usage: council ledger [N]"),
                         (("ledger", "x"), "usage: council ledger [how many recent runs, default 10]"),
                         (("ledger", "--json"), "ledger doesn't take --json"),
                         (("map",), 'usage: council map status | map touch <dir>="<line>" …'),
@@ -9973,7 +9853,7 @@ def reports_refusals(tmp):
         check("%s: refused — %s" % (" ".join(words), want), code == 2 and want in err and not out, out + err)
     check("memory: no refusal touched the memory file", read(os.path.join(repo, ".council", "conventions.md")) == before)
     for words, want in ((("ledger",), "no ledger yet — every completed run adds its seats to"),
-                        (("ledger", "advice"), "no ledger yet"), (("map", "status"), "no map yet — write .council/map.md from the plugin's references/templates/map.md")):
+                        (("map", "status"), "no map yet — write .council/map.md from the plugin's references/templates/map.md")):
         code, out, err = council(repo, *words)
         check("%s: says what is missing, exit 0" % " ".join(words), code == 0 and want in out, out + err)
 

@@ -5,8 +5,7 @@ Your judgment, written down.
 ## Steps
 
 1. **Raw ledger first.** From every seat file's `## Index`, list every raw item — before merging
-   anything and before re-reading any source. Open an item's full text only when you need it to
-   judge that item.
+   anything and before re-reading any source. Open an item's full text only to judge that item.
 2. **Merge** by owner (your mode's owner rules) and by root cause. Keep every author:
    "from hunt#3, collina#1".
 3. **Conflict pass.** List the pairs that contradict each other or rest on incompatible "Assumes"
@@ -15,12 +14,9 @@ Your judgment, written down.
    here, or pattern-matching? Still-applicable settled memory entries are never findings.
 5. **Cut to your mode's cap.** Keep the cut list, with a reason for each item.
 6. **Write `<run>/synthesis.md`** in the format below. In review, plan and research, every kept
-   and cut claim carries a declared `state:` and `from:` as specified in
-   `references/run/evidence-model.md`; a `REPRODUCED` claim also names saved `proof:`. Do not upgrade
-   an inference to observation because several seats agreed. Post-game keeps its request-quote
-   format instead. Everything after this stage reads the file, not your memory of it.
-7. **For review, plan and research, build the provisional claim index** with
-   `council evidence build`. Missing verifier links at this stage are expected, never a pass.
+   and cut claim carries a declared `state:` and `from:` (`references/run/evidence-model.md`); a
+   `REPRODUCED` claim also names saved `proof:`. Several seats agreeing never upgrades an inference
+   to an observation. Everything after this stage reads the file, not your memory of it.
 
 ## synthesis.md
 

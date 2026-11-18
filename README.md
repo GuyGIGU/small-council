@@ -3,7 +3,7 @@
 **A council of expert reviewers for Claude Code, where every finding is proved before you see it.**
 
 [![CI](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml/badge.svg)](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.1.0-black.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-black.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![Any stack](https://img.shields.io/badge/stack-any-black.svg)](references/roster/expert-catalog.md)
 
@@ -43,6 +43,8 @@ check that `python --version` works in Git Bash (the Microsoft Store stub doesn'
    /plugin marketplace add GuyGIGU/small-council
    /plugin install small-council@small-council
    ```
+   That installs the `release` branch: only the files the plugin runs (about 2 MB). The evals, tests
+   and docs stay in this repository.
 2. **First review:** make a change, then `/council-review`. No setup needed first: in a project
    with no council it does a quick one (the default experts, nothing probed, kept on your machine)
    and starts. It proposes the experts and a token estimate; say go. A small change runs Solo (the
@@ -196,7 +198,10 @@ On **just me**, all of `.council/` stays local.
 - The pane and the line above the prompt are a Claude Code mod (Claude Code 2.1.287 or later; the
   desktop app from 2.1.286): they show in the terminal, the desktop app and VS Code, and never in
   `claude -p`.
-- Update the plugin from `/plugin` → Installed → small-council → Update now, then `/reload-plugins`.
+- Update with `claude plugin update small-council@small-council` (auto-update is off for this
+  marketplace), then start a new session or run `/reload-plugins`. An update arrives with each new
+  version. If yours came from an older install that copied the whole repository and the update doesn't
+  take, run `claude plugin marketplace remove small-council`, then the two install commands again.
   Your config, memory, map and records are kept. After an update, `council doctor` names the
   permission rules your project lacks; a `/council-init` refresh adds them and anything else the new
   version expects. The [CHANGELOG](CHANGELOG.md) says what changed and what to do first.

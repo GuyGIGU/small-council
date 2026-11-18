@@ -4,42 +4,33 @@ Give each seat exactly its slice, and each worker a budget.
 
 ## Steps
 
-1. **Match surfaces.** Use the Convene routing recommendation as a starting point, then map its
-   archetypes to the project's actual roster; a recommendation is never a substitute for the
-   project's Surface markers. For each roster seat, match its Surface markers (the config's roster
-   column: globs and greps in this repo's idioms) against the in-scope files from the index or the scope
-   inventory. The match is the seat's slice. A config without markers yet → judge by the seat's
-   lens, and suggest a council-init refresh (after a quick setup, the review's Deliver line is that
-   suggestion). A lens with several roster rows (`dodds-web`,
-   `dodds-admin`) is several seats, each with its own surface.
+1. **Match surfaces.** Start from Convene's size, then, for each roster seat, match its Surface
+   markers (the config's roster column: globs and greps in this repo's idioms) against the in-scope
+   files from the index or the scope inventory: the match is the seat's slice. No markers yet → judge by the seat's lens, and
+   suggest a council-init refresh (after a quick setup, the review's Deliver line is that
+   suggestion). A lens with several roster rows (`dodds-web`, `dodds-admin`) is several seats, each
+   with its own surface.
 2. **No orphans.** Every in-scope file belongs to at least one seat; an unowned file is a coverage
    gap. That includes the files the index names past the 80-file cap (listed at its end, with no
-   hunks): they are in scope, just not indexed. Leftovers go to the closest lens — structure takes
-   what nobody else claims.
+   hunks). Leftovers go to the closest lens — structure takes what nobody else claims.
 3. **Thin seats pair up.** A seat with an empty slice is not called, with its reason recorded. A seat
    with a thin slice (one or two files) shares one worker with a neighbour — UI with UX, backend with
    data — rather than getting its own agent.
 4. **Big slices split.** Over ~25 files → two workers (`hunt-a`, `hunt-b`), each with half.
 5. **Budgets from slice size:** ~15 tool calls for up to 5 files, ~30 for up to 15, ~45 for up to 25.
 6. **Count agents.** Workers + the verifiers Challenge will need must fit the agent cap
-   (context-core, Limits). Count agent runs, not seats: a seat you will run as a Workflow counts
-   every agent it starts — give it `budget/<slug>/agent-runs` in the plan. Give each of its agents a group of small,
-   same-kind parts (files, tasks, items), never one small part each. Over → pair more seats, or ask
-   the user. A diagnosis worker counts too; a re-dispatch or a resumed worker: context-core, Limits.
+   (context-core, Limits). Count agent runs, not seats: a seat run as a Workflow counts every agent
+   it starts (`references/run/workflow.md`, Assign). Over → pair more seats, or ask the user. A
+   diagnosis worker counts too.
 7. **Finish the run plan.** In `<run>/run-plan.tsv`, give every considered seat, the Chair too, its
-   rows (`references/run/run-plan.md`, Shape), with the reason. Copy the recommendation's compatible
-   risk, complexity band, uncertainty, cap, and verification level only after checking them against
-   what Prepare uncovered. If a recommendation changed, record the evidence and reason in the plan. Run
-   `council run plan check`; fix every error before going on.
-   If `- seat models: on` is set in `council.config.md`, a selected mapping or survey worker may get
-   `seat/<slug>/purpose = mapping` or `survey` and `seat/<slug>/model = sonnet` or `haiku`;
-   run-plan.md says what each purpose covers. A builder, review or verifier seat gets its role's
-   model from `- models:` (`references/run/models.md`); otherwise omit the model row (`inherit`). Keep
-   the Chair at `inherit`, and a verifier never weaker than its builder (the plan check enforces both;
-   at dispatch: Work). A model choice is a request for dispatch, not proof of which model ran.
+   rows (`references/run/run-plan.md`, Shape), with the reason. Check Convene's risk, complexity,
+   uncertainty, cap and verification level against what Prepare uncovered; a changed one gets its
+   evidence and reason in the plan. Run `council run plan check`; fix every error before going on.
+   A seat's model row: a mapping or survey worker under `- seat models: on`, or a builder, review
+   or verifier seat under `- models:` (run-plan.md, `references/run/models.md`); otherwise none
+   (`inherit`). A model choice is a request for dispatch, not proof of which model ran.
 8. **Record it.** `council seat <slug> queued` for every worker; `council seat <slug> skipped
-   note="<reason>"` for every seat not called. The helper refuses to queue or start a seat the valid
-   plan does not mark selected.
+   note="<reason>"` for every seat not called.
 
 ## Rules
 
@@ -51,4 +42,4 @@ Give each seat exactly its slice, and each worker a budget.
 ## Done when
 
 Every in-scope file has an owner, every worker has a slice and a budget, and `council run plan check`
-is clean. → `council state phase=brief` (the helper refuses this transition while the plan is invalid)
+is clean. → `council state phase=brief`

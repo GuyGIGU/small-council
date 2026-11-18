@@ -3,7 +3,7 @@
 A report is a claim; nothing used to check it against the diff. Each round of a build task (the first
 build, then each fix) ends with a report whose head the helper reads, and with that round's diff saved
 beside it. `council patch save <n>` checks one against the other before the verifier sees either
-(`docs/design/task-tree.md`, section 3; D38). The builder is a builder agent on seat `task-<n>`, or the Chair in a Solo build (D42).
+(https://github.com/GuyGIGU/small-council/blob/main/docs/design/task-tree.md, section 3; D38). The builder is a builder agent on seat `task-<n>`, or the Chair in a Solo build (D42).
 
 ## The head
 

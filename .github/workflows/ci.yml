@@ -179,3 +179,10 @@ jobs:
         run: |
           claude plugin validate .
           claude plugin test .
+
+      # What a user installs is the release tree (D45), not this checkout: Claude Code's own validator
+      # judges it as scripts/build_release.py writes it. evals/run_release.py (in every leg above) proves the rest.
+      - name: Validate the release tree
+        run: |
+          python3 scripts/build_release.py "$RUNNER_TEMP/release"
+          claude plugin validate "$RUNNER_TEMP/release" --strict

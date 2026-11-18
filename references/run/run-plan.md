@@ -4,11 +4,15 @@
 choices that used to live only in the Chair's prose before any context is distributed or worker is
 started. It is run-local and ignored by git with the rest of `.council/runs/`.
 
-`council route recommend --task "<summary>"` can suggest those decisions before a run opens. Its
-output is advisory and never writes this file or dispatches seats. The Chair maps suggested seat
-archetypes to the project's actual roster and records the final choices and their reasons here.
-The route's numeric complexity input is converted to a `low`, `medium`, or `high` band for this v1
-contract; do not put the numeric score in `assessment/run/complexity`.
+No command suggests these decisions: the Chair makes them at Convene, from the doctrine's size
+limits and the config's `- estimates:` line, and records them and their reasons here.
+
+- **Complexity** describes the amount of coordinated work, not the seriousness of failure. A
+  small security fix can be simple but high-risk.
+- **Risk** describes potential harm, reversibility and exposure. It governs how much independent
+  challenge is warranted; it is not a prediction that a defect exists.
+- **Uncertainty** describes missing information about intent, code or behavior. It can justify
+  deeper discovery without assuming that more workers will resolve the ambiguity.
 
 ## Shape
 
@@ -30,13 +34,14 @@ The required run rows are:
 - `budget/run/agent-cap` and `estimated-tokens`
 - optional `budget/run/chair-tokens`, the Chair's own share of `estimated-tokens` (its reading and
   judging, which no seat records); agents' tokens are compared with the rest, never with the whole
-- optional `budget/run/token-ceiling`, a positive whole-token limit the owner gave; copy it from
-  `route recommend --budget-tokens` when that flag was used
+- optional `budget/run/token-ceiling`, any positive whole number of tokens the owner gave as a
+  limit; a cost past it is the owner's to decide before a run opens (Convene, step 6)
 - `verification/run/level` (`self`, `independent`, or `adversarial`)
 
 Every considered seat has `seat/<slug>/disposition` (`selected` or `skipped`) and
 `seat/<slug>/role` (`chair`, `worker`, `verifier`, or `diagnosis` — a read-only worker on a stuck
-build task, counted as a worker's agent run). In a council-implement run each task's builder is a
+build task, counted as a worker's agent run). A Challenge verifier's seat is `verify-<n>`: its rows
+are `seat/verify-<n>/…`, the name `council seat verify-<n>` records it under. In a council-implement run each task's builder is a
 build seat, `task-<n>`, role `worker`; a Solo build selects none, and the Chair builds
 (`references/run/builder-loop.md`). Every selected seat has a context level
 (`minimal`, `focused`, or `full`) and a positive tool-call budget. The selected Chair is budgeted but

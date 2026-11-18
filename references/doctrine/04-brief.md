@@ -5,7 +5,7 @@ with the Write tool. A permission prompt here, before any fan-out, is expected: 
 `.council/` for the session, so the workers can write their files.
 
 Start from `council run plan show`: the brief's called and uncalled seats, context and budgets must
-agree with the validated plan. If a new seat is needed, update and re-check the plan before briefing it.
+agree with the validated plan. A new seat: update and re-check the plan before briefing it.
 
 ## The format — edge-ordered: what matters most goes at the top and the bottom
 
@@ -51,24 +51,19 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 - **Write for a worker with zero context.** If a fact isn't in the brief or the worker's reference
   doc, the worker doesn't have it.
 - **Keep the seat blocks exact.** `council collect` reads the `### <slug>` headings and their `ref:`,
-  `out:` and `cap:` lines. A paired worker gets one block that names both lenses, with one `- ref:`
-  line per reference doc.
+  `out:` and `cap:` lines. A paired worker gets one block that names both lenses.
 - **Cards first.** Before you write the seat blocks, write the card of each selected seat that has
   none (`<home>/cards/<slug>.md`) from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`, by
-  the rules in its comment: one seat at a time, each saved before the next. Setup writes none; a
-  seat's first run does (a Solo run briefs no seat, so writes none). The card is then the seat's
-  `ref:`: its principles translated to this project. Its `- doc:` line gives the full doc's absolute
-  path (the card's `source:` line names it relative to the plugin or repo). A worker that covers
-  several roster seats — a pair, or a split `hunt-a` — gets each seat's card and doc. A block links
-  only its own seats' cards and docs: never another seat's, and never the whole set. The roster is
-  the one place a surface maps to its doc: a seat's doc is its row's Reference cell, so a frontend
-  seat gets the frontend doc alone.
+  the rules in its comment. The card is then the seat's `ref:`: its principles translated to this
+  project. A worker that covers several roster seats — a pair, or a split `hunt-a` — gets each
+  seat's card and doc; a block links only its own seats' cards and docs, never another seat's or the
+  whole set. A seat's doc is its roster row's Reference cell (the one place a surface maps to its
+  doc), so a frontend seat gets the frontend doc alone.
 - **Memory in scope, never the whole file.** Before writing, `council memory select`: it reads the
   run's index, the seats Assign recorded and the mode; a run without a diff also passes its target
   paths, which add to those. Apply Convene's changed-instructions rule before quoting entries in
-  the bottom block; mark overridden preferences separately, not as binding rules, keeping observed
-  failures separate from settled rules. If it warns that entries can't be read or are left out,
-  tell the user.
+  the bottom block: mark overridden preferences apart from binding rules, keeping observed failures
+  apart from settled rules. If it warns that entries can't be read or are left out, tell the user.
 - **Hard rules go in word for word** — workers also load the project's CLAUDE.md, but the brief is
   the orders they must not miss.
 - **So do the user's decisions**: every one on record when you write the brief. `council collect`

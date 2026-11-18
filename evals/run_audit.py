@@ -537,8 +537,9 @@ with tempfile.TemporaryDirectory(prefix="council-audit-") as temporary:
           verdict == "FAIL" and words.startswith("0 of ") and "through a shell variable" in words
           and "by the full path" in words, words)
     verdict, words = item(out, "Helper output shown whole")
-    check("run 1's pattern: helper output cut by | tail and | head is named, call by call (the rule was words only)",
-          verdict == "FAIL" and "route recommend | head -30" in words and "seat | tail -1" in words, words)
+    check("run 1's pattern: helper output cut by | tail is named, call by call (the rule was words only); its "
+          "`route recommend | head -30`, a command 1.2.0 removed (D44), is read without a fault and is no helper call now",
+          verdict == "FAIL" and "seat | tail -1" in words and "route" not in words, words)
     verdict, words = item(out, "Helper refusals tried again")
     check("run 1's pattern: the refused status after close came in a chained call whose exit was sed's, so it is "
           "named as hidden, by the reason (D21), not judged by its words",

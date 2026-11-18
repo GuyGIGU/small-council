@@ -24,7 +24,6 @@ COMMANDS = {  # each module's main takes (args, the words after the command's ow
     "seat": "seat",
     "correct": "correct",
     "cap": "cap",
-    "route": "route",
     "gate": "gate",
     "gates": "gate_list",
     "changed": "changed",
@@ -61,13 +60,25 @@ USAGES = {  # a sub of `run` or `cap` with no row; run's is built from COMMANDS,
 }
 CAP_SUBS = ("", "check", "allow")
 TOP = {key.split(" ")[0] for key in COMMANDS}
+RETIRED = {  # a command 1.2.0 removed (D44), by its words, and what to do instead
+    "route": "size the run from the doctrine's size limits and the config's `- estimates:` line, record it in "
+             "run-plan.tsv, then: council run plan check",
+    "ledger advice": "council ledger [N] shows each seat's record over the last N runs; weigh it from there",
+    "evidence show": "the claims and their verdicts are in <run>/claims.jsonl, which council evidence check builds "
+                     "and checks; council status counts them",
+}
 
 
 def main(argv: list[str]) -> int:
     """Run one council command line; the exit code is the command's (2 for a refusal)."""
     _plain_streams()
     try:
-        args = cli.parse(argv)
+        try:
+            args = cli.parse(argv)
+        except cli.Refusal:
+            _retired([word for word in argv if not word.startswith("-")])   # its old flags are unknown now
+            raise
+        _retired(args.words)
         if args.flags and not args.words:
             raise cli.Refusal("a flag needs a command — see: council help")
         return _route(args, args.words[0], args.words[1:]) if args.words else _usage()
@@ -89,6 +100,13 @@ def _route(args: cli.Args, command: str, words: list[str]) -> int:
     name = COMMANDS[key]
     module = importlib.import_module("council.commands." + name)
     return int(module.main(args, words[1:] if command == "run" else words))
+
+
+def _retired(words: list[str]) -> None:
+    """Refuse a removed command as an unknown one, naming what to do instead (D19)."""
+    for key in (" ".join(words[:2]), " ".join(words[:1])):
+        if key in RETIRED:
+            raise cli.Refusal("unknown command '%s' — removed in 1.2.0: %s" % (key, RETIRED[key]))
 
 
 def _usage() -> int:

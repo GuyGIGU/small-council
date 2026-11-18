@@ -1,15 +1,19 @@
 """Project a council synthesis and blind-verifier tables into an evidence ledger.
 
 The Markdown remains authoritative. This is a deterministic, run-local index of its
-claims and links, not an independent assessment of whether a claim is true. `table --file`
+claims and links, not an independent assessment of whether a claim is true. `build` writes it;
+`check` builds it too, then checks it, and every command that needs it builds it (D44). `table --file`
 reads one verifier file the same way, for the seat check that runs when a verifier stops.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -422,9 +426,42 @@ def indexed(run: Path, action: str) -> dict[str, Any]:
     return fields
 
 
+def sourced(run: Path, several: bool) -> tuple[list[Claim], list[str]]:
+    """The claims synthesis.md and every verify-*.md give now, and what in them could not be indexed."""
+    claims, issues = synthesis(run)
+    return claims, issues + verifier_rows(run, claims, several)
+
+
+def write_index(run: Path, claims: list[Claim]) -> str:
+    """claims.jsonl written from the claims, only when it differs: its one writer. '' once the file holds the index,
+    else what couldn't be written and how to mend it; no caller's verdict waits on the write."""
+    output, data = run / "claims.jsonl", render(claims).encode("utf-8")
+    try:
+        if output.is_file() and not output.is_symlink() and output.read_bytes() == data:
+            with contextlib.suppress(OSError):   # dated now, so the audit's "older than a source" stays true
+                os.utime(str(output))            # (a read-only index that already matches has nothing to mend)
+        else:
+            paths.atomic_write(output, data, prefix=".claims-", suffix=".tmp", refuse_link=True)
+        return ""
+    except (OSError, paths.RecordError) as fault:
+        replacing = isinstance(fault, paths.RecordError) or getattr(fault, "filename2", None) is not None
+        where = ("make {} a plain writable file (or move it aside)".format(output) if replacing
+                 else "make the run folder {} writable".format(run))
+        return "the claim index could not be saved ({}): {}".format(getattr(fault, "strerror", None) or fault, where)
+
+
+def build(run: Path) -> tuple[list[Claim], str]:
+    """The run's claim index, built now from its sources for any command that needs it (D44), and write_index's line;
+    EvidenceError names each problem when the sources can't be indexed, and the index is left as it was."""
+    claims, issues = sourced(run, indexed(run, "build")["mode"] == "council-plan")
+    if issues:
+        raise EvidenceError("; ".join(issues))
+    return claims, write_index(run, claims)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("build", "show", "check", "table"))
+    parser.add_argument("action", choices=("build", "check", "table"))
     parser.add_argument("--run", type=Path)
     parser.add_argument("--file", type=Path, help="table: the one verifier file to read")
     args = parser.parse_args(argv)
@@ -440,43 +477,24 @@ def main(argv: list[str]) -> int:
     run = args.run.absolute()
     if run.is_symlink() or not run.is_dir():
         raise EvidenceError("run must be a real directory: " + str(run))
-    output = run / "claims.jsonl"
-    fields = indexed(run, args.action)
-    several = fields["mode"] == "council-plan"
-    if args.action == "show":
-        body = read_file(output)
-        expected, issues = synthesis(run)
-        issues += verifier_rows(run, expected, several)
-        if issues or body != render(expected):
-            raise EvidenceError("claims.jsonl is stale or source artifacts are invalid — run council evidence build")
-        claims = [json.loads(line) for line in lines_of(body) if line.strip()]
-        for claim in claims:
-            links = ",".join(item["ref"] for item in claim["verification"]) or "none"
-            own = claim["verification"] and all(item.get("self") for item in claim["verification"])
-            print("{} {}{} {} | {} @ {} | from {} | {}{} @ {}".format(
-                claim["id"], claim["disposition"], " (restored)" if claim.get("restored") else "", claim["claim"],
-                claim["evidence_state"], claim["citation"], ",".join(claim["provenance"]) or "none",
-                claim["verdict"], " (self-checked)" if own else "", links))
-        print("evidence: {} claim(s) -> {}".format(len(claims), output))
-        return 0
-    claims, issues = synthesis(run)
-    issues += verifier_rows(run, claims, several)
     if args.action == "build":
-        if issues:
-            raise EvidenceError("; ".join(issues))
-        paths.atomic_write(output, render(claims).encode("utf-8"), prefix=".claims-", suffix=".tmp", refuse_link=True)
-        print("evidence: {} claim(s) indexed -> {}".format(len(claims), output))
+        claims, unsaved = build(run)
+        if unsaved:
+            raise EvidenceError("{}, then council evidence build --run {}".format(unsaved, run.name))
+        print("evidence: {} claim(s) indexed -> {}".format(len(claims), run / "claims.jsonl"))
         return 0
-    recorded = read_file(output, required=False)
-    if recorded is None or recorded != render(claims):
-        issues.append("claims.jsonl is missing or stale — run council evidence build")
+    fields = indexed(run, args.action)
+    claims, issues = sourced(run, fields["mode"] == "council-plan")
+    unsaved = "" if issues else write_index(run, claims)   # the check builds the index itself (D44)
     issues += assess(run, claims, fields["self_check"])
+    if unsaved:
+        print("evidence: {} — the verdict comes from the index built now; then council evidence check --run {} "
+              "saves it".format(unsaved, run.name), file=sys.stderr)
     for issue in issues:
         print("evidence: " + issue)
     if issues:
         print("evidence: {} issue(s) across {} claim(s)".format(len(issues), len(claims)))
         return 1
-    print("evidence: {} claim(s), all required links present (truth still requires independent review)".format(
-        len(claims)))
+    print("evidence: %d claim(s), all required links present (truth still requires independent review)" % len(claims))
     return 0
 

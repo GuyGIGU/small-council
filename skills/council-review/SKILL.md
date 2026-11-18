@@ -24,16 +24,12 @@ Resolve the target before sizing:
 - **A path, commit range or module the user names:** exactly that.
 - **Default branch, nothing changed:** ask what to review.
 
-State the target as files, +/− lines and `base..head`.
-- Deliverable: `<home>/reviews/<YYYY-MM-DD>-<slug>.md`.
-- Cap: 15 findings.
+State the target as files, +/− lines and `base..head`. Deliverable:
+`<home>/reviews/<YYYY-MM-DD>-<slug>.md`. Cap: 15 findings.
 
-**No council yet** (Convene, step 2). Before sizing, tell the user in a line or two that this project
-has no council yet, so you'll do a quick setup and start the review now: the catalog's seats as it
-names them, no seat cards yet, no map, kept on this machine, no check probed. Say its limits once, as
-facts: no check was probed, so nothing in this review is checked by machine; the seats are the
-catalog's, and Assign picks them by the change in front of it, as always. Then run
-`council init scaffold --quick` and go on as usual, proposing the size and cost first.
+**No council yet** (Convene, step 2). Before sizing, read
+`${CLAUDE_PLUGIN_ROOT}/references/run/quick-setup.md` (what to tell the user first), then run
+`council init scaffold --quick` and go on, proposing the size and cost first.
 
 ## At Prepare
 
@@ -73,31 +69,18 @@ Index line: `<n> · <P1|P2|P3> · <principle> · <path:line[-line]> · <title>`
 
 ## At Judge
 
-- **Owner rules.** Keep the owner's item and cross-reference the rest:
-
-  | Topic | Owner |
-  |---|---|
-  | Visual design | UI |
-  | Component architecture | Frontend |
-  | Flows and screen states | UX |
-  | Cross-module structure | Refactoring |
-  | Server and runtime code | Backend |
-  | Concurrency, ordering, cancellation | Concurrency |
-  | Parsers, decoders, file formats, deserialisation | Untrusted input |
-  | Accessibility | Accessibility |
-  | Timeouts, retries, deploys, configuration in production | Operability |
-  | Prompt injection and streaming | LLM |
-  | Auth, secrets, injection, general application security | Security |
-  | Schema, migrations, data integrity | Data |
-  | Hot paths | Performance |
+- **Owner rules.** Keep the owner's item and cross-reference the rest. Topic → owner: visual design
+  → UI · component architecture → Frontend · flows and screen states → UX · cross-module structure →
+  Refactoring · server and runtime code → Backend · concurrency, ordering, cancellation → Concurrency
+  · parsers, decoders, file formats, deserialisation → Untrusted input · accessibility →
+  Accessibility · timeouts, retries, deploys, configuration in production → Operability · prompt
+  injection and streaming → LLM · auth, secrets, injection, general application security → Security
+  · schema, migrations, data integrity → Data · hot paths → Performance.
 
   Tests complement the other seats; they never duplicate them. A recast seat keeps the lens of the
   seat it came from. When a topic's owner isn't seated, its nearest seated neighbour owns it.
-- **Grounding-gate failures are findings**, each with the exact message and location:
-  - build or type error → P1;
-  - failing test → P1;
-  - lint error → P2;
-  - lint warning → P3.
+- **Grounding-gate failures are findings**, each with the exact message and location: a build or
+  type error or a failing test → P1; a lint error → P2; a lint warning → P3.
 - **Pre-existing problems** go in their own section, outside the 15 — unless they're P1 and this
   change makes them reachable.
 
@@ -107,14 +90,10 @@ Write `<home>/reviews/<YYYY-MM-DD>-<slug>.md` with the doctrine's frontmatter an
 line, then:
 - **Target:** files, +/− lines, `base..head`.
 - **Council:** who ran (and what each checks), who wasn't called and why, and who found nothing.
-- **Findings, P1 → P3.** Each gives:
-  - the title and `path:line`;
-  - `<what it checks> (<Seat>) × Carmack — <principle>`;
-  - its origin;
-  - its evidence state and synthesis id (a restored cut claim keeps its `C` id), so the citation
-    and verifier row can be traced;
-  - what's wrong, the consequence and the fix;
-  - the verifier's verdict.
+- **Findings, P1 → P3**, each with its title and `path:line`; `<what it checks> (<Seat>) × Carmack —
+  <principle>`; its origin; its evidence state and synthesis id (a restored cut claim keeps its `C`
+  id), so the citation and verifier row can be traced; what's wrong, the consequence and the fix;
+  the verifier's verdict.
 - **Pre-existing problems nearby:** one line each.
 - **Refuted by verification:** one line each — what was claimed, and why it's wrong.
 - **Not covered:** anything the council didn't look at.
@@ -144,6 +123,4 @@ setup, that yes runs `/council-init` first (Convene, step 2), without offering i
 
 ## Notes
 
-- No code in the review.
-- No opening flattery.
-- Teach, don't just flag.
+No code in the review. No opening flattery. Teach, don't just flag.

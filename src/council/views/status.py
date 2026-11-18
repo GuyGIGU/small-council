@@ -209,7 +209,8 @@ def evidence_of(snap: Snap, run_path: Path) -> list[dict[str, str]]:
     if verifies:
         add("Verifier reports ({})".format(verifies), rel(run) + "/verify-*.md")
     if claims.get("stale"):
-        add("Claims index out of date", rel(run / "claims.jsonl"))
+        add("Claims index out of date — council evidence check --run {} updates it".format(run.name),
+            rel(run / "claims.jsonl"))
     elif claims["total"]:
         verdicts = ", ".join("{} {}".format(n, v.lower()) for v, n in claims["by_verdict"].items())
         add("Claims and their verdicts ({})".format(verdicts), rel(run / "claims.jsonl"))

@@ -4,6 +4,57 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-11-18
+
+**In short:** an install holds only what runs (about 2 MB, not the whole repository), a review reads
+less before it starts, and three commands the method did not need are gone.
+
+### Before you update
+- **The install source changed.** The plugin now installs from the repository's `release` branch.
+  Run `claude plugin update small-council@small-council` and start a new session. If the update
+  finds nothing, remove and add the marketplace again: `claude plugin marketplace remove
+  small-council`, `claude plugin marketplace add GuyGIGU/small-council`, `claude plugin install
+  small-council@small-council`.
+- **Three commands are gone.** Each is refused with what to do instead, so a script or a habit that
+  still calls one stops with a clear line.
+- A run opened on 1.1.0 can be finished on 1.2.0.
+
+### Removed
+- **`council route recommend`** (supersedes D31 through D44). The Chair sizes a run from the size
+  limits, the roster and the config's estimates: agents × the estimate for each, plus about 20k for
+  itself. No command prints a cost figure. The agent cap still counts every agent.
+- **`council ledger advice`.** `council ledger [N]` stays, and gains two columns, `judged` and
+  `counted`: the two facts the roster bar needs (3 judged runs, 15 items, at most 5 from any one
+  run). The table weighs nothing; the Chair does, and the user decides.
+- **`council evidence show`.** `claims.jsonl` in the run folder is the index; read it.
+
+### Changed
+- **`council evidence check` builds the claim index itself** (D44), and so do `council memory
+  propose` and the close of a complete run. No one runs `council evidence build` first to make
+  another command work. When the index can't be saved, the check still gives its verdict and says in
+  one line which file or folder to make writable.
+- **What ships is the `release` branch** (D45): the skills, agents, hooks, references, helper and
+  licence files, about 250 files and 2 MB. The tests, evals and docs stay in the repository. One
+  script builds the tree, checks it stands alone and publishes it, and it refuses a version that is
+  not newer than the one published.
+- **A review loads less** (D46, superseding D13's figure only): the method a review reads before it
+  touches the project went from 56,666 bytes to under 50,000. Nothing was dropped: rules for other
+  modes, for resuming a run and for the quick setup moved to references the method names at the
+  moment they are needed (`references/run/workflow.md`, `resume.md`, `quick-setup.md`). The three
+  agent contracts are a little shorter too.
+- **Session start names `references/run/resume.md`** wherever a run is to be carried on, so the
+  rules for a paused or interrupted run are one step away.
+- `council status` and the closing card name `council evidence check` when the claim index is out of
+  date.
+- `council doctor` on a bad `- estimates:` or `- estimate per worker:` line says what it costs: the
+  Chair can't price a run from it.
+
+### Fixed
+- Re-closing a complete run that had no saved audit built the claim index after the audit, so the
+  audit could call a current index out of date. Cause: the two steps ran in the wrong order.
+- With the route gone, the Chair's own share of about 20k was left out of the estimate, so a run on
+  budget read as over it. Cause: the route had added that share and nothing else did.
+
 ## [1.1.0] — 2026-11-18
 
 **In short:** a first review needs no setup, the full setup is mostly one command, and seat cards are

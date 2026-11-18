@@ -75,11 +75,13 @@ with tempfile.TemporaryDirectory() as folder:
     write(run, "verify-1.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | Expiry skipped | CONFIRMED | current path via src/auth.py:4 |\n")
     if BASH:
-        built = invoke(run, "build", via_cli=True)
         checked = invoke(run, "check", via_cli=True)
+        check("CLI: a check after the verifier wrote builds the index itself and passes — no evidence build first",
+              checked.returncode == 0 and claims(run)[0]["verdict"] == "CONFIRMED", checked.stdout + checked.stderr)
         shown = invoke(run, "show", via_cli=True)
-        check("CLI builds, checks and shows a verified run", built.returncode == 0 and
-              checked.returncode == 0 and shown.returncode == 0 and "CONFIRMED" in shown.stdout)
+        check("CLI: evidence show is refused as removed in 1.2.0, naming claims.jsonl and evidence check",
+              shown.returncode == 2 and not shown.stdout and "unknown command 'evidence show'" in shown.stderr
+              and "claims.jsonl" in shown.stderr and "council evidence check" in shown.stderr, shown.stderr)
     else:
         check("CLI unavailable without bash", True)
         invoke(run, "build")
@@ -116,10 +118,10 @@ with tempfile.TemporaryDirectory() as folder:
 
     write(run, "verify-1.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | Expiry skipped | REFUTED | upstream guard at src/auth.py:2 |\n")
-    check("changed verifier makes ledger stale", invoke(run, "check").returncode == 1)
-    check("show refuses a stale ledger", invoke(run, "show").returncode == 2)
-    invoke(run, "build")
     kept_refuted = invoke(run, "check")
+    check("a changed verifier is read by the check itself: the index holds its new verdict, and no stale snapshot "
+          "is what fails", claims(run)[0]["verdict"] == "REFUTED" and "stale" not in kept_refuted.stdout,
+          kept_refuted.stdout)
     check("a kept claim its verifier REFUTED fails the check, naming the two ways out",
           claims(run)[0]["verdict"] == "REFUTED" and kept_refuted.returncode == 1 and
           "claim 1: kept, but its verifier REFUTED it" in kept_refuted.stdout and "## Cut" in kept_refuted.stdout and
@@ -138,6 +140,11 @@ with tempfile.TemporaryDirectory() as folder:
     write(run, "verify-2.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | Expiry skipped | CONFIRMED | opposite trace |\n")
     check("conflicting verifier rows cannot silently confirm", invoke(run, "build").returncode == 2)
+    before = (run / "claims.jsonl").read_bytes()
+    conflicted = invoke(run, "check")
+    check("a check whose sources can't be indexed names the problem and leaves the index as it was",
+          conflicted.returncode == 1 and "multiple verifier rows" in conflicted.stdout and
+          (run / "claims.jsonl").read_bytes() == before, conflicted.stdout)
     (run / "verify-2.md").unlink()
     write(run, "verify-1.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 9 | Orphaned finding | CONFIRMED | stray proof |\n| 1 | Expiry skipped | REFUTED | guarded |\n")
@@ -248,8 +255,8 @@ with tempfile.TemporaryDirectory() as folder:
     restored = invoke(confirmed, "build")
     check("a restored claim moves to Kept with its id: checked as kept, recorded as restored",
           restored.returncode == 0 and invoke(confirmed, "check").returncode == 0 and
-          claims(confirmed)[1]["disposition"] == "kept" and claims(confirmed)[1].get("restored") is True and
-          "C1 kept (restored)" in invoke(confirmed, "show").stdout, restored.stdout + restored.stderr)
+          claims(confirmed)[1]["disposition"] == "kept" and claims(confirmed)[1].get("restored") is True,
+          restored.stdout + restored.stderr)
     write(confirmed, "synthesis.md", "# Synthesis\n## Kept\n" + kept + "## Cut\n" +
           cut.format("still-cut: the user ruled it out of scope · "))
     invoke(confirmed, "build")
@@ -293,8 +300,7 @@ with tempfile.TemporaryDirectory() as folder:
     built = invoke(solo, "build")
     check("solo: the Chair's own check is a recorded verdict the index labels self-checked, and the check passes",
           built.returncode == 0 and invoke(solo, "check").returncode == 0 and
-          all(c["verification"][0].get("self") is True for c in claims(solo)) and
-          "(self-checked)" in invoke(solo, "show").stdout, built.stdout + built.stderr)
+          all(c["verification"][0].get("self") is True for c in claims(solo)), built.stdout + built.stderr)
     squad = fresh(folder, "squad-self", "council-review", plan_syn, {"verify-self.md": own})
     invoke(squad, "build")
     alone = invoke(squad, "check")
@@ -337,6 +343,67 @@ with tempfile.TemporaryDirectory() as folder:
     check("verifier table: a later summary table is left alone, and a | inside backticks stays in its cell",
           table.returncode == 0 and built.returncode == 0 and claims(tail)[0]["verdict"] == "CONFIRMED",
           table.stdout + table.stderr + built.stdout + built.stderr)
+
+    # The check's verdict never waits on writing the index: an index it can't save is one line naming what to mend.
+    locked = fresh(folder, "unsaved", "council-review",
+                   "# Synthesis\n## Kept\n1 · P1 · Principle 1 · src/auth.py:4 · Expiry skipped · state: OBSERVED · from: hunt#3\n",
+                   {"seats/hunt.md": "# Hunt\n## Index\n3 · P1 · Principle 1 · src/auth.py:4 · Expiry skipped\n",
+                    "verify-1.md": "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+                                   "| 1 | Expiry skipped | CONFIRMED | src/auth.py:4 skips it |\n"})
+    invoke(locked, "build")
+    older = (locked / "synthesis.md").stat().st_mtime - 30
+    os.utime(str(locked / "claims.jsonl"), (older, older))    # its sources saved again since, with the same claims
+    invoke(locked, "check")
+    check("check: an index that already matches is dated now, so the audit reads it as no older than its sources",
+          (locked / "claims.jsonl").stat().st_mtime_ns >= (locked / "synthesis.md").stat().st_mtime_ns)
+    built_text = (locked / "claims.jsonl").read_bytes()
+    os.chmod(str(locked / "claims.jsonl"), 0o444)
+    same = invoke(locked, "check")
+    check("check: an index that already matches is not written again — a read-only one passes, as it was",
+          same.returncode == 0 and not same.stderr and (locked / "claims.jsonl").read_bytes() == built_text,
+          same.stdout + same.stderr)
+    write(locked, "verify-1.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | Expiry skipped | REFUTED | src/auth.py:4 checks it |\n")
+    differs = invoke(locked, "check")       # Windows can't replace a read-only file; POSIX renames over it and saves
+    step = ("could not be saved" in differs.stderr and "evidence check --run unsaved" in differs.stderr and
+            "WinError" not in differs.stderr) if os.name == "nt" else not differs.stderr
+    check("check: an index it can't save still gets its verdict and exit code, plus the step, no raw OS error",
+          differs.returncode == 1 and "REFUTED" in differs.stdout and step, differs.stdout + differs.stderr)
+    os.chmod(str(locked / "claims.jsonl"), 0o644)
+    (locked / "claims.jsonl").unlink()
+    (locked / "claims.jsonl").mkdir()
+    folder_index = invoke(locked, "check")
+    refused = invoke(locked, "build")
+    check("check: a folder where the index goes gets the verdict and a line naming it; build refuses with the step",
+          folder_index.returncode == 1 and "REFUTED" in folder_index.stdout and
+          "claims.jsonl a plain writable file" in folder_index.stderr and refused.returncode == 2 and
+          "then council evidence build --run unsaved" in refused.stderr and "Errno" not in refused.stderr,
+          folder_index.stdout + folder_index.stderr + refused.stderr)
+    (locked / "claims.jsonl").rmdir()
+    sys.path.insert(0, str(ROOT / "src"))
+    from council.commands import evidence as engine   # noqa: E402  (the temp file's creation failing, on any OS)
+    import tempfile as made                            # noqa: E402
+
+    def unwritable(*_args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(Path(kwargs.get("dir", ".")) / ".claims-x.tmp"))
+    real, made.mkstemp = made.mkstemp, unwritable
+    try:
+        line = str(engine.write_index(locked, []))
+    except OSError as raw:
+        line = "raw: " + str(raw)
+    finally:
+        made.mkstemp = real
+    check("an unwritable run folder (the temp file fails first) is named as the folder to make writable",
+          "make the run folder" in line and "Permission denied" in line and not (locked / "claims.jsonl").exists(),
+          line)
+    if os.name != "nt" and hasattr(os, "geteuid") and os.geteuid() != 0:
+        os.chmod(str(locked), 0o555)
+        try:
+            shut = invoke(locked, "check")
+        finally:
+            os.chmod(str(locked), 0o755)
+        check("POSIX: a check in a read-only run folder still judges, naming the folder to make writable",
+              shut.returncode == 1 and "make the run folder" in shut.stderr, shut.stdout + shut.stderr)
 
 for name, okay, detail in results:
     print("[{}] {}".format("PASS" if okay else "FAIL", name))
