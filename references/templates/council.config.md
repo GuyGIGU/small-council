@@ -1,0 +1,116 @@
+# Council config — <project>
+<!-- Written by council-init. Hand edits are welcome: any section you add or change is yours and
+     council-init never overwrites it (a re-run merges and shows a diff). Paths here must point inside
+     the repo or at the plugin's references/ — never at files elsewhere on one machine. -->
+last-verified: <YYYY-MM-DD> @ <short-sha>
+<!-- Replace the next line with the whole line `council fingerprint` prints; never edit it by hand. -->
+stack-fingerprint: <hash> — manifests: <…> · languages: <…>
+
+## Stack
+<2–5 lines: languages, frameworks, data stores, surfaces (UI / API / engine / CLI / game), runtime and
+deploy target, domain. Name the one thing that must never break.>
+
+## Run preferences
+- approve without asking: up to squad
+- agent cap: 10
+- seat models: off
+- models: builder=inherit, review=inherit, verifier=inherit
+- build tier: light
+- checking: one per batch
+- open items: ask
+- pushes: on
+- sharing: team
+<!-- Add `- notifications: off` here to suppress `council status --line` and council phone alerts.
+     Without that line, four owner-facing moments may notify when PushNotification is available:
+     a blocking question, a stopped build, a cap/ceiling stop, and run completion. -->
+<!-- "approve without asking": solo | squad | full — a /command or instruction to proceed without
+     further confirmation approves up to this size. Full needs explicit size-and-cost approval;
+     approval already given carries forward. "agent cap": agents per run, verifiers included.
+     "build tier": light | full — how much proof a build records (references/build-proof.md, Tiers):
+     light records a before/after pair for risky tasks only; full records one for every task.
+     Missing means light. Yours to change.
+     "checking": one per batch | per task — how many checker agents a build dispatches
+     (references/build-proof.md, Checking). One per batch: builders and machine gates for every task,
+     then a single verifier at the end of the build; the agent gate refuses a second without your go.
+     Per task: a verifier per risky task and per batch of ordinary ones. Missing means one per batch.
+     "open items": ask | fix now — what a build does with what it leaves open (council-implement,
+     At Deliver). Ask: a fix-now-or-later question. Fix now: one line each in the receipt (what, rough
+     time, rough tokens), fixed without asking. Commit, push and PR stay questions. Missing means ask.
+     "pushes": on | off | off until <YYYY-MM-DD> — off holds push and PR (a team freeze): a build
+     commits and stops, and the bash gate refuses git push and gh pr create (COUNCIL_ALLOW_PUSH=1 git
+     push … on your word). From the date on it reads as on. Missing means on. `council pushes` shows it.
+     "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.
+     "models": builder=, review=, verifier= — inherit (the session's model), fable, opus, sonnet or
+     haiku for each role's agents; a role left out, or no line, means inherit. council-init proposes
+     a split from its own model (references/run/models.md); a verifier is never on a weaker model
+     than the builder it checks, and the Chair stays on the session's model.
+     "sharing": team | just me — team commits .council/ with the project; just me keeps it on this
+     machine (git's own exclude list ignores it, and CLAUDE.md gets no note), so teammates never meet
+     the council. `council sharing just-me` / `council sharing team` switches it; missing means team.
+     "estimates": review=, plan=, builder=, verifier=, converge= — tokens (e.g. builder=450k) for one agent
+     of each role; converge is a build's verifier. A role left out takes "estimate per worker".
+     Both are yours to set by hand; the Chair prices a run with them at Convene: each agent at its
+     role's figure, 80k without one, plus about 20k for itself. -->
+
+## Roster
+Chair: John Carmack — always on; the synthesis filter ("a real problem in this codebase at this scale,
+or pattern-matching?"). Not a seat.
+
+| Seat | Slug | Lens | Surface | Reference | Recast note |
+|---|---|---|---|---|---|
+| Troy Hunt | hunt | Security | `**/auth/**`, `token`, `subprocess`, `open(` | references/security.md | kept |
+| Martin Fowler | fowler | Structure / refactoring | whatever no other seat claims | references/refactoring.md | kept — never dropped |
+| Kent Beck | beck | Tests | `tests/**`, `*_test.*`, `*.spec.*` | references/quality-testing.md | kept — never dropped |
+| <Seat> | <slug> | <lens> | <2–6 globs or words in this repo's idioms> | references/<file>.md or .council/refs/<file>.md | <why kept, or recast from whom> |
+
+<!-- Surface: where this seat's lens lives in THIS repo — assignment matches it against the change.
+     No "|" inside a cell (it's a table); list alternatives separately.
+     Dropped seats (and why): <Seat> — <reason>. Recast before you drop: most "no surface" seats have an
+     analogous surface (any persistent store → data integrity; any computation engine → numerical
+     correctness). -->
+
+## Gates
+| Gate | Command | Run at | Mandatory | Checked | Probe | Needs | Side effects |
+|---|---|---|---|---|---|---|---|
+| tests | `<command>` | grounding, verify | yes | ✓ <date> | `<its fast dry-run, e.g. --collect-only>` · broken: fail, exit <n> | <tools, env vars, services> | none |
+| lint | `<command>` | verify | no | ✓ <date> | `<command> --version` | — | none |
+| build | `<command>` | verify | yes | ✗ <date>: <why it couldn't run here> | `<probe>` | <an SDK, a device> | writes the tree |
+
+<!-- The council helper runs these (`council gate <name>`, `council gate --all --at verify`) and judges
+     them by exit code. Never put `| tail`, `| head` or `| grep` in a gate command.
+     Commands run under bash (Git Bash on Windows), as written: bash drops a \ outside quotes, so
+     write paths with / or quote them (cmd /c ".\run.bat").
+     Probe: the exact dry-run council-init ran — for a mandatory gate, also its run with the tool
+     deliberately broken, which must fail (a gate that passes without its tool fakes a green).
+     Needs: tools, env vars, credentials, hardware.
+     Covers (an optional column): the paths the gate checks, as git pathspecs from the code root,
+     comma separated — e.g. a row `| ui | ... | none | app/ui/, *.kt |` under a `| Covers |` header.
+     Empty means the whole tree. `council gate --all` doesn't rerun a gate when nothing under its paths
+     changed since its last green in the run; the receipt lists it as not rerun.
+     Run at: grounding · verify · both · manual (by name only). Mandatory: yes · no.
+     Checked: ✓ <date> · ✗ <date>: <why it can't run here> · ✗ not probed: <why> (init didn't dry-run it).
+     The helper names any other word in these three cells rather than guessing what it means.
+     Side effects: none · writes the tree · network · cost · hardware · deploy · credentials.
+     `council gate --all` skips a gate marked ✗ and any gate whose side effects or needs involve
+     cost, hardware, deploys or credentials — those run only by name, with the user's go-ahead.
+     Every gate runs under a time limit: the largest of three times its green baseline time in the
+     run, `- gate time limit: <time>` (e.g. 20m) under Run preferences, and 120 s; with neither, 9
+     minutes for a command given after --, 30 for a configured gate. A gate past it is stopped and
+     recorded as TIMED OUT; add or raise the line when a check is slower — it counts from the next
+     call on, mid-run too. -->
+
+## Hard rules
+- <non-negotiables every worker and builder obeys, e.g. "never write to the production database",
+  "engine output must stay byte-identical unless a task says otherwise">
+
+## Memory
+- conventions: .council/conventions.md
+- map: .council/map.md
+- cards: .council/cards/ (a seat's card, written the first time a run selects it)
+- ledger: .council/ledger.tsv (each completed run adds a row per seat)
+<!-- Add `- memory budget: <n> KB` here (a whole number from 1 to 1024; 25 KB when it is left out): past it,
+     run open, a complete close, council status and council doctor say the memory has grown past what every
+     run should read, and council memory tidy lists the merges and retirements it can find. -->
+
+## Notes
+<free-form, owned by the user>

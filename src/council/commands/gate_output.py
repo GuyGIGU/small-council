@@ -1,0 +1,149 @@
+"""What a gate's saved output says beyond its exit code: that no test ran, which tests failed, that cmd opened a
+prompt and ran nothing, that `python -m <tool>` had no such tool. Each reads the output as bin/council's awk,
+grep and sed did, line by line, a carriage return dropped where they dropped it."""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from council.records import bytewise, paths
+
+SPACE = " \t\n\v\f\r"
+RAN = re.compile(r"(running|ran)[ \t]+[1-9][0-9]*[ \t]+tests?([^a-z]|$)|tests run:[ \t]*[1-9]"
+                 r"|(^|[^0-9])[1-9][0-9]*[ \t]+(passed|passing)([^a-z]|$)")
+NONE_SKIPPED = re.compile(r"(skip|fail|error|ignor|pend)[a-z]*:?[ \t]*0 tests?")
+NONE_RAN = re.compile(r"collected 0 items|no tests ran|ran 0 tests|no tests found|no test files|no tests to run"
+                      r"|(^|[^0-9.])0 passing")
+ZERO_TESTS = re.compile(r"(^|[^0-9.])0 tests?([ \t]+(ran|run|found|collected|executed|in)([^a-z]|$)"
+                        r"|[ \t]*[.,;]|[ \t]*$)")
+ALL_SKIPPED = re.compile(r"(^|[^0-9.])[1-9][0-9]*[ \t]+skipped([,;)]|[ \t]+in[ \t]|[ \t]*$|[ \t]*=)")
+UNITTEST_RAN = re.compile(r"ran[ \t]+([0-9]+)[ \t]+tests?[ \t]+in[ \t]")
+UNITTEST_SKIPS = re.compile(r"^ok[ \t]+\((?:[a-z_]+=[0-9]+,[ \t]*)*skipped=([0-9]+)")
+TEST_RUNNERS = ("pytest", "jest", "mocha", "vitest", "rspec", "phpunit", "unittest", "ctest ", " go test", "cargo test",
+                "npm test", "npm run test", "yarn test", "pnpm test", "dotnet test", "mvn test", "gradle test")
+ANSI = re.compile("\033\\[[0-9;]*[A-Za-z]")
+FAILURE_LINES = (
+    (re.compile(r"[ \t]*(FAILED|ERROR)[ \t]+[^ \t]"), "rest"),
+    (re.compile(r"[ \t]*---[ \t]+(FAIL|ERROR):[ \t]+[^ \t]"), "rest"),
+    (re.compile(r"[ \t]*(FAIL|ERROR):[ \t]+[^ \t]"), "rest"),
+    (re.compile("[ \t]*(✖|✗|✕|×|❌)[ \t]+[^ \t]"), "rest"),
+    (re.compile(r"[ \t]*not ok[ \t]+[0-9]+[ \t]*-?[ \t]*"), "after"),
+    (re.compile(r"[ \t]*test[ \t]+[^ \t]+[ \t]+\.\.\.[ \t]+(FAILED|failed)"), "second"),
+    (re.compile(r"[ \t]*[^ \t]+[ \t]+FAILED([ \t]|$)"), "first"),
+    (re.compile(r"[ \t]*FAIL[ \t]+[^ \t]"), "rest"),
+)
+MISSING_MODULE = re.compile(r"^.*: No module named ([A-Za-z0-9_.]+)[ \t\n\v\f\r]*$")
+
+
+def text(path: str | Path) -> str:
+    """A saved output's text, its bytes kept (surrogateescape); '' when it can't be read."""
+    return (paths.contents(path) or b"").decode("utf-8", "surrogateescape")
+
+
+def clip(line: str, width: int) -> str:
+    """bytewise.clip of a gate's UTF-8 text: a line past width cut at its last space within it, then ' …'."""
+    return bytewise.clip(line, width, "…")
+
+
+def zero_tests(content: str) -> str:
+    """The line of a passing gate's output that says no test ran, clipped to 120 — unless another line shows
+    tests did run (go's "ok <package>", cargo's "running 5 tests", maven's "Tests run: 5", "5 passed"). Every test
+    skipped is none ran: pytest's "12 skipped in 0.03s" or jest's "4 skipped, 4 total" with no passed count, and
+    unittest's "OK (skipped=3)" after "Ran 3 tests"; some skipped and some passed is a run."""
+    ran, hit, skipped, unit = False, None, None, [0, -1]
+    for line in bytewise.records(content, fold=False):
+        line = line.replace("\r", "")
+        lower = line.lower()
+        if re.match(r"ok[ \t]+[^ \t]+\t", lower) and "[no test" not in lower:
+            ran = True
+        counted, skips = UNITTEST_RAN.match(lower), UNITTEST_SKIPS.search(lower)
+        unit[0] = int(counted.group(1)) if counted else unit[0]
+        if skips:
+            unit[1], skipped = int(skips.group(1)), line
+        if RAN.search(lower) and not counted:
+            ran = True
+        if NONE_SKIPPED.search(lower):               # none skipped is not none ran
+            continue
+        if hit is None and (NONE_RAN.search(lower) or ZERO_TESTS.search(lower)):
+            hit = line
+        if skipped is None and ALL_SKIPPED.search(lower):
+            skipped = line
+    found = (skipped if unit[1] == unit[0] else "") if unit[0] else hit or skipped   # unittest counted its tests
+    return clip(found, 120) if found and not ran else ""
+
+
+def _norm(name: str) -> str:
+    name = re.sub(r"[ \t]*\([0-9][0-9.,]*[ \t]*(ms|s|sec|secs|seconds)\)[ \t]*$", "", name, count=1)
+    name = re.sub(r"[ \t]+-[ \t].*$", "", name, count=1)       # pytest appends " - AssertionError: …"
+    return re.sub(r"^[ \t\[]+|[ \t,.:;\]]+$", "", name)
+
+
+def failure_ids(content: str) -> list[str]:
+    """The failing tests a runner's output names, in order, once each, run times dropped: pytest, go, unittest,
+    node --test, jest/vitest, TAP and cargo. A log line naming a moment is no test."""
+    found: list[str] = []
+    for raw in bytewise.records(content, fold=False):
+        line = ANSI.sub("", raw.replace("\r", ""))
+        for rule, take in FAILURE_LINES:
+            match = rule.match(line)
+            if not match:
+                continue
+            fields = re.split(r"[ \t\n]+", raw.strip(" \t\n"))
+            name = {"rest": line[match.end() - 1:], "after": line[match.end():],
+                    "second": fields[1] if len(fields) > 1 else "", "first": fields[0]}[take]
+            name = _norm(name)
+            if name and not re.match(r"[0-9]+[-:/.][0-9]", name) and name not in found:
+                found.append(name)
+            break
+    return found
+
+
+def never_ran(content: str) -> bool:
+    """cmd.exe that never got its /c switch: its version banner first, a prompt last, and nothing else ran."""
+    found = bytewise.records(content, fold=False)
+    if not content or not found:
+        return False
+    last = found[-1].replace("\r", "")
+    return found[0].startswith("Microsoft Windows [Version") and re.search(r">[ ]*$", last) is not None
+
+
+def missing_module(content: str) -> str:
+    """The module `python -m <module>` could not find, when Python's one line saying so is all a gate printed
+    besides `council changed`'s own lines; '' otherwise (a traceback's ModuleNotFoundError is a check that ran)."""
+    said = [line for line in bytewise.records(content, fold=False)
+            if line.strip(SPACE) and not line.startswith("changed: ")]
+    if len(said) != 1:
+        return ""
+    found = MISSING_MODULE.match(said[0])
+    return found.group(1).replace("\r", "") if found else ""
+
+
+def could_not_run(code: int, content: str) -> str:
+    """Why a gate's command could not run, as council gate says it ('' when it ran and its exit is the check's): the
+    code root out of reach (97), a command not found (127), Python with no module for `python -m` (exit 1, that line
+    alone), cmd that opened its prompt and ran nothing."""
+    if code == 97:
+        return "the code root could not be entered"
+    if code == 127:
+        return "a command it calls was not found"
+    module = missing_module(content) if code == 1 else ""
+    if module:
+        return "Python has no module " + module
+    return "cmd opened its prompt and ran nothing" if never_ran(content) else ""
+
+
+def is_test_gate(name: str, command: str) -> bool:
+    """A test gate, told by its name or by a runner in its command, never by an argument (src tests)."""
+    if "test" in bytewise.lower(name) or "spec" in bytewise.lower(name):
+        return True
+    padded = " " + bytewise.lower(command) + " "
+    return any(runner in padded for runner in TEST_RUNNERS)
+
+
+def blank(content: str) -> bool:
+    return content.strip(SPACE) == ""
+
+
+def tail(content: str, count: int) -> list[str]:
+    """`tail -n count` as $( ) keeps it: trailing empty lines dropped."""
+    return "\n".join(bytewise.records(content, fold=False)[-count:]).rstrip("\n").split("\n")

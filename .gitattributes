@@ -1,0 +1,11 @@
+# Normalize line endings. The SessionStart hook runs under bash on every platform and must never be
+# checked out with CRLF (bash would choke on the carriage returns), even on a Windows machine with
+# core.autocrlf=true — Claude Code clones this repo when installing the plugin.
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf

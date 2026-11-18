@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# Small Council — SubagentStop hook for council-worker, council-verifier and council-builder.
+#
+# A council agent may not finish without the file its contract requires. When that file is missing or
+# malformed, the hook blocks the stop once: exit 2, and the reason on stderr goes back to the agent so
+# it can fix the file. The next stop always passes (stop_hook_active), so it can never loop. A reply that
+# is there but empty, runs to more than one line, names no .md file or names one it can't find is sent
+# back the same once. Anything it can't read, it lets through — this hook must never trap an agent on a guess.
+
+set -u
+
+input="$(cat 2>/dev/null || true)"
+
+# The string value of a top-level JSON field (first occurrence), unescaped enough for these checks.
+json_str() {
+  printf '%s' "$input" | K="$1" awk '
+    BEGIN { RS = "\001" }
+    {
+      pat = "\"" ENVIRON["K"] "\"[ \t\r\n]*:[ \t\r\n]*\""
+      if (!match($0, pat)) exit
+      i = RSTART + RLENGTH; out = ""; L = length($0)
+      while (i <= L) {
+        c = substr($0, i, 1)
+        if (c == "\\") {
+          e = substr($0, i + 1, 1)
+          if (e == "n") out = out "\n"; else if (e == "t") out = out "\t"; else if (e == "r") out = out ""
+          else if (e == "u") { out = out "?"; i += 4 } else out = out e
+          i += 2; continue
+        }
+        if (c == "\"") break
+        out = out c; i++
+      }
+      printf "%s", out
+    }'
+}
+
+block() {
+  printf 'Small Council seat check: %s\n' "$1" >&2
+  exit 2
+}
+
+helper="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/bin/council"
+# A tool of the helper's (commands/script.py) on the Python bin/council picks (D34); with none, exit 2 lets the stop pass.
+tool() { COUNCIL_SCRIPT=script "${BASH:-bash}" "$helper" "$@"; }
+
+# Any spacing JSON allows ("stop_hook_active" : true, a line break) — whitespace inside the reply's own
+# text can't fake it, because a quote in a JSON string is escaped (\").
+case "$(printf '%s' "$input" | tr -d ' \t\r\n')" in *'"stop_hook_active":true'*) exit 0 ;; esac
+
+case "$(json_str agent_type)" in
+  *council-worker) kind=worker ;;
+  *council-verifier) kind=verifier ;;
+  *council-builder) kind=builder ;;
+  *) exit 0 ;;
+esac
+sid="$(json_str session_id)"; . "${BASH_SOURCE[0]%[/\\\\]*}/session-mark.sh" 2>/dev/null && mark_session "$sid" seat-gate   # council doctor reads it
+[ -f "$helper" ] || exit 0
+if [ "$kind" = builder ]; then        # judged in Python (builder_stop): exit 1 and its one line send it back once
+  why="$(printf '%s' "$input" | tool builder_stop 2>/dev/null)" || [ "$?" -ne 1 ] || [ -z "$why" ] || block "$why"
+  exit 0
+fi
+
+msg="$(json_str last_assistant_message)"
+if [ -z "$msg" ]; then
+  # No reply field (an older host, input it can't read) is the host's affair: let it through. A reply that
+  # is there but empty is an agent that stopped before answering — a turn limit: send it back once.
+  printf '%s' "$input" | grep -q '"last_assistant_message"[[:space:]]*:[[:space:]]*""' || exit 0
+fi
+# A BLOCKED reply, as the helper's one reader (seat_files.blocked) reads it, passes; exit 1 is no BLOCKED reply.
+printf '%s' "$input" | tool builder_stop blocked >/dev/null 2>&1; [ "$?" -eq 1 ] || exit 0
+
+finish="finish by writing your output file, then reply with exactly one line: Wrote <output path> — <N> items (<counts>). If you couldn't do the work, reply BLOCKED: <reason> instead."
+[ "$kind" = worker ] || finish="finish by writing your verdicts to the file your dispatch named (<run>/verify-<n>.md), then reply with exactly one line: Wrote <path> — <count of each verdict>. If you couldn't do the check, reply BLOCKED: <reason> instead."
+
+[ -n "$msg" ] || block "you stopped without a reply — $finish"
+
+# The line that names the file: "Wrote <path>" anywhere, or at a line's start "Wrote:", "**Wrote**", "wrote".
+line="$(printf '%s\n' "$msg" | grep -m 1 -i -E '^[[:space:]>*_]*wrote[*_:]*[[:space:]].*\.md' || true)"
+[ -n "$line" ] || line="$(printf '%s\n' "$msg" | grep -m 1 'Wrote ' || true)"
+[ -n "$line" ] || block "$finish"
+
+# For each "….md" after the word (a full stop may follow; a markdown link gives its target): the whole text
+# before it, then the text from each space, quote or mark on — so "my findings to /abs/x.md" yields /abs/x.md.
+cands="$(printf '%s\n' "$line" | LC_ALL=C awk '
+  NR == 1 {
+    t = " " tolower($0)
+    if (!match(t, /[^a-z]wrote[*_:]*[ \t]+/)) exit
+    s = substr($0, RSTART + RLENGTH - 1)
+    pathch = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./\\-"
+    marks = "[]`\"'"'"'*_(< \t"
+    off = 0; rest = s
+    while ((i = index(rest, ".md")) > 0) {
+      end = off + i + 2
+      nxt = substr(s, end + 1, 1)
+      if (nxt == ".") nxt = substr(s, end + 2, 1)
+      if ((nxt == "" || index(pathch, nxt) == 0) && substr(s, end + 1, 2) != "](") {
+        c = substr(s, 1, end)
+        while ((k = index(c, "](")) > 0) c = substr(c, k + 2)
+        n = length(c)
+        for (j = 1; j <= n; j++) {
+          if (j > 1 && index(marks, substr(c, j - 1, 1)) == 0) continue
+          d = substr(c, j)
+          while (d != "" && index(marks, substr(d, 1, 1))) d = substr(d, 2)
+          if (d != "" && !(d in seen)) { seen[d] = 1; print d }
+        }
+        print ""
+      }
+      rest = substr(rest, i + 3); off = end
+    }
+  }')"
+[ -n "$cands" ] || block "your reply names no .md file — give the full path of the file you wrote: Wrote <full path> — <counts>"
+cwd="$(json_str cwd)"
+path=""; named=""
+while IFS= read -r c; do
+  if [ -z "$c" ]; then                     # the end of one .md's candidates: an absolute one that isn't there
+    [ -z "$named" ] || break               # is the file the agent named
+    continue
+  fi
+  case "$c" in
+    /* | [A-Za-z]:[\\/]*) p="$c"; [ -n "$named" ] || named="$c" ;;
+    *) p="${cwd:+$cwd/}$c" ;;
+  esac
+  if [ -s "$p" ]; then path="$p"; break; fi
+done <<EOF
+$cands
+EOF
+if [ -z "$path" ]; then
+  # Only relative names, joined to the folder Claude Code sends — which may not be the run's: ask for the
+  # full path (the one block), rather than let a file nobody has seen pass.
+  [ -n "$named" ] || block "no file at the name you gave (looked in ${cwd:-the folder the session sent}) — reply with the file's full path: Wrote <full path> — <counts>"
+  path="$named"
+fi
+
+problems=""
+add() { problems="${problems}${problems:+; }$1"; }
+
+if [ ! -s "$path" ]; then
+  add "the file you named ($path) doesn't exist or is empty"
+else
+  l1="$(sed -n '1p' "$path" | tr -d '\r')"
+  bom="$(printf '\357\273\277')"; l1="${l1#"$bom"}"                 # an editor's byte-order mark
+  l2="$(sed -n '2p' "$path" | tr -d '\r')"
+  if [ "$kind" = worker ]; then
+    case "$l1" in '# '*) ;; *) add "line 1 must be '# <Seat> — <lane> (<mode>)'" ;; esac
+    case "$l2" in 'ref:'*) ;; *) add "line 2 must be 'ref: <the first heading of your reference document, copied exactly>' — one ref: line per document — or 'ref: none'" ;; esac
+    if ! grep -q '^## Index' "$path"; then
+      add "add an '## Index' section with one line per item: '<n> · <severity> · <principle> · <path:line> · <title>' (write '(none) — <why>' for an empty lane)"
+    else
+      # The same rule as council.records.seat_files.shape (council collect and check): change both together.
+      # A review item has to name a place; collect and check read the full citation, so this only sends
+      # back an item with nothing place-like in any field ("1 · P1 · Principle 3 · Login has no rate limit").
+      case "$(printf '%s' "$l1" | tr 'A-Z' 'a-z')" in *'review)'|*'review) ') review=1 ;; *) review=0 ;; esac
+      shape="$(REVIEW="$review" awk '
+        function item(l) { return l ~ /^[-*+]? *[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\|) / }
+        /^## / { h = tolower($0); sub(/^## +/, "", h); ins = (h ~ /(^|[^a-z])index([^a-z]|$)/); pend = 0; next }
+        !ins { next }
+        {
+          l = $0; gsub(/\r/, "", l); gsub(/\t/, " ", l)
+          if (l ~ /^###/) {              # a group heading is skipped; an item body ends the Index: what follows says
+            pend = 0
+            if (l ~ /^#+ *[*_]*C?[0-9]+[a-z]?[*_]* +(·|\|) /) bad++
+            else pend = 1
+            next
+          }
+          if (l ~ /^ *$/) next
+          if (pend) { pend = 0; if (!item(l) && l !~ /^ *([-*+] +)?[*_]*\([Nn]one\)/) { ins = 0; next } }
+          if (l ~ /^ *([-*+] +)?[*_]*\([Nn]one\)/) { none = 1; next }
+          if (item(l)) {                 # an item needs four fields: no citation, no item
+            if ((index(l, "·") ? split(l, f, / +· +/) : split(l, f, / +\| +/)) < 4) { bad++; next }
+            ok++
+            if (ENVIRON["REVIEW"] == 1 && l !~ /[]A-Za-z0-9_)]: *[0-9]|#L[0-9]|(^|[^A-Za-z])L[0-9]|[A-Za-z0-9_-]\.[A-Za-z]|\/|::/) unc++
+            next
+          }
+          if (l ~ /^[ \t]/) {            # a note under an item, unless it is written as an item line
+            if (l ~ /^ +([-*+] +)?[*_]*C?[0-9]+[a-z]?[*_]*\.? +(·|\||-|\342\200\224|\342\200\223) /) bad++
+            next
+          }
+          if (l ~ /^([-*+] +)?[*_]*C?[0-9]+/ || l ~ / · / || l ~ /^\| *[*_]*C?[0-9]+[a-z]?[*_]* *\|/) bad++
+        }
+        END { printf "%d %d %d %d", ok, bad, unc, none }' "$path")"
+      ok="${shape%% *}"; rest="${shape#* }"; bad="${rest%% *}"; rest="${rest#* }"; unc="${rest%% *}"; none="${rest#* }"
+      [ "${unc:-0}" -eq 0 ] || add "$unc review item(s) name no place — give each a <path:line> field (no evidence, no item)"
+      [ "${bad:-0}" -eq 0 ] || add "$bad line(s) under '## Index' aren't in the index format — write each item as '<n> · <severity> · <principle> · <path:line> · <title>'"
+      if [ "${ok:-0}" -eq 0 ] && [ "${none:-0}" -eq 0 ] && [ "${bad:-0}" -eq 0 ]; then add "the Index is empty — list your items, or write '(none) — <why>' if your lane had nothing"; fi
+    fi
+  else
+    case "$l1" in '# Verification'*) ;; *) add "line 1 must be '# Verification — <run title>'" ;; esac
+    if ! grep -q '^[[:space:]]*|' "$path"; then
+      add "add the verdict table: | # | Item | Verdict | Evidence |"
+    else
+      # The claim index's own reading of the table (evidence table): what the index could not read,
+      # the verifier fixes now — not the Chair, by hand, after it. 1 is "problems"; anything else passes.
+      fp="$path"; case "$path" in /*) fp="$(cd "${path%/*}" 2>/dev/null && { pwd -W 2>/dev/null || pwd; })/${path##*/}" ;; esac
+      table="$(tool evidence table --file "$fp" 2>/dev/null)"; rc=$?   # /c/x as Python opens it: bin/council passes words as typed
+      if [ "$rc" -eq 1 ] && [ -n "$table" ]; then
+        n="$(printf '%s\n' "$table" | grep -c .)"
+        table="$(printf '%s\n' "$table" | head -n 3 | awk 'NR > 1 { printf "; " } { printf "%s", $0 }')"
+        [ "$n" -le 3 ] || table="$table; and $((n - 3)) more"
+        add "$table"
+      fi
+    fi
+  fi
+  size="$(wc -c < "$path" | tr -d ' ')"
+  if [ "$size" -gt 16384 ]; then
+    kb=$(( (size * 10 + 1023) / 1024 )); kb="$((kb / 10)).$((kb % 10))"     # rounded up: 16.0 would read as fine
+    cut="cut it to your item cap and keep items short"
+    [ "$kind" = worker ] || cut="shorten the paragraphs, and keep every row of the verdict table"
+    add "the file is $kb KB (limit 16 KB) — $cut"
+  fi
+fi
+
+if [ -z "$problems" ]; then                     # the file is right: now the reply must be its one line
+  [ "$(printf '%s\n' "$msg" | grep -c '[^[:space:]]')" -le 1 ] \
+    || block "$path is in order — now reply with exactly one line, nothing else: Wrote <path> — <counts>"
+  exit 0
+fi
+block "$path — $problems. Fix the file, then reply again with your one line."

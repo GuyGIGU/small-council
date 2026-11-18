@@ -1,0 +1,390 @@
+"""Draft and file observed-failure memory proposals from verified run evidence.
+
+The helper never decides that a failure matters or that the user agreed. `draft` turns one verified
+run record into a proposal, `insert` files it under ## Proposed, and `move` applies the user's yes
+or no. `insert` and `move` write a new copy of the memory file; council memory checks that copy with
+the same parser that serves memory, and that no other entry changed, before it replaces the original.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+from typing import Any, Iterator
+
+from council.commands import evidence                # the claim ledger's parser
+from council.commands import repair_trail as repair  # the repair trail's integrity check
+from council.records import bytewise, state as run_state
+from council.records.home import absolute, native
+from council.records import memory_entries as parsed
+from council.records.cells import lines_of
+
+MAX_MEMORY = 1024 * 1024
+FAILURE_VERDICTS = ("REFUTED", "MISCITED")
+TABLE_CELL = re.compile(r"^[ \t]*\|[ \t]*([^|]*?)[ \t]*\|")      # a table row's first cell
+# Every spelling of an F id the parser reads — "F-4", "f4", "F4" — so a new number is never a reused one.
+FID = re.compile(r"(?<![A-Za-z0-9_])[Ff]-?([0-9]+)(?![0-9])")
+FIELD = re.compile(r"^\*\*([A-Za-z]+):\*\*[ \t]*(.*)$")
+PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?"
+                         r"(-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----|$)", re.S)
+
+
+class MemoryError_(Exception):
+    pass
+
+
+def one_line(text: Any, limit: int = 0, copied: bool = True) -> str:
+    """A field value: one line, and nothing the memory parser would read as a comment — nor, in text
+    copied from a run artifact, as a field (**Scope:** …). Runs are collapsed in one pass, so "***"
+    or "<!---" cannot reassemble into a marker. A private key goes whole, before the text is joined
+    into one line and cut short. A scope keeps its ** globs."""
+    text = PRIVATE_KEY.sub("[redacted private key]", str(text or ""))
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", text)
+    text = re.sub(r"<!-{2,}", "<!-", text)
+    text = re.sub(r"-{2,}>", "->", text)
+    if copied:
+        text = re.sub(r"\*{2,}", "*", text).replace("`", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if limit and len(text) > limit:
+        text = text[:limit].rsplit(" ", 1)[0].rstrip(" ,;:·") + " …"
+    return text
+
+
+def rel(top: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(top.resolve()).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
+
+
+def run_value(run: Path, name: str) -> str:
+    return run_state.field(run_state.text(run, read=lambda path: evidence.read_file(path, required=False)),
+                           name).strip()
+
+
+def citation_places(citation: str, top: Path) -> list[tuple[str, str]]:
+    """The places a claim's citation names ("src/a.py:12", "src/a.py:3-9, b.py:4") that are real files
+    of this project, as (path, place) pairs. Anything else in it — a glob, a field marker, an absolute
+    or climbing path, a file that is not there — is not a place to scope or anchor an entry by."""
+    places = []
+    for piece in re.split(r"[,;]", citation or ""):
+        piece = piece.strip().strip("`\"'").replace("\\", "/")
+        path = re.sub(r"(:[0-9][0-9 -]*|#L?[0-9]+(-L?[0-9]+)?)$", "", piece).strip()
+        if (not path or re.search(r"[*?<>|\"`:]", path) or absolute(path) or
+                ".." in path.split("/") or not (top / path).is_file()):
+            continue
+        if path not in [known for known, _ in places]:
+            places.append((path, piece))
+    return places
+
+
+def verifier_reason(run: Path, ref: str, verdict: str) -> str:
+    """The verdict cell of the verifier row a claim links to ("REFUTED — revoke runs first"), or ''."""
+    name, _, number = ref.rpartition(":")
+    body = evidence.read_file(run / name, required=False) or ""
+    lines = lines_of(body)
+    if not number.isdigit() or not 1 <= int(number) <= len(lines):
+        return ""
+    cells = [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", lines[int(number) - 1])[1:-1]]
+    return cells[2] if len(cells) > 2 and cells[2].upper().startswith(verdict) else ""
+
+
+def block(title: str, fields: list[tuple[str, str]]) -> str:
+    lines = ["### F-0: " + one_line(title, 90)]
+    lines += ["**{}:** {}".format(name, value) for name, value in fields if value]
+    return "\n".join(lines) + "\n"
+
+
+def draft_claim(run: Path, top: Path, claim_id: str, scope: str, today: str) -> str:
+    if not (run / "synthesis.md").is_file():
+        raise MemoryError_("no synthesis.md in this run, so no claims to draft from — a claim comes from a review, "
+                           "plan or research run's Judge: pass --run <that run>")
+    try:
+        claims, unsaved = evidence.build(run)       # the index, built now from its sources (D44)
+    except evidence.EvidenceError as unread:
+        raise MemoryError_("the claim index can't be built: {} — mend that, then propose again"
+                           .format(unread)) from None
+    if unsaved:
+        print("council: {} — the draft comes from the index built now".format(unsaved), file=sys.stderr)
+    claim = next((item for item in claims if item["id"] == claim_id), None)
+    if claim is None:
+        raise MemoryError_("no claim {} in this run's claims.jsonl".format(claim_id))
+    verdict = claim["verdict"]
+    if verdict == "CONFIRMED":
+        raise MemoryError_("claim {} was CONFIRMED — a real finding, not a council failure; "
+                           "nothing to draft".format(claim_id))
+    if verdict not in FAILURE_VERDICTS or len(claim["verification"]) != 1:
+        raise MemoryError_("claim {} is {} — only a single REFUTED or MISCITED verifier row is "
+                           "evidence of a council failure".format(claim_id, verdict))
+    link = claim["verification"][0]
+    places = citation_places(claim["citation"], top)
+    if not scope and not places:
+        raise MemoryError_("claim {} cites no file of this project to scope it by — pass --scope".format(claim_id))
+    sources = [rel(top, run) + "/" + link["ref"]]
+    deliverable = run_value(run, "deliverable")
+    if deliverable:
+        candidate = Path(native(deliverable)) if absolute(deliverable) else top / deliverable
+        if candidate.is_file():
+            sources.append(rel(top, candidate))
+    failure = '{} claimed "{}" at {}; a blind verifier returned {} (its evidence: {})'.format(
+        one_line(", ".join(claim["provenance"]) or "an unattributed item", 80),
+        one_line(claim["claim"], 200), one_line(claim["citation"], 120),
+        one_line(verifier_reason(run, link["ref"], verdict) or verdict, 240), one_line(link["evidence"], 160))
+    name = one_line(run.name, 80)
+    # Copied text first; the fields the helper sets come after it, so theirs are the values read.
+    return block("{} claim: {}".format(verdict.lower(), one_line(claim["claim"], 60)), [
+        ("Failure", failure),
+        ("Anchor", ", ".join(place for _, place in places)),
+        ("Scope", one_line(scope, 200, copied=False) if scope else ", ".join(path for path, _ in places)),
+        ("Origin", "run {} ({})".format(name, one_line(run_value(run, "mode") or "unknown mode", 40))),
+        ("Evidence", ", ".join(sources)),
+        ("Verdict", verdict),
+        ("Drafted", "{} by council memory propose from claim {} of run {}".format(today, claim_id, name)),
+    ])
+
+
+def draft_repair(run: Path, top: Path, task: str, scope: str, today: str) -> str:
+    if run_value(run, "mode") != "council-implement":
+        raise MemoryError_("repair proposals come from council-implement runs only")
+    if not scope:
+        raise MemoryError_("a repair proposal needs --scope: the paths, seats or mode the failure concerns")
+    rows = [row for row in repair.load_ledger(run) if row.get("task") == task]
+    if not rows:
+        raise MemoryError_("no repair attempts recorded for task " + task)
+    repair.inspect_rows(run, rows, check=True)
+    failed = [row for row in rows if row.get("result") == "failed"]
+    if not failed:
+        raise MemoryError_("task {} has no failed gate attempt to remember".format(task))
+    last = rows[-1]
+    if last.get("action") == "stop":
+        outcome = "the trail stopped after the third failure"
+    elif last.get("action") == "resolved":
+        outcome = "the same gate passed on attempt {}".format(last.get("attempt"))
+    else:
+        outcome = "the trail was still open when this was drafted"
+    gate = one_line(failed[-1].get("gate"), 60)
+    failure = ("gate {} failed on {} of {} recorded attempt(s) for build task {} (advisory category {}; "
+               "baseline {}); last failure signal: {}; {}").format(
+        gate, len(failed), len(rows), task, one_line(failed[-1].get("category"), 40),
+        one_line(failed[-1].get("baseline"), 20), one_line(failed[-1].get("signal"), 200), outcome)
+    run_rel, name = rel(top, run), one_line(run.name, 80)
+    return block("gate {} failed {} time(s) on task {}".format(gate, len(failed), task), [
+        ("Failure", failure),
+        ("Scope", one_line(scope, 200, copied=False)),
+        ("Origin", "run {} (council-implement)".format(name)),
+        ("Evidence", ", ".join([run_rel + "/" + row["proof_text"] for row in failed] + [run_rel + "/repairs.jsonl"])),
+        ("Verdict", "OBSERVED"),
+        ("Drafted", "{} by council memory propose from repair task {} of run {}".format(today, task, name)),
+    ])
+
+
+# ---------------------------------------------------------------------------------------------------
+# The memory file: read it whole, and keep every byte of the lines this command does not touch.
+
+def load_memory(path: Path) -> tuple[list[str], str]:
+    """The memory file's lines, each with its newline: UTF-8 with a stray byte kept, so that write() puts back the
+    bytes of every line this command leaves alone. Then the newline most of its lines end with."""
+    if path.is_symlink():
+        raise MemoryError_("the memory file is a symlink — edit it by hand")
+    data = path.read_bytes()
+    if len(data) > MAX_MEMORY:
+        raise MemoryError_("the memory file is over 1 MB — consolidate it first")
+    lines = [piece + "\n" for piece in data.decode("utf-8", "surrogateescape").split("\n")]
+    lines[-1] = lines[-1][:-1]
+    if lines[-1] == "":
+        lines.pop()
+    crlf = sum(line.endswith("\r\n") for line in lines)
+    return lines, ("\r\n" if crlf and crlf * 2 >= len(lines) else "\n")
+
+
+def read(lines: list[str]) -> list[str]:
+    """The lines as the memory parser reads them (C-locale text, records/bytewise.py), one for one."""
+    return bytewise.lines(bytewise.text("".join(lines)))
+
+
+def headings(lines: list[str]) -> Iterator[tuple[int, int, str, str]]:
+    """(index, level, text, entry id or '') of each heading the memory parser reads."""
+    for index, text in parsed.visible(read(lines)):
+        found = parsed.heading_of(text)
+        if found:
+            level, title = found
+            yield index, level, title, (parsed.entry_id(title) if 2 <= level <= 4 else "")
+
+
+def sections(lines: list[str]) -> list[tuple[int, str]]:
+    """Level-1/2 section headings as (index, what they file); a first level-1 heading is the file's title."""
+    found, seen = [], False
+    for index, level, text, ident in headings(lines):
+        if level <= 2 and not ident and (level == 2 or seen):
+            found.append((index, parsed.section(text)))
+        seen = True
+    return found
+
+
+def section_end(lines: list[str], start: int) -> int:
+    for index, level, _, ident in headings(lines):
+        if index > start and level <= 2 and not ident:
+            return index
+    return len(lines)
+
+
+def place(lines: list[str], at: int, new_lines: list[str], newline: str) -> list[str]:
+    """Insert new_lines at `at` with one blank line around them, never doubling blank lines."""
+    before, after = lines[:at], lines[at:]
+    while before and before[-1].strip() == "":
+        before.pop()
+    if before and not before[-1].endswith("\n"):
+        before[-1] += newline
+    chunk = ([newline] if before else []) + [line + newline for line in new_lines]
+    while after and after[0].strip() == "":
+        after.pop(0)
+    if after:
+        chunk.append(newline)
+    return before + chunk + after
+
+
+def cited(lines: list[str], key: str) -> bool:
+    pattern = re.compile(re.escape(bytewise.text(key)) + r"(?![0-9A-Za-z_./-])")
+    return any(pattern.search(text.replace("\\", "/")) for _, text in parsed.visible(read(lines)))
+
+
+def first_evidence(entry_lines: list[str]) -> str:
+    for line in entry_lines:
+        match = FIELD.match(line.strip())
+        if match and match.group(1) == "Evidence":
+            return match.group(2).split(",")[0].strip()
+    return ""
+
+
+def insert(memory: Path, block_path: Path, out: Path) -> int:
+    lines, newline = load_memory(memory)
+    new = [line.rstrip("\r") for line in block_path.read_text(encoding="utf-8").strip("\n").split("\n")]
+    head = parsed.heading_of(bytewise.text(new[0])) if new else None
+    if not head or parsed.entry_id(head[1]) != "F-0":
+        raise MemoryError_("the draft does not open with its F-0 heading")
+    key = first_evidence(new)
+    if not key:
+        raise MemoryError_("the draft names no evidence")
+    if cited(lines, key):
+        raise MemoryError_("memory already cites {} (an entry, a proposal or a rejected line) — "
+                           "nothing drafted".format(key))
+    number = 1 + max([0] + [int(m.group(1)) for _, text in parsed.visible(read(lines))
+                            for m in FID.finditer(text)])
+    new[0] = re.sub(r"F-0\b", "F-{}".format(number), new[0], count=1)
+    proposed = [index for index, kind in sections(lines) if kind == "proposed"]
+    if proposed:
+        lines = place(lines, section_end(lines, proposed[0]), new, newline)
+    else:
+        lines = place(lines, len(lines), ["## Proposed — awaiting the user's yes/no", ""] + new, newline)
+    write(out, lines)
+    print("F-{}".format(number))
+    return 0
+
+
+def find_entry(lines: list[str], wanted: str) -> tuple[int, int]:
+    """An entry's lines, as bin/council's memory parser reads them: a heading deeper than #### or a table
+    row is never an entry (it names them as not read), and any entry heading ends the entry above it."""
+    hits = [(index, level) for index, level, _, ident in headings(lines) if ident == wanted]
+    unread = [] if hits else (
+        ["line {}: a heading deeper than ####".format(index + 1) for index, level, text, _ in headings(lines)
+         if level > 4 and parsed.cand_id(text) == wanted]
+        + ["line {}: a table row".format(index + 1) for index, text in parsed.visible(read(lines))
+           if TABLE_CELL.match(text) and parsed.cand_id(TABLE_CELL.match(text).group(1)) == wanted])
+    if unread:
+        raise MemoryError_("{} opens like an entry where the memory parser reads none ({}) — write it as a "
+                           "heading (### {}) first".format(wanted, "; ".join(unread), wanted))
+    if len(hits) != 1:
+        raise MemoryError_("{} must appear exactly once as a heading entry (found {}); move a "
+                           "hand-written proposal by hand".format(wanted, len(hits)))
+    start, level = hits[0]
+    end = next((index for index, lvl, text, ident in headings(lines)
+                if index > start and (lvl <= level or ident or (lvl > 4 and parsed.cand_id(text)))), len(lines))
+    while end > start + 1 and lines[end - 1].strip() == "":
+        end -= 1
+    return start, end
+
+
+def move(memory: Path, wanted: str, target: str, said_path: Path, today: str, out: Path) -> int:
+    lines, newline = load_memory(memory)
+    said = one_line(said_path.read_text(encoding="utf-8"), 300)
+    if not said:
+        raise MemoryError_("record the user's own words with --user-said")
+    start, end = find_entry(lines, wanted)
+    entry = [line.rstrip("\r\n") for line in lines[start:end]]
+    rest = lines[:start] + lines[end:]
+    if 0 < start < len(rest) and rest[start - 1].strip() == "" and rest[start].strip() == "":
+        del rest[start]                                     # the gap it leaves is one blank line, not two
+    if target == "observed":
+        entry.append('**Approved:** {} — the user said: "{}"'.format(today, said))
+        observed = [index for index, kind in sections(rest) if kind == "observed"]
+        if observed:
+            rest = place(rest, section_end(rest, observed[0]), entry, newline)
+        else:
+            proposed = [index for index, kind in sections(rest) if kind == "proposed"]
+            head = ["## Observed Failures (F) — historical evidence, never a rule", ""]
+            rest = place(rest, proposed[0] if proposed else len(rest), head + entry, newline)
+    else:
+        title = bytewise.shown(parsed.heading_of(read(lines)[start])[1])
+        title = re.sub(r"^[*_~]*F-[0-9]+[*_~]*[ \t]*[:.—–-]?[ \t]*", "", title)
+        line = '- {} · {} · the user said: "{}" · was {}, evidence {}'.format(
+            one_line(title, 90) or "observed failure", today, said, wanted, first_evidence(entry) or "none")
+        rejected = [index for index, kind in sections(rest) if kind == "rejected"]
+        if rejected:
+            rest = place(rest, section_end(rest, rejected[0]), [line], newline)
+        else:
+            head = ["## Rejected — proposals the user said no to; never propose these again", ""]
+            rest = place(rest, len(rest), head + [line], newline)
+    write(out, rest)
+    return 0
+
+
+def write(out: Path, lines: list[str]) -> None:
+    if out.exists() or out.is_symlink():
+        raise MemoryError_("refusing to overwrite " + str(out))
+    with open(out, "w", encoding="utf-8", errors="surrogateescape", newline="") as stream:
+        stream.write("".join(lines))
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="action")
+    sub.required = True
+    one = sub.add_parser("draft")
+    one.add_argument("kind", choices=("claim", "repair"))
+    one.add_argument("id")
+    one.add_argument("--run", required=True, type=Path)
+    one.add_argument("--top", required=True, type=Path)
+    one.add_argument("--scope-file", type=Path,
+                     help="a file holding the scope (never an argument: Git Bash rewrites a leading /)")
+    one.add_argument("--today", required=True)
+    two = sub.add_parser("insert")
+    two.add_argument("--memory", required=True, type=Path)
+    two.add_argument("--block", required=True, type=Path)
+    two.add_argument("--out", required=True, type=Path)
+    three = sub.add_parser("move")
+    three.add_argument("id")
+    three.add_argument("--to", required=True, choices=("observed", "rejected"))
+    three.add_argument("--memory", required=True, type=Path)
+    three.add_argument("--said", required=True, type=Path)
+    three.add_argument("--today", required=True)
+    three.add_argument("--out", required=True, type=Path)
+    args = parser.parse_args(argv)
+    if args.action == "draft":
+        run = args.run.absolute()
+        if run.is_symlink() or not run.is_dir():
+            raise MemoryError_("run must be a real directory")
+        scope = args.scope_file.read_text(encoding="utf-8").strip() if args.scope_file else ""
+        if args.kind == "claim":
+            text = draft_claim(run, args.top.absolute(), args.id, scope, args.today)
+        elif not repair.TASK.fullmatch(args.id):
+            raise MemoryError_("task must be a short safe id")
+        else:
+            text = draft_repair(run, args.top.absolute(), args.id, scope, args.today)
+        sys.stdout.write(text)
+        return 0
+    if args.action == "insert":
+        return insert(args.memory, args.block, args.out)
+    return move(args.memory, args.id, args.to, args.said, args.today, args.out)
+

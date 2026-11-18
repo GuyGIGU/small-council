@@ -1,0 +1,46 @@
+Small Council
+=============
+
+Small Council (formerly Ultra Council) is a derivative work of **Carmack-Council**
+by Sam Hudson, originally released under the MIT License.
+
+    Original project : Carmack-Council
+    Author           : Sam Hudson (github.com/SamJHudson01)
+    Source           : https://github.com/SamJHudson01/Carmack-Council
+    License          : MIT (see LICENSE)
+
+What is derived and what is new
+-------------------------------
+Small Council keeps the named-expert council idea, the council-review,
+council-plan, council-implement, spec-writer, and test-architect modes
+(substantially rewritten), and several reference documents. It adds:
+
+  - context-core      — a reusable context-engineering pipeline that every
+                        mode runs on (the original had no shared pipeline);
+  - council-init      — per-project tailoring of the roster, gates, and
+                        codebase map;
+  - council-research  — an evidence-graded investigation mode;
+  - the council-worker and council-verifier agents and the SessionStart hook;
+  - durable project memory, the codebase map, and the .council/ layout;
+  - an evals harness (validation, structural, hook, and behavioral drills).
+
+The seat reference documents under `references/` — `security.md`,
+`refactoring.md`, and the `quality-*.md` set other than
+`quality-performance.md` — and the spec-writer documents originate from
+Carmack-Council and remain under its MIT license. Their copyright notice is
+preserved in LICENSE as the MIT terms require.
+
+Grateful acknowledgment to Sam Hudson for the original Carmack-Council.
+
+The council pane (hooks/council-scene.ts)
+-----------------------------------------
+The council hall's pixel-art style, its way of drawing (pixel maps of letters
+turned into runs of SVG rects, animated with SMIL), the robot, cat and dragon
+body shapes and the robot's mood lamp come from **agent-avatars**:
+
+    Original project : agent-avatars
+    Author           : vanyastaff (github.com/vanyastaff)
+    Source           : https://github.com/vanyastaff/agent-avatars
+    License          : MIT (see LICENSE)
+
+The owl, ghost and frog, the role gear, the hall and the squad list are new.

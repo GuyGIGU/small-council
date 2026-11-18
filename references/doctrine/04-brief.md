@@ -1,0 +1,74 @@
+# Stage 4 — Brief
+
+One set of orders that every seat can act on with no other context. Write it to `<run>/brief.md`
+with the Write tool. A permission prompt here, before any fan-out, is expected: allow edits under
+`.council/` for the session, so the workers can write their files.
+
+Start from `council run plan show`: the brief's called and uncalled seats, context and budgets must
+agree with the validated plan. A new seat: update and re-check the plan before briefing it.
+
+## The format — edge-ordered: what matters most goes at the top and the bottom
+
+```
+# Brief — <run title>
+Deliverable: <the one thing this run produces, and its path>
+Intent: <what the author or user is trying to achieve>
+Ask: <abs>/ask.md, and the filed request it continues (<abs>/.council/asks/<file>) — the user's own words; read them
+Question for every seat: <the one question each seat answers in its lane>
+Out of scope: <…>
+Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is a diff>
+
+## Landscape
+<the system in 2–3 lines, from map.md · the scope with sizes · the change index path ·
+ grounding gate results · earlier council findings on these paths, as ids + one line>
+
+## Seats
+### <slug> — <what it checks> (<Seat name>)
+- ref: <absolute path to the seat's card (Cards first), else none (a mapping worker); a paired seat has one - ref: line each>
+- doc: <absolute path of the full doc behind each card>
+- out: seats/<slug>.md
+- slice: <paths and globs — this seat's only>
+- cap: <item cap, default 8> · budget: <~tool calls>
+- objective: <this seat's version of the question, in one sentence>
+- key questions: <two or three>
+- start at: <index entries, surface markers, hot spots>
+
+## Seats not called
+- <slug> — <what it checks>: <reason>
+
+## Hard constraints — do not forget
+- <the config's hard rules, word for word>
+- Settled, never a finding: <applicable AP/EC/D entries from `council memory select`, one line each>
+- Current overrides: <the user's exact words and affected memory ids, or none; Convene's rule>
+- The user's decisions: <each `council state decision=` entry of the run, its words word for word, or none>
+- Observed failures, not rules: <the scoped F entries it printed, including verdict and evidence>
+- Not a finding: <your mode's list, from its `## At Brief`>
+```
+
+## Rules
+
+- `## Seats` lists worker seats only; a verifier is briefed at Challenge, step 2.
+- **Write for a worker with zero context.** If a fact isn't in the brief or the worker's reference
+  doc, the worker doesn't have it.
+- **Keep the seat blocks exact.** `council collect` reads the `### <slug>` headings and their `ref:`,
+  `out:` and `cap:` lines. A paired worker gets one block that names both lenses.
+- **Cards first.** Before you write the seat blocks, write the card of each selected seat that has
+  none (`<home>/cards/<slug>.md`) from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`, by
+  the rules in its comment. The card is then the seat's `ref:`: its principles translated to this
+  project. A worker that covers several roster seats — a pair, or a split `hunt-a` — gets each
+  seat's card and doc; a block links only its own seats' cards and docs, never another seat's or the
+  whole set. A seat's doc is its roster row's Reference cell (the one place a surface maps to its
+  doc), so a frontend seat gets the frontend doc alone.
+- **Memory in scope, never the whole file.** Before writing, `council memory select`: it reads the
+  run's index, the seats Assign recorded and the mode; a run without a diff also passes its target
+  paths, which add to those. Apply Convene's changed-instructions rule before quoting entries in
+  the bottom block: mark overridden preferences apart from binding rules, keeping observed failures
+  apart from settled rules. If it warns that entries can't be read or are left out, tell the user.
+- **Hard rules go in word for word** — workers also load the project's CLAUDE.md, but the brief is
+  the orders they must not miss.
+- **So do the user's decisions**: every one on record when you write the brief. `council collect`
+  warns about one the brief leaves out; then hold the findings to it at Judge and tell the user.
+
+## Done when
+
+brief.md is written. → `council state phase=work`

@@ -1,0 +1,59 @@
+"""A gate's saved verdict, gates/<name>.json, read the way the helper's sed read it: one line, written by council
+gate (src/council/commands/gate_run.py). `council gate` reads a baseline's numbers and `council check` a proof's
+exit, command and proof kind through these, so a verdict is read one way."""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import NamedTuple
+
+from council.records import bytewise
+
+COMMAND = re.compile(r'.*"command": "(.*)", "exit"')
+
+
+def _first(path: str | Path, pattern: re.Pattern) -> str:
+    for line in bytewise.file_lines(path, fold=False):
+        found = pattern.match(line)
+        if found:
+            return found.group(1)
+    return ""
+
+
+def number(path: str | Path, key: str) -> str:
+    """A verdict's number: the last `"key": N` on the first line that has one ('' when none)."""
+    return _first(path, re.compile(r'.*"%s": *(%s)' % (key, "-?[0-9]+" if key == "exit" else "[0-9]+")))
+
+
+def text(path: str | Path, key: str) -> str:
+    """A verdict's string field with no quote in it (proof, invalid), as written ('' when none)."""
+    return _first(path, re.compile(r'.*"%s": "([^"]*)"' % key))
+
+
+def command(path: str | Path) -> str:
+    """The command a verdict records, its JSON escapes undone."""
+    return re.sub(r"\\(.)", r"\1", _first(path, COMMAND))
+
+
+def holds(path: str | Path, words: str) -> bool:
+    """Whether the verdict's text holds these words anywhere (grep -q)."""
+    return any(words in line for line in bytewise.file_lines(path, fold=False))
+
+
+class Green(NamedTuple):
+    """A green verdict `gate --all` may take instead of running the gate again, as long as the tree matches."""
+
+    tree: str
+    seat: str
+    when: str
+
+
+def green(path: str | Path, command: str) -> Green | None:
+    """The verdict as a green that counts for its tree, or None: a red, a time-out, a pass with a note (nothing
+    ran, cmd's prompt), a record marked invalid, a run of another command than this one (given as the verdict
+    writes it, JSON-escaped), or no tree on record (outside git, or the tree changed while it ran)."""
+    tree, seat = text(path, "tree"), text(path, "seat")
+    if number(path, "exit") != "0" or not tree or not seat or holds(path, '"timed_out": ') \
+            or holds(path, '"note": "') or holds(path, '"invalid": "') or _first(path, COMMAND) != command:
+        return None
+    return Green(tree, seat, text(path, "when"))
