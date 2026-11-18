@@ -118,6 +118,20 @@ def missing_module(content: str) -> str:
     return found.group(1).replace("\r", "") if found else ""
 
 
+def could_not_run(code: int, content: str) -> str:
+    """Why a gate's command could not run, as council gate says it ('' when it ran and its exit is the check's): the
+    code root out of reach (97), a command not found (127), Python with no module for `python -m` (exit 1, that line
+    alone), cmd that opened its prompt and ran nothing."""
+    if code == 97:
+        return "the code root could not be entered"
+    if code == 127:
+        return "a command it calls was not found"
+    module = missing_module(content) if code == 1 else ""
+    if module:
+        return "Python has no module " + module
+    return "cmd opened its prompt and ran nothing" if never_ran(content) else ""
+
+
 def is_test_gate(name: str, command: str) -> bool:
     """A test gate, told by its name or by a runner in its command, never by an argument (src tests)."""
     if "test" in bytewise.lower(name) or "spec" in bytewise.lower(name):

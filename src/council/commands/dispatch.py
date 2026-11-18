@@ -9,6 +9,7 @@ from council.commands import cli
 COMMANDS = {  # each module's main takes (args, the words after the command's own)
     "home": "home",
     "sharing": "sharing",
+    "init": "init",
     "run status": "runs",
     "run plan": "plan",
     "run events": "run_events",

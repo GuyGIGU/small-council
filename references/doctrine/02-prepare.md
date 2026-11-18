@@ -9,7 +9,8 @@ Gather every shared fact once, so no seat has to.
    patch their sections, folding in any `## Changes` lines (`council map touch`) and deleting them; a
    refresh moves `map-commit`, and only once every changed area has been covered. No map →
    write one from `${CLAUDE_PLUGIN_ROOT}/references/templates/map.md`. Hard ceiling: ~10 skeleton
-   reads — manifests, entry points, schemas, route tables.
+   reads — manifests, entry points, schemas, route tables. After a quick setup (`setup: quick` in
+   the config), go on without one: the change index stands in, and the full setup builds the map.
 3. **Change index** — for anything with a diff: `council index [--base <ref>]` writes
    `<run>/index.md`: per changed file its hunks, changed symbols, callers and covering tests. Seats
    read it instead of each re-tracing the blast radius.

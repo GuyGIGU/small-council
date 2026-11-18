@@ -31,11 +31,12 @@ def said(call: Call, name: str, result: Result, secs: int, info: tuple, content:
         event(call.run, name, "failed", "exit=%d;seconds=%d;empty=0;timed_out=1" % (code, secs),
               "gate failed, and its event was not recorded")
         return False
-    module = gate_output.missing_module(content) if code == 1 else ""
+    cannot = gate_output.could_not_run(code, content)
+    module = gate_output.missing_module(content) if cannot.startswith("Python has no module") else ""
     if never:
         cli.say('gate %s: FAIL — cmd opened its prompt and ran nothing (%ss): write its switch as //c, e.g. cmd //c '
                 '"<command>" — full output: %s' % (name, secs, out))
-    elif code == 127:                          # the shell's "command not found": nothing was checked
+    elif code == 127 and cannot:               # the shell's "command not found": nothing was checked
         cli.say("gate %s: could not run (exit 127, %ss) — a command it calls was not found; install it, or fix the "
                 "gate's command — full output: %s" % (name, secs, out))
     elif module:

@@ -3,7 +3,7 @@
 **A council of expert reviewers for Claude Code, where every finding is proved before you see it.**
 
 [![CI](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml/badge.svg)](https://github.com/GuyGIGU/small-council/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.0.0-black.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-black.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![Any stack](https://img.shields.io/badge/stack-any-black.svg)](references/roster/expert-catalog.md)
 
@@ -43,16 +43,17 @@ check that `python --version` works in Git Bash (the Microsoft Store stub doesn'
    /plugin marketplace add GuyGIGU/small-council
    /plugin install small-council@small-council
    ```
-2. **Set up, once per project:** `/council-init`. It detects your stack, picks the experts, dry-runs
-   your test, lint and build commands, maps the code, and shows you all of it before writing
-   `.council/`. It asks three things: which missing checks to fit (or "not now"), whether the council
-   is shared with a team or just you, and the permission rules. Say yes to the rules, or every
-   bookkeeping step asks. The checks themselves still ask each time, on purpose: a check runs any
-   command it names. Expect a few minutes.
-3. **First review:** make a change, then `/council-review`. It proposes the experts and a token
-   estimate; say go. A small change runs Solo (the main session alone, self-checked, about 20k
-   tokens); say "squad" for independent experts and a blind verifier. You get findings with
-   `file:line`, each re-checked before you see it.
+2. **First review:** make a change, then `/council-review`. No setup needed first: in a project
+   with no council it does a quick one (the default experts, nothing probed, kept on your machine)
+   and starts. It proposes the experts and a token estimate; say go. A small change runs Solo (the
+   main session alone, self-checked, about 20k tokens); say "squad" for independent experts and a
+   blind verifier. You get findings with `file:line`, each re-checked before you see it.
+3. **Full setup, once per project:** `/council-init`, which the first review offers at its end. It
+   detects your stack, fits the experts to it, dry-runs your test, lint and build commands, maps the
+   code, and shows you all of it before writing `.council/`. It asks three things: which missing
+   checks to fit (or "not now"), whether the council is shared with a team or just you, and the
+   permission rules. Say yes to the rules, or every bookkeeping step asks. The checks themselves
+   still ask each time, on purpose: a check runs any command it names. Plan and build need it.
 4. **First build:** `/council-plan add CSV export to the report page`, answer its scoping questions,
    approve the plan, then `/council-implement`. Each task goes to a fresh builder agent, the checks
    run after each one, one verifier checks the whole build at the end, and you get a receipt that

@@ -38,6 +38,15 @@ def _lines(home: str | Path | None) -> list[str]:
     return cells.lines_of(data.decode("utf-8", errors="replace").lstrip(BOM))
 
 
+QUICK_SETUP = "setup: quick"
+
+
+def quick_setup(home: str | Path | None) -> bool:
+    """The config came from a quick setup: council init scaffold --quick writes a `setup: quick <date> — …` line,
+    and the full setup (/council-init) takes it out."""
+    return first(home, r"setup:[ \t]*quick([^A-Za-z]|\Z)") is not None
+
+
 def first(home: str | Path | None, pattern: str) -> re.Match | None:
     """The first config line the pattern matches from its start, as sed -n 's/…/p' | head -n 1 finds it."""
     rule = re.compile(pattern)

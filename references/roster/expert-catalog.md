@@ -13,8 +13,7 @@ practitioners — the name carries the doctrine.
    stack, keeps its reference doc, and records why.
 4. Write roster, slugs, seat → reference map, and gates into `.council/council.config.md` (template:
    `references/templates/council.config.md`).
-5. Write a **seat card** per seat (below).
-6. Propose to the user, adjust, and write on confirmation.
+5. Propose to the user, adjust, and write on confirmation. Setup writes no **seat card** (below).
 
 **Chair:** John Carmack — always on, never a seat. **Never dropped:** Fowler (every codebase has
 structure) and Beck (every codebase has, or should have, tests).
@@ -45,18 +44,18 @@ treats the origin examples as illustrations.
 
 ## Seat cards
 
-A seat doc is written for every project; a **card** is written for this one. council-init writes
-`.council/cards/<slug>.md` per seat from `references/templates/seat-card.md`: each principle of the
+A seat doc is written for every project; a **card** is written for this one: each principle of the
 doc, numbered as in the doc, in one line saying what it means here; the severity rubric in this
-repo's terms; where to look; and what is not a finding here — at most ~6 KB. Workers read the card
-first (its first line is their `ref:` proof) and open the full doc only for the principles they
-cite. A refresh rewrites the cards whose doc, surface or stack changed.
+repo's terms; where to look; and what is not a finding here — at most ~6 KB. A seat's card is
+written the first time a run selects it, at Brief, by the rules in `references/templates/seat-card.md`;
+a refresh rewrites a card whose doc, surface or stack changed. Workers read the card first (its
+first line is their `ref:` proof) and open the full doc only for the principles they cite.
 
 ## One lens, several areas
 
 In a monorepo, or a repo with distinct parts, a lens may take several rows — one per area, each
 with its own slug and surface: `dodds-web` for `apps/web/**`, `dodds-admin` for `apps/admin/**`.
-Each is a seat of its own in Assign, with its own card.
+Each is a seat of its own in Assign, with its own card once a run selects it.
 
 ## Recast before you drop
 

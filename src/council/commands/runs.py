@@ -22,7 +22,7 @@ def status(every: bool) -> int:
     rest; with every (--all), the newest 20 runs."""
     home = where.council_home()
     if not os.path.isdir(home):
-        cli.say("no council here (no %s) — run council-init" % home)
+        cli.say("no council here (no %s) — %s" % (home, where.NO_SETUP))
         return 0
     listed = runs.listing(home, SHOWN, "all") if every else runs.listing(home, 1000000, "open")
     if not listed:

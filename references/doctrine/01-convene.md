@@ -12,25 +12,26 @@ to a protected subject (context-core, Limits), or to a review or post-game, whic
    alongside one; ask if unresolved. Alongside uses `council run open <mode> --alongside`, then
    `--run <folder>` on every command. Never overwrite an open run. `<mode>` is always the skill's
    name, such as `council-review`.
-2. **No `council.config.md`?** Run council-init first; a post-game needs no roster. Never tailor a
-   roster inline. Otherwise `council fingerprint check`: if the stack moved or there is
-   no stack-fingerprint, say so and offer a refresh — the roster, cards and gates may be stale.
+2. **No `council.config.md`?** A **review** starts now on a quick setup,
+   `council init scaffold --quick` (council-review, At Convene). A **post-game** needs no roster.
+   **Plan, implement and research** run council-init first, on a `setup: quick` config too: they
+   lean on the map and the probed checks. Never tailor a roster inline. Otherwise
+   `council fingerprint check`: if the stack moved or there is no stack-fingerprint, say so and
+   offer a refresh — the roster, cards and gates may be stale.
 3. **Resolve the target.** Your mode's `## At Convene` says how: a diff, a plan, a question.
 4. **Shape check** — from the map and file counts, without reading code. One dependent chain → Solo
    or one builder; independent slices → seats. Match paths against the roster's Surface column.
 5. **Size it.** Start with `council route recommend --task "<short task>" --mode <mode>`, adding
    `--risk`, `--complexity`, `--uncertainty` or `--surface` only when the known evidence warrants
-   them. Compare its advice with the roster, surfaces, project history and risks; record any
-   override and why in the run plan. `--classic` shows the static policy. If the route says
-   `needs-rescope`, resolve the budget or verification shortfall with the user before opening or
+   them. Weigh its advice against the roster, surfaces, history and risks; record any override and
+   why in the run plan. If the route says `needs-rescope`, resolve the budget or verification shortfall with the user before opening or
    dispatching a run; a lower-cost Solo label does not waive required independent challenge.
-   Use context-core's size limits. Count Challenge's verifiers — one per expected P1 or protected
-   item, one per 8 of the rest (Challenge, step 2) — within the agent cap, counting agents as
-   Assign, step 6 does.
+   Use context-core's size limits. Count Challenge's verifiers (Challenge, step 2) within the agent
+   cap, counted as Assign, step 6 does.
 6. **Estimate from this project's history.** `council ledger` shows each seat's average tokens per
    run; `council run status --all` shows whole runs. With no history, assume ~60–100k tokens per
-   worker. The route budgets each agent at its role's `- estimates:` figure, else `estimate per worker`
-   (both set by hand in the config), else 80k. The size-and-cost line gives the figures it used.
+   worker. The route budgets each agent at its role's `- estimates:` figure, else `estimate per
+   worker`, else 80k; the size-and-cost line gives the figures it used.
 7. **Open the run and save the request.** `council run open <mode>` prints the run folder and
    records this session's id, so a compaction resumes the right run. Right after it, before anything
    else, write `<run>/ask.md`:
@@ -43,8 +44,8 @@ to a protected subject (context-core, Limits), or to a review or post-game, whic
    ## Later, in your words
    - <date>: "<words that add to, drop or change what gets built>"
    ```
-   "Yes" or "go" isn't a request. A hand-off — plan to build, review to fix, a build or post-game to
-   review, post-game to build or plan — continues the same request: `council state ask=<path>` from the
+   "Yes" or "go" isn't a request. A hand-off (plan to build, review to fix, and so on) continues the
+   same request: `council state ask=<path>` from the
    input's "Your request" line, and `(no new words)` unless the user adds some. A new /command with new
    words starts a new one. **The request** is then the file `continues:` names plus ask.md's new words:
    read both. Pasted text — a PR, an issue — goes in as it is, headings and all.

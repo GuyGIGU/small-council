@@ -47,6 +47,10 @@ def home_from(top: str, superproject: str, porcelain: str, exists: Callable[[str
     return main + "/.council"
 
 
+NO_SETUP = ("a review starts on a quick setup: council init scaffold --quick; plan, build and research run "
+            "/council-init first")
+
+
 def council_home(cwd: str | Path = ".") -> str:
     """The .council/ of the main checkout, shared by every linked worktree; ./.council outside git. The
     path is written as the helper prints it (git's form: C:/… with / on Windows)."""

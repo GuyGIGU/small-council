@@ -29,6 +29,16 @@ def settings(doc: Doctor) -> None:
                  "per batch` to keep one)")
 
 
+def quick(doc: Doctor) -> None:
+    """A config from a quick setup: true of it, and what the full setup adds."""
+    if config.quick_setup(where.native(doc.home)):
+        doc.warn("this council comes from a quick setup (council.config.md's `setup: quick` line): its roster is the "
+                 "catalog's seats as the catalog names them, with no recast and few surface markers, and it has no "
+                 "map",
+                 "run /council-init for the full setup: it tailors the roster to this project (recasts, drops, surface "
+                 "markers), probes the checks with you and builds the map")
+
+
 def _run_preferences(doc: Doctor, home: str) -> None:
     """Under ## Run preferences: a line no longer read, a key no setting has, a setting written twice, and a list
     line that isn't `- key: value`."""

@@ -28,6 +28,13 @@ State the target as files, +/− lines and `base..head`.
 - Deliverable: `<home>/reviews/<YYYY-MM-DD>-<slug>.md`.
 - Cap: 15 findings.
 
+**No council yet** (Convene, step 2). Before sizing, tell the user in a line or two that this project
+has no council yet, so you'll do a quick setup and start the review now: the catalog's seats as it
+names them, no seat cards yet, no map, kept on this machine, no check probed. Say its limits once, as
+facts: no check was probed, so nothing in this review is checked by machine; the seats are the
+catalog's, and Assign picks them by the change in front of it, as always. Then run
+`council init scaffold --quick` and go on as usual, proposing the size and cost first.
+
 ## At Prepare
 
 - Always run `council index --base <base>`.
@@ -114,6 +121,10 @@ line, then:
 - **Summary table**, then the **verdict:** ship-ready or not, the single most important thing, and
   the most critical domain.
 
+**After a quick setup** (a `setup: quick` line in the config), end the chat summary with one line,
+once per run: `/council-init` does the full setup — a roster fitted to this project, the checks
+probed, the map. That line is also this run's mention of the missing checks (Deliver, step 4).
+
 In chat — never just "done":
 
 ```
@@ -128,7 +139,8 @@ Full review: <path>
 
 After the memory proposals comes the fix hand-off: *"Fix these with council-implement? Default:
 every P1 and P2 this change introduced or touched."* An item whose origin came back `origin unknown`
-counts as the change's own (Challenge, step 1). On a yes, hand it the review's path.
+counts as the change's own (Challenge, step 1). On a yes, hand it the review's path; after a quick
+setup, that yes runs `/council-init` first (Convene, step 2), without offering it again.
 
 ## Notes
 

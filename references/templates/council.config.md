@@ -106,7 +106,7 @@ or pattern-matching?"). Not a seat.
 ## Memory
 - conventions: .council/conventions.md
 - map: .council/map.md
-- cards: .council/cards/ (one per seat slug)
+- cards: .council/cards/ (a seat's card, written the first time a run selects it)
 - ledger: .council/ledger.tsv (each completed run adds a row per seat)
 <!-- Add `- memory budget: <n> KB` here (a whole number from 1 to 1024; 25 KB when it is left out): past it,
      run open, a complete close, council status and council doctor say the memory has grown past what every

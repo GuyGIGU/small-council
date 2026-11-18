@@ -10,6 +10,16 @@ from council.records import map_file
 AREAS = 12
 NO_MAP = ("no map yet — write .council/%s from the plugin's references/templates/%s, as Prepare says, or run "
           "council-init, which builds it" % (map_file.NAME, map_file.NAME))
+QUICK_NO_MAP = ("no map yet — this council comes from a quick setup, which builds none: go on without it; the full "
+                "setup (/council-init) builds the map")
+
+
+def no_map(home: str) -> str:
+    """What a missing map means here: on a quick setup's config, that the full setup builds it."""
+    from council.records import config
+    return QUICK_NO_MAP if config.quick_setup(where.native(home)) else NO_MAP
+
+
 USAGE = 'usage: council map status | map touch <dir>="<line>" …'
 
 
@@ -26,7 +36,7 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 def status(home: str) -> list[str]:
     if not map_file.path(where.native(home)).is_file():
-        return [NO_MAP]
+        return [no_map(home)]
     found = map_file.stale(where.native(home))          # the whole repository, from any folder
     if not found.sha:
         return ["map.md has no map-commit stamp — refresh the map and stamp it"]

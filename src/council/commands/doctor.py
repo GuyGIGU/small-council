@@ -58,19 +58,20 @@ def main(args: cli.Args, words: list[str]) -> int:
     home = where.council_home()
     doc = Doctor(home)
     if not os.path.isdir(where.native(home)):
-        doc.error("no council home at %s" % home, "run council-init in this repo")
+        doc.error("no council home at %s" % home, where.NO_SETUP)
         cli.say("doctor: 1 error(s), 0 warning(s)")
         return 1
     native = where.native(home)
     has_config = os.path.isfile(where.native(home + "/" + config.NAME))
     if not has_config:
-        doc.error("no %s" % config.NAME, "run council-init")
+        doc.error("no %s" % config.NAME, where.NO_SETUP)
     else:
         if config.first(native, "last-verified:") is None:
             doc.warn("the config has no last-verified stamp (an older layout)",
                      "run council-init refresh to migrate it to the current template")
         from council.commands import doctor_config
         doctor_config.settings(doc)
+        doctor_config.quick(doc)
         roster(doc)
         from council.commands import doctor_gates
         doctor_gates.gates(doc)
@@ -108,11 +109,7 @@ def roster(doc: Doctor) -> None:
         doc.warn("couldn't read a Roster table in %s" % config.NAME,
                  "run council-init refresh (older configs list seats instead of a table)")
         return
-    cards = doc.home + "/cards"
-    has_cards = os.path.isdir(where.native(cards))
-    if not has_cards:
-        doc.warn("no seat cards yet (.council/cards/ is missing)",
-                 "a council-init refresh writes one per seat — workers read them instead of the generic docs")
+    cards = doc.home + "/cards"          # a seat's card is written the first run that selects it: none is no finding
     for slug, seat, ref in rows:
         if ref not in ("none", "n/a", "-") and not _isfile(ref_path(ref, doc.root)):
             doc.error("seat '%s' points at a reference doc that doesn't exist: %s" % (seat, ref),
@@ -120,7 +117,7 @@ def roster(doc: Doctor) -> None:
         if slug == "-":
             doc.warn("seat '%s' has no slug" % seat,
                      "give it a lowercase slug in the roster — it names the seat's file and card")
-        elif has_cards:
+        else:
             card(doc, seat, slug, cards + "/" + slug + ".md")
     slugs = [slug for slug, _, _ in rows if slug != "-"]
     shared = sorted({s for s in slugs if slugs.count(s) > 1}, key=bytewise.text)
@@ -130,10 +127,9 @@ def roster(doc: Doctor) -> None:
 
 
 def card(doc: Doctor, seat: str, slug: str, path: str) -> None:
+    """A card that exists is checked; a seat with none yet is fine, since its first run writes it."""
     data = paths.contents(where.native(path))
     if data is None:
-        doc.warn("seat '%s' has no card (cards/%s.md)" % (seat, slug),
-                 "council-init refresh writes one from references/templates/seat-card.md")
         return
     source = cells.field(data.decode("utf-8", "surrogateescape"), "source")
     source = re.sub(r"[ \t\n\v\f\r]*·.*\Z", "", source, count=1, flags=re.S).replace("`", "")
@@ -223,8 +219,8 @@ def _plan_check(folder: str) -> tuple[int, list[str]]:
 
 def map_stamp(doc: Doctor) -> None:
     if not _isfile(doc.home + "/" + map_file.NAME):
-        from council.commands.map_status import NO_MAP
-        doc.warn("no %s" % map_file.NAME, NO_MAP[len("no map yet — "):])
+        from council.commands.map_status import no_map
+        doc.warn("no %s" % map_file.NAME, no_map(doc.home)[len("no map yet — "):])
         return
     if git.run(".", "rev-parse", "--git-dir")[0] != 0:
         found = map_file.Stale(map_file.commit(where.native(doc.home)), True, 0, [])

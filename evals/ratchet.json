@@ -120,7 +120,7 @@
    "longest_name": "agents_on_record"
   },
   "src/council/commands/audit_steps.py": {
-   "lines": 231,
+   "lines": 243,
    "longest": 27,
    "longest_name": "size_first"
   },
@@ -185,7 +185,7 @@
    "longest_name": "refuse"
   },
   "src/council/commands/collect.py": {
-   "lines": 280,
+   "lines": 282,
    "longest": 36,
    "longest_name": "one"
   },
@@ -200,22 +200,22 @@
    "longest_name": "_fields"
   },
   "src/council/commands/dispatch.py": {
-   "lines": 101,
+   "lines": 102,
    "longest": 15,
    "longest_name": "main"
   },
   "src/council/commands/doctor.py": {
-   "lines": 273,
-   "longest": 45,
+   "lines": 269,
+   "longest": 46,
    "longest_name": "main"
   },
   "src/council/commands/doctor_config.py": {
-   "lines": 64,
+   "lines": 74,
    "longest": 23,
    "longest_name": "_run_preferences"
   },
   "src/council/commands/doctor_gates.py": {
-   "lines": 123,
+   "lines": 128,
    "longest": 41,
    "longest_name": "row"
   },
@@ -245,9 +245,9 @@
    "longest_name": "main"
   },
   "src/council/commands/fingerprint.py": {
-   "lines": 88,
-   "longest": 16,
-   "longest_name": "stack_summary"
+   "lines": 99,
+   "longest": 22,
+   "longest_name": "stack_read"
   },
   "src/council/commands/gate.py": {
    "lines": 247,
@@ -260,8 +260,8 @@
    "longest_name": "execute"
   },
   "src/council/commands/gate_failed.py": {
-   "lines": 86,
-   "longest": 40,
+   "lines": 87,
+   "longest": 41,
    "longest_name": "said"
   },
   "src/council/commands/gate_list.py": {
@@ -275,7 +275,7 @@
    "longest_name": "take"
   },
   "src/council/commands/gate_output.py": {
-   "lines": 135,
+   "lines": 149,
    "longest": 25,
    "longest_name": "zero_tests"
   },
@@ -305,7 +305,7 @@
    "longest_name": "refusal"
   },
   "src/council/commands/help.py": {
-   "lines": 177,
+   "lines": 185,
    "longest": 8,
    "longest_name": "main"
   },
@@ -329,13 +329,33 @@
    "longest": 20,
    "longest_name": "definition"
   },
+  "src/council/commands/init.py": {
+   "lines": 264,
+   "longest": 33,
+   "longest_name": "scaffold"
+  },
+  "src/council/commands/init_checks.py": {
+   "lines": 267,
+   "longest": 32,
+   "longest_name": "node"
+  },
+  "src/council/commands/init_seats.py": {
+   "lines": 117,
+   "longest": 17,
+   "longest_name": "_file_markers"
+  },
+  "src/council/commands/init_write.py": {
+   "lines": 231,
+   "longest": 32,
+   "longest_name": "fill_unprobed"
+  },
   "src/council/commands/ledger.py": {
    "lines": 122,
    "longest": 25,
    "longest_name": "lines"
   },
   "src/council/commands/map_status.py": {
-   "lines": 52,
+   "lines": 62,
    "longest": 21,
    "longest_name": "status"
   },
@@ -490,13 +510,13 @@
    "longest_name": "export"
   },
   "src/council/commands/run_export_log.py": {
-   "lines": 104,
+   "lines": 106,
    "longest": 21,
    "longest_name": "lines"
   },
   "src/council/commands/run_open.py": {
-   "lines": 145,
-   "longest": 49,
+   "lines": 147,
+   "longest": 51,
    "longest_name": "main"
   },
   "src/council/commands/run_resume.py": {
@@ -540,9 +560,9 @@
    "longest_name": "_runs"
   },
   "src/council/commands/sharing.py": {
-   "lines": 278,
+   "lines": 306,
    "longest": 33,
-   "longest_name": "without_block"
+   "longest_name": "switch"
   },
   "src/council/commands/shell.py": {
    "lines": 128,
@@ -600,8 +620,8 @@
    "longest_name": "records"
   },
   "src/council/records/cells.py": {
-   "lines": 147,
-   "longest": 20,
+   "lines": 148,
+   "longest": 21,
    "longest_name": "table_cells"
   },
   "src/council/records/citations.py": {
@@ -615,7 +635,7 @@
    "longest_name": "undelivered"
   },
   "src/council/records/config.py": {
-   "lines": 429,
+   "lines": 438,
    "longest": 25,
    "longest_name": "roster_table"
   },
@@ -645,7 +665,7 @@
    "longest_name": "operator"
   },
   "src/council/records/gate_table.py": {
-   "lines": 188,
+   "lines": 203,
    "longest": 28,
    "longest_name": "gates_listed"
   },
@@ -655,7 +675,7 @@
    "longest_name": "results"
   },
   "src/council/records/home.py": {
-   "lines": 114,
+   "lines": 118,
    "longest": 16,
    "longest_name": "worktrees"
   },

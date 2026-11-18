@@ -241,7 +241,7 @@ WEIGHTS = {"Helper evals: runs": 260, "Helper evals: gates": 244, "Helper evals:
            "Helper evals: collect": 105, "Helper evals: timing": 57, "Helper evals: filing": 46,
            "Hook evals: timing": 46, "Memory evals": 40, "Run audit evals": 39, "Helper evals: citations": 32,
            "Unit tests (tests/py)": 24, "Benchmark harness self-test (no model calls)": 18,
-           "Helper evals: models": 16, "Helper evals: reports": 14, "Model routing evals": 12}
+           "Helper evals: models": 16, "Helper evals: reports": 14, "Helper evals: setup": 20, "Model routing evals": 12}
 
 
 def weight(job):

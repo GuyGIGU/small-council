@@ -16,7 +16,7 @@ verification	run	level	self	setup default: the gate dry-runs and the user's yes 
 seat	chair	disposition	selected	the Chair runs setup
 seat	chair	role	chair	setup is the Chair's own work
 context	chair	level	focused	config and skeleton files only: map the repo, don't deep-read it
-budget	chair	tool-calls	200	setup default: detection, dry-runs, cards and wiring are many small steps
+budget	chair	tool-calls	200	setup default: detection, dry-runs, the map and wiring are many small steps
 # A mapping worker, one per top-level area (large repo only); add its estimate to estimated-tokens:
 # seat	map-<area>	disposition	selected	maps <the area's paths>
 # seat	map-<area>	role	worker	one area of the map
