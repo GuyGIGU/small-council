@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """Build the release tree: the files of this checkout that run, and nothing else (D45).
 
-    python scripts/build_release.py <out-dir>
+    python scripts/build_release.py <out-dir>               # a clean checkout: what a commit ships
+    python scripts/build_release.py --worktree <out-dir>    # the working tree as it is, edits and all
 
 Writes into <out-dir>, which must be empty or not exist yet, every file git tracks under SHIPPED, with
 its bytes as they are in this checkout and its mode as git records it (bin/council and the hook scripts
 stay executable), and three files written for the tree: plugin.json without what points into the dev
 tree, a marketplace.json whose entry is the tree itself ("./"), and a short README.md. Untracked and
-ignored files (.venv, caches) never go, and nothing in the tree depends on the time or the machine, so
-two builds of one commit are byte-identical. .github/workflows/release.yml runs it at each v* tag and
-commits the tree to the release branch; CONTRIBUTING.md (Releasing) has the same steps by hand.
+ignored files (.venv, caches) never go. Without --worktree it refuses a checkout whose shipped files have
+uncommitted changes, so what it writes is the commit's: two builds of one commit are byte-identical.
+scripts/publish_release.py builds with it, checks the tree and commits it to the release branch.
 
 Python 3.8+, standard library only.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -137,41 +139,52 @@ def place(out: Path, path: str, data: bytes, mode: str) -> None:
     os.chmod(str(target), 0o755 if mode == "100755" else 0o644)
 
 
-def build(out: Path) -> tuple:
-    """Write the tree into out; (files, bytes, the executable paths)."""
+def uncommitted() -> list:
+    """The shipped paths whose working copy or index differs from HEAD."""
+    paths = [p for p, _ in SHIPPED if p not in WRITTEN] + [".claude-plugin"]
+    out = git("status", "--porcelain", "--untracked-files=no", "-z", "--", *paths).decode("utf-8")
+    return [entry[3:] for entry in out.split("\0") if len(entry) > 3]
+
+
+def build(out: Path, worktree: bool = False) -> list:
+    """Write the tree into out; its records, (path, mode, sha256 of the bytes), sorted by path."""
     if out.exists() and (not out.is_dir() or any(out.iterdir())):
         raise Refusal("%s is not an empty folder: name a new or empty one (the build never writes over files)" % out)
+    changed = [] if worktree else uncommitted()
+    if changed:
+        raise Refusal("shipped files with uncommitted changes: %s — commit or stash them, or pass --worktree to "
+                      "build the working tree as it is (never for a release)" % ", ".join(changed[:5]))
     files = tracked()
     missing = [path for path, _ in files if not (ROOT / path).is_file()]
     if missing:
         raise Refusal("tracked but not on disk: %s — restore them (git checkout -- <path>) or commit their removal"
                       % ", ".join(missing[:5]))
     out.mkdir(parents=True, exist_ok=True)
-    size = 0
-    for path, mode in files:
-        data = (ROOT / path).read_bytes()
+    records = []
+    entries = [(p, m, (ROOT / p).read_bytes()) for p, m in files] + [(p, "100644", d) for p, d in written().items()]
+    for path, mode, data in entries:
         place(out, path, data, mode)
-        size += len(data)
-    for path, data in written().items():
-        place(out, path, data, "100644")
-        size += len(data)
-    return len(files) + len(WRITTEN), size, [path for path, mode in files if mode == "100755"]
+        records.append((path, mode, hashlib.sha256(data).hexdigest()))
+    return sorted(records)
 
 
 def main(words: list) -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")    # Windows consoles default to cp1252
+    worktree = words[:1] == ["--worktree"]
+    words = words[1:] if worktree else words
     if len(words) != 1 or words[0].startswith("-"):
         print(__doc__.strip().splitlines()[2].strip(), file=sys.stderr)
         print("build_release: name the folder to write the tree into, one new or empty folder", file=sys.stderr)
         return 2
     out = Path(words[0]).resolve()
     try:
-        count, size, executable = build(out)
+        records = build(out, worktree)
     except Refusal as why:
         print("build_release: %s" % why, file=sys.stderr)
         return 2
-    print("Wrote %s — %d files, %d bytes, version %s" % (out.as_posix(), count, size, plugin_json().get("version")))
-    print("executable: %s" % " ".join(executable))
+    size = sum((out / path).stat().st_size for path, _, _ in records)
+    print("Wrote %s — %d files, %d bytes, version %s%s" % (out.as_posix(), len(records), size,
+                                                           plugin_json().get("version"), " (the working tree)" * worktree))
     return 0
 
 
