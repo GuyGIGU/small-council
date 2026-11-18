@@ -5794,7 +5794,7 @@ def gates_timed(tmp):
         with open(path, "rb") as f:
             return f.read()
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")   # local, as the helper stamps it
     said = "checks take: %%d min (measured %s) — a review's estimate uses it\n" % today
     timed = new_repo(tmp, "timed")
     cfg = os.path.join(timed, ".council", "council.config.md")
