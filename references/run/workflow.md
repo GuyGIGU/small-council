@@ -15,7 +15,7 @@ one small part each.
 - If dispatching through Workflow, pass a seat's `seat/<slug>/model` value to its `agent()` call.
 - **Whatever dispatches the workers** (Agent tool, Workflow, background agents), the file contract
   holds: one file per seat in `seats/`. The seat-check hook covers only
-  `council-worker` and `council-verifier` agents, never a Workflow's (their type is
+  `council-worker`, `council-verifier` and `council-builder` agents, never a Workflow's (their type is
   `workflow-subagent`), so give a Workflow's agents the worker's file rules in their prompt;
   `council collect` then checks every file in `seats/`, named in the brief or not.
 - A Workflow's notification is recorded with `agents=<agent_count>` (Work, While they work).
