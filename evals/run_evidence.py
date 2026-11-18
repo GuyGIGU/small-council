@@ -351,11 +351,16 @@ with tempfile.TemporaryDirectory() as folder:
                     "verify-1.md": "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
                                    "| 1 | Expiry skipped | CONFIRMED | src/auth.py:4 skips it |\n"})
     invoke(locked, "build")
-    stamp = (locked / "claims.jsonl").stat().st_mtime_ns
+    older = (locked / "synthesis.md").stat().st_mtime - 30
+    os.utime(str(locked / "claims.jsonl"), (older, older))    # its sources saved again since, with the same claims
+    invoke(locked, "check")
+    check("check: an index that already matches is dated now, so the audit reads it as no older than its sources",
+          (locked / "claims.jsonl").stat().st_mtime_ns >= (locked / "synthesis.md").stat().st_mtime_ns)
+    built_text = (locked / "claims.jsonl").read_bytes()
     os.chmod(str(locked / "claims.jsonl"), 0o444)
     same = invoke(locked, "check")
-    check("check: an index that already matches is not written again — a read-only one passes, untouched",
-          same.returncode == 0 and not same.stderr and (locked / "claims.jsonl").stat().st_mtime_ns == stamp,
+    check("check: an index that already matches is not written again — a read-only one passes, as it was",
+          same.returncode == 0 and not same.stderr and (locked / "claims.jsonl").read_bytes() == built_text,
           same.stdout + same.stderr)
     write(locked, "verify-1.md", "# Verification\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
           "| 1 | Expiry skipped | REFUTED | src/auth.py:4 checks it |\n")

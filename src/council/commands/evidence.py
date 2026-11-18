@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -436,6 +437,10 @@ def write_index(run: Path, claims: list[Claim]) -> str:
     output, data = run / "claims.jsonl", render(claims).encode("utf-8")
     try:
         if output.is_file() and not output.is_symlink() and output.read_bytes() == data:
+            try:
+                os.utime(str(output))      # current as of now, so the audit's "older than a source" stays true
+            except OSError:
+                pass                       # a read-only index that already matches: nothing to mend
             return ""
         paths.atomic_write(output, data, prefix=".claims-", suffix=".tmp", refuse_link=True)
         return ""
