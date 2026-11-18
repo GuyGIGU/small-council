@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### For contributors
+- A proposal for a redesign, built on a measured comparison of the council's review with plain
+  reviewers: [`docs/design/redesign-2.0.md`](docs/design/redesign-2.0.md). Nothing in the plugin
+  changes, and no part of it is decided.
+
 ## [1.2.0] — 2026-11-18
 
 **In short:** an install holds only what runs (about 2 MB, not the whole repository), a review reads
