@@ -120,7 +120,10 @@ def scaffold(project: Project, args: cli.Args) -> int:
     _gitignore(home)
     plugin = where.plugin_root()
     left: list[str] = []
-    if has_config:
+    quick_config = has_config and config.quick_setup(where.native(home))
+    if quick_config and not quick:
+        left += _from_quick(project, run)
+    elif has_config:
         cli.say("Kept %s/%s — it exists, so nothing in it changed; %s" % (home, config.NAME, REFRESH))
     else:
         left += _config(project, plugin, init_write.probes(run), quick)
@@ -130,10 +133,35 @@ def scaffold(project: Project, args: cli.Args) -> int:
     if quick and not has_config:
         cli.say("This is a quick setup: every catalog seat as the catalog names it, with no recast, no seat cards and "
                 "no map, and the council kept on this machine (sharing: just me). /council-init does the full setup.")
+    left = list(dict.fromkeys(left))
     for line in left or ["nothing" if quick and not has_config else
                          "nothing from this command — its files were there already; " + REFRESH]:
         cli.say("Left for the Chair: " + line)
     return 0
+
+
+def _from_quick(project: Project, run: Path | None) -> list[str]:
+    """A quick setup made full: its `✗ not probed` Gates rows that the setup run probed, written as a first write
+    would; nothing else in the config changes. The lines it leaves for the Chair."""
+    path = project.home + "/" + config.NAME
+    if run is None:
+        cli.say("Kept %s — a quick setup's config: to fill its unprobed checks, open a council-init run (council run "
+                "open council-init), probe them, then run council init scaffold again" % path)
+        return []
+    data = paths.contents(where.native(path)) or b""
+    text, done = init_write.fill_unprobed(data.decode("utf-8", "surrogateescape"), project.checks,
+                                          init_write.probes(run), clock.now_date())
+    if done:
+        paths.atomic_write(Path(where.native(path)), text.encode("utf-8", "surrogateescape"), ".config-",
+                           keep_mode=True)
+        cli.say("Updated %s — the Gates rows the setup run probed: %s; nothing else in it changed"
+                % (path, ", ".join(done)))
+    else:
+        cli.say("Kept %s — no `✗ not probed` Gates row has a probe in the setup run, so nothing in it changed" % path)
+    return ["the roster — tailor the quick setup's rows: recasts, drops and each seat's surface markers "
+            "(council-init, Phase B)", "the ## Stack section of council.config.md",
+            "the map's prose — each section of map.md, the One way per job table too (council-init, Phase D)",
+            "the `setup: quick` line in council.config.md: take it out once the setup is full"]
 
 
 def _write_new(path: str, text: str) -> bool:

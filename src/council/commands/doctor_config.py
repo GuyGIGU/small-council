@@ -34,7 +34,7 @@ def quick(doc: Doctor) -> None:
     if config.quick_setup(where.native(doc.home)):
         doc.warn("this council comes from a quick setup (council.config.md's `setup: quick` line): its roster is the "
                  "catalog's seats as the catalog names them, with no recast and few surface markers, and it has no "
-                 "seat cards and no map",
+                 "map",
                  "run /council-init for the full setup: it tailors the roster to this project (recasts, drops, surface "
                  "markers), probes the checks with you and builds the map")
 

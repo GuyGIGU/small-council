@@ -7,9 +7,9 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.commands import init_seats
+from council.commands import gate_output, init_seats
 from council.commands.init_checks import Check
-from council.records import config, map_file, memory
+from council.records import cells, config, map_file, memory, paths
 from council.records import gates as gate_files
 from council.records import verdicts
 
@@ -20,11 +20,13 @@ EARLY = ("lint", "type check")             # quick to run, and a review reads wh
 
 
 class Probe(NamedTuple):
-    """A probe's saved verdict: its exit, the command it ran, and why a pass proves nothing ('' when it counts)."""
+    """A probe's saved verdict: its exit, the command it ran, why a pass proves nothing ('' when it counts), and why
+    its command could not run at all, as council gate reads it ('' when it ran)."""
 
     exit: int
     command: str
     why: str
+    cannot: str = ""
 
 
 def template(plugin: str, name: str) -> str:
@@ -39,9 +41,12 @@ def probes(run: Path | None) -> dict[str, Probe]:
     for result in gate_files.results(run):
         name = result["name"]
         if gate_files.kind(name) == "probe":
-            command = verdicts.command(gate_files.files(run, gate_files.slug(name))[0]) or result["command"]
+            verdict, output = gate_files.files(run, gate_files.slug(name))
+            command = verdicts.command(verdict) or result["command"]
             code = result["exit"] if isinstance(result["exit"], int) else 1
-            found[name] = Probe(code, command, result["void"] or result["note"])
+            content = (paths.contents(output) or b"").decode("utf-8", "surrogateescape")
+            found[name] = Probe(code, command, result["void"] or result["note"],
+                                gate_output.could_not_run(code, content) if code else "")
     return found
 
 
@@ -61,7 +66,9 @@ def gate_row(check: Check, probed: dict[str, Probe], today: str, unprobed: str) 
         probe = "`%s`" % _cell(run.command)
         if broken is not None:
             probe += " · broken: %s, exit %d" % ("fail" if broken.exit else "passed", broken.exit)
-        if run.exit or run.why:
+        if _fails_today(run, broken):
+            checked = "✓ %s: runs, and fails today (probe exit %d)" % (today, run.exit)
+        elif run.exit or run.why:
             checked = "✗ %s: probe %s" % (today, run.why or "failed, exit %d" % run.exit)
         elif broken is not None and not broken.exit:
             checked = "✗ %s: passes with its tool broken — fix the command" % today
@@ -70,6 +77,13 @@ def gate_row(check: Check, probed: dict[str, Probe], today: str, unprobed: str) 
     row = "| %s | `%s` | %s | %s | %s | %s | %s | %s |" % (check.name, _cell(check.command), at, must, checked, probe,
                                                          check.needs, check.side)
     return row, "%s · %s · mandatory %s" % (check.name, checked, must)
+
+
+def _fails_today(run: Probe, broken: Probe | None) -> bool:
+    """A probe that ran and failed while its broken twin could not run at all: the check works, and the project has
+    problems it finds today (a linter on a real lint error). A probe that could not run, timed out or was marked
+    invalid, or one with no twin to tell, is no such check."""
+    return bool(run.exit and not run.cannot and not run.why and broken is not None and broken.cannot)
 
 
 def _replace_rows(lines: list[str], heading: str, rows: list[str]) -> list[str]:
@@ -144,3 +158,21 @@ def map_text(plugin: str, project: str, sha: str, today: str) -> str:
     text = template(plugin, map_file.NAME).replace("# Codebase map — <project>", "# Codebase map — " + project, 1)
     text = re.sub(r"(?m)^map-commit: <full sha>$", ("map-commit: " + sha).rstrip(), text, count=1)
     return re.sub(r"(?m)^updated: <YYYY-MM-DD>$", "updated: " + today, text, count=1)
+
+
+def fill_unprobed(text: str, checks: list[Check], probed: dict[str, Probe], today: str) -> tuple[str, list[str]]:
+    """A quick setup's config with each Gates row that still reads `✗ not probed` and has a probe in the setup run
+    written again by gate_row, every other line as it was; and the names of the rows it wrote."""
+    by_name = {check.name: check for check in checks}
+    lines, inside, done = text.split("\n"), False, []
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            inside = cells.heading(line.rstrip("\r")) == "gates"
+            continue
+        cut = [cell.strip(" \t\r") for cell in cells.table_cells(line)] if inside and line.startswith("|") else []
+        name = cut[1] if len(cut) > 6 else ""
+        if name not in by_name or "probe-" + name not in probed or not cut[5].startswith("✗ not probed"):
+            continue
+        lines[i] = gate_row(by_name[name], probed, today, "")[0] + ("\r" if line.endswith("\r") else "")
+        done.append(name)
+    return "\n".join(lines), done

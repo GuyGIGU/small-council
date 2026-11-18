@@ -41,7 +41,9 @@ def main(args: cli.Args, words: list[str]) -> int:
     home = where.council_home()
     if not os.path.isdir(where.native(home)):
         if mode not in ("council-init", "council-postgame"):   # init maps before a config; a post-game checks any work
-            raise cli.Refusal("no council home at %s — run council-init first" % home)
+            first = ("set up a quick one first: council init scaffold --quick" if mode == "council-review" else
+                     "run /council-init first")
+            raise cli.Refusal("no council home at %s — %s, then open the run again" % (home, first))
         _makedirs(home, home)
     said = ignores.keep_out(home)                  # before any words land in runs/ — older homes too
     if said:

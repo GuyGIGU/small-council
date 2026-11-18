@@ -99,6 +99,24 @@ class GateRowTest(unittest.TestCase):
                       self.row({"probe-t": init_write.Probe(0, "bash t.sh", "exit 0, but it printed nothing")}))
         self.assertIn("| no | ✗ not probed: no probe-t ran | not run: `bash t.sh` |", self.row({}))
 
+    def test_a_check_that_runs_and_fails_today(self) -> None:
+        failed = init_write.Probe(1, "bash t.sh", "")
+        gone = init_write.Probe(127, "bash no-t.sh", "never ran (exit 127)", "a command it calls was not found")
+        self.assertIn("| no | ✓ 2026-11-18: runs, and fails today (probe exit 1) |",
+                      self.row({"probe-t": failed, "probe-t-broken": gone}))
+        self.assertIn("| no | ✗ 2026-11-18: probe failed, exit 1 |", self.row({"probe-t": failed}))
+        ran_twin = init_write.Probe(2, "bash no-t.sh", "")
+        self.assertIn("| ✗ ", self.row({"probe-t": failed, "probe-t-broken": ran_twin}))
+        cannot = init_write.Probe(1, "python -m t", "", "Python has no module t")
+        self.assertIn("| ✗ ", self.row({"probe-t": cannot, "probe-t-broken": gone}))
+
+    def test_could_not_run_is_council_gates_own_reading(self) -> None:
+        from council.commands import gate_output
+        self.assertEqual(gate_output.could_not_run(127, "x: command not found\n"), "a command it calls was not found")
+        self.assertEqual(gate_output.could_not_run(1, "/usr/bin/python: No module named ruff\n"),
+                         "Python has no module ruff")
+        self.assertEqual(gate_output.could_not_run(1, "src/a.py:1: E1 error\n"), "")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4281,7 +4281,11 @@ def runs_worktrees_close_and_find(tmp):
     git(fresh, "add", "-A")
     git(fresh, "commit", "-q", "-m", "init")
     code, _, err = council(fresh, "run", "open", "council-review")
-    check("run open: a mode other than init needs a council home", code == 2 and "council-init first" in err, err)
+    check("run open council-review: with no council home, the next step is the quick setup",
+          code == 2 and "council init scaffold --quick" in err and "then open the run again" in err, err)
+    code, _, err = council(fresh, "run", "open", "council-plan")
+    check("run open: another mode than init or review needs a council home, from /council-init",
+          code == 2 and "run /council-init first" in err and "--quick" not in err, err)
     code, init_run, err = council(fresh, "run", "open", "council-init")
     init_run = init_run.strip()
     check("run open council-init: creates the council home and its .gitignore (runs/ and asks/)",
@@ -10136,6 +10140,110 @@ def setup_quick(tmp):
     code, out, err = council(empty, "doctor")
     check("doctor after a quick setup that found no check: a warning naming the full setup, not an error",
           code == 0 and "ERROR" not in out and "the quick setup found no check" in out, out + err)
+
+
+@part("setup")
+def setup_next_steps(tmp):
+    """With no council, run status and doctor say what each mode starts on (a review on the quick setup); on a quick
+    setup's config a missing map is the full setup's to build, and the doctor's warning names no seat cards."""
+    bare = setup_repo(tmp, "no-council", {"a.py": "x = 1\n"})
+    code, out, err = council(bare, "run", "status")
+    check("run status with no council: a review starts on the quick setup, the other modes on /council-init",
+          code == 0 and "council init scaffold --quick" in out and "/council-init first" in out
+          and "— run council-init" not in out, out + err)
+    code, out, err = council(bare, "doctor")
+    check("doctor with no council home: its fix names the quick setup for a review and /council-init for the rest",
+          code == 1 and "council init scaffold --quick" in out and "/council-init first" in out, out + err)
+    quick = setup_repo(tmp, "quick-map", {"a.py": "x = 1\n"})
+    council(quick, "init", "scaffold", "--quick")
+    code, out, err = council(quick, "map", "status")
+    check("map status on a quick setup: no map, go on without it, the full setup builds it",
+          code == 0 and "quick setup" in out and "/council-init" in out and "as Prepare says" not in out, out + err)
+    code, out, err = council(quick, "doctor")
+    check("doctor on a quick setup: the map warning names the full setup, and the quick warning names no seat cards",
+          "WARN  no map.md\n       Fix: this council comes from a quick setup" in out and "seat cards and no map" not in out
+          and "comes from a quick setup (council.config.md" in out, out + err)
+    plain = setup_repo(tmp, "plain-map", {"a.py": "x = 1\n"})
+    write(os.path.join(plain, ".council", "council.config.md"), "# Council config — x\n")
+    code, out, err = council(plain, "map", "status")
+    check("map status on any other config: as before, the template Prepare writes it from",
+          code == 0 and "as Prepare says" in out and "quick setup" not in out, out + err)
+
+
+@part("setup")
+def setup_fails_today(tmp):
+    """A probe that ran and failed while its broken twin could not run is a working check that fails today: ✓, not
+    mandatory, and gate --all runs it. A failed probe with no twin, or one that could not run, stays ✗."""
+    repo = setup_repo(tmp, "fails-today", {"scripts/lint.sh": 'echo "E1 a real lint error"; exit 1\n',
+                                           "scripts/check.sh": 'echo "bad"; exit 1\n',
+                                           "scripts/test.sh": "no-such-runner-here\n"})
+    council(repo, "run", "open", "council-init")
+    for name, command in (("scripts-lint-sh", "bash scripts/lint.sh"),
+                          ("scripts-lint-sh-broken", "bash scripts/no-such-lint.sh"),
+                          ("scripts-check-sh", "bash scripts/check.sh"),
+                          ("scripts-test-sh", "bash scripts/test.sh"),
+                          ("scripts-test-sh-broken", "bash scripts/no-such-test.sh")):
+        council(repo, "gate", "probe-" + name, "--", command)
+    code, out, err = council(repo, "init", "scaffold")
+    cfg = read(os.path.join(repo, ".council", "council.config.md"))
+    check("init scaffold: a probe that failed while its broken twin could not run is ✓, fails today, not mandatory",
+          code == 0 and re.search(r"\| scripts-lint-sh \| [^|]+ \| [^|]+ \| no \| ✓ [0-9-]+: runs, and fails today "
+                                  r"\(probe exit 1\) \| `bash scripts/lint\.sh` · broken: fail, exit 127 \|", cfg)
+          is not None, out + err + cfg)
+    check("init scaffold: a failed probe with no twin, and one that could not run itself, stay ✗",
+          "| ✗ " in line_of(cfg, "| scripts-check-sh |") and "probe failed, exit 1" in line_of(cfg, "| scripts-check-sh |")
+          and "| ✗ " in line_of(cfg, "| scripts-test-sh |"), cfg)
+    code, out, err = council(repo, "gate", "--all")
+    check("gate --all: runs the check that fails today, and skips the two that stay ✗",
+          "gate scripts-lint-sh: FAIL (exit 1" in out and "gate scripts-check-sh: skipped" in out
+          and "gate scripts-test-sh: skipped" in out, out + err)
+
+
+@part("setup")
+def setup_from_quick(tmp):
+    """A quick setup made full: with a setup run open, scaffold fills only the `✗ not probed` rows the run probed and
+    writes the map skeleton; nothing else in the config changes, and a second run changes nothing. A config with no
+    `setup: quick` line is kept whole."""
+    repo = setup_repo(tmp, "from-quick", {"scripts/test.sh": 'echo "1 passed"\n', "scripts/lint.sh": "exit 0\n",
+                                          "pyproject.toml": "[tool.mypy]\n"})
+    council(repo, "init", "scaffold", "--quick")
+    path = os.path.join(repo, ".council", "council.config.md")
+    write(path, read(path).replace("✗ not probed: quick setup, no probe ran | not run: `bash scripts/lint.sh`",
+                                   "✗ 2026-11-01: the Chair's own word | not run: `bash scripts/lint.sh`"))
+    before = read(path)
+    code, out, err = council(repo, "init", "scaffold")
+    check("init scaffold on a quick config with no setup run: kept whole, naming the run to open",
+          code == 0 and read(path) == before and "council run open council-init" in out, out + err)
+    council(repo, "run", "open", "council-init")
+    council(repo, "gate", "probe-scripts-test-sh", "--", "bash scripts/test.sh")
+    council(repo, "gate", "probe-scripts-lint-sh", "--", "bash scripts/lint.sh")
+    code, out, err = council(repo, "init", "scaffold")
+    after = read(path)
+    changed = [(a, b) for a, b in zip(before.split("\n"), after.split("\n")) if a != b]
+    check("init scaffold on a quick config: only the probed `✗ not probed` row changed, as a first write writes it",
+          code == 0 and len(before.split("\n")) == len(after.split("\n")) and len(changed) == 1
+          and changed[0][1].startswith("| scripts-test-sh | `bash scripts/test.sh` | verify | no | ✓ ")
+          and "Updated " in out and "scripts-test-sh" in line_of(out, "Updated ")
+          and "setup: quick" in after and "✗ 2026-11-01: the Chair's own word" in after, out + err + after)
+    check("init scaffold on a quick config: writes the map skeleton, and leaves the roster, Stack, the map's prose "
+          "and the setup: quick line to the Chair",
+          os.path.isfile(os.path.join(repo, ".council", "map.md")) and "Left for the Chair: the roster" in out
+          and "Left for the Chair: the ## Stack section" in out and "Left for the Chair: the map's prose" in out
+          and "Left for the Chair: the `setup: quick` line" in out, out)
+    files = home_files(repo)
+    code, out, err = council(repo, "init", "scaffold")
+    check("init scaffold on a quick config again: changes nothing", code == 0 and home_files(repo) == files
+          and "Updated " not in out, out + err)
+    full = setup_repo(tmp, "full-kept", {"scripts/test.sh": 'echo "1 passed"\n'})
+    council(full, "init", "scaffold", "--quick")
+    cfg = os.path.join(full, ".council", "council.config.md")
+    write(cfg, "\n".join(line for line in read(cfg).split("\n") if not line.startswith("setup: quick")))
+    kept = read(cfg)
+    council(full, "run", "open", "council-init")
+    council(full, "gate", "probe-scripts-test-sh", "--", "bash scripts/test.sh")
+    code, out, err = council(full, "init", "scaffold")
+    check("init scaffold on a config with no setup: quick line: kept whole, even with probes in the run",
+          code == 0 and read(cfg) == kept and "Kept " in out and "Updated " not in out, out + err)
 
 
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")

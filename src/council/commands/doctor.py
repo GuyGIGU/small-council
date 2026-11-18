@@ -58,13 +58,13 @@ def main(args: cli.Args, words: list[str]) -> int:
     home = where.council_home()
     doc = Doctor(home)
     if not os.path.isdir(where.native(home)):
-        doc.error("no council home at %s" % home, "run council-init in this repo")
+        doc.error("no council home at %s" % home, where.NO_SETUP)
         cli.say("doctor: 1 error(s), 0 warning(s)")
         return 1
     native = where.native(home)
     has_config = os.path.isfile(where.native(home + "/" + config.NAME))
     if not has_config:
-        doc.error("no %s" % config.NAME, "run council-init")
+        doc.error("no %s" % config.NAME, where.NO_SETUP)
     else:
         if config.first(native, "last-verified:") is None:
             doc.warn("the config has no last-verified stamp (an older layout)",
@@ -219,8 +219,8 @@ def _plan_check(folder: str) -> tuple[int, list[str]]:
 
 def map_stamp(doc: Doctor) -> None:
     if not _isfile(doc.home + "/" + map_file.NAME):
-        from council.commands.map_status import NO_MAP
-        doc.warn("no %s" % map_file.NAME, NO_MAP[len("no map yet — "):])
+        from council.commands.map_status import no_map
+        doc.warn("no %s" % map_file.NAME, no_map(doc.home)[len("no map yet — "):])
         return
     if git.run(".", "rev-parse", "--git-dir")[0] != 0:
         found = map_file.Stale(map_file.commit(where.native(doc.home)), True, 0, [])
