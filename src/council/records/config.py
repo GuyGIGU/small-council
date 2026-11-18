@@ -114,6 +114,40 @@ def pref(home: str | Path | None, key: str, empty: bool = False) -> Pref | None:
     return found if found and (found.value or empty) else None
 
 
+def with_pref(data: bytes, key: str, value: str, after: str = "", at_end: bool = False) -> bytes:
+    """The config with `- <key>: <value>` in its own line endings, the one writer of a setting's line: replaced
+    where the first such line is; else added after the first `- <after>:` line; else under ## Run preferences,
+    right under the heading or, at_end, after the section's last `- key:` line; else in a new Run preferences
+    section at the end."""
+    cr = b"\r" if b"\r" in data else b""
+    records = data.split(b"\n")
+    if data.endswith(b"\n") or not data:
+        records.pop()
+    keys = [_key_of(line) for line in records]
+    heads = [cells.heading(line.rstrip(b"\r").decode("latin-1")) for line in records]
+    head = next((i for i, name in enumerate(heads) if name == "run preferences"), None)
+    has = keys.index(key) if key in keys else None
+    at = keys.index(after) if after and after in keys else head
+    if has is None and at == head and head is not None and at_end:
+        ends = next((i for i in range(head + 1, len(records)) if heads[i] is not None), len(records))
+        at = max([i for i in range(head, ends) if keys[i]] or [head])
+    line = b"- " + key.encode("utf-8") + b": " + value.encode("utf-8") + cr
+    out = []
+    for i, record in enumerate(records):
+        out.append(line if i == has else record)
+        if has is None and i == at:
+            out.append(line)
+    if has is None and at is None:
+        out += [cr, b"## Run preferences" + cr, line]
+    return b"".join(record + b"\n" for record in out)
+
+
+def _key_of(line: bytes) -> str:
+    """The key of a `- key:` line, as pref_of reads it ('' for any other line)."""
+    found = pref_of(line.decode("latin-1"))
+    return found.key if found else ""
+
+
 _SAID: set[str] = set()
 
 
@@ -242,6 +276,35 @@ def gate_time_limit(home: str | Path) -> tuple[int | None, str]:
     found = pref(home, "gate time limit")
     raw = found.said if found else ""
     return (limit_seconds(raw) if raw else None), raw
+
+
+CHECKS_TAKE = "checks take"
+MAX_MINUTES = 1440                               # a day: the longest the checks' time is taken to be
+
+
+def minutes(raw: str) -> int | None:
+    """A checks' time as written ('25', '25 min', '25 minutes'): a whole number of minutes from 1 to 1440, else None."""
+    found = re.fullmatch(r"([0-9]{1,12})[ \t]*(?:min|mins|minute|minutes)?", raw.strip(" \t"))
+    number = int(found.group(1)) if found else 0
+    return number if 1 <= number <= MAX_MINUTES else None
+
+
+def checks_take(home: str | Path | None) -> int | None:
+    """`- checks take: <n> min (measured <date>)`, the minutes a review's runner measured its checks at (written by
+    council gates timed); None with no line — not measured yet — or (said once on stderr) one it can't read."""
+    found = pref(home, CHECKS_TAKE)
+    value = minutes(found.value) if found else None
+    if found and value is None:
+        unread(found, "no time (not measured yet)")
+    return value
+
+
+def checks_measured(home: str | Path | None) -> str:
+    """The date in the `- checks take:` line's `(measured <date>)` note, as written; '' with none."""
+    found = pref(home, CHECKS_TAKE)
+    lines = _lines(home)
+    said = re.search(r"\(measured[ \t]+([^()]*?)[ \t]*\)", lines[found.line - 1]) if found else None
+    return said.group(1) if said else ""
 
 
 HARD_RULES = "## Hard rules"
@@ -410,6 +473,7 @@ SETTINGS: dict[str, tuple[str, Callable[[str], bool]]] = {
     "estimates": ("review=, plan=, builder=, verifier= and converge=, each a token figure from 1k to 1M, such as "
                   "builder=450k", _estimates_read),
     "gate time limit": ("a time, such as 90, 15m or 2 hours", lambda value: limit_seconds(value) is not None),
+    CHECKS_TAKE: ("a whole number of minutes from 1 to 1440, such as 25 min", lambda value: minutes(value) is not None),
     "guardrails": ("declined", _one_of("declined")),
     "memory budget": ("a size from 1 to 1024 KB, such as 25 KB", lambda value: memory_kb(value) is not None),
 }

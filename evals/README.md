@@ -247,9 +247,9 @@ keys; the agent under test can't read them.
 | triggering, near-miss | `trigger-review`, `trigger-plan`, `trigger-research`, `trigger-postgame`, `near-miss-question`, `near-miss-small-edit`, `near-miss-postgame` | the right mode starts; none starts for a question, a one-line edit in a council project, or a git question that sounds like "are we done?" — and the ask still gets handled | cheap — a few turns each |
 | postgame | `postgame-seeded-gap` | a finished build whose plan dropped part of the request: the gap is found and blamed on planning, only blind verifiers check the code, nothing unasked is proposed | high |
 | war-room | `plan-war-room-proposal` | "debate it" stays in council-plan, names the war room and its cost, and dispatches nothing before the go | moderate |
-| sizing | `propose-small-change`, `propose-risky-change` | a right-sized proposal, seats not going with reasons, nothing dispatched before the go-ahead | moderate |
-| dispatch | `squad-review-dispatch` | a `/council-review` inside the approved size runs end to end: 2–4 workers, a blind verifier for the auth bypass, the bypass in the deliverable | the priciest |
-| fixture | `seeded-review-solo` | recall (the planted bug) and precision (the accepted pattern left alone), in the reply and in the deliverable | high |
+| sizing | `propose-small-change`, `propose-risky-change` | the review is proposed in plain words first: what the reader and the runner will do, an estimate in tokens and minutes, a go-ahead asked for; no seat or size menu, nothing dispatched before the go | moderate |
+| dispatch | `squad-review-dispatch` | a `/council-review` inside the approved size runs end to end: exactly two `council-worker` agents (the reader and the runner), a blind verifier for the auth bypass, the bypass in the deliverable and the reply, the run closed and the status card shown | the priciest |
+| fixture | `seeded-review-solo` | a review is always the reader and the runner (exactly two workers, no Solo review since 1.3.0): recall (the planted bug), precision (the accepted pattern left alone), in the reply and in the deliverable | high |
 | calibration | `verifier-calibration` | the verifier's verdicts on two true and two false claims, from a blind dispatch | moderate |
 | resume | `resume-unfinished-run` | an open run is offered for resume; no seat is dispatched again | moderate |
 | adaptation | `init-godot-roster` | council-init fits a non-web stack and asks before writing | moderate |

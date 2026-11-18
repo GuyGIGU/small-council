@@ -5,7 +5,7 @@ import sys
 
 from council.commands import cli
 
-COUNCIL_VERSION = "1.2.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
+COUNCIL_VERSION = "1.3.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
 
 USAGE = """\
 council — the Small Council's helper (Python 3.8+ and git)
@@ -27,8 +27,9 @@ council — the Small Council's helper (Python 3.8+ and git)
   council pushes [check git push|gh pr create]  the push freeze · check: the bash gate's decision (exit 2 while held)
   council run open <mode> [--alongside] [--session=ID] [--code-root=DIR]
                                          open a run for a mode, e.g. council-review (or review); prints its
-                                         folder; --code-root: the worktree the code is in, opened from the
-                                         main checkout
+                                         folder; a review's opens with its plan and brief.md, the reader and
+                                         the runner; --code-root: the worktree the code is in, opened from
+                                         the main checkout
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
   council run close [--status complete|abandoned|paused]
                                          close the run (complete only once it came through Deliver);
@@ -105,7 +106,9 @@ council — the Small Council's helper (Python 3.8+ and git)
                                          and all it started are stopped: exit 124, TIMED OUT — no proof
   council gate <name> --invalid "<why>"  mark a red that proves nothing (the new check didn't compile, the
                                          probe was broken); council check reads that proof as no proof yet
-  council gates                          list the configured gates
+  council gates                          list the configured gates, then how long the checks take
+  council gates timed <minutes>          record how long the project's checks took (1-1440): the config's
+                                         "- checks take:" line, which a review's estimate uses
   council changed [--glob '<pat>'] [--each] -- <cmd>
                                          run <cmd> over just the files this change touches (0 when none);
                                          inside a gate, since the run's recorded base

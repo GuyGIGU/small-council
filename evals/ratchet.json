@@ -185,8 +185,8 @@
    "longest_name": "parse"
   },
   "src/council/commands/close_report.py": {
-   "lines": 65,
-   "longest": 22,
+   "lines": 66,
+   "longest": 23,
    "longest_name": "chair"
   },
   "src/council/commands/closed.py": {
@@ -275,8 +275,8 @@
    "longest_name": "said"
   },
   "src/council/commands/gate_list.py": {
-   "lines": 40,
-   "longest": 16,
+   "lines": 76,
+   "longest": 21,
    "longest_name": "main"
   },
   "src/council/commands/gate_lock.py": {
@@ -315,7 +315,7 @@
    "longest_name": "refusal"
   },
   "src/council/commands/help.py": {
-   "lines": 182,
+   "lines": 185,
    "longest": 8,
    "longest_name": "main"
   },
@@ -520,7 +520,7 @@
    "longest_name": "lines"
   },
   "src/council/commands/run_open.py": {
-   "lines": 147,
+   "lines": 159,
    "longest": 51,
    "longest_name": "main"
   },
@@ -635,9 +635,9 @@
    "longest_name": "undelivered"
   },
   "src/council/records/config.py": {
-   "lines": 429,
-   "longest": 25,
-   "longest_name": "roster_table"
+   "lines": 493,
+   "longest": 26,
+   "longest_name": "with_pref"
   },
   "src/council/records/converge.py": {
    "lines": 90,
@@ -810,13 +810,13 @@
    "longest_name": "workflow_extra"
   },
   "src/council/records/sharing.py": {
-   "lines": 58,
-   "longest": 19,
-   "longest_name": "with_sharing"
+   "lines": 37,
+   "longest": 8,
+   "longest_name": "sharing"
   },
   "src/council/records/stages.py": {
-   "lines": 85,
-   "longest": 12,
+   "lines": 103,
+   "longest": 13,
    "longest_name": "required"
   },
   "src/council/records/state.py": {
@@ -825,7 +825,7 @@
    "longest_name": "header"
   },
   "src/council/records/state_write.py": {
-   "lines": 186,
+   "lines": 187,
    "longest": 36,
    "longest_name": "_locked"
   },

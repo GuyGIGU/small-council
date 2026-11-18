@@ -14,10 +14,10 @@ records everything in a **run folder** inside the project's **council home** (`.
 
 | Part | Where | What it is |
 |---|---|---|
-| Kernel | `skills/context-core/SKILL.md` | The laws, the stage index, the helper's essentials, file layout, limits, resume. Every mode invokes it. |
-| Modes | `skills/council-*/SKILL.md` | One per job: init, review, plan, implement, research, postgame. Thin: `## At <Stage>` sections only where the mode differs. |
+| Kernel | `skills/context-core/SKILL.md` | The laws, the stage index, the helper's essentials, file layout, limits, resume. Every mode but council-review invokes it. |
+| Modes | `skills/council-*/SKILL.md` | One per job: init, review, plan, implement, research, postgame. Thin: `## At <Stage>` sections only where the mode differs. A review's page is its whole method instead: the commands in order and the rules they need, with no kernel or doctrine (D47). |
 | Standalone skills | `skills/spec-writer/`, `skills/test-architect/` | Skills that use the council's agents and formats without being council modes. |
-| Stage doctrine | `references/doctrine/NN-<stage>.md` | One file per stage, read by the Chair when it enters that stage. |
+| Stage doctrine | `references/doctrine/NN-<stage>.md` | One file per stage, read by the Chair when it enters that stage (never in a review, D47). |
 | References | `references/` | By who reads it: the seat docs, `guardrails.md` and `build-proof.md` at the root, `doctrine/`, `run/` (the run's contracts), `roster/`, `templates/`, `spec-writer/`, `test-architect/`. `references/README.md` is the map. |
 | Agents | `agents/council-worker.md`, `agents/council-verifier.md`, `agents/council-builder.md` | The seat worker's, the blind verifier's and the builder's contracts. The builder builds one task of a build in a clean window (D42). |
 | Helper | `bin/council`, `src/council/` | The CLI for the mechanical steps: runs, state, seats, gates, the change index, checks, memory, the agent stop. `bin/council` only starts Python; every command is in `src/council/commands/` (§10). |
@@ -104,12 +104,12 @@ Inside a run folder:
 | File | Written by | Read by |
 |---|---|---|
 | `session-state.md` | `council run open`, `council state` | the helper (`field`), the scripts through `council.records.state`, the mod, `session-start.sh` |
-| `run-plan.tsv` | the Chair, checked by `council run plan check` | the helper, `council run audit`, `council evidence`, `council status`, `quick_validate.py` |
+| `run-plan.tsv` | the Chair, checked by `council run plan check`; a review's is written by `council run open` from its template and changed by the Chair only where its comments say | the helper, `council run audit`, `council evidence`, `council status`, `quick_validate.py` |
 | `events.tsv` | the helper only, through `event_append` (contract: `references/run/event-stream.md`) | the helper, `council run audit`, `council repair` |
 | `seats.tsv`, `usage.tsv` | `council seat`; the agent gate records a build seat `running` as its builder goes out (`seat.taken`) | the helper, `council run audit`, `council status` |
 | `agent-starts.tsv` | the agent gate (`council cap check`) | the helper, `council run audit`, `council status` |
 | `ask.md` | the Chair (the user's words) | `council check`, `council ask save`, `council status` |
-| `brief.md`, `seats/`, `verify-<n>.md`, `synthesis.md` | the Chair and its agents | `council collect`, `council check`, `council run audit`, `council evidence` |
+| `brief.md`, `seats/`, `verify-<n>.md`, `synthesis.md` | the Chair and its agents; a review's brief is written by `council run open` from its template, and the Chair fills only its `<…>` lines | `council collect`, `council check`, `council run audit`, `council evidence` |
 | `gates/` | `council gate`; `council check` writes `gates/reverted/after-<n>-with-change.txt` and `after-<n>.txt`, its revert check's two outputs, which no gate reader reads | `council check`, `council evidence` |
 | `check.md` | `council check`; in a build it ends with the receipt's `Checked by machine:`, `Not proved:` and `Your decisions:` lines | the Chair (the receipt, those three lines copied word for word), the audit |
 | `audit.md` | `council run close` (the audit with `--at-close --save`, through `records/audit_file`); a close again rewrites it | `council status` (the closing card), `council run status`, a later session |
@@ -122,7 +122,7 @@ Inside a run folder:
 
 - **Skills** (what the user invokes): `council-init`, `council-review`, `council-plan`,
   `council-implement`, `council-research`, `council-postgame`, `spec-writer`, `test-architect`, and
-  `context-core`, which only modes invoke.
+  `context-core`, which only modes invoke (every mode but council-review).
 - **Agents**: `small-council:council-worker`, `small-council:council-verifier`,
   `small-council:council-builder`.
 - **Helper commands** (`council help` gives exact syntax; `references/run/helper-commands.md` gives the
@@ -260,8 +260,8 @@ folds them, and new code uses the named way.
 | List memory merges and retirements | `council memory tidy` (`commands/memory_tidy.py`): numbered operations, nothing written; the user's yes applies each through `memory.replace` | Rules now enforced by a hook are not looked for: nothing reads what the hooks enforce |
 | Write a run's state | `council.records.state_write.change`: `council state`, and `run open`, `resume`, `close` and `turn-end` through it (`raw_lines` and `council.records.paths.atomic_write(keep_mode=True)` for a header rewrite of its own); `clear_waiting` is a thin caller, and `council index` and `council ask save` set their fields through `change` too | |
 | Count an agent | `council seat` records it; the agent gate (`council cap check`, `src/council/commands/agent_gate.py`) counts starts; the ledger is written at close | One record per agent run, by id (`references/run/run-accounting.md`) |
-| Measure a run's method load | `council.records.stages.method_files` and `method_bytes`: context-core's skill, the mode's own and the doctrine of each stage it enters (all ten when none are named), each file's bytes with CRLF read as LF. `evals/run_structural.py` holds a review's under 50,000 bytes with it (D46); `run close` records the run's figure, over `stages.required`, as `method_bytes=` on `run.chair_usage` | No second list of what the Chair loads |
-| Point a seat at its reference | The roster's Reference cell (`council.config.md`, `## Roster`), the one place a surface maps to its doc: a brief block's `- ref:` is the seat's card, else that doc (doctrine `04-brief.md`, Cards first); `council collect` checks the seat's `ref:` line against what its block names | Never the whole set of seat docs |
+| Measure a run's method load | `council.records.stages.method_files` and `method_bytes`: context-core's skill, the mode's own and the doctrine of each stage it enters (all ten when none are named), or a review's own page alone (D47), each file's bytes with CRLF read as LF. `evals/run_structural.py` holds a review's under 16,000 bytes with it (D47); `run close` records the run's figure, over `stages.required`, as `method_bytes=` on `run.chair_usage` | No second list of what the Chair loads |
+| Point a seat at its reference | The roster's Reference cell (`council.config.md`, `## Roster`), the one place a surface maps to its doc: a brief block's `- ref:` is the seat's card, else that doc (doctrine `04-brief.md`, Cards first); `council collect` checks the seat's `ref:` line against what its block names | Never the whole set of seat docs. Not for a review: its reader and runner have `ref: none`, and their role text in the brief is their lens (D48) |
 | Read what a run's agents used | The per-seat rule: `council.records.usage` (`seat_list`, `usage_totals`, `usage_words`, `reported_runs`, `agents_share`, `standing`), read by `council cap`, the agent gate, `council seat`'s notes, `run close`, the ledger and the status card | — |
 | Hold a build to its verifier rounds | `council.commands.rounds`: one checker per batch (D18), and no third check without a diagnosis or the user's go, for the agent gate and `council seat … running` | |
 | Hold a build to its fix rounds | `council.commands.rounds.third_fix_round`, asked by `council patch save`: no third fix round in the same files without a redesign and the user's go (D38) | Beside the verifier-round rules, in the same module |
@@ -281,7 +281,9 @@ folds them, and new code uses the named way.
 | Print the task tree | `council tree` (`src/council/commands/tree.py`): the request, then the plan's tasks under each Serves quote | Reads only through `records/` |
 | Read a project's own decisions at setup | `references/roster/decision-records.md`, read by council-init: each decision a `- PROPOSED decision:` line under conventions.md's `## Proposed`, citing `file:line`; the map's `## One way per job` table filled from the records and the code | No command accepts one: the user's yes is moved by hand |
 | Write a project's setup files | `council init scaffold` (`commands/init.py`, `init_write.py`): from `references/templates/`, never over a file already there; a Gates row is ✓ only from a probe in the setup run (a failed probe whose broken twin could not run, by `gate_output.could_not_run`, as `✓ … fails today`), every other candidate `✗ not probed`; on a `setup: quick` config, with a setup run open, only its `✗ not probed` rows are filled (`init_write.fill_unprobed`, by the header's column names); the candidate checks come from `init_checks.found` alone | The Chair writes the judgment: the roster rows and their markers, the Stack section, the map's prose |
-| Start a first review with no setup | doctrine `01-convene.md`, step 2: a review in a project with no config runs `council init scaffold --quick` and goes on (D43); every other mode runs council-init first | Never a roster tailored inline: the quick setup takes the catalog's seats as they are |
+| Start a first review with no setup | council-review's page (Convene, and `references/run/quick-setup.md`): a review in a project with no config runs `council init scaffold --quick` only to make the council home, and goes on reading none of its roster (D43, D48); every other mode runs council-init first (doctrine `01-convene.md`, step 2) | Never a roster tailored inline: the quick setup takes the catalog's seats as they are |
+| Open a review | `council run open council-review` (`commands/run_open.py`): the plan from `references/templates/run-plan-review.tsv` and `<run>/brief.md` from `review-brief.md`, the run, its folder, the code root and the council home filled in; a missing template is a refusal, as the plan's is (D48) | The Chair fills only the brief's `<…>` lines and never rewords the role texts; no seat comes from the roster |
+| Record how long the checks take | `council gates timed <minutes>` (`commands/gate_list.py`), from the runner's `checks:` line: the config's `- checks take: <n> min (measured <date>)` line, replaced in place or added after `- gate time limit:`, through `paths.atomic_write`; read by `council.records.config.checks_take`, and printed last by `council gates` | A missing line means not measured yet; a review's estimate uses the line |
 | Write a seat's card | The Chair at Brief (doctrine `04-brief.md`, Cards first), before the seat blocks, for each selected seat with none; the rules live in `references/templates/seat-card.md`'s comment alone | Setup writes none; a refresh rewrites only a card that exists |
 | Read the build log's Converge table | `council.records.converge.read`, for the status's closing card | |
 | Stamp a time | `council.clock`: `now_date` (the one date-only stamp), `now_min` and `now_sec` (local), `now_utc`; `local_moment`, `utc_moment` and `iso_moment` read a stamp back | |

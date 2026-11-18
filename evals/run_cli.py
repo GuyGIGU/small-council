@@ -571,23 +571,58 @@ def runs_open(tmp):
     copy = os.path.join(tmp, "plugin-crlf")
     for folder in ("bin", "src", "references"):
         shutil.copytree(os.path.join(ROOT, folder), os.path.join(copy, folder), ignore=shutil.ignore_patterns("__pycache__"))
-    template = os.path.join(copy, "references", "templates", "run-plan.tsv")
-    with open(template, "rb") as f:
-        lf = f.read().replace(b"\r\n", b"\n")
-    with open(template, "wb") as f:
-        f.write(lf.replace(b"\n", b"\r\n"))
+    lfs = {}
+    for name in ("run-plan.tsv", "run-plan-review.tsv", "review-brief.md"):
+        template = os.path.join(copy, "references", "templates", name)
+        with open(template, "rb") as f:
+            lfs[name] = f.read().replace(b"\r\n", b"\n")
+        with open(template, "wb") as f:
+            f.write(lfs[name].replace(b"\n", b"\r\n"))
     crlf_repo = new_repo(tmp, "plan-template-crlf")
     write(os.path.join(crlf_repo, ".council", "council.config.md"), "# Council config\n")
-    opened = subprocess.run([BASH, os.path.join(copy, "bin", "council"), "run", "open", "council-review"], cwd=crlf_repo,
-                            capture_output=True, env=GIT_ENV, timeout=120)
-    written_path = os.path.join(opened.stdout.decode("utf-8").strip(), "run-plan.tsv")
-    written = b""
-    if os.path.isfile(written_path):
-        with open(written_path, "rb") as f:
-            written = f.read()
-    check("run open: a CRLF plan template is written with LF line ends, on every OS",
-          opened.returncode == 0 and b"\r" not in written and written.count(b"\n") == lf.count(b"\n"),
-          opened.stderr.decode("utf-8", "replace") + repr(written[:200]))
+    for mode, files in (("council-plan", {"run-plan.tsv": "run-plan.tsv"}),
+                        ("council-review", {"run-plan.tsv": "run-plan-review.tsv", "brief.md": "review-brief.md"})):
+        opened = subprocess.run([BASH, os.path.join(copy, "bin", "council"), "run", "open", mode, "--alongside"],
+                                cwd=crlf_repo, capture_output=True, env=GIT_ENV, timeout=120)
+        for written_name, name in files.items():
+            written_path = os.path.join(opened.stdout.decode("utf-8").strip(), written_name)
+            written = b""
+            if os.path.isfile(written_path):
+                with open(written_path, "rb") as f:
+                    written = f.read()
+            check("run open %s: a CRLF %s template is written with LF line ends, on every OS" % (mode, name),
+                  opened.returncode == 0 and b"\r" not in written and written.count(b"\n") == lfs[name].count(b"\n"),
+                  opened.stderr.decode("utf-8", "replace") + repr(written[:200]))
+    # A review opens with its fixed plan and its brief (D48): the plan valid untouched, the brief with every {{…}}
+    # filled and both role texts word for word; a missing brief template is refused as a missing plan template is.
+    review_repo = new_repo(tmp, "review-opens")
+    write(os.path.join(review_repo, ".council", "council.config.md"), "# Council config\n")
+    code, review_run, err = council(review_repo, "run", "open", "review")
+    review_run = review_run.strip()
+    brief = read(os.path.join(review_run, "brief.md")) if code == 0 else ""
+    roles = re.findall(r"(?m)^(?:> .*\n)+", read(os.path.join(ROOT, "references", "templates", "review-brief.md")))
+    plan_code, plan_out, plan_err = council(review_repo, "run", "plan", "check")
+    check("run open review: its plan passes council run plan check untouched — squad, the reader and the runner",
+          code == 0 and plan_code == 0 and "squad" in plan_out and
+          "seat\treader\trole\tworker" in read(os.path.join(review_run, "run-plan.tsv")) and
+          "seat\trunner\trole\tworker" in read(os.path.join(review_run, "run-plan.tsv")), plan_out + plan_err + err)
+    check("run open review: brief.md has no {{ left — the run, its folder, the code root and the home filled — and "
+          "both role texts word for word",
+          "{{" not in brief and brief.startswith("# Brief — %s\n" % os.path.basename(review_run)) and
+          ("Run: %s ·" % review_run) in brief and
+          ("Council home: %s ·" % os.path.dirname(os.path.dirname(review_run))) in brief and
+          re.search(r"^Code root: .+/review-opens ·", brief, re.MULTILINE) is not None and
+          len(roles) == 2 and all(role in brief for role in roles), brief[:600] + err)
+    code, plan_run, err = council(review_repo, "run", "open", "plan", "--alongside")
+    check("run open: another mode writes no brief.md, and keeps the starter plan",
+          code == 0 and not os.path.exists(os.path.join(plan_run.strip(), "brief.md")) and
+          "seat\treader\t" not in read(os.path.join(plan_run.strip(), "run-plan.tsv")), plan_run + err)
+    os.remove(os.path.join(copy, "references", "templates", "review-brief.md"))
+    missing = subprocess.run([BASH, os.path.join(copy, "bin", "council"), "run", "open", "council-review", "--alongside"],
+                             cwd=crlf_repo, capture_output=True, env=GIT_ENV, timeout=120)
+    check("run open review: a missing brief template is refused, naming it, as a missing plan template is",
+          missing.returncode == 2 and b"brief template is missing: " in missing.stderr and
+          b"review-brief.md" in missing.stderr, missing.stderr.decode("utf-8", "replace"))
     first_events = events(run)
     check("run open: stamps and writes the first structured event",
           "events-schema: 1" in st and len(first_events) == 1 and
@@ -611,14 +646,18 @@ def runs_open(tmp):
     check("run events show: a CRLF events.tsv is shown with no CR in its lines, on every OS",
           shown.returncode == 0 and "run.opened  run → council-review  (phase=convene)\n".encode("utf-8") in shown.stdout
           and b"\r" not in shown.stdout, repr(shown.stdout) + shown.stderr.decode("utf-8", "replace"))
-    code, out, _ = council(repo, "run", "plan", "check")
+    # Every mode but a review (and setup) opens with the starter plan, which is incomplete on purpose.
+    starter = new_repo(tmp, "starter-plan")
+    write(os.path.join(starter, ".council", "council.config.md"), "# Council config\n")
+    starter_run = council(starter, "run", "open", "council-plan")[1].strip()
+    code, out, _ = council(starter, "run", "plan", "check")
     check("run plan check: the starter plan is intentionally incomplete", code == 1 and "replace the placeholder" in out, out)
-    code, out, err = council(repo, "state", "phase=brief")
+    code, out, err = council(starter, "state", "phase=brief")
     check("state: refuses to enter Brief while the run plan is invalid",
-          code == 2 and "cannot advance to brief" in err and "phase: convene" in read(os.path.join(run, "session-state.md")), out + err)
-    code, out, err = council(repo, "state", "phase=build")
+          code == 2 and "cannot advance to brief" in err and "phase: convene" in read(os.path.join(starter_run, "session-state.md")), out + err)
+    code, out, err = council(starter, "state", "phase=build")
     check("state: refuses to enter an implement Build while the run plan is invalid",
-          code == 2 and "cannot advance to build" in err and "phase: convene" in read(os.path.join(run, "session-state.md")), out + err)
+          code == 2 and "cannot advance to build" in err and "phase: convene" in read(os.path.join(starter_run, "session-state.md")), out + err)
 
     # State
     code, out, _ = council(repo, "state", "phase=prepare", "next=build the index")
@@ -755,7 +794,7 @@ def runs_open(tmp):
     # ' selected ' (which the plan check takes) starts its seat, and a level of SELF does not make the run self-checked.
     kv = new_repo(tmp, "plan-values-as-written")
     write(os.path.join(kv, ".council", "council.config.md"), "# Council config\n")
-    _, kv_run, _ = council(kv, "run", "open", "council-review")
+    _, kv_run, _ = council(kv, "run", "open", "council-research")     # a review takes its own check at any level (D49)
     kv_run = kv_run.strip()
     write_plan(kv_run, selected=("hunt",), verification="self")
     kv_plan = os.path.join(kv_run, "run-plan.tsv")
@@ -3675,8 +3714,17 @@ def runs_helper_carries_next_steps(tmp):
     mine = nxt()
     council(nx, "state", "phase=brief")
     check("state phase=: every stage change records that stage's next step, naming its doctrine file — unless the "
-          "call names its own", "02-prepare.md" in at_prepare and mine == "ask the owner about the scope"
+          "call names its own", "council-review" in at_prepare and ".md" not in at_prepare and mine == "ask the owner about the scope"
           and "04-brief.md" in nxt(), str((at_prepare, mine, nxt())))
+    pn = new_repo(tmp, "next-steps-plan")
+    write(os.path.join(pn, ".council", "council.config.md"), "# Council config\n")
+    prun = council(pn, "run", "open", "council-plan")[1].strip().splitlines()[-1]
+    council(pn, "state", "phase=prepare")
+    plan_next = re.search(r"^next:[ 	]*(.*)$", read(os.path.join(prun, "session-state.md")), re.MULTILINE).group(1)
+    council(nx, "state", "phase=work")
+    check("state phase=: a review's next after phase=work names council-review and no doctrine file; a plan run's "
+          "still names its doctrine file", "council-review" in nxt() and "doctrine" not in nxt() and ".md" not in nxt()
+          and "02-prepare.md" in plan_next, str((nxt(), plan_next)))
     code, out, err = council(nx, "state", "decision=Go ahead with the Squad, four seats")
     council(nx, "state", "decision=Use the key token=abc123notarealvalue for the test server")
     body = read(st).split("## Decisions so far", 1)[-1]
@@ -5458,6 +5506,7 @@ def close_unfinished(tmp):
           and "status: in-progress" in read(os.path.join(run, "session-state.md"))
           and not [e for e in events(run) if e[3] == "run.closed"], err)
     write_plan(run)
+    council(repo, "state", "phase=work")                        # a review's own path goes through Work (D50)
     council(repo, "state", "phase=judge")
     council(repo, "state", "phase=challenge")
     council(repo, "state", "phase=deliver")
@@ -5515,7 +5564,7 @@ def runs_stage_order_and_close(tmp):
     def steps(r, *phases):
         return [council(r, "state", "phase=" + p)[0] for p in phases]
 
-    rv, rvr = fresh("order-review", "council-review", selected=("chair", "hunt"))
+    rv, rvr = fresh("order-plan", "council-plan", selected=("chair", "hunt"))
     before = len(events(rvr))
     code, out, err = council(rv, "state", "phase=assign")
     check("state phase=: a step past a stage the run must enter is refused, naming it and the next step",
@@ -5587,7 +5636,12 @@ def runs_stage_order_and_close(tmp):
           and "status: complete" in read(os.path.join(bdr, "session-state.md")))
 
     early, er = fresh("order-paused", "council-review")
-    steps(early, "prepare", "judge", "challenge")
+    code, out, err = council(early, "state", "phase=prepare")
+    code, out, err = council(early, "state", "phase=judge")
+    check("state phase=: a review's own path goes through Work — Prepare to Judge is refused, naming it (D50)",
+          code == 2 and "would skip work" in err and phase_of(er) == "prepare", err)
+    check("state phase=: a review's own path — Work, Judge, Challenge — needs no skip=, and no Assign, Brief or Collect",
+          steps(early, "work", "judge", "challenge") == [0] * 3, read(os.path.join(er, "events.tsv")))
     code, out, err = council(early, "run", "close")
     st = read(os.path.join(er, "session-state.md"))
     check("run close: a run that never reached Deliver is refused as complete, and the refusal names --status paused",
@@ -5691,32 +5745,33 @@ def runs_stage_order_and_close(tmp):
           and len(kinds) - 1 - kinds[::-1].index("run.chair_usage") < kinds.index("run.closed"), out + err + repr(chair_rows))
 
     # Beside the Chair's tokens, the method its mode loads (D13): context-core's skill, the mode's own and the
-    # doctrine of each stage the run must enter, counted here from the files themselves. A review whose plan
-    # selects no worker seat enters six stages; one with a worker seat enters all ten.
+    # doctrine of each stage the run must enter, counted here from the files themselves; a review's is its own
+    # page alone (D47). A plan whose plan selects a worker seat enters all ten stages.
     def method_of(mode, ranks):
         names = [os.path.join("skills", "context-core", "SKILL.md"), os.path.join("skills", mode, "SKILL.md")]
         names += [os.path.join("references", "doctrine", f) for f in os.listdir(os.path.join(ROOT, "references", "doctrine"))
                   if int(f[:2]) in ranks]
         return sum(len(Path(ROOT, n).read_bytes().replace(b"\r\n", b"\n")) for n in names)
-    short = method_of("council-review", {1, 2, 7, 8, 9, 10})
-    check("run close: the method load is recorded beside the Chair's tokens (method_bytes=) and said on the same line",
+    short = len(Path(ROOT, "skills", "council-review", "SKILL.md").read_bytes().replace(b"\r\n", b"\n"))
+    check("run close: the method load is recorded beside the Chair's tokens (method_bytes=) and said on the same line — "
+          "a review's is its one page",
           chair_rows[-1][6] == "calls=4;basis=complete;method_bytes=%d" % short
-          and "· method load: {:,} bytes (context-core, council-review and the doctrine of the 6 stages it enters)".format(short)
+          and "· method load: {:,} bytes (council-review's one page)".format(short)
           in out, out + err + repr(chair_rows))
     code, out, err = council(cu, "status", "--run", cname)
     check("status: the closing card shows the Chair's own work, the latest reading, and the method load beside it",
           code == 0 and "The Chair's own work: 33k tokens over 4 model calls (its context's growth, from the session transcript)"
           " · method load: {:,} bytes".format(short) in out, out + err)
     sid_w = "sess-chair-usage-w"
-    wu, wur = fresh("chair-method", "council-review", selected=("chair", "hunt"), env=session(sid_w))
+    wu, wur = fresh("chair-method", "council-plan", selected=("chair", "hunt"), env=session(sid_w))
     write(os.path.join(ccfg, "projects", "eval-project", sid_w + ".jsonl"),
           call(sid_w, datetime.now(timezone.utc), "w1", 5000, 0, 0))
     code, out, err = council(wu, "run", "close", "--status", "abandoned", env={"CLAUDE_CONFIG_DIR": ccfg})
-    full = method_of("council-review", set(range(1, 11)))
+    full = method_of("council-plan", set(range(1, 11)))
     rows = [e[6] for e in events(wur) if e[3] == "run.chair_usage"]
-    check("run close: a review whose plan selects a worker seat records the method of all ten stages, the D13 figure",
+    check("run close: a plan whose plan selects a worker seat records the method of all ten stages, the D13 figure",
           code == 0 and rows == ["calls=1;basis=complete;method_bytes=%d" % full] and full > short
-          and "· method load: {:,} bytes (context-core, council-review and the doctrine of the 10 stages it enters)".format(full)
+          and "· method load: {:,} bytes (context-core, council-plan and the doctrine of the 10 stages it enters)".format(full)
           in out, out + err + repr(rows))
     os.remove(os.path.join(ccfg, "projects", "eval-project", sid_a + ".jsonl"))
     p = subprocess.run([sys.executable, os.path.join(ROOT, "src", "council", "commands", "script.py"), "chair_usage", "--run",
@@ -5728,6 +5783,65 @@ def runs_stage_order_and_close(tmp):
     code, out, err = council(nu, "run", "close", "--status", "abandoned", env={"CLAUDE_CONFIG_DIR": os.path.join(tmp, "chair-none-config")})
     check("run close: with no session transcript to read, the close says nothing of the Chair and records nothing",
           code == 0 and "Chair's own work" not in out + err and not any(e[3] == "run.chair_usage" for e in events(nur)), out + err)
+
+
+@part("gates")
+def gates_timed(tmp):
+    # How long the project's checks take, measured by a review's runner: council gates timed writes the config's
+    # `- checks take:` line (in place, else after `- gate time limit:`, else at the end of the Run preferences list),
+    # council gates says it last, and a line nobody can read is named, never used.
+    def read_bytes(path):
+        with open(path, "rb") as f:
+            return f.read()
+
+    today = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")   # local, as the helper stamps it
+    said = "checks take: %%d min (measured %s) — a review's estimate uses it\n" % today
+    timed = new_repo(tmp, "timed")
+    cfg = os.path.join(timed, ".council", "council.config.md")
+    template = read(os.path.join(ROOT, "references", "templates", "council.config.md"))
+    write(cfg, template)
+    code, out, err = council(timed, "gates", "timed", "23")
+    after = read(cfg)
+    check("gates timed: writes `- checks take: <n> min (measured <date>)` at the end of the template's Run "
+          "preferences list, nothing else changed, and says the line",
+          code == 0 and out == said % 23 and after == template.replace(
+              "- sharing: team\n", "- sharing: team\n- checks take: 23 min (measured %s)\n" % today, 1), out + err)
+    code, out, err = council(timed, "gates", "timed", "40")
+    check("gates timed: a second measure replaces the line where it is",
+          code == 0 and read(cfg) == after.replace("- checks take: 23 min", "- checks take: 40 min"), read(cfg)[:900])
+    code, out, err = council(timed, "gates")
+    check("gates: says how long the checks take last, as gates timed said it", code == 0 and out.endswith(said % 40),
+          out + err)
+    write(cfg, "# Council config\r\n\r\n## Run preferences\r\n- agent cap: 10\r\n- gate time limit: 20m\r\n"
+               "- sharing: team\r\n\r\n## Gates\r\n")
+    code, out, err = council(timed, "gates", "timed", "7")
+    check("gates timed: goes right after `- gate time limit:`, in the config's own CRLF line ends",
+          code == 0 and read_bytes(cfg) == ("# Council config\r\n\r\n## Run preferences\r\n- agent cap: 10\r\n"
+                                            "- gate time limit: 20m\r\n- checks take: 7 min (measured %s)\r\n"
+                                            "- sharing: team\r\n\r\n## Gates\r\n" % today).encode(), repr(read_bytes(cfg)))
+    before = read_bytes(cfg)
+    refused = [(words, c, e) for words in (["timed"], ["timed", "0"], ["timed", "1441"], ["timed", "ten"],
+                                           ["timed", "5", "6"], ["timed", "2.5"])
+               for c, _, e in [council(timed, "gates", *words)]
+               if c != 2 or "usage: council gates timed <minutes>" not in e or "1 to 1440" not in e]
+    check("gates timed: no number, 0, past a day, a word, two numbers or a fraction is refused naming the usage, "
+          "nothing written", not refused and read_bytes(cfg) == before, repr(refused))
+    bare = new_repo(tmp, "timed-bare")
+    code, out, err = council(bare, "gates", "timed", "5")
+    check("gates timed: with no config, the usual no-setup refusal, nothing written",
+          code == 2 and "no council.config.md" in err and "council init scaffold --quick" in err and
+          not os.path.exists(os.path.join(bare, ".council", "council.config.md")), out + err)
+    write(cfg, "# Council config\n\n## Run preferences\n- checks take: soon (measured 2026-01-01)\n")
+    code, out, err = council(timed, "gates")
+    dcode, dout, _ = council(timed, "doctor")
+    check("gates: a `- checks take:` line it can't read is not said as a time; stderr names the line once, and "
+          "doctor names it with the values allowed",
+          code == 0 and "checks take" not in out and "`- checks take: soon`" in err and "not measured yet" in err and
+          "`- checks take: soon`: checks take takes a whole number of minutes from 1 to 1440" in dout, out + err + dout)
+    write(cfg, "# Council config\n\n## Run preferences\n- agent cap: 10\n")
+    code, out, err = council(timed, "gates")
+    check("gates: with no `- checks take:` line, nothing about the checks' time (not measured yet)",
+          code == 0 and "checks take" not in out + err, out + err)
 
 
 @part("gates")

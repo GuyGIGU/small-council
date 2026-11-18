@@ -27,26 +27,30 @@ writes files before confirming.
 ## D2 — Triggering
 **Pass if:**
 - in a council-enabled project, "review this", finishing a change, or opening a PR makes the agent
-  *propose* a council review with its size, seats (and seats not going), and cost;
+  *propose* a council review with its cost in plain terms: the reader and the runner, the tokens,
+  and the minutes to the first findings and to the whole review;
 - it doesn't fire on unrelated chat.
 
 ## D3 — Bug caught (fixture)
 **Setup:** see `fixtures/README.md` — a copy of `fixtures/` as its own git repo.
 
-**Pass if:** the empty-input bug in `average` comes back as a P1 or P2 that:
-- is attributed to the right seat;
-- carries origin, basis and "refuted if";
-- gives a concrete fix and no code;
-- was CONFIRMED by a verifier that saw only the claim and its location.
+**Pass if:** the empty-input bug in `average` comes back as a serious finding that:
+- names who found it: the reader, the runner, or both on one line;
+- carries its origin and "refuted if";
+- says what happens, what it costs and what to do, with no code;
+- was checked by the main session against the code (a CONFIRMED row in `verify-self.md`) before it
+  was shown.
 
 ## D4 — Memory respected (fixture)
 **Pass if:** `last_or_none` (Accepted Pattern AP-1) is not flagged.
 
-## D5 — Right-sized runs
+## D5 — A review's estimate
 **Setup:** a one-file, ten-line change.
 
-**Pass if:** the Chair recommends Solo or a small Squad, shows the seats not going with reasons, and
-states the estimated cost. A `/council-review` of that size starts without a second question.
+**Pass if:** the Chair says in plain terms what will happen (the reader and the runner), the tokens,
+and the minutes to the first findings and to the whole review, with no menu of seats or sizes. A
+`/council-review` within the config's `approve without asking` starts without a second question, and
+both agents go out in one message within about 2 minutes.
 
 ## D6 — Resume after compaction
 **Setup:** start a Squad review, then run `/compact` while seats are running.
@@ -99,8 +103,8 @@ it never loops.
 
 ## D13 — Helper-driven bookkeeping
 **Pass if**, in any Squad run:
-- the Chair uses `council run open`, `state`, `seat`, `index`, `collect`, `check` and `run close`
-  rather than hand-editing run files;
+- the Chair uses `council run open`, `state`, `seat`, `index`, `collect` (not in a review), `check`
+  and `run close` rather than hand-editing run files;
 - the user sees a progress line as seats finish;
 - the cost is reported at the end.
 
@@ -132,7 +136,7 @@ examples: a Go service, a Godot game, a Python CLI.
 - every seat has `.council/cards/<slug>.md`, under ~6 KB, listing every principle of its doc with the
   doc's numbers, each translated to this repo (a path or an idiom, or "not applicable here" with the
   reason);
-- a following review's brief gives each seat its card as `ref:`, the seat files echo the card's first
+- a following plan's or research run's brief gives each seat its card as `ref:`, the seat files echo the card's first
   line, and `council collect` shows `ok` in the ref column;
 - items cite principles by the doc's numbers.
 

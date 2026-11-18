@@ -43,14 +43,18 @@ deploy target, domain. Name the one thing that must never break.>
      "models": builder=, review=, verifier= — inherit (the session's model), fable, opus, sonnet or
      haiku for each role's agents; a role left out, or no line, means inherit. council-init proposes
      a split from its own model (references/run/models.md); a verifier is never on a weaker model
-     than the builder it checks, and the Chair stays on the session's model.
+     than the builder it checks, and the Chair stays on the session's model. A review's reader and
+     runner always run on the session's model; review= does not change them.
      "sharing": team | just me — team commits .council/ with the project; just me keeps it on this
      machine (git's own exclude list ignores it, and CLAUDE.md gets no note), so teammates never meet
      the council. `council sharing just-me` / `council sharing team` switches it; missing means team.
      "estimates": review=, plan=, builder=, verifier=, converge= — tokens (e.g. builder=450k) for one agent
      of each role; converge is a build's verifier. A role left out takes "estimate per worker".
      Both are yours to set by hand; the Chair prices a run with them at Convene: each agent at its
-     role's figure, 80k without one, plus about 20k for itself. -->
+     role's figure, 80k without one, plus about 20k for itself.
+     "checks take": `- checks take: <n> min (measured <YYYY-MM-DD>)` — how long the project's checks
+     took a review's runner; `council gates timed <n>` writes it, and a review's estimate uses it.
+     Missing means not measured yet. -->
 
 ## Roster
 Chair: John Carmack — always on; the synthesis filter ("a real problem in this codebase at this scale,

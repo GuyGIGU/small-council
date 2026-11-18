@@ -58,8 +58,8 @@ it, it records `run.cap_passed` and the status card says so. From the cap on, a 
 agent until the user's go is recorded with `council cap allow` (`references/run/run-accounting.md`).
 
 An optional `seat/<slug>/model` row is `inherit`, `fable`, `opus`, `sonnet`, or `haiku`. Missing
-means `inherit`. A builder, review or verifier seat may take its role's model from the config's
-`- models:` line (`references/run/models.md`); the Chair stays on `inherit`, and the check refuses a
+means `inherit`. A builder or verifier seat may take its role's model from the config's `- models:`
+line (`references/run/models.md`; a review's reader and runner take none, D51); the Chair stays on `inherit`, and the check refuses a
 verifier on a weaker model than a builder it checks — in a Solo build, the Chair too.
 Otherwise overrides require `- seat models: on` in `council.config.md`, and only selected worker seats
 may use `sonnet` or `haiku`. A worker requesting an override must

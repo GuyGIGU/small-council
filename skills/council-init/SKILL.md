@@ -89,7 +89,7 @@ build/compile, and any e2e or regression harness.
 - **Never probe** a gate that deploys, spends money, flashes hardware or needs credentials: ask
   first. If it stays unprobed, the scaffold writes its Checked cell `✗ not probed: …`, and
   `council gate --all` skips it.
-- **Mandatory gates, and a slow suite at verify:** reviews wait for grounding gates.
+- **Mandatory gates, and a slow suite at verify:** plan and research runs wait for grounding gates.
 - **Prove each mandatory gate can fail.** One that only greps its tool's output, or ends in
   `|| true`, passes with the tool missing — green for ever. Run detect's `broken:` line (the command
   with its tool broken): `council gate probe-<name>-broken -- '<broken command>'` must fail. The

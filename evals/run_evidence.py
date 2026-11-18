@@ -301,16 +301,34 @@ with tempfile.TemporaryDirectory() as folder:
     check("solo: the Chair's own check is a recorded verdict the index labels self-checked, and the check passes",
           built.returncode == 0 and invoke(solo, "check").returncode == 0 and
           all(c["verification"][0].get("self") is True for c in claims(solo)), built.stdout + built.stderr)
-    squad = fresh(folder, "squad-self", "council-review", plan_syn, {"verify-self.md": own})
+    squad = fresh(folder, "squad-self", "council-research", plan_syn, {"verify-self.md": own})
     invoke(squad, "build")
     alone = invoke(squad, "check")
-    check("squad: a self-check alone does not stand in for the independent verifier the plan calls for",
+    check("squad research: a self-check alone does not stand in for the independent verifier the plan calls for",
           alone.returncode == 1 and "only the Chair's own check" in alone.stdout, alone.stdout)
     write(squad, "verify-1.md", head + "| 1 | One table | UNCERTAIN | no join |\n| 2 | A queue | CONFIRMED | q.py:7 |\n")
     both = invoke(squad, "build")
     check("squad: the independent verifier's verdict outranks the Chair's own, with no conflict",
           both.returncode == 0 and claims(squad)[0]["verdict"] == "UNCERTAIN" and
           invoke(squad, "check").returncode == 0, both.stdout + both.stderr)
+    # A review: the main session checks each serious finding itself at any level; a protected subject's finding also
+    # gets a blind verifier, whose verdict outranks the main session's (D49).
+    review = fresh(folder, "review-self", "council-review", plan_syn,
+                   {"verify-self.md": own, "verify-1.md": head + "| 1 | One table | UNCERTAIN | no join |\n"})
+    built, passed = invoke(review, "build"), invoke(review, "check")
+    check("review at level independent: the verifier's row for one claim and the main session's own check for the "
+          "other pass the check, and the verifier's verdict outranks the self-check where both exist",
+          built.returncode == 0 and passed.returncode == 0 and
+          [c["verdict"] for c in claims(review)] == ["UNCERTAIN", "UNCERTAIN"] and
+          [len(c["verification"]) for c in claims(review)] == [2, 1] and
+          claims(review)[1]["verification"][0].get("self") is True,
+          built.stdout + built.stderr + passed.stdout)
+    (review / "verify-self.md").unlink()
+    invoke(review, "build")
+    unchecked = invoke(review, "check")
+    check("review: a kept finding nobody checked still fails the check — the main session's own check is what "
+          "stands in, not nothing", unchecked.returncode == 1 and "claim 2: no verification link" in unchecked.stdout,
+          unchecked.stdout)
 
     solo_from = fresh(folder, "solo-from", "council-review", plan_syn.replace("from: chair\n", "from: chair#1\n", 1),
                       {"verify-self.md": own}, level="self", size="solo")

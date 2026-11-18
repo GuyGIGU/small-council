@@ -56,6 +56,7 @@ def never_a_pass(text, marker):
 SKILLS = ["context-core", "council-init", "council-review", "council-plan", "council-implement",
           "council-research", "council-postgame", "spec-writer", "test-architect"]
 MODES = ["council-review", "council-plan", "council-implement", "council-research", "council-postgame"]
+STAGED = [m for m in MODES if m != "council-review"]   # on context-core's stages; a review is its own page (D47)
 STAGES = ["convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn"]
 DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 
@@ -125,6 +126,7 @@ guardrails = read("references", "guardrails.md")
 builder_loop = read("references", "run", "builder-loop.md")   # the build loop's steps 1-6, moved out of council-implement
 build_receipt = read("references", "run", "build-receipt.md")  # council-implement's Deliver, read at Deliver
 build_log = read("references", "templates", "build-log.md")    # council-implement's log template
+review_brief = read("references", "templates", "review-brief.md")   # a review's fixed brief, run open fills it (D48)
 
 # 2. Kernel
 LAWS = ["One head", "Parallel readers, one writer", "Gather once, share with everyone", "The disk is the memory",
@@ -154,21 +156,20 @@ check("kernel: approval threshold from the config", "approve without asking" in 
 check("kernel: the steps every run needs — the Chair's own seat record, the owner alert after waiting=, "
       "and a resume (never a re-dispatch) at an agent's turn limit",
       "`council seat chair done agents=0`" in core and "council status --line" in flat(core)
-      and "PushNotification" in core and "60 turns" in core
+      and "PushNotification" in core and "100 turns" in core and "60 turns" in core
       and "never re-dispatch it" in core)
 check("kernel: cards and the ledger have a home (helper-commands.md, The council home, which the kernel points at)",
       "`cards/<slug>.md`" in helper_reference and "`ledger.tsv`" in helper_reference
       and "references/run/helper-commands.md`, The council home" in flat(core))
-# The method a review run reads before it touches the project: under 50,000 bytes (D46; D13 held it under
-# 59,407): a rule the helper now says keeps one pointer here, not its whole text, and a rule only another mode
-# or a rare case needs lives in the reference that moment reads.
+# The method a review run reads: its one page, under 16,000 bytes (D47, superseding D46's 50,000 across twelve
+# files); a reference read only at a rare moment (quick-setup.md, resume.md) stays outside it.
 # The files counted are the helper's one definition (council.records.stages.method_files), which run close records too.
 load = helper_stages.method_bytes("council-review", root=ROOT)
-check("method: the method load counts context-core, council-review and the ten doctrine files, each once",
-      helper_stages.method_files("council-review") == ["skills/context-core/SKILL.md", "skills/council-review/SKILL.md"]
-      + ["references/doctrine/" + name for name in DOCTRINE], repr(helper_stages.method_files("council-review")))
-check("method: what a review run reads (context-core, doctrine 01-10, council-review) is under 50,000 bytes (D46)",
-      load < 50000, str(load))
+check("method: a review's method load is its own page alone, no context-core and no doctrine (D47)",
+      helper_stages.method_files("council-review") == ["skills/council-review/SKILL.md"],
+      repr(helper_stages.method_files("council-review")))
+check("method: what a review run reads (council-review's page) is under 16,000 bytes, CRLF read as LF (D47)",
+      load < 16000, str(load))
 resume_doc = read("references", "run", "resume.md")   # moved out of context-core's Resume, which points at it
 check("resume.md: resuming a run records this session as its driver (council run resume), and the kernel's Resume "
       "points at it", "council run resume" in resume_doc and "references/run/resume.md" in core[core.find("## Resume"):])
@@ -189,8 +190,9 @@ check("evidence: support states stay distinct from verifier verdicts",
       "separate" in evidence_contract)
 check("worker and verifier: declared support is blind to independent verification",
       "Evidence state:" in worker and "which you do not receive" in verifier and "refute the claim" in verifier)
-check("modes: evidence states reach review, research, plan, build and post-game",
-      all("evidence-model.md" in (builder_loop if mode == "council-implement" else skill[mode]) for mode in MODES))
+check("modes: evidence states reach review (its brief), research, plan, build and post-game",
+      all("evidence-model.md" in (builder_loop if mode == "council-implement" else skill[mode]) for mode in STAGED)
+      and all(s in review_brief for s in ("Evidence state:", "OBSERVED", "REPRODUCED")))
 repair_contract = read("references", "run", "repair-loop.md")
 check("repair: build mode records bounded same-gate failures",
       "council repair record" in builder_loop and "repair-loop.md" in builder_loop and
@@ -273,13 +275,17 @@ check("04-brief: memory in scope comes from council memory select", "council mem
 no_config = flat(doctrine["01-convene.md"]).split("**No `council.config.md`?**", 1)[-1].split("3. **Resolve the target.**", 1)[0]
 check("01-convene: with no config, a review starts on the quick setup; plan, implement and research run council-init first; "
       "a post-game needs no roster",
-      "A **review** starts now on a quick setup, `council init scaffold --quick`" in no_config
+      "A **review** runs on its own page, council-review, which starts on a quick setup "
+      "(`council init scaffold --quick`)" in no_config
       and "**Plan, implement and research** run council-init first, on a `setup: quick` config too" in no_config
       and "A **post-game** needs no roster" in no_config)
-check("review: the quick setup states its limits once and offers the full setup once, at Deliver",
-      "**No council yet** (Convene, step 2)" in skill["council-review"]
-      and "`council init scaffold --quick`" in skill["council-review"].split("## At Prepare", 1)[0]
-      and "once per run: `/council-init` does the full setup" in flat(skill["council-review"].split("## At Deliver", 1)[-1]))
+review_convene = skill["council-review"].split("## 1. Convene", 1)[-1].split("## 2. Go", 1)[0]
+check("review: with no council, it reads quick-setup.md and runs the quick setup at Convene, and offers the full "
+      "setup once, at the end (D43, D48)",
+      "${CLAUDE_PLUGIN_ROOT}/references/run/quick-setup.md" in review_convene
+      and "`council init scaffold --quick`" in review_convene
+      and "one last line, once: `/council-init` does the full setup" in flat(skill["council-review"].split("## 6. Learn", 1)[-1])
+      and "makes its folder" in flat(read("references", "run", "quick-setup.md")))
 check("init: the mechanical part of setup is council init detect and council init scaffold, and setup writes no card",
       "`council init detect`" in skill["council-init"] and "`council init scaffold`" in skill["council-init"]
       and "`.council/cards/<slug>.md`" not in skill["council-init"]
@@ -330,7 +336,8 @@ check("06-collect: checks a war room's round-2 files", "debate.md" in doctrine["
 check("09-deliver: files the request and knows the postgame kind; plan and post-game file first by pointing at it",
       "council ask save" in doctrine["09-deliver.md"] and "postgame" in doctrine["09-deliver.md"]
       and all("File the request first (Deliver, step 1), then write:" in skill[m] for m in ["council-plan", "council-postgame"])
-      and not [m for m in MODES if "council ask save" in skill[m]])
+      and not [m for m in STAGED if "council ask save" in skill[m]]
+      and "`council ask save`" in skill["council-review"])     # a review reads no doctrine, so its page runs it
 
 # 4. Every `council …` command the texts mention exists in the helper
 known = set(re.findall(r"^\s+council ([a-z]+)", helper_help.USAGE, re.MULTILINE))
@@ -390,21 +397,23 @@ check("helper call form: no skill, doctrine, agent or reference shows a council 
 check("every --option those mentions use exists in the helper", bool(flags) and not bad_flags, "; ".join(bad_flags[:8]))
 
 # 5. Modes
-for m in MODES:
+for m in STAGED:
     heads = re.findall(r"^## At ([A-Za-z]+)", skill[m], re.MULTILINE)
     check(f"{m}: invokes context-core", "context-core" in skill[m])
     check(f"{m}: every '## At <Stage>' names a real stage", heads and all(h.lower() in STAGES for h in heads), ", ".join(heads))
-WANT = {"council-review": ["Convene", "Prepare", "Brief", "Work", "Judge", "Deliver", "Learn"],
-        "council-plan": ["Convene", "Prepare", "Brief", "Work", "Collect", "Judge", "Challenge", "Deliver"],
+WANT = {"council-plan": ["Convene", "Prepare", "Brief", "Work", "Collect", "Judge", "Challenge", "Deliver"],
         "council-research": ["Convene", "Prepare", "Assign", "Brief", "Work", "Judge", "Challenge", "Deliver", "Learn"],
         "council-implement": ["Convene", "Prepare", "Challenge", "Deliver"],
         "council-postgame": ["Convene", "Prepare", "Judge", "Challenge", "Deliver", "Learn"]}
 for m, want in WANT.items():
     missing = [w for w in want if f"## At {w}" not in skill[m]]
     check(f"{m}: has its stage sections", not missing, ", ".join(missing))
-for m in ["council-review", "council-plan", "council-research", "council-postgame"]:
+for m in ["council-plan", "council-research", "council-postgame"]:
     check(f"{m}: per-item format has an index line", "Index line: `<n> ·" in skill[m])
     check(f"{m}: description says propose with its size and cost", "size and cost" in description(skill[m]))
+check("council-review: its description says to propose its cost first, and its brief template carries the item "
+      "format's index line", "Propose its cost first" in description(skill["council-review"])
+      and "Index line: `<n> ·" in review_brief)
 for m, path in [("council-review", "<home>/reviews/"), ("council-plan", "<home>/plans/"),
                 ("council-implement", "<home>/logs/"), ("council-research", "<home>/research/"),
                 ("council-postgame", "<home>/postgames/")]:
@@ -462,7 +471,10 @@ check("init: a refresh offers an earlier, shorter permission list the rules it l
       and "**Permission rules:**" in skill["council-init"].split("## Refresh (re-runs)")[1])
 review, plan, impl, research, init = (skill[k] for k in ["council-review", "council-plan", "council-implement", "council-research", "council-init"])
 for label, text, needles in [
-    ("review", review, ["merge-base", "council index --base", "Origin:", "Basis:", "Refuted if:", "Not a finding", "council-implement"]),
+    ("review", review, ["merge-base", "council index --base", "`council memory select`", "council-implement",
+                        "`council run open council-review`", "verify-self.md", "synthesis.md", "`council check`",
+                        "`council evidence check`", "`council ask save`", "`council run close`", "<home>/reviews/"]),
+    ("review brief", review_brief, ["Origin:", "Refuted if:", "Shown by:", "{{RUN_DIR}}/scratch", "checks: <minutes> min"]),
     ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research", "war-room.md",
                     "## How the council decided", "ask.md"]),   # debate.md: war-room.md's list; ask save: 09-deliver's check
     ("implement", impl, ["fix mode", "clean-context diagnosis", "converge", "council gate --all",
@@ -505,7 +517,7 @@ for label, text, needles in [
 check("init: a mapping squad's brief gives its workers the index line and a cap",
       "`<n> · map · <section> · <path> · <one-line fact>`" in init and "`cap: 8`" in init)
 check("review: the default fix hand-off covers what the change touched, not only what it introduced",
-      "introduced or touched" in review and "touched (" in review)
+      "introduced or touched" in review and "Origin: introduced | touched" in review_brief)
 check("postgame: parts quote the request with its secrets redacted", "never a secret" in skill["council-postgame"])
 check("09-deliver: the request line quotes the filed, redacted copy", "redacted" in doctrine["09-deliver.md"].split("**Your request:**", 1)[-1][:400])
 check("08-challenge: says what each of council check's citation verdicts asks of the Chair",
@@ -514,6 +526,49 @@ check("08-challenge: says what to do with an uncited review item and an unknown 
       "no-citation" in doctrine["08-challenge.md"] and "origin unknown" in doctrine["08-challenge.md"])
 check("review: an item whose origin is unknown still reaches the fix hand-off",
       "origin unknown" in review)
+# A review's one page (D47-D51): the commands a review runs, in order, with the rules they need; no kernel or doctrine.
+REVIEW_STEPS = ["## 1. Convene", "## 2. Go", "## 3. Each agent's return", "## 4. Judge and challenge", "## 5. Deliver",
+                "## 6. Learn and close", "## Hard stops", "## Resume"]
+step_at = [review.find(s) for s in REVIEW_STEPS]
+check("review page: its steps in order, Convene to Learn, then the hard stops and resume (D47)",
+      -1 not in step_at and step_at == sorted(step_at), str(step_at))
+check("review page: invokes no context-core and reads no stage doctrine (D47)",
+      "context-core" not in review and "references/doctrine/" not in review and "## At " not in review)
+check("review page: the run opens with the fixed plan and brief, and the brief's <…> lines are filled in one Edit (D48)",
+      "`council run open council-review`" in review and "`brief.md`" in review_convene and "one Edit" in review_convene)
+check("review page: both seats go out in ONE message as council-workers with no name and no model, pointing at the "
+      "brief, and are recorded by agent id (D48, D51)",
+      all(p in flat(review) for p in ("Both Agent calls in ONE message", "`subagent_type: small-council:council-worker`",
+                                       "no `name`", "no `model`", "Reference: none — your role is in your brief block",
+                                       "`council seat reader running agent=<id>`")))
+check("review page: each serious finding is checked against the code by the main session into verify-self.md, and a "
+      "protected subject also gets a blind verifier whose verdict outranks it (D49)",
+      all(p in flat(review) for p in ("open the cited code yourself", "`<run>/verify-self.md`", "`# Self-check — <run>`",
+                                       "`| # | Item | Verdict | Evidence |`", "`small-council:council-verifier`",
+                                       "Its verdict outranks yours")))
+check("review page: the reader's checked findings are shown at once, the runner's checks time is recorded, and the "
+      "estimate names tokens and minutes from `- checks take:`",
+      "show its checked serious findings in chat at" in flat(review) and "`council gates timed <minutes>`" in review
+      and "`- checks take:`" in review and "about 8 minutes" in flat(review))
+check("review page: the worth bar, and the chat report's sections in order",
+      "**The worth bar.** An item reaches the owner only if they would act or decide on it" in flat(review)
+      and -1 < review.find("**Does not work**") < review.find("**Your decisions**") < review.find("**Not proved**")
+      < review.find("**Noted for later**") < review.find("**Cost**") < review.find("`Full review: <path>`"))
+check("review page: points at resume.md, and resume.md says a review re-reads its own page",
+      "${CLAUDE_PLUGIN_ROOT}/references/run/resume.md" in review.split("## Resume", 1)[-1]
+      and "a review's is its own page (council-review)" in flat(resume_doc))
+check("review page: the helper call rule in one line, and no pipe into head, tail or grep",
+      "plain `council <command>`" in review and "never piped into head, tail or grep" in flat(review))
+check("context-core: no longer claims the review mode (D47)",
+      "plan, implement, research and post-game" in description(core) and "review, plan" not in description(core))
+check("worker: a ref: none block with a role: takes the role as its lens and the brief's item format, and the "
+      "project's checks run only in a scratch clone, never in the code root",
+      "`ref: none` and a `role:`" in worker and "use the brief's item format" in flat(worker)
+      and "`git clone` under the run's scratch folder, never in the code root" in flat(worker))
+appendix = read("docs", "design", "redesign-2.0.md").split("## Appendix A", 1)[-1]
+role_texts = re.findall(r"((?:^> .*\n)+)", appendix, re.MULTILINE)
+check("review brief: the reader's and the runner's role texts are the redesign's Appendix A, word for word",
+      len(role_texts) == 2 and all(r in review_brief for r in role_texts), str(len(role_texts)))
 check("07-judge: an empty Kept section says (none)", "(none)" in doctrine["07-judge.md"])
 check("test-architect: the verifier's temporary folder is named as pwd -W prints it, which every tool opens (wording)",
       re.search(r"mktemp -d[^\n]*pwd -W", skill["test-architect"]) is not None)
@@ -529,9 +584,10 @@ check("worker: rulings capped, lanes kept", "## Needs a ruling" in worker and "#
 check("worker: tells it to return 'BLOCKED: <reason>' rather than proceed blind (wording)",
       "Never proceed blind" in worker and "`BLOCKED: <reason>`" in worker)
 check("verifier: states the 16 KB file limit the seat check enforces", "16 KB" in verifier)
-check("worker and verifier: each is told its 60-turn limit; the verifier writes its file first and adds a row "
-      "per item as it settles it (a real verifier used ~414k tokens and left nothing)",
-      "60 turns" in worker and "60 turns" in verifier and "## Write your file first" in verifier
+check("worker and verifier: each is told its turn limit (a worker 100, a verifier 60); the verifier writes its file "
+      "first and adds a row per item as it settles it (a real verifier used ~414k tokens and left nothing)",
+      "maxTurns: 100" in worker and "100 turns" in worker and "about turn 75" in worker
+      and "maxTurns: 60" in verifier and "60 turns" in verifier and "## Write your file first" in verifier
       and verifier.find("## Write your file first") < verifier.find("## Verifying a claim"))
 check("verifier: scratch files stay out of the run folder, nothing runs in the background, and its answer is "
       "final and one line",
@@ -783,10 +839,10 @@ def reference_docs():
 prose = {**{f"skills/{s}": flat(skill[s]) for s in SKILLS}, **{f"doctrine/{d}": flat(doctrine[d]) for d in DOCTRINE},
          "agents/worker": flat(worker), "agents/verifier": flat(verifier), "agents/builder": flat(builder),
          **{path: flat(read(*path.split("/"))) for path in reference_docs()}}
-ONE_HOME = [  # (the wording, its one home)
-    ("concurrency or ordering, public contracts", "skills/context-core"),          # protected subjects
+ONE_HOME = [  # (the wording, its one home; a pair when a review's page, which loads no kernel, holds it too: D47)
+    ("concurrency or ordering, public contracts", ("skills/context-core", "skills/council-review")),   # protected subjects
     ("isn't a new agent", "skills/context-core"),                                 # resumed vs re-dispatched
-    ("write your file now", "skills/context-core"),                               # the turn-limit resume
+    ("write your file now", ("skills/context-core", "skills/council-review")),    # the turn-limit resume
     ("never report that as a pass", "skills/context-core"),                       # exit 4
     ("no bare principle numbers", "skills/context-core"),                         # no internal labels
     ("never a round-1 re-dispatch", "references/run/war-room.md"),                    # a lost round-2 seat
@@ -802,12 +858,13 @@ GONE = [  # stale or contradicting wording that must not come back anywhere
     "open the PR from it",                  # the PR is opened at Deliver, after the user's OK on pr-body.md (#48)
     "questions, numbered",                  # rulings are one question (Deliver, step 6)
     "doesn't repeat the alarm every run",   # missing checks: once, in that run's offer (Deliver, step 4)
+    "review seats one step below",          # council-init proposes no lower model for a review (D51)
 ]
 gone_bad = [f"{p!r} in {[k for k, t in prose.items() if p in t]}" for p in GONE if any(p in t for t in prose.values())]
 check("one rule, one place: contradicting copies are gone from every skill, doctrine, agent and reference",
       not gone_bad, "; ".join(gone_bad))
 homes_bad = [f"{p!r} in {[k for k, t in prose.items() if p in t]} (owner {home})" for p, home in ONE_HOME
-             if [k for k, t in prose.items() if p in t] != [home]]
+             if [k for k, t in prose.items() if p in t] != ([home] if isinstance(home, str) else list(home))]
 check("one rule, one place: each folded rule's wording is in its owner only", not homes_bad, "; ".join(homes_bad))
 check("modes: none restates the kernel's stage-entry rule (context-core, The stages, says it once)",
       not [m for m in MODES if "then this file's `## At <Stage>`" in flat(skill[m])]

@@ -119,8 +119,9 @@ def _rewrite(lines: list, words: list, old_phase: str) -> None:
             flat = value.replace("\r", " ").replace("\n", " ")
             _put(lines, key + ":", key + ": " + flat, header_only=False, add=True)
     phase, named = cells.field("\n".join(lines), "phase"), "next" in [word.split("=", 1)[0] for word in words]
-    if phase != old_phase and not named and stages.next_text(phase):
-        _put(lines, "next:", "next: " + stages.next_text(phase), header_only=True, add=False)
+    mode = cells.field("\n".join(lines), "mode")
+    if phase != old_phase and not named and stages.next_text(phase, mode):
+        _put(lines, "next:", "next: " + stages.next_text(phase, mode), header_only=True, add=False)
     if phase not in ("", "convene") and field("\n".join(lines), "next") == COUNCIL_NEXT_AT_OPEN:
         _put(lines, "next:", "next:", header_only=True, add=False)
     _put(lines, "updated:", "updated: " + clock.now_min(), header_only=False, add=False)

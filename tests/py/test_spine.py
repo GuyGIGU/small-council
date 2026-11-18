@@ -92,7 +92,18 @@ class StagesTest(Spine):
     def plan(self, *rows: str) -> None:
         (self.run / "run-plan.tsv").write_bytes("".join(row + "\n" for row in rows).encode())
 
+    def mode(self, mode: str) -> None:
+        self.write(".council/runs/%s/session-state.md" % self.run.name, STATE.replace("council-review", mode))
+
+    def test_a_review_takes_its_own_path_whatever_its_plan(self) -> None:          # the reader and the runner (D50)
+        review = ["convene", "prepare", "work", "judge", "challenge", "deliver", "learn"]
+        self.assertEqual(stages.required(self.run), review)
+        self.plan("seat\treader\trole\tworker", "seat\treader\tdisposition\tselected", "run\trun\tsize\tsolo")
+        self.assertEqual(stages.required(self.run), review)
+        self.assertEqual(stages.skipped(self.run, "prepare", "judge"), ["work"])
+
     def test_the_path_a_run_must_take(self) -> None:
+        self.mode("council-plan")
         self.assertEqual(stages.required(self.run), stages.SHORT.split())  # noqa: SIM905
         self.plan("seat\thunt\trole\t worker ", "seat\thunt\tdisposition\tselected\r", "run\trun\tsize\tsquad")
         self.assertEqual(len(stages.required(self.run)), 10)
@@ -114,7 +125,9 @@ class StagesTest(Spine):
                          ["skills/context-core/SKILL.md", "skills/council-implement/SKILL.md"] +
                          ["references/doctrine/%s.md" % n for n in ("01-convene", "02-prepare", "08-challenge",
                                                                    "09-deliver", "10-learn")])
-        self.assertEqual(len(stages.method_files("council-review")), 12)                      # none named: all ten
+        self.assertEqual(len(stages.method_files("council-plan")), 12)                        # none named: all ten
+        self.assertEqual(stages.method_files("council-review", ["convene", "work"]),         # its one page (D47)
+                         ["skills/council-review/SKILL.md"])
         self.assertEqual(stages.method_files("council-init", []), ["skills/context-core/SKILL.md",
                                                                    "skills/council-init/SKILL.md"])
         self.assertEqual(stages.method_files("context-core", ["learn", "learn", "x"]),
@@ -122,7 +135,9 @@ class StagesTest(Spine):
         root = self.tmp / "plugin"
         self.write("plugin/skills/context-core/SKILL.md", "a\r\nb\n")                         # CRLF read as LF
         self.write("plugin/references/doctrine/01-convene.md", "é")                      # bytes, not characters
-        self.assertEqual(stages.method_bytes("council-review", ["convene", "prepare"], root.as_posix()), 4 + 2)
+        self.assertEqual(stages.method_bytes("council-plan", ["convene", "prepare"], root.as_posix()), 4 + 2)
+        self.write("plugin/skills/council-review/SKILL.md", "c\r\n")
+        self.assertEqual(stages.method_bytes("council-review", ["convene", "prepare"], root.as_posix()), 2)
 
 
 CARD = ("show the user its %s now, once: hand the output of `council status --widget%s` to a show_widget tool (it may "
