@@ -55,6 +55,7 @@ SUITES = [
     ("Status and accounting evals", ["evals/run_status.py"], "shared"),
     ("Run audit evals", ["evals/run_audit.py"], "shared"),
     ("Chair replay evals (no model calls)", ["evals/run_replay.py"], "shared"),
+    ("Release tree evals (the installed tree stands alone)", ["evals/run_release.py"], "shared"),
     ("Benchmark harness self-test (no model calls)", ["evals/bench.py", "self-test"], "shared"),
     ("Repair drill trace checker self-test (no model calls)",
      ["evals/check_repair_trace.py", "--self-test", "--case", "evals/suite/build-repair-drill"], "shared"),
@@ -74,7 +75,7 @@ FAST = {"Validate plugin", "Structural evals", "Ratchet (sizes and structure onl
         "Repair drill trace checker self-test (no model calls)", "Seat learning evals",
         "Repair loop evals", "Evidence model evals",
         "Benchmark harness self-test (no model calls)", "Model routing evals",
-        "Chair replay evals (no model calls)"}
+        "Chair replay evals (no model calls)", "Release tree evals (the installed tree stands alone)"}
 UNIT_TESTS = ROOT / "tests" / "py"
 
 
