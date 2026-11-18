@@ -7782,17 +7782,22 @@ def runs_sharing(tmp):
           read(os.path.join(sh, "CLAUDE.md")) == "# Project\n\nOur rules.\n\nMore rules.\n", read(os.path.join(sh, "CLAUDE.md")))
     check("sharing just-me: an AGENTS.md that held only the note goes",
           not os.path.exists(os.path.join(sh, "AGENTS.md")) and "removed AGENTS.md" in out, out)
-    check("sharing just-me: says the CLAUDE.md change needs a commit, since the note was committed — and not for the uncommitted AGENTS.md",
-          "it was committed" in line_of(out, "CLAUDE.md") and "committed" not in line_of(out, "AGENTS.md"), out)
+    check("sharing just-me: each file git tracks that it changed is named as an uncommitted change, with commit it or "
+          "put it back — and not the AGENTS.md git doesn't track",
+          "uncommitted" in line_of(out, "CLAUDE.md") and "commit it" in line_of(out, "CLAUDE.md")
+          and "git checkout -- CLAUDE.md" in line_of(out, "CLAUDE.md")
+          and "git checkout -- .council/council.config.md" in line_of(out, "council.config.md")
+          and "committed" not in line_of(out, "AGENTS.md"), out)
     check("sharing just-me: the config says so under Run preferences, in its own CRLF line endings",
           b"## Run preferences\r\n- sharing: just me\r\n- agent cap: 10\r\n" in raw(cfg)
           and raw(cfg).count(b"\n") == raw(cfg).count(b"\r\n"), repr(raw(cfg)))
     check("sharing just-me: council files already in git are named, with the one command that takes them out — not run for the user",
           "1 council file(s) are already in git" in out and "git rm -r --cached .council" in out
           and git(sh, "ls-files", ".council") == ".council/council.config.md", out)
-    council(sh, "sharing", "just-me")
+    _, out, _ = council(sh, "sharing", "just-me")
     check("sharing just-me twice: the exclude list is unchanged, and the config holds one sharing line",
           raw(excl) == after and raw(cfg).count(b"- sharing:") == 1, repr(raw(excl)))
+    check("sharing just-me twice: nothing changed, so no file is named as an uncommitted change", "uncommitted" not in out, out)
 
     code, out, _ = council(sh, "sharing")
     check("sharing: just me shows what is done and what is left, with its fix",
@@ -7859,6 +7864,23 @@ def runs_sharing(tmp):
         f.write(note.replace("\n", "\r\n"))
     _, out, _ = council(loose, "sharing")
     check("sharing: finds the note in a CRLF CLAUDE.md", "still in CLAUDE.md" in line_of(out, "NOT YET"), out)
+
+    # A tracked file the switch changes is named, as an uncommitted change with its two next steps; a file the
+    # user had already edited is put back by hand, since git checkout would drop their edits too.
+    mine = new_repo(tmp, "sharing-tracked")
+    write(os.path.join(mine, "CLAUDE.md"), "# Project\n\n" + note)
+    write(os.path.join(mine, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- sharing: just me\n")
+    git(mine, "add", "-A")
+    git(mine, "commit", "-q", "-m", "a council")
+    append(os.path.join(mine, "CLAUDE.md"), "My own edit.\n")
+    code, out, _ = council(mine, "sharing", "team")
+    check("sharing team: the config git tracks is named as an uncommitted change, commit it or put it back",
+          code == 0 and "uncommitted" in line_of(out, "council.config.md")
+          and "git checkout -- .council/council.config.md" in line_of(out, "council.config.md"), out)
+    code, out, _ = council(mine, "sharing", "just-me")
+    check("sharing just-me: a tracked CLAUDE.md with the user's own edits is put back by hand, not with git checkout",
+          code == 0 and "uncommitted" in line_of(out, "CLAUDE.md") and "by hand" in line_of(out, "CLAUDE.md")
+          and "My own edit." in read(os.path.join(mine, "CLAUDE.md")), out)
 
 @part("requests")
 def requests_postgame_and_redaction(tmp):
