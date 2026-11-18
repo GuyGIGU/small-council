@@ -46,9 +46,9 @@ def main(args: cli.Args, words: list[str]) -> int:
             raise cli.Refusal("run %s changed while it was being closed — run the close again" % run.name)
         cli.say("%s is already closed — %s at %s; %s" % (run.name, old[0], old[1], "the close stopped before its own "
                 "records, now done: " + ", ".join(added) if added else "nothing changed"))
+        close_report.claims_note(run, old[0])           # the index first, so the audit it saves reads it current
         if old[0] == "complete" and not audit_file.present(run):
             close_report.audit(run)
-        close_report.claims_note(run, old[0])
         return 0
     _close(run, status, lost, retake, old[0] != status or not old[1])
     locks.release(lock)                                   # once: a second release could free another close's lock
