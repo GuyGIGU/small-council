@@ -3,7 +3,8 @@
      (about 120 lines). A line is here only if removing it would change what an agent does; a line that restates the
      code stays out. Each rule ends with its reason and its date: `— why: <the bug or decision it came from>
      (<YYYY-MM-DD>)`, or `— why: not recorded`, so it can be retired when its reason is gone. Written from the map at
-     setup; changed on the owner's word. -->
+     setup; kept true by each build for what it changed (references/run/book.md, After a build); a rule changed
+     only on the owner's word. -->
 
 ## Parts
 <One line per part: what it is, the folder it lives in, and which part it may call. Dependencies run one way.>

@@ -2,7 +2,9 @@
 # Fixed: the designer, and the main session's own check of what it reports. A decision that is hard to undo
 # (the stack of a new project, a data format, a public interface, a migration): uncomment designer-2's rows,
 # add 150000 to estimated-tokens, and say why. A claim on a protected subject: add the verifier's rows, add its
-# tokens, and set verification to independent.
+# tokens, and set verification to independent. A Small request in /council, where the main session writes the
+# three-item design itself: size solo, estimated-tokens 0, the designer's disposition skipped with why, its
+# context and budget rows deleted; at Deliver, council seat chair done agents=0.
 kind	id	field	value	reason
 schema	plan	version	1	versioned run-plan contract
 run	run	id	{{RUN}}	bind this plan to its run folder

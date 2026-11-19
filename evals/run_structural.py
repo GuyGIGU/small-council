@@ -747,9 +747,11 @@ check("09-deliver: the rulings go out as one AskUserQuestion — the harmless it
       all("(Deliver, step 6)" in flat(skill[s]) for s in ["context-core", "council-postgame"]) and
       not any("numbered rulings" in skill[s] for s in ["council-implement", "council-postgame"]))
 check("implement: the push/PR order is the freeze, then git fetch and gh pr list --state all (did the base move, did "
-      "a related PR merge), then pr-body.md printed for the user's edit or OK; the PR question only after it (#48)",
+      "a related PR merge), then pr-body.md written from the report and printed for the user's edit or OK; the PR "
+      "question only after it (#48)",
       "`git fetch`, then `gh pr list --state all`" in impl_deliver and "whether the base moved" in impl_deliver and
       "a related PR merged" in impl_deliver and "print `<run>/pr-body.md` for the user's edit or OK" in impl_deliver and
+      "write it from the report" in impl_deliver and
       "The PR question comes only after that OK" in impl_deliver and
       -1 < impl_deliver.find("**The freeze:**") < impl_deliver.find("**Fetch first:**") < impl_deliver.find("**The PR text:**"))
 check("pushes: the config template carries `- pushes: on` with off and off until a date; under a freeze the build "
