@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-11-19
+
+**In short:** the rest of redesign 2.0, built on the owner's word before each stage's own test.
+Your project keeps a short book every agent reads first; plan and research are a designer that
+looks underneath before anything is built; a build leaves a restore point and ends with the reader
+and the runner; `/council` runs the whole loop from one request, and `/council-health` shows where
+the project drifted from its book.
+
+### Before you update
+- **Finish or pause any open council run first.** A plan, research or build run opened on 1.3.0
+  follows its old page; close it paused (`council run close --status paused`) and start again
+  after updating.
+- **None of stages 2 to 5 has had its test yet** (redesign 2.0, section 12). Each stage is one
+  commit, so any one of them can be taken back alone.
+
 ### Stage 2: the book
 Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, section 12), which is still owed.
 - **Your project keeps a book every agent reads first** (D52): a design page (its parts, who owns
