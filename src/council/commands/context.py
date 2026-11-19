@@ -17,8 +17,7 @@ CEILING = 8000     # bytes of the whole printed pack, UTF-8, its last line inclu
 NAMES = ("The task", "Owner", "Hard constraints and memory", "Rulings and standing rules",
          "Earlier changes to these files")
 USAGE = "usage: council context build task-<n> [--run <folder>] — a build task's orders, printed"
-BUILDER_RULES = "references/run/builder-rules.md"
-BUILD_PROOF = "references/build-proof.md"
+BUILDER_PAGE = "references/run/builder-rules.md"     # the builder's one page (D56)
 PLUGIN_REF = re.compile(r"(?<![\w./-])references/[\w./-]*\w")    # a path in a Ref cell that may be the plugin's
 NEVER = ("- Never in a pack: the plan's other tasks, the code itself, seat files, and the Chair's Ruling: lines "
          "(they sit in the build log, which nothing reads).")
@@ -215,9 +214,10 @@ def rulings(run: Path, number: int) -> list[str]:
         "'%s' is not a time, so the defaults hold (council help, council gate … --timeout)" % raw if raw else
         "not set in the config: the defaults hold (council help, council gate … --timeout)"))
     root = where.plugin_root()
-    out.append("Proof: council gate before-%d, then after-%d, one command in both — %s/%s" % (
-        number, number, root, BUILD_PROOF))
-    out.append("Standing builder rules: %s/%s — read it before the first edit" % (root, BUILDER_RULES))
+    out.append("Proof: council gate before-%d, then after-%d, one command in both — the builder's page, Proof" % (
+        number, number))
+    out.append("The builder's page: %s/%s — your steps, proof, report and stops on one page; read it before the "
+               "first edit" % (root, BUILDER_PAGE))
     return out + [""]
 
 

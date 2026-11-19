@@ -56,7 +56,8 @@ def never_a_pass(text, marker):
 SKILLS = ["context-core", "council-init", "council-review", "council-plan", "council-implement",
           "council-research", "council-postgame", "spec-writer", "test-architect"]
 MODES = ["council-review", "council-plan", "council-implement", "council-research", "council-postgame"]
-STAGED = [m for m in MODES if m != "council-review"]   # on context-core's stages; a review is its own page (D47)
+STAGED = [m for m in MODES if m not in ("council-review", "council-implement")]   # on context-core's stages; a review
+#                                                     and a build are each their own page (D47, D56)
 STAGES = ["convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn"]
 DOCTRINE = [f"{i:02d}-{s}.md" for i, s in enumerate(STAGES, 1)]
 
@@ -124,6 +125,7 @@ bash_gate = read("hooks", "bash-gate.sh")
 warroom = read("references", "run", "war-room.md")
 guardrails = read("references", "guardrails.md")
 builder_loop = read("references", "run", "builder-loop.md")   # the build loop's steps 1-6, moved out of council-implement
+builder_page = read("references", "run", "builder-rules.md")  # the builder's one page since D56
 build_receipt = read("references", "run", "build-receipt.md")  # council-implement's Deliver, read at Deliver
 build_log = read("references", "templates", "build-log.md")    # council-implement's log template
 review_brief = read("references", "templates", "review-brief.md")   # a review's fixed brief, run open fills it (D48)
@@ -170,6 +172,32 @@ check("method: a review's method load is its own page alone, no context-core and
       repr(helper_stages.method_files("council-review")))
 check("method: what a review run reads (council-review's page) is under 16,000 bytes, CRLF read as LF (D47)",
       load < 16000, str(load))
+# A build is one page too (D56): its own page alone, under the same 16,000 bytes; the builder reads one page of rules,
+# which its contract and its orders name, in place of the four build references it read before.
+build_load = helper_stages.method_bytes("council-implement", root=ROOT)
+check("method: a build's method load is its own page alone, no context-core and no doctrine (D56)",
+      helper_stages.method_files("council-implement") == ["skills/council-implement/SKILL.md"]
+      and "context-core" not in skill["council-implement"].split("---", 2)[-1],
+      repr(helper_stages.method_files("council-implement")))
+check("method: what a build run reads (council-implement's page) is under 16,000 bytes, CRLF read as LF (D56)",
+      build_load < 16000, str(build_load))
+builder_contract = read("agents", "council-builder.md")
+check("builder: its contract points at one page of rules, builder-rules.md, and at none of the build references it "
+      "read before (D56); the page holds the steps, the proof, the report head, the stops and the standing rules, "
+      "under 9,000 bytes",
+      "references/run/builder-rules.md" in builder_contract
+      and not any(name in builder_contract for name in ("builder-loop.md", "builder-report.md", "build-proof.md"))
+      and all(h in builder_page for h in ("## The steps", "## Proof", "## The report", "## When you stop instead",
+                                          "## Standing rules"))
+      and len(builder_page.encode("utf-8")) < 9000, str(len(builder_page.encode("utf-8"))))
+check("build brief (D56): the build's reader and runner get the review's brief with build-brief.md's two blocks; the "
+      "runner's block makes it break each behaviour line on purpose and report a test that stays green, without "
+      "touching the role texts",
+      "{{BUILD}}" in review_brief and "{{BUILD_RUNNER}}" in review_brief
+      and all(b in read("references", "templates", "build-brief.md") for b in ("[BUILD]", "[BUILD_RUNNER]",
+                                                                             "break that behaviour on purpose",
+                                                                             "STAYED GREEN"))
+      and "Neither\nseat reads the builders' reports" in read("references", "templates", "build-brief.md"))
 resume_doc = read("references", "run", "resume.md")   # moved out of context-core's Resume, which points at it
 check("resume.md: resuming a run records this session as its driver (council run resume), and the kernel's Resume "
       "points at it", "council run resume" in resume_doc and "references/run/resume.md" in core[core.find("## Resume"):])
@@ -199,12 +227,12 @@ check("repair: build mode records bounded same-gate failures",
       "same" in repair_contract and "Third" in repair_contract and "stop product-code mutation" in repair_contract.lower())
 check("repair: terminal gate stop cannot fall through to another fix or success commit",
       "third failure stops the build" in repair_contract and
-      "do not attempt steps 6–7 as a fix path" in skill["council-implement"] and
-      "only if the task is not blocked" in builder_loop and
-      "commit only a task whose mandatory gates pass" in skill["council-implement"])
+      'skip="blocked: task <n>"' in skill["council-implement"] and
+      "**After, only if not blocked:**" in builder_page and
+      "commit only a task whose mandatory gates pass" in flat(skill["council-implement"]))
 check("repair: blocked work is excluded from the built count and helper cost is labelled",
-      "A task stopped" in build_receipt and
-      "is not counted as built" in build_receipt and
+      "A task stopped by the repair limit is blocked" in flat(build_receipt) and
+      "is never counted as working" in build_receipt and
       "helper-only usage" in build_receipt)
 check("repair: the helper and repair-loop.md expose the inspectable repair trail",
       "council repair record" in helper_help.USAGE and "council repair record" in repair_contract and
@@ -337,7 +365,8 @@ check("09-deliver: files the request and knows the postgame kind; plan and post-
       "council ask save" in doctrine["09-deliver.md"] and "postgame" in doctrine["09-deliver.md"]
       and all("File the request first (Deliver, step 1), then write:" in skill[m] for m in ["council-plan", "council-postgame"])
       and not [m for m in STAGED if "council ask save" in skill[m]]
-      and "`council ask save`" in skill["council-review"])     # a review reads no doctrine, so its page runs it
+      and all("`council ask save`" in skill[m] for m in ("council-review", "council-implement")))   # one-page modes
+#                                                     read no doctrine, so their page runs it
 
 # 4. Every `council …` command the texts mention exists in the helper
 known = set(re.findall(r"^\s+council ([a-z]+)", helper_help.USAGE, re.MULTILINE))
@@ -403,7 +432,6 @@ for m in STAGED:
     check(f"{m}: every '## At <Stage>' names a real stage", heads and all(h.lower() in STAGES for h in heads), ", ".join(heads))
 WANT = {"council-plan": ["Convene", "Prepare", "Brief", "Work", "Collect", "Judge", "Challenge", "Deliver"],
         "council-research": ["Convene", "Prepare", "Assign", "Brief", "Work", "Judge", "Challenge", "Deliver", "Learn"],
-        "council-implement": ["Convene", "Prepare", "Challenge", "Deliver"],
         "council-postgame": ["Convene", "Prepare", "Judge", "Challenge", "Deliver", "Learn"]}
 for m, want in WANT.items():
     missing = [w for w in want if f"## At {w}" not in skill[m]]
@@ -477,20 +505,22 @@ for label, text, needles in [
     ("review brief", review_brief, ["Origin:", "Refuted if:", "Shown by:", "{{RUN_DIR}}/scratch", "checks: <minutes> min"]),
     ("plan", plan, ["specs/", "Touches", "Done when", "Constraints", "council-research", "war-room.md",
                     "## How the council decided", "ask.md"]),   # debate.md: war-room.md's list; ask save: 09-deliver's check
-    ("implement", impl, ["fix mode", "clean-context diagnosis", "converge", "council gate --all",
-                         "small-council:council-verifier", "Notes for later tasks", "diagnose-<n>.md", "verify-<n>b.md",
-                         "Start:", "## Converge", "Post-game:", "Three kinds of input",
-                         "NOTHING WAS CHECKED", "## Shortcuts and concessions", "Shortcuts I took:", "Not proved:",
-                         "Left open:", "left on the user's ruling", "build-receipt.md", "build-log.md", 'council state phase=deliver skip="blocked: task <n>"',
-                         "Checked by machine:", "Works?:", "guardrails.md", "council check", "gates/baseline/",
-                         "older Gates layout",
-                         "Draft any PR text as `<run>/pr-body.md`; the PR is opened from it at Deliver, after the user's OK."]),
+    ("implement", impl, ["fix mode", "clean-context diagnosis", "council gate --all", "`council restore point`",
+                         "`council restore show`", "small-council:council-verifier", "small-council:council-worker",
+                         "`council run open council-implement`", "Start:", "## Converge", "Post-game:",
+                         "NOTHING WAS CHECKED", "## Shortcuts and concessions", "**Works now**", "**Does not work**",
+                         "**Your decisions**", "**Not proved**", "**Noted for later**", "**Cost**", "**Undo**",
+                         "build-receipt.md", "build-log.md", 'skip="blocked: task <n>"',
+                         "Checked by machine", "guardrails.md", "council check", "gates/baseline/",
+                         "older Gates layout", "`council book note", "verify-self.md", "`council gates timed",
+                         "before-<n>.png", "references/run/builder-rules.md"]),
     ("builder-loop", builder_loop, ["Before-evidence", "After-evidence"]),
     ("build-receipt", build_receipt, ["council-postgame", "No commit, push or PR question while anything is left open",
-                                      "data-loss hazard defaults to fix now", "Shortcuts I took:", "Not proved:",
-                                      "Left open:", "Works?:", "Checked by machine:", "guardrails.md"]),
+                                      "data-loss hazard defaults to fix now", "Works now", "Does not work", "Undo",
+                                      "Not proved", "Checked by machine", "guardrails.md",
+                                      "## What follows the report"]),
     ("build-log", build_log, ["Notes for later tasks", "## Shortcuts and concessions", "## Converge", "Post-game:",
-                              "Ruling:", "left on the user's ruling"]),
+                              "Ruling:", "left on the user's ruling", "Restore point:"]),
     ("research", research, ["scout", "Strength:"]),
     ("postgame", skill["council-postgame"], ["ask.md", "council run open council-postgame",   # ask save: 09-deliver's check
                                              "never the plan", "quote:", "small-council:council-verifier",
@@ -605,15 +635,14 @@ check("build tier: build-proof.md states both tiers with light as the default, t
       "and the verifier batches, the config template carries the line, and a build ends at a stated finish line",
       "## Tiers" in build_proof and "build tier: light" in build_proof and "A missing line reads as light" in build_proof and
       "light: gates only" in build_proof and
-      "light tier" in builder_loop and "Ruling:" in build_log and
-      "risk class" in skill["council-implement"].split("Dispatch `small-council:council-verifier` with:", 1)[-1] and
-      "finish line" in skill["council-implement"] and "never a hunt inside the build" in skill["council-implement"] and
+      "`- build tier: full`" in builder_page and "Ruling:" in build_log and
+      "That is the finish line: nothing more is hunted inside this build." in flat(skill["council-implement"]) and
       "- build tier: light" in read("references", "templates", "council.config.md"))
-check("checking: build-proof.md states one per batch as the default and per task, the implement skill points at it and "
-      "runs step 7 per task only, and the config template carries the line",
-      "## Checking" in build_proof and "A missing line reads as one per batch" in build_proof and
-      "**Per task**" in build_proof and "Checking" in skill["council-implement"] and
-      "only under `- checking: per task`" in skill["council-implement"] and
+check("checking (D56): a build ends with the reader and the runner on the whole change, with no converge or per-task "
+      "verifier; a verifier is only for a protected subject's finding; the config template still carries the line",
+      "## Checking" in build_proof and "only under `- checking: per task`" not in skill["council-implement"] and
+      "Neither reads the builders' reports or the log" in flat(skill["council-implement"]) and
+      "A finding on a protected subject" in skill["council-implement"] and
       "- checking: one per batch" in read("references", "templates", "council.config.md"))
 # A bug underneath stops the branch (docs/design/task-tree.md, section 4, and T3): the builder's stop, the Chair's
 # rule for it, the verifier's question on every round, and the orders a task is built from.
@@ -621,12 +650,14 @@ builder_report = read("references", "run", "builder-report.md")
 needs_fix = "`NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <the command or test, and its output>`"
 check("a bug underneath: repair-loop.md and builder-report.md give the builder one NEEDS: fix return line, recorded as "
       "a NEEDS: seat; the implement skill stops the task and those resting on it and starts the fix only on a yes",
-      needs_fix in repair_contract and needs_fix in builder_report and 'note="NEEDS: fix …"' in repair_contract
-      and "carry on with the tasks that do not rest on it" in skill["council-implement"]
+      needs_fix in repair_contract and needs_fix in builder_report and needs_fix in builder_page
+      and 'note="NEEDS: fix …"' in repair_contract
       and all(p in flat(skill["council-implement"]) for p in (
-          "stop that task and every task that depends on it (`Depends on`; the helper refuses them)",
-          "A task that only shares the code is not stopped: its builder is held to the same rule.",
-          "the Serves line of the task it unblocks", "it starts only on the user's yes")))
+          "Stop that task and every task that depends on it (`Depends on`; the helper refuses them)",
+          "a task that only shares the code goes on, its builder held to the same rule",
+          "the Serves line of the task it unblocks", "the bug is shown by a run, never argued",
+          "**fix it first**, **build anyway and note it**, **stop**",
+          "the stopped task goes on without asking again")))
 check("a bug underneath: the verifier asks on every round whether an added line only makes up for other code, naming "
       "it; build-proof.md, Checking, holds the rule, with the user's ruling as its one exception",
       "On every round" in verifier and "make up for other code in this repo? Name that code." in flat(verifier)
@@ -635,9 +666,9 @@ check("a bug underneath: the verifier asks on every round whether an added line 
 check("the task's orders: the build loop takes them from council context build and resumes from council tree after a "
       "compaction; the standing builder rules are one reference, which the orders link and never copy",
       "`council context build task-<n>`" in skill["council-implement"]
-      and "`council context build task-<n> --run <run folder>`" in builder_loop
-      and "resume from `council tree`" in skill["council-implement"]
-      and "never copy it" in flat(read("references", "run", "builder-rules.md")))
+      and "`council context build task-<n> --run <run folder>`" in flat(builder_page)
+      and "Resume after a compaction from `council tree`" in flat(skill["council-implement"])
+      and "never copy it" in flat(builder_page))
 cfg_template = read("references", "templates", "council.config.md")
 impl_deliver = flat(build_receipt)
 deliver_doc = flat(doctrine["09-deliver.md"])
@@ -657,7 +688,7 @@ check("09-deliver: the rulings go out as one AskUserQuestion — the harmless it
       "the recommended option first, and each option saying what happens next and what it costs" in deliver_doc and
       "as its own question, with *fix now* as the default" in deliver_doc and
       "in the log or the deliverable, not in the question" in deliver_doc and
-      all("(Deliver, step 6)" in flat(skill[s]) for s in ["context-core", "council-implement", "council-postgame"]) and
+      all("(Deliver, step 6)" in flat(skill[s]) for s in ["context-core", "council-postgame"]) and
       not any("numbered rulings" in skill[s] for s in ["council-implement", "council-postgame"]))
 check("implement: the push/PR order is the freeze, then git fetch and gh pr list --state all (did the base move, did "
       "a related PR merge), then pr-body.md printed for the user's edit or OK; the PR question only after it (#48)",
@@ -670,12 +701,10 @@ check("pushes: the config template carries `- pushes: on` with off and off until
       "- pushes: on" in cfg_template and '"pushes": on | off | off until <YYYY-MM-DD>' in cfg_template and
       "`- pushes:` line (missing means `on`)" in impl_deliver and "`off until <date>` before that date" in impl_deliver and
       "the freeze holds push and PR only" in impl_deliver and "record the commit in the log, and stop" in impl_deliver and
-      re.search(r"^Built: .*\[· push and PR held by the freeze\[ until <date>\]\]$", build_receipt, re.MULTILINE)
-      is not None)
+      "the report's Works now ends with the words it prints after the dash, the date included" in impl_deliver)
 check("verifier: judges the Done-when, never hunts past it, and notes the rest under ## Noticed — never as a verdict "
       "(a real batch's checks ran ten hours finding a narrower gap each round)",
-      "Judge the Done-when, nothing wider" in verifier and "## Noticed" in verifier and "however narrow" in verifier
-      and "## Noticed" in skill["council-implement"])
+      "Judge the Done-when, nothing wider" in verifier and "## Noticed" in verifier and "however narrow" in verifier)
 check("post-game: a next task closes a gap against the request, quoting its part; everything else is Noticed, not "
       "tasked, and council check reads the next tasks once the deliverable is recorded",
       "## Noticed, not tasked" in skill["council-postgame"] and "part <#>:" in skill["council-postgame"]
@@ -840,7 +869,8 @@ prose = {**{f"skills/{s}": flat(skill[s]) for s in SKILLS}, **{f"doctrine/{d}": 
          "agents/worker": flat(worker), "agents/verifier": flat(verifier), "agents/builder": flat(builder),
          **{path: flat(read(*path.split("/"))) for path in reference_docs()}}
 ONE_HOME = [  # (the wording, its one home; a pair when a review's page, which loads no kernel, holds it too: D47)
-    ("concurrency or ordering, public contracts", ("skills/context-core", "skills/council-review")),   # protected subjects
+    ("concurrency or ordering, public contracts", ("skills/context-core", "skills/council-review",
+                                                   "skills/council-implement")),   # protected subjects
     ("isn't a new agent", "skills/context-core"),                                 # resumed vs re-dispatched
     ("write your file now", ("skills/context-core", "skills/council-review")),    # the turn-limit resume
     ("never report that as a pass", "skills/context-core"),                       # exit 4
@@ -916,13 +946,14 @@ for label, text in shipped.items():
     check(f"{label}: no hard-coded project leakage", bool(text) and "chrollo" not in text.lower())
 
 # 12b. The README's first steps: every command needs Python (D24), so it is named before the install command, and the
-# receipt it shows has the eight lines council-implement gives.
+# build report it shows has the sections council-implement gives (D58).
 readme = read("README.md")
 quick = readme.split("## Quick start", 1)[-1].split("\n## ", 1)[0] if "## Quick start" in readme else ""
-check("README: the quick start names Python 3.8 before the install command, and its receipt has the eight lines",
+check("README: the quick start names Python 3.8 before the install command, and its build report has the "
+      "sections council-implement gives (D58)",
       0 <= quick.find("Python 3.8") < quick.find("/plugin marketplace add")
-      and all(k in readme for k in ("Built:", "Works?:", "Checked by machine:", "Your decisions:", "Shortcuts I took:",
-                                     "Not proved:", "Left open:", "Cost:")))
+      and all(k in readme for k in ("Works now", "Does not work", "Your decisions", "Not proved", "Noted for later",
+                                     "Cost:", "Undo:")))
 
 # 13. Versions agree: plugin.json, the newest CHANGELOG release, and the helper
 plugin = json.loads(read(".claude-plugin", "plugin.json") or "{}")

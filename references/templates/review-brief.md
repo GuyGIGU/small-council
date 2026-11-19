@@ -10,6 +10,7 @@ Both seats answer one question: what in this change will hurt this project, and 
 The owner does not read code. Write each finding as what happens and what it costs, with a
 recommendation.
 
+{{BUILD}}
 ## The book — read it before anything else
 {{BOOK}}
 - known problems: {{KNOWN}}
@@ -62,6 +63,7 @@ under Found, not fixed, and any item of a kind under Not to raise again, is neve
   --others --exclude-standard` lists.
 - time: under your file's `ref:` line, write `checks: <minutes> min at the new end — <the commands>`
   (`checks: none ran — <why>` when none could run). The next review's estimate uses it.
+{{BUILD_RUNNER}}
 - Never run anything in the code root itself. A check that needs something the scratch copy can't
   get (a secret, a service, an install the session refuses): say what you could not run, and why.
 

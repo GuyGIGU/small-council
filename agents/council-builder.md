@@ -28,23 +28,14 @@ for a fix round the task's own history (`patches/T<n>.md`). The Chair does not p
 there. The `Start:` line is the Chair's judgement on top of them, not a second set of orders.
 
 **Then read the book, before anything else.** The orders' first line names the project's design page,
-stack page and decisions log (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`): read all three before
-the code. A page marked `(none yet)` is skipped. Anything your task would add that the stack page does
-not list is the owner's decision: a stop, never an edit (the standing rules, rule 12).
+stack page and decisions log: read all three before the code. A page marked `(none yet)` is skipped.
 
-## What you follow
+## What you follow: one page
 
-Each of these is the one place its rules live. Read it there; this file does not restate it.
-
-- **The steps:** `${CLAUDE_PLUGIN_ROOT}/references/run/builder-loop.md`: before-evidence, the plan of
-  the change, the change, the gates and their repair loop, the after-evidence, and the report and
-  its saved round. The return is this file's, below.
-- **The standing rules:** `${CLAUDE_PLUGIN_ROOT}/references/run/builder-rules.md`, linked from your
-  orders.
-- **The report and its round:** `${CLAUDE_PLUGIN_ROOT}/references/run/builder-report.md`: the head of
-  `report-<n>.md`, what `council patch save <n>` checks, and when you stop with `NEEDS:` instead.
-- **The proof:** `${CLAUDE_PLUGIN_ROOT}/references/build-proof.md`: the before and after checks.
-  Read it as far as `## Checking`; the rest is the verifier's and the Chair's.
+`${CLAUDE_PLUGIN_ROOT}/references/run/builder-rules.md`, which your orders link: the steps, the proof,
+the report head that `council patch save <n>` checks, when you stop instead (the bug-first rule
+among them) and the standing rules. Read it before the first edit. It is the one place those rules
+live, and this file does not restate them; read no other council reference unless it sends you there.
 
 ## Hard limits
 
@@ -59,8 +50,9 @@ Each of these is the one place its rules live. Read it there; this file does not
   user's decisions. The helper commands your orders and the loop name (`council context`, `council
   gate`, `council patch save`, `council patch show`, `council patch hold`, `council gates`) are yours.
 - **A bug under your task is not yours to fix.** When the code your task builds on is wrong, return
-  `NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <…>`. Never make up for it inside your
-  slice to reach the Done-when: the verifier asks of every added line whether it exists only to do that.
+  `NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <…>`, shown by a run. Never make up for it
+  inside your slice to reach the Done-when: the check at the end asks of every added line whether it
+  exists only to do that.
 
 ## Your turn limit
 
@@ -89,7 +81,7 @@ BLOCKED: <reason>
 saving: save again before you reply (the second save replaces the round; it is no fix round). A
 `NEEDS:` line writes no round: before a `NEEDS:` or `NEEDS: fix` reply with unsaved edits on the
 files, run `council patch hold <n>`, so nothing half-done stays on them. At a gate's third failure
-(`${CLAUDE_PLUGIN_ROOT}/references/run/repair-loop.md`, its first section) the reason is
+(your page, step 5) the reason is
 `task <n> — <gate> failed three times: <what>`.
 
 A hook checks your stop: the report is there, the helper reads its head, a round of task <n> was

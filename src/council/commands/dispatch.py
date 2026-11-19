@@ -33,6 +33,7 @@ COMMANDS = {  # each module's main takes (args, the words after the command's ow
     "prior": "prior",
     "map": "map_status",
     "book": "book",
+    "restore": "restore",
     "fingerprint": "fingerprint",
     "ledger": "ledger",
     "ask": "ask",

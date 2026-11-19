@@ -89,22 +89,23 @@ at any point.
 
 ## What a run gives you
 
-After every build, the same eight lines, in the same order, whatever happened:
+After every build, the same report, in the same order, whatever happened:
 
 ```
-Built: 4 of 4 tasks — you can now export a report as CSV
-Works?: ran `npm start` and exported a 12-row file; the 3 new tests pass
-Checked by machine: gates: 3 ran — all pass (baseline: 1 FAIL)
-Your decisions: none
-Shortcuts I took: the export limit is hardcoded at 5,000 rows (src/export.ts) — streaming needs a design call
+Works now
+- You can export a report as CSV — the runner exported a 12-row file; its test went red when the export was broken on purpose
+- (pictures of the export page before and after)
+Does not work: nothing
+Your decisions
+- The export stops at 5,000 rows (a hardcoded limit). Left as is, bigger reports are cut short. Recommended: streaming, a design call; can be undone
 Not proved: nothing
-Left open: nothing
-Cost: helpers ~90k tokens across 3 agents; Chair usage unavailable · 2 of 2 fix(es) proved · 0 broken · log: .council/logs/2026-09-16-csv.md
+Noted for later: the old export button has no label (in known problems)
+Cost: ~640k tokens and 38 minutes, against an estimate of ~700k and 40
+Undo: to take the whole build back, say so — `council restore show` prints the steps that put every file back as it was
 ```
 
-"Shortcuts", "Not proved" and "Left open" are never skipped. `none` is an answer; silence isn't.
-`Checked by machine:`, `Your decisions:` and `Not proved:` are printed by the helper from its records,
-never written by the model.
+"Does not work", "Not proved" and "Undo" are never skipped. `nothing` is an answer; silence isn't.
+What the checks proved is printed by the helper from its records, never written by the model.
 
 After every review: what happened and what it cost, a recommendation, and findings with a file and
 line, an evidence grade (observed, reproduced, inferred), how each was checked, and a fix line the

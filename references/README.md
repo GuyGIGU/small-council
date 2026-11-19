@@ -34,11 +34,11 @@ Each mode but council-review adds its specifics under `## At <Stage>` headings. 
 append-only record of CLI-observable actions.
 `run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.
 `evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
-`builder-report.md` defines a build round's report head and the checks of it against the saved diff;
-`builder-rules.md` lists the standing rules every build task carries, which its orders link;
-`builder-loop.md` gives the steps that build one task; the one line its builder returns is the builder
-contract's (`agents/council-builder.md`). `build-receipt.md` gives a build's receipt and what follows it,
-read at Deliver.
+`builder-rules.md` is the builder's one page (D56): the steps, the proof, the report head, the stops
+and the standing rules, which a task's orders link; the one line its builder returns is the builder
+contract's (`agents/council-builder.md`). `builder-report.md` (the round's checks against its saved diff)
+and `builder-loop.md` stay as reading. `build-receipt.md` gives what follows a build's report, read at
+Deliver.
 `war-room.md` defines the second round; `sharing.md` defines the team-or-just-me choice;
 `models.md` defines the model per role; `workflow.md` gives the rules a seat run through the
 Workflow tool adds. `resume.md` says how a run carries on after a compaction, a new

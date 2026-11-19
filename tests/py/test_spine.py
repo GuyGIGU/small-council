@@ -121,10 +121,11 @@ class StagesTest(Spine):
 
     def test_the_method_a_mode_loads(self) -> None:
         build = stages.REQUIRED["council-implement"].split()
-        self.assertEqual(stages.method_files("council-implement", build),   # the build loop has no doctrine file
-                         ["skills/context-core/SKILL.md", "skills/council-implement/SKILL.md"] +
-                         ["references/doctrine/%s.md" % n for n in ("01-convene", "02-prepare", "08-challenge",
-                                                                   "09-deliver", "10-learn")])
+        self.assertEqual(stages.method_files("council-implement", build),   # a build's one page (D56)
+                         ["skills/council-implement/SKILL.md"])
+        self.assertEqual(stages.method_files("council-postgame", ["convene", "build"]),   # a build has no doctrine
+                         ["skills/context-core/SKILL.md", "skills/council-postgame/SKILL.md",
+                          "references/doctrine/01-convene.md"])
         self.assertEqual(len(stages.method_files("council-plan")), 12)                        # none named: all ten
         self.assertEqual(stages.method_files("council-review", ["convene", "work"]),         # its one page (D47)
                          ["skills/council-review/SKILL.md"])

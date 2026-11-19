@@ -144,6 +144,11 @@ council — the Small Council's helper (Python 3.8+ and git)
   council book waive "<the owner's words>"
                                          a kind of item the owner waved off, dated, under ## Not to raise
                                          again; a review raises neither list again (the same words: once)
+  council restore point                  a build's restore point, before it changes the project: a commit of
+                                         the code root's files as they are (refs/council/restore/<run>), in
+                                         <run>/restore.md; nothing in the project moves
+  council restore show                   the restore point, what changed since, and the commands that put
+                                         every file back: printed, never run (the owner's call)
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
   council memory [index|check|tidy]      memory's one-line index · stale anchors and failure evidence · the
                                          merges and retirements reading alone can find, numbered (writes nothing)

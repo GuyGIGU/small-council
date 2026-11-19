@@ -34,6 +34,33 @@ Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, se
   names it on the first line of a task's orders. `council doctor permissions` now offers
   `Bash(council book:*)`.
 
+### Stage 3: the build loop
+Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, section 12), which is still owed.
+- **Every build can be undone** (D57): before it changes anything, the build takes a restore point,
+  a saved copy of every file as it was, your unsaved work included, without moving anything. The
+  report's last line, **Undo**, says in one sentence how to take the whole build back; nothing is
+  undone unless you say so. `council restore show` prints the exact steps.
+- **One page for each builder** (D56): a builder now reads one page of rules instead of four
+  references, and gets its task from the same one command as before.
+- **A build is one page for the main session too** (D56): restore point, the project's checks before
+  the first change, one fresh builder per task with the checks after each, then the check at the end,
+  one fix round, the report, and the book updated. It loads about a third of what it did.
+- **The check at the end is the review's pair** (D56, replacing build tiers and the converge
+  verifier): a reader compares the whole change with the plan's behaviour lines and the book, and a
+  runner runs the old and the new version side by side. Neither reads the builders' own reports.
+  For each behaviour line the runner breaks the behaviour on purpose and shows its test catch it; a
+  test that would not catch it is reported to you.
+- **A bug under the work stops it first, and you choose** (D59): when the code a task rests on is
+  wrong, the build shows it by a run and brings you a recommendation with three answers: fix it
+  first, build anyway and note it, or stop. After a fix the original task goes on without asking you
+  again.
+- **The same report after every build** (D58): Works now (each behaviour line and how it was shown,
+  with a before and after picture when you can see the change on screen), Does not work, Your
+  decisions, Not proved, Noted for later (also kept in known problems), Cost against the estimate,
+  and Undo. A builder's own report is shorter: its fixed head and one line per thing it noticed.
+- **Helper:** `council restore point` and `council restore show`; `council run open
+  council-implement` now writes the build's plan with the reader and the runner, and their brief.
+
 ## [1.3.0] — 2026-11-18
 
 **In short:** a review is now two agents working at once — one reads the change, one runs it — and

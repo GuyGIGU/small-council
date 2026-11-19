@@ -17,8 +17,10 @@ from council.records import home as where
 ASKED = closing.MODES                              # the modes that save the user's request first
 MODES = ASKED + ("council-init", "test-architect", "context-core")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
-PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review.tsv"}   # else run-plan.tsv
-BRIEFS = {"council-review": "review-brief.md"}    # a review's brief, its two seats' role texts in it (D48)
+PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review.tsv",
+         "council-implement": "run-plan-implement.tsv"}                                  # else run-plan.tsv
+BRIEFS = {"council-review": "review-brief.md", "council-implement": "review-brief.md"}   # the pair's role texts (D48)
+BUILD_LINES = "build-brief.md"    # what a build's brief adds to the review's, each block on its {{NAME}} line (D56)
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
 STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead
 
@@ -130,17 +132,39 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
     if brief is not None:
         from council.commands import book    # the book's paths, as council book prints them (D52)
         _fill(brief, native / run_files.BRIEF, run, RUN=name, RUN_DIR=run, CODE_ROOT=top, HOME=home,
-              BOOK="\n".join(book.read_first(home)), KNOWN=book.known(home))
+              BOOK="\n".join(book.read_first(home)), KNOWN=book.known(home), **build_lines(mode))
     _write(native / "log.md", "# Run log — %s · opened %s\n" % (mode, clock.now_sec()))
     _write(native / seats.SEATS, "\t".join(seat_write.HEADER) + "\n")
     return run
 
 
+def build_lines(mode: str) -> dict[str, str]:
+    """The blocks of build-brief.md by name ([BUILD], [BUILD_RUNNER]) for a build; each empty for a review, whose
+    brief then has those lines taken out."""
+    blocks = {"BUILD": "", "BUILD_RUNNER": ""}
+    if mode != "council-implement":
+        return blocks
+    try:
+        text = (TEMPLATES / BUILD_LINES).read_bytes().decode("utf-8", "surrogateescape").replace("\r\n", "\n")
+    except OSError:
+        raise cli.Refusal("brief template is missing: %s" % (TEMPLATES / BUILD_LINES).as_posix()) from None
+    name = ""
+    for line in text.split("\n"):
+        if line.startswith("[") and line.endswith("]") and line[1:-1] in blocks:
+            name = line[1:-1]
+        elif name:
+            blocks[name] += line + "\n"
+    return {key: value.rstrip("\n") for key, value in blocks.items()}
+
+
 def _fill(template: Path, file: Path, run: str, **values: str) -> None:
-    """A run file from its template, each {{KEY}} filled, written with LF line ends and a last newline."""
+    """A run file from its template, each {{KEY}} filled, written with LF line ends and a last newline; a line that is
+    only a {{KEY}} whose value is empty is taken out whole."""
     text = template.read_bytes().decode("utf-8", "surrogateescape")
     text = text.replace("\r\n", "\n")         # a CR right before a newline is dropped on every OS, as bytewise.records
     for key, value in values.items():
+        if not value:
+            text = text.replace("\n{{%s}}\n" % key, "\n")
         text = text.replace("{{%s}}" % key, value)
     try:
         file.write_bytes((text if text.endswith("\n") or not text else text + "\n").encode("utf-8", "surrogateescape"))
