@@ -1,7 +1,7 @@
 """council index [--base <rev>]: the change index — every file changed since the base (the merge-base with the default
-branch, or --base) with its hunks, the definitions its diff names, their callers and the tests that name it — into
-the run's index.md, and the base into its state; then the earlier council work on these files (records/earlier.py)
-is added after it."""
+branch, or --base; a restore point's commit is the base itself, so the owner's work from before it is not the run's)
+with its hunks, the definitions its diff names, their callers and the tests that name it — into the run's index.md,
+and the base into its state; then the earlier council work on these files (records/earlier.py) is added after it."""
 from __future__ import annotations
 
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from council import clock, diff, git
 from council.commands import changed, cli, closed, index_symbols, prior, resolve
-from council.records import bytewise, cells, citations, earlier, run_files, state_write
+from council.records import bytewise, cells, citations, earlier, restore, run_files, state_write
 from council.records import home as where
 
 LABELS = {"A": "added", "D": "deleted", "?": "new, untracked"}
@@ -41,8 +41,10 @@ def main(args: cli.Args, words: list[str]) -> int:
     if git.run(".", "rev-parse", "--git-dir", names=True)[0] != 0:
         raise cli.Refusal("the code root is not a git repository — the change index needs git")
     ref = args.value("base") or changed.default_branch() or "HEAD"
-    code, found = git.run(".", "merge-base", "HEAD", ref, names=True)
-    base = _text(found).strip() if code == 0 else ""
+    base, now = restore_point(ref)
+    if not base:
+        code, found = git.run(".", "merge-base", "HEAD", ref, names=True)
+        base = _text(found).strip() if code == 0 else ""
     if not base:
         code, found = git.run(".", "rev-parse", "-q", "--verify", ref + "^{commit}", names=True)
         base = _text(found).strip() if code == 0 else ""
@@ -52,8 +54,8 @@ def main(args: cli.Args, words: list[str]) -> int:
     if not base:
         raise cli.Refusal("unknown base: %s — name a branch, tag or commit this repository has: council index --base "
                           "<ref>" % ref)
-    index = Index(base, ref)
-    index.every(changes(base))
+    index = Index(base, ref, now)
+    index.every(changes(base, now))
     out = run / run_files.INDEX
     out.write_bytes(index.document(run.name).encode("utf-8", "surrogateescape"))
     if postgame:
@@ -86,6 +88,20 @@ def earlier_work(run: Path, home: str) -> None:
     cli.say("earlier council work on these files: %d mention(s), listed at the end of the index" % len(found))
 
 
+def restore_point(ref: str) -> tuple[str, str]:
+    """A restore point's commit (one a ref under refs/council/restore/ keeps) that is no ancestor of HEAD, and the
+    tree of the files as they are now: the change is everything since the point itself, so the owner's work from
+    before it is never read as the run's, and HEAD's merge-base with it (the point's own parent) is not the base.
+    ('', '') for any other ref, which keeps the merge-base."""
+    code, found = git.run(".", "rev-parse", "-q", "--verify", ref + "^{commit}", names=True)
+    commit = _text(found).strip() if code == 0 else ""
+    if not commit or git.run(".", "merge-base", "--is-ancestor", commit, "HEAD", names=True)[0] == 0:
+        return "", ""
+    kept = git.run(".", "for-each-ref", "--points-at", commit, "--format=%(refname)", restore.REF, names=True)[1]
+    now = git.files_tree(".") if kept.strip() else ""
+    return (commit, now) if now else ("", "")
+
+
 def record(run: Path, base: str) -> None:
     """The base into the state (council state base=…)."""
     try:
@@ -94,16 +110,18 @@ def record(run: Path, base: str) -> None:
         raise cli.Refusal(str(failure)) from None
 
 
-def changes(base: str) -> list[tuple[str, str, str]]:
+def changes(base: str, now: str = "") -> list[tuple[str, str, str]]:
     """status, path, old path (a rename's or a copy's, else "-") for each changed file, by path, each once; an
-    untracked folder (a nested repository or worktree) is not a changed file."""
+    untracked folder (a nested repository or worktree) is not a changed file. Against `now`, a tree of the files as
+    they are (a restore point's base), the untracked files are in it already."""
     found = []
-    for line in records(git.run(".", "diff", "-M", "--name-status", base, "--", ".", names=True)[1]):
+    for line in records(git.run(".", "diff", "-M", "--name-status", base, *([now] if now else []), "--", ".",
+                                names=True)[1]):
         cells = line.split("\t")
         state = cells[0][:1]
         cell = (cells + ["", ""])
         found.append((state, cell[2], cell[1]) if state in ("R", "C") else (state, cell[1], "-"))
-    for line in records(git.run(".", "ls-files", "--others", "--exclude-standard", names=True)[1]):
+    for line in [] if now else records(git.run(".", "ls-files", "--others", "--exclude-standard", names=True)[1]):
         if not line.endswith("/"):
             found.append(("?", line, "-"))
     seen, kept = set(), []
@@ -143,8 +161,8 @@ def hunks(lines: list[str]) -> str:
 class Index:
     """The index as it is built: each file's section, the files past the cap, and the counts."""
 
-    def __init__(self, base: str, ref: str) -> None:
-        self.base, self.ref = base, ref
+    def __init__(self, base: str, ref: str, now: str = "") -> None:
+        self.base, self.ref, self.since = base, ref, [base] + ([now] if now else [])   # now: the files' tree
         self.short = _text(git.run(".", "rev-parse", "--short", base, names=True)[1]).strip()
         self.head = _text(git.run(".", "rev-parse", "--short", "HEAD", names=True)[1]).strip()
         self.cap, self.most = _cap("COUNCIL_INDEX_CAP", "80")      # files indexed in full (the evals lower it)
@@ -187,13 +205,13 @@ class Index:
             diff = ["+" + line for line in records(data)[:400]]
         else:
             paths = [old, path] if state in ("R", "C") else [path]   # both paths, so git pairs them
-            numstat = git.run(".", "diff", "-M", "--numstat", self.base, "--", *paths, names=True)[1]
+            numstat = git.run(".", "diff", "-M", "--numstat", *self.since, "--", *paths, names=True)[1]
             numbers = (records(numstat) or [""])[0].split("\t")
             add, deleted = numbers[0], numbers[1] if len(numbers) > 1 else ""
             if add == "-":
                 self.body.append("## %s  (%s, binary)\n\n" % (path, label))
                 return
-            diff = records(git.run(".", "diff", "-M", "-U0", self.base, "--", *paths, names=True)[1])
+            diff = records(git.run(".", "diff", "-M", "-U0", *self.since, "--", *paths, names=True)[1])
             spans = hunks(diff)
         self.section(path, label, (add, deleted), spans, diff)
 

@@ -39,12 +39,14 @@ def _root(home: str) -> str:
 
 
 def _configured(home: str) -> dict[str, str]:
-    """The `- <page>: <path>` lines under the config's ## Book section: the path as said (notes off, quotes off)."""
+    """The `- <page>: <path>` lines under the config's ## Book section: the path as said (notes, quotes and a
+    " — adopted" aside off, as the memory file's line is read)."""
     found: dict[str, str] = {}
     for number, line in config.section(where.native(home), "book"):
         pref = config.pref_of(line, number)
-        if pref and pref.key in PAGES and pref.key not in found and pref.said:
-            found[pref.key] = re.sub(r"[`\"']", "", pref.said).strip()
+        said = config.path_said(pref.said).strip() if pref and pref.key in PAGES and pref.key not in found else ""
+        if pref and said:
+            found[pref.key] = said
     return found
 
 

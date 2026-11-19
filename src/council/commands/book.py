@@ -87,6 +87,7 @@ def _template(project: str) -> str:
 
 
 def _add(home: str, sub: str, words: str) -> int:
+    words = " ".join(words.split())      # one line: a line end can't start a heading, and the same words match
     line = redact.said(words).strip()
     hidden = line.count("[redacted") - words.count("[redacted")
     if hidden > 0:

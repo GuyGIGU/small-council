@@ -95,7 +95,8 @@ redirect to a file and read that.
 ## 5. Deliver
 
 1. `council state phase=deliver`, then `council ask save`.
-2. Write `<home>/reviews/<YYYY-MM-DD>-health.md`, front matter as a review's with `kind: health`.
+2. Write `<home>/reviews/<YYYY-MM-DD>-health.md` (taken today: `-health-2.md`, then `-3`; never
+   overwrite an earlier pass), front matter as a review's with `kind: health`.
    Under the `# Title`: ``**Your request:** `.council/asks/<file>` — "<its first ~12 words>…"``.
    Then the chat report's sections in full; for each proposal its `path:line`, the book's line it
    drifted from, what happens if nothing is done, what it costs, whether it can be undone, your

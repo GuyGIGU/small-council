@@ -19,7 +19,13 @@ the project drifted from its book.
   follows its old page; close it paused (`council run close --status paused`) and start again
   after updating.
 - **None of stages 2 to 5 has had its test yet** (redesign 2.0, section 12). Each stage is one
-  commit, so any one of them can be taken back alone.
+  commit, but each builds on the ones before it, so they can only be taken back newest first
+  (stage 5, then 4, then 3, then 2), never one from the middle alone.
+- **Then run `/council-init` once in each project (a refresh)**, so the project's book exists.
+  Until you do, every brief shows the book's pages as not written yet, and `/council-health` has
+  nothing to measure the project against.
+- **A build now needs its restore point.** A build run opened on 1.3.0 and resumed after updating
+  is stopped at the start of its build until it takes one (`council restore point`).
 
 ### Stage 2: the book
 Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, section 12), which is still owed.
@@ -54,7 +60,10 @@ Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, se
 - **Every build can be undone** (D57): before it changes anything, the build takes a restore point,
   a saved copy of every file as it was, your unsaved work included, without moving anything. The
   report's last line, **Undo**, says in one sentence how to take the whole build back; nothing is
-  undone unless you say so. `council restore show` prints the exact steps.
+  undone unless you say so. `council restore show` prints the exact steps. The undo covers the
+  files in your project folder that git keeps or could keep. It does not cover files git is told
+  to ignore (such as `.env` or build output), the council's own `.council/` folder, or anything
+  outside the project folder (a database, installed packages): those stay as the build left them.
 - **One page for each builder** (D56): a builder now reads one page of rules instead of four
   references, and gets its task from the same one command as before.
 - **A build is one page for the main session too** (D56): restore point, the project's checks before
@@ -63,14 +72,15 @@ Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, se
 - **The check at the end is the review's pair** (D56, replacing build tiers and the converge
   verifier): a reader compares the whole change with the plan's behaviour lines and the book, and a
   runner runs the old and the new version side by side. Neither reads the builders' own reports.
-  For each behaviour line the runner breaks the behaviour on purpose and shows its test catch it; a
-  test that would not catch it is reported to you.
+  For each behaviour line the runner is asked to break the behaviour on purpose and show that its
+  test catches it; a test that would not catch it is reported to you.
 - **A bug under the work stops it first, and you choose** (D59): when the code a task rests on is
   wrong, the build shows it by a run and brings you a recommendation with three answers: fix it
   first, build anyway and note it, or stop. After a fix the original task goes on without asking you
   again.
 - **The same report after every build** (D58): Works now (each behaviour line and how it was shown,
-  with a before and after picture when you can see the change on screen), Does not work, Your
+  with a before and after picture of a change you can see, where the session can start the
+  project), Does not work, Your
   decisions, Not proved, Noted for later (also kept in known problems), Cost against the estimate,
   and Undo. A builder's own report is shorter: its fixed head and one line per thing it noticed.
 - **Helper:** `council restore point` and `council restore show`; `council run open
@@ -113,10 +123,12 @@ Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, se
   only the decisions that need you (as consequences), then builds it one task at a time with a
   restore point and the project's checks, has the reader and the runner check the whole change,
   fixes what they find once, and gives you one report with its undo line. The council picks how
-  deep to go from the work; you never pick a size. A small request goes straight through.
-- **One estimate, one go-ahead, one report** (D64): the cost of the whole job is shown before any
-  agent starts, your go-ahead covers the design and the build, and you are asked again only if the
-  build turns out to cost more than you approved. The report's cost is the whole job's.
+  deep to go from the work; you never pick a size. A small request goes straight through to the
+  one question before the build.
+- **One estimate, one question before anything is built, one report** (D64): the cost of the whole
+  job is shown before any agent starts. Before the build starts you are always asked once, in one
+  message: the lines it will build, the branch, and the cost ("Build these, on <branch>? About N
+  tokens, M minutes."). The report's cost is the whole job's.
 - **`/council-health` says where the project has drifted from its book** (D65): one agent reads
   the whole project against its design page, stack page, decisions and known problems. You get at
   most five refactors worth doing, each with what it costs, why (what goes wrong if nothing is
@@ -127,8 +139,34 @@ Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, se
   review's, with a health block); `council run open council` says the whole job is a plan run then
   a build run, and opens nothing.
 
+### Changed
+
+- **`/council` always asks you once before it builds**, even for a small request with nothing to
+  decide: you see what will be built, on which branch, and what it costs, and nothing is built
+  until you answer. It replaces the branch question, so it is still one question.
+- **A build does not start without its restore point.** The helper refuses to begin building until
+  the point is taken, so every build can be undone. A project outside git records that you chose
+  the backup copy instead (`council state restore=backup`).
+- **Fewer permission prompts:** `council restore` joins the commands council-init offers to allow,
+  so taking and showing a restore point no longer asks each time. `council doctor` names it for a
+  project set up before.
+
 ### Fixed
 
+- **The undo now works in the cases it failed:** after the build switched to a new branch and left
+  changes unsaved; on a new project with no saved history yet; a file you had deleted before the
+  build no longer comes back; your own unsaved edits to the council's files, and the notes the build
+  added there, are kept. When git cannot read the files, `council restore show` now says so instead
+  of saying there is nothing to undo, and the point no longer claims unsaved work on a clean project
+  that keeps its council files in git.
+- **The check at the end of a build looks only at what the build changed.** Your own unsaved edits
+  from before the build were being checked as if the build had made them.
+- **A build's closing check no longer fails** on line numbers the fix round had moved.
+- **After the conversation is compacted,** a session carrying on a plan, build, research, review or
+  health run is told to re-read the right part of that mode's own page, not the old shared method.
+- **A second health check on the same day** is saved beside the first instead of replacing it.
+- **The book:** a page named with a note after it ("docs/arch.md — adopted") is found; a known
+  problem written over several lines is kept as one line and still recognised when said again.
 - **A finished review no longer fails its own closing check.** Since 1.3.0 the close's audit still
   asked a review for three stages it no longer has (assign, brief, collect) and reported a FAIL on
   every review. It now reads each one-page mode's stages from the one place that defines them.

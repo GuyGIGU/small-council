@@ -356,12 +356,15 @@ def memory_line(home: str | Path) -> tuple[str, str] | None:
     one); None when there is no such line."""
     for line in _memory_section(home):
         if re.match(r"[ \t]*[-*][ \t]*conventions:", line):
-            v = re.sub(r"[\r`\"']", "", re.sub(r"\A[ \t]*[-*][ \t]*conventions:[ \t]*", "", line, count=1))
-            v = re.sub(r"[ \t]+\([^()]*\)[ \t]*\Z", "", v, count=1)
-            v = re.sub(r"[ \t]+(—|–|-)[ \t].*\Z", "", v, count=1, flags=re.S)
-            v = re.sub(r"[ \t]+\Z", "", v, count=1)
+            v = path_said(re.sub(r"\A[ \t]*[-*][ \t]*conventions:[ \t]*", "", line, count=1))
             return v, re.sub(r"[ \t].*\Z", "", v, count=1, flags=re.S)
     return None
+
+
+def path_said(value: str) -> str:
+    """A path as a config line gives it: CRs and quotes off, then a trailing (note) and a " — aside"."""
+    v = re.sub(r"[ \t]+\([^()]*\)[ \t]*\Z", "", re.sub(r"[\r`\"']", "", value), count=1)
+    return re.sub(r"[ \t]+\Z", "", re.sub(r"[ \t]+(—|–|-)[ \t].*\Z", "", v, count=1, flags=re.S), count=1)
 
 
 def memory_kb(raw: str) -> int | None:

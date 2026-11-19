@@ -103,8 +103,8 @@ and plan from its answer.
    and three answers: **fix it first** (task 1 of this plan fixes it, then the plan goes on),
    **build anyway and note it** (`council book note`), **stop**. Record their words.
 4. **Two designs.** Show both side by side in the owner's terms: what each builds, gives and costs,
-   and whether it can be undone; then your recommendation. Where they agree, say so: that is the
-   strongest evidence a plan gets.
+   and whether it can be undone; then your recommendation. Where they agree, say so, and that it
+   is some support, not proof: both are the same model on the same brief.
 5. **Every decision as a consequence:** what happens if nothing is decided, your recommendation
    first, and whether it can be undone. Put them as one question; record each answer with
    `council state decision="<their words>"`. Inside the approved scope you decide what is unclear

@@ -35,8 +35,9 @@ consequence, as "<it> no longer happens"). The report, the pair's brief and the 
 2. Read the input in full, the config's `## Hard rules`, the book (`council book`: the design page,
    the stack page, the decisions log) and `map.md`. Order the tasks: dependencies first; in fix
    mode P1 before P2, then by file.
-3. Not a git repository: recommend `git init`. Declined: copy each file to `<run>/backup/<path>`
-   before its first change, and the report's Undo line says so.
+3. Not a git repository: recommend `git init`. Declined: `council state restore=backup` once the
+   run is open, copy each file to `<run>/backup/<path>` before its first change, and the report's
+   Undo line says so.
 4. `council run open council-implement`. It writes `run-plan.tsv` and `brief.md`. Then, in one
    call, `council state input=<the input's path> ask=<its "Your request" file>`, and write
    `<run>/ask.md`: `# Ask — <title>`, `source: from <the input>`,
@@ -62,7 +63,8 @@ consequence, as "<it> no longer happens"). The report, the pair's brief and the 
 ## 2. Prepare — before the first change
 
 1. `council state phase=prepare`, then **`council restore point`**: a commit of the files as they
-   are, kept by the helper; nothing moves. Every run that changes the project takes one first.
+   are, kept by the helper; nothing moves. Every run that changes the project takes one first;
+   `phase=build` is refused without it.
 2. **The checks before the first change:** `council gate --all` (each output under
    `gates/baseline/`), then `council state baseline="tests: exit 1 (3 failing) · lint: pass"`. A
    failure that was there before is never blamed on a task.

@@ -8,8 +8,8 @@ description: The whole Small Council loop from one request in your words — the
 You are the Chair of the whole loop, its one head, judging as John Carmack would: the smallest
 change that does what was asked, proved by a run. The loop is two runs the helper already knows,
 one after the other: a **plan run** (Understand, Look underneath) and a **build run** (Build,
-Prove, Report and update the book). The owner sees one request, one estimate, one go-ahead and
-one report. This page says what joins the two runs and what changes; for each step it names the
+Prove, Report and update the book). The owner sees one request, one estimate, one question before anything
+is built, and one report. This page says what joins the two runs and what changes; for each step it names the
 section of `skills/council-plan/SKILL.md` or `skills/council-implement/SKILL.md` that holds its
 commands. Read each section when you reach it and follow it as written, except where this page
 says otherwise.
@@ -27,8 +27,8 @@ no run of its own.
    behaviour lines, at most one question with your recommended answer.
 2. **The depth, from the work.** The owner never picks a size:
    - **Small** (one part, one existing way, nothing hard to undo): the designer's three-item
-     design, and the build follows with no stop unless it finds a bug the request rests on or a
-     real fork.
+     design, then the build's one question (section 3) and no other stop unless it finds a bug
+     the request rests on or a real fork.
    - **Hard to undo** (a new project's stack, a data format or schema, a public interface, a
      migration): the second designer from the start (council-plan, section 2, step 3).
    - **Anything else:** the designer alone; a hard-to-undo fork it finds gets the second
@@ -36,13 +36,13 @@ no run of its own.
 3. **The cost first, for the whole loop**, in plain terms, before any agent starts: the design (the
    plan's `estimated-tokens`, about 10 minutes) and the build (council-implement, section 1, step
    6: one builder per task, with one task per behaviour line as the guess until the design is in,
-   plus 500k for the pair and the checks' minutes). Ask that step's branch question in the same
-   message.
+   plus 500k for the pair and the checks' minutes). The branch is asked once, before the build
+   (section 3).
 4. **Approval, once** (D9 as it stands). `/council`, or the owner's word to go ahead, approves the
    whole loop while the config's `approve without asking` reaches squad and the estimate is within
    any token ceiling they gave. Otherwise ask, with `council state waiting="<the question>"`; on
-   their yes, `council state decision="<their words>"`. The build asks again only if its own
-   estimate, once the plan's tasks are known, passes what was approved.
+   their yes, `council state decision="<their words>"`. The build's one question (section 3)
+   comes whatever the estimate; past what was approved, it says so.
 
 ## 2. Look underneath — the designer
 
@@ -53,8 +53,8 @@ approval are this page's, given at step 1). These differ:
   rests on, no fork), go straight on; with some, one question holding all of them, each a
   consequence (what happens if nothing is decided, your recommendation first, whether it can be
   undone). A bug the request rests on that the owner says to fix first becomes task 1 of the plan.
-- **In chat at Deliver** (council-plan, section 5, step 3): one line in place of the plan's report,
-  *"The design is done: <n> tasks; building now."*, unless the owner asked to see the plan first.
+- **In chat at Deliver** (council-plan, section 5, step 3): no report of its own; the question
+  before the build (section 3) shows what will be built, unless the owner asked to see the plan.
 - Before you close the plan run (section 6), note its spend line from `council status` for the
   report's Cost. Its last question is not asked: the build follows.
 
@@ -62,12 +62,17 @@ approval are this page's, given at step 1). These differ:
 
 Follow council-implement, sections 1 to 4, on the plan just written. These differ:
 
+- **One question, always, before the build run opens**, even within what step 1 approved and with
+  no forks: the behaviour lines to be built, as restated, one per line; the branch; the estimate
+  (council-implement, section 1, step 6, now exact: the plan's tasks). *"Build these, on
+  <branch>? About <n> tokens, <m> minutes."* One question, one turn; it is that step's branch
+  question, never a second one. Never the default branch without a yes.
 - Section 1, step 4: `council run open council-implement`, then
   `council state input=<the plan's path> ask=<its "Your request" file>`; `<run>/ask.md` has
   `source: from <the plan's path> (/council)`, `continues: <.council/asks/<file>.md>` and
   `(no new words)`, unless the owner added some.
-- Section 1, steps 6 and 7: the estimate is now exact (the plan's tasks). Within what step 1
-  approved: say it in one line and go on. Past it: ask.
+- Section 1, steps 6 and 7: the answer to that question is the build's approval; once the run is
+  open, `council state decision="<their words>"`.
 - Everything else as written: the restore point and the checks before the first change, one
   fresh builder per task with the checks after each, and the stops, the bug-first rule among them.
 

@@ -54,7 +54,7 @@ Adding a language, framework, library, tool or service, or swapping one, is a de
 effect of a task (D54).
 
 - A builder that needs one stops with `NEEDS: <what it would add, what it gives and costs>`
-  (`builder-rules.md`, rule 12), as it stops when the design does not fit.
+  (`builder-rules.md`, When you stop instead), as it stops when the design does not fit.
 - A verifier finds a change that adds one with no decision of the owner's on record INCOMPLETE
   (`references/build-proof.md`, Checking); a review's reader reports it.
 - On the owner's yes: a new entry in the decisions log in their words, then the stack page's row.
