@@ -5039,7 +5039,7 @@ def requests_and_proofs(tmp):
     check("check: in a build, a diagnosis file's old line numbers aren't checked as citations",
           code == 0 and "diagnose-2" not in out, out)
     check("check: in a build, the reader's and the runner's files (written before the fix round) aren't checked as "
-          "citations, so Deliver's check passes", code == 0 and "reader" not in out and "runner" not in out, out)
+          "citations, so Deliver's check passes", code == 0 and "reader#" not in out and "runner#" not in out, out)
     write(os.path.join(req, ".council", "logs", "2026-09-16-build.md"),
           "# Council Implementation Log \u2014 build\nInput: `x` \u00b7 Run: %s \u00b7 Start: abc123\n\n## Task 1: x\n"
           % os.path.basename(brun))
@@ -10612,7 +10612,7 @@ def build_opens_with_the_pair(tmp):
     code, run, err = council(repo, "run", "open", "council-implement")
     run = run.strip()
     brief, plan = read(os.path.join(run, "brief.md")), read(os.path.join(run, "run-plan.tsv"))
-    roles = [block for block in re.findall(r"(?m)^> .*(?:\n> .*)*", review_brief)]
+    roles = list(re.findall(r"(?m)^> .*(?:\n> .*)*", review_brief))
     check("run open council-implement: the plan selects the reader and the runner as workers, names no model for "
           "them, and leaves the estimate to the Chair",
           code == 0 and "seat\treader\tdisposition\tselected" in plan and "seat\trunner\trole\tworker" in plan
