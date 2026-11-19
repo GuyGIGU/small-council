@@ -381,6 +381,11 @@ def session_start(tmp):
     said = resume_named(line_with(out, "COMPACTED DURING A COUNCIL RUN"))
     check("after compaction: the driving run's line names resume.md by a path that exists", not said, said)
     check("after compaction: re-invoke the run's own mode", "Re-invoke the council-review skill" in out, out)
+    c = compacted(out)
+    check("after compaction in a one-page mode (a review): re-read its page's section for the phase, never "
+          "context-core or a doctrine (resume.md)",
+          len(c) == 1 and "re-read that page's section for the current phase (work)" in c[0]
+          and "context-core" not in c[0] and "doctrine" not in c[0], out)
     check("after compaction: don't re-dispatch running seats", "do not re-dispatch seats that are running" in out, out)
     code, out = run_hook(full, payload='{"session_id":"eval","source":"compact"}')
     check("after compaction: compact JSON without spaces is recognised too", len(compacted(out)) == 1, out)
@@ -833,14 +838,18 @@ def memory_file_and_seat_check(tmp):
     code, out = run_hook(pgr, "compact", session="eval")
     check("after compaction in a post-game: re-invoke council-postgame and re-read ask.md",
           "Re-invoke the council-postgame skill" in out and "and ask.md, if present" in out, out)
+    check("after compaction in a post-game, still on context-core: it loads context-core, then the phase's doctrine",
+          "council-postgame skill (it loads context-core)" in out and "re-read the doctrine for that phase" in out, out)
     bld = new_repo(tmp, "build")
     write(os.path.join(bld, ".council", "council.config.md"), "# Council config\n")
     write(os.path.join(bld, ".council", "runs", "2026-09-15-140000-implement", "session-state.md"),
           state("in-progress", mode="council-implement", phase="build", code_root=git(bld, "rev-parse", "--show-toplevel"), session="eval"))
     code, out = run_hook(bld, "compact", session="eval")
     c = compacted(out)
-    check("after compaction mid-build: points at the build loop, not at a stage doctrine a build skips",
-          len(c) == 1 and "build loop" in c[0] and "doctrine for that phase" not in c[0], out)
+    check("after compaction mid-build: points at the build page's section for the build and the build log, not at "
+          "context-core or a stage doctrine a build skips",
+          len(c) == 1 and "re-read that page's section for the current phase (build) and the build log" in c[0]
+          and "doctrine for that phase" not in c[0] and "context-core" not in c[0], out)
 
     code, out = run_hook(full, payload="\x00not json at all")
     check("garbage stdin: exits 0", code == 0, str(code))

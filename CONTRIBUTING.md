@@ -11,14 +11,14 @@ you change anything.
   inherits them.
 - **Modes are thin.** A mode invokes `context-core` and adds only its specifics, under
   `## At <Stage>` headings named after real stages: target resolution, the per-item format, owner
-  rules, the deliverable. Copy `skills/council-research/SKILL.md` for shape, brevity and voice. `council-review` is its own one page (D47) and is not a model for a mode.
+  rules, the deliverable. Copy `skills/council-postgame/SKILL.md` for shape, brevity and voice. `council-review`, `council-implement`, `council-plan`, `council-research` and `council-health` are each their own one page (D47, D56, D60, D65), and `council` joins the plan and build pages (D64); none is a model for a mode.
 - **The helper does the mechanics.** If a step can be done or checked by a script — opening and
   closing runs, gates, the change index, checking seat files or citations — it belongs in the
   helper (`src/council/commands/`), not in prose the model has to remember.
 - **The agents carry the contracts.** The seat worker's rules live in `agents/council-worker.md`, the
   verifier's in `agents/council-verifier.md`, the builder's in `agents/council-builder.md`. Dispatch
-  messages point at the brief and never restate a contract. A step of the build loop goes in
-  `references/run/builder-loop.md`, which the builder follows, not in council-implement.
+  messages point at the brief and never restate a contract. A builder's step, proof or stop goes on
+  its one page, `references/run/builder-rules.md`, which the builder follows, not in council-implement (D56).
 - **The hooks enforce what prose can't.** SessionStart handles orientation and resume, and marks the
   session so `council run open` can tell its hooks run; PreToolUse stops new agents at a run's limit
   and refuses a council command piped into head, tail or grep (that Bash hook marks the session too);

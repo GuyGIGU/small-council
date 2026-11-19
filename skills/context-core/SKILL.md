@@ -1,6 +1,6 @@
 ---
 name: context-core
-description: Shared engine for the Small Council's plan, implement, research and post-game modes (a review runs on its own page, council-review). Load when one of those modes invokes it or when resuming one of their runs.
+description: Shared engine for the Small Council's post-game mode (a review, a build, a plan and research each run on their own page). Load when council-postgame invokes it or when resuming a post-game run.
 user-invocable: false
 ---
 
@@ -50,8 +50,7 @@ Stage 0, Summon, is the council-init skill (a first review's quick setup: counci
 loop. A **Solo** run skips stages 3–6: run `council memory select` (plus the target paths when there
 is no diff), then do the seat work yourself with the needed reference doc and the entries it printed,
 record it (`council seat chair done agents=0` — without it the ledger has no row for your items),
-then continue at Judge. council-postgame skips them too (its skill says how). council-plan's war room
-runs inside Collect.
+then continue at Judge. council-postgame skips them too (its skill says how).
 
 ## The helper
 

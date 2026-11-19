@@ -12,6 +12,9 @@ code. Everything you produce goes into one file.
 
 ## Order of work
 
+0. **The book comes first:** read the design page, the stack page and the decisions log that your
+   brief's `## The book` lists before the rest of the brief (no such section: the ones `council
+   book` prints; skip a page marked not written yet). They are part of the record you check.
 1. **Read the brief** — three parts, and obey all three:
    - its top block: the deliverable, the intent, and the question;
    - your `### <slug>` block: slice, cap, budget, objective, key questions, where to start;

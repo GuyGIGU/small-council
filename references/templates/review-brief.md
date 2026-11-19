@@ -10,12 +10,25 @@ Both seats answer one question: what in this change will hurt this project, and 
 The owner does not read code. Write each finding as what happens and what it costs, with a
 recommendation.
 
+{{BUILD}}
+{{HEALTH}}
+## The book — read it before anything else
+{{BOOK}}
+- known problems: {{KNOWN}}
+
+Read the design page, the stack page and the decisions log first, then known problems: what it lists
+under Found, not fixed, and any item of a kind under Not to raise again, is never a finding here.
+
 ## Seats
 ### reader — reads the change against its record and traces its callers
 - ref: none
 - out: seats/reader.md
 - slice: the whole change ({{RUN_DIR}}/index.md)
 - cap: 10 · budget: ~100 tool calls
+- book: the book is part of the change's record. Report where the change breaks a rule of the design
+  page or a recorded decision, or adds a second way beside a job's one way, citing the line; and
+  anything the change brings in (a language, framework, library, tool or service) that the stack
+  page does not list, which is the owner's decision, never a side effect.
 - role:
 
 > Your half of a two-person review. A colleague reviews the same change at the same time and owns
@@ -51,6 +64,7 @@ recommendation.
   --others --exclude-standard` lists.
 - time: under your file's `ref:` line, write `checks: <minutes> min at the new end — <the commands>`
   (`checks: none ran — <why>` when none could run). The next review's estimate uses it.
+{{BUILD_RUNNER}}
 - Never run anything in the code root itself. A check that needs something the scratch copy can't
   get (a secret, a service, an install the session refuses): say what you could not run, and why.
 

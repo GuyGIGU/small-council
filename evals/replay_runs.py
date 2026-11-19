@@ -202,6 +202,7 @@ def implement(chair: Chair) -> Path:
     chair.council("run", "plan", "check")
     chair.council("state", "size=squad — 2 builders + 1 verifier, est. ~520k tokens")
     chair.council("state", "phase=prepare")
+    chair.council("restore", "point")
     chair.council("gate", "tests", "--", "true")
     chair.council("state", "phase=build")
     for task, agent in ((1, "b1c2d3e4f5a6b7c8d"), (2, "b2c3d4e5f6a7b8c9d")):

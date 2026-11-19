@@ -13,6 +13,7 @@ from council.clock import iso_moment
 from council.records import events as event_stream
 from council.records import cells, paths, usage, usage_gaps
 from council.records import plan as run_plan
+from council.records import stages as run_stages
 from council.records import seats as seat_files
 from council.records import state as run_state
 from council.records.audit_file import FAIL, PASS, WARN
@@ -26,7 +27,8 @@ STAGES = ("convene", "prepare", "assign", "brief", "work", "collect", "judge", "
 RANK = dict((stage, n) for n, stage in enumerate(STAGES))
 RANK["build"] = RANK["work"]                       # council-implement's build loop stands in for stages 3-7
 SEAT_STAGES = ("assign", "brief", "work", "collect")   # stages 3-6: a run with no worker seat skips them
-MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame")
+MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame",
+         "council-health")
 CLAIM_MODES = ("council-review", "council-plan", "council-research")
 VERDICTS = ("CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED")
 
@@ -102,8 +104,8 @@ def stages(run: Run, say: Say) -> None:
     path = [s for n, s in enumerate(entered) if n == 0 or s != entered[n - 1]]
     if run.mode not in MODES:
         need, why = [], ""                          # council-init, test-architect, context-core: no fixed path
-    elif run.mode == "council-implement":
-        need, why = ["convene", "prepare", "build", "challenge", "deliver", "learn"], ""
+    elif run.mode == "council-implement" or (run.mode in run_stages.ONE_PAGE and run.workers()):
+        need, why = run_stages.required(run.folder), ""   # a one-page mode's path, its one definition (D50, D56, D60)
     elif run.mode == "council-postgame" or not run.workers():
         need = [s for s in STAGES if s not in SEAT_STAGES]
         why = "" if run.mode == "council-postgame" else " (stages 3-6 are skipped: no worker seat was selected)"

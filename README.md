@@ -72,12 +72,14 @@ check that `python --version` works in Git Bash (the Microsoft Store stub doesn'
 
 | Command | What you get |
 |---|---|
+| `/council` | The whole loop from one request in your words: the request as lines you can check, a look at the code underneath, your decisions as consequences, then the build with a restore point, the reader and the runner on the whole change, and one report with its undo line. You never pick a size. |
 | `/council-review` | Two agents review the change at once; you get checked findings, ranked P1/P2/P3, what it cost and a recommendation, handed to implement for fixing. |
-| `/council-plan` | A plan in small, checkable tasks. Say "debate it" to have the experts argue the hard calls first. |
-| `/council-implement` | Builds a plan or fixes review findings, with proof for each task and a blind check of every result. |
-| `/council-research` | An answer backed by graded evidence, saved for next time. |
+| `/council-plan` | Your request as lines you can check, a look at the code underneath (where it fits, anything broken it rests on, the real choices, brought as what happens if you choose nothing), then a plan in small, checkable tasks. A choice that is hard to undo gets two designs made apart. |
+| `/council-implement` | Builds a plan or fixes review findings, with a restore point first, checks after each task, and the reader and the runner on the whole change. |
+| `/council-research` | An answer backed by evidence checked against the code, saved for next time. Nothing is built. |
 | `/council-postgame` | "Did we build what I asked?" Matches, drift and gaps against your request, word for word. |
-| `/council-init` | Sets the council up for a project, or refreshes it when the stack moves. |
+| `/council-health` | Where the project drifted from its book (the design page, the stack page, the decisions log, known problems), with a few refactors proposed, each with its cost, its reason and whether it can be undone. Builds nothing. |
+| `/council-init` | Sets the council up for a project, or refreshes it when the stack moves. A project with no code starts with its stack: two proposals made apart, and your choice written down. |
 | `/spec-writer` | A short spec: job stories, acceptance criteria, boundaries. |
 | `/test-architect` | Finds tests that only look like tests, and fixes them. |
 
@@ -89,22 +91,23 @@ at any point.
 
 ## What a run gives you
 
-After every build, the same eight lines, in the same order, whatever happened:
+After every build, the same report, in the same order, whatever happened:
 
 ```
-Built: 4 of 4 tasks — you can now export a report as CSV
-Works?: ran `npm start` and exported a 12-row file; the 3 new tests pass
-Checked by machine: gates: 3 ran — all pass (baseline: 1 FAIL)
-Your decisions: none
-Shortcuts I took: the export limit is hardcoded at 5,000 rows (src/export.ts) — streaming needs a design call
+Works now
+- You can export a report as CSV — the runner exported a 12-row file; its test went red when the export was broken on purpose
+- (pictures of the export page before and after)
+Does not work: nothing
+Your decisions
+- The export stops at 5,000 rows (a hardcoded limit). Left as is, bigger reports are cut short. Recommended: streaming, a design call; can be undone
 Not proved: nothing
-Left open: nothing
-Cost: helpers ~90k tokens across 3 agents; Chair usage unavailable · 2 of 2 fix(es) proved · 0 broken · log: .council/logs/2026-09-16-csv.md
+Noted for later: the old export button has no label (in known problems)
+Cost: ~640k tokens and 38 minutes, against an estimate of ~700k and 40
+Undo: to take the whole build back, say so — `council restore show` prints the steps that put every file back as it was
 ```
 
-"Shortcuts", "Not proved" and "Left open" are never skipped. `none` is an answer; silence isn't.
-`Checked by machine:`, `Your decisions:` and `Not proved:` are printed by the helper from its records,
-never written by the model.
+"Does not work", "Not proved" and "Undo" are never skipped. `nothing` is an answer; silence isn't.
+What the checks proved is printed by the helper from its records, never written by the model.
 
 After every review: what happened and what it cost, a recommendation, and findings with a file and
 line, an evidence grade (observed, reproduced, inferred), how each was checked, and a fix line the

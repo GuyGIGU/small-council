@@ -1,0 +1,39 @@
+# Small Council run plan v1, as a build opens it (D56). Keep exactly five tab-separated columns.
+# Fixed: the reader and the runner, on the whole change once the last task is built, and the main
+# session's own check of each serious finding they make. Add the four task-<n> rows below once per
+# task (none in a Solo build, where you build), and set estimated-tokens: the tasks' builders plus
+# 500000 for the pair, and say why. A finding on a protected subject: add the verifier's rows, add
+# its tokens, and set verification to independent.
+kind	id	field	value	reason
+schema	plan	version	1	versioned run-plan contract
+run	run	id	{{RUN}}	bind this plan to its run folder
+run	run	mode	{{MODE}}	mode chosen when the run opened
+run	run	size	squad	one builder per task, then the reader and the runner (D56)
+assessment	run	risk	medium	a build changes the project; the restore point takes it back
+assessment	run	complexity	medium	tasks one at a time, then two agents on the whole change
+assessment	run	uncertainty	medium	what the change really does is what the pair finds out
+budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
+budget	run	estimated-tokens	<pending>	the tasks' builders, plus the pair (about 500k)
+verification	run	level	self	the main session checks each serious finding against the code itself
+seat	chair	disposition	selected	the main session runs the build, checks the findings and writes the report
+seat	chair	role	chair	the one head
+context	chair	level	focused	the plan, the checks' outputs, the findings and the code they cite
+budget	chair	tool-calls	120	dispatches, the checks after each task, each serious finding's check, the report
+seat	reader	disposition	selected	reads the whole change against the plan's behaviour lines and the book
+seat	reader	role	worker	one half of the check at the end
+context	reader	level	focused	the brief and the change
+budget	reader	tool-calls	100	a deep read
+seat	runner	disposition	selected	runs both ends of the change and breaks each behaviour on purpose
+seat	runner	role	worker	the other half of the check at the end
+context	runner	level	focused	the brief and the change
+budget	runner	tool-calls	100	clones, the project's checks at both ends, the break-on-purpose runs
+# One builder per task, four rows each (task-2, task-3 … the same):
+# seat	task-1	disposition	selected	builds task 1
+# seat	task-1	role	worker	the one hand that writes its code
+# context	task-1	level	focused	its orders: council context build task-1
+# budget	task-1	tool-calls	150	the builder's turn limit
+# A blind verifier for a finding on a protected subject:
+# seat	verify-1	disposition	selected	a finding on <the protected subject>
+# seat	verify-1	role	verifier	checks it blind
+# context	verify-1	level	focused	the claim and its path:line only
+# budget	verify-1	tool-calls	40	one claim

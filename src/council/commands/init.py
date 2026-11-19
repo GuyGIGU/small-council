@@ -21,6 +21,8 @@ USAGE = "usage: council init detect | init scaffold [--quick] [--run <folder>]"
 REFRESH = "a council-init refresh is the next step to bring it up to date"
 HARD_RULES_LEFT = ("the ## Hard rules section of council.config.md — written empty: a `- ` line for each of the "
                    "project's non-negotiables, if it has any")
+BOOK_LEFT = ("the book — the design page, the stack page and the decisions log, each the project's own file where it "
+             "has one, their paths under ## Book (council-init, Phase E; references/run/book.md)")
 
 
 class Project(NamedTuple):
@@ -171,7 +173,7 @@ def _from_quick(project: Project, run: Path | None) -> list[str]:
     return ["the roster — tailor the quick setup's rows: recasts, drops and each seat's surface markers "
             "(council-init, Phase B)", "the ## Stack section of council.config.md", HARD_RULES_LEFT,
             "the map's prose — each section of map.md, the One way per job table too (council-init, Phase D)",
-            "the `setup: quick` line in council.config.md: take it out once the setup is full"]
+            BOOK_LEFT, "the `setup: quick` line in council.config.md: take it out once the setup is full"]
 
 
 def _write_new(path: str, text: str) -> bool:
@@ -236,7 +238,7 @@ def _config_left(project: Project, probed: dict[str, init_write.Probe], quick: b
                    and not (name.endswith("-broken") and name[len("probe-"):-len("-broken")] in names))
     left = [] if quick else ["the roster — a row per seat beyond Fowler and Beck, each with its surface markers, in "
                              "place of the <Seat> row (council-init, Phase B)",
-                             "the ## Stack section of council.config.md", HARD_RULES_LEFT]
+                             "the ## Stack section of council.config.md", HARD_RULES_LEFT, BOOK_LEFT]
     left += ["%s ran, but no detected check is named %s, so it has no Gates row — add its row by hand"
              % (name, name[len("probe-"):]) for name in stray]
     return left

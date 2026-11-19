@@ -6,7 +6,8 @@ from pathlib import Path
 
 from council.records import bytewise, events, gate_table, home, map_file, memory, plan, seat_files, stages, state, usage
 
-MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame")
+MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame",
+         "council-health")
 EARLY = ("convene", "prepare", "assign", "brief", "work", "build", "collect", "judge", "challenge")
 PAUSED = "council run close --status paused --run %s"
 

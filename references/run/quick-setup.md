@@ -8,3 +8,8 @@ setup now makes its folder (kept on this machine) and the review starts straight
 reads no roster, so nothing in it waits on the full setup; `/council-init` does that later — the
 checks probed and the project's map — and the review offers it once, at its end. Then run
 `council init scaffold --quick` and go on to the estimate.
+
+The quick setup writes none of the book's pages (`references/run/book.md`): its config names their
+default places, `council book` says each is not written yet, and the review's brief says so to both
+seats. The review's first `council book note` starts known problems; the design page, the stack
+page and an adopted decisions log come with `/council-init`.

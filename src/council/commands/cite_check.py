@@ -28,7 +28,7 @@ class Scope(NamedTuple):
 
 
 def scope(top: str, base: str, run: str, mode: str) -> Scope:
-    return Scope(top, base, run, mode in AREA_MODES, mode == "council-review")
+    return Scope(top, base, run, mode in AREA_MODES, mode in ("council-review", "council-health"))
 
 
 def git_ok(top: str, *args: str) -> bool:

@@ -318,7 +318,7 @@ def revert_build(tmp, name):
     run = run.strip()
     write_plan(run)
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build")
+    building(repo, "state", "phase=build")
     council(repo, "gate", "--all", "--at", "grounding")
     return repo, run
 
@@ -336,7 +336,7 @@ def comment_build(tmp, name, files, touches):
     run = council(repo, "run", "open", "council-implement")[1].strip()
     write_plan(run, selected=("task-1",))
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build", "input=.council/plans/p.md")
+    building(repo, "state", "phase=build", "input=.council/plans/p.md")
     return repo, run
 
 
@@ -384,7 +384,7 @@ def pack_run(tmp, name):
           "provider retries the webhook.\nKeep the receipt email.\n## Later, in your words\n- 2026-11-16 10:00: "
           "and log each retry we drop\n")
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build", "input=.council/plans/charge.md")
+    building(repo, "state", "phase=build", "input=.council/plans/charge.md")
     council(repo, "state", "decision=charge by the idempotency key")
     return repo, run
 
@@ -417,6 +417,71 @@ last-verified: 2026-09-15 @ eval
 ## Memory
 - conventions: .council/conventions.md
 """
+
+def tree_files(repo):
+    """Every file outside .git/ and .council/, by its path in the repo, with its bytes."""
+    found = {}
+    for folder, dirs, files in os.walk(repo):
+        rel = os.path.relpath(folder, repo).replace("\\", "/")
+        if rel.split("/")[0] in (".git", ".council"):
+            dirs[:] = []
+            continue
+        for name in files:
+            with open(os.path.join(folder, name), "rb") as held:
+                found[name if rel == "." else rel + "/" + name] = held.read()
+    return found
+
+
+def undone(repo, crlf, build):
+    """A build run's restore point, then build(repo), then the undo council restore show prints, each line run in
+    order as the owner would (bash, stopping at the first that fails), all under core.autocrlf crlf: what the point
+    said, the files at the point and after the undo (line ends as LF, under crlf), show's output, the first failure."""
+    git(repo, "config", "core.autocrlf", "true" if crlf else "false")
+    council(repo, "run", "open", "council-implement")
+    said = council(repo, "restore", "point")
+    lf = (lambda files: {path: data.replace(b"\r\n", b"\n") for path, data in files.items()}) if crlf else dict
+    before = lf(tree_files(repo))
+    build(repo)
+    code, out, err = council(repo, "restore", "show")
+    failed = "" if code == 0 else "restore show exit %d: %s" % (code, err)
+    for step in [line[2:] for line in out.splitlines() if line.startswith("  ")] * (not failed):
+        done = subprocess.run([BASH, "-c", step], cwd=repo, capture_output=True, text=True, env=GIT_ENV)
+        if done.returncode:
+            failed = "%s: exit %d: %s" % (step, done.returncode, done.stderr.strip())
+            break
+    return {"point": said[1] + said[2], "before": before, "after": lf(tree_files(repo)), "out": out + err,
+            "failed": failed}
+
+
+def symbolic(repo):
+    """HEAD's branch ref, or '' when HEAD is detached or git can't say."""
+    done = subprocess.run([GIT, "symbolic-ref", "-q", "HEAD"], cwd=repo, capture_output=True, text=True, env=GIT_ENV)
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def committed(repo, path, text, message):
+    write(os.path.join(repo, path), text)
+    git(repo, "add", "--", path)
+    git(repo, "commit", "-q", "-m", message)
+
+
+def building(repo, *words):
+    """council state phase=build …, the run's restore point taken first: a build refuses to start without one."""
+    council(repo, "restore", "point")
+    return council(repo, *words)
+
+
+def restore_repo(tmp, name):
+    """A committed repo with a council, a build run open, and uncommitted work: a.txt changed, notes.txt untracked."""
+    repo = small_council_repo(tmp, name, "")
+    write(os.path.join(repo, "b.txt"), "b\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "b")
+    write(os.path.join(repo, "a.txt"), "a, edited\n")
+    write(os.path.join(repo, "notes.txt"), "mine\n")
+    run = council(repo, "run", "open", "council-implement")[1].strip()
+    return repo, run
+
 
 def setup_repo(tmp, name, files):
     """A committed repo holding these files, for council init."""
@@ -572,7 +637,7 @@ def runs_open(tmp):
     for folder in ("bin", "src", "references"):
         shutil.copytree(os.path.join(ROOT, folder), os.path.join(copy, folder), ignore=shutil.ignore_patterns("__pycache__"))
     lfs = {}
-    for name in ("run-plan.tsv", "run-plan-review.tsv", "review-brief.md"):
+    for name in ("run-plan.tsv", "run-plan-review.tsv", "review-brief.md", "run-plan-design.tsv", "design-brief.md"):
         template = os.path.join(copy, "references", "templates", name)
         with open(template, "rb") as f:
             lfs[name] = f.read().replace(b"\r\n", b"\n")
@@ -580,7 +645,8 @@ def runs_open(tmp):
             f.write(lfs[name].replace(b"\n", b"\r\n"))
     crlf_repo = new_repo(tmp, "plan-template-crlf")
     write(os.path.join(crlf_repo, ".council", "council.config.md"), "# Council config\n")
-    for mode, files in (("council-plan", {"run-plan.tsv": "run-plan.tsv"}),
+    for mode, files in (("council-postgame", {"run-plan.tsv": "run-plan.tsv"}),
+                        ("council-plan", {"run-plan.tsv": "run-plan-design.tsv", "brief.md": "design-brief.md"}),
                         ("council-review", {"run-plan.tsv": "run-plan-review.tsv", "brief.md": "review-brief.md"})):
         opened = subprocess.run([BASH, os.path.join(copy, "bin", "council"), "run", "open", mode, "--alongside"],
                                 cwd=crlf_repo, capture_output=True, env=GIT_ENV, timeout=120)
@@ -590,8 +656,12 @@ def runs_open(tmp):
             if os.path.isfile(written_path):
                 with open(written_path, "rb") as f:
                     written = f.read()
+            # {{BOOK}} is the book's first three pages, a line each (two more); a review's two {{BUILD…}} lines and
+            # its {{HEALTH}} line are taken out (three fewer, D56, D65); the designer's brief has none of them (D60)
+            grown = {"design-brief.md": 2, "review-brief.md": -1}.get(name, 0)
             check("run open %s: a CRLF %s template is written with LF line ends, on every OS" % (mode, name),
-                  opened.returncode == 0 and b"\r" not in written and written.count(b"\n") == lfs[name].count(b"\n"),
+                  opened.returncode == 0 and b"\r" not in written
+                  and written.count(b"\n") == lfs[name].count(b"\n") + grown,
                   opened.stderr.decode("utf-8", "replace") + repr(written[:200]))
     # A review opens with its fixed plan and its brief (D48): the plan valid untouched, the brief with every {{…}}
     # filled and both role texts word for word; a missing brief template is refused as a missing plan template is.
@@ -613,8 +683,8 @@ def runs_open(tmp):
           ("Council home: %s ·" % os.path.dirname(os.path.dirname(review_run))) in brief and
           re.search(r"^Code root: .+/review-opens ·", brief, re.MULTILINE) is not None and
           len(roles) == 2 and all(role in brief for role in roles), brief[:600] + err)
-    code, plan_run, err = council(review_repo, "run", "open", "plan", "--alongside")
-    check("run open: another mode writes no brief.md, and keeps the starter plan",
+    code, plan_run, err = council(review_repo, "run", "open", "postgame", "--alongside")
+    check("run open: another mode (a post-game) writes no brief.md, and keeps the starter plan",
           code == 0 and not os.path.exists(os.path.join(plan_run.strip(), "brief.md")) and
           "seat\treader\t" not in read(os.path.join(plan_run.strip(), "run-plan.tsv")), plan_run + err)
     os.remove(os.path.join(copy, "references", "templates", "review-brief.md"))
@@ -649,7 +719,7 @@ def runs_open(tmp):
     # Every mode but a review (and setup) opens with the starter plan, which is incomplete on purpose.
     starter = new_repo(tmp, "starter-plan")
     write(os.path.join(starter, ".council", "council.config.md"), "# Council config\n")
-    starter_run = council(starter, "run", "open", "council-plan")[1].strip()
+    starter_run = council(starter, "run", "open", "council-postgame")[1].strip()
     code, out, _ = council(starter, "run", "plan", "check")
     check("run plan check: the starter plan is intentionally incomplete", code == 1 and "replace the placeholder" in out, out)
     code, out, err = council(starter, "state", "phase=brief")
@@ -3688,6 +3758,7 @@ def runs_config_written_loosely(tmp):
     rules = json.loads(out)["permissions"]["allow"] if code == 0 else []
     check("doctor permissions: prints the whole list council-init offers, as JSON to paste",
           "Bash(council patch:*)" in rules and "Bash(council context:*)" in rules and "Edit(.council/**)" in rules
+          and "Bash(council book:*)" in rules and "Bash(council restore:*)" in rules
           and not any("council gate:" in rule or "council cap" in rule for rule in rules), out + err)
 
 
@@ -3718,12 +3789,13 @@ def runs_helper_carries_next_steps(tmp):
           and "04-brief.md" in nxt(), str((at_prepare, mine, nxt())))
     pn = new_repo(tmp, "next-steps-plan")
     write(os.path.join(pn, ".council", "council.config.md"), "# Council config\n")
-    prun = council(pn, "run", "open", "council-plan")[1].strip().splitlines()[-1]
+    prun = council(pn, "run", "open", "council-postgame")[1].strip().splitlines()[-1]
     council(pn, "state", "phase=prepare")
     plan_next = re.search(r"^next:[ 	]*(.*)$", read(os.path.join(prun, "session-state.md")), re.MULTILINE).group(1)
     council(nx, "state", "phase=work")
-    check("state phase=: a review's next after phase=work names council-review and no doctrine file; a plan run's "
-          "still names its doctrine file", "council-review" in nxt() and "doctrine" not in nxt() and ".md" not in nxt()
+    check("state phase=: a review's next after phase=work names council-review and no doctrine file; a post-game "
+          "run's still names its doctrine file (a plan's names its page since D60: the design group)",
+          "council-review" in nxt() and "doctrine" not in nxt() and ".md" not in nxt()
           and "02-prepare.md" in plan_next, str((nxt(), plan_next)))
     code, out, err = council(nx, "state", "decision=Go ahead with the Squad, four seats")
     council(nx, "state", "decision=Use the key token=abc123notarealvalue for the test server")
@@ -4940,6 +5012,9 @@ def requests_and_proofs(tmp):
                   '{"gate": "%s", "command": "%s", "exit": %d, "seconds": 1, "when": "2026-09-16 10:00:00"}\n' % (name, cmd, ex))
     write(os.path.join(prf, "seats", "diagnose-2.md"), "# Diagnosis — task 2\nref: none\n## Index\n"
           "1 · likely · root cause · webapp/backend/tests/test_expiry.py:9-12 · the lines before the fix\n")
+    for slug in ("reader", "runner"):      # the pair reads the whole change before the fix round moves its lines
+        write(os.path.join(prf, "seats", slug + ".md"), "# %s\n## Index\n"
+              "1 · P2 · Principle 1 · webapp/backend/tests/test_expiry.py:40-44 · lines the fix round moved\n" % slug)
     code, out, _ = council(proof, "check")
     check("check: a Godot test named as -gtest=res://… counts as the saved test",
           "task 1  proof  ok · test saved: test/unit/test_player.gd" in out, out)
@@ -4963,6 +5038,8 @@ def requests_and_proofs(tmp):
           "task 10  proof  ok · couldn't confirm a saved test" in out, out)
     check("check: in a build, a diagnosis file's old line numbers aren't checked as citations",
           code == 0 and "diagnose-2" not in out, out)
+    check("check: in a build, the reader's and the runner's files (written before the fix round) aren't checked as "
+          "citations, so Deliver's check passes", code == 0 and "reader#" not in out and "runner#" not in out, out)
     write(os.path.join(req, ".council", "logs", "2026-09-16-build.md"),
           "# Council Implementation Log \u2014 build\nInput: `x` \u00b7 Run: %s \u00b7 Start: abc123\n\n## Task 1: x\n"
           % os.path.basename(brun))
@@ -5572,13 +5649,14 @@ def runs_stage_order_and_close(tmp):
           and 'skip="<why>"' in err and phase_of(rvr) == "convene" and len(events(rvr)) == before, err)
     council(rv, "state", "phase=prepare")
     code, out, err = council(rv, "state", "phase=judge")
-    check("state phase=: a run whose plan selects a worker seat can't jump from Prepare to Judge",
-          code == 2 and "would skip assign, brief, work, collect" in err and phase_of(rvr) == "prepare", err)
+    check("state phase=: a plan run whose plan selects a worker seat can't jump from Prepare to Judge past Work, "
+          "and Assign, Brief and Collect are no longer its to enter (D60)",
+          code == 2 and "would skip work," in err and "assign" not in err and phase_of(rvr) == "prepare", err)
     code, out, err = council(rv, "state", "phase=judge", "skip=the user ruled the seats out; Chair reads it alone")
     moved = [e for e in events(rvr) if e[3] == "run.phase_changed"][-1:]
     check("state phase= skip=: a skip with a reason goes through, and the phase event records what and why",
           code == 0 and phase_of(rvr) == "judge" and moved and moved[0][5] == "judge"
-          and moved[0][6] == "from=prepare;skipped=assign,brief,work,collect;reason=the user ruled the seats out, Chair reads it alone"
+          and moved[0][6] == "from=prepare;skipped=work;reason=the user ruled the seats out, Chair reads it alone"
           and "skip:" not in read(os.path.join(rvr, "session-state.md")), out + err + str(moved))
     check("state phase=: a step back is never a skip (judge back to work, then on in turn)",
           steps(rv, "work", "collect", "judge", "challenge", "deliver", "learn") == [0] * 6 and phase_of(rvr) == "learn")
@@ -5609,8 +5687,23 @@ def runs_stage_order_and_close(tmp):
     bd, bdr = fresh("order-build", "council-implement")
     code, out, err = council(bd, "state", "phase=challenge")
     check("state phase=: a build can't go to Challenge before its build loop", code == 2 and "would skip prepare, build" in err, err)
+    council(bd, "state", "phase=prepare")
+    code, out, err = council(bd, "state", "phase=build")
+    check("state phase=build: a build with no restore point is refused, naming council restore point and the "
+          "no-git backup's record, and stays in Prepare (D57)",
+          code == 2 and "needs this run's restore point first" in err and "next: council restore point" in err
+          and "council state restore=backup" in err and phase_of(bdr) == "prepare", err)
+    code, out, err = council(bd, "state", "restore=later")
+    check("state restore=: takes backup only, naming council restore point", code == 2 and "restore= takes backup only"
+          in err and "council restore point" in err, err)
+    nogit, ngr = fresh("order-build-backup", "council-implement")
+    council(nogit, "state", "phase=prepare")
+    code, out, err = council(nogit, "state", "restore=backup")
+    check("state phase=build: outside git, the backup recorded (restore=backup) lets a build start with no point",
+          code == 0 and council(nogit, "state", "phase=build")[0] == 0 and phase_of(ngr) == "build", out + err)
+    council(bd, "restore", "point")
     check("state phase=: a build's own path — Prepare, Build, Challenge, Deliver, Learn — needs no skip=",
-          steps(bd, "prepare", "build", "challenge", "build", "challenge", "deliver", "learn") == [0] * 7, read(os.path.join(bdr, "events.tsv")))
+          steps(bd, "build", "challenge", "build", "challenge", "deliver", "learn") == [0] * 6, read(os.path.join(bdr, "events.tsv")))
     code, out, err = council(bd, "state", "phase=build")
     check("state phase=: a build may go back from Learn to its build loop for one more task", code == 0 and phase_of(bdr) == "build", err)
     code, out, err = council(bd, "state", "phase=deliver")
@@ -5746,7 +5839,7 @@ def runs_stage_order_and_close(tmp):
 
     # Beside the Chair's tokens, the method its mode loads (D13): context-core's skill, the mode's own and the
     # doctrine of each stage the run must enter, counted here from the files themselves; a review's is its own
-    # page alone (D47). A plan whose plan selects a worker seat enters all ten stages.
+    # page alone (D47), and so is a plan's (D60). A post-game enters its six stages.
     def method_of(mode, ranks):
         names = [os.path.join("skills", "context-core", "SKILL.md"), os.path.join("skills", mode, "SKILL.md")]
         names += [os.path.join("references", "doctrine", f) for f in os.listdir(os.path.join(ROOT, "references", "doctrine"))
@@ -5763,15 +5856,16 @@ def runs_stage_order_and_close(tmp):
           code == 0 and "The Chair's own work: 33k tokens over 4 model calls (its context's growth, from the session transcript)"
           " · method load: {:,} bytes".format(short) in out, out + err)
     sid_w = "sess-chair-usage-w"
-    wu, wur = fresh("chair-method", "council-plan", selected=("chair", "hunt"), env=session(sid_w))
+    wu, wur = fresh("chair-method", "council-postgame", selected=("chair", "verify-1"), env=session(sid_w))
     write(os.path.join(ccfg, "projects", "eval-project", sid_w + ".jsonl"),
           call(sid_w, datetime.now(timezone.utc), "w1", 5000, 0, 0))
     code, out, err = council(wu, "run", "close", "--status", "abandoned", env={"CLAUDE_CONFIG_DIR": ccfg})
-    full = method_of("council-plan", set(range(1, 11)))
+    full = method_of("council-postgame", {1, 2, 7, 8, 9, 10})
     rows = [e[6] for e in events(wur) if e[3] == "run.chair_usage"]
-    check("run close: a plan whose plan selects a worker seat records the method of all ten stages, the D13 figure",
+    check("run close: a post-game records the method of its six stages, context-core's and its own, the D13 figure",
           code == 0 and rows == ["calls=1;basis=complete;method_bytes=%d" % full] and full > short
-          and "· method load: {:,} bytes (context-core, council-plan and the doctrine of the 10 stages it enters)".format(full)
+          and "· method load: {:,} bytes (context-core, council-postgame and the doctrine of the 6 stages it enters)"
+          .format(full)
           in out, out + err + repr(rows))
     os.remove(os.path.join(ccfg, "projects", "eval-project", sid_a + ".jsonl"))
     p = subprocess.run([sys.executable, os.path.join(ROOT, "src", "council", "commands", "script.py"), "chair_usage", "--run",
@@ -6199,7 +6293,7 @@ def gates_build_records_attempts(tmp):
     run = run.strip()
     write_plan(run)
     council(stop, "state", "phase=prepare")
-    council(stop, "state", "phase=build")
+    building(stop, "state", "phase=build")
     codes = [council(stop, "gate", "unit")[0] for _ in range(3)]
     code, out, err = council(stop, "gate", "unit")
     check("gate: in a build, three failures of one gate stop it with no repair record typed",
@@ -6214,7 +6308,7 @@ def gates_build_records_attempts(tmp):
     frun = frun.strip()
     write_plan(frun)
     council(fix, "state", "phase=prepare")
-    council(fix, "state", "phase=build")
+    building(fix, "state", "phase=build")
     code, out, err = council(fix, "gate", "unit")
     check("gate: a failure in a build is recorded as an attempt, and says so last",
           code == 1 and "repair: task T1 attempt 1" in out, out + err)
@@ -6248,7 +6342,7 @@ def gates_build_records_attempts(tmp):
     write_plan(brun.strip())
     council(base, "gate", "--all")                                # the baseline, before any change: unit already fails
     council(base, "state", "phase=prepare")
-    council(base, "state", "phase=build")
+    building(base, "state", "phase=build")
     code, out, err = council(base, "gate", "unit")
     check("gate: in a build, a failure naming only the baseline's failing tests is said, and not counted",
           code == 1 and "not counted — the same tests fail as at the baseline" in out, out + err)
@@ -6320,7 +6414,7 @@ def gates_alerts_from_the_helper(tmp):
     _, brun, _ = council(blk, "run", "open", "council-implement")
     write_plan(brun.strip())
     council(blk, "state", "phase=prepare")
-    council(blk, "state", "phase=build")
+    building(blk, "state", "phase=build")
     said = [council(blk, "gate", "unit") for _ in range(3)]
     check("gate: the third failure that stops the build says to alert the owner; the first two don't",
           all("PushNotification" not in o + e for _, o, e in said[:2]) and "PushNotification" in said[2][1] + said[2][2],
@@ -6337,7 +6431,7 @@ def gates_repair_stop(tmp):
     run = run.strip()
     write_plan(run)
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build")
+    building(repo, "state", "phase=build")
     code, out, _ = council(repo, "gate", "unit")
     check("gate <name>: a failure in a build records the attempt itself (task 1 when no next: names one)",
           code == 1 and "repair: task T1 attempt 1" in out, out)
@@ -6378,7 +6472,7 @@ def gates_repair_stop(tmp):
     code, trun, _ = council(two, "run", "open", "council-implement")
     write_plan(trun.strip())
     council(two, "state", "phase=prepare")
-    council(two, "state", "phase=build")
+    building(two, "state", "phase=build")
     council(two, "state", "next=task 1: read the rows")
     council(two, "gate", "unit")
     council(two, "repair", "record", "T1", "unit")
@@ -6404,7 +6498,7 @@ def gate_time_limits(tmp):
     code, run, _ = council(repo, "run", "open", "council-implement")
     run = run.strip()
     write_plan(run)
-    council(repo, "state", "phase=prepare"); council(repo, "state", "phase=build", "next=task 1: stop the hang")
+    council(repo, "state", "phase=prepare"); building(repo, "state", "phase=build", "next=task 1: stop the hang")
     hang = 'echo started; (while :; do echo beat >> beat.txt; sleep 0.2; done) & sleep 40; echo never'
     began = time.monotonic()
     code, out, err = council(repo, "gate", "probe-1", "--timeout", "2", "--", hang)
@@ -6530,7 +6624,7 @@ def gate_invalid_proof(tmp):
     code, run, _ = council(repo, "run", "open", "council-implement")
     run = run.strip()
     write_plan(run)
-    council(repo, "state", "phase=build", "next=task 1: x")
+    building(repo, "state", "phase=build", "next=task 1: x")
     check1 = "bash tools/check.sh && echo 'error: value of type Notebook has no member settled' >&2"
     council(repo, "gate", "before-1", "--", check1)
     code, out, err = council(repo, "gate", "before-1", "--invalid", "the new check did not compile")
@@ -6698,7 +6792,7 @@ def gates_covers_paths(tmp):
     run = run.strip()
     write_plan(run)
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build")
+    building(repo, "state", "phase=build")
     council(repo, "gate", "--all", "--at", "grounding")
     tree = json.loads(read(os.path.join(run, "gates", "ui.json")) or "{}").get("tree", "")
     write(os.path.join(repo, "app", "core", "model.kt"), "model, edited\n")          # outside ui's paths
@@ -6771,7 +6865,7 @@ def gates_patch_rounds(tmp):
     run = run.strip()
     write_plan(run)
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build", "input=.council/plans/pay.md")
+    building(repo, "state", "phase=build", "input=.council/plans/pay.md")
     report = os.path.join(run, "report-1.md")
     saved = lambda n: os.path.isfile(os.path.join(run, "patches", "T1-%d.patch" % n))   # noqa: E731
 
@@ -6905,7 +6999,7 @@ def gates_patch_no_bytecode(tmp):
     run = run.strip()
     write_plan(run, selected=("task-1", "task-2"))
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build")
+    building(repo, "state", "phase=build")
     council(repo, "seat", "task-1", "queued")
     write(os.path.join(repo, "tally", "parse.py"), "def parse(text):\n    return text.split()\n")
     write(os.path.join(repo, "tests", "__pycache__", "test_parse.cpython-314.pyc"), "\x00bytecode\n")
@@ -7108,7 +7202,7 @@ def gates_repair_counts_the_running_task(tmp):
     run = council(repo, "run", "open", "council-implement")[1].strip()
     write_plan(run, selected=("task-2", "task-3"))
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build", "next=task 2: charge once")
+    building(repo, "state", "phase=build", "next=task 2: charge once")
     council(repo, "seat", "task-3", "queued")
     council(repo, "seat", "task-3", "running", "agent=x3")
     code, out, err = council(repo, "gate", "unit")
@@ -7243,7 +7337,7 @@ def gates_just_me_tree(tmp):
     run = council(repo, "run", "open", "council-implement")[1].strip()
     write_plan(run)
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build", "input=.council/plans/a.md")
+    building(repo, "state", "phase=build", "input=.council/plans/a.md")
     tree = lambda: json.loads(read(os.path.join(run, "gates", "tests.json")) or "{}").get("tree", "")   # noqa: E731
     council(repo, "gate", "tests")
     team = tree()
@@ -8393,17 +8487,18 @@ def requests_task_pack(tmp):
           and "AP-1 · the gateway retries on its own · scope: src/pay/**" in out and "EC-1 · every module" in out
           and "AP-2" not in out and "memory: 1 scoped and 1 every-run entries of 3 apply" in out, out)
     check("context build: part 4 holds the user's decision, ask.md's Later words, the gates, the time limit, the "
-          "task's proof gates linking build-proof.md and one line linking the standing builder rules, each by its "
-          "whole path in the plugin",
+          "task's proof gates pointing at the builder's page, and one line linking that page by its whole path in "
+          "the plugin (D56)",
           '"charge by the idempotency key"' in line_of(out, "idempotency")
           and "- 2026-11-16 10:00: and log each retry we drop" in out
           and "- unit · true · run at: verify · mandatory: yes" in out
           and "Gate time limit: 20m (the config's - gate time limit:)" in out
-          and line_of(out, "Proof:").startswith("Proof: council gate before-2, then after-2, one command in both — ")
-          and os.path.samefile(whole("Proof:"), plugin("build-proof.md"))
-          and line_of(out, "Standing builder rules:").endswith(" — read it before the first edit")
-          and os.path.samefile(whole("Standing builder rules:"), plugin("run", "builder-rules.md"))
-          and out.count("references/run/builder-rules.md") == 1, out)
+          and line_of(out, "Proof:") == "Proof: council gate before-2, then after-2, one command in both — the "
+          "builder's page, Proof"
+          and line_of(out, "The builder's page:").endswith(
+              " — your steps, proof, report and stops on one page; read it before the first edit")
+          and os.path.samefile(whole("The builder's page:"), plugin("run", "builder-rules.md"))
+          and out.count("references/run/builder-rules.md") == 1 and "build-proof.md" not in out, out)
     check("context build: part 5 names task 1's saved round on the same file, with its cause",
           "- task 1 round 1 (T1-1.patch): src/pay/charge.py · Cause: none, a first build" in out
           and "own history" not in out, out)
@@ -8427,7 +8522,8 @@ def requests_task_pack(tmp):
     code, out, err = council(repo, "context", "build", "task-2", env={"CLAUDE_PLUGIN_ROOT": slash(elsewhere)})
     check("context build: with CLAUDE_PLUGIN_ROOT set, the plugin's paths are under it",
           code == 0 and "Ref: %s/references/quality-backend.md — read" % slash(elsewhere) in out
-          and "Standing builder rules: %s/references/run/builder-rules.md — read" % slash(elsewhere) in out, out + err)
+          and "The builder's page: %s/references/run/builder-rules.md — your steps" % slash(elsewhere) in out,
+          out + err)
     os.remove(os.path.join(elsewhere, "references", "quality-backend.md"))
     code, out, err = council(repo, "context", "build", "task-2", env={"CLAUDE_PLUGIN_ROOT": slash(elsewhere)})
     check("context build: a Ref naming no file of the plugin's is printed as the plan writes it",
@@ -8630,7 +8726,7 @@ def requests_continued_request_reaches_builders(tmp):
     write(os.path.join(run, "ask.md"), "# Ask — order pricing\ncontinues: .council/asks/2026-11-17-order-pricing.md\n"
           "## In your words\n(no new words)\n")
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build", "input=.council/plans/order.md")
+    building(repo, "state", "phase=build", "input=.council/plans/order.md")
     code, pack, err = council(repo, "context", "build", "task-1")
     later = pack.split("Later, in the user's words", 1)[-1].split("Gates (", 1)[0]
     check("context build: the pack of a build that continues a filed request carries that request's Later lines",
@@ -8663,7 +8759,7 @@ def requests_build_from_postgame_or_review(tmp):
         run = out.strip().splitlines()[-1]
         write_plan(run, selected=("task-1", "task-2"))
         council(repo, "state", "phase=prepare")
-        council(repo, "state", "phase=build", "input=" + given)
+        building(repo, "state", "phase=build", "input=" + given)
         return run
 
     build("sPg", ".council/reviews/postgame.md")
@@ -9447,7 +9543,7 @@ def runs_task_decisions_unlock_their_task(tmp):
     run = out.strip().splitlines()[-1]
     write_plan(run, selected=("task-2", "verify-1", "verify-1b", "verify-1c"))
     council(repo, "state", "phase=prepare")
-    council(repo, "state", "phase=build", "input=.council/plans/stop.md")
+    building(repo, "state", "phase=build", "input=.council/plans/stop.md")
     council(repo, "seat", "task-2", "running", "agent=b1")
     council(repo, "seat", "task-2", "done", "tokens=20000", "note=" + FIX_STOP)
     council(repo, "state", "decision=the receipt can wait", "task=3")
@@ -9514,7 +9610,7 @@ def runs_build_seat_fix_stop(tmp):
         run = out.strip().splitlines()[-1]
         write_plan(run, selected=("task-1", "task-2", "task-3"))
         council(repo, "state", "phase=prepare")
-        council(repo, "state", "phase=build", "input=.council/plans/stop.md")
+        building(repo, "state", "phase=build", "input=.council/plans/stop.md")
         return run
 
     fs = new_repo(tmp, "fix-stop")
@@ -9625,7 +9721,7 @@ def runs_fix_stop_not_lifted(tmp):
         run = out.strip().splitlines()[-1]
         write_plan(run, selected=("task-1", "task-2"))
         council(repo, "state", "phase=prepare")
-        council(repo, "state", "phase=build", "input=.council/plans/stop.md")
+        building(repo, "state", "phase=build", "input=.council/plans/stop.md")
         council(repo, "seat", "task-1", "running", "agent=h1")
         council(repo, "seat", "task-1", "done", "tokens=20000", "note=" + note)
         return run
@@ -10387,7 +10483,591 @@ def setup_from_quick_by_header(tmp):
           and "then run council init scaffold again" in out and "Updated " not in out, out + err)
 
 
-parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
+@part("book")
+def book_pages(tmp):
+    """The project's book (D52): council book prints where its four pages are — a project's own file named under the
+    config's ## Book, else the default under the council home, the decisions log the memory file — and whether each
+    is there yet; it refuses with no config, and any other word, naming its usage."""
+    bare = new_repo(tmp, "book-bare")
+    code, out, err = council(bare, "book")
+    check("book: with no config, the usual no-setup refusal", code == 2 and "no council.config.md" in err
+          and "council init scaffold --quick" in err, out + err)
+    repo = setup_repo(tmp, "book", {"a.py": "1\n"})
+    council(repo, "init", "scaffold", "--quick")
+    home = slash(os.path.join(repo, ".council"))
+    cfg = read(os.path.join(repo, ".council", "council.config.md"))
+    check("book: a quick setup's config names the four pages' default places under ## Book",
+          "## Book\n- design: .council/design.md\n- stack: .council/stack.md\n- decisions: memory\n"
+          "- known problems: .council/known-problems.md\n" in cfg, cfg)
+    code, out, err = council(repo, "book")
+    lines = out.splitlines()
+    check("book: each page's path under the home, not written yet, the decisions log the memory file, and who reads "
+          "the first three",
+          code == 0 and len(lines) == 5 and lines[0].startswith("design: %s/design.md — not written yet" % home)
+          and lines[1].startswith("stack: %s/stack.md — not written yet" % home)
+          and lines[2] == "decisions: %s/conventions.md (the memory file: its ## Decisions (D) section)" % home
+          and lines[3].startswith("known problems: %s/known-problems.md — none yet" % home)
+          and lines[4].startswith("Read first: design, stack, decisions — every agent"), out + err)
+    write(os.path.join(repo, "docs", "architecture.md"), "# Architecture\n")
+    write(os.path.join(repo, ".council", "council.config.md"), cfg.replace(
+        "- design: .council/design.md", "- design: docs/architecture.md (adopted)", 1))
+    code, out, err = council(repo, "book")
+    check("book: a page the config names is the project's own file, said as there",
+          code == 0 and "design: %s/docs/architecture.md\n" % slash(repo) in out, out + err)
+    write(os.path.join(repo, ".council", "council.config.md"), cfg.replace(
+        "- design: .council/design.md", "- design: docs/architecture.md — adopted", 1))
+    code, out, err = council(repo, "book")
+    check("book: a ` — adopted` aside after the path is no part of it, as the memory line's is not",
+          code == 0 and "design: %s/docs/architecture.md\n" % slash(repo) in out and "adopted" not in out, out + err)
+    refused = [(words, c, e) for words in (["frob"], ["note"], ["note", "a", "b"], ["waive", " "])
+               for c, _, e in [council(repo, "book", *words)]
+               if c != 2 or "usage: council book" not in e]
+    check("book: another word, no line, two lines or a blank one is refused naming the usage, nothing written",
+          not refused and not os.path.exists(os.path.join(repo, ".council", "known-problems.md")), repr(refused))
+
+
+@part("book")
+def book_known_problems(tmp):
+    """Known problems (D55): council book note and book waive add a dated line under their section, the file made from
+    the template the first time; the same words are written once; the line is redacted; a path outside the project is
+    refused, naming the config line to change."""
+    today = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")   # local, as the helper stamps it
+    repo = setup_repo(tmp, "known", {"a.py": "1\n"})
+    council(repo, "init", "scaffold", "--quick")
+    known = os.path.join(repo, ".council", "known-problems.md")
+    code, out, err = council(repo, "book", "note", "the total is off by one — a.py:1 (review %s)" % today)
+    text = read(known)
+    check("book note: makes known problems from the template and puts the dated line under ## Found, not fixed",
+          code == 0 and out.startswith("Wrote %s — the line under ## Found, not fixed, in a new file" % slash(known))
+          and text.startswith("# Known problems — known\n")
+          and "## Found, not fixed\n- %s: the total is off by one — a.py:1 (review %s)\n" % (today, today) in text,
+          out + err + text)
+    code, out, err = council(repo, "book", "note", "The total is off by one — a.py:1 (review %s) " % today)
+    check("book note: the same words again, in other capitals, are kept once and nothing is written",
+          code == 0 and out.startswith("Kept ") and "nothing written" in out and read(known) == text, out + err)
+    code, out, err = council(repo, "book", "note", "the total is off\n## Not to raise again\n- by one — a.py:1")
+    many = read(known)
+    check("book note: a line with line ends in it is written as one line, so it adds no heading of its own",
+          code == 0 and len(re.findall(r"^## Not to raise again", many, re.MULTILINE)) == 1
+          and "- %s: the total is off ## Not to raise again - by one — a.py:1\n" % today in many, out + err + many)
+    code, out, err = council(repo, "book", "note", "the total is off\n  ## Not to raise again\t- by one — a.py:1")
+    check("book note: the same words again, broken over other lines, are kept once",
+          code == 0 and out.startswith("Kept ") and read(known) == many, out + err)
+    write(known, text)
+    code, out, err = council(repo, "book", "waive", "renames of private helpers")
+    after = read(known)
+    check("book waive: the owner's words, dated, under ## Not to raise again, the rest of the file as it was",
+          code == 0 and "## Not to raise again\n- %s: renames of private helpers\n" % today in after
+          and after.split("## Not to raise again")[0] == text.split("## Not to raise again")[0], out + err + after)
+    code, out, err = council(repo, "book", "note", "token=ghp_abcdefghijklmnopqrstuvwxyz1234 is in the log")
+    check("book note: a secret-looking string is redacted from the line, and it says so",
+          code == 0 and "ghp_" not in read(known) and "[redacted" in read(known) and "redacted" in err, out + err)
+    cfg = os.path.join(repo, ".council", "council.config.md")
+    write(cfg, read(cfg).replace("- known problems: .council/known-problems.md", "- known problems: ../outside.md"))
+    code, out, err = council(repo, "book", "note", "x")
+    check("book note: a known-problems path outside the project is refused, naming the ## Book line, nothing written",
+          code == 2 and "outside the project" in err and "`- known problems: <path>` under the config's ## Book" in err
+          and not os.path.exists(os.path.join(tmp, "outside.md")), out + err)
+
+
+@part("book")
+def book_in_briefs(tmp):
+    """Every agent reads the book first (D52): a review's brief lists the design page, the stack page, the decisions
+    log and known problems, filled by council run open, and a build task's orders name the first three on the line
+    under their heading."""
+    repo = setup_repo(tmp, "book-brief", {"a.py": "1\n"})
+    council(repo, "init", "scaffold", "--quick")
+    council(repo, "book", "note", "an old problem — a.py:1")
+    home = slash(os.path.join(repo, ".council"))
+    code, run, err = council(repo, "run", "open", "council-review")
+    brief = read(os.path.join(run.strip(), "brief.md"))
+    book = brief.split("## The book — read it before anything else\n", 1)[-1].split("\n## Seats", 1)[0]
+    check("run open council-review: the brief's ## The book lists the four pages from council book, with no "
+          "placeholder left, and the reader's book line comes before its role text",
+          code == 0 and book.startswith("- design: %s/design.md — not written yet" % home)
+          and "\n- decisions: %s/conventions.md (the memory file" % home in book
+          and "\n- known problems: %s/known-problems.md\n" % home in book
+          and "{{BOOK}}" not in brief and "{{KNOWN}}" not in brief
+          and brief.index("- book: the book is part of the change's record") < brief.index("- role:"), brief[:2500])
+    council(repo, "run", "close", "--status", "abandoned")
+    repo, run = pack_run(tmp, "book-pack")
+    code, out, err = council(repo, "context", "build", "task-1")
+    second = out.split("\n")[1] if "\n" in out else ""
+    check("context build: the line under the heading names the book's design page, stack page and decisions log, "
+          "a page not written yet as (none yet)",
+          code == 0 and second == "Read first, before anything else — the book: design (none yet) · stack (none yet) "
+          "· decisions %s/conventions.md" % slash(os.path.join(repo, ".council")), out[:600] + err)
+
+
+
+@part("build")
+def build_opens_with_the_pair(tmp):
+    """A build's check at the end (D56): council run open council-implement writes its plan with the reader and the
+    runner fixed and its estimate left to the Chair, and its brief from the review's template, the role texts word for
+    word, with build-brief.md's two blocks in place; a review's brief carries neither block, nor a placeholder."""
+    repo = small_council_repo(tmp, "build-pair", "")
+    code, run, err = council(repo, "run", "open", "council-review")
+    review_brief = read(os.path.join(run.strip(), "brief.md"))
+    council(repo, "run", "close", "--status", "abandoned")
+    code, run, err = council(repo, "run", "open", "council-implement")
+    run = run.strip()
+    brief, plan = read(os.path.join(run, "brief.md")), read(os.path.join(run, "run-plan.tsv"))
+    roles = list(re.findall(r"(?m)^> .*(?:\n> .*)*", review_brief))
+    check("run open council-implement: the plan selects the reader and the runner as workers, names no model for "
+          "them, and leaves the estimate to the Chair",
+          code == 0 and "seat\treader\tdisposition\tselected" in plan and "seat\trunner\trole\tworker" in plan
+          and "estimated-tokens\t<pending>" in plan and "seat\treader\tmodel" not in plan
+          and "# seat\ttask-1\tdisposition\tselected" in plan, plan[:1500] + err)
+    check("run open council-implement: the brief is the review's, both role texts word for word, with the build's "
+          "section and the runner's break-on-purpose line; a review's brief has neither and no {{…}} is left",
+          len(roles) == 2 and all(r in brief for r in roles)
+          and "## This change is a build" in brief and "break that behaviour on purpose" in brief
+          and brief.index("break that behaviour on purpose") > brief.index("### runner")
+          and "## This change is a build" not in review_brief and "on purpose" not in review_brief
+          and "{{" not in brief and "{{" not in review_brief and "\n\n\n" not in review_brief,
+          brief[:3000])
+    write(os.path.join(run, "run-plan.tsv"), plan.replace("estimated-tokens\t<pending>", "estimated-tokens\t800000")
+          .replace("# seat\ttask-1\t", "seat\ttask-1\t").replace("# context\ttask-1\t", "context\ttask-1\t")
+          .replace("# budget\ttask-1\t", "budget\ttask-1\t"))
+    cfg = os.path.join(repo, ".council", "council.config.md")
+    write(cfg, read(cfg) + "\n## Run preferences\n- models: builder=sonnet, verifier=sonnet\n")
+    code, out, err = council(repo, "run", "plan", "check")
+    check("run plan check: a build's plan with its task row and the pair passes, the pair not counted as builders a "
+          "sonnet verifier would be weaker than (D51, D56)", code == 0 and "plan: valid · squad" in out, out + err)
+
+
+@part("build")
+def restore_point_and_undo(tmp):
+    """The restore point (D57): council restore point commits the files as they are, uncommitted work and untracked
+    files included, keeps it by a ref and writes restore.md, moving nothing; a second one is refused; council restore
+    show says nothing changed, then, after a build's edits and a commit, prints the commands that put every file back,
+    and running them does."""
+    repo, run = restore_repo(tmp, "restore")
+    status, head = git(repo, "status", "--porcelain"), git(repo, "rev-parse", "HEAD")
+    code, out, err = council(repo, "restore", "point")
+    held = read(os.path.join(run, "restore.md"))
+    commit = re.search(r"^commit: ([0-9a-f]+)$", held, re.MULTILINE)
+    ref = git(repo, "rev-parse", "-q", "--verify", "refs/council/restore/" + os.path.basename(run)).strip()
+    check("restore point: a commit of the files with the uncommitted work, kept by its ref, in restore.md; the status, "
+          "HEAD and branch as they were",
+          code == 0 and out.startswith("Restore point: ") and "(with the uncommitted work)" in out
+          and commit is not None and ref == commit.group(1) and "head: %s" % head.strip() in held
+          and "branch: main" in held and git(repo, "status", "--porcelain") == status
+          and git(repo, "rev-parse", "HEAD") == head
+          and git(repo, "show", "%s:notes.txt" % ref).strip() == "mine", out + err + held)
+    code, out, err = council(repo, "restore", "point")
+    check("restore point: a second one for the same run is refused, naming restore show, and restore.md stays",
+          code == 2 and "taken already" in err and "council restore show" in err
+          and read(os.path.join(run, "restore.md")) == held, out + err)
+    code, out, err = council(repo, "restore", "show")
+    check("restore show: before anything changed, nothing to undo",
+          code == 0 and "Since then: nothing changed" in out and "git reset" not in out, out + err)
+    write(os.path.join(repo, "a.txt"), "a, built\n")
+    write(os.path.join(repo, "new.txt"), "made by the build\n")
+    os.remove(os.path.join(repo, "b.txt"))
+    os.remove(os.path.join(repo, "notes.txt"))
+    git(repo, "add", "-A", "--", "a.txt", "b.txt", "new.txt")
+    git(repo, "commit", "-q", "-m", "task 1")
+    write(os.path.join(repo, "later.txt"), "uncommitted, made by the build\n")
+    code, out, err = council(repo, "restore", "show")
+    lines = out.splitlines()
+    steps = [line[2:] for line in lines if line.startswith("  ")]
+    check("restore show: what changed since (the branch moved, new and deleted files named), then the commands, "
+          "printed and not run",
+          code == 0 and "the branch moved from" in out and "2 new, 2 deleted" in out and "new.txt" in out
+          and any(line.startswith("Undo: ") and "only on the owner's word" in line for line in lines)
+          and steps[:1] == ["git update-ref refs/heads/main %s" % head.strip()] and "rm -f -- later.txt new.txt" in steps
+          and os.path.isfile(os.path.join(repo, "new.txt")), out + err)
+    for step in steps:
+        subprocess.run([BASH, "-c", step], cwd=repo, capture_output=True, env=dict(   # line ends as the eval's git
+            GIT_ENV, GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="core.autocrlf", GIT_CONFIG_VALUE_0="false"))
+    files = {name: read(os.path.join(repo, name)) for name in ("a.txt", "b.txt", "notes.txt")
+             if os.path.isfile(os.path.join(repo, name))}
+    check("restore show: its commands put every file back as it was at the point — the edit and the untracked file "
+          "back, the build's files gone, HEAD where it was, the same status",
+          files == {"a.txt": "a, edited\n", "b.txt": "b\n", "notes.txt": "mine\n"}
+          and not os.path.exists(os.path.join(repo, "new.txt")) and not os.path.exists(os.path.join(repo, "later.txt"))
+          and git(repo, "rev-parse", "HEAD") == head and git(repo, "status", "--porcelain") == status,
+          repr(files) + git(repo, "status", "--porcelain"))
+
+
+@part("build")
+def restore_refusals(tmp):
+    """council restore: another word is refused with its usage; show with no point names restore point; a code root
+    outside git is refused, naming git init and the backup copy; nothing is written."""
+    repo, run = restore_repo(tmp, "restore-refused")
+    code, out, err = council(repo, "restore")
+    code2, _, err2 = council(repo, "restore", "back")
+    check("restore: no word, or another, is refused with its usage",
+          code == 2 and code2 == 2 and "usage: council restore point | restore show" in err
+          and "usage: council restore point" in err2, err + err2)
+    code, out, err = council(repo, "restore", "show")
+    check("restore show: with no point, refused naming council restore point, nothing written",
+          code == 2 and "no restore point for this run" in err and "council restore point" in err
+          and not os.path.exists(os.path.join(run, "restore.md")), out + err)
+    council(repo, "run", "close", "--status", "abandoned")
+    plain = os.path.join(tmp, "restore-no-git")
+    os.makedirs(plain)
+    code, run, err = council(repo, "run", "open", "council-implement", "--code-root", plain)
+    code, out, err = council(repo, "restore", "point", "--run", os.path.basename(run.strip()))
+    check("restore point: a code root outside git is refused, naming git init and the backup copy, nothing written",
+          code == 2 and "not a git repository" in err and "git init" in err and "/backup/<path>" in err
+          and "council state restore=backup" in err
+          and not os.path.exists(os.path.join(run.strip(), "restore.md")), out + err)
+
+
+@part("build")
+def restore_show_refusals(tmp):
+    """council restore show refuses, naming the next step, when git can't read the files as they are now (never
+    "nothing to undo") and when the point's commit is gone."""
+    repo, run = restore_repo(tmp, "restore-show-refused")
+    council(repo, "restore", "point")
+    index = os.path.join(repo, ".git", "index")
+    with open(index, "rb") as kept:
+        whole = kept.read()
+    with open(index, "wb") as broken:
+        broken.write(b"DIRCgarbage")
+    code, out, err = council(repo, "restore", "show")
+    with open(index, "wb") as mended:
+        mended.write(whole)
+    check("restore show: when git can't read the files as they are now, refused naming git status, never "
+          "\"nothing to undo\"", code == 2 and "could not read the code root's files" in err
+          and "`git status`" in err and "nothing to undo" not in out, out + err)
+    held = os.path.join(run, "restore.md")
+    write(held, re.sub(r"^commit: .*$", "commit: " + "0" * 40, read(held), flags=re.MULTILINE))
+    code, out, err = council(repo, "restore", "show")
+    check("restore show: a point whose commit is gone is refused, naming what the owner can still use",
+          code == 2 and "is gone from this repository" in err and "git reflog" in err, out + err)
+
+
+@part("build")
+def index_from_the_restore_point(tmp):
+    """council index --base <the restore point's commit>, as the build page runs it for the reader and the runner:
+    the change is everything since the point itself, so the owner's uncommitted work from before it (an edit, an
+    untracked file) is not listed as the build's, and state base= is the point's commit; a branch name still takes
+    the merge-base."""
+    repo = small_council_repo(tmp, "index-point", "")
+    committed(repo, "owner.py", "def owner():\n    return 1\n", "owner")
+    committed(repo, "built.py", "def built():\n    return 1\n", "built")
+    write(os.path.join(repo, "owner.py"), "def owner():\n    return 2  # the owner's, before the run\n")
+    write(os.path.join(repo, "notes.txt"), "the owner's, untracked\n")
+    run = council(repo, "run", "open", "council-implement")[1].strip()
+    council(repo, "restore", "point")
+    commit = re.search(r"^commit: (\S+)$", read(os.path.join(run, "restore.md")), re.MULTILINE).group(1)
+    write(os.path.join(repo, "built.py"), "def built():\n    return 3  # the build\n")
+    write(os.path.join(repo, "fresh.py"), "def fresh():\n    return 1\n")
+    code, out, err = council(repo, "index", "--base", commit)
+    text = read(os.path.join(run, "index.md"))
+    check("index --base <restore point>: only the build's files, never the owner's work from before the point, and "
+          "the point's commit as the run's base",
+          code == 0 and "## built.py  (modified, +1/-1)" in text and "## fresh.py  (added" in text
+          and "## owner.py" not in text and "## notes.txt" not in text
+          and re.search(r"^base: %s$" % commit, read(os.path.join(run, "session-state.md")), re.MULTILINE),
+          out + err + text)
+    code, out, err = council(repo, "index", "--base", "main")
+    text = read(os.path.join(run, "index.md"))
+    check("index --base <branch>: a branch name keeps the merge-base, the owner's edit listed with the rest",
+          code == 0 and "## owner.py  (modified" in text and "## built.py" in text, out + err + text)
+
+
+@part("build")
+def restore_undo_keeps_the_home(tmp):
+    """The printed undo (D57) leaves .council/ as it is on disk when HEAD tracks it: the owner's uncommitted edit
+    there and the build's known-problems note are both kept, while HEAD and the code go back; on a tree whose only
+    change is in .council/, the point claims no uncommitted work. Under core.autocrlf false and true."""
+    for crlf in (False, True):
+        tag = " (core.autocrlf %s)" % str(crlf).lower()
+        repo = small_council_repo(tmp, "undo-home-%d" % crlf, "")
+        head = git(repo, "rev-parse", "HEAD")
+        cfg, known = (os.path.join(repo, ".council", name) for name in ("council.config.md", "known-problems.md"))
+        append(cfg, "\n- the owner's edit, not committed\n")
+
+        def build(r):
+            council(r, "book", "note", "found by the build — a.txt:1")
+            committed(r, "a.txt", "a, built\n", "task 1")
+        got = undone(repo, crlf, build)
+        check("restore point: a tree whose HEAD tracks .council/ and changes only there holds no uncommitted work to "
+              "claim" + tag, got["point"].startswith("Restore point: ")
+              and "(with the uncommitted work)" not in got["point"], got["point"])
+        check("restore undo: .council/ tracked — HEAD and a.txt back, the owner's edit there and the build's note "
+              "both kept" + tag, not got["failed"] and got["after"] == got["before"]
+              and git(repo, "rev-parse", "HEAD") == head and symbolic(repo) == "refs/heads/main"
+              and "the owner's edit, not committed" in read(cfg) and "found by the build" in read(known),
+              got["failed"] + got["out"])
+
+
+@part("build")
+def restore_undo_after_a_branch(tmp):
+    """The printed undo (D57) after a build that switched to a new branch, committed, and left changes uncommitted:
+    every line runs, HEAD is back on the point's branch at its commit, the files as they were; a point taken detached
+    goes back detached and moves no branch. Under core.autocrlf false and true."""
+    for crlf in (False, True):
+        tag = " (core.autocrlf %s)" % str(crlf).lower()
+        repo = small_council_repo(tmp, "undo-branch-%d" % crlf, "")
+        head = git(repo, "rev-parse", "HEAD")
+
+        def build(r):
+            git(r, "switch", "-q", "-c", "council/feature")
+            committed(r, "a.txt", "a, task 1\n", "task 1")
+            write(os.path.join(r, "a.txt"), "a, task 2, not committed\n")
+            write(os.path.join(r, "new.txt"), "made by task 2\n")
+        got = undone(repo, crlf, build)
+        check("restore undo: after a switch to a new branch with uncommitted changes, every line runs and HEAD is on "
+              "main at the point's commit, the files as they were" + tag,
+              not got["failed"] and got["after"] == got["before"] and symbolic(repo) == "refs/heads/main"
+              and git(repo, "rev-parse", "HEAD") == head, got["failed"] + got["out"])
+        repo = small_council_repo(tmp, "undo-detached-%d" % crlf, "")
+        head = git(repo, "rev-parse", "HEAD")
+        git(repo, "checkout", "-q", "--detach")
+
+        def build(r):
+            git(r, "switch", "-q", "-c", "feature")
+            committed(r, "a.txt", "a, built\n", "task 1")
+        got = undone(repo, crlf, build)
+        check("restore undo: a point taken detached goes back detached at its commit, and the branch the build made "
+              "keeps its commit" + tag,
+              not got["failed"] and got["after"] == got["before"] and symbolic(repo) == ""
+              and git(repo, "rev-parse", "HEAD") == head and git(repo, "rev-parse", "main") == head
+              and git(repo, "rev-parse", "feature") != head, got["failed"] + got["out"])
+
+
+@part("build")
+def restore_undo_keeps_deletions(tmp):
+    """The printed undo (D57) keeps a file the owner deleted, uncommitted, before the point deleted, and removes
+    what the build added; on a new project with no commit and no file but .council/, it removes the build's commit
+    and its file and leaves the branch unborn. Under core.autocrlf false and true."""
+    for crlf in (False, True):
+        tag = " (core.autocrlf %s)" % str(crlf).lower()
+        repo = small_council_repo(tmp, "undo-deleted-%d" % crlf, "")
+        committed(repo, "gone.txt", "old\n", "gone")
+        head = git(repo, "rev-parse", "HEAD")
+        os.remove(os.path.join(repo, "gone.txt"))
+
+        def build(r):
+            write(os.path.join(r, "new.txt"), "made by the build\n")
+            write(os.path.join(r, "a.txt"), "a, built\n")
+        got = undone(repo, crlf, build)
+        check("restore undo: a file deleted before the point stays deleted, the build's new file goes" + tag,
+              not got["failed"] and got["after"] == got["before"] and "gone.txt" not in got["after"]
+              and "new.txt" not in got["after"] and git(repo, "rev-parse", "HEAD") == head,
+              got["failed"] + got["out"])
+        repo = new_repo(tmp, "undo-empty-%d" % crlf)
+        write(os.path.join(repo, ".council", "council.config.md"), "# Council config — x\n\n## Gates\n")
+        got = undone(repo, crlf, lambda r: committed(r, "app.py", "print(1)\n", "first"))
+        has_head = subprocess.run([GIT, "rev-parse", "-q", "--verify", "HEAD"], cwd=repo, capture_output=True,
+                                  env=GIT_ENV).returncode == 0
+        check("restore undo: a new project with no commit — every line runs, app.py is gone, no commit is left and "
+              "HEAD is still on main" + tag,
+              not got["failed"] and got["after"] == {} and not has_head and symbolic(repo) == "refs/heads/main"
+              and os.path.isfile(os.path.join(repo, ".council", "council.config.md")), got["failed"] + got["out"])
+
+
+@part("design")
+def design_opens_with_the_designer(tmp):
+    """The design step (D60, D61): council run open council-plan and council-research write the fixed plan with the
+    designer and the brief from design-brief.md, the designer's role text word for word; the plan passes untouched,
+    and with the second designer's rows uncommented; the next-step lines name the page's own sections and the
+    run enters the paired stages in turn; a setup run's two stack designers pass the plan check too (D63)."""
+    def uncomment(text, slug):
+        """A fixed plan's commented rows for a seat, made live."""
+        return "".join(line[2:] if line.startswith("# ") and ("\t%s\t" % slug) in line else line
+                       for line in text.splitlines(True))
+    repo = small_council_repo(tmp, "design", "")
+    role = re.findall(r"(?m)^> .*(?:\n> .*)*", read(os.path.join(ROOT, "references", "templates", "design-brief.md")))
+    for mode in ("council-plan", "council-research"):
+        code, run, err = council(repo, "run", "open", mode)
+        run = run.strip()
+        brief, plan = read(os.path.join(run, "brief.md")), read(os.path.join(run, "run-plan.tsv"))
+        pcode, pout, perr = council(repo, "run", "plan", "check")
+        check("run open %s: the fixed plan selects the designer, names no model for it, keeps designer-2 commented, "
+              "and passes council run plan check untouched" % mode,
+              code == 0 and pcode == 0 and "plan: valid · squad" in pout
+              and "seat\tdesigner\trole\tworker" in plan and "seat\tdesigner\tmodel" not in plan
+              and "# seat\tdesigner-2\tdisposition\tselected" in plan and "\t%s\t" % mode in plan,
+              pout + perr + err + plan[:800])
+        check("run open %s: the brief is the designer's, its role text word for word, the book listed, no {{…}} left"
+              % mode,
+              len(role) == 1 and role[0] in brief and "{{" not in brief and "### designer-2" in brief
+              and brief.startswith("# Brief — %s\n" % os.path.basename(run)) and "\n- design: " in brief
+              and "the main session writes the %s deliverable" % mode in brief, brief[:1500] + err)
+        write(os.path.join(run, "run-plan.tsv"), uncomment(plan, "designer-2"))
+        pcode, pout, perr = council(repo, "run", "plan", "check")
+        check("run plan check %s: the second designer's rows uncommented, it passes with three selected" % mode,
+              pcode == 0 and "3 selected" in pout, pout + perr)
+        council(repo, "state", "phase=prepare")
+        state = read(os.path.join(run, "session-state.md"))
+        nxt = state.split("\nnext: ", 1)[-1].split("\n", 1)[0]
+        check("state %s: Prepare's next step names the page's own section, never a doctrine file (D60)" % mode,
+              "(%s, section 2)" % mode in nxt and "doctrine" not in nxt, state)
+        council(repo, "state", "phase=work")
+        code, out, err = council(repo, "state", "phase=deliver")
+        check("state %s: Deliver straight after Work is refused, naming judge and challenge, the stages a design "
+              "run enters in turn" % mode,
+              code == 2 and "would skip judge, challenge" in err and "council state phase=judge" in err, out + err)
+        council(repo, "run", "close", "--status", "abandoned")
+    code, run, err = council(repo, "run", "open", "council-init")
+    run = run.strip()
+    plan = read(os.path.join(run, "run-plan.tsv"))
+    live = uncomment(uncomment(plan, "designer"), "designer-2").replace("size\tsolo\t", "size\tsquad\t") \
+        .replace("estimated-tokens\t0\t", "estimated-tokens\t300000\t")
+    write(os.path.join(run, "run-plan.tsv"), live)
+    pcode, pout, perr = council(repo, "run", "plan", "check")
+    check("run plan check: a new project's setup run with its two stack designers uncommented passes as a squad (D63)",
+          code == 0 and "# seat\tdesigner-2\tdisposition\tselected" in plan and pcode == 0
+          and "plan: valid · squad" in pout and "3 selected" in pout, pout + perr + err)
+
+
+@part("design")
+def design_run_closes_on_its_path(tmp):
+    """A plan run on its page's path closes complete with its stages passed by the audit (D60): the audit reads a
+    design run's path from council.records.stages, not the ten stages."""
+    repo = small_council_repo(tmp, "design-close", "")
+    code, run, err = council(repo, "run", "open", "council-plan")
+    run = run.strip()
+    write(os.path.join(run, "ask.md"), "# Ask\nsource: said at the time\n## In your words\nadd CSV export to the "
+          "report page please\n")
+    write(os.path.join(repo, "app.py"), "def total(xs):\n    return sum(xs)\n")
+    for step in ("phase=prepare", "phase=work"):
+        council(repo, "state", step)
+    council(repo, "seat", "designer", "running", "agent=a1")
+    write(os.path.join(run, "seats", "designer.md"), "# Designer — fit (council-plan)\nref: none\nquestion: q\n"
+          "coverage: app.py\n## Index\n1 · fit · extends the total · app.py:1 · Export reads the same total\n")
+    council(repo, "seat", "designer", "done", "tokens=1000", "tools=10")
+    council(repo, "state", "phase=judge")
+    write(os.path.join(run, "synthesis.md"), "# Synthesis\n## Kept\n1 · fit · extends the total · app.py:1 · "
+          "Export reads the same total · state: OBSERVED · from: designer#1\n## Cut\n")
+    write(os.path.join(run, "verify-self.md"), "# Self-check\n| # | Item | Verdict | Evidence |\n|---|---|---|---|\n"
+          "| 1 | Export reads the same total | CONFIRMED | app.py:1 |\n")
+    write(os.path.join(repo, ".council", "plans", "export.md"), "# Council Plan: export\n\n## Task Sequence\n"
+          "### 1. Export\n| | |\n|---|---|\n| **Depends on** | — |\n| **Serves** | \"add CSV export to the report "
+          "page\" |\n| **Owner** | New way: no export yet |\n| **Rests on** | — |\n| **Touches** | app.py |\n"
+          "| **Constraints** | — |\n| **Done when** | When a manager exports the report, a CSV downloads. |\n")
+    for step in ("phase=challenge", "phase=deliver", "deliverable=.council/plans/export.md", "phase=learn"):
+        council(repo, "state", step)
+    pcode, pout, perr = council(repo, "run", "plan", "check")
+    code, out, err = council(repo, "run", "close")
+    audit = read(os.path.join(run, "audit.md")) if os.path.isfile(os.path.join(run, "audit.md")) else ""
+    check("run close: a plan run on its page's path closes complete, its plan's tasks checked, and the audit passes "
+          "its stages, never asking for assign, brief or collect (D60)",
+          pcode == 0 and "tasks: 1 checked against the request" in pout and code == 0 and "complete" in out
+          and "Stages: convene > prepare > work > judge > challenge > deliver > learn" in audit
+          and "never entered" not in audit, pout + perr + out + err + audit[:1500])
+
+
+@part("design")
+def review_run_closes_on_its_path(tmp):
+    """A review run on its page's path (D50) passes the audit's stages: the audit reads every one-page mode's path
+    from council.records.stages. 1.3.0 still asked a review for assign, brief and collect."""
+    repo = small_council_repo(tmp, "review-close", "")
+    code, run, err = council(repo, "run", "open", "council-review")
+    run = run.strip()
+    write(os.path.join(run, "ask.md"), "# Ask\nsource: said at the time\n## In your words\nreview my change\n")
+    write(os.path.join(repo, "app.py"), "def total(xs):\n    return sum(xs)\n")
+    for step in ("phase=prepare", "phase=work"):
+        council(repo, "state", step)
+    for slug in ("reader", "runner"):
+        council(repo, "seat", slug, "running", "agent=a-" + slug)
+        write(os.path.join(run, "seats", slug + ".md"), "# %s (council-review)\nref: none\n## Index\n(none)\n" % slug)
+        council(repo, "seat", slug, "done", "tokens=1000", "tools=10")
+    for step in ("phase=judge", "phase=challenge", "phase=deliver", "phase=learn"):
+        council(repo, "state", step)
+    code, out, err = council(repo, "run", "close")
+    audit = read(os.path.join(run, "audit.md")) if os.path.isfile(os.path.join(run, "audit.md")) else ""
+    check("run close: a review run on its page's path passes the audit's stages, never asking for assign, brief or "
+          "collect (D50)",
+          "Stages: convene > prepare > work > judge > challenge > deliver > learn" in audit
+          and "never entered" not in audit, out + err + audit[:1500])
+
+
+@part("loop")
+def loop_has_no_run_of_its_own(tmp):
+    """/council (D64) is a plan run then a build run: `council run open council` is refused, naming both runs and the
+    page's step, and nothing is opened."""
+    repo = small_council_repo(tmp, "loop-open", "")
+    code, out, err = council(repo, "run", "open", "council")
+    runs = os.path.join(repo, ".council", "runs")
+    check("run open council: refused, naming the plan run, the build run on its plan and the page's step; no run "
+          "folder is made (D64)",
+          code == 2 and "council run open council-plan" in err and "council run open council-implement" in err
+          and "skills/council/SKILL.md, step 1" in err and (not os.path.isdir(runs) or not os.listdir(runs)),
+          out + err)
+
+
+@part("loop")
+def health_opens_with_the_reader(tmp):
+    """A health pass (D65): council run open council-health (or health) writes the fixed plan with the reader and the
+    runner's rows commented, and the review's brief with the health block on its line and no build block, the reader's
+    role text word for word; the plan passes untouched and with the runner uncommented; the next-step lines name the
+    page's own sections and the run enters the review's stages in turn."""
+    repo = small_council_repo(tmp, "health-open", "")
+    roles = re.findall(r"(?m)^(?:> .*\n)+", read(os.path.join(ROOT, "references", "templates", "review-brief.md")))
+    code, run, err = council(repo, "run", "open", "health")
+    run = run.strip()
+    brief, plan = read(os.path.join(run, "brief.md")), read(os.path.join(run, "run-plan.tsv"))
+    pcode, pout, perr = council(repo, "run", "plan", "check")
+    check("run open health: the fixed plan selects the reader, names no model, keeps the runner commented, and passes "
+          "council run plan check untouched (D65)",
+          code == 0 and pcode == 0 and "plan: valid · squad" in pout and "\tcouncil-health\t" in plan
+          and "seat\treader\trole\tworker" in plan and "# seat\trunner\tdisposition\tselected" in plan
+          and "\tmodel\t" not in plan, pout + perr + err + plan[:800])
+    check("run open health: the brief is the review's with the health block, the reader's role word for word, no "
+          "build block and no {{…}} left (D65)",
+          "## This is a health pass, not a review of a change\n" in brief and len(roles) == 2 and roles[0] in brief
+          and "## This change is a build" not in brief and "{{" not in brief and "\n- design: " in brief
+          and brief.startswith("# Brief — %s\n" % os.path.basename(run)), brief[:1500] + err)
+    write(os.path.join(run, "run-plan.tsv"), "".join(line[2:] if line.startswith("# ") and "\trunner\t" in line
+                                                     else line for line in plan.splitlines(True)))
+    pcode, pout, perr = council(repo, "run", "plan", "check")
+    check("run plan check health: the runner's rows uncommented, it passes with three selected (D65)",
+          pcode == 0 and "3 selected" in pout, pout + perr)
+    council(repo, "state", "phase=prepare")
+    state = read(os.path.join(run, "session-state.md"))
+    nxt = state.split("\nnext: ", 1)[-1].split("\n", 1)[0]
+    check("state health: Prepare's next step names the page's own section, never a doctrine file (D65)",
+          "(council-health, section 1)" in nxt and "doctrine" not in nxt, state)
+    council(repo, "state", "phase=work")
+    code, out, err = council(repo, "state", "phase=deliver")
+    check("state health: Deliver straight after Work is refused, naming judge and challenge, the review's stages "
+          "(D65)", code == 2 and "would skip judge, challenge" in err and "council state phase=judge" in err, out + err)
+
+
+@part("loop")
+def health_run_closes_on_its_path(tmp):
+    """A health pass on its page's path closes complete with the audit passing its stages (D65); its check wants a
+    place for every item, as a review's does."""
+    repo = small_council_repo(tmp, "health-close", "")
+    code, run, err = council(repo, "run", "open", "council-health")
+    run = run.strip()
+    write(os.path.join(run, "ask.md"), "# Ask\nsource: said at the time\n## In your words\nhow healthy is it\n")
+    write(os.path.join(repo, "app.py"), "def save(x):\n    return x\n")
+    for step in ("phase=prepare", "phase=work"):
+        council(repo, "state", step)
+    council(repo, "seat", "reader", "running", "agent=a1")
+    write(os.path.join(run, "seats", "reader.md"), "# Reader (council-health)\nref: none\n## Index\n"
+          "1 · P2 · second way · app.py:1 · Two ways to save\n")
+    council(repo, "seat", "reader", "done", "tokens=1000", "tools=10")
+    council(repo, "state", "phase=judge")
+    write(os.path.join(run, "synthesis.md"), "# Synthesis\n## Kept\n1 · P2 · second way · app.py:1 · Two ways to "
+          "save · state: OBSERVED · from: reader#1\n2 · P3 · stale · Nowhere in particular · state: INFERRED · "
+          "from: reader#2\n## Cut\n")
+    council(repo, "state", "phase=challenge")
+    ccode, cout, cerr = council(repo, "check")
+    write(os.path.join(run, "synthesis.md"), "# Synthesis\n## Kept\n1 · P2 · second way · app.py:1 · Two ways to "
+          "save · state: OBSERVED · from: reader#1\n## Cut\n")
+    write(os.path.join(repo, ".council", "reviews", "2026-11-19-health.md"), "# Health\n")
+    for step in ("phase=deliver", "deliverable=.council/reviews/2026-11-19-health.md", "phase=learn"):
+        council(repo, "state", step)
+    council(repo, "ask", "save")
+    code, out, err = council(repo, "run", "close")
+    audit = read(os.path.join(run, "audit.md")) if os.path.isfile(os.path.join(run, "audit.md")) else ""
+    check("check health: an item with no path:line is no-citation, as a review's is (D65)",
+          ccode == 1 and "no-citation" in cout + cerr, cout + cerr)
+    check("run close: a health pass on its page's path closes complete and the audit passes its stages, never asking "
+          "for assign, brief or collect (D65)",
+          code == 0 and "complete" in out and "Stages: convene > prepare > work > judge > challenge > deliver > learn"
+          in audit and "never entered" not in audit and "FAIL" not in audit, out + err + audit[:1500])
+
+parser =argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
 parser.add_argument("--list", action="store_true",
                     help="print each group, whether it must run alone, and its blocks; run nothing")
 parser.add_argument("--group", metavar="NAME[,NAME...]", help="run only these groups (default: all, in file order)")
