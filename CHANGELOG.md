@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Stage 2: the book
+Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, section 12), which is still owed.
+- **Your project keeps a book every agent reads first** (D52): a design page (its parts, who owns
+  each folder, the one way each job is done, where new code goes; two pages at most), a stack page
+  (what it is built with and why; one page at most), the decisions log, and known problems. Setup
+  writes them, or uses the project's own file where there is one and records its path under the
+  config's new `## Book` section, so nothing is kept twice. With no such file the pages live in
+  `.council/`. `council book` shows where each page is.
+- **Setup asks you why** each part of the stack was chosen when no record says; a reason you don't
+  give is written `not recorded`, never made up.
+- **Every rule in the book carries its reason and its date**, and a line goes in only if leaving it
+  out would change what an agent does.
+- **A review checks the change against the book**: its reader reports a broken rule or decision, a
+  second way of doing a job, and anything the change brings in that the stack page doesn't list.
+- **What a review notes for later is kept** (D55): every item below the worth bar goes into known
+  problems instead of being dropped (`council book note`), and when you say "stop raising this kind
+  of thing" it is written there in your words (`council book waive`). Reviews read the file and
+  don't raise either again.
+- **The stack is your decision** (D54): a builder that would add a library, swap a tool or bring in
+  a second language stops and asks you; a verifier rejects a change that does it without your word.
+- **Your decisions stay where you keep them** (D53, superseding D28 in part): a project's own
+  decisions log is read in place and no longer copied into the council's memory; without one,
+  decisions stay in memory as before.
+- **Helper:** `council book`, `council book note "<line>"` and `council book waive "<your words>"`;
+  `council run open council-review` lists the book in the review's brief, and `council context build`
+  names it on the first line of a task's orders. `council doctor permissions` now offers
+  `Bash(council book:*)`.
+
 ## [1.3.0] — 2026-11-18
 
 **In short:** a review is now two agents working at once — one reads the change, one runs it — and

@@ -32,3 +32,7 @@ this list names the place; read it there.
 11. **End with the report head, or a `NEEDS:` or `BLOCKED:` line.** `builder-report.md`, The head
     and When the builder stops instead; the one line it returns: the builder contract
     (`agents/council-builder.md`), Your return value.
+12. **The stack is the owner's.** A language, framework, library, tool or service the book's stack
+    page does not list (your orders' first line names the page) is a decision, never a side effect:
+    add none and swap none. A builder agent stops with `NEEDS: <what it would add, what it gives and
+    what it costs>`; the Chair in a Solo build asks the user (`references/run/book.md`, D54).

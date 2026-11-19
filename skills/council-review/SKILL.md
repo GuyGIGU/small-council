@@ -100,7 +100,9 @@ redirect to a file and read that.
    Kept is what reaches the owner; an item both found is one line with both sources. `state:` is
    what you can stand behind: `REPRODUCED` only with `proof: gates/<name>.json` saved in this run,
    else `OBSERVED` once you traced it, and the runner's command goes in your evidence. Never
-   renumber or delete a line; with nothing kept, `(none) — <why>` under Kept.
+   renumber or delete a line; with nothing kept, `(none) — <why>` under Kept. An item the book's
+   known problems already lists, or of a kind under its Not to raise again, goes under Cut with
+   `why: known problem` or `why: waived`: the owner never hears it twice.
 4. Add your verdict to `<run>/verify-self.md` (line 1 `# Self-check — <run>`, then
    `| # | Item | Verdict | Evidence |`, `#` the synthesis id): `CONFIRMED`; `REFUTED` (move the
    line under Cut, id kept); `UNCERTAIN` (it ships under Not proved); `MISCITED` (fix the citation).
@@ -150,19 +152,23 @@ redirect to a file and read that.
    independent), what happens, what it costs and a `Fix:` line (council-implement reads it); then
    what was refuted, one line each, and what was not covered. No code.
 3. `council state deliverable=<path>`.
-4. **The chat report:**
+4. **Into the book:** each item below the worth bar, one call each:
+   `council book note "<what happens, in the project's terms> — <path:line> (review <date>)"`. It
+   is kept there, not lost and not raised again (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`).
+5. **The chat report:**
    - **Does not work** — each: what happens, what it costs, the recommendation, how it was shown
      (a run or the code).
    - **Your decisions** — each: what happens if nothing is done, the recommendation, whether it can
      be undone.
    - **Not proved** — what no run could show, and why.
-   - **Noted for later** — five lines at most.
+   - **Noted for later** — five lines at most; all of them are in known problems.
    - **Cost** — tokens (the spend line `council status` prints) and minutes since the run opened,
      against the estimate.
    - `Full review: <path>`
 
 **The worth bar.** An item reaches the owner only if they would act or decide on it; the rest goes
-to Noted for later. The owner does not read code: no code, no bare severity labels and no internal
+to Noted for later. When the owner waves off a kind of item, record it in their words,
+`council book waive "<their words>"`, and no review raises that kind again. The owner does not read code: no code, no bare severity labels and no internal
 ids in chat; what happens and what it costs, with a recommendation.
 
 ## 6. Learn and close

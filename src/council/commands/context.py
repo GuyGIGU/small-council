@@ -41,7 +41,9 @@ def main(args: cli.Args, words: list[str]) -> int:
             named, number, "its tasks: %s; council context build <one of them>" % listed if listed else
             "its ## Task Sequence lists none; write the plan's tasks first"))
     held = patches.held(run, number)
-    heading = ["# Task pack — task %d · %s" % (number, named)] + _where(run) + [""] + [
+    from council.commands import book    # the book's first three pages, read before anything else (D52)
+    first = book.one_line(Path(run).parent.parent.as_posix())
+    heading = ["# Task pack — task %d · %s" % (number, named), first] + _where(run) + [""] + [
         "Held: %s — the edits task %d's last builder left in no round, taken off the files; put them back before the "
         "first edit: council patch apply %d --held" % (held.as_posix(), number, number), ""] * held.is_file()
     cli.say_all(fit(heading, parts(run, found)))

@@ -22,6 +22,9 @@ Code root: <abs> · Council home: <abs> · Run: <abs> · Base: <sha, if there is
 <the system in 2–3 lines, from map.md · the scope with sizes · the change index path ·
  grounding gate results · earlier council findings on these paths, as ids + one line>
 
+## The book
+<the design, stack and decisions lines `council book` prints, one `- ` line each: every seat reads them first>
+
 ## Seats
 ### <slug> — <what it checks> (<Seat name>)
 - ref: <absolute path to the seat's card (Cards first), else none (a mapping worker); a paired seat has one - ref: line each>

@@ -18,6 +18,12 @@ These files are read whole, past Phase A's cap on reads: they are the point of t
 A record that says it is superseded, rejected or deprecated is not proposed; the one that replaced it
 is. Two records that disagree are both shown to the user, with their dates, and neither is proposed.
 
+**A decisions log is adopted, not copied** (D53). A project's own log or ADR folder becomes the book's
+decisions log: its path goes under the config's `## Book` as `- decisions: <path>`
+(`references/run/book.md`), every agent reads it there, and its entries are not proposed into memory,
+so there is never a second copy. Only a decision stated outside such a log (an `ARCHITECTURE.md`, a
+CLAUDE.md rule) becomes a proposal, as below. With no log, decisions stay memory's D entries.
+
 ## Each decision becomes a proposal
 
 One line under `## Proposed` in conventions.md, in the format its comment gives:

@@ -107,6 +107,16 @@ or pattern-matching?"). Not a seat.
 - <non-negotiables every worker and builder obeys, e.g. "never write to the production database",
   "engine output must stay byte-identical unless a task says otherwise">
 
+## Book
+- design: .council/design.md
+- stack: .council/stack.md
+- decisions: memory
+- known problems: .council/known-problems.md
+<!-- The project's book (references/run/book.md): every agent reads the design page, the stack page and the
+     decisions log before anything else, and a review reads known problems. Where the project keeps its own such
+     file, setup names it here in place of the default, and never writes a second one. `decisions: memory` is the
+     memory file's ## Decisions (D) section. `council book` prints where each page is. -->
+
 ## Memory
 - conventions: .council/conventions.md
 - map: .council/map.md

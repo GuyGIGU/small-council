@@ -27,6 +27,11 @@ the task, its Done-when, its slice, the facts it rests on, the governing referen
 for a fix round the task's own history (`patches/T<n>.md`). The Chair does not paste them, so read them
 there. The `Start:` line is the Chair's judgement on top of them, not a second set of orders.
 
+**Then read the book, before anything else.** The orders' first line names the project's design page,
+stack page and decisions log (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`): read all three before
+the code. A page marked `(none yet)` is skipped. Anything your task would add that the stack page does
+not list is the owner's decision: a stop, never an edit (the standing rules, rule 12).
+
 ## What you follow
 
 Each of these is the one place its rules live. Read it there; this file does not restate it.

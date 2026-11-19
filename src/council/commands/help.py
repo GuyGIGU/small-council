@@ -137,6 +137,13 @@ council — the Small Council's helper (Python 3.8+ and git)
   council map touch <dir>="<line>" …     the user's line for each top-level area, under today's
                                          ## Changes in the map; map-commit moves to HEAD once every
                                          area changed since it has a line
+  council book                           where the project's book is: the design page, the stack page, the
+                                         decisions log (every agent reads these first) and known problems
+  council book note "<line>"             a true thing found and not fixed, dated, under known problems'
+                                         ## Found, not fixed (a review's items below the worth bar)
+  council book waive "<the owner's words>"
+                                         a kind of item the owner waved off, dated, under ## Not to raise
+                                         again; a review raises neither list again (the same words: once)
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
   council memory [index|check|tidy]      memory's one-line index · stale anchors and failure evidence · the
                                          merges and retirements reading alone can find, numbered (writes nothing)

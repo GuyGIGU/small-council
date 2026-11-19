@@ -590,8 +590,10 @@ def runs_open(tmp):
             if os.path.isfile(written_path):
                 with open(written_path, "rb") as f:
                     written = f.read()
+            grown = 2 if name == "review-brief.md" else 0     # {{BOOK}} is the book's first three pages, a line each
             check("run open %s: a CRLF %s template is written with LF line ends, on every OS" % (mode, name),
-                  opened.returncode == 0 and b"\r" not in written and written.count(b"\n") == lfs[name].count(b"\n"),
+                  opened.returncode == 0 and b"\r" not in written
+                  and written.count(b"\n") == lfs[name].count(b"\n") + grown,
                   opened.stderr.decode("utf-8", "replace") + repr(written[:200]))
     # A review opens with its fixed plan and its brief (D48): the plan valid untouched, the brief with every {{…}}
     # filled and both role texts word for word; a missing brief template is refused as a missing plan template is.
@@ -10385,6 +10387,108 @@ def setup_from_quick_by_header(tmp):
           "and the output names the column and the next step",
           code == 0 and read(path) == before and "names no Checked column" in out
           and "then run council init scaffold again" in out and "Updated " not in out, out + err)
+
+
+@part("book")
+def book_pages(tmp):
+    """The project's book (D52): council book prints where its four pages are — a project's own file named under the
+    config's ## Book, else the default under the council home, the decisions log the memory file — and whether each
+    is there yet; it refuses with no config, and any other word, naming its usage."""
+    bare = new_repo(tmp, "book-bare")
+    code, out, err = council(bare, "book")
+    check("book: with no config, the usual no-setup refusal", code == 2 and "no council.config.md" in err
+          and "council init scaffold --quick" in err, out + err)
+    repo = setup_repo(tmp, "book", {"a.py": "1\n"})
+    council(repo, "init", "scaffold", "--quick")
+    home = slash(os.path.join(repo, ".council"))
+    cfg = read(os.path.join(repo, ".council", "council.config.md"))
+    check("book: a quick setup's config names the four pages' default places under ## Book",
+          "## Book\n- design: .council/design.md\n- stack: .council/stack.md\n- decisions: memory\n"
+          "- known problems: .council/known-problems.md\n" in cfg, cfg)
+    code, out, err = council(repo, "book")
+    lines = out.splitlines()
+    check("book: each page's path under the home, not written yet, the decisions log the memory file, and who reads "
+          "the first three",
+          code == 0 and len(lines) == 5 and lines[0].startswith("design: %s/design.md — not written yet" % home)
+          and lines[1].startswith("stack: %s/stack.md — not written yet" % home)
+          and lines[2] == "decisions: %s/conventions.md (the memory file: its ## Decisions (D) section)" % home
+          and lines[3].startswith("known problems: %s/known-problems.md — none yet" % home)
+          and lines[4].startswith("Read first: design, stack, decisions — every agent"), out + err)
+    write(os.path.join(repo, "docs", "architecture.md"), "# Architecture\n")
+    write(os.path.join(repo, ".council", "council.config.md"), cfg.replace(
+        "- design: .council/design.md", "- design: docs/architecture.md (adopted)", 1))
+    code, out, err = council(repo, "book")
+    check("book: a page the config names is the project's own file, said as there",
+          code == 0 and "design: %s/docs/architecture.md\n" % slash(repo) in out, out + err)
+    refused = [(words, c, e) for words in (["frob"], ["note"], ["note", "a", "b"], ["waive", " "])
+               for c, _, e in [council(repo, "book", *words)]
+               if c != 2 or "usage: council book" not in e]
+    check("book: another word, no line, two lines or a blank one is refused naming the usage, nothing written",
+          not refused and not os.path.exists(os.path.join(repo, ".council", "known-problems.md")), repr(refused))
+
+
+@part("book")
+def book_known_problems(tmp):
+    """Known problems (D55): council book note and book waive add a dated line under their section, the file made from
+    the template the first time; the same words are written once; the line is redacted; a path outside the project is
+    refused, naming the config line to change."""
+    today = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")   # local, as the helper stamps it
+    repo = setup_repo(tmp, "known", {"a.py": "1\n"})
+    council(repo, "init", "scaffold", "--quick")
+    known = os.path.join(repo, ".council", "known-problems.md")
+    code, out, err = council(repo, "book", "note", "the total is off by one — a.py:1 (review %s)" % today)
+    text = read(known)
+    check("book note: makes known problems from the template and puts the dated line under ## Found, not fixed",
+          code == 0 and out.startswith("Wrote %s — the line under ## Found, not fixed, in a new file" % slash(known))
+          and text.startswith("# Known problems — known\n")
+          and "## Found, not fixed\n- %s: the total is off by one — a.py:1 (review %s)\n" % (today, today) in text,
+          out + err + text)
+    code, out, err = council(repo, "book", "note", "The total is off by one — a.py:1 (review %s) " % today)
+    check("book note: the same words again, in other capitals, are kept once and nothing is written",
+          code == 0 and out.startswith("Kept ") and "nothing written" in out and read(known) == text, out + err)
+    code, out, err = council(repo, "book", "waive", "renames of private helpers")
+    after = read(known)
+    check("book waive: the owner's words, dated, under ## Not to raise again, the rest of the file as it was",
+          code == 0 and "## Not to raise again\n- %s: renames of private helpers\n" % today in after
+          and after.split("## Not to raise again")[0] == text.split("## Not to raise again")[0], out + err + after)
+    code, out, err = council(repo, "book", "note", "token=ghp_abcdefghijklmnopqrstuvwxyz1234 is in the log")
+    check("book note: a secret-looking string is redacted from the line, and it says so",
+          code == 0 and "ghp_" not in read(known) and "[redacted" in read(known) and "redacted" in err, out + err)
+    cfg = os.path.join(repo, ".council", "council.config.md")
+    write(cfg, read(cfg).replace("- known problems: .council/known-problems.md", "- known problems: ../outside.md"))
+    code, out, err = council(repo, "book", "note", "x")
+    check("book note: a known-problems path outside the project is refused, naming the ## Book line, nothing written",
+          code == 2 and "outside the project" in err and "`- known problems: <path>` under the config's ## Book" in err
+          and not os.path.exists(os.path.join(tmp, "outside.md")), out + err)
+
+
+@part("book")
+def book_in_briefs(tmp):
+    """Every agent reads the book first (D52): a review's brief lists the design page, the stack page, the decisions
+    log and known problems, filled by council run open, and a build task's orders name the first three on the line
+    under their heading."""
+    repo = setup_repo(tmp, "book-brief", {"a.py": "1\n"})
+    council(repo, "init", "scaffold", "--quick")
+    council(repo, "book", "note", "an old problem — a.py:1")
+    home = slash(os.path.join(repo, ".council"))
+    code, run, err = council(repo, "run", "open", "council-review")
+    brief = read(os.path.join(run.strip(), "brief.md"))
+    book = brief.split("## The book — read it before anything else\n", 1)[-1].split("\n## Seats", 1)[0]
+    check("run open council-review: the brief's ## The book lists the four pages from council book, with no "
+          "placeholder left, and the reader's book line comes before its role text",
+          code == 0 and book.startswith("- design: %s/design.md — not written yet" % home)
+          and "\n- decisions: %s/conventions.md (the memory file" % home in book
+          and "\n- known problems: %s/known-problems.md\n" % home in book
+          and "{{BOOK}}" not in brief and "{{KNOWN}}" not in brief
+          and brief.index("- book: the book is part of the change's record") < brief.index("- role:"), brief[:2500])
+    council(repo, "run", "close", "--status", "abandoned")
+    repo, run = pack_run(tmp, "book-pack")
+    code, out, err = council(repo, "context", "build", "task-1")
+    second = out.split("\n")[1] if "\n" in out else ""
+    check("context build: the line under the heading names the book's design page, stack page and decisions log, "
+          "a page not written yet as (none yet)",
+          code == 0 and second == "Read first, before anything else — the book: design (none yet) · stack (none yet) "
+          "· decisions %s/conventions.md" % slash(os.path.join(repo, ".council")), out[:600] + err)
 
 
 parser = argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
