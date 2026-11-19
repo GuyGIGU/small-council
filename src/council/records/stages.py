@@ -24,10 +24,11 @@ STAGES = {  # name: (rank, next step); a build stands where council-implement's 
     "learn": (10, "Learn: memory proposals, then close the run (doctrine 10-learn.md)"),
 }
 SHORT = "convene prepare judge challenge deliver learn"
+PAIRED = "convene prepare work judge challenge deliver learn"   # fixed seats, no roster to assign or brief
 REQUIRED = {"council-implement": "convene prepare build challenge deliver learn", "council-postgame": SHORT,
-            "council-review": "convene prepare work judge challenge deliver learn"}   # the reader and the runner (D50)
-ONE_PAGE = ("council-review", "council-implement")   # a mode whose method is its own page alone, no context-core or
-#                                                     doctrine (D47; a build's since D56)
+            "council-review": PAIRED}                                      # the reader and the runner (D50)
+ONE_PAGE = ("council-review", "council-implement", "council-plan", "council-research")   # a mode whose method is its
+#                                     own page alone, no context-core or doctrine (D47; a build's D56; D60)
 
 
 def name_ok(stage: str, mode: str) -> bool:
@@ -61,7 +62,24 @@ IMPLEMENT_NEXT = {
     "deliver": "Deliver: council check, the log, the report with its Undo line (council-implement, section 6)",
     "learn": "Learn: into the book, close the run, delete the scratch clones (council-implement, section 7)",
 }
-NEXT = {"council-review": REVIEW_NEXT, "council-implement": IMPLEMENT_NEXT}   # a one-page mode's own steps
+DESIGN_NEXT = {
+    "prepare": "Prepare: memory select, the brief's <…> lines, a second designer or not, then the estimate "
+               "(%s, section 2)",
+    "work": "Work: the designer (both, in one message, for what is hard to undo), then record each one (%s, section 3)",
+    "judge": "Judge: check each bug and claim, weigh the design into synthesis.md (%s, section 4)",
+    "challenge": "Challenge: council check, then council evidence check until clean (%s, section 4)",
+    "deliver": "Deliver: council ask save, the %s, the owner's decisions as consequences (%s, section 5)",
+    "learn": "Learn: into the book, close the run, delete the scratch clones (%s, section 6)",
+}
+
+
+def _design(mode: str, thing: str) -> dict[str, str]:
+    """A design mode's steps, each naming its own page's section."""
+    return {stage: text % ((thing, mode) if stage == "deliver" else (mode,)) for stage, text in DESIGN_NEXT.items()}
+
+
+NEXT = {"council-review": REVIEW_NEXT, "council-implement": IMPLEMENT_NEXT,   # a one-page mode's own steps
+        "council-plan": _design("council-plan", "plan"), "council-research": _design("council-research", "answer")}
 
 
 def next_text(stage: str, mode: str = "") -> str:
@@ -72,8 +90,8 @@ def next_text(stage: str, mode: str = "") -> str:
 
 
 def required(run: Path) -> list[str]:
-    """The stages a run must enter: a mode's own list (a review's always, D50); all ten for a plan or research run
-    with a worker, not Solo."""
+    """The stages a run must enter: a mode's own list (a review's always, D50); a plan's or research's with a worker,
+    not Solo, the paired ones (the designer, D60; all ten until then); else the short path."""
     mode = state.field(state.text(run), "mode")
     if mode in REQUIRED or mode not in SYNTHESISED:
         return REQUIRED.get(mode, "").split()
@@ -82,7 +100,7 @@ def required(run: Path) -> list[str]:
     picked = {key[1] for key, value in rows.items()
               if key[0] == "seat" and (key[2], value) == ("disposition", "selected")}
     if rows.get(("run", "run", "size")) != "solo" and workers & picked:
-        return [stage for stage in STAGES if stage != "build"]
+        return PAIRED.split()
     return SHORT.split()
 
 

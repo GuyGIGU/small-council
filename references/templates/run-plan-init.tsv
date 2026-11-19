@@ -23,3 +23,12 @@ budget	chair	tool-calls	200	setup default: detection, dry-runs, the map and wiri
 # seat	map-<area>	purpose	mapping	charts its area for map.md
 # context	map-<area>	level	focused	its area's paths only
 # budget	map-<area>	tool-calls	30	one area, map rows only
+# A new project's stack (references/run/book.md, A new project's stack): two designers, made apart; add 300000:
+# seat	designer	disposition	selected	proposes the stack, what each choice gives and costs
+# seat	designer	role	worker	one of two independent designs (D61)
+# context	designer	level	focused	the brief and the owner's words
+# budget	designer	tool-calls	100	a design, read and argued from the request
+# seat	designer-2	disposition	selected	a second stack proposal, made apart from the first
+# seat	designer-2	role	worker	never reads the first designer's file
+# context	designer-2	level	focused	the brief and the owner's words
+# budget	designer-2	tool-calls	100	a design, read and argued from the request

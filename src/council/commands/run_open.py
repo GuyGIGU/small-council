@@ -18,8 +18,10 @@ ASKED = closing.MODES                              # the modes that save the use
 MODES = ASKED + ("council-init", "test-architect", "context-core")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review.tsv",
-         "council-implement": "run-plan-implement.tsv"}                                  # else run-plan.tsv
-BRIEFS = {"council-review": "review-brief.md", "council-implement": "review-brief.md"}   # the pair's role texts (D48)
+         "council-implement": "run-plan-implement.tsv", "council-plan": "run-plan-design.tsv",
+         "council-research": "run-plan-design.tsv"}                                      # else run-plan.tsv
+BRIEFS = {"council-review": "review-brief.md", "council-implement": "review-brief.md",   # the pair's role texts (D48)
+          "council-plan": "design-brief.md", "council-research": "design-brief.md"}     # the designer's (D60)
 BUILD_LINES = "build-brief.md"    # what a build's brief adds to the review's, each block on its {{NAME}} line (D56)
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
 STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead
@@ -131,7 +133,7 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
     _fill(template, native / plan_file.NAME, run, RUN=name, MODE=mode, AGENT_CAP=str(config.agent_cap(home)))
     if brief is not None:
         from council.commands import book    # the book's paths, as council book prints them (D52)
-        _fill(brief, native / run_files.BRIEF, run, RUN=name, RUN_DIR=run, CODE_ROOT=top, HOME=home,
+        _fill(brief, native / run_files.BRIEF, run, RUN=name, RUN_DIR=run, CODE_ROOT=top, HOME=home, MODE=mode,
               BOOK="\n".join(book.read_first(home)), KNOWN=book.known(home), **build_lines(mode))
     _write(native / "log.md", "# Run log — %s · opened %s\n" % (mode, clock.now_sec()))
     _write(native / seats.SEATS, "\t".join(seat_write.HEADER) + "\n")

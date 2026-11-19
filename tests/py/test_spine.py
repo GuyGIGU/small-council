@@ -106,8 +106,8 @@ class StagesTest(Spine):
         self.mode("council-plan")
         self.assertEqual(stages.required(self.run), stages.SHORT.split())  # noqa: SIM905
         self.plan("seat\thunt\trole\t worker ", "seat\thunt\tdisposition\tselected\r", "run\trun\tsize\tsquad")
-        self.assertEqual(len(stages.required(self.run)), 10)
-        self.assertEqual(stages.skipped(self.run, "prepare", "judge"), ["assign", "brief", "work", "collect"])
+        self.assertEqual(stages.required(self.run), stages.PAIRED.split())  # noqa: SIM905   the designer (D60)
+        self.assertEqual(stages.skipped(self.run, "prepare", "judge"), ["work"])
         self.plan("seat\thunt\trole\tworker", "seat\thunt\tdisposition\tselected", "run\trun\tsize\tsolo")
         self.assertEqual(stages.skipped(self.run, "prepare", "deliver"), ["judge", "challenge"])
         self.plan("seat\thunt\trole\tworker", "seat\thunt\tdisposition\tselected", "run\trun\tsize\tsolo",
@@ -126,7 +126,9 @@ class StagesTest(Spine):
         self.assertEqual(stages.method_files("council-postgame", ["convene", "build"]),   # a build has no doctrine
                          ["skills/context-core/SKILL.md", "skills/council-postgame/SKILL.md",
                           "references/doctrine/01-convene.md"])
-        self.assertEqual(len(stages.method_files("council-plan")), 12)                        # none named: all ten
+        self.assertEqual(len(stages.method_files("council-postgame")), 12)                    # none named: all ten
+        self.assertEqual(stages.method_files("council-plan"), ["skills/council-plan/SKILL.md"])   # one page (D60)
+        self.assertEqual(stages.method_files("council-research", ["work"]), ["skills/council-research/SKILL.md"])
         self.assertEqual(stages.method_files("council-review", ["convene", "work"]),         # its one page (D47)
                          ["skills/council-review/SKILL.md"])
         self.assertEqual(stages.method_files("council-init", []), ["skills/context-core/SKILL.md",
@@ -136,7 +138,7 @@ class StagesTest(Spine):
         root = self.tmp / "plugin"
         self.write("plugin/skills/context-core/SKILL.md", "a\r\nb\n")                         # CRLF read as LF
         self.write("plugin/references/doctrine/01-convene.md", "é")                      # bytes, not characters
-        self.assertEqual(stages.method_bytes("council-plan", ["convene", "prepare"], root.as_posix()), 4 + 2)
+        self.assertEqual(stages.method_bytes("council-postgame", ["convene", "prepare"], root.as_posix()), 4 + 2)
         self.write("plugin/skills/council-review/SKILL.md", "c\r\n")
         self.assertEqual(stages.method_bytes("council-review", ["convene", "prepare"], root.as_posix()), 2)
 

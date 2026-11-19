@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: plan-second-design-proposal
+description: Asking the council to plan a multi-tenant billing change whose open schema question is hard to undo keeps council-plan, restates the spec as behaviour lines, proposes a second, independent designer with its added cost, and dispatches nothing before the go-ahead.
+tags: [design, proposal]
+expected_outcome: Stays in council-plan; the reply restates the request as behaviour lines, says the table choice is hard to undo so two designers will work apart, names the added cost; one question at most, with a recommended answer; no Agent calls.
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 20
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Agent]

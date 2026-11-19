@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Scaffold: a small billing app with a five-seat council and a complete spec for a multi-tenant billing
-# change — the tough, cross-cutting kind of feature the war room is for. Self-contained.
+# Scaffold: a small billing app with a council and a complete spec for a multi-tenant billing
+# change whose open question (one table or one per tenant) is a schema choice, hard to undo. Self-contained.
 set -euo pipefail
 git init -q
 git symbolic-ref HEAD refs/heads/main

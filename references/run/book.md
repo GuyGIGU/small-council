@@ -59,6 +59,32 @@ effect of a task (D54).
   (`references/build-proof.md`, Checking); a review's reader reports it.
 - On the owner's yes: a new entry in the decisions log in their words, then the stack page's row.
 
+## A new project's stack (council-init, D63)
+
+A project with no code yet (`council init detect` finds no manifest, and `git ls-files` lists only
+documents) starts with its stack, before Phase B: it is the owner's decision, and hard to undo.
+
+1. Ask once what they want to build, for whom, and anything already fixed (a host, a language they
+   know); save it in the setup run's `ask.md` under `## In your words`.
+2. Make the setup run a squad: `size` squad, the `designer` and `designer-2` rows at the foot of its
+   `run-plan.tsv` uncommented, their tokens added to `estimated-tokens`; `council run plan check`.
+3. Write `<run>/brief.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/design-brief.md`, every
+   `{{…}}` filled (the run, its folder, the code root, the home, `council-init`, the book's lines as
+   `council book` prints them), the role text word for word. Request: the owner's words. `answer:`
+   propose a stack: each language, framework, library, tool and service, what it gives, what it
+   costs, and what would make you choose otherwise. `reading: none`.
+4. Both in ONE message, `subagent_type: small-council:council-worker`, no `name`, no `model`:
+   `Seat: <designer|designer-2> — <its line in the brief> · council-init run`, `Brief: <abs run>/brief.md`,
+   `Reference: none — your role is in your brief block`, `Fork: the stack of this new project`,
+   `Write <abs run>/seats/<slug>.md`; then `council seat <slug> running agent=<id>`, and `done` on
+   each return. Neither sees the other's file.
+5. Show both proposals side by side in the owner's terms: what each choice gives and costs, what
+   happens if nothing is chosen, and whether it can be changed later and what that would take; then
+   your recommendation. Where the two agree, say so.
+6. On the owner's choice: a new entry in the decisions log in their words, then the stack page from
+   `references/templates/stack.md`, one row per choice, its reason the owner's, dated. Phase B goes
+   on from the chosen stack.
+
 ## Known problems (D55)
 
 - At a review's Deliver, each item below the worth bar (Noted for later) goes in with

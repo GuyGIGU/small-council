@@ -24,8 +24,10 @@ description: Summon the Small Council for this project — detect the stack and 
   It reads the root, `scripts/` and `tools/`.
 - **Then read what it doesn't:** what CI runs, the README's "how to run tests", a second level of
   folders (`apps/*/package.json`), and the tracked files by extension
-  (`git ls-files | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20`), which catches the
-  Xcode projects, notebooks, game engines and firmware a manifest list misses.
+  (`git ls-files | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20`), which catches what a
+  manifest list misses (Xcode projects, notebooks, firmware).
+- **No code yet** (no manifest, only documents tracked): the stack comes first, before Phase B
+  (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`, A new project's stack).
 - **Surfaces are yours to judge** — which of these exist:
   - UI components; a server or API;
   - a relational DB or migrations; other persistent state (files, caches, save data);
@@ -44,8 +46,7 @@ For each catalog seat, decide **include / recast / drop** by its "applies when" 
   - any computation-heavy engine → numerical correctness;
   - any hot loop → performance.
 
-  Seats dropped for "zero surface" have produced a quarter of a review's findings once
-  recast. Drop only when there's truly nothing to look at (no UI at all → no UI, UX or Frontend seats).
+  Drop only when there's truly nothing to look at (no UI at all → no UI, UX or Frontend seats).
 - **Every seat gets:**
   - a lowercase **slug** — the name of its seat file;
   - a named practitioner who fits the stack;
@@ -116,8 +117,7 @@ On a yes, write `<home>/plans/guardrails.md` from the reference's template (its 
 task per check, cheapest first — and offer council-implement. Each task's **Serves** quotes three or
 more of the user's own words, as they said them; when their yes was a word or two ("Both"), quote
 the question with it — "Fit the ones you want? — Both" — since the plan check refuses a shorter
-quote. **council-init installs nothing itself**, so every install gets before-and-after evidence, a
-blind verifier and a log row. Every task's Done-when is two-sided (it fails on a deliberate
+quote. **council-init installs nothing itself**, so every install is built and proved as a task. Every task's Done-when is two-sided (it fails on a deliberate
 violation and passes once it's removed), and a new lint, format or type gate is ratcheted
 (`council changed`, `Mandatory: no`): the reference's "proved both ways" and "The ratchet". A task
 names nothing under `.council/`: the Gates row is added after the build.
@@ -216,8 +216,7 @@ Then:
 
    **These rules match the command text.** They cover `council run status` typed plainly and nothing
    else: a call through a shell variable, an alias or `bash <path>/bin/council` matches none of them
-   and asks every time. So every council call is a plain `council <command>` (context-core, "The
-   helper"). Only if `command -v council` fails here, add the fallback form the same way —
+   and asks every time. So every council call is a plain `council <command>`. Only if `command -v council` fails here, add the fallback form the same way —
    `Bash(bash *bin/council run:*)` and so on — or the list does nothing.
 
    **`council gate` and `council changed` are deliberately not on the list**: both run whatever

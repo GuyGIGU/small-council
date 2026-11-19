@@ -73,11 +73,11 @@ check that `python --version` works in Git Bash (the Microsoft Store stub doesn'
 | Command | What you get |
 |---|---|
 | `/council-review` | Two agents review the change at once; you get checked findings, ranked P1/P2/P3, what it cost and a recommendation, handed to implement for fixing. |
-| `/council-plan` | A plan in small, checkable tasks. Say "debate it" to have the experts argue the hard calls first. |
-| `/council-implement` | Builds a plan or fixes review findings, with proof for each task and a blind check of every result. |
-| `/council-research` | An answer backed by graded evidence, saved for next time. |
+| `/council-plan` | Your request as lines you can check, a look at the code underneath (where it fits, anything broken it rests on, the real choices, brought as what happens if you choose nothing), then a plan in small, checkable tasks. A choice that is hard to undo gets two designs made apart. |
+| `/council-implement` | Builds a plan or fixes review findings, with a restore point first, checks after each task, and the reader and the runner on the whole change. |
+| `/council-research` | An answer backed by evidence checked against the code, saved for next time. Nothing is built. |
 | `/council-postgame` | "Did we build what I asked?" Matches, drift and gaps against your request, word for word. |
-| `/council-init` | Sets the council up for a project, or refreshes it when the stack moves. |
+| `/council-init` | Sets the council up for a project, or refreshes it when the stack moves. A project with no code starts with its stack: two proposals made apart, and your choice written down. |
 | `/spec-writer` | A short spec: job stories, acceptance criteria, boundaries. |
 | `/test-architect` | Finds tests that only look like tests, and fixes them. |
 

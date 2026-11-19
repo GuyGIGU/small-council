@@ -9,8 +9,9 @@ when the user says to go on with a paused run, or when you hand the work on to a
 - After a compaction or in a new session, the SessionStart hook names the open runs and what to do
   with each. Re-invoke the skill named by the run's `mode:`, read `session-state.md` and `ask.md`,
   re-read the method for its phase, and continue: a review's is its own page (council-review), the
-  step for that phase; any other mode loads context-core and the doctrine for the phase (a build's
-  `build` phase: its build loop). No hook message? Run `council run status`.
+  step for that phase, and so is a build's, a plan's and a research run's (council-implement,
+  council-plan, council-research); a post-game loads context-core and the doctrine for the phase.
+  No hook message? Run `council run status`.
 - **Carrying a run on in a new session, after `/clear`, or on the user's "go on":** first
   `council run resume --run <folder>`, which makes this session its driver. A run another session
   updated recently may still be live there: leave it — no re-dispatch, no close — until the user

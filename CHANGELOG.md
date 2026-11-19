@@ -61,6 +61,42 @@ Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, se
 - **Helper:** `council restore point` and `council restore show`; `council run open
   council-implement` now writes the build's plan with the reader and the runner, and their brief.
 
+### Stage 4: the design step
+Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, section 12), which is still owed; its pass bar is not set yet.
+- **A plan starts by saying back what you asked for** (D60): your request is written as lines you
+  can check without reading code ("when a manager exports the report, a CSV downloads"). At most
+  one question comes back to you, with the answer the council recommends. Those lines become what
+  each task must do and what the build's tests prove.
+- **One designer looks underneath before anything is planned** (D60): it reads the project's book
+  and the code under your request, and says where the work fits and which existing way it extends,
+  anything broken that the work would rest on (shown by running it, never argued), and any real
+  choice for you. The panel of experts is no longer sent on plans or research; an expert's page is
+  handed to the designer to read when the work touches something sensitive (who may see what,
+  losing data, secrets, a public interface).
+- **Your decisions come as consequences** (D62): each says what happens if you decide nothing, the
+  recommendation first, and whether it can be undone.
+- **A choice that is hard to undo gets two designs made apart** (D61): the stack of a new project, a
+  data format, a public interface or a migration gets a second designer that never sees the first
+  one's work. You see both side by side, where they agree, and the recommendation. A small request
+  gets a three-line design and goes straight on.
+- **A bug the request rests on is raised before planning on top of it**, with the same three
+  answers a build gives: fix it first (the plan's first task, then the rest goes on), build anyway
+  and note it, or stop. Anything else found goes into known problems.
+- **Research is the designer on a question** (D60): an answer checked against the code, its
+  confidence, your decisions as consequences, and no build.
+- **A new project starts with its stack** (D63): setup on a project with no code asks what you want
+  to build, two designers propose a stack apart (what each choice gives and costs), and your choice
+  is written to the decisions log and the stack page.
+- **Plan and research are one page each** (D60): each loads about a fifth of what it did.
+- **Helper:** `council run open council-plan` and `council run open council-research` now write the
+  run's plan with the designer (a second one ready to add) and the designer's brief.
+
+### Fixed
+
+- **A finished review no longer fails its own closing check.** Since 1.3.0 the close's audit still
+  asked a review for three stages it no longer has (assign, brief, collect) and reported a FAIL on
+  every review. It now reads each one-page mode's stages from the one place that defines them.
+
 ## [1.3.0] — 2026-11-18
 
 **In short:** a review is now two agents working at once — one reads the change, one runs it — and
