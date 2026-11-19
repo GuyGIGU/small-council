@@ -11,6 +11,7 @@ The owner does not read code. Write each finding as what happens and what it cos
 recommendation.
 
 {{BUILD}}
+{{HEALTH}}
 ## The book — read it before anything else
 {{BOOK}}
 - known problems: {{KNOWN}}

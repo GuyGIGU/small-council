@@ -119,6 +119,24 @@ class StagesTest(Spine):
                          (5, "task 1 — the first task of the plan", 0))
         self.assertTrue(stages.name_ok("a-b", "test-architect") and not stages.name_ok("a-b", "council-review"))
 
+    def test_a_health_pass_takes_the_review_path_and_names_its_page(self) -> None:   # the reader on the book (D65)
+        self.mode("council-health")
+        self.plan("seat\treader\trole\tworker", "seat\treader\tdisposition\tselected", "run\trun\tsize\tsquad")
+        self.assertEqual(stages.required(self.run), stages.PAIRED.split())  # noqa: SIM905
+        self.assertEqual(stages.skipped(self.run, "work", "deliver"), ["judge", "challenge"])
+        self.assertTrue(all("(council-health, section " in stages.next_text(stage, "council-health")
+                            for stage in stages.REQUIRED["council-health"].split()[1:]))
+        self.assertIn("doctrine", stages.next_text("work", "council-postgame"))   # another mode keeps its doctrine line
+
+    def test_the_blocks_each_brief_adds_to_the_reviews(self) -> None:     # a build's (D56) and a health pass's (D65)
+        from council.commands import run_open
+        health, build, review = (run_open.brief_lines(m) for m in ("council-health", "council-implement",
+                                                                    "council-review"))
+        self.assertTrue(health["HEALTH"].startswith("## This is a health pass, not a review of a change\n"))
+        self.assertEqual((health["BUILD"], health["BUILD_RUNNER"], build["HEALTH"]), ("", "", ""))
+        self.assertTrue(build["BUILD"].startswith("## This change is a build") and build["BUILD_RUNNER"])
+        self.assertEqual(set(review.values()), {""})
+
     def test_the_method_a_mode_loads(self) -> None:
         build = stages.REQUIRED["council-implement"].split()
         self.assertEqual(stages.method_files("council-implement", build),   # a build's one page (D56)
@@ -131,6 +149,10 @@ class StagesTest(Spine):
         self.assertEqual(stages.method_files("council-research", ["work"]), ["skills/council-research/SKILL.md"])
         self.assertEqual(stages.method_files("council-review", ["convene", "work"]),         # its one page (D47)
                          ["skills/council-review/SKILL.md"])
+        self.assertEqual(stages.method_files("council-health", ["work"]), ["skills/council-health/SKILL.md"])  # D65
+        self.assertEqual(stages.method_files("council"), ["skills/council/SKILL.md",   # the loop's page and the two it
+                                                          "skills/council-plan/SKILL.md",   # follows (D64)
+                                                          "skills/council-implement/SKILL.md"])
         self.assertEqual(stages.method_files("council-init", []), ["skills/context-core/SKILL.md",
                                                                    "skills/council-init/SKILL.md"])
         self.assertEqual(stages.method_files("context-core", ["learn", "learn", "x"]),

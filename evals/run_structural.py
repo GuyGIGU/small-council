@@ -54,7 +54,7 @@ def never_a_pass(text, marker):
 
 
 SKILLS = ["context-core", "council-init", "council-review", "council-plan", "council-implement",
-          "council-research", "council-postgame", "spec-writer", "test-architect"]
+          "council-research", "council-postgame", "spec-writer", "test-architect", "council", "council-health"]
 MODES = ["council-review", "council-plan", "council-implement", "council-research", "council-postgame"]
 ONE_PAGE = ("council-review", "council-implement", "council-plan", "council-research")   # each its own page (D47,
 #                                                     D56, D60)
@@ -192,6 +192,39 @@ for mode, limit in (("council-plan", 12500), ("council-research", 10500)):
           and "## At " not in skill[mode], repr(helper_stages.method_files(mode)))
     check(f"method: what a {mode} run reads is under {limit:,} bytes, CRLF read as LF (D60)", mode_load < limit,
           str(mode_load))
+# The whole loop (D64): /council has no run of its own; its page joins a plan run and a build run, naming their pages'
+# sections, so its method is its page and those two, and its page stays small because it copies neither.
+loop_files = helper_stages.method_files("council")
+check("method: /council's method is its own page and the two pages whose sections it follows, plan and build (D64)",
+      loop_files == ["skills/council/SKILL.md", "skills/council-plan/SKILL.md", "skills/council-implement/SKILL.md"]
+      and "context-core" not in skill["council"].split("---", 2)[-1] and "references/doctrine/" not in skill["council"],
+      repr(loop_files))
+check("method: /council's own page is under 8,000 bytes and the whole loop's load under 36,000, CRLF read as LF (D64)",
+      len(skill["council"].encode("utf-8")) < 8000 and helper_stages.method_bytes("council", root=ROOT) < 36000,
+      "%d / %d" % (len(skill["council"].encode("utf-8")), helper_stages.method_bytes("council", root=ROOT)))
+loop = flat(skill["council"])
+check("council: opens a plan run then a build run on its plan, one approval for both, the depth picked from the work, "
+      "the cost first, and the report's Cost the whole loop's (D64)",
+      "`council run open council-plan`" in loop and "`council run open council-implement`" in loop
+      and "council state input=<the plan's path>" in loop and "Approval, once" in loop
+      and "The owner never picks a size" in loop and "The cost first, for the whole loop" in loop
+      and "the Cost line is the whole loop's" in loop and "(/council)" in loop
+      and "Propose its cost first" in description(skill["council"]))
+health_load = helper_stages.method_bytes("council-health", root=ROOT)
+check("method: a health pass's method load is its own page alone, no context-core and no doctrine, under 10,500 "
+      "bytes (D65)",
+      helper_stages.method_files("council-health") == ["skills/council-health/SKILL.md"]
+      and "context-core" not in skill["council-health"].split("---", 2)[-1]
+      and "references/doctrine/" not in skill["council-health"] and health_load < 10500, str(health_load))
+health = flat(skill["council-health"])
+check("council-health: opens its own run with the reader, the runner only for what a run must show, at most five "
+      "proposals each with its cost, its reason and whether it can be undone, the rest into known problems, and "
+      "nothing built (D65)",
+      "`council run open council-health`" in health and "The runner, only when a run must show it" in health
+      and "At most five proposals reach the owner" in health and "whether it can be undone" in health
+      and "`council book note" in health and "Nothing in the project changes and nothing is built" in health
+      and "`council ask save`" in health and "<home>/reviews/<YYYY-MM-DD>-health.md" in health
+      and "Propose its cost first" in description(skill["council-health"]))
 builder_contract = read("agents", "council-builder.md")
 check("builder: its contract points at one page of rules, builder-rules.md, and at none of the build references it "
       "read before (D56); the page holds the steps, the proof, the report head, the stops and the standing rules, "

@@ -26,9 +26,11 @@ STAGES = {  # name: (rank, next step); a build stands where council-implement's 
 SHORT = "convene prepare judge challenge deliver learn"
 PAIRED = "convene prepare work judge challenge deliver learn"   # fixed seats, no roster to assign or brief
 REQUIRED = {"council-implement": "convene prepare build challenge deliver learn", "council-postgame": SHORT,
-            "council-review": PAIRED}                                      # the reader and the runner (D50)
-ONE_PAGE = ("council-review", "council-implement", "council-plan", "council-research")   # a mode whose method is its
-#                                     own page alone, no context-core or doctrine (D47; a build's D56; D60)
+            "council-review": PAIRED, "council-health": PAIRED}       # the reader and the runner (D50); health's D65
+ONE_PAGE = ("council-review", "council-implement", "council-plan", "council-research",   # a mode whose method is its
+            "council-health")         # own page alone, no context-core or doctrine (D47; a build's D56; D60; D65)
+FOLLOWS = {"council": ("council-plan", "council-implement")}   # /council: no run of its own, a plan run then a build
+#                                     run, its page naming their pages' sections (D64)
 
 
 def name_ok(stage: str, mode: str) -> bool:
@@ -73,13 +75,26 @@ DESIGN_NEXT = {
 }
 
 
+HEALTH_NEXT = {
+    "prepare": "Prepare: memory select, the brief's <…> lines, then the estimate (council-health, section 1)",
+    "work": "Work: the reader, then record it; the runner only for an item a run must show (council-health, "
+            "section 2)",
+    "judge": "Judge: check each proposal against the code, the worth bar, synthesis.md (council-health, section 4)",
+    "challenge": "Challenge: council check until it is clean (council-health, section 4)",
+    "deliver": "Deliver: council ask save, the health report, the rest into known problems (council-health, "
+               "section 5)",
+    "learn": "Learn: close the run, delete the scratch clones (council-health, section 6)",
+}
+
+
 def _design(mode: str, thing: str) -> dict[str, str]:
     """A design mode's steps, each naming its own page's section."""
     return {stage: text % ((thing, mode) if stage == "deliver" else (mode,)) for stage, text in DESIGN_NEXT.items()}
 
 
 NEXT = {"council-review": REVIEW_NEXT, "council-implement": IMPLEMENT_NEXT,   # a one-page mode's own steps
-        "council-plan": _design("council-plan", "plan"), "council-research": _design("council-research", "answer")}
+        "council-plan": _design("council-plan", "plan"), "council-research": _design("council-research", "answer"),
+        "council-health": HEALTH_NEXT}
 
 
 def next_text(stage: str, mode: str = "") -> str:
@@ -107,9 +122,10 @@ def required(run: Path) -> list[str]:
 def method_files(mode: str, entered: list[str] | None = None) -> list[str]:
     """What a mode's Chair loads as method, the one definition of a run's method load (D13): context-core's skill,
     the mode's own, and the doctrine of each stage it enters (every stage's when none are given; a build's loop
-    has no doctrine file), as paths under the plugin's folder; a one-page mode's own page alone (D47, D56)."""
-    if mode in ONE_PAGE:
-        return ["skills/%s/SKILL.md" % mode]
+    has no doctrine file), as paths under the plugin's folder; a one-page mode's own page alone (D47, D56); /council's
+    page and the pages whose sections it follows (D64)."""
+    if mode in ONE_PAGE or mode in FOLLOWS:
+        return ["skills/%s/SKILL.md" % name for name in (mode,) + FOLLOWS.get(mode, ())]
     named = [stage for stage in (STAGES if entered is None else entered) if stage in STAGES and stage != "build"]
     skills = ["context-core"] + [mode] * (mode != "context-core")
     return (["skills/%s/SKILL.md" % name for name in skills] +

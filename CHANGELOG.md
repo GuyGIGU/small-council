@@ -91,6 +91,27 @@ Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, se
 - **Helper:** `council run open council-plan` and `council run open council-research` now write the
   run's plan with the designer (a second one ready to add) and the designer's brief.
 
+### Stage 5: /council and /council-health
+Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, section 12), which is still owed.
+- **`/council` does the whole job from one request** (D64): say what you want in your own words.
+  It writes your request back as lines you can check, looks at the code underneath, brings you
+  only the decisions that need you (as consequences), then builds it one task at a time with a
+  restore point and the project's checks, has the reader and the runner check the whole change,
+  fixes what they find once, and gives you one report with its undo line. The council picks how
+  deep to go from the work; you never pick a size. A small request goes straight through.
+- **One estimate, one go-ahead, one report** (D64): the cost of the whole job is shown before any
+  agent starts, your go-ahead covers the design and the build, and you are asked again only if the
+  build turns out to cost more than you approved. The report's cost is the whole job's.
+- **`/council-health` says where the project has drifted from its book** (D65): one agent reads
+  the whole project against its design page, stack page, decisions and known problems. You get at
+  most five refactors worth doing, each with what it costs, why (what goes wrong if nothing is
+  done) and whether it can be undone, each checked against the code first. Everything else goes
+  into known problems, so it is kept but not shown twice. Nothing is built; say yes to a proposal
+  and `/council-implement` builds it.
+- **Helper:** `council run open council-health` writes the health pass's plan and its brief (the
+  review's, with a health block); `council run open council` says the whole job is a plan run then
+  a build run, and opens nothing.
+
 ### Fixed
 
 - **A finished review no longer fails its own closing check.** Since 1.3.0 the close's audit still

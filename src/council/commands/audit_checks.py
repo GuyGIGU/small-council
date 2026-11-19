@@ -27,7 +27,8 @@ STAGES = ("convene", "prepare", "assign", "brief", "work", "collect", "judge", "
 RANK = dict((stage, n) for n, stage in enumerate(STAGES))
 RANK["build"] = RANK["work"]                       # council-implement's build loop stands in for stages 3-7
 SEAT_STAGES = ("assign", "brief", "work", "collect")   # stages 3-6: a run with no worker seat skips them
-MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame")
+MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame",
+         "council-health")
 CLAIM_MODES = ("council-review", "council-plan", "council-research")
 VERDICTS = ("CONFIRMED", "REFUTED", "UNCERTAIN", "MISCITED")
 

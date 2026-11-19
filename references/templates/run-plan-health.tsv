@@ -1,0 +1,33 @@
+# Small Council run plan v1, as a health pass opens it (D65). Keep exactly five tab-separated columns.
+# Fixed: the reader, on the whole project against its book, and the main session's own check of each proposal.
+# An item only a run can show: uncomment the runner's rows, add 250000 to estimated-tokens, and say why. A claim on
+# a protected subject: add the verifier's rows, add its tokens, and set verification to independent.
+kind	id	field	value	reason
+schema	plan	version	1	versioned run-plan contract
+run	run	id	{{RUN}}	bind this plan to its run folder
+run	run	mode	{{MODE}}	mode chosen when the run opened
+run	run	size	squad	one fixed seat, the reader, and the runner only for what a run must show (D65)
+assessment	run	risk	low	it changes nothing in the project; a wrong proposal is checked before the owner sees it
+assessment	run	complexity	medium	one agent reads the whole project against its book
+assessment	run	uncertainty	medium	where the project drifted is what the reader finds out
+budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
+budget	run	estimated-tokens	250000	the reader, about half of a review's pair, plus the main session's check
+verification	run	level	self	the main session checks each proposal against the code itself
+seat	chair	disposition	selected	the main session briefs, checks the proposals and writes the report
+seat	chair	role	chair	the one head
+context	chair	level	focused	the book, the proposals and the code they cite
+budget	chair	tool-calls	60	the dispatch, each proposal's check, the report
+seat	reader	disposition	selected	reads the whole project against its book
+seat	reader	role	worker	where it drifted, and the refactors that would bring it back
+context	reader	level	focused	the brief, the book and the code
+budget	reader	tool-calls	100	a deep read
+# The runner, only for an item a run must show (D65):
+# seat	runner	disposition	selected	runs <the check> on the project as it is
+# seat	runner	role	worker	one clone, the one check named
+# context	runner	level	focused	the brief and the check
+# budget	runner	tool-calls	100	a clone and the check
+# A blind verifier for a claim on a protected subject:
+# seat	verify-1	disposition	selected	a claim on <the protected subject>
+# seat	verify-1	role	verifier	checks it blind
+# context	verify-1	level	focused	the claim and its path:line only
+# budget	verify-1	tool-calls	40	one claim

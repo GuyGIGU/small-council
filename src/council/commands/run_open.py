@@ -19,10 +19,14 @@ MODES = ASKED + ("council-init", "test-architect", "context-core")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review.tsv",
          "council-implement": "run-plan-implement.tsv", "council-plan": "run-plan-design.tsv",
-         "council-research": "run-plan-design.tsv"}                                      # else run-plan.tsv
+         "council-research": "run-plan-design.tsv", "council-health": "run-plan-health.tsv"}   # else run-plan.tsv
 BRIEFS = {"council-review": "review-brief.md", "council-implement": "review-brief.md",   # the pair's role texts (D48)
-          "council-plan": "design-brief.md", "council-research": "design-brief.md"}     # the designer's (D60)
-BUILD_LINES = "build-brief.md"    # what a build's brief adds to the review's, each block on its {{NAME}} line (D56)
+          "council-plan": "design-brief.md", "council-research": "design-brief.md",     # the designer's (D60)
+          "council-health": "review-brief.md"}                                          # the reader's again (D65)
+LINES = {"council-implement": "build-brief.md",   # what a build's brief adds to the review's (D56), and a health
+         "council-health": "health-brief.md"}     # pass's (D65), each block on its {{NAME}} line
+BLOCKS = ("BUILD", "BUILD_RUNNER", "HEALTH")
+LOOP = "council"   # /council: no run of its own (D64)
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
 STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead
 
@@ -36,6 +40,10 @@ def main(args: cli.Args, words: list[str]) -> int:
         raise cli.Refusal("usage: council run open <mode> [--alongside] [--session=ID]   (the skill name, e.g. "
                           "council-review)")
     mode = "council-" + mode if mode not in MODES and "council-" + mode in MODES else mode   # review = council-review
+    if mode == LOOP:
+        raise cli.Refusal("/council has no run of its own: it opens a plan run first (council run open council-plan), "
+                          "then a build run on the plan it writes (council run open council-implement) — follow "
+                          "skills/council/SKILL.md, step 1")
     if mode not in MODES:
         raise cli.Refusal("unknown mode '%s' — use a skill name: %s" % (mode, ", ".join(MODES)))
     session = resolve.session_id(args)
@@ -134,22 +142,23 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
     if brief is not None:
         from council.commands import book    # the book's paths, as council book prints them (D52)
         _fill(brief, native / run_files.BRIEF, run, RUN=name, RUN_DIR=run, CODE_ROOT=top, HOME=home, MODE=mode,
-              BOOK="\n".join(book.read_first(home)), KNOWN=book.known(home), **build_lines(mode))
+              BOOK="\n".join(book.read_first(home)), KNOWN=book.known(home), **brief_lines(mode))
     _write(native / "log.md", "# Run log — %s · opened %s\n" % (mode, clock.now_sec()))
     _write(native / seats.SEATS, "\t".join(seat_write.HEADER) + "\n")
     return run
 
 
-def build_lines(mode: str) -> dict[str, str]:
-    """The blocks of build-brief.md by name ([BUILD], [BUILD_RUNNER]) for a build; each empty for a review, whose
-    brief then has those lines taken out."""
-    blocks = {"BUILD": "", "BUILD_RUNNER": ""}
-    if mode != "council-implement":
+def brief_lines(mode: str) -> dict[str, str]:
+    """The blocks a mode's lines template adds to the review's brief, by name ([BUILD], [BUILD_RUNNER] for a build,
+    [HEALTH] for a health pass); a block the mode's file lacks is empty, and a brief has an empty one's line taken
+    out (a review's, all three)."""
+    blocks = dict.fromkeys(BLOCKS, "")
+    if mode not in LINES:
         return blocks
     try:
-        text = (TEMPLATES / BUILD_LINES).read_bytes().decode("utf-8", "surrogateescape").replace("\r\n", "\n")
+        text = (TEMPLATES / LINES[mode]).read_bytes().decode("utf-8", "surrogateescape").replace("\r\n", "\n")
     except OSError:
-        raise cli.Refusal("brief template is missing: %s" % (TEMPLATES / BUILD_LINES).as_posix()) from None
+        raise cli.Refusal("brief template is missing: %s" % (TEMPLATES / LINES[mode]).as_posix()) from None
     name = ""
     for line in text.split("\n"):
         if line.startswith("[") and line.endswith("]") and line[1:-1] in blocks:

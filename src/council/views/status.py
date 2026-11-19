@@ -45,7 +45,8 @@ STAGES = (("convene", "Setting up"), ("prepare", "Gathering context"), ("assign"
           ("deliver", "Writing the report"), ("learn", "Recording lessons"))
 OTHER_PHASES = {"build": "Building the plan's tasks"}
 MODES = {"council-review": "Review", "council-plan": "Plan", "council-implement": "Build",
-         "council-research": "Research", "council-postgame": "Post-game check", "council-init": "Setup"}
+         "council-research": "Research", "council-postgame": "Post-game check", "council-init": "Setup",
+         "council-health": "Health check"}
 STATES = {  # key: (label, role, icon) — the role colours the badge, the words and icon carry the meaning
     "starting": ("Starting", "accent", "ti-player-play"),
     "running": ("Running", "accent", "ti-activity"),

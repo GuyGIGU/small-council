@@ -603,9 +603,9 @@ def runs_open(tmp):
             if os.path.isfile(written_path):
                 with open(written_path, "rb") as f:
                     written = f.read()
-            # {{BOOK}} is the book's first three pages, a line each (two more); a review's two {{BUILD…}} lines are
-            # taken out (two fewer, D56); the designer's brief has no {{BUILD…}} line (D60)
-            grown = 2 if name == "design-brief.md" else 0
+            # {{BOOK}} is the book's first three pages, a line each (two more); a review's two {{BUILD…}} lines and
+            # its {{HEALTH}} line are taken out (three fewer, D56, D65); the designer's brief has none of them (D60)
+            grown = {"design-brief.md": 2, "review-brief.md": -1}.get(name, 0)
             check("run open %s: a CRLF %s template is written with LF line ends, on every OS" % (mode, name),
                   opened.returncode == 0 and b"\r" not in written
                   and written.count(b"\n") == lfs[name].count(b"\n") + grown,
@@ -10742,6 +10742,95 @@ def review_run_closes_on_its_path(tmp):
           "collect (D50)",
           "Stages: convene > prepare > work > judge > challenge > deliver > learn" in audit
           and "never entered" not in audit, out + err + audit[:1500])
+
+
+@part("loop")
+def loop_has_no_run_of_its_own(tmp):
+    """/council (D64) is a plan run then a build run: `council run open council` is refused, naming both runs and the
+    page's step, and nothing is opened."""
+    repo = small_council_repo(tmp, "loop-open", "")
+    code, out, err = council(repo, "run", "open", "council")
+    runs = os.path.join(repo, ".council", "runs")
+    check("run open council: refused, naming the plan run, the build run on its plan and the page's step; no run "
+          "folder is made (D64)",
+          code == 2 and "council run open council-plan" in err and "council run open council-implement" in err
+          and "skills/council/SKILL.md, step 1" in err and (not os.path.isdir(runs) or not os.listdir(runs)),
+          out + err)
+
+
+@part("loop")
+def health_opens_with_the_reader(tmp):
+    """A health pass (D65): council run open council-health (or health) writes the fixed plan with the reader and the
+    runner's rows commented, and the review's brief with the health block on its line and no build block, the reader's
+    role text word for word; the plan passes untouched and with the runner uncommented; the next-step lines name the
+    page's own sections and the run enters the review's stages in turn."""
+    repo = small_council_repo(tmp, "health-open", "")
+    roles = re.findall(r"(?m)^(?:> .*\n)+", read(os.path.join(ROOT, "references", "templates", "review-brief.md")))
+    code, run, err = council(repo, "run", "open", "health")
+    run = run.strip()
+    brief, plan = read(os.path.join(run, "brief.md")), read(os.path.join(run, "run-plan.tsv"))
+    pcode, pout, perr = council(repo, "run", "plan", "check")
+    check("run open health: the fixed plan selects the reader, names no model, keeps the runner commented, and passes "
+          "council run plan check untouched (D65)",
+          code == 0 and pcode == 0 and "plan: valid · squad" in pout and "\tcouncil-health\t" in plan
+          and "seat\treader\trole\tworker" in plan and "# seat\trunner\tdisposition\tselected" in plan
+          and "\tmodel\t" not in plan, pout + perr + err + plan[:800])
+    check("run open health: the brief is the review's with the health block, the reader's role word for word, no "
+          "build block and no {{…}} left (D65)",
+          "## This is a health pass, not a review of a change\n" in brief and len(roles) == 2 and roles[0] in brief
+          and "## This change is a build" not in brief and "{{" not in brief and "\n- design: " in brief
+          and brief.startswith("# Brief — %s\n" % os.path.basename(run)), brief[:1500] + err)
+    write(os.path.join(run, "run-plan.tsv"), "".join(line[2:] if line.startswith("# ") and "\trunner\t" in line
+                                                     else line for line in plan.splitlines(True)))
+    pcode, pout, perr = council(repo, "run", "plan", "check")
+    check("run plan check health: the runner's rows uncommented, it passes with three selected (D65)",
+          pcode == 0 and "3 selected" in pout, pout + perr)
+    council(repo, "state", "phase=prepare")
+    state = read(os.path.join(run, "session-state.md"))
+    nxt = state.split("\nnext: ", 1)[-1].split("\n", 1)[0]
+    check("state health: Prepare's next step names the page's own section, never a doctrine file (D65)",
+          "(council-health, section 1)" in nxt and "doctrine" not in nxt, state)
+    council(repo, "state", "phase=work")
+    code, out, err = council(repo, "state", "phase=deliver")
+    check("state health: Deliver straight after Work is refused, naming judge and challenge, the review's stages "
+          "(D65)", code == 2 and "would skip judge, challenge" in err and "council state phase=judge" in err, out + err)
+
+
+@part("loop")
+def health_run_closes_on_its_path(tmp):
+    """A health pass on its page's path closes complete with the audit passing its stages (D65); its check wants a
+    place for every item, as a review's does."""
+    repo = small_council_repo(tmp, "health-close", "")
+    code, run, err = council(repo, "run", "open", "council-health")
+    run = run.strip()
+    write(os.path.join(run, "ask.md"), "# Ask\nsource: said at the time\n## In your words\nhow healthy is it\n")
+    write(os.path.join(repo, "app.py"), "def save(x):\n    return x\n")
+    for step in ("phase=prepare", "phase=work"):
+        council(repo, "state", step)
+    council(repo, "seat", "reader", "running", "agent=a1")
+    write(os.path.join(run, "seats", "reader.md"), "# Reader (council-health)\nref: none\n## Index\n"
+          "1 · P2 · second way · app.py:1 · Two ways to save\n")
+    council(repo, "seat", "reader", "done", "tokens=1000", "tools=10")
+    council(repo, "state", "phase=judge")
+    write(os.path.join(run, "synthesis.md"), "# Synthesis\n## Kept\n1 · P2 · second way · app.py:1 · Two ways to "
+          "save · state: OBSERVED · from: reader#1\n2 · P3 · stale · Nowhere in particular · state: INFERRED · "
+          "from: reader#2\n## Cut\n")
+    council(repo, "state", "phase=challenge")
+    ccode, cout, cerr = council(repo, "check")
+    write(os.path.join(run, "synthesis.md"), "# Synthesis\n## Kept\n1 · P2 · second way · app.py:1 · Two ways to "
+          "save · state: OBSERVED · from: reader#1\n## Cut\n")
+    write(os.path.join(repo, ".council", "reviews", "2026-11-19-health.md"), "# Health\n")
+    for step in ("phase=deliver", "deliverable=.council/reviews/2026-11-19-health.md", "phase=learn"):
+        council(repo, "state", step)
+    council(repo, "ask", "save")
+    code, out, err = council(repo, "run", "close")
+    audit = read(os.path.join(run, "audit.md")) if os.path.isfile(os.path.join(run, "audit.md")) else ""
+    check("check health: an item with no path:line is no-citation, as a review's is (D65)",
+          ccode == 1 and "no-citation" in cout + cerr, cout + cerr)
+    check("run close: a health pass on its page's path closes complete and the audit passes its stages, never asking "
+          "for assign, brief or collect (D65)",
+          code == 0 and "complete" in out and "Stages: convene > prepare > work > judge > challenge > deliver > learn"
+          in audit and "never entered" not in audit and "FAIL" not in audit, out + err + audit[:1500])
 
 parser =argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
 parser.add_argument("--list", action="store_true",

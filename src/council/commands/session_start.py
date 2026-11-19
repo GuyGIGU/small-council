@@ -111,9 +111,9 @@ def _banner(home: str, sid: str) -> None:
         return
     cli.say("[Small Council] Council-enabled project. Council home: %s. %s"
             % (home, doctor_hooks.count_line(sid) if sid else ""))
-    cli.say("- Substantial work? Check for a council mode first (council-review, council-plan, council-implement, "
-            "council-research, council-postgame, spec-writer, test-architect). Propose it with its size and estimated "
-            "cost, and wait for a go-ahead before any multi-agent run.")
+    cli.say("- Substantial work? Check for a council mode first (council, council-review, council-plan, "
+            "council-implement, council-research, council-postgame, council-health, spec-writer, test-architect). "
+            "Propose it with its size and estimated cost, and wait for a go-ahead before any multi-agent run.")
     cli.say("- The `council` helper does the bookkeeping (`council run status`, `council doctor`). It is a bash "
             "script: run it in the Bash tool (Git Bash on Windows), never from PowerShell. Call it as a plain `council "
             "<command>`, never piped (a hook refuses `| head`, `| tail` and `| grep`: redirect it to a file and read "
