@@ -12,6 +12,7 @@ recommendation.
 
 {{BUILD}}
 {{HEALTH}}
+{{POSTGAME}}
 ## The book — read it before anything else
 {{BOOK}}
 - known problems: {{KNOWN}}

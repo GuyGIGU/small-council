@@ -126,12 +126,22 @@ class StagesTest(Spine):
         self.assertEqual(stages.skipped(self.run, "work", "deliver"), ["judge", "challenge"])
         self.assertTrue(all("(council-health, section " in stages.next_text(stage, "council-health")
                             for stage in stages.REQUIRED["council-health"].split()[1:]))
-        self.assertIn("doctrine", stages.next_text("work", "council-postgame"))   # another mode keeps its doctrine line
+        self.assertIn("doctrine", stages.next_text("work", "test-architect"))   # another mode keeps its doctrine line
 
-    def test_the_blocks_each_brief_adds_to_the_reviews(self) -> None:     # a build's (D56) and a health pass's (D65)
-        from council.commands import run_open
-        health, build, review = (run_open.brief_lines(m) for m in ("council-health", "council-implement",
-                                                                    "council-review"))
+    def test_a_postgame_takes_the_review_path_and_names_its_page(self) -> None:   # the pair on the request (D67)
+        self.mode("council-postgame")
+        self.plan("seat\treader\trole\tworker", "seat\treader\tdisposition\tselected", "run\trun\tsize\tsquad")
+        self.assertEqual(stages.required(self.run), stages.PAIRED.split())  # noqa: SIM905
+        self.assertEqual(stages.skipped(self.run, "prepare", "judge"), ["work"])
+        self.assertTrue(all("(council-postgame, section " in stages.next_text(stage, "council-postgame")
+                            for stage in stages.REQUIRED["council-postgame"].split()[1:]))
+
+    def test_the_blocks_each_brief_adds_to_the_reviews(self) -> None:     # a build's (D56), a health pass's (D65)
+        from council.commands import run_open                               # and a post-game's (D67)
+        health, build, review, postgame = (run_open.brief_lines(m) for m in ("council-health", "council-implement",
+                                                                              "council-review", "council-postgame"))
+        self.assertTrue(postgame["POSTGAME"].startswith("## This is a post-game: the finished work against the "))
+        self.assertEqual({key for key, value in postgame.items() if value}, {"POSTGAME"})
         self.assertTrue(health["HEALTH"].startswith("## This is a health pass, not a review of a change\n"))
         self.assertEqual((health["BUILD"], health["BUILD_RUNNER"], build["HEALTH"]), ("", "", ""))
         self.assertTrue(build["BUILD"].startswith("## This change is a build") and build["BUILD_RUNNER"])
@@ -141,10 +151,11 @@ class StagesTest(Spine):
         build = stages.REQUIRED["council-implement"].split()
         self.assertEqual(stages.method_files("council-implement", build),   # a build's one page (D56)
                          ["skills/council-implement/SKILL.md"])
-        self.assertEqual(stages.method_files("council-postgame", ["convene", "build"]),   # a build has no doctrine
-                         ["skills/context-core/SKILL.md", "skills/council-postgame/SKILL.md",
+        self.assertEqual(stages.method_files("test-architect", ["convene", "build"]),   # a build has no doctrine
+                         ["skills/context-core/SKILL.md", "skills/test-architect/SKILL.md",
                           "references/doctrine/01-convene.md"])
-        self.assertEqual(len(stages.method_files("council-postgame")), 12)                    # none named: all ten
+        self.assertEqual(len(stages.method_files("test-architect")), 12)                    # none named: all ten
+        self.assertEqual(stages.method_files("council-postgame", ["work"]), ["skills/council-postgame/SKILL.md"])  # D67
         self.assertEqual(stages.method_files("council-plan"), ["skills/council-plan/SKILL.md"])   # one page (D60)
         self.assertEqual(stages.method_files("council-research", ["work"]), ["skills/council-research/SKILL.md"])
         self.assertEqual(stages.method_files("council-review", ["convene", "work"]),         # its one page (D47)
@@ -160,7 +171,7 @@ class StagesTest(Spine):
         root = self.tmp / "plugin"
         self.write("plugin/skills/context-core/SKILL.md", "a\r\nb\n")                         # CRLF read as LF
         self.write("plugin/references/doctrine/01-convene.md", "é")                      # bytes, not characters
-        self.assertEqual(stages.method_bytes("council-postgame", ["convene", "prepare"], root.as_posix()), 4 + 2)
+        self.assertEqual(stages.method_bytes("test-architect", ["convene", "prepare"], root.as_posix()), 4 + 2)
         self.write("plugin/skills/council-review/SKILL.md", "c\r\n")
         self.assertEqual(stages.method_bytes("council-review", ["convene", "prepare"], root.as_posix()), 2)
 

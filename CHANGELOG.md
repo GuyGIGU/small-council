@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+- **The post-game runs on the new path.** `/council-postgame` ("did we build what I asked?") is one page, like the review: the reader and the runner each check every part of your original request, one against the code and one by running it in a scratch copy, and the main session checks each verdict before you see it. The report and the next tasks council-implement builds from are unchanged. It costs about 500k tokens, as a review does (it was about 100–180k with one checker). Finish or pause an open post-game run before updating. D67, on the owner's word; built before any test of it.
+
 ## [2.0.0] — 2026-11-19
 
 **In short:** the rest of redesign 2.0, built on the owner's word before each stage's own test.

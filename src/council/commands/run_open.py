@@ -19,13 +19,15 @@ MODES = ASKED + ("council-init", "test-architect", "context-core")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
 PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review.tsv",
          "council-implement": "run-plan-implement.tsv", "council-plan": "run-plan-design.tsv",
-         "council-research": "run-plan-design.tsv", "council-health": "run-plan-health.tsv"}   # else run-plan.tsv
+         "council-research": "run-plan-design.tsv", "council-health": "run-plan-health.tsv",
+         "council-postgame": "run-plan-postgame.tsv"}                                   # else run-plan.tsv
 BRIEFS = {"council-review": "review-brief.md", "council-implement": "review-brief.md",   # the pair's role texts (D48)
           "council-plan": "design-brief.md", "council-research": "design-brief.md",     # the designer's (D60)
-          "council-health": "review-brief.md"}                                          # the reader's again (D65)
-LINES = {"council-implement": "build-brief.md",   # what a build's brief adds to the review's (D56), and a health
-         "council-health": "health-brief.md"}     # pass's (D65), each block on its {{NAME}} line
-BLOCKS = ("BUILD", "BUILD_RUNNER", "HEALTH")
+          "council-health": "review-brief.md", "council-postgame": "review-brief.md"}   # the pair's again (D65, D67)
+LINES = {"council-implement": "build-brief.md",   # what a build's brief adds to the review's (D56), a health
+         "council-health": "health-brief.md",     # pass's (D65) and a post-game's (D67), each block on its
+         "council-postgame": "postgame-brief.md"}  # {{NAME}} line
+BLOCKS = ("BUILD", "BUILD_RUNNER", "HEALTH", "POSTGAME")
 LOOP = "council"   # /council: no run of its own (D64)
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
 STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead
@@ -150,8 +152,8 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
 
 def brief_lines(mode: str) -> dict[str, str]:
     """The blocks a mode's lines template adds to the review's brief, by name ([BUILD], [BUILD_RUNNER] for a build,
-    [HEALTH] for a health pass); a block the mode's file lacks is empty, and a brief has an empty one's line taken
-    out (a review's, all three)."""
+    [HEALTH] for a health pass, [POSTGAME] for a post-game); a block the mode's file lacks is empty, and a brief has
+    an empty one's line taken out (a review's, all four)."""
     blocks = dict.fromkeys(BLOCKS, "")
     if mode not in LINES:
         return blocks

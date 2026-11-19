@@ -777,8 +777,8 @@ with tempfile.TemporaryDirectory(prefix="council-status-") as temporary:
         stepping.mkdir()
         subprocess.run([GIT, "init", "-q"], cwd=stepping, check=True)
         write(stepping / ".council" / "council.config.md", "# Council config\n")
-        srun = Path(council(stepping, "run", "open", "council-postgame")[1].strip())  # a staged mode: its doctrine
-        #                                                       named (a plan is its own page since D60)
+        srun = Path(council(stepping, "run", "open", "context-core")[1].strip())  # the old engine's stages: its
+        #                                             doctrine named (every council mode is its own page since D67)
         at_open_line = "\nnext: {}\n".format(snapshot.NEXT_AT_OPEN)
         opened = read(srun / "session-state.md")
         council(stepping, "state", "size=solo")
