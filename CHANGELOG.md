@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- Leftovers of the old seat system that nothing called after 2.1.0: the reference-title check
+  (`ref_title` and its two normalisers), the plan's verifier-role lookup (`is_verifier`), and the
+  war room's round-2 file name in a done seat's missing-file check. The release script's label for
+  `references/` names watch lists instead of doctrine and seat docs. No behaviour changes.
+
 ## [2.1.0] — 2026-11-20
 
 **In short:** the old expert-seat system is gone. Setup recruits no experts and writes no seat

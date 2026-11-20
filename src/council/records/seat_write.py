@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 
-from council.records import bytewise, locks, owners, paths, seat_files, seat_rows, seats
+from council.records import bytewise, locks, owners, paths, seat_files, seats
 from council.records.cells import leading
 
 HEADER = ["slug", "state", "agent", "tokens", "updated", "note", "agents", "reported"]
@@ -65,8 +65,6 @@ def missing_file(run: Path, slug: str) -> str:
         return ""
     else:
         file = seat_files.out_path(run, slug)
-        if "round 2" in seat_rows.cell(run, slug, "note"):
-            file = (file[:-3] if file.endswith(".md") else file) + "-r2.md"
         found = [file]
     return "" if any(os.path.isfile(name) and os.path.getsize(name) > 0 for name in found) else file
 

@@ -1,5 +1,5 @@
 """One seat's rows across a run's files, as the helper reads a seat: its seats.tsv cells, the tool calls its
-agents reported (tools.tsv) and the plan's word on it (run-plan.tsv: a verifier's role, a tool-call budget)."""
+agents reported (tools.tsv) and the plan's word on it (run-plan.tsv: a tool-call budget)."""
 from __future__ import annotations
 
 import re
@@ -41,8 +41,3 @@ def tool_calls(run: Path, slug: str) -> str:
 def tool_budget(run: Path, slug: str) -> str:
     """The plan's tool-call budget for the seat (its first `budget <slug> tool-calls <n>` row), or ''."""
     return plan.budget(Path(run), "tool-calls", slug)
-
-
-def is_verifier(run: Path, slug: str) -> bool:
-    """The plan names the seat a verifier (`seat <slug> role verifier`): a Challenge verifier writes no seat file."""
-    return plan.keyed(plan.text(Path(run))).get(("seat", slug, "role")) == "verifier"

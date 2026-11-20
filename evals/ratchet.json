@@ -445,8 +445,8 @@
    "longest_name": "seat_rules"
   },
   "src/council/commands/plan_models.py": {
-   "lines": 101,
-   "longest": 27,
+   "lines": 102,
+   "longest": 28,
    "longest_name": "seat_model"
   },
   "src/council/commands/plan_tasks.py": {
@@ -800,17 +800,17 @@
    "longest_name": "glob_re"
   },
   "src/council/records/seat_files.py": {
-   "lines": 254,
+   "lines": 211,
    "longest": 40,
    "longest_name": "shape"
   },
   "src/council/records/seat_rows.py": {
-   "lines": 48,
+   "lines": 43,
    "longest": 13,
    "longest_name": "tool_calls"
   },
   "src/council/records/seat_write.py": {
-   "lines": 138,
+   "lines": 136,
    "longest": 26,
    "longest_name": "seat_usage"
   },

@@ -1,6 +1,5 @@
-"""A run's seat files and the brief that names them: the brief's seat blocks, a reference doc's title as a worker
-proves it read it, a seat file's item lines and the shape of its item sections, a verify file's shape, and an
-agent's BLOCKED: line (in its reply or its file).
+"""A run's seat files and the brief that names them: the brief's seat blocks, a seat file's item lines and the
+shape of its item sections, a verify file's shape, and an agent's BLOCKED: line (in its reply or its file).
 `council check` reads seat files through these; hooks/seat-gate.sh keeps its own copy of
 the item-section rule (index_shape): change both together."""
 from __future__ import annotations
@@ -98,48 +97,6 @@ def blocked(lines: list[str]) -> str:
     if told and BLOCKED_FIRST.match(told[0]):
         return told[0]
     return next((line for line in told if BLOCKED.match(line)), "")
-
-
-def norm(text: str) -> str:
-    """Letters and digits only, lowercased — for comparing a seat's ref: line with its doc's title."""
-    return "".join(bytewise.lower(c) for c in text if c.isascii() and c.isalnum())
-
-
-WIDE_DROPS = (rb"\xe2\x80[\x80-\xbf]|\xe2\x81[\x80-\xbf]|\xe2[\x86-\xac][\x80-\xbf]",     # dashes, quotes, arrows
-              rb"\xc2[\x80-\xbf]|\xe3\x80[\x80-\xbf]|\xef\xb8[\x80-\x8f]|\xef\xbb\xbf",     # NBSP, "·", CJK marks, BOM
-              rb"\xf0\x9f[\x80-\xbf][\x80-\xbf]")                                          # emoji
-
-
-def norm_wide(text: str) -> str:
-    """The same, but keeping letters no ASCII rule knows — a title written in Hebrew, Chinese or Greek would
-    otherwise come out empty. Punctuation that looks like a letter to a byte-wise tool still goes."""
-    data = text.encode("utf-8", "surrogateescape")
-    for drop in WIDE_DROPS:
-        data = re.sub(drop, b"", data)
-    data = re.sub(rb"[^A-Za-z0-9\x80-\xff]", b"", data)
-    return bytewise.lower(data.decode("utf-8", "surrogateescape"))
-
-
-def ref_title(path: str | Path) -> str:
-    """A reference doc's title as a worker copies it — its first heading, after any front matter; else its first
-    line of text — normalised (norm, else norm_wide)."""
-    front, first, title = False, "", ""
-    for at, line in enumerate(bytewise.file_lines(path, fold=False)):
-        if at == 0:
-            line = line[1:] if line.startswith(paths.BOM) else line
-            if re.fullmatch(r"---[ \t\r]*", line):
-                front = True
-                continue
-        if front:
-            front = re.fullmatch(r"---[ \t\r]*", line) is None
-            continue
-        if re.match(r"#+[ \t]", line):
-            title = re.sub(r"^#+[ \t]*", "", line)
-            break
-        if not first and re.search(r"[^ \t\r]", line):
-            first = line
-    raw = title or first
-    return norm(raw) or norm_wide(raw)
 
 
 class Item(NamedTuple):
