@@ -7,9 +7,18 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
-- The redesign proposal gains a stage 6, proposed and not built: the old expert seats go from
-  setup, test audits and resumed runs, and the per-technology checklists stay as watch lists
-  named on the project's stack page (`docs/design/redesign-2.0.md`, section 16).
+- Stage 6a of the redesign (`docs/design/redesign-2.0.md`, section 16; D72–D75): the expert seats
+  go from setup and test audits. `/council-init` recruits no roster: it asks why each part of the
+  stack was chosen and names its watch lists on the stack page, the per-technology checklists now
+  listed in `references/watch-lists.md`; `council init detect` prints them in place of seats, and
+  `council book` prints each stack row's lists. Briefs name the touched rows' lists, two at most for
+  one agent, as reference only. A large repository is mapped by plain workers
+  (`references/templates/map-brief.md`), and a large test audit runs on readers and a runner
+  (`council run open test-architect`, `run-plan-audit.tsv`, `audit-brief.md`) with no
+  `context-core`. An older config's `## Roster`, `- cards:`, `- ledger:` and `- seat models:` are
+  read and unused: `council doctor` warns, and a council-init refresh removes them on the owner's
+  yes, deleting no card file. A plan check refuses a seat's own `sonnet` or `haiku`. Stage 6b
+  (deleting the old pages and code) is not built.
 
 ## [2.0.0] — 2026-11-20
 

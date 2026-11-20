@@ -71,23 +71,24 @@ def main():
         write_plan(run, "seat\tmapper\tpurpose\tsurvey\troutine survey\n"
                    "seat\tmapper\tmodel\thaiku\troutine survey\n")
         code, out, err = call(repo, "run", "plan", "check")
-        check("non-inherit choice is refused by default", code == 1 and "seat model overrides are off" in out,
-              out + err)
+        check("non-inherit choice is refused, naming inherit (D74)", code == 1 and "`- seat models:` is no longer read" in out
+              and "make seat/mapper/model inherit" in out, out + err)
         config.write_bytes(("# Test council config\n- seat models: on\n").encode("utf-8"))
         code, out, err = call(repo, "run", "plan", "check")
-        check("enabled worker model choice passes", code == 0, out + err)
+        check("an old `- seat models: on` line routes nothing: still refused (D74)", code == 1 and "`- seat models:` is no longer read" in out,
+              out + err)
         code, out, err = call(repo, "run", "plan", "show")
-        check("plan display shows purpose and requested model", code == 0
-              and "purpose survey" in out and "model haiku" in out, out + err)
+        check("plan display refuses the same plan, naming the row (D74)", code != 0
+              and "`- seat models:` is no longer read" in out + err, out + err)
         write_plan(run, "seat\tmapper\tmodel\thaiku\tmissing purpose\n")
         code, out, err = call(repo, "run", "plan", "check")
         check("override without a declared mapping or survey purpose is refused", code == 1
-              and "needs seat/mapper/purpose = mapping or survey" in out, out + err)
+              and "`- seat models:` is no longer read" in out, out + err)
         write_plan(run, "seat\tmapper\tpurpose\tother\timplementation work\n"
                    "seat\tmapper\tmodel\thaiku\tinvalid override\n")
         code, out, err = call(repo, "run", "plan", "check")
         check("override for declared other work is refused", code == 1
-              and "needs seat/mapper/purpose = mapping or survey" in out, out + err)
+              and "`- seat models:` is no longer read" in out, out + err)
         for slug, label in (("chair", "Chair"), ("verify-check", "verifier")):
             write_plan(run, "seat\t{}\tmodel\tsonnet\ttest invalid override\n".format(slug))
             code, out, err = call(repo, "run", "plan", "check")
@@ -102,7 +103,7 @@ def main():
         write_plan(run, "seat\tmapper\tpurpose\tsurvey\troutine survey\n"
                    "seat\tmapper\tmodel\thaiku\troutine survey\n")
         code, out, err = call(repo, "run", "plan", "check")
-        check("an explicit seat models: off refuses an override", code == 1 and "seat model overrides are off" in out,
+        check("an explicit seat models: off refuses an override", code == 1 and "`- seat models:` is no longer read" in out,
               out + err)
         for label, rows in (("no model row", ""), ("only inherit rows", "seat\tmapper\tmodel\tinherit\tdefault\n")):
             write_plan(run, rows)
@@ -110,25 +111,28 @@ def main():
             check("routing unused ({}): plan display says nothing about models".format(label),
                   code == 0 and "seat" in out and "model" not in out, out + err)
 
-        # A finished run is not judged by today's setting: turning seat models back off must not make
-        # doctor call a closed run's plan invalid. An open run with the same plan is still flagged.
+        # A finished run is not judged by today's rule: a run routed while `- seat models: on` was read (its plan
+        # written into the closed run's folder, as an older run's is) stays valid, while an open run with the same
+        # plan is flagged (D74).
         routed = "seat\tmapper\tpurpose\tmapping\tcodebase map\nseat\tmapper\tmodel\thaiku\tcodebase map\n"
         config.write_bytes(("# Test council config\n- seat models: on\n").encode("utf-8"))
-        write_plan(run, routed)
+        write_plan(run, "")
         code, out, err = call(repo, "state", "phase=deliver", "skip=this test is about what comes after Deliver")
         closed_ok = code == 0
         code, out, err = call(repo, "run", "close", "--status", "complete")
-        check("a routed run reaches Deliver and closes", closed_ok and code == 0, out + err)
+        check("a run reaches Deliver and closes", closed_ok and code == 0, out + err)
+        write_plan(run, routed)
         code, out, err = call(repo, "run", "open", "council-review")
         second = Path(out.strip())
-        write_plan(second, routed)
+        write_plan(second, "")
         code, out, err = call(repo, "state", "phase=deliver", "skip=this test is about what comes after Deliver")
-        check("a second routed run is open at Deliver", code == 0, out + err)
+        check("a second run is open at Deliver", code == 0, out + err)
+        write_plan(second, routed)
         config.write_bytes(("# Test council config\n- seat models: off\n").encode("utf-8"))
         code, out, err = call(repo, "doctor")
-        check("doctor: a closed run's plan stays valid after seat models go back off",
+        check("doctor: a closed run's routed plan stays valid",
               "run {} has".format(run.name) not in out + err, out + err)
-        check("doctor: an open run's override is still flagged once seat models are off",
+        check("doctor: an open run's override is flagged",
               "run {} has an invalid run plan".format(second.name) in out + err, out + err)
         code, out, err = call(repo, "run", "plan", "check", "--run", run.name)
         check("plan check on the closed run still passes", code == 0, out + err)

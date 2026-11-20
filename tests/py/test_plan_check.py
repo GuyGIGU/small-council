@@ -100,13 +100,14 @@ class JudgeTest(unittest.TestCase):
                       "council state decision=\"…\"", judged(full).problems)
         self.assertNotIn("Full needs the user", " ".join(judged(full, full_go=True).problems))
 
-    def test_another_model_needs_the_setting_a_worker_and_a_purpose(self) -> None:
+    def test_a_seats_own_cheaper_model_is_refused_since_seat_models_is_no_longer_read(self) -> None:
         text = PLAN + "seat\tverify-1\tmodel\tsonnet\tm\n"
-        self.assertEqual(judged(text).problems, [
+        self.assertEqual(judged(text).problems, [           # D74: no setting makes it pass in an open run
             "ERROR line 26: only worker seats can use sonnet or haiku; verify-1 has role verifier",
-            "ERROR line 26: seat model overrides are off; enable seat models: on in council.config.md",
-            "ERROR line 26: sonnet or haiku needs seat/verify-1/purpose = mapping or survey"])
-        self.assertNotIn("overrides are off", " ".join(judged(text, seat_models="closed").problems))
+            "ERROR line 26: `- seat models:` is no longer read, so verify-1 can't take sonnet as a seat's own choice — make "
+            "seat/verify-1/model inherit (a build's builder and a verifier take theirs from council.config.md's - models: "
+            "line)"])
+        self.assertNotIn("no longer read", " ".join(judged(text, seat_models="closed").problems))   # its day's rule
 
     def test_a_number_writes_as_awk_does(self) -> None:
         self.assertEqual([plan_check.number_text(n) for n in (12.0, 2.5, 1e20)], ["12", "2.5", "100000000000000000000"])

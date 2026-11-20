@@ -8,12 +8,12 @@ stack-fingerprint: <hash> — manifests: <…> · languages: <…>
 
 ## Stack
 <2–5 lines: languages, frameworks, data stores, surfaces (UI / API / engine / CLI / game), runtime and
-deploy target, domain. Name the one thing that must never break.>
+deploy target, domain. Name the one thing that must never break. Each part's reason and watch lists
+go on the book's stack page, not here.>
 
 ## Run preferences
 - approve without asking: up to squad
 - agent cap: 10
-- seat models: off
 - models: builder=inherit, review=inherit, verifier=inherit
 - build tier: light
 - checking: one per batch
@@ -41,9 +41,10 @@ deploy target, domain. Name the one thing that must never break.>
      "pushes": on | off | off until <YYYY-MM-DD> — off holds push and PR (a team freeze): a build
      commits and stops, and the bash gate refuses git push and gh pr create (COUNCIL_ALLOW_PUSH=1 git
      push … on your word). From the date on it reads as on. Missing means on. `council pushes` shows it.
-     "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.
      "models": builder=, verifier= — inherit (the session's model), fable, opus, sonnet or haiku for
      a build's builders and for every verifier; a role left out, or no line, means inherit.
+     Every other agent (the reader, the runner, the designer, a mapping worker) runs on the session's
+     model; an older config's `- seat models:` line is no longer read (D74).
      council-init proposes a split from its own model (references/run/models.md); a verifier is
      never on a weaker model than the builder it checks. review= is still read and changes nothing:
      the Chair, the reader and the runner (a review's, a build's, a health pass's) and a plan's
@@ -61,23 +62,6 @@ deploy target, domain. Name the one thing that must never break.>
      "checks take": `- checks take: <n> min (measured <YYYY-MM-DD>)` — how long the project's checks
      took a review's runner; `council gates timed <n>` writes it, and a review's estimate uses it.
      Missing means not measured yet. -->
-
-## Roster
-Chair: John Carmack — always on; the synthesis filter ("a real problem in this codebase at this scale,
-or pattern-matching?"). Not a seat.
-
-| Seat | Slug | Lens | Surface | Reference | Recast note |
-|---|---|---|---|---|---|
-| Troy Hunt | hunt | Security | `**/auth/**`, `token`, `subprocess`, `open(` | references/security.md | kept |
-| Martin Fowler | fowler | Structure / refactoring | whatever no other seat claims | references/refactoring.md | kept — never dropped |
-| Kent Beck | beck | Tests | `tests/**`, `*_test.*`, `*.spec.*` | references/quality-testing.md | kept — never dropped |
-| <Seat> | <slug> | <lens> | <2–6 globs or words in this repo's idioms> | references/<file>.md or .council/refs/<file>.md | <why kept, or recast from whom> |
-
-<!-- Surface: where this seat's lens lives in THIS repo — assignment matches it against the change.
-     No "|" inside a cell (it's a table); list alternatives separately.
-     Dropped seats (and why): <Seat> — <reason>. Recast before you drop: most "no surface" seats have an
-     analogous surface (any persistent store → data integrity; any computation engine → numerical
-     correctness). -->
 
 ## Gates
 | Gate | Command | Run at | Mandatory | Checked | Probe | Needs | Side effects |
@@ -121,13 +105,13 @@ or pattern-matching?"). Not a seat.
 <!-- The project's book (references/run/book.md): every agent reads the design page, the stack page and the
      decisions log before anything else, and a review reads known problems. Where the project keeps its own such
      file, setup names it here in place of the default, and never writes a second one. `decisions: memory` is the
-     memory file's ## Decisions (D) section. `council book` prints where each page is. -->
+     memory file's ## Decisions (D) section. `council book` prints where each page is, and the watch lists the
+     stack page's rows name: the checklist pages for each part of the stack (references/watch-lists.md), which a
+     brief names for the parts its work touches. There is no roster of expert seats. -->
 
 ## Memory
 - conventions: .council/conventions.md
 - map: .council/map.md
-- cards: .council/cards/ (a seat's card, written the first time a run selects it)
-- ledger: .council/ledger.tsv (each completed run adds a row per seat)
 <!-- Add `- memory budget: <n> KB` here (a whole number from 1 to 1024; 25 KB when it is left out): past it,
      run open, a complete close, council status and council doctor say the memory has grown past what every
      run should read, and council memory tidy lists the merges and retirements it can find. -->

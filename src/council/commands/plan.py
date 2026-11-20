@@ -72,7 +72,7 @@ def whole(run: Path) -> str:
 
 def settings(run: Path, home: str) -> plan_check.Settings:
     """The run's settings for the check, from its state, its allowances and the project's config."""
-    routing, full_go = config.seat_models(home), True
+    routing, full_go = "off", True                   # `- seat models:` is no longer read (D74)
     if resolve.field(run, "status") in ("complete", "abandoned"):
         routing = "closed"
     else:

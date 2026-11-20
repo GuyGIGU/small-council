@@ -659,9 +659,9 @@ def runs_open(tmp):
                 with open(written_path, "rb") as f:
                     written = f.read()
             # {{BOOK}} is the book's first three pages, a line each (two more); a review's two {{BUILD…}} lines, its
-            # {{HEALTH}} and {{POSTGAME}} lines are taken out (four fewer, D56, D65, D71); the designer's brief has
-            # none of them (D60)
-            grown = {"design-brief.md": 2, "review-brief.md": -2}.get(name, 0)
+            # {{HEALTH}}, {{POSTGAME}}, {{AUDIT}} and {{AUDIT_READERS}} lines are taken out (six fewer, D56, D65, D71,
+            # D75); the designer's brief has none of them (D60)
+            grown = {"design-brief.md": 2, "review-brief.md": -4}.get(name, 0)
             check("run open %s: a CRLF %s template is written with LF line ends, on every OS" % (mode, name),
                   opened.returncode == 0 and b"\r" not in written
                   and written.count(b"\n") == lfs[name].count(b"\n") + grown,
@@ -4012,12 +4012,14 @@ def runs_worktrees_close_and_find(tmp):
     write(os.path.join(repo, ".council", "cards", "fowler.md"),
           "# Fowler — Structure card for eval\nsource: references/nope.md · written: 2026-09-15 @ abc1234\n## Principles, applied here\n1. x — here: y\n")
     code, out, _ = council(repo, "doctor")
-    check("doctor: a missing reference doc is an error", code == 1 and "does-not-exist.md" in out and "Fix:" in out, out)
+    unused = line_of(out, "WARN  council.config.md still carries the expert seats")
+    check("doctor: an older config's roster and cards are read and unused (D72): one WARN names the section and the "
+          "card files, its fix a council-init refresh that deletes no card; no roster row or card is checked",
+          "its ## Roster section (3 seat(s))" in unused and "1 seat card(s) under .council/cards/ are unused too: "
+          "fowler.md" in unused and "run a council-init refresh" in out and "it deletes none" in out
+          and "does-not-exist.md" not in out and "repeats a slug" not in out and "the card for" not in out
+          and os.path.isfile(os.path.join(repo, ".council", "cards", "fowler.md")), out)
     check("doctor: flags a gate row whose columns shifted", "columns have shifted" in out, out)
-    check("doctor: flags a repeated slug", "repeats a slug: fowler" in out, out)
-    check("doctor: a seat with no card yet is no finding (its first run writes it); a card that is there is still "
-          "checked", not [l for l in out.splitlines() if "Ghost" in l and "card" in l] and "the card for 'Martin Fowler'" in out, out)
-    check("doctor: flags a card whose source doc is gone", "names a source doc that doesn't exist: references/nope.md" in out, out)
     check("doctor: flags stale memory anchors", "3 memory anchor(s) point at code" in out, out)
     check("doctor: notices a config without a stack fingerprint", "has no stack-fingerprint" in out, out)
     check("doctor: every finding carries a fix", out.count("Fix:") == out.count("ERROR") + out.count("WARN "), out)
@@ -4030,12 +4032,25 @@ def runs_worktrees_close_and_find(tmp):
     code, out, _ = council(gone_map, "doctor")
     check("doctor: a map-commit that isn't in this repo's history is flagged", "isn't in this repo's history" in out, out)
     no_cards = new_repo(tmp, "nocards")
-    write(os.path.join(no_cards, ".council", "council.config.md"), "# Council config\n\n## Roster\n"
-          "| Seat | Slug | Lens | Surface | Reference | Recast note |\n|---|---|---|---|---|---|\n"
-          "| Martin Fowler | fowler | Structure | `src/**` | references/refactoring.md | kept |\n")
+    old = ("# Council config\n\n## Roster\n"
+           "| Seat | Slug | Lens | Surface | Reference | Recast note |\n|---|---|---|---|---|---|\n"
+           "| Martin Fowler | fowler | Structure | `src/**` | references/refactoring.md | kept |\n"
+           "| Godot loop | godot | Frame loop | `scenes/**` | .council/refs/godot.md | project-local |\n\n"
+           "## Memory\n- conventions: .council/conventions.md\n- cards: .council/cards/\n- ledger: .council/ledger.tsv\n")
+    write(os.path.join(no_cards, ".council", "council.config.md"), old)
     code, out, _ = council(no_cards, "doctor")
-    check("doctor: no .council/cards/ folder at all is no finding, and nothing about a card is said",
-          "card" not in out.lower() and "Martin Fowler" not in out, out)
+    unused = line_of(out, "WARN  council.config.md still carries the expert seats")
+    check("doctor: an old roster with its - cards: and - ledger: lines and no cards folder: the WARN names the "
+          "section, both lines and the project's own page, now a watch list, and no card file",
+          "its ## Roster section (2 seat(s)), its `- cards:` line, its `- ledger:` line" in unused
+          and "the project's own page(s) it points at are watch lists now: .council/refs/godot.md" in unused
+          and "under .council/cards/" not in unused and "Martin Fowler" not in out, out)
+    write(os.path.join(no_cards, ".council", "council.config.md"),
+          "# Council config\n\n## Memory\n- conventions: .council/conventions.md\n")
+    code, out, _ = council(no_cards, "doctor")
+    check("doctor: once a refresh has removed them, nothing about the expert seats is said",
+          "expert seats" not in out and ".council/cards/" not in out,
+          "\n".join(line for line in out.splitlines() if "expert seats" in line or ".council/cards/" in line))
     code, out, _ = council(msec, "doctor")
     check("doctor: counts a proposal written as a heading, and flags entries under a section it can't place",
           "2 memory proposal(s) await" in out and "1 memory entr" in out and "never reach a brief" in out, out)
@@ -9985,12 +10000,17 @@ def models_per_role(tmp):
     models_line("- seat models: on\n- models: builder=opus, verifier=opus\n")
     write(plan_path, plain + routed + "seat\tbuild\tmodel\thaiku\tmapping seat\n")
     code, out, _ = council(repo, "run", "plan", "check")
-    check("models: seat models: on still routes a mapping worker to haiku beside a models line",
-          code == 0 and "plan: valid" in out, out)
-    models_line("- seat models: off\n- models: builder=opus, verifier=opus\n")
+    check("models: an old `- seat models: on` line routes nothing — a mapping worker's own haiku is refused, naming "
+          "inherit (D74)",
+          code == 1 and "`- seat models:` is no longer read, so build can't take haiku as a seat's own choice" in out
+          and "make seat/build/model inherit" in out, out)
+    write(plan_path, plain + routed)
     code, out, _ = council(repo, "run", "plan", "check")
-    check("models: seat models: off still refuses that override",
-          code == 1 and "seat model overrides are off; enable seat models: on in council.config.md" in out, out)
+    check("models: the same mapping worker on the session's model passes beside the old line",
+          code == 0 and "plan: valid" in out, out)
+    code, out, _ = council(repo, "doctor")
+    check("models: doctor says the old `- seat models:` line is no longer read, and why",
+          "`- seat models:`, is no longer read: every worker runs on the session's model (D74)" in out, out)
 
 
 @part("models")
@@ -10196,9 +10216,17 @@ def setup_detect(tmp):
     check("init detect: each check comes with its probe and broken twin, ready to run",
           "  probe: council gate probe-pytest -- 'python -m pytest --collect-only -q'" in said["py"]
           and "  broken: council gate probe-pytest-broken -- 'python -m pytest_not_installed" in said["py"], said["py"])
-    check("init detect: a project that shows no check says none found, and every catalog seat is listed",
-          "checks: none found" in said["none"] and said["none"].count("\nseat: ") == 14
-          and "stack-fingerprint: " in said["none"], said["none"])
+    check("init detect: a project that shows no check says none found, and every watch list is listed with its "
+          "page, no seat (D72, D73)",
+          "checks: none found" in said["none"] and said["none"].count("\nwatch list: ") == 14
+          and "\nseat: " not in said["none"] and "stack-fingerprint: " in said["none"]
+          and "watch list: quality-testing · Tests · references/quality-testing.md · seen: nothing in the file list"
+          in said["none"]
+          and "watch list: refactoring · Structure and refactoring · references/refactoring.md · seen: every codebase "
+          "has structure" in said["none"], said["none"])
+    check("init detect: a list's line says what the file list shows for it",
+          "**/*.tsx" in line_of(said["node"], "watch list: quality-frontend ·")
+          and "seen: nothing" in line_of(said["node"], "watch list: quality-postgres ·"), said["node"])
     for words, want in ((("init",), "usage: council init detect"), (("init", "go"), "usage: council init detect"),
                         (("init", "detect", "--quick"), "init detect only reads"),
                         (("init", "scaffold", "x"), "usage: council init detect")):
@@ -10231,14 +10259,17 @@ def setup_scaffold(tmp):
                     r"exit 1 \|", cfg) is not None and "| mypy | `python -m mypy .` |" in cfg
           and "| ✗ not probed: no probe-mypy in the setup run |" in cfg, cfg)
     head = git(repo, "rev-parse", "--short", "HEAD")
-    check("init scaffold: the config is stamped (last-verified, the line council fingerprint prints) and keeps the "
-          "roster for the Chair; the map is stamped at HEAD",
+    check("init scaffold: the config is stamped (last-verified, the line council fingerprint prints) and has no "
+          "roster, cards or ledger line (D72); the map is stamped at HEAD",
           "last-verified: %s @ %s" % (time.strftime("%Y-%m-%d"), head) in cfg
-          and council(repo, "fingerprint")[1].strip() in cfg and "| <Seat> |" in cfg and "| fowler |" in cfg
+          and council(repo, "fingerprint")[1].strip() in cfg and "## Roster" not in cfg and "| <Seat> |" not in cfg
+          and re.search(r"^- (cards|ledger|seat models):", cfg, re.MULTILINE) is None
           and "map-commit: " + git(repo, "rev-parse", "HEAD") in read(os.path.join(repo, ".council", "map.md"))
           and "- sharing: team" in cfg and "setup: quick" not in cfg, cfg)
-    check("init scaffold: what is left for the Chair is said: the roster, the Stack section, the map's prose",
-          "Left for the Chair: the roster" in out and "Left for the Chair: the ## Stack section" in out
+    check("init scaffold: what is left for the Chair is said: the Stack section, the book with the stack page's "
+          "reasons and watch lists, the map's prose; no roster",
+          "Left for the Chair: the roster" not in out and "Left for the Chair: the ## Stack section" in out
+          and "each part with its reason and its watch lists" in line_of(out, "Left for the Chair: the book")
           and "Left for the Chair: the map's prose" in out, out)
     code, out, err = council(repo, "gate", "--all")
     check("gate --all after the scaffold: runs the probed check and skips the failing and the unprobed one",
@@ -10265,10 +10296,10 @@ def setup_quick(tmp):
           and "Left for the Chair: nothing" in out, out + err)
     check("init scaffold --quick: git status stays clean (sharing: just me, git's exclude list)",
           not git(repo, "status", "--porcelain", "--untracked-files=all") and "- sharing: just me" in cfg, cfg)
-    check("init scaffold --quick: every catalog seat as the catalog names it, with the markers the files show, and "
-          "an unprobed check that gate --all will skip",
-          cfg.count("quick setup: as the catalog names it, not recast") == 12 and "| fowler |" in cfg
-          and "`tests/**`" in line_of(cfg, "| Kent Beck | beck | Tests |") and "`src/auth/**`" in cfg
+    check("init scaffold --quick: no roster (D72), and an unprobed check that gate --all will skip",
+          "## Roster" not in cfg and "| fowler |" not in cfg and "Kent Beck" not in cfg
+          and re.search(r"^- (cards|ledger|seat models):", cfg, re.MULTILINE) is None
+          and "setup: quick" in cfg and "no check probed, no map, no book" in line_of(cfg, "setup: quick")
           and "| scripts-test-sh | `bash scripts/test.sh` |" in cfg and "✗ not probed: quick setup" in cfg
           and not os.path.exists(os.path.join(repo, ".council", "map.md")), cfg)
     code, out, err = council(repo, "doctor")
@@ -10379,10 +10410,10 @@ def setup_from_quick(tmp):
           and changed[0][1].startswith("| scripts-test-sh | `bash scripts/test.sh` | verify | no | ✓ ")
           and "Updated " in out and "scripts-test-sh" in line_of(out, "Updated ")
           and "setup: quick" in after and "✗ 2026-11-01: the Chair's own word" in after, out + err + after)
-    check("init scaffold on a quick config: writes the map skeleton, and leaves the roster, Stack, the map's prose "
-          "and the setup: quick line to the Chair",
-          os.path.isfile(os.path.join(repo, ".council", "map.md")) and "Left for the Chair: the roster" in out
-          and "Left for the Chair: the ## Stack section" in out and "Left for the Chair: the map's prose" in out
+    check("init scaffold on a quick config: writes the map skeleton, and leaves Stack, the book, the map's prose "
+          "and the setup: quick line to the Chair, no roster",
+          os.path.isfile(os.path.join(repo, ".council", "map.md")) and "Left for the Chair: the roster" not in out
+          and "Left for the Chair: the book" in out and "Left for the Chair: the ## Stack section" in out and "Left for the Chair: the map's prose" in out
           and "Left for the Chair: the `setup: quick` line" in out, out)
     files = home_files(repo)
     code, out, err = council(repo, "init", "scaffold")
@@ -10435,8 +10466,8 @@ def setup_small_stack(tmp):
 def setup_no_placeholders(tmp):
     """Both scaffolds write ## Hard rules empty (what its readers take for no rule yet) and ## Notes empty, never
     the template's <…> placeholders; outside a comment the only placeholders left are the ones named under Left for
-    the Chair (the full setup's <Seat> row and Stack section). The full scaffold names Hard rules there; --quick
-    doesn't."""
+    the Chair (the full setup's Stack section; there is no <Seat> row, D72). The full scaffold names Hard rules
+    there; --quick doesn't."""
     def placeholders(cfg):
         return re.findall(r"<[^<>]*>", re.sub(r"<!--.*?-->", "", cfg, flags=re.S))
 
@@ -10454,11 +10485,11 @@ def setup_no_placeholders(tmp):
     code, out, err = council(full, "init", "scaffold")
     cfg = read(os.path.join(full, ".council", "council.config.md"))
     stack = cfg.split("## Stack", 1)[-1].split("\n## ", 1)[0]
-    seat = line_of(cfg, "| <Seat> |")
-    left = [p for p in placeholders(cfg) if p not in stack and p not in seat]
-    check("init scaffold: Hard rules and Notes are written empty, the only placeholders left are the <Seat> row and "
-          "the Stack section, and Hard rules is named under Left for the Chair",
-          code == 0 and section(cfg, "Hard rules") == [] and section(cfg, "Notes") == [] and left == [] and seat
+    left = [p for p in placeholders(cfg) if p not in stack]
+    check("init scaffold: Hard rules and Notes are written empty, the only placeholder left is the Stack section's, "
+          "and Hard rules is named under Left for the Chair",
+          code == 0 and section(cfg, "Hard rules") == [] and section(cfg, "Notes") == [] and left == []
+          and "| <Seat> |" not in cfg
           and "Left for the Chair: the ## Hard rules section" in out, out + err + str(left))
 
 
@@ -10530,13 +10561,14 @@ def book_pages(tmp):
           "- known problems: .council/known-problems.md\n" in cfg, cfg)
     code, out, err = council(repo, "book")
     lines = out.splitlines()
-    check("book: each page's path under the home, not written yet, the decisions log the memory file, and who reads "
-          "the first three",
-          code == 0 and len(lines) == 5 and lines[0].startswith("design: %s/design.md — not written yet" % home)
+    check("book: each page's path under the home, not written yet, the decisions log the memory file, no watch "
+          "list named yet, and who reads the first three",
+          code == 0 and len(lines) == 6 and lines[0].startswith("design: %s/design.md — not written yet" % home)
           and lines[1].startswith("stack: %s/stack.md — not written yet" % home)
           and lines[2] == "decisions: %s/conventions.md (the memory file: its ## Decisions (D) section)" % home
           and lines[3].startswith("known problems: %s/known-problems.md — none yet" % home)
-          and lines[4].startswith("Read first: design, stack, decisions — every agent"), out + err)
+          and lines[4].startswith("watch lists: none named on the stack page (references/watch-lists.md")
+          and lines[5].startswith("Read first: design, stack, decisions — every agent"), out + err)
     write(os.path.join(repo, "docs", "architecture.md"), "# Architecture\n")
     write(os.path.join(repo, ".council", "council.config.md"), cfg.replace(
         "- design: .council/design.md", "- design: docs/architecture.md (adopted)", 1))
@@ -10626,6 +10658,47 @@ def book_in_briefs(tmp):
           "a page not written yet as (none yet)",
           code == 0 and second == "Read first, before anything else — the book: design (none yet) · stack (none yet) "
           "· decisions %s/conventions.md" % slash(os.path.join(repo, ".council")), out[:600] + err)
+
+
+@part("book")
+def book_watch_lists(tmp):
+    """The stack page's watch lists (D73): council book prints each row's lists with the path an agent opens — a
+    shipped list by its name, a project's own page by its path, one not there said so, `—` and a placeholder naming
+    none — and a review's and a design's brief carry the `watch lists:` line for the Chair to fill, reference only."""
+    repo = setup_repo(tmp, "book-watch", {"a.py": "1\n"})
+    council(repo, "init", "scaffold", "--quick")
+    write(os.path.join(repo, ".council", "refs", "godot.md"), "# Godot frame loop\n")
+    write(os.path.join(repo, ".council", "stack.md"),
+          "# Stack — x\n\n| Kind | What | Reason | Since | Watch lists |\n|---|---|---|---|---|\n"
+          "| language | Python 3.12 | not recorded | before setup | refactoring, `quality-testing` |\n"
+          "| library | SQLite | one host | before setup | quality-postgres, quality-postgres |\n"
+          "| engine | Godot 4 | the team knows it | 2026-11-01 | .council/refs/godot.md, .council/refs/gone.md |\n"
+          "| tool | ruff | fast | before setup | — |\n"
+          "| <kind> | <name> | <why> | <date> | <zero or more> |\n\nNotes after the table.\n")
+    code, out, err = council(repo, "book")
+    plugin = slash(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    lines = [line for line in out.splitlines() if line.startswith("watch lists: ")]
+    project = slash(repo)
+    check("book: each stack row's watch lists with their paths, a list once, a project page by its path, one not "
+          "there said so, a row naming none left out",
+          code == 0 and lines == [
+              "watch lists: Python 3.12 — refactoring (%s/references/refactoring.md), quality-testing "
+              "(%s/references/quality-testing.md)" % (plugin, plugin),
+              "watch lists: SQLite — quality-postgres (%s/references/quality-postgres.md)" % plugin,
+              "watch lists: Godot 4 — .council/refs/godot.md (%s/.council/refs/godot.md), .council/refs/gone.md "
+              "(%s/.council/refs/gone.md, not found)" % (project, project)]
+          and out.splitlines()[-1].startswith("Read first: "), out + err)
+    for mode, label in (("council-review", "review"), ("council-plan", "design")):
+        code, run, err = council(repo, "run", "open", mode)
+        brief = read(os.path.join(run.strip(), "brief.md"))
+        line = line_of(brief, "- watch lists: ")
+        check("run open %s: the %s brief's book section carries the watch lists line for the Chair, two at most for "
+              "a seat, reference only" % (mode, label),
+              code == 0 and line.startswith("- watch lists: <the watch lists of the stack rows the work touches")
+              and "two at most for a seat" in line and "never a list to fill" in line
+              and "nothing is reported because a list mentions it" in line
+              and brief.index("- watch lists: ") < brief.index("## Seats"), brief[:2000] + err)
+        council(repo, "run", "close", "--status", "abandoned")
 
 
 @part("book")
@@ -11151,6 +11224,57 @@ def health_opens_with_the_reader(tmp):
     code, out, err = council(repo, "state", "phase=deliver")
     check("state health: Deliver straight after Work is refused, naming judge and challenge, the review's stages "
           "(D65)", code == 2 and "would skip judge, challenge" in err and "council state phase=judge" in err, out + err)
+
+
+@part("loop")
+def audit_opens_with_the_pair(tmp):
+    """A large test audit (D75): council run open test-architect writes the audit plan — a reader and the runner,
+    reader-2 and reader-3 commented — and the review's brief with the audit block and the two extra readers' blocks,
+    the role texts word for word; the plan passes untouched and with three readers; a second reader is recorded from
+    its brief block; the next steps name test-architect's page, and its method is that page alone."""
+    repo = small_council_repo(tmp, "audit-open", "")
+    roles = re.findall(r"(?m)^(?:> .*\n)+", read(os.path.join(ROOT, "references", "templates", "review-brief.md")))
+    code, run, err = council(repo, "run", "open", "test-architect")
+    run = run.strip()
+    brief, plan = read(os.path.join(run, "brief.md")), read(os.path.join(run, "run-plan.tsv"))
+    pcode, pout, perr = council(repo, "run", "plan", "check")
+    check("run open test-architect: the audit plan selects a reader and the runner, names no model, keeps reader-2 "
+          "and reader-3 commented, and passes council run plan check untouched (D75)",
+          code == 0 and pcode == 0 and "plan: valid · squad · 3 selected" in pout and "\ttest-architect\t" in plan
+          and "seat\treader\trole\tworker" in plan and "seat\trunner\trole\tworker" in plan
+          and "# seat\treader-2\tdisposition\tselected" in plan and "# seat\treader-3\trole\tworker" in plan
+          and "\tmodel\t" not in plan, pout + perr + err + plan[:800])
+    check("run open test-architect: the brief is the review's with the audit block, quality-testing as the reading, "
+          "both role texts word for word, reader-2's and reader-3's blocks in ## Seats, no {{…}} left (D75)",
+          "## This is a test audit, not a review of a change\n" in brief and len(roles) == 2
+          and roles[0] in brief and roles[1] in brief and "references/quality-testing.md" in brief
+          and "one clone, `now` in the scratch folder" in brief and "## This change is a build" not in brief
+          and "## This is a health pass" not in brief and "{{" not in brief
+          and brief.index("### reader-2 — ") > brief.index("## Seats") > brief.index("## This is a test audit")
+          and brief.index("### reader-3 — ") < brief.index("## Item format")
+          and "context-core" not in brief, brief[:3000] + err)
+    write(os.path.join(run, "run-plan.tsv"), "".join(
+        line[2:] if line.startswith("# ") and re.search(r"\treader-[23]\t", line) else line
+        for line in plan.splitlines(True)).replace("\testimated-tokens\t500000\t", "\testimated-tokens\t1000000\t"))
+    pcode, pout, perr = council(repo, "run", "plan", "check")
+    check("run plan check test-architect: reader-2 and reader-3 uncommented, it passes with five selected (D75)",
+          pcode == 0 and "5 selected" in pout, pout + perr)
+    council(repo, "state", "phase=prepare")
+    state = read(os.path.join(run, "session-state.md"))
+    nxt = state.split("\nnext: ", 1)[-1].split("\n", 1)[0]
+    check("state test-architect: Prepare's next step names the page's own paragraph, never a doctrine file (D75)",
+          "(test-architect, Mode 1, Scope)" in nxt and "doctrine" not in nxt, state)
+    council(repo, "state", "phase=work")
+    code, out, err = council(repo, "seat", "reader-2", "running", "agent=a2")
+    check("seat reader-2: a second reader is recorded from its brief block, with no error",
+          code == 0 and "ERROR" not in out + err and "\nreader-2\trunning\t" in read(os.path.join(run, "seats.tsv")),
+          out + err)
+    sys.path.insert(0, os.path.join(ROOT, "src"))
+    from council.records import stages as run_stages
+    check("test-architect's method is its own page alone, no context-core or doctrine (D75)",
+          run_stages.method_files("test-architect", ["convene", "work"]) == ["skills/test-architect/SKILL.md"]
+          and "invoke `context-core`" not in read(os.path.join(ROOT, "skills", "test-architect", "SKILL.md")),
+          str(run_stages.method_files("test-architect")))
 
 
 @part("loop")

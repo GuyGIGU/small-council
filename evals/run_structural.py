@@ -85,11 +85,12 @@ check("layout: no using-council skill (the hook replaced it)", not os.path.isdir
 check("layout: no per-skill manifest.json", not any(os.path.isfile(os.path.join(ROOT, "skills", s, "manifest.json")) for s in SKILLS))
 
 # 1b. references/ is laid out by who reads each file (references/README.md names the folders), and a path
-# that a project's own files carry never moves (a roster's doc column, a card's source:, a plan's Ref:).
+# that a project's own files carry never moves (a stack page's watch lists, an older roster's doc column, a card's
+# source:, a plan's Ref:). The fourteen checklist pages are the rows of references/watch-lists.md (D73).
 refs_readme = read("references", "README.md")
 named_folders = set(re.findall(r"^\| `([a-z-]+)/` \|", refs_readme, re.MULTILINE))
-FROZEN_DOCS = set(re.findall(r"^\| \*\*[^|]+\*\* \| [a-z-]+ \| [^|]+ \| `([a-z-]+\.md)` \|",
-                             read("references", "roster", "expert-catalog.md"), re.MULTILINE)) | {"guardrails.md", "build-proof.md"}
+WATCH_LISTS = re.findall(r"^\| `([a-z-]+)` \| [^|]+ \| [^|]+ \|$", read("references", "watch-lists.md"), re.MULTILINE)
+FROZEN_DOCS = {name + ".md" for name in WATCH_LISTS} | {"guardrails.md", "build-proof.md", "watch-lists.md"}
 loose = []
 for folder, subfolders, names in os.walk(os.path.join(ROOT, "references")):
     rel = os.path.relpath(folder, os.path.join(ROOT, "references")).replace(os.sep, "/")
@@ -105,7 +106,7 @@ for carrier in [("references", "templates", "council.config.md"), ("references",
 carried |= set(re.findall(r"`Ref: references/([a-z][a-z0-9-]*\.md)`", read("skills", "council-init", "SKILL.md")))
 moved = sorted(d for d in FROZEN_DOCS | carried if not os.path.isfile(os.path.join(ROOT, "references", d)))
 check("layout: every seat doc, and every doc path a template or council-init writes into a project, stays at references/<file>.md",
-      len(FROZEN_DOCS) == 16 and carried <= FROZEN_DOCS and not moved, f"moved or unfrozen: {moved} {sorted(carried - FROZEN_DOCS)}")
+      len(FROZEN_DOCS) == 17 and carried <= FROZEN_DOCS and not moved, f"moved or unfrozen: {moved} {sorted(carried - FROZEN_DOCS)}")
 
 skill = {s: read("skills", s, "SKILL.md") for s in SKILLS}
 core = skill["context-core"]
@@ -328,11 +329,9 @@ check("accounting: seats record exact usage per agent run, a Workflow's agent co
       "share one per-seat rule",
       os.path.isfile(os.path.join(ROOT, "references", "run", "run-accounting.md")) and
       "agents=<agent_count>" in doctrine["05-work.md"] and "never a role name" in doctrine["05-work.md"])
-check("seat learning: the Chair weighs roster changes on judged runs only, past a stated bar (the ledger weighs nothing)",
-      "council ledger [N]" in doctrine["10-learn.md"] and
-      "council ledger 20" in read("skills/council-init/SKILL.md") and
-      "it weighs nothing, you do" in read("skills/council-init/SKILL.md") and
-      "Below the bar" in read("skills/council-init/SKILL.md"))
+check("seat learning: setup proposes no roster change from the ledger, since there is no roster (D72); the ledger "
+      "stays for older runs",
+      "council ledger [N]" in doctrine["10-learn.md"] and "council ledger" not in read("skills/council-init/SKILL.md"))
 
 # 3. Stage doctrine
 for i, (d, stage) in enumerate(zip(DOCTRINE, STAGES), 1):
@@ -604,11 +603,12 @@ for label, text, needles in [
     ("guardrails", guardrails, ["Formatter", "Linter", "Type check", "Test runner", "Dependency audit", "ratchet",
                                 "council changed", "Mandatory: no", "plans/guardrails.md", "council-implement",
                                 "proved both ways", "No coverage threshold", "No commit hook", "multiple of 256"]),
-    ("init", init, ["expert-catalog.md", "Surface markers", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
+    ("init", init, ["watch-lists.md", "Watch lists", "map-brief.md", ".council/refs/<name>.md", "never delete one",
+                    "No stage doctrine, no `council collect`", ".gitignore", "`asks/`", "small-council:begin", "ultra-council:begin",
                     "council home rule", "//C:/Users/…` never matches",
                     "Edit(.council/**)", "Bash(council run:*)", "guardrails.md", "NOTHING WAS CHECKED", "plans/guardrails.md",
                     "last-verified", "council doctor", "council run open council-init", "run plan opens ready for setup",
-                    "seat-card.md", "seat-doc.md", "council fingerprint", "Side effects", "council ledger", "run under bash",
+                    "council fingerprint", "Side effects", "run under bash",
                     "needs an open run", "every command into the Gates table", "Prove each mandatory gate can fail",
                     "probe-<name>-broken"]),
     ("test-architect", skill["test-architect"], ["## Mode 2: Specify", "test-architect-formats.md", "small-council:council-verifier",
@@ -616,8 +616,11 @@ for label, text, needles in [
     ("spec-writer", skill["spec-writer"], ["Gherkin"])]:
     missing = [n for n in needles if n not in text]
     check(f"{label}: carries its mechanisms", not missing, ", ".join(missing))
-check("init: a mapping squad's brief gives its workers the index line and a cap",
-      "`<n> · map · <section> · <path> · <one-line fact>`" in init and "`cap: 8`" in init)
+map_brief = read("references", "templates", "map-brief.md")
+check("init: a large repo's mapping brief gives its plain workers the index line and a cap, and no collect (D72)",
+      "`<n> · map · <section> · <path> · <one-line fact>`" in map_brief and "- cap: 8" in map_brief
+      and "- ref: none" in map_brief and "references/templates/map-brief.md" in init
+      and "expert-catalog" not in init)
 check("review: the default fix hand-off covers what the change touched, not only what it introduced",
       "introduced or touched" in review and "Origin: introduced | touched" in review_brief)
 check("postgame: parts quote the request with its secrets redacted", "never a secret" in skill["council-postgame"])
@@ -866,7 +869,8 @@ check("mod: the view has its tests", "claude-code/testing" in read("tests", "cou
 cfg, conv, mp = read("references", "templates", "council.config.md"), read("references", "templates", "conventions.md"), read("references", "templates", "map.md")
 check("template config: last-verified stamp", "last-verified:" in cfg)
 check("template config: run preferences", "## Run preferences" in cfg and "approve without asking: up to squad" in cfg and "agent cap: 10" in cfg)
-check("template config: experimental routing options start off", "- seat models: off" in cfg)
+check("template config: carries no `- seat models:` line, no longer read (D74)",
+      re.search(r"^- seat models:", cfg, re.MULTILINE) is None)
 check("template config: sharing starts at team, and says what just me does and how to switch",
       "- sharing: team" in cfg and "just me" in cfg and "council sharing just-me" in cfg)
 sharing_doc = read("references", "run", "sharing.md")
@@ -887,7 +891,9 @@ check("model routing: plan, doctrine and ADR state the opt-in boundary",
 # The agent gate does judge a council agent's dispatch now; what no hook checks is the model it is given.
 check("05-work: what isn't gated is the Agent call's `model` parameter, not the dispatch",
       "the `model` parameter isn't gated" in flat(doctrine["05-work.md"]) and "dispatch itself isn't gated" not in flat(doctrine["05-work.md"]))
-check("template config: roster has slugs and surface markers", "| Seat | Slug | Lens | Surface | Reference | Recast note |" in cfg)
+check("template config: no roster, cards or ledger line; the stack page names watch lists (D72, D73)",
+      "## Roster" not in cfg and re.search(r"^- (cards|ledger):", cfg, re.MULTILINE) is None
+      and "| Watch lists |" in read("references", "templates", "stack.md"))
 check("template config: gates table", "| Gate | Command | Run at | Mandatory | Checked |" in cfg)
 check("template conventions: AP / EC / D / Proposed / Rejected", all(s in conv for s in ["## Accepted Patterns", "## Enforced Conventions", "## Decisions", "## Proposed", "## Rejected"]))
 check("template conventions: no live PROPOSED line (the hook would count it)", re.search(r"^- PROPOSED", conv, re.MULTILINE) is None)
@@ -904,9 +910,12 @@ check("template conventions: scope and anchor fields", "**Scope:**" in conv and 
 check("template conventions: says which sections are served and how to retire an entry", "## Retired" in conv and "**Retired:**" in conv)
 check("template conventions: says how a section's name is read, and what memory lists as unread",
       "not a word further along its heading" in conv and "could not be read" in conv)
-for label, rel in [("fixture", ("evals", "fixtures", ".council", "council.config.md")), ("example", ("examples", "chrollo", "council.config.md"))]:
-    t = read(*rel)
-    check(f"{label} config: current schema (surface markers, run preferences)", "| Surface |" in t and "## Run preferences" in t)
+fixture_cfg, example_cfg = read("evals", "fixtures", ".council", "council.config.md"), read("examples", "chrollo", "council.config.md")
+check("fixture config: an older schema kept on purpose (a roster with surface markers), read and unused (D72)",
+      "| Surface |" in fixture_cfg and "## Run preferences" in fixture_cfg)
+check("example config: current schema (run preferences, the book, no roster); its stack page names watch lists",
+      "## Run preferences" in example_cfg and "## Book" in example_cfg and "## Roster" not in example_cfg
+      and "| Watch lists |" in read("examples", "chrollo", "stack.md"))
 
 # 9. Catalog and seat docs
 catalog = read("references", "roster", "expert-catalog.md")
@@ -923,8 +932,9 @@ for doc in seat_docs:
         check(f"{doc}: keeps its origin-stack examples in a final section", "## Origin-stack examples" in text)
     check(f"{doc}: numbers its principles 'Principle N'", re.search(r"^(#+ )?\**Principle 1\b", text, re.MULTILINE) is not None)
 check("catalog: no external/unshipped seat docs", "external (" not in catalog)
-check("template config: example slugs match the catalog",
-      all(s in slugs for s in re.findall(r"^\| [A-Z][^|]+ \| ([a-z-]+) \|", cfg, re.MULTILINE)))
+check("watch lists: references/watch-lists.md lists each of the fourteen checklist pages once, and each is there (D73)",
+      len(WATCH_LISTS) == 14 and len(set(WATCH_LISTS)) == 14 and sorted(n + ".md" for n in WATCH_LISTS) == sorted(seat_docs)
+      and all(os.path.isfile(os.path.join(ROOT, "references", n + ".md")) for n in WATCH_LISTS), ", ".join(WATCH_LISTS))
 
 # 9b. The architecture record stays true to the code: an agent trusts docs/architecture.md and
 # docs/decisions.md, so a command, schema, environment variable or decision id they miss or invent is a bug.

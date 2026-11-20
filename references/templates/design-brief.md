@@ -12,6 +12,7 @@ your recommendation first, and whether it can be undone.
 ## The book — read it before anything else
 {{BOOK}}
 - known problems: {{KNOWN}}
+- watch lists: <the watch lists of the stack rows the work touches, as council book prints them, two at most for a seat, or none> — reference, never a list to fill: the worth bar is unchanged, and nothing is reported because a list mentions it
 
 Read the design page, the stack page and the decisions log first. A recorded decision is settled:
 build on it, never re-open it. What known problems already lists is never an item here.
@@ -36,7 +37,7 @@ build on it, never re-open it. What known problems already lists is never an ite
 > request, one part and one existing way with nothing hard to undo, gets three items and no more.
 
 - answer: <research only: answer the question first, as item 1, at the confidence the evidence supports, with what would settle what stays unknown; else none>
-- reading: <a protected subject (authorization, data loss, injection, secrets, concurrency or ordering, public contracts): the catalogue page to read for it, e.g. `references/security.md`; else none>
+- reading: <a protected subject (authorization, data loss, injection, secrets, concurrency or ordering, public contracts): the watch list to read for it, e.g. `references/security.md`; else none>
 
 ### designer-2 — a second, independent design of a decision that is hard to undo
 - ref: none

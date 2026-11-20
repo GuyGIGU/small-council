@@ -1,5 +1,5 @@
 ---
 type: regex
-pattern: 'Fowler[\s\S]*Beck|Beck[\s\S]*Fowler'
+pattern: 'refactoring[\s\S]*quality-testing|quality-testing[\s\S]*refactoring'
 ---
-Structure (Fowler) and Tests (Beck) are never dropped, whatever the stack.
+The structure and tests watch lists (`refactoring`, `quality-testing`) are named, whatever the stack (D73).

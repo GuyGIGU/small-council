@@ -221,14 +221,6 @@ def checking(home: str | Path | None) -> str:
     return "one per batch (default; '{}' is not a setting — one per batch or per task)".format(found.value)
 
 
-def seat_models(home: str | Path) -> str:
-    """'on' for `- seat models: on`; 'off' for off, no line, or (said once on stderr) a word it can't read."""
-    value, found = _choice(home, "seat models", ("on", "off"))
-    if found and not value:
-        unread(found, "off")
-    return value or "off"
-
-
 def notifications_off(home: str | Path | None) -> bool:
     """`- notifications: off`; on with no line, or (said once on stderr) with a word it can't read."""
     value, found = _choice(home, "notifications", ("on", "off"))
@@ -391,7 +383,9 @@ def memory_budget(home: str | Path) -> tuple[int, str]:
 
 
 class Seat(NamedTuple):
-    """One row of the config's Roster table, C-locale text (records/bytewise.py); '' for an empty cell."""
+    """One row of an older config's Roster table, C-locale text (records/bytewise.py); '' for an empty cell. Setup
+    writes no roster (D72): council doctor reads one to say it is unused, and until a refresh removes it its slugs
+    still stand as memory scope words and name an older run's seats in the status."""
 
     seat: str
     slug: str
@@ -466,7 +460,6 @@ SETTINGS: dict[str, tuple[str, Callable[[str], bool]]] = {
     "approve without asking": ("solo, squad or full (as `up to squad`)",
                                lambda value: re.fullmatch(r"(up to )?(solo|squad|full)", value) is not None),
     "agent cap": ("a whole number of agents, such as 10", lambda value: _cap(value) is not None),
-    "seat models": ("on or off", _one_of("on", "off")),
     "models": ("builder=, review= and verifier=, each inherit, fable, opus, sonnet or haiku", _models_read),
     "build tier": ("light or full", _one_of("light", "full")),
     "checking": ("one per batch or per task", _one_of(*CHECKING)),
@@ -483,7 +476,8 @@ SETTINGS: dict[str, tuple[str, Callable[[str], bool]]] = {
     "memory budget": ("a size from 1 to 1024 KB, such as 25 KB", lambda value: memory_kb(value) is not None),
 }
 # Settings an older plugin read that this one doesn't: the key, and what became of it.
-RETIRED = {"context packs": "context packs were removed (1.0); nothing replaced them, so the line does nothing"}
+RETIRED = {"context packs": "context packs were removed (1.0); nothing replaced them, so the line does nothing",
+           "seat models": "every worker runs on the session's model (D74), so the line does nothing"}
 
 
 def problems(home: str | Path | None) -> list[Pref]:

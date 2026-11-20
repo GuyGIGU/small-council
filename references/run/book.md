@@ -23,10 +23,13 @@ architecture doc that holds the stack) is named for both.
 - **The stack page** lists what `council init detect` and the manifests show, each row with its
   reason. A reason comes from a record (cite its `file:line`) or from the owner: ask once, listing the
   rows with no reason, at Phase E. One the owner doesn't give is `not recorded`. Never invent one.
+- **Each stack row names its watch lists** (D73): the checklist pages of
+  `references/watch-lists.md` whose "applies when" fits that part, or a project's own page under
+  `.council/refs/`, or `—`. Propose them with the reasons; the owner adds or drops any.
 - **The decisions log** adopted from the project is read in place: its entries are not copied into
   memory. With none, decisions are memory's D entries, filed only on the owner's words (D28, D53).
 - **Known problems** starts empty.
-- Propose the pages with the roster and write them on the owner's yes, as every Phase E item is.
+- Propose the pages with the rest of Phase E and write them on the owner's yes, as every Phase E item is.
 
 ## After a build: the Chair keeps the design page true
 
@@ -65,6 +68,9 @@ section 6, step 2), the Chair edits the page:
   A review's brief lists them (`council run open council-review` fills its `## The book`), a build
   task's orders name them on their first line (`council context build`), and any other brief has a
   `## The book` section with the lines `council book` prints.
+- **A brief names the watch lists** of the stack rows the work touches, two at most for one agent,
+  on its `watch lists:` line: reference, never a list to fill. The worth bar is unchanged, and nothing
+  is reported because a list mentions it.
 - **The reader checks the change against the book**: a broken rule or decision, a second way beside
   a job's one way, and anything brought in that the stack page does not list.
 - **A review reads known problems.** An item it already lists, or of a kind under Not to raise again,
@@ -84,7 +90,8 @@ effect of a task (D54).
 ## A new project's stack (council-init, D63)
 
 A project with no code yet (`council init detect` finds no manifest, and `git ls-files` lists only
-documents) starts with its stack, before Phase B: it is the owner's decision, and hard to undo.
+documents) starts with its stack, before anything else setup proposes: it is the owner's decision, and
+hard to undo.
 
 1. Ask once what they want to build, for whom, and anything already fixed (a host, a language they
    know); save it in the setup run's `ask.md` under `## In your words`.
@@ -104,8 +111,8 @@ documents) starts with its stack, before Phase B: it is the owner's decision, an
    happens if nothing is chosen, and whether it can be changed later and what that would take; then
    your recommendation. Where the two agree, say so.
 6. On the owner's choice: a new entry in the decisions log in their words, then the stack page from
-   `references/templates/stack.md`, one row per choice, its reason the owner's, dated. Phase B goes
-   on from the chosen stack.
+   `references/templates/stack.md`, one row per choice, its reason the owner's, dated. Setup goes on
+   from the chosen stack (Phase B, its watch lists).
 
 ## Known problems (D55)
 

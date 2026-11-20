@@ -1,7 +1,7 @@
 # Small Council run plan v1, as council-init opens it. Keep exactly five tab-separated columns.
 # Setup is the Chair's own work, so this plan is valid as it opens. Change a value only where this
-# repo differs, and say why in its reason. A large repo's mapping squad (council-init Phase D) makes
-# the run a squad: set size to squad, add each mapping worker's rows as below, then council run plan check.
+# repo differs, and say why in its reason. A large repo's mapping workers (council-init Phase D: plain workers on
+# map-brief.md, D72) make the run a squad: set size to squad, add each one's rows as below, then council run plan check.
 kind	id	field	value	reason
 schema	plan	version	1	versioned run-plan contract
 run	run	id	{{RUN}}	bind this plan to its run folder

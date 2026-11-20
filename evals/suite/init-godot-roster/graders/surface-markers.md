@@ -1,5 +1,5 @@
 ---
 type: regex
-pattern: '\*\.gd\b|\*\.tscn\b|scripts/\*\*|\bFileAccess\b'
+pattern: '\*\.gd\b|\*\.tscn\b|scripts/\*\*|\bFileAccess\b|GDScript|\.gd\b'
 ---
-Seat surfaces are written in this repo's own idioms, such as `*.gd`, `*.tscn`, `scripts/**` or `FileAccess`.
+The stack page's parts are named in this repo's own terms, such as GDScript, `*.gd`, `*.tscn`, `scripts/**` or `FileAccess`.

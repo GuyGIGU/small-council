@@ -67,18 +67,21 @@ doctrine or the helper.
   code 2, and the next step named (D19). A gate returns its own exit code.
 - **Every command is covered in `evals/run_cli.py`** (or a hook's path in `evals/run_hook.py`).
 
-## Adding a seat
+## Adding a watch list
 
-Seats live in `references/roster/expert-catalog.md`, not in skills.
-- Add a row: practitioner, slug, lens, reference doc, "applies when", and the recast/drop rule.
-- Add the doc under `references/`:
-  - its first line is a single `# Title` (workers echo it as proof of reading);
+There are no expert seats to add (D72). A watch list is a checklist page for one kind of part of a
+stack (D73): reference that a brief names, never a list to fill.
+- Add a row to `references/watch-lists.md`: the list's name, what it covers, and when it applies.
+- Add the page under `references/<name>.md`:
+  - its first line is a single `# Title`;
   - its principles are numbered `Principle 1…N`. P1–P3 are severities, and the two must never look
     alike;
-  - it has an `## Applying this seat to another stack` section.
-- Add the doc to `SEAT_DOCS` in `scripts/quick_validate.py` and update the seat count in
-  `evals/run_structural.py`.
-- John Carmack chairs; he is never a seat.
+  - it has an `## Applying this … to another stack` section, as the shipped pages do.
+- Add the page to `SEAT_DOCS` in `scripts/quick_validate.py` (the list keeps its old name) and update
+  the count in `evals/run_structural.py`. To have `council init detect` say what the file list shows
+  for it, add its file extensions or words in `src/council/commands/init_lists.py`.
+- A project's own watch list lives under `.council/refs/<name>.md` and is named on its stack page
+  row; it needs none of the above.
 
 ## Running the gates
 

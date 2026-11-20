@@ -28,8 +28,8 @@ PAIRED = "convene prepare work judge challenge deliver learn"   # fixed seats, n
 REQUIRED = {"council-implement": "convene prepare build challenge deliver learn", "council-postgame": PAIRED,
             "council-review": PAIRED, "council-health": PAIRED}   # the reader and the runner (D50); D65's; D71's
 ONE_PAGE = ("council-review", "council-implement", "council-plan", "council-research",   # a mode whose method is its
-            "council-health", "council-postgame")   # own page alone, no context-core or doctrine (D47; D56; D60; D65;
-#                                                     a post-game's, D71)
+            "council-health", "council-postgame",   # own page alone, no context-core or doctrine (D47; D56; D60; D65;
+            "test-architect")                       # a post-game's, D71; a test audit's, D75)
 FOLLOWS = {"council": ("council-plan", "council-implement")}   # /council: no run of its own, a plan run then a build
 #                                     run, its page naming their pages' sections (D64)
 
@@ -99,6 +99,15 @@ POSTGAME_NEXT = {
 }
 
 
+AUDIT_NEXT = {   # a large test audit's steps (D75), all in its page's Mode 1 Scope paragraph
+    "prepare": "Prepare: the surface map, then the brief's <…> lines — the shares and the riskiest code "
+               "(test-architect, Mode 1, Scope)",
+    "work": "Work: the readers and the runner in one message, then record each one (test-architect, Mode 1, Scope)",
+    "judge": "Judge: check each P1 against the test and the code yourself (test-architect, Mode 1, Scope)",
+    "deliver": "Deliver: the audit report from their files (test-architect, Mode 1, Phase 3)",
+}
+
+
 def _design(mode: str, thing: str) -> dict[str, str]:
     """A design mode's steps, each naming its own page's section."""
     return {stage: text % ((thing, mode) if stage == "deliver" else (mode,)) for stage, text in DESIGN_NEXT.items()}
@@ -106,7 +115,7 @@ def _design(mode: str, thing: str) -> dict[str, str]:
 
 NEXT = {"council-review": REVIEW_NEXT, "council-implement": IMPLEMENT_NEXT,   # a one-page mode's own steps
         "council-plan": _design("council-plan", "plan"), "council-research": _design("council-research", "answer"),
-        "council-health": HEALTH_NEXT, "council-postgame": POSTGAME_NEXT}
+        "council-health": HEALTH_NEXT, "council-postgame": POSTGAME_NEXT, "test-architect": AUDIT_NEXT}
 
 
 def next_text(stage: str, mode: str = "") -> str:

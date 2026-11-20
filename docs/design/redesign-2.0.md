@@ -334,7 +334,8 @@ The check was five web searches over comparison posts and vendor write-ups, on t
 
 ## 16. Stage 6: the expert seats go
 
-**Status: proposed on 2026-11-20, on the owner's ask to write it up. Not decided, not built.** The
+**Status: proposed on 2026-11-20, on the owner's ask to write it up. 6a decided and built
+(2026-11-20; D72–D75), before its test; 6b not decided, not built.** The
 owner's direction: the reader and the runner are the main way, so nothing should still run on the
 old expert seats; no role-play experts at setup, since they did not beat a plain agent (section 2).
 What is kept from "experts by stack" is the stack itself: what the project is built with shapes

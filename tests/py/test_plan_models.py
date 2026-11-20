@@ -75,22 +75,26 @@ class SeatModelTest(unittest.TestCase):
         self.assertEqual(problems(rows(chair="opus"), models=SPLIT), [
             "ERROR line 24: the Chair stays on the session's model — make seat/chair/model inherit"])
 
-    def test_sonnet_or_haiku_outside_a_role_keeps_the_seat_models_rules(self) -> None:
+    def test_sonnet_or_haiku_outside_a_role_is_refused_and_a_closed_run_keeps_its_days_rule(self) -> None:
         self.assertEqual(problems(rows(chair="sonnet")), [
             "ERROR line 24: only worker seats can use sonnet or haiku; chair has role chair",
-            "ERROR line 24: seat model overrides are off; enable seat models: on in council.config.md",
-            "ERROR line 24: sonnet or haiku needs seat/chair/purpose = mapping or survey"])
+            "ERROR line 24: `- seat models:` is no longer read, so chair can't take sonnet as a seat's own choice — make "
+            "seat/chair/model inherit (a build's builder and a verifier take theirs from council.config.md's - models: "
+            "line)"])
         mapper = "seat\tbuild-1\tpurpose\tmapping\tp\n" + rows(build_1="haiku")
-        self.assertEqual(problems(mapper, seat_models="on"), [])
-        self.assertEqual(problems(mapper, seat_models="off", models=SPLIT), [
-            "ERROR line 25: seat model overrides are off; enable seat models: on in council.config.md"])
+        self.assertEqual(problems(mapper, seat_models="off", models=SPLIT), [   # a mapping worker too (D74)
+            "ERROR line 25: `- seat models:` is no longer read, so build-1 can't take haiku as a seat's own choice — make "
+            "seat/build-1/model inherit (a build's builder and a verifier take theirs from council.config.md's - models: "
+            "line)"])
+        self.assertEqual(problems(mapper, seat_models="closed"), [])           # judged by the rule of its day
 
     def test_an_unknown_name_is_refused_on_its_row(self) -> None:
         self.assertEqual(problems(rows(verify_1="gpt")), [
             "ERROR line 24: seat model must be inherit, fable, opus, sonnet or haiku",
             "ERROR line 24: only worker seats can use sonnet or haiku; verify-1 has role verifier",
-            "ERROR line 24: seat model overrides are off; enable seat models: on in council.config.md",
-            "ERROR line 24: sonnet or haiku needs seat/verify-1/purpose = mapping or survey"])
+            "ERROR line 24: `- seat models:` is no longer read, so verify-1 can't take gpt as a seat's own choice — make "
+            "seat/verify-1/model inherit (a build's builder and a verifier take theirs from council.config.md's - models: "
+            "line)"])
 
     def test_the_configs_own_problem_is_refused_while_the_run_is_open(self) -> None:
         bad = models.Models(written=True, problem="council.config.md's `- models:` line: 'gpt' is not a model")
@@ -134,7 +138,7 @@ class VerifierTest(unittest.TestCase):
 
     def test_a_review_has_no_builder_so_its_verifier_may_be_cheaper(self) -> None:
         mapper = "seat\tbuild-1\tpurpose\tmapping\tp\n" + rows(build_1="haiku")
-        self.assertEqual(problems(mapper, seat_models="on"), [])          # a mapping seat is not checked work
+        self.assertEqual(problems(mapper, seat_models="closed"), [])      # a mapping seat is not checked work
         review = PLAN.replace("council-implement", "council-review")
         given = GIVEN._replace(mode="council-review", run=RUN.replace("implement", "review"),
                                models=models.Models("inherit", "opus", "sonnet", True))

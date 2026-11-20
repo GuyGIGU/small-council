@@ -6,10 +6,10 @@ reader needs.
 
 | Where | Who reads it |
 |---|---|
-| `*.md` at this level | Seat workers, and the Chair and builders at two points: the 14 seat docs, `guardrails.md` and `build-proof.md`. These paths are frozen: project files carry them (a roster's doc column, a card's `source:`, a plan's `Ref:`, comments in the config), so a move would break every installed project |
+| `*.md` at this level | Agents a brief points at, and the Chair and builders at two points: `watch-lists.md` and the 14 checklist pages it lists, `guardrails.md` and `build-proof.md`. These paths are frozen: project files carry them (a stack page's watch lists, an older roster's doc column, a card's `source:`, a plan's `Ref:`, comments in the config), so a move would break every installed project |
 | `doctrine/` | The Chair, one file per stage, when it enters that stage (a review reads none: its page is its method) |
 | `run/` | The Chair, builders, the helper and the scripts: the run's contracts, records and procedures |
-| `roster/` | `council-init`: the seat catalogue, and how setup reads a project's own decisions |
+| `roster/` | `council-init`: how setup reads a project's own decisions; the old seat catalogue, which no run reads (D72) |
 | `templates/` | council-init (the skill), which copies them into a project's `.council/`; the modes, for a deliverable's form (`build-log.md`); and `council run open`, for a review's plan and brief (`run-plan-review.tsv`, `review-brief.md`) |
 | `spec-writer/` | The `spec-writer` skill: its tier templates and guides |
 | `test-architect/` | The `test-architect` skill: its report and specification formats |
@@ -47,7 +47,11 @@ session or `/clear`. `quick-setup.md` is what a first review with no setup tells
 At this level, with the seat docs: `build-proof.md` defines the proof a build records, and
 `guardrails.md` defines the checks a project needs before a green report means anything.
 
-## Seat reference docs — one per council seat
+## Watch lists — the checklist pages (D73)
+
+`watch-lists.md` is their one table: what each covers and when it applies. A row of a project's
+stack page names its watch lists, and a brief names the touched rows' lists, two at most for one
+agent: reference, never a list to fill. The pages, with the old seats they came from:
 
 `security.md` (Hunt) · `refactoring.md` (Fowler) · `quality-frontend.md` (Dodds) ·
 `quality-backend.md` (Collina) · `quality-postgres.md` (Leach — data integrity) ·
@@ -56,15 +60,15 @@ At this level, with the seat docs: `build-proof.md` defines the proof a build re
 `quality-accessibility.md` (Pickering) · `quality-concurrency.md` (Goetz) ·
 `untrusted-input.md` (Patterson) · `quality-operability.md` (Nygard)
 
-**Keep a single `# Title` as the first line of every seat doc.** A seat worker copies it into line 2 of
-its seat file (`ref: …`), and `council collect` checks that line to prove the doc was read — so the
+**Keep a single `# Title` as the first line of every page.** An older run's seat worker copied it into
+line 2 of its seat file (`ref: …`), and `council collect` still checks that line on such a run — so the
 title is load-bearing. Number the principles `Principle 1…N`; severities are P1–P3, and the two must
 never look alike.
 
-Every seat doc has an **Applying this seat to another stack** section near the top; the ten inherited
-from the origin keep their origin-stack examples in a final section. The principles are stack-agnostic; the first run that selects a seat translates them into a
-per-project **seat card** (`.council/cards/<slug>.md`) that workers read first (see
-`roster/expert-catalog.md`).
+Every page has an **Applying this seat to another stack** section near the top; the ten inherited
+from the origin keep their origin-stack examples in a final section. The principles are
+stack-agnostic. Older versions translated them into per-project seat cards (`.council/cards/`);
+setup writes none now (D72).
 
 ## Council machinery
 

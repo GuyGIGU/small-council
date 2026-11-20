@@ -31,7 +31,7 @@ redirect to a file and read that.
 5. Fill every `<…>` line of `brief.md` in one Edit: the Target as `the whole project at <git
    rev-parse HEAD>` (or the part the owner named); the Intent as `a health pass: where the project
    drifted from its book`, and the owner's words if they narrowed it; the config's `## Hard rules`
-   word for word; what memory select printed; each `council state decision=` entry word for word.
+   word for word; the watch lists of the stack rows the pass touches, as `council book` prints them (two at most for a seat); what memory select printed; each `council state decision=` entry word for word.
    `none` where there is nothing.
 6. **The estimate, in plain terms:** one agent reads the whole project against its book and says
    where it drifted and what would bring it back; you check each proposal against the code before

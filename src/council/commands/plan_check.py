@@ -21,7 +21,7 @@ class Settings(NamedTuple):
     mode: str            # session-state.md's mode
     cap: int             # the configured agent cap
     go: int | None       # the user's latest go past the cap (council cap allow), if any
-    seat_models: str     # on, off, or closed: a closed run's plan was judged by the setting of its day
+    seat_models: str     # off, or closed: a closed run's plan was judged by the setting of its day (D74)
     full_go: bool        # a decision of the user's since the run opened (or the run is closed)
     models: models.Models = models.Models()   # the config's `- models:` line (D37): all inherit without it
 
