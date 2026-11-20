@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 
-from council.commands import cli, nudges, plan, resolve
+from council.commands import cli, closed, nudges, plan, resolve
 from council.records import bytewise, restore, stages, state, state_write, tasks
 
 STATUSES = ("in-progress", "paused", "complete", "abandoned")
-PLANNED = ("brief", "build", "work", "collect", "judge", "challenge", "deliver", "learn")   # need a valid plan
+PLANNED = ("build", "work", "judge", "challenge", "deliver", "learn")   # need a valid plan
 BLANK = " \t\n\v\f\r"
 BACKUP = "backup"        # restore=: a build outside git (the owner declined git init) copies files instead
 
@@ -33,17 +34,42 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 
 def _unbriefed(run: Path) -> None:
-    """On the step into Work, before any seat is dispatched: collect's warning for each of the user's decisions the
-    brief does not carry (collect.unbriefed), on stderr. A brief it can't read says nothing."""
-    from council.commands import collect          # only the step into Work reads the brief
-    from council.records import run_files
+    """On the step into Work, before any seat is dispatched: a warning on stderr for each of the user's decisions the
+    brief does not carry (unbriefed). A brief it can't read says nothing."""
+    from council.records import run_files         # only the step into Work reads the brief
     brief = run / run_files.BRIEF
     try:
-        lines = collect.unbriefed(run, brief, collect.BEFORE) if brief.is_file() else []
+        lines = unbriefed(run, brief) if brief.is_file() else []
     except OSError:
         lines = []
     for line in lines:
         cli.warn(line)
+
+
+def unbriefed(run: Path, brief: Path) -> list[str]:
+    """A line for each decision of the whole run's (a task's own goes to its task's orders) recorded in or before the
+    minute brief.md was last written, whose words the brief does not carry. A decision keeps only its minute, so one
+    in the brief's own minute counts: a warning costs a look, a miss a seat briefed without the user's word. Both
+    sides as the quote check folds them (request.fold), every run of blanks and line breaks one space, lower case: a
+    wrapped line, curly quotes or a capital still match; a paraphrase does not (D7)."""
+    from council.commands import gate_output      # read only here, on the step into Work (D34)
+    from council.records import paths, redact, request
+
+    def plain(text: str) -> str:
+        return re.sub(r"\s+", " ", request.fold(text)).strip().lower()
+
+    written = time.strftime("%Y-%m-%d %H:%M", time.localtime(brief.stat().st_mtime))
+    carried = plain(redact.said(paths.text_of(brief, run)))      # redacted as the decision's words were
+    out = []
+    for entry in state.decisions(state.text(run)):
+        said = state.decision(entry)
+        if said.task is not None or not said.minute or said.minute > written or not plain(said.words):
+            continue
+        if not request.found(carried, plain(said.words)):
+            out.append("state: WARNING brief.md (written %s) does not carry the user's decision of %s, \"%s\" — the "
+                       "seats would be briefed without it: quote it word for word in the brief before you dispatch"
+                       % (written, said.minute, gate_output.clip(said.words, 100)))
+    return out
 
 
 def _header(run: Path) -> None:
@@ -123,9 +149,11 @@ def _checked(run: Path, words: list[str]) -> str:
             raise cli.Refusal('skip= takes why a stage is skipped, in words: council state phase=<stage> skip="<why>"')
         if key == "skip":
             gave_skip, skip = True, value.replace(";", ",").replace("\r", " ").replace("\n", " ")
+        if key == "phase":
+            closed.refuse_old(run, "advanced")
         if key == "phase" and not stages.name_ok(value, mode):
-            raise cli.Refusal("phase=%s is not a stage — use one of convene, prepare, assign, brief, work, collect, "
-                              "judge, challenge, deliver, learn, or build in a build (lower case)" % value)
+            raise cli.Refusal("phase=%s is not a stage — use one of convene, prepare, work, judge, challenge, "
+                              "deliver, learn, or build in a build (lower case)" % value)
         if key == "restore" and value != BACKUP:
             raise cli.Refusal("restore= takes backup only: council state restore=backup records that the code root "
                               "is not in git and the owner declined `git init` — otherwise: council restore point")

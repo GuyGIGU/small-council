@@ -95,7 +95,7 @@ test files, every file in one share, and the five riskiest source files for the 
 readers (uncomment `reader-2`, `reader-3` in `run-plan.tsv` past ~60 and ~120 test files; `council
 run plan check`), all `small-council:council-worker`, and one runner, in one message, each told its
 brief block and recorded with `council seat`. Check each P1 against the test and the code yourself,
-then write the report (Phase 3) from their files. No `context-core`, no stage doctrine. A small
+then write the report (Phase 3) from their files. A small
 scope → do it inline.
 
 ### Phase 1: Map the surface

@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Skill
-input_match: '"skill"\s*:\s*"(?:[\w-]+:)?(?:council-|context-core|spec-writer|test-architect)'
+input_match: '"skill"\s*:\s*"(?:[\w-]+:)?(?:council-|spec-writer|test-architect)'
 min: 0
 max: 0
 arm: both

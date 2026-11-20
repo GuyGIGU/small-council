@@ -73,11 +73,11 @@ def here(code_root: str, tree: str) -> bool:
 
 def skill(mode: str) -> str:
     """The skill that owns a run, from its mode: field (0.2 runs sometimes wrote the short name)."""
-    if mode.startswith("council-") or mode in ("test-architect", "spec-writer", "context-core"):
+    if mode.startswith("council-") or mode in ("test-architect", "spec-writer"):
         return mode
     if mode in ("review", "plan", "implement", "research", "postgame", "init"):
         return "council-" + mode
-    return "context-core"
+    return mode or "council"          # an older run's own word (context-core), named as it was written
 
 
 def seat_summary(run: str | Path, working: str = "still working") -> str:
@@ -86,7 +86,7 @@ def seat_summary(run: str | Path, working: str = "still working") -> str:
     for line in bytewise.file_lines(Path(run) / "seats.tsv")[1:]:
         cell = line.split("\t") + [""] * 6
         if cell[1] in ("running", "queued"):
-            groups["working"].append(cell[0] + (" (war-room round 2)" if "round 2" in cell[5] else ""))
+            groups["working"].append(cell[0])
         elif cell[1] == "done":
             groups["done"].append(cell[0])
         elif cell[1] in ("failed", "blocked"):

@@ -75,7 +75,7 @@ record the failure and retry limit manually in the log instead of claiming the h
   seat: record it `council seat <slug> done note="NEEDS: <question>"`, never `failed` or `blocked`.
   The Chair building a task in a Solo build stops the same way: the question, not a guess. It records
   the stop on the task's seat with `agents=0` (`council seat task-<n> done agents=0 note="NEEDS: …"`), as for its own
-  seat (context-core): no agent ran, so the audit asks no token figure of it.
+  seat: no agent ran, so the audit asks no token figure of it.
 - **A bug underneath stops the task.** A builder that finds the code under its task wrong stops and
   returns `NEEDS: fix <file:line> · does: <…> · should: <…> · seen: <the command or test, and its output>`.
   Wrong means a `Rests on` fact that is false, or code that does not do what its owner's row, its
@@ -113,7 +113,7 @@ concurrency, configuration, environment, performance, timeout (a gate the helper
 limit) and `UNKNOWN`. The signal line is saved with
 the suggestion. It is **advisory**: output may mention a symptom rather than the cause. The Chair
 checks the code and baseline, chooses an existing project seat or the task's governing expert, and
-may override the suggestion in the log. A missing roster seat does not license a new dispatch.
+may override the suggestion in the log. A suggestion does not license a new dispatch.
 Test/lint suggest the testing lens; data/schema the data-integrity lens; concurrency and timeout
 (a hang is most often a wait that never ends) the concurrency lens;
 environment/configuration/build the operability lens; type/runtime the backend lens; performance

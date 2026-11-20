@@ -44,8 +44,7 @@ each one a resume came from) and adds up how much the Chair's context grew in it
 the run was open, each call once. That is the measure an agent's figure uses (its final context size), so
 the two compare; a cache rebuilt after an idle gap adds nothing, and agents' calls are left out (their
 seats hold them). The figure is said with the close, recorded as a `run.chair_usage` event and shown on
-the card, with the run's method load beside it: the bytes of context-core's skill, the mode's own and the
-doctrine of each stage the run must enter, or a review's one page alone (`method_bytes=`; D47 holds a
+the card, with the run's method load beside it: the bytes of the mode's one page (`method_bytes=`; D47 holds a
 review's under 16,000). It is never added to the agents' total or compared with their share of the estimate. A session
 with no transcript to read makes it "at least"; no Python or no transcript at all: nothing is said, and
 nothing is guessed. Two runs open at once in one session each count the calls they share.
@@ -98,8 +97,6 @@ The `seat.updated` event carries a seat's totals so far, so summing events count
 | none | no agent run on record | nothing to cost |
 
 - **The close line** (`actual:` in `session-state.md`) uses the same bases.
-- **The ledger** marks rows it writes with `accounting` 2. Their tokens are a checked figure or "-".
-  Rows without the mark are older, and their tokens are never priced by `council ledger`.
 - **The close's audit names each seat that was an agent run with no token figure** (the `Token
   figures` item, a FAIL, from `records/usage_gaps.py` over the per-seat rule above: a basis of
   partial, missing, unrecorded or suspect; the Chair's own seat, a seat declared `agents=0` and a seat
@@ -123,7 +120,7 @@ unknown seat, and a missing source.
   looks small.
 
 Tool calls: `tools=<tool_uses>` on a report goes to `tools.tsv` (per agent id the latest figure, as for
-tokens); the seat's line and `council collect` show it against the plan's `budget/<slug>/tool-calls`.
+tokens); the seat's line shows it against the plan's `budget/<slug>/tool-calls`.
 
 A closed run (complete or abandoned) takes no more agent reports: a late agent's figure goes through
 `council correct`, which also refreshes the run's ledger rows. It still takes the Chair's own record

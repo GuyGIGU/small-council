@@ -39,11 +39,12 @@ Snap = Dict[str, Any]    # a run's snapshot (snapshot.snapshot)
 SCHEMA = "council.run-status/1"
 QUIET_MINUTES = 60         # an open run with no recorded activity for this long reads as quiet (stale)
 ATTEMPTS = 3               # the repair loop's stop limit (commands/repair_trail.py)
-STAGES = (("convene", "Setting up"), ("prepare", "Gathering context"), ("assign", "Choosing the experts"),
-          ("brief", "Writing the briefs"), ("work", "Experts at work"), ("collect", "Collecting results"),
+STAGES = (("convene", "Setting up"), ("prepare", "Gathering context"), ("work", "Agents at work"),
           ("judge", "Weighing the findings"), ("challenge", "Checking the findings"),
           ("deliver", "Writing the report"), ("learn", "Recording lessons"))
-OTHER_PHASES = {"build": "Building the plan's tasks"}
+OTHER_PHASES = {"build": "Building the plan's tasks",   # and an older run's stages, which no run enters now (D77)
+                "assign": "Choosing the seats (an older run)", "brief": "Writing the briefs (an older run)",
+                "collect": "Collecting results (an older run)"}
 MODES = {"council-review": "Review", "council-plan": "Plan", "council-implement": "Build",
          "council-research": "Research", "council-postgame": "Post-game check", "council-init": "Setup",
          "council-health": "Health check"}

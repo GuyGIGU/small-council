@@ -249,16 +249,6 @@ for case in sorted(os.listdir(suite_dir)) if os.path.isdir(suite_dir) else []:
     if b"\r\n" in raw:
         errors.append(f"evals/suite/{case}/scaffold.sh: has CRLF line endings — keep LF")
 
-# 8. Stage doctrine: ten files, each titled "# Stage N — <name>"
-STAGES = ["convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn"]
-for i, stage in enumerate(STAGES, 1):
-    rel = f"references/doctrine/{i:02d}-{stage}.md"
-    path = os.path.join(ROOT, *rel.split("/"))
-    if not os.path.isfile(path):
-        errors.append(f"{rel}: missing")
-    elif not read(path).startswith(f"# Stage {i} — "):
-        errors.append(f"{rel}: first line must be '# Stage {i} — …'")
-
 # 8b. The machine-readable run plan template: the helper instantiates this for every new run.
 plan_path = os.path.join(ROOT, "references", "templates", "run-plan.tsv")
 if not os.path.isfile(plan_path):

@@ -5,14 +5,10 @@ you change anything.
 
 ## Who owns what
 
-- **The kernel and the stage doctrine own the method.** `skills/context-core/SKILL.md` holds the laws,
-  the stage index, the helper table, the file layout, the limits and resume. `references/doctrine/`
-  holds one file per stage. Improvements to *how work is handled* go there, once, and every mode
-  inherits them.
-- **A mode is one page.** Its steps in order, the helper commands and the rules they need; it
-  invokes no other skill and reads no stage doctrine. `council-review`, `council-implement`,
-  `council-plan`, `council-research`, `council-health` and `council-postgame` are each their own page
-  (D47, D56, D60, D65, D71), and `council` joins the plan and build pages (D64). Copy
+- **A mode is one page, and the page owns its method.** Its steps in order, the helper commands and
+  the rules they need; it invokes no other skill. There is no shared engine page and no file per
+  stage (D76): every mode is its own page (D47, D56, D60, D65, D71, D75), and `council` joins the plan
+  and build pages (D64). A rule two modes need is said in each page, since each is read alone. Copy
   `skills/council-review/SKILL.md` for shape, brevity and voice.
 - **The helper does the mechanics.** If a step can be done or checked by a script — opening and
   closing runs, gates, the change index, checking seat files or citations — it belongs in the
@@ -27,7 +23,7 @@ you change anything.
   SubagentStop checks the seat file.
 
 If you find yourself writing map, dispatch or aggregate logic inside a mode, stop: it belongs in the
-doctrine or the helper.
+helper.
 
 ## Adding a mode
 
@@ -35,7 +31,9 @@ doctrine or the helper.
    - Frontmatter: `name` equal to the folder (kebab-case).
    - `description`: at most 600 characters, key use case first. If the mode fans out, it says to
      propose the run with its size and cost.
-2. Invoke `context-core`, then add `## At <Stage>` sections only where the mode differs. Name a tracked
+2. Write its steps in order, Convene to Learn, with the helper commands each step runs. Give it a plan
+   and a brief template (`references/templates/run-plan-<mode>.tsv`, and its brief), which
+   `council run open <mode>` fills, and name it in `council.records.stages.ONE_PAGE`. Name a tracked
    deliverable path under `<home>/`, and give a per-item format that starts with an index line:
    `<n> · <severity> · <principle> · <path:line> · <title>`.
 3. Write reference docs as `${CLAUDE_PLUGIN_ROOT}/references/<file>.md`, never as a bare relative path
@@ -45,12 +43,13 @@ doctrine or the helper.
    config.
 6. Add its invariants to `evals/run_structural.py` and a drill to `evals/behavioral-drills.md`.
 
-## Changing the stage doctrine
+## Changing a mode's page
 
-- **Title and hand-off.** Each file's first line is `# Stage N — <name>`. Each ends with its hand-off:
-  `council state phase=<next stage>`.
-- **Size.** Stay under 6,000 characters. The Chair reads the file when it enters the stage, so every
-  line competes for attention.
+- **Size.** A review's and a build's page stay under 16,000 bytes, and the others under their own
+  limits (`evals/run_structural.py`). The Chair reads the page on every run, so every line competes
+  for attention: move a rare case's detail into the reference the page points at.
+- **Hand-offs.** Each step ends with its `council state phase=<next stage>`; the stages are convene,
+  prepare, work (build in a build), judge, challenge, deliver, learn.
 - **Commands.** Name helper commands in backticks. The structural eval checks that each one exists.
 
 ## Changing the helper
@@ -91,7 +90,6 @@ python evals/run_structural.py     # is the design intact?
 python evals/run_ratchet.py        # did a size or structure number go up?
 python evals/run_cli.py            # does the helper work?   (bash + git)
 python evals/run_hook.py           # do the hooks behave?    (bash + git)
-python evals/run_phrases.py        # advisory wording checks — never fails
 python evals/run_all.py --fast     # the fast tier, about a minute: a first look while you work
 python evals/run_all.py            # every suite CI runs, several at a time, then a summary
 ```
@@ -177,7 +175,7 @@ hand at least once. A green build with a mode that has never actually run is not
 
 ## Style
 
-- **Generic.** Skills, doctrine, agents, hooks, the helper and references stay stack-agnostic. A
+- **Generic.** Skills, agents, hooks, the helper and references stay stack-agnostic. A
   specific project's config belongs only under `examples/`.
 - **Plain language** in anything shown to the user, with no invented jargon. Say what a seat checks
   before its name.

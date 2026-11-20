@@ -51,7 +51,6 @@ SUITES = [
     ("Evidence model evals", ["evals/run_evidence.py"], "shared"),
     ("Repair loop evals", ["evals/run_repair.py"], "shared"),
     ("Memory evals", ["evals/run_memory.py"], "shared"),
-    ("Seat learning evals", ["evals/run_seats.py"], "shared"),
     ("Status and accounting evals", ["evals/run_status.py"], "shared"),
     ("Run audit evals", ["evals/run_audit.py"], "shared"),
     ("Chair replay evals (no model calls)", ["evals/run_replay.py"], "shared"),
@@ -60,19 +59,18 @@ SUITES = [
     ("Repair drill trace checker self-test (no model calls)",
      ["evals/check_repair_trace.py", "--self-test", "--case", "evals/suite/build-repair-drill"], "shared"),
     ("Hook evals", ["evals/run_hook.py"], "groups"),
-    ("Phrase checks (advisory, never fails)", ["evals/run_phrases.py"], "shared"),
 ]
 
 
-# These say pass their own way (a validation line, a JSON measurement, advisory phrases), not with a
-# "N/N checks passed" line; every other job must print one, with at least one check.
-NO_COUNT = {"scripts/quick_validate.py", "evals/run_phrases.py"}
+# This one says pass its own way (a validation line), not with a "N/N checks passed" line; every other job
+# must print one, with at least one check.
+NO_COUNT = {"scripts/quick_validate.py"}
 
 # The fast tier, by job name: each takes seconds on a Windows laptop with the others running beside it.
 # Every group of the helper and hook evals takes minutes, so none is here.
 FAST = {"Validate plugin", "Structural evals", "Ratchet (sizes and structure only go down)",
         "Ratchet self-test", "Unit tests (tests/py)",
-        "Repair drill trace checker self-test (no model calls)", "Seat learning evals",
+        "Repair drill trace checker self-test (no model calls)",
         "Repair loop evals", "Evidence model evals",
         "Benchmark harness self-test (no model calls)", "Model routing evals",
         "Chair replay evals (no model calls)", "Release tree evals (the installed tree stands alone)"}

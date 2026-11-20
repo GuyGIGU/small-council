@@ -8,7 +8,7 @@ from typing import Callable
 
 from council import clock
 from council.commands import build_seat, cap, cli, closed, event_note, nudges, plan, resolve, rounds, seat_notes
-from council.records import cells, ledger, seat_rows, seat_write, seats, state_write
+from council.records import cells, seat_rows, seat_write, seats, state_write
 from council.records import home as where
 from council.records import plan as run_plan
 
@@ -43,7 +43,7 @@ def main(args: cli.Args, words: list[str]) -> int:
     if got["agents"] == "0" and got["tokens"]:
         raise cli.Refusal("agents=0 says no agent ran for this seat — it takes no tokens=")
     run = resolve.run_folder(args)
-    closed_out = _closed_out(run, slug, state, got)
+    _closed_out(run, slug, state, got)
     _may_record(run, slug, state, got)
     starting = build_seat.starts(run, slug, state)        # read before the write changes the seat's state
     state_write.clear_waiting(run)                       # the call is good: the run moves on
@@ -51,8 +51,6 @@ def main(args: cli.Args, words: list[str]) -> int:
     with event_note.locked(lock, "seat lock unavailable: " + lock.as_posix(),
                            "seat changed, but its lock could not be released: " + lock.as_posix()):
         first, dup = _record(run, slug, state, got)
-    if closed_out and resolve.field(run, "status") == "complete":       # the ledger copies the record
-        cli.say("ledger: %d seat row(s) of %s refreshed" % (ledger.record(run), run.name))
     if got["tools"] and not dup:                          # tool calls, kept apart from usage.tsv's columns
         tools = seats.path(run, seat_rows.TOOLS)
         try:
@@ -124,10 +122,10 @@ def _fields(words: list[str]) -> dict[str, str]:
     return got
 
 
-def _closed_out(run: Path, slug: str, state: str, got: dict[str, str]) -> bool:
-    """A closed run takes only a close-out that keeps every counted figure; True when the run is closed."""
+def _closed_out(run: Path, slug: str, state: str, got: dict[str, str]) -> None:
+    """A closed run takes only a close-out that keeps every counted figure."""
     if not state_write.closed(run):
-        return False
+        return
     key = (state, got["agents"], got["tokens"] + got["agent"], seat_rows.cell(run, slug, "state"),
            seat_rows.cell(run, slug, "agent"))
     chair = any((r.get("kind"), r.get("id"), r.get("field"), r.get("value")) == ("seat", slug, "role", "chair")
@@ -135,7 +133,6 @@ def _closed_out(run: Path, slug: str, state: str, got: dict[str, str]) -> bool:
     if not ((key == ("done", "0", "", "", "") and chair) or key == ("skipped", "", "", "queued", "")
             or (key[:3] == ("failed", "", "") and key[3] in ("running", "queued"))):
         closed.refuse(run, LATE % run.name)
-    return True
 
 
 def _may_record(run: Path, slug: str, state: str, got: dict[str, str]) -> None:

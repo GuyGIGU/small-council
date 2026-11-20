@@ -126,7 +126,8 @@ class StagesTest(Spine):
         self.assertEqual(stages.skipped(self.run, "work", "deliver"), ["judge", "challenge"])
         self.assertTrue(all("(council-health, section " in stages.next_text(stage, "council-health")
                             for stage in stages.REQUIRED["council-health"].split()[1:]))
-        self.assertIn("doctrine", stages.next_text("work", "spec-writer"))      # another mode keeps its doctrine line
+        self.assertEqual(stages.next_text("challenge", "test-architect"), "Challenge: verify what is kept")   # a stage
+        self.assertNotIn("doctrine", "".join(text for _, text in stages.STAGES.values()))   # its page names none of
         self.assertIn("(test-architect, Mode 1, Scope)", stages.next_text("work", "test-architect"))   # D75's page
 
     def test_a_postgame_takes_the_review_path_and_names_its_page(self) -> None:   # the pair on the request (D71)
@@ -149,34 +150,32 @@ class StagesTest(Spine):
         self.assertEqual(set(review.values()), {""})
 
     def test_the_method_a_mode_loads(self) -> None:
-        build = stages.REQUIRED["council-implement"].split()
-        self.assertEqual(stages.method_files("council-implement", build),   # a build's one page (D56)
-                         ["skills/council-implement/SKILL.md"])
-        self.assertEqual(stages.method_files("test-architect", ["convene", "work"]),   # a test audit's one page
-                         ["skills/test-architect/SKILL.md"])                              # (D75)
-        self.assertEqual(stages.method_files("spec-writer", ["convene", "build"]),     # a build has no doctrine
-                         ["skills/context-core/SKILL.md", "skills/spec-writer/SKILL.md",
-                          "references/doctrine/01-convene.md"])
-        self.assertEqual(len(stages.method_files("spec-writer")), 12)                       # none named: all ten
-        self.assertEqual(stages.method_files("council-postgame", ["work"]), ["skills/council-postgame/SKILL.md"])  # D71
-        self.assertEqual(stages.method_files("council-plan"), ["skills/council-plan/SKILL.md"])   # one page (D60)
-        self.assertEqual(stages.method_files("council-research", ["work"]), ["skills/council-research/SKILL.md"])
-        self.assertEqual(stages.method_files("council-review", ["convene", "work"]),         # its one page (D47)
-                         ["skills/council-review/SKILL.md"])
-        self.assertEqual(stages.method_files("council-health", ["work"]), ["skills/council-health/SKILL.md"])  # D65
+        for mode in stages.ONE_PAGE:                    # every mode a run can have: its own page alone (D47, D56,
+            self.assertEqual(stages.method_files(mode), ["skills/%s/SKILL.md" % mode])    # D60, D65, D71, D75, D76)
+        self.assertIn("council-init", stages.ONE_PAGE)
         self.assertEqual(stages.method_files("council"), ["skills/council/SKILL.md",   # the loop's page and the two it
                                                           "skills/council-plan/SKILL.md",   # follows (D64)
                                                           "skills/council-implement/SKILL.md"])
-        self.assertEqual(stages.method_files("council-init", []), ["skills/context-core/SKILL.md",
-                                                                   "skills/council-init/SKILL.md"])
-        self.assertEqual(stages.method_files("context-core", ["learn", "learn", "x"]),
-                         ["skills/context-core/SKILL.md", "references/doctrine/10-learn.md"])
         root = self.tmp / "plugin"
-        self.write("plugin/skills/context-core/SKILL.md", "a\r\nb\n")                         # CRLF read as LF
-        self.write("plugin/references/doctrine/01-convene.md", "é")                      # bytes, not characters
-        self.assertEqual(stages.method_bytes("spec-writer", ["convene", "prepare"], root.as_posix()), 4 + 2)
-        self.write("plugin/skills/council-review/SKILL.md", "c\r\n")
-        self.assertEqual(stages.method_bytes("council-review", ["convene", "prepare"], root.as_posix()), 2)
+        self.write("plugin/skills/council-init/SKILL.md", "a\r\nbé\n")   # CRLF read as LF; bytes, not characters
+        self.assertEqual(stages.method_bytes("council-init", root.as_posix()), 4 + 2)
+        self.assertEqual(stages.method_bytes("council-review", root.as_posix()), 0)   # a page that is not there
+
+    def test_a_run_from_before_2_0_is_told_from_todays(self) -> None:      # D77
+        self.write(".council/runs/%s/brief.md" % self.run.name, "# brief\n")
+        self.assertEqual(stages.old_path(self.run), "")
+        self.assertTrue(not stages.name_ok("collect", "council-init") and stages.name_ok("map", "council-init"))
+        self.assertEqual([stages.rank(stage) for stage in ("assign", "brief", "collect")], [3, 4, 6])
+        self.write(".council/runs/%s/events.tsv" % self.run.name, "schema\tseq\tat\ttype\tsubject\tvalue\tdetail\n"
+                   "1\t1\t2026-01-01T00:00:00Z\trun.phase_changed\trun\tassign\t\n")
+        self.assertIn("it entered assign, a stage the runs before 2.0 had", stages.old_path(self.run))
+        (self.run / "events.tsv").unlink()
+        (self.run / "brief.md").unlink()
+        self.assertIn("it has no brief.md", stages.old_path(self.run))
+        self.mode("council-init")
+        self.assertEqual(stages.old_path(self.run), "")                     # setup's run opens with no brief
+        self.mode("context-core")
+        self.assertIn("its mode, context-core, is not one a run has now", stages.old_path(self.run))
 
 
 CARD = ("show the user its %s now, once: hand the output of `council status --widget%s` to a show_widget tool (it may "

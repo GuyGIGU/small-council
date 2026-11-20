@@ -1,7 +1,7 @@
 """The run plan check's model rules (references/run/run-plan.md, D37): which seat may ask for which model, and
 a verifier never on a weaker model than the builder it checks. plan_check.Check calls `judge` once every row
 is read. `- seat models:` is no longer read (D74): a seat's own sonnet or haiku is refused in an open run, and a closed
-run's is judged by the mapping and survey rule of its day."""
+run's is judged by the mapping and survey rule of its day. Setup's mapping workers take the line's `map=` (D78)."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -12,6 +12,7 @@ if TYPE_CHECKING:                                   # plan_check imports this mo
     from council.commands.plan_check import Check
 
 BUILD = "council-implement"
+SETUP = "council-init"
 ROUTED = ("mapping", "survey")                      # the purposes `- seat models: on` routed, until D74
 LEGACY = ("sonnet", "haiku")                        # the only names `- seat models:` ever routed
 PAIR = ("reader", "runner")                         # the two fixed seats that end a build, as they make a review
@@ -19,12 +20,14 @@ PAIR = ("reader", "runner")                         # the two fixed seats that e
 
 def role_of(check: Check, ident: str) -> str:
     """The `- models:` role a seat's agent plays: a build's workers are builders (its reader and runner none), a
-    review's workers are review seats, a verifier is a verifier; '' for the Chair, a diagnosis seat and other modes'
-    workers.
-    A mapping or survey worker has no role: it runs on the session's model (D74)."""
+    review's workers are review seats, a verifier is a verifier, setup's mapping workers are map seats (D78); '' for
+    the Chair, a diagnosis seat and other modes' workers.
+    Any other mapping or survey worker has no role: it runs on the session's model (D74)."""
     role = check.role.get(ident, "")
     if role == "verifier":
         return "verifier"
+    if role == "worker" and (check.given.mode, check.purpose.get(ident, "")) == (SETUP, "mapping"):
+        return "map"
     if role != "worker" or check.purpose.get(ident, "") in ROUTED:
         return ""
     if check.given.mode == BUILD and ident in PAIR:      # a build's reader and runner: the session's model (D51, D56)
@@ -74,7 +77,12 @@ def seat_model(check: Check, ident: str, model: str, role: str, found: models.Mo
     sonnet or haiku is refused, since `- seat models:` is no longer read (D74; a closed run's by the purpose rule of
     its day); fable and opus need `- models:`."""
     seat_role = check.role.get(ident, "")
-    if model in LEGACY or model not in models.NAMES:   # an unknown name: refused by its row, judged as before
+    if role == "map" and model in models.NAMES:        # setup's mapping worker, not on the line's map= model (D78)
+        check.problem(line, "%s is not the model of setup's mapping workers in council.config.md (- models: map=%s) — "
+                            "make seat/%s/model %s, or set map= there (inherit, sonnet or haiku) "
+                            "on the owner's word"
+                      % (model, found.map, ident, found.map))
+    elif model in LEGACY or model not in models.NAMES:   # an unknown name: refused by its row, judged as before
         if seat_role != "worker":
             check.problem(line, "only worker seats can use sonnet or haiku; %s has role %s" % (ident, seat_role))
         if check.given.seat_models != "closed":

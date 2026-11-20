@@ -132,16 +132,18 @@ Fill the map's prose:
 - **Fill its `## One way per job` table, and find the project's recorded decisions:**
   `${CLAUDE_PLUGIN_ROOT}/references/roster/decision-records.md`.
 - **A small repo** → do it yourself, then `council run close`.
-- **A large repo** → at most 4 plain mapping workers, one area each, in the setup run (one run):
+- **A large repo** → at most 4 plain mapping workers, one area each, in the setup run (one run).
+  First propose their model, once: the session's (`inherit`), or `sonnet` for a cheaper map. On the
+  owner's pick write `map=` on the config's `- models:` line (D78).
   1. Its plan: `size` squad, one `map-<area>` row set per area from the foot of `run-plan.tsv`, their
-     estimate added to `estimated-tokens`; then `council run plan check`.
+     estimate added to `estimated-tokens`, and a `seat map-<area> model` row each when `map=` is
+     not `inherit`; then `council run plan check`.
   2. `<run>/brief.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map-brief.md`, one
      `### map-<area>` block per area, every `<…>` filled.
-  3. All in ONE message, `subagent_type: small-council:council-worker`, no `name`, no `model`:
-     `Seat: map-<area> — <its line> · council-init run`, `Brief: <abs run>/brief.md`, `Reference:
+  3. All in ONE message, `subagent_type: small-council:council-worker`, no `name`, `model` only as
+     `map=` names one: `Seat: map-<area> — <its line> · council-init run`, `Brief: <abs run>/brief.md`, `Reference:
      none — your role is in your brief block`, `Write <abs run>/seats/map-<area>.md`; then `council
      seat map-<area> running agent=<id>`, and `done` on each return.
-     No stage doctrine, no `council collect`.
   4. Merge their files into one map of at most ~250 lines, then `council run close`.
 
 ## Phase E — Propose, then write

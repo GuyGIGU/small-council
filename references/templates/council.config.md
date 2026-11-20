@@ -14,7 +14,7 @@ go on the book's stack page, not here.>
 ## Run preferences
 - approve without asking: up to squad
 - agent cap: 10
-- models: builder=inherit, review=inherit, verifier=inherit
+- models: builder=inherit, review=inherit, verifier=inherit, map=inherit
 - build tier: light
 - checking: one per batch
 - pushes: on
@@ -43,7 +43,8 @@ go on the book's stack page, not here.>
      push … on your word). From the date on it reads as on. Missing means on. `council pushes` shows it.
      "models": builder=, verifier= — inherit (the session's model), fable, opus, sonnet or haiku for
      a build's builders and for every verifier; a role left out, or no line, means inherit.
-     Every other agent (the reader, the runner, the designer, a mapping worker) runs on the session's
+     map= — inherit, sonnet or haiku for setup's mapping workers on a large repository (D78).
+     Every other agent (the reader, the runner, the designer) runs on the session's
      model; an older config's `- seat models:` line is no longer read (D74).
      council-init proposes a split from its own model (references/run/models.md); a verifier is
      never on a weaker model than the builder it checks. review= is still read and changes nothing:

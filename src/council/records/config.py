@@ -382,22 +382,12 @@ def memory_budget(home: str | Path) -> tuple[int, str]:
     return COUNCIL_MEMORY_SIZE_LIMIT, ""
 
 
-class Seat(NamedTuple):
-    """One row of an older config's Roster table, C-locale text (records/bytewise.py); '' for an empty cell. Setup
-    writes no roster (D72): council doctor reads one to say it is unused, and until a refresh removes it its slugs
-    still stand as memory scope words and name an older run's seats in the status."""
-
-    seat: str
-    slug: str
-    lens: str
-    reference: str
-
-
-def roster_table(home: str | Path) -> list[Seat]:
-    """The Roster table under ## Roster (cells.heading) as the helper's awk read it: cells split by cells.table_cells,
-    its columns found by their header names (Seat, else the first; Slug; Lens; Reference), each cell trimmed of
-    blanks, CRs, backticks and asterisks; a row with no seat, a rule row or a <placeholder> seat left out, and a
-    <placeholder> slug or reference read as empty."""
+def old_roster(home: str | Path) -> list[str]:
+    """An older config's ## Roster table (cells.heading), one Reference cell a seat row ('' for none), C-locale text
+    (records/bytewise.py). No run reads a roster (D72, D76): council doctor counts the rows and names the project's
+    own pages to say the section is unused. The columns are found by their header names (Seat, else the first;
+    Reference), each cell trimmed of blanks, CRs, backticks and asterisks; a row with no seat, a rule row or a
+    <placeholder> seat is left out, and a <placeholder> reference reads as empty."""
     found, inside, columns = [], False, None
     for line in bytewise.records(bytewise.read(paths.contents(path(home)) or b"")):
         if line.startswith("## "):
@@ -409,14 +399,12 @@ def roster_table(home: str | Path) -> list[Seat]:
         if columns is None:
             names = [bytewise.lower(_cell(c)) for c in cut]
             columns = tuple(max([i for i in range(1, len(cut) - 1) if names[i] == h] or [d])
-                            for h, d in (("seat", 1), ("slug", 0), ("lens", 0), ("reference", 0)))
+                            for h, d in (("seat", 1), ("reference", 0)))
             continue
-        seat, slug, lens, ref = (_cell(cut[i]) if i and i < len(cut) else "" for i in columns)
+        seat, ref = (_cell(cut[i]) if i and i < len(cut) else "" for i in columns)
         if seat == "" or re.fullmatch(r":?-+:?", seat) or seat.startswith("<"):
             continue
-        slug = "" if slug.startswith("<") else slug
-        ref = "" if ref.startswith("<") or re.fullmatch(r":?-+:?", ref) else ref
-        found.append(Seat(seat, slug, lens, ref))
+        found.append("" if ref.startswith("<") or re.fullmatch(r":?-+:?", ref) else ref)
     return found
 
 
@@ -460,7 +448,8 @@ SETTINGS: dict[str, tuple[str, Callable[[str], bool]]] = {
     "approve without asking": ("solo, squad or full (as `up to squad`)",
                                lambda value: re.fullmatch(r"(up to )?(solo|squad|full)", value) is not None),
     "agent cap": ("a whole number of agents, such as 10", lambda value: _cap(value) is not None),
-    "models": ("builder=, review= and verifier=, each inherit, fable, opus, sonnet or haiku", _models_read),
+    "models": ("builder=, review= and verifier=, each inherit, fable, opus, sonnet or haiku, and map= (setup's "
+               "mapping workers: inherit, sonnet or haiku)", _models_read),
     "build tier": ("light or full", _one_of("light", "full")),
     "checking": ("one per batch or per task", _one_of(*CHECKING)),
     "open items": ("ask or fix now", _one_of("ask", "fix now")),

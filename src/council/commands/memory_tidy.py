@@ -1,5 +1,5 @@
-"""council memory tidy: the consolidation operations the memory file shows by reading alone, numbered, as
-references/doctrine/10-learn.md has the Chair propose them — `merge <id> into <id>` for two entries that serve the
+"""council memory tidy: the consolidation operations the memory file shows by reading alone, numbered, for
+the Chair to propose — `merge <id> into <id>` for two entries that serve the
 same rule text (title and rule, the same once case, runs of blanks and trailing punctuation are set aside), and
 `retire <id> — <why>` for an entry that names a retired id, or that carries a retired mark but still sits in a
 section the council reads. It writes nothing: each operation is put to the user and applied on their yes, one at a
