@@ -128,7 +128,7 @@ class StagesTest(Spine):
                             for stage in stages.REQUIRED["council-health"].split()[1:]))
         self.assertIn("doctrine", stages.next_text("work", "test-architect"))   # another mode keeps its doctrine line
 
-    def test_a_postgame_takes_the_review_path_and_names_its_page(self) -> None:   # the pair on the request (D68)
+    def test_a_postgame_takes_the_review_path_and_names_its_page(self) -> None:   # the pair on the request (D71)
         self.mode("council-postgame")
         self.plan("seat\treader\trole\tworker", "seat\treader\tdisposition\tselected", "run\trun\tsize\tsquad")
         self.assertEqual(stages.required(self.run), stages.PAIRED.split())  # noqa: SIM905
@@ -137,7 +137,7 @@ class StagesTest(Spine):
                             for stage in stages.REQUIRED["council-postgame"].split()[1:]))
 
     def test_the_blocks_each_brief_adds_to_the_reviews(self) -> None:     # a build's (D56), a health pass's (D65)
-        from council.commands import run_open                               # and a post-game's (D68)
+        from council.commands import run_open                               # and a post-game's (D71)
         health, build, review, postgame = (run_open.brief_lines(m) for m in ("council-health", "council-implement",
                                                                               "council-review", "council-postgame"))
         self.assertTrue(postgame["POSTGAME"].startswith("## This is a post-game: the finished work against the "))
@@ -155,7 +155,7 @@ class StagesTest(Spine):
                          ["skills/context-core/SKILL.md", "skills/test-architect/SKILL.md",
                           "references/doctrine/01-convene.md"])
         self.assertEqual(len(stages.method_files("test-architect")), 12)                    # none named: all ten
-        self.assertEqual(stages.method_files("council-postgame", ["work"]), ["skills/council-postgame/SKILL.md"])  # D68
+        self.assertEqual(stages.method_files("council-postgame", ["work"]), ["skills/council-postgame/SKILL.md"])  # D71
         self.assertEqual(stages.method_files("council-plan"), ["skills/council-plan/SKILL.md"])   # one page (D60)
         self.assertEqual(stages.method_files("council-research", ["work"]), ["skills/council-research/SKILL.md"])
         self.assertEqual(stages.method_files("council-review", ["convene", "work"]),         # its one page (D47)

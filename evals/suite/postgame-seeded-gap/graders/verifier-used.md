@@ -6,4 +6,4 @@ min: 1
 max: 2
 arm: with-only
 ---
-Admins-only is authorization, a protected subject: once it is called met, a blind verifier checks it (D68). At most two — a post-game is Squad-sized.
+Admins-only is authorization, a protected subject: once it is called met, a blind verifier checks it (D71). At most two — a post-game is Squad-sized.

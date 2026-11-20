@@ -838,7 +838,7 @@ def memory_file_and_seat_check(tmp):
     code, out = run_hook(pgr, "compact", session="eval")
     check("after compaction in a post-game: re-invoke council-postgame and re-read ask.md",
           "Re-invoke the council-postgame skill" in out and "and ask.md, if present" in out, out)
-    check("after compaction in a post-game, its own page since D68: re-read that page's section for the phase, never "
+    check("after compaction in a post-game, its own page since D71: re-read that page's section for the phase, never "
           "context-core or a doctrine",
           "re-read that page's section for the current phase (judge)" in out and "context-core" not in out
           and "doctrine" not in out, out)

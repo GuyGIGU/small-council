@@ -1,4 +1,4 @@
-"""The build loop's limits (council-implement): one checker per batch under `- checking: one per batch` (D18),
+"""The build loop's limits (council-implement): one blind verifier a build under `- checking: one per batch` (D18, D56),
 no third check of a task without a diagnosis or the user's go, and no third fix round in the same files without
 a redesign. The agent gate asks the first two before a council verifier starts; `council seat … running` (bash
 until seat is ported) asks them again; `council patch save` asks the third. Each returns why it must wait, or
@@ -165,7 +165,8 @@ def batch_check(run: Path, slug: str, home: str) -> str | None:
     if decisions_since(run, since) > 0 and decisions_since(run, first) >= len(counted):
         return None
     return ("cannot start %s — this build already started %d verifier(s) (%s), and under checking: one per batch a "
-            "build gets one checker, at converge (references/build-proof.md, Checking). Another needs the user's go: "
-            "ask them once, with its cost, then record their words with council state decision=\"…\" and dispatch. A "
-            "verifier stopped at its turn limit is resumed with SendMessage, never started again. To check task by "
-            "task, the config says - checking: per task." % (slug, len(counted), ", ".join(who for who, _ in counted)))
+            "build starts one blind verifier, for a finding on a protected subject (the build page, section 5, "
+            "step 5); its reader and runner check everything else. Another needs the user's go: ask them once, with "
+            "its cost, then record their words with council state decision=\"…\" and dispatch. A verifier stopped at "
+            "its turn limit is resumed with SendMessage, never started again. To lift the limit, the config says "
+            "- checking: per task." % (slug, len(counted), ", ".join(who for who, _ in counted)))

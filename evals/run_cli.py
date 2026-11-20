@@ -659,7 +659,7 @@ def runs_open(tmp):
                 with open(written_path, "rb") as f:
                     written = f.read()
             # {{BOOK}} is the book's first three pages, a line each (two more); a review's two {{BUILD…}} lines, its
-            # {{HEALTH}} and {{POSTGAME}} lines are taken out (four fewer, D56, D65, D68); the designer's brief has
+            # {{HEALTH}} and {{POSTGAME}} lines are taken out (four fewer, D56, D65, D71); the designer's brief has
             # none of them (D60)
             grown = {"design-brief.md": 2, "review-brief.md": -2}.get(name, 0)
             check("run open %s: a CRLF %s template is written with LF line ends, on every OS" % (mode, name),
@@ -3746,8 +3746,9 @@ def runs_config_written_loosely(tmp):
     write(os.path.join(old, ".claude", "settings.local.json"),
           '{"permissions": {"allow": ["Edit(.council/**)", "Bash(council run:*)", "Bash(council state:*)"]}}')
     code, out, err = council(old, "doctor")
-    check("doctor: `build tier: full` with no `checking:` line says a verifier per task is now `checking: per task`",
-          "says `- build tier: full` and has no `- checking:` line" in out and "add `- checking: per task`" in out,
+    check("doctor: `build tier: full` with no `checking:` line says how a 2.0 build is checked, and what settles it",
+          "says `- build tier: full` and has no `- checking:` line" in out and "by a reader and a runner" in out
+          and "add `- checking: one per batch`" in out and "a build sends one verifier" not in out,
           out + err)
     check("doctor: a map with no One way per job table says what it is for and that a council-init refresh adds it",
           "map.md has no `## One way per job` table" in out and "a council-init refresh adds it" in out, out + err)
@@ -3797,7 +3798,7 @@ def runs_helper_carries_next_steps(tmp):
     plan_next = re.search(r"^next:[ 	]*(.*)$", read(os.path.join(prun, "session-state.md")), re.MULTILINE).group(1)
     council(nx, "state", "phase=work")
     check("state phase=: a review's next after phase=work names council-review and no doctrine file; a post-game "
-          "run's names its own page's section too since D68 (a plan's since D60: the design group)",
+          "run's names its own page's section too since D71 (a plan's since D60: the design group)",
           "council-review" in nxt() and "doctrine" not in nxt() and ".md" not in nxt()
           and "(council-postgame, section 2)" in plan_next and "doctrine" not in plan_next, str((nxt(), plan_next)))
     code, out, err = council(nx, "state", "decision=Go ahead with the Squad, four seats")
@@ -5679,10 +5680,10 @@ def runs_stage_order_and_close(tmp):
           code == 2 and "would skip challenge" in err and phase_of(nwr) == "judge", err)
     pg, pgr = fresh("order-postgame", "council-postgame", selected=("chair", "reader", "runner"), verification="self")
     code, out, err = council(pg, "state", "phase=challenge")
-    check("state phase=: a post-game can't leave out Prepare, Work and Judge either (D68)",
+    check("state phase=: a post-game can't leave out Prepare, Work and Judge either (D71)",
           code == 2 and "would skip prepare, work, judge" in err, err)
     check("state phase=: a post-game's own path — the review's: Prepare, Work, Judge, Challenge, Deliver, Learn — "
-          "needs no skip= (D68)", steps(pg, "prepare", "work", "judge", "challenge", "deliver", "learn") == [0] * 6,
+          "needs no skip= (D71)", steps(pg, "prepare", "work", "judge", "challenge", "deliver", "learn") == [0] * 6,
           read(os.path.join(pgr, "events.tsv")))
     init = new_repo(tmp, "order-init")
     council(init, "run", "open", "council-init")
@@ -5859,7 +5860,7 @@ def runs_stage_order_and_close(tmp):
           and len(kinds) - 1 - kinds[::-1].index("run.chair_usage") < kinds.index("run.closed"), out + err + repr(chair_rows))
 
     # Beside the Chair's tokens, the method its mode loads (D13), counted here from the files themselves: a review's
-    # is its own page alone (D47), and so is a plan's (D60) and a post-game's (D68).
+    # is its own page alone (D47), and so is a plan's (D60) and a post-game's (D71).
     short = len(Path(ROOT, "skills", "council-review", "SKILL.md").read_bytes().replace(b"\r\n", b"\n"))
     check("run close: the method load is recorded beside the Chair's tokens (method_bytes=) and said on the same line — "
           "a review's is its one page",
@@ -5878,7 +5879,7 @@ def runs_stage_order_and_close(tmp):
     code, out, err = council(wu, "run", "close", "--status", "abandoned", env={"CLAUDE_CONFIG_DIR": ccfg})
     full = len(Path(ROOT, "skills", "council-postgame", "SKILL.md").read_bytes().replace(b"\r\n", b"\n"))
     rows = [e[6] for e in events(wur) if e[3] == "run.chair_usage"]
-    check("run close: a post-game records its one page as its method, the D13 figure, as a review does (D68)",
+    check("run close: a post-game records its one page as its method, the D13 figure, as a review does (D71)",
           code == 0 and rows == ["calls=1;basis=complete;method_bytes=%d" % full]
           and "· method load: {:,} bytes (council-postgame's one page)".format(full) in out, out + err + repr(rows))
     os.remove(os.path.join(ccfg, "projects", "eval-project", sid_a + ".jsonl"))
@@ -9166,6 +9167,7 @@ def runs_one_checker_per_batch(tmp):
     check("seat: one per batch — a second verifier is refused, naming the first, the user's go and the per-task setting",
           code == 2 and "cannot start verify-2" in err and "already started 1 verifier(s) (verify-1)" in err
           and 'council state decision="' in err and "checking: per task" in err
+          and "for a finding on a protected subject" in err and "at converge" not in err
           and "\nverify-2\t" not in read(os.path.join(orun, "seats.tsv")), out + err)
     code, out, err = council(ob, "seat", "verify-1", "running", "agent=o3")
     check("seat: one per batch — the first verifier started again after its verdict is a second checker too",
@@ -10023,6 +10025,19 @@ def doctor_hooks_live(tmp):
           "the Chair can't price a run from it" in said("estimates") and "default" not in said("estimates")
           and "the Chair can't price a run from it" in said("estimate per worker")
           and "the helper uses the setting's default" in said("agent cap"), out + err)
+    # Issue 44: since 2.0 only a builder's and a verifier's figure price anything, and the doctor says so; the words
+    # an older config carries (review=, plan=, converge=) stay readable (D23): a line with all five is not named.
+    check("doctor: a bad estimates line names the two figures still priced, builder= and verifier=, and says the "
+          "older words are still read and price nothing",
+          "estimates takes builder= or verifier= with a token figure from 1k to 1M, such as builder=450k"
+          in said("estimates")
+          and "(review=, plan= and converge= are still read and price nothing)" in said("estimates"), out + err)
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- agent cap: 10\n"
+          "- estimates: review=100k, plan=120k, builder=450k, verifier=90k, converge=200k\n")
+    code, out, err = council(repo, "doctor")
+    check("doctor: an estimates line with every word an older config wrote (review=, plan=, builder=, verifier=, "
+          "converge=) is read without complaint",
+          code in (0, 1) and "doctor: " in out and "estimates" not in out + err, out + err)
     write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- agent cap: 10\n")
     code, out, err = council(repo, "doctor", "hooks", "--line", "--session", "s-doc")
     check("doctor hooks --line: only the count, the SessionStart banner's line", code == 0 and out.strip().startswith("hooks: 3 of 5 live"), out + err)
@@ -10695,6 +10710,9 @@ def build_opens_with_the_pair(tmp):
           code == 0 and "seat\treader\tdisposition\tselected" in plan and "seat\trunner\trole\tworker" in plan
           and "estimated-tokens\t<pending>" in plan and "seat\treader\tmodel" not in plan
           and "# seat\ttask-1\tdisposition\tselected" in plan, plan[:1500] + err)
+    check("run open council-implement: the plan it writes tells the Chair what one builder is quoted at, the config's "
+          "builder= figure and 500000 without one, never the old 80k (issue 44)",
+          "builder= figure (500000 without one" in plan and "500000 for the pair" in plan, plan[:900])
     check("run open council-implement: the brief is the review's, both role texts word for word, with the build's "
           "section and the runner's break-on-purpose line; a review's brief has neither and no {{…}} is left",
           len(roles) == 2 and all(r in brief for r in roles)
@@ -10703,9 +10721,9 @@ def build_opens_with_the_pair(tmp):
           and "## This change is a build" not in review_brief and "on purpose" not in review_brief
           and "{{" not in brief and "{{" not in review_brief and "\n\n\n" not in review_brief,
           brief[:3000])
-    write(os.path.join(run, "run-plan.tsv"), plan.replace("estimated-tokens\t<pending>", "estimated-tokens\t800000")
+    write(os.path.join(run, "run-plan.tsv"), plan.replace("estimated-tokens\t<pending>", "estimated-tokens\t1000000")
           .replace("# seat\ttask-1\t", "seat\ttask-1\t").replace("# context\ttask-1\t", "context\ttask-1\t")
-          .replace("# budget\ttask-1\t", "budget\ttask-1\t"))
+          .replace("# budget\ttask-1\t", "budget\ttask-1\t"))     # one builder at the 500k default, and the pair
     cfg = os.path.join(repo, ".council", "council.config.md")
     write(cfg, read(cfg) + "\n## Run preferences\n- models: builder=sonnet, verifier=sonnet\n")
     code, out, err = council(repo, "run", "plan", "check")
@@ -11173,7 +11191,7 @@ def health_run_closes_on_its_path(tmp):
 
 @part("postgame")
 def postgame_opens_with_the_pair(tmp):
-    """A post-game (D68): council run open council-postgame (or postgame) writes the fixed plan with the reader and the
+    """A post-game (D71): council run open council-postgame (or postgame) writes the fixed plan with the reader and the
     runner, and the review's brief with the post-game block on its line, the parts line left for the Chair and both
     role texts word for word; the plan passes untouched; the next-step lines name the page's own sections, and Work
     can't be left out."""
@@ -11184,12 +11202,12 @@ def postgame_opens_with_the_pair(tmp):
     brief, plan = read(os.path.join(run, "brief.md")), read(os.path.join(run, "run-plan.tsv"))
     pcode, pout, perr = council(repo, "run", "plan", "check")
     check("run open postgame: the fixed plan selects the reader and the runner, names no model, and passes council "
-          "run plan check untouched (D68)",
+          "run plan check untouched (D71)",
           code == 0 and pcode == 0 and "plan: valid · squad" in pout and "\tcouncil-postgame\t" in plan
           and "seat\treader\trole\tworker" in plan and "seat\trunner\trole\tworker" in plan
           and "estimated-tokens\t500000" in plan and "\tmodel\t" not in plan, pout + perr + err + plan[:800])
     check("run open postgame: the brief is the review's with the post-game block, both roles word for word, the parts "
-          "line for the Chair, no build or health block and no {{…}} left (D68)",
+          "line for the Chair, no build or health block and no {{…}} left (D71)",
           "## This is a post-game: the finished work against the owner's request\n" in brief and len(roles) == 2
           and all(role in brief for role in roles) and "\nParts: <" in brief and "## This change is a build" not in brief
           and "## This is a health pass" not in brief and "{{" not in brief
@@ -11197,16 +11215,16 @@ def postgame_opens_with_the_pair(tmp):
     council(repo, "state", "phase=prepare")
     state = read(os.path.join(run, "session-state.md"))
     nxt = state.split("\nnext: ", 1)[-1].split("\n", 1)[0]
-    check("state postgame: Prepare's next step names the page's own section, never a doctrine file (D68)",
+    check("state postgame: Prepare's next step names the page's own section, never a doctrine file (D71)",
           "(council-postgame, section 2)" in nxt and "doctrine" not in nxt, state)
     code, out, err = council(repo, "state", "phase=judge")
-    check("state postgame: Judge straight after Prepare is refused, naming work (D68)",
+    check("state postgame: Judge straight after Prepare is refused, naming work (D71)",
           code == 2 and "would skip work" in err and "council state phase=work" in err, out + err)
 
 
 @part("postgame")
 def postgame_run_closes_on_its_path(tmp):
-    """A post-game on its page's path closes complete with the audit passing its stages (D68); its parts' quotes are
+    """A post-game on its page's path closes complete with the audit passing its stages (D71); its parts' quotes are
     checked against the request, and the closing card counts the Chair's verdicts in verify-self.md."""
     repo = small_council_repo(tmp, "postgame-close", "")
     code, run, err = council(repo, "run", "open", "council-postgame")
@@ -11246,15 +11264,15 @@ def postgame_run_closes_on_its_path(tmp):
     audit = read(os.path.join(run, "audit.md")) if os.path.isfile(os.path.join(run, "audit.md")) else ""
     scode, card, serr = council(repo, "status", "--run", os.path.basename(run))
     check("check postgame: a part that paraphrases the request is refused before the pair starts; the quoted parts "
-          "pass, and so does a next task quoting its part (D68)",
+          "pass, and so does a next task quoting its part (D71)",
           qcode == 1 and "synthesis#2  quote  NOT-IN-THE-REQUEST" in qout and ccode == 0
           and "synthesis#2  quote  ok" in cout and dcode == 0 and "next task 1  done-when  ok" in dout,
           qout + cout + cerr + dout + derr)
     check("run close: a post-game on its page's path closes complete and the audit passes its stages, never asking "
-          "for assign, brief or collect (D68)",
+          "for assign, brief or collect (D71)",
           code == 0 and "complete" in out and "Stages: convene > prepare > work > judge > challenge > deliver > learn"
           in audit and "never entered" not in audit and "FAIL" not in audit, out + err + audit[:1500])
-    check("status postgame: the closing card counts the Chair's verdicts from verify-self.md (D68)",
+    check("status postgame: the closing card counts the Chair's verdicts from verify-self.md (D71)",
           "1 of 2 parts of the request met" in card and "verify-self.md" in card, card + serr)
 
 
