@@ -6,7 +6,28 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Changed
+## [2.0.0] — 2026-11-20
+
+**In short:** the rest of redesign 2.0, built on the owner's word before each stage's own test.
+Your project keeps a short book every agent reads first; plan and research are a designer that
+looks underneath before anything is built; a build leaves a restore point and ends with the reader
+and the runner; `/council` runs the whole loop from one request, and `/council-health` shows where
+the project drifted from its book.
+
+### Before you update
+- **Finish or pause any open council run first.** A plan, research or build run opened on 1.3.0
+  follows its old page; close it paused (`council run close --status paused`) and start again
+  after updating.
+- **None of stages 2 to 5 has had its test yet** (redesign 2.0, section 12). Each stage is one
+  commit, but each builds on the ones before it, so they can only be taken back newest first
+  (stage 5, then 4, then 3, then 2), never one from the middle alone.
+- **Then run `/council-init` once in each project (a refresh)**, so the project's book exists.
+  Until you do, every brief shows the book's pages as not written yet, and `/council-health` has
+  nothing to measure the project against.
+- **A build now needs its restore point.** A build run opened on 1.3.0 and resumed after updating
+  is stopped at the start of its build until it takes one (`council restore point`).
+
+### After stage 5: changed
 - **The post-game runs on the new path.** `/council-postgame` ("did we build what I asked?") is one page, like the review: the reader and the runner each check every part of your original request, one against the code and one by running it in a scratch copy, and the main session checks each verdict before you see it. The report and the next tasks council-implement builds from are unchanged. It costs about 500k tokens, as a review does (it was about 100–180k with one checker). Finish or pause an open post-game run before updating. D71, on the owner's word; built before any test of it.
 - **A small request through `/council` is two agents, not four.** One part, one existing way and
   nothing hard to undo: the main session writes the design and reads the change against the book
@@ -31,7 +52,7 @@ All notable changes to this project are documented here. The format is based on
   describe a final checker or roles that price nothing.
 - The process audit stays as it is (D69). No lead builder: issue 63 is closed (D70).
 
-### Fixed
+### After stage 5: fixed
 - **`council state restore=backup` is refused in a project that has git**, so a build can no longer
   start without its restore point; the refusal names `council restore point`.
 - **A build writes its PR text again.** The 2.0.0 build page dropped the step that writes
@@ -42,27 +63,6 @@ All notable changes to this project are documented here. The format is based on
   a second verifier, and `council doctor`'s note on `- build tier: full`, now say a build is
   checked once by a reader and a runner, with a blind verifier only for a finding on a protected
   subject; a plan's `New way:` goes to you as one of its Your decisions.
-
-## [2.0.0] — 2026-11-19
-
-**In short:** the rest of redesign 2.0, built on the owner's word before each stage's own test.
-Your project keeps a short book every agent reads first; plan and research are a designer that
-looks underneath before anything is built; a build leaves a restore point and ends with the reader
-and the runner; `/council` runs the whole loop from one request, and `/council-health` shows where
-the project drifted from its book.
-
-### Before you update
-- **Finish or pause any open council run first.** A plan, research or build run opened on 1.3.0
-  follows its old page; close it paused (`council run close --status paused`) and start again
-  after updating.
-- **None of stages 2 to 5 has had its test yet** (redesign 2.0, section 12). Each stage is one
-  commit, but each builds on the ones before it, so they can only be taken back newest first
-  (stage 5, then 4, then 3, then 2), never one from the middle alone.
-- **Then run `/council-init` once in each project (a refresh)**, so the project's book exists.
-  Until you do, every brief shows the book's pages as not written yet, and `/council-health` has
-  nothing to measure the project against.
-- **A build now needs its restore point.** A build run opened on 1.3.0 and resumed after updating
-  is stopped at the start of its build until it takes one (`council restore point`).
 
 ### Stage 2: the book
 Built on the owner's word, 2026-11-19, before the stage's test (redesign 2.0, section 12), which is still owed.
