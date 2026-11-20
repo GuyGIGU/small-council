@@ -9,9 +9,11 @@ you change anything.
   the stage index, the helper table, the file layout, the limits and resume. `references/doctrine/`
   holds one file per stage. Improvements to *how work is handled* go there, once, and every mode
   inherits them.
-- **Modes are thin.** A mode invokes `context-core` and adds only its specifics, under
-  `## At <Stage>` headings named after real stages: target resolution, the per-item format, owner
-  rules, the deliverable. Copy `skills/council-postgame/SKILL.md` for shape, brevity and voice. `council-review`, `council-implement`, `council-plan`, `council-research` and `council-health` are each their own one page (D47, D56, D60, D65), and `council` joins the plan and build pages (D64); none is a model for a mode.
+- **A mode is one page.** Its steps in order, the helper commands and the rules they need; it
+  invokes no other skill and reads no stage doctrine. `council-review`, `council-implement`,
+  `council-plan`, `council-research`, `council-health` and `council-postgame` are each their own page
+  (D47, D56, D60, D65, D71), and `council` joins the plan and build pages (D64). Copy
+  `skills/council-review/SKILL.md` for shape, brevity and voice.
 - **The helper does the mechanics.** If a step can be done or checked by a script — opening and
   closing runs, gates, the change index, checking seat files or citations — it belongs in the
   helper (`src/council/commands/`), not in prose the model has to remember.

@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
+- **The post-game runs on the new path.** `/council-postgame` ("did we build what I asked?") is one page, like the review: the reader and the runner each check every part of your original request, one against the code and one by running it in a scratch copy, and the main session checks each verdict before you see it. The report and the next tasks council-implement builds from are unchanged. It costs about 500k tokens, as a review does (it was about 100–180k with one checker). Finish or pause an open post-game run before updating. D71, on the owner's word; built before any test of it.
 - **A small request through `/council` is two agents, not four.** One part, one existing way and
   nothing hard to undo: the main session writes the design and reads the change against the book
   itself; one builder builds it and the runner proves it. A bug underneath, a real choice or

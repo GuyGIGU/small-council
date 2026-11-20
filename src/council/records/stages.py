@@ -25,10 +25,11 @@ STAGES = {  # name: (rank, next step); a build stands where council-implement's 
 }
 SHORT = "convene prepare judge challenge deliver learn"
 PAIRED = "convene prepare work judge challenge deliver learn"   # fixed seats, no roster to assign or brief
-REQUIRED = {"council-implement": "convene prepare build challenge deliver learn", "council-postgame": SHORT,
-            "council-review": PAIRED, "council-health": PAIRED}       # the reader and the runner (D50); health's D65
+REQUIRED = {"council-implement": "convene prepare build challenge deliver learn", "council-postgame": PAIRED,
+            "council-review": PAIRED, "council-health": PAIRED}   # the reader and the runner (D50); D65's; D71's
 ONE_PAGE = ("council-review", "council-implement", "council-plan", "council-research",   # a mode whose method is its
-            "council-health")         # own page alone, no context-core or doctrine (D47; a build's D56; D60; D65)
+            "council-health", "council-postgame")   # own page alone, no context-core or doctrine (D47; D56; D60; D65;
+#                                                     a post-game's, D71)
 FOLLOWS = {"council": ("council-plan", "council-implement")}   # /council: no run of its own, a plan run then a build
 #                                     run, its page naming their pages' sections (D64)
 
@@ -87,6 +88,17 @@ HEALTH_NEXT = {
 }
 
 
+POSTGAME_NEXT = {
+    "prepare": "Prepare: the change index, the request's parts, the brief's <…> lines, then the estimate "
+               "(council-postgame, section 2)",
+    "work": "Work: both agents in one message, then record each one (council-postgame, section 3)",
+    "judge": "Judge: each part's verdict checked against the code, verify-self.md (council-postgame, section 4)",
+    "challenge": "Challenge: council check until the quotes are clean (council-postgame, section 5)",
+    "deliver": "Deliver: council ask save, the post-game, its next tasks checked (council-postgame, section 6)",
+    "learn": "Learn: close the run, delete the scratch clones, the next move (council-postgame, section 7)",
+}
+
+
 def _design(mode: str, thing: str) -> dict[str, str]:
     """A design mode's steps, each naming its own page's section."""
     return {stage: text % ((thing, mode) if stage == "deliver" else (mode,)) for stage, text in DESIGN_NEXT.items()}
@@ -94,7 +106,7 @@ def _design(mode: str, thing: str) -> dict[str, str]:
 
 NEXT = {"council-review": REVIEW_NEXT, "council-implement": IMPLEMENT_NEXT,   # a one-page mode's own steps
         "council-plan": _design("council-plan", "plan"), "council-research": _design("council-research", "answer"),
-        "council-health": HEALTH_NEXT}
+        "council-health": HEALTH_NEXT, "council-postgame": POSTGAME_NEXT}
 
 
 def next_text(stage: str, mode: str = "") -> str:

@@ -838,8 +838,10 @@ def memory_file_and_seat_check(tmp):
     code, out = run_hook(pgr, "compact", session="eval")
     check("after compaction in a post-game: re-invoke council-postgame and re-read ask.md",
           "Re-invoke the council-postgame skill" in out and "and ask.md, if present" in out, out)
-    check("after compaction in a post-game, still on context-core: it loads context-core, then the phase's doctrine",
-          "council-postgame skill (it loads context-core)" in out and "re-read the doctrine for that phase" in out, out)
+    check("after compaction in a post-game, its own page since D71: re-read that page's section for the phase, never "
+          "context-core or a doctrine",
+          "re-read that page's section for the current phase (judge)" in out and "context-core" not in out
+          and "doctrine" not in out, out)
     bld = new_repo(tmp, "build")
     write(os.path.join(bld, ".council", "council.config.md"), "# Council config\n")
     write(os.path.join(bld, ".council", "runs", "2026-09-15-140000-implement", "session-state.md"),

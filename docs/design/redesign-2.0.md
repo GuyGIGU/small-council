@@ -1,9 +1,11 @@
 # Redesign 2.0: a proposal
 
-**Status: a proposal, written 2026-11-18.** A part becomes real only when the owner says so, and
-then it gets its entry in [`decisions.md`](../decisions.md). Stage 1 (section 12) was decided on
-2026-11-18 as D47 to D51 and built in 1.3.0; nothing else here is decided or built. Section
-2 is measured. Everything after it is the planning session's design, built on those measurements and
+**Status: decided and built, not yet tested.** Written 2026-11-18 as a proposal; each part became
+real on the owner's word and has its entry in [`decisions.md`](../decisions.md). Stage 1
+(section 12) was decided as D47 to D51 and built in 1.3.0; stages 2 to 5 as D52 to D66 and built in
+2.0.0; the post-game of section 7 as D71, after 2.0.0. Stages 2 to 5 and the post-game were built
+before their section 12 tests, by the owner's choice; those tests are still owed. Section 2 is
+measured. Everything after it is the planning session's design, built on those measurements and
 on how this repository is run.
 
 ## 1. Who it is for

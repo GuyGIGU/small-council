@@ -637,7 +637,8 @@ def runs_open(tmp):
     for folder in ("bin", "src", "references"):
         shutil.copytree(os.path.join(ROOT, folder), os.path.join(copy, folder), ignore=shutil.ignore_patterns("__pycache__"))
     lfs = {}
-    for name in ("run-plan.tsv", "run-plan-review.tsv", "review-brief.md", "run-plan-design.tsv", "design-brief.md"):
+    for name in ("run-plan.tsv", "run-plan-review.tsv", "review-brief.md", "run-plan-design.tsv", "design-brief.md",
+                 "run-plan-postgame.tsv"):
         template = os.path.join(copy, "references", "templates", name)
         with open(template, "rb") as f:
             lfs[name] = f.read().replace(b"\r\n", b"\n")
@@ -645,7 +646,8 @@ def runs_open(tmp):
             f.write(lfs[name].replace(b"\n", b"\r\n"))
     crlf_repo = new_repo(tmp, "plan-template-crlf")
     write(os.path.join(crlf_repo, ".council", "council.config.md"), "# Council config\n")
-    for mode, files in (("council-postgame", {"run-plan.tsv": "run-plan.tsv"}),
+    for mode, files in (("context-core", {"run-plan.tsv": "run-plan.tsv"}),
+                        ("council-postgame", {"run-plan.tsv": "run-plan-postgame.tsv"}),
                         ("council-plan", {"run-plan.tsv": "run-plan-design.tsv", "brief.md": "design-brief.md"}),
                         ("council-review", {"run-plan.tsv": "run-plan-review.tsv", "brief.md": "review-brief.md"})):
         opened = subprocess.run([BASH, os.path.join(copy, "bin", "council"), "run", "open", mode, "--alongside"],
@@ -656,9 +658,10 @@ def runs_open(tmp):
             if os.path.isfile(written_path):
                 with open(written_path, "rb") as f:
                     written = f.read()
-            # {{BOOK}} is the book's first three pages, a line each (two more); a review's two {{BUILD…}} lines and
-            # its {{HEALTH}} line are taken out (three fewer, D56, D65); the designer's brief has none of them (D60)
-            grown = {"design-brief.md": 2, "review-brief.md": -1}.get(name, 0)
+            # {{BOOK}} is the book's first three pages, a line each (two more); a review's two {{BUILD…}} lines, its
+            # {{HEALTH}} and {{POSTGAME}} lines are taken out (four fewer, D56, D65, D71); the designer's brief has
+            # none of them (D60)
+            grown = {"design-brief.md": 2, "review-brief.md": -2}.get(name, 0)
             check("run open %s: a CRLF %s template is written with LF line ends, on every OS" % (mode, name),
                   opened.returncode == 0 and b"\r" not in written
                   and written.count(b"\n") == lfs[name].count(b"\n") + grown,
@@ -683,8 +686,8 @@ def runs_open(tmp):
           ("Council home: %s ·" % os.path.dirname(os.path.dirname(review_run))) in brief and
           re.search(r"^Code root: .+/review-opens ·", brief, re.MULTILINE) is not None and
           len(roles) == 2 and all(role in brief for role in roles), brief[:600] + err)
-    code, plan_run, err = council(review_repo, "run", "open", "postgame", "--alongside")
-    check("run open: another mode (a post-game) writes no brief.md, and keeps the starter plan",
+    code, plan_run, err = council(review_repo, "run", "open", "context-core", "--alongside")
+    check("run open: another mode (the old engine's) writes no brief.md, and keeps the starter plan",
           code == 0 and not os.path.exists(os.path.join(plan_run.strip(), "brief.md")) and
           "seat\treader\t" not in read(os.path.join(plan_run.strip(), "run-plan.tsv")), plan_run + err)
     os.remove(os.path.join(copy, "references", "templates", "review-brief.md"))
@@ -719,7 +722,7 @@ def runs_open(tmp):
     # Every mode but a review (and setup) opens with the starter plan, which is incomplete on purpose.
     starter = new_repo(tmp, "starter-plan")
     write(os.path.join(starter, ".council", "council.config.md"), "# Council config\n")
-    starter_run = council(starter, "run", "open", "council-postgame")[1].strip()
+    starter_run = council(starter, "run", "open", "context-core")[1].strip()
     code, out, _ = council(starter, "run", "plan", "check")
     check("run plan check: the starter plan is intentionally incomplete", code == 1 and "replace the placeholder" in out, out)
     code, out, err = council(starter, "state", "phase=brief")
@@ -3795,9 +3798,9 @@ def runs_helper_carries_next_steps(tmp):
     plan_next = re.search(r"^next:[ 	]*(.*)$", read(os.path.join(prun, "session-state.md")), re.MULTILINE).group(1)
     council(nx, "state", "phase=work")
     check("state phase=: a review's next after phase=work names council-review and no doctrine file; a post-game "
-          "run's still names its doctrine file (a plan's names its page since D60: the design group)",
+          "run's names its own page's section too since D71 (a plan's since D60: the design group)",
           "council-review" in nxt() and "doctrine" not in nxt() and ".md" not in nxt()
-          and "02-prepare.md" in plan_next, str((nxt(), plan_next)))
+          and "(council-postgame, section 2)" in plan_next and "doctrine" not in plan_next, str((nxt(), plan_next)))
     code, out, err = council(nx, "state", "decision=Go ahead with the Squad, four seats")
     council(nx, "state", "decision=Use the key token=abc123notarealvalue for the test server")
     body = read(st).split("## Decisions so far", 1)[-1]
@@ -5675,11 +5678,13 @@ def runs_stage_order_and_close(tmp):
     code, out, err = council(noworker, "state", "phase=deliver")
     check("state phase=: Challenge is never skipped unasked (Judge to Deliver refused)",
           code == 2 and "would skip challenge" in err and phase_of(nwr) == "judge", err)
-    pg, pgr = fresh("order-postgame", "council-postgame", selected=("chair", "verify-1"))
+    pg, pgr = fresh("order-postgame", "council-postgame", selected=("chair", "reader", "runner"), verification="self")
     code, out, err = council(pg, "state", "phase=challenge")
-    check("state phase=: a post-game can't leave out Prepare and Judge either", code == 2 and "would skip prepare, judge" in err, err)
-    check("state phase=: a post-game's own path — Prepare, Judge, Challenge, Deliver, Learn — needs no skip=",
-          steps(pg, "prepare", "judge", "challenge", "deliver", "learn") == [0] * 5, read(os.path.join(pgr, "events.tsv")))
+    check("state phase=: a post-game can't leave out Prepare, Work and Judge either (D71)",
+          code == 2 and "would skip prepare, work, judge" in err, err)
+    check("state phase=: a post-game's own path — the review's: Prepare, Work, Judge, Challenge, Deliver, Learn — "
+          "needs no skip= (D71)", steps(pg, "prepare", "work", "judge", "challenge", "deliver", "learn") == [0] * 6,
+          read(os.path.join(pgr, "events.tsv")))
     init = new_repo(tmp, "order-init")
     council(init, "run", "open", "council-init")
     check("state phase=: council-init names its own phases, in any order, and closes complete without a Deliver stage",
@@ -5854,14 +5859,8 @@ def runs_stage_order_and_close(tmp):
           and len(chair_rows) == 2 and chair_rows[-1][5] == "33000" and chair_rows[-1][6].startswith("calls=4;basis=complete;")
           and len(kinds) - 1 - kinds[::-1].index("run.chair_usage") < kinds.index("run.closed"), out + err + repr(chair_rows))
 
-    # Beside the Chair's tokens, the method its mode loads (D13): context-core's skill, the mode's own and the
-    # doctrine of each stage the run must enter, counted here from the files themselves; a review's is its own
-    # page alone (D47), and so is a plan's (D60). A post-game enters its six stages.
-    def method_of(mode, ranks):
-        names = [os.path.join("skills", "context-core", "SKILL.md"), os.path.join("skills", mode, "SKILL.md")]
-        names += [os.path.join("references", "doctrine", f) for f in os.listdir(os.path.join(ROOT, "references", "doctrine"))
-                  if int(f[:2]) in ranks]
-        return sum(len(Path(ROOT, n).read_bytes().replace(b"\r\n", b"\n")) for n in names)
+    # Beside the Chair's tokens, the method its mode loads (D13), counted here from the files themselves: a review's
+    # is its own page alone (D47), and so is a plan's (D60) and a post-game's (D71).
     short = len(Path(ROOT, "skills", "council-review", "SKILL.md").read_bytes().replace(b"\r\n", b"\n"))
     check("run close: the method load is recorded beside the Chair's tokens (method_bytes=) and said on the same line — "
           "a review's is its one page",
@@ -5873,17 +5872,16 @@ def runs_stage_order_and_close(tmp):
           code == 0 and "The Chair's own work: 33k tokens over 4 model calls (its context's growth, from the session transcript)"
           " · method load: {:,} bytes".format(short) in out, out + err)
     sid_w = "sess-chair-usage-w"
-    wu, wur = fresh("chair-method", "council-postgame", selected=("chair", "verify-1"), env=session(sid_w))
+    wu, wur = fresh("chair-method", "council-postgame", selected=("chair", "reader", "runner"), verification="self",
+                    env=session(sid_w))
     write(os.path.join(ccfg, "projects", "eval-project", sid_w + ".jsonl"),
           call(sid_w, datetime.now(timezone.utc), "w1", 5000, 0, 0))
     code, out, err = council(wu, "run", "close", "--status", "abandoned", env={"CLAUDE_CONFIG_DIR": ccfg})
-    full = method_of("council-postgame", {1, 2, 7, 8, 9, 10})
+    full = len(Path(ROOT, "skills", "council-postgame", "SKILL.md").read_bytes().replace(b"\r\n", b"\n"))
     rows = [e[6] for e in events(wur) if e[3] == "run.chair_usage"]
-    check("run close: a post-game records the method of its six stages, context-core's and its own, the D13 figure",
-          code == 0 and rows == ["calls=1;basis=complete;method_bytes=%d" % full] and full > short
-          and "· method load: {:,} bytes (context-core, council-postgame and the doctrine of the 6 stages it enters)"
-          .format(full)
-          in out, out + err + repr(rows))
+    check("run close: a post-game records its one page as its method, the D13 figure, as a review does (D71)",
+          code == 0 and rows == ["calls=1;basis=complete;method_bytes=%d" % full]
+          and "· method load: {:,} bytes (council-postgame's one page)".format(full) in out, out + err + repr(rows))
     os.remove(os.path.join(ccfg, "projects", "eval-project", sid_a + ".jsonl"))
     p = subprocess.run([sys.executable, os.path.join(ROOT, "src", "council", "commands", "script.py"), "chair_usage", "--run",
                         cur], capture_output=True,
@@ -11190,6 +11188,93 @@ def health_run_closes_on_its_path(tmp):
           "for assign, brief or collect (D65)",
           code == 0 and "complete" in out and "Stages: convene > prepare > work > judge > challenge > deliver > learn"
           in audit and "never entered" not in audit and "FAIL" not in audit, out + err + audit[:1500])
+
+@part("postgame")
+def postgame_opens_with_the_pair(tmp):
+    """A post-game (D71): council run open council-postgame (or postgame) writes the fixed plan with the reader and the
+    runner, and the review's brief with the post-game block on its line, the parts line left for the Chair and both
+    role texts word for word; the plan passes untouched; the next-step lines name the page's own sections, and Work
+    can't be left out."""
+    repo = small_council_repo(tmp, "postgame-open", "")
+    roles = re.findall(r"(?m)^(?:> .*\n)+", read(os.path.join(ROOT, "references", "templates", "review-brief.md")))
+    code, run, err = council(repo, "run", "open", "postgame")
+    run = run.strip()
+    brief, plan = read(os.path.join(run, "brief.md")), read(os.path.join(run, "run-plan.tsv"))
+    pcode, pout, perr = council(repo, "run", "plan", "check")
+    check("run open postgame: the fixed plan selects the reader and the runner, names no model, and passes council "
+          "run plan check untouched (D71)",
+          code == 0 and pcode == 0 and "plan: valid · squad" in pout and "\tcouncil-postgame\t" in plan
+          and "seat\treader\trole\tworker" in plan and "seat\trunner\trole\tworker" in plan
+          and "estimated-tokens\t500000" in plan and "\tmodel\t" not in plan, pout + perr + err + plan[:800])
+    check("run open postgame: the brief is the review's with the post-game block, both roles word for word, the parts "
+          "line for the Chair, no build or health block and no {{…}} left (D71)",
+          "## This is a post-game: the finished work against the owner's request\n" in brief and len(roles) == 2
+          and all(role in brief for role in roles) and "\nParts: <" in brief and "## This change is a build" not in brief
+          and "## This is a health pass" not in brief and "{{" not in brief
+          and brief.startswith("# Brief — %s\n" % os.path.basename(run)), brief[:1500] + err)
+    council(repo, "state", "phase=prepare")
+    state = read(os.path.join(run, "session-state.md"))
+    nxt = state.split("\nnext: ", 1)[-1].split("\n", 1)[0]
+    check("state postgame: Prepare's next step names the page's own section, never a doctrine file (D71)",
+          "(council-postgame, section 2)" in nxt and "doctrine" not in nxt, state)
+    code, out, err = council(repo, "state", "phase=judge")
+    check("state postgame: Judge straight after Prepare is refused, naming work (D71)",
+          code == 2 and "would skip work" in err and "council state phase=work" in err, out + err)
+
+
+@part("postgame")
+def postgame_run_closes_on_its_path(tmp):
+    """A post-game on its page's path closes complete with the audit passing its stages (D71); its parts' quotes are
+    checked against the request, and the closing card counts the Chair's verdicts in verify-self.md."""
+    repo = small_council_repo(tmp, "postgame-close", "")
+    code, run, err = council(repo, "run", "open", "council-postgame")
+    run = run.strip()
+    write(os.path.join(run, "ask.md"), "# Ask\nsource: said at the time\n## In your words\nSave the file on exit. "
+          "Show a toast when it saves.\n")
+    write(os.path.join(repo, "app.py"), "def save(x):\n    return x\n")
+    council(repo, "state", "phase=prepare")
+    write(os.path.join(run, "synthesis.md"), "# Synthesis\n## Kept\n"
+          '1 · must · ask · app.py · saves on exit · quote: "Save the file on exit."\n'
+          '2 · must · ask · app.py · a toast · quote: "Show a pop-up when it saves."\n## Drift on paper\n- none\n')
+    qcode, qout, qerr = council(repo, "check")
+    write(os.path.join(run, "synthesis.md"), "# Synthesis\n## Kept\n"
+          '1 · must · ask · app.py · saves on exit · quote: "Save the file on exit."\n'
+          '2 · must · ask · app.py · a toast · quote: "Show a toast when it saves."\n## Drift on paper\n- none\n')
+    council(repo, "state", "phase=work")
+    for slug in ("reader", "runner"):
+        council(repo, "seat", slug, "running", "agent=a-" + slug)
+        write(os.path.join(run, "seats", slug + ".md"), "# %s (council-postgame)\nref: none\n## Index\n"
+              "1 · MET · part 1 · app.py:1 · Saves on exit\n2 · NOT MET · part 2 · app.py:1 · No toast\n" % slug)
+        council(repo, "seat", slug, "done", "tokens=1000", "tools=10")
+    council(repo, "state", "phase=judge")
+    write(os.path.join(run, "verify-self.md"), "# Self-check — postgame\n| # | Part | Verdict | Evidence |\n"
+          "|---|---|---|---|\n| 1 | Saves on exit | MET | app.py:1 |\n| 2 | A toast | NOT MET | no toast in app.py |\n")
+    council(repo, "state", "phase=challenge")
+    ccode, cout, cerr = council(repo, "check")
+    write(os.path.join(repo, ".council", "postgames", "2026-11-19-save.md"), "# Post-game: save\n## Next move\n"
+          "Finish\n### Next tasks\n#### 1. The toast\n| | |\n|---|---|\n"
+          '| **Done when** | part 2: "Show a toast when it saves." — save, the toast shows |\n'
+          "## Noticed, not tasked\n- none\n")
+    for step in ("phase=deliver", "deliverable=.council/postgames/2026-11-19-save.md"):
+        council(repo, "state", step)
+    dcode, dout, derr = council(repo, "check")
+    council(repo, "ask", "save")
+    council(repo, "state", "phase=learn")
+    code, out, err = council(repo, "run", "close")
+    audit = read(os.path.join(run, "audit.md")) if os.path.isfile(os.path.join(run, "audit.md")) else ""
+    scode, card, serr = council(repo, "status", "--run", os.path.basename(run))
+    check("check postgame: a part that paraphrases the request is refused before the pair starts; the quoted parts "
+          "pass, and so does a next task quoting its part (D71)",
+          qcode == 1 and "synthesis#2  quote  NOT-IN-THE-REQUEST" in qout and ccode == 0
+          and "synthesis#2  quote  ok" in cout and dcode == 0 and "next task 1  done-when  ok" in dout,
+          qout + cout + cerr + dout + derr)
+    check("run close: a post-game on its page's path closes complete and the audit passes its stages, never asking "
+          "for assign, brief or collect (D71)",
+          code == 0 and "complete" in out and "Stages: convene > prepare > work > judge > challenge > deliver > learn"
+          in audit and "never entered" not in audit and "FAIL" not in audit, out + err + audit[:1500])
+    check("status postgame: the closing card counts the Chair's verdicts from verify-self.md (D71)",
+          "1 of 2 parts of the request met" in card and "verify-self.md" in card, card + serr)
+
 
 parser =argparse.ArgumentParser(description="Helper evals: run bin/council against scaffolded git repos.")
 parser.add_argument("--list", action="store_true",

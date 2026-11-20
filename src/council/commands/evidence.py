@@ -420,8 +420,8 @@ def indexed(run: Path, action: str) -> dict[str, Any]:
     """The run's fields, for a mode that keeps a claim index; a post-game's refusal, with the reason and the step."""
     fields = run_fields(run)
     if fields["mode"] == "council-postgame":
-        raise EvidenceError("a post-game keeps no claim index: its verifier judges the work against the request (MET, "
-                            "PARTLY MET, NOT MET, CAN'T TELL) in verify-*.md, and the closing card counts those rows "
+        raise EvidenceError("a post-game keeps no claim index: its verdicts on the request (MET, PARTLY MET, NOT MET, "
+                            "CAN'T TELL) are in verify-self.md, and the closing card counts those rows "
                             "— nothing to " + action + "; go on with the run: council status --run " + run.name)
     return fields
 

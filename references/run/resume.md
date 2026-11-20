@@ -10,8 +10,8 @@ when the user says to go on with a paused run, or when you hand the work on to a
   with each. Re-invoke the skill named by the run's `mode:`, read `session-state.md` and `ask.md`,
   re-read the method for its phase, and continue: a review's is its own page (council-review), the
   step for that phase, and so is a build's, a plan's and a research run's (council-implement,
-  council-plan, council-research, council-health); a post-game loads context-core and the doctrine for the
-  phase. A plan or build run whose `ask.md` source line ends `(/council)` is a step of the whole loop:
+  council-plan, council-research, council-health, council-postgame); a post-game opened on 2.0.0 or
+  earlier loads context-core and the doctrine for the phase. A plan or build run whose `ask.md` source line ends `(/council)` is a step of the whole loop:
   re-invoke council, whose Resume names the step.
   No hook message? Run `council run status`.
 - **Carrying a run on in a new session, after `/clear`, or on the user's "go on":** first

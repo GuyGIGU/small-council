@@ -1,6 +1,6 @@
 ---
 name: context-core
-description: Shared engine for the Small Council's post-game mode (a review, a build, a plan and research each run on their own page). Load when council-postgame invokes it or when resuming a post-game run.
+description: The Small Council's old shared engine, kept only for a post-game run opened on 2.0.0 or earlier (every mode now runs on its own page). Load when resuming such a run.
 user-invocable: false
 ---
 
