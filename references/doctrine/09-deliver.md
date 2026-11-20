@@ -32,7 +32,7 @@
    checks once, in the offer. council-implement's receipt holds this line.
 5. **The cost:** quote the spend line from `council status`, with its estimate and any ceiling —
    never worked out from seat rows; the helper keeps partial and unknown figures honest.
-6. **Then the rulings, as one question** (from synthesis.md; a build's open items): ONE
+6. **Then the rulings, as one question** (from synthesis.md): ONE
    AskUserQuestion (without it, one plain question in the chat), never as a numbered list of notes:
    - the harmless items together, under one plain sentence — "nothing here can break the app or
      lose work";

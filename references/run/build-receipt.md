@@ -24,14 +24,19 @@ to hold (D58); its rules stand where the report keeps them:
 
 ### Open items
 
-**No commit, push or PR question while anything is left open.** How items close is the config's
-`- open items:` line (missing or unreadable: `ask`, and say so):
-- **`ask`:** offer each item under Does not work or Noted for later as *fix now* or *later* in the rulings question
-  — a data-loss hazard defaults to fix now — and wait: "later" is the user's ruling, never yours.
-- **`fix now`:** no per-item question. Each item is one line under Does not work — `<what> — ~<time> —
-  ~<k>k tokens` — and you fix it like the fix round: gates prove it; a re-check or spend past the
-  budget still needs the user's go; one you can't fix goes to the rulings question. A data-loss
-  hazard still gets its own line to the user the moment you find it.
+**No commit, push or PR question while anything is left open.** The open items are what is still
+wrong after the build's one fix round (the build page, section 5, step 6). That round takes every
+confirmed item the change introduced, with no question; an item left after it is open until the
+user ruled on it.
+- **No second pass** (D11): each open item goes in the report under Does not work, and as a
+  consequence under Your decisions (D62): what happens if nothing is done, the recommendation
+  first, whether it can be undone. Fixing it is a follow-up, on the user's word, never another
+  round here; "later" is the user's ruling, never yours.
+- **Noted for later is never offered as fix now or later:** each line goes to known problems with
+  `council book note` (D55); the report shows five at most.
+- A data-loss hazard still gets its own line to the user the moment you find it.
+- The config's `- open items:` line is still read and changes nothing in a build: the fix round
+  never asks, and nothing is fixed after it without the user's word.
 
 ### Commit, push and PR
 

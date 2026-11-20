@@ -21,7 +21,9 @@ NAME = "council.config.md"
 AGENT_CAP = 10
 SPACE = "[ \t\n\r\f\v]"  # sed's [[:space:]]
 MAX_PER_WORKER = 1000000
-ESTIMATE_ROLES = ("review", "plan", "builder", "verifier", "converge")    # the roles `- estimates:` gives a figure
+# The roles `- estimates:` may name. The Chair still prices two: builder (a build's builder; 500k without it) and
+# verifier (a post-game's checker). review, plan and converge are read without complaint and price nothing (D56, D60).
+ESTIMATE_ROLES = ("review", "plan", "builder", "verifier", "converge")
 BOM = "﻿"
 
 
@@ -473,8 +475,8 @@ SETTINGS: dict[str, tuple[str, Callable[[str], bool]]] = {
     "sharing": ("team or just me", _sharing_read),
     "notifications": ("on or off", _one_of("on", "off")),
     "estimate per worker": ("a token figure from 1k to 1M, such as 150k", lambda value: _in_range(value) is not None),
-    "estimates": ("review=, plan=, builder=, verifier= and converge=, each a token figure from 1k to 1M, such as "
-                  "builder=450k", _estimates_read),
+    "estimates": ("builder= or verifier= with a token figure from 1k to 1M, such as builder=450k (review=, plan= and "
+                  "converge= are still read and price nothing)", _estimates_read),
     "gate time limit": ("a time, such as 90, 15m or 2 hours", lambda value: limit_seconds(value) is not None),
     CHECKS_TAKE: ("a whole number of minutes from 1 to 1440, such as 25 min", lambda value: minutes(value) is not None),
     "guardrails": ("declined", _one_of("declined")),

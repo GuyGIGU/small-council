@@ -19,6 +19,16 @@ All notable changes to this project are documented here. The format is based on
   section (set up before 2.0: run a `council-init` refresh), when a page the book names is missing,
   when there is no design or stack page yet, and when the design page passes 120 lines or the stack
   page 60. Warnings only: a run still goes.
+- **A build's cost quote is honest in a new project.** Each builder is quoted at your config's
+  `builder=` figure, and at 500k without one (it was 80k, when real builders take 300k to 1.3M);
+  the quote says it is a default until this project's builds are measured (#44, D68).
+- **The end of a build matches 2.0.** The one fix round takes what the build's own check confirmed,
+  without asking, and there is never a second. What is still wrong is in the report, under Does not
+  work and Your decisions; smaller things go to known problems. The config's `- open items:` line
+  is still read and changes nothing, and new configs no longer carry it (#45, D68).
+- The config's comments describe 2.0: `- checking:`, `- models:` and `- estimates:` no longer
+  describe a final checker or roles that price nothing.
+- The process audit stays as it is (D69). No lead builder: issue 63 is closed (D70).
 
 ### Fixed
 - **`council state restore=backup` is refused in a project that has git**, so a build can no longer
@@ -27,6 +37,10 @@ All notable changes to this project are documented here. The format is based on
   `<run>/pr-body.md`, so the step that shows it to you had nothing to show.
 - The undo is now tested for a file the build turned into a folder, and the reverse; both come
   back. An ignored file inside such a folder is removed with it.
+- Two helper messages and one reference page still described the build before 2.0. The refusal of
+  a second verifier, and `council doctor`'s note on `- build tier: full`, now say a build is
+  checked once by a reader and a runner, with a blind verifier only for a finding on a protected
+  subject; a plan's `New way:` goes to you as one of its Your decisions.
 
 ## [2.0.0] — 2026-11-19
 

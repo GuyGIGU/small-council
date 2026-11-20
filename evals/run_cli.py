@@ -3743,8 +3743,9 @@ def runs_config_written_loosely(tmp):
     write(os.path.join(old, ".claude", "settings.local.json"),
           '{"permissions": {"allow": ["Edit(.council/**)", "Bash(council run:*)", "Bash(council state:*)"]}}')
     code, out, err = council(old, "doctor")
-    check("doctor: `build tier: full` with no `checking:` line says a verifier per task is now `checking: per task`",
-          "says `- build tier: full` and has no `- checking:` line" in out and "add `- checking: per task`" in out,
+    check("doctor: `build tier: full` with no `checking:` line says how a 2.0 build is checked, and what settles it",
+          "says `- build tier: full` and has no `- checking:` line" in out and "by a reader and a runner" in out
+          and "add `- checking: one per batch`" in out and "a build sends one verifier" not in out,
           out + err)
     check("doctor: a map with no One way per job table says what it is for and that a council-init refresh adds it",
           "map.md has no `## One way per job` table" in out and "a council-init refresh adds it" in out, out + err)
@@ -9168,6 +9169,7 @@ def runs_one_checker_per_batch(tmp):
     check("seat: one per batch — a second verifier is refused, naming the first, the user's go and the per-task setting",
           code == 2 and "cannot start verify-2" in err and "already started 1 verifier(s) (verify-1)" in err
           and 'council state decision="' in err and "checking: per task" in err
+          and "for a finding on a protected subject" in err and "at converge" not in err
           and "\nverify-2\t" not in read(os.path.join(orun, "seats.tsv")), out + err)
     code, out, err = council(ob, "seat", "verify-1", "running", "agent=o3")
     check("seat: one per batch — the first verifier started again after its verdict is a second checker too",
@@ -10025,6 +10027,19 @@ def doctor_hooks_live(tmp):
           "the Chair can't price a run from it" in said("estimates") and "default" not in said("estimates")
           and "the Chair can't price a run from it" in said("estimate per worker")
           and "the helper uses the setting's default" in said("agent cap"), out + err)
+    # Issue 44: since 2.0 only a builder's and a verifier's figure price anything, and the doctor says so; the words
+    # an older config carries (review=, plan=, converge=) stay readable (D23): a line with all five is not named.
+    check("doctor: a bad estimates line names the two figures still priced, builder= and verifier=, and says the "
+          "older words are still read and price nothing",
+          "estimates takes builder= or verifier= with a token figure from 1k to 1M, such as builder=450k"
+          in said("estimates")
+          and "(review=, plan= and converge= are still read and price nothing)" in said("estimates"), out + err)
+    write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- agent cap: 10\n"
+          "- estimates: review=100k, plan=120k, builder=450k, verifier=90k, converge=200k\n")
+    code, out, err = council(repo, "doctor")
+    check("doctor: an estimates line with every word an older config wrote (review=, plan=, builder=, verifier=, "
+          "converge=) is read without complaint",
+          code in (0, 1) and "doctor: " in out and "estimates" not in out + err, out + err)
     write(os.path.join(repo, ".council", "council.config.md"), "# Council config\n\n## Run preferences\n- agent cap: 10\n")
     code, out, err = council(repo, "doctor", "hooks", "--line", "--session", "s-doc")
     check("doctor hooks --line: only the count, the SessionStart banner's line", code == 0 and out.strip().startswith("hooks: 3 of 5 live"), out + err)
@@ -10697,6 +10712,9 @@ def build_opens_with_the_pair(tmp):
           code == 0 and "seat\treader\tdisposition\tselected" in plan and "seat\trunner\trole\tworker" in plan
           and "estimated-tokens\t<pending>" in plan and "seat\treader\tmodel" not in plan
           and "# seat\ttask-1\tdisposition\tselected" in plan, plan[:1500] + err)
+    check("run open council-implement: the plan it writes tells the Chair what one builder is quoted at, the config's "
+          "builder= figure and 500000 without one, never the old 80k (issue 44)",
+          "builder= figure (500000 without one" in plan and "500000 for the pair" in plan, plan[:900])
     check("run open council-implement: the brief is the review's, both role texts word for word, with the build's "
           "section and the runner's break-on-purpose line; a review's brief has neither and no {{…}} is left",
           len(roles) == 2 and all(r in brief for r in roles)
@@ -10705,9 +10723,9 @@ def build_opens_with_the_pair(tmp):
           and "## This change is a build" not in review_brief and "on purpose" not in review_brief
           and "{{" not in brief and "{{" not in review_brief and "\n\n\n" not in review_brief,
           brief[:3000])
-    write(os.path.join(run, "run-plan.tsv"), plan.replace("estimated-tokens\t<pending>", "estimated-tokens\t800000")
+    write(os.path.join(run, "run-plan.tsv"), plan.replace("estimated-tokens\t<pending>", "estimated-tokens\t1000000")
           .replace("# seat\ttask-1\t", "seat\ttask-1\t").replace("# context\ttask-1\t", "context\ttask-1\t")
-          .replace("# budget\ttask-1\t", "budget\ttask-1\t"))
+          .replace("# budget\ttask-1\t", "budget\ttask-1\t"))     # one builder at the 500k default, and the pair
     cfg = os.path.join(repo, ".council", "council.config.md")
     write(cfg, read(cfg) + "\n## Run preferences\n- models: builder=sonnet, verifier=sonnet\n")
     code, out, err = council(repo, "run", "plan", "check")
