@@ -37,6 +37,10 @@ All notable changes to this project are documented here. The format is based on
   `<run>/pr-body.md`, so the step that shows it to you had nothing to show.
 - The undo is now tested for a file the build turned into a folder, and the reverse; both come
   back. An ignored file inside such a folder is removed with it.
+- Two helper messages and one reference page still described the build before 2.0. The refusal of
+  a second verifier, and `council doctor`'s note on `- build tier: full`, now say a build is
+  checked once by a reader and a runner, with a blind verifier only for a finding on a protected
+  subject; a plan's `New way:` goes to you as one of its Your decisions.
 
 ## [2.0.0] — 2026-11-19
 

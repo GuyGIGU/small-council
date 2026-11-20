@@ -3743,8 +3743,9 @@ def runs_config_written_loosely(tmp):
     write(os.path.join(old, ".claude", "settings.local.json"),
           '{"permissions": {"allow": ["Edit(.council/**)", "Bash(council run:*)", "Bash(council state:*)"]}}')
     code, out, err = council(old, "doctor")
-    check("doctor: `build tier: full` with no `checking:` line says a verifier per task is now `checking: per task`",
-          "says `- build tier: full` and has no `- checking:` line" in out and "add `- checking: per task`" in out,
+    check("doctor: `build tier: full` with no `checking:` line says how a 2.0 build is checked, and what settles it",
+          "says `- build tier: full` and has no `- checking:` line" in out and "by a reader and a runner" in out
+          and "add `- checking: one per batch`" in out and "a build sends one verifier" not in out,
           out + err)
     check("doctor: a map with no One way per job table says what it is for and that a council-init refresh adds it",
           "map.md has no `## One way per job` table" in out and "a council-init refresh adds it" in out, out + err)
@@ -9168,6 +9169,7 @@ def runs_one_checker_per_batch(tmp):
     check("seat: one per batch — a second verifier is refused, naming the first, the user's go and the per-task setting",
           code == 2 and "cannot start verify-2" in err and "already started 1 verifier(s) (verify-1)" in err
           and 'council state decision="' in err and "checking: per task" in err
+          and "for a finding on a protected subject" in err and "at converge" not in err
           and "\nverify-2\t" not in read(os.path.join(orun, "seats.tsv")), out + err)
     code, out, err = council(ob, "seat", "verify-1", "running", "agent=o3")
     check("seat: one per batch — the first verifier started again after its verdict is a second checker too",

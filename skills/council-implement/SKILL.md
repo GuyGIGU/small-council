@@ -191,7 +191,7 @@ For each task, in order:
 
 ## 7. Learn and close
 
-1. **Into the book:** each Noticed for later line and each builder's `Noticed:` line,
+1. **Into the book:** each Noted for later line and each builder's `Noticed:` line,
    `council book note "<…> — <path:line> (build <date>)"`; each decision the owner made that
    changes the design or the stack, a new entry in the decisions log in their words
    (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`). **The design page**, done at section 6, step 2:
