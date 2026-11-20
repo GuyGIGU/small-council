@@ -33,15 +33,21 @@ def main(args: cli.Args, words: list[str]) -> int:
 
 
 def chosen(run: Path, words: list[str], mode: str) -> list[str]:
-    """The files named; else synthesis.md, else every seat file (in a build, not a diagnosis: it cites the code
-    before its fix, lines that moved on)."""
+    """The files named; else synthesis.md, else every seat file (in a build, not a diagnosis, the reader's or the
+    runner's: each cites the code as it was before the fix that followed it, lines that moved on)."""
     if words:
         return words
     folder = run.as_posix()
     if (run / run_files.SYNTHESIS).is_file():
         return [folder + "/" + run_files.SYNTHESIS]
     found = [folder + "/seats/" + name for name in seat_files.listed(run / "seats", "*.md")]
-    return [path for path in found if not (mode == IMPLEMENT and path.rsplit("/", 1)[-1].startswith("diagnose-"))]
+    return [path for path in found if not (mode == IMPLEMENT and before_fix(path.rsplit("/", 1)[-1]))]
+
+
+def before_fix(name: str) -> bool:
+    """A build's seat file written before a fix moved the lines it cites: a diagnosis, and the reader's and the
+    runner's (they read the whole change before the fix round), so their citations are stale by Deliver."""
+    return name.startswith("diagnose-") or name in ("reader.md", "runner.md")
 
 
 def _write(path: Path, lines: list[str]) -> None:

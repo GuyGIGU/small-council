@@ -1,4 +1,4 @@
-# Small Council 1.2.0
+# Small Council 2.0.0
 
 A context-engineering council for Claude Code: tailored expert seats review, plan, build, and research in isolated context windows, debate the tough calls, verify adversarially, check finished work against your original request, fit the checks a project is missing, and report every build — shortcuts included — in plain language.
 

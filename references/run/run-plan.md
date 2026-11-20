@@ -58,8 +58,8 @@ it, it records `run.cap_passed` and the status card says so. From the cap on, a 
 agent until the user's go is recorded with `council cap allow` (`references/run/run-accounting.md`).
 
 An optional `seat/<slug>/model` row is `inherit`, `fable`, `opus`, `sonnet`, or `haiku`. Missing
-means `inherit`. A builder, review or verifier seat may take its role's model from the config's
-`- models:` line (`references/run/models.md`); the Chair stays on `inherit`, and the check refuses a
+means `inherit`. A builder or verifier seat may take its role's model from the config's `- models:`
+line (`references/run/models.md`; a review's reader and runner take none, D51); the Chair stays on `inherit`, and the check refuses a
 verifier on a weaker model than a builder it checks — in a Solo build, the Chair too.
 Otherwise overrides require `- seat models: on` in `council.config.md`, and only selected worker seats
 may use `sonnet` or `haiku`. A worker requesting an override must
@@ -109,7 +109,7 @@ stage while a task breaks a rule below. Beside `Depends on` and `Done when`, eve
 | Row | What it holds | Refused when |
 |---|---|---|
 | **Serves** | the part of the request it serves, in quotes, word for word from ask.md's `## In your words` (and the filed request it continues). A support task (a test, a changelog line) quotes the part its parent serves | the row is missing, quotes nothing, quotes under three words, or quotes words the request never said |
-| **Owner** | the module or folder, and the job it extends: a row of `map.md`'s `## One way per job` table, named by its job. Or `New way: <why no existing way fits>`, which goes to the user as a ruling (Deliver, step 6) and, once they rule, into memory as a decision. A probe or research task says `Probe: <the question>` or `Research: <the question>` | the row is missing, `New way:` gives no why, or the map has the table and the row names none of its jobs |
+| **Owner** | the module or folder, and the job it extends: a row of `map.md`'s `## One way per job` table, named by its job. Or `New way: <why no existing way fits>`, which goes to the owner as one of the plan's Your decisions and, once they decide, into the decisions log. A probe or research task says `Probe: <the question>` or `Research: <the question>` | the row is missing, `New way:` gives no why, or the map has the table and the row names none of its jobs |
 | **Rests on** | the facts the task takes as given, split by `;`, each ending with its evidence state (`references/run/evidence-model.md`) and `outside` when it is about something outside the repo: `the provider retries for 3 days (ASSUMED, outside); orders are keyed by id (OBSERVED)`. `—` when it rests on nothing | the row is missing, or a fact has no state |
 
 **An unknown becomes its own task.** A task resting on an `ASSUMED` or `INFERRED` fact marked `outside`

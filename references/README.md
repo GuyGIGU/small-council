@@ -7,24 +7,25 @@ reader needs.
 | Where | Who reads it |
 |---|---|
 | `*.md` at this level | Seat workers, and the Chair and builders at two points: the 14 seat docs, `guardrails.md` and `build-proof.md`. These paths are frozen: project files carry them (a roster's doc column, a card's `source:`, a plan's `Ref:`, comments in the config), so a move would break every installed project |
-| `doctrine/` | The Chair, one file per stage, when it enters that stage |
+| `doctrine/` | The Chair, one file per stage, when it enters that stage (a review reads none: its page is its method) |
 | `run/` | The Chair, builders, the helper and the scripts: the run's contracts, records and procedures |
 | `roster/` | `council-init`: the seat catalogue, and how setup reads a project's own decisions |
-| `templates/` | council-init (the skill), which copies them into a project's `.council/`; and the modes, for a deliverable's form (`build-log.md`) |
+| `templates/` | council-init (the skill), which copies them into a project's `.council/`; the modes, for a deliverable's form (`build-log.md`); and `council run open`, for a review's plan and brief (`run-plan-review.tsv`, `review-brief.md`) |
 | `spec-writer/` | The `spec-writer` skill: its tier templates and guides |
 | `test-architect/` | The `test-architect` skill: its report and specification formats |
 
 ## Stage doctrine — `doctrine/`
 
 One short file per stage of a council run, read by the Chair **when it enters that stage**. A rule
-read at the start of a long run fades by its end; a rule read at the moment of action doesn't.
+read at the start of a long run fades by its end; a rule read at the moment of action doesn't. A
+review reads none of them: `skills/council-review/SKILL.md` is its whole method (D47).
 
 `01-convene.md` · `02-prepare.md` · `03-assign.md` · `04-brief.md` · `05-work.md` · `06-collect.md` ·
 `07-judge.md` · `08-challenge.md` · `09-deliver.md` · `10-learn.md`
 
 The laws, stage index and essential helper rules live in `skills/context-core/SKILL.md`.
 The full command-purpose table lives in `run/helper-commands.md`; `council help` gives exact syntax.
-Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is council-init.
+Each mode but council-review adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is council-init.
 
 ## Run contracts — `run/`
 
@@ -33,11 +34,11 @@ Each mode adds its specifics under `## At <Stage>` headings. Stage 0 (Summon) is
 append-only record of CLI-observable actions.
 `run-accounting.md` defines exact usage, corrections and the `council.run-status/1` JSON contract.
 `evidence-model.md` defines claim links; `repair-loop.md` defines bounded diagnosis.
-`builder-report.md` defines a build round's report head and the checks of it against the saved diff;
-`builder-rules.md` lists the standing rules every build task carries, which its orders link;
-`builder-loop.md` gives the steps that build one task; the one line its builder returns is the builder
-contract's (`agents/council-builder.md`). `build-receipt.md` gives a build's receipt and what follows it,
-read at Deliver.
+`builder-rules.md` is the builder's one page (D56): the steps, the proof, the report head, the stops
+and the standing rules, which a task's orders link; the one line its builder returns is the builder
+contract's (`agents/council-builder.md`). `builder-report.md` (the round's checks against its saved diff)
+and `builder-loop.md` stay as reading. `build-receipt.md` gives what follows a build's report, read at
+Deliver.
 `war-room.md` defines the second round; `sharing.md` defines the team-or-just-me choice;
 `models.md` defines the model per role; `workflow.md` gives the rules a seat run through the
 Workflow tool adds. `resume.md` says how a run carries on after a compaction, a new
@@ -75,6 +76,9 @@ per-project **seat card** (`.council/cards/<slug>.md`) that workers read first (
 - `templates/seat-card.md` — a seat's card, written at Brief the first time a run selects the seat;
   its comment holds the rules for writing one.
 - `templates/seat-doc.md` — the shape of a project-local seat doc.
+- `templates/run-plan-review.tsv` · `templates/review-brief.md` — a review's fixed plan and brief, the
+  reader's and the runner's role texts word for word; `council run open council-review` fills them
+  into the run folder (D48).
 
 ## Spec and test docs
 

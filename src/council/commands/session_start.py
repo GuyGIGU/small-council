@@ -10,7 +10,7 @@ import time
 
 from council import git
 from council.commands import cli, doctor_hooks
-from council.records import hook_marks, map_file, memory, paths, runs, sharing, state
+from council.records import hook_marks, map_file, memory, paths, runs, sharing, stages, state
 from council.records import home as where
 
 AREAS = 5            # the stale areas the banner names; council map status lists them all
@@ -21,8 +21,8 @@ RESUME = "references/run/resume.md"    # the rules for carrying a run on, named 
 RUN_LINES = {   # one open run of this tree's or this session's, by what it is to this session
     "paused": ("- PAUSED COUNCIL RUN: {seen}. Resume it only when the user asks: council run resume --run {name}, then "
                "re-invoke the {skill} skill and read its session-state.md.{resume}{away}"),
-    "driving": ("- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: {where}). Re-invoke the {skill} skill (it loads "
-                "context-core), read {dir}/session-state.md (and ask.md, if present), {redo}, and continue from there."
+    "driving": ("- CONTEXT WAS JUST COMPACTED DURING A COUNCIL RUN: {where}). Re-invoke the {skill} skill{loads}, read "
+                "{dir}/session-state.md (and ask.md, if present), {redo}, and continue from there."
                 "{resume}{seats} Do not restart, do not re-dispatch seats that are running or done (wait for their "
                 "notifications), do not skip the completeness check.{runflag}"),
     "alongside": ("- Also open {at}, opened alongside by this same session: {name} ({skill}, phase {phase}). It is "
@@ -111,9 +111,9 @@ def _banner(home: str, sid: str) -> None:
         return
     cli.say("[Small Council] Council-enabled project. Council home: %s. %s"
             % (home, doctor_hooks.count_line(sid) if sid else ""))
-    cli.say("- Substantial work? Check for a council mode first (council-review, council-plan, council-implement, "
-            "council-research, council-postgame, spec-writer, test-architect). Propose it with its size and estimated "
-            "cost, and wait for a go-ahead before any multi-agent run.")
+    cli.say("- Substantial work? Check for a council mode first (council, council-review, council-plan, "
+            "council-implement, council-research, council-postgame, council-health, spec-writer, test-architect). "
+            "Propose it with its size and estimated cost, and wait for a go-ahead before any multi-agent run.")
     cli.say("- The `council` helper does the bookkeeping (`council run status`, `council doctor`). It is a bash "
             "script: run it in the Bash tool (Git Bash on Windows), never from PowerShell. Call it as a plain `council "
             "<command>`, never piped (a hook refuses `| head`, `| tail` and `| grep`: redirect it to a file and read "
@@ -233,8 +233,7 @@ def _described(r: runs.Listed, at: str, sid: str, event: str, driving: str, here
     said["runflag"] = said["away"] or (" Several runs are open on this tree: pass --run %s to every council command "
                                        "for this one." % said["name"] if here_n > 1 else "")
     said["at"] = "in another working tree (%s)" % _flat(at, PATH) if said["away"] else "on this working tree"
-    said["redo"] = ("re-read its build loop and the build log" if phase == "build"
-                    else "re-read the doctrine for that phase")
+    said["loads"], said["redo"] = _method(r.mode, phase)
     if r.status == "paused":
         kind = "paused"
     elif event == "compact":
@@ -248,6 +247,16 @@ def _described(r: runs.Listed, at: str, sid: str, event: str, driving: str, here
         seats = _flat(runs.seat_summary(where.native(r.folder), working), PATH)
         said["seats"] = " Seats — %s." % seats if seats else ""
     return RUN_LINES[kind].format(**said)
+
+
+def _method(mode: str, phase: str) -> tuple[str, str]:
+    """What the driving line says to load and to re-read: a one-page mode's own page, at its section for the phase
+    (references/run/resume.md); a mode still on context-core, it and the doctrine for the phase."""
+    log = " and the build log" if phase == "build" else ""
+    if mode in stages.ONE_PAGE:
+        return "", "re-read that page's section for the current phase (%s)%s" % (phase or "unknown", log)
+    return (" (it loads context-core)", "re-read its build loop and the build log" if phase == "build"
+            else "re-read the doctrine for that phase")
 
 
 def _elsewhere(others: list[str], n_other: int, gone: list[str], n_gone: int) -> None:

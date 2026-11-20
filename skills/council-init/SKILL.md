@@ -5,7 +5,6 @@ description: Summon the Small Council for this project — detect the stack and 
 
 # Council Init — summon the council for this project (stage 0)
 
-One installed plugin gives each repo a bespoke council, built to fit it.
 - Follow the council's discipline: **map the repo, don't deep-read it.**
 - First read `${CLAUDE_PLUGIN_ROOT}/references/roster/expert-catalog.md`: the seats, their "applies
   when" rules, and the recast rules.
@@ -25,8 +24,10 @@ One installed plugin gives each repo a bespoke council, built to fit it.
   It reads the root, `scripts/` and `tools/`.
 - **Then read what it doesn't:** what CI runs, the README's "how to run tests", a second level of
   folders (`apps/*/package.json`), and the tracked files by extension
-  (`git ls-files | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20`), which catches the
-  Xcode projects, notebooks, game engines and firmware a manifest list misses.
+  (`git ls-files | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20`), which catches what a
+  manifest list misses (Xcode projects, notebooks, firmware).
+- **No code yet** (no manifest, only documents tracked): the stack comes first, before Phase B
+  (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`, A new project's stack).
 - **Surfaces are yours to judge** — which of these exist:
   - UI components; a server or API;
   - a relational DB or migrations; other persistent state (files, caches, save data);
@@ -45,8 +46,7 @@ For each catalog seat, decide **include / recast / drop** by its "applies when" 
   - any computation-heavy engine → numerical correctness;
   - any hot loop → performance.
 
-  Seats dropped for "zero surface" have produced a quarter of a review's findings once
-  recast. Drop only when there's truly nothing to look at (no UI at all → no UI, UX or Frontend seats).
+  Drop only when there's truly nothing to look at (no UI at all → no UI, UX or Frontend seats).
 - **Every seat gets:**
   - a lowercase **slug** — the name of its seat file;
   - a named practitioner who fits the stack;
@@ -89,7 +89,7 @@ build/compile, and any e2e or regression harness.
 - **Never probe** a gate that deploys, spends money, flashes hardware or needs credentials: ask
   first. If it stays unprobed, the scaffold writes its Checked cell `✗ not probed: …`, and
   `council gate --all` skips it.
-- **Mandatory gates, and a slow suite at verify:** reviews wait for grounding gates.
+- **Mandatory gates, and a slow suite at verify:** plan and research runs wait for grounding gates.
 - **Prove each mandatory gate can fail.** One that only greps its tool's output, or ends in
   `|| true`, passes with the tool missing — green for ever. Run detect's `broken:` line (the command
   with its tool broken): `council gate probe-<name>-broken -- '<broken command>'` must fail. The
@@ -117,15 +117,13 @@ On a yes, write `<home>/plans/guardrails.md` from the reference's template (its 
 task per check, cheapest first — and offer council-implement. Each task's **Serves** quotes three or
 more of the user's own words, as they said them; when their yes was a word or two ("Both"), quote
 the question with it — "Fit the ones you want? — Both" — since the plan check refuses a shorter
-quote. **council-init installs nothing itself**, so every install gets before-and-after evidence, a
-blind verifier and a log row. Every task's Done-when is two-sided (it fails on a deliberate
+quote. **council-init installs nothing itself**, so every install is built and proved as a task. Every task's Done-when is two-sided (it fails on a deliberate
 violation and passes once it's removed), and a new lint, format or type gate is ratcheted
 (`council changed`, `Mandatory: no`): the reference's "proved both ways" and "The ratchet". A task
 names nothing under `.council/`: the Gates row is added after the build.
 
 On a no, write `guardrails: declined <date>` into the config once the scaffold has written it. `council doctor` then reports
-the project's missing checks as a warning rather than an error, so the decision sticks without being
-asked again; delete that line to have them fitted.
+the project's missing checks as a warning rather than an error, so it isn't asked again; delete that line to have them fitted.
 
 ## Phase D — Write the scaffold, then build the map
 
@@ -159,19 +157,22 @@ Fill the map's prose:
 
 ## Phase E — Propose, then write
 
-The order, honestly: the scaffold wrote only facts nobody has to agree to (the probes' results, the
-fingerprint, the template's defaults, the map from the code). What the user decides is proposed
-first and written only on their yes. Present:
+The scaffold wrote only facts nobody has to agree to; what the user decides is proposed first and
+written only on their yes. Present:
 - the roster, with recasts, drops, the reasons, and each seat's surface markers;
 - the gates (✓/✗) and their side effects;
 - the run preferences, sharing included: team or just me (when to ask:
   `${CLAUDE_PLUGIN_ROOT}/references/run/sharing.md`);
 - a model per role, proposed from yours: `${CLAUDE_PLUGIN_ROOT}/references/run/models.md`;
-- a three-line summary of the map.
+- a three-line summary of the map;
+- **the book** (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`): the design page, the stack page and
+  the decisions log, each the project's own file where it has one, never a second. Ask once for the
+  stack reasons no record gives; one not given is `not recorded`, never invented.
 
 Adjust on request. On confirmation, write into `.council/council.config.md`:
 - **the roster rows**, in place of the `<Seat>` row, each with its recast note;
 - **`## Stack`**, in place of its placeholder;
+- **`## Book`**: each page's path; then each page it names that is not there yet, from its template;
 - **`## Hard rules`**, which the scaffold writes empty: a `- ` line for each non-negotiable the
   user confirms (CLAUDE.md's and AGENTS.md's too); none, and it stays empty;
 - **the run preferences** and models as answered (the defaults are the user's to change: approve
@@ -186,7 +187,7 @@ Then:
 - **Memory:** keep an existing `conventions.md` wherever it is, and record its path in the config's
   Memory section; the scaffold wrote `.council/conventions.md` only when there was none. Obvious
   accepted patterns seen during detection go under `## Proposed`, never straight into the confirmed
-  sections; so does each decision Phase D found, citing its `file:line`.
+  sections; so does each decision Phase D found outside an adopted log, citing its `file:line`.
 
 ## Phase F — Wire it up
 
@@ -215,8 +216,7 @@ Then:
 
    **These rules match the command text.** They cover `council run status` typed plainly and nothing
    else: a call through a shell variable, an alias or `bash <path>/bin/council` matches none of them
-   and asks every time. So every council call is a plain `council <command>` (context-core, "The
-   helper"). Only if `command -v council` fails here, add the fallback form the same way —
+   and asks every time. So every council call is a plain `council <command>`. Only if `command -v council` fails here, add the fallback form the same way —
    `Bash(bash *bin/council run:*)` and so on — or the list does nothing.
 
    **`council gate` and `council changed` are deliberately not on the list**: both run whatever
@@ -234,8 +234,7 @@ Then:
    it holds an earlier, shorter version of this list, offer to add the rules it lacks: name them, use
    the form the file already uses, leave every other rule in the file as it is, and write only on a
    yes. After a plugin update, `council doctor` names the rules a project's list lacks.
-3. **Nothing else to install.** The plugin's hooks orient council sessions, flag open runs, restore
-   the method after a compaction and check every seat file before a worker finishes.
+3. **Nothing else to install:** the plugin's hooks do the rest.
 
 ## Refresh (re-runs)
 
@@ -276,6 +275,7 @@ Configs drift. On a re-run, or "refresh the council":
 - **Permission rules:** bring the council rules in `.claude/settings.local.json` up to Phase F's
   list, as Phase F step 2 says — on a yes.
 - **Refresh the map** if `council map status` shows it far behind.
+- **The book:** `council book` names a missing page; fill or cut pages as `references/run/book.md` says.
 
 ## Output
 

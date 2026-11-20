@@ -58,8 +58,9 @@ def chair(run: Path) -> None:
         cli.warn("council: %s" % failure)
         return
     doctrine = sum(name.startswith("references/doctrine/") for name in stages.method_files(mode, entered))
+    loaded = ("%s's one page" % mode if mode in stages.ONE_PAGE else      # a review's method is its page (D47)
+              "context-core, %s and the doctrine of the %d stage%s it enters" % (mode, doctrine, "s" * (doctrine != 1)))
     cli.say("the Chair's own work: %s%s tokens over %s model call%s (its context's growth, from the session "
-            "transcript; not in the agents' figures) · method load: %s bytes (context-core, %s and the doctrine of "
-            "the %d stage%s it enters)"
+            "transcript; not in the agents' figures) · method load: %s bytes (%s)"
             % ("at least " * (basis == "partial"), usage.token_text(int(tokens)), calls, "s" * (calls != "1"),
-               format(method, ","), mode, doctrine, "s" * (doctrine != 1)))
+               format(method, ","), loaded))

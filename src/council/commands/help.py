@@ -5,7 +5,7 @@ import sys
 
 from council.commands import cli
 
-COUNCIL_VERSION = "1.2.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
+COUNCIL_VERSION = "2.0.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
 
 USAGE = """\
 council — the Small Council's helper (Python 3.8+ and git)
@@ -27,8 +27,9 @@ council — the Small Council's helper (Python 3.8+ and git)
   council pushes [check git push|gh pr create]  the push freeze · check: the bash gate's decision (exit 2 while held)
   council run open <mode> [--alongside] [--session=ID] [--code-root=DIR]
                                          open a run for a mode, e.g. council-review (or review); prints its
-                                         folder; --code-root: the worktree the code is in, opened from the
-                                         main checkout
+                                         folder; a review's opens with its plan and brief.md, the reader and
+                                         the runner; --code-root: the worktree the code is in, opened from
+                                         the main checkout
   council run status [--all]             open runs, this tree's first (the last 20 with --all)
   council run close [--status complete|abandoned|paused]
                                          close the run (complete only once it came through Deliver);
@@ -105,7 +106,9 @@ council — the Small Council's helper (Python 3.8+ and git)
                                          and all it started are stopped: exit 124, TIMED OUT — no proof
   council gate <name> --invalid "<why>"  mark a red that proves nothing (the new check didn't compile, the
                                          probe was broken); council check reads that proof as no proof yet
-  council gates                          list the configured gates
+  council gates                          list the configured gates, then how long the checks take
+  council gates timed <minutes>          record how long the project's checks took (1-1440): the config's
+                                         "- checks take:" line, which a review's estimate uses
   council changed [--glob '<pat>'] [--each] -- <cmd>
                                          run <cmd> over just the files this change touches (0 when none);
                                          inside a gate, since the run's recorded base
@@ -134,6 +137,18 @@ council — the Small Council's helper (Python 3.8+ and git)
   council map touch <dir>="<line>" …     the user's line for each top-level area, under today's
                                          ## Changes in the map; map-commit moves to HEAD once every
                                          area changed since it has a line
+  council book                           where the project's book is: the design page, the stack page, the
+                                         decisions log (every agent reads these first) and known problems
+  council book note "<line>"             a true thing found and not fixed, dated, under known problems'
+                                         ## Found, not fixed (a review's items below the worth bar)
+  council book waive "<the owner's words>"
+                                         a kind of item the owner waved off, dated, under ## Not to raise
+                                         again; a review raises neither list again (the same words: once)
+  council restore point                  a build's restore point, before it changes the project: a commit of
+                                         the code root's files as they are (refs/council/restore/<run>), in
+                                         <run>/restore.md; nothing in the project moves
+  council restore show                   the restore point, what changed since, and the commands that put
+                                         every file back: printed, never run (the owner's call)
   council fingerprint [check]            the stack's fingerprint; check compares it with the config
   council memory [index|check|tidy]      memory's one-line index · stale anchors and failure evidence · the
                                          merges and retirements reading alone can find, numbered (writes nothing)

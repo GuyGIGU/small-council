@@ -56,8 +56,10 @@ table forgivingly — a bold or `#1` id, a bold verdict, prose after it, an `Evi
 runs the same reading when a verifier stops, so the verifier fixes its own file. The Chair records
 corrections in the readable deliverable rather than overwriting the verifier's words.
 
-A Solo run's own verdicts (`verify-self.md`, Challenge, Solo runs) are links marked `self`;
-the closing card says self-checked, and they satisfy `evidence check` only when the run plan's verification level is `self` (or its size `solo`).
+The Chair's own verdicts (`verify-self.md`: a Solo run's, Challenge, Solo runs; a review's, council-review)
+are links marked `self`; the closing card says self-checked, and they satisfy `evidence check` on a
+review at any verification level (D49), elsewhere only when the run plan's verification level is
+`self` (or its size `solo`).
 An independent verifier's row outranks a self-check.
 
 ## Run-local index

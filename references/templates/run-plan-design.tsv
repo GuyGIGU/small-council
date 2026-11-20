@@ -1,0 +1,36 @@
+# Small Council run plan v1, as a plan or a research run opens it (D60). Keep exactly five tab-separated columns.
+# Fixed: the designer, and the main session's own check of what it reports. A decision that is hard to undo
+# (the stack of a new project, a data format, a public interface, a migration): uncomment designer-2's rows,
+# add 150000 to estimated-tokens, and say why. A claim on a protected subject: add the verifier's rows, add its
+# tokens, and set verification to independent. A Small request in /council, where the main session writes the
+# three-item design itself: size solo, estimated-tokens 0, the designer's disposition skipped with why, its
+# context and budget rows deleted; at Deliver, council seat chair done agents=0.
+kind	id	field	value	reason
+schema	plan	version	1	versioned run-plan contract
+run	run	id	{{RUN}}	bind this plan to its run folder
+run	run	mode	{{MODE}}	mode chosen when the run opened
+run	run	size	squad	one fixed seat, the designer, and a second for what is hard to undo (D60)
+assessment	run	risk	low	it changes nothing in the project; a wrong design is caught before anything is built on it
+assessment	run	complexity	medium	one agent reads the book and the code under the request
+assessment	run	uncertainty	medium	what is underneath the request is what the designer finds out
+budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
+budget	run	estimated-tokens	150000	one designer, about 100 tool calls, plus the main session's check
+verification	run	level	self	the main session checks each bug and each claim a decision rests on against the code itself
+seat	chair	disposition	selected	the main session restates the request, checks the design and writes the deliverable
+seat	chair	role	chair	the one head
+context	chair	level	focused	the request, the book, the design and the code it cites
+budget	chair	tool-calls	60	the understanding, the dispatch, each check, the deliverable
+seat	designer	disposition	selected	reads the book and the code under the request
+seat	designer	role	worker	where the work fits, what is broken underneath, the real forks
+context	designer	level	focused	the brief, the book and the code under the request
+budget	designer	tool-calls	100	a deep read and a run in a scratch clone for a bug
+# A second, independent designer for a decision that is hard to undo (D61):
+# seat	designer-2	disposition	selected	a second design of <the decision>, made apart from the first
+# seat	designer-2	role	worker	never reads the first designer's file
+# context	designer-2	level	focused	the brief, the book and the code; the decision only
+# budget	designer-2	tool-calls	100	a deep read
+# A blind verifier for a claim on a protected subject:
+# seat	verify-1	disposition	selected	a claim on <the protected subject>
+# seat	verify-1	role	verifier	checks it blind
+# context	verify-1	level	focused	the claim and its path:line only
+# budget	verify-1	tool-calls	40	one claim

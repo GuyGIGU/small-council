@@ -1,0 +1,32 @@
+# Small Council run plan v1, as a post-game opens it (D71). Keep exactly five tab-separated columns.
+# Fixed: the reader and the runner on the request's parts, and the main session's own check of each verdict.
+# Change estimated-tokens to your estimate and say why. A finding on a protected subject: add the
+# verifier's rows below, add its tokens, and set verification to independent.
+kind	id	field	value	reason
+schema	plan	version	1	versioned run-plan contract
+run	run	id	{{RUN}}	bind this plan to its run folder
+run	run	mode	{{MODE}}	mode chosen when the run opened
+run	run	size	squad	two fixed seats, the reader and the runner, against the request (D71)
+assessment	run	risk	medium	a post-game changes nothing, but a part it calls met that is not stays missing
+assessment	run	complexity	medium	two agents on the finished work at once
+assessment	run	uncertainty	medium	whether each part was built is what the pair finds out
+budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
+budget	run	estimated-tokens	500000	the review's pair (about 470k on a real change), plus the main session's check
+verification	run	level	self	the main session checks each part's verdict against the code itself (D71)
+seat	chair	disposition	selected	the main session splits the request, checks the verdicts and writes the post-game
+seat	chair	role	chair	the one head
+context	chair	level	focused	the request, the verdicts and the code they cite
+budget	chair	tool-calls	60	the parts, the dispatch, each verdict's check, the post-game
+seat	reader	disposition	selected	reads the work against each part of the request
+seat	reader	role	worker	one half of the check
+context	reader	level	focused	the brief, the request and the work
+budget	reader	tool-calls	100	a deep read, measured at 15 to 21 minutes of work
+seat	runner	disposition	selected	runs each part it can at both ends and shows what it does
+seat	runner	role	worker	the other half of the check
+context	runner	level	focused	the brief, the request and the work
+budget	runner	tool-calls	100	clones, the project's checks at both ends, and a probe per part
+# A blind verifier for a finding on a protected subject (D49):
+# seat	verify-1	disposition	selected	a finding on <the protected subject>
+# seat	verify-1	role	verifier	checks it blind
+# context	verify-1	level	focused	the claim and its path:line only
+# budget	verify-1	tool-calls	40	one claim

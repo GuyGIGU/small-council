@@ -12,8 +12,8 @@ protected subject (context-core, Limits), or a review or post-game, which add a 
    alongside one; ask if unresolved. Alongside: `council run open <mode> --alongside`, then
    `--run <folder>` on every command. Never overwrite an open run. `<mode>` is always the skill's
    name, such as `council-review`.
-2. **No `council.config.md`?** A **review** starts now on a quick setup,
-   `council init scaffold --quick` (council-review, At Convene). A **post-game** needs no roster.
+2. **No `council.config.md`?** A **review** runs on its own page, council-review, which starts on a
+   quick setup (`council init scaffold --quick`). A **post-game** needs no roster.
    **Plan, implement and research** run council-init first, on a `setup: quick` config too: they
    lean on the map and the probed checks. Never tailor a roster inline. Otherwise
    `council fingerprint check`: if the stack moved or there is no stack-fingerprint, say so and

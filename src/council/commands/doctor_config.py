@@ -25,10 +25,11 @@ def settings(doc: Doctor) -> None:
     tier, checks = config.pref(home, "build tier"), config.pref(home, "checking", empty=True)
     if tier and tier.value == "full" and checks is None:
         doc.warn("%s line %d says `- build tier: full` and has no `- checking:` line: full used to mean a verifier "
-                 "per task, and now records a proof pair per task only — a build sends one verifier, at the end"
+                 "per task, and now records a proof pair per task only — every build is checked once, at the end, by a "
+                 "reader and a runner, and a blind verifier starts only for a finding on a protected subject"
                  % (config.NAME, tier.line),
-                 "add `- checking: per task` under ## Run preferences for a verifier per task (or `- checking: one "
-                 "per batch` to keep one)")
+                 "nothing is lost: add `- checking: one per batch` under ## Run preferences to settle it (`- checking: "
+                 "per task` only lifts the limit of one such verifier a build)")
 
 
 def quick(doc: Doctor) -> None:

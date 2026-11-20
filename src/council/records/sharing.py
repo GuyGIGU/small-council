@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from council.records import cells, config
+from council.records import config
 
 JUST_ME = ("just me", "just-me", "private")
 
@@ -33,26 +33,5 @@ def has_sharing(home: str | Path) -> bool:
 
 def with_sharing(data: bytes, label: str) -> bytes:
     """The config with `- sharing: <label>` in its own line endings: replaced where the first such line is,
-    else added under ## Run preferences, else in a new Run preferences section at the end."""
-    cr = b"\r" if b"\r" in data else b""
-    records = data.split(b"\n")
-    if data.endswith(b"\n") or not data:
-        records.pop()
-    bare = [line[:-1] if line.endswith(b"\r") else line for line in records]
-    has = next((i for i, t in enumerate(bare) if _key(t) == "sharing"), None)
-    head = next((i for i, t in enumerate(bare) if cells.heading(t.decode("latin-1")) == "run preferences"), None)
-    line = b"- sharing: " + label.encode("utf-8") + cr
-    out = []
-    for i, record in enumerate(records):
-        out.append(line if i == has else record)
-        if has is None and i == head:
-            out.append(line)
-    if has is None and head is None:
-        out += [cr, b"## Run preferences" + cr, line]
-    return b"".join(record + b"\n" for record in out)
-
-
-def _key(line: bytes) -> str:
-    """The key of a `- key:` line, as config.pref_of reads it ('' for any other line)."""
-    found = config.pref_of(line.decode("latin-1"))
-    return found.key if found else ""
+    else added right under ## Run preferences, else in a new Run preferences section at the end (config.with_pref)."""
+    return config.with_pref(data, "sharing", label)

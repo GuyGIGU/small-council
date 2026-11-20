@@ -1,6 +1,6 @@
 """council doctor: what would stop the council working here, or make it work worse, each as ERROR or WARN with its
 fix — the config and its roster, cards and gates; open runs left behind, run plans and event streams; the memory;
-the map; the stack fingerprint; what .council/.gitignore keeps out; and, when sharing is just me, what still
+the book; the map; the stack fingerprint; what .council/.gitignore keeps out; and, when sharing is just me, what still
 shares it. Exit 1 when there is an error."""
 from __future__ import annotations
 
@@ -81,6 +81,9 @@ def main(args: cli.Args, words: list[str]) -> int:
     run_plans(doc)
     from council.commands import doctor_memory
     doctor_memory.memory_file(doc)
+    if has_config:
+        from council.commands import doctor_book
+        doctor_book.report(doc)
     map_stamp(doc)
     if has_config and git.run(".", "rev-parse", "--git-dir")[0] == 0:
         stack(doc)

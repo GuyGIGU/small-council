@@ -129,7 +129,9 @@ recorded decision (the memory D and EC entries in scope, quoted in the brief) or
 doing a job beside a row of the `## One way per job` table in the council home's `map.md`: a second
 error type, config reader or data-access path beside the row's. If it does, the verdict is INCOMPLETE,
 citing the entry id or the table row, even when the Done-when is met. A new way the user ruled on is a
-recorded decision itself, so it is no second way.
+recorded decision itself, so it is no second way. The same holds for the stack: a change that brings in
+a language, framework, library, tool or service the book's stack page does not list (`council book`
+names the page), with no decision of the user's on record, is INCOMPLETE, naming it (D54).
 
 **Making up for other code.** On every round, a first build too, the checker also asks whether any
 added line exists only to make up for other code in this repo: a guard, a conversion, a retry or a

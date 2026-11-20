@@ -13,16 +13,20 @@ if TYPE_CHECKING:                                   # plan_check imports this mo
 BUILD = "council-implement"
 ROUTED = ("mapping", "survey")                      # the purposes `- seat models: on` may route
 LEGACY = ("sonnet", "haiku")                        # the only names `- seat models:` ever routed
+PAIR = ("reader", "runner")                         # the two fixed seats that end a build, as they make a review
 
 
 def role_of(check: Check, ident: str) -> str:
-    """The `- models:` role a seat's agent plays: a build's workers are builders, a review's workers are
-    review seats, a verifier is a verifier; '' for the Chair, a diagnosis seat and other modes' workers.
+    """The `- models:` role a seat's agent plays: a build's workers are builders (its reader and runner none), a
+    review's workers are review seats, a verifier is a verifier; '' for the Chair, a diagnosis seat and other modes'
+    workers.
     A mapping or survey worker stays under `- seat models:` alone."""
     role = check.role.get(ident, "")
     if role == "verifier":
         return "verifier"
     if role != "worker" or check.purpose.get(ident, "") in ROUTED:
+        return ""
+    if check.given.mode == BUILD and ident in PAIR:      # a build's reader and runner: the session's model (D51, D56)
         return ""
     return {BUILD: "builder", "council-review": "review"}.get(check.given.mode, "")
 

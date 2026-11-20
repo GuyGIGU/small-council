@@ -1,6 +1,6 @@
 # A model per role
 
-Which model each role's agents run on (D37, as D42 amends it). The run plan check enforces it
+Which model each role's agents run on (D37, as D42 and D51 amend it). The run plan check enforces it
 (`references/run/run-plan.md`); council-init proposes it; the Chair passes it at dispatch
 (`references/doctrine/05-work.md`).
 
@@ -20,7 +20,7 @@ what to write.
 | Role | Whose agents | Notes |
 |---|---|---|
 | `builder` | A build's builder agents (council-implement workers) | One per task, on its build seat `task-<n>`; in a Solo build the Chair builds instead, on the session's model (D42) |
-| `review` | A review's seat workers (council-review) | Mapping and survey workers keep `- seat models:` |
+| `review` | None since 1.3.0: a review's reader and runner run on the session's model, and its plan gives them no model row (D51) | Still read, so an older line stays valid; mapping and survey workers keep `- seat models:` |
 | `verifier` | Every verifier seat, in every mode | Never weaker than the builder it checks |
 
 The Chair stays on the session's model. Plan, research and post-game seats, diagnosis workers, and
@@ -35,26 +35,25 @@ below `fable` is refused against a builder on `inherit`. The Chair counts as a b
 build, which the helper reads as a run plan that selects no build seat: the Chair builds on the
 session's model, so that build's verifier is `inherit` or `fable`. Otherwise a build's verifier is
 judged against its builder agents' model. A review has no builder: its verifier may be cheaper than
-its seats.
+the session's model.
 
 ## Proposing a split (council-init)
 
 Propose from the model you are running on, in one line, and write it only on the user's yes:
-- the review seats one step below your model, never below `sonnet` (`fable` → `opus`, `opus` →
-  `sonnet`; on `sonnet` or `haiku`, `inherit`);
-- the verifier on `inherit`; `sonnet` only when the user wants cheaper review checks (a Solo build's
+- the builder on `inherit`;
+- the verifier on `inherit`; `sonnet` only when the user wants cheaper checks (a Solo build's
   verifier row stays `inherit` or `fable` whatever the line says);
-- the builder on `inherit`.
+- `review=` stays `inherit`: no lower model for a review, whose reader and runner always run on the
+  session's model (D51).
 
-> Models: review seats on sonnet, verifier and builder on your model (opus). Cheaper reviews; builds
-> unchanged. Keep, change, or all inherit?
+> Models: builder and verifier on your model (opus). Keep, or a cheaper verifier?
 
 On "all inherit", write `- models: builder=inherit, review=inherit, verifier=inherit`.
 
 ## The size-and-cost line
 
 When the line names any model other than `inherit`, the approval message's cost says which model
-each role runs on: "~400k tokens: 3 review seats on sonnet, the verifier on your model". Tokens are
+each role runs on: "~900k tokens: the builders on sonnet, the verifier on your model". Tokens are
 counted, not priced: a token on haiku costs less than one on opus, and the helper never claims a
 saving.
 

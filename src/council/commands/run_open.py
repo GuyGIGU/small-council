@@ -8,7 +8,8 @@ from pathlib import Path
 
 from council import clock, git
 from council.commands import cli, event_note, resolve
-from council.records import config, events, hook_marks, ignores, memory, paths, request, seat_write, seats, state_write
+from council.records import config, events, hook_marks, ignores, memory, paths, request, run_files, seat_write, seats
+from council.records import state_write
 from council.records import plan as plan_file
 from council.records import closing
 from council.records import home as where
@@ -16,6 +17,18 @@ from council.records import home as where
 ASKED = closing.MODES                              # the modes that save the user's request first
 MODES = ASKED + ("council-init", "test-architect", "context-core")
 TEMPLATES = Path(__file__).resolve().parents[3] / "references" / "templates"
+PLANS = {"council-init": "run-plan-init.tsv", "council-review": "run-plan-review.tsv",
+         "council-implement": "run-plan-implement.tsv", "council-plan": "run-plan-design.tsv",
+         "council-research": "run-plan-design.tsv", "council-health": "run-plan-health.tsv",
+         "council-postgame": "run-plan-postgame.tsv"}                                   # else run-plan.tsv
+BRIEFS = {"council-review": "review-brief.md", "council-implement": "review-brief.md",   # the pair's role texts (D48)
+          "council-plan": "design-brief.md", "council-research": "design-brief.md",     # the designer's (D60)
+          "council-health": "review-brief.md", "council-postgame": "review-brief.md"}   # the pair's again (D65, D71)
+LINES = {"council-implement": "build-brief.md",   # what a build's brief adds to the review's (D56), a health
+         "council-health": "health-brief.md",     # pass's (D65) and a post-game's (D71), each block on its
+         "council-postgame": "postgame-brief.md"}  # {{NAME}} line
+BLOCKS = ("BUILD", "BUILD_RUNNER", "HEALTH", "POSTGAME")
+LOOP = "council"   # /council: no run of its own (D64)
 INIT_NEXT = "follow council-init: detect the stack, recruit, dry-run the gates, map, then propose"
 STATUS_HINT = "if the user asks how the run is going"   # an advisory line's lead
 
@@ -29,6 +42,10 @@ def main(args: cli.Args, words: list[str]) -> int:
         raise cli.Refusal("usage: council run open <mode> [--alongside] [--session=ID]   (the skill name, e.g. "
                           "council-review)")
     mode = "council-" + mode if mode not in MODES and "council-" + mode in MODES else mode   # review = council-review
+    if mode == LOOP:
+        raise cli.Refusal("/council has no run of its own: it opens a plan run first (council run open council-plan), "
+                          "then a build run on the plan it writes (council run open council-implement) — follow "
+                          "skills/council/SKILL.md, step 1")
     if mode not in MODES:
         raise cli.Refusal("unknown mode '%s' — use a skill name: %s" % (mode, ", ".join(MODES)))
     session = resolve.session_id(args)
@@ -112,26 +129,60 @@ def _folder(home: str, mode: str, top: str, session: str) -> str:
     except OSError:
         raise cli.Refusal("cannot write in " + run) from None
     init = mode == "council-init"
-    template = TEMPLATES / ("run-plan-init.tsv" if init else plan_file.NAME)
-    if not template.is_file():
-        raise cli.Refusal("run plan template is missing: " + template.as_posix())
+    template = TEMPLATES / PLANS.get(mode, plan_file.NAME)
+    brief = TEMPLATES / BRIEFS[mode] if mode in BRIEFS else None
+    for need, what in ((template, "run plan"), (brief, "brief")):
+        if need is not None and not need.is_file():
+            raise cli.Refusal("%s template is missing: %s" % (what, need.as_posix()))
     head = git.text(top, "rev-parse", "-q", "--verify", "HEAD") or ""
     _write(native / paths.STATE, "status: in-progress\nmode: %s\nphase: convene\nupdated: %s\nopened: %s\n"
            "code-root: %s\nsession: %s\nplan-schema: 1\nevents-schema: 1\nsize:\nbase:\nstart-head: %s\n"
            "deliverable:\nnext: %s\n%s\n" % (mode, clock.now_min(), clock.now_sec(), top, session, head, INIT_NEXT
                                              if init else state_write.COUNCIL_NEXT_AT_OPEN, state_write.DECISIONS))
-    plan = template.read_bytes().decode("utf-8", "surrogateescape")
-    plan = plan.replace("\r\n", "\n")         # a CR right before a newline is dropped on every OS, as bytewise.records
-    for key, value in (("RUN", run.rsplit("/", 1)[1]), ("MODE", mode), ("AGENT_CAP", str(config.agent_cap(home)))):
-        plan = plan.replace("{{%s}}" % key, value)
-    try:
-        (native / plan_file.NAME).write_bytes((plan if plan.endswith("\n") or not plan else plan + "\n")
-                                              .encode("utf-8", "surrogateescape"))
-    except OSError:
-        raise cli.Refusal("cannot write %s/%s" % (run, plan_file.NAME)) from None
+    name = run.rsplit("/", 1)[1]
+    _fill(template, native / plan_file.NAME, run, RUN=name, MODE=mode, AGENT_CAP=str(config.agent_cap(home)))
+    if brief is not None:
+        from council.commands import book    # the book's paths, as council book prints them (D52)
+        _fill(brief, native / run_files.BRIEF, run, RUN=name, RUN_DIR=run, CODE_ROOT=top, HOME=home, MODE=mode,
+              BOOK="\n".join(book.read_first(home)), KNOWN=book.known(home), **brief_lines(mode))
     _write(native / "log.md", "# Run log — %s · opened %s\n" % (mode, clock.now_sec()))
     _write(native / seats.SEATS, "\t".join(seat_write.HEADER) + "\n")
     return run
+
+
+def brief_lines(mode: str) -> dict[str, str]:
+    """The blocks a mode's lines template adds to the review's brief, by name ([BUILD], [BUILD_RUNNER] for a build,
+    [HEALTH] for a health pass, [POSTGAME] for a post-game); a block the mode's file lacks is empty, and a brief has
+    an empty one's line taken out (a review's, all four)."""
+    blocks = dict.fromkeys(BLOCKS, "")
+    if mode not in LINES:
+        return blocks
+    try:
+        text = (TEMPLATES / LINES[mode]).read_bytes().decode("utf-8", "surrogateescape").replace("\r\n", "\n")
+    except OSError:
+        raise cli.Refusal("brief template is missing: %s" % (TEMPLATES / LINES[mode]).as_posix()) from None
+    name = ""
+    for line in text.split("\n"):
+        if line.startswith("[") and line.endswith("]") and line[1:-1] in blocks:
+            name = line[1:-1]
+        elif name:
+            blocks[name] += line + "\n"
+    return {key: value.rstrip("\n") for key, value in blocks.items()}
+
+
+def _fill(template: Path, file: Path, run: str, **values: str) -> None:
+    """A run file from its template, each {{KEY}} filled, written with LF line ends and a last newline; a line that is
+    only a {{KEY}} whose value is empty is taken out whole."""
+    text = template.read_bytes().decode("utf-8", "surrogateescape")
+    text = text.replace("\r\n", "\n")         # a CR right before a newline is dropped on every OS, as bytewise.records
+    for key, value in values.items():
+        if not value:
+            text = text.replace("\n{{%s}}\n" % key, "\n")
+        text = text.replace("{{%s}}" % key, value)
+    try:
+        file.write_bytes((text if text.endswith("\n") or not text else text + "\n").encode("utf-8", "surrogateescape"))
+    except OSError:
+        raise cli.Refusal("cannot write %s/%s" % (run, file.name)) from None
 
 
 def _makedirs(folder: str, said: str) -> None:
