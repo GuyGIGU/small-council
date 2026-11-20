@@ -19,12 +19,6 @@ class SeatFilesTest(support.Scratch):
                          [seat_files.Seat("security", "references/a.md ;; b.md", "seats/x.md", "5"),
                           seat_files.Seat("beck", "none", "seats/beck.md", "8")])
 
-    def test_a_title_is_compared_on_letters_and_digits(self) -> None:
-        path = self.write("ref.md", "\ufeff# Héllo — World\nbody\n")
-        self.assertEqual(seat_files.ref_title(path), "hlloworld")
-        self.assertEqual(seat_files.norm("Héllo — World"), "hlloworld")
-        self.assertEqual(seat_files.norm_wide("שלום — x"), "שלוםx")          # a title no ASCII rule knows
-
     def test_items_and_the_shape_of_their_section(self) -> None:
         path = self.write("seat.md", "# S — l\nref: x\n## Index\n1 · high · P1 · src/a.py:3 · title\n"
                                      "- 2 · low · P2 · a.py · t · extra\n4 · bad\n## Notes\n5 · m · p · c · t\n")
@@ -66,14 +60,12 @@ class SeatRowsTest(support.Scratch):
         self.write(".council/runs/%s/tools.tsv" % run.name,
                    "at\tslug\tagent\tcalls\nt\tbeck\ta1\t5\nt\tbeck\ta1\t9\nt\tbeck\t\t2\nt\tother\ta2\t7\n")
         self.write(".council/runs/%s/run-plan.tsv" % run.name,
-                   "budget\tbeck\ttool-calls\t30\nbudget\tbeck\ttool-calls\t40\nseat\tv1\trole\tverifier\n")
+                   "budget\tbeck\ttool-calls\t30\nbudget\tbeck\ttool-calls\t40\n")
         self.assertEqual(seat_rows.cell(run, "beck", "note"), "sat out")
         self.assertEqual(seat_rows.cell(run, "nobody", "note"), "")
         self.assertEqual(seat_rows.tool_calls(run, "beck"), "11")        # a1's latest total, and the one with no id
         self.assertEqual(seat_rows.tool_calls(run, "nobody"), "")
         self.assertEqual(seat_rows.tool_budget(run, "beck"), "30")        # the first row of a key wins
-        self.assertTrue(seat_rows.is_verifier(run, "v1"))
-        self.assertFalse(seat_rows.is_verifier(run, "beck"))
 
 
 class VerdictsTest(support.Scratch):

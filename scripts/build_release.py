@@ -32,7 +32,7 @@ SHIPPED = (
     ("bin", "bin/council, the helper's launcher, on the Bash tool's PATH"),
     ("hooks", "hooks.json, the hook scripts, and the council pane's mod (council-view.tsx, council-scene.ts)"),
     ("skills", "the modes and the standalone skills Claude Code loads"),
-    ("references", "doctrine, run contracts, seat docs, templates: read by the Chair, the agents and the helper"),
+    ("references", "watch lists, run contracts, templates: read by the Chair, the agents and the helper"),
     ("src", "the helper's Python package, which bin/council starts"),
     ("types", "plugin.json's types (./types/index.d.ts), which the mod imports"),
     ("LICENSE", "the licence, which every copy carries"),
