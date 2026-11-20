@@ -93,6 +93,15 @@ def _undoable(run: Path, backup_now: bool) -> None:
                       % run.as_posix())
 
 
+def _outside_git(run: Path) -> None:
+    """restore=backup stands in for the restore point only where git can't take one: a code root in git is refused."""
+    from council.commands import restore as restoring     # only restore= asks git
+    top = restoring.in_git(run)
+    if top:
+        raise cli.Refusal("restore=backup is for a code root outside git, and %s is in git, so its restore point can "
+                          "be taken — next: council restore point" % Path(top).as_posix())
+
+
 def _checked(run: Path, words: list[str]) -> str:
     """Refuse a word the change would not take; the phase event's skip note (';skipped=…;reason=…') or ''."""
     mode, to, skip, gave_skip = resolve.field(run, "mode"), "", "", False
@@ -120,6 +129,8 @@ def _checked(run: Path, words: list[str]) -> str:
         if key == "restore" and value != BACKUP:
             raise cli.Refusal("restore= takes backup only: council state restore=backup records that the code root "
                               "is not in git and the owner declined `git init` — otherwise: council restore point")
+        if key == "restore":
+            _outside_git(run)
         to = value if key == "phase" else to
         if key == "phase" and value in PLANNED:
             plan.require(run, "advance to " + value)

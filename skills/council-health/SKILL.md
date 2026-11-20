@@ -84,6 +84,9 @@ redirect to a file and read that.
    C1 · P3 · <kind> · <path:line> · <title> · why: <below the bar | refuted | known problem | waived> · state: INFERRED · from: reader#5
    ```
    An item known problems already lists, or of a kind under its Not to raise again, is cut.
+   **A stale page is not drift:** before calling an item drift, check the page's last change against
+   the code's (`git log -1 --format=%cs -- <file>`, each). Code changed after the page may be a page
+   a build left behind: say so, and its `Fix:` is the page's line (`book.md`, After a build).
 2. **The worth bar.** At most five proposals reach the owner: the ones they would act on, the
    costliest to leave first. A refactor is worth proposing only if leaving it costs more than doing
    it: name what goes wrong, or gets harder to change, if nothing is done. Everything else is

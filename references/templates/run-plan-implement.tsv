@@ -3,7 +3,9 @@
 # session's own check of each serious finding they make. Add the four task-<n> rows below once per
 # task (none in a Solo build, where you build), and set estimated-tokens: the tasks' builders plus
 # 500000 for the pair, and say why. A finding on a protected subject: add the verifier's rows, add
-# its tokens, and set verification to independent.
+# its tokens, and set verification to independent. A Small request in /council, where the main session reads
+# the diff itself: the reader's disposition skipped with why, its context and budget rows deleted, and 250000
+# for the runner alone.
 kind	id	field	value	reason
 schema	plan	version	1	versioned run-plan contract
 run	run	id	{{RUN}}	bind this plan to its run folder
