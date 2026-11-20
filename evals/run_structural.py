@@ -566,7 +566,7 @@ for label, text, needles in [
                          "before-<n>.png", "references/run/builder-rules.md"]),
     ("builder-loop", builder_loop, ["Before-evidence", "After-evidence"]),
     ("build-receipt", build_receipt, ["council-postgame", "No commit, push or PR question while anything is left open",
-                                      "data-loss hazard defaults to fix now", "Works now", "Does not work", "Undo",
+                                      "**No second pass** (D11)", "Works now", "Does not work", "Undo",
                                       "Not proved", "Checked by machine", "guardrails.md",
                                       "## What follows the report"]),
     ("build-log", build_log, ["Notes for later tasks", "## Shortcuts and concessions", "## Converge", "Post-game:",
@@ -728,23 +728,49 @@ check("the task's orders: the build loop takes them from council context build a
 cfg_template = read("references", "templates", "council.config.md")
 impl_deliver = flat(build_receipt)
 deliver_doc = flat(doctrine["09-deliver.md"])
-check("open items: the config template carries `- open items: ask` and fix now; the build's Deliver reads the line "
-      "(missing means ask), fix now is one receipt line each with time and tokens and no per-item question, commit, "
-      "push and PR stay questions, and a data-loss hazard still gets its own line (#45)",
-      "- open items: ask" in cfg_template and '"open items": ask | fix now' in cfg_template and
-      "`- open items:` line (missing or unreadable: `ask`" in impl_deliver and "no per-item question" in impl_deliver and
-      "`<what> — ~<time> — ~<k>k tokens`" in impl_deliver and
+check("open items (#45): a build's one fix round takes every confirmed item with no question and there is no "
+      "second pass; what is still wrong goes under Does not work and Your decisions, each as a consequence; Noted "
+      "for later goes to known problems and is never offered; no rulings question, which a 2.0 build does not have; "
+      "the config's `- open items:` line is still read and changes nothing, and a new config carries no such line; "
+      "commit, push and PR stay questions, and a data-loss hazard still gets its own line",
+      "- open items:" not in cfg_template.split("<!--")[0] and '"open items": ask | fix now' in cfg_template and
+      "still read, and it changes nothing" in flat(cfg_template) and
+      "That round takes every confirmed item the change introduced, with no question" in impl_deliver and
+      "**No second pass** (D11)" in impl_deliver and
+      "under Does not work, and as a consequence under Your decisions" in impl_deliver and
+      "what happens if nothing is done, the recommendation first" in impl_deliver and
+      "Noted for later is never offered as fix now or later" in impl_deliver and
+      "`council book note`" in impl_deliver and "rulings question" not in impl_deliver and
+      "`- open items:` line is still read and changes nothing in a build" in impl_deliver and
       "Commit, push and PR stay questions under either setting" in impl_deliver and
       "A data-loss hazard still gets its own line to the user the moment you find it" in impl_deliver)
+impl_plan_template = read("references", "templates", "run-plan-implement.tsv")
+check("estimates (#44): a build's builder is quoted at the config's builder= figure, and at 500k without one, said as "
+      "a default until the project's builds are measured: the build page owns the figure, and the build's plan "
+      "template and the config template agree with it; the config template prices no review, plan or converge "
+      "verifier from the line, and says those words are still read",
+      "the config's `builder=` figure (`- estimates:`), or 500k without one" in flat(skill["council-implement"]) and
+      "a default until this project's builds are measured" in flat(skill["council-implement"]) and
+      "builder= figure (500000 without one" in impl_plan_template and
+      "each builder is quoted at 500k: a default until this project's own builds are measured" in flat(cfg_template) and
+      "review=, plan= and converge= are still read without complaint and price nothing" in flat(cfg_template) and
+      "converge is a build's verifier" not in cfg_template and "80k without one" not in cfg_template)
+check("config template: its comments describe a 2.0 build — `- checking:` governs only a protected subject's blind "
+      "verifier (D56), with no verifier at the end of every build, and `review=` in `- models:` changes nothing (D51)",
+      "only the blind verifier a build starts for a finding on a protected subject" in flat(cfg_template) and
+      "single verifier at the end of the build" not in cfg_template and
+      "review= is still read and changes nothing" in flat(cfg_template))
 check("09-deliver: the rulings go out as one AskUserQuestion — the harmless items under one plain sentence, the "
       "recommended option first with what happens and what it costs, a real hazard its own question defaulting to "
-      "fix now, the detail in the log — and the kernel, the build receipt and the post-game point at it (#52)",
+      "fix now, the detail in the log — and the kernel and the post-game point at it; a build, which reads no stage "
+      "doctrine, is not named there (#52, D56)",
       "ONE AskUserQuestion" in deliver_doc and "never as a numbered list of notes" in deliver_doc and
       '"nothing here can break the app or lose work"' in deliver_doc and
       "the recommended option first, and each option saying what happens next and what it costs" in deliver_doc and
       "as its own question, with *fix now* as the default" in deliver_doc and
       "in the log or the deliverable, not in the question" in deliver_doc and
       all("(Deliver, step 6)" in flat(skill[s]) for s in ["context-core", "council-postgame"]) and
+      "a build's open items" not in deliver_doc and
       not any("numbered rulings" in skill[s] for s in ["council-implement", "council-postgame"]))
 check("implement: the push/PR order is the freeze, then git fetch and gh pr list --state all (did the base move, did "
       "a related PR merge), then pr-body.md written from the report and printed for the user's edit or OK; the PR "

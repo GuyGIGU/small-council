@@ -1,7 +1,8 @@
 # Small Council run plan v1, as a build opens it (D56). Keep exactly five tab-separated columns.
 # Fixed: the reader and the runner, on the whole change once the last task is built, and the main
 # session's own check of each serious finding they make. Add the four task-<n> rows below once per
-# task (none in a Solo build, where you build), and set estimated-tokens: the tasks' builders plus
+# task (none in a Solo build, where you build), and set estimated-tokens: each task's builder at the
+# config's builder= figure (500000 without one: council-implement, section 1, step 6) plus
 # 500000 for the pair, and say why. A finding on a protected subject: add the verifier's rows, add
 # its tokens, and set verification to independent. A Small request in /council, where the main session reads
 # the diff itself: the reader's disposition skipped with why, its context and budget rows deleted, and 250000

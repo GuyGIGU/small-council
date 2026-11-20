@@ -47,8 +47,9 @@ consequence, as "<it> no longer happens"). The report, the pair's brief and the 
    `${CLAUDE_PLUGIN_ROOT}/references/templates/build-log.md`, `Run: <run folder name>` in it.
 6. **The estimate, in plain terms:** the tasks in order; one builder each, then two agents check
    the whole change (one reading it against the plan and the book, one running the old and the new
-   version and breaking each behaviour on purpose to show its test catches it). Tokens: the
-   config's builder estimate (`- estimates:`) per task, plus 500k for the pair. Time: the config's
+   version and breaking each behaviour on purpose to show its test catches it). Tokens: per task
+   the config's `builder=` figure (`- estimates:`), or 500k without one (say it is a default until
+   this project's builds are measured), plus 500k for the pair. Time: the config's
    `- checks take:` minutes once before the first change, once after each task, once at the end,
    plus about 15 minutes for the pair (no such line: say the checks' time is not measured yet).
    And: *"One commit per task on <branch>, so each task can be taken back on its own?"* Never on

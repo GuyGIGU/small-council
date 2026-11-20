@@ -17,7 +17,6 @@ deploy target, domain. Name the one thing that must never break.>
 - models: builder=inherit, review=inherit, verifier=inherit
 - build tier: light
 - checking: one per batch
-- open items: ask
 - pushes: on
 - sharing: team
 <!-- Add `- notifications: off` here to suppress `council status --line` and council phone alerts.
@@ -29,29 +28,36 @@ deploy target, domain. Name the one thing that must never break.>
      "build tier": light | full — how much proof a build records (references/build-proof.md, Tiers):
      light records a before/after pair for risky tasks only; full records one for every task.
      Missing means light. Yours to change.
-     "checking": one per batch | per task — how many checker agents a build dispatches
-     (references/build-proof.md, Checking). One per batch: builders and machine gates for every task,
-     then a single verifier at the end of the build; the agent gate refuses a second without your go.
-     Per task: a verifier per risky task and per batch of ordinary ones. Missing means one per batch.
-     "open items": ask | fix now — what a build does with what it leaves open (council-implement,
-     At Deliver). Ask: a fix-now-or-later question. Fix now: one line each in the receipt (what, rough
-     time, rough tokens), fixed without asking. Commit, push and PR stay questions. Missing means ask.
+     "checking": one per batch | per task — only the blind verifier a build starts for a finding on
+     a protected subject (authorization, data loss, secrets …). One per batch: the agent gate lets a
+     build start one and refuses a second without your go. Per task: no such limit. Every build is
+     checked once, by a reader and a runner on the whole change, whatever this line says. Missing
+     means one per batch.
+     "open items": ask | fix now — an older config's line, still read, and it changes nothing: a
+     build fixes the problems its check at the end confirms in the change in one round, without
+     asking, and never starts a second (references/run/build-receipt.md, Open items). What is still
+     wrong is in the report, under Does not work and Your decisions, for you to rule on. Smaller
+     things it noticed go to known problems. Commit, push and PR stay questions.
      "pushes": on | off | off until <YYYY-MM-DD> — off holds push and PR (a team freeze): a build
      commits and stops, and the bash gate refuses git push and gh pr create (COUNCIL_ALLOW_PUSH=1 git
      push … on your word). From the date on it reads as on. Missing means on. `council pushes` shows it.
      "seat models": off | on — off refuses planned sonnet/haiku overrides; missing means off.
-     "models": builder=, review=, verifier= — inherit (the session's model), fable, opus, sonnet or
-     haiku for each role's agents; a role left out, or no line, means inherit. council-init proposes
-     a split from its own model (references/run/models.md); a verifier is never on a weaker model
-     than the builder it checks, and the Chair stays on the session's model. A review's reader and
-     runner always run on the session's model; review= does not change them.
+     "models": builder=, verifier= — inherit (the session's model), fable, opus, sonnet or haiku for
+     a build's builders and for every verifier; a role left out, or no line, means inherit.
+     council-init proposes a split from its own model (references/run/models.md); a verifier is
+     never on a weaker model than the builder it checks. review= is still read and changes nothing:
+     the Chair, the reader and the runner (a review's, a build's, a health pass's) and a plan's
+     designer always run on the session's model.
      "sharing": team | just me — team commits .council/ with the project; just me keeps it on this
      machine (git's own exclude list ignores it, and CLAUDE.md gets no note), so teammates never meet
      the council. `council sharing just-me` / `council sharing team` switches it; missing means team.
-     "estimates": review=, plan=, builder=, verifier=, converge= — tokens (e.g. builder=450k) for one agent
-     of each role; converge is a build's verifier. A role left out takes "estimate per worker".
-     Both are yours to set by hand; the Chair prices a run with them at Convene: each agent at its
-     role's figure, 80k without one, plus about 20k for itself.
+     "estimates": `- estimates: builder=450k` — the tokens one builder costs in this project, yours
+     to set by hand. A build's quote is that figure per task, plus 500k for the two agents that check
+     the whole change. Without it each builder is quoted at 500k: a default until this project's own
+     builds are measured (the Cost line of a build's report shows what they took). verifier= prices
+     a post-game's checker (else `- estimate per worker:`, else 80k). review=, plan= and converge=
+     are still read without complaint and price nothing: a review, a plan and a health pass have
+     fixed figures, and a build has no converge verifier.
      "checks take": `- checks take: <n> min (measured <YYYY-MM-DD>)` — how long the project's checks
      took a review's runner; `council gates timed <n>` writes it, and a review's estimate uses it.
      Missing means not measured yet. -->
