@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- The redesign proposal gains a stage 6, proposed and not built: the old expert seats go from
+  setup, test audits and resumed runs, and the per-technology checklists stay as watch lists
+  named on the project's stack page (`docs/design/redesign-2.0.md`, section 16).
+
 ## [2.0.0] — 2026-11-20
 
 **In short:** the rest of redesign 2.0, built on the owner's word before each stage's own test.

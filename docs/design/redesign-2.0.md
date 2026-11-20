@@ -8,6 +8,8 @@ before their section 12 tests, by the owner's choice; those tests are still owed
 measured. Everything after it is the planning session's design, built on those measurements and
 on how this repository is run.
 
+Section 16, stage 6, is the exception: proposed on 2026-11-20, not decided and not built.
+
 ## 1. Who it is for
 
 One owner who builds real projects with agents and does not read code. That owner needs four things:
@@ -329,6 +331,89 @@ The check was five web searches over comparison posts and vendor write-ups, on t
 - Loading the whole method into every session (Superpowers). Rejected in the earlier study.
 
 **Not checked:** gstack. The search returned nothing on it.
+
+## 16. Stage 6: the expert seats go
+
+**Status: proposed on 2026-11-20, on the owner's ask to write it up. Not decided, not built.** The
+owner's direction: the reader and the runner are the main way, so nothing should still run on the
+old expert seats; no role-play experts at setup, since they did not beat a plain agent (section 2).
+What is kept from "experts by stack" is the stack itself: what the project is built with shapes
+its design and its decisions, as written pages, not as characters.
+
+**Why it is needed.** After 2.0.0 the old system is still installed, because three things read it:
+
+- a large test audit (`test-architect` invokes `context-core` and starts Beck seats);
+- setup (`council-init` reads the expert catalogue, recruits a roster, and maps a large repository
+  with a squad on the old stages; a first review's quick setup writes a default roster);
+- a run opened before 2.0, when it is resumed.
+
+**What changes.**
+
+| Today | Under stage 6 |
+|---|---|
+| Setup recruits, recasts and drops expert seats, with surface markers and a card each | Setup detects the stack, asks the owner why each part was chosen (as now), tries the checks, maps the code and writes the book. No roster, no markers, no cards |
+| Each per-technology checklist (database, frontend, accessibility, performance and the rest) belongs to an expert seat | Each is a **watch list**. A row of the stack page names the watch lists for that part. The files stay at their paths |
+| The reader and the runner get no checklist (`ref: none`); the designer gets one only for a protected subject | The main session names in the brief the watch lists of the stack rows a change touches, two at most for one agent. They are reference, never a list to fill: the worth bar (section 8) is unchanged, and nothing is reported because a list mentions it |
+| A domain the catalogue does not cover gets a project-local seat with its own reference page | The page stays, as the project's own watch list, named on the stack page. The seat goes |
+| A large test audit splits the test files across Beck seats on the ten stages | The pair: up to three readers share the test files and read them for tests that prove nothing; one runner breaks the riskiest code on purpose in a scratch clone and reports which tests noticed |
+| A large repository is mapped by a squad on the old stages, gathered by `council collect` | Plain workers, one area each, their files recorded as the one-page commands record theirs |
+| A run opened on the old path can be resumed | It is refused with its next step: close it paused and start again |
+| Each seat keeps a track record (`ledger.tsv`) that setup reads to change the roster | Nothing is recorded per seat. A bug found late becomes a check or a line in the book (section 14, point 5) |
+
+**How the owner meets the stack.** One table at setup and on any change: the part, why it was
+chosen, its watch lists. A new library or a change of stack stops the builder and comes to the
+owner as a decision (section 4). `/council-health` reports a part in use that the page does not
+list.
+
+**What is deleted** (measured on 2.0.0 by a read-only pass; "seat" below means an expert seat):
+
+- Shipped pages, about 100,000 bytes: the ten rule files (35,045), `context-core` (7,895), the
+  expert catalogue (9,238), the seat card and seat page templates (3,407), the old command
+  reference (33,003), the war room page (7,050) and two pages only the old path names (5,551).
+- Helper code, about 1,100 of 25,100 lines: five whole modules (gathering seat files, the seat
+  track record and its counts, the default roster) and the roster's readers in a dozen others.
+  `council collect` and `council ledger` are retired with a refusal that names what to do instead.
+- Their tests: roughly 500 lines of helper scenarios, 75 to 95 document checks, two whole eval
+  files, two setup cases.
+
+**What stays.** The hooks, untouched: none reads the roster, the rule files or the stage names.
+The agent types and the word "seat" in a run's records (`seats.tsv`, `seats/reader.md`): the
+reader, the runner, the designer and a build's tasks are recorded as seats, and those names are
+frozen (D23). The fourteen checklist pages. A project's old config: a `## Roster` section, and the
+`- cards:`, `- ledger:` and `- seat models:` lines, are read without error and change nothing;
+`council doctor` says they are unused, and a setup refresh removes them and lists the card files
+that are now unused, for the owner to delete or keep. An old `ledger.tsv` is left where it is.
+
+**Decisions it touches.** Each needs a superseding entry on the owner's word before the build
+(the next free id is D72): D13 and D46 (the rule files and their sizes), D14 (modes invoke
+`context-core`), D15 (seats from the catalogue), D30 and D37's seat models, D43 (quick setup names
+the catalogue's seats), D63 in part (the stack still comes first; there is no roster after it),
+D8 in part (the old stage order), D1 in part ("seats advise"). It also overrules section 14,
+point 4: the catalogue page goes; its checklists are what is kept.
+
+**Two builds, one commit each, every command working after each:**
+
+| Build | What it does | Rough cost |
+|---|---|---|
+| 6a. Off the seats | Watch lists on the stack page and in the briefs; setup without a roster; quick setup without one; the test audit and the large-repository map on plain workers; old config lines read as unused | 0.8 to 1.2M tokens |
+| 6b. The deletion | Old runs refused on resume; the pages, the helper code and the tests above removed; the two helper commands retired | 1 to 1.5M tokens |
+
+The cost is a guess from the size of the map, not a measurement. 6b is safe only after 6a: it
+deletes what 6a stops using.
+
+**Its test, owed like the others.** The two measured changes reviewed with watch lists and without:
+no fewer of the ten known defects found, and at most 2 noise items a run. Setup run on one real
+project before and after: the same stack page, in less time.
+
+**Risks.**
+
+- **Watch lists may bring the noise back.** A reviewer handed a lens returned something for that
+  lens (section 2). The guard is the worth bar and the two-list limit; whether it holds is not
+  measured.
+- **A large test audit on the pair is a new design**, not a measured one.
+- **An unfinished run from before 2.0 cannot be continued** after this update.
+
+**Version.** 2.1.0: no command the owner types is removed.
 
 ## Appendix A: the measured role texts
 
