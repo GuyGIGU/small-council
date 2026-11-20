@@ -240,8 +240,8 @@ def stack(doc: Doctor) -> None:
         said = said[len("fingerprint: "):]
         at = said.rfind(". Suggest")
         doc.warn(said[:at] if at >= 0 else said,
-                 "run a council-init refresh — it re-checks the stack page, its watch lists and the gates against the new "
-                 "stack")
+                 "run a council-init refresh — it re-checks the stack page, its watch lists and the gates against "
+                 "the new stack")
     elif said.startswith("no stack-fingerprint"):
         doc.warn("the config has no stack-fingerprint",
                  "a council-init refresh records one, so a changed stack gets noticed")

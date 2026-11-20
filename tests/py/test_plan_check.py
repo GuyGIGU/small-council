@@ -39,6 +39,13 @@ seat\tsecurity\trole\tworker\tw
 GIVEN = plan_check.Settings(RUN, "council-review", 10, None, "off", False)
 
 
+def unread(line: int, seat: str, model: str) -> str:
+    """The plan check's refusal of a seat's own cheaper model, now `- seat models:` is no longer read (D74)."""
+    return ("ERROR line %d: `- seat models:` is no longer read, so %s can't take %s as a seat's own choice — make "
+            "seat/%s/model inherit (a build's builder and a verifier take theirs from council.config.md's - models: "
+            "line)" % (line, seat, model, seat))
+
+
 def judged(text: str = PLAN, **changes: object) -> plan_check.Verdict:
     return plan_check.judge(text, GIVEN._replace(**changes))
 
@@ -104,9 +111,7 @@ class JudgeTest(unittest.TestCase):
         text = PLAN + "seat\tverify-1\tmodel\tsonnet\tm\n"
         self.assertEqual(judged(text).problems, [           # D74: no setting makes it pass in an open run
             "ERROR line 26: only worker seats can use sonnet or haiku; verify-1 has role verifier",
-            "ERROR line 26: `- seat models:` is no longer read, so verify-1 can't take sonnet as a seat's own choice — make "
-            "seat/verify-1/model inherit (a build's builder and a verifier take theirs from council.config.md's - models: "
-            "line)"])
+            unread(26, "verify-1", "sonnet")])
         self.assertNotIn("no longer read", " ".join(judged(text, seat_models="closed").problems))   # its day's rule
 
     def test_a_number_writes_as_awk_does(self) -> None:

@@ -56,7 +56,8 @@ def rows(home: str) -> list[Row]:
     """Each row of the stack page that names a watch list, in the page's order; none when the page is missing, is a
     folder, or has no table with a Watch lists column."""
     page = book.page(home, "stack")
-    data = paths.contents(where.native(page.path)) if page.there and not os.path.isdir(where.native(page.path)) else None
+    native = where.native(page.path)
+    data = paths.contents(native) if page.there and not os.path.isdir(native) else None
     if data is None:
         return []
     root = home[:home.rfind("/")] if "/" in home else home
