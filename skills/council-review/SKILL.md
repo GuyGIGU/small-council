@@ -45,7 +45,7 @@ redirect to a file and read that.
 5. `council state phase=prepare`, then `council index --base <base>` and `council memory select`.
 6. Fill every `<…>` line of `brief.md` in one Edit: the target as `base..head`, files and +/−
    lines; the intent (the PR's title and body, the commit messages, or the owner's words); the
-   config's `## Hard rules` word for word; what memory select printed, one line each; each
+   config's `## Hard rules` word for word; the watch lists of the stack rows the change touches, as `council book` prints them (two at most for a seat); what memory select printed, one line each; each
    `council state decision=` entry word for word. Write `none` where there is nothing.
 7. **The estimate**, said in plain terms: two agents review the change at once, one reading it
    against what it claims, one running the project's checks on the old and the new version; you

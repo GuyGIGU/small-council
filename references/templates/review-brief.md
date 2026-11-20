@@ -13,9 +13,11 @@ recommendation.
 {{BUILD}}
 {{HEALTH}}
 {{POSTGAME}}
+{{AUDIT}}
 ## The book — read it before anything else
 {{BOOK}}
 - known problems: {{KNOWN}}
+- watch lists: <the watch lists of the stack rows the work touches, as council book prints them, two at most for a seat (name it when they differ), or none> — reference, never a list to fill: the worth bar is unchanged, and nothing is reported because a list mentions it
 
 Read the design page, the stack page and the decisions log first, then known problems: what it lists
 under Found, not fixed, and any item of a kind under Not to raise again, is never a finding here.
@@ -68,6 +70,7 @@ under Found, not fixed, and any item of a kind under Not to raise again, is neve
 {{BUILD_RUNNER}}
 - Never run anything in the code root itself. A check that needs something the scratch copy can't
   get (a secret, a service, an install the session refuses): say what you could not run, and why.
+{{AUDIT_READERS}}
 
 ## Item format
 

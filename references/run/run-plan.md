@@ -4,8 +4,9 @@
 choices that used to live only in the Chair's prose before any context is distributed or worker is
 started. It is run-local and ignored by git with the rest of `.council/runs/`.
 
-No command suggests these decisions: the Chair makes them at Convene, from the doctrine's size
-limits and the config's `- estimates:` line, and records them and their reasons here.
+No command suggests these decisions: `council run open` writes each mode's plan ready to run, and the
+Chair changes a value at Convene, from the mode's page and the config's `- estimates:` line, with its
+reason.
 
 - **Complexity** describes the amount of coordinated work, not the seriousness of failure. A
   small security fix can be simple but high-risk.
@@ -43,7 +44,7 @@ Every considered seat has `seat/<slug>/disposition` (`selected` or `skipped`) an
 build task, counted as a worker's agent run). A Challenge verifier's seat is `verify-<n>`: its rows
 are `seat/verify-<n>/…`, the name `council seat verify-<n>` records it under. In a council-implement run each task's builder is a
 build seat, `task-<n>`, role `worker`; a Solo build selects none, and the Chair builds
-(`references/run/builder-loop.md`). Every selected seat has a context level
+(`references/run/builder-rules.md`). Every selected seat has a context level
 (`minimal`, `focused`, or `full`) and a positive tool-call budget. The selected Chair is budgeted but
 does not count as an agent. Skipped seats receive neither context nor budget.
 
@@ -61,14 +62,13 @@ An optional `seat/<slug>/model` row is `inherit`, `fable`, `opus`, `sonnet`, or 
 means `inherit`. A builder or verifier seat may take its role's model from the config's `- models:`
 line (`references/run/models.md`; a review's reader and runner take none, D51); the Chair stays on `inherit`, and the check refuses a
 verifier on a weaker model than a builder it checks — in a Solo build, the Chair too.
-Otherwise overrides require `- seat models: on` in `council.config.md`, and only selected worker seats
-may use `sonnet` or `haiku`. A worker requesting an override must
-also declare `seat/<slug>/purpose = mapping` or `survey`. `other` cannot receive an override.
-A `mapping` seat charts an area of the code for `map.md` (what is where, how it connects); a `survey`
-seat gathers facts, files or candidates for others to judge; `other` is anything that judges,
-advises or builds. The checker verifies this declared purpose; the Chair must ensure the dispatched
-task actually fits it. These rules are checked in the run plan only: the Agent call's `model`
-parameter isn't gated, so the Chair keeps to the plan. A closed run (complete or abandoned) is not rechecked against today's `seat models` or `models` setting.
+A setup run's mapping worker (`seat/map-<area>/purpose = mapping`, in a council-init run) may take the
+line's `map=` model, `sonnet` or `haiku` (D78). Every other worker stays on `inherit`: `- seat models:`
+is no longer read (D74), and the check refuses a seat's own `sonnet` or `haiku`, naming `inherit`.
+A `mapping` seat charts an area of the code for `map.md` (what is where, how it connects). These
+rules are checked in the run plan only: the Agent call's `model` parameter isn't gated, so the Chair
+keeps to the plan. A closed run (complete or abandoned) is not rechecked against today's `models`
+setting.
 
 Exactly one Chair must be selected. Solo selects no delegated agents; Squad selects at least one,
 and Full selects at least four. An open run's Full plan also needs the user's explicit size-and-cost
@@ -76,23 +76,23 @@ go on record: a decision since the run opened (`council state decision="…"`); 
 read as it was. Independent or adversarial verification requires a selected
 `verifier`; a plan marked `self` cannot also select one. The Chair receives a context level but
 does not count as an agent. A plan that cannot fit its required verifier or run size must be
-resized or given a higher cap before Brief or dispatch.
+resized or given a higher cap before dispatch.
 
 ## Lifecycle
 
-`council run open` instantiates the template and binds its run id, mode, and configured agent cap.
-The remaining placeholders make the starter deliberately invalid. Convene fills the run-level
-decisions; Assign records all considered seats and runs `council run plan check`.
+`council run open` writes the mode's own plan (`references/templates/run-plan-<mode>.tsv`), bound to
+its run id, mode and configured agent cap, with the mode's fixed seats. The Chair changes a value at
+Convene where this run differs, then runs `council run plan check`.
 
 A `council-init` run is the exception. Setup follows its own phases and is the Chair's own work, so it
 opens from `references/templates/run-plan-init.tsv`, already valid: solo, the Chair only, self-verified, each
-default saying so in its reason. A large repo's mapping squad makes it a squad, one mapping worker
-per area (council-init Phase D).
+default saying so in its reason. A large repo's mapping workers make it a squad, one per area
+(council-init Phase D).
 
-The helper refuses to enter Brief, Build, or a later standard stage while the plan is invalid. It also
+The helper refuses to enter Work, Build, or a later stage while the plan is invalid. It also
 refuses to queue or start a worker not marked selected. `council run plan show` renders the checked
 contract in plain language for briefing and review. `council doctor` checks the plans of open runs
-too; an incomplete plan is expected during Convene, Prepare, or Assign and is a warning there, but
+too; an incomplete plan is expected during Convene or Prepare and is a warning there, but
 invalid after that is an error. A closed run's plan is the record of what was decided then: doctor
 never judges it by today's settings, and nobody rewrites it after the fact.
 

@@ -1,10 +1,10 @@
 """council init detect | init scaffold [--quick] [--run <folder>]: the mechanical part of setting up the council.
 detect reads the project and prints, one fact per line, its stack fingerprint, its candidate checks (each with the
-probe to run and its broken twin) and the catalog's seats with the surface the file list shows. scaffold writes the
-setup files under the council home from the templates — council.config.md, conventions.md, map.md and .gitignore —
-and never overwrites one: a file already there is kept and named. Its Gates rows come from the probes the open
-council-init run holds; a candidate nobody probed is written ✗ not probed, so council gate --all skips it. --quick
-writes the catalog's seats as a default roster, no map, and keeps the council on this machine (sharing: just me).
+probe to run and its broken twin) and each watch list with what the file list shows for it (D72, D73). scaffold
+writes the setup files under the council home from the templates — council.config.md, conventions.md, map.md and
+.gitignore — and never overwrites one: a file already there is kept and named. Its Gates rows come from the probes
+the open council-init run holds; a candidate nobody probed is written ✗ not probed, so council gate --all skips it.
+--quick writes no map and keeps the council on this machine (sharing: just me). Neither writes a roster.
 Nothing here runs a project command: the Chair probes each check with council gate probe-<name> -- '<fast form>'."""
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from council import clock, git
-from council.commands import cli, fingerprint, init_checks, init_seats, init_write, resolve
+from council.commands import cli, fingerprint, init_checks, init_lists, init_write, resolve
 from council.records import config, ignores, map_file, memory, paths, runs
 from council.records import home as where
 
@@ -21,8 +21,9 @@ USAGE = "usage: council init detect | init scaffold [--quick] [--run <folder>]"
 REFRESH = "a council-init refresh is the next step to bring it up to date"
 HARD_RULES_LEFT = ("the ## Hard rules section of council.config.md — written empty: a `- ` line for each of the "
                    "project's non-negotiables, if it has any")
-BOOK_LEFT = ("the book — the design page, the stack page and the decisions log, each the project's own file where it "
-             "has one, their paths under ## Book (council-init, Phase E; references/run/book.md)")
+BOOK_LEFT = ("the book — the design page, the stack page (each part with its reason and its watch lists) and the "
+             "decisions log, each the project's own file where it has one, their paths under ## Book (council-init, "
+             "Phase E; references/run/book.md)")
 
 
 class Project(NamedTuple):
@@ -81,16 +82,13 @@ def detect(project: Project) -> int:
         cli.say("  needs: %s · side effects: %s" % (check.needs, check.side))
     cli.say("checks: %s — looked at %s" % ("%d found" % len(project.checks) if project.checks else "none found",
                                            ", ".join(init_checks.LOOKED_AT)))
-    for seat in init_seats.default_roster(where.plugin_root(), project.files):
-        cli.say("seat: %s · %s · %s · %s · surface: %s" % (
-            seat.slug, seat.practitioner, seat.lens, seat.doc,
-            ", ".join(seat.markers) if seat.markers else "nothing in the file list (the catalog's rule needs a look)"))
+    cli.say_all(init_lists.line(listed) for listed in init_lists.found(where.plugin_root(), project.files))
     if has_config:
         cli.say("next: council.config.md exists, so council init scaffold keeps it — " + REFRESH)
     else:
         cli.say("next: in an open council-init run (council run open council-init), probe each check you keep, then: "
                 "council init scaffold")
-        cli.say("next: or, for a quick setup with no probes and the catalog's seats: council init scaffold --quick")
+        cli.say("next: or, for a quick setup with no probes and no map: council init scaffold --quick")
     return 0
 
 
@@ -138,8 +136,8 @@ def scaffold(project: Project, args: cli.Args) -> int:
     if not quick:
         left += _map(project, plugin)
     if quick and not has_config:
-        cli.say("This is a quick setup: every catalog seat as the catalog names it, with no recast, no seat cards and "
-                "no map, and the council kept on this machine (sharing: just me). /council-init does the full setup.")
+        cli.say("This is a quick setup: no check probed, no map and no book, and the council kept on this machine "
+                "(sharing: just me). /council-init does the full setup.")
     left = list(dict.fromkeys(left))
     for line in left or ["nothing" if quick and not has_config else
                          "nothing from this command — its files were there already; " + REFRESH]:
@@ -170,8 +168,7 @@ def _from_quick(project: Project, run: Path | None) -> list[str]:
                 % (path, ", ".join(filled.done)))
     else:
         cli.say("Kept %s — no `✗ not probed` Gates row has a probe in the setup run, so nothing in it changed" % path)
-    return ["the roster — tailor the quick setup's rows: recasts, drops and each seat's surface markers "
-            "(council-init, Phase B)", "the ## Stack section of council.config.md", HARD_RULES_LEFT,
+    return ["the ## Stack section of council.config.md", HARD_RULES_LEFT,
             "the map's prose — each section of map.md, the One way per job table too (council-init, Phase D)",
             BOOK_LEFT, "the `setup: quick` line in council.config.md: take it out once the setup is full"]
 
@@ -215,7 +212,7 @@ def _config(project: Project, plugin: str, probed: dict[str, init_write.Probe], 
     fill = init_write.Config(os.path.basename(root), today, git.text(project.tree, "rev-parse", "--short", "HEAD")
                              or "no commit yet", project.fingerprint,
                              project.summary + (" (%s)" % project.seen if project.seen else ""),
-                             init_write.roster_rows(plugin, project.files, quick), rows, mem, quick)
+                             rows, mem, quick)
     text = init_write.config_text(plugin, fill)
     if quick:
         from council.records import sharing as setting
@@ -236,9 +233,7 @@ def _config_left(project: Project, probed: dict[str, init_write.Probe], quick: b
     names = {check.name for check in project.checks}
     stray = sorted(name for name in probed if name[len("probe-"):] not in names
                    and not (name.endswith("-broken") and name[len("probe-"):-len("-broken")] in names))
-    left = [] if quick else ["the roster — a row per seat beyond Fowler and Beck, each with its surface markers, in "
-                             "place of the <Seat> row (council-init, Phase B)",
-                             "the ## Stack section of council.config.md", HARD_RULES_LEFT, BOOK_LEFT]
+    left = [] if quick else ["the ## Stack section of council.config.md", HARD_RULES_LEFT, BOOK_LEFT]
     left += ["%s ran, but no detected check is named %s, so it has no Gates row — add its row by hand"
              % (name, name[len("probe-"):]) for name in stray]
     return left

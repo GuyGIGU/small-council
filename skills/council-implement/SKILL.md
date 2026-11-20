@@ -132,8 +132,8 @@ For each task, in order:
    `council memory select`.
 2. Fill every `<…>` line of `brief.md` in one Edit: the Target as `<restore point>..` the tree now,
    uncommitted work included, the files and +/− lines; the Intent as the behaviour lines, one per
-   line; the hard rules word for word; what memory select printed; each `council state decision=`
-   entry word for word. `none` where there is nothing.
+   line; the hard rules word for word; the watch lists of the stack rows the build touches, as `council book` prints them (two at most for a seat); what memory select printed; each `council state
+   decision=` entry word for word. `none` where there is nothing.
 3. Both Agent calls in ONE message, `subagent_type: small-council:council-worker`, no `name`, no
    `model`:
    ```

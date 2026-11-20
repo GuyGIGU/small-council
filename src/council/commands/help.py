@@ -5,7 +5,7 @@ import sys
 
 from council.commands import cli
 
-COUNCIL_VERSION = "2.0.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
+COUNCIL_VERSION = "2.1.0"   # .claude-plugin/plugin.json and the newest CHANGELOG release say the same
 
 USAGE = """\
 council — the Small Council's helper (Python 3.8+ and git)
@@ -17,13 +17,13 @@ council — the Small Council's helper (Python 3.8+ and git)
                                          CLAUDE.md points at it) or just me (git ignores it through its own
                                          exclude list, and the CLAUDE.md note goes); no word shows what's left
   council init detect                    setup's reading: the stack fingerprint, the project's candidate checks
-                                         (each with its probe and broken twin to run) and the catalog's seats
-                                         with the surface the file list shows; writes nothing
+                                         (each with its probe and broken twin to run) and each watch list with
+                                         what the file list shows for it; writes nothing
   council init scaffold [--quick] [--run <folder>]
                                          write the setup files from the templates (config, conventions.md,
                                          map.md, .gitignore), never over one already there; Gates rows from the
                                          open council-init run's probes, an unprobed check ✗ not probed;
-                                         --quick: the catalog's seats, no map, sharing just me
+                                         --quick: no probes, no map, no book, sharing just me
   council pushes [check git push|gh pr create]  the push freeze · check: the bash gate's decision (exit 2 while held)
   council run open <mode> [--alongside] [--session=ID] [--code-root=DIR]
                                          open a run for a mode, e.g. council-review (or review); prints its
@@ -112,8 +112,6 @@ council — the Small Council's helper (Python 3.8+ and git)
   council changed [--glob '<pat>'] [--each] -- <cmd>
                                          run <cmd> over just the files this change touches (0 when none);
                                          inside a gate, since the run's recorded base
-  council collect                        check every seat file: the brief's, a war room's debate.md's, and
-                                         any other .md in seats/ (a Workflow's agents skip the seat hook)
   council check [file …] [--base REF]    check citations and origin (default: synthesis.md); in a build, each
                                          proof (an ok change proof with saved rounds is rerun with them taken
                                          off, and must fail) and the receipt's Checked by machine and Not
@@ -163,9 +161,6 @@ council — the Small Council's helper (Python 3.8+ and git)
   council prior [path …]                 earlier council work on these paths (default: the index)
   council ask save [slug]                file the run's ask.md — the user's words — under .council/asks/;
                                          secret-looking strings are redacted; records ask= in the state
-  council ledger [N]                     each seat's record over the last N completed runs (default 10),
-                                         with the roster bar's facts: judged runs, and items counted
-                                         at most 5 from any one run; it weighs nothing
   council status [--widget [--preview] | --json | --line]
                                          the run in plain words: what is happening, whether it moves,
                                          what needs the user, where the evidence is; --widget prints

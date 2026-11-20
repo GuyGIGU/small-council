@@ -1,13 +1,13 @@
 ---
 name: council-init
-description: Summon the Small Council for this project — detect the stack and surfaces, recruit and recast the expert roster with surface markers, dry-run the real check commands, build the codebase map, and write .council/ (config, memory, map). Run once per repo, when the stack changes, or to refresh a stale config. Use when a council plan, build or research starts in a repo with no .council/council.config.md or a quick one, when a review offers the full setup, or the user says "set up", "init", "summon", or "refresh" the council.
+description: Summon the Small Council for this project — detect the stack and surfaces, ask why each part was chosen and propose its watch lists, dry-run the real check commands, build the codebase map, and write .council/ (config, memory, map, the book). Run once per repo, when the stack changes, or to refresh a stale config. Use when a council plan, build or research starts in a repo with no .council/council.config.md or a quick one, when a review offers the full setup, or the user says "set up", "init", "summon", or "refresh" the council.
 ---
 
 # Council Init — summon the council for this project (stage 0)
 
 - Follow the council's discipline: **map the repo, don't deep-read it.**
-- First read `${CLAUDE_PLUGIN_ROOT}/references/roster/expert-catalog.md`: the seats, their "applies
-  when" rules, and the recast rules.
+- First read `${CLAUDE_PLUGIN_ROOT}/references/watch-lists.md`: the checklist pages, what each
+  covers and when it applies. There is no roster of expert seats (D72).
 - The council home is the main checkout's `.council/`; `council home` prints it. Call the helper as a
   plain `council <command>` — never through a shell variable or alias, or as `bash <path>/bin/council`
   while it is on PATH: permission rules match the command text. If `command -v council` fails, write
@@ -20,7 +20,8 @@ description: Summon the Small Council for this project — detect the stack and 
   `.gitignore`; the probes and the scaffold need it. Keep it open through Phase D.
 - **`council init detect`** does the inventory and writes nothing: the `stack-fingerprint:` line,
   each check the manifests and scripts declare (with the `probe:` and `broken:` lines to run, its
-  needs and side effects), and a `seat:` line per catalog seat with the surface the file list shows.
+  needs and side effects), and a `watch list:` line per checklist page with what the file list shows
+  for it.
   It reads the root, `scripts/` and `tools/`.
 - **Then read what it doesn't:** what CI runs, the README's "how to run tests", a second level of
   folders (`apps/*/package.json`), and the tracked files by extension
@@ -34,38 +35,25 @@ description: Summon the Small Council for this project — detect the stack and 
   - an LLM or prompt pipeline; a numerical or simulation engine;
   - a game loop; a mobile app; infrastructure as code; a CLI.
 
-  A `seat:` line whose rule "needs a look" is a question for Phase B, not a drop.
+  A `watch list:` line with nothing seen is a question for Phase B, not a drop.
 
 Cap your reads at config and skeleton files; the decision records are read in Phase D.
 
-## Phase B — Recruit, recast, drop
+## Phase B — Each part's reason and watch lists
 
-For each catalog seat, decide **include / recast / drop** by its "applies when" rule.
-- **Recast before you drop.** Most "no surface" seats have an analogous one:
-  - any persistent store → data integrity;
-  - any computation-heavy engine → numerical correctness;
-  - any hot loop → performance.
-
-  Drop only when there's truly nothing to look at (no UI at all → no UI, UX or Frontend seats).
-- **Every seat gets:**
-  - a lowercase **slug** — the name of its seat file;
-  - a named practitioner who fits the stack;
-  - its **Surface markers**: 2–6 globs or words in this repo's own idioms (`migrations/**`,
-    `APIRouter`, `*.tscn`, `save_game`) that say where the seat's lens lives. They make assignment
-    mechanical and every skip evidenced. No `|` inside a marker (the roster is a table): list
-    alternatives separately.
-  - For a recast seat: it keeps its reference doc, and you record why it was recast.
-
-  No card yet: a seat's card is written the first run that selects it (doctrine Brief, Cards first).
-- **One lens, several areas.** In a monorepo, or a repo with distinct parts (a web app and an admin,
-  an app and its firmware), a lens may take several rows — one per area, each with its own slug
-  (`dodds-web`, `dodds-admin`) and surface.
-- **John Carmack chairs** — always on, never a seat. **Fowler (structure) and Beck (tests) are never
-  dropped.**
-- **A domain the catalog doesn't cover** (a game engine's frame loop, firmware, a DSL) → propose a
-  project-local seat with its own reference doc under `.council/refs/`, drafted from
-  `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-doc.md` and the project's real constraints. Cite
-  repo evidence for every principle, and leave it `status: draft` until the user accepts it.
+The stack page (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`) has a row per language, framework,
+library, tool and service, with why it was chosen and its watch lists (D73).
+- **The reason** comes from a record (cite its `file:line`) or the owner: ask once at Phase E for
+  every row with none. One not given is `not recorded`, never invented.
+- **Watch lists** are reference pages, never seats: for each part, the pages of
+  `watch-lists.md` whose "applies when" fits it, or `—`. Look for the analogous part before leaving a
+  list out — any persistent store → `quality-postgres`'s integrity rules; a hot loop →
+  `quality-performance`. Every codebase gets `refactoring` on its main language's row, and one with
+  tests `quality-testing` on its test runner's.
+- **A domain no page covers** (a game engine's frame loop, firmware, a DSL) → propose a project's own
+  watch list under `.council/refs/<name>.md`, in the shape of a shipped page and from the project's
+  real constraints. Cite repo evidence for every line, leave it `status: draft` until the owner
+  accepts it, and name its path on its row.
 
 ## Phase C — Dry-run the gates
 
@@ -129,8 +117,9 @@ the project's missing checks as a warning rather than an error, so it isn't aske
 
 **`council init scaffold`** writes the mechanical files from the templates, each only where none
 exists: the config (`last-verified: <date> @ <sha>`, the line `council fingerprint` prints, the
-template's run preferences, the Fowler and Beck rows, a Gates row per check from this run's probes),
-`conventions.md` when there is no memory file, and `map.md` stamped with `map-commit`. Its
+template's run preferences, a Gates row per check from this run's probes),
+`conventions.md` when there is no memory file, and `map.md` stamped with `map-commit`. It writes no
+roster, markers or cards (D72). Its
 `Left for the Chair:` lines name the rest.
 
 Fill the map's prose:
@@ -143,34 +132,34 @@ Fill the map's prose:
 - **Fill its `## One way per job` table, and find the project's recorded decisions:**
   `${CLAUDE_PLUGIN_ROOT}/references/roster/decision-records.md`.
 - **A small repo** → do it yourself, then `council run close`.
-- **A large repo** → a mapping squad of at most 4 workers, run like any council run:
-  1. The setup run (Phase A). One run, not two.
-  2. Make its plan a squad: `size` squad, and one mapping worker per area from the rows at the foot
-     of `run-plan.tsv`, their estimate added to `estimated-tokens`; then `council run plan check`.
-     The helper starts no worker the plan doesn't select.
-  3. Write a brief whose `## Seats` has one block per top-level area: `ref: none`,
-     `out: seats/<area>.md`, `cap: 8`, the area's paths as the slice. Format: "an `## Index` of at
-     most 8 map rows, each `<n> · map · <section> · <path> · <one-line fact>`, then the map template's
-     sections for your area, a path on every row".
-  4. Dispatch them following stage 5, then run `council collect`.
-  5. Merge the results into one map of at most ~250 lines, then `council run close`.
+- **A large repo** → at most 4 plain mapping workers, one area each, in the setup run (one run).
+  First propose their model, once: the session's (`inherit`), or `sonnet` for a cheaper map. On the
+  owner's pick write `map=` on the config's `- models:` line (D78).
+  1. Its plan: `size` squad, one `map-<area>` row set per area from the foot of `run-plan.tsv`, their
+     estimate added to `estimated-tokens`, and a `seat map-<area> model` row each when `map=` is
+     not `inherit`; then `council run plan check`.
+  2. `<run>/brief.md` from `${CLAUDE_PLUGIN_ROOT}/references/templates/map-brief.md`, one
+     `### map-<area>` block per area, every `<…>` filled.
+  3. All in ONE message, `subagent_type: small-council:council-worker`, no `name`, `model` only as
+     `map=` names one: `Seat: map-<area> — <its line> · council-init run`, `Brief: <abs run>/brief.md`, `Reference:
+     none — your role is in your brief block`, `Write <abs run>/seats/map-<area>.md`; then `council
+     seat map-<area> running agent=<id>`, and `done` on each return.
+  4. Merge their files into one map of at most ~250 lines, then `council run close`.
 
 ## Phase E — Propose, then write
 
 The scaffold wrote only facts nobody has to agree to; what the user decides is proposed first and
 written only on their yes. Present:
-- the roster, with recasts, drops, the reasons, and each seat's surface markers;
 - the gates (✓/✗) and their side effects;
 - the run preferences, sharing included: team or just me (when to ask:
   `${CLAUDE_PLUGIN_ROOT}/references/run/sharing.md`);
 - a model per role, proposed from yours: `${CLAUDE_PLUGIN_ROOT}/references/run/models.md`;
 - a three-line summary of the map;
 - **the book** (`${CLAUDE_PLUGIN_ROOT}/references/run/book.md`): the design page, the stack page and
-  the decisions log, each the project's own file where it has one, never a second. Ask once for the
-  stack reasons no record gives; one not given is `not recorded`, never invented.
+  the decisions log, each the project's own file where it has one, never a second; the stack page's
+  rows with their reasons and watch lists (Phase B). Ask once for the reasons no record gives.
 
 Adjust on request. On confirmation, write into `.council/council.config.md`:
-- **the roster rows**, in place of the `<Seat>` row, each with its recast note;
 - **`## Stack`**, in place of its placeholder;
 - **`## Book`**: each page's path; then each page it names that is not there yet, from its template;
 - **`## Hard rules`**, which the scaffold writes empty: a `- ` line for each non-negotiable the
@@ -245,19 +234,16 @@ Configs drift. On a re-run, or "refresh the council":
   numbered operations, applied on the user's yes.
 - **A `setup: quick` line** (the quick setup a first review made) means the full setup is still to
   do: in the setup run, probe the checks `council init detect` lists; `council init scaffold` then
-  fills the Gates rows that still read `✗ not probed` and writes the map's skeleton. Tailor the
-  roster (Phase B), build the map (Phase D), write `## Stack`. It chose just me: ask about sharing.
+  fills the Gates rows that still read `✗ not probed` and writes the map's skeleton. Write the stack
+  page with its reasons and watch lists (Phase B), build the map (Phase D), write `## Stack` and the
+  book. It chose just me: ask about sharing.
   Take the `setup: quick` line out last, after the user's yes.
-- **Cards:** rewrite only a card that exists and whose doc, surface or stack changed (a recast too),
-  from `${CLAUDE_PLUGIN_ROOT}/references/templates/seat-card.md`. A seat without one gets it the
-  first run that selects it.
-- **Roster changes from the record.** `council ledger 20` shows each seat's runs, items raised,
-  kept, cut and refuted, the share shipped, and the bar's two facts: `judged` (runs whose synthesis
-  credited items) and `counted` (the items the seat raised in them, at most 5 from any run);
-  it weighs nothing, you do. Propose a change only past the bar (`judged` 3 or more and `counted` 15
-  or more; `runs` and `raised` don't decide it), with the numbers shown — "UX (Friedman): 6 judged runs, 8 of 30 items shipped —
-  narrow its surface to `src/ui/**`?" Below the bar, say the record is too thin and change nothing. A lens the runs keep flagging outside their lanes is a
-  separate proposal: name the runs. The user decides; nothing changes without a yes.
+- **An older config's expert seats** (`council doctor` warns: a `## Roster` section, a `- cards:`,
+  `- ledger:` or `- seat models:` line), which no run reads (D72, D74). Propose, as numbered
+  operations: each roster row's own page under `.council/refs/` named as a watch list on its stack
+  row; each memory entry scoped to a seat's slug re-scoped to that seat's paths; then the section and
+  the lines removed. Write on the owner's yes. List the card files under `.council/cards/` as unused:
+  the owner deletes or keeps them; never delete one.
 - Re-check **every path and gate** in the config against the repo, dry-running the gates again
   (`council run open council-init` first — `council gate probe-<name> -- '…'` needs an open run;
   close it when you are done), and update `last-verified`.
@@ -266,10 +252,10 @@ Configs drift. On a re-run, or "refresh the council":
   Until then the helper reads no gate and every report says NOTHING WAS CHECKED: show the diff and
   say what each row came from.
 - **Merge, don't overwrite.** Show a diff. Any section the user added or edited — hard rules, a
-  pinned gate, a manual recast, Notes — is theirs: merge around it and surface conflicts for them to
+  pinned gate, a stack row's watch lists, Notes — is theirs: merge around it and surface conflicts for them to
   resolve.
-- **Older layouts** → offer to migrate to the current template, which adds Surface and Run
-  preferences, and show the diff.
+- **Older layouts** → offer to migrate to the current template, which adds Run preferences and the
+  Book, and show the diff.
 - **Legacy run folders** (`.council/<mode>-output/`) stay where they are as history. An old run still
   marked open → close it on the user's say-so: `council run close --run <dir> --status abandoned`.
 - **Permission rules:** bring the council rules in `.claude/settings.local.json` up to Phase F's
@@ -280,7 +266,7 @@ Configs drift. On a re-run, or "refresh the council":
 ## Output
 
 Tell the user, plainly and numbered:
-- the roster: recasts, drops and why;
+- the stack page: each part, its reason and its watch lists;
 - the gates (✓/✗);
 - the files written;
 - anything that needs their decision.

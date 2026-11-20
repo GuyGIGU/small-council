@@ -1,0 +1,36 @@
+# Small Council run plan v1, as a large test audit opens it (test-architect, D75). Keep exactly five tab-separated columns.
+# Fixed: the reader on the test files, the runner that breaks the riskiest code on purpose, and the main session's
+# own check of each P1 finding. More than about 60 test files: uncomment reader-2 (and reader-3 past about 120),
+# add 250000 to estimated-tokens for each, and say why. Three readers at most.
+kind	id	field	value	reason
+schema	plan	version	1	versioned run-plan contract
+run	run	id	{{RUN}}	bind this plan to its run folder
+run	run	mode	{{MODE}}	mode chosen when the run opened
+run	run	size	squad	the reader and the runner, and up to two more readers on a large suite (D75)
+assessment	run	risk	low	an audit changes nothing in the project; a wrong finding is checked before the owner sees it
+assessment	run	complexity	medium	up to four agents on one test suite at once
+assessment	run	uncertainty	medium	which tests prove nothing is what the audit finds out
+budget	run	agent-cap	{{AGENT_CAP}}	project cap from council.config.md, default 10
+budget	run	estimated-tokens	500000	a review's pair as the nearest measured figure; the audit itself is not measured yet
+verification	run	level	self	the main session checks each P1 finding against the test and the code itself
+seat	chair	disposition	selected	the main session shares out the test files, checks the findings and writes the report
+seat	chair	role	chair	the one head
+context	chair	level	focused	the surface map, the findings and the tests they cite
+budget	chair	tool-calls	60	the dispatch, each P1 finding's check, the report
+seat	reader	disposition	selected	reads its share of the test files for tests that prove nothing
+seat	reader	role	worker	one reader of the audit
+context	reader	level	focused	the brief and its share of the test files
+budget	reader	tool-calls	100	a deep read of its share
+seat	runner	disposition	selected	breaks the riskiest code on purpose in a scratch clone and reports which tests noticed
+seat	runner	role	worker	the audit's one runner
+context	runner	level	focused	the brief and the riskiest code
+budget	runner	tool-calls	100	a clone, the suite once whole, then one break at a time
+# A second and a third reader, each on its own share of the test files:
+# seat	reader-2	disposition	selected	reads its share of the test files for tests that prove nothing
+# seat	reader-2	role	worker	one reader of the audit
+# context	reader-2	level	focused	the brief and its share of the test files
+# budget	reader-2	tool-calls	100	a deep read of its share
+# seat	reader-3	disposition	selected	reads its share of the test files for tests that prove nothing
+# seat	reader-3	role	worker	one reader of the audit
+# context	reader-3	level	focused	the brief and its share of the test files
+# budget	reader-3	tool-calls	100	a deep read of its share

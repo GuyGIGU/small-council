@@ -85,25 +85,21 @@ class Tree:
             hits.update(n for b, n, rule in rules if b in data and rule.search(data))
             yield f, hits
 
-    def orphans(self, found: list[str], slugs: list[str]) -> list[str]:
-        """The lines for every scope item that matches no file, seat slug or mode."""
-        known = [s for s in slugs + list(MODES) if s != ""]
-        roster = bool(slugs)
+    def orphans(self, found: list[str]) -> list[str]:
+        """The lines for every scope item that matches no file or mode. A bare word (no path character) is a seat's
+        slug in some run (reader, task-3) or a mode: nothing here can judge it, so it is never reported (D76)."""
         out, seen = [], set()
         for row in found:
             c = cells(row)
             if c[4] not in ("settled", "observed") or c[2] == "-" or scope.everyrun(c[2]):
                 continue
             listed = scope.items(c[2])
-            hit = [g.text in known for g in listed]
+            hit = [g.text in MODES for g in listed]
             for i, g in enumerate(listed):
-                if hit[i]:
-                    continue
-                if not re.search(r"[/.*?{\[]", g.text) and not roster:
-                    continue                                    # no roster to judge a word by
-                hit[i] = any(scope.covers(f, g.text, ".*", False) for f in self.files)
+                if not hit[i] and not _bare(g.text):
+                    hit[i] = any(scope.covers(f, g.text, ".*", False) for f in self.files)
             for i, g in enumerate(listed):
-                if hit[i] or _bare(g.text, roster) or (g.piece_of and hit[g.piece_of - 1]):
+                if hit[i] or _bare(g.text) or (g.piece_of and hit[g.piece_of - 1]):
                     continue
                 if g.whole and _pieces_hit(i + 1, listed, hit):
                     continue
@@ -114,8 +110,8 @@ class Tree:
         return out
 
 
-def _bare(g: str, roster: bool) -> bool:
-    return not roster and not re.search(r"[/.*?{\[]", g)
+def _bare(g: str) -> bool:
+    return not re.search(r"[/.*?{\[]", g)
 
 
 def _pieces_hit(whole: int, listed: list[scope.Item], hit: list[bool]) -> bool:

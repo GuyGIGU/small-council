@@ -24,9 +24,8 @@ Event = Dict[str, Any]
 
 MAX_FILE = 64 * 1024 * 1024
 STAGES = ("convene", "prepare", "assign", "brief", "work", "collect", "judge", "challenge", "deliver", "learn")
-RANK = dict((stage, n) for n, stage in enumerate(STAGES))
-RANK["build"] = RANK["work"]                       # council-implement's build loop stands in for stages 3-7
-SEAT_STAGES = ("assign", "brief", "work", "collect")   # stages 3-6: a run with no worker seat skips them
+RANK = dict((stage, n) for n, stage in enumerate(STAGES))   # assign, brief, collect: an older run's (D77)
+RANK["build"] = RANK["work"]                       # council-implement's build loop stands where Work does
 MODES = ("council-review", "council-plan", "council-implement", "council-research", "council-postgame",
          "council-health")
 CLAIM_MODES = ("council-review", "council-plan", "council-research")
@@ -103,14 +102,12 @@ def stages(run: Run, say: Say) -> None:
                if e["type"] in ("run.opened", "run.phase_changed")]
     path = [s for n, s in enumerate(entered) if n == 0 or s != entered[n - 1]]
     if run.mode not in MODES:
-        need, why = [], ""                          # council-init, test-architect, context-core: no fixed path
-    elif run.mode == "council-implement" or (run.mode in run_stages.ONE_PAGE and run.workers()):
-        need, why = run_stages.required(run.folder), ""   # a one-page mode's path, its one definition (D50, D56, D60)
-    elif run.mode == "council-postgame" or not run.workers():
-        need = [s for s in STAGES if s not in SEAT_STAGES]
-        why = "" if run.mode == "council-postgame" else " (stages 3-6 are skipped: no worker seat was selected)"
+        need, why = [], ""                          # council-init, test-architect, an older run's mode: no fixed path
+    elif run.mode == "council-implement" or run.workers():
+        need, why = run_stages.required(run.folder), ""   # the mode's path, its one definition (D50, D56, D60)
     else:
-        need, why = list(STAGES), ""
+        need = run_stages.SHORT.split()
+        why = "" if run.mode == "council-postgame" else " (Work is skipped: no worker seat was selected)"
     missing = [s for s in need if s not in entered] if run.status == "complete" else []
     back = ["%s back to %s" % (a, b) for a, b in zip(path, path[1:]) if RANK.get(b, 99) < RANK.get(a, -1)]
     unknown = [s for s in path if s not in RANK] if run.mode in MODES else []    # setup names its own phases
@@ -363,7 +360,7 @@ def agent_limit(run: Run, say: Say) -> None:
 
 def token_figures(run: Run, say: Say) -> None:
     """Every seat that was an agent run has a token figure. Graded FAIL, as the other gaps in a run's own record
-    are: the Chair left the run total and the ledger short, and can put it right with council correct."""
+    are: the Chair left the run total short, and can put it right with council correct."""
     label = "Token figures"
     if run.status != "complete":
         say(PASS, label, "not checked: the run did not complete")
@@ -373,7 +370,7 @@ def token_figures(run: Run, say: Say) -> None:
         say(PASS, label, "every agent run's tokens are on record")
         return
     fix = 'council correct <seat> tokens=<exact> agents=<exact> evidence="<source>" --run ' + run.name
-    lead = "%d seat(s) ran as agents with no token figure, so the run total and the ledger leave them out"
+    lead = "%d seat(s) ran as agents with no token figure, so the run total leaves them out"
     say(FAIL, label, "%s: %s; put one right with %s" % (lead % len(gaps), usage_gaps.words(gaps), fix))
 
 

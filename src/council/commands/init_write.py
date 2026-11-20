@@ -1,5 +1,5 @@
 """council init scaffold's files, filled from the plugin's references/templates/: council.config.md (its stamps, the
-fingerprint, a roster and the Gates rows the setup run's probes earned), conventions.md and map.md. Every line a
+fingerprint and the Gates rows the setup run's probes earned; no roster, D72), conventions.md and map.md. Every line a
 person reads stays as the template has it; only the placeholders a program can fill are filled."""
 from __future__ import annotations
 
@@ -7,15 +7,14 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-from council.commands import gate_output, init_seats
+from council.commands import gate_output
 from council.commands.init_checks import Check
 from council.records import cells, config, gate_table, map_file, memory, paths
 from council.records import gates as gate_files
 from council.records import verdicts
 
 TEMPLATES = "references/templates/"
-QUICK_LINE = (config.QUICK_SETUP + " %s — the default roster as the catalog names it, no recast, no seat cards, "
-              "no map; /council-init does the full setup")
+QUICK_LINE = config.QUICK_SETUP + " %s — no check probed, no map, no book; /council-init does the full setup"
 EARLY = ("lint", "type check")             # quick to run, and a review reads what they report: grounding too
 
 
@@ -116,7 +115,6 @@ class Config(NamedTuple):
     short: str
     fingerprint: str
     summary: str
-    roster: list[str]
     gates: list[str]
     memory: str
     quick: bool
@@ -143,8 +141,7 @@ def config_text(plugin: str, fill: Config) -> str:
         end = next(i for i in range(at, len(out)) if not out[i].strip() or out[i].startswith("## "))
         out[at:end] = ["Detected by `council init scaffold --quick`, with no judgment: %s. /council-init writes "
                        "this section." % fill.summary]
-    out = _replace_rows(_unfilled(_unfilled(out, "Hard rules"), "Notes"), "Roster", fill.roster)
-    return "\n".join(_replace_rows(out, "Gates", fill.gates))
+    return "\n".join(_replace_rows(_unfilled(_unfilled(out, "Hard rules"), "Notes"), "Gates", fill.gates))
 
 
 def _unfilled(lines: list[str], heading: str) -> list[str]:
@@ -161,21 +158,6 @@ def _unfilled(lines: list[str], heading: str) -> list[str]:
         if not placeholder:
             out.append(lines[i])
     return out
-
-
-def roster_rows(plugin: str, files: list[str], quick: bool) -> list[str]:
-    """Quick: every catalog seat. Full: Fowler and Beck (never dropped), then the template's row for the Chair."""
-    seats = init_seats.default_roster(plugin, files)
-    rows = []
-    for seat in seats:
-        if seat.slug in init_seats.ALWAYS:
-            rows.append(init_seats.row(seat, "kept — never dropped"))
-        elif quick:
-            rows.append(init_seats.row(seat, "quick setup: as the catalog names it, not recast"))
-    if not quick:
-        rows.append(next(line for line in template(plugin, config.NAME).split("\n")
-                         if line.startswith("| <Seat> |")))
-    return rows
 
 
 def conventions_text(plugin: str, project: str) -> str:

@@ -15,9 +15,7 @@ Small Council keeps the named-expert council idea, the council-review,
 council-plan, council-implement, spec-writer, and test-architect modes
 (substantially rewritten), and several reference documents. It adds:
 
-  - context-core      — a reusable context-engineering pipeline that every
-                        mode runs on (the original had no shared pipeline);
-  - council-init      — per-project tailoring of the roster, gates, and
+  - council-init      — per-project setup of the stack page, gates, and
                         codebase map;
   - council-research  — an evidence-graded investigation mode;
   - the council-worker and council-verifier agents and the SessionStart hook;

@@ -1,13 +1,12 @@
 # A model per role
 
-Which model each role's agents run on (D37, as D42 and D51 amend it). The run plan check enforces it
-(`references/run/run-plan.md`); council-init proposes it; the Chair passes it at dispatch
-(`references/doctrine/05-work.md`).
+Which model each role's agents run on (D37, as D42, D51, D74 and D78 amend it). The run plan check
+enforces it (`references/run/run-plan.md`); council-init proposes it; the Chair passes it at dispatch.
 
 ## The line
 
 ```
-- models: builder=<name>, review=<name>, verifier=<name>
+- models: builder=<name>, review=<name>, verifier=<name>, map=<name>
 ```
 
 In `council.config.md`'s `## Run preferences`. A name is `inherit` (the session's model), `fable`,
@@ -20,12 +19,13 @@ what to write.
 | Role | Whose agents | Notes |
 |---|---|---|
 | `builder` | A build's builder agents (council-implement workers) | One per task, on its build seat `task-<n>`; in a Solo build the Chair builds instead, on the session's model (D42) |
-| `review` | None since 1.3.0: a review's reader and runner run on the session's model, and its plan gives them no model row (D51) | Still read, so an older line stays valid; mapping and survey workers keep `- seat models:` |
+| `review` | None since 1.3.0: a review's reader and runner run on the session's model, and its plan gives them no model row (D51) | Still read, so an older line stays valid |
 | `verifier` | Every verifier seat, in every mode | Never weaker than the builder it checks |
+| `map` | Setup's mapping workers on a large repository (`map-<area>`, council-init Phase D) | `inherit`, `sonnet` or `haiku` only: the session's model or a cheaper one (D78) |
 
-The Chair stays on the session's model. Plan, research and post-game seats, diagnosis workers, and
-mapping or survey workers are not roles of this line: they inherit, or take `- seat models:`'s
-`sonnet` or `haiku` for a mapping or survey purpose, exactly as before.
+The Chair stays on the session's model, and so do the reader, the runner, the designer and a
+diagnosis worker: they are not roles of this line. An older config's `- seat models:` line is no
+longer read (D74).
 
 ## A verifier never below its builder
 
@@ -44,11 +44,13 @@ Propose from the model you are running on, in one line, and write it only on the
 - the verifier on `inherit`; `sonnet` only when the user wants cheaper checks (a Solo build's
   verifier row stays `inherit` or `fable` whatever the line says);
 - `review=` stays `inherit`: no lower model for a review, whose reader and runner always run on the
-  session's model (D51).
+  session's model (D51);
+- `map=` only on a large repository, before the mapping workers start: `inherit`, or `sonnet` for a
+  cheaper map (charting what is where needs less than judging it). The owner confirms it.
 
 > Models: builder and verifier on your model (opus). Keep, or a cheaper verifier?
 
-On "all inherit", write `- models: builder=inherit, review=inherit, verifier=inherit`.
+On "all inherit", write `- models: builder=inherit, review=inherit, verifier=inherit, map=inherit`.
 
 ## The size-and-cost line
 

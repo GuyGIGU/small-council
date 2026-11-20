@@ -86,7 +86,7 @@ redirect to a file and read that.
 5. Fill every `<…>` line of `brief.md` in one Edit: the target as `base..head`, files and +/− lines
    (with no config, add the test command the owner gave); the intent as the request's first
    ~12 words and `the parts below`; the parts, `<#> · "<quote>"`, one line each; the config's
-   `## Hard rules` word for word; what memory select printed, one line each; each
+   `## Hard rules` word for word; the watch lists of the stack rows the work touches, as `council book` prints them (two at most for a seat); what memory select printed, one line each; each
    `council state decision=` entry word for word. Write `none` where there is nothing. Nothing from
    the plan, the logs or your own view goes in.
 6. **The estimate**, in plain terms: two agents check the work against each part of the request at
